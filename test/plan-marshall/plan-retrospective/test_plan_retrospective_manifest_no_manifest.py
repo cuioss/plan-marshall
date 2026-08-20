@@ -13,7 +13,6 @@ from _plan_retrospective_manifest_fixtures import (
     _manifest_default,
     _manifest_docs_only,
     _manifest_early_terminate,
-    _manifest_tests_only,
     _setup_plan_with_manifest,
     _write_diff,
 )
@@ -50,6 +49,55 @@ class TestNoManifest:
         assert data['manifest_present'] is False
         assert data['checks'] == []
         assert data['findings'] == []
+
+
+# =============================================================================
+# Rule M5: manifest version recognition
+# =============================================================================
+
+
+class TestManifestVersionRule:
+    def test_pass_for_known_version(self, tmp_path, monkeypatch):
+        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_default())
+        diff = _write_diff(tmp_path, ['src/foo/bar.py'])
+        result = run_script(
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
+        )
+        data = result.toon()
+        check = _check_by_name(data['checks'], 'manifest_version_recognized')
+        assert check is not None
+        assert check['status'] == 'pass'
+
+    def test_fail_for_unknown_version(self, tmp_path, monkeypatch):
+        # Replace the version line precisely. Replacing the bare ``1`` would
+        # also rewrite list counts in the surrounding TOON header.
+        body = _manifest_default().replace('manifest_version: 1\n', 'manifest_version: 99\n')
+        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=body)
+        diff = _write_diff(tmp_path, [])
+        result = run_script(
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
+        )
+        data = result.toon()
+        check = _check_by_name(data['checks'], 'manifest_version_recognized')
+        assert check is not None
+        assert check['status'] == 'fail'
+        finding = _finding_by_code(data['findings'], 'manifest_version_unknown')
+        assert finding is not None
+        assert finding['severity'] == 'error'
 
 
 # =============================================================================
@@ -231,61 +279,3 @@ class TestEarlyTerminateRule:
         assert check['status'] == 'fail'
         finding = _finding_by_code(data['findings'], 'early_terminate_diff_nonempty')
         assert finding is not None
-
-
-# =============================================================================
-# Rule M3: tests-only verification
-# =============================================================================
-
-
-class TestTestsOnlyRule:
-    def test_pass_when_only_test_files(self, tmp_path, monkeypatch):
-        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_tests_only())
-        diff = _write_diff(
-            tmp_path,
-            [
-                'test/foo/test_bar.py',
-                'tests/baz/baz_test.py',
-                'src/main/java/FooTest.java',
-                'src/web/foo.test.js',
-                'src/web/bar.spec.js',
-            ],
-        )
-        result = run_script(
-            MANIFEST_SCRIPT,
-            'run',
-            '--plan-id',
-            plan_id,
-            '--mode',
-            'live',
-            '--diff-file',
-            str(diff),
-        )
-        data = result.toon()
-        check = _check_by_name(data['checks'], 'tests_only_diff')
-        assert check is not None
-        assert check['status'] == 'pass'
-
-    def test_fail_when_production_code_present(self, tmp_path, monkeypatch):
-        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_tests_only())
-        diff = _write_diff(
-            tmp_path,
-            ['test/foo/test_bar.py', 'src/main/foo/bar.py'],
-        )
-        result = run_script(
-            MANIFEST_SCRIPT,
-            'run',
-            '--plan-id',
-            plan_id,
-            '--mode',
-            'live',
-            '--diff-file',
-            str(diff),
-        )
-        data = result.toon()
-        check = _check_by_name(data['checks'], 'tests_only_diff')
-        assert check is not None
-        assert check['status'] == 'fail'
-        finding = _finding_by_code(data['findings'], 'tests_only_diff_violation')
-        assert finding is not None
-        assert 'src/main/foo/bar.py' in finding['culprits']

@@ -1,0 +1,272 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""In-process tests for the manage-status.py CLI dispatcher (``main``)."""
+
+
+import json
+
+import pytest
+from _manage_status_main_dispatch_fixtures import _PHASES, _ms, _parse, _pin_stale_snapshot, _run
+
+
+def test_main_phase_write_preserves_a_title_token_set_after_its_snapshot_read(
+    plan_context, monkeypatch, capsys
+):
+    """A ``title-token set`` landing inside a phase write's read→write window survives.
+
+    ``set-phase`` commits a WHOLE document assembled from a snapshot read, so a
+    concurrent set committed after that read would be clobbered by the snapshot
+    value — a last-writer-wins loss on the very field four independent writers
+    coordinate through. The phase delta must land AND the live record must
+    survive; asserting only the former would certify exactly the defect.
+    """
+    plan_id = 'ms-disp-race'
+    _run(monkeypatch, capsys, ['create', '--plan-id', plan_id, '--title', 'Race', '--phases', _PHASES])
+
+    status_file = plan_context.plan_dir_for(plan_id) / 'status.json'
+    stale_snapshot = json.loads(status_file.read_text(encoding='utf-8'))
+    assert 'title_token' not in stale_snapshot
+
+    # The concurrent writer commits its record in its own critical section.
+    code, _, _ = _run(
+        monkeypatch,
+        capsys,
+        ['title-token', 'set', '--plan-id', plan_id, '--state', 'build-busy', '--owner', 'build-hook'],
+    )
+    assert code == 0
+
+    _pin_stale_snapshot(monkeypatch, stale_snapshot)
+    code, out, _ = _run(monkeypatch, capsys, ['set-phase', '--plan-id', plan_id, '--phase', '5-execute'])
+
+    assert code == 0
+    assert _parse(out)['status'] == 'success'
+    persisted = json.loads(status_file.read_text(encoding='utf-8'))
+    assert persisted['current_phase'] == '5-execute'
+    assert persisted['title_token']['state'] == 'build-busy'
+    assert persisted['title_token']['owner'] == 'build-hook'
+
+
+def test_main_transition_preserves_a_title_token_set_after_its_snapshot_read(
+    plan_context, monkeypatch, capsys
+):
+    """``transition`` shares the same read→write window and the same protection.
+
+    Covered alongside ``set-phase`` because a per-call-site guard is the failure
+    mode here: fixing one phase writer and leaving its sibling unguarded looks
+    green on a single-writer test.
+    """
+    plan_id = 'ms-disp-race-tr'
+    _run(monkeypatch, capsys, ['create', '--plan-id', plan_id, '--title', 'RaceTr', '--phases', _PHASES])
+
+    status_file = plan_context.plan_dir_for(plan_id) / 'status.json'
+    stale_snapshot = json.loads(status_file.read_text(encoding='utf-8'))
+
+    code, _, _ = _run(
+        monkeypatch,
+        capsys,
+        ['title-token', 'set', '--plan-id', plan_id, '--state', 'lock-owned', '--owner', 'merge-lock'],
+    )
+    assert code == 0
+
+    _pin_stale_snapshot(monkeypatch, stale_snapshot)
+    code, out, _ = _run(monkeypatch, capsys, ['transition', '--plan-id', plan_id, '--completed', '1-init'])
+
+    assert code == 0
+    assert _parse(out)['status'] == 'success'
+    persisted = json.loads(status_file.read_text(encoding='utf-8'))
+    assert persisted['current_phase'] == '2-refine'
+    assert persisted['title_token']['state'] == 'lock-owned'
+    assert persisted['title_token']['owner'] == 'merge-lock'
+
+
+# =============================================================================
+# transition exit-code contract
+# =============================================================================
+
+
+def test_main_transition_normal_boundary_exits_zero(plan_context, monkeypatch, capsys):
+    """A transition across a non-blocking boundary succeeds and exits 0."""
+    _run(monkeypatch, capsys, ['create', '--plan-id', 'ms-disp-tr', '--title', 'TR', '--phases', _PHASES])
+
+    code, out, _ = _run(monkeypatch, capsys, ['transition', '--plan-id', 'ms-disp-tr', '--completed', '1-init'])
+
+    assert code == 0
+    assert _parse(out)['status'] == 'success'
+
+
+def test_main_transition_invalid_phase_exits_zero_with_error(plan_context, monkeypatch, capsys):
+    """Transitioning a non-existent completed phase returns an error and exits 0.
+
+    The result is an error dict (``invalid_phase``) that ``verify_blocks_transition``
+    does NOT treat as a transition-block, so the dispatcher's exit-code guard
+    leaves the code at 0.
+    """
+    _run(monkeypatch, capsys, ['create', '--plan-id', 'ms-disp-tri', '--title', 'TRI', '--phases', _PHASES])
+
+    code, out, _ = _run(monkeypatch, capsys, ['transition', '--plan-id', 'ms-disp-tri', '--completed', 'no-such-phase'])
+
+    assert code == 0
+    data = _parse(out)
+    assert data['status'] == 'error'
+    assert data['error'] == 'invalid_phase'
+
+
+def test_main_archive_still_drops_the_title_token(plan_context, monkeypatch, capsys):
+    """``archive`` opts OUT of the preserve rule — its owner-agnostic pop must stick.
+
+    The preserve-by-default write seam would otherwise silently resurrect the
+    token an archive deliberately discards, turning a documented design decision
+    into a vacuous pop.
+    """
+    plan_id = 'ms-disp-archive-tt'
+    _run(monkeypatch, capsys, ['create', '--plan-id', plan_id, '--title', 'ArchTT', '--phases', _PHASES])
+
+    code, _, _ = _run(
+        monkeypatch,
+        capsys,
+        ['title-token', 'set', '--plan-id', plan_id, '--state', 'lock-owned', '--owner', 'merge-lock'],
+    )
+    assert code == 0
+
+    code, out, _ = _run(monkeypatch, capsys, ['archive', '--plan-id', plan_id])
+
+    assert code == 0
+    assert _parse(out)['status'] == 'success'
+    import _status_core
+
+    archived_status = next(_status_core.get_archive_dir().glob(f'*-{plan_id}/status.json'))
+    archived = json.loads(archived_status.read_text(encoding='utf-8'))
+    assert 'title_token' not in archived
+
+
+def test_main_update_phase_marks_done(plan_context, monkeypatch, capsys):
+    """update-phase dispatches and transitions a phase to done."""
+    _run(monkeypatch, capsys, ['create', '--plan-id', 'ms-disp-up', '--title', 'UP', '--phases', _PHASES])
+
+    code, out, _ = _run(
+        monkeypatch, capsys, ['update-phase', '--plan-id', 'ms-disp-up', '--phase', '1-init', '--status', 'done']
+    )
+
+    assert code == 0
+    assert _parse(out)['status'] == 'success'
+
+
+def test_main_progress_after_create(plan_context, monkeypatch, capsys):
+    """progress dispatches and reports a success payload for an existing plan."""
+    _run(monkeypatch, capsys, ['create', '--plan-id', 'ms-disp-pr', '--title', 'PR', '--phases', _PHASES])
+
+    code, out, _ = _run(monkeypatch, capsys, ['progress', '--plan-id', 'ms-disp-pr'])
+
+    assert code == 0
+    assert _parse(out)['status'] == 'success'
+
+
+# =============================================================================
+# Result-is-None dispatch branch (handler returns None, output skipped)
+# =============================================================================
+
+
+def test_main_get_context_missing_plan_exits_zero_with_error(plan_context, monkeypatch, capsys):
+    """get-context on a missing plan returns None from the handler.
+
+    ``require_status`` emits the file_not_found TOON itself and returns None, so
+    the dispatcher skips its own ``output_toon`` (the ``result is None`` branch)
+    and still exits 0.
+    """
+    code, out, _ = _run(monkeypatch, capsys, ['get-context', '--plan-id', 'ms-disp-absent'])
+
+    assert code == 0
+    data = _parse(out)
+    assert data['status'] == 'error'
+    assert data['error'] == 'file_not_found'
+
+
+# =============================================================================
+# mark-step-done (loop-back classification through the dispatcher)
+# =============================================================================
+
+
+def test_main_mark_step_done_loop_back_records_target(plan_context, monkeypatch, capsys):
+    """A loop_back outcome with a valid --loop-back-target dispatches and persists."""
+    _run(monkeypatch, capsys, ['create', '--plan-id', 'ms-disp-ms', '--title', 'MS', '--phases', _PHASES])
+
+    code, out, _ = _run(
+        monkeypatch,
+        capsys,
+        [
+            'mark-step-done',
+            '--plan-id', 'ms-disp-ms',
+            '--phase', '5-execute',
+            '--step', 'discovery',
+            '--outcome', 'loop_back',
+            '--loop-back-target', '5-execute',
+        ],
+    )
+
+    assert code == 0
+    data = _parse(out)
+    assert data['status'] == 'success'
+    assert data['outcome'] == 'loop_back'
+    assert data['loop_back_target'] == '5-execute'
+
+
+def test_main_mark_step_done_loop_back_missing_target_errors(plan_context, monkeypatch, capsys):
+    """loop_back without --loop-back-target is rejected by the handler (exit 0, error)."""
+    _run(monkeypatch, capsys, ['create', '--plan-id', 'ms-disp-msx', '--title', 'MSX', '--phases', _PHASES])
+
+    code, out, _ = _run(
+        monkeypatch,
+        capsys,
+        [
+            'mark-step-done',
+            '--plan-id', 'ms-disp-msx',
+            '--phase', '5-execute',
+            '--step', 'discovery',
+            '--outcome', 'loop_back',
+        ],
+    )
+
+    assert code == 0
+    data = _parse(out)
+    assert data['status'] == 'error'
+    assert data['error'] == 'missing_loop_back_target'
+
+
+# =============================================================================
+# argparse-level rejections at the dispatcher boundary
+# =============================================================================
+
+
+def test_main_missing_subcommand_exits_2(plan_context, monkeypatch, capsys):
+    """No subcommand is an argparse error: SystemExit code 2."""
+    code, _, err = _run(monkeypatch, capsys, [])
+
+    assert code == 2
+    assert 'usage' in err.lower() or 'error' in err.lower()
+
+
+def test_main_unknown_flag_exits_2(plan_context, monkeypatch, capsys):
+    """An unknown flag on a real subcommand is an argparse error: exit 2."""
+    code, _, _ = _run(monkeypatch, capsys, ['list', '--definitely-not-a-flag'])
+
+    assert code == 2
+
+
+# =============================================================================
+# _loop_back_target_type argparse validator (module-level function)
+# =============================================================================
+
+
+def test_loop_back_target_type_normalizes_case():
+    """The validator lowercases a valid target and returns the canonical form."""
+    assert _ms._loop_back_target_type('5-EXECUTE') == '5-execute'
+    assert _ms._loop_back_target_type('6-finalize') == '6-finalize'
+
+
+def test_loop_back_target_type_rejects_unknown():
+    """An unknown target raises argparse.ArgumentTypeError naming the valid set."""
+    import argparse
+
+    with pytest.raises(argparse.ArgumentTypeError) as exc:
+        _ms._loop_back_target_type('banana')
+    assert 'banana' in str(exc.value)

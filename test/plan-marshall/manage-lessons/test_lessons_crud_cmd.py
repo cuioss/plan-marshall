@@ -5,10 +5,10 @@
 
 
 from argparse import Namespace
+from pathlib import Path
 from unittest.mock import patch
-from _lessons_helpers import SCRIPT_PATH, cmd_get, cmd_list
-from conftest import run_script
-from _lessons_crud_fixtures import _seed_cli_lesson
+from _lessons_helpers import cmd_get, cmd_list
+from _lessons_crud_fixtures import _seed_lesson_with_status
 
 
 # =============================================================================
@@ -53,49 +53,6 @@ This is the lesson body.
 
         assert result['status'] == 'error'
         assert result['error'] == 'not_found'
-
-
-class TestCliReadAlias:
-    """Subprocess test pinning ``read`` as an alias for the ``get`` subcommand."""
-
-    def test_cli_read_alias_succeeds(self, tmp_path):
-        """``manage-lessons read`` succeeds via the CLI for an existing lesson."""
-        _seed_cli_lesson(tmp_path, '2025-01-01-01-001', 'Test Lesson Title')
-
-        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = run_script(
-                SCRIPT_PATH,
-                'read',
-                '--lesson-id',
-                '2025-01-01-01-001',
-            )
-
-        assert result.success, f'Script failed: {result.stderr}'
-        assert 'status: success' in result.stdout
-        assert 'title: Test Lesson Title' in result.stdout
-
-    def test_cli_read_alias_matches_get(self, tmp_path):
-        """``read`` and ``get`` produce identical payloads for the same lesson."""
-        _seed_cli_lesson(tmp_path, '2025-01-01-01-001', 'Test Lesson Title')
-
-        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            read_result = run_script(
-                SCRIPT_PATH,
-                'read',
-                '--lesson-id',
-                '2025-01-01-01-001',
-            )
-            get_result = run_script(
-                SCRIPT_PATH,
-                'get',
-                '--lesson-id',
-                '2025-01-01-01-001',
-            )
-
-        assert read_result.returncode == 0
-        assert get_result.returncode == 0
-        assert read_result.returncode == get_result.returncode
-        assert read_result.stdout == get_result.stdout
 
 
 # =============================================================================
@@ -240,3 +197,69 @@ Body content here.
 
         assert result['status'] == 'success'
         assert 'content' not in result['lessons'][0]
+
+
+class TestCmdListStatusFilter:
+    """``cmd_list --status`` filter behaviour."""
+
+    def _seed_three_statuses(self, lessons_dir: Path) -> None:
+        _seed_lesson_with_status(lessons_dir, '2025-01-01-01-001', 'active', 'Active Lesson')
+        _seed_lesson_with_status(lessons_dir, '2025-01-01-01-002', 'superseded', 'Superseded Lesson')
+        _seed_lesson_with_status(lessons_dir, '2025-01-01-01-003', None, 'Legacy No Status')
+
+    def test_default_excludes_superseded(self, tmp_path):
+        """Default filter (``status=active``) hides superseded lessons; absent status treated as active."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_three_statuses(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_list(Namespace(component=None, category=None, status='active', full=False))
+
+        assert result['status'] == 'success'
+        listed_ids = {entry['id'] for entry in result['lessons']}
+        assert '2025-01-01-01-001' in listed_ids
+        assert '2025-01-01-01-003' in listed_ids  # absent status ⇒ active
+        assert '2025-01-01-01-002' not in listed_ids  # superseded hidden
+
+    def test_status_all_returns_every_lesson(self, tmp_path):
+        """``--status all`` returns every lesson regardless of lifecycle status."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_three_statuses(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_list(Namespace(component=None, category=None, status='all', full=False))
+
+        listed_ids = {entry['id'] for entry in result['lessons']}
+        assert listed_ids == {
+            '2025-01-01-01-001',
+            '2025-01-01-01-002',
+            '2025-01-01-01-003',
+        }
+
+    def test_status_superseded_returns_only_superseded(self, tmp_path):
+        """``--status superseded`` returns only lessons with frontmatter ``status=superseded``."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_three_statuses(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_list(Namespace(component=None, category=None, status='superseded', full=False))
+
+        listed_ids = {entry['id'] for entry in result['lessons']}
+        assert listed_ids == {'2025-01-01-01-002'}
+
+    def test_legacy_namespace_without_status_attr_defaults_to_active(self, tmp_path):
+        """Backwards compatibility: a Namespace without a ``status`` attribute must default to ``active``."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_three_statuses(lessons_dir)
+
+        # Legacy Namespace without status field — older callers must still work.
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_list(Namespace(component=None, category=None, full=False))
+
+        listed_ids = {entry['id'] for entry in result['lessons']}
+        assert '2025-01-01-01-002' not in listed_ids  # superseded still hidden
+        assert '2025-01-01-01-001' in listed_ids

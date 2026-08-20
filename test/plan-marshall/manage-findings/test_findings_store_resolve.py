@@ -4,257 +4,383 @@
 
 
 from _findings_store_fixtures import (
+    QGATE_PERSIST_OK,
+    _findings_core,
+    _observed_qgate_statuses,
     add_finding,
+    add_qgate_finding,
+    clear_qgate_findings,
+    promote_finding,
     query_findings,
     query_findings_unified,
-    resolve_finding,
-    resolve_findings_by_type,
+    query_qgate_findings,
+    resolve_qgate_finding,
+    resolve_qgate_findings_by_evidence,
 )
 
 
-def test_add_finding_invalid_bot_kind(plan_context):
-    """An unknown bot_kind value returns the canonical error shape."""
-    result = add_finding(
-        'store-prc-badbotkind',
-        'pr-comment',
-        'Title',
+def test_resolve_qgate_finding(plan_context):
+    """Test resolving a Q-Gate finding."""
+    r = add_qgate_finding(
+        'store-qgate-resolve',
+        '5-execute',
+        'qgate',
+        'test-failure',
+        'Test failure',
         'Detail',
-        bot_kind='sonarcloud',
-    )
-    assert result['status'] == 'error'
-    assert 'Invalid bot_kind' in result['message']
-
-
-def test_add_finding_accepts_sourcery_bot_kind(plan_context):
-    """``sourcery`` is a first-class bot_kind accepted by add_finding."""
-    add_finding(
-        'store-prc-sourcery',
-        'pr-comment',
-        'Sourcery comment',
-        'Detail',
-        author='sourcery-ai[bot]',
-        bot_kind='sourcery',
     )
 
-    result = query_findings('store-prc-sourcery', bot_kind='sourcery')
-    assert result['filtered_count'] == 1
-    assert result['findings'][0]['bot_kind'] == 'sourcery'
-
-
-def test_query_findings_by_bot_kind(plan_context):
-    """query_findings filters by exact bot_kind match."""
-    add_finding('store-prc-bybotkind', 'pr-comment', 'C1', 'd', author='coderabbitai[bot]', bot_kind='coderabbit')
-    add_finding('store-prc-bybotkind', 'pr-comment', 'C2', 'd', author='cuioss-review-bot[bot]', bot_kind='pr-agent')
-    add_finding('store-prc-bybotkind', 'pr-comment', 'C3', 'd', author='coderabbitai[bot]', bot_kind='coderabbit')
-
-    result = query_findings('store-prc-bybotkind', bot_kind='coderabbit')
-    assert result['total_count'] == 3
-    assert result['filtered_count'] == 2
-    assert {f['title'] for f in result['findings']} == {'C1', 'C3'}
-
-
-def test_query_findings_bot_kind_excludes_unfielded(plan_context):
-    """The bot_kind filter excludes pr-comment findings that carry no bot_kind."""
-    add_finding('store-prc-botkind-mix', 'pr-comment', 'Legacy', 'd', author='octocat', kind='inline')
-    add_finding('store-prc-botkind-mix', 'pr-comment', 'Bot', 'd', bot_kind='pr-agent')
-
-    result = query_findings('store-prc-botkind-mix', bot_kind='pr-agent')
-    assert result['total_count'] == 2
-    assert result['filtered_count'] == 1
-    assert result['findings'][0]['title'] == 'Bot'
-
-
-def test_query_findings_unified_carries_reviewed_commit_sha_and_bot_kind(plan_context):
-    """The unified read surfaces reviewed_commit_sha/bot_kind on the merged plan slice."""
-    add_finding(
-        'store-prc-rcs-unified',
-        'pr-comment',
-        'Plan comment',
-        'd',
-        bot_kind='coderabbit',
-        reviewed_commit_sha='deadbeef',
+    result = resolve_qgate_finding(
+        'store-qgate-resolve',
+        '5-execute',
+        r['hash_id'],
+        'fixed',
+        detail='Fixed it',
     )
-
-    unified = query_findings_unified('store-prc-rcs-unified')
-    assert unified['plan_count'] == 1
-    record = next(f for f in unified['findings'] if f['title'] == 'Plan comment')
-    assert record['reviewed_commit_sha'] == 'deadbeef'
-    assert record['bot_kind'] == 'coderabbit'
-
-
-def test_query_findings_unified_filters_by_bot_kind(plan_context):
-    """The unified read narrows the merged result by bot_kind."""
-    add_finding('store-prc-unified-bk', 'pr-comment', 'From coderabbit', 'd', bot_kind='coderabbit')
-    add_finding('store-prc-unified-bk', 'pr-comment', 'From pr-agent', 'd', bot_kind='pr-agent')
-
-    unified = query_findings_unified('store-prc-unified-bk', bot_kind='coderabbit')
-    assert unified['plan_count'] == 1
-    assert unified['findings'][0]['title'] == 'From coderabbit'
-
-
-def test_add_finding_pr_comment_backward_compatible_without_new_fields(plan_context):
-    """Existing pr-comment findings (author/kind only) remain valid and queryable.
-
-    Backward-compatibility guard: a pr-comment finding created with the pre-existing
-    author/kind surface and neither reviewed_commit_sha nor bot_kind persists and
-    round-trips unchanged, and a bot_kind filter does not surface it.
-    """
-    add_finding(
-        'store-prc-bwcompat',
-        'pr-comment',
-        'Old-style comment',
-        'Pre-enrichment finding',
-        author='octocat',
-        kind='review_body',
-    )
-
-    result = query_findings('store-prc-bwcompat', finding_type='pr-comment')
-    assert result['filtered_count'] == 1
-    record = result['findings'][0]
-    assert record['author'] == 'octocat'
-    assert record['kind'] == 'review_body'
-    assert 'reviewed_commit_sha' not in record
-    assert 'bot_kind' not in record
-
-    filtered = query_findings('store-prc-bwcompat', bot_kind='coderabbit')
-    assert filtered['filtered_count'] == 0
-
-
-# =============================================================================
-# Test: resolve_finding
-# =============================================================================
-
-
-def test_resolve_finding_success(plan_context):
-    """Test resolving a finding."""
-    r = add_finding('store-resolve', 'bug', 'Bug', 'Detail')
-    hash_id = r['hash_id']
-
-    result = resolve_finding('store-resolve', hash_id, 'fixed', detail='Fixed in commit abc123')
     assert result['status'] == 'success'
-    assert result['hash_id'] == hash_id
     assert result['resolution'] == 'fixed'
 
 
-def test_resolve_finding_invalid_resolution(plan_context):
-    """Test resolving with invalid resolution string."""
-    r = add_finding('store-resolve-bad', 'bug', 'Bug', 'Detail')
-
-    result = resolve_finding('store-resolve-bad', r['hash_id'], 'invalid-resolution')
-    assert result['status'] == 'error'
-    assert 'Invalid resolution' in result['message']
-
-
-def test_resolve_finding_not_found(plan_context):
-    """Test resolving a non-existent finding."""
-    result = resolve_finding('store-resolve-nf', 'nonexistent', 'fixed')
-    assert result['status'] == 'error'
-    assert 'not found' in result['message']
-
-
-def test_resolve_finding_rejected_is_valid(plan_context):
-    """`rejected` is a valid resolution accepted by the validator.
-
-    Added by the ext-point-verify findings pipeline: `rejected` joins the
-    terminal resolution set and is accepted by `resolve_finding` without the
-    `Invalid resolution` error path firing.
-    """
-    r = add_finding('store-resolve-rejected', 'sonar-issue', 'Refuted finding', 'Detail')
-
-    result = resolve_finding(
-        'store-resolve-rejected', r['hash_id'], 'rejected', detail='Adversarially refuted'
+def test_resolve_qgate_finding_rejected_is_valid(plan_context):
+    """`rejected` is accepted as a valid Q-Gate resolution by the validator."""
+    r = add_qgate_finding(
+        'store-qgate-resolve-rejected',
+        '5-execute',
+        'qgate',
+        'test-failure',
+        'Refuted Q-Gate finding',
+        'Detail',
     )
 
+    result = resolve_qgate_finding(
+        'store-qgate-resolve-rejected',
+        '5-execute',
+        r['hash_id'],
+        'rejected',
+        detail='Adversarially refuted at the verify stage',
+    )
     assert result['status'] == 'success'
     assert result['resolution'] == 'rejected'
 
 
-def test_resolve_findings_by_type_accepts_rejected(plan_context):
-    """Bulk resolve accepts `rejected` as a valid target resolution."""
-    add_finding('store-bulk-rejected', 'lint-issue', 'Lint 1', 'Detail')
-    add_finding('store-bulk-rejected', 'lint-issue', 'Lint 2', 'Detail')
-
-    result = resolve_findings_by_type('store-bulk-rejected', ('lint-issue',), 'rejected')
-
-    assert result['status'] == 'success'
-    assert result['resolved_count'] == 2
-
-    rejected = query_findings('store-bulk-rejected', finding_type='lint-issue', resolution='rejected')
-    assert rejected['filtered_count'] == 2
-    pending = query_findings('store-bulk-rejected', finding_type='lint-issue', resolution='pending')
-    assert pending['filtered_count'] == 0
-
-
 # =============================================================================
-# Test: resolve_findings_by_type (bulk resolve)
+# Test: resolve_qgate_findings_by_evidence (D3 — self-review loop-back resolution)
+#
+# A loop-back that lands a fix transitions the corresponding finding; a finding
+# with no evidenced fix is left alone. Both directions are asserted — the second
+# is the important one: a finding marked `fixed` without a landed change touching
+# its file is strictly worse than one left `pending`.
 # =============================================================================
 
 
-def test_resolve_findings_by_type_bulk_count(plan_context):
-    """Bulk-resolving all pending findings of a type returns the correct count."""
-    add_finding('store-bulk-count', 'bug', 'Bug 1', 'Detail')
-    add_finding('store-bulk-count', 'bug', 'Bug 2', 'Detail')
-    add_finding('store-bulk-count', 'bug', 'Bug 3', 'Detail')
-
-    result = resolve_findings_by_type('store-bulk-count', ('bug',), 'fixed')
-    assert result['status'] == 'success'
-    assert result['resolved_count'] == 3
-    assert len(result['hash_ids']) == 3
-
-    pending = query_findings('store-bulk-count', finding_type='bug', resolution='pending')
-    assert pending['filtered_count'] == 0
-    resolved = query_findings('store-bulk-count', finding_type='bug', resolution='fixed')
-    assert resolved['filtered_count'] == 3
-
-
-def test_resolve_findings_by_type_leaves_other_types(plan_context):
-    """Findings not matching the type predicate are left unresolved."""
-    add_finding('store-bulk-other', 'bug', 'Bug 1', 'Detail')
-    add_finding('store-bulk-other', 'bug', 'Bug 2', 'Detail')
-    add_finding('store-bulk-other', 'improvement', 'Improve 1', 'Detail')
-
-    result = resolve_findings_by_type('store-bulk-other', ('bug',), 'fixed')
-    assert result['status'] == 'success'
-    assert result['resolved_count'] == 2
-
-    pending_improve = query_findings(
-        'store-bulk-other', finding_type='improvement', resolution='pending'
+def test_resolve_evidenced_transitions_finding_whose_file_changed(plan_context):
+    """A pending finding whose file_path IS in the landed-fix set is resolved `fixed`."""
+    pid = 'ev-resolve-changed'
+    r = add_qgate_finding(
+        pid, '6-finalize', 'qgate', 'bug', 'contract_drift at src/a.py:10', 'Detail',
+        file_path='src/a.py',
     )
-    assert pending_improve['filtered_count'] == 1
 
+    result = resolve_qgate_findings_by_evidence(
+        pid, '6-finalize', ['src/a.py'], evidence_sha='deadbeef'
+    )
 
-def test_resolve_findings_by_type_skips_already_resolved(plan_context):
-    """An already-resolved finding is not double-counted on a subsequent bulk resolve."""
-    r1 = add_finding('store-bulk-dup', 'bug', 'Bug 1', 'Detail')
-    add_finding('store-bulk-dup', 'bug', 'Bug 2', 'Detail')
-
-    resolve_finding('store-bulk-dup', r1['hash_id'], 'fixed')
-
-    result = resolve_findings_by_type('store-bulk-dup', ('bug',), 'fixed')
     assert result['status'] == 'success'
-    assert result['resolved_count'] == 1
-    assert r1['hash_id'] not in result['hash_ids']
+    assert [e['hash_id'] for e in result['resolved']] == [r['hash_id']]
+    assert result['left_pending'] == []
+    # The store reflects the transition.
+    pending = query_qgate_findings(pid, '6-finalize', resolution='pending')
+    assert pending['filtered_count'] == 0
+    fixed = query_qgate_findings(pid, '6-finalize', resolution='fixed')
+    assert fixed['filtered_count'] == 1
+    assert 'deadbeef' in fixed['findings'][0]['resolution_detail']
+    assert 'src/a.py' in fixed['findings'][0]['resolution_detail']
 
 
-def test_resolve_findings_by_type_empty_when_no_match(plan_context):
-    """Bulk resolve returns a zero count when no findings match the type predicate."""
-    add_finding('store-bulk-empty', 'improvement', 'Improve 1', 'Detail')
+def test_resolve_evidenced_leaves_finding_whose_file_unchanged(plan_context):
+    """THE important direction: a pending finding whose file_path is NOT in the
+    landed-fix set is left `pending` — an unevidenced fix never auto-resolves."""
+    pid = 'ev-resolve-unchanged'
+    r = add_qgate_finding(
+        pid, '6-finalize', 'qgate', 'bug', 'contract_drift at src/b.py:20', 'Detail',
+        file_path='src/b.py',
+    )
 
-    result = resolve_findings_by_type('store-bulk-empty', ('bug',), 'fixed')
+    # The landed fix touched a DIFFERENT file.
+    result = resolve_qgate_findings_by_evidence(pid, '6-finalize', ['src/other.py'])
+
     assert result['status'] == 'success'
-    assert result['resolved_count'] == 0
-    assert result['hash_ids'] == []
+    assert result['resolved'] == []
+    assert [e['hash_id'] for e in result['left_pending']] == [r['hash_id']]
+    # The finding is untouched.
+    pending = query_qgate_findings(pid, '6-finalize', resolution='pending')
+    assert pending['filtered_count'] == 1
+    assert pending['findings'][0]['hash_id'] == r['hash_id']
 
 
-def test_resolve_findings_by_type_multiple_types(plan_context):
-    """Bulk resolve spans multiple finding types in a single call."""
-    add_finding('store-bulk-multi', 'bug', 'Bug 1', 'Detail')
-    add_finding('store-bulk-multi', 'improvement', 'Improve 1', 'Detail')
-    add_finding('store-bulk-multi', 'tip', 'Tip 1', 'Detail')
+def test_resolve_evidenced_leaves_finding_with_no_file_path(plan_context):
+    """A pending finding carrying no file_path cannot be evidenced — left `pending`."""
+    pid = 'ev-resolve-no-file'
+    add_qgate_finding(pid, '6-finalize', 'qgate', 'bug', 'defect with no file anchor', 'Detail')
 
-    result = resolve_findings_by_type('store-bulk-multi', ('bug', 'improvement'), 'fixed')
+    result = resolve_qgate_findings_by_evidence(pid, '6-finalize', ['src/anything.py'])
+
     assert result['status'] == 'success'
-    assert result['resolved_count'] == 2
+    assert result['resolved'] == []
+    assert len(result['left_pending']) == 1
+    assert query_qgate_findings(pid, '6-finalize', resolution='pending')['filtered_count'] == 1
 
-    pending_tip = query_findings('store-bulk-multi', finding_type='tip', resolution='pending')
-    assert pending_tip['filtered_count'] == 1
+
+def test_resolve_evidenced_mixed_batch_partitions_by_evidence(plan_context):
+    """A batch resolves only the file-matched findings; the rest stay pending."""
+    pid = 'ev-resolve-mixed'
+    fixed_finding = add_qgate_finding(
+        pid, '6-finalize', 'qgate', 'bug', 'defect at src/fixed.py:1', 'Detail',
+        file_path='src/fixed.py',
+    )
+    kept_finding = add_qgate_finding(
+        pid, '6-finalize', 'qgate', 'bug', 'defect at src/kept.py:1', 'Detail',
+        file_path='src/kept.py',
+    )
+
+    result = resolve_qgate_findings_by_evidence(pid, '6-finalize', ['src/fixed.py'])
+
+    assert [e['hash_id'] for e in result['resolved']] == [fixed_finding['hash_id']]
+    assert [e['hash_id'] for e in result['left_pending']] == [kept_finding['hash_id']]
+
+
+def test_resolve_evidenced_ignores_already_resolved_findings(plan_context):
+    """A finding already resolved is neither re-resolved nor reported as pending."""
+    pid = 'ev-resolve-already'
+    r = add_qgate_finding(
+        pid, '6-finalize', 'qgate', 'bug', 'defect at src/done.py:1', 'Detail',
+        file_path='src/done.py',
+    )
+    resolve_qgate_finding(pid, '6-finalize', r['hash_id'], 'accepted')
+
+    result = resolve_qgate_findings_by_evidence(pid, '6-finalize', ['src/done.py'])
+
+    assert result['resolved'] == []
+    assert result['left_pending'] == []
+    # The accepted resolution is untouched (not overwritten to fixed).
+    accepted = query_qgate_findings(pid, '6-finalize', resolution='accepted')
+    assert accepted['filtered_count'] == 1
+
+
+def test_resolve_evidenced_premature_resolution_is_self_correcting(plan_context):
+    """A resolution the fix did not actually earn is corrected by the next round:
+    re-detecting the same (title, discriminator) REOPENS the record to pending."""
+    pid = 'ev-resolve-reopen'
+    add_qgate_finding(
+        pid, '6-finalize', 'qgate', 'bug', 'defect at src/c.py:5', 'Detail',
+        file_path='src/c.py',
+    )
+    # The fix touched src/c.py, so evidence resolves it...
+    resolve_qgate_findings_by_evidence(pid, '6-finalize', ['src/c.py'])
+    assert query_qgate_findings(pid, '6-finalize', resolution='fixed')['filtered_count'] == 1
+
+    # ...but the defect persisted, so the next round re-detects it → reopened.
+    reopened = add_qgate_finding(
+        pid, '6-finalize', 'qgate', 'bug', 'defect at src/c.py:5', 'Detail',
+        file_path='src/c.py',
+    )
+    assert reopened['status'] == 'reopened'
+    assert query_qgate_findings(pid, '6-finalize', resolution='pending')['filtered_count'] == 1
+
+
+def test_resolve_evidenced_invalid_phase_errors(plan_context):
+    """An invalid Q-Gate phase is rejected."""
+    result = resolve_qgate_findings_by_evidence('ev-bad-phase', 'not-a-phase', ['x.py'])
+    assert result['status'] == 'error'
+    assert 'phase' in result['message'].lower()
+
+
+def test_resolve_evidenced_failed_write_reported_as_pending_not_resolved(plan_context, monkeypatch):
+    """A finding whose file matches the evidence but whose persistence WRITE fails
+    is reported as still `pending`, never as `resolved` — claiming a resolution the
+    store never recorded is the fail-open this evidence gate exists to prevent."""
+    pid = 'ev-resolve-write-fail'
+    r = add_qgate_finding(
+        pid, '6-finalize', 'qgate', 'bug', 'defect at src/z.py:1', 'Detail',
+        file_path='src/z.py',
+    )
+    # Simulate the record vanishing between the read and the update write.
+    monkeypatch.setattr(_findings_core, 'update_jsonl', lambda *a, **k: False)
+
+    result = resolve_qgate_findings_by_evidence(pid, '6-finalize', ['src/z.py'])
+
+    assert result['status'] == 'success'
+    assert result['resolved'] == [], (
+        'A failed write must not be reported as a resolution — the finding is '
+        'still pending.'
+    )
+    assert [e['hash_id'] for e in result['left_pending']] == [r['hash_id']]
+
+
+# =============================================================================
+# Test: promote_finding
+# =============================================================================
+
+
+def test_promote_finding_success(plan_context):
+    """Test promoting a finding."""
+    r = add_finding('store-promote', 'bug', 'Bug', 'Detail')
+    hash_id = r['hash_id']
+
+    result = promote_finding('store-promote', hash_id, 'manage-lessons')
+    assert result['status'] == 'success'
+    assert result['promoted_to'] == 'manage-lessons'
+
+    query = query_findings('store-promote', promoted=True)
+    assert query['filtered_count'] == 1
+
+
+def test_qgate_dedup_pending(plan_context):
+    """Test Q-Gate deduplication for pending findings with same title AND content.
+
+    Dedup keys on the (title, content-discriminator) pair — a bare title
+    collision alone is no longer enough. A genuine re-detection of the same
+    defect carries the SAME title AND the SAME content (detail/file/rule), so
+    the discriminator matches and the second add collapses onto the first.
+    """
+    r1 = add_qgate_finding(
+        'store-qgate-dedup',
+        '5-execute',
+        'qgate',
+        'build-error',
+        'Same title',
+        'Same detail',
+    )
+    assert r1['status'] == 'success'
+
+    r2 = add_qgate_finding(
+        'store-qgate-dedup',
+        '5-execute',
+        'qgate',
+        'build-error',
+        'Same title',
+        'Same detail',
+    )
+    assert r2['status'] == 'deduplicated'
+    assert r2['hash_id'] == r1['hash_id']
+
+
+def test_qgate_reopen_resolved(plan_context):
+    """Test Q-Gate reopens a resolved finding when the SAME defect is re-detected.
+
+    Reopen fires only on a genuine re-detection — same title AND same content
+    discriminator (detail/file/rule) as the resolved record. A same-title but
+    different-content finding fails the discriminator match and is filed fresh
+    instead of reopening the unrelated resolved record.
+    """
+    r1 = add_qgate_finding(
+        'store-qgate-reopen',
+        '5-execute',
+        'qgate',
+        'build-error',
+        'Flaky test',
+        'Detail',
+    )
+    resolve_qgate_finding('store-qgate-reopen', '5-execute', r1['hash_id'], 'fixed')
+
+    r2 = add_qgate_finding(
+        'store-qgate-reopen',
+        '5-execute',
+        'qgate',
+        'build-error',
+        'Flaky test',
+        'Detail',
+    )
+    assert r2['status'] == 'reopened'
+    assert r2['hash_id'] == r1['hash_id']
+
+
+def test_qgate_persist_ok_admits_every_in_store_outcome(plan_context):
+    """The three outcomes that leave the record IN the store are all members."""
+    observed = _observed_qgate_statuses('store-qgate-partition-ok')
+
+    assert observed['fresh'] in QGATE_PERSIST_OK
+    assert observed['dedup'] in QGATE_PERSIST_OK
+    assert observed['reopened'] in QGATE_PERSIST_OK
+
+
+def test_qgate_persist_ok_excludes_the_rejection_outcome(plan_context):
+    """A REJECTED persist is outside the set — it must never read as benign."""
+    observed = _observed_qgate_statuses('store-qgate-partition-reject')
+
+    assert observed['rejected'] not in QGATE_PERSIST_OK
+    assert observed['rejected'] != observed['dedup'], (
+        'a rejection must not collapse onto the benign deduplicated outcome'
+    )
+
+
+def test_qgate_persist_ok_partitions_the_outcome_space_exactly(plan_context):
+    """The set is exactly the in-store outcomes — no more, no less.
+
+    Derived both ways: every observed in-store outcome is a member, and the set
+    carries no member the primitive never produces, so an extra value silently
+    added to ``QGATE_PERSIST_OK`` (which would re-admit a rejection) fails here.
+    """
+    observed = _observed_qgate_statuses('store-qgate-partition-exact')
+
+    in_store = {observed['fresh'], observed['dedup'], observed['reopened']}
+    assert set(QGATE_PERSIST_OK) == in_store
+
+
+def test_rejected_qgate_finding_is_non_pending_in_unified_read(plan_context):
+    """A `rejected` Q-Gate finding is non-blocking: excluded from the unified read.
+
+    The findings-gate invariant in `query_findings_unified` merges ONLY pending
+    Q-Gate records. A finding resolved to `rejected` is therefore treated as
+    non-pending exactly like `fixed` / `accepted` — it never surfaces through the
+    unified gate read and so does not block the gate.
+    """
+    pid = 'store-qgate-rejected-nonpending'
+    pending = add_qgate_finding(
+        pid, '5-execute', 'qgate', 'test-failure', 'Stays pending', 'Detail'
+    )
+    refuted = add_qgate_finding(
+        pid, '5-execute', 'qgate', 'test-failure', 'Gets rejected', 'Detail'
+    )
+    resolve_qgate_finding(pid, '5-execute', refuted['hash_id'], 'rejected')
+
+    unified = query_findings_unified(pid)
+
+    assert unified['qgate_count'] == 1
+    titles = {f['title'] for f in unified['findings']}
+    assert titles == {'Stays pending'}
+    assert pending['hash_id'] in {f['hash_id'] for f in unified['findings']}
+
+
+def test_clear_qgate_findings(plan_context):
+    """Test clearing all Q-Gate findings for a phase."""
+    add_qgate_finding(
+        'store-qgate-clear',
+        '5-execute',
+        'qgate',
+        'build-error',
+        'Error 1',
+        'Detail',
+    )
+    add_qgate_finding(
+        'store-qgate-clear',
+        '5-execute',
+        'qgate',
+        'test-failure',
+        'Error 2',
+        'Detail',
+    )
+
+    result = clear_qgate_findings('store-qgate-clear', '5-execute')
+    assert result['status'] == 'success'
+    assert result['cleared'] == 2
+
+    query = query_qgate_findings('store-qgate-clear', '5-execute')
+    assert query['total_count'] == 0
+
+
+def test_clear_qgate_findings_empty(plan_context):
+    """Test clearing Q-Gate findings when none exist."""
+    result = clear_qgate_findings('store-qgate-clear-empty', '5-execute')
+    assert result['status'] == 'success'
+    assert result['cleared'] == 0

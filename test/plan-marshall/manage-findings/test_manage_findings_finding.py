@@ -4,17 +4,15 @@
 
 
 from _manage_findings_fixtures import (
-    SCRIPT_PATH,
     _add_ns,
+    _promote_ns,
     _query_ns,
     _resolve_ns,
     cmd_add,
+    cmd_promote,
     cmd_query,
     cmd_resolve,
 )
-from toon_parser import parse_toon  # noqa: E402
-
-from conftest import run_script
 
 # =============================================================================
 # Test: Finding Add Command
@@ -161,52 +159,6 @@ def test_finding_add_without_author_kind_still_succeeds(plan_context):
     assert 'kind' not in record
 
 
-def test_cli_pr_comment_author_kind_roundtrip(plan_context):
-    """CLI plumbing: add a pr-comment with --author/--kind and read them back."""
-    pid = 'cli-prc-rt'
-    add_result = run_script(
-        SCRIPT_PATH,
-        'add',
-        '--plan-id',
-        pid,
-        '--type',
-        'pr-comment',
-        '--title',
-        'CLI reviewer comment',
-        '--detail',
-        'd',
-        '--author',
-        'octocat',
-        '--kind',
-        'inline',
-    )
-    assert add_result.success, f'Script failed: {add_result.stderr}'
-
-    list_result = run_script(SCRIPT_PATH, 'list', '--plan-id', pid, '--author', 'octocat', '--kind', 'inline')
-    assert list_result.success, f'Script failed: {list_result.stderr}'
-    data = parse_toon(list_result.stdout)
-    assert data['filtered_count'] == 1
-
-
-def test_cli_pr_comment_invalid_kind_rejected(plan_context):
-    """CLI plumbing: --kind outside the allowed set is rejected by argparse."""
-    result = run_script(
-        SCRIPT_PATH,
-        'add',
-        '--plan-id',
-        'cli-prc-badkind',
-        '--type',
-        'pr-comment',
-        '--title',
-        'Bad kind',
-        '--detail',
-        'd',
-        '--kind',
-        'not-a-kind',
-    )
-    assert not result.success
-
-
 def test_finding_add_pr_comment_with_reviewed_commit_sha_and_bot_kind(plan_context):
     """cmd_add forwards reviewed_commit_sha and bot_kind onto a pr-comment finding."""
     result = cmd_add(
@@ -250,52 +202,6 @@ def test_finding_add_without_new_fields_still_succeeds(plan_context):
     assert 'bot_kind' not in record
 
 
-def test_cli_pr_comment_reviewed_commit_sha_bot_kind_roundtrip(plan_context):
-    """CLI plumbing: add a pr-comment with --reviewed-commit-sha/--bot-kind and read them back."""
-    pid = 'cli-prc-rcs-rt'
-    add_result = run_script(
-        SCRIPT_PATH,
-        'add',
-        '--plan-id',
-        pid,
-        '--type',
-        'pr-comment',
-        '--title',
-        'CLI bot comment',
-        '--detail',
-        'd',
-        '--reviewed-commit-sha',
-        'deadbeef',
-        '--bot-kind',
-        'coderabbit',
-    )
-    assert add_result.success, f'Script failed: {add_result.stderr}'
-
-    list_result = run_script(SCRIPT_PATH, 'list', '--plan-id', pid, '--bot-kind', 'coderabbit')
-    assert list_result.success, f'Script failed: {list_result.stderr}'
-    data = parse_toon(list_result.stdout)
-    assert data['filtered_count'] == 1
-
-
-def test_cli_pr_comment_invalid_bot_kind_rejected(plan_context):
-    """CLI plumbing: --bot-kind outside the allowed set is rejected by argparse."""
-    result = run_script(
-        SCRIPT_PATH,
-        'add',
-        '--plan-id',
-        'cli-prc-badbotkind',
-        '--type',
-        'pr-comment',
-        '--title',
-        'Bad bot_kind',
-        '--detail',
-        'd',
-        '--bot-kind',
-        'sonarcloud',
-    )
-    assert not result.success
-
-
 # =============================================================================
 # Test: Finding Resolve Command
 # =============================================================================
@@ -321,3 +227,97 @@ def test_finding_resolve(plan_context):
     )
     assert result['status'] == 'success'
     assert result['resolution'] == 'fixed'
+
+
+def test_finding_resolve_all_statuses(plan_context):
+    """Test all resolution statuses."""
+    resolutions = ['pending', 'fixed', 'suppressed', 'accepted', 'taken_into_account', 'rejected']
+    for res in resolutions:
+        add_result = cmd_add(_add_ns(type='bug', title=f'Bug for {res}', detail='d'))
+        hash_id = str(add_result['hash_id'])
+
+        result = cmd_resolve(_resolve_ns(hash_id=hash_id, resolution=res))
+        assert result['status'] == 'success', f'Failed for resolution {res}'
+
+
+# =============================================================================
+# Test: Finding Promote Command
+# =============================================================================
+
+
+def test_finding_promote(plan_context):
+    """Test promoting a finding."""
+    add_result = cmd_add(
+        _add_ns(
+            plan_id='finding-promote',
+            type='tip',
+            title='Use constructor injection',
+            detail='Prefer constructor injection over field injection for testability',
+        )
+    )
+    hash_id = str(add_result['hash_id'])
+
+    result = cmd_promote(
+        _promote_ns(
+            plan_id='finding-promote',
+            hash_id=hash_id,
+            promoted_to='architecture',
+        )
+    )
+    assert result['status'] == 'success'
+    assert result['promoted_to'] == 'architecture'
+
+
+def test_finding_promote_to_lessons(plan_context):
+    """Test promoting to lessons learned."""
+    add_result = cmd_add(
+        _add_ns(
+            type='bug',
+            title='Null pointer from missing null check',
+            detail='Always check for null before calling methods on optional fields',
+        )
+    )
+    hash_id = str(add_result['hash_id'])
+
+    result = cmd_promote(
+        _promote_ns(
+            hash_id=hash_id,
+            promoted_to='lessons-2025-01-22-001',
+        )
+    )
+    assert 'lessons-' in result['promoted_to']
+
+
+def test_finding_query_promoted(plan_context):
+    """Test filtering by promoted status."""
+    add_result = cmd_add(_add_ns(type='tip', title='Promoted tip', detail='d'))
+    hash_id = str(add_result['hash_id'])
+    cmd_promote(_promote_ns(hash_id=hash_id, promoted_to='architecture'))
+
+    cmd_add(_add_ns(type='tip', title='Not promoted', detail='d'))
+
+    result = cmd_query(_query_ns(promoted='true'))
+    assert result['filtered_count'] == 1
+
+    result = cmd_query(_query_ns(promoted='false'))
+    assert result['filtered_count'] == 1
+
+
+# =============================================================================
+# Test: Finding Resolve with taken_into_account (extended)
+# =============================================================================
+
+
+def test_finding_resolve_taken_into_account(plan_context):
+    """Test that taken_into_account resolution works for regular findings too."""
+    add_result = cmd_add(_add_ns(type='triage', title='Reviewed finding', detail='d'))
+    hash_id = str(add_result['hash_id'])
+
+    result = cmd_resolve(
+        _resolve_ns(
+            hash_id=hash_id,
+            resolution='taken_into_account',
+            detail='Addressed in revision',
+        )
+    )
+    assert result['resolution'] == 'taken_into_account'

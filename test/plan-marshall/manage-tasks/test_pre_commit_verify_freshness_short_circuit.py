@@ -29,6 +29,9 @@ from _pre_commit_verify_freshness_fixtures import (
 )
 from _resolve_project_dir_fixtures import (
     CANONICAL_WORKTREE,
+    MAIN_CHECKOUT_ROOT,
+    NO_PLAN_SENTINEL,
+    patch_main_checkout_root,
     patch_query_worktree_path,
     worktree_query_result,
 )
@@ -144,6 +147,40 @@ def test_build_verdict_falls_through_to_the_ledger_scan(
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-build-needed'))
 
     assert result['status'] == 'stale', result
+
+
+def test_build_shaped_steps_still_exempt_a_footprint_needing_no_build(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """A markdown-only footprint is exempt even though the manifest composes builds.
+
+    The converse gap the consolidation closes: a plan whose manifest carries
+    ``module-tests`` / ``coverage`` steps was NEVER exempt under the retired
+    shape predicate, so a docs-only footprint that ran no build failed closed on
+    a build proof it could not possibly produce. The footprint decides now.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-docs-footprint-build-steps')
+    _write_status(plan_dir)
+    _write_manifest(
+        plan_dir,
+        verification_steps=['verify:quality-gate', 'verify:module-tests', 'verify:coverage'],
+    )
+    _stub_verdict(
+        monkeypatch,
+        {
+            'decision': 'not_necessary',
+            'reason': 'plan footprint touches no build_map glob — only non-buildable files changed',
+        },
+    )
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    _stub_ledger_path(monkeypatch, tmp_path / 'never-written.jsonl')
+
+    result = cmd_pre_commit_verify_freshness(
+        Namespace(plan_id='freshness-docs-footprint-build-steps')
+    )
+
+    assert result['status'] == 'fresh', result
+    assert 'no build_map glob' in result['reason']
 
 
 def test_consult_is_command_free(plan_context, monkeypatch, tmp_path) -> None:
@@ -271,40 +308,6 @@ def test_all_quality_gate_steps_do_not_exempt_when_a_build_is_necessary(
     assert result['status'] == 'stale', result
 
 
-def test_build_shaped_steps_still_exempt_a_footprint_needing_no_build(
-    plan_context, monkeypatch, tmp_path
-) -> None:
-    """A markdown-only footprint is exempt even though the manifest composes builds.
-
-    The converse gap the consolidation closes: a plan whose manifest carries
-    ``module-tests`` / ``coverage`` steps was NEVER exempt under the retired
-    shape predicate, so a docs-only footprint that ran no build failed closed on
-    a build proof it could not possibly produce. The footprint decides now.
-    """
-    plan_dir = plan_context.plan_dir_for('freshness-docs-footprint-build-steps')
-    _write_status(plan_dir)
-    _write_manifest(
-        plan_dir,
-        verification_steps=['verify:quality-gate', 'verify:module-tests', 'verify:coverage'],
-    )
-    _stub_verdict(
-        monkeypatch,
-        {
-            'decision': 'not_necessary',
-            'reason': 'plan footprint touches no build_map glob — only non-buildable files changed',
-        },
-    )
-    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
-    _stub_ledger_path(monkeypatch, tmp_path / 'never-written.jsonl')
-
-    result = cmd_pre_commit_verify_freshness(
-        Namespace(plan_id='freshness-docs-footprint-build-steps')
-    )
-
-    assert result['status'] == 'fresh', result
-    assert 'no build_map glob' in result['reason']
-
-
 def test_absent_manifest_is_irrelevant_to_the_gate(
     plan_context, monkeypatch, tmp_path
 ) -> None:
@@ -326,26 +329,6 @@ def test_absent_manifest_is_irrelevant_to_the_gate(
 
     assert result['status'] == 'fresh', result
     assert result['reason'] == 'plan footprint is empty'
-
-
-def test_malformed_manifest_is_irrelevant_to_the_gate(
-    plan_context, monkeypatch, tmp_path
-) -> None:
-    """An unparseable manifest cannot affect the gate — it is never parsed."""
-    plan_dir = plan_context.plan_dir_for('freshness-nb-bad-manifest')
-    _write_status(plan_dir)
-    (plan_dir / 'execution.toon').write_text(
-        '{ this is not valid toon\n  : : :\n', encoding='utf-8'
-    )
-    _stub_verdict(monkeypatch, {'decision': 'build'})
-    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
-    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA)])
-    _stub_ledger_path(monkeypatch, ledger_path)
-
-    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-nb-bad-manifest'))
-
-    assert result['status'] == 'fresh', result
-    assert result['worktree_sha'] == _CURRENT_SHA
 
 
 def test_worktree_root_routes_through_the_resolver(
@@ -389,3 +372,18 @@ def test_worktree_root_ignores_status_metadata(
     assert seen == [Path(CANONICAL_WORKTREE)], (
         'the gate followed status.metadata.worktree_path instead of the resolver'
     )
+
+
+def test_no_plan_sentinel_resolves_to_the_main_checkout(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """``NO_PLAN`` resolves to the main checkout without shelling out."""
+    plan_context.plan_dir_for(NO_PLAN_SENTINEL)
+    seen = _capture_worktree_root(monkeypatch)
+    _stub_ledger_path(monkeypatch, _write_ledger(tmp_path, [_build_entry()]))
+
+    with patch_query_worktree_path(True) as mock, patch_main_checkout_root():
+        cmd_pre_commit_verify_freshness(Namespace(plan_id=NO_PLAN_SENTINEL))
+
+    assert seen == [Path(MAIN_CHECKOUT_ROOT)]
+    assert mock.call_count == 0, 'the sentinel must never reach get-worktree-path'

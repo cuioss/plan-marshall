@@ -10,43 +10,6 @@ from _collect_fragments_fixtures import _ArgsNS, _load_module, _valid_fragment_b
 from _plan_retrospective_fixtures import setup_live_plan  # noqa: E402
 
 
-class TestReadFragment:
-    """Direct unit tests for _read_fragment error branches."""
-
-    def test_missing_file_raises_value_error(self, tmp_path):
-        module = _load_module()
-
-        try:
-            module._read_fragment(tmp_path / 'nope.toon')
-        except ValueError as exc:
-            assert 'does not exist' in str(exc)
-        else:
-            raise AssertionError('Expected ValueError for missing fragment')
-
-    def test_empty_file_raises_value_error(self, tmp_path):
-        module = _load_module()
-        fragment = tmp_path / 'empty.toon'
-        fragment.write_text('', encoding='utf-8')
-
-        try:
-            module._read_fragment(fragment)
-        except ValueError as exc:
-            assert 'empty' in str(exc).lower()
-        else:
-            raise AssertionError('Expected ValueError for empty fragment')
-
-    def test_valid_fragment_returns_dict(self, tmp_path):
-        module = _load_module()
-        fragment = tmp_path / 'ok.toon'
-        fragment.write_text('status: success\naspect: demo\n', encoding='utf-8')
-
-        result = module._read_fragment(fragment)
-
-        assert isinstance(result, dict)
-        assert result['status'] == 'success'
-        assert result['aspect'] == 'demo'
-
-
 class TestCmdInit:
     """Direct unit tests for cmd_init."""
 

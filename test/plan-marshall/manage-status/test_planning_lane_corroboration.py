@@ -88,6 +88,34 @@ def test_recorded_vector_routes_deep_without_the_corroboration_fix():
     assert result['suppressed_signals'] == []
 
 
+def test_recorded_case_end_to_end_routes_light(plan_context):
+    """End-to-end wiring of D3(a): a single_module request whose body fires ONLY S7
+    routes light through the real command entry point.
+
+    The scope is persisted ``single_module`` and the body names a concrete path (so
+    S5 / S1 stay quiet) while carrying one risk-prose phrase (``foundation``), so S7
+    is the sole fired signal. The corroboration then denies it the lane: ``light``,
+    with S7 suppressed — the recorded over-route, corrected, proven through the
+    reader rather than only the pure scorer.
+    """
+    plan_dir = plan_context.plan_dir_for('pl-recorded-e2e')
+    _write_orchestrator_request(
+        plan_dir,
+        '.plan/local/orchestrator/y/plans/PLAN-03-y.md',
+        'Update pkg/one.py. This is foundation work the rest builds on.',
+    )
+    _write_status(plan_dir, metadata={})
+    _write_references(plan_dir, scope_estimate='single_module')
+    _write_marshal(plan_context.fixture_dir)
+
+    result = cmd_planning_lane_route(_ns_route('pl-recorded-e2e'))
+
+    assert result['signals']['risk_prose'] is True
+    assert result['planning_lane'] == 'light'
+    assert result['fired_signals'] == []
+    assert result['suppressed_signals'] == ['S7:risk_prose']
+
+
 # =============================================================================
 # D3(d) — CONTROL: a genuinely deep-warranting vector still routes deep
 # =============================================================================
@@ -300,31 +328,3 @@ def test_plaintext_description_does_not_resolve_orchestrator_provenance(plan_con
 
     assert result['signals']['plan_source'] is None
     assert 'plan_source' in result['confidence']['null_signals']
-
-
-def test_recorded_case_end_to_end_routes_light(plan_context):
-    """End-to-end wiring of D3(a): a single_module request whose body fires ONLY S7
-    routes light through the real command entry point.
-
-    The scope is persisted ``single_module`` and the body names a concrete path (so
-    S5 / S1 stay quiet) while carrying one risk-prose phrase (``foundation``), so S7
-    is the sole fired signal. The corroboration then denies it the lane: ``light``,
-    with S7 suppressed — the recorded over-route, corrected, proven through the
-    reader rather than only the pure scorer.
-    """
-    plan_dir = plan_context.plan_dir_for('pl-recorded-e2e')
-    _write_orchestrator_request(
-        plan_dir,
-        '.plan/local/orchestrator/y/plans/PLAN-03-y.md',
-        'Update pkg/one.py. This is foundation work the rest builds on.',
-    )
-    _write_status(plan_dir, metadata={})
-    _write_references(plan_dir, scope_estimate='single_module')
-    _write_marshal(plan_context.fixture_dir)
-
-    result = cmd_planning_lane_route(_ns_route('pl-recorded-e2e'))
-
-    assert result['signals']['risk_prose'] is True
-    assert result['planning_lane'] == 'light'
-    assert result['fired_signals'] == []
-    assert result['suppressed_signals'] == ['S7:risk_prose']

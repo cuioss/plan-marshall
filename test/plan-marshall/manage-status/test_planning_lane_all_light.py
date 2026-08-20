@@ -5,19 +5,16 @@
 
 from __future__ import annotations
 
-import json
-
 from _planning_lane_fixtures import (
     _CONCRETE_BODY,
     _VAGUE_BODY,
     _light_setup,
-    _ns_escalate,
+    _mod,
     _ns_route,
     _write_marshal,
     _write_references,
     _write_request,
     _write_status,
-    cmd_planning_lane_escalate,
     cmd_planning_lane_route,
 )
 
@@ -132,6 +129,25 @@ def test_s5_concrete_request_with_cli_signal_stays_light(plan_context):
     assert result['planning_lane'] == 'light'
 
 
+# =============================================================================
+# S5 regex constants + _request_is_concrete importability (downstream consumers)
+# =============================================================================
+#
+# The audit retrospective check (deliverable 2) re-derives request_concrete from
+# each archived request.md by importing these symbols. These tests lock that they
+# remain module-level and importable, and that _request_is_concrete matches the
+# documented S5 anchors.
+
+
+def test_s5_regex_constants_are_module_level_importable():
+    """The four S5 regexes are importable module-level compiled patterns."""
+    import re  # noqa: PLC0415
+
+    for name in ('_PATH_RE', '_FENCE_RE', '_CLI_RE', '_NOTATION_RE'):
+        pattern = getattr(_mod, name)
+        assert isinstance(pattern, re.Pattern), f'{name} must be a compiled regex'
+
+
 def test_s1_free_form_source_with_vague_request_forces_deep(plan_context):
     """S1 — free-form source AND failed S5 concreteness conjunction forces deep."""
     # Free-form source (plan_source unset) + vague body.
@@ -220,52 +236,21 @@ def test_deep_lane_auto_defers_to_signal_set(plan_context):
     assert result['planning_lane'] == 'deep'
 
 
-# =============================================================================
-# --persist
-# =============================================================================
+def test_deep_lane_always_does_not_coerce_profile_to_full(plan_context):
+    """deep_lane=always forces planning_lane=deep but leaves the profile projection alone.
 
+    Planning depth and the execution profile are independent axes (§4.2): the
+    ceremony gate that ratchets the lane to deep must NOT coerce the posture to
+    full. An all-light narrow concrete change keeps its minimal projection even
+    under deep_lane=always.
+    """
+    _light_setup(plan_context, 'pl-profile-indep')
+    _write_marshal(plan_context.fixture_dir, compatibility='deprecation', deep_lane='always')
 
-def test_persist_writes_planning_lane_metadata(plan_context):
-    """--persist writes the resolved lane into status.metadata.planning_lane."""
-    plan_dir = _light_setup(plan_context, 'pl-persist')
+    result = cmd_planning_lane_route(_ns_route('pl-profile-indep'))
 
-    result = cmd_planning_lane_route(_ns_route('pl-persist', persist=True))
-
-    assert result['persisted'] is True
-    status = json.loads((plan_dir / 'status.json').read_text())
-    assert status['metadata']['planning_lane'] == 'light'
-
-
-def test_route_without_persist_does_not_write(plan_context):
-    """Without --persist the router does not mutate status.json."""
-    plan_dir = _light_setup(plan_context, 'pl-nopersist')
-
-    result = cmd_planning_lane_route(_ns_route('pl-nopersist'))
-
-    assert result['persisted'] is False
-    status = json.loads((plan_dir / 'status.json').read_text())
-    assert 'planning_lane' not in status.get('metadata', {})
-
-
-# =============================================================================
-# escalate — one-way ratchet
-# =============================================================================
-
-
-def test_escalate_sets_deep_and_lane_escalated(plan_context):
-    """escalate sets planning_lane=deep + lane_escalated=true + escalation_trigger."""
-    # A light plan that then escalates.
-    plan_dir = _light_setup(plan_context, 'pl-escalate')
-
-    result = cmd_planning_lane_escalate(_ns_escalate('pl-escalate', trigger='explosion', persist=True))
-
-    # Return payload.
+    # The deep-lane gate wins the planning-depth verdict ...
     assert result['planning_lane'] == 'deep'
-    assert result['lane_escalated'] is True
-    assert result['escalation_trigger'] == 'explosion'
-    assert result['persisted'] is True
-    # Persisted metadata.
-    status = json.loads((plan_dir / 'status.json').read_text())
-    assert status['metadata']['planning_lane'] == 'deep'
-    assert status['metadata']['lane_escalated'] is True
-    assert status['metadata']['escalation_trigger'] == 'explosion'
+    assert result['decision_predicate'] == 'plan.phase-1-init.deep_lane=always'
+    # ... but the execution-profile projection is unaffected by it.
+    assert result['execution_profile'] == 'minimal'

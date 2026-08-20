@@ -8,7 +8,9 @@ from pathlib import Path
 
 import pytest
 from _manage_adr_fixtures import (
-    _build_metadata_block,
+    METADATA_BLOCK_END,
+    METADATA_BLOCK_START,
+    _touch_adr,
     cmd_create,
     cmd_delete,
     cmd_list,
@@ -81,6 +83,45 @@ def test_create_multiple_adrs(adr_dir):
     assert result['number'] == 3
 
 
+def test_create_emits_metadata_block(adr_dir):
+    """create produces an ADR carrying the (empty) metadata block."""
+    result = cmd_create(Namespace(command='create', title='Has Block', status='Proposed'))
+
+    assert result['status'] == 'success'
+
+    # Empty corpus → default width 4.
+    created_file = adr_dir / f'{result["number"]:04d}-Has_Block.adoc'
+    content = created_file.read_text()
+    assert METADATA_BLOCK_START in content
+    assert METADATA_BLOCK_END in content
+
+    metadata = parse_metadata_block(content)
+    assert metadata['summary'] == ''
+    assert metadata['tags'] == []
+
+
+def test_create_next_filename_on_seven_adr_three_digit_corpus(adr_dir):
+    """Success criterion: a 7-ADR 3-digit corpus emits the next ADR as 008-."""
+    for n in range(1, 8):
+        _touch_adr(adr_dir, f'{n:03d}-Decision_{n}.adoc')
+
+    result = cmd_create(Namespace(command='create', title='Eighth Decision', status='Proposed'))
+
+    assert result['status'] == 'success'
+    assert result['number'] == 8
+    assert Path(result['path']).name == '008-Eighth_Decision.adoc'
+    assert 'ADR-008' in (adr_dir / '008-Eighth_Decision.adoc').read_text()
+
+
+def test_create_on_empty_corpus_emits_four_digit_prefix(adr_dir):
+    """Success criterion: an empty corpus emits 0001- (default width 4)."""
+    result = cmd_create(Namespace(command='create', title='First Decision', status='Proposed'))
+
+    assert result['status'] == 'success'
+    assert result['number'] == 1
+    assert Path(result['path']).name == '0001-First_Decision.adoc'
+
+
 def test_list_adrs(adr_dir):
     """Test listing ADRs."""
     cmd_create(Namespace(command='create', title='ADR One', status='Proposed'))
@@ -121,6 +162,23 @@ def test_read_adr_not_found(adr_dir):
     assert 'not found' in result['message'].lower()
 
 
+def test_read_update_delete_on_four_digit_corpus(adr_dir):
+    """read/update/delete resolve a 4-digit-prefixed ADR by its number."""
+    _touch_adr(adr_dir, '0008-Wide.adoc', title='Wide', status='Proposed')
+
+    read_result = cmd_read(Namespace(command='read', number=8))
+    assert read_result['status'] == 'success'
+    assert 'Wide' in read_result['content']
+
+    update_result = cmd_update(Namespace(command='update', number=8, status='Accepted'))
+    assert update_result['status'] == 'success'
+    assert 'Accepted' in (adr_dir / '0008-Wide.adoc').read_text()
+
+    delete_result = cmd_delete(Namespace(command='delete', number=8, force=True))
+    assert delete_result['deleted']
+    assert not (adr_dir / '0008-Wide.adoc').exists()
+
+
 def test_update_adr_status(adr_dir):
     """Test updating ADR status."""
     cmd_create(Namespace(command='create', title='Update Test', status='Proposed'))
@@ -154,55 +212,3 @@ def test_delete_with_force(adr_dir):
     # Created on an empty corpus → 4-digit prefix; confirm it is gone.
     files = list(adr_dir.glob('0001-*.adoc'))
     assert len(files) == 0
-
-
-def test_filename_sanitization(adr_dir):
-    """Test filename sanitization for special characters."""
-    result = cmd_create(Namespace(command='create', title='Use API/REST for User Service!', status='Proposed'))
-
-    assert result['status'] == 'success'
-    filename = Path(result['path']).name
-    assert '/' not in filename
-    assert '!' not in filename
-
-
-# =========================================================================
-# Tier 2: Progressive-disclosure metadata block parsing
-# =========================================================================
-
-
-def test_parse_metadata_block_all_fields_present(adr_dir):
-    """All four metadata fields are extracted; list fields are comma-split."""
-    content = (
-        '= ADR-001: Test\n\n'
-        + _build_metadata_block(
-            summary='Use a fenced metadata block',
-            tags='persistence, scanning',
-            affects='plan-marshall, pm-documents',
-            supersedes='ADR-000',
-        )
-        + '\n== Status\n\nProposed\n'
-    )
-
-    metadata = parse_metadata_block(content)
-
-    assert metadata['summary'] == 'Use a fenced metadata block'
-    assert metadata['tags'] == ['persistence', 'scanning']
-    assert metadata['affects'] == ['plan-marshall', 'pm-documents']
-    assert metadata['supersedes'] == ['ADR-000']
-
-
-def test_parse_metadata_block_fields_absent(adr_dir):
-    """A block whose fields are blank yields empty scalar/list defaults."""
-    content = (
-        '= ADR-002: Empty\n\n'
-        + _build_metadata_block()
-        + '\n== Status\n\nProposed\n'
-    )
-
-    metadata = parse_metadata_block(content)
-
-    assert metadata['summary'] == ''
-    assert metadata['tags'] == []
-    assert metadata['affects'] == []
-    assert metadata['supersedes'] == []

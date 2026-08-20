@@ -4,17 +4,74 @@
 
 
 from _findings_storage_fixtures import (
+    add_assessment,
     add_finding,
     add_qgate_finding,
+    get_assessments_path,
     get_finding,
     get_findings_path,
-    get_qgate_path,
     mark_finding_responded,
     promote_finding,
     query_findings,
-    query_qgate_findings,
     resolve_finding,
 )
+
+
+def test_assessment_writes_to_assessments_file(plan_context):
+    """`add_assessment` creates `findings/assessments.jsonl` only."""
+    assess_path = get_assessments_path('storage-assess-route')
+    bug_path = get_findings_path('storage-assess-route', 'bug')
+
+    add_assessment(
+        'storage-assess-route',
+        'docs/architecture.md',
+        'CERTAIN_INCLUDE',
+        85,
+    )
+
+    assert assess_path.exists()
+    assert assess_path.name == 'assessments.jsonl'
+    assert not bug_path.exists()
+
+
+# =============================================================================
+# Query merging: query_findings concatenates every per-type file
+# =============================================================================
+
+
+def test_query_findings_merges_across_per_type_files(plan_context):
+    """Query returns the union of every per-type file."""
+    add_finding('storage-query-merge', 'bug', 'Bug X', 'Detail')
+    add_finding('storage-query-merge', 'improvement', 'Improve X', 'Detail')
+    add_finding('storage-query-merge', 'tip', 'Tip X', 'Detail')
+    add_finding('storage-query-merge', 'sonar-issue', 'S1234', 'Detail')
+
+    result = query_findings('storage-query-merge')
+
+    assert result['status'] == 'success'
+    assert result['total_count'] == 4
+    assert result['filtered_count'] == 4
+    seen_types = sorted({r['type'] for r in result['findings']})
+    assert seen_types == ['bug', 'improvement', 'sonar-issue', 'tip']
+
+
+def test_query_findings_ignores_qgate_and_assessment_files(plan_context):
+    """Q-Gate and assessment records must not leak into `query_findings`."""
+    add_finding('storage-query-isolate', 'bug', 'Plan bug', 'Detail')
+    add_qgate_finding(
+        'storage-query-isolate',
+        '5-execute',
+        'qgate',
+        'build-error',
+        'Phase bug',
+        'Detail',
+    )
+    add_assessment('storage-query-isolate', 'x.md', 'CERTAIN_INCLUDE', 80)
+
+    result = query_findings('storage-query-isolate')
+
+    assert result['total_count'] == 1
+    assert result['findings'][0]['title'] == 'Plan bug'
 
 
 def test_query_findings_hash_id_space_is_stable_across_split(plan_context):
@@ -192,6 +249,16 @@ def test_resolve_finding_rejected_writes_back_to_owning_per_type_file(plan_conte
     assert '"resolution_detail": "Out of scope"' in sonar_lines[0]
 
 
+def test_resolve_finding_returns_error_when_hash_absent_in_any_file(plan_context):
+    """`resolve_finding` reports not-found when the hash is in no per-type file."""
+    add_finding('storage-resolve-missing', 'bug', 'Bug', 'Detail')
+
+    outcome = resolve_finding('storage-resolve-missing', 'deadbe', 'fixed')
+
+    assert outcome['status'] == 'error'
+    assert 'not found' in outcome['message']
+
+
 def test_promote_finding_writes_back_to_owning_per_type_file(plan_context):
     """`promote_finding` updates only the per-type file containing the hash."""
     bug_path = get_findings_path('storage-promote-locate', 'bug')
@@ -210,16 +277,6 @@ def test_promote_finding_writes_back_to_owning_per_type_file(plan_context):
     assert '"promoted": false' in bug_lines[0]
     assert '"promoted": true' in tip_lines[0]
     assert '"promoted_to": "manage-architecture"' in tip_lines[0]
-
-
-def test_resolve_finding_returns_error_when_hash_absent_in_any_file(plan_context):
-    """`resolve_finding` reports not-found when the hash is in no per-type file."""
-    add_finding('storage-resolve-missing', 'bug', 'Bug', 'Detail')
-
-    outcome = resolve_finding('storage-resolve-missing', 'deadbe', 'fixed')
-
-    assert outcome['status'] == 'error'
-    assert 'not found' in outcome['message']
 
 
 def test_mark_finding_responded_stamps_marker_and_timestamp(plan_context):
@@ -244,63 +301,3 @@ def test_mark_finding_responded_returns_error_when_hash_absent(plan_context):
 
     assert outcome['status'] == 'error'
     assert 'not found' in outcome['message']
-
-
-# =============================================================================
-# Q-Gate identical-results contract across the split
-# =============================================================================
-
-
-def test_qgate_query_returns_identical_records_to_what_was_added(plan_context):
-    """`qgate add` then `qgate query` round-trip yields the same records."""
-    r1 = add_qgate_finding(
-        'storage-qgate-roundtrip',
-        '5-execute',
-        'qgate',
-        'build-error',
-        'Build error A',
-        'Detail A',
-    )
-    r2 = add_qgate_finding(
-        'storage-qgate-roundtrip',
-        '5-execute',
-        'user_review',
-        'pr-comment',
-        'PR comment B',
-        'Detail B',
-    )
-
-    result = query_qgate_findings('storage-qgate-roundtrip', '5-execute')
-
-    assert result['status'] == 'success'
-    assert result['total_count'] == 2
-    returned_ids = sorted(r['hash_id'] for r in result['findings'])
-    assert returned_ids == sorted([r1['hash_id'], r2['hash_id']])
-
-
-def test_qgate_phases_use_distinct_files(plan_context):
-    """Different Q-Gate phases write to distinct sibling files."""
-    execute_path = get_qgate_path('storage-qgate-phases', '5-execute')
-    finalize_path = get_qgate_path('storage-qgate-phases', '6-finalize')
-
-    add_qgate_finding(
-        'storage-qgate-phases',
-        '5-execute',
-        'qgate',
-        'build-error',
-        'Exec issue',
-        'Detail',
-    )
-    add_qgate_finding(
-        'storage-qgate-phases',
-        '6-finalize',
-        'qgate',
-        'pr-comment',
-        'Finalize issue',
-        'Detail',
-    )
-
-    assert execute_path.exists()
-    assert finalize_path.exists()
-    assert execute_path != finalize_path
-    assert execute_path.parent == finalize_path.parent

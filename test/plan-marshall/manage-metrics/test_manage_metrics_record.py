@@ -44,56 +44,6 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
     return plan_context
 
 
-class TestDispatchTerminationCausesEnum:
-    """Structural assertions on the DISPATCH_TERMINATION_CAUSES tuple."""
-
-    def test_enum_contains_exactly_twelve_values(self):
-        """The enum extends to exactly 12 entries — the legacy 5, the phase-6/phase-4
-        extension (5), the budget_yield phase-5 dispatch-loop signal, plus
-        returned_with_findings (the productive-loop-back member)."""
-        assert len(manage_metrics.DISPATCH_TERMINATION_CAUSES) == 12
-
-    def test_enum_contains_returned_with_findings_cause(self):
-        """The productive-non-completion member is present.
-
-        A findings-bearing loop-back is a success of the dispatched step and a
-        non-completion of the loop; before this member the dispatch ledger had no
-        token for it and such returns fell through to `error`. RED before the
-        member was added.
-        """
-        assert 'returned_with_findings' in manage_metrics.DISPATCH_TERMINATION_CAUSES
-
-    def test_enum_preserves_legacy_five_values(self):
-        """The legacy 5 entries remain present so prior callers do not break."""
-        legacy = {
-            'voluntary_checkpoint',
-            'task_complete_returned_verbatim',
-            'harness_cancellation',
-            'error',
-            'clean_exit_queue_empty',
-        }
-        assert legacy.issubset(set(manage_metrics.DISPATCH_TERMINATION_CAUSES))
-
-    def test_enum_contains_phase_6_finalize_causes(self):
-        """The three phase-6-finalize outcomes are present in the extended enum."""
-        phase6 = {'step_complete', 'blocked_user_review', 'blocked_session_restart'}
-        assert phase6.issubset(set(manage_metrics.DISPATCH_TERMINATION_CAUSES))
-
-    def test_enum_contains_phase_4_plan_causes(self):
-        """The two phase-4-plan outcomes are present in the extended enum."""
-        phase4 = {'task_batch_complete', 'agent_returned'}
-        assert phase4.issubset(set(manage_metrics.DISPATCH_TERMINATION_CAUSES))
-
-    def test_enum_contains_budget_yield_cause(self):
-        """The phase-5 budget-bounded dispatch loop's yield signal is present."""
-        assert 'budget_yield' in manage_metrics.DISPATCH_TERMINATION_CAUSES
-
-    def test_enum_has_no_duplicate_values(self):
-        """Every termination cause is distinct — budget_yield is additive, not a rename."""
-        causes = manage_metrics.DISPATCH_TERMINATION_CAUSES
-        assert len(causes) == len(set(causes))
-
-
 class TestRecordDispatchBoundaryAcceptsNewCauses:
     """cmd_record_dispatch_boundary accepts each of the 5 new termination causes."""
 

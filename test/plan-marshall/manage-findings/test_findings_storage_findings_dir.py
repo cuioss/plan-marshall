@@ -7,11 +7,10 @@ from _findings_storage_fixtures import (
     add_assessment,
     add_finding,
     add_qgate_finding,
-    get_assessments_path,
     get_findings_dir,
     get_findings_path,
     get_qgate_path,
-    query_findings,
+    query_qgate_findings,
 )
 
 # =============================================================================
@@ -24,6 +23,25 @@ def test_findings_dir_absent_until_first_write(plan_context):
     findings_dir = get_findings_dir('storage-dir-lazy')
 
     assert not findings_dir.exists()
+
+
+def test_findings_qgate_assessments_coexist_in_same_dir(plan_context):
+    """All three storage flavours share one `findings/` directory without colliding."""
+    findings_dir = get_findings_dir('storage-coexist')
+
+    add_finding('storage-coexist', 'bug', 'Plan bug', 'Detail')
+    add_qgate_finding(
+        'storage-coexist',
+        '5-execute',
+        'qgate',
+        'build-error',
+        'Phase bug',
+        'Detail',
+    )
+    add_assessment('storage-coexist', 'a.md', 'CERTAIN_INCLUDE', 90)
+
+    children = sorted(p.name for p in findings_dir.iterdir() if p.is_file())
+    assert children == ['assessments.jsonl', 'bug.jsonl', 'qgate-5-execute.jsonl']
 
 
 def test_per_type_file_created_lazily_on_first_add(plan_context):
@@ -86,77 +104,61 @@ def test_qgate_writes_to_qgate_phase_file(plan_context):
     assert not bug_path.exists()
 
 
-def test_assessment_writes_to_assessments_file(plan_context):
-    """`add_assessment` creates `findings/assessments.jsonl` only."""
-    assess_path = get_assessments_path('storage-assess-route')
-    bug_path = get_findings_path('storage-assess-route', 'bug')
-
-    add_assessment(
-        'storage-assess-route',
-        'docs/architecture.md',
-        'CERTAIN_INCLUDE',
-        85,
-    )
-
-    assert assess_path.exists()
-    assert assess_path.name == 'assessments.jsonl'
-    assert not bug_path.exists()
+# =============================================================================
+# Q-Gate identical-results contract across the split
+# =============================================================================
 
 
-def test_findings_qgate_assessments_coexist_in_same_dir(plan_context):
-    """All three storage flavours share one `findings/` directory without colliding."""
-    findings_dir = get_findings_dir('storage-coexist')
-
-    add_finding('storage-coexist', 'bug', 'Plan bug', 'Detail')
-    add_qgate_finding(
-        'storage-coexist',
+def test_qgate_query_returns_identical_records_to_what_was_added(plan_context):
+    """`qgate add` then `qgate query` round-trip yields the same records."""
+    r1 = add_qgate_finding(
+        'storage-qgate-roundtrip',
         '5-execute',
         'qgate',
         'build-error',
-        'Phase bug',
-        'Detail',
+        'Build error A',
+        'Detail A',
     )
-    add_assessment('storage-coexist', 'a.md', 'CERTAIN_INCLUDE', 90)
+    r2 = add_qgate_finding(
+        'storage-qgate-roundtrip',
+        '5-execute',
+        'user_review',
+        'pr-comment',
+        'PR comment B',
+        'Detail B',
+    )
 
-    children = sorted(p.name for p in findings_dir.iterdir() if p.is_file())
-    assert children == ['assessments.jsonl', 'bug.jsonl', 'qgate-5-execute.jsonl']
-
-
-# =============================================================================
-# Query merging: query_findings concatenates every per-type file
-# =============================================================================
-
-
-def test_query_findings_merges_across_per_type_files(plan_context):
-    """Query returns the union of every per-type file."""
-    add_finding('storage-query-merge', 'bug', 'Bug X', 'Detail')
-    add_finding('storage-query-merge', 'improvement', 'Improve X', 'Detail')
-    add_finding('storage-query-merge', 'tip', 'Tip X', 'Detail')
-    add_finding('storage-query-merge', 'sonar-issue', 'S1234', 'Detail')
-
-    result = query_findings('storage-query-merge')
+    result = query_qgate_findings('storage-qgate-roundtrip', '5-execute')
 
     assert result['status'] == 'success'
-    assert result['total_count'] == 4
-    assert result['filtered_count'] == 4
-    seen_types = sorted({r['type'] for r in result['findings']})
-    assert seen_types == ['bug', 'improvement', 'sonar-issue', 'tip']
+    assert result['total_count'] == 2
+    returned_ids = sorted(r['hash_id'] for r in result['findings'])
+    assert returned_ids == sorted([r1['hash_id'], r2['hash_id']])
 
 
-def test_query_findings_ignores_qgate_and_assessment_files(plan_context):
-    """Q-Gate and assessment records must not leak into `query_findings`."""
-    add_finding('storage-query-isolate', 'bug', 'Plan bug', 'Detail')
+def test_qgate_phases_use_distinct_files(plan_context):
+    """Different Q-Gate phases write to distinct sibling files."""
+    execute_path = get_qgate_path('storage-qgate-phases', '5-execute')
+    finalize_path = get_qgate_path('storage-qgate-phases', '6-finalize')
+
     add_qgate_finding(
-        'storage-query-isolate',
+        'storage-qgate-phases',
         '5-execute',
         'qgate',
         'build-error',
-        'Phase bug',
+        'Exec issue',
         'Detail',
     )
-    add_assessment('storage-query-isolate', 'x.md', 'CERTAIN_INCLUDE', 80)
+    add_qgate_finding(
+        'storage-qgate-phases',
+        '6-finalize',
+        'qgate',
+        'pr-comment',
+        'Finalize issue',
+        'Detail',
+    )
 
-    result = query_findings('storage-query-isolate')
-
-    assert result['total_count'] == 1
-    assert result['findings'][0]['title'] == 'Plan bug'
+    assert execute_path.exists()
+    assert finalize_path.exists()
+    assert execute_path != finalize_path
+    assert execute_path.parent == finalize_path.parent

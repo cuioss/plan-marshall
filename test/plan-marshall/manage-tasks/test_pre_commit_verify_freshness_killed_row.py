@@ -13,10 +13,8 @@ import file_ops
 import pytest
 from _pre_commit_verify_freshness_fixtures import (
     _CURRENT_SHA,
-    _OTHER_SHA,
     _RESOLVED_NOTATIONS,
     _build_entry,
-    _change_entry,
     _stub_expected_notations,
     _stub_ledger_path,
     _stub_verdict,
@@ -123,26 +121,6 @@ def test_control_error_row_still_prescribes_fixing_the_code(
     assert 'do not blind-retry' not in result['message'], result
 
 
-def test_stale_reason_reads_the_most_recent_matching_row(
-    plan_context, monkeypatch, tmp_path
-) -> None:
-    """Several non-green builds against one tree: the LATEST one is the reason."""
-    _write_status(plan_context.plan_dir_for('freshness-latest-row'))
-    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
-    ledger_path = _write_ledger(
-        tmp_path,
-        [
-            _build_entry(worktree_sha=_CURRENT_SHA, exit_code=1, status='error'),
-            _build_entry(worktree_sha=_CURRENT_SHA, exit_code=-9, status='killed'),
-        ],
-    )
-    _stub_ledger_path(monkeypatch, ledger_path)
-
-    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-latest-row'))
-
-    assert result['reason'] == 'build_killed', result
-
-
 def test_statusless_row_reports_indeterminate_not_mutation(
     plan_context, monkeypatch, tmp_path
 ) -> None:
@@ -185,65 +163,6 @@ def test_undecidable_when_worktree_sha_unresolvable(plan_context, monkeypatch, t
     assert result['reason'] == 'head_unresolvable'
 
 
-def test_fresh_match_is_tier_agnostic_across_resolved_notations(
-    plan_context, monkeypatch, tmp_path
-) -> None:
-    """A non-pyproject, plan-less (``plan_id=None``) build still satisfies the gate.
-
-    The primary predicate filters on ``kind``, ``status`` and ``worktree_sha``
-    and never on ``plan_id`` — so a Maven build from an orchestrator-driven
-    global-tier run with ``plan_id=None`` proves freshness exactly as a
-    plan-scoped pyproject build does. Tier-agnosticism is what this pins.
-
-    It is NOT notation-agnosticism: the row passes because Maven is in the
-    architecture-resolved notation set (the pinned fixture), not because the
-    gate ignores notations. A notation OUTSIDE that set is refused —
-    ``test_freshness_notation_crosscheck_*.py`` pins that half.
-    """
-    plan_dir = plan_context.plan_dir_for('freshness-agnostic')
-    _write_status(plan_dir)
-    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
-    ledger_path = _write_ledger(
-        tmp_path,
-        [
-            _build_entry(
-                worktree_sha=_CURRENT_SHA,
-                notation='plan-marshall:build-maven:maven',
-                plan_id=None,
-            )
-        ],
-    )
-    _stub_ledger_path(monkeypatch, ledger_path)
-
-    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-agnostic'))
-
-    assert result['status'] == 'fresh', result
-    assert result['matched_notation'] == 'plan-marshall:build-maven:maven'
-
-
-def test_fresh_among_mixed_entries(plan_context, monkeypatch, tmp_path) -> None:
-    """The matching successful build is found among non-matching noise entries."""
-    plan_dir = plan_context.plan_dir_for('freshness-mixed')
-    _write_status(plan_dir)
-    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
-    ledger_path = _write_ledger(
-        tmp_path,
-        [
-            _change_entry(worktree_sha=_OTHER_SHA),
-            _build_entry(worktree_sha=_OTHER_SHA),
-            _build_entry(worktree_sha=_CURRENT_SHA, exit_code=1, status='error'),
-            _build_entry(worktree_sha=_CURRENT_SHA, exit_code=0, status='timeout'),
-            _build_entry(worktree_sha=_CURRENT_SHA, notation='plan-marshall:build-npm:npm'),
-        ],
-    )
-    _stub_ledger_path(monkeypatch, ledger_path)
-
-    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-mixed'))
-
-    assert result['status'] == 'fresh', result
-    assert result['matched_notation'] == 'plan-marshall:build-npm:npm'
-
-
 def test_malformed_ledger_lines_are_skipped(plan_context, monkeypatch, tmp_path) -> None:
     """A ledger with garbage lines around a valid entry still resolves fresh.
 
@@ -263,6 +182,26 @@ def test_malformed_ledger_lines_are_skipped(plan_context, monkeypatch, tmp_path)
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-malformed'))
 
     assert result['status'] == 'fresh', result
+
+
+def test_malformed_manifest_is_irrelevant_to_the_gate(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """An unparseable manifest cannot affect the gate — it is never parsed."""
+    plan_dir = plan_context.plan_dir_for('freshness-nb-bad-manifest')
+    _write_status(plan_dir)
+    (plan_dir / 'execution.toon').write_text(
+        '{ this is not valid toon\n  : : :\n', encoding='utf-8'
+    )
+    _stub_verdict(monkeypatch, {'decision': 'build'})
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA)])
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-nb-bad-manifest'))
+
+    assert result['status'] == 'fresh', result
+    assert result['worktree_sha'] == _CURRENT_SHA
 
 
 # =============================================================================

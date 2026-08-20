@@ -15,16 +15,91 @@ from _classification_validation_gate_fixtures import (
     _body_with_fan_out_marker,
     _body_with_paths,
     _body_with_unscannable_line,
-    _ns_route,
-    _write_marshal,
     _write_references,
     _write_request,
     _write_status,
     classify_scope_pure,
-    cmd_planning_lane_route,
     read_request_body,
     run_classification_validation,
 )
+
+# =============================================================================
+# Mismatch class 3 — a narrow persisted band over a multi-module-sized body
+# =============================================================================
+
+
+def test_scale_mismatch_light_routing_fires(plan_context):
+    """A persisted surgical band over a body naming >= 8 distinct paths flags one finding.
+
+    The residual the sensor cannot close on its own: the pre-route classifier would
+    band this body ``multi_module``, so a persisted ``surgical`` can only have come
+    from a different writer (refine's module-mapping derivation or outline's
+    refinement) or from a body that grew after init. ``change_type`` is deliberately
+    NOT ``bug_fix`` so mismatch class 1 cannot fire and the assertion isolates
+    class 3.
+    """
+    plan_dir = plan_context.plan_dir_for('cv-scale-mismatch')
+    _write_request(plan_dir, _body_with_paths(_MULTI_MODULE_MIN_PATHS))
+    _write_status(plan_dir, metadata={'change_type': 'tech_debt'})
+    _write_references(plan_dir, scope_estimate='surgical')
+
+    result = run_classification_validation('cv-scale-mismatch')
+
+    classes = {m['mismatch'] for m in result['mismatches']}
+    assert classes == {'scale_mismatch_light_routing'}
+    assert result['mismatch_count'] == 1
+    assert result['findings_emitted'] == 1
+    # Flag-not-block holds for the new class exactly as for the other two.
+    assert result['status'] == 'success'
+    assert result['blocked'] is False
+
+
+def test_scale_mismatch_silent_when_band_and_count_agree(plan_context):
+    """A surgical band over a genuinely small body is agreement, not a mismatch."""
+    plan_dir = plan_context.plan_dir_for('cv-scale-agree')
+    _write_request(plan_dir, _body_with_paths(2))
+    _write_status(plan_dir, metadata={'change_type': 'tech_debt'})
+    _write_references(plan_dir, scope_estimate='surgical')
+
+    result = run_classification_validation('cv-scale-agree')
+
+    assert result['mismatch_count'] == 0
+    assert result['blocked'] is False
+
+
+def test_scale_mismatch_silent_for_a_non_narrow_persisted_band(plan_context):
+    """A large body with a large persisted band is agreement too — nothing to flag.
+
+    The check is about a NARROW CLAIM being contradicted, not about size. Only
+    ``surgical`` is a narrow claim; ``single_module`` is the catch-all middle band,
+    so pairing it with a high count is not a contradiction.
+    """
+    plan_dir = plan_context.plan_dir_for('cv-scale-broad-band')
+    _write_request(plan_dir, _body_with_paths(_MULTI_MODULE_MIN_PATHS + 4))
+    _write_status(plan_dir, metadata={'change_type': 'tech_debt'})
+    _write_references(plan_dir, scope_estimate='multi_module')
+
+    result = run_classification_validation('cv-scale-broad-band')
+
+    classes = {m['mismatch'] for m in result['mismatches']}
+    assert 'scale_mismatch_light_routing' not in classes
+
+
+def test_scale_mismatch_silent_for_an_unscoreable_body(plan_context):
+    """An unscoreable body contradicts nothing, so class 3 stays silent.
+
+    The gate must not manufacture a disagreement out of zero bytes — the same
+    declared-unknown discipline the sensor itself follows.
+    """
+    plan_dir = plan_context.plan_dir_for('cv-scale-no-body')
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    _write_status(plan_dir, metadata={'change_type': 'tech_debt'})
+    _write_references(plan_dir, scope_estimate='surgical')
+    # No request.md is written at all.
+
+    result = run_classification_validation('cv-scale-no-body')
+
+    assert result['mismatch_count'] == 0
 
 
 def test_scale_mismatch_boundary_is_driven_by_the_sensor_threshold(plan_context):
@@ -262,81 +337,3 @@ def test_scale_mismatch_degrades_when_the_deferred_import_fails(plan_context, mo
     assert 'scale_mismatch_light_routing' not in classes
     # The unaffected class still reports — the degradation is scoped to class 3.
     assert 'feature_as_bug_fix' in classes
-
-
-def test_class_two_and_class_three_are_mutually_exclusive(plan_context):
-    """Classes 2 and 3 can never co-fire, so all three classes cannot fire at once.
-
-    Class 2 requires ``scope_estimate`` to be null / empty / ``none``; class 3
-    requires it to be exactly ``surgical``. The two predicates are disjoint on the
-    same field by construction. Recording this keeps ``mismatch_count`` honest — the
-    gate has three classes but its ceiling is two, and a future reader must not
-    infer a maximum of three from the class count.
-    """
-    plan_dir = plan_context.plan_dir_for('cv-mutual-exclusion')
-    _write_request(plan_dir, _body_with_paths(_MULTI_MODULE_MIN_PATHS))
-    _write_status(plan_dir, metadata={'change_type': 'bug_fix'})
-    # A null scope satisfies class 2 and, by the same value, disqualifies class 3.
-    _write_references(plan_dir, scope_estimate=None, affected_files=['a/b.py'])
-
-    result = run_classification_validation('cv-mutual-exclusion')
-
-    classes = {m['mismatch'] for m in result['mismatches']}
-    assert 'non_empty_affected_files_with_null_scope' in classes
-    assert 'scale_mismatch_light_routing' not in classes
-
-
-def test_class_one_and_class_three_co_fire_two_findings(plan_context):
-    """The reachable two-class maximum: a feature-shaped bug_fix stamp over a large body."""
-    plan_dir = plan_context.plan_dir_for('cv-one-and-three')
-    _write_request(
-        plan_dir, _body_with_paths(_MULTI_MODULE_MIN_PATHS, lead=f'{_FEATURE_BODY} ')
-    )
-    _write_status(plan_dir, metadata={'change_type': 'bug_fix'})
-    _write_references(plan_dir, scope_estimate='surgical')
-
-    result = run_classification_validation('cv-one-and-three')
-
-    classes = {m['mismatch'] for m in result['mismatches']}
-    assert classes == {'feature_as_bug_fix', 'scale_mismatch_light_routing'}
-    assert result['mismatch_count'] == 2
-    assert result['findings_emitted'] == 2
-    assert result['blocked'] is False
-
-
-def test_route_is_not_blocked_by_a_scale_mismatch(plan_context):
-    """A fired class-3 finding rides along on the route return without gating the lane."""
-    plan_dir = plan_context.plan_dir_for('cv-scale-route')
-    _write_request(plan_dir, _body_with_paths(_MULTI_MODULE_MIN_PATHS))
-    _write_status(plan_dir, metadata={'change_type': 'tech_debt', 'plan_source': 'lesson'})
-    _write_references(plan_dir, scope_estimate='surgical')
-    _write_marshal(plan_context.fixture_dir)
-
-    result = cmd_planning_lane_route(_ns_route('cv-scale-route'))
-
-    assert result['status'] == 'success'
-    assert result['planning_lane'] in ('light', 'deep')
-    cv = result['classification_validation']
-    assert 'scale_mismatch_light_routing' in {m['mismatch'] for m in cv['mismatches']}
-
-
-# =============================================================================
-# Both mismatches together
-# =============================================================================
-
-
-def test_both_mismatches_fire_two_findings(plan_context):
-    """A plan tripping both classes records two distinct findings without blocking."""
-    # bug_fix over a feature narrative AND affected_files without scope.
-    plan_dir = plan_context.plan_dir_for('cv-both')
-    _write_request(plan_dir, _FEATURE_BODY)
-    _write_status(plan_dir, metadata={'change_type': 'bug_fix'})
-    _write_references(plan_dir, scope_estimate=None, affected_files=['a/b.py'])
-
-    result = run_classification_validation('cv-both')
-
-    classes = {m['mismatch'] for m in result['mismatches']}
-    assert classes == {'feature_as_bug_fix', 'non_empty_affected_files_with_null_scope'}
-    assert result['mismatch_count'] == 2
-    assert result['findings_emitted'] == 2
-    assert result['blocked'] is False

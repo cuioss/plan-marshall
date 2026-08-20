@@ -5,19 +5,57 @@
 
 from __future__ import annotations
 
+import json
+from argparse import Namespace
+
 import pytest
 from _planning_lane_fixtures import (
-    _BOILERPLATE_CITATION,
-    _light_setup,
     _mod,
-    _ns_route,
-    _write_marshal,
+    _ns_scope,
+    _write_references,
     _write_request,
     classify_scope_pure,
-    cmd_planning_lane_route,
+    cmd_scope_estimate_heuristic,
     evaluate_signals_pure,
     scope_estimate_from_request_pure,
 )
+
+from conftest import load_script_module
+
+
+def test_scope_heuristic_declares_unknown_for_unreadable_request(plan_context):
+    """End-to-end: an unscoreable request persists the declared unknown, not a band."""
+    plan_dir = plan_context.plan_dir_for('pl-scope-unknown')
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    _write_references(plan_dir, scope_estimate=None)
+
+    result = cmd_scope_estimate_heuristic(
+        Namespace(plan_id='pl-scope-unknown', persist=True)
+    )
+
+    assert result['status'] == 'success'
+    assert result['scope_estimate'] == 'none'
+    assert result['scope_resolved'] is False
+    assert result['distinct_path_count'] == 0
+    refs = json.loads((plan_dir / 'references.json').read_text())
+    assert refs['scope_estimate'] == 'none'
+
+
+def test_scope_heuristic_reports_scope_resolved_true_for_a_scored_body(plan_context):
+    """``scope_resolved`` distinguishes a classified band from the declared unknown.
+
+    Without this field a consumer reading ``scope_estimate`` alone cannot tell a
+    measured band from a "cannot tell" verdict — which is exactly how a zero-byte
+    read used to pass for a band.
+    """
+    plan_dir = plan_context.plan_dir_for('pl-scope-resolved')
+    _write_request(plan_dir, 'Fix pkg/one.py.')
+    _write_references(plan_dir, scope_estimate=None)
+
+    result = cmd_scope_estimate_heuristic(Namespace(plan_id='pl-scope-resolved', persist=False))
+
+    assert result['scope_estimate'] == 'surgical'
+    assert result['scope_resolved'] is True
 
 
 @pytest.mark.parametrize(
@@ -173,154 +211,6 @@ def test_scope_unknown_is_a_deep_biasing_s2_value():
     assert 'S2:scope_estimate' in verdict['fired_signals']
 
 
-# --- scope_provenance — why the band came out as it did -----------------------
-#
-# The operator-facing half of the fix (arm 1 of the surfacing question): the route
-# return and the decision-log line explain the band rather than only asserting it.
-# No new prompt and no new override seam — --lane-override / S6 already exists.
-
-
-@pytest.mark.parametrize(
-    ('body', 'expected_rule', 'expected_count', 'expected_fan_out'),
-    [
-        ('', 'unscoreable_body', 0, False),
-        (
-            'Sweep test/plan-marshall/x/test_x.py and every marketplace/bundles/*/plugin.json.',
-            'fan_out_marker',
-            1,
-            True,
-        ),
-        (
-            'Touch ' + ', '.join(f'dir{i}/file{i}.py' for i in range(8)) + '.',
-            'path_count_at_or_above_multi_module_floor',
-            8,
-            False,
-        ),
-        ('Touch a/one.py, b/two.py, c/three.py, d/four.py.', 'path_count_middle_band', 4, False),
-        ('Fix a/one.py.', 'path_count_at_or_below_surgical_max', 1, False),
-        ('Make the thing better, somehow.', 'pathless_non_empty_body', 0, False),
-    ],
-)
-def test_classify_scope_pure_reports_the_band_rule_that_fired(
-    body, expected_rule, expected_count, expected_fan_out
-):
-    """Every row of the band table reports its own ``band_rule`` plus both measurements.
-
-    One case per table row, so a future row that stops being reachable — a
-    vacuous band — shows up as a failing case rather than as silently dead code.
-    """
-    _band, provenance = classify_scope_pure(body)
-
-    assert provenance == {
-        'distinct_path_count': expected_count,
-        'fan_out_marker': expected_fan_out,
-        'band_rule': expected_rule,
-    }
-
-
-def test_classify_scope_pure_band_and_provenance_cannot_disagree():
-    """``scope_estimate_from_request_pure`` is a projection of ``classify_scope_pure``.
-
-    The band and its explanation come from ONE decision, so the thin wrapper can
-    never drift from the provenance-bearing classifier.
-    """
-    body = 'Rewrite all **/*.py under the module.'
-
-    assert scope_estimate_from_request_pure(body) == classify_scope_pure(body)[0]
-
-
-def test_route_surfaces_scope_provenance(plan_context):
-    """The route return carries scope_provenance alongside BOTH verdicts.
-
-    The operator reading one surface sees the lane, the posture, and the band rule
-    that drove them — the whole point of surfacing provenance rather than adding a
-    prompt.
-    """
-    plan_dir = _light_setup(plan_context, 'pl-provenance')
-    _write_request(plan_dir, 'Fix marketplace/bundles/plan-marshall/skills/x/scripts/x.py.')
-
-    result = cmd_planning_lane_route(_ns_route('pl-provenance'))
-
-    assert result['scope_provenance'] == {
-        'distinct_path_count': 1,
-        'fan_out_marker': False,
-        'band_rule': 'path_count_at_or_below_surgical_max',
-    }
-    # Both verdicts are on the same return, next to the provenance that explains them.
-    assert result['planning_lane'] == 'light'
-    assert result['execution_profile'] == 'minimal'
-
-
-def test_route_surfaces_scope_provenance_under_the_deep_lane_short_circuit(plan_context):
-    """Provenance is a property of the request body, so the deep_lane gate cannot erase it.
-
-    ``deep_lane=always`` replaces the signal-scored verdict, but the band
-    explanation must survive — otherwise the one configuration most likely to hide
-    a miscalibrated band is also the one that stops reporting it.
-    """
-    _light_setup(plan_context, 'pl-provenance-always')
-    _write_marshal(plan_context.fixture_dir, compatibility='deprecation', deep_lane='always')
-
-    result = cmd_planning_lane_route(_ns_route('pl-provenance-always'))
-
-    assert result['decision_predicate'] == 'plan.phase-1-init.deep_lane=always'
-    assert result['scope_provenance']['band_rule'] == 'path_count_at_or_below_surgical_max'
-
-
-# --- Settled path-counter semantics ------------------------------------------
-#
-# Both properties below are DECISIONS recorded in _distinct_paths' docstring, not
-# accidents of the regex. They are asserted so a future edit has to change the
-# test deliberately rather than drift.
-
-
-@pytest.mark.parametrize(
-    'bare_name',
-    ['_cmd_planning_lane.py', 'agents.md', 'retro_sections.py'],
-)
-def test_distinct_paths_excludes_bare_filenames_intentionally(bare_name):
-    """A bare filename is deliberately NOT counted — a directory separator is required.
-
-    ``_PATH_RE`` matches only ``dir/name.ext``. This exclusion is intentional: a
-    bare filename cannot be resolved to a repo location without the directory
-    discovery this module is defined to exclude, and matching bare ``word.word``
-    tokens would sweep in ordinary prose (``e.g.``, version numbers,
-    sentence-final abbreviations). The consequence is an UNDER-count, which
-    biases toward the wider band — the same conservative direction as citation
-    inflation.
-    """
-    body = f'Rewrite {bare_name} so the handler is reachable.'
-
-    assert _mod._distinct_paths(body) == set()
-    # Under-counting to zero paths lands in single_module (wider), never surgical.
-    assert scope_estimate_from_request_pure(body) == 'single_module'
-
-
-def test_distinct_paths_counts_a_citation_it_cannot_distinguish_from_a_target():
-    """The counter counts path STRINGS; it cannot tell a citation from a target.
-
-    A body whose only path is a citation of a governing document still counts
-    one path and bands ``surgical``. The sensor declares its inapplicability for
-    this discrimination rather than faking it — but the residual must stay
-    visible, so it is asserted rather than left implicit. The error is
-    one-directional: citations INFLATE the count, and inflation moves the band
-    from ``surgical`` toward ``single_module`` (wider), never the reverse.
-    """
-    citation_only = (
-        'Tidy the hand-off prose. See '
-        f'`{_BOILERPLATE_CITATION}` for the tier contract.'
-    )
-
-    assert _mod._distinct_paths(citation_only) == {_BOILERPLATE_CITATION}
-    assert scope_estimate_from_request_pure(citation_only) == 'surgical'
-
-    # Adding real targets alongside the citation moves the band wider, never narrower.
-    with_targets = (
-        f'{citation_only} Change a/one.py, b/two.py, c/three.py and d/four.py.'
-    )
-    assert scope_estimate_from_request_pure(with_targets) == 'single_module'
-
-
 def test_scope_pure_makes_no_architecture_call(monkeypatch):
     """The classifier performs zero architecture calls (pure, regex-only)."""
     # Any attempt to import or invoke an architecture surface would raise here.
@@ -334,3 +224,105 @@ def test_scope_pure_makes_no_architecture_call(monkeypatch):
 
     monkeypatch.setattr(builtins, '__import__', _guard_import)
     assert scope_estimate_from_request_pure('Fix pkg/one.py and pkg/two.py.') == 'surgical'
+
+
+# =============================================================================
+# cmd_scope_estimate_heuristic — persistence to references.json
+# =============================================================================
+
+
+def test_scope_heuristic_persists_surgical_to_references(plan_context):
+    """--persist writes the classified scope_estimate into references.json."""
+    plan_dir = plan_context.plan_dir_for('pl-scope-persist')
+    _write_request(plan_dir, 'Fix marketplace/bundles/plan-marshall/skills/x/scripts/x.py.')
+    _write_references(plan_dir, scope_estimate=None)
+
+    result = cmd_scope_estimate_heuristic(_ns_scope('pl-scope-persist', persist=True))
+
+    assert result['status'] == 'success'
+    assert result['scope_estimate'] == 'surgical'
+    assert result['persisted'] is True
+    refs = json.loads((plan_dir / 'references.json').read_text())
+    assert refs['scope_estimate'] == 'surgical'
+    # The persist preserves other references fields.
+    assert refs['base_branch'] == 'main'
+
+
+def test_scope_heuristic_persists_single_module_for_the_middle_band(plan_context):
+    """A five-path request persists single_module — the 4–7 middle band, end to end."""
+    plan_dir = plan_context.plan_dir_for('pl-scope-middle')
+    _write_request(plan_dir, 'Touch a/one.py, b/two.py, c/three.py, d/four.py, e/five.py.')
+    _write_references(plan_dir, scope_estimate=None)
+
+    result = cmd_scope_estimate_heuristic(_ns_scope('pl-scope-middle', persist=True))
+
+    assert result['scope_estimate'] == 'single_module'
+    refs = json.loads((plan_dir / 'references.json').read_text())
+    assert refs['scope_estimate'] == 'single_module'
+
+
+def test_scope_heuristic_persists_multi_module_for_a_large_request(plan_context):
+    """An eight-path request persists multi_module — the band that used to be unreachable.
+
+    End-to-end proof that the upper segment of the path-count line now exists: the
+    persisted value is a deep-biasing S2 band, so a large concrete request stops
+    routing light.
+    """
+    plan_dir = plan_context.plan_dir_for('pl-scope-large')
+    _write_request(
+        plan_dir,
+        'Touch ' + ', '.join(f'dir{i}/file{i}.py' for i in range(8)) + '.',
+    )
+    _write_references(plan_dir, scope_estimate=None)
+
+    result = cmd_scope_estimate_heuristic(_ns_scope('pl-scope-large', persist=True))
+
+    assert result['scope_estimate'] == 'multi_module'
+    assert result['distinct_path_count'] == 8
+    refs = json.loads((plan_dir / 'references.json').read_text())
+    assert refs['scope_estimate'] == 'multi_module'
+    assert 'multi_module' in _mod._DEEP_SCOPE_ESTIMATES
+
+
+def test_scope_heuristic_without_persist_does_not_write(plan_context):
+    """Without --persist the classifier reports but does not mutate references.json."""
+    plan_dir = plan_context.plan_dir_for('pl-scope-nopersist')
+    _write_request(plan_dir, 'Fix pkg/one.py.')
+    _write_references(plan_dir, scope_estimate=None)
+
+    result = cmd_scope_estimate_heuristic(_ns_scope('pl-scope-nopersist'))
+
+    assert result['scope_estimate'] == 'surgical'
+    assert result['persisted'] is False
+    refs = json.loads((plan_dir / 'references.json').read_text())
+    assert 'scope_estimate' not in refs
+
+
+def test_scope_heuristic_plan_dir_not_found_errors(plan_context):
+    """scope-estimate-heuristic against a missing plan dir returns a structured error."""
+    result = cmd_scope_estimate_heuristic(_ns_scope('pl-scope-missing', persist=True))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'plan_dir_not_found'
+
+
+# =============================================================================
+# Dispatch wiring — scope-estimate-heuristic
+# =============================================================================
+
+
+def test_scope_estimate_heuristic_registered_in_manage_status_dispatch():
+    """The scope-estimate-heuristic verb resolves to cmd_scope_estimate_heuristic."""
+    import argparse  # noqa: PLC0415
+
+    manage_status = load_script_module(
+        'plan-marshall', 'manage-status', 'manage-status.py', '_manage_status_dispatch_check_scope_est'
+    )
+
+    assert callable(manage_status.cmd_scope_estimate_heuristic)
+    p = argparse.ArgumentParser()
+    sub = p.add_subparsers(dest='cmd')
+    scope = sub.add_parser('scope-estimate-heuristic')
+    scope.set_defaults(func=manage_status.cmd_scope_estimate_heuristic)
+    ns = p.parse_args(['scope-estimate-heuristic'])
+    assert ns.func is manage_status.cmd_scope_estimate_heuristic

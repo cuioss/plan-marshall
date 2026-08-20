@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from fnmatch import fnmatch
+from pathlib import Path
 
 from _qgate_closure_fixtures import (
     _REAL_A,
@@ -96,6 +97,21 @@ def test_projection_covers_the_mutation_scope_of_a_survey_deliverable():
     assert gaps == [_REAL_B]
 
 
+def test_projection_leaves_a_declared_glob_to_the_reconciliation_check():
+    """A declared glob in the write-set is not reported as an unprojected write.
+
+    A pattern cannot be a step target, so reporting it as "no task targets this"
+    would emit a finding on every survey-scope deliverable that declares a
+    pattern — noise the author cannot act on. The claim-versus-index check owns
+    patterns; the projection check owns literal paths.
+    """
+    deliverable = _deliverable(1, mutate=[_STANDARDS_GLOB, _REAL_A])
+
+    gaps = compute_projection_gaps(deliverable, [_task(1, 1, [_REAL_A])])
+
+    assert gaps == []
+
+
 # =============================================================================
 # Referrer closure — step target the deliverable never declared
 # =============================================================================
@@ -137,21 +153,6 @@ def test_referrer_reports_a_target_covered_only_by_a_glob():
     gaps = compute_referrer_gaps(_task(1, 1, [_REAL_A]), declared_paths(deliverable))
 
     assert gaps == [_REAL_A]
-
-
-def test_projection_leaves_a_declared_glob_to_the_reconciliation_check():
-    """A declared glob in the write-set is not reported as an unprojected write.
-
-    A pattern cannot be a step target, so reporting it as "no task targets this"
-    would emit a finding on every survey-scope deliverable that declares a
-    pattern — noise the author cannot act on. The claim-versus-index check owns
-    patterns; the projection check owns literal paths.
-    """
-    deliverable = _deliverable(1, mutate=[_STANDARDS_GLOB, _REAL_A])
-
-    gaps = compute_projection_gaps(deliverable, [_task(1, 1, [_REAL_A])])
-
-    assert gaps == []
 
 
 # =============================================================================
@@ -196,34 +197,43 @@ def test_declared_glob_fully_enumerated_is_closed():
     assert population['population_complete'] is True
 
 
-def test_unexpandable_glob_is_reported_not_silently_zero():
-    """An absolute pattern is an UNMEASURED scope, never an empty one."""
-    deliverable = _deliverable(1, survey=['/etc/*.conf'])
+def test_a_declared_glob_escaping_the_repo_is_unmeasured_not_empty():
+    """An escaping pattern is rejected, and the escape target really exists.
 
+    The precondition is asserted rather than assumed: the pattern must resolve
+    to a directory that is BOTH outside the repository and populated, or the
+    test would pass for the uninteresting reason that there was nothing out
+    there to find either way.
+
+    ⛔ **The number of ``..`` segments is DERIVED from ``PROJECT_ROOT``, never
+    hard-coded.** How deep the checkout sits below ``/`` is a property of the
+    environment, not of the code under test: a developer checkout at
+    ``/home/user/plan-marshall`` is three levels down, a GitHub Actions checkout
+    at ``/home/runner/work/plan-marshall/plan-marshall`` is five. An earlier
+    version wrote ``../../../etc`` and asserted it resolved to ``/etc``, with a
+    docstring claiming ``PROJECT_ROOT`` "is three levels below /". That was true
+    only where it was written: CI resolved the same pattern to
+    ``/home/runner/etc``, the precondition failed, and the suite was green on one
+    machine and red on every other. Deriving the depth makes the precondition
+    hold wherever the checkout lives.
+
+    Left unnormalised, ``Path.glob`` walks out of the repository and returns
+    nothing, so a scope nothing examined reports a clean zero — the very defect
+    this module reports on outlines, committed by the module itself.
+    """
+    # parts[0] is '/', so the remaining count is the depth to climb to reach it.
+    up = '/'.join(['..'] * (len(PROJECT_ROOT.resolve().parts) - 1))
+    escape = f'{up}/etc/*.conf'
+    outside = (PROJECT_ROOT / f'{up}/etc').resolve()
+    assert outside == Path('/etc'), 'precondition: the pattern must leave the repo'
+    assert list(outside.glob('*.conf')), 'precondition: the escape target must be populated'
+
+    expansion = expand_declared_glob(escape, PROJECT_ROOT)
+    assert expansion.expandable is False
+
+    deliverable = _deliverable(1, survey=[escape])
     gaps, population = check_declared_scope_reconciliation([deliverable], PROJECT_ROOT)
 
     assert [g['kind'] for g in gaps] == ['unexpandable_glob']
-    assert population['globs_unexpandable'] == 1
-    assert population['globs_expanded'] == 0
-    assert population['population_complete'] is False
-
-
-def test_a_home_relative_glob_is_unmeasured_not_empty():
-    """``~/…`` raises NOTHING and matches nothing — the silent half of the guard.
-
-    An absolute pattern raises inside ``Path.glob`` and is caught either way, so
-    guarding it is a statement of intent. ``~`` is different: pathlib treats it
-    as an ordinary directory name, so the expansion succeeds, returns zero
-    matches, and would be reported as a measured-empty scope. Only the explicit
-    guard separates that from a pattern that genuinely matches nothing.
-    """
-    assert list(PROJECT_ROOT.glob('~/x/*.py')) == [], 'precondition: pathlib does not raise here'
-
-    expansion = expand_declared_glob('~/x/*.py', PROJECT_ROOT)
-
-    assert expansion.expandable is False
-    _gaps, population = check_declared_scope_reconciliation(
-        [_deliverable(1, survey=['~/x/*.py'])], PROJECT_ROOT
-    )
     assert population['globs_unexpandable'] == 1
     assert population['population_complete'] is False

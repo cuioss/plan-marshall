@@ -254,6 +254,30 @@ def test_checkpoint_total_spans_populations_when_an_inline_row_is_present(
     )
 
 
+def test_checkpoint_targets_are_read_from_the_single_thresholds_constant() -> None:
+    """The armed targets live in ``THRESHOLDS`` and cover the classed scope bands.
+
+    The checkpoint classes are a deliberate SUBSET of the live ``scope_estimate``
+    enum — an unlisted band scores ``unclassed`` rather than being silently
+    graded against a borrowed target — so this asserts subset membership, not
+    equality, and would catch a target keyed on a value the enum never had.
+    """
+    audit = _load_audit()
+    targets = audit.THRESHOLDS['checkpoint_token_targets']
+    live_scopes = _live_scope_estimates()
+
+    assert targets, 'THRESHOLDS["checkpoint_token_targets"] is empty.'
+    unknown = set(targets) - live_scopes
+    assert not unknown, (
+        f'THRESHOLDS["checkpoint_token_targets"] is keyed on {sorted(unknown)}, '
+        f'which are not members of the live scope_estimate enum {sorted(live_scopes)} '
+        f'— those targets can never be selected and the class reads `unclassed`.'
+    )
+    assert all(isinstance(value, int) and value > 0 for value in targets.values()), (
+        f'Every checkpoint target must be a positive integer token budget; got {targets}.'
+    )
+
+
 def test_lane_lever_verdict_is_unaffected_by_billing_weighted_total(tmp_path: Path) -> None:
     """The checkpoint verdict is identical with and without a billing column.
 
@@ -299,28 +323,4 @@ def test_lane_lever_verdict_is_unaffected_by_billing_weighted_total(tmp_path: Pa
         f"Expected a `within` verdict for a 300K surgical plan against target "
         f"{targets['surgical']}; got {baseline['verdict']}. If this flipped to "
         f'`over`, a second token field is being summed into the work total.'
-    )
-
-
-def test_checkpoint_targets_are_read_from_the_single_thresholds_constant() -> None:
-    """The armed targets live in ``THRESHOLDS`` and cover the classed scope bands.
-
-    The checkpoint classes are a deliberate SUBSET of the live ``scope_estimate``
-    enum — an unlisted band scores ``unclassed`` rather than being silently
-    graded against a borrowed target — so this asserts subset membership, not
-    equality, and would catch a target keyed on a value the enum never had.
-    """
-    audit = _load_audit()
-    targets = audit.THRESHOLDS['checkpoint_token_targets']
-    live_scopes = _live_scope_estimates()
-
-    assert targets, 'THRESHOLDS["checkpoint_token_targets"] is empty.'
-    unknown = set(targets) - live_scopes
-    assert not unknown, (
-        f'THRESHOLDS["checkpoint_token_targets"] is keyed on {sorted(unknown)}, '
-        f'which are not members of the live scope_estimate enum {sorted(live_scopes)} '
-        f'— those targets can never be selected and the class reads `unclassed`.'
-    )
-    assert all(isinstance(value, int) and value > 0 for value in targets.values()), (
-        f'Every checkpoint target must be a positive integer token budget; got {targets}.'
     )

@@ -154,21 +154,6 @@ def test_the_finding_names_every_hit_and_states_the_true_total():
     assert f'{len(hits)} of them appear in no declared list' in detail
 
 
-def test_population_publishes_member_identities_not_only_counts():
-    """The positive-population assertion needs the members, not the cardinality.
-
-    A count answers "was the population non-empty?". Only the members answer
-    "did it contain the element at risk?" — the half of the guard the plan asks
-    for and a count cannot express.
-    """
-    deliverables = [_deliverable(1, affected=[_REAL_A], survey=[_REAL_B])]
-
-    _gaps, population = check_declared_set_closure([_task(1, 1, [_REAL_A])], deliverables)
-
-    assert population['scanned_paths'] == sorted([_REAL_A, _REAL_B])
-    assert population['scanned_paths_truncated'] is False
-
-
 def test_scanned_paths_truncation_is_disclosed_not_silent(monkeypatch):
     """The published-member cap says when it bit. (B1)
 

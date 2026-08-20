@@ -5,22 +5,25 @@
 
 from __future__ import annotations
 
-import json
 from argparse import Namespace
 
 import pytest
 from _planning_lane_fixtures import (
-    _light_setup,
+    _BOILERPLATE_CITATION,
     _mod,
     _ns_route,
+    _ns_scope,
     _pure,
     _write_ingested_request,
     _write_marshal,
     _write_references,
+    _write_request,
     _write_status,
+    classify_scope_pure,
     cmd_planning_lane_route,
     cmd_scope_estimate_heuristic,
     project_profile_pure,
+    scope_estimate_from_request_pure,
 )
 
 
@@ -191,66 +194,145 @@ def test_evaluate_signals_pure_emits_profile_projection():
     assert result['profile']['candidate_postures'] == ['minimal', 'standard', 'full']
 
 
-def test_route_surfaces_execution_profile(plan_context):
-    """The route return surfaces execution_profile + the structured profile block."""
-    # Generative + broad signals → full posture, deep lane.
-    plan_dir = _light_setup(plan_context, 'pl-profile-full')
-    _write_references(plan_dir, scope_estimate='multi_module')
-    _write_status(plan_dir, metadata={'plan_source': 'lesson', 'change_type': 'feature'})
-
-    result = cmd_planning_lane_route(_ns_route('pl-profile-full'))
-
-    assert result['execution_profile'] == 'full'
-    assert result['profile']['recommended_posture'] == 'full'
-    assert result['profile']['candidate_postures'] == ['minimal', 'standard', 'full']
+# --- scope_provenance — why the band came out as it did -----------------------
+#
+# The operator-facing half of the fix (arm 1 of the surfacing question): the route
+# return and the decision-log line explain the band rather than only asserting it.
+# No new prompt and no new override seam — --lane-override / S6 already exists.
 
 
-def test_route_projects_minimal_for_narrow_concrete_change(plan_context):
-    """An all-light, narrow, concrete change projects the minimal posture."""
-    _light_setup(plan_context, 'pl-profile-minimal')
+@pytest.mark.parametrize(
+    ('body', 'expected_rule', 'expected_count', 'expected_fan_out'),
+    [
+        ('', 'unscoreable_body', 0, False),
+        (
+            'Sweep test/plan-marshall/x/test_x.py and every marketplace/bundles/*/plugin.json.',
+            'fan_out_marker',
+            1,
+            True,
+        ),
+        (
+            'Touch ' + ', '.join(f'dir{i}/file{i}.py' for i in range(8)) + '.',
+            'path_count_at_or_above_multi_module_floor',
+            8,
+            False,
+        ),
+        ('Touch a/one.py, b/two.py, c/three.py, d/four.py.', 'path_count_middle_band', 4, False),
+        ('Fix a/one.py.', 'path_count_at_or_below_surgical_max', 1, False),
+        ('Make the thing better, somehow.', 'pathless_non_empty_body', 0, False),
+    ],
+)
+def test_classify_scope_pure_reports_the_band_rule_that_fired(
+    body, expected_rule, expected_count, expected_fan_out
+):
+    """Every row of the band table reports its own ``band_rule`` plus both measurements.
 
-    result = cmd_planning_lane_route(_ns_route('pl-profile-minimal'))
-
-    assert result['planning_lane'] == 'light'
-    assert result['execution_profile'] == 'minimal'
-
-
-def test_deep_lane_always_does_not_coerce_profile_to_full(plan_context):
-    """deep_lane=always forces planning_lane=deep but leaves the profile projection alone.
-
-    Planning depth and the execution profile are independent axes (§4.2): the
-    ceremony gate that ratchets the lane to deep must NOT coerce the posture to
-    full. An all-light narrow concrete change keeps its minimal projection even
-    under deep_lane=always.
+    One case per table row, so a future row that stops being reachable — a
+    vacuous band — shows up as a failing case rather than as silently dead code.
     """
-    _light_setup(plan_context, 'pl-profile-indep')
-    _write_marshal(plan_context.fixture_dir, compatibility='deprecation', deep_lane='always')
+    _band, provenance = classify_scope_pure(body)
 
-    result = cmd_planning_lane_route(_ns_route('pl-profile-indep'))
-
-    # The deep-lane gate wins the planning-depth verdict ...
-    assert result['planning_lane'] == 'deep'
-    assert result['decision_predicate'] == 'plan.phase-1-init.deep_lane=always'
-    # ... but the execution-profile projection is unaffected by it.
-    assert result['execution_profile'] == 'minimal'
+    assert provenance == {
+        'distinct_path_count': expected_count,
+        'fan_out_marker': expected_fan_out,
+        'band_rule': expected_rule,
+    }
 
 
-def test_persist_writes_execution_profile_metadata(plan_context):
-    """--persist writes the projected posture into status.metadata.execution_profile."""
-    plan_dir = _light_setup(plan_context, 'pl-profile-persist')
+def test_classify_scope_pure_band_and_provenance_cannot_disagree():
+    """``scope_estimate_from_request_pure`` is a projection of ``classify_scope_pure``.
 
-    result = cmd_planning_lane_route(_ns_route('pl-profile-persist', persist=True))
+    The band and its explanation come from ONE decision, so the thin wrapper can
+    never drift from the provenance-bearing classifier.
+    """
+    body = 'Rewrite all **/*.py under the module.'
 
-    assert result['persisted'] is True
-    status = json.loads((plan_dir / 'status.json').read_text())
-    assert status['metadata']['execution_profile'] == 'minimal'
+    assert scope_estimate_from_request_pure(body) == classify_scope_pure(body)[0]
 
 
-def test_route_without_persist_does_not_write_execution_profile(plan_context):
-    """Without --persist the projected posture is not written to status.json."""
-    plan_dir = _light_setup(plan_context, 'pl-profile-nopersist')
+# --- Settled path-counter semantics ------------------------------------------
+#
+# Both properties below are DECISIONS recorded in _distinct_paths' docstring, not
+# accidents of the regex. They are asserted so a future edit has to change the
+# test deliberately rather than drift.
 
-    cmd_planning_lane_route(_ns_route('pl-profile-nopersist'))
 
-    status = json.loads((plan_dir / 'status.json').read_text())
-    assert 'execution_profile' not in status.get('metadata', {})
+@pytest.mark.parametrize(
+    'bare_name',
+    ['_cmd_planning_lane.py', 'agents.md', 'retro_sections.py'],
+)
+def test_distinct_paths_excludes_bare_filenames_intentionally(bare_name):
+    """A bare filename is deliberately NOT counted — a directory separator is required.
+
+    ``_PATH_RE`` matches only ``dir/name.ext``. This exclusion is intentional: a
+    bare filename cannot be resolved to a repo location without the directory
+    discovery this module is defined to exclude, and matching bare ``word.word``
+    tokens would sweep in ordinary prose (``e.g.``, version numbers,
+    sentence-final abbreviations). The consequence is an UNDER-count, which
+    biases toward the wider band — the same conservative direction as citation
+    inflation.
+    """
+    body = f'Rewrite {bare_name} so the handler is reachable.'
+
+    assert _mod._distinct_paths(body) == set()
+    # Under-counting to zero paths lands in single_module (wider), never surgical.
+    assert scope_estimate_from_request_pure(body) == 'single_module'
+
+
+def test_distinct_paths_counts_a_citation_it_cannot_distinguish_from_a_target():
+    """The counter counts path STRINGS; it cannot tell a citation from a target.
+
+    A body whose only path is a citation of a governing document still counts
+    one path and bands ``surgical``. The sensor declares its inapplicability for
+    this discrimination rather than faking it — but the residual must stay
+    visible, so it is asserted rather than left implicit. The error is
+    one-directional: citations INFLATE the count, and inflation moves the band
+    from ``surgical`` toward ``single_module`` (wider), never the reverse.
+    """
+    citation_only = (
+        'Tidy the hand-off prose. See '
+        f'`{_BOILERPLATE_CITATION}` for the tier contract.'
+    )
+
+    assert _mod._distinct_paths(citation_only) == {_BOILERPLATE_CITATION}
+    assert scope_estimate_from_request_pure(citation_only) == 'surgical'
+
+    # Adding real targets alongside the citation moves the band wider, never narrower.
+    with_targets = (
+        f'{citation_only} Change a/one.py, b/two.py, c/three.py and d/four.py.'
+    )
+    assert scope_estimate_from_request_pure(with_targets) == 'single_module'
+
+
+# =============================================================================
+# D2 acceptance — pre-route classification unblocks the light lane
+# =============================================================================
+
+
+def test_prerouted_surgical_scope_flips_s2_from_deep_to_light(plan_context):
+    """The pre-route scope classification flips S2 from deep (None) to light (surgical).
+
+    Before D2, a concrete narrow request reached the router with scope_estimate
+    unset, so S2 fired deep unconditionally. After the pre-route classifier
+    persists scope_estimate=surgical, S2 no longer fires and the router reaches
+    the light lane for a well-bounded, concrete request.
+    """
+    plan_dir = plan_context.plan_dir_for('pl-d2-accept')
+    _write_request(plan_dir, 'Fix marketplace/bundles/plan-marshall/skills/x/scripts/x.py per the diagnosis.')
+    _write_status(plan_dir, metadata={'plan_source': 'lesson', 'change_type': 'bug_fix'})
+    _write_references(plan_dir, scope_estimate=None)
+    _write_marshal(plan_context.fixture_dir, compatibility='deprecation', deep_lane='auto')
+
+    # Pre-classification: with scope_estimate still None, S2 fires deep.
+    before = cmd_planning_lane_route(_ns_route('pl-d2-accept'))
+    assert before['planning_lane'] == 'deep'
+    assert 'S2:scope_estimate' in before['fired_signals']
+
+    # Run the pre-route classifier; it persists scope_estimate=surgical.
+    scope_result = cmd_scope_estimate_heuristic(_ns_scope('pl-d2-accept', persist=True))
+    assert scope_result['scope_estimate'] == 'surgical'
+
+    # Now the router routes light — S2 no longer fires.
+    after = cmd_planning_lane_route(_ns_route('pl-d2-accept'))
+    assert after['planning_lane'] == 'light'
+    assert 'S2:scope_estimate' not in after['fired_signals']

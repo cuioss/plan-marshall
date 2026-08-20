@@ -5,10 +5,13 @@
 
 import pytest
 from _tasks_cost_fixtures import (
+    _L_MAX,
     _M_MAX,
     _PROFILE_WEIGHT_DEFAULT,
     _S_MAX,
+    _XL_MAX,
     _XS_MAX,
+    COST_SIZES,
     PROFILE_WEIGHTS,
     W_PROFILE,
     W_SKILLS,
@@ -154,3 +157,43 @@ def test_score_to_size_below_m_max_is_m():
 def test_score_to_size_at_m_max_is_l():
     """A score exactly at the M/L boundary maps to L."""
     assert score_to_size(_M_MAX) == 'L'
+
+
+def test_score_to_size_below_l_max_is_l():
+    """A score just below the L/XL boundary maps to L."""
+    assert score_to_size(_L_MAX - 1) == 'L'
+
+
+def test_score_to_size_at_l_max_is_xl():
+    """A score exactly at the L/XL boundary maps to XL."""
+    assert score_to_size(_L_MAX) == 'XL'
+
+
+def test_score_to_size_below_xl_max_is_xl():
+    """A score just below the XL/XXL boundary maps to XL."""
+    assert score_to_size(_XL_MAX - 1) == 'XL'
+
+
+def test_score_to_size_at_xl_max_is_xxl():
+    """A score exactly at the XL/XXL boundary maps to XXL."""
+    assert score_to_size(_XL_MAX) == 'XXL'
+
+
+def test_score_to_size_zero_is_smallest():
+    """A zero score maps to the smallest size (XS)."""
+    assert score_to_size(0) == 'XS'
+
+
+def test_score_to_size_very_large_is_xxl():
+    """A very large score maps to the largest size (XXL)."""
+    assert score_to_size(_XL_MAX * 10) == 'XXL'
+
+
+def test_score_to_size_is_monotone_non_decreasing():
+    """The band mapping never assigns a smaller size to a larger score."""
+    order = {label: i for i, label in enumerate(COST_SIZES)}
+    prev = -1
+    for score in range(0, _XL_MAX + 50):
+        rank = order[score_to_size(score)]
+        assert rank >= prev
+        prev = rank

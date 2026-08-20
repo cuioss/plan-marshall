@@ -178,7 +178,7 @@ class TestExpectedInvariants:
         ADR-002 gate, Signal 2 only fires at ``phase >= 5-execute``, so the
         un-phased default never carries worktree invariants — they surface in
         the per-phase expectation instead (see
-        ``TestWorktreeInvariantGating`` and the integration test below).
+        ``TestWorktreeInvariantGating`` in the sibling module).
         """
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         status_path = plan_dir / 'status.json'

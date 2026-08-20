@@ -3,17 +3,9 @@
 """Tests for manage-status.py read + phase verbs + worktree-path resolution."""
 
 
-import json
 from argparse import Namespace
 
-from _manage_status_read_fixtures import (
-    cmd_create,
-    cmd_get_worktree_path,
-    cmd_progress,
-    cmd_read,
-    cmd_set_phase,
-    cmd_update_phase,
-)
+from _manage_status_read_fixtures import cmd_create, cmd_progress, cmd_read, cmd_set_phase, cmd_update_phase
 
 # =============================================================================
 # Test: Read Command
@@ -128,93 +120,3 @@ def test_progress_after_completion(plan_context, monkeypatch):
     result = cmd_progress(Namespace(plan_id='progress-done-plan'))
     assert result['progress']['completed_phases'] == 2
     assert result['progress']['percent'] == 50
-
-
-# =============================================================================
-# Test: cmd_get_worktree_path verb
-# =============================================================================
-#
-# cmd_get_worktree_path resolves status.metadata into a tri-state response
-# discriminated by `worktree_state`:
-# - use_worktree==false (or metadata absent) →
-#   worktree_state: disabled, worktree_path: ''
-# - use_worktree==true and worktree_path set →
-#   worktree_state: materialized, worktree_path: <abs>
-# - use_worktree==true and worktree_path missing/empty →
-#   worktree_state: pending, worktree_path: '', not_yet_materialized: true
-
-
-def test_get_worktree_path_resolved_when_use_worktree_true(plan_context):
-    """A materialized plan (worktree_path + branch persisted) → returns both.
-
-    The path and branch are no longer seeded at create — phase-5-execute Step
-    2.5 back-fills them at materialization. This test seeds the materialized
-    metadata shape directly (also the shape a legacy plan carries) and asserts
-    the verb reads it verbatim.
-    """
-    plan_id = 'wt-resolve-ok'
-    abs_path = '/tmp/worktrees/wt-resolve-ok'
-    branch = 'feature/wt-resolve-ok'
-    cmd_create(
-        Namespace(
-            plan_id=plan_id,
-            title='Resolve OK',
-            phases='1-init,2-refine',
-            force=False,
-            use_worktree=True,
-        )
-    )
-    # Simulate phase-5 materialization: back-fill worktree_path + branch.
-    status_path = plan_context.plan_dir_for(plan_id) / 'status.json'
-    status = json.loads(status_path.read_text(encoding='utf-8'))
-    status['metadata'] = {
-        'use_worktree': True,
-        'worktree_path': abs_path,
-        'worktree_branch': branch,
-    }
-    status_path.write_text(json.dumps(status), encoding='utf-8')
-
-    result = cmd_get_worktree_path(Namespace(plan_id=plan_id))
-    assert result['status'] == 'success'
-    assert result['use_worktree'] is True
-    assert result['worktree_state'] == 'materialized', (
-        f'Expected worktree_state=materialized, got '
-        f'{result.get("worktree_state")!r}.'
-    )
-    assert result['worktree_path'] == abs_path, (
-        f'Expected resolved worktree_path={abs_path!r}, got '
-        f'{result.get("worktree_path")!r}. The verb must read '
-        f'metadata.worktree_path verbatim — no recomputation.'
-    )
-    assert result['worktree_branch'] == branch
-
-
-def test_get_worktree_path_empty_when_use_worktree_false(plan_context):
-    """use_worktree=false → returns empty string (NOT an error).
-
-    Plans running against the main checkout legitimately have no worktree
-    path; the verb's empty-string contract lets callers branch cleanly on a
-    falsy value without parsing error envelopes.
-    """
-    plan_id = 'wt-resolve-false'
-    cmd_create(
-        Namespace(
-            plan_id=plan_id,
-            title='Resolve False',
-            phases='1-init,2-refine',
-            force=False,
-            use_worktree=False,
-        )
-    )
-    result = cmd_get_worktree_path(Namespace(plan_id=plan_id))
-    assert result['status'] == 'success'
-    assert result['use_worktree'] is False
-    assert result['worktree_state'] == 'disabled', (
-        f'Expected worktree_state=disabled, got '
-        f'{result.get("worktree_state")!r}.'
-    )
-    assert result['worktree_path'] == '', (
-        f"Expected empty worktree_path '', got "
-        f'{result.get("worktree_path")!r}. use_worktree=false MUST yield '
-        f'an empty string — never an error, never a missing key.'
-    )

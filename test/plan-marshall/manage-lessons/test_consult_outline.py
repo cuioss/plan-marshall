@@ -8,13 +8,14 @@ from _consult_fixtures import (
     OUTLINE_LESSON_IDS,
     OUTLINE_SKILL_PATH,
     PLAN_ID,
-    SOLUTION_OUTLINE_COMPONENT,
-    SOLUTION_OUTLINE_LESSON_ID,
     TEST_PATH,
     _consult,
     _seed_lesson,
     _write_outline,
 )
+from _lessons_helpers import SCRIPT_PATH
+
+from conftest import run_script
 
 
 class TestConsultOutlineResolution:
@@ -44,6 +45,82 @@ class TestConsultOutlineResolution:
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_id'
+
+
+class TestConsultCli:
+    """CLI plumbing: the subcommand is registered and carries the documented default."""
+
+    def test_cli_surfaces_matching_lesson(self, tmp_path):
+        """The consult verb round-trips through the argparse entry point."""
+        _seed_lesson(tmp_path, OUTLINE_LESSON_IDS[0], OUTLINE_COMPONENT)
+        _write_outline(tmp_path, [OUTLINE_SKILL_PATH])
+
+        result = run_script(
+            SCRIPT_PATH,
+            'consult',
+            '--plan-id',
+            PLAN_ID,
+            env_overrides={'PLAN_BASE_DIR': str(tmp_path)},
+        )
+
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'success'
+        assert data['surfaced_count'] == 1
+        assert data['components'] == [OUTLINE_COMPONENT]
+
+    def test_cli_default_cap_is_twenty_five(self, tmp_path):
+        """Omitting --max-per-component applies the documented default of 25."""
+        for lesson_id in OUTLINE_LESSON_IDS:
+            _seed_lesson(tmp_path, lesson_id, OUTLINE_COMPONENT)
+        _write_outline(tmp_path, [OUTLINE_SKILL_PATH])
+
+        result = run_script(
+            SCRIPT_PATH,
+            'consult',
+            '--plan-id',
+            PLAN_ID,
+            env_overrides={'PLAN_BASE_DIR': str(tmp_path)},
+        )
+
+        data = result.toon()
+        assert data['surfaced_count'] == len(OUTLINE_LESSON_IDS)
+        assert data['truncated'] is False
+
+    def test_cli_honours_explicit_cap(self, tmp_path):
+        """An explicit --max-per-component binds and discloses truncation."""
+        for lesson_id in OUTLINE_LESSON_IDS[:3]:
+            _seed_lesson(tmp_path, lesson_id, OUTLINE_COMPONENT)
+        _write_outline(tmp_path, [OUTLINE_SKILL_PATH])
+
+        result = run_script(
+            SCRIPT_PATH,
+            'consult',
+            '--plan-id',
+            PLAN_ID,
+            '--max-per-component',
+            '1',
+            env_overrides={'PLAN_BASE_DIR': str(tmp_path)},
+        )
+
+        data = result.toon()
+        assert data['truncated'] is True
+        assert data['total_matched'] == 3
+        assert data['surfaced_count'] == 1
+
+    def test_cli_rejects_invalid_plan_id(self, tmp_path):
+        """A malformed plan_id is rejected by the canonical validator."""
+        result = run_script(
+            SCRIPT_PATH,
+            'consult',
+            '--plan-id',
+            'Not A Plan',
+            env_overrides={'PLAN_BASE_DIR': str(tmp_path)},
+        )
+
+        data = result.toon_or_error()
+        assert data['status'] == 'error'
+        assert data['error'] == 'invalid_plan_id'
 
 
 class TestPathToComponentMapping:
@@ -85,60 +162,3 @@ class TestPathToComponentMapping:
         result = _consult(tmp_path)
 
         assert result['components'] == [OUTLINE_COMPONENT]
-
-
-class TestComponentFiltering:
-    """Only active lessons whose component is EXACTLY a derived one are surfaced."""
-
-    def test_matching_component_lesson_is_surfaced(self, tmp_path):
-        """A lesson naming the derived component appears in surfaced[]."""
-        _seed_lesson(tmp_path, OUTLINE_LESSON_IDS[0], OUTLINE_COMPONENT)
-        _write_outline(tmp_path, [OUTLINE_SKILL_PATH])
-
-        result = _consult(tmp_path)
-
-        assert result['surfaced_count'] == 1
-        row = result['surfaced'][0]
-        assert row['lesson_id'] == OUTLINE_LESSON_IDS[0]
-        assert row['component'] == OUTLINE_COMPONENT
-        assert row['title'] == f'Title for {OUTLINE_LESSON_IDS[0]}'
-
-    def test_bare_bundle_component_is_not_surfaced(self, tmp_path):
-        """Matching is exact string equality — a bare bundle does not expand."""
-        _seed_lesson(tmp_path, OUTLINE_LESSON_IDS[0], 'plan-marshall')
-        _write_outline(tmp_path, [OUTLINE_SKILL_PATH])
-
-        result = _consult(tmp_path)
-
-        assert result['surfaced_count'] == 0
-        assert result['total_matched'] == 0
-
-    def test_different_skill_component_is_not_surfaced(self, tmp_path):
-        """A lesson on a sibling skill the plan does not edit is excluded."""
-        _seed_lesson(tmp_path, SOLUTION_OUTLINE_LESSON_ID, SOLUTION_OUTLINE_COMPONENT)
-        _write_outline(tmp_path, [OUTLINE_SKILL_PATH])
-
-        result = _consult(tmp_path)
-
-        assert result['surfaced_count'] == 0
-
-    def test_superseded_lesson_is_not_surfaced(self, tmp_path):
-        """Only active lessons are surfaced; a superseded stub is skipped."""
-        _seed_lesson(tmp_path, OUTLINE_LESSON_IDS[0], OUTLINE_COMPONENT, status='superseded')
-        _seed_lesson(tmp_path, OUTLINE_LESSON_IDS[1], OUTLINE_COMPONENT)
-        _write_outline(tmp_path, [OUTLINE_SKILL_PATH])
-
-        result = _consult(tmp_path)
-
-        assert [row['lesson_id'] for row in result['surfaced']] == [OUTLINE_LESSON_IDS[1]]
-
-    def test_missing_corpus_returns_zero_surfaced(self, tmp_path):
-        """A plan whose components carry no lessons completes with zero surfaced."""
-        _write_outline(tmp_path, [OUTLINE_SKILL_PATH])
-
-        result = _consult(tmp_path)
-
-        assert result['status'] == 'success'
-        assert result['surfaced'] == []
-        assert result['surfaced_count'] == 0
-        assert result['truncated'] is False

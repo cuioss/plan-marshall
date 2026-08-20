@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: F811
 """Tests for the unified ``manage-locks/merge_lock.py`` — the single main-anchored
 merge-to-main serializer fronted by a FIFO admission queue.
 """
@@ -10,15 +9,58 @@ from __future__ import annotations
 
 import json
 from argparse import Namespace
+from pathlib import Path
 
-from _manage_locks_merge_lock_fixtures import (
-    _make_live_plan,
-    # Fixtures — resolved by pytest, not referenced by name:
-    _stub_title_tokens,  # noqa: F401
-    _waiting_plan_ids,
-    isolated_base,  # noqa: F401
-    merge_lock,
-)
+import pytest
+from _manage_locks_merge_lock_fixtures import _make_live_plan, _TokenRecorder, _waiting_plan_ids, merge_lock
+
+# =============================================================================
+# Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def isolated_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
+    """Stage an isolated PLAN_BASE_DIR under tmp_path.
+
+    Layout::
+
+        tmp_path/main/.plan/local/                  (PLAN_BASE_DIR — main stand-in)
+        tmp_path/main/.plan/local/plans/            (holder plan dirs resolve here)
+        tmp_path/main/.plan/local/merge.lock        (the O_EXCL lock resolves here)
+        tmp_path/main/.plan/local/merge-queue.json  (the FIFO queue resolves here)
+
+    Sets PLAN_BASE_DIR to the main stand-in so the lock resolves to
+    ``<base>/merge.lock``, the FIFO queue to ``<base>/merge-queue.json``, and
+    ``holder_is_dead(holder)`` resolves the holder plan dir to
+    ``<base>/plans/{holder}``.
+    """
+    base = tmp_path / 'main' / '.plan' / 'local'
+    (base / 'plans').mkdir(parents=True)
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+    return {
+        'base': base,
+        'lock_path': base / 'merge.lock',
+        'queue_path': base / 'merge-queue.json',
+    }
+
+
+@pytest.fixture(autouse=True)
+def _stub_title_tokens(monkeypatch: pytest.MonkeyPatch) -> _TokenRecorder:
+    """Autouse: stub the three best-effort title-token seams for EVERY test so the
+    direct ``run_acquire`` / ``run_release`` unit tests never spawn the real
+    executor subprocess (the token surface is best-effort and out-of-scope for the
+    lock-correctness assertions). Tests that care about the token surface request
+    this fixture by name and assert on the recorder.
+
+    The CLI-subprocess concurrency tests run in a SEPARATE spawned process where
+    this monkeypatch does not apply — there the real best-effort wrappers run and
+    swallow any executor failure, exactly as in production.
+    """
+    recorder = _TokenRecorder()
+    recorder.install(monkeypatch)
+    return recorder
+
 
 # =============================================================================
 # Idempotent re-poll — a blocked plan re-polling KEEPS its FIFO position
@@ -192,3 +234,66 @@ class TestReleaseAdvancesFront:
         assert rel['action'] == 'released'
         # Front dequeued; w1 remains → post-removal depth is 1.
         assert rel['waiting_count'] == 1
+
+
+# =============================================================================
+# Release
+# =============================================================================
+
+
+class TestRelease:
+    def test_release_removes_lock(self, isolated_base: dict) -> None:
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        assert isolated_base['lock_path'].is_file()
+
+        result = merge_lock.run_release(Namespace(plan_id='plan-a'))
+        assert result['status'] == 'success'
+        assert result['action'] == 'released'
+        assert not isolated_base['lock_path'].exists()
+
+    def test_release_when_free_is_noop_success(self, isolated_base: dict) -> None:
+        result = merge_lock.run_release(Namespace(plan_id='plan-a'))
+        assert result['status'] == 'success'
+        assert result['action'] == 'noop'
+
+    def test_release_twice_is_idempotent_noop(self, isolated_base: dict) -> None:
+        """A second release (after the lock is already freed) is a no-op success —
+        a crashed-and-retried finalize must not error on the second release."""
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        first = merge_lock.run_release(Namespace(plan_id='plan-a'))
+        assert first['action'] == 'released'
+
+        second = merge_lock.run_release(Namespace(plan_id='plan-a'))
+        assert second['status'] == 'success'
+        assert second['action'] == 'noop'
+
+    def test_release_foreign_holder_is_noop_and_leaves_lock_intact(self, isolated_base: dict) -> None:
+        """A caller that is not the recorded holder must not remove the lock."""
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+
+        result = merge_lock.run_release(Namespace(plan_id='plan-b'))
+        assert result['status'] == 'success'
+        assert result['action'] == 'noop'
+        assert result['holder'] == 'plan-a'
+        # The foreign holder's lock is left intact.
+        assert isolated_base['lock_path'].is_file()
+        assert isolated_base['lock_path'].read_text(encoding='utf-8').strip() == 'plan-a'
+
+    def test_release_dequeues_even_when_caller_never_held_the_lock(self, isolated_base: dict) -> None:
+        """A plan that gave up waiting (never held the lock) must STILL be dequeued
+        from the FIFO queue on release — otherwise its stale entry would wedge the
+        front. The foreign-holder release noop leaves the lock intact but removes
+        the caller's own waiting entry so the front can advance."""
+        base = isolated_base['base']
+        for name in ('front', 'waiter'):
+            _make_live_plan(base, name)
+        merge_lock.run_acquire(Namespace(plan_id='front', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='waiter', timeout=5.0))
+        assert _waiting_plan_ids(isolated_base['queue_path']) == ['front', 'waiter']
+
+        # The waiter gives up: it releases though it never held the lock.
+        rel = merge_lock.run_release(Namespace(plan_id='waiter'))
+        assert rel['action'] == 'noop'
+        # The front holder's lock is intact, but the waiter is gone from the queue.
+        assert isolated_base['lock_path'].read_text(encoding='utf-8').strip() == 'front'
+        assert _waiting_plan_ids(isolated_base['queue_path']) == ['front']

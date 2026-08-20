@@ -275,3 +275,95 @@ def test_mark_step_force_migrates_legacy_bare_string_preserving_prior_outcome(pl
         'firing_count': 2,
         'prior_firings': [{'outcome': 'done'}],
     }
+
+
+def test_mark_step_rejects_legacy_bare_string_entry(plan_context):
+    """A seeded bare-string entry must be rejected with legacy_string_entry error."""
+    plan_id = 'mark-step-legacy'
+    _make_plan(plan_id)
+    status = read_status(plan_id)
+    status.setdefault('metadata', {})['phase_steps'] = {'1-init': {'step-a': 'done'}}
+    write_status(plan_id, status)
+
+    result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='ignored'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'legacy_string_entry'
+    assert result['existing_outcome'] == 'done'
+    assert result['requested_outcome'] == 'done'
+    assert result['phase'] == '1-init'
+    assert result['step'] == 'step-a'
+
+    persisted = read_status(plan_id)
+    assert persisted['metadata']['phase_steps']['1-init']['step-a'] == 'done'
+
+
+# =============================================================================
+# Multi-phase / multi-step coexistence
+# =============================================================================
+
+
+def test_mark_step_multi_phase_and_multi_step(plan_context):
+    """Independent phases and steps should coexist in phase_steps."""
+    plan_id = 'mark-step-multi'
+    _make_plan(plan_id)
+
+    cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done'))
+    cmd_mark_step_done(_args(plan_id, '1-init', 'step-b', 'skipped'))
+    cmd_mark_step_done(_args(plan_id, '2-refine', 'clarify', 'done', display_detail='clarified'))
+    cmd_mark_step_done(_args(plan_id, '3-outline', 'draft', 'done'))
+
+    persisted = read_status(plan_id)
+    phase_steps = persisted['metadata']['phase_steps']
+
+    assert phase_steps['1-init'] == {
+        'step-a': {'outcome': 'done', 'display_detail': None},
+        'step-b': {'outcome': 'skipped', 'display_detail': None},
+    }
+    assert phase_steps['2-refine'] == {
+        'clarify': {'outcome': 'done', 'display_detail': 'clarified'},
+    }
+    assert phase_steps['3-outline'] == {
+        'draft': {'outcome': 'done', 'display_detail': None},
+    }
+
+
+# =============================================================================
+# Error paths
+# =============================================================================
+
+
+def test_mark_step_missing_plan(plan_context):
+    """Missing plan: require_status emits TOON and returns None."""
+    result = cmd_mark_step_done(_args('nonexistent-plan', '1-init', 'step-a', 'done'))
+    assert result is None
+
+
+def test_mark_step_invalid_outcome(plan_context):
+    """Invalid outcome value returns invalid_outcome error without writing."""
+    plan_id = 'mark-step-bad-outcome'
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'bogus'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_outcome'
+
+    persisted = read_status(plan_id)
+    assert 'phase_steps' not in persisted.get('metadata', {})
+
+
+def test_mark_step_failed_idempotent(plan_context):
+    """Re-marking a step 'failed' with same detail is a no-op (changed=False)."""
+    plan_id = 'mark-step-failed-idempotent'
+    _make_plan(plan_id)
+    cmd_mark_step_done(
+        _args(plan_id, '6-finalize', 'automatic-review', 'failed', display_detail='timeout')
+    )
+
+    second = cmd_mark_step_done(
+        _args(plan_id, '6-finalize', 'automatic-review', 'failed', display_detail='timeout')
+    )
+
+    assert second['status'] == 'success'
+    assert second['changed'] is False
+    assert second['outcome'] == 'failed'

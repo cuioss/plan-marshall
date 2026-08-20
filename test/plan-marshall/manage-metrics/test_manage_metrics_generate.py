@@ -6,14 +6,17 @@
 import pytest
 from _manage_metrics_fixtures import (
     ns_accumulate,
+    ns_end_phase,
     ns_generate,
+    ns_start_phase,
 )
 from _manage_metrics_module_fixtures import (
     _UNSEEDED_PLAN_IDS,
-    _recorded_phase_row,
     _write_dispatch_boundaries,
     cmd_accumulate_agent_usage,
+    cmd_end_phase,
     cmd_generate,
+    cmd_start_phase,
     manage_metrics,
 )
 
@@ -44,6 +47,50 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
 
     monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
     return plan_context
+
+
+def test_generate_total_row_sums_three_columns_independently(plan_context):
+    """The Total row sums Worked, Reported (wall), and Idle independently."""
+    manage_metrics.write_metrics(
+        'metrics-gen-total',
+        {
+            'phases': {
+                '1-init': {'duration_seconds': 200, 'agent_duration_ms': 120000},
+                '2-refine': {'duration_seconds': 100, 'agent_duration_ms': 40000},
+            },
+        },
+    )
+
+    result = cmd_generate(ns_generate('metrics-gen-total'))
+    assert result['status'] == 'success'
+    # worked total = 120 + 40 = 160 s; wall total = 200 + 100 = 300 s;
+    # idle total = (200-120) + (100-40) = 80 + 60 = 140 s.
+    assert result['total_worked_seconds'] == 160.0
+    assert result['total_wall_seconds'] == 300.0
+    assert result['total_idle_seconds'] == 140.0
+
+
+def test_generate_no_data(plan_context):
+    """generate returns error when no metrics data exists."""
+    result = cmd_generate(ns_generate('metrics-gen-02'))
+    assert result['status'] == 'error'
+    assert 'No metrics data' in str(result.get('message', ''))
+
+
+def test_generate_all_six_phases(plan_context):
+    """generate handles all 6 phases."""
+    phases = ['1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-finalize']
+    for phase in phases:
+        cmd_start_phase(ns_start_phase('metrics-gen-03', phase))
+        cmd_end_phase(ns_end_phase('metrics-gen-03', phase))
+
+    result = cmd_generate(ns_generate('metrics-gen-03'))
+    assert result['status'] == 'success'
+    assert result['phases_recorded'] == 6
+
+    md_content = (plan_context.plan_dir_for('metrics-gen-03') / 'metrics.md').read_text()
+    for phase in phases:
+        assert phase in md_content
 
 
 class TestGenerateReconcilesDispatchBoundaries:
@@ -243,52 +290,85 @@ class TestGenerateReconcilesAccumulator:
         assert six['agent_duration_ms'] == 60000  # folded from accumulator
 
 
-class TestReconcileFloorKeepsPartiality:
-    """The reconcile `plan-marshall:plan-retrospective` performs before reading
-    `metrics.md` (its Step 2.5) folds the OPEN 6-finalize accumulator FLOOR into the
-    phase row while leaving the phase marked partial.
+class TestGenerateRendersFourFieldUsage:
+    """cmd_generate renders the four usage fields and the billing-weighted total."""
 
-    This pins the D3 guarantee of plan 050: a run where the largest finalize phase
-    did work must read NON-ZERO for that phase, and the partiality machinery must
-    still flag the genuinely-absent boundary. The retrospective (order 995) reads
-    per-phase tokens from `metrics.md` before `default:record-metrics` (order 998)
-    performs the authoritative close, so an unreconciled `metrics.md` renders
-    6-finalize as zero. Calling `generate` before the read folds the durable
-    accumulator into the row (a non-zero floor) WITHOUT stamping an `end_time`, so
-    record-metrics' later close stays authoritative (its accumulator read is
-    assign-cumulative, so it overwrites the floor with the complete total) and a
-    genuinely-open phase is still reported as partial.
-    """
-
-    def test_reconcile_folds_finalize_floor_but_keeps_it_marked_partial(self, plan_context):
-        # A real non-zero phase, NOT a fixture that closes trivially: phases 1-5 are
-        # closed; 6-finalize accrued subagent tokens into its durable accumulator but
-        # was never token-closed (record-metrics has not run yet).
-        phases = {name: _recorded_phase_row() for name in manage_metrics.PHASE_NAMES[:5]}
-        phases['6-finalize'] = {'duration_seconds': 600}
-        manage_metrics.write_metrics('d3-reconcile-floor', {'phases': phases})
-        cmd_accumulate_agent_usage(
-            ns_accumulate(
-                'd3-reconcile-floor', '6-finalize', total_tokens=54321, tool_uses=11, duration_ms=120000
-            )
+    def test_renders_four_fields_and_billing_total(self, plan_context):
+        """metrics.md Phase Details renders each new field plus the billing note."""
+        manage_metrics.write_metrics(
+            'gen-4f',
+            {
+                'phases': {
+                    '5-execute': {
+                        'duration_seconds': 600,
+                        'agent_duration_ms': 300000,
+                        'input_tokens': 1000,
+                        'output_tokens': 200,
+                        'cache_read_input_tokens': 10000,
+                        'cache_creation_input_tokens': 400,
+                        'billing_weighted_total': 2700,
+                    },
+                },
+            },
         )
 
-        # The reconcile the retrospective performs before aspect 4 reads metrics.md.
-        result = cmd_generate(ns_generate('d3-reconcile-floor'))
+        result = cmd_generate(ns_generate('gen-4f'))
         assert result['status'] == 'success'
 
-        # (1) The largest finalize phase now reads its FLOOR, not zero.
-        six = manage_metrics.read_metrics_raw('d3-reconcile-floor')['phases']['6-finalize']
-        assert six['total_tokens'] == 54321, (
-            'The reconcile must fold the 6-finalize accumulator floor into the row so '
-            'the retrospective reads a phase that did work as non-zero, not zero.'
+        md = (plan_context.plan_dir_for('gen-4f') / 'metrics.md').read_text()
+        assert '- **Input tokens**: 1,000' in md
+        assert '- **Output tokens**: 200' in md
+        assert '- **Cache read input tokens**: 10,000' in md
+        assert '- **Cache creation input tokens**: 400' in md
+        assert '- **Billing-weighted total**: 2,700' in md
+        # The bullet DEFINES the measure — names its population and its weights —
+        # rather than apologising for rendering it.
+        assert 'derived-cost population' in md
+        assert '0.1 × cache_read' in md
+        assert '1.25 × cache_creation' in md
+        # And the figure now also has a first-class column of its own.
+        assert 'Billing (cost)' in md
+
+    def test_absent_four_fields_render_nothing(self, plan_context):
+        """A phase without the four fields renders no usage-view lines (no '- **Input tokens**')."""
+        manage_metrics.write_metrics(
+            'gen-4f-absent',
+            {
+                'phases': {
+                    '1-init': {'duration_seconds': 100, 'agent_duration_ms': 50000},
+                },
+            },
         )
 
-        # (2) The partiality machinery is untouched: no end_time was stamped, so the
-        # genuinely-open phase is STILL flagged — record-metrics (998) still owes the
-        # authoritative close, and a future genuine omission still surfaces here.
-        assert result['any_phase_missing_end_time'] is True
-        assert '6-finalize' in result['phases_missing_end_time'], (
-            'Folding the floor must not close the phase: leaving 6-finalize in '
-            'phases_missing_end_time is what keeps the partiality signal honest.'
+        result = cmd_generate(ns_generate('gen-4f-absent'))
+        assert result['status'] == 'success'
+
+        md = (plan_context.plan_dir_for('gen-4f-absent') / 'metrics.md').read_text()
+        assert '- **Input tokens**' not in md
+        assert '- **Billing-weighted total**' not in md
+
+    def test_total_tokens_column_unchanged_alongside_four_fields(self, plan_context):
+        """The legacy Tokens column still renders total_tokens when the four fields exist."""
+        manage_metrics.write_metrics(
+            'gen-4f-coexist',
+            {
+                'phases': {
+                    '5-execute': {
+                        'duration_seconds': 600,
+                        'agent_duration_ms': 300000,
+                        'total_tokens': 50000,
+                        'input_tokens': 1000,
+                        'output_tokens': 200,
+                        'billing_weighted_total': 1200,
+                    },
+                },
+            },
         )
+
+        result = cmd_generate(ns_generate('gen-4f-coexist'))
+        assert result['status'] == 'success'
+        # total_tokens still flows to the Tokens column / Total tokens detail line.
+        assert result['total_tokens'] == 50000
+        md = (plan_context.plan_dir_for('gen-4f-coexist') / 'metrics.md').read_text()
+        assert '- **Total tokens**: 50,000' in md
+        assert '- **Input tokens**: 1,000' in md

@@ -108,6 +108,29 @@ def test_non_terminal_with_require_terminal_returns_error(plan_context):
     assert result['step'] == 'impl'
 
 
+def test_non_terminal_near_miss_does_not_escalate_to_mismatched_key(plan_context):
+    """A near-miss orphan whose outcome is NON-terminal must NOT trigger the
+    mismatched-key branch — only a terminal orphan record counts as a near-miss.
+    With no terminal record under any key, the verdict is step_record_missing."""
+    plan_id = 'assert-near-miss-nonterminal'
+    _make_plan(plan_id)
+    status = read_status(plan_id)
+    status.setdefault('metadata', {})['phase_steps'] = {
+        '6-finalize': {'plan-retrospectiv': {'outcome': 'in_progress', 'display_detail': None}}
+    }
+    write_status(plan_id, status)
+
+    result = cmd_assert_step_recorded(
+        _assert_args(plan_id, '6-finalize', 'plan-retrospective', require_terminal=True)
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'step_record_missing'
+    assert result['recorded'] is False
+    assert result['outcome'] is None
+    assert 'orphan_key' not in result
+
+
 def test_bare_string_legacy_entry_not_recorded(plan_context):
     """A legacy bare-string entry is not a dict, so it does NOT count as recorded."""
     plan_id = 'assert-legacy-string'
@@ -121,6 +144,21 @@ def test_bare_string_legacy_entry_not_recorded(plan_context):
     assert result['status'] == 'success'
     assert result['recorded'] is False
     assert result['outcome'] is None
+
+
+def test_bare_record_matches_default_prefixed_query(plan_context):
+    """Record via ``push`` then assert via ``default:push`` → recorded (no mismatch)."""
+    plan_id = 'assert-canon-bare-to-default'
+    _make_plan(plan_id)
+    _seed_step(plan_id, '6-finalize', 'push', 'done')
+
+    result = cmd_assert_step_recorded(
+        _assert_args(plan_id, '6-finalize', 'default:push', require_terminal=True)
+    )
+
+    assert result['status'] == 'success'
+    assert result['recorded'] is True
+    assert result['outcome'] == 'done'
 
 
 # =============================================================================
@@ -162,46 +200,3 @@ def test_step_absent_with_require_terminal_returns_error(plan_context):
     assert result['outcome'] is None
     assert result['phase'] == '1-init'
     assert result['step'] == 'step-missing'
-
-
-def test_phase_absent_returns_not_recorded(plan_context):
-    """A phase with no recorded steps reports recorded=false."""
-    plan_id = 'assert-absent-phase'
-    _make_plan(plan_id)
-    _seed_step(plan_id, '1-init', 'step-a', 'done')
-
-    result = cmd_assert_step_recorded(_assert_args(plan_id, '6-finalize', 'push'))
-
-    assert result['status'] == 'success'
-    assert result['recorded'] is False
-    assert result['outcome'] is None
-
-
-def test_phase_absent_with_require_terminal_returns_error(plan_context):
-    """--require-terminal on a phase with no steps escalates to step_record_missing."""
-    plan_id = 'assert-absent-phase-require'
-    _make_plan(plan_id)
-    _seed_step(plan_id, '1-init', 'step-a', 'done')
-
-    result = cmd_assert_step_recorded(_assert_args(plan_id, '6-finalize', 'push', require_terminal=True))
-
-    assert result['status'] == 'error'
-    assert result['error'] == 'step_record_missing'
-    assert result['recorded'] is False
-
-
-# =============================================================================
-# No steps recorded at all (no phase_steps metadata) -> not recorded
-# =============================================================================
-
-
-def test_no_phase_steps_metadata_returns_not_recorded(plan_context):
-    """A freshly created plan with no phase_steps metadata reports recorded=false."""
-    plan_id = 'assert-no-steps'
-    _make_plan(plan_id)
-
-    result = cmd_assert_step_recorded(_assert_args(plan_id, '1-init', 'step-a'))
-
-    assert result['status'] == 'success'
-    assert result['recorded'] is False
-    assert result['outcome'] is None

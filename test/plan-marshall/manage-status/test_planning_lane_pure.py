@@ -5,116 +5,16 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest
 from _planning_lane_fixtures import (
-    _light_setup,
-    _ns_escalate,
-    _ns_route,
+    _BOILERPLATE_CITATION,
+    _TARGET_BELOW_NESTED_HEADING,
+    _mod,
     _pure,
-    cmd_planning_lane_escalate,
-    cmd_planning_lane_route,
+    _write_ingested_request,
+    evaluate_signals_pure,
+    scope_estimate_from_request_pure,
 )
-
-from conftest import load_script_module
-
-
-def test_escalate_is_monotonic_route_cannot_downgrade(plan_context):
-    """After escalate, a subsequent light-resolving route does NOT clobber deep on disk.
-
-    The one-way invariant: once lane_escalated=true is persisted, a fresh route
-    that resolves light must not silently downgrade the escalated lane. The route
-    verb persists planning_lane, but the sticky lane_escalated flag remains, so
-    the deep escalation evidence is preserved.
-    """
-    # Escalate first.
-    plan_dir = _light_setup(plan_context, 'pl-monotonic')
-    cmd_planning_lane_escalate(_ns_escalate('pl-monotonic', trigger='premise', persist=True))
-
-    # A light-resolving route does not clear the sticky escalation flag.
-    cmd_planning_lane_route(_ns_route('pl-monotonic', persist=True))
-
-    # lane_escalated remains true (sticky), escalation evidence preserved.
-    status = json.loads((plan_dir / 'status.json').read_text())
-    assert status['metadata']['lane_escalated'] is True
-    assert status['metadata']['escalation_trigger'] == 'premise'
-
-
-@pytest.mark.parametrize('trigger', ['explosion', 'premise', 'cross_cutting'])
-def test_escalate_records_each_trigger(plan_context, trigger):
-    """Each escalation trigger value round-trips into escalation_trigger."""
-    plan_dir = _light_setup(plan_context, f'pl-trig-{trigger}')
-
-    result = cmd_planning_lane_escalate(_ns_escalate(f'pl-trig-{trigger}', trigger=trigger, persist=True))
-
-    assert result['escalation_trigger'] == trigger
-    status = json.loads((plan_dir / 'status.json').read_text())
-    assert status['metadata']['escalation_trigger'] == trigger
-
-
-# =============================================================================
-# Error path
-# =============================================================================
-
-
-def test_route_plan_dir_not_found_errors(plan_context):
-    """route against a missing plan dir returns a structured error."""
-    result = cmd_planning_lane_route(_ns_route('pl-missing'))
-
-    assert result['status'] == 'error'
-    assert result['error'] == 'plan_dir_not_found'
-
-
-def test_escalate_plan_dir_not_found_errors(plan_context):
-    """escalate against a missing plan dir returns a structured error."""
-    result = cmd_planning_lane_escalate(_ns_escalate('pl-missing-esc'))
-
-    assert result['status'] == 'error'
-    assert result['error'] == 'plan_dir_not_found'
-
-
-# =============================================================================
-# Dispatch wiring
-# =============================================================================
-
-
-def test_planning_lane_route_registered_in_manage_status_dispatch():
-    """The route verb resolves to cmd_planning_lane_route in manage-status.py."""
-    import argparse  # noqa: PLC0415
-
-    manage_status = load_script_module(
-        'plan-marshall', 'manage-status', 'manage-status.py', '_manage_status_dispatch_check_pl_route'
-    )
-
-    assert callable(manage_status.cmd_planning_lane_route)
-    p = argparse.ArgumentParser()
-    sub = p.add_subparsers(dest='cmd')
-    lane = sub.add_parser('planning-lane')
-    lane_sub = lane.add_subparsers(dest='verb')
-    route = lane_sub.add_parser('route')
-    route.set_defaults(func=manage_status.cmd_planning_lane_route)
-    ns = p.parse_args(['planning-lane', 'route'])
-    assert ns.func is manage_status.cmd_planning_lane_route
-
-
-def test_planning_lane_escalate_registered_in_manage_status_dispatch():
-    """The escalate verb resolves to cmd_planning_lane_escalate in manage-status.py."""
-    import argparse  # noqa: PLC0415
-
-    manage_status = load_script_module(
-        'plan-marshall', 'manage-status', 'manage-status.py', '_manage_status_dispatch_check_pl_esc'
-    )
-
-    assert callable(manage_status.cmd_planning_lane_escalate)
-    p = argparse.ArgumentParser()
-    sub = p.add_subparsers(dest='cmd')
-    lane = sub.add_parser('planning-lane')
-    lane_sub = lane.add_subparsers(dest='verb')
-    esc = lane_sub.add_parser('escalate')
-    esc.set_defaults(func=manage_status.cmd_planning_lane_escalate)
-    ns = p.parse_args(['planning-lane', 'escalate'])
-    assert ns.func is manage_status.cmd_planning_lane_escalate
 
 
 def test_pure_all_light_signals_resolve_light():
@@ -256,3 +156,180 @@ def test_pure_multiple_deep_signals_accumulate_in_fired_order():
         'S3:change_type',
         'S4:compatibility',
     ]
+
+
+def test_pure_override_defaults_to_none_when_omitted():
+    """The override argument is optional and defaults to None (no S6)."""
+    result = evaluate_signals_pure(
+        scope_estimate='surgical',
+        change_type='bug_fix',
+        compatibility='deprecation',
+        plan_source='lesson',
+        request_concrete=True,
+    )
+
+    assert result['lane'] == 'light'
+    assert result['signals']['planning_lane_override'] is None
+
+
+def test_request_is_concrete_is_module_level_importable():
+    """_request_is_concrete is importable for downstream re-derivation of S5."""
+    assert callable(_mod._request_is_concrete)
+
+
+@pytest.mark.parametrize(
+    'body',
+    [
+        'Update `marketplace/bundles/plan-marshall/skills/x/scripts/x.py` to fix it.',
+        'Run python3 .plan/execute-script.py plan-marshall:foo:foo bar.',
+        'Use the manage-status verb to read the plan.',
+        'Here is a fenced block:\n```\ncode\n```\n',
+    ],
+)
+def test_request_is_concrete_true_for_each_anchor(body):
+    """Each S5 anchor (path / CLI / notation / fence) marks the body concrete."""
+    assert _mod._request_is_concrete(body) is True
+
+
+@pytest.mark.parametrize('body', ['', 'The thing should do the thing, somehow.'])
+def test_request_is_concrete_false_for_anchorless_body(body):
+    """An empty or anchorless body is not concrete (→ S5 deep).
+
+    Re-justified under the whole-body read: the empty case now arrives here only
+    when ``request.md`` is genuinely absent, unreadable, or empty — never as a
+    side effect of an H2 section boundary. S5 and the scope band agree on that
+    input (S5 → not concrete, scope → declared unknown), and both bias deep, so
+    the unscoreable request is widened by two independent signals rather than
+    silently narrowed by either.
+    """
+    assert _mod._request_is_concrete(body) is False
+
+
+# =============================================================================
+# _read_request_body — the whole-body, heading-blind read
+# =============================================================================
+#
+# The reader must be robust to an ingested spec carrying its own '## ' headings,
+# which is the NORMAL case for every orchestrated plan. The shared markdown
+# splitter starts a new section on any line beginning '## ' with no nesting
+# awareness, so a section-scoped read truncated the request at the ingested
+# body's first nested heading and scored boilerplate instead.
+
+
+def test_read_request_body_returns_text_after_a_nested_h2_heading(plan_context):
+    """The read spans the whole body, including text below a nested '## ' heading.
+
+    The regression the whole-body read exists to prevent: with a section-scoped
+    read this target is unreachable, because '## Objective' terminates the
+    'Original Input' section before the surface list is ever seen.
+    """
+    plan_dir = plan_context.plan_dir_for('pl-read-nested-h2')
+    _write_ingested_request(plan_dir)
+
+    body = _mod._read_request_body('pl-read-nested-h2')
+
+    # Text below the first nested heading is present.
+    assert _TARGET_BELOW_NESTED_HEADING in body
+    assert '## Expected Surface' in body
+    assert 'doc/concepts/orchestration.adoc' in body
+    # The ingested spec's own headings survive verbatim — nothing was consumed
+    # as a section boundary.
+    assert '## Objective' in body
+
+
+def test_read_request_body_strips_only_the_host_title_line(plan_context):
+    """Only the host document's own '# Request' title line is removed."""
+    plan_dir = plan_context.plan_dir_for('pl-read-title-strip')
+    _write_ingested_request(plan_dir)
+
+    body = _mod._read_request_body('pl-read-title-strip')
+
+    assert '# Request' not in body
+    # The INGESTED spec's own '# PLAN-99' title is not the host title and stays.
+    assert '# PLAN-99: An ingested orchestrator plan spec' in body
+    # Header metadata lines are not a section boundary and are retained.
+    assert 'source: description' in body
+
+
+def test_read_request_body_retains_a_non_first_line_request_heading(plan_context):
+    """Only line 1 is eligible for the title strip — a later '# Request…' stays.
+
+    The strip is anchored to the FIRST line rather than matched anywhere,
+    because an ingested spec may legitimately carry its own ``# Request …``
+    heading. Dropping that would silently remove request narrative and would
+    contradict the docstring's ONLY-line-removed contract.
+    """
+    plan_dir = plan_context.plan_dir_for('pl-read-nested-request-heading')
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'request.md').write_text(
+        '# Request: host title\n'
+        '\n'
+        'source: description\n'
+        '\n'
+        '# Request routing rework\n'
+        '\n'
+        'Body naming marketplace/bundles/plan-marshall/skills/x/y.py\n',
+        encoding='utf-8',
+    )
+
+    body = _mod._read_request_body('pl-read-nested-request-heading')
+
+    # The host title (line 1) is gone...
+    assert '# Request: host title' not in body
+    # ...but the ingested spec's own '# Request …' heading is preserved.
+    assert '# Request routing rework' in body
+
+
+def test_read_request_body_counts_targets_the_truncating_read_could_not_reach(plan_context):
+    """The scored body yields the target paths, not just the boilerplate citation.
+
+    Pins the end-to-end consequence of the read change on the same fixture: the
+    truncated head region carries exactly one path — a citation — which would
+    band ``surgical``; the whole body carries five, which lands in the 4–7 middle
+    band, ``single_module``.
+    """
+    plan_dir = plan_context.plan_dir_for('pl-read-target-count')
+    _write_ingested_request(plan_dir)
+
+    body = _mod._read_request_body('pl-read-target-count')
+    paths = _mod._distinct_paths(body)
+
+    assert _BOILERPLATE_CITATION in paths
+    assert _TARGET_BELOW_NESTED_HEADING in paths
+    assert len(paths) == 5, sorted(paths)
+    assert scope_estimate_from_request_pure(body) == 'single_module'
+
+
+def test_read_request_body_empty_when_request_absent(plan_context):
+    """A plan with no request.md reads as the empty (declared-unknown) body."""
+    plan_dir = plan_context.plan_dir_for('pl-read-absent')
+    plan_dir.mkdir(parents=True, exist_ok=True)
+
+    assert _mod._read_request_body('pl-read-absent') == ''
+
+
+def test_read_request_body_empty_when_only_the_title_line_present(plan_context):
+    """A request.md carrying nothing but the title line reads as empty, not as chrome."""
+    plan_dir = plan_context.plan_dir_for('pl-read-title-only')
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'request.md').write_text('# Request: nothing else\n', encoding='utf-8')
+
+    assert _mod._read_request_body('pl-read-title-only') == ''
+
+
+def test_read_request_body_handles_non_utf8_request(plan_context):
+    """A non-UTF-8 request.md degrades to the declared unknown, never an exception.
+
+    ``Path.read_text(encoding='utf-8')`` raises ``UnicodeDecodeError`` — a
+    ``ValueError`` subtype, NOT an ``OSError`` — so an ``except OSError`` guard
+    alone would let it escape and crash the phase. This asserts the widened
+    guard routes an undecodable body to the same unscoreable path as a missing
+    file.
+    """
+    plan_dir = plan_context.plan_dir_for('pl-read-non-utf8')
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    # 0xFF is not a valid UTF-8 start byte.
+    (plan_dir / 'request.md').write_bytes(b'# Request\n\n\xff\xfe not utf-8 \xff\n')
+
+    assert _mod._read_request_body('pl-read-non-utf8') == ''
+    assert scope_estimate_from_request_pure(_mod._read_request_body('pl-read-non-utf8')) == 'none'

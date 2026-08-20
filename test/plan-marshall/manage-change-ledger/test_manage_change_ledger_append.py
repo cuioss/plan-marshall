@@ -115,77 +115,6 @@ def test_append_build_records_nonzero_exit(env) -> None:
     assert entry['plan_id'] == NO_PLAN_SENTINEL
 
 
-# ---------------------------------------------------------------------------
-# The three wrapper-reported build fields: command / duration_seconds / outcome
-# ---------------------------------------------------------------------------
-#
-# ``args`` and ``command`` are TWO LAYERS of one invocation and neither
-# substitutes for the other: ``args`` is the executor argv the caller supplied,
-# ``command`` is what the build wrapper resolved that argv into and actually
-# ran. They are asserted TOGETHER on purpose — a record that collapsed the two
-# into a single field would satisfy either assertion alone while making the
-# other layer unrecoverable, so only the paired check can see the collapse.
-
-
-def test_build_record_emits_command_duration_and_outcome_beside_args() -> None:
-    """``build_record`` carries the wrapper's three facts WITHOUT losing ``args``."""
-    import _ledger_core
-
-    payload = {
-        'status': 'success',
-        'command': './pw verify plan-marshall',
-        'duration_seconds': 12.5,
-        'log_file': '/tmp/build.log',
-    }
-
-    record = _ledger_core.build_record(
-        notation='plan-marshall:build-pyproject:pyproject_build',
-        plan_id='my-plan',
-        args='run --command-args "verify plan-marshall"',
-        command='./pw verify plan-marshall',
-        duration_seconds=12.5,
-        outcome=payload,
-        exit_code=0,
-        status='success',
-        worktree_sha='deadbeef',
-        log_file='/tmp/build.log',
-    )
-
-    assert record['command'] == './pw verify plan-marshall'
-    assert record['duration_seconds'] == 12.5
-    assert record['outcome'] == payload
-    # args is UNCHANGED: it still carries the EXECUTOR argv, not the resolved
-    # command, so a reader can recover both layers from one row.
-    assert record['args'] == 'run --command-args "verify plan-marshall"'
-    assert record['args'] != record['command']
-
-
-def test_build_record_defaults_the_three_wrapper_fields_to_none() -> None:
-    """A payload-less writer still produces a COMPLETE row.
-
-    A killed or crashed build has no parseable wrapper payload, and the CLI
-    ``append`` verb (the second writer) has none by construction. Both must
-    still land a row: the three fields are keyword-only with a ``None`` default
-    rather than required, so no caller is forced to invent a value.
-    """
-    import _ledger_core
-
-    record = _ledger_core.build_record(
-        notation='plan-marshall:build-pyproject:pyproject_build',
-        plan_id='my-plan',
-        args='run --command-args "verify plan-marshall"',
-        exit_code=-1,
-        status='killed',
-        worktree_sha='deadbeef',
-        log_file=None,
-    )
-
-    assert record['command'] is None
-    assert record['duration_seconds'] is None
-    assert record['outcome'] is None
-    assert record['args'] == 'run --command-args "verify plan-marshall"'
-
-
 def test_append_verb_row_carries_the_three_fields_as_null(env) -> None:
     """The CLI second writer emits the KEYS, with null values.
 
@@ -251,3 +180,158 @@ def test_append_without_plan_id_records_the_sentinel_never_null(env, kind, extra
         f'append --kind {kind} without --plan-id stored {entry["plan_id"]!r}; '
         'the row must carry the NO_PLAN sentinel, never null.'
     )
+
+
+@pytest.mark.parametrize(
+    'kind,extra',
+    [
+        ('build', ('--notation', 'plan-marshall:build-pyproject:pyproject_build',
+                   '--exit-code', '0', '--status', 'success')),
+        ('job', ('--job-id', 'J-2',)),
+    ],
+)
+def test_append_with_a_real_plan_id_stores_it_verbatim(env, kind, extra) -> None:
+    """The fallback never overwrites a supplied plan id — the carve-out is narrow."""
+    result = env.run('append', '--kind', kind, *extra, '--plan-id', 'my-plan')
+
+    assert result.success, result.stderr
+    entry = _read_ledger(env.ledger_path)[0]
+    assert entry['plan_id'] == 'my-plan'
+
+
+@pytest.mark.parametrize('build_status', ['success', 'error', 'timeout', 'killed'])
+def test_append_build_stores_each_status_vocabulary_value(env, build_status: str) -> None:
+    # every vocabulary value round-trips verbatim onto the stored entry.
+    result = env.run(
+        'append',
+        '--kind',
+        'build',
+        '--notation',
+        'plan-marshall:build-pyproject:pyproject_build',
+        '--exit-code',
+        '0',
+        '--status',
+        build_status,
+    )
+
+    assert result.success, result.stderr
+    entry = _read_ledger(env.ledger_path)[0]
+    assert entry['status'] == build_status
+
+
+def test_append_build_requires_notation(env) -> None:
+    # --notation is mandatory for kind=build.
+    result = env.run(
+        'append', '--kind', 'build', '--exit-code', '0', '--status', 'success'
+    )
+
+    # error TOON, no ledger line written.
+    data = result.toon()
+    assert data['status'] == 'error'
+    assert not env.ledger_path.exists()
+
+
+def test_append_build_requires_exit_code(env) -> None:
+    # --exit-code is mandatory for kind=build.
+    result = env.run(
+        'append', '--kind', 'build', '--notation', 'plan-marshall:x:y',
+        '--status', 'success',
+    )
+
+    data = result.toon()
+    assert data['status'] == 'error'
+    assert not env.ledger_path.exists()
+
+
+def test_append_build_requires_status(env) -> None:
+    # --status is mandatory for kind=build (the truthful outcome of record).
+    result = env.run(
+        'append', '--kind', 'build', '--notation', 'plan-marshall:x:y',
+        '--exit-code', '0',
+    )
+
+    data = result.toon()
+    assert data['status'] == 'error'
+    assert not env.ledger_path.exists()
+
+
+def test_append_build_rejects_unknown_status(env) -> None:
+    # --status is choices-validated at the argparse boundary.
+    result = env.run(
+        'append', '--kind', 'build', '--notation', 'plan-marshall:x:y',
+        '--exit-code', '0', '--status', 'flaky',
+    )
+
+    assert not result.success
+    assert not env.ledger_path.exists()
+
+
+# ---------------------------------------------------------------------------
+# append --kind change
+# ---------------------------------------------------------------------------
+
+
+def test_append_change_stores_paths_verbatim(env) -> None:
+    result = env.run(
+        'append',
+        '--kind',
+        'change',
+        '--deliverable-id',
+        '2',
+        '--commit-sha',
+        'abc123',
+        '--changed-paths',
+        'src/a.py,src/b.py,test/c.py',
+    )
+
+    # success TOON.
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['status'] == 'success'
+    assert data['kind'] == 'change'
+
+    # change fields stored verbatim.
+    entry = _read_ledger(env.ledger_path)[0]
+    assert entry['kind'] == 'change'
+    assert entry['deliverable_id'] == '2'
+    assert entry['commit_sha'] == 'abc123'
+    assert entry['changed_paths'] == ['src/a.py', 'src/b.py', 'test/c.py']
+    assert entry['worktree_sha']
+    assert entry['timestamp_iso']
+
+
+def test_append_change_accepts_task_id_alias(env) -> None:
+    # --task-id is the accepted alternative to --deliverable-id.
+    result = env.run(
+        'append',
+        '--kind',
+        'change',
+        '--task-id',
+        'TASK-7',
+        '--commit-sha',
+        'def456',
+    )
+
+    # the alias populates deliverable_id; empty --changed-paths → [].
+    assert result.success, result.stderr
+    entry = _read_ledger(env.ledger_path)[0]
+    assert entry['deliverable_id'] == 'TASK-7'
+    assert entry['changed_paths'] == []
+
+
+def test_append_change_requires_commit_sha(env) -> None:
+    # --commit-sha is mandatory for kind=change.
+    result = env.run('append', '--kind', 'change', '--deliverable-id', '2')
+
+    data = result.toon()
+    assert data['status'] == 'error'
+    assert not env.ledger_path.exists()
+
+
+def test_append_change_requires_deliverable_or_task(env) -> None:
+    # one of --deliverable-id / --task-id is required.
+    result = env.run('append', '--kind', 'change', '--commit-sha', 'abc123')
+
+    data = result.toon()
+    assert data['status'] == 'error'
+    assert not env.ledger_path.exists()

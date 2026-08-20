@@ -3,6 +3,8 @@
 """Tests for manage-metrics.py CLI script."""
 
 
+from pathlib import Path
+
 import pytest
 from _manage_metrics_fixtures import (
     ns_enrich,
@@ -11,6 +13,9 @@ from _manage_metrics_fixtures import (
 from _manage_metrics_module_fixtures import (
     _ENRICH_TWO_PHASE_METRICS,
     _UNSEEDED_PLAN_IDS,
+    SCRIPT_PATH,
+    _contract_counter_keys,
+    _contract_subsource_keys,
     _patch_runtime_op,
     cmd_enrich,
     cmd_generate,
@@ -44,6 +49,49 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
 
     monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
     return plan_context
+
+
+class TestManageMetricsHasNoTranscriptCode:
+    """Regression: the Claude-transcript engine no longer lives in manage-metrics.
+
+    The transcript engine (transcript discovery, message.usage parse, <usage> tag,
+    strict-UUID, cache-pricing weights) was relocated to claude_runtime. These
+    assertions guard against a re-introduction.
+    """
+
+    def test_no_transcript_engine_symbols(self):
+        """The removed transcript-engine helpers/constants are absent from the module."""
+        for symbol in (
+            'USAGE_TAG_RE',
+            'USAGE_FIELD_RE',
+            'SESSION_ID_RE',
+            'USAGE_FOUR_FIELDS',
+            'BILLING_WEIGHT_CACHE_READ',
+            'BILLING_WEIGHT_CACHE_CREATION',
+            '_sum_subagent_transcript',
+            '_billing_weighted_total',
+            '_attribute_subagent_usage',
+            '_add_usage_four_fields',
+            '_window_for_timestamp',
+            '_extract_text_payload',
+            '_resolve_subagent_transcripts',
+        ):
+            assert not hasattr(manage_metrics, symbol), f'{symbol} should have been relocated'
+
+    def test_source_has_no_claude_transcript_path_or_parse(self):
+        """The manage-metrics source no longer hard-codes the Claude transcript layout.
+
+        The ``.claude/projects`` path derivation and the transcript JSONL parse are
+        the transcript engine — both relocated to claude_runtime. (The ``<usage>``
+        return-tag continues to be consumed by the accumulate-agent-usage storage
+        path, so its string still legitimately appears; the assertion targets only
+        the transcript-engine markers.)
+        """
+        source = Path(SCRIPT_PATH).read_text(encoding='utf-8')
+        assert '.claude/projects' not in source
+        # The strict-UUID transcript guard and cache-pricing weights are gone.
+        assert 'SESSION_ID_RE' not in source
+        assert 'BILLING_WEIGHT' not in source
 
 
 class TestExplorationCountersAbsentVsMeasuredZero:
@@ -265,3 +313,49 @@ class TestExplorationSubsourceRoundTrip:
             '- **Unattributed exploration bytes**: 50 of 1,000 exploration_result_bytes'
             in md
         )
+
+
+def test_exploration_buckets_match_platform_runtime_contract():
+    """``_EXPLORATION_BUCKETS`` matches the bucket set the runtime contract declares.
+
+    Contract-level drift guard for the cross-process hand-mirror: the bucket names
+    are recovered from the contract's ``*_tool_calls`` keys, so adding a bucket to
+    the producer without extending ``_EXPLORATION_BUCKETS`` fails loudly here.
+    """
+    contract_buckets = {
+        key[: -len('_tool_calls')]
+        for key in _contract_counter_keys()
+        if key.endswith('_tool_calls')
+    }
+
+    assert contract_buckets, 'contract declares no *_tool_calls counter keys'
+    assert set(manage_metrics._EXPLORATION_BUCKETS) == contract_buckets
+    # The mirror must also stay duplicate-free — a repeated name would silently
+    # double a bucket's counter fields below.
+    assert len(manage_metrics._EXPLORATION_BUCKETS) == len(contract_buckets)
+
+
+def test_exploration_counter_fields_match_platform_runtime_contract():
+    """``_EXPLORATION_COUNTER_FIELDS`` equals the contract's counter key set exactly.
+
+    The derived ``{bucket}_{measure}`` product must reproduce the contract's ten
+    published counter keys — no extra field manage-metrics would persist but the
+    producer never emits, and no missing field the producer emits but the report
+    would drop.
+    """
+    assert set(manage_metrics._EXPLORATION_COUNTER_FIELDS) == _contract_counter_keys()
+
+
+def test_exploration_subsource_fields_match_platform_runtime_contract():
+    """``_EXPLORATION_SUBSOURCE_FIELDS`` equals the contract's sub-source key set exactly.
+
+    Same cross-process hand-mirror guard as the two drift tests above: a
+    sub-source added on the producer side without extending the mirror would
+    silently under-persist and under-render, and fails loudly here instead.
+    """
+    contract_keys = _contract_subsource_keys()
+
+    assert contract_keys, 'contract declares no exploration sub-source keys'
+    assert set(manage_metrics._EXPLORATION_SUBSOURCE_FIELDS) == contract_keys
+    # The mirror stays duplicate-free — a repeated name would double a field.
+    assert len(manage_metrics._EXPLORATION_SUBSOURCE_FIELDS) == len(contract_keys)

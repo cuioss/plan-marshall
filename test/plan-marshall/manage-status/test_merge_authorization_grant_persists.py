@@ -7,15 +7,19 @@ from _merge_authorization_fixtures import (
     BARRIER_GAP,
     HEAD_A,
     HEAD_B,
-    MERGE_ACTION_GAP,
     _check_args,
     _grant_args,
     _make_plan,
+    _manage_status_script,
+    _record_for,
     _verdict_for,
     cmd_merge_authorization_check,
     cmd_merge_authorization_grant,
     read_status,
+    write_status,
 )
+
+from conftest import run_script
 
 # =============================================================================
 # grant — persistence and the overwrite-is-the-re-seek contract
@@ -40,6 +44,36 @@ def test_grant_persists_head_bound_record(plan_context):
     assert persisted['head'] == HEAD_A
     assert persisted['gap_class'] == BARRIER_GAP
     assert set(persisted) == {'head', 'gap_class', 'granted_over', 'reason', 'granted_at'}
+
+
+def test_grant_cli_requires_the_gap_class(plan_context):
+    """`grant` without --gap-class is an argparse rejection.
+
+    A grant site that omitted the class would persist an unlabelled ruling. The
+    parser refuses it at the boundary, so the classless record the fail-closed
+    read handles can only ever arrive from a legacy or hand-edited status file.
+    """
+    plan_id = 'merge-auth-cli-grant-no-gap'
+    _make_plan(plan_id)
+
+    result = run_script(
+        _manage_status_script(),
+        'merge-authorization',
+        'grant',
+        '--plan-id',
+        plan_id,
+        '--kind',
+        'barrier-ask-override',
+        '--head',
+        HEAD_A,
+        '--granted-over',
+        '2 unhandled',
+        '--reason',
+        'operator accepted the gap',
+    )
+
+    assert result.returncode == 2
+    assert '--gap-class' in result.stderr
 
 
 def test_record_round_trips_granted_over_and_reason(plan_context):
@@ -67,6 +101,37 @@ def test_record_round_trips_granted_over_and_reason(plan_context):
     assert checked['records'][0]['reason'] == reason
 
 
+def test_record_without_a_gap_class_matches_no_class(plan_context):
+    """A record carrying no ``gap_class`` is never admissible — no wildcard.
+
+    A legacy or hand-edited record with the field absent must fail closed rather
+    than matching every class, which is the fail-open direction: an unlabelled
+    ruling would authorize past every gate at once.
+    """
+    plan_id = 'merge-auth-classless'
+    _make_plan(plan_id)
+    status = read_status(plan_id)
+    status.setdefault('metadata', {})['merge_authorizations'] = {
+        'barrier-ask-override': {
+            'head': HEAD_A,
+            'granted_over': '2 unhandled',
+            'reason': 'legacy record written before the gap class existed',
+            'granted_at': '2026-01-15T14:30:00Z',
+        }
+    }
+    write_status(plan_id, status)
+
+    result = cmd_merge_authorization_check(_check_args(plan_id, HEAD_A, gap_class=BARRIER_GAP))
+
+    # Still HEAD-valid and still reported — nothing is hidden...
+    assert result['any_authorized'] is True
+    assert result['authorized_kinds'] == ['barrier-ask-override']
+    # ...but an unlabelled ruling authorizes nothing.
+    assert result['any_admissible'] is False
+    assert result['inadmissible_kinds'] == ['barrier-ask-override']
+    assert _record_for(result, 'barrier-ask-override')['gap_class'] is None
+
+
 def test_regrant_at_new_head_overwrites_the_record(plan_context):
     """A re-grant replaces the record rather than accumulating a second one.
 
@@ -87,29 +152,6 @@ def test_regrant_at_new_head_overwrites_the_record(plan_context):
     assert authorizations['barrier-ask-override']['head'] == HEAD_B
 
 
-# =============================================================================
-# check — the lapse rule (D5a) and the re-seek (D5b)
-# =============================================================================
-
-
-def test_check_lapses_when_head_advances(plan_context):
-    """The lapse rule: an authorization granted at HEAD A does not authorize HEAD B.
-
-    A ruling made over one tree must not be recalled to merge a different one.
-    """
-    plan_id = 'merge-auth-lapse'
-    _make_plan(plan_id)
-    cmd_merge_authorization_grant(_grant_args(plan_id, 'barrier-ask-override', HEAD_A))
-
-    result = cmd_merge_authorization_check(_check_args(plan_id, HEAD_B))
-
-    assert result['status'] == 'success'
-    assert result['any_authorized'] is False
-    assert result['lapsed_kinds'] == ['barrier-ask-override']
-    assert result['authorized_kinds'] == []
-    assert _verdict_for(result, 'barrier-ask-override') == 'lapsed'
-
-
 def test_regrant_at_new_head_reauthorizes(plan_context):
     """The re-grant rule: a re-seek at the advanced HEAD restores authorization.
 
@@ -127,51 +169,3 @@ def test_regrant_at_new_head_reauthorizes(plan_context):
     assert result['authorized_kinds'] == ['barrier-ask-override']
     assert result['lapsed_kinds'] == []
     assert _verdict_for(result, 'barrier-ask-override') == 'valid'
-
-
-def test_check_at_the_granting_head_is_valid(plan_context):
-    """An authorization checked at the HEAD it was granted against is valid.
-
-    The matched positive control for the lapse rule: without this, a check that
-    returned ``lapsed`` unconditionally would satisfy the lapse test while
-    re-prompting the operator on every ordinary merge.
-    """
-    plan_id = 'merge-auth-same-head'
-    _make_plan(plan_id)
-    cmd_merge_authorization_grant(
-        _grant_args(plan_id, 'pre-merge-consent', HEAD_A, gap_class=MERGE_ACTION_GAP)
-    )
-
-    result = cmd_merge_authorization_check(
-        _check_args(plan_id, HEAD_A, gap_class=MERGE_ACTION_GAP)
-    )
-
-    assert result['any_authorized'] is True
-    assert result['any_admissible'] is True
-    assert _verdict_for(result, 'pre-merge-consent') == 'valid'
-
-
-# =============================================================================
-# check — fail-closed defaults
-# =============================================================================
-
-
-def test_empty_store_is_fail_closed(plan_context):
-    """No records at all yields any_authorized: false with both lists empty.
-
-    ``absent`` is never collapsed into ``valid``: a plan that never granted
-    anything must not read as authorized.
-    """
-    plan_id = 'merge-auth-empty'
-    _make_plan(plan_id)
-
-    result = cmd_merge_authorization_check(_check_args(plan_id, HEAD_A))
-
-    assert result['status'] == 'success'
-    assert result['any_authorized'] is False
-    assert result['any_admissible'] is False
-    assert result['authorized_kinds'] == []
-    assert result['lapsed_kinds'] == []
-    assert result['admissible_kinds'] == []
-    assert result['inadmissible_kinds'] == []
-    assert result['records'] == []

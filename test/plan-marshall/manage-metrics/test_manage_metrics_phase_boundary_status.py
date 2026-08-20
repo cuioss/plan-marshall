@@ -6,7 +6,7 @@
 import pytest
 from _manage_metrics_fixtures import (
     ns_boundary_status,
-    ns_generate,
+    ns_end_phase,
     ns_phase_boundary,
     ns_start_phase,
 )
@@ -15,8 +15,9 @@ from _manage_metrics_phase_boundary_fixtures import (
     _field,
     _phase_block,
     _register_unseeded,
+    _seed_status_created,
     cmd_boundary_status,
-    cmd_generate,
+    cmd_end_phase,
     cmd_phase_boundary,
     cmd_start_phase,
     manage_metrics,
@@ -49,6 +50,164 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
 
     monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
     return plan_context
+
+
+# =============================================================================
+# D5/D6 — worked <= wall clamp invariant
+# =============================================================================
+
+
+def test_phase_boundary_clamps_worked_to_wall_for_1init_bootstrap(plan_context):
+    """1-init bootstrap ordering: a forwarded worked window longer than the
+    created→end wall span is clamped so worked <= wall (a worked>wall row can
+    never be persisted)."""
+    # status.json.created at "now" makes the backfilled wall span near-zero;
+    # the forwarded worked window is deliberately huge.
+    created_ts = manage_metrics.now_utc_iso()
+    plan_dir = plan_context.plan_dir_for('clamp-1init')
+    _seed_status_created(plan_dir, created_ts)
+
+    # No prior start-phase; backfill from status.json.created.
+    result = cmd_phase_boundary(
+        ns_phase_boundary(
+            'clamp-1init',
+            prev_phase='1-init',
+            next_phase='2-refine',
+            duration_ms=999_999_999,
+        )
+    )
+
+    assert result['status'] == 'success'
+    content = (plan_dir / 'work' / 'metrics.toon').read_text()
+    block = _phase_block(content, '1-init')
+    wall_s = float(_field(block, 'duration_seconds'))
+    worked_s = float(_field(block, 'agent_duration_seconds'))
+    worked_ms = int(_field(block, 'agent_duration_ms'))
+    assert worked_s <= wall_s
+    assert worked_ms <= round(wall_s * 1000)
+    assert worked_ms < 999_999_999
+
+
+def test_end_phase_clamps_worked_to_wall(plan_context):
+    """cmd_end_phase write site: the symmetric clamp bounds worked to wall."""
+    # Start then immediately end (wall span ~0); forward a huge worked window.
+    cmd_start_phase(ns_start_phase('clamp-end', '3-outline'))
+
+    result = cmd_end_phase(
+        ns_end_phase('clamp-end', phase='3-outline', duration_ms=888_888_888)
+    )
+
+    assert result['status'] == 'success'
+    content = (plan_context.plan_dir_for('clamp-end') / 'work' / 'metrics.toon').read_text()
+    block = _phase_block(content, '3-outline')
+    wall_s = float(_field(block, 'duration_seconds'))
+    worked_s = float(_field(block, 'agent_duration_seconds'))
+    assert worked_s <= wall_s
+    assert int(_field(block, 'agent_duration_ms')) < 888_888_888
+
+
+def test_clamp_does_not_inflate_when_worked_below_wall(plan_context):
+    """Negative control: a worked window SMALLER than wall is left unchanged."""
+    # A created timestamp far in the past makes the wall span comfortably
+    # exceed the small forwarded worked window.
+    created_ts = '2026-01-01T00:00:00+00:00'
+    plan_dir = plan_context.plan_dir_for('clamp-below')
+    _seed_status_created(plan_dir, created_ts)
+
+    # Small worked window (2 s) vs a multi-month wall span.
+    cmd_phase_boundary(
+        ns_phase_boundary(
+            'clamp-below',
+            prev_phase='1-init',
+            next_phase='2-refine',
+            duration_ms=2000,
+        )
+    )
+
+    # The clamp only bounds, never inflates: worked stays 2 s.
+    content = (plan_dir / 'work' / 'metrics.toon').read_text()
+    block = _phase_block(content, '1-init')
+    assert int(_field(block, 'agent_duration_ms')) == 2000
+    assert float(_field(block, 'agent_duration_seconds')) == 2.0
+
+
+# =============================================================================
+# D8 — retrospective_tokens attribution write
+# =============================================================================
+
+
+def test_retrospective_tokens_recorded_on_finalize_when_forwarded(plan_context):
+    """--retrospective-tokens forwarded → recorded as a [6-finalize] sub-field."""
+    cmd_start_phase(ns_start_phase('retro-attr', '6-finalize'))
+
+    result = cmd_end_phase(
+        ns_end_phase(
+            'retro-attr',
+            phase='6-finalize',
+            total_tokens=10000,
+            retrospective_tokens=4000,
+        )
+    )
+
+    assert result['status'] == 'success'
+    assert result['retrospective_tokens'] == 4000
+    content = (plan_context.plan_dir_for('retro-attr') / 'work' / 'metrics.toon').read_text()
+    block = _phase_block(content, '6-finalize')
+    assert _field(block, 'retrospective_tokens') == '4000'
+
+
+def test_retrospective_tokens_absent_when_not_forwarded(plan_context):
+    """No --retrospective-tokens → the field is absent (no schema migration)."""
+    cmd_start_phase(ns_start_phase('retro-absent', '6-finalize'))
+
+    # total_tokens only, no retrospective attribution.
+    result = cmd_end_phase(
+        ns_end_phase('retro-absent', phase='6-finalize', total_tokens=10000)
+    )
+
+    # default-absent: the field never appears.
+    assert result['status'] == 'success'
+    assert 'retrospective_tokens' not in result
+    content = (plan_context.plan_dir_for('retro-absent') / 'work' / 'metrics.toon').read_text()
+    block = _phase_block(content, '6-finalize')
+    assert _field(block, 'retrospective_tokens') is None
+
+
+# =============================================================================
+# boundary-status — resume-time half-stamped boundary detection (read-only)
+# =============================================================================
+#
+# `boundary-status` is the detection half of cross-session boundary
+# reconciliation. It reads work/metrics.toon and classifies the boundary into
+# --next-phase as one of: stamped / missing / not_applicable. It MUST perform
+# ZERO mutation of metrics.toon — the orchestrator reacts to a `missing` verdict
+# by issuing an explicit `phase-boundary` call.
+
+
+# -----------------------------------------------------------------------------
+# missing: half-stamped boundary (the case the verb exists to detect)
+# -----------------------------------------------------------------------------
+
+
+def test_boundary_status_missing_when_next_phase_has_no_start(plan_context):
+    """next phase has no start_time → classification 'missing' on next.start_time.
+
+    The prior session self-transitioned the status but skipped the paired
+    phase-boundary, so the resuming phase has no start_time yet. With no
+    --prev-phase, only the "current phase has no start" condition is evaluated.
+    """
+    # 1-init started + closed, but 2-refine never opened.
+    cmd_start_phase(ns_start_phase('bs-missing-next', '1-init'))
+    cmd_phase_boundary(ns_phase_boundary('bs-missing-next', prev_phase='1-init', next_phase='2-refine'))
+
+    # On resume, the orchestrator is about to enter 3-outline, which has no start.
+    result = cmd_boundary_status(ns_boundary_status('bs-missing-next', next_phase='3-outline'))
+
+    assert result['status'] == 'success'
+    assert result['classification'] == 'missing'
+    assert result['next_phase'] == '3-outline'
+    assert result['prev_phase'] == '-'
+    assert result['missing_fields'] == '3-outline.start_time'
 
 
 def test_boundary_status_missing_when_prev_started_but_not_ended(plan_context):
@@ -206,94 +365,3 @@ def test_boundary_status_plan_not_found_when_unseeded(plan_context):
     result = cmd_boundary_status(ns_boundary_status(plan_id, next_phase='2-refine'))
     assert result['status'] == 'error'
     assert result['error'] == 'plan_not_found'
-
-
-# =============================================================================
-# Boundary monotonicity detector (D3): a finalize loop-back re-enters an earlier
-# phase, so a later phase's start_time precedes an earlier phase's end_time.
-# =============================================================================
-
-
-def test_generate_flags_loopback_non_monotonic_boundary(plan_context):
-    """A loop-back row where 6-finalize.start_time precedes 5-execute.end_time is flagged,
-    its idle residual guarded (non-negative, non-corrupt), and a warning surfaced.
-    """
-    # Seed a non-monotonic boundary directly: 5-execute closes at 15:00 while the
-    # subsequent 6-finalize re-entry starts at 14:00 (a finalize loop-back). The
-    # 6-finalize wall span would otherwise derive a corrupt residual.
-    manage_metrics.write_metrics(
-        'monotonic-loopback',
-        {
-            'phases': {
-                '5-execute': {
-                    'start_time': '2026-05-08T13:00:00+00:00',
-                    'end_time': '2026-05-08T15:00:00+00:00',
-                    'agent_duration_ms': 60000,
-                },
-                '6-finalize': {
-                    # start precedes 5-execute.end_time (15:00) — non-monotonic.
-                    'start_time': '2026-05-08T14:00:00+00:00',
-                    'end_time': '2026-05-08T14:30:00+00:00',
-                    'agent_duration_ms': 30000,
-                },
-            },
-        },
-    )
-
-    result = cmd_generate(ns_generate('monotonic-loopback'))
-    assert result['status'] == 'success'
-    # 6-finalize is the offending phase (its start precedes 5-execute's end).
-    assert result['boundary_monotonicity'] == ['6-finalize']
-
-    content = (plan_context.plan_dir_for('monotonic-loopback') / 'work' / 'metrics.toon').read_text()
-    # Top-level warning key persisted.
-    assert 'boundary_monotonicity: 6-finalize' in content
-    # Per-phase annotation stamped on the offending row.
-    fin_block = _phase_block(content, '6-finalize')
-    assert _field(fin_block, 'boundary_non_monotonic') == 'true'
-    # Idle residual guarded to zero (never a corrupt/negative figure).
-    assert _field(fin_block, 'idle_duration_ms') == '0'
-    # The recorded boundary fields are NOT rewritten (read-only detector).
-    assert _field(fin_block, 'start_time') == '2026-05-08T14:00:00+00:00'
-    assert _field(fin_block, 'end_time') == '2026-05-08T14:30:00+00:00'
-
-    # Warning marker rendered under the Phase Breakdown heading.
-    md = (plan_context.plan_dir_for('monotonic-loopback') / 'metrics.md').read_text()
-    assert 'Boundary monotonicity warning' in md
-
-
-def test_generate_monotonic_boundaries_have_no_warning(plan_context):
-    """A well-ordered sequence produces no boundary_monotonicity warning and the idle
-    residual for each phase is derived normally (not guarded).
-    """
-    manage_metrics.write_metrics(
-        'monotonic-clean',
-        {
-            'phases': {
-                '5-execute': {
-                    'start_time': '2026-05-08T13:00:00+00:00',
-                    'end_time': '2026-05-08T14:00:00+00:00',
-                    'agent_duration_ms': 60000,
-                },
-                '6-finalize': {
-                    'start_time': '2026-05-08T14:00:00+00:00',
-                    'end_time': '2026-05-08T14:30:00+00:00',
-                    'agent_duration_ms': 60000,
-                },
-            },
-        },
-    )
-
-    result = cmd_generate(ns_generate('monotonic-clean'))
-    assert result['status'] == 'success'
-    assert result['boundary_monotonicity'] == []
-
-    content = (plan_context.plan_dir_for('monotonic-clean') / 'work' / 'metrics.toon').read_text()
-    assert 'boundary_monotonicity:' not in content
-    fin_block = _phase_block(content, '6-finalize')
-    assert _field(fin_block, 'boundary_non_monotonic') is None
-    # 6-finalize wall = 30m (1800000 ms), worked = 60000 ms -> idle = 1740000 ms.
-    assert _field(fin_block, 'idle_duration_ms') == '1740000'
-
-    md = (plan_context.plan_dir_for('monotonic-clean') / 'metrics.md').read_text()
-    assert 'Boundary monotonicity warning' not in md

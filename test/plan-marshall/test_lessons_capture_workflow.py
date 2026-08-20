@@ -146,53 +146,6 @@ class TestDispatcherGateSourcesNamed:
         )
 
 
-class TestRemediatedInRunSignalsNamed:
-    """Each of the three signals MUST count remediated-in-run evidence,
-    not only outstanding / loud-failure evidence. These assertions verify
-    the reworked prose names the resolved-in-run source/field/marker per
-    signal so the gate does NOT short-circuit to ``skipped`` on a run that
-    detected-and-remediated a defect (the highest-value lesson class)."""
-
-    def test_signal_2_names_resolution_fixed_pr_comment(self) -> None:
-        """Signal 2 (automatic-review) MUST count fixed-in-run review-bot
-        findings via ``manage-findings list --type pr-comment
-        --resolution fixed``."""
-        body = _read_dispatcher()
-        assert 'manage-findings' in body and 'list' in body, (
-            'Signal-2 prose must name a manage-findings list invocation '
-            'to count fixed-in-run review-bot findings'
-        )
-        assert '--type pr-comment' in body, (
-            'Signal-2 prose must name the pr-comment finding type token'
-        )
-        assert '--resolution fixed' in body, (
-            'Signal-2 prose must name "--resolution fixed" so the '
-            'remediated-in-run review-bot findings fire the signal'
-        )
-
-    def test_signal_3_names_all_three_marker_classes(self) -> None:
-        """Signal 3 (script-failures) MUST bucket all three marker classes
-        — ``[FAILED]``, ``[ERROR] ... script_failure``, and
-        ``voluntary_checkpoint → error`` — by distinct failing notation."""
-        body = _read_dispatcher()
-        assert '[FAILED]' in body, (
-            'Signal-3 prose must preserve the "[FAILED]" marker class'
-        )
-        assert 'script_failure' in body, (
-            'Signal-3 prose must name the "[ERROR] ... script_failure" '
-            'marker class so argparse-rejection / internal-error lines '
-            'are counted'
-        )
-        assert 'voluntary_checkpoint' in body and 'error' in body, (
-            'Signal-3 prose must name the "voluntary_checkpoint → error" '
-            'reclassification marker class (dispatch-boundary no-progress)'
-        )
-        assert 'distinct' in body and 'notation' in body, (
-            'Signal-3 prose must state the three marker classes are '
-            'bucketed by distinct failing notation into signal_3_count'
-        )
-
-
 class TestDispatcherSkipBranch:
     """The dispatcher's all-zero skip branch MUST emit the canonical
     ``mark-step-done`` call directly so the phase_steps_complete
@@ -250,6 +203,53 @@ class TestDispatcherForwardsGateCounts:
                 f'Dispatcher Signal Gate must forward the runtime-input '
                 f'field {field!r} when dispatching the workflow body'
             )
+
+
+class TestRemediatedInRunSignalsNamed:
+    """Each of the three signals MUST count remediated-in-run evidence,
+    not only outstanding / loud-failure evidence. These assertions verify
+    the reworked prose names the resolved-in-run source/field/marker per
+    signal so the gate does NOT short-circuit to ``skipped`` on a run that
+    detected-and-remediated a defect (the highest-value lesson class)."""
+
+    def test_signal_2_names_resolution_fixed_pr_comment(self) -> None:
+        """Signal 2 (automatic-review) MUST count fixed-in-run review-bot
+        findings via ``manage-findings list --type pr-comment
+        --resolution fixed``."""
+        body = _read_dispatcher()
+        assert 'manage-findings' in body and 'list' in body, (
+            'Signal-2 prose must name a manage-findings list invocation '
+            'to count fixed-in-run review-bot findings'
+        )
+        assert '--type pr-comment' in body, (
+            'Signal-2 prose must name the pr-comment finding type token'
+        )
+        assert '--resolution fixed' in body, (
+            'Signal-2 prose must name "--resolution fixed" so the '
+            'remediated-in-run review-bot findings fire the signal'
+        )
+
+    def test_signal_3_names_all_three_marker_classes(self) -> None:
+        """Signal 3 (script-failures) MUST bucket all three marker classes
+        — ``[FAILED]``, ``[ERROR] ... script_failure``, and
+        ``voluntary_checkpoint → error`` — by distinct failing notation."""
+        body = _read_dispatcher()
+        assert '[FAILED]' in body, (
+            'Signal-3 prose must preserve the "[FAILED]" marker class'
+        )
+        assert 'script_failure' in body, (
+            'Signal-3 prose must name the "[ERROR] ... script_failure" '
+            'marker class so argparse-rejection / internal-error lines '
+            'are counted'
+        )
+        assert 'voluntary_checkpoint' in body and 'error' in body, (
+            'Signal-3 prose must name the "voluntary_checkpoint → error" '
+            'reclassification marker class (dispatch-boundary no-progress)'
+        )
+        assert 'distinct' in body and 'notation' in body, (
+            'Signal-3 prose must state the three marker classes are '
+            'bucketed by distinct failing notation into signal_3_count'
+        )
 
 
 class TestBodyNoLongerCarriesGate:

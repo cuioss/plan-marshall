@@ -9,75 +9,13 @@ from pathlib import Path
 
 from _manage_status_transition_fixtures import (
     SCRIPT_PATH,
-    _lifecycle,
-    _seed_execute_phase_plan,
     _seed_finalize_phase_plan,
+    _stub_finding_queries,
     cmd_archive,
     cmd_transition,
 )
 
 from conftest import run_script
-
-
-def test_cli_transition_not_found_exits_zero(plan_context):
-    """Regression: transition with missing status.json exits 0 with TOON error output."""
-    result = run_script(SCRIPT_PATH, 'transition', '--plan-id', 'nonexistent', '--completed', '1-init')
-    assert result.success, f'Should exit 0, got: {result.stderr}'
-    assert 'status: error' in result.stdout
-    assert 'file_not_found' in result.stdout
-
-
-def test_collect_modified_files_helper_is_removed():
-    """The ``_collect_modified_files`` producer no longer exists.
-
-    The footprint ledger was deleted in favour of the on-demand
-    compute-footprint verb; the seeding helper must be gone so no code
-    path can re-introduce a persisted modified_files write at transition.
-    """
-    assert not hasattr(_lifecycle, '_collect_modified_files'), (
-        '_collect_modified_files must be deleted — the 5-execute transition '
-        'no longer seeds references.modified_files (footprint is derived '
-        'on-demand via manage-references compute-footprint).'
-    )
-
-
-def test_transition_5_execute_does_not_write_modified_files(plan_context):
-    """The 5-execute transition must NOT add modified_files to references.json."""
-    plan_dir = plan_context.plan_dir_for('transition-no-seed')
-    _seed_execute_phase_plan(plan_dir, 'transition-no-seed')
-
-    result = cmd_transition(Namespace(plan_id='transition-no-seed', completed='5-execute'))
-
-    assert result['status'] == 'success'
-    refs = json.loads((plan_dir / 'references.json').read_text(encoding='utf-8'))
-    assert 'modified_files' not in refs, (
-        f'5-execute transition seeded modified_files: {refs!r}. The footprint '
-        f'ledger was removed — the transition must never touch references.json '
-        f'for footprint.'
-    )
-
-
-def test_transition_5_execute_preserves_legacy_modified_files_untouched(plan_context):
-    """A references.json that already carries a legacy modified_files key is
-    left untouched by the transition — the transition neither reads nor
-    rewrites the field.
-    """
-    plan_dir = plan_context.plan_dir_for('transition-legacy-untouched')
-    _seed_execute_phase_plan(plan_dir, 'transition-legacy-untouched')
-    # Inject a legacy ledger (as an archived/pre-migration plan might carry).
-    refs_path = plan_dir / 'references.json'
-    legacy = json.loads(refs_path.read_text(encoding='utf-8'))
-    legacy['modified_files'] = ['legacy-a.py', 'legacy-b.py']
-    refs_path.write_text(json.dumps(legacy), encoding='utf-8')
-
-    result = cmd_transition(Namespace(plan_id='transition-legacy-untouched', completed='5-execute'))
-
-    assert result['status'] == 'success'
-    refs = json.loads(refs_path.read_text(encoding='utf-8'))
-    assert refs.get('modified_files') == ['legacy-a.py', 'legacy-b.py'], (
-        f'Transition rewrote a legacy modified_files key: {refs!r}. The '
-        f'transition must not read or mutate the field at all.'
-    )
 
 
 def test_archive_marks_final_phase_done_and_sets_complete(plan_context):
@@ -273,3 +211,91 @@ def test_archive_reason_cli_round_trip_persists_to_archive(plan_context):
         f'CLI --reason did not round-trip into archived status.json: '
         f'{archived_status.get("metadata")!r}'
     )
+
+
+def test_archive_refuses_when_actionable_finding_pending(plan_context, monkeypatch):
+    """NEGATIVE control: a normal-completion archive (no --reason) is REFUSED
+    while an actionable finding is pending, and the plan dir is NOT moved."""
+    _stub_finding_queries(monkeypatch, {'sonar-issue': 2})
+    plan_id = 'finalize-block-archive'
+    _seed_finalize_phase_plan(plan_id)
+
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False, reason=None))
+
+    assert result is not None
+    assert result['status'] == 'error'
+    assert result['error'] == 'blocking_findings_present'
+    assert result['blocking_count'] == 2
+    assert result['per_type']['sonar-issue'] == 2
+    # The plan directory survives — no move happened.
+    assert plan_context.plan_dir_for(plan_id).exists()
+    assert 'archived_to' not in result
+
+
+def test_archive_admits_when_no_actionable_finding(plan_context, monkeypatch):
+    """POSITIVE control: a clean normal-completion archive proceeds."""
+    _stub_finding_queries(monkeypatch, {})
+    plan_id = 'finalize-clean-archive'
+    _seed_finalize_phase_plan(plan_id)
+
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False, reason=None))
+
+    assert result['status'] == 'success'
+    assert 'archived_to' in result
+
+
+def test_archive_with_reason_bypasses_findings_gate(plan_context, monkeypatch):
+    """A DELIBERATE archive (--reason present, e.g. abandonment) is exempt from
+    the completion gate: it archives even with a pending actionable finding, so a
+    low-confidence / abandoned plan is never stranded behind its own findings.
+    Confirms the gate discriminates on the completion intent."""
+    _stub_finding_queries(monkeypatch, {'build-error': 3})
+    plan_id = 'finalize-abandon-archive'
+    _seed_finalize_phase_plan(plan_id)
+
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False, reason='low_confidence'))
+
+    assert result['status'] == 'success', (
+        'A --reason archive is a deliberate abandonment and must not be blocked '
+        'by pending findings.'
+    )
+    assert 'archived_to' in result
+
+
+def test_archive_dry_run_does_not_fire_findings_gate(plan_context, monkeypatch):
+    """A dry-run archive returns before the gate — it makes no state change, so a
+    pending finding must not turn a preview into a refusal."""
+    _stub_finding_queries(monkeypatch, {'build-error': 1})
+    plan_id = 'finalize-dryrun-archive'
+    _seed_finalize_phase_plan(plan_id)
+
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=True, reason=None))
+
+    assert result['status'] == 'success'
+    assert result.get('dry_run') is True
+    assert 'would_archive_to' in result
+
+
+def test_archive_of_already_complete_plan_not_blocked_by_pending_finding(plan_context, monkeypatch):
+    """The cleanup pass archives already-`complete` plans (no --reason). A stale
+    pending record on such a plan must NOT wedge cleanup — the completion gate
+    fires only while the plan is actively in 6-finalize, not after it completed.
+    This is exactly the pre-D3 residue (a permanently-pending qgate record) whose
+    cleanup a broad gate would have blocked."""
+    _stub_finding_queries(monkeypatch, {})  # clean, so the plan can complete
+    plan_id = 'finalize-cleanup-complete'
+    _seed_finalize_phase_plan(plan_id)
+    # Complete it normally (clean) → current_phase becomes 'complete'.
+    done = cmd_transition(Namespace(plan_id=plan_id, completed='6-finalize'))
+    assert done['status'] == 'success'
+
+    # A stale pending actionable record now appears (the pre-D3 residue).
+    _stub_finding_queries(monkeypatch, {'build-error': 1})
+
+    # The cleanup archive (no --reason) of the already-complete plan must proceed.
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False, reason=None))
+    assert result['status'] == 'success', (
+        'A cleanup archive of an already-complete plan must not be blocked by a '
+        'stale pending finding — the completion gate fires only while in 6-finalize.'
+    )
+    assert 'archived_to' in result

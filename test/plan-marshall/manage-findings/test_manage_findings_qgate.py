@@ -5,98 +5,15 @@
 
 from _manage_findings_fixtures import (
     SCRIPT_PATH,
-    _add_ns,
-    _promote_ns,
     _qgate_add_ns,
     _qgate_query_ns,
     _qgate_resolve_ns,
-    _query_ns,
-    _resolve_ns,
-    cmd_add,
-    cmd_promote,
     cmd_qgate_add,
     cmd_qgate_query,
     cmd_qgate_resolve,
-    cmd_query,
-    cmd_resolve,
 )
 
 from conftest import run_script
-
-
-def test_finding_resolve_all_statuses(plan_context):
-    """Test all resolution statuses."""
-    resolutions = ['pending', 'fixed', 'suppressed', 'accepted', 'taken_into_account', 'rejected']
-    for res in resolutions:
-        add_result = cmd_add(_add_ns(type='bug', title=f'Bug for {res}', detail='d'))
-        hash_id = str(add_result['hash_id'])
-
-        result = cmd_resolve(_resolve_ns(hash_id=hash_id, resolution=res))
-        assert result['status'] == 'success', f'Failed for resolution {res}'
-
-
-# =============================================================================
-# Test: Finding Promote Command
-# =============================================================================
-
-
-def test_finding_promote(plan_context):
-    """Test promoting a finding."""
-    add_result = cmd_add(
-        _add_ns(
-            plan_id='finding-promote',
-            type='tip',
-            title='Use constructor injection',
-            detail='Prefer constructor injection over field injection for testability',
-        )
-    )
-    hash_id = str(add_result['hash_id'])
-
-    result = cmd_promote(
-        _promote_ns(
-            plan_id='finding-promote',
-            hash_id=hash_id,
-            promoted_to='architecture',
-        )
-    )
-    assert result['status'] == 'success'
-    assert result['promoted_to'] == 'architecture'
-
-
-def test_finding_promote_to_lessons(plan_context):
-    """Test promoting to lessons learned."""
-    add_result = cmd_add(
-        _add_ns(
-            type='bug',
-            title='Null pointer from missing null check',
-            detail='Always check for null before calling methods on optional fields',
-        )
-    )
-    hash_id = str(add_result['hash_id'])
-
-    result = cmd_promote(
-        _promote_ns(
-            hash_id=hash_id,
-            promoted_to='lessons-2025-01-22-001',
-        )
-    )
-    assert 'lessons-' in result['promoted_to']
-
-
-def test_finding_query_promoted(plan_context):
-    """Test filtering by promoted status."""
-    add_result = cmd_add(_add_ns(type='tip', title='Promoted tip', detail='d'))
-    hash_id = str(add_result['hash_id'])
-    cmd_promote(_promote_ns(hash_id=hash_id, promoted_to='architecture'))
-
-    cmd_add(_add_ns(type='tip', title='Not promoted', detail='d'))
-
-    result = cmd_query(_query_ns(promoted='true'))
-    assert result['filtered_count'] == 1
-
-    result = cmd_query(_query_ns(promoted='false'))
-    assert result['filtered_count'] == 1
-
 
 # =============================================================================
 # Test: Q-Gate Add Command
@@ -197,6 +114,130 @@ def test_qgate_add_invalid_source(plan_context):
 
 
 # =============================================================================
+# Test: Q-Gate Deduplication
+# =============================================================================
+
+
+def test_qgate_add_dedup_pending(plan_context):
+    """Same title AND same content discriminator dedups to a single pending record."""
+    result1 = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-dedup-pend',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Missing assessment for helper.py',
+            detail='helper.py is consumer-only',
+        )
+    )
+    assert result1['status'] == 'success'
+    original_hash = str(result1['hash_id'])
+
+    # Same title AND same detail/file_path/rule → same discriminator → dedup.
+    result2 = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-dedup-pend',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Missing assessment for helper.py',
+            detail='helper.py is consumer-only',
+        )
+    )
+    assert result2['status'] == 'deduplicated'
+    assert str(result2['hash_id']) == original_hash
+
+    query_result = cmd_qgate_query(
+        _qgate_query_ns(
+            plan_id='qgate-dedup-pend',
+            phase='3-outline',
+        )
+    )
+    assert query_result['total_count'] == 1
+
+
+def test_qgate_add_reopen_resolved(plan_context):
+    """Re-adding a resolved finding with the SAME content discriminator reopens it."""
+    add_result = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-dedup-reopen',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Missing coverage for utils.py',
+            detail='utils.parse() has no test',
+        )
+    )
+    assert add_result['status'] == 'success'
+    hash_id = str(add_result['hash_id'])
+
+    cmd_qgate_resolve(
+        _qgate_resolve_ns(
+            plan_id='qgate-dedup-reopen',
+            hash_id=hash_id,
+            resolution='taken_into_account',
+            phase='3-outline',
+            detail='Addressed',
+        )
+    )
+
+    # Same title AND same detail → same discriminator → genuine re-detection → reopen.
+    reopen_result = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-dedup-reopen',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Missing coverage for utils.py',
+            detail='utils.parse() has no test',
+        )
+    )
+    assert reopen_result['status'] == 'reopened'
+    assert str(reopen_result['hash_id']) == hash_id
+
+    query_result = cmd_qgate_query(
+        _qgate_query_ns(
+            plan_id='qgate-dedup-reopen',
+            phase='3-outline',
+            resolution='pending',
+        )
+    )
+    assert query_result['filtered_count'] == 1
+
+
+def test_qgate_add_different_titles_not_deduped(plan_context):
+    """Test that different titles create separate findings."""
+    cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-dedup-diff',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Finding A',
+            detail='d1',
+        )
+    )
+    cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-dedup-diff',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Finding B',
+            detail='d2',
+        )
+    )
+
+    query_result = cmd_qgate_query(
+        _qgate_query_ns(
+            plan_id='qgate-dedup-diff',
+            phase='3-outline',
+        )
+    )
+    assert query_result['total_count'] == 2
+
+
+# =============================================================================
 # Test: Q-Gate Query Command
 # =============================================================================
 
@@ -294,35 +335,3 @@ def test_qgate_query_by_source(plan_context):
     )
     assert result['total_count'] == 2
     assert result['filtered_count'] == 1
-
-
-def test_qgate_per_phase_isolation(plan_context):
-    """Test that Q-Gate findings are isolated per phase."""
-    cmd_qgate_add(
-        _qgate_add_ns(
-            plan_id='qgate-phase-iso',
-            phase='3-outline',
-            source='qgate',
-            type='triage',
-            title='Phase 3 finding',
-            detail='d',
-        )
-    )
-    cmd_qgate_add(
-        _qgate_add_ns(
-            plan_id='qgate-phase-iso',
-            phase='4-plan',
-            source='qgate',
-            type='triage',
-            title='Phase 4 finding',
-            detail='d',
-        )
-    )
-
-    result = cmd_qgate_query(_qgate_query_ns(plan_id='qgate-phase-iso', phase='3-outline'))
-    assert result['total_count'] == 1
-    assert result['phase'] == '3-outline'
-
-    result = cmd_qgate_query(_qgate_query_ns(plan_id='qgate-phase-iso', phase='4-plan'))
-    assert result['total_count'] == 1
-    assert result['phase'] == '4-plan'

@@ -8,13 +8,12 @@ from __future__ import annotations
 import itertools
 from datetime import UTC, datetime, timedelta
 
-import pytest
 from _manage_metrics_fixtures import (
     ns_generate,
     ns_start_phase,
 )
 from _manage_metrics_record_dispatch_boundary_fixtures import (
-    DISPATCH_TERMINATION_CAUSES,
+    SCRIPT_PATH,
     _boundary_path,
     _data_rows,
     _ns,
@@ -22,6 +21,8 @@ from _manage_metrics_record_dispatch_boundary_fixtures import (
     cmd_record_dispatch_boundary,
     manage_metrics,
 )
+
+from conftest import run_script
 
 # =============================================================================
 # Boundary-measure coverage: rows_recorded and the partiality verdict
@@ -92,6 +93,25 @@ def test_missing_reference_count_is_undecidable_not_partial():
         {'dispatch_boundary_rows_recorded': 3}
     ) is None
     assert manage_metrics._boundary_measure_is_partial({'subagent_samples': 5}) is None
+
+
+# =============================================================================
+# (e) Missing required flags cause non-zero exit before any file write
+# =============================================================================
+
+
+def test_missing_required_flag_rejected_subprocess_no_file_written(plan_context):
+    """Omitting --termination-cause rejects the run before any file write."""
+    result = run_script(
+        SCRIPT_PATH,
+        'record-dispatch-boundary',
+        '--plan-id',
+        'disp-missing-cause',
+        '--phase',
+        '5-execute',
+    )
+    assert result.returncode != 0, 'argparse rejection MUST yield non-zero exit'
+    assert not _boundary_path(plan_context.plan_dir_for('disp-missing-cause'), '5-execute').exists()
 
 
 # =============================================================================
@@ -214,40 +234,3 @@ def test_subsequent_invocations_append_rows_in_order_with_monotonic_timestamps(
     assert timestamps == sorted(timestamps), (
         f'Timestamps not monotonic across appended rows: {timestamps}'
     )
-
-
-# =============================================================================
-# (c) Every documented --termination-cause value is accepted
-# =============================================================================
-
-
-@pytest.mark.parametrize('cause', list(DISPATCH_TERMINATION_CAUSES))
-def test_all_termination_causes_accepted(plan_context, cause):
-    """Each member of the documented termination-cause enum is accepted as-is.
-
-    Parametrized over the live DISPATCH_TERMINATION_CAUSES tuple, so a newly
-    added cause (e.g. budget_yield) is automatically exercised on the happy path.
-    """
-    # plan_id slugs use kebab-case; map underscores → hyphens for the slug.
-    plan_id = f'disp-cause-{cause.replace("_", "-")}'
-    plan_dir = plan_context.plan_dir_for(plan_id)
-    _seed_status_json(plan_dir)
-    result = cmd_record_dispatch_boundary(
-        _ns(
-            plan_id,
-            phase='5-execute',
-            termination_cause=cause,
-            total_tokens=1,
-            tool_uses=1,
-            duration_ms=1,
-        )
-    )
-    assert result['status'] == 'success'
-    assert result['termination_cause'] == cause
-
-    path = _boundary_path(plan_dir, '5-execute')
-    content = path.read_text(encoding='utf-8')
-    # Only one data row, and it carries the requested cause verbatim.
-    rows = _data_rows(content)
-    assert len(rows) == 1
-    assert f',{cause},1,1,1' in rows[0]

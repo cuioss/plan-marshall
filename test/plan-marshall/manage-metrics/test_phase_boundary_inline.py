@@ -146,6 +146,56 @@ def test_inline_init_phase_absent_from_missing_end_time_list(plan_context):
     assert 'unrecorded_phases:' not in content
 
 
+# =============================================================================
+# Inline main-context attribution on a MIXED phase (D2): a 6-finalize phase that
+# ran BOTH dispatched steps (total_tokens present) AND inline steps (four-field
+# usage present) surfaces the inline contribution as a distinct field.
+# =============================================================================
+
+
+def test_inline_main_context_surfaced_on_mixed_finalize_phase(plan_context, monkeypatch):
+    """A 6-finalize phase carrying BOTH a dispatched total_tokens AND four-field usage
+    surfaces inline_main_context_tokens (input+output+cache_creation, cache_read
+    EXCLUDED), keeps total_tokens byte-identical, and keeps its end_time marker
+    (#812).
+    """
+    _drive_full_six_phase_plan('inline-mixed-finalize')
+    # 6-finalize closed with dispatched total_tokens=31000. Feed enrich a
+    # four-field bucket for it — the inline finalize-step contribution. The
+    # enrich else-branch must surface inline_main_context_tokens without
+    # overwriting the dispatched total.
+    buckets = {
+        '6-finalize': {
+            'input_tokens': 20000,
+            'output_tokens': 8000,
+            'cache_read_input_tokens': 500000,
+            'cache_creation_input_tokens': 2000,
+            'billing_weighted_total': 40000,
+        },
+    }
+    _run_inline_enrich('inline-mixed-finalize', monkeypatch, buckets=buckets)
+    result = cmd_generate(ns_generate('inline-mixed-finalize'))
+
+    # #812: the timestamps-closed row keeps its end_time marker — attribution
+    # never touches it.
+    assert result['any_phase_missing_end_time'] is False
+
+    content = (plan_context.plan_dir_for('inline-mixed-finalize') / 'work' / 'metrics.toon').read_text()
+    fin_block = _phase_block(content, '6-finalize')
+    # Explicit-wins: the dispatched total_tokens is byte-identical.
+    assert int(_field(fin_block, 'total_tokens')) == 31000
+    # inline_main_context_tokens = 20000 + 8000 + 2000 = 30000 (cache_read EXCLUDED).
+    inline_field = _field(fin_block, 'inline_main_context_tokens')
+    assert inline_field is not None
+    assert int(inline_field) == 30000
+    # The cache_read magnitude must NOT leak into the surfaced inline figure.
+    assert int(inline_field) < 500000
+
+    # generate renders the inline reconciliation line under the phase total.
+    md = (plan_context.plan_dir_for('inline-mixed-finalize') / 'metrics.md').read_text()
+    assert 'Inline main-context tokens' in md
+
+
 def test_recipe_inline_refine_outline_carry_total_tokens_after_enrich(plan_context, monkeypatch):
     """The recipe-inline 2-refine / 3-outline phases carry a derived total_tokens after enrich."""
     _drive_full_six_phase_plan('inline-recipe')
@@ -232,56 +282,6 @@ def test_unclosed_phase_still_flips_missing_end_time(plan_context):
     # is missing one.
     assert '1-init' not in result['phases_missing_end_time']
     assert '2-refine' not in result['phases_missing_end_time']
-
-
-# =============================================================================
-# Inline main-context attribution on a MIXED phase (D2): a 6-finalize phase that
-# ran BOTH dispatched steps (total_tokens present) AND inline steps (four-field
-# usage present) surfaces the inline contribution as a distinct field.
-# =============================================================================
-
-
-def test_inline_main_context_surfaced_on_mixed_finalize_phase(plan_context, monkeypatch):
-    """A 6-finalize phase carrying BOTH a dispatched total_tokens AND four-field usage
-    surfaces inline_main_context_tokens (input+output+cache_creation, cache_read
-    EXCLUDED), keeps total_tokens byte-identical, and keeps its end_time marker
-    (#812).
-    """
-    _drive_full_six_phase_plan('inline-mixed-finalize')
-    # 6-finalize closed with dispatched total_tokens=31000. Feed enrich a
-    # four-field bucket for it — the inline finalize-step contribution. The
-    # enrich else-branch must surface inline_main_context_tokens without
-    # overwriting the dispatched total.
-    buckets = {
-        '6-finalize': {
-            'input_tokens': 20000,
-            'output_tokens': 8000,
-            'cache_read_input_tokens': 500000,
-            'cache_creation_input_tokens': 2000,
-            'billing_weighted_total': 40000,
-        },
-    }
-    _run_inline_enrich('inline-mixed-finalize', monkeypatch, buckets=buckets)
-    result = cmd_generate(ns_generate('inline-mixed-finalize'))
-
-    # #812: the timestamps-closed row keeps its end_time marker — attribution
-    # never touches it.
-    assert result['any_phase_missing_end_time'] is False
-
-    content = (plan_context.plan_dir_for('inline-mixed-finalize') / 'work' / 'metrics.toon').read_text()
-    fin_block = _phase_block(content, '6-finalize')
-    # Explicit-wins: the dispatched total_tokens is byte-identical.
-    assert int(_field(fin_block, 'total_tokens')) == 31000
-    # inline_main_context_tokens = 20000 + 8000 + 2000 = 30000 (cache_read EXCLUDED).
-    inline_field = _field(fin_block, 'inline_main_context_tokens')
-    assert inline_field is not None
-    assert int(inline_field) == 30000
-    # The cache_read magnitude must NOT leak into the surfaced inline figure.
-    assert int(inline_field) < 500000
-
-    # generate renders the inline reconciliation line under the phase total.
-    md = (plan_context.plan_dir_for('inline-mixed-finalize') / 'metrics.md').read_text()
-    assert 'Inline main-context tokens' in md
 
 
 def test_dispatched_phase_without_four_field_usage_is_marked_unmeasured(plan_context, monkeypatch):

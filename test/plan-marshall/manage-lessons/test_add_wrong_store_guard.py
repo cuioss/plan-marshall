@@ -5,13 +5,7 @@
 
 Covers:
 
-* ``cmd_add`` direct invocation (TestCmdAdd)
-* ``cmd_add`` CLI plumbing via subprocess (TestCliPlumbingAdd)
-* ``status=active`` frontmatter seeding on add (TestStatusFrontmatterOnAdd)
-* Hour-aware id generation backing ``cmd_add`` (TestGetNextIdHourAware)
-* Zone agreement between the id prefix and ``created`` (TestLessonIdClockZone)
 * Collision-safe id allocation in ``cmd_add`` / ``cmd_from_error``
-  (TestCollisionSafeAllocation) — these tests cover the
   ``_allocate_and_write_scaffold`` helper that both subcommands share;
   ``cmd_from_error`` is exercised in one regression test to pin the shared
   contract rather than be split across files.
@@ -19,40 +13,14 @@ Covers:
 
 
 import json
-import time
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
 import _lessons_io
-import pytest
 from _lessons_helpers import (
     cmd_add,
     cmd_from_error,
 )
-
-
-# =============================================================================
-# Tier 2: id prefix / created-field zone agreement
-# =============================================================================
-
-
-@pytest.fixture
-def europe_berlin_tz(monkeypatch):
-    """Pin the process-local timezone to ``Europe/Berlin`` for one test.
-
-    ``Europe/Berlin`` is UTC+2 in July (CEST), so a late-evening UTC instant
-    already falls on the next local calendar day — the divergence window this
-    module's zone regression needs. ``time.tzset()`` is what makes the ``TZ``
-    change visible to ``datetime.astimezone()``; it must be re-run on teardown
-    so the restored ``TZ`` takes effect for subsequent tests.
-    """
-    monkeypatch.setenv('TZ', 'Europe/Berlin')
-    time.tzset()
-    try:
-        yield
-    finally:
-        monkeypatch.undo()
-        time.tzset()
 
 
 class TestAddWrongStoreGuard:

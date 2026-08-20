@@ -80,68 +80,6 @@ def test_script_source_uses_canonical_local_plans_path():
     assert legacy == [], f'Legacy .plan/plans/ strings remain: {legacy}'
 
 
-def test_exploration_buckets_match_platform_runtime_contract():
-    """``_EXPLORATION_BUCKETS`` matches the bucket set the runtime contract declares.
-
-    Contract-level drift guard for the cross-process hand-mirror: the bucket names
-    are recovered from the contract's ``*_tool_calls`` keys, so adding a bucket to
-    the producer without extending ``_EXPLORATION_BUCKETS`` fails loudly here.
-    """
-    contract_buckets = {
-        key[: -len('_tool_calls')]
-        for key in _contract_counter_keys()
-        if key.endswith('_tool_calls')
-    }
-
-    assert contract_buckets, 'contract declares no *_tool_calls counter keys'
-    assert set(manage_metrics._EXPLORATION_BUCKETS) == contract_buckets
-    # The mirror must also stay duplicate-free — a repeated name would silently
-    # double a bucket's counter fields below.
-    assert len(manage_metrics._EXPLORATION_BUCKETS) == len(contract_buckets)
-
-
-def test_exploration_counter_fields_match_platform_runtime_contract():
-    """``_EXPLORATION_COUNTER_FIELDS`` equals the contract's counter key set exactly.
-
-    The derived ``{bucket}_{measure}`` product must reproduce the contract's ten
-    published counter keys — no extra field manage-metrics would persist but the
-    producer never emits, and no missing field the producer emits but the report
-    would drop.
-    """
-    assert set(manage_metrics._EXPLORATION_COUNTER_FIELDS) == _contract_counter_keys()
-
-
-def test_cache_read_attribution_fields_match_platform_runtime_contract():
-    """``_CACHE_READ_ATTRIBUTION_FIELDS`` equals the contract's attribution key set exactly.
-
-    The derived product over ``_EXPLORATION_BUCKETS`` plus the residual literal must
-    reproduce the published group — no field manage-metrics would persist that the
-    producer never emits, and no field the producer emits that the report drops.
-    """
-    contract_keys = _contract_attribution_keys()
-
-    assert contract_keys, 'contract declares no cache-read attribution keys'
-    assert set(manage_metrics._CACHE_READ_ATTRIBUTION_FIELDS) == contract_keys
-    # The residual is a member of the group, not an optional extra: dropping it
-    # would turn a partial split into an apparently complete one.
-    assert 'cache_read_unattributed' in contract_keys
-
-
-def test_exploration_subsource_fields_match_platform_runtime_contract():
-    """``_EXPLORATION_SUBSOURCE_FIELDS`` equals the contract's sub-source key set exactly.
-
-    Same cross-process hand-mirror guard as the two drift tests above: a
-    sub-source added on the producer side without extending the mirror would
-    silently under-persist and under-render, and fails loudly here instead.
-    """
-    contract_keys = _contract_subsource_keys()
-
-    assert contract_keys, 'contract declares no exploration sub-source keys'
-    assert set(manage_metrics._EXPLORATION_SUBSOURCE_FIELDS) == contract_keys
-    # The mirror stays duplicate-free — a repeated name would double a field.
-    assert len(manage_metrics._EXPLORATION_SUBSOURCE_FIELDS) == len(contract_keys)
-
-
 def test_subsource_group_is_disjoint_from_the_exploration_counter_group():
     """Matched control: the sub-sources are not a sixth bucket in the counter family.
 
@@ -266,6 +204,17 @@ def test_every_documented_termination_cause_site_matches_the_enum():
     )
 
 
+def test_every_declared_population_has_a_bullet_note():
+    """No population may render without a qualifier — derived, not hand-listed.
+
+    `_POPULATION_BULLET_NOTE` is indexed unconditionally at the render site, so a
+    population added to the tuple without a note would raise there. This asserts
+    the coverage directly instead of waiting for a KeyError in a report.
+    """
+    missing = set(manage_metrics.TOKEN_POPULATIONS) - set(manage_metrics._POPULATION_BULLET_NOTE)
+    assert missing == set(), f'populations with no rendered qualifier: {sorted(missing)}'
+
+
 def test_termination_cause_sites_cover_both_documented_shapes():
     """More than one site exists, and both documented shapes are discovered.
 
@@ -364,22 +313,56 @@ def test_data_format_termination_cause_guard_detects_a_dropped_value():
         _assert_documented_set_matches_enum(mutated, '`termination_cause` enum**:')
 
 
-def test_enrich_labels_a_zero_dispatch_phase_as_inline(plan_context, monkeypatch):
-    """The inline fold still happens — and the row says so, twice.
+def test_repeated_enrich_keeps_an_inline_only_row_labelled_inline(plan_context, monkeypatch):
+    """A second enrich run must not read its OWN fold as a dispatched total.
 
-    The folded figure lands in `total_tokens` (so the phase stays countable) AND
-    under its own population-honest name `inline_main_context_tokens`, with
-    `total_tokens_population: inline` naming which population `total_tokens`
-    measures here. Reading the figure ONLY through the dispatched-population
-    field is what the second record removes.
+    The inline branch writes `total_tokens`, so a branch keyed on
+    `not total_tokens` is self-defeating: run two sees run one's fold, falls
+    through to the mixed branch, and stamps `mixed` on a row where nothing was
+    ever dispatched. Re-invocation is the ordinary case — `record-metrics` runs
+    enrich on every finalize entry and a loop-back re-enters it — so a
+    single-run assertion proves nothing about the stamp a report actually reads.
     """
-    plan_id = 'population-inline-only'
+    plan_id = 'population-enrich-idempotent-inline'
     cmd_start_phase(ns_start_phase(plan_id, '1-init'))
     cmd_end_phase(ns_end_phase(plan_id, '1-init'))
 
     assert _run_enrich_with_buckets(plan_id, monkeypatch, {'1-init': _INLINE_BUCKET})['enriched']
+    first = dict(_phase_row(plan_id, '1-init'))
+    assert first['total_tokens_population'] == manage_metrics.POPULATION_INLINE
+    assert first['total_tokens'] == _INLINE_SUM
 
-    row = _phase_row(plan_id, '1-init')
-    assert row['total_tokens'] == _INLINE_SUM
+    assert _run_enrich_with_buckets(plan_id, monkeypatch, {'1-init': _INLINE_BUCKET})['enriched']
+    second = _phase_row(plan_id, '1-init')
+
+    # The discriminator survives the re-run, and the folded figure is unchanged —
+    # the second run recognised its own prior fold instead of re-classifying it.
+    assert second['total_tokens_population'] == manage_metrics.POPULATION_INLINE
+    assert second['total_tokens'] == first['total_tokens']
+    assert second['inline_main_context_tokens'] == _INLINE_SUM
+
+
+def test_repeated_enrich_keeps_a_genuinely_mixed_row_labelled_mixed(plan_context, monkeypatch):
+    """Matched control: the idempotence fix does not disable the `mixed` stamp.
+
+    Keying the inline branch off the discriminator could have been "widened" into
+    never reaching the mixed branch at all, which would pass the inline test
+    above while destroying the signature it exists to distinguish. A row carrying
+    a REAL dispatched total plus inline spend must still read `mixed` on the
+    first run and on every run after it.
+    """
+    plan_id = 'population-enrich-idempotent-mixed'
+    cmd_start_phase(ns_start_phase(plan_id, '6-finalize'))
+    cmd_end_phase(ns_end_phase(plan_id, '6-finalize', total_tokens=88000))
+
+    _run_enrich_with_buckets(plan_id, monkeypatch, {'6-finalize': _INLINE_BUCKET})
+    assert _phase_row(plan_id, '6-finalize')['total_tokens_population'] == (
+        manage_metrics.POPULATION_MIXED
+    )
+
+    _run_enrich_with_buckets(plan_id, monkeypatch, {'6-finalize': _INLINE_BUCKET})
+    row = _phase_row(plan_id, '6-finalize')
+
+    assert row['total_tokens_population'] == manage_metrics.POPULATION_MIXED
+    assert row['total_tokens'] == 88000, 'the dispatched total must never be overwritten'
     assert row['inline_main_context_tokens'] == _INLINE_SUM
-    assert row['total_tokens_population'] == manage_metrics.POPULATION_INLINE

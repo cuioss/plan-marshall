@@ -10,7 +10,7 @@ import json
 from _manage_tasks_qgate_mechanical_fixtures import (
     _EXISTING_FILE,
     _MISSING_FILE,
-    _files_exist_failed,
+    _load_module,
     _ns,
     _qgate_mod,
     _seed_one_coverage_failure,
@@ -101,46 +101,6 @@ def test_qgate_mechanical_files_exist_missing_step_target(plan_context):
 
     result = cmd_qgate_mechanical(_ns('qgate-files-missing'))
     assert result['checks']['files_exist']['failed'] == 1
-
-
-def test_qgate_files_exist_read_missing_flags(plan_context):
-    """read + missing target → 1 finding (current behaviour preserved)."""
-    assert _files_exist_failed(plan_context, 'qgate-read-missing', _MISSING_FILE, 'read') == 1
-
-
-def test_qgate_files_exist_read_present_passes(plan_context):
-    """read + existing target → 0 findings."""
-    assert _files_exist_failed(plan_context, 'qgate-read-present', _EXISTING_FILE, 'read') == 0
-
-
-def test_qgate_files_exist_write_new_missing_passes(plan_context):
-    """write-new + missing target → 0 findings (the noise class this plan removes)."""
-    assert _files_exist_failed(plan_context, 'qgate-writenew-missing', _MISSING_FILE, 'write-new') == 0
-
-
-def test_qgate_files_exist_write_new_present_flags(plan_context):
-    """write-new + existing target → 1 finding (inverted signal fires)."""
-    assert _files_exist_failed(plan_context, 'qgate-writenew-present', _EXISTING_FILE, 'write-new') == 1
-
-
-def test_qgate_files_exist_write_replace_missing_passes(plan_context):
-    """write-replace + missing target → 0 findings."""
-    assert _files_exist_failed(plan_context, 'qgate-writerepl-missing', _MISSING_FILE, 'write-replace') == 0
-
-
-def test_qgate_files_exist_write_replace_present_passes(plan_context):
-    """write-replace + existing target → 0 findings."""
-    assert _files_exist_failed(plan_context, 'qgate-writerepl-present', _EXISTING_FILE, 'write-replace') == 0
-
-
-def test_qgate_files_exist_delete_missing_flags(plan_context):
-    """delete + missing target → 1 finding (delete-specific message)."""
-    assert _files_exist_failed(plan_context, 'qgate-delete-missing', _MISSING_FILE, 'delete') == 1
-
-
-def test_qgate_files_exist_delete_present_passes(plan_context):
-    """delete + existing target → 0 findings."""
-    assert _files_exist_failed(plan_context, 'qgate-delete-present', _EXISTING_FILE, 'delete') == 0
 
 
 def test_qgate_mechanical_files_exist_skips_verification_profile(plan_context):
@@ -385,3 +345,17 @@ def test_qgate_mechanical_deduplicated_persist_stays_benign(plan_context):
     # ``findings_emitted`` counts appends, and a dedup appends nothing — but that
     # zero means "already in the store", never "rejected".
     assert second['findings_emitted'] == 0
+
+
+# =============================================================================
+# Dispatch via manage-tasks.py registry
+# =============================================================================
+
+
+def test_qgate_mechanical_registered_in_manage_tasks_dispatch():
+    """The subcommand is wired in ``COMMANDS`` so the dispatcher routes to it."""
+    manage_tasks = _load_module('_manage_tasks_dispatch_check', 'manage-tasks.py')
+    assert 'qgate-mechanical-checks' in manage_tasks.COMMANDS
+    assert manage_tasks.COMMANDS['qgate-mechanical-checks'] is cmd_qgate_mechanical or callable(
+        manage_tasks.COMMANDS['qgate-mechanical-checks']
+    )

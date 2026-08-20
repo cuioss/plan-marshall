@@ -5,7 +5,7 @@
 
 import json
 
-from _manage_status_main_dispatch_fixtures import _PHASES, _parse, _pin_stale_snapshot, _run
+from _manage_status_main_dispatch_fixtures import _PHASES, _parse, _run
 
 # =============================================================================
 # create -> read roundtrip through the dispatcher
@@ -137,38 +137,28 @@ def test_main_title_token_set_then_clear(plan_context, monkeypatch, capsys):
     assert 'title_token' not in cleared
 
 
-def test_main_phase_write_preserves_a_title_token_set_after_its_snapshot_read(
-    plan_context, monkeypatch, capsys
-):
-    """A ``title-token set`` landing inside a phase write's read→write window survives.
+def test_main_title_token_rejects_unknown_state(plan_context, monkeypatch, capsys):
+    """An out-of-enum --state is an argparse rejection (exit 2)."""
+    code, _, _ = _run(
+        monkeypatch, capsys, ['title-token', 'set', '--plan-id', 'ms-disp-tt2', '--state', 'not-a-state']
+    )
 
-    ``set-phase`` commits a WHOLE document assembled from a snapshot read, so a
-    concurrent set committed after that read would be clobbered by the snapshot
-    value — a last-writer-wins loss on the very field four independent writers
-    coordinate through. The phase delta must land AND the live record must
-    survive; asserting only the former would certify exactly the defect.
+    assert code == 2
+
+
+def test_main_title_token_rejects_unknown_owner(plan_context, monkeypatch, capsys):
+    """An out-of-enum --owner is likewise an argparse rejection (exit 2).
+
+    The owner vocabulary is as closed as the state vocabulary: an unrecognised
+    owner recorded on the token would produce a record no writer could clear.
     """
-    plan_id = 'ms-disp-race'
-    _run(monkeypatch, capsys, ['create', '--plan-id', plan_id, '--title', 'Race', '--phases', _PHASES])
-
-    status_file = plan_context.plan_dir_for(plan_id) / 'status.json'
-    stale_snapshot = json.loads(status_file.read_text(encoding='utf-8'))
-    assert 'title_token' not in stale_snapshot
-
-    # The concurrent writer commits its record in its own critical section.
     code, _, _ = _run(
         monkeypatch,
         capsys,
-        ['title-token', 'set', '--plan-id', plan_id, '--state', 'build-busy', '--owner', 'build-hook'],
+        [
+            'title-token', 'set', '--plan-id', 'ms-disp-tt3',
+            '--state', 'build-busy', '--owner', 'not-an-owner',
+        ],
     )
-    assert code == 0
 
-    _pin_stale_snapshot(monkeypatch, stale_snapshot)
-    code, out, _ = _run(monkeypatch, capsys, ['set-phase', '--plan-id', plan_id, '--phase', '5-execute'])
-
-    assert code == 0
-    assert _parse(out)['status'] == 'success'
-    persisted = json.loads(status_file.read_text(encoding='utf-8'))
-    assert persisted['current_phase'] == '5-execute'
-    assert persisted['title_token']['state'] == 'build-busy'
-    assert persisted['title_token']['owner'] == 'build-hook'
+    assert code == 2

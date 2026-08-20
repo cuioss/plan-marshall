@@ -3,15 +3,7 @@
 """Tests for manage-tasks.py new fields: domain, profile, skills, origin."""
 
 
-from _task_new_fields_fixtures import (
-    _add_ns,
-    _list_ns,
-    _read_ns,
-    add_task_with_fields,
-    cmd_add,
-    cmd_list,
-    cmd_read,
-)
+from _task_new_fields_fixtures import _add_ns, add_task_with_fields, cmd_add
 
 # =============================================================================
 # Tests: add with new fields
@@ -164,76 +156,97 @@ steps:
 
 
 # =============================================================================
-# Tests: read returns new fields
+# Tests: arbitrary domains (config-driven, not hardcoded)
 # =============================================================================
 
 
-def test_get_returns_domain(plan_context):
-    """Read returns domain field."""
-    add_task_with_fields(plan_id='nf-get-dom', title='Test', domain='javascript', profile='implementation')
-    result = cmd_read(_read_ns(plan_id='nf-get-dom', number=1))
+def test_add_with_arbitrary_domain(plan_context):
+    """Add accepts any domain value (domains are config-driven)."""
+    toon = """title: Requirements task
+deliverable: 1
+domain: requirements
+profile: implementation
+description: Desc
+skills:
+  - pm-requirements:req-core
+steps:
+  - docs/requirements.adoc (write-new)"""
+    result = cmd_add(_add_ns(plan_id='nf-arb-dom', content=toon.replace('\n', '\\n')))
 
     assert result['status'] == 'success'
-    assert result['task']['domain'] == 'javascript'
+    assert result['task']['domain'] == 'requirements'
 
 
-def test_get_returns_profile(plan_context):
-    """Read returns profile field."""
-    add_task_with_fields(plan_id='nf-get-prof', title='Test', profile='testing')
-    result = cmd_read(_read_ns(plan_id='nf-get-prof', number=1))
-
-    assert result['status'] == 'success'
-    assert result['task']['profile'] == 'testing'
-
-
-def test_get_returns_skills(plan_context):
-    """Read returns skills array."""
-    add_task_with_fields(
-        plan_id='nf-get-skills', title='Test', skills=['pm-dev-java:java-core', 'pm-dev-java:java-cdi']
-    )
-    result = cmd_read(_read_ns(plan_id='nf-get-skills', number=1))
+def test_add_with_custom_domain(plan_context):
+    """Add accepts custom domain values (config-driven)."""
+    toon = """title: Custom domain task
+deliverable: 1
+domain: my-custom-domain
+profile: implementation
+description: Desc
+skills:
+  - pm-dev-java:java-core
+steps:
+  - src/main/java/File.java (write-replace)"""
+    result = cmd_add(_add_ns(plan_id='nf-cust-dom', content=toon.replace('\n', '\\n')))
 
     assert result['status'] == 'success'
-    assert len(result['task']['skills']) == 2
-    assert 'pm-dev-java:java-core' in result['task']['skills']
-    assert 'pm-dev-java:java-cdi' in result['task']['skills']
+    assert result['task']['domain'] == 'my-custom-domain'
 
 
-def test_get_returns_origin(plan_context):
-    """Read returns origin field."""
-    add_task_with_fields(plan_id='nf-get-origin', title='Test', origin='plan')
-    result = cmd_read(_read_ns(plan_id='nf-get-origin', number=1))
+# =============================================================================
+# Tests: task type field
+# =============================================================================
+
+
+def test_add_with_plan_origin(plan_context):
+    """Add task with plan origin (default)."""
+    toon = """title: Implementation task
+deliverable: 1
+domain: java
+profile: implementation
+description: Desc
+skills:
+  - pm-dev-java:java-core
+steps:
+  - src/main/java/File.java (write-replace)"""
+    result = cmd_add(_add_ns(plan_id='nf-plan-origin', content=toon.replace('\n', '\\n')))
 
     assert result['status'] == 'success'
     assert result['task']['origin'] == 'plan'
 
 
-# =============================================================================
-# Tests: list includes new columns
-# =============================================================================
-
-
-def test_list_includes_domain_column(plan_context):
-    """List includes domain column."""
-    add_task_with_fields(plan_id='nf-list-dom', title='Java task', domain='java', profile='implementation')
-    add_task_with_fields(plan_id='nf-list-dom', title='JS task', domain='javascript', profile='implementation')
-
-    result = cmd_list(_list_ns(plan_id='nf-list-dom'))
-
-    assert result['status'] == 'success'
-    domains = [t['domain'] for t in result['tasks_table']]
-    assert 'java' in domains
-    assert 'javascript' in domains
-
-
-def test_list_includes_profile_column(plan_context):
-    """List includes profile column."""
-    add_task_with_fields(plan_id='nf-list-prof', title='Impl task', profile='implementation')
-    add_task_with_fields(plan_id='nf-list-prof', title='Test task', profile='testing')
-
-    result = cmd_list(_list_ns(plan_id='nf-list-prof'))
+def test_add_with_fix_origin(plan_context):
+    """Add task with fix origin."""
+    toon = """title: Fix task
+deliverable: 1
+domain: java
+profile: implementation
+origin: fix
+description: Desc
+skills:
+  - pm-dev-java:java-core
+steps:
+  - src/main/java/File.java (write-replace)"""
+    result = cmd_add(_add_ns(plan_id='nf-fix-origin', content=toon.replace('\n', '\\n')))
 
     assert result['status'] == 'success'
-    profiles = [t['profile'] for t in result['tasks_table']]
-    assert 'implementation' in profiles
-    assert 'testing' in profiles
+    assert result['task']['origin'] == 'fix'
+
+
+def test_add_with_sonar_origin(plan_context):
+    """Add task with sonar origin."""
+    toon = """title: Sonar fix task
+deliverable: 1
+domain: java
+profile: quality
+origin: sonar
+description: Desc
+skills:
+  - pm-dev-java:java-core
+steps:
+  - src/main/java/File.java (write-replace)"""
+    result = cmd_add(_add_ns(plan_id='nf-sonar-origin', content=toon.replace('\n', '\\n')))
+
+    assert result['status'] == 'success'
+    assert result['task']['origin'] == 'sonar'
