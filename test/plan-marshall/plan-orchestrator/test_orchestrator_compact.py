@@ -238,6 +238,15 @@ def _regenerated(result: dict, surface: str) -> dict:
     return rows[0]
 
 
+def _abstained(result: dict, section: str) -> dict:
+    rows: list[dict] = [row for row in result['abstained'] if row['section'] == section]
+    assert len(rows) == 1, (
+        f'expected exactly one {section!r} abstained row, got '
+        f'{[row["section"] for row in result["abstained"]]}'
+    )
+    return rows[0]
+
+
 # =============================================================================
 # Report shape and the happy path
 # =============================================================================
@@ -357,16 +366,25 @@ class TestNarrativeSurvivesVerbatim:
         assert RETRACTION in _epic_text(plan_context)
 
     def test_every_hand_authored_section_survives_verbatim(self, plan_context):
+        """Every narrative section survives a pass, and a SECOND pass is byte-identical.
+
+        The byte-identity claim is asserted across an actually-performed second
+        pass. Comparing the settled text against a read taken BEFORE the first
+        ``_run()`` would compare two different documents (the first pass rewrites
+        the resume body), and comparing it against a re-read of the same file
+        would be true by construction because nothing wrote between the reads.
+        """
         _live_epic(plan_context)
-
-        text = _epic_text(plan_context)  # after regeneration
         _run()
-        after = _epic_text(plan_context)
+        after_first = _epic_text(plan_context)  # the settled text, after regeneration
 
+        _run()
+
+        after_second = _epic_text(plan_context)
         for fragment in (VISION_TEXT, START_ANNOTATION, QUEUE_ANNOTATION, OPEN_DEFECT, WATCH):
-            assert fragment in after
-        # A second pass changes nothing at all.
-        assert after == text or after == _epic_text(plan_context)
+            assert fragment in after_second
+        # A second pass changes nothing at all — across a pass that was performed.
+        assert after_second == after_first
 
     def test_content_outside_the_markers_is_untouched_when_only_the_queue_changes(
         self, plan_context
@@ -479,6 +497,60 @@ class TestMarkersAbsent:
         assert _regenerated(result, 'resume-summary')['outcome'] == 'regenerated'
         # No ordered-queue markers were inserted into the hand-authored doc.
         assert _orch._begin_marker('ordered-queue') not in _epic_text(plan_context)
+
+    def test_an_unreachable_surface_is_not_reported_as_preserved_verbatim(self, plan_context):
+        """A section the stage COULD NOT reach is distinguishable from one it left alone.
+
+        ``## Ordered Queue`` carries a derivable surface. With its marker pair
+        absent the stage cannot regenerate it, so reporting it as
+        ``preserved_verbatim`` — a deliberate abstention — would claim a choice
+        the stage never made.
+        """
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+        _write_epic(plan_context, include_queue_markers=False)
+
+        result = _run()
+
+        assert _abstained(result, 'Ordered Queue')['treatment'] == (
+            'markers_absent_not_regenerated'
+        )
+
+    def test_an_unreachable_surface_is_counted_apart_from_the_abstentions(self, plan_context):
+        """``abstained_count`` counts choices; ``unreachable_count`` counts blind spots."""
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+        _write_epic(plan_context, include_queue_markers=False)
+
+        result = _run()
+
+        assert result['unreachable_count'] == 1
+        preserved = [
+            row for row in result['abstained'] if row['treatment'] == 'preserved_verbatim'
+        ]
+        assert result['abstained_count'] == len(preserved)
+        assert 'Ordered Queue' not in [row['section'] for row in preserved]
+
+    def test_a_purely_narrative_section_is_still_preserved_verbatim(self, plan_context):
+        """The control: a section carrying no derivable surface keeps the old treatment."""
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+        _write_epic(plan_context, include_queue_markers=False)
+
+        result = _run()
+
+        assert _abstained(result, 'Decisions')['treatment'] == 'preserved_verbatim'
+
+    def test_a_reachable_ledger_reports_no_unreachable_section(self, plan_context):
+        """With both marker pairs present nothing is unreachable, and the count says so."""
+        _live_epic(plan_context)
+
+        result = _run()
+
+        assert result['unreachable_count'] == 0
+        assert all(
+            row['treatment'] == 'preserved_verbatim' for row in result['abstained']
+        )
 
 
 # =============================================================================

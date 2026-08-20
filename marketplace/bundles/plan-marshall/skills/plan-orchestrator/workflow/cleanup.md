@@ -94,7 +94,7 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator com
   --slug {slug}
 ```
 
-Report `ledger_compaction: compacted`, and fold the stage's `regenerated[]`, `invariants[]`, and `abstained[]` into this report — every relocation the judgement half applied is named in `applied[]` with its source and destination, per the apply-policy. A `violated` invariant is acted on here, not swallowed (a `relocated_pointer_reachable: violated` means a pointer names a heading `settled.md` does not carry — fix the pointer or the heading and re-run); an `indeterminate` one is an unobservable check, never a failure. The stage refuses a closed epic (`refused_closed`) — but `cleanup` never reaches Phase B on a closed epic, because compaction is a live-epic operation.
+Report `ledger_compaction: compacted`, and fold the stage's `regenerated[]`, `invariants[]`, and `abstained[]` into this report as `compaction_regenerated[]`, `compaction_invariants[]` and `compaction_abstained[]` — all three **required, never omitted**, emitted empty when the stage produced no rows. Carry each `compaction_abstained[]` row's `treatment` through verbatim: a `markers_absent_not_regenerated` row is a surface the stage COULD NOT REACH, and reporting it as `preserved_verbatim` would claim an abstention nobody chose. Every relocation the judgement half applied is named in `applied[]` with its source and destination, per the apply-policy. A `violated` invariant is acted on here, not swallowed (a `relocated_pointer_reachable: violated` means a pointer names a heading `settled.md` does not carry — fix the pointer or the heading and re-run); an `indeterminate` one is an unobservable check, never a failure. The stage refuses a closed epic (`refused_closed`) — but `cleanup` never reaches Phase B on a closed epic, because compaction is a live-epic operation.
 
 ### Step 9 (Phase C): Archive — retire consumed messages
 
@@ -166,6 +166,12 @@ applied[A]{spec,finding_class,source,destination}:
 declined[D]{spec,finding_class,reason}:
   PLAN-09-gamma.md,redistribution,"row is running — never re-scoped mid-execution"
 ledger_compaction: compacted
+compaction_regenerated[R]{surface,outcome,lines_before,lines_after}:
+  ordered-queue,regenerated,7,9
+compaction_invariants[I]{invariant,verdict,evidence,population}:
+  queue_spec_bidirectional,ok,"queue and specs reconcile both ways","4 queue row(s) and 4 spec file(s)"
+compaction_abstained[B]{section,treatment}:
+  Decisions,preserved_verbatim
 archive_drain: refused
 archive_drain_reason: "no quiescence signal exists — PLAN-TRUTH-032 is superseded"
 restart_verdict: ready | not_ready | indeterminate
@@ -175,3 +181,5 @@ resume_anchor: "{next action}"
 `display_detail` is ≤80 chars, ASCII, no trailing period.
 
 Every per-spec row in `regrounded[]` carries its own `claims_scanned` population, so a row of zeros states which zero it is. `applied[]` names a source and a destination for every move — a silent application is indistinguishable from a lossy one. `declined[]` is a **required field, never omitted**: a clean report that hides a skip is exactly the failure this epic files against everyone else, so a run that declined nothing emits an empty `declined[]` rather than dropping the key.
+
+The three `compaction_*` keys carry the compact stage's own `regenerated[]`, `invariants[]` and `abstained[]` through into this report unchanged, and each is **required and never omitted** for the same reason `declined[]` is — a run that regenerated nothing, hit no invariant, or abstained from nothing emits the empty array rather than dropping the key, because an absent key is indistinguishable from a check that never ran. `compaction_abstained[]`'s `treatment` distinguishes a **choice** (`preserved_verbatim` — the section carries no derivable surface) from a **blind spot** (`markers_absent_not_regenerated` — the section owns a derivable surface whose marker pair is absent, so the stage could not reach it); the stage counts them apart as `abstained_count` and `unreachable_count`, and this report must not collapse them.
