@@ -42,7 +42,7 @@ INDET = _ppt.OUTCOME_INDETERMINATE
 
 SHAPE_1 = _ppt.SHAPE_1_SATURATION
 SHAPE_2 = _ppt.SHAPE_2_PIN_MARKED_NEWER_UNMARKED
-SHAPE_3 = _ppt.SHAPE_3_STALE_UNMARKED_BESIDE_PIN
+SHAPE_3 = _ppt.SHAPE_3_LOADER_FOLLOWS_NON_PIN_DIR
 SHAPE_4 = _ppt.SHAPE_4_PIN_DIVERGES_FROM_SOURCE
 SHAPE_5 = _ppt.SHAPE_5_REGISTRY_SELF_DISAGREES
 SHAPE_6 = _ppt.SHAPE_6_DIVERGENCE_NO_GC
@@ -84,15 +84,77 @@ def test_healthy_state_passes():
 # ---------------------------------------------------------------------------
 # (a) Each of the six shapes is detected.
 # ---------------------------------------------------------------------------
-def test_shape1_empty_unmarked_set_is_fail():
-    # Every version dir is orphan-marked (GC saturation) — a naive `unmarked == []`
-    # check reads this as "nothing stale"; the oracle reports it as a fail on the
-    # GC-exposure axis.
+def test_shape1_saturation_is_reported_and_is_not_itself_a_failure():
+    """Saturation is a GC-exposure OBSERVATION, not a load-safety failure.
+
+    A naive ``unmarked == []`` check reads a fully-marked cache as "nothing
+    stale", so the shape is still detected and reported. It no longer FAILS on
+    its own: the loader never consults the marker, so every dir being marked
+    still resolves to the newest eligible dir and seats no session on the wrong
+    body. What remains is a deletion risk from the foreign collector.
+
+    This tree is still a FAIL — and saturation is not why. Every dir being
+    marked includes the PIN dir whenever the pin is present, and that exposure
+    (the pin scheduled for deletion) does block. Saturation therefore cannot be
+    the sole signal in any tree with a readable registry; the case where the
+    re-ranking changes the OUTCOME is the next test.
+    """
     obs = _obs(version_dirs=(VersionDir('0.1.200', marked=True),))
+    verdict = _verdict(obs)
+    assert SHAPE_1 in verdict.shapes
+    assert SHAPE_1 in _ppt.NON_BLOCKING_SHAPES
+    assert any('saturation' in g for g in verdict.gc_exposures)
+    assert verdict.outcome == FAIL
+    assert any('orphan-marked' in g for g in verdict.gc_exposures)
+
+
+def test_saturation_with_an_unreadable_registry_is_indeterminate_not_fail():
+    """Saturation alone no longer converts a could-not-look into a verdict.
+
+    With the registry unreadable there is no pin dir to be exposed and no
+    divergence to compute, so saturation was the only entry on the shape list —
+    and it turned "the registry could not be read" into a confident FAIL. The
+    honest answer is ``indeterminate``: the shape is still reported, but the
+    reason the run cannot issue a verdict is the unreadable store.
+    """
+    obs = _obs(
+        install_path_version=None,
+        registry_version=None,
+        version_dirs=(VersionDir('0.1.200', marked=True),),
+    )
+    verdict = _verdict(obs)
+    assert verdict.outcome == INDET
+    assert 'could_not_look' in verdict.reason
+    assert SHAPE_1 in verdict.shapes
+    assert any('saturation' in g for g in verdict.gc_exposures)
+
+
+def test_saturation_alongside_a_real_divergence_still_fails():
+    """The control: saturation suppresses nothing else.
+
+    Without it, making saturation non-blocking would be indistinguishable from
+    making a saturated observation unfailable.
+    """
+    obs = _obs(
+        executor_version='0.1.100',
+        version_dirs=(VersionDir('0.1.200', marked=True),),
+    )
     verdict = _verdict(obs)
     assert verdict.outcome == FAIL
     assert SHAPE_1 in verdict.shapes
-    assert verdict.gc_exposures  # saturation is a GC exposure
+    assert any('executor' in d for d in verdict.divergences)
+
+
+def test_a_marked_pin_dir_still_fails():
+    """The other GC exposure — the pin dir itself scheduled for deletion — still fails.
+
+    Pins that the non-blocking carve-out is scoped to saturation and did not
+    disarm the GC-exposure axis as a whole.
+    """
+    obs = _obs(version_dirs=(VersionDir('0.1.200', marked=True), VersionDir('0.1.100', marked=False)))
+    verdict = _verdict(obs)
+    assert verdict.outcome == FAIL
+    assert any('orphan-marked' in g for g in verdict.gc_exposures)
 
 
 def test_shape2_pin_orphan_marked_while_newer_unmarked():
@@ -108,7 +170,7 @@ def test_shape2_pin_orphan_marked_while_newer_unmarked():
     assert verdict.gc_exposures  # the pin dir is marked (scheduled for deletion)
 
 
-def test_shape3_stale_unmarked_beside_pin_seats_session_backward():
+def test_shape3_loader_follows_a_non_pin_dir_seats_session_backward():
     # Two unmarked dirs: the registry pin (0.1.100) and a stale dir whose NAME
     # sorts higher (0.1.300). The loader follows the higher version-key, seating
     # the session off the pin.
@@ -257,6 +319,22 @@ def test_fail_verdict_states_operator_remedy_including_no_restart_and_in_run():
     assert 'Do NOT write the plugin registry' in verdict.remedy
 
 
+def test_every_operator_repair_step_names_an_invocable_surface():
+    """All three repair steps name something the operator can actually run.
+
+    Steps (1) and (2) named ``/sync-plugin-cache`` and the steward's
+    ``cache_retention sweep``; step (3) was the bare phrase "regenerate the
+    executor" — a goal, not a command, leaving the operator to guess which
+    surface performs it.
+    """
+    remedy = _verdict(_obs(executor_version='0.1.100')).remedy
+
+    assert '/sync-plugin-cache' in remedy
+    assert 'plan-marshall:marshall-steward:cache_retention sweep' in remedy
+    assert '/marshall-steward' in remedy
+    assert '.plan/execute-script.py' in remedy
+
+
 # ---------------------------------------------------------------------------
 # D4 — loader selection under two unmarked directories (from the selector code).
 # ---------------------------------------------------------------------------
@@ -265,15 +343,15 @@ def test_loader_follows_highest_version_key_among_unmarked():
     assert loader_selected_version(dirs) == '0.1.300'
 
 
-def test_loader_ignores_marker_on_retention_pinned_newest():
-    # The newest-on-disk dir's marker is ignored outright (retention pin).
+def test_loader_is_marker_insensitive_when_the_newest_dir_is_marked():
+    # The marker is never consulted: the newest dir wins whether or not it carries one.
     dirs = (VersionDir('0.1.300', marked=True), VersionDir('0.1.100', marked=False))
     assert loader_selected_version(dirs) == '0.1.300'
 
 
-def test_loader_saturation_falls_back_to_newest():
+def test_loader_is_marker_insensitive_when_every_dir_is_marked():
     dirs = (VersionDir('0.1.100', marked=True), VersionDir('0.1.050', marked=True))
-    # 0.1.100 is the newest-on-disk pin, so it is treated as live and wins.
+    # No fallback branch is involved: the newest dir wins, markers unread.
     assert loader_selected_version(dirs) == '0.1.100'
 
 
@@ -694,3 +772,187 @@ def test_observe_reports_a_split_executor_end_to_end(tmp_path):
     assert obs.executor_anchor is not None
     assert obs.executor_anchor.status == _ppt.EXECUTOR_SPLIT
     assert evaluate(obs, obs, sampling_instant='2026-08-13T00:00:00Z').outcome == FAIL
+
+
+# ---------------------------------------------------------------------------
+# Loader eligibility, and the tree shape 3 was named for.
+# ---------------------------------------------------------------------------
+def test_loader_returns_an_older_dir_when_the_newest_is_ineligible():
+    """Eligibility can send the resolution BACKWARD — the incident's mechanism.
+
+    ``resolve_bundle_path`` supplies a PER-REQUEST predicate
+    (``(d / subpath).exists()``), so a request for a subpath present only in an
+    older dir resolves to that older dir. A model with no eligibility set can
+    only ever resolve forward, and would report this as agreement.
+    """
+    dirs = (VersionDir('0.1.300', marked=False), VersionDir('0.1.100', marked=False))
+
+    assert loader_selected_version(dirs) == '0.1.300'
+    assert loader_selected_version(dirs, frozenset({'0.1.100'})) == '0.1.100'
+
+
+def test_loader_is_none_when_eligibility_excludes_every_dir():
+    """No eligible dir is the selector's own loud failure, not a silent pick."""
+    dirs = (VersionDir('0.1.300', marked=False),)
+
+    assert loader_selected_version(dirs, frozenset()) is None
+
+
+def test_observe_populates_eligibility_from_the_requested_subpath(tmp_path):
+    """The adapter derives eligibility from which dirs carry the subpath.
+
+    The fixture puts the requested script ONLY in the older dir, so the observed
+    eligibility set excludes the newer one and the loader model resolves
+    backward — the state a no-eligibility model reports as clean.
+    """
+    cache = tmp_path / 'cache'
+    bundle = cache / 'plan-marshall'
+    subpath = 'skills/s/scripts/a.py'
+    _make_version_dir(bundle, '0.1.300', marked=False, files={'skills/s/scripts/other.py': 'x\n'})
+    _make_version_dir(bundle, '0.1.100', marked=False, files={subpath: 'print(1)\n'})
+
+    registry = tmp_path / 'config.json'
+    registry.write_text(
+        '{"plan-marshall": {"installPath": "/c/plan-marshall/0.1.300", "version": "0.1.300"}}',
+        encoding='utf-8',
+    )
+    executor = tmp_path / 'execute-script.py'
+    executor.write_text('"/x/cache/plan-marshall/0.1.300/skills/s/scripts/a.py"\n', encoding='utf-8')
+
+    obs = _ppt.observe(
+        cache_bundle_dir=bundle,
+        registry_path=registry,
+        plugin_name='plan-marshall',
+        executor_path=executor,
+        subpath=subpath,
+    )
+
+    assert obs.eligible_versions == frozenset({'0.1.100'})
+    verdict = evaluate(obs, obs, sampling_instant='2026-08-13T00:00:00Z')
+    assert verdict.loader_selected_version == '0.1.100'
+    assert verdict.outcome == FAIL
+    assert any('loader_selected' in d for d in verdict.divergences)
+
+
+def test_observe_without_a_subpath_leaves_every_dir_eligible(tmp_path):
+    """The control: omitting ``subpath`` models the directory-existence predicate.
+
+    That is the PYTHONPATH walk's predicate, which is the same for every request
+    and therefore always resolves forward.
+    """
+    cache = tmp_path / 'cache'
+    bundle = cache / 'plan-marshall'
+    _make_version_dir(bundle, '0.1.300', marked=False, files={'skills/s/scripts/other.py': 'x\n'})
+    _make_version_dir(bundle, '0.1.100', marked=False, files={'skills/s/scripts/a.py': 'print(1)\n'})
+
+    registry = tmp_path / 'config.json'
+    registry.write_text(
+        '{"plan-marshall": {"installPath": "/c/plan-marshall/0.1.300", "version": "0.1.300"}}',
+        encoding='utf-8',
+    )
+    executor = tmp_path / 'execute-script.py'
+    executor.write_text('"/x/cache/plan-marshall/0.1.300/skills/s/scripts/a.py"\n', encoding='utf-8')
+
+    obs = _ppt.observe(
+        cache_bundle_dir=bundle,
+        registry_path=registry,
+        plugin_name='plan-marshall',
+        executor_path=executor,
+    )
+
+    assert obs.eligible_versions is None
+    assert evaluate(obs, obs, sampling_instant='2026-08-13T00:00:00Z').loader_selected_version == '0.1.300'
+
+
+def test_shape3_literal_older_stale_beside_newest_pin_is_a_pass():
+    """The tree the plan's "shape 3" named is a PASS — pinned, not argued.
+
+    An older stale UNMARKED dir sitting beside a correct, NEWEST pin: under
+    newest-eligible-wins the loader already follows the pin, so nothing is
+    mis-seated and the older dir is unreachable. The implemented shape-3
+    condition can only fire when a NON-pin dir sorts HIGHER than the pin, which
+    this tree does not have.
+
+    Whether such a tree should nonetheless be reported — it is equally the
+    benign window right after a sync, before the retention sweep runs — is a
+    policy question recorded as a proposal for an operator, not decided here.
+    This test exists so the current behaviour is pinned either way.
+    """
+    obs = _obs(
+        install_path_version='0.1.300',
+        registry_version='0.1.300',
+        executor_version='0.1.300',
+        version_dirs=(VersionDir('0.1.300', marked=False), VersionDir('0.1.100', marked=False)),
+    )
+
+    verdict = _verdict(obs)
+
+    assert verdict.outcome == PASS
+    assert verdict.shapes == ()
+    assert verdict.loader_selected_version == '0.1.300'
+
+
+# ---------------------------------------------------------------------------
+# The paired observer — the double-sample guard's missing producer.
+# ---------------------------------------------------------------------------
+def _pin_trap_fixture(tmp_path):
+    """Return the kwargs ``observe`` / ``observe_pair`` take over a fixture tree."""
+    bundle = tmp_path / 'cache' / 'plan-marshall'
+    _make_version_dir(bundle, '0.1.200', marked=False, files={'skills/s/scripts/a.py': 'print(1)\n'})
+    source = tmp_path / 'source'
+    (source / 'skills' / 's' / 'scripts').mkdir(parents=True)
+    (source / 'skills' / 's' / 'scripts' / 'a.py').write_text('print(1)\n', encoding='utf-8')
+    registry = tmp_path / 'config.json'
+    registry.write_text(
+        '{"plan-marshall": {"installPath": "/c/plan-marshall/0.1.200", "version": "0.1.200"}}',
+        encoding='utf-8',
+    )
+    executor = tmp_path / 'execute-script.py'
+    executor.write_text('"/x/cache/plan-marshall/0.1.200/skills/s/scripts/a.py"\n', encoding='utf-8')
+    return {
+        'cache_bundle_dir': bundle,
+        'registry_path': registry,
+        'plugin_name': 'plan-marshall',
+        'executor_path': executor,
+        'source_dir': source,
+    }
+
+
+def test_observe_pair_detects_a_store_that_changed_between_the_two_reads(tmp_path):
+    """The paired observer takes two INDEPENDENT reads, so the guard can fire.
+
+    Nothing exported a paired variant, so every caller passed the same
+    observation twice — which satisfies the double-sample guard by construction
+    and reduces it to asserting that a value equals itself. The injected sleep
+    mutates the tree between the reads at no wall-clock cost.
+    """
+    kwargs = _pin_trap_fixture(tmp_path)
+    pin_file = kwargs['cache_bundle_dir'] / '0.1.200' / 'skills' / 's' / 'scripts' / 'a.py'
+    slept: list[float] = []
+
+    def _fake_sleep(seconds: float) -> None:
+        slept.append(seconds)
+        pin_file.write_text('print(2)\n', encoding='utf-8')
+
+    first, second = _ppt.observe_pair(delay_seconds=0.5, sleep=_fake_sleep, **kwargs)
+
+    assert slept == [0.5]
+    assert first != second
+    verdict = evaluate(first, second, sampling_instant='2026-08-13T00:00:00Z')
+    assert verdict.outcome == INDET
+    assert 'read_during_write' in verdict.reason
+
+
+def test_observe_pair_over_a_quiet_tree_reaches_a_verdict(tmp_path):
+    """The control: with nothing changing between the reads, the pair agrees."""
+    kwargs = _pin_trap_fixture(tmp_path)
+
+    first, second = _ppt.observe_pair(delay_seconds=0.0, sleep=lambda _s: None, **kwargs)
+
+    assert first == second
+    assert evaluate(first, second, sampling_instant='2026-08-13T00:00:00Z').outcome == PASS
+
+
+def test_observe_pair_is_exported():
+    """The producer is part of the module's public surface, not an internal helper."""
+    assert 'observe_pair' in _ppt.__all__

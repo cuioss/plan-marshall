@@ -22,7 +22,10 @@ production:
   cache.
 * It treats the unmarked set as **registry-derived, not an independent witness**
   (the foreign GC forces it into agreement with the registry), and uses it only
-  to detect the post-sync GC-exposure window.
+  to detect the post-sync GC-exposure window. **This repository's version
+  selection does not consult the orphan marker at all** — see
+  :func:`loader_selected_version` — so the marker set says nothing about which
+  dir a session loads.
 * It compares pin content against source as **"N of M files match; K diverge"**,
   never a boolean, and **degrades honestly** — a partial scan says so.
 * It **double-samples**: two observations taken seconds apart must agree, or the
@@ -32,9 +35,27 @@ production:
 * It reports its **sampling instant**, the **population size**, and the **newest
   marker's age** — so "the sweep saturated" is distinguishable from "nothing has
   been marked yet".
-* It reports **divergence and GC-exposure as separate axes**, so shape 6
-  (divergence without GC exposure — "repair when convenient") does not rank
-  alongside shape 1 (saturation — "repair before the fuse burns").
+* It reports **divergence and GC-exposure as separate axes**, and saturation
+  (shape 1) is REPORTED without failing the load-safety gate: the loader never
+  reads the marker, so a fully-marked cache still resolves to the newest
+  eligible dir and seats no session on the wrong body. It stays a GC-exposure
+  observation because the foreign collector may delete those dirs.
+
+Shape 3 and the tree it was named for
+-------------------------------------
+The shape-3 condition this module implements is *"two or more unmarked dirs AND
+the loader resolves to a dir other than the registry pin"*
+(:data:`SHAPE_3_LOADER_FOLLOWS_NON_PIN_DIR`). Under newest-eligible-wins that can
+only fire when a NON-pin dir sorts HIGHER than the pin.
+
+The literal tree the originating plan's "shape 3" described — an older stale
+unmarked dir sitting beside a correct, NEWEST pin — is therefore a **PASS**, and
+the ``test_shape3_literal_older_stale_beside_newest_pin_is_a_pass`` test pins
+that. It is a pass because nothing is mis-seated: the loader already follows the
+pin, and the older dir is unreachable. Whether that tree should nonetheless be
+reported — it is equally the benign window right after a sync, before the
+retention sweep runs — is a POLICY question about what counts as a finding, not
+a defect. It is recorded as a proposal for an operator rather than decided here.
 
 The live filesystem adapters (``observe_*``, ``read_*``, ``compare_pin_content``)
 read the three stores into these structures. The live plugin cache is not present
@@ -47,6 +68,8 @@ from __future__ import annotations
 
 import json
 import re
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -78,10 +101,26 @@ OUTCOME_INDETERMINATE = 'indeterminate'
 
 SHAPE_1_SATURATION = 'shape1:empty-unmarked-set'
 SHAPE_2_PIN_MARKED_NEWER_UNMARKED = 'shape2:pin-orphan-marked-newer-unmarked'
-SHAPE_3_STALE_UNMARKED_BESIDE_PIN = 'shape3:stale-unmarked-beside-pin'
+# Named for the condition the code EVALUATES, not for the tree the plan's shape 3
+# described. The condition is "two or more unmarked dirs AND the loader resolves to
+# a dir other than the registry pin" — which under newest-eligible-wins can only
+# fire when a NON-pin dir sorts HIGHER than the pin. The literal tree shape 3 was
+# written about (an older stale unmarked dir beside a correct NEWEST pin) is
+# therefore a PASS: the loader already follows the pin, so nothing is mis-seated.
+# Whether that tree should nonetheless be reported is a policy question, recorded
+# as a proposal rather than decided here.
+SHAPE_3_LOADER_FOLLOWS_NON_PIN_DIR = 'shape3:loader-follows-non-pin-dir'
 SHAPE_4_PIN_DIVERGES_FROM_SOURCE = 'shape4:pin-diverges-from-source'
 SHAPE_5_REGISTRY_SELF_DISAGREES = 'shape5:registry-installPath-vs-version'
 SHAPE_6_DIVERGENCE_NO_GC = 'shape6:divergence-without-gc-exposure'
+
+# Shapes that are REPORTED but do not fail the load-safety gate. Saturation was
+# ranked as a failure — and in the repair-urgently tier — while the loader was
+# believed to consult the orphan marker. It does not: with every dir marked, the
+# newest eligible dir is still what resolves, so a saturated cache seats no
+# session on the wrong body. It stays on the GC-exposure axis because the foreign
+# collector may delete those dirs.
+NON_BLOCKING_SHAPES = frozenset({SHAPE_1_SATURATION})
 
 # The load-safety gate reads THIS registry field; the verdict names it so the
 # check is falsifiable rather than depending on an unstated choice of "the pin".
@@ -100,10 +139,13 @@ EXECUTOR_NO_ANCHOR = 'no_anchor'
 EXECUTOR_SPLIT = 'split'
 
 _UNMARKED_DERIVED_NOTE = (
-    'The unmarked set is REGISTRY-DERIVED, not an independent witness: the foreign '
+    'The unmarked set is REGISTRY-DERIVED, not an independent witness: the FOREIGN '
     'garbage collector deletes the marker from the registry installPath directory '
-    'and marks every other, so it lags the registry. It is used here only to detect '
-    'the post-sync GC-exposure window, never as corroboration of installPath.'
+    'and marks every other, so it lags the registry. Its ONLY use here is the '
+    'GC-EXPOSURE axis — which dirs the foreign collector has scheduled for '
+    'deletion. It is never corroboration of installPath, and it says nothing about '
+    'which dir the loader follows: this repository\'s version selection does not '
+    'consult the marker at all.'
 )
 
 _SESSION_SEATING_NOTE = (
@@ -114,9 +156,12 @@ _SESSION_SEATING_NOTE = (
 )
 
 _AXES_NOTE = (
-    'Divergence and GC-exposure are reported as SEPARATE axes. A divergence without '
-    'GC exposure (shape 6) is "repair when convenient"; saturation (shape 1) is '
-    '"repair before the fuse burns".'
+    'Divergence and GC-exposure are reported as SEPARATE axes. Saturation (shape 1) '
+    'is REPORTED but does not by itself fail the load-safety gate: the loader never '
+    'reads the marker, so a fully-marked cache still resolves to the newest '
+    'eligible dir. It remains a GC-exposure observation because the foreign '
+    'collector may delete those dirs — a disk-space and availability concern, not a '
+    'wrong-version-loaded one.'
 )
 
 # ---------------------------------------------------------------------------
@@ -129,7 +174,9 @@ REMEDY_OPERATOR = (
     'executor: (1) re-run the cache sync (`/sync-plugin-cache`) to move the cache '
     'forward; (2) prune the superseded version dirs with the marshall-steward '
     'cache-retention sweep (`plan-marshall:marshall-steward:cache_retention sweep`); '
-    '(3) regenerate the executor. Do NOT write the plugin registry — it is the plugin '
+    '(3) regenerate the executor by re-running the steward wizard (`/marshall-steward`), '
+    'which rewrites `.plan/execute-script.py` against the refreshed cache. '
+    'Do NOT write the plugin registry — it is the plugin '
     "manager's file, and a second writer is a defect in its own right."
 )
 REMEDY_NO_RESTART = (
@@ -267,7 +314,11 @@ class StoreObservation:
     ``content`` is the installPath dir compared against source (``None`` when not
     compared). ``executor_anchor`` carries WHY ``executor_version`` is ``None``
     when it is, so a version-SPLIT executor is reported as the disagreement it is
-    rather than as an unreadable store. ``newest_marker_age_seconds`` is REPORTED
+    rather than as an unreadable store. ``eligible_versions`` is the set of dirs
+    satisfying the loader's eligibility predicate for the subpath under test
+    (``None`` when every dir is eligible), which is what lets the loader model
+    reproduce a BACKWARD resolution rather than always resolving forward.
+    ``newest_marker_age_seconds`` is REPORTED
     for diagnosis, never fed into the oracle decision (an age-based staleness
     heuristic is out of scope — markers get re-written, resetting apparent age).
     """
@@ -279,6 +330,7 @@ class StoreObservation:
     content: ContentComparison | None = None
     newest_marker_age_seconds: float | None = None
     executor_anchor: ExecutorAnchor | None = None
+    eligible_versions: frozenset[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -344,24 +396,47 @@ def _unmarked(dirs: tuple[VersionDir, ...]) -> list[VersionDir]:
     return [d for d in dirs if not d.marked]
 
 
-def loader_selected_version(dirs: tuple[VersionDir, ...]) -> str | None:
+def loader_selected_version(
+    dirs: tuple[VersionDir, ...],
+    eligible: frozenset[str] | None = None,
+) -> str | None:
     """The version dir the LOADER actually follows — established from the selector code.
 
-    Mirrors ``marketplace_bundles.select_live_version_dir`` (D4): the newest-on-disk
-    dir is retention-pinned and its marker is ignored outright; among the resulting
-    live set (unmarked dirs plus that pin) the numerically-highest version-key wins;
-    when every dir is marked the newest overall is the degraded fallback.
+    Mirrors ``marketplace_bundles.select_live_version_dir``: among the version
+    dirs that satisfy the caller's ELIGIBILITY predicate, the numerically-highest
+    version-key wins. **The ``.orphaned_at`` marker is never consulted**, by that
+    selector or by this model.
 
-    The load-bearing consequence, and why D1 must NOT assume the loader resolves to
-    the registry pin: with two unmarked dirs the loader follows the higher
-    version-KEY, which can be a directory whose NAME sorts high while its CONTENT is
-    stale — so the loaded dir and the registry ``installPath`` can diverge.
+    The body once computed a retention pin, a live set and a degraded fallback,
+    and the docstring described a marker-aware selector to match. Both were
+    fiction: the "retention pin" was ``max(dirs)``, it was unconditionally a
+    member of the live set, and the maximum of a set containing its own maximum
+    is that maximum — so every branch returned the newest dir on disk whatever
+    any marker said. The model is now the one line it always evaluated.
+
+    ``eligible`` restricts the pool to the version dirs that carry the subpath
+    under test, mirroring the per-request predicate the real resolver supplies.
+    ``None`` means every dir is eligible. An eligibility set that excludes every
+    dir yields ``None`` — the selector's own loud failure, never a silent
+    resolution to an ineligible dir.
+
+    **Why the eligibility set matters, and why the divergence is reachable.**
+    ``marketplace_bundles.resolve_bundle_path`` passes a PER-REQUEST predicate,
+    ``lambda d: (d / subpath).exists()`` — so two requests in the same process
+    can resolve to different version dirs, and a request for a subpath that
+    exists ONLY in an older dir resolves BACKWARD to it. That is the incident
+    this detector was built for. It is a different predicate from the one
+    ``collect_script_dirs`` supplies for the PYTHONPATH walk,
+    ``lambda d: (d / 'skills').is_dir()`` — a directory-existence test that is
+    the same for every request and therefore resolves forward to the newest dir
+    carrying a ``skills/`` tree. Modelling the loader without an eligibility set
+    can only ever reproduce the second, and would report the first as agreement.
     """
     if not dirs:
         return None
-    pinned = max(dirs, key=lambda d: _version_key(d.name))
-    live = [d for d in dirs if d.name == pinned.name or not d.marked]
-    pool = live or list(dirs)
+    pool = [d for d in dirs if eligible is None or d.name in eligible]
+    if not pool:
+        return None
     return max(pool, key=lambda d: _version_key(d.name)).name
 
 
@@ -406,6 +481,13 @@ def evaluate(
     ``indeterminate`` (a read-during-write, whose false FAIL is the dangerous
     direction because it triggers action). On agreement the single-sample oracle
     runs over ``sample_a``.
+
+    ⛔ **Passing the SAME observation twice defeats the guard entirely.** The
+    comparison then asserts that a value equals itself, which it always does, and
+    the double-sample conjunct is satisfied without anything having been sampled
+    twice. :func:`observe_pair` is the supported producer: it takes two
+    independent reads separated by an injectable delay. ``observe`` returns one
+    observation and is not a substitute for it.
     """
     population = len(sample_a.version_dirs)
     if _volatile_signature(sample_a) != _volatile_signature(sample_b):
@@ -415,7 +497,9 @@ def evaluate(
                 'read_during_write: the two samples disagreed, so the stores were '
                 'mid-write. No verdict is issued over an inconsistent snapshot.'
             ),
-            loader_selected_version=loader_selected_version(sample_a.version_dirs),
+            loader_selected_version=loader_selected_version(
+                sample_a.version_dirs, sample_a.eligible_versions
+            ),
             sampling_instant=sampling_instant,
             population_size=population,
             newest_marker_age_seconds=sample_a.newest_marker_age_seconds,
@@ -434,7 +518,7 @@ def _evaluate_single(obs: StoreObservation, sampling_instant: str) -> Verdict:
     ev = obs.executor_version
     content = obs.content
     executor_anchor = obs.executor_anchor
-    loader = loader_selected_version(dirs)
+    loader = loader_selected_version(dirs, obs.eligible_versions)
 
     shapes: list[str] = []
     divergences: list[str] = []
@@ -468,12 +552,19 @@ def _evaluate_single(obs: StoreObservation, sampling_instant: str) -> Verdict:
         )
 
     # --- GC-exposure axis (a load-bearing dir is orphan-marked, or saturation) ---
+    # ``blocking_gc_exposures`` is the subset that FAILS the load-safety gate. The
+    # two lists are built separately rather than filtered apart afterwards: a
+    # filter keyed on the message text would silently stop excluding saturation
+    # the moment anyone reworded it.
+    blocking_gc_exposures: list[str] = []
     pin_dir = next((d for d in dirs if d.name == ipv), None) if ipv is not None else None
     if dirs and not unmarked:
         gc_exposures.append('saturation: every eligible version dir carries .orphaned_at')
         shapes.append(SHAPE_1_SATURATION)
     if pin_dir is not None and pin_dir.marked:
-        gc_exposures.append(f'{GATE_FIELD} dir {pin_dir.name} is orphan-marked (scheduled for deletion)')
+        exposure = f'{GATE_FIELD} dir {pin_dir.name} is orphan-marked (scheduled for deletion)'
+        gc_exposures.append(exposure)
+        blocking_gc_exposures.append(exposure)
         pin_key = _version_key(pin_dir.name)
         newer_unmarked = [d for d in unmarked if _version_key(d.name) > pin_key]
         if newer_unmarked:
@@ -481,7 +572,7 @@ def _evaluate_single(obs: StoreObservation, sampling_instant: str) -> Verdict:
 
     # --- Shape 3: two+ unmarked and the loader follows a dir other than the pin ---
     if len(unmarked) >= 2 and ipv is not None and loader is not None and loader != ipv:
-        shapes.append(SHAPE_3_STALE_UNMARKED_BESIDE_PIN)
+        shapes.append(SHAPE_3_LOADER_FOLLOWS_NON_PIN_DIR)
 
     # --- Shape 4: the ONLY unmarked dir IS the pin, yet the pin diverges from source ---
     if (
@@ -505,7 +596,7 @@ def _evaluate_single(obs: StoreObservation, sampling_instant: str) -> Verdict:
         or (content is not None and content.usable and content.diverged > 0)
     )
     already_specific = any(
-        s in shapes for s in (SHAPE_3_STALE_UNMARKED_BESIDE_PIN, SHAPE_4_PIN_DIVERGES_FROM_SOURCE)
+        s in shapes for s in (SHAPE_3_LOADER_FOLLOWS_NON_PIN_DIR, SHAPE_4_PIN_DIVERGES_FROM_SOURCE)
     )
     if cache_divergence and not gc_exposures and not already_specific:
         shapes.append(SHAPE_6_DIVERGENCE_NO_GC)
@@ -527,7 +618,10 @@ def _evaluate_single(obs: StoreObservation, sampling_instant: str) -> Verdict:
     # across the two axes above; a shape is reported once).
     shapes = list(dict.fromkeys(shapes))
 
-    if shapes or divergences or gc_exposures:
+    # Saturation is reported on both the shape list and the GC-exposure axis but
+    # does not fail the gate — see NON_BLOCKING_SHAPES. Everything else does.
+    blocking_shapes = [s for s in shapes if s not in NON_BLOCKING_SHAPES]
+    if blocking_shapes or divergences or blocking_gc_exposures:
         outcome = OUTCOME_FAIL
         reason = 'pin gap detected: the three stores do not agree'
         if unreadable:
@@ -894,6 +988,7 @@ def observe(
     executor_path: Path,
     source_dir: Path | None = None,
     now: datetime | None = None,
+    subpath: str | None = None,
 ) -> StoreObservation:
     """Assemble a :class:`StoreObservation` by reading the three live stores.
 
@@ -901,8 +996,22 @@ def observe(
     dir is present), the pin's content is compared against it; otherwise
     ``content`` is ``None`` and the oracle reports the content axis as
     not-compared (an ``indeterminate`` driver, never a silent pass).
+
+    ``subpath`` names the bundle-relative path a caller would actually request
+    (``skills/{skill}/scripts/{script}.py``). When given, the eligibility set is
+    populated from the version dirs that actually CARRY it — mirroring the
+    per-request predicate ``marketplace_bundles.resolve_bundle_path`` supplies,
+    which is the mechanism by which a resolution goes backward. Omitting it
+    leaves every dir eligible, which models the PYTHONPATH walk's
+    directory-existence predicate instead and cannot reproduce a backward
+    resolution.
     """
     version_dirs, marker_age = observe_cache_version_dirs(cache_bundle_dir, now=now)
+    eligible: frozenset[str] | None = None
+    if subpath is not None:
+        eligible = frozenset(
+            d.name for d in version_dirs if (cache_bundle_dir / d.name / subpath).exists()
+        )
     install_version, registry_version = read_registry_entry(registry_path, plugin_name)
     executor_anchor = read_executor_anchored_version(executor_path)
     executor_version = executor_anchor.version
@@ -919,7 +1028,33 @@ def observe(
         content=content,
         newest_marker_age_seconds=marker_age,
         executor_anchor=executor_anchor,
+        eligible_versions=eligible,
     )
+
+
+def observe_pair(
+    *,
+    delay_seconds: float = 2.0,
+    sleep: Callable[[float], None] = time.sleep,
+    **observe_kwargs,
+) -> tuple[StoreObservation, StoreObservation]:
+    """Take the TWO observations :func:`evaluate` double-samples over.
+
+    The double-sample guard has no meaning unless the two samples are genuinely
+    independent reads separated in time. ``observe`` returns ONE observation, and
+    nothing exported a paired variant — so every caller had to pass the same
+    observation twice, which satisfies the guard by construction and reduces it
+    to an assertion that a value equals itself.
+
+    ``sleep`` is injected so a test can drive the pairing with a fake clock and a
+    fixture that mutates between the two reads, at no wall-clock cost. Every
+    other keyword is forwarded verbatim to :func:`observe`, so the pair is read
+    through exactly the same adapters as a single observation.
+    """
+    first = observe(**observe_kwargs)
+    sleep(delay_seconds)
+    second = observe(**observe_kwargs)
+    return first, second
 
 
 __all__ = [
@@ -931,12 +1066,13 @@ __all__ = [
     'ExecutorAnchor',
     'GATE_FIELD',
     'LoadedVersionVerdict',
+    'NON_BLOCKING_SHAPES',
     'OUTCOME_FAIL',
     'OUTCOME_INDETERMINATE',
     'OUTCOME_PASS',
     'SHAPE_1_SATURATION',
     'SHAPE_2_PIN_MARKED_NEWER_UNMARKED',
-    'SHAPE_3_STALE_UNMARKED_BESIDE_PIN',
+    'SHAPE_3_LOADER_FOLLOWS_NON_PIN_DIR',
     'SHAPE_4_PIN_DIVERGES_FROM_SOURCE',
     'SHAPE_5_REGISTRY_SELF_DISAGREES',
     'SHAPE_6_DIVERGENCE_NO_GC',
@@ -949,6 +1085,7 @@ __all__ = [
     'loader_selected_version',
     'observe',
     'observe_cache_version_dirs',
+    'observe_pair',
     'read_executor_anchored_version',
     'read_registry_entry',
 ]
