@@ -21,6 +21,7 @@ Output:
 
 import configparser
 from pathlib import Path
+from typing import Any
 
 try:
     import tomllib  # Python 3.11+
@@ -363,20 +364,59 @@ def _load_toml(descriptor: Path) -> dict | None:
     return data
 
 
+def _table(container: Any, key: str) -> dict:
+    """Return ``container[key]`` when it is a table, and an empty one otherwise.
+
+    ⛔ **A descriptor may be well-formed TOML and still wrongly shaped.**
+    ``project = "invalid"`` parses; so does ``[tool.poetry.group]`` with
+    ``dev = "notatable"``. Reaching ``.get()`` straight through such a value
+    raises ``AttributeError``, which is not caught anywhere on this path — so a
+    **single** mis-shaped descriptor propagated out of
+    ``discover_python_modules`` and took every module in the tree with it,
+    including the ones that parsed perfectly.
+
+    That is the same blast radius as the ``setup.cfg`` interpolation abort fixed
+    in :func:`_read_setup_cfg`, reached through a different door, and it gets the
+    same answer: the mis-shaped table reads as absent, so the module publishes
+    nothing and is still **discovered**. One bad descriptor costs its own module
+    and no other.
+    """
+    value = container.get(key) if isinstance(container, dict) else None
+    return value if isinstance(value, dict) else {}
+
+
+def _sequence(container: Any, key: str) -> list:
+    """Return ``container[key]`` when it is a list, and an empty one otherwise.
+
+    The companion of :func:`_table` for the fields that hold requirement lists.
+    ``dependencies = "core"`` parses as a string, and iterating a string yields
+    its characters — which produced one fabricated edge **per character** rather
+    than an error. Silent nonsense is worse than a missing answer, so a
+    non-list reads as absent.
+    """
+    value = container.get(key) if isinstance(container, dict) else None
+    return value if isinstance(value, list) else []
+
+
 def _read_pep621(data: dict, metadata: dict, dependencies: list[str]) -> None:
-    """Read the PEP 621 ``[project]`` table into ``metadata`` / ``dependencies``."""
-    project = data.get('project') or {}
+    """Read the PEP 621 ``[project]`` table into ``metadata`` / ``dependencies``.
+
+    Every table and list is taken through :func:`_table` / :func:`_sequence`, so
+    a well-formed-but-mis-shaped descriptor costs its own module and never the
+    crawl.
+    """
+    project = _table(data, 'project')
     for key, field in (('name', 'name'), ('version', 'version'), ('description', 'description'),
                        ('requires-python', 'requires_python')):
         if project.get(key):
             metadata[field] = project[key]
 
-    for dep in project.get('dependencies', []):
+    for dep in _sequence(project, 'dependencies'):
         name = requirement_name(dep)
         if name:
             dependencies.append(f'{name}:runtime')
 
-    for dep in (project.get('optional-dependencies') or {}).get('dev', []):
+    for dep in _sequence(_table(project, 'optional-dependencies'), 'dev'):
         name = requirement_name(dep)
         if name:
             dependencies.append(f'{name}:dev')
@@ -390,20 +430,19 @@ def _read_poetry(data: dict, metadata: dict, dependencies: list[str]) -> None:
     the value is not inspected. ``python`` is skipped — it is the interpreter
     constraint, not a package, and Poetry records it alongside the real ones.
     """
-    poetry = (data.get('tool') or {}).get('poetry') or {}
+    poetry = _table(_table(data, 'tool'), 'poetry')
     if not poetry:
         return
     for key, field in (('name', 'name'), ('version', 'version'), ('description', 'description')):
         if poetry.get(key):
             metadata[field] = poetry[key]
 
-    for name in (poetry.get('dependencies') or {}):
+    for name in _table(poetry, 'dependencies'):
         if name == 'python':
             continue
         dependencies.append(f'{requirement_name(name)}:runtime')
 
-    dev_groups = (poetry.get('group') or {}).get('dev') or {}
-    for name in (dev_groups.get('dependencies') or {}):
+    for name in _table(_table(_table(poetry, 'group'), 'dev'), 'dependencies'):
         if name == 'python':
             continue
         dependencies.append(f'{requirement_name(name)}:dev')

@@ -142,6 +142,59 @@ def test_setup_cfg_metadata_is_published():
     assert metadata['default']['description'].startswith('Fixture root')
 
 
+@pytest.mark.parametrize(('label', 'body'), [
+    ('project-is-a-string', 'project = "invalid"\n'),
+    ('tool-is-a-string', 'tool = "invalid"\n'),
+    ('poetry-is-a-string', '[tool]\npoetry = "nope"\n'),
+    ('optional-dependencies-is-a-string', '[project]\nname = "x"\noptional-dependencies = "nope"\n'),
+    ('poetry-group-is-a-string', '[tool.poetry]\nname = "x"\n[tool.poetry.group]\ndev = "notatable"\n'),
+])
+def test_a_WRONGLY_SHAPED_descriptor_costs_only_that_module(tmp_path, label, body):
+    """Well-formed TOML can still be wrongly shaped, and that must not kill the crawl.
+
+    `project = "invalid"` parses. So does a `[tool.poetry.group]` whose `dev` is
+    a string. Reaching `.get()` through such a value raises `AttributeError`,
+    which nothing on this path catches — so ONE mis-shaped descriptor propagated
+    out of `discover_python_modules` and took every module with it, including
+    the ones that parsed perfectly.
+
+    Same blast radius as the `setup.cfg` interpolation abort, through a
+    different door, and it gets the same answer: the mis-shaped table reads as
+    absent, the module is still discovered, and its siblings are untouched.
+    Reported by the repository's PR review bot on this branch.
+    """
+    good = tmp_path / 'good'
+    (good / 'tests').mkdir(parents=True)
+    (good / 'pyproject.toml').write_text(
+        '[project]\nname = "good-one"\ndependencies = ["requests"]\n', encoding='utf-8')
+    bad = tmp_path / 'bad'
+    (bad / 'tests').mkdir(parents=True)
+    (bad / 'pyproject.toml').write_text(body, encoding='utf-8')
+
+    modules = {m['name']: m for m in discover_python_modules(str(tmp_path))}
+
+    assert modules['good']['dependencies'] == ['requests:runtime'], f'{label}: the sibling was lost'
+    assert modules['bad']['dependencies'] == []
+
+
+def test_a_STRING_dependency_list_fabricates_no_per_character_edges(tmp_path):
+    """`dependencies = "core"` is iterable, which is worse than being invalid.
+
+    Iterating a string yields its characters, so a scalar where a list belongs
+    produced one fabricated dependency per character — `c`, `o`, `r`, `e` — each
+    a candidate edge target. Silent nonsense is worse than a missing answer, so
+    a non-list reads as absent.
+    """
+    module = tmp_path / 'pkg'
+    (module / 'tests').mkdir(parents=True)
+    (module / 'pyproject.toml').write_text(
+        '[project]\nname = "x"\ndependencies = "core"\n', encoding='utf-8')
+
+    modules = {m['name']: m for m in discover_python_modules(str(tmp_path))}
+
+    assert modules['pkg']['dependencies'] == []
+
+
 def test_a_PERCENT_SIGN_in_one_setup_cfg_costs_only_THAT_module(tmp_path):
     """One module's percent sign must not erase the tree.
 
