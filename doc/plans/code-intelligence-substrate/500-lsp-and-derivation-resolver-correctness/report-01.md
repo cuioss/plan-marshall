@@ -348,7 +348,8 @@ stale-figure defect this report warns about elsewhere, committed here.
 | `f93849e`, round 9's fixes | 21437 passed, 14 skipped, 416.91 s, `verify: SUCCESS` |
 | `91629f3`, round 10's fixes | 21439 passed, 14 skipped, 416.59 s, `verify: SUCCESS` |
 | `1c234ff`, round 11's fixes | 21439 passed, 14 skipped, 435.96 s, `verify: SUCCESS` |
-| **`77c1a21`, the tree merged with `origin/main` at `8dd6f1a` — the figure that governs** | **21642 passed, 14 skipped, 486.33 s, `verify: SUCCESS`** |
+| `77c1a21`, the tree merged with `origin/main` at `8dd6f1a` | 21642 passed, 14 skipped, 486.33 s, `verify: SUCCESS` |
+| **`b4a98aa`, the review bot's finding fixed — the figure that governs** | **21648 passed, 14 skipped, 463.89 s, `verify: SUCCESS`** — and independently green on **CI** at the same commit, every check passing |
 
 The figure that governs is the last, because it is the only one measured on the tree that actually
 lands — which, once `main` moved under the branch a second time, is the **merged** tree rather than
@@ -1066,12 +1067,35 @@ here, is that this is **not** worth another open-ended round: the correct closin
 
 ## Reviewer participation
 
-**Not done — the reviewers have not yet spoken.** [#1321](https://github.com/cuioss/plan-marshall/pull/1321)
-is open with **no** `skip-bot-review` label (arm `reviewable`: 28 R1, 25 R2, 4 R3 paths), so the
-expected reviewer population is the one configuration derives — never a list transcribed here — and
-each row's verdict is taken from the stored comment bodies rather than from a check state. The table
-is filled as they arrive; coverage is reported as N-of-M, and a reviewer that never speaks is
-recorded `silent` rather than omitted.
+[#1321](https://github.com/cuioss/plan-marshall/pull/1321) is open with **no** `skip-bot-review`
+label (arm `reviewable`: 28 R1, 25 R2, 4 R3 paths), so every configured reviewer was invited. The
+population is the one configuration derives — never a list transcribed here — and each verdict below
+is taken from the reviewer's own stored comment body, not from a check state.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
+|---|---|---|---|
+| `cuioss-review-bot[bot]` | **reviewed** | — | Posted a *PR Reviewer Guide* naming one focus area: an **Unhandled Exception** in `_read_pep621` / `_read_poetry`, where a non-dict value for `project`, `tool`, `poetry`, `optional-dependencies` or `group` raises `AttributeError` and "will crash `discover_python_modules` and fail module discovery for the entire codebase". ⭐ **Verified by execution on all five shapes and fixed** in `b4a98aa`, plus a sixth the same helper covers (`dependencies = "core"` fabricating one edge per character). Six guards, red-checked |
+| `sourcery-ai[bot]` | **rate-limited** (`refusal_structural`) | **no** | *"your pull request is larger than the review limit of 150000 diff characters."* A ceiling on the **diff**, not a window — waiting cannot change it, so per § Step 7 it was **never** offered a retry and goes straight into the record. Its check run reports `skipped` |
+| `coderabbitai[bot]` | **rate-limited** | **yes** | *"you've reached your PR review limit … Next review available in: 44 minutes."* A clock, so provisional rather than a shortfall. It began a review of all 62 files twice and was interrupted both times — first by a head change mid-review, then by the limit |
+
+**Coverage: 1-of-3 reviewed.** One refusal is permanent by its own terms (`sourcery`, diff size); one is a clock still being retried (`coderabbit`).
+
+**Retry log — `coderabbitai[bot]`** (budget six, per § Step 7):
+
+| # | Waited before it | Attempt | Notice returned |
+|---|---|---|---|
+| 1 | — (PR creation) | automatic on open | review started, then *"head commit changed during the review"* |
+| 2 | — (immediate) | push `b4a98aa` | *"Review limit reached … 44 minutes"* |
+| 3 | ~51 min | push (this commit) | pending |
+
+⚠ **Attempts 1 and 2 were spent by the run's own push cadence, not by the provider.** Three pushes
+landed inside five minutes — the report-only PR-number commit, the `origin/main` merge, and the
+review-bot fix — and each superseded the head CodeRabbit was reading. The same cadence cancelled
+three in-flight `verify / verify` runs, whose `verify / conclusion` failures were **cancellations,
+not defects** (`##[error]verify job failed or was cancelled`); CI went green at `b4a98aa` once the
+pushes stopped. **Batching those three commits would have cost one attempt instead of three and no
+cancelled CI runs at all** — recorded here because it is a lesson about this run's behaviour, not
+about the reviewers.
 
 ## Cost
 
@@ -1107,7 +1131,7 @@ narrated as complete.
 | 5 Build gate | **Done** — § Build gate carries the git-derived `*.py` verdict and one stamped row per commit that changed production Python, the last governing |
 | 6 Verification sub-agent | **Done** — ten rounds, every finding and disposition recorded per round; exit `budget-exhausted, non-converging`; the budget (five, extended by the operator to ten) and the extension are recorded with what the operator was told; the verifier's own last answer is quoted; each survivor is listed individually in § Left open with its bound; whether the late rounds were narrower is answered explicitly (no) |
 | 7 Bot-review label | **Done — no label, arm `reviewable`.** Re-derived at PR creation from `git diff --name-only origin/main...HEAD`: **28** R1 (`*.py`), **25** R2 (`marketplace/**`), **4** R3 (`doc/plans/**`), **0** S (`.claude/skills/**`). Row 1 of the decision table fires on any R1/R2/R3 membership, so the review is **not** suppressed |
-| 7 PR cycle | **In progress** — [#1321](https://github.com/cuioss/plan-marshall/pull/1321) is open, created on the already-pushed branch, no label (arm `reviewable`). The session is subscribed to its activity. § Reviewer participation is filled once the reviewers have spoken; until then it is **not done** rather than not applicable |
+| 7 PR cycle | **In progress** — [#1321](https://github.com/cuioss/plan-marshall/pull/1321) open, no label (arm `reviewable`), CI green at `b4a98aa` (`mergeable_state: clean`). § Reviewer participation carries a verdict per reviewer and the retry log; **coverage 1-of-3**, with one permanent refusal and one clock still being retried, so the step stays **in progress** rather than done |
 | 8 Merge gate | ⛔ **NOT DONE** — it follows the review cycle. Condition 2 (the stale-base re-verification) **was** discharged early, on its own terms — `main` moved under the branch, the branch was rebased onto `a34819d` at the operator's instruction, and the full `./pw verify` was re-run on the merged tree and has been re-run on every subsequent commit that touched Python |
 | 8 Bridge | **Done** — no status or bookkeeping write landed under `doc/plans/` outside this plan's own directory. The one edit to another plan's directory (`020-corpus-residency-admission-control/report-01.md`) is a **declared deliverable** of D6, appended as a correction |
 | 9 This check | **Done** — this table |
