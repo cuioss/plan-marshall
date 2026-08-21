@@ -233,6 +233,19 @@ concluded `success`, alongside `verify / gate`, `verify / conclusion`, `dependen
 footprint gate — by design, since that commit changes only this report — so `7727727` remains the
 authoritative CI run for the code.
 
+**Third base advance, checked the same way.** `main` gained #1317 (orchestrator inbox lifecycle)
+and #1318 (a staged plan document) after the last push. File overlap with this branch is **empty**,
+and the skills differ — `manage-config` and `plan-orchestrator` against this branch's
+`platform-runtime`, `extension-api`, `manage-providers`, `tools-permission-*`,
+`tools-marketplace-inventory` and `plan-retrospective`. A textual check therefore reads clean, and
+by itself that is exactly what the second base advance proved insufficient.
+
+So it was executed rather than argued: `git merge origin/main --no-commit --no-ff` (clean), then
+both sides' suites on the combined tree — **3730 passed** — covering the `load_script_module`
+registration-collision class a name-level check cannot see. The trial merge was then aborted; the
+branch history is unchanged, and GitHub reports `mergeable_state: blocked` (awaiting approval)
+rather than `dirty`, so no merge or rebase is required to land.
+
 `git status --porcelain` was empty before each commit; no `uv.lock` churn reached a commit, and paths
 were staged explicitly rather than with `git add -A`.
 
