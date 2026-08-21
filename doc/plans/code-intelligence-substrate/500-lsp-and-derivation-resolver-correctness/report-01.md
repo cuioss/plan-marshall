@@ -151,14 +151,25 @@ The three figures D3's claims actually rest on — **72** cross-bundle reference
 (all still `pm-* → plan-marshall`), and **0** references targeting `.venv/**` — are unchanged. The
 file-count-driven figures moved with #1314's 204 added test modules, as expected.
 
-⚠ **Two figures moved further than the file count explains, and the cause is NOT established:**
-`vendor-tree` fell 422 → 0 while `unresolved-symbol` rose 293 → 751. The magnitudes nearly offset,
-which is consistent with the ~422 positions that previously resolved *into* a vendored tree now
-failing to resolve at all — but that is a reading of two numbers, not a measurement, and it is
-recorded as an open observation rather than an explanation. It does not touch this deliverable's
-verdict: the vendored trees are present on this clone (`.venv` 923 `.py` files, `.pyprojectx` 817),
-the `.venv`-targeting count is **0** either way, and both the exclusion and its suppression note are
-pinned by tests that do not depend on this repository's contents.
+⛔ **Measurement conditions for the right-hand column, since two of its cells are NOT reproducible
+across sessions.** Both runs above: this clone at HEAD, `pyright-langserver` from
+`/root/.local/bin`, a 600 s budget, one process at a time. Round 6's verifier re-ran the same
+harvest on the same clone and reproduced **`files_scanned` 1602, references 3549, cross-bundle 72,
+module edges 10, `.venv` targets 0** exactly — but measured `vendor-tree` **465** and
+`unresolved-symbol` **293** where these runs measured **0** and **751**.
+
+⚠ **The two cells trade off against each other, and the cause is interpreter state, not the code
+under test.** 465 + 293 = 758 ≈ 0 + 751: a position either resolves *into* a vendored tree (counted
+`vendor-tree`, suppressed) or fails to resolve at all (counted `unresolved-symbol`), and which one a
+given position lands in depends on what the language server has indexed at that moment. That is the
+interpreter-dependence this plan's D3 § *Out of scope* names and declines to fix. ⛔ **Read those two
+cells as a pair whose sum is stable, never as independent figures**, and do not compare either across
+runs.
+
+It does not touch this deliverable's verdict. The vendored trees are present on this clone (`.venv`
+923 `.py` files, `.pyprojectx` 817); the `.venv`-targeting count is **0** in every run by every
+observer; and both the exclusion and its suppression note are pinned by tests that do not depend on
+this repository's contents or on a live server.
 
 The baseline showed zero cross-bundle edges, so the premise held and the **G1 half proceeded** rather
 than halting.
@@ -334,15 +345,14 @@ stale-figure defect this report warns about elsewhere, committed here.
 | **`b0d746c`, round 5's fixes — the figure that governs** | **21419 passed, 14 skipped, 404.89 s, `verify: SUCCESS`** |
 
 The figure that governs is the last, because it is the only one measured on the tree that actually
-lands. Rounds 4 and 5 each touch production Python (docstrings in `lsp_client.py` and
-`_lsp_workspace_edit.py`), so the gate was re-run on each rather than carried forward — the
-stale-figure defect this section already records once. ⛔ **`c12fcaa` follows `b0d746c` and is
-report-only**, so the Python tree it governs is byte-identical: `git diff --name-only b0d746c..HEAD
--- '*.py'` is empty, which is why the gate was not re-run for it. All three sub-steps ran on the
-governing commit: quality-gate (`ruff … All checks passed!`, `mypy … Success: no issues found in 416
-source files`, `SPDX-header check passed`), test-compile (`mypy … 939 source files`), and
-module-tests. All three sub-steps ran on it: quality-gate (`ruff … All checks passed!`, `mypy … Success: no
-issues found in 416 source files`, `SPDX-header check passed`), test-compile, and module-tests.
+lands. Rounds 4, 5 and 6 each touch production Python — docstrings in `lsp_client.py`,
+`_lsp_workspace_edit.py` and `build-pyproject/scripts/extension.py` — so the gate was re-run on each
+rather than carried forward, which is the stale-figure defect this section already records once.
+⛔ **Every commit after the governing one is report-only**, and that is established rather than
+asserted: `git diff --name-only {governing}..HEAD -- '*.py'` returns nothing. All three sub-steps ran
+on the governing commit: quality-gate (`ruff … All checks passed!`, `mypy … Success: no issues found
+in 416 source files`, `SPDX-header check passed`), test-compile (`mypy … 939 source files`), and
+module-tests.
 
 ⚠ **The first `./pw verify` FAILED**, and the failure is worth recording because it is exactly the
 class the contract warns about: `test-compile` — the only sub-step that type-checks the test tree, and
@@ -437,11 +447,10 @@ surface". Both halves were wrong** — the count was stale, and files outside th
 present when it was written. Verification item 5 requires every such file **accounted for**, not
 absent. Re-derived at the moment of this claim:
 
-`git diff --name-only origin/main...HEAD` → **55 files** (re-derived at `b364322`, the round-4 fix
-commit; `report-01.md` is already in that set, so committing this section does not move it).
-**Twelve fall outside** the plan's Expected surface, each for a stated reason — the first seven from
-the deliverables, the last five added by round 4's sweep-and-count over claims this run had corrected
-at only some of their sites:
+`git diff --name-only origin/main...HEAD` → **59 files**, 26 of them `*.py` (re-derived at `d893d51`,
+the round-6 fix commit; `report-01.md` is already in that set, so committing this section does not
+move it). **Sixteen fall outside** the plan's Expected surface, each for a stated reason — the first
+seven from the deliverables, five added by round 4's sweep, and four by round 6's:
 
 | File | Why it was touched |
 |---|---|
@@ -457,6 +466,10 @@ at only some of their sites:
 | `.../extension-api/standards/module-discovery.md` | Round 4 / W6: D4 made its Python dependency-string contract (PEP 621 only) **false**. |
 | `.../manage-architecture/standards/architecture-persistence.md` | Round 4 / sweep: the same claim as W6, third consumer kind. |
 | `.../marshall-steward/references/menu-derivation-resolvers.md` | Round 4 / W2: D6 made its definition of `configured` **false**, at the agent-facing menu that renders the field. |
+| `.../build-pyproject/scripts/extension.py` | Round 6 / F1: D4 made **three** of its production docstrings false — including `_distribution_name`'s and `derive_edges`', the method D4's own *Done when* clauses drive. The resolver that owns the behaviour, never opened until round 6. |
+| `.../extension-api/standards/ext-point-derivation-resolver.md` | Round 6 / F2: the same claim, in the table the document calls the one place the shipped roster is enumerated. |
+| `.../script-shared/scripts/extension/_name_edge_join.py` | Round 6 / F3: the same claim, in the docstring of the module that *performs* the join. |
+| `doc/concepts/extension-architecture.adoc` | Round 6 / F3: the same claim, as two labels on the Axis-C description. |
 
 All of them except the two tests are the plan's own carve-in: § Out of scope states this plan changes
 *"the documentation that is **inseparable from a behaviour change it lands**"*, and a statement this
@@ -464,7 +477,7 @@ run's change renders false is exactly that. The two tests are named by a *Done w
 else lies outside; the plan's own directory carries `plan.md`, `proposals.md` and this report, as the
 Expected surface anticipates.
 
-⚠ **Five of the twelve were reached only by round 4**, and they split two ways — a distinction an
+⚠ **Five of the sixteen were reached only by round 4**, and they split two ways — a distinction an
 earlier revision of this paragraph got wrong by claiming all five "were already false before this
 branch touched anything adjacent". **Two** were: the `~97 %` premise sites, false since the
 re-measurement that predates this branch. **Three** were made false *by this run* — D4 taught the
@@ -472,6 +485,12 @@ discoverer Poetry and `setup.cfg`, which falsified the PEP-621-only contract in 
 and `architecture-persistence.md`, and D6 tightened `configured`, which falsified the resolver menu's
 definition. Either way they are the n−1-of-n shape the contract's sweep-and-count rule names, and
 they are why the outside-surface count grew in a round that fixed no code.
+
+⛔ **Four more were reached only by round 6, and they are the same claim as one of round 4's** — the
+Python dependency-string contract, which D4 falsified and which the run had by then corrected at five
+*prose* sites while never opening the code that owns it. That the surface kept growing across three
+separate rounds for **one** claim is the strongest evidence this report carries about how the run
+fails, and it is what § What have we learned proposes a contract change for.
 
 ## Gap coverage
 
@@ -629,7 +648,7 @@ sweep did.
 
 | # | Observation | Why it is left |
 |---|---|---|
-| O1 | `lsp-client/SKILL.md` tells a leaf to run `./pw verify` — this repo's wrapper, in a skill that ships to consumer projects of any ecosystem | **Pre-existing at FOUR sites**, all predating this branch: `SKILL.md:41`, `SKILL.md:142`, `lsp_client.py`'s module docstring, and `DIAGNOSTICS_BOUNDARY_NOTE` — the last being a prose literal shipped in **every** `diagnose` payload, so it reaches an operator through machine output rather than through a document. An earlier revision of this row named three of the four. This branch propagated it once and that copy is fixed (W9); the four are owned by `560-documentation-surface-truthfulness` |
+| O1 | `lsp-client/SKILL.md` tells a leaf to run `./pw verify` — this repo's wrapper, in a skill that ships to consumer projects of any ecosystem | **Pre-existing at FOUR sites**, all predating this branch: `SKILL.md:41`, `SKILL.md:157`, `lsp_client.py:27` (the module docstring), and `DIAGNOSTICS_BOUNDARY_NOTE` at `lsp_client.py:77` — the last being a prose literal shipped in **every** `diagnose` payload, so it reaches an operator through machine output rather than through a document. An earlier revision of this row named three of the four. This branch propagated it once and that copy is fixed (W9); the four are owned by `560-documentation-surface-truthfulness` |
 | O2 | `_report_omitted`'s notification names the bare script rather than the executor form | Incomplete, not false |
 | O3 | `lsp_client.py`'s module docstring enumerates two outcomes; `unknown` is a third, unnamed **there** (it is named in `SKILL.md`, the user page and the code) | Incomplete, not false |
 | O4 | The ambiguity guard drops a reference whenever the **target basename** is ambiguous, even for a dotted or relative import to a uniquely-located file | **Bounded:** 0 hits on this repository, always counted under `ambiguous-module-name`, and it is the conservative direction the plan's ⚠ mandates. Cannot change this deliverable's verdict |
@@ -706,6 +725,46 @@ rather than about the code.** A1/A2/A3 are the n−1-of-n shape *again*: W5 swep
 A4–A7 are all in this report's own prose — three figures `b11e5cc` re-derived for one section without
 sweeping the others, and one claim `b11e5cc` newly introduced. The run has now produced both patterns
 in five consecutive rounds; § What have we learned proposes the contract change that follows from it.
+
+### Round 6 — plan verifier (first round of the extended budget)
+
+The verifier swept all eight claims the previous two commits corrected, re-derived the report's
+figures by executing them, and ran four mutations. **Eight condition-A findings and one new
+condition-B finding (B4).** All nine closed here — B4 by a test rather than a disclosure.
+
+Reproduced independently, by execution: `./pw verify` at HEAD (**21419 passed / 14 skipped**,
+`verify: SUCCESS`, mypy over 416 production + 939 test files); the validator's 308 / 5083 / **61**
+and its 26 / 31 / 4 split; the harvest twice (**72** cross-bundle, **10** edges, **0** `.venv`
+targets, 1602 / 3549); **177** search paths and the single ambiguous basename; **70** bundle-skill
+`scripts/` directories, exactly one carrying `__init__.py`; the Poetry and setuptools fixtures
+through the **real** `BuildExtension.derive_edges`; the 55-file / 24-`*.py` / six-test-directory
+diff; all 20 SHA tokens resolving to ancestors of HEAD; G25's asserted absence.
+
+| # | Finding | Disposition |
+|---|---|---|
+| F1 | ⭐ **The PEP-621-only contract survived in the owning resolver's own production docstrings** — `build-pyproject/scripts/extension.py` at three places: the module docstring ("what a Python distribution DOES publish is its PEP 621 `[project] name`"), `_distribution_name` ("a directory that declares no `[project] name` publishes no distribution"), and `derive_edges` ("each module publishes a `[project] name`"). Measured false through the real path: the Poetry fixture publishes `poetry-core-lib` from `[tool.poetry]`, the setuptools fixture `setuptools-core-lib` from `setup.cfg [metadata]`, and `derive_edges` — the exact method D4's *Done when* (a) and (b) drive — yields three edges for each | **fixed** at all three. The docstrings now describe the field (`metadata.name`) rather than the descriptor, which is what the resolver actually reads |
+| F2 | The same claim in `ext-point-derivation-resolver.md:227` — the table the document itself calls the one place the shipped roster is enumerated | **fixed** |
+| F3 | The same claim in `_name_edge_join.py`, the docstring of the module that *performs* the join, plus two labels in `doc/concepts/{code-intelligence,extension-architecture}.adoc` | **fixed** at all four |
+| F4 | § Left open called B1 "the one vacuity gap in the branch". **False when written** — `b0d746c` had created a second (B4) in the same commit that closed round 5 | **fixed**; the sentence is now a re-derived measurement rather than a property claim |
+| F5 | § Findings O1's cite `SKILL.md:142` now points at the sentence **W9 installed**; the real fourth `./pw verify` site is `:157`. The *count* of four was right | **fixed** — all four re-derived and confirmed byte-identical on `origin/main` |
+| F6 | § Left open's B2 cited `lsp_client.py:373`/`:391`; `b0d746c`'s 15 added lines moved them to `:383`/`:403` | **fixed** |
+| F7 | § D3's "At HEAD" table published two cells with no measurement stamp, and the verifier's own re-run **did not reproduce them** (`vendor-tree` 465 vs 0, `unresolved-symbol` 293 vs 751) — while every load-bearing cell reproduced exactly | **fixed** — conditions stamped, and the ⚠ the run had left open is now answered: 465 + 293 ≈ 0 + 751, so the two cells trade off according to what the server has indexed. They are recorded as a pair whose **sum** is stable and are not to be compared across runs |
+| F8 | § Build gate carried a sentence twice, in two variants, introduced by `9552d75` | **fixed** |
+| B4 | New: `phase` and `unverified_path` were asserted by **no** test while four documents described them — all four added by `b0d746c` | **closed by a test**, not bounded — see § Left open |
+
+⛔ **Round 6's own verdict on convergence: not narrower, and it said so.** Four findings (F5–F8) are
+genuinely narrower than anything round 5 produced — two line-number drifts caused mechanically by one
+commit, one missing stamp, one editing artefact. **F1–F3 are not.** They are a claim family the run
+had corrected at **five prose sites and never once in code**, and the residue sat in the production
+docstrings of the very resolver whose `derive_edges` D4's *Done when* clauses drive. The verifier's
+own words: *"a widening search radius, not a converging one — the loop is finding fewer things
+because each round's sweep is aimed at the previous round's claim, and a new claim family surfaces
+each time it widens."*
+
+⚠ **The sweep now has a rule that would have caught F1–F3, and it is the lesson of this round:** a
+claim about *what the code does* is not swept until the **code that does it** has been read. Rounds
+2–5 swept prose from prose. Round 6 is the first to reach a production docstring in a file the branch
+never opened.
 
 ## Reviewer participation
 
@@ -820,7 +879,8 @@ the rounds so far found is fixed. Round 3's O2–O4 stand as recorded there; rou
 | # | Survivor | Bound, with its evidence |
 |---|---|---|
 | B1 | **The restore-failure branch is pinned by no test.** Mutating `_lsp_workspace_edit.py`'s `except OSError as restore_exc: restore_error = restore_exc` to `except OSError: pass` — reverting exactly what D2/G4 requires — leaves **58 passed / 0 failed** across `test/plan-marshall/lsp-client/`. The only assertion touching it is the happy path (`test_lsp_workspace_edit.py:146`, `restore_error is None`) | The behaviour is **correct as written** — traced `apply_workspace_edit` → `WorkspaceApplyError(path, exc, restore_error)` → `rolled_back=exc.restore_error is None` → `payload['restore_error']` — and four documentation sites now describe it. The exposure is a *silent regression later*, not a defect now. Provoking a real restore failure needs a mid-rollback write failure, which no fixture in this tree can create without patching the filesystem layer. ⚠ This is the one vacuity gap in the branch and it is disclosed rather than hidden |
-| B2 | **Two rollback call sites sit outside the exception boundary** — `restore_files(originals)` at `lsp_client.py:373` (`diagnostics_unavailable`, phase `after`) and `:391` (`diagnostics_worsened`). An `OSError` there escapes `_run_edit` to `safe_main`, so the verb returns a bare `status: error` with the edit still on disk and no `restore_error` | It **cannot produce a false clean**: the return is an error, never a success or a `rolled_back: true`. It requires a write failure *during* rollback. And G4's actual scope — the apply loop — **is** guarded, so the deliverable's clause is met; this is the adjacent case the clause does not name |
+| B2 | **Two rollback call sites sit outside the exception boundary** — `restore_files(originals)` at `lsp_client.py:383` (`diagnostics_unavailable`, phase `after`) and `:403` (`diagnostics_worsened`). An `OSError` there escapes `_run_edit` to `safe_main`, so the verb returns a bare `status: error` with the edit still on disk and no `restore_error` | It **cannot produce a false clean**: the return is an error, never a success or a `rolled_back: true`. It requires a write failure *during* rollback. And G4's actual scope — the apply loop — **is** guarded, so the deliverable's clause is met; this is the adjacent case the clause does not name. ⚠ Round 6 sharpened it: when this was recorded the FIRST of the two sites was on a branch **no test executed at all** — an unconditional `raise` at its head left 58/58 green. That is no longer true; the guard added for B4 drives exactly that branch, so the site is now exercised even though its `OSError` path still is not. ⛔ The line numbers above were stale in an earlier revision (`:373`/`:391`, which a later commit's 15 added lines moved) and are re-derived here |
+| B4 | **`phase` and `unverified_path` were asserted by no test** — deleting both kwargs from both production returns left **58 passed / 0 failed**, while **four** documentation sites describe them, all four added by `b0d746c`. The commit that closed round 5 opened a gap of its own, in the one field a task leaf's reading of the payload turns on | **CLOSED by a test rather than bounded.** Two guards now pin both routes through `diagnostics_unavailable`: `phase: before` with `rolled_back: false` and **no** `restore_error`, and `phase: after` with `rolled_back: true` and the file restored. Red-checked — stripping the two kwargs fails both guards, and the real code passes them. Closing it cost less than the disclosure would have |
 | B3 | **One search-path directory is missed.** `platform-runtime/scripts` carries an `__init__.py`, so the structural rule treats it as a package and omits it, yet two real bare imports target it | **Provably cannot affect this deliverable's result**: both importers are inside the `plan-marshall` bundle, so no cross-bundle reference and no module edge can change. Confirmed by measurement, not by argument — the **72** / **10** figures are identical with and without it. Recorded at § D3 alongside the sentence it falsified (A9) |
 
 Round 3's observations O1 and O5 are **not** in this list: O1 was overtaken by round 5's A8 (the site
