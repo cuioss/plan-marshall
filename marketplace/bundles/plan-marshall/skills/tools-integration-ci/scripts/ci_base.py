@@ -866,16 +866,39 @@ def derive_landing_state(pr_states: list[str], pushed: bool) -> str:
 # ``parser.prog`` — a bare script filename the script-execution convention
 # forbids.
 CI_NOTATION = 'plan-marshall:tools-integration-ci:ci'
-CI_ROUTER_FLAGS = ('--plan-id', '--project-dir')
+try:
+    from resolve_project_dir import ROUTER_FLAGS as CI_ROUTER_FLAGS
+except ImportError:
+    # Same lazy-import fallback the routing path uses: minimal smoke fixtures
+    # monkeypatch ci_base without the full PYTHONPATH. The literal is the
+    # fallback only — `resolve_project_dir.ROUTER_FLAGS` is the definition, and
+    # the lock-step test pins the two together.
+    CI_ROUTER_FLAGS = ('--plan-id', '--project-dir')
 
 
 def parse_ci_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
     """Parse a CI provider's argv, with the router flags known to the error path.
 
     Every provider front-end parses through here rather than calling
-    ``parse_args_with_toon_errors`` directly, so a router flag written after the
-    verb gets the placement note on every provider rather than on whichever one
-    remembered to ask for it.
+    ``parse_args_with_toon_errors`` directly, so a misplaced router flag gets the
+    placement note on every provider rather than on whichever one remembered to
+    ask for it.
+
+    ⛔ **Reach, stated exactly, because it is narrower than the flag list looks.**
+    The note is an ERROR-PATH augmentation: it fires only when argparse rejects
+    the token. That makes it live for ``--plan-id`` — :func:`extract_routing_args`
+    consumes that flag only BEFORE the first subcommand token, so a post-verb one
+    survives into ``remaining_argv`` and is rejected. It is INERT for
+    ``--project-dir`` at these entrypoints: :func:`extract_project_dir` consumes
+    that flag from ANY position, so a post-verb one never reaches the parser,
+    the parse succeeds, and there is no rejection to annotate.
+
+    Both flags stay in :data:`CI_ROUTER_FLAGS` because the note is also reached
+    through paths that do not pre-route. Making the ``--project-dir`` half live
+    at the provider entrypoints requires position-aware consumption, matching
+    ``--plan-id`` — a routing behaviour change with a pinned test
+    (``test_ci.py::…second_occurrence…`` and the mid-verb case), out of scope for
+    the change that introduced this note and raised separately.
     """
     args: argparse.Namespace = parse_args_with_toon_errors(
         parser, notation=CI_NOTATION, extra_router_flags=CI_ROUTER_FLAGS

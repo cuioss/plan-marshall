@@ -37,6 +37,7 @@ Usage:
 """
 
 import re
+import shlex
 import sys
 from collections.abc import Iterable
 from pathlib import Path
@@ -1056,7 +1057,13 @@ def _augment_misplaced_router_flag(
         f'python3 .plan/execute-script.py {notation}' if notation else prog
     )
     if argv:
-        example = ' '.join([invocation, *_move_router_flags_first(list(argv), misplaced)])
+        # ``shlex.join`` on the ARGUMENTS, not on the invocation: the corrected
+        # example is meant to be copied and run, and a value carrying a space or
+        # a shell metacharacter (`--title "a b"`, `--body $x`) would otherwise be
+        # re-split or expanded into a different command than the one the caller
+        # typed. The invocation prefix is composed here and never user data, so
+        # quoting it would only add noise.
+        example = f'{invocation} {shlex.join(_move_router_flags_first(list(argv), misplaced))}'
     else:
         example = f'{invocation} {misplaced[0]} VALUE <subcommand> ...'
     return (

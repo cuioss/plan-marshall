@@ -646,7 +646,12 @@ owed anyway. Budget: six.
 | 2 | 13:35 | `b55ad1d` | Condition 2's base merge + condition 4's report push (one push) | Same notice, comment edited in place at 13:35:30 |
 | 3 | 14:29 | `c3fa560` | The report re-commit § Step 8 condition 4 licenses on each wake | *"Review limit reached … Next review available in: **48 minutes**"* — commit status `CodeRabbit: Review rate limited` at 14:30:53, run `45c5231b` |
 | 4 | 15:27 | `680c83e` | Same carrier | *"Review limit reached … Next review available in: **59 minutes**"* at 15:28:37, run `37f7eec4` |
-| 5 | 16:41 | — | Same carrier | *(read back on the next wake)* |
+| 5 | 16:41 | `5f56288` | Same carrier | ✅ **REVIEW OBTAINED** — run `5253ed3a`, 42 files, 18 actionable comments, merge risk 🟡 Moderate |
+
+**Arm: `obtained`.** Five attempts, four refused, the fifth served. Timing the
+attempt to the notice's window plus jitter is what got it: the fifth attempt
+landed 14 minutes after a window closed. The reachability check (above) is what
+justified spending attempts at all rather than recording `unobtainable`.
 
 ⛔ **Attempts 1 and 2 fell inside one window and the second was therefore spent
 for nothing.** Both were pushes the run owed on its own schedule (§ Step 4's
@@ -663,6 +668,40 @@ fact already closed 8 minutes earlier — itself inside the 5–20 minute jitter
 band. Waiting it out would have burned 45 minutes against a shared allowance for
 nothing. Derive the delay from the clock at the moment of arming, not from when
 the wake's context was assembled.
+
+## CodeRabbit review — 18 findings, all dispositioned
+
+⛔ **The review found this plan's own defect class in the code this plan
+produced, four times over.** That is the single most important fact in this
+report and it is stated first, not buried: a run can close a defect class in the
+tree it audits while committing the same class in its own output.
+
+| # | Finding | Disposition |
+|---|---|---|
+| C1 | `_plugin_pin_trap.py` — a comparison whose union held N paths, none readable, reported `usable: True` and reached the pass arm. **Verified: `ContentComparison(0, 3, 0, scanned=0)` → `unusable_because: None`.** | **Fixed.** `scanned_count == 0` is now unusable. The COUNT of paths is not evidence about their bytes — the same false-clean direction the class already rejected for a zero-path walk. |
+| C2 | `_volatile_signature`'s docstring claimed EVERY axis the oracle reads is covered; `eligible_versions` was absent, and the oracle reads it to compute `loader`. | **Fixed.** Axis added. The gap was reachable: a subpath materialising under a non-pin dir between the two reads flips the loader while every other axis compares equal. |
+| C3 | `_analyze_shim_marker` and `_analyze_thinking_directive_in_workflow_docs` returned `[]` for unreadable files that are counted in `population_size`. | **Fixed.** Both emit an explicit `*_target_unreadable` finding. The thinking rule also reports discovery-side unreadable candidates, whose `implements:` test could not be run — those under-derive the population instead of overstating coverage. |
+| C15 | `test_quality_gate_root_anchored_findings.py` — the control for "the bypass is anchor-scoped" called only the two predicates, never `_scoped`. **A control that cannot fail for the reason it names.** | **Fixed and mutation-confirmed.** Rewritten to drive a real scoped `cmd_quality_gate`. Mutating `_scoped` to return everything now reddens it (`1 failed, 6 passed`); before, it passed. |
+| C7 | The D6 router-flag note is **inert for `--project-dir`** at the provider entrypoints: `extract_project_dir` consumes it from any position, so the parse succeeds and there is no rejection to annotate. **Verified: `['pr','view','--pr-number','7','--project-dir','/tmp']` → `remaining` drops the flag; the `--plan-id` equivalent survives.** | **False claim fixed; behaviour change RAISED, not taken.** `parse_ci_args` now states the reach exactly. Making the half live requires position-aware consumption of `--project-dir`, which changes documented routing and reddens a pinned test (`test_ci.py`'s mid-verb case) — a larger ask, proposed on the thread for the author to decide. |
+| C4 | Root flag arity: a zero-arity root switch (`--verbose`) breaks verb resolution and yields an invalid `--verbose VALUE list` correction. | **Raised, not taken** — see the thread. It needs `flag_arity` threaded from the executor surface into `_ScriptEntry`, which widens the PR beyond the note it was opened for. |
+| C5 | `_FLAG_TOKEN_RE` scanned raw text, so `list --message "--plan-id p"` reported a misplaced router flag against a CORRECT invocation. **Verified: flags seen = `['message', 'plan-id']`.** | **Fixed.** Quoted runs are blanked (offsets preserved) before the scan. Now `['message']`. |
+| C6 | `_extract_invocations` matched physical lines, so a backslash-continued invocation reported CLEAN over a rejected call. **Verified: the continuation yielded `rest=' \\'`.** | **Fixed.** Continuations are folded, first physical line kept as the finding line. |
+| C8 | The corrected example joined raw tokens, so a value with a space produced a different command when copied. | **Fixed** with `shlex.join` over the arguments. |
+| C9 | `CI_ROUTER_FLAGS` restated the router's flag names instead of deriving them. | **Fixed.** `resolve_project_dir.ROUTER_FLAGS` is now the single definition; an identity-not-equality lock-step test pins it. |
+| C10 | The dated-narration pattern accepted only `20xx` while the rule documents `YYYY`. | **Fixed — with a correction of my own first attempt.** Widening to a bare `\d{4}` matched `after 3600`, a timeout in SECONDS, in three live scripts. `(?:19\|20)\d{2}` covers pre-2000 dates without inventing findings. The literal example was then removed from the comment, because writing it made the module a live match of its own rule — the round-3 trap, again. |
+| C11 | `rule-catalog.md` said exactly ONE collection drop is counted nowhere; a second exists (empty split / `--`-prefixed members). | **Fixed** in both the catalogue and the code comment. A disclosure calling itself complete while omitting a case is the defect this rule reports. |
+| C12 | `rule-provenance.md:243` — unescaped pipes inside code spans split the table row (`MD056`, 7 cells against 4), dropping its tail when rendered. **My own edit caused it.** | **Fixed.** Pipes inside code spans escaped; the row is back to 4 columns matching its header. |
+| C13 | `#4` in the 060 report vs "a fifth signature" in the plan. | **Clarified, not "corrected" — neither was false.** The rule is at POSITION #4 and is the FIFTH to exist, because it was inserted ahead of the old #4 rather than appended. Both numbers now stated. |
+| C14 | A control's docstring still said a one-member body "never enters the population" — untrue since round 6. | **Fixed.** |
+| C16 | The per-column docstring contradicted the row-level zero rule. | **Fixed** — "nonzero measured cells", with the row-level qualifier stated. |
+| C17 | Legacy-absent and explicit `unmeasured` are provenance cases reported through ONE output, not two reader buckets. | **Fixed.** |
+| C18 | Two of three assertions were current-census facts labelled invariants; an improvement would redden them. | **Fixed.** The identity is marked as the invariant; the other two are marked current-census tripwires, to be DELETED rather than "fixed" when a real improvement falsifies them. |
+
+**Two findings were raised rather than taken (C4, C7).** Both need changes wider
+than the note they were filed against — one threads flag arity through the
+executor surface, the other alters documented routing with a pinned test. The
+contract's guidance for a review bot's larger finding is to raise it once with a
+proposed patch rather than widen the PR, which is what the threads carry.
 
 ## Contract check (Step 9)
 

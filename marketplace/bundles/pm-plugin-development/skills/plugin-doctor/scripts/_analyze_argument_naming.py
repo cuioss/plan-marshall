@@ -161,6 +161,18 @@ _INVOCATION_RE = re.compile(
 # rejects placeholder shapes like ``--{plan-id}``.
 _FLAG_TOKEN_RE = re.compile(r'(?<![A-Za-z0-9])--(?P<flag>[A-Za-z][A-Za-z0-9_\-]*)\b')
 
+# A quoted run is a VALUE, whatever it looks like. Scanning raw text made
+# ``list --message "--plan-id p"`` report ``--plan-id`` as a misplaced router
+# flag — an error finding against a correct invocation, which is the
+# over-rejection this cluster's asymmetric-error rule refuses. Blanked rather
+# than removed so every surviving match keeps its original offset.
+_QUOTED_RUN_RE = re.compile(r'"[^"]*"|\'[^\']*\'')
+
+
+def _without_quoted_values(text: str) -> str:
+    """``text`` with the CONTENTS of quoted runs blanked, offsets preserved."""
+    return _QUOTED_RUN_RE.sub(lambda m: m.group(0)[0] + ' ' * (len(m.group(0)) - 2) + m.group(0)[-1], text)
+
 # Canonical Forms table parser — extracts the rightmost code-fenced cell.
 # The table format is:
 #     | Script | Operation | Canonical form |
@@ -433,6 +445,35 @@ def _markdown_targets(marketplace_root: Path) -> list[Path]:
     return targets
 
 
+def _joined_lines(text: str) -> list[tuple[int, str]]:
+    """``(first_physical_line, joined_text)`` with shell continuations folded.
+
+    A canonical block routinely writes one command across several physical lines
+    with a trailing backslash. Matching each physical line independently split
+    those into an executor line carrying no flags and a continuation line
+    carrying no executor token — so a misplaced router flag on the continuation
+    was invisible and the rule reported CLEAN over a rejected invocation. The
+    line number reported is the FIRST physical line, which is where a reader
+    looks. ``_analyze_manage_invocation`` already folds continuations this way.
+    """
+    out: list[tuple[int, str]] = []
+    pending: list[str] = []
+    start = 0
+    for idx, raw in enumerate(text.splitlines(), start=1):
+        stripped = raw.rstrip()
+        if not pending:
+            start = idx
+        if stripped.endswith('\\'):
+            pending.append(stripped[:-1])
+            continue
+        pending.append(raw)
+        out.append((start, ''.join(pending)))
+        pending = []
+    if pending:
+        out.append((start, ''.join(pending)))
+    return out
+
+
 def _extract_invocations(markdown_path: Path) -> list[_Invocation]:
     """Parse markdown lines and emit one ``_Invocation`` per executor token."""
     try:
@@ -440,7 +481,7 @@ def _extract_invocations(markdown_path: Path) -> list[_Invocation]:
     except (OSError, UnicodeDecodeError):
         return []
     out: list[_Invocation] = []
-    for idx, raw in enumerate(text.splitlines(), start=1):
+    for idx, raw in _joined_lines(text):
         match = _INVOCATION_RE.search(raw)
         if not match:
             continue
@@ -610,7 +651,7 @@ def scan_flag(
                 allowed = sub_allowed
                 scope_label = inv.subcommand
 
-            for match in _FLAG_TOKEN_RE.finditer(inv.all_flag_text):
+            for match in _FLAG_TOKEN_RE.finditer(_without_quoted_values(inv.all_flag_text)):
                 flag = match.group('flag')
                 if flag in allowed:
                     continue
@@ -673,7 +714,7 @@ def scan_router_flag_placement(
             own = entry.subcommand_own_flags.get(inv.subcommand)
             if own is None:
                 continue
-            for match in _FLAG_TOKEN_RE.finditer(inv.rest):
+            for match in _FLAG_TOKEN_RE.finditer(_without_quoted_values(inv.rest)):
                 flag = match.group('flag')
                 if flag in own or flag not in entry.root_flags:
                     continue

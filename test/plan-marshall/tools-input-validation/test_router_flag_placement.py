@@ -121,9 +121,14 @@ def test_example_renders_the_callers_real_verb_and_moves_the_flag(monkeypatch, c
 
     stderr = capsys.readouterr().err
 
+    # ``'*.py'`` is QUOTED, and that is the point: the example is meant to be
+    # copied and run, and a bare ``--pattern *.py`` would be glob-expanded by the
+    # shell into matching filenames before the script ever saw it. The note's
+    # whole claim is that it prints the caller's own command with the flag moved,
+    # so a command that means something different when pasted breaks the claim.
     assert (
         'python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture '
-        '--project-dir /repo find --pattern *.py' in stderr
+        "--project-dir /repo find --pattern '*.py'" in stderr
     )
     assert '<subcommand>' not in stderr
 
@@ -147,7 +152,9 @@ def test_example_uses_the_executor_convention_not_a_bare_script_filename():
     example = augmented.rsplit('e.g. `', 1)[1].rstrip('`.')
     assert example.startswith('python3 .plan/execute-script.py ')
     assert 'architecture.py' not in example
-    assert example.endswith('--plan-id p1 find --pattern *.py')
+    # Quoted for the reason given in the sibling test above: an unquoted glob is
+    # a different command once the shell has seen it.
+    assert example.endswith("--plan-id p1 find --pattern '*.py'")
 
 
 def test_example_falls_back_to_prog_when_no_notation_is_supplied():

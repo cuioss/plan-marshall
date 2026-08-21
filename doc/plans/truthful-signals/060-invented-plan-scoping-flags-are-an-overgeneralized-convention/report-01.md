@@ -84,8 +84,11 @@ narrows the candidate space decisively, and is recorded as guidance for a future
   `--plan-id`/`--project-dir` where the flag is verb-scoped" (`agent-behavior-rules.md`), names the
   OPPOSITE shape: a flag written ahead of the verb that belongs after it. The CI shape is a
   router-scoped flag written AFTER the verb that belongs before it, and the two prescribe opposite
-  moves. Plan `500` added it as signature #4, with both signatures cross-referencing each other so a
-  reader cannot collapse them. Its own "Why" concedes the failure "is
+  moves. Plan `500` added it at POSITION #4 in the numbered list — the FIFTH signature in a section that
+  previously held four, inserted ahead of the old #4 rather than appended, so the count and the
+  ordinal legitimately differ. Both numbers are stated because naming only one reads as a
+  contradiction against the plan's "add a fifth recurrence signature". Both signatures
+  cross-reference each other so a reader cannot collapse them. Its own "Why" concedes the failure "is
   structural" and recurs despite the rule (`:337`). This is the plan's thesis confirmed: a loaded,
   correct prose guard that still fires — a documentation-layer vacuous guard. Adding emphasis is the
   plan's explicitly REJECTED option, and nothing here argues this instance differs.

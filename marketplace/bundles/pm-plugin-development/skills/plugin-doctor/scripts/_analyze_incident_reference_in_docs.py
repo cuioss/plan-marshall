@@ -173,7 +173,17 @@ _TERM_OF_ART_REVERSED_RE = re.compile(
 # No example here spells a real date or version after a preposition, for the
 # self-trigger reason given above.
 _DATED_NARRATION_RE = re.compile(
-    r'\b(?:as of|since|before|after)\s+(?:20\d{2}(?:-\d{2}(?:-\d{2})?)?|\d+\.\d+\.\d+)\b',
+    # ``19xx`` and ``20xx``, not just ``20xx``: the rule documents
+    # ``YYYY(-MM(-DD))``, so a pre-2000 dated phrase is narration by that
+    # definition and the ``20``-only class disagreed with its own published spec.
+    # ⛔ The example is deliberately NOT spelled out here — writing it literally
+    # made this module a live match of its own rule, which is the same trap the
+    # ``#NNNN`` placeholders below exist to avoid.
+    # ⛔ NOT a bare ``\d{4}``: widening that far matched `after 3600` — a timeout
+    # in SECONDS — in three live scripts, manufacturing findings against correct
+    # code. A four-digit number is not a year; a four-digit number in the range
+    # people actually date documents with is.
+    r'\b(?:as of|since|before|after)\s+(?:(?:19|20)\d{2}(?:-\d{2}(?:-\d{2})?)?|\d+\.\d+\.\d+)\b',
     re.IGNORECASE,
 )
 

@@ -531,6 +531,13 @@ def _enum_sites_in_skill(
             for match in pattern.finditer(raw):
                 members = _split_enum_members(match.group('members'))
                 if not members or any(m.startswith('--') for m in members):
+                    # The SECOND collection-time drop counted by no cause (the
+                    # first is the notation-less enum above). An empty split, or
+                    # a body whose members are themselves flags, is a flag list
+                    # rather than an enum claim. Zero live sites carry either
+                    # shape — but a declined token with no figure is exactly what
+                    # this rule reports, so both are disclosed in rule-catalog.md
+                    # rather than left implicit here.
                     continue
                 sites.append(
                     (line, block_notation, block_path, match.group('flag'), members)

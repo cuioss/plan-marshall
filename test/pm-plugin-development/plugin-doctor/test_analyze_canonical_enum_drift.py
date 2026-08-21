@@ -356,9 +356,11 @@ def test_shared_fence_second_invocation_drift_is_still_caught(tmp_path):
     examining anything below the first invocation.
 
     The wrong enum carries TWO members (``p|z`` against a live ``p|q``) rather
-    than one. A one-member body is a template slot, not an enum claim, and never
-    enters the population — so spelling the drift that way would have tested the
-    collector's minimum instead of the attribution this control is for.
+    than one. A one-member body IS collected — it is filed under
+    ``single_member_ambiguous`` and never compared — so spelling the drift that
+    way would produce no finding at all and would test the one-member rule
+    instead of the attribution this control is for. This said "never enters the
+    population", which stopped being true when that rule changed.
     """
     _write_shared_fence_bundle(tmp_path, add_enum='x|y', remove_enum='p|z')
 
@@ -737,14 +739,23 @@ def test_a_modelled_parser_with_no_choices_is_not_a_blind_spot(tmp_path):
 def test_real_tree_blind_spot_count_is_published_and_dominated_by_underived_parsers():
     """Over the REAL tree the blind-spot figure is the actionable one.
 
-    Asserted as an invariant rather than a literal, since both counts move when
-    a skill documents another enum: blind spots are the unresolved total minus
-    the sites whose parser WAS modelled and declares nothing.
+    The first assertion is a genuine INVARIANT: the census is complete over
+    ``UNRESOLVED_CAUSES`` and ``no_choices_declared`` is the only excluded cause,
+    so the identity holds for any tree.
+
+    ⛔ The two below it are NOT invariants, and this docstring called all three
+    invariants once. They describe the census as it stands: modelling more parser
+    surfaces — following the ``script-shared`` build-CLI factory, say — drives
+    ``parser_surface_not_derived`` to zero and reddens them on an IMPROVEMENT the
+    suite should reward. They are kept as a tripwire that the census is still
+    non-trivial. When a real improvement makes one false, DELETE it; do not
+    "fix" it by weakening the census.
     """
     coverage = _mod.derive_coverage(derive_population(MARKETPLACE_ROOT))
     causes = coverage['unresolved_causes']
 
     assert coverage['blind_spots'] == coverage['unresolved'] - causes[_mod.UNRESOLVED_NO_CHOICES_DECLARED]
+    # Current-census tripwires — see the ⛔ above before changing either.
     assert coverage['blind_spots'] > causes[_mod.UNRESOLVED_NO_CHOICES_DECLARED]
     assert causes[_mod.UNRESOLVED_PARSER_NOT_DERIVED] > 0
 

@@ -190,15 +190,39 @@ def test_per_file_findings_still_obey_the_scope_filter(tmp_path: Path) -> None:
 
     Without this control the rules above would also pass if ``--paths`` had been
     disabled outright rather than given a root-anchor exception.
+
+    ⛔ Driven through a real ``cmd_quality_gate`` run, because the predicate
+    assertions below CANNOT detect that failure. This test called only
+    ``_finding_in_scope`` and ``_finding_is_tree_wide``; if ``_scoped`` were
+    changed to return every finding unfiltered, both predicates would still
+    return exactly the same values and the control would still pass — a control
+    that cannot fail for the reason it names, which is this plan's own subject
+    committed inside the test written to close it.
     """
     root, bundles = _fixture_repo(tmp_path)
     inside = _write(bundles / 'b' / 'skills' / 's' / 'inside.md')
-    outside = _write(bundles / 'b' / 'skills' / 'other' / 'outside.md')
+    outside = _write(
+        bundles / 'b' / 'skills' / 'other' / 'outside.md',
+        'Observed on #812 the run failed.\n',
+    )
 
+    result = _doctor.cmd_quality_gate(
+        _Args(marketplace_root=str(root), paths=[str(inside.parent)])
+    )
+
+    # The out-of-scope file carries a real, file-anchored violation. It must be
+    # absent from a run scoped elsewhere — the assertion that actually fails if
+    # ``_scoped`` stops filtering.
+    anchored = [
+        i for i in result['issues']
+        if Path(i.get('file', '')).resolve() == outside.resolve()
+    ]
+    assert anchored == []
+
+    # Supporting unit check on the predicates the gate composes.
     assert _doctor._finding_in_scope({'file': str(inside)}, [inside.parent]) is True
     assert _doctor._finding_in_scope({'file': str(outside)}, [inside.parent]) is False
     assert _doctor._finding_is_tree_wide({'file': str(outside)}, bundles) is False
-    assert root.exists()
 
 
 def test_the_bypass_keys_on_the_anchor_not_on_a_finding_type(tmp_path: Path) -> None:

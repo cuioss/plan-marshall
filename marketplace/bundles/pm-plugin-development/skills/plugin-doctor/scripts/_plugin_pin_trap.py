@@ -264,6 +264,16 @@ class ContentComparison:
         An explicitly recorded reason wins; a comparison over zero paths is
         unusable whether or not the adapter recorded why, so a hand-built
         ``ContentComparison(0, 0, 0)`` cannot satisfy a pass either.
+
+        ⛔ A NON-EMPTY union none of whose paths could be read is the same
+        nothing, and it was missing here. ``compare_pin_content`` reaches that
+        state when every source-side ``read_bytes`` raises: the result carries
+        ``total > 0`` with ``scanned == 0``, ``diverged == 0`` and no explicit
+        reason, so ``usable`` was True, ``diverged > 0`` was False, and
+        ``_evaluate_single`` resolved it as "the pin content matches source"
+        after reading zero bytes. The COUNT of paths in the union is not
+        evidence about their contents — the same false-clean direction this
+        class rejects for a zero-path walk.
         """
         if self.unusable_reason is not None:
             return self.unusable_reason
@@ -271,6 +281,11 @@ class ContentComparison:
             return (
                 'empty_comparison: the comparison walked ZERO paths, so it is '
                 'evidence about nothing'
+            )
+        if self.scanned_count == 0:
+            return (
+                f'nothing_scanned: all {self.total} paths in the union failed to '
+                'read, so the byte comparison is evidence about nothing'
             )
         return None
 
@@ -461,7 +476,14 @@ def _volatile_signature(obs: StoreObservation) -> tuple:
     verdict over two samples that demonstrably disagreed on it. The executor
     anchor's status and version set are included for the same reason: two
     differently-split executor reads both leave ``executor_version`` at ``None``
-    and would otherwise compare equal.
+    and would otherwise compare equal. ``eligible_versions`` is here because
+    ``_evaluate_single`` reads it to compute ``loader``, which drives both the
+    loader divergence and ``SHAPE_3_LOADER_FOLLOWS_NON_PIN_DIR`` — and the gap
+    was reachable: ``observe`` derives eligibility from whether the requested
+    subpath EXISTS under each version dir, so a subpath materialising inside a
+    non-pin dir between the two reads flips the selected loader while every
+    other axis compares equal. The docstring claimed every axis was covered
+    while this one had no mechanism behind the claim.
     """
     anchor = obs.executor_anchor
     return (
@@ -471,6 +493,7 @@ def _volatile_signature(obs: StoreObservation) -> tuple:
         obs.executor_version,
         None if anchor is None else (anchor.status, anchor.versions),
         None if obs.content is None else obs.content.signature(),
+        None if obs.eligible_versions is None else tuple(sorted(obs.eligible_versions)),
     )
 
 
