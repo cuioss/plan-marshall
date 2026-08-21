@@ -2,7 +2,7 @@
 
 **Date (UTC):** 2026-08-20    **Branch:** `claude/lsp-derivation-resolver-correctness-7ncdpz`    **PR:** _pending_    **Outcome:** completed
 
-> **Verification loop exit:** _pending_
+> **Verification loop exit:** _pending — the operator extended the budget from five rounds to ten_
 
 ## Skills loaded
 
@@ -170,7 +170,16 @@ than halting.
 generalization leak. The implemented rule is structural: **a directory holding Python files but no
 `__init__.py` is not a package, so an import of one of its files can only resolve with that directory
 on the search path** — which is exactly the set a launcher synthesizes, computed from the tree. On
-this repository it yields 177 directories, covering every `scripts/` directory the plan names.
+this repository it yields 177 directories. ⚠ **That is 69 of the 70 bundle-skill `scripts/`
+directories holding `.py` files, not all 70** — an earlier revision of this sentence said "every
+`scripts/` directory the plan names", which is false.
+`marketplace/bundles/plan-marshall/skills/platform-runtime/scripts` is excluded because it carries an
+`__init__.py`, so by the structural rule above it *is* a package and needs no search-path entry. Two
+real bare imports nonetheless target it (`from claude_runtime import …` in
+`tools-permission-doctor/scripts/permission_common.py`, `from platform_runtime import _make_runtime`
+in `script-shared/scripts/marketplace_paths.py`). **Bounded:** both importers are inside the
+`plan-marshall` bundle, so neither a cross-bundle reference nor a module edge can be affected — the
+**72** / **10** result is provably unchanged, and that was confirmed by measurement, not argued.
 
 Assembling paths into settings is the client's concern, so `lsp-client` gained
 `analysis_config_with_extra_paths` and an injectable `analysis_config` on `StdioTransport` (the
@@ -448,10 +457,14 @@ run's change renders false is exactly that. The two tests are named by a *Done w
 else lies outside; the plan's own directory carries `plan.md`, `proposals.md` and this report, as the
 Expected surface anticipates.
 
-⚠ **Five of the twelve were reached only by round 4**, and every one of them was already false before
-this branch touched anything adjacent — they state a claim this run corrected elsewhere. That is the
-n−1-of-n shape the contract's sweep-and-count rule names, and it is why the outside-surface count grew
-in a round that fixed no code.
+⚠ **Five of the twelve were reached only by round 4**, and they split two ways — a distinction an
+earlier revision of this paragraph got wrong by claiming all five "were already false before this
+branch touched anything adjacent". **Two** were: the `~97 %` premise sites, false since the
+re-measurement that predates this branch. **Three** were made false *by this run* — D4 taught the
+discoverer Poetry and `setup.cfg`, which falsified the PEP-621-only contract in `module-discovery.md`
+and `architecture-persistence.md`, and D6 tightened `configured`, which falsified the resolver menu's
+definition. Either way they are the n−1-of-n shape the contract's sweep-and-count rule names, and
+they are why the outside-surface count grew in a round that fixed no code.
 
 ## Gap coverage
 
@@ -609,7 +622,7 @@ sweep did.
 
 | # | Observation | Why it is left |
 |---|---|---|
-| O1 | `lsp-client/SKILL.md` tells a leaf to run `./pw verify` — this repo's wrapper, in a skill that ships to consumer projects of any ecosystem | **Pre-existing**: two sites and the module docstring predate this branch; propagated once. Owned by `560-documentation-surface-truthfulness` |
+| O1 | `lsp-client/SKILL.md` tells a leaf to run `./pw verify` — this repo's wrapper, in a skill that ships to consumer projects of any ecosystem | **Pre-existing at FOUR sites**, all predating this branch: `SKILL.md:41`, `SKILL.md:142`, `lsp_client.py`'s module docstring, and `DIAGNOSTICS_BOUNDARY_NOTE` — the last being a prose literal shipped in **every** `diagnose` payload, so it reaches an operator through machine output rather than through a document. An earlier revision of this row named three of the four. This branch propagated it once and that copy is fixed (W9); the four are owned by `560-documentation-surface-truthfulness` |
 | O2 | `_report_omitted`'s notification names the bare script rather than the executor form | Incomplete, not false |
 | O3 | `lsp_client.py`'s module docstring enumerates two outcomes; `unknown` is a third, unnamed **there** (it is named in `SKILL.md`, the user page and the code) | Incomplete, not false |
 | O4 | The ambiguity guard drops a reference whenever the **target basename** is ambiguous, even for a dotted or relative import to a uniquely-located file | **Bounded:** 0 hits on this repository, always counted under `ambiguous-module-name`, and it is the conservative direction the plan's ⚠ mandates. Cannot change this deliverable's verdict |
@@ -638,7 +651,7 @@ kind of consumer than the ones fixed. All nine closed in this commit.
 | W6 | `extension-api/standards/module-discovery.md:300` still described the Python dependency string as PEP-621-only after D4 taught the discoverer Poetry and `setup.cfg` | **fixed**, and the same claim fixed at `manage-architecture/standards/architecture-persistence.md:167` — a site the verifier did not name, and the *third* consumer kind of this one sentence |
 | W7 | § D3's baseline table went stale in the rebase (`files_scanned`, references, `out-of-workspace`, `vendor-tree`, wall-clock), and carried no stamp saying which tree it was measured on | **fixed** — the pair is stamped as one measurement on the pre-rebase tree, and re-measured at HEAD |
 | W8 | § Findings O5's numbers **and** its explanation both went false in the rebase: the cause is #1314's 204 added test modules, not "~2 test files" | **fixed** — the row records that it was overtaken, rather than being quietly restated |
-| W9 | The new fail-closed paragraph in `lsp-client/SKILL.md` added a **`./pw verify`** instruction — this repository's wrapper — to a skill that ships to consumer projects of any ecosystem. The verifier offered a bound and recommended the fix instead | **fixed** — "the project's architecture-resolved `verify` command". ⚠ The two pre-existing sites and the module docstring (round 3's O1) are **untouched**: they predate this branch and are owned by `560-documentation-surface-truthfulness`. This branch no longer *adds* to them |
+| W9 | The new fail-closed paragraph in `lsp-client/SKILL.md` added a **`./pw verify`** instruction — this repository's wrapper — to a skill that ships to consumer projects of any ecosystem. The verifier offered a bound and recommended the fix instead | **fixed** — "the project's architecture-resolved `verify` command". ⚠ The **four** pre-existing sites (round 3's O1, whose own count round 5 corrected — see there) are **untouched**: they predate this branch and are owned by `560-documentation-surface-truthfulness`. This branch no longer *adds* to them |
 
 ⚠ **What round 4 says about this run.** Four of its eight condition-A findings (W1, W2, W4, W6) are
 sibling sites of claims this run had already corrected, and two more (W5 inside V6's sentence, W8
@@ -646,17 +659,66 @@ inside the round-3 record) are defects introduced by the *previous round's own f
 recorded in § What have we learned rather than repaired by one more sweep: a fix to a false statement
 is not complete until the claim — not the file — has been swept.
 
+### Round 5 — plan verifier (the budget's last round)
+
+The verifier re-checked all ten round-4 fixes, swept each corrected claim to every site, re-derived
+the report's figures **by executing** them, and ran a mutation pass for vacuity. **Twelve findings:
+nine false statements (condition A, all fixed here) and three behavioural survivors (condition B,
+each left open with a bound).**
+
+Reproduced independently, by execution: `./pw verify` at HEAD (**21419 passed, 14 skipped**,
+`verify: SUCCESS`); **every cell** of § D3's "At HEAD" column, including the `vendor-tree` 0 and
+`unresolved-symbol` 751 this run could not explain; **177** search paths and the single ambiguous
+basename; the validator's 308 / 5083 / **61** and its 26 / 31 / 4 split; the `pm-plugin-development`
+suite at **2621 passed / 0 skipped**; all 17 SHA tokens resolving to ancestors of HEAD; the collateral
+55 / 24 / twelve-outside. It found **no vacuous guard** other than B1's uncovered branch.
+
+| # | Finding | Disposition |
+|---|---|---|
+| A1 | `lsp_client.py:275`, `_edit_failure`'s docstring — "nothing is left modified on disk". The **fifth** site of the claim W5 retired at four, and the first in production code | **fixed** — the helper now states that it decides nothing about the tree, and names the state each of the five reason/phase combinations leaves it in |
+| A2 | `_lsp_workspace_edit.py:17` — "so no caller can observe a half-applied edit". Sixth site, same claim | **fixed** — a caller observes one in exactly the `restore_error` case, and the docstring says so |
+| A3 | `lsp-client/SKILL.md` and the user page both said `edit` "rolls back" on `diagnostics_unavailable`. **Measured**: the `phase: before` branch returns `rolled_back: false` because *nothing was ever written* — and for a pull-diagnostics server that is the **mainline** return, not a corner. W5's own new instruction ("`rolled_back: false` … the tree is then left partly edited") therefore made a leaf read this payload exactly backwards | **fixed** at all three consuming sites — the two `phase` routes are now tabulated, `unverified_path` is documented, and the `rolled_back: false` rule is scoped to "**together with `restore_error`**, never alone" |
+| A4 | § Residue — "this branch's 50 changed files". It is 55; `b11e5cc` re-derived that count for § Collateral check and did not sweep this sibling. The intersection is still **empty** (re-derived) | **fixed** |
+| A5 | § Residue ×2 — "seven test directories". Six changed; `test/plan-marshall/build-npm` is in the Expected surface but no file there changed | **fixed** |
+| A6 | § Cost — "26 h 58 m", measured two commits earlier | **fixed** — stamped, and stated as a lower bound the report's own commits extend |
+| A7 | § Collateral check — "every one of them was already false before this branch", **introduced by `b11e5cc` itself**. True of two of the five; the other three were falsified by D4 and D6 | **fixed** — the five are split by which made them false |
+| A8 | § Findings O1 / W9 — the pre-existing `./pw verify` sites enumerated as three. There is a fourth: `DIAGNOSTICS_BOUNDARY_NOTE`, a prose literal shipped in **every** `diagnose` payload, which reaches an operator through machine output rather than a document | **fixed** at both rows; the handoff to `560` now names four |
+| A9 | § D3 — "covering **every** `scripts/` directory the plan names". 69 of 70; `platform-runtime/scripts` is excluded by the structural rule because it carries `__init__.py` | **fixed** — with B3's bound stated inline |
+
+⛔ **The contract's five-round budget was spent here, and the boundary question was PUT TO THE
+OPERATOR rather than decided by the run.** They were told that the loop was not converging — round 5
+produced *nine* condition-A findings against round 4's eight, and both of round 4's structural
+patterns recurred — and they **extended the budget to ten rounds, to run until it converges**. The
+loop therefore continues past round 5; everything condition A forbids leaving open is fixed in this
+commit regardless, and condition B's three survivors are carried into the next round for re-checking
+rather than closed here.
+
+⚠ **Both of round 4's structural patterns recurred in round 5, which is the finding about the run
+rather than about the code.** A1/A2/A3 are the n−1-of-n shape *again*: W5 swept four sites of the
+"nothing changed on disk" claim and left two production docstrings and one reason-code sibling.
+A4–A7 are all in this report's own prose — three figures `b11e5cc` re-derived for one section without
+sweeping the others, and one claim `b11e5cc` newly introduced. The run has now produced both patterns
+in five consecutive rounds; § What have we learned proposes the contract change that follows from it.
+
 ## Reviewer participation
 
-_Pending._
+**Not done — no PR exists.** The run has not reached Step 7: it is still inside Step 6's verification
+loop, whose budget the operator extended from five rounds to ten. No reviewer has been invited, so
+there is no population to report a verdict for, and this section is filled after the PR is created,
+not before. Reporting it as *not done* rather than as *not applicable* is deliberate — the step is
+owed, it has simply not been reached.
 
 ## Cost
 
 - **Tokens:** not available to the agent in this session.
-- **Wall-clock:** **26 h 58 m** between the first and last commit on this branch. Source:
-  `git log --format=%aI origin/main..HEAD`, first vs last — **author** dates, deliberately: the
-  rebase reset every *committer* date to the rebase instant, so `%cI` would report a span of one
-  minute. ⚠ This is elapsed span, **not** time worked: the run was idle across a long gap while
+- **Wall-clock:** **≥ 27 h 53 m** — `cdf8062` (2026-08-20T08:49:01Z) to `b11e5cc`
+  (2026-08-21T12:41:46Z). Source: `git log --format=%aI origin/main..HEAD`, first vs last —
+  **author** dates, deliberately: the rebase reset every *committer* date to the rebase instant, so
+  `%cI` would report a span of one minute. ⛔ **Stamped and a lower bound by construction**: every
+  commit after the one named extends it, including the commit carrying this sentence. An earlier
+  revision published `26 h 58 m` unstamped and it was stale two commits later — the same
+  moves-with-every-commit defect § Build gate stamps against, committed a second time in a different
+  section. ⚠ This is elapsed span, **not** time worked: the run was idle across a long gap while
   waiting for PR #1314 to land, and no attempt is made here to net that out.
 - **Population:** this single Claude Code cloud session's usage. ⛔ **Not comparable** to a
   plan-marshall `metrics.toon` total, which counts the orchestrator-plus-agent dispatch tree under
@@ -688,8 +750,8 @@ rather than trusted from the draft:
 |---|---|
 | Files in #1314 | 309 |
 | …under `marketplace/**` or `doc/user/**` | **0** |
-| …in this branch's seven test directories | **0** |
-| **Intersection with this branch's 50 changed files** | **empty** |
+| …in this branch's six changed test directories | **0** |
+| **Intersection with this branch's 55 changed files** | **empty** |
 
 The draft-time breakdown, which the landed form did not change:
 
@@ -699,7 +761,7 @@ The draft-time breakdown, which the landed form did not change:
 | `doc/plans/test-quality/**`, four top-level `test/plan-marshall/*.py` | **none** |
 | `marketplace/**` | **0 files** |
 | `doc/user/**` | **0 files** |
-| The seven test directories this branch changes | **0 files** |
+| The six test directories this branch changes | **0 files** |
 
 ⚠ **The interaction to watch is semantic, not textual.** #1314's own body records that
 `conftest.load_script_module` registers under the script stem, and that collapsing distinct
@@ -741,4 +803,27 @@ correction cites no SHA either.
 
 ### Left open
 
-_Pending the verification loop's exit._
+⚠ **This list is PROVISIONAL while the loop runs.** The operator extended the budget past round 5, so
+each survivor below is re-put to the verifier in each further round rather than settled here.
+
+⛔ **These are condition-B survivors — behavioural findings the run argues need no fix, each with a
+bound and the evidence for it.** Nothing condition A governs is in this list: every false statement
+the rounds so far found is fixed. Round 3's O2–O4 stand as recorded there; round 5 added B1–B3.
+
+| # | Survivor | Bound, with its evidence |
+|---|---|---|
+| B1 | **The restore-failure branch is pinned by no test.** Mutating `_lsp_workspace_edit.py`'s `except OSError as restore_exc: restore_error = restore_exc` to `except OSError: pass` — reverting exactly what D2/G4 requires — leaves **58 passed / 0 failed** across `test/plan-marshall/lsp-client/`. The only assertion touching it is the happy path (`test_lsp_workspace_edit.py:146`, `restore_error is None`) | The behaviour is **correct as written** — traced `apply_workspace_edit` → `WorkspaceApplyError(path, exc, restore_error)` → `rolled_back=exc.restore_error is None` → `payload['restore_error']` — and four documentation sites now describe it. The exposure is a *silent regression later*, not a defect now. Provoking a real restore failure needs a mid-rollback write failure, which no fixture in this tree can create without patching the filesystem layer. ⚠ This is the one vacuity gap in the branch and it is disclosed rather than hidden |
+| B2 | **Two rollback call sites sit outside the exception boundary** — `restore_files(originals)` at `lsp_client.py:373` (`diagnostics_unavailable`, phase `after`) and `:391` (`diagnostics_worsened`). An `OSError` there escapes `_run_edit` to `safe_main`, so the verb returns a bare `status: error` with the edit still on disk and no `restore_error` | It **cannot produce a false clean**: the return is an error, never a success or a `rolled_back: true`. It requires a write failure *during* rollback. And G4's actual scope — the apply loop — **is** guarded, so the deliverable's clause is met; this is the adjacent case the clause does not name |
+| B3 | **One search-path directory is missed.** `platform-runtime/scripts` carries an `__init__.py`, so the structural rule treats it as a package and omits it, yet two real bare imports target it | **Provably cannot affect this deliverable's result**: both importers are inside the `plan-marshall` bundle, so no cross-bundle reference and no module edge can change. Confirmed by measurement, not by argument — the **72** / **10** figures are identical with and without it. Recorded at § D3 alongside the sentence it falsified (A9) |
+
+Round 3's observations O1 and O5 are **not** in this list: O1 was overtaken by round 5's A8 (the site
+count was wrong) and remains a handoff to `560-documentation-surface-truthfulness` rather than a
+survivor of this plan; O5 was overtaken by the rebase and is recorded as such at its own row.
+
+⚠ **Three checks the verifier could not re-derive, disclosed rather than silently carried.** § Build
+gate's CI-portability row 1 (`662 passed, 10 skipped`) does not name its population, and none of the
+four populations round 5 tried reproduced it — *unverifiable*, not proven false; row 2 and § Red-then-
+green's pre-change counts need a detached worktree with hand-adapted pre-change test copies, which
+round 5 did not reconstruct; and six of the ten mutants in § Mutation sweep were not independently
+re-run (four were). The cold reads of rounds 1 and 3 are unrepeatable by construction — a verifier
+that has read the plan is no longer a plan-blind reader.
