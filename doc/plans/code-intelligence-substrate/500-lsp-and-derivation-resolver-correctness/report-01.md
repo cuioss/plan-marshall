@@ -342,12 +342,16 @@ stale-figure defect this report warns about elsewhere, committed here.
 | `f5bc086` (independently re-run by the round-3 verifier) | 21419 passed, 14 skipped, 507.80 s |
 | `be54037`, the REBASED tree | 21419 passed, 14 skipped, 412.44 s, `verify: SUCCESS` |
 | `b364322`, round 4's fixes | 21419 passed, 14 skipped, 385.38 s, `verify: SUCCESS` |
-| **`b0d746c`, round 5's fixes — the figure that governs** | **21419 passed, 14 skipped, 404.89 s, `verify: SUCCESS`** |
+| `b0d746c`, round 5's fixes | 21419 passed, 14 skipped, 404.89 s, `verify: SUCCESS` |
+| **`d893d51`, round 6's fixes — the figure that governs** | **21420 passed, 14 skipped, 490.34 s, `verify: SUCCESS`** |
 
 The figure that governs is the last, because it is the only one measured on the tree that actually
 lands. Rounds 4, 5 and 6 each touch production Python — docstrings in `lsp_client.py`,
 `_lsp_workspace_edit.py` and `build-pyproject/scripts/extension.py` — so the gate was re-run on each
-rather than carried forward, which is the stale-figure defect this section already records once.
+rather than carried forward, which is the stale-figure defect this section already records once. The
+count rises by one at `d893d51` because round 6 closed B4 with a **new** guard
+(`test_a_missing_post_edit_verdict_rolls_back_and_says_so`); 21419 → 21420 is that test and nothing
+else.
 ⛔ **Every commit after the governing one is report-only**, and that is established rather than
 asserted: `git diff --name-only {governing}..HEAD -- '*.py'` returns nothing. All three sub-steps ran
 on the governing commit: quality-gate (`ruff … All checks passed!`, `mypy … Success: no issues found
