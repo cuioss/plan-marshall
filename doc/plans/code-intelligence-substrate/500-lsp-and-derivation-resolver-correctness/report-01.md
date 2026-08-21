@@ -1,6 +1,6 @@
 # Run report — 500-lsp-and-derivation-resolver-correctness (run 01)
 
-**Date (UTC):** 2026-08-20    **Branch:** `claude/lsp-derivation-resolver-correctness-7ncdpz`    **PR:** none — not requested by the operator, and § Contract check records step 7 as **not done**    **Outcome:** completed (the deliverables; see § How the loop stopped for the loop)
+**Date (UTC):** 2026-08-20    **Branch:** `claude/lsp-derivation-resolver-correctness-7ncdpz`    **PR:** [#1321](https://github.com/cuioss/plan-marshall/pull/1321)    **Outcome:** completed (the deliverables; see § How the loop stopped for the loop)
 
 > **Verification loop exit:** budget-exhausted, non-converging
 
@@ -1063,11 +1063,12 @@ here, is that this is **not** worth another open-ended round: the correct closin
 
 ## Reviewer participation
 
-**Not done — no PR exists.** The run has not reached Step 7: it is still inside Step 6's verification
-loop, whose budget the operator extended from five rounds to ten. No reviewer has been invited, so
-there is no population to report a verdict for, and this section is filled after the PR is created,
-not before. Reporting it as *not done* rather than as *not applicable* is deliberate — the step is
-owed, it has simply not been reached.
+**Not done — the reviewers have not yet spoken.** [#1321](https://github.com/cuioss/plan-marshall/pull/1321)
+is open with **no** `skip-bot-review` label (arm `reviewable`: 28 R1, 25 R2, 4 R3 paths), so the
+expected reviewer population is the one configuration derives — never a list transcribed here — and
+each row's verdict is taken from the stored comment bodies rather than from a check state. The table
+is filled as they arrive; coverage is reported as N-of-M, and a reviewer that never speaks is
+recorded `silent` rather than omitted.
 
 ## Cost
 
@@ -1103,8 +1104,8 @@ narrated as complete.
 | 5 Build gate | **Done** — § Build gate carries the git-derived `*.py` verdict and one stamped row per commit that changed production Python, the last governing |
 | 6 Verification sub-agent | **Done** — ten rounds, every finding and disposition recorded per round; exit `budget-exhausted, non-converging`; the budget (five, extended by the operator to ten) and the extension are recorded with what the operator was told; the verifier's own last answer is quoted; each survivor is listed individually in § Left open with its bound; whether the late rounds were narrower is answered explicitly (no) |
 | 7 Bot-review label | **Done — no label, arm `reviewable`.** Re-derived at PR creation from `git diff --name-only origin/main...HEAD`: **28** R1 (`*.py`), **25** R2 (`marketplace/**`), **4** R3 (`doc/plans/**`), **0** S (`.claude/skills/**`). Row 1 of the decision table fires on any R1/R2/R3 membership, so the review is **not** suppressed |
-| 7 PR cycle | ⛔ **NOT DONE.** No PR exists. The operator has not asked for one, and the lane's PR step is theirs to trigger. § Reviewer participation records this as *not done* rather than *not applicable* — the step is owed, it has simply not been reached |
-| 8 Merge gate | ⛔ **NOT DONE**, and cannot be: it presupposes a PR. Condition 2 (the stale-base re-verification) **was** discharged early, on its own terms — `main` moved under the branch, the branch was rebased onto `a34819d` at the operator's instruction, and the full `./pw verify` was re-run on the merged tree and has been re-run on every subsequent commit that touched Python |
+| 7 PR cycle | **In progress** — [#1321](https://github.com/cuioss/plan-marshall/pull/1321) is open, created on the already-pushed branch, no label (arm `reviewable`). The session is subscribed to its activity. § Reviewer participation is filled once the reviewers have spoken; until then it is **not done** rather than not applicable |
+| 8 Merge gate | ⛔ **NOT DONE** — it follows the review cycle. Condition 2 (the stale-base re-verification) **was** discharged early, on its own terms — `main` moved under the branch, the branch was rebased onto `a34819d` at the operator's instruction, and the full `./pw verify` was re-run on the merged tree and has been re-run on every subsequent commit that touched Python |
 | 8 Bridge | **Done** — no status or bookkeeping write landed under `doc/plans/` outside this plan's own directory. The one edit to another plan's directory (`020-corpus-residency-admission-control/report-01.md`) is a **declared deliverable** of D6, appended as a correction |
 | 9 This check | **Done** — this table |
 | 9 What have we learned | **Done** — below, with a proposal the operator must accept or decline |
