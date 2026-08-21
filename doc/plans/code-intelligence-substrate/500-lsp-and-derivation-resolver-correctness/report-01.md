@@ -343,16 +343,20 @@ stale-figure defect this report warns about elsewhere, committed here.
 | `b364322`, round 4's fixes | 21419 passed, 14 skipped, 385.38 s, `verify: SUCCESS` |
 | `b0d746c`, round 5's fixes | 21419 passed, 14 skipped, 404.89 s, `verify: SUCCESS` |
 | `d893d51`, round 6's fixes | 21420 passed, 14 skipped, 490.34 s, `verify: SUCCESS` |
-| **`def48c4`, round 7's fix — the figure that governs** | **21422 passed, 14 skipped, 400.14 s, `verify: SUCCESS`** |
+| `def48c4`, round 7's fix | 21422 passed, 14 skipped, 400.14 s, `verify: SUCCESS` |
+| **`e061414`, round 8's fixes — the figure that governs** | **21433 passed, 14 skipped, 406.69 s, `verify: SUCCESS`** |
 
 The figure that governs is the last, because it is the only one measured on the tree that actually
-lands. Rounds 4 through 7 each touch production Python — docstrings in `lsp_client.py`,
-`_lsp_workspace_edit.py` and `build-pyproject/scripts/extension.py`, and at round 7 a real behaviour
-change in `apply_workspace_edit` — so the gate was re-run on each rather than carried forward, which
-is the stale-figure defect this section already records once. The
+lands. Rounds 4 through 8 each touch production Python — docstrings at first, then real behaviour changes
+from round 7 on (`apply_workspace_edit`'s rollback, `read_message`'s frame contract, the harvest's
+failure-mode split, and the resolver listing's `configured` flag) — so the gate was re-run on each
+rather than carried forward, which is the stale-figure defect this section already records once. The
 count rises with each round that closes a finding by adding a guard rather than by bounding it:
-21419 → 21420 is round 6's single B4 guard, and 21420 → 21422 is round 7's pair pinning the
-partial-write rollback (B5). Each delta is exactly the guards named and nothing else.
+21419 → 21420 is round 6's single B4 guard, 21420 → 21422 is round 7's pair pinning the partial-write
+rollback (B5), and 21422 → 21433 is round 8's eleven — eight driving the seven bad-frame shapes and a
+clean-EOF control through the real `serve` subprocess, one for the harvest's `request-failed:` mode,
+one for the third `configured` reader, and one for the recoverable-frame stream alignment. Each delta
+is exactly the guards named and nothing else.
 ⛔ **Every commit after the governing one is report-only**, and that is established rather than
 asserted: `git diff --name-only {governing}..HEAD -- '*.py'` returns nothing. All three sub-steps ran
 on the governing commit: quality-gate (`ruff … All checks passed!`, `mypy … Success: no issues found
@@ -452,10 +456,14 @@ surface". Both halves were wrong** — the count was stale, and files outside th
 present when it was written. Verification item 5 requires every such file **accounted for**, not
 absent. Re-derived at the moment of this claim:
 
-`git diff --name-only origin/main...HEAD` → **59 files**, 26 of them `*.py` (re-derived at `d893d51`,
-the round-6 fix commit; `report-01.md` is already in that set, so committing this section does not
+`git diff --name-only origin/main...HEAD` → **62 files**, 28 of them `*.py` (re-derived at `e061414`,
+the round-8 fix commit; `report-01.md` is already in that set, so committing this section does not
 move it). **Sixteen fall outside** the plan's Expected surface, each for a stated reason — the first
-seven from the deliverables, five added by round 4's sweep, and four by round 6's:
+seven from the deliverables, five added by round 4's sweep, and four by round 6's. ⛔ Round 8 added
+**three** files and **no** new outside-surface entry: its three code fixes all landed inside the
+surface the plan named (`_lsp_jsonrpc.py`, `_corpus_lsp_protocol.py`, `run_config.py` and their test
+directories), which is what a round finding defects in the *implementation* rather than in prose
+about it looks like on this table:
 
 | File | Why it was touched |
 |---|---|
