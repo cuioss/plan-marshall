@@ -41,14 +41,16 @@ The module-budget campaign's first run landed and left four things behind that *
 owns**. Three of them are not defects in that run's work — they are gaps in the campaign's own
 apparatus, and each will recur on every one of runs 2 through 7 if it is not closed now.
 
-**The campaign cannot reach its own goal.** Plan `100`'s stated definition of done is that
-`test-module-line-budget` reaches zero. Three modules in slice `050` remain over budget, and each is a
-**single class that exceeds the budget by itself** — 495, 424 and 422 class lines inside 541-, 466- and
-465-line modules. Plan `100` § D2 forbids splitting a class, without qualification, so a follow-up run
-under that plan cannot close them. The rule cannot reach zero while a plan forbids the only operation
-that would get it there. This plan takes that decision rather than deferring it again: § D2 below
-authorises the split, on stated conditions, and the reasoning is written out so a reviewer can
-disagree with it.
+**The rule's count has three permanent residents, and nobody intends to act on them.** Plan `100`'s
+stated definition of done is that `test-module-line-budget` reaches zero. Three modules in slice `050`
+remain over budget, each a **single class under 500 lines** — 495, 424 and 422 class lines inside 541-,
+466- and 465-line modules. Plan `100` § D2 forbids splitting a class, so a follow-up run under that
+plan cannot close them; and the campaign's subject was *excessively large files* — the slice it split
+held an 8,705-line module — which a 466-line module holding one 424-line class plainly is not. So the
+right answer is neither to split them nor to leave them flagged: **it is to decide, and to make the
+rule express the decision.** A count that can never reach zero is one every future run must
+re-litigate, and a standard whose exceptions live only in a plan's prose is one the next reader will
+not find.
 
 **The rule cannot see a large and growing part of the tree it governs.**
 `analyze_test_module_line_budget` iterates every `*.py` under the test root and then filters on
@@ -81,11 +83,12 @@ is the structural answer**; a further round of care is the remedy that has alrea
 
 ## Goal
 
-`test-module-line-budget` measures every module in the test tree rather than only the collected ones;
-slice `050` reaches zero over-budget modules, so the campaign has a demonstrated path to its own
-definition of done; and the checks that make a split safe — fidelity, duplication, attribution — are
-committed scripts a later run invokes rather than prose a later run re-implements, each one deriving
-both ends of every comparison it reports.
+`test-module-line-budget` measures every module in the test tree rather than only the collected ones,
+and stops flagging the one shape the campaign has decided not to act on — so its count is something a
+run can drive to zero honestly rather than a number with three permanent residents. And the checks
+that make a split safe — fidelity, duplication, attribution — are committed scripts a later run
+invokes rather than prose a later run re-implements, each one deriving both ends of every comparison
+it reports.
 
 ## Deliverables
 
@@ -93,32 +96,42 @@ both ends of every comparison it reports.
    Derive, from the tree in your clone rather than from this document: the whole-tree
    `test-module-line-budget` count; the over-budget modules inside slice `050`'s ten directories; for
    each, whether its largest class exceeds the budget **alone**; the non-collected modules over budget;
-   and the count of `RUF100` unused-`noqa` diagnostics. Record each with the command that produced it.
-   **This is the gating deliverable.** If slice `050` holds an over-budget module whose largest class
-   is *within* budget, it is an ordinary split that plan `100` already permits and this plan's D2 does
-   not apply to it — **halt and report**, because the premise D2 rests on has changed. If the count of
-   single-class-over-budget modules is not three, proceed against the derived set and say so; the
-   number is a lead, the *shape* is the premise.
+   and the `RUF100` population, split into its three kinds (see § Out of scope). Record each with the
+   command that produced it — and for `RUF100` use `--extend-select`, never `--select`: `--select`
+   REPLACES the configured rule set, which makes every directive look non-enabled and inflates the
+   count by about 60%. That error was made while authoring this plan and is recorded here so the run
+   does not repeat it.
+   **This is the gating deliverable.** D2 rests on a shape, not a count: an over-budget module whose
+   whole content is one class that is itself under the 500-line ceiling. If a module in slice `050` is
+   over budget for any other reason — two classes, or one class above the ceiling — **D2 does not apply
+   to it**; it is an ordinary split, plan `100` already permits it, and this run reports it rather than
+   silently widening the exemption to cover it. If no module has D2's shape, **halt and report**: the
+   exemption would then be a rule change with no instance, which is a different proposal and needs a
+   different argument.
    *Done when:* every figure in § Claim labels marked **re-derive** has been recomputed and recorded
    with its command, and any shape mismatch has halted the run with the module named.
 
-2. **D2 — Close the three modules whose one class is over the budget alone.**
-   ⚠️ **This deliverable deliberately authorises what plan `100` forbids, and that is its whole
-   point.** Plan `100` § D2 says splitting a class is not licensed; run 1 read that as scoped to
-   classes over budget alone and honoured it, which is why these three survive. The campaign cannot
-   reach zero under that reading, so this plan lifts it **for these modules only** and on conditions:
-   a class is split into sibling classes along the behaviour boundaries its own tests already have —
-   never in arbitrary halves, never by line count — each sibling named for the behaviour it covers,
-   and **no test body, name or assertion changes**. If a class has no internal behaviour boundary to
-   split on, that is a finding: record it, leave the module, and say why, rather than inventing a
-   boundary to satisfy a count.
-   Run 1 has already done this once and it is the precedent to follow: a 399-line class became five
-   classes across two modules by extractor, with 14 tests preserved and re-run in both directory
-   orders.
-   *Done when:* slice `050`'s `test-module-line-budget` count is zero **or** every remaining module is
-   recorded with the reason no behaviour boundary exists; the `Class::test` multiset over the affected
-   directories is identical before and after, proven by D4's differ; and every affected test passes in
-   default **and** reverse directory order.
+2. **D2 — Stop the campaign chasing a shape it has decided to keep.**
+   Run 1 left three modules over budget, each a **single class under 500 lines** — 495, 424 and 422
+   class lines inside 541-, 466- and 465-line modules. The campaign's subject was **excessively large
+   files**: the slice it split contained an 8,705-line module and a ~1,750-line one. A 466-line module
+   holding one 424-line class is not that, and splitting a coherent test class to move a module from
+   466 lines to two of ~230 buys nothing a reader wants.
+   ⚠️ **So the decision is to keep them, and the deliverable is to make the rule say so.** Leaving
+   them flagged would be worse than either alternative: `test-module-line-budget` would carry three
+   findings nobody intends to act on, the campaign's own definition of done ("the count reaches zero")
+   would be permanently unreachable, and every future run would re-litigate them. Add a **bounded,
+   documented exemption**: a collected module whose content is a single class, where that class is
+   under a stated ceiling, is not flagged. State the ceiling and the reasoning in the standard the rule
+   cites, so the exemption is a decision a reader can find and disagree with rather than a silent
+   special case in the analyzer.
+   The ceiling is **500 lines**, and it is a decision rather than a derivation — record it as one.
+   ⛔ **The exemption must be narrow, and the narrowness is the whole safety property.** It applies
+   only where the module is *one* class: a 900-line module holding two 450-line classes is an ordinary
+   split and must stay flagged. Verify that with a fixture for each shape before shipping.
+   *Done when:* the three modules are unchanged on disk; the rule no longer flags them; a module of
+   two under-ceiling classes and a module of one over-ceiling class are both still flagged, each pinned
+   by a test; and the standard states the ceiling with its reasoning.
 
 3. **D3 — Make the budget rule see every module in the tree it governs.**
    `analyze_test_module_line_budget` (`marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py`)
@@ -202,21 +215,35 @@ both ends of every comparison it reports.
 * **Fixing the modules D3 newly reports.** Excluded because widening a metric and reducing what it
   then measures are two changes, and bundling them would make it impossible to tell which of the two
   moved the count. D3 reports them; a reduction slice reduces them.
-* **The tree-wide `RUF100` sweep.** There are roughly 1,127 unused-`noqa` directives and every one is
-  auto-fixable, so it is tempting to take them here. Excluded because the sweep would touch enough
-  files to push this PR past the automated reviewers' file ceilings — which is precisely the failure
-  run 1 recorded, having forfeited two of three reviewers at 309 files. Clearing directives in the
-  files this plan already touches is in scope; the tree-wide sweep is recorded as a proposal with its
-  measured size, and belongs in a PR whose whole content is one mechanical, tool-reproducible change.
+* **The tree-wide `RUF100` sweep.** Excluded for two reasons, and the second is the one that matters.
+  First, it spans ~391 files, which would push this PR past the automated reviewers' file ceilings —
+  precisely the failure run 1 recorded, having forfeited two of three reviewers at 309 files. Second,
+  **`ruff --fix` is the wrong tool for a third of it**, because the population is not one thing:
+
+  | Kind | Count | What it is | Safe to delete? |
+  |---|---:|---|---|
+  | Shadowed | ~364 | a line-level `# noqa: E402` in a file whose header already says `# ruff: noqa: I001, E402` | **yes** — pure redundancy, the file-level directive wins |
+  | Stale | ~219 | the rule is enabled, nothing shadows it, and the code no longer triggers it | **yes** — the suppression outlived its cause |
+  | Non-enabled | ~108 | names a rule this project does not run — `S603`, `BLE001`, `PLC0415`, `ANN*`, `D*` | **no** — see below |
+
+  The third kind is why this is not a `--fix` away. `# noqa: S603` marks a subprocess call the author
+  judged deliberate; `# noqa: BLE001` marks an intentional broad `except`. Those rules are absent from
+  the `select` list, so the directives suppress nothing today and `--fix` deletes them all — discarding
+  the annotation that would matter the moment anyone enables `S` or `BLE`. A sweep must therefore
+  **classify before it deletes**, which makes it a real change needing its own argument rather than a
+  mechanical one. Recorded as a proposal with these figures; clearing directives in files this plan
+  already touches is in scope.
 * **Flipping `test-module-line-budget` to `severity: error`.** Excluded because it is a policy decision
   with a named owner (`090` § D7's ladder) and a cloud run has no operator to take it. D1's figures
   are what that decision will need; the decision is not this plan's.
 * **Adding any third-party dependency**, including `pytest-randomly`. Excluded because it is a
   user-approval step and this run has no operator. Reverse directory order is what run 1 used to
   establish order-independence and needs no plugin.
-* **Splitting a class in any module outside slice `050`.** Excluded because D2's licence is granted
-  against three named, derived modules and a general licence to split classes is a change to the
-  campaign's standard, which belongs in plan `100` rather than in a leftovers plan.
+* **Widening the exemption beyond one-class modules, or raising the 400-line budget itself.**
+  Excluded because D2's exemption is deliberately the narrowest shape that covers the observed cases —
+  a module that is *one* class, under a stated ceiling. Changing the budget, or exempting a module
+  with two classes, is a change to the campaign's standard for six unrun slices on the evidence of
+  three modules, and belongs in plan `100` rather than in a leftovers plan.
 * **Editing any `report-NN.md`, `verification.md` or `gaps.md`.** Excluded because those are dated
   records of what was true when a run executed, and the epic's documentation standards exempt them for
   exactly that reason. A stale module name in a record is not stale — it is what the tree held at the
@@ -249,27 +276,29 @@ names or for the files above, and **halt and report** rather than editing a file
 | Three modules in slice `050` are over budget, each with one class over budget alone (495/424/422 lines in 541/466/465-line modules) | OBSERVED — **re-derive; it is D2's whole premise and D1 halts on a shape mismatch** | The three files named in § Expected surface, parsed for class extents. Derived at authoring time against the tree run 1 landed |
 | `analyze_test_module_line_budget` filters on `_is_collected_module`, so no helper module is ever measured | OBSERVED | `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py` — `analyze_test_module_line_budget`, and `_is_collected_module` immediately above it |
 | About 94 non-collected modules hold about 20,000 lines, roughly 8 of them over budget, none reported | HYPOTHESIS — **re-derive; it sizes D3** | A walk of `test/**/*.py` partitioned by `_is_collected_module`'s own predicate. Re-derive rather than trust: run 1 landed 66 new helpers and the number moves with every slice |
-| Roughly 1,127 `RUF100` unused-`noqa` diagnostics exist, and `RUF100` is not in the enabled rule set | HYPOTHESIS — **it is the out-of-scope entry's justification** | `uv run ruff check test/ marketplace/ --select RUF100 --statistics`, and the `select` list in `pyproject.toml`. An asserted absence — that the rule is *not* enabled — so confirm the select list rather than inferring it from the diagnostics |
+| The `RUF100` population is ~691 across ~391 files, in three kinds (~364 shadowed, ~219 stale, ~108 non-enabled) | OBSERVED — **and the first derivation of it was wrong by 63%** | `uv run ruff check test/ marketplace/ --extend-select RUF100 --output-format json`, partitioned on whether the message says `unused:` or `non-enabled:`, and for the shadowed kind by checking each file's first 12 lines for a `# ruff: noqa:` header naming the same code. ⚠️ The figure first recorded here was **1,127**, from `--select RUF100`, which REPLACES the configured rule set so that every directive reports as non-enabled. Same tool, same tree, two instruments, a 436-diagnostic gap — lesson 4's fifth instance, found while authoring the plan that cites lesson 4 |
 | Run 1's instruments were never committed | OBSERVED — **an asserted absence, verify it** | `doc/plans/test-quality/100-module-budget-campaign/report-01.md` § Residue, "For the next campaign run", states it outright. Confirm against the tree: if a fidelity differ or duplication detector already exists under `test/`, D4 extends it rather than creating a second one, and an unverified absence here means building something twice |
 | The slice's duplication figure is currently unknown, because run 1's two ends used two definitions | OBSERVED | `report-01.md` § Findings, M45, which records the two definitions and the re-measurement. This is why D1 does **not** ask for a duplication number and D5 waits on D4 |
 | About six references in **staged, unexecuted** plans name a module run 1 deleted, against ~270 hits tree-wide of which ~200 are dated records | HYPOTHESIS — **re-derive, and re-derive the CLASSIFICATION, not just the count** | Sweep `doc/` for `test_*.py` names not present under `test/`, then partition by document kind. This claim was itself wrong on first derivation: an unpartitioned sweep returns ~270 and reads as a large defect, when the great majority are `report-NN.md` / `verification.md` / `gaps.md` records the standards exempt, plus the `plan.md` of plans that have already run. `report-01.md` § Residue puts the live set at five; the partition puts it at six. **The number is not the risk — treating a record as a defect is**, and rewriting one would be the worse error |
-| Plan `100` § D2 forbids splitting a class without qualification, so a follow-up run under it cannot close the three | OBSERVED — **it is the reason this plan exists rather than a run 2 of `100`** | `doc/plans/test-quality/100-module-budget-campaign/plan.md` § D2, and `report-01.md` § Contract check, which records the scoping reading run 1 applied |
+| Plan `100` § D2 forbids splitting a class, so a follow-up run under it cannot close the three — and the campaign's subject was excessively large files, which these are not | OBSERVED for the first half, **a DECISION for the second** | `doc/plans/test-quality/100-module-budget-campaign/plan.md` § D2 and `report-01.md` § Contract check confirm the prohibition and the reading run 1 applied. That these three should be *kept* rather than split is **not derivable from any artifact** — it is an operator decision taken while authoring this plan, on the reasoning that the slice's original subject was an 8,705-line module and a 466-line one is a different thing. It is recorded as a decision so a reviewer can reject it; if rejected, D2 inverts to a split and D1's gate is unchanged |
 | No party the collision matrix names against this plan is in flight | HYPOTHESIS — **gating and halting; check before D2 and again before D3** | `doc/plans/test-quality/README.md` § "The collision matrix", read there rather than restated here |
 
 ## Verification
 
 **Four conditions, all of which must hold.**
 
-1. **No test is lost or gained.** D2 and D5 both move code. The whole-tree collected count and the
+1. **No test is lost or gained.** D5 moves code. The whole-tree collected count and the
    `Class::test` multiset over the affected directories must be identical before and after — measured
-   by D4's differ, which computes both ends itself.
+   by D4's differ, which computes both ends itself. **D2 changes no test file at all**, which is its
+   own strongest check: `git diff --stat -- test/` must show the three modules untouched.
 2. **Order-independence.** The affected directories pass in default **and** reverse directory order.
-   D2 reorders tests within a module by construction, and run 1's own reordering is what made this
-   check necessary rather than ceremonial.
-3. **The rule's count moves in exactly the two ways expected.** Slice `050`'s count falls to zero
-   (D2), and the whole-tree count *rises* by the newly-visible helper modules (D3). Report both
-   separately: a single net figure would hide one behind the other, which is the same
-   two-things-in-one-number defect lesson 4 records.
+   D5's hoists change what a module binds at import time, and run 1's seven-test failure from exactly
+   that cause is what makes this check necessary rather than ceremonial.
+3. **The rule's count moves in exactly three ways, each reported separately.** It *falls* by the three
+   modules D2 exempts; it *rises* by the newly-visible over-budget helpers (D3); and nothing else
+   moves. A single net figure would hide two of the three behind the third, which is the same
+   two-things-in-one-number defect lesson 4 records. Report the three modules by name, so a reader can
+   see the exemption did not quietly swallow a fourth.
 4. **Every figure in the report carries the command that produced it, and both ends came from one
    instrument.** This is the run's own application of lesson 4 to itself. A before/after pair whose
    two sides were produced by different scripts, or one of whose sides was quoted from an earlier
