@@ -286,17 +286,40 @@ stale-figure defect this report warns about elsewhere, committed here.
 |---|---|
 | `a230637` | 21414 passed, 14 skipped, 583.66 s |
 | `f5bc086` (independently re-run by the round-3 verifier) | 21419 passed, 14 skipped, 507.80 s |
-| **Final, on the merged tree** | recorded at the stale-base re-verification below — and it is the one that governs |
+| **`be54037`, the REBASED tree — the figure that governs** | **21419 passed, 14 skipped, 412.44 s, `verify: SUCCESS`** |
 
-The figure that governs is the last: merge-gate condition 2 re-runs the full gate on the tree that
-actually lands, and no intermediate figure substitutes for it.
+The figure that governs is the last, because it is the only one measured on the tree that actually
+lands. All three sub-steps ran on it: quality-gate (`ruff … All checks passed!`, `mypy … Success: no
+issues found in 416 source files`, `SPDX-header check passed`), test-compile, and module-tests.
 
 ⚠ **The first `./pw verify` FAILED**, and the failure is worth recording because it is exactly the
 class the contract warns about: `test-compile` — the only sub-step that type-checks the test tree, and
 the one neither `quality-gate` nor `module-tests` runs — rejected two unused `type: ignore` comments
 that were green under both narrower calls. Fixed in `a230637`; the figures above are the re-run.
 
-**Stale-base re-verification (§ Step 8 condition 2):** recorded at the merge gate below.
+### Stale-base re-verification (merge-gate condition 2)
+
+`git rev-list --count HEAD..origin/main` at the gate: **0** — the base is current, because the branch
+was **rebased** onto it rather than left behind it (§ Residue records why a rebase rather than a
+merge, and what the rebase obliged).
+
+⚠ **A zero here is a measurement, not the absence of one.** It reads zero *because* the run brought
+the base in: before the rebase the gap was **4** commits, one of them PR #1314's 309-file test
+restructure. What condition 2 requires is that the gate has been run on a tree containing the moved
+base, and it was:
+
+| | |
+|---|---|
+| Shape used | **Rebased onto `origin/main` (`a34819d`)** — the branch head *is* the tested tree, so the PR's own CI verifies exactly what lands |
+| Tested commit | `be54037` |
+| Predicate | 24 `*.py` files changed, so the **full** `./pw verify` — not the docs-only skip |
+| Result | **`verify: SUCCESS`** — 21419 passed, 14 skipped, 412.44 s |
+
+**This run also settles the one risk the #1314 coordination check could not reach.** A file-overlap
+check cannot see an order-dependent `load_script_module` registration collision — the failure mode
+#1314's own body records as having cost a sibling plan 173 failures. Only a green whole-tree run
+**with #1314's 202 split modules and 66 new fixture modules actually in the tree** settles that, and
+this is that run.
 
 ### CI portability — measured, not assumed
 
@@ -551,8 +574,11 @@ _Pending._
 ## Cost
 
 - **Tokens:** not available to the agent in this session.
-- **Wall-clock:** _re-derived at finalize; source: `git log --format=%cI` on this branch's first and
-  last commits._
+- **Wall-clock:** **26 h 58 m** between the first and last commit on this branch. Source:
+  `git log --format=%aI origin/main..HEAD`, first vs last — **author** dates, deliberately: the
+  rebase reset every *committer* date to the rebase instant, so `%cI` would report a span of one
+  minute. ⚠ This is elapsed span, **not** time worked: the run was idle across a long gap while
+  waiting for PR #1314 to land, and no attempt is made here to net that out.
 - **Population:** this single Claude Code cloud session's usage. ⛔ **Not comparable** to a
   plan-marshall `metrics.toon` total, which counts the orchestrator-plus-agent dispatch tree under
   plan-marshall's own per-task billing boundary — a boundary an interactive cloud session does not
@@ -574,8 +600,19 @@ The operator flagged [#1314](https://github.com/cuioss/plan-marshall/pull/1314) 
 `test-quality/100-module-budget-campaign`, which splits 66 over-budget test modules into 199 test
 modules plus 64 `_{domain}_fixtures.py` modules across **281 files**.
 
-**Checked before assuming: there is no collision.** All 281 filenames were read (three pages of the
-PR's file list) and compared against this branch's surface:
+**Checked before assuming: there is no collision — verified twice, and the second time is the one
+that counts.** The first check read all 281 filenames from the open PR's file list. #1314 then grew
+to **309 files** before merging, so the check was re-run against the **landed** commit (`a34819d`)
+rather than trusted from the draft:
+
+| Measured on the landed merge | Count |
+|---|---|
+| Files in #1314 | 309 |
+| …under `marketplace/**` or `doc/user/**` | **0** |
+| …in this branch's seven test directories | **0** |
+| **Intersection with this branch's 50 changed files** | **empty** |
+
+The draft-time breakdown, which the landed form did not change:
 
 | #1314 touches | Overlap with this branch |
 |---|---|
