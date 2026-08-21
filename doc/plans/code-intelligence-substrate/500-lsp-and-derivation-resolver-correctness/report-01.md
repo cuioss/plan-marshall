@@ -1,8 +1,8 @@
 # Run report — 500-lsp-and-derivation-resolver-correctness (run 01)
 
-**Date (UTC):** 2026-08-20    **Branch:** `claude/lsp-derivation-resolver-correctness-7ncdpz`    **PR:** _pending_    **Outcome:** completed
+**Date (UTC):** 2026-08-20    **Branch:** `claude/lsp-derivation-resolver-correctness-7ncdpz`    **PR:** none — not requested by the operator, and § Contract check records step 7 as **not done**    **Outcome:** completed (the deliverables; see § How the loop stopped for the loop)
 
-> **Verification loop exit:** _pending — the operator extended the budget from five rounds to ten_
+> **Verification loop exit:** budget-exhausted, non-converging
 
 ## Skills loaded
 
@@ -345,21 +345,22 @@ stale-figure defect this report warns about elsewhere, committed here.
 | `d893d51`, round 6's fixes | 21420 passed, 14 skipped, 490.34 s, `verify: SUCCESS` |
 | `def48c4`, round 7's fix | 21422 passed, 14 skipped, 400.14 s, `verify: SUCCESS` |
 | `e061414`, round 8's fixes | 21433 passed, 14 skipped, 406.69 s, `verify: SUCCESS` |
-| **`f93849e`, round 9's fixes — the figure that governs** | **21437 passed, 14 skipped, 416.91 s, `verify: SUCCESS`** |
+| `f93849e`, round 9's fixes | 21437 passed, 14 skipped, 416.91 s, `verify: SUCCESS` |
+| **`91629f3`, round 10's fixes — the figure that governs** | **21439 passed, 14 skipped, 416.59 s, `verify: SUCCESS`** |
 
 The figure that governs is the last, because it is the only one measured on the tree that actually
-lands. Rounds 4 through 9 each touch production Python — docstrings at first, then real behaviour changes
+lands. Rounds 4 through 10 each touch production Python — docstrings at first, then real behaviour changes
 from round 7 on (`apply_workspace_edit`'s rollback, `read_message`'s frame contract, the harvest's
-failure-mode split, the resolver listing's `configured` flag, and round 9's three write-path fixes) —
-so the gate was re-run on each rather than carried forward, which is the stale-figure defect this
-section already records once. The
+failure-mode split, the resolver listing's `configured` flag, round 9's three write-path fixes, and
+round 10's `setup.cfg` interpolation fix) — so the gate was re-run on each rather than carried
+forward, which is the stale-figure defect this section already records once. The
 count rises with each round that closes a finding by adding a guard rather than by bounding it:
 21419 → 21420 is round 6's single B4 guard, 21420 → 21422 is round 7's pair pinning the partial-write
 rollback (B5), 21422 → 21433 is round 8's eleven — eight driving the seven bad-frame shapes and a
 clean-EOF control through the real `serve` subprocess, one for the harvest's `request-failed:` mode,
-one for the third `configured` reader, and one for the recoverable-frame stream alignment — and
-21433 → 21437 is round 9's four: the clean-tree `restore_error` case, the URI-alias normalisation,
-and the two line-length clamp guards. Each delta is exactly the guards named and nothing else.
+one for the third `configured` reader, and one for the recoverable-frame stream alignment — 21433 → 21437 is round 9's four (the clean-tree `restore_error` case, the URI-alias normalisation,
+and the two line-length clamp guards), and 21437 → 21439 is round 10's pair pinning the `setup.cfg`
+interpolation abort. Each delta is exactly the guards named and nothing else.
 ⛔ **Every commit after the governing one is report-only**, and that is established rather than
 asserted: `git diff --name-only {governing}..HEAD -- '*.py'` returns nothing. All three sub-steps ran
 on the governing commit: quality-gate (`ruff … All checks passed!`, `mypy … Success: no issues found
@@ -476,8 +477,8 @@ surface". Both halves were wrong** — the count was stale, and files outside th
 present when it was written. Verification item 5 requires every such file **accounted for**, not
 absent. Re-derived at the moment of this claim:
 
-`git diff --name-only origin/main...HEAD` → **62 files**, 28 of them `*.py` (re-derived at `e061414`,
-the round-8 fix commit; `report-01.md` is already in that set, so committing this section does not
+`git diff --name-only origin/main...HEAD` → **62 files**, 28 of them `*.py` (re-derived at `91629f3`,
+the round-10 fix commit; `report-01.md` is already in that set, so committing this section does not
 move it). **Sixteen fall outside** the plan's Expected surface, each for a stated reason — the first
 seven from the deliverables, five added by round 4's sweep, and four by round 6's. ⛔ Round 8 added
 **three** files and **no** new outside-surface entry: its three code fixes all landed inside the
@@ -926,6 +927,57 @@ own discovery of this "the first fix-induced regression in nine rounds". Round 1
 consecutive rounds**, which is what turns it from an incident into the finding § What have we learned
 is built on.
 
+### How the loop stopped
+
+**Exit: `budget-exhausted, non-converging`.** Both tokens are load-bearing and neither is a
+formality.
+
+**The budget.** The lane contract's budget is five rounds. Round 5 spent it, and — the operator being
+reachable — the boundary question was **put to them** rather than decided by the run. They were told
+the loop was not converging and **extended it to ten rounds, to run until it converged.** It did not.
+Round 10 is the tenth and no further extension was sought, so the loop ends on a spent budget, not on
+a clean verifier.
+
+**The verifier's own last answer**, asked directly and recorded rather than paraphrased: *"Does
+anything you found remain that condition A or B forbids leaving open?"* — **Yes**, nine condition-A
+statements and one condition-B finding (`B-1`) that no bound could cover. **All ten are fixed in
+`91629f3`.** Everything condition A forbids leaving open is closed; `B-1` was fixed rather than
+bounded because the cost of leaving it was the *entire* discovery result, silently.
+
+**Were the late rounds' findings narrower, or merely fewer?** ⛔ **Neither — and this is the finding
+the exit qualifier records.** Per round, condition-A findings ran 20, 10, 9, 9, 8, 8, 9, 9: flat, not
+decaying. Round 10's own summary is quoted rather than softened: *"the loop has not converged and it
+will not converge by running more rounds, because the finding rate is not decaying."*
+
+**What each round's findings were made of is the real story**, and it changes twice:
+
+| Rounds | Method | What they found |
+|---|---|---|
+| 1–6 | Read the statements, compare them to each other | Stale prose only. **Zero** code defects |
+| 7–8 | **Execute the behaviour**, then sweep outward | Three code defects, incl. a deliverable whose own title clause was false for seven rounds |
+| 9–10 | Execute the seams the previous fixes opened | Four more code defects — **and two consecutive rounds in which the previous round's fix had falsified statements in the files it edited** |
+
+⭐ **Six of the seven code defects this run fixed were found after round 6, by executing rather than
+reading.** Five rounds of prose-versus-prose sweeping found none of them. That is the single most
+transferable thing this run produced, and § What have we learned proposes the contract change that
+follows from it.
+
+**Residue a reader should assume remains.** Stated as the verifier stated it, not softened: the write
+path is correct for content but **not for line endings**, and its own clean-tree check cannot see a
+line-ending-only change (`S1`). Both discoverers crash rather than degrade on descriptors that are
+syntactically valid but structurally wrong (`S5`). The diagnostics gate assumes a spec-conforming
+server and leaves an edit on disk if it does not get one (`S2`, `S9`). Poetry's legacy and non-`dev`
+groups produce no edges, undisclosed (`S4`). **None of these can produce a false clean success — the
+class this plan exists to eliminate — except `S1`, which is bounded to line endings.** All twelve are
+in § Left open with their bounds and their reproductions.
+
+**What a further round would have to execute**, recorded so a successor plan need not re-derive it:
+the families round 10 left unswept after finding four of seven productive — chiefly the npm workspace
+resolution paths, `diagnostic_key` under duplicate-with-different-severity, and the corpus index's
+behaviour when the corpus changes size mid-session. ⚠ The verifier's own recommendation, adopted
+here, is that this is **not** worth another open-ended round: the correct closing move was to fix
+`B-1`, fix the condition-A statements, and stop and disclose.
+
 ## Reviewer participation
 
 **Not done — no PR exists.** The run has not reached Step 7: it is still inside Step 6's verification
@@ -937,14 +989,15 @@ owed, it has simply not been reached.
 ## Cost
 
 - **Tokens:** not available to the agent in this session.
-- **Wall-clock:** **≥ 27 h 53 m** — `cdf8062` (2026-08-20T08:49:01Z) to `b11e5cc`
-  (2026-08-21T12:41:46Z). Source: `git log --format=%aI origin/main..HEAD`, first vs last —
+- **Wall-clock:** **≥ 32 h 10 m** — `cdf8062` (2026-08-20T08:49:01Z) to `91629f3`
+  (2026-08-21T16:58:51Z), across **33** commits. Source: `git log --format=%aI origin/main..HEAD`, first vs last —
   **author** dates, deliberately: the rebase reset every *committer* date to the rebase instant, so
   `%cI` would report a span of one minute. ⛔ **Stamped and a lower bound by construction**: every
   commit after the one named extends it, including the commit carrying this sentence. An earlier
   revision published `26 h 58 m` unstamped and it was stale two commits later — the same
   moves-with-every-commit defect § Build gate stamps against, committed a second time in a different
-  section. ⚠ This is elapsed span, **not** time worked: the run was idle across a long gap while
+  section; a later revision published `≥ 27 h 53 m`, stamped, which this supersedes at the last
+  commit. ⚠ This is elapsed span, **not** time worked: the run was idle across a long gap while
   waiting for PR #1314 to land, and no attempt is made here to net that out.
 - **Population:** this single Claude Code cloud session's usage. ⛔ **Not comparable** to a
   plan-marshall `metrics.toon` total, which counts the orchestrator-plus-agent dispatch tree under
@@ -953,11 +1006,71 @@ owed, it has simply not been reached.
 
 ## Contract check (Step 9)
 
-_Pending._
+Per step, with the artifact that proves it. Steps not reached are reported **not done** rather than
+narrated as complete.
+
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | **Done** — named in § Skills loaded, loaded by bundle source path because the plugin is not installed in a cloud session |
+| 2 Branch | **Done** — `claude/lsp-derivation-resolver-correctness-7ncdpz`, the **harness-assigned** form, kept as the contract requires and recorded as such; present on `origin` |
+| 3 Plan directory | **Done** — `doc/plans/code-intelligence-substrate/500-lsp-and-derivation-resolver-correctness/` with `plan.md`, `proposals.md` and this report |
+| 4 Implement | **Done** — six deliverables, 33 commits, every one carrying the trailer |
+| 4 Per-commit gate | **Done** — every commit touching `*.py` was preceded by a clean `./pw quality-gate` (`ruff … All checks passed!`, `mypy … Success`, `SPDX-header check passed`) |
+| 4 Pushed | **Done** — `git status -sb` reports no `ahead`; the branch was pushed after every commit, not once at PR time |
+| 5 Build gate | **Done** — § Build gate carries the git-derived `*.py` verdict and one stamped row per commit that changed production Python, the last governing |
+| 6 Verification sub-agent | **Done** — ten rounds, every finding and disposition recorded per round; exit `budget-exhausted, non-converging`; the budget (five, extended by the operator to ten) and the extension are recorded with what the operator was told; the verifier's own last answer is quoted; each survivor is listed individually in § Left open with its bound; whether the late rounds were narrower is answered explicitly (no) |
+| 7 PR cycle | ⛔ **NOT DONE.** No PR exists. The operator has not asked for one, and the lane's PR step is theirs to trigger. § Reviewer participation records this as *not done* rather than *not applicable* — the step is owed, it has simply not been reached |
+| 8 Merge gate | ⛔ **NOT DONE**, and cannot be: it presupposes a PR. Condition 2 (the stale-base re-verification) **was** discharged early, on its own terms — `main` moved under the branch, the branch was rebased onto `a34819d` at the operator's instruction, and the full `./pw verify` was re-run on the merged tree and has been re-run on every subsequent commit that touched Python |
+| 8 Bridge | **Done** — no status or bookkeeping write landed under `doc/plans/` outside this plan's own directory. The one edit to another plan's directory (`020-corpus-residency-admission-control/report-01.md`) is a **declared deliverable** of D6, appended as a correction |
+| 9 This check | **Done** — this table |
+| 9 What have we learned | **Done** — below, with a proposal the operator must accept or decline |
 
 ## What have we learned (Step 9)
 
-_Pending._
+Two proposals, each named by what happened in **this** run rather than by what might generally be
+better. Both are for the operator to accept or decline; neither is applied here.
+
+### Proposal 1 — the verification loop must execute, not only read
+
+**The evidence.** Rounds 1–6 swept statements against statements across six rounds and found **zero**
+code defects. Rounds 7–10 executed the behaviour first and found **seven**, including: a rollback
+that discarded the one file it needed to restore; a deliverable whose own title clause (*"survives a
+bad frame"*) had been false since the commit that claimed it, through seven verification rounds; two
+false cleans; a file-truncating clamp; and a percent sign in a `setup.cfg` value that erased every
+module in the tree. Not one of these was reachable by reading, because in every case **the prose was
+right and the code was wrong** — the sweep's implicit question, *"which statement is stale?"*, has no
+correct answer when the answer is *"none of them"*.
+
+**The proposed change** to `cloud-plan-lane` § Step 6's sub-agent instruction: alongside the existing
+beyond-diff sweep, require the verifier to **start from each deliverable's behaviour, execute it, and
+compare what it does to every statement about it** — and to treat "the statements agree with each
+other" as no evidence at all. The instruction should name the shape that kept working here: *for each
+claim family, ask which file **owns** the behaviour, run it, and read that file's docstrings.*
+
+⚠ **The cost is real and should be stated with the benefit.** Executing rounds took roughly twice as
+long per round as reading rounds. Rounds 7–10 cost about 25 minutes of verifier wall-clock each; they
+also found every defect that mattered.
+
+### Proposal 2 — a fix commit must re-derive the measurements in the sections it moves
+
+**The evidence.** Round 9 found that round 7's fix had falsified four statements. Round 10 found that
+round 9's fix had falsified four more — two docstrings and a comment it wrote itself, plus two
+figures in the report commit that accompanied it. That is **two consecutive rounds in which the
+previous round's own repair introduced the next round's findings**. The single most-repeated defect
+in this entire report is narrower still: one survivor row's line citations drifted **four times**
+(`:373`/`:391` → `:383`/`:403` → `:390`/`:410` → `:393`/`:413`), each time because a commit added
+lines above them and nobody re-derived the row.
+
+**The proposed change**: a commit that changes behaviour must, in the same commit, re-derive every
+figure, count and citation in the sections whose lines it moved — **including rows recorded as open
+survivors**, which are the ones a run is least likely to revisit because they are filed as settled. A
+survivor row is a measurement with an expiry date.
+
+⭐ **And the cheaper half, which this run adopted at round 10 and would recommend as the default:**
+where a citation would be a line number, name the thing instead. `:390`/`:410` became *"the two
+`restore_files(originals)` calls in `_run_edit`"*, which no commit can invalidate. Four recurrences
+of one defect is enough evidence that re-deriving line numbers is the wrong remedy and not citing
+them is the right one.
 
 ## Residue
 
