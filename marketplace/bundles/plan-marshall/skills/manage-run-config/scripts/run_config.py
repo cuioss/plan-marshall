@@ -858,7 +858,12 @@ def is_derivation_resolver_enabled(resolver_id: str, section: dict[str, Any] | N
     entry = section.get(resolver_id)
     if not isinstance(entry, dict):
         return DERIVATION_RESOLVER_ENABLED_DEFAULT
-    return bool(entry.get('enabled', DERIVATION_RESOLVER_ENABLED_DEFAULT))
+    # ⛔ Only the literal JSON ``false`` disables. ``bool()`` here also disabled
+    # on ``0``, ``""``, ``null`` and ``[]`` — malformed values for a boolean
+    # field, which this store's stated rule fails **open** on. Coercing them to
+    # "disabled" silently turned a typo into a resolver nobody runs, which is
+    # the failure the fail-open direction exists to prevent.
+    return entry.get('enabled', DERIVATION_RESOLVER_ENABLED_DEFAULT) is not False
 
 
 def cmd_derivation_resolver_get(args: argparse.Namespace) -> dict:
@@ -1396,7 +1401,8 @@ Examples:
     p_dr_set.add_argument('--disabled', action='store_true', help='Deactivate the resolver')
     p_dr_set.set_defaults(func=cmd_derivation_resolver_set)
 
-    p_dr_list = dr_subparsers.add_parser('list', help='List configured resolver entries', allow_abbrev=False)
+    p_dr_list = dr_subparsers.add_parser(
+        'list', help='List every stored resolver entry, each flagged `configured`', allow_abbrev=False)
     p_dr_list.set_defaults(func=cmd_derivation_resolver_list)
 
     p_dr_remove = dr_subparsers.add_parser(

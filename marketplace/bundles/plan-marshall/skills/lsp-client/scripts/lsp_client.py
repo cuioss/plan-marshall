@@ -386,9 +386,21 @@ def _run_edit(session: LspSession, language: str, path: str, line: int, characte
     errors_after = 0
     added_by_path: dict[str, list[dict[str, Any]]] = {}
     new_diagnostics: list[dict[str, Any]] = []
+
+    # ⛔ Notify EVERY path before collecting ANY verdict. `apply_workspace_edit`
+    # has already written all of them, but the server only learns of a file when
+    # its `didChange` arrives — so interleaving notify-then-wait asked the server
+    # about file 1 while it still believed files 2..n held their pre-edit
+    # content. For a **cross-file rename** — the case this verb exists for —
+    # that intermediate workspace is genuinely inconsistent, the transient
+    # errors are real, and `edit_verdict` rolled back a correct edit because of
+    # them. The pre-change sequence is captured per path as the notification is
+    # sent, so each wait still requires a strictly later push and the
+    # settled-for-the-pre-edit-verdict guarantee is unchanged.
+    seq_before_change = {target: session.change_to_disk(target) for target in paths}
+
     for target in paths:
-        seq_before_change = session.change_to_disk(target)
-        diagnostics = session.diagnostics(target, after_seq=seq_before_change)
+        diagnostics = session.diagnostics(target, after_seq=seq_before_change[target])
         if diagnostics is None:
             restore_files(originals)
             return _edit_failure(

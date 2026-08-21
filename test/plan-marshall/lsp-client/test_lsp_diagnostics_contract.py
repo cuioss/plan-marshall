@@ -154,6 +154,41 @@ def test_diagnose_reports_unknown_when_the_server_never_publishes(tmp_path):
     assert differing  # not byte-identical payloads, which is what they used to be
 
 
+def test_a_CROSS_FILE_rename_is_not_rolled_back_by_a_half_applied_workspace(tmp_path):
+    """Every file is notified before any verdict is collected.
+
+    `apply_workspace_edit` writes all the files, but the server only learns of
+    one when its `didChange` arrives. Interleaving notify-then-wait therefore
+    asked the server about file 1 while it still believed files 2..n held their
+    pre-edit content — and for a cross-file rename that intermediate workspace
+    is genuinely broken, so the transient errors are real and `edit_verdict`
+    rolled back a **correct** edit because of them.
+
+    The fake server models exactly that: it reports an unresolved reference on
+    every change until all three files have been changed, then re-publishes them
+    clean. A client that waits for one verdict before sending the next
+    notification can never reach that quorum. Reported by CodeRabbit.
+    """
+    targets = [_module(tmp_path, name) for name in ('a.py', 'b.py', 'c.py')]
+    config = {'rename_edit': _rename_edit(*targets), 'change_quorum': len(targets), 'files': {
+        name: {'open': []} for name in ('a.py', 'b.py', 'c.py')
+    }}
+    session = _session(tmp_path, config)
+    try:
+        result = client._run_edit(session, 'python', str(targets[0]), 0, 0, 'bar')
+    finally:
+        session.close()
+
+    assert result['status'] == 'success', (
+        f"a valid cross-file rename was rejected: {result.get('reason')} "
+        f"{result.get('new_diagnostics')}"
+    )
+    assert result['applied'] is True
+    assert result['file_count'] == 3
+    for target in targets:
+        assert target.read_text().startswith('bar'), f'{target.name} was rolled back'
+
+
 def test_edit_fails_closed_when_the_server_never_publishes(tmp_path):
     """The BASELINE verdict is missing, so the verb stops before writing anything.
 
@@ -176,7 +211,7 @@ def test_edit_fails_closed_when_the_server_never_publishes(tmp_path):
     assert result['applied'] is False
     assert result['phase'] == 'before'
     assert result['rolled_back'] is False
-    assert result['unverified_path'] == str(target)
+    assert result['unverified_path'] == str(target.resolve())  # the payload carries the RESOLVED path
     assert 'restore_error' not in result  # the flag's OTHER meaning, absent here
     assert target.read_text() == 'foo = 1\n'
 
@@ -201,7 +236,7 @@ def test_a_missing_post_edit_verdict_rolls_back_and_says_so(tmp_path):
     assert result['reason'] == REASON_UNAVAILABLE
     assert result['phase'] == 'after'
     assert result['rolled_back'] is True
-    assert result['unverified_path'] == str(target)
+    assert result['unverified_path'] == str(target.resolve())  # the payload carries the RESOLVED path
     assert target.read_text() == 'foo = 1\n'  # restored, not left edited
 
 

@@ -31,6 +31,12 @@ import json, sys, time
 CONFIG = json.loads(open(sys.argv[1]).read())
 FILES = CONFIG.get("files", {})
 DELAY = CONFIG.get("publish_delay", {})
+# Models a CROSS-FILE rename: until every participating file has been changed,
+# the workspace is genuinely inconsistent and the server reports it. Once the
+# quorum is met each file re-publishes clean. A client that waits for one file's
+# verdict before notifying the next can never reach the quorum.
+CHANGE_QUORUM = CONFIG.get("change_quorum")
+CHANGED = set()
 
 
 def read_message():
@@ -78,6 +84,19 @@ while True:
     elif method in ("textDocument/didOpen", "textDocument/didChange"):
         uri = message["params"]["textDocument"]["uri"]
         phase = "open" if method.endswith("didOpen") else "change"
+        if CHANGE_QUORUM is not None and phase == "change":
+            CHANGED.add(uri)
+            if len(CHANGED) < CHANGE_QUORUM:
+                publish(uri, [{
+                    "severity": 1, "code": "E-XFILE",
+                    "message": "unresolved reference; the rename is only half applied",
+                    "range": {"start": {"line": 0, "character": 0},
+                              "end": {"line": 0, "character": 3}},
+                }])
+            else:
+                for known in sorted(CHANGED):
+                    publish(known, [])
+            continue
         entry = FILES.get(uri.rsplit("/", 1)[-1], {})
         if phase in entry:
             delay = DELAY.get(phase, 0.0)

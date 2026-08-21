@@ -306,6 +306,12 @@ def test_every_pep508_spelling_yields_the_same_edge(tmp_path, spelling):
     ('sample-core@file:///./x', 'sample-core'),
     ('sample-core ; python_version >= "3.11"', 'sample-core'),
     ('sample-core[a,b]~=1.0 ; extra == "dev"', 'sample-core'),
+    # PEP 508 permits the specifier in parentheses. Splitting on `>` alone left
+    # `sample-core (`, which survives PEP 503 normalisation and joins against
+    # nothing — a mangled key, not a missing one. Reported by CodeRabbit.
+    ('sample-core (>=1.0)', 'sample-core'),
+    ('sample-core(>=1.0)', 'sample-core'),
+    ('sample-core (==1.0) ; python_version >= "3.11"', 'sample-core'),
     ('', ''),
     ('   ', ''),
 ])

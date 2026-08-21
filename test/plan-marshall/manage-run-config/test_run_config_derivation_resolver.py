@@ -19,6 +19,7 @@ rather than once.
 import argparse
 import json
 
+import pytest
 import run_config
 
 from conftest import get_script_path, run_script
@@ -312,6 +313,28 @@ def _write_raw_section(section: dict) -> None:
     config['derivation_resolvers'] = section
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(config), encoding='utf-8')
+
+
+@pytest.mark.parametrize('stored', [0, '', None, [], {}, 'false', 'no'])
+def test_only_literal_FALSE_disables_a_resolver(plan_context, stored):
+    """Every other value for `enabled` is malformed, and malformed fails OPEN.
+
+    `bool()` coerced `0`, `""`, `null` and `[]` to "disabled" — turning a typo
+    in the run-configuration into a resolver nobody runs, silently. This store's
+    stated rule is that a malformed entry fails **open**, and a non-boolean in a
+    boolean field is malformed. Reported by CodeRabbit against the standard that
+    documents the rule.
+    """
+    _write_raw_section({'markdown': {'enabled': stored}})
+
+    assert run_config.is_derivation_resolver_enabled('markdown') is True
+
+
+def test_literal_false_still_disables(plan_context):
+    """The control: the fail-open widening must not disable the off switch."""
+    _write_raw_section({'markdown': {'enabled': False}})
+
+    assert run_config.is_derivation_resolver_enabled('markdown') is False
 
 
 def test_get_reports_a_non_dict_entry_as_not_configured(plan_context):

@@ -288,7 +288,12 @@ def requirement_name(requirement: str) -> str:
     """
     head = requirement.split(';', 1)[0]
     head = head.split('@', 1)[0]
-    for separator in ('[', '<', '>', '=', '!', '~'):
+    # ``(`` is in the set because PEP 508 permits the specifier in parentheses —
+    # ``sample-core (>=1.0)``. Splitting on ``>`` alone left ``sample-core (``,
+    # which survives PEP 503 normalisation and joins against nothing: the exact
+    # mangled-key failure this function exists to prevent, in the one spelling
+    # the separator list omitted.
+    for separator in ('(', '[', '<', '>', '=', '!', '~'):
         head = head.split(separator)[0]
     return head.strip()
 
@@ -437,15 +442,21 @@ def _read_poetry(data: dict, metadata: dict, dependencies: list[str]) -> None:
         if poetry.get(key):
             metadata[field] = poetry[key]
 
+    # The empty-name guard matches the PEP 621 path: a specifier-shaped or empty
+    # table key would otherwise publish the bare scope string ``':runtime'``.
     for name in _table(poetry, 'dependencies'):
         if name == 'python':
             continue
-        dependencies.append(f'{requirement_name(name)}:runtime')
+        extracted = requirement_name(name)
+        if extracted:
+            dependencies.append(f'{extracted}:runtime')
 
     for name in _table(_table(_table(poetry, 'group'), 'dev'), 'dependencies'):
         if name == 'python':
             continue
-        dependencies.append(f'{requirement_name(name)}:dev')
+        extracted = requirement_name(name)
+        if extracted:
+            dependencies.append(f'{extracted}:dev')
 
 
 def _read_setup_cfg(descriptor: Path, metadata: dict, dependencies: list[str]) -> None:

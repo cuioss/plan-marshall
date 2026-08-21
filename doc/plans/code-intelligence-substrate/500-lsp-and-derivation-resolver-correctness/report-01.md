@@ -1076,9 +1076,26 @@ is taken from the reviewer's own stored comment body, not from a check state.
 |---|---|---|---|
 | `cuioss-review-bot[bot]` | **reviewed** | — | Posted a *PR Reviewer Guide* naming one focus area: an **Unhandled Exception** in `_read_pep621` / `_read_poetry`, where a non-dict value for `project`, `tool`, `poetry`, `optional-dependencies` or `group` raises `AttributeError` and "will crash `discover_python_modules` and fail module discovery for the entire codebase". ⭐ **Verified by execution on all five shapes and fixed** in `b4a98aa`, plus a sixth the same helper covers (`dependencies = "core"` fabricating one edge per character). Six guards, red-checked |
 | `sourcery-ai[bot]` | **rate-limited** (`refusal_structural`) | **no** | *"your pull request is larger than the review limit of 150000 diff characters."* A ceiling on the **diff**, not a window — waiting cannot change it, so per § Step 7 it was **never** offered a retry and goes straight into the record. Its check run reports `skipped` |
-| `coderabbitai[bot]` | **rate-limited** | **yes** | *"you've reached your PR review limit … Next review available in: 44 minutes."* A clock, so provisional rather than a shortfall. It began a review of all 62 files twice and was interrupted both times — first by a head change mid-review, then by the limit |
+| `coderabbitai[bot]` | **reviewed** (attempt 3) | — | Reviewed all 62 files at `ad92db5` on the third attempt, once the window reset: **5 actionable comments and 10 nitpicks**, merge risk *moderate*. ⭐ **All five actionable findings were verified by execution and are real**; three are behavioural and fixed in code. The two earlier attempts were interrupted — first by a head change mid-review, then by the limit — which is why the clock reading, not a shortfall reading, was the correct one |
 
-**Coverage: 1-of-3 reviewed.** One refusal is permanent by its own terms (`sourcery`, diff size); one is a clock still being retried (`coderabbit`).
+**Coverage: 2-of-3 reviewed.** The one shortfall (`sourcery`) is permanent by its own terms — a
+diff-size ceiling, not a window.
+
+**CodeRabbit's five actionable findings, each verified before it was fixed:**
+
+| # | Finding | Verified | Disposition |
+|---|---|---|---|
+| C1 | `requirement_name` mangles the **parenthesized** PEP 508 form: `sample-core (>=1.0)` → `'sample-core ('`, a key that survives PEP 503 normalisation and joins against nothing | ✅ executed | **fixed** — `(` added to the separator set; three parametrised cases, red-checked |
+| C2 | ⭐ **A cross-file rename could be rolled back for a workspace it had only half-notified.** The post-edit loop waited for file 1's verdict before notifying file 2, so the server judged file 1 against its *pre-edit* belief about the others — and for a cross-file rename that intermediate state is genuinely broken, so `edit_verdict` rejected a **correct** edit | ✅ reproduced with a quorum-modelling fake server | **fixed in code** — every `didChange` is sent before any verdict is collected; the per-path pre-change sequence is still captured at notify time, so the newer-push guarantee is unchanged. Guard added, red-checked |
+| C3 | `derivation-resolver list --help` still read *"List configured resolver entries"* | ✅ read | **fixed.** ⛔ The **sixth** site of that one contract — docstring, epilog, standards table and SKILL body were corrected and the argparse `help=` was not. The run's signature defect, in the surface an operator sees first |
+| C4 | ⭐ `bool(entry.get('enabled', …))` disabled the resolver on `0`, `""`, `null` and `[]` — **contradicting this store's own documented fail-open rule**, and turning a typo into a resolver nobody runs | ✅ executed across nine values | **fixed in code** — only the literal JSON `false` disables. Seven parametrised guards plus an off-switch control, red-checked; the standard now states the value rule too |
+| C5 | Two assertions compare `unverified_path` against an **unresolved** path; round 9's own `uri_to_path` resolve made the payload resolved, so the tests would fail wherever the temp dir contains a symlink (macOS `/var` → `/private/var`) | ✅ read | **fixed** — both compare against `str(target.resolve())` |
+
+⚠ **C2 and C4 are the two that matter, and neither is a nit.** C2 rejects a *valid* multi-file rename
+— the operation D2 exists to make safe — and C4 silently disables a resolver on a malformed value in
+the very store D6 unified. Both were invisible to eleven verification rounds and to a green
+21648-test suite, because both need a *specific* input shape no existing test supplied. The reviewer
+budget bought two real defects the run's own loop did not reach.
 
 **Retry log — `coderabbitai[bot]`** (budget six, per § Step 7):
 
@@ -1086,7 +1103,7 @@ is taken from the reviewer's own stored comment body, not from a check state.
 |---|---|---|---|
 | 1 | — (PR creation) | automatic on open | review started, then *"head commit changed during the review"* |
 | 2 | — (immediate) | push `b4a98aa` | *"Review limit reached … 44 minutes"* |
-| 3 | ~51 min | push (this commit) | pending |
+| 3 | ~51 min | push `ad92db5` | **review delivered** — 5 actionable, 10 nitpicks |
 
 ⚠ **Attempts 1 and 2 were spent by the run's own push cadence, not by the provider.** Three pushes
 landed inside five minutes — the report-only PR-number commit, the `origin/main` merge, and the
