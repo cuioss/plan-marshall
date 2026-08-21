@@ -617,14 +617,24 @@ owed anyway. Budget: six.
 |---|---|---|---|---|
 | 1 | 13:21 | `88d22e3` | PR creation | *"Review limit reached … Next review available in: 38 minutes"* |
 | 2 | 13:35 | `b55ad1d` | Condition 2's base merge + condition 4's report push (one push) | Same notice, comment edited in place at 13:35:30 |
-| 3 | 14:29 | — | This section's own commit — the report re-commit § Step 8 condition 4 licenses on each wake | *(recorded below on the next read)* |
+| 3 | 14:29 | `c3fa560` | The report re-commit § Step 8 condition 4 licenses on each wake | *"Review limit reached … Next review available in: **48 minutes**"* — commit status `CodeRabbit: Review rate limited` at 14:30:53, run `45c5231b` |
+| 4 | 15:27 | — | Same carrier | *(read back on the next wake)* |
 
 ⛔ **Attempts 1 and 2 fell inside one window and the second was therefore spent
 for nothing.** Both were pushes the run owed on its own schedule (§ Step 4's
 cadence outranks this retry schedule, and a finished commit is never held back
 to time an attempt), so neither was avoidable — but the budget counts the run's
-effort, not the provider's accounting, so it cost 2 of 6 regardless. Attempt 3
-was timed to the stated window plus jitter.
+effort, not the provider's accounting, so it cost 2 of 6 regardless. Attempts 3
+and 4 were each timed to the previous notice's window plus jitter — 14:29 against
+a window closing at 14:13, and 15:27 against one closing at 15:18:53.
+
+⛔ **A timer for attempt 4 was armed 45 minutes too late and was deleted rather
+than waited out.** Reading the clock is part of timing an attempt: the wake that
+armed it computed the delay from a stale sense of "now", and the window had in
+fact already closed 8 minutes earlier — itself inside the 5–20 minute jitter
+band. Waiting it out would have burned 45 minutes against a shared allowance for
+nothing. Derive the delay from the clock at the moment of arming, not from when
+the wake's context was assembled.
 
 ## Contract check (Step 9)
 
