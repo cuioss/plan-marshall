@@ -88,7 +88,8 @@ and stops flagging the one shape the campaign has decided not to act on — so i
 run can drive to zero honestly rather than a number with three permanent residents. And the checks
 that make a split safe — fidelity, duplication, attribution — are committed scripts a later run
 invokes rather than prose a later run re-implements, each one deriving both ends of every comparison
-it reports.
+it reports. And the tree stops carrying ~691 lint suppressions that suppress nothing, without losing
+the ~108 that record a judgement the current rule set does not ask about.
 
 ## Deliverables
 
@@ -96,7 +97,7 @@ it reports.
    Derive, from the tree in your clone rather than from this document: the whole-tree
    `test-module-line-budget` count; the over-budget modules inside slice `050`'s ten directories; for
    each, whether its largest class exceeds the budget **alone**; the non-collected modules over budget;
-   and the `RUF100` population, split into its three kinds (see § Out of scope). Record each with the
+   and the `RUF100` population, split into its three kinds (see § D7). Record each with the
    command that produced it — and for `RUF100` use `--extend-select`, never `--select`: `--select`
    REPLACES the configured rule set, which makes every directive look non-enabled and inflates the
    count by about 60%. That error was made while authoring this plan and is recorded here so the run
@@ -224,29 +225,44 @@ it reports.
    was deliberately left; and no `report-NN.md`, `verification.md` or `gaps.md` has been edited.
 
 
+7. **D7 — Clear the suppressions whose cause is gone, and refuse to clear the ones whose cause is not.**
+   The tree carries about **1,130** `noqa` directives; about **691** suppress nothing. They are not one
+   population and a bare `ruff --fix` is wrong for a third of them:
+
+   | Kind | ~Count | What it is | Disposition |
+   |---|---:|---|---|
+   | Shadowed | 364 | a line-level `# noqa: E402` in a file whose header already says `# ruff: noqa: I001, E402` | **delete the line-level one**; the file header already covers it |
+   | Stale | 219 | rule enabled, nothing shadowing, code no longer triggers it | **delete** |
+   | Non-enabled | 108 | names a rule this project does not run — `S603`, `BLE001`, `PLC0415`, `ANN*`, `D*` | ⛔ **do not delete** — see below |
+
+   ⛔ **The third kind is why this is not `--fix`.** `# noqa: S603` marks a subprocess call the author
+   judged deliberate; `# noqa: BLE001` marks an intentional broad `except`. Those families are absent
+   from `select`, so the directives suppress nothing today and `--fix` deletes every one of them —
+   discarding the annotation that would matter the moment anyone enables `S` or `BLE`. Convert each to
+   a plain comment that states the intent in words (`# deliberate: fixed argv, no shell`), so the
+   judgement survives the rule set it was written against. Where the intent cannot be recovered from
+   the code, **leave the directive and record it** rather than guess.
+   ⚠️ **Measure with `--extend-select RUF100`, never `--select RUF100`** — the latter replaces the
+   configured rule set and inflates the count by about 60%. D1 states this; it is repeated here because
+   this is the deliverable that acts on the number.
+   ⚠️ **This deliverable alone touches ~391 files and will push the PR past both automated reviewers'
+   ceilings** (100 and 300 files), forfeiting the review run 1 already lost once. It is taken anyway,
+   by decision, because the alternative is carrying it indefinitely. Land it as **its own commit**, so
+   a reviewer can verify it by re-running the tool over that commit rather than by reading 391 diffs,
+   and say so in the PR body.
+   ⛔ **Do not touch the ~148 live E402 suppressions**, which sit on imports that genuinely follow a
+   `sys.path` manipulation. Those have a cause; D7 removes annotations whose cause is gone, and
+   removing a live one turns a green build red.
+   *Done when:* `ruff check --extend-select RUF100` reports zero over the two kinds this deliverable
+   clears; every non-enabled directive is either converted to an intent comment or recorded with why it
+   was left; `./pw verify` is green; and the count is reported by kind, not as one number.
+
+
 ## Out of scope
 
 * **Fixing the modules D3 newly reports.** Excluded because widening a metric and reducing what it
   then measures are two changes, and bundling them would make it impossible to tell which of the two
   moved the count. D3 reports them; a reduction slice reduces them.
-* **The tree-wide `RUF100` sweep.** Excluded for two reasons, and the second is the one that matters.
-  First, it spans ~391 files, which would push this PR past the automated reviewers' file ceilings —
-  precisely the failure run 1 recorded, having forfeited two of three reviewers at 309 files. Second,
-  **`ruff --fix` is the wrong tool for a third of it**, because the population is not one thing:
-
-  | Kind | Count | What it is | Safe to delete? |
-  |---|---:|---|---|
-  | Shadowed | ~364 | a line-level `# noqa: E402` in a file whose header already says `# ruff: noqa: I001, E402` | **yes** — pure redundancy, the file-level directive wins |
-  | Stale | ~219 | the rule is enabled, nothing shadows it, and the code no longer triggers it | **yes** — the suppression outlived its cause |
-  | Non-enabled | ~108 | names a rule this project does not run — `S603`, `BLE001`, `PLC0415`, `ANN*`, `D*` | **no** — see below |
-
-  The third kind is why this is not a `--fix` away. `# noqa: S603` marks a subprocess call the author
-  judged deliberate; `# noqa: BLE001` marks an intentional broad `except`. Those rules are absent from
-  the `select` list, so the directives suppress nothing today and `--fix` deletes them all — discarding
-  the annotation that would matter the moment anyone enables `S` or `BLE`. A sweep must therefore
-  **classify before it deletes**, which makes it a real change needing its own argument rather than a
-  mechanical one. Recorded as a proposal with these figures; clearing directives in files this plan
-  already touches is in scope.
 * **Flipping `test-module-line-budget` to `severity: error`.** Excluded because it is a policy decision
   with a named owner (`090` § D7's ladder) and a cloud run has no operator to take it. D1's figures
   are what that decision will need; the decision is not this plan's.
@@ -277,9 +293,14 @@ it reports.
   `550-*.md`, `doc/plans/test-quality/050-*/plan.md` — D6's five pointers, **other epics' plan
   directories**, edited here only to repoint a dead module name
 - `marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md` — D6's three specimens
+- **~391 files across `test/` and `marketplace/bundles/`** — D7, one line removed or reworded per dead
+  directive. ⛔ **This is by far the widest surface in the plan and it reaches deep into `090`'s tree.**
+  It is mechanical and tool-reproducible, but it is not small: check the matrix for `090` immediately
+  before running D7, not only at the start, and take D7 **last** so a collision costs only that
+  commit
 
-⚠️ **This surface crosses two other plans' territory** — `090`'s (`marketplace/bundles/**`) and two
-other epics' plan directories. Look this plan up in `doc/plans/test-quality/README.md` § "The
+⚠️ **This surface crosses two other plans' territory** — `090`'s (`marketplace/bundles/**`, both at
+one analyzer for D3 and across ~250 files for D7) and two other epics' plan directories. Look this plan up in `doc/plans/test-quality/README.md` § "The
 collision matrix" before starting, confirm no open PR or in-flight branch exists for any party it
 names or for the files above, and **halt and report** rather than editing a file a sibling is holding.
 
@@ -354,13 +375,16 @@ figure is comparable with one produced by a different definition, the output fai
   named modules keeps the blast radius to what has actually been examined. If runs 2 through 7 hit the
   same wall repeatedly, *that* is the evidence for amending the standard, and it will be a better
   argument than this one.
-* **The review-coverage problem is real and is not solved here.** Run 1's PR reached 309 files and both
-  automated reviewers refused it on file-count ceilings — 100 and 300 — so two thirds of the
-  repository's review capacity was structurally unreachable. This plan keeps its own diff small enough
-  to stay under both, which is why the `RUF100` sweep is out of scope. **Record a proposal** for how a
-  slice should be carved into pull requests; do not take the decision, and do not restructure the
-  lane's one-plan-one-PR cycle to fit — that is the contract's, and the run may not amend the contract
-  that governs it.
+* **This plan will forfeit its automated review, and that is a decision rather than an oversight.**
+  Run 1's PR reached 309 files and both automated reviewers refused it on file-count ceilings — 100
+  and 300 — so two thirds of the repository's review capacity was structurally unreachable. D7 alone
+  touches ~391 files, so this plan lands in the same place. It is taken anyway: the alternative is
+  carrying ~691 inert suppressions indefinitely, and the sweep is the one part of this plan a human
+  can verify without reading the diff, by re-running the tool over D7's commit. **Keep D7 in its own
+  commit** so that verification is available, and say so in the PR body.
+  **Record a proposal** for how a slice should be carved into pull requests so a future run does not
+  face the same trade; do not take the decision, and do not restructure the lane's one-plan-one-PR
+  cycle to fit — that is the contract's, and the run may not amend the contract that governs it.
 * **No `.plan/` path is a source for this plan.** The epic is standalone and has no orchestrator
   ledger, so **do not go looking for one**. Every artifact cited here is git-tracked or is produced by
   a command this plan states.
