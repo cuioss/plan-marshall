@@ -932,10 +932,75 @@ def test_project_scan_ignores_a_declared_root_that_does_not_exist(
     assert [rec['name'] for rec in records] == ['project:finalize-step-only']
 
 
+def test_project_scan_skips_a_declared_root_that_is_a_file(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A declared root that exists as a NON-directory is skipped.
+
+    The sibling test about an absent root cannot pin this: ``Path.glob`` on a
+    missing directory yields nothing either way, so the record set is identical
+    with or without the ``is_dir()`` filter. A root that exists but is a file is
+    the only shape the two implementations differ on.
+    """
+    _pin_project_roots(monkeypatch, tmp_path, ('afile', 'present/steps'))
+    (tmp_path / 'afile').write_text('not a directory', encoding='utf-8')
+    _write_project_step(tmp_path / 'present' / 'steps', 'finalize-step-only', 'Only.')
+
+    records = _discovery._scan_project_for_implementors(_PROJECT_EXT_POINT)
+    assert [rec['name'] for rec in records] == ['project:finalize-step-only']
+
+
+def test_project_scan_records_only_finalize_step_directories(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A skill declaring the ext-point but not named ``finalize-step-*`` is not a step.
+
+    Project step ids are path-derived, so a directory outside that naming
+    convention has no well-formed ``project:`` id to be recorded under.
+    """
+    _pin_project_roots(monkeypatch, tmp_path, ('steps',))
+    _write_project_step(tmp_path / 'steps', 'finalize-step-real', 'Real.')
+    _write_project_step(tmp_path / 'steps', 'some-other-skill', 'Not a step.')
+
+    records = _discovery._scan_project_for_implementors(_PROJECT_EXT_POINT)
+    assert [rec['name'] for rec in records] == ['project:finalize-step-real']
+
+
+def test_project_scan_survives_one_unreadable_root(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An OSError on one root skips that root, it does not abandon the scan.
+
+    Returning ``[]`` would let a single unreadable directory silently empty the
+    finalize-step registry — every step missing, no error.
+    """
+    _pin_project_roots(monkeypatch, tmp_path, ('broken', 'present/steps'))
+    (tmp_path / 'broken').mkdir()
+    _write_project_step(tmp_path / 'present' / 'steps', 'finalize-step-only', 'Only.')
+
+    real_glob = pathlib.Path.glob
+
+    def _explode(self, pattern):
+        if self.name == 'broken':
+            raise OSError(13, 'Permission denied')
+        return real_glob(self, pattern)
+
+    monkeypatch.setattr(pathlib.Path, 'glob', _explode)
+
+    records = _discovery._scan_project_for_implementors(_PROJECT_EXT_POINT)
+    assert [rec['name'] for rec in records] == ['project:finalize-step-only']
+
+
 def test_project_scan_resolves_an_absolute_declared_root(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An absolute root resolves independently of the project root."""
+    """An absolute root resolves independently of the project root.
+
+    Weaker than it reads: ``pathlib``'s ``/`` already discards the left operand
+    for an absolute right one, so bypassing ``_resolve_skill_root`` entirely
+    would still pass this. The tilde sibling is what discriminates; this case
+    documents the absolute form rather than pinning its resolution.
+    """
     elsewhere = tmp_path / 'elsewhere' / 'steps'
     _pin_project_roots(monkeypatch, tmp_path / 'project', (str(elsewhere),))
     _write_project_step(elsewhere, 'finalize-step-abs', 'Absolute.')

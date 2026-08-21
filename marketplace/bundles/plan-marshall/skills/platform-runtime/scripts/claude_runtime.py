@@ -2456,13 +2456,34 @@ def _load_settings(path: Path) -> dict[str, Any]:
     ``tools-permission-*`` scripts delegate here. A missing file yields the
     empty-permissions skeleton; malformed JSON yields the same skeleton with an
     ``error`` key so callers can surface the parse failure.
+
+    "Malformed" covers the shape as well as the syntax. A file whose top level
+    or whose ``permissions`` value is not an object parses as valid JSON, and
+    seeding the three lists into it raised a ``TypeError`` out of the loader —
+    a traceback where every caller expects the ``error`` key. Both are reported
+    the same way as a parse failure, which is also why the value is never
+    replaced with an empty object: overwriting it would let a subsequent save
+    discard whatever the operator actually had there.
     """
     if not path.exists():
         return {"permissions": {"allow": [], "deny": [], "ask": []}}
     try:
         data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return {
+                "error": f"Settings root must be an object; found {type(data).__name__}",
+                "permissions": {"allow": [], "deny": [], "ask": []},
+            }
         if "permissions" not in data:
             data["permissions"] = {}
+        if not isinstance(data["permissions"], dict):
+            return {
+                "error": (
+                    "permissions must be an object; found "
+                    f"{type(data['permissions']).__name__}"
+                ),
+                "permissions": {"allow": [], "deny": [], "ask": []},
+            }
         for key in ("allow", "deny", "ask"):
             if key not in data["permissions"]:
                 data["permissions"][key] = []
@@ -2620,17 +2641,20 @@ def _reject_unprotectable_path(protected_dir: str) -> str | None:
     refused, each because the rendered rule would mean something other than what
     the caller asked for:
 
-    - **empty or blank** — ``Path("")`` is ``"."``, which renders ``Read(/**)``
-      and ``Bash(python3 -c **)``: a denial of every absolute read and every
-      inline script, from an argument that named nothing;
+    - **empty or blank** — ``Path("")`` is ``"."``, which renders
+      ``Read(./**)`` and ``Bash(python3 -c *.*)``. The second is the sharp edge:
+      the distinctive-tail vector becomes ``*.*``, matching any inline script
+      containing a dot — from an argument that named nothing;
     - **relative** — the rules are matched against whatever the tool resolves,
       so a relative path denies an unrelated location or nothing at all;
     - **carrying a delimiter or glob** — see
       ``_PATH_CHARS_THE_DSL_CANNOT_CARRY``. A ``)`` truncates the rule and lets
       the remainder of the path become rule text of its own;
-    - **the filesystem root** — ``/`` renders ``Read(/**)``, denying every read
-      on the machine. A request to protect one directory must never be able to
-      deny all of them.
+    - **the filesystem root** — ``/`` renders ``Read(//**)``, whose effect
+      depends on how the matcher treats ``//``, and ``Bash(python3 -c */*)``,
+      which does not: the distinctive tail becomes ``*/*``, matching any inline
+      script containing a slash. A request to protect one directory must not be
+      able to produce either.
 
     Control characters are refused with them: a newline splits one rule into two.
     Whitespace and ``..`` are refused for the reasons given at each check.
@@ -2657,8 +2681,8 @@ def _reject_unprotectable_path(protected_dir: str) -> str | None:
         # else while being told it succeeded.
         return "path contains '..'; name the directory to protect directly"
     if path == path.parent:
-        # `/` renders `Read(/**)`: a request to protect one directory would
-        # deny every read on the machine.
+        # `/` renders `Bash(python3 -c */*)` — the distinctive tail becomes
+        # `*/*`, matching any inline script carrying a slash.
         return "path is the filesystem root"
     return None
 
@@ -2680,16 +2704,18 @@ def _protect_path_deny_rules(protected_dir: str) -> list[str]:
     that were drafted.
 
     **Both spellings are normalized from one `Path`.** Rendering the tilde arm
-    through `Path` and the absolute arm from the caller's raw string let the two
-    disagree — `"/a//b"` and `"/a/b/"` produced one live rule and one keyed on a
-    spelling nothing matches, and two spellings of one directory then survived
-    de-duplication as distinct. `..` is collapsed lexically rather than by
-    `resolve()`, which would follow symlinks and rename the directory the caller
-    asked to protect.
+    through `Path` and the absolute arm from the caller's raw string lets the two
+    disagree — `"/a//b"` and `"/a/b/"` produce one live rule and one keyed on a
+    spelling nothing matches, and two spellings of one directory then survive
+    de-duplication as distinct. `Path` alone collapses every difference that can
+    reach here: doubled separators, a trailing separator and `/./`. It does not
+    collapse `..`, and does not need to — `_reject_unprotectable_path` refuses a
+    path carrying one, because collapsing `..` lexically renames the directory
+    under a symlinked parent while `resolve()` renames it under any symlink.
 
     Callers validate with `_reject_unprotectable_path` first; this renders.
     """
-    normalized = Path(os.path.normpath(str(protected_dir)))
+    normalized = Path(protected_dir)
     absolute = str(normalized)
     tilde = _tilde_form(normalized)
     distinctive = tilde[2:] if tilde.startswith("~/") else absolute

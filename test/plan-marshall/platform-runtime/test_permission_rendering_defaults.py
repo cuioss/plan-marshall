@@ -138,3 +138,24 @@ class TestEnsureDefaultPermissions:
         assert settings['permissions']['allow'] == sorted(
             ['Edit(.plan/**)', 'Write(.plan/**)', 'Read(~/.claude/plugins/cache/**)']
         )
+
+    def test_a_failed_write_is_not_reported_as_applied(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """`applied` must follow the write, not the intent to write.
+
+        The protect-path sibling closes exactly this fail-open one function
+        over. Here the cost of getting it wrong is downstream: ``cmd_apply_fixes``
+        reads ``defaults['applied'] or save_settings(...)``, so a wrongly-True
+        ``applied`` short-circuits the retry AND suppresses the error the caller
+        would otherwise report.
+        """
+        path = tmp_path / 'settings.json'
+        settings = self._settings([])
+        monkeypatch.setattr(claude_runtime, '_save_settings', lambda _p, _s: False)
+
+        result = claude_runtime.ensure_default_permissions(settings, path)
+
+        # There WAS work to do — otherwise `applied is False` proves nothing.
+        assert result['defaults_added_count'] == 3
+        assert result['applied'] is False

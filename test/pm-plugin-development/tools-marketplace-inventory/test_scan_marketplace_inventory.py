@@ -1562,6 +1562,19 @@ def test_runtime_mount_prefix_follows_a_relocated_skill_root(monkeypatch):
     assert module.runtime_mount_prefix() == './somewhere/skills'
 
 
+def test_runtime_mount_prefix_takes_the_highest_priority_root(monkeypatch):
+    """With several declared roots, the FIRST is the mount point.
+
+    Every other fixture here supplies one root, where first and last coincide —
+    so this is the only case that pins the docstring's "highest-priority" claim.
+    """
+    module = _scan_module()
+    monkeypatch.setattr(
+        module, 'get_project_skill_roots', lambda: ('first/skills', 'second/skills')
+    )
+    assert module.runtime_mount_prefix() == './first/skills'
+
+
 def test_runtime_mount_prefix_leaves_an_anchored_root_alone(monkeypatch):
     """A ``~``-anchored or absolute root is already a location — do not prepend ``./``."""
     module = _scan_module()
@@ -1571,8 +1584,8 @@ def test_runtime_mount_prefix_leaves_an_anchored_root_alone(monkeypatch):
     assert module.runtime_mount_prefix() == '/opt/skills'
 
 
-def test_discovered_scripts_carry_the_derived_runtime_mount(scan):
-    """The scan's emitted ``path_formats.runtime`` uses the derived prefix."""
+def _emitted_mounts(scan) -> list[str]:
+    """Return every ``path_formats.runtime`` the scan emits."""
     import json
 
     result = scan('--direct-result', '--full', '--format', 'json')
@@ -1585,4 +1598,31 @@ def test_discovered_scripts_carry_the_derived_runtime_mount(scan):
         for script in bundle.get('scripts', [])
     ]
     assert mounts, 'the synthetic tree must yield at least one script'
-    assert mounts == ['./.claude/skills/plan-alpha/scripts/run-alpha.py']
+    return mounts
+
+
+def test_discovered_scripts_carry_the_claude_runtime_mount(scan):
+    """On the default (Claude) target the emitted mount is unchanged."""
+    assert _emitted_mounts(scan) == ['./.claude/skills/plan-alpha/scripts/run-alpha.py']
+
+
+def test_discovered_scripts_follow_a_relocated_skill_root(
+    synthetic_marketplace, monkeypatch, capsys
+):
+    """The emitted mount is WIRED to the derivation, not merely equal to it.
+
+    On the default target the derived prefix and the literal ``./.claude/skills``
+    coincide, so the sibling above passes just as well against a hardcoded
+    literal — the exact residue this change exists to delete. Relocating the
+    root is what separates the two.
+
+    The runner is built here rather than taken from the ``scan`` fixture because
+    ``_scan_module()`` loads a fresh module object per call: patching one copy
+    would leave the fixture's copy — the one that actually runs — untouched, and
+    the test would pass against the hardcode it is written to catch.
+    """
+    module = _scan_module()
+    monkeypatch.setattr(module, 'get_project_skill_roots', lambda: ('somewhere/skills',))
+    run = _make_runner(module, monkeypatch, capsys)
+
+    assert _emitted_mounts(run) == ['./somewhere/skills/plan-alpha/scripts/run-alpha.py']

@@ -77,8 +77,12 @@ class TestEnsureDeniedCLI:
         reported = capsys.readouterr().out
         assert 'status: success' in reported
         assert f'rules_added: {len(deny)}' in reported
-        # The protection's own denominator, not the settings file's total deny
-        # count: every rule this command asked for, added or already present.
+        # This fixture's deny list starts empty, so `len(deny)` and
+        # `protection_rules_total` coincide here by construction — the
+        # distinction between the protection's own denominator and the settings
+        # file's total deny count is pinned by
+        # `test_protection_total_counts_the_protection_not_the_deny_list`, not
+        # by this line.
         assert f'protection_rules_total: {len(deny)}' in reported
 
     def test_ensure_denied_is_idempotent(self, claude_project, capsys) -> None:
@@ -190,6 +194,71 @@ class TestEnsureDeniedCLI:
         # The rules still reached disk: the point of not raising.
         assert 'status: success' in captured.out
         assert _deny_list(claude_project)
+
+
+    def test_the_runtimes_own_error_code_reaches_the_operator(
+        self, claude_project, monkeypatch, capsys
+    ) -> None:
+        """A runtime error is forwarded by CODE, not flattened to a generic one.
+
+        A caller branching on `error` needs the code the runtime produced —
+        `io_error` (rules rendered, nothing written) calls for a different
+        response than a malformed settings file. Nothing else drives the
+        `status != 'success'` branch, so without this the whole forwarding path
+        is unguarded end-to-end.
+        """
+        import _cred_ensure_denied
+
+        class _FailingRuntime:
+            def permission_fix(self, *_args, **_kwargs):
+                return (
+                    'operation: permission fix\n'
+                    'status: error\n'
+                    'error: io_error\n'
+                    'message: Failed to write settings\n'
+                )
+
+        monkeypatch.setattr(_cred_ensure_denied, '_resolve_runtime', _FailingRuntime)
+        assert _cred_ensure_denied.run_ensure_denied(Namespace(target='project')) == 0
+
+        reported = capsys.readouterr().out
+        assert 'status: error' in reported
+        # The specific code, not the `protect_path_failed` fallback.
+        assert 'error: io_error' in reported
+
+    def test_the_reported_target_is_the_one_the_caller_asked_for(
+        self, claude_project, monkeypatch, capsys
+    ) -> None:
+        """`target` echoes the argument rather than a constant.
+
+        Every other test in this module passes `project`, which is also the
+        value a hardcoded echo would produce.
+        """
+        import _cred_ensure_denied
+
+        monkeypatch.setattr(_cred_ensure_denied, '_resolve_runtime', lambda: None)
+        assert _cred_ensure_denied.run_ensure_denied(Namespace(target='global')) == 0
+
+        assert 'target: global' in capsys.readouterr().out
+
+    def test_a_loose_directory_mode_is_tightened_back_to_0700(
+        self, claude_project, capsys
+    ) -> None:
+        """The primary boundary is re-asserted, and says so.
+
+        The deny rules are defence in depth; this mode is the boundary they back
+        up, and nothing else in this module exercises it.
+        """
+        import _cred_ensure_denied
+
+        _cred_ensure_denied.CREDENTIALS_DIR.mkdir(parents=True, exist_ok=True)
+        _cred_ensure_denied.os.chmod(str(_cred_ensure_denied.CREDENTIALS_DIR), 0o755)
+
+        assert _cred_ensure_denied.run_ensure_denied(Namespace(target='project')) == 0
+
+        mode = _cred_ensure_denied.CREDENTIALS_DIR.stat().st_mode & 0o777
+        assert mode == 0o700
+        assert 'expected 0o700' in capsys.readouterr().err
 
 
 class TestEnsureDeniedRendersNoGrammar:

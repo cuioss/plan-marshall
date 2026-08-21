@@ -268,8 +268,9 @@ class TestPermissionFixProtectPath:
             ('/home/u/cre(ds', 'a "(" is the other delimiter'),
             ('/home/u/x*', 'a "*" widens the rule past what was asked for'),
             ('/home/u/a\nb', 'a newline splits one rule into two'),
+            ('/home/u/a\x7fb', 'DEL is a control character above the 0x20 range'),
             ('/home/u/my creds', 'a space moves the argument boundary in a Bash rule'),
-            ('/', 'the filesystem root renders Read(/**) — every read on the machine'),
+            ('/', 'the root renders Bash(python3 -c */*) — any inline script with a slash'),
             ('/home/u/../../etc', 'a ".." silently renames the directory the caller named'),
         ],
     )

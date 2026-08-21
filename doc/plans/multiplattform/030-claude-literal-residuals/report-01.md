@@ -530,11 +530,13 @@ path for an unregistered target, and the Claude default for an absent `marshal.j
 F1–F30, R2-01–R2-15, R3-01–R3-10.
 
 **Bounded observations round 4 raised and did not treat as findings**, recorded so they are not
-lost: `protect-path` does not normalize its path argument, so `"$HOME/"` yields a double-slash rule,
-`"./creds"` yields rules that describe more ground than they cover, and `"/"` yields
-`Bash(python3 -c */*)`. The retired builder used the raw string identically, and the credentials
-caller passes one absolute path, so this is a pre-existing shape reachable only by CLI misuse.
-`_tilde_form` is path-lexical, so a symlink into the home directory renders absolute.
+lost: that `protect-path` did not normalize its path argument, so `"$HOME/"`, `"./creds"` and `"/"`
+each rendered a rule describing other ground than the caller named. Round 4 bounded them as CLI
+misuse of a pre-existing shape and moved on. **That bound did not hold**: round 6 read the same
+surface as a security control rather than a shape, and every one of those inputs is now a refusal —
+`"$HOME/"` and `"./creds"` as non-absolute, `"/"` as the filesystem root, alongside empty, blank,
+whitespace-bearing, `..`-bearing, control-character and delimiter-bearing paths. `_tilde_form` is
+path-lexical, so a symlink into the home directory renders absolute; that one stands.
 
 ### When the loop stopped, and on whose answer
 
@@ -575,15 +577,23 @@ the same as exhausted — see the residue.
 |---|---|---|
 | **F25** — D1 does not route through the `Runtime` op surface; `permission_common` imports `claude_runtime` directly, so the default set is Claude's whatever `runtime.target` says | (b) bounded | Behaviour is identical to `origin/main`, verified by reading its `permission_common`, which imported the same helpers the same way. The runtime registry holds `claude` and `opencode`; the build registry's third target has no `Runtime` at all. Closing it needs a new `Runtime` operation — which this plan's Out of scope forbids — or the `permission_common` restructure now registered in the inventory. Re-put to the verifier in the stopping pass and re-confirmed |
 | **F4-residue** — the Claude-shaped settings mapping crosses into `ensure_default_permissions` as an argument, which principles §1 forbids | (b) bounded | Pre-existing and verified so: `origin/main`'s `save_settings` already passed the same mapping into `claude_runtime._save_settings`. This adds one more site of an existing crossing, not a new kind. Closing it means restructuring every `permission_fix` subcommand. Re-put to the verifier in the stopping pass and re-confirmed |
-| **`protect-path` does not normalize its path argument** — `"$HOME/"` yields a double-slash rule, `"./creds"` an unanchored one, `"/"` yields `Bash(python3 -c */*)` | (b) bounded | All three **run**, not reasoned about. The retired builder used the raw string identically, so this is a pre-existing shape; the only shipped caller passes one absolute path, so it is reachable solely by CLI misuse. `_tilde_form` is path-lexical, so a symlink into home renders absolute |
+| **`protect-path` path normalization** — `"$HOME/"`, `"./creds"` and `"/"` each rendered a rule describing other ground than the caller named | ~~(b) bounded~~ → **closed** | Bounded here as CLI misuse of a pre-existing shape. Rounds 6 and 9 overturned that: a deny rule is a security control, so an input it cannot render faithfully is refused rather than rendered approximately. All three are refusals. What survives of the original observation is only that `_tilde_form` is path-lexical, so a symlink into home renders absolute |
 
 **What residue to assume remains.** The deliverables should be read as still carrying defects of the
 kind the last passes found: **false or imprecise sentences**, in prose written to explain a fix.
 That class did not decay across five passes — every round found at least one, including the closure
 pass, and twice the defect was inside a sentence a previous round had just rewritten. It is not
 claimed to be exhausted. What *is* claimed, and was tested by execution rather than reading, is that
-no behavioural defect is open: the last change to executing code was round 3's, and the two passes
-since found none.
+no behavioural defect was open **as of that pass** — the last change to executing code had been
+round 3's, and the two passes since found none.
+
+That claim did not survive the rounds the operator authorised next. Round 6 found a fail-open in the
+security command, round 9 a regression this run had itself introduced, and the review on the PR
+found four more, including one — `protect-path` accepting `/` and rendering `Bash(python3 -c */*)` — that every
+pass up to it had walked past. The honest reading of the stopping argument is therefore not that it
+was wrong to stop, but that "no behavioural defect is open" is a claim a verification loop cannot
+earn by not finding one. It is bounded by the lenses that ran, and the lenses that found these were
+the ones chosen *after* the loop said it was done.
 
 ### Post-loop: a meta-project leak the verification passes never looked for
 
@@ -637,9 +647,10 @@ file produced `status: success` with a non-zero `rules_added` and **zero rules o
 security control telling an operator their credentials were guarded by rules that reached nothing.
 The sibling `ensure_default_permissions`, added in the same commit, consumes that bool correctly:
 the change established the right pattern in one place and violated it in the one that mattered.
-It also found that an empty `--permissions` element rendered `Read(/**)` and
-`Bash(python3 -c **)` — a denial of every absolute read and every inline script — and that a path
-carrying `)` truncates its rule and frees the remainder as rule text.
+It also found that an empty `--permissions` element rendered `Read(./**)` and
+`Bash(python3 -c *.*)` — the second matching any inline script containing a dot, from an argument
+that named nothing — and that a path carrying `)` truncates its rule and frees the remainder as
+rule text.
 
 Every input class round 6 names was **executed**, not argued, on both the current and the retired
 implementation.
@@ -662,6 +673,48 @@ none gained**, and 41 collected items either side.
 Three land under budget. `_protect_path` is **409 lines around a single class**, and the campaign's
 own rule forbids splitting a class — the same shape that campaign accepted for four of its own
 modules. Recorded rather than forced.
+
+### Verification round 8 — 58/58 mutation-proven, and nine survivors
+
+Round 8's lens was test vacuity at scale: not the eighteen tests a hand sweep happens to cover, but
+**every test this run added or modified**, each one mutation-proven rather than read. The population
+was derived mechanically — the sorted set of `def test_*` names at `origin/main` diffed against the
+branch, per file — rather than taken from the diff hunks, which is how a moved test reads as a new
+one. 104 mutations, applied to a `$TMPDIR` copy with byte snapshots restored in a `finally`; the
+repository itself was never written to, and `git checkout`/`restore`/`stash` were never used.
+
+**Result: 58 of 58 kill. Zero vacuous. Zero unverified.** Every added or modified test failed
+against at least one mutation aimed at its stated concern. That is the answer to the question this
+round existed to ask, and it is a good one.
+
+It is not, however, the round's value. **Testing what the tests catch also enumerates what they do
+not**, and that half returned nine survivors — live code paths a mutation walks straight through.
+Four sit in code this run wrote:
+
+| Survivor | Why it matters |
+|---|---|
+| `discover_scripts` re-hardcoding `./.claude/skills` in place of the derived prefix | The exact residue this plan exists to delete, in the deliverable that deletes it. The test is *named* for the derivation, but the fixture runs on the Claude target, where the literal and the derivation agree by construction — it pinned the string, not the wiring |
+| `configurable_contract.resolve_step_doc_path`'s multi-root branch — three sub-behaviours | Round 9's own fix, shipped with no discriminating coverage. Its comment asserts an invariant with `extension_discovery` that nothing enforced |
+| `ensure_default_permissions` reporting `applied: True` on a failed write | The same fail-open round 6 closed in the protect-path sibling, one function over. Downstream, `defaults['applied'] or save_settings(...)` means a wrong `True` suppresses both the retry and the error |
+| `_cred_ensure_denied`'s whole `status != 'success'` branch | The `io_error` forwarding round 9 added: the runtime produces the code, and nothing checked it reaches the operator |
+
+The rest: `_ensure_credentials_dir_mode` untested end to end, `0x7F` absent from the control-character
+cases, `runtime_mount_prefix`'s highest-priority `[0]`, the `target` echo, and three
+`_scan_project_for_implementors` filters. All nine are now closed by tests, each written to fail
+against the mutation that found it.
+
+Round 8 also separated **vacuous** from **redundant**, which a less careful pass would have conflated.
+Four survivors are *equivalent mutants* — the cache-glob composition, the `normalize` default set, the
+empty-path guard, and an `os.path.normpath` call — and it proved the equivalence rather than assuming
+it. Three are properly characterised and stay. The fourth was a genuine finding of a different kind:
+`normpath` differs from `Path` only on `..`, and `..` is now refused upstream, so the call was dead —
+while its docstring still explained that `..` is *collapsed lexically*, contradicting the refusal
+added one function over. Dead code and a false sentence, removed together.
+
+And it named four tests whose **stated claim exceeds what they discriminate** — true assertions
+reached by a route other than the one the docstring implies. Two are closed by the new tests; the
+other two had their claims trimmed to what they actually establish, with the sibling that carries
+the weight named.
 
 ### Verification round 9 — dispositions
 
@@ -704,6 +757,66 @@ re-derived against the working tree, not the last commit.
 The lesson is not "remember the rule". It is that prose explaining a *fix* is the place this rule
 gets broken, because the natural way to explain a fix is to describe what was wrong.
 
+### The PR review — six findings the nine rounds walked past
+
+CodeRabbit reviewed the PR head and posted actionable comments on ten threads. Six were real, and
+the pattern across them is worth more than the individual fixes: **every one sits at a boundary
+between two things this run touched**, which is exactly where a pass scoped to one deliverable does
+not look.
+
+| Finding | Why nine rounds missed it |
+|---|---|
+| `protect-path` accepted `/` — rendering `Read(//**)` and `Bash(python3 -c */*)`, the second matching any inline script carrying a slash | Round 6 enumerated the *inputs the grammar cannot carry* and refused each. `/` carries nothing the grammar cannot render; it is the meaning of the result that is catastrophic. A different question than the one round 6 asked |
+| `extension_discovery` claimed a project step id only on an ext-point match, so a lower-priority root could supply a record whose file `configurable_contract` never resolves to | Round 9 found the two files disagreeing about *how* to resolve roots and fixed that. It did not then ask whether they agree about *which* root wins — the second asymmetry inside the pair it had just reconciled |
+| `_ensure_credentials_dir_mode` let `OSError` escape, replacing the TOON payload with a traceback and costing the caller the deny rules | The mode re-assertion is the *primary* boundary and was pre-existing; every pass read it as the part that already worked. That it runs before the runtime resolves, and so can take the defence-in-depth layer down with it, is a fact about ordering rather than about either piece |
+| Both settings-path selectors used `exists()`, so a directory at a candidate path loads as the empty skeleton and shadows a real file at the other | The selectors were pinned by tests written against files. Nothing asked what a non-file at those paths does |
+| `contract.md` omitted `io_error` from its error table and understated `protect-path`'s refusal set | Round 6 added the refusals and round 9 added `io_error`; each documented its own change where it made it, and neither re-read the file's own enumerations. A table is a claim about completeness, and adding an entry elsewhere silently falsifies it |
+| `tools-permission-fix/SKILL.md` called `--settings` "the active platform's settings file" directly below the ⚠️ saying every operation resolves to Claude's | Introduced by round 9's own fix: widening the warning made a sentence twelve lines below it false. The exact failure mode the report names as this run's characteristic residue |
+
+The seventh, a nitpick, was the operation-set duplication: adding `protect-path` meant editing the
+same six names in the argparse `choices`, both runtimes' `valid_ops`, and a test sweep. That is
+**this change's own debt** and matches a standing repository learning, so it is closed rather than
+deferred — `runtime_base.PERMISSION_FIX_OPERATIONS` publishes the set once and every site derives
+from it, with a non-vacuity guard on the sweep so a derived population that went empty could not
+pass trivially.
+
+Two were declined on the thread with reasoning rather than applied. Scoping the permission skills
+with `targets: [claude]` would contain the direct-binding operations by removing the
+platform-routed ones that already work correctly; the correct remedy — routing through the registry
+— is the open coupling a later plan in this epic draws. The fallback-layout lockstep check is the
+inventory's own recorded remedy candidate for a row that stays open.
+
+### A false sentence that survived nine rounds and a review
+
+Worth recording on its own, because it is the clearest instance of this run's characteristic residue
+and it was caught by neither the loop nor the reviewer.
+
+Round 6 reported that an empty `--permissions` element renders `Read(/**)` and `Bash(python3 -c **)`,
+"a denial of every absolute read and every inline script". The reviewer, reading the same surface,
+reported that `/` renders `Read(/**)`. Both statements were carried into code comments, a docstring,
+a test's reason string and this report — five places — and **neither is what the renderer produces**.
+Executed rather than read:
+
+| Input | Actually renders |
+|---|---|
+| `''` | `Read(./**)` … `Bash(python3 -c *.*)` |
+| `'   '` | `Read(   /**)` … `Bash(python3 -c *   *)` |
+| `'./creds'` | `Read(creds/**)` … `Bash(python3 -c *creds*)` |
+| `'/'` | `Read(//**)` … `Bash(python3 -c */*)` |
+
+The refusals were right; the reasons given for them were wrong. And the error was not conservative
+in a harmless direction — it named the *wrong rule as the dangerous one*. `Read(//**)` may deny
+everything or nothing depending on how the matcher treats `//`, which nothing here can determine.
+The rule that is unambiguously catastrophic is the distinctive-tail vector: `Bash(python3 -c */*)`
+matches any inline script carrying a slash, and `Bash(python3 -c *.*)` any inline script carrying a
+dot. A reader following the old comment would have hardened the wrong thing.
+
+What let it stand for nine rounds is that the sentence was *plausible* and its conclusion was
+*correct*, so every pass that re-read it agreed with the refusal and never re-derived the string.
+The discipline that caught it is the one already stated for dispositions and applied here to prose:
+**close by re-derivation, not by re-reading.** One `python -c` against the actual renderer, which
+takes seconds, would have caught it in round 6.
+
 ## Reviewer participation
 
 _Recorded at the merge gate, from the comment bodies on all three surfaces._
@@ -720,7 +833,13 @@ changed-path set carries R1 (`*.py`), R2 (`marketplace/**`) and R3 (`doc/plans/*
 
 | Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
 |---|---|---|---|
-| … | … | … | … |
+| `coderabbitai` | **Reviewed — changes requested in substance** | Yes | Two review submissions, 23 actionable comments over 10 inline threads, plus a `Merge Risk: 🟠 High` assessment naming the deny-all read rule, the priority resolution and the failure paths. Six findings were real and are fixed; one nitpick — the duplicated operation set — was this change's own debt and is closed; two were declined on the thread with reasoning. A third submission was cut short by the plan's hourly review limit |
+| `cuioss-review-bot` | **Reviewed — one finding, not reachable as stated** | No | PR Reviewer Guide: "No security concerns identified", one focus area — an unhandled `KeyError` on `settings["permissions"]["deny"]`. Not reachable: `_load_settings` seeds `allow`/`deny`/`ask` before returning. Probing the shape it pointed at *did* find a live defect — a non-object `permissions` value raises `TypeError` out of the loader instead of returning `invalid_settings` — which is fixed with four tests. Answered on the PR |
+| `sourcery-ai` | **Declined — size limit** | No | "your pull request is larger than the review limit of 150000 diff characters". `honors_skip_label: false`, so it was invited and refused on size rather than on the label. No findings, and none obtainable from this reviewer at this diff size |
+
+**M = 3, all three responded.** Two produced findings; the third's decline is a capability limit
+rather than an approval, and is recorded as such — a silent reviewer and a reviewer that says it
+cannot read the diff are different things, and only the second is evidence about the change.
 
 ## Cost
 
@@ -733,21 +852,107 @@ changed-path set carries R1 (`*.py`), R2 (`marketplace/**`) and R3 (`doc/plans/*
   tree under plan-marshall's own per-task billing boundary — a boundary this lane does not have. The
   two figures answer different questions and must not be put side by side.
 
-**What the run cost in verification effort, which is the figure that matters here.** Five
-verification passes ran: four general rounds and one targeted closure pass. They returned 30, 15,
-10, 5 and 2 findings — 62 in total, of which **two changed code behaviour** (the conditional write,
-and round 3's two boundary defects counted as one behavioural change each) and the rest were
-statements, guards, scope declaration, and this report. The mutation sweep ran four times, ending at
-18 mutations with none surviving.
+**What the run cost in verification effort, which is the figure that matters here.** Nine
+verification passes ran, plus an external review. The first five — four general rounds and a
+targeted closure pass — returned 30, 15, 10, 5 and 2 findings, 62 in total, of which two changed
+code behaviour; that phase's mutation sweep ran four times, ending at 18 mutations with none
+surviving.
+
+The four the operator authorised next were each given a **different lens**, and the return profile
+inverts: far fewer findings, far more of them behavioural. Round 5 (repository standards) found
+thirteen forbidden test docstrings and five meta-project leaks; round 6 (adversarial security) found
+the fail-open in the security command; round 8 (mutation-proven vacuity) ran 104 mutations, proved
+58 of 58 tests non-vacuous, and enumerated nine unguarded code paths; round 9 (cold read) found four
+blockers including a regression this run had introduced. The review then found six more.
+
+The comparison worth carrying: **62 findings from five same-lens passes changed code behaviour
+twice; roughly 30 from four different-lens passes and a review changed it more than a dozen times.**
+Rounds are not the unit of verification effort — lenses are.
 
 ## Contract check (Step 9)
 
-_pending_
+Each of the plan's five deliverables, checked against what the tree now holds rather than against
+what the run believes it did.
+
+| Deliverable | Contract | Held? |
+|---|---|---|
+| D1 — default permissions render in the runtime | No `Read(`/`Bash(`/`Edit(`/`Write(` construction in `permission_fix.py`'s default set; the rules reach the allow list through `ensure_default_permissions` | **Yes**, with a stated residue: `permission_common` binds `claude_runtime` by direct import, so this resolves to Claude whatever `runtime.target` says. Behaviour identical to `origin/main`; registered open in the inventory |
+| D2 — settings-path reads delegate | Neither `tools-permission-*` script composes `.claude` segments; both selectors live in `claude_runtime` | **Yes** |
+| D3 — credential deny rules render in the runtime | `_cred_ensure_denied.py` neither builds nor receives permission-grammar strings; Claude's written rules are semantically identical to before, pinned by test; a non-Claude runtime degrades to `no-op` | **Yes**, and pinned by `test_module_source_constructs_no_permission_dsl`, which asserts the module's own source carries no `Read(`, no `Bash(` and no `DENY_RULES` |
+| D4 — implementor scan routes through layout resolution | No segment-wise `.claude` construction in `_scan_project_for_implementors`; a test covers a non-default root list | **Yes**, and wider than the plan asked: root priority, first-root-wins across ext-points, absolute and `~`-anchored roots, a non-directory root, the `finalize-step-*` filter and per-root `OSError` tolerance are each pinned |
+| D5 — display and filter strings stop naming `.claude/` | The inventory scan's emitted runtime mount derives from the layout op | **Yes**, and the derivation is now *wired*, not merely equal: relocating the root moves the emitted mount |
+
+Two contract items are met by a route the plan did not anticipate, and both are recorded rather than
+smoothed over. D3 is delivered by extending an operation *enum value* (`protect-path`) rather than
+adding a `Runtime` operation, because the plan's Out of scope forbids the latter. And the shipped
+change touches ten files beyond the plan's Expected surface, classified **forced** or **adjacent** in
+§ Findings; the adjacent ones were reverted, then re-landed on the operator's decision.
 
 ## What have we learned (Step 9)
 
-_pending_
+**A verification loop cannot certify the absence of a defect class it has no lens for.** Nine rounds
+ran. Rounds 1–4 were scoped to the plan and returned prose findings; the loop's own stopping argument
+was that a fifth *general* round would not terminate, which was correct and also beside the point.
+What actually found defects afterwards was **changing the lens**: repository standards (round 5),
+adversarial security (6), blast radius (7), mutation-proven vacuity (8), cold read (9), and finally
+an external reviewer. Each of those found something every previous round had walked past, and the
+last of them found a fail-open in the security command the run had shipped. The generalisable form:
+*when a loop converges, the finding is that the lens is exhausted, not that the code is clean.*
+
+**Prose written to explain a fix is where the no-historical-prose rule breaks.** Not from
+forgetting it — the rule was under active discussion — but because the natural way to explain a fix
+is to describe what was wrong. The gate caught one instance in a sentence written *while fixing the
+previous instances*. Present-tense phrasing that survives the change ("this is the only branch that
+indexes `deny`, so it is the only one that can meet this state") costs nothing and does not decay.
+
+**Widening a warning falsifies the sentences below it.** Round 9's fix to the ⚠️ in
+`tools-permission-fix/SKILL.md` made a line twelve lines further down false, and the reviewer found
+it. A doc edit's blast radius is the document, not the paragraph.
+
+**Migrating one half of a symmetric pair is worse than migrating neither.** Routing
+`extension_discovery` through the declared skill roots while `configurable_contract` still built
+`.claude/skills` inline turned a silent miss on a non-Claude target into a runtime error. The pair
+then had a *second* asymmetry — which root wins — that the fix to the first did not think to ask
+about. When two call sites are documented as having to agree, the agreement is the thing to test.
+
+**"58/58 tests kill" and "the code is covered" are different claims.** Round 8 established the
+first, exhaustively and by mutation. The same run enumerated nine live code paths no test touches,
+four of them in code this run wrote. A green suite measures the tests that exist.
 
 ## Residue
 
-_pending_
+**Open couplings, registered rather than closed.** `permission_common` and `permission_fix` bind
+`claude_runtime` by direct import instead of routing through `platform_runtime._REGISTRY`, and the
+Claude settings-file *shape* crosses into `ensure_default_permissions` as a parameter, which
+[principles §1](../reference/principles.md) forbids. Both rows stay in the coupling inventory,
+un-drawn, for a later plan in this epic: closing them means restructuring every `permission_fix`
+subcommand, not changing a call site. The reviewer proposed `targets: [claude]` as a cheaper
+containment; it was declined on the thread, because these skills are mixed — their platform-routed
+operations already honour the target correctly, and scoping the component would remove the working
+half to contain the broken one.
+
+**One row was closed and deleted**: `configurable_contract.py`'s segment-wise `.claude/skills`
+construction, re-derived gone from the tree before removal, per the inventory's own closing rule.
+
+**`_tilde_form` is path-lexical**, so a directory reached through a symlink into the home directory
+renders in absolute form only. Both spellings are still written, so the protection holds; the tilde
+arm simply does not fire. Characterised, not closed.
+
+**The permission matcher's own behaviour is unverified and unverifiable here.** Every deny rule this
+change writes rests on assumptions about how Claude Code matches them — that `~` is expanded at match
+time, and that `*` behaves as assumed mid-command in a `Bash(...)` rule. Nothing in this repository
+can test that; the rules are pinned by their rendered bytes, which is a pin on *this* side of the
+boundary only. Both assumptions match the rules the retired implementation wrote, so the change
+preserves whatever was true before — but "preserved" is the whole claim, and it is worth an
+operator's eye.
+
+**One question for the operator, raised and not decided here:** `Grep` is not among the denied tools
+on the credentials directory, while `Read` and the `Bash` exfiltration vectors are. Whether it
+belongs there is a policy call about the tool surface rather than a defect in this change, so it is
+left open rather than answered unilaterally.
+
+**What residue to assume remains.** The false-or-imprecise-sentence class did not decay across nine
+rounds and a review — every pass found at least one, several inside sentences a previous pass had
+just rewritten. It is not claimed exhausted. What is claimed, and tested by execution rather than
+reading, is that every behavioural finding raised through the review is closed by a test written to
+fail against the mutation or input that found it.

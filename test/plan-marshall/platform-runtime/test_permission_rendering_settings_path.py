@@ -97,3 +97,48 @@ class TestProjectSettingsReadPath:
             'settings.local.json'
         )
         assert claude_runtime._claude_project_settings_path(str(tmp_path)).name == 'settings.json'
+
+
+class TestSettingsShapeIsMalformedToo:
+    """A file that parses but is the wrong SHAPE fails closed like a parse error."""
+
+    def _load(self, tmp_path: Path, payload: str) -> dict:
+        settings = tmp_path / 'settings.json'
+        settings.write_text(payload, encoding='utf-8')
+        return claude_runtime._load_settings(settings)
+
+    def test_a_non_object_permissions_value_is_an_error_not_a_traceback(
+        self, tmp_path: Path
+    ) -> None:
+        """Seeding the three lists into a string raised TypeError out of the loader.
+
+        Every caller branches on the ``error`` key, so a raise here reaches the
+        operator as a traceback instead of `invalid_settings`.
+        """
+        loaded = self._load(tmp_path, '{"permissions": "oops"}')
+        assert 'permissions must be an object' in loaded['error']
+
+    def test_a_non_object_root_is_an_error_too(self, tmp_path: Path) -> None:
+        """A JSON list is valid JSON and an invalid settings file."""
+        loaded = self._load(tmp_path, '["not", "settings"]')
+        assert 'must be an object' in loaded['error']
+
+    def test_the_operators_malformed_value_is_never_carried_forward(
+        self, tmp_path: Path
+    ) -> None:
+        """The error skeleton is empty, so a save can never write it back.
+
+        Replacing the bad value with an empty object in place would let a
+        subsequent write discard whatever the operator actually had.
+        """
+        loaded = self._load(tmp_path, '{"permissions": "oops", "other": "kept-on-disk"}')
+        assert loaded['permissions'] == {'allow': [], 'deny': [], 'ask': []}
+        assert 'other' not in loaded
+
+    def test_a_well_formed_file_missing_a_list_is_still_seeded(
+        self, tmp_path: Path
+    ) -> None:
+        """The shape guard must not reject the file it exists to normalize."""
+        loaded = self._load(tmp_path, '{"permissions": {"allow": ["Read(a)"]}}')
+        assert 'error' not in loaded
+        assert loaded['permissions'] == {'allow': ['Read(a)'], 'deny': [], 'ask': []}
