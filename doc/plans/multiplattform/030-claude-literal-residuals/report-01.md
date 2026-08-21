@@ -37,12 +37,12 @@ onto `main` before the PR and a rebase replaces every replayed commit's object i
 would cite a commit on no branch under review. That choice is why the rebase needed no citation
 remapping: there was no same-branch SHA anywhere to go stale.
 
-**What the rebase did and did not pick up.** The operator asked for it in order to fetch a
-test-restructuring PR (#1314, the module-budget campaign). **That PR had not merged**, so the rebase
-did not fetch it; what it fetched was three unrelated documentation commits in the `truthful-signals`
-and `review-apparatus` epics. The rebase was clean, and re-derived so: the intersection of #1314's
-281 changed files with this branch's is **empty**, and so is the intersection with the three commits
-actually taken. § Build gate records the gate re-run on the rebased tree.
+**What the rebase picked up.** The operator asked for it in order to fetch a test-restructuring PR
+(#1314, the module-budget campaign). At the first rebase that PR **had not merged**, so what came in
+was three unrelated documentation commits; it merged afterwards and a second rebase took it. Both
+were clean, and re-derived so: the intersection of #1314's 281 changed files with this branch's is
+**empty**. § Build gate records both gate runs, and the order-independence check the second one
+warranted.
 
 ### D1 — Default permissions render in the runtime
 
@@ -197,7 +197,7 @@ predated the round-1 fix commit, which is how a gate figure goes quietly stale.
 
 - quality-gate — `mypy … Success: no issues found in 416 source files`; `ruff … All checks passed!`;
   `SPDX-header check passed`; plugin-doctor `status: pass`, `total_issues: 0`.
-- test-compile — no issues found over 784 source files (one `no-any-return` in a new test was found
+- test-compile — no issues found over 935 source files (one `no-any-return` in a new test was found
   and fixed here; the narrower `quality-gate` + `module-tests` pair does **not** run this step, which
   is why the full `verify` was used).
 - module-tests — **21381 passed, 14 skipped**.
@@ -205,15 +205,33 @@ predated the round-1 fix commit, which is how a gate figure goes quietly stale.
 `git status --porcelain` was empty before each commit; no `uv.lock` churn reached a commit, and paths
 were staged explicitly rather than with `git add -A`.
 
-**Stale-base re-verification (§ Step 8 condition 2).** `git rev-list --count HEAD..origin/main` read
-**3** before the PR, so the base had advanced and the condition applied. Shape used: **rebased on the
-branch**, so the tested tree *is* the PR head and the PR's own CI verifies what actually lands.
-The rebase replayed 12 commits with no conflict; the gate was then re-run in full on that tree and
-is the run recorded above (quality-gate clean, test-compile clean over 784 files, 21381 passed / 14
-skipped). `git rev-list --count HEAD..origin/main` reads **0** after.
+**Stale-base re-verification (§ Step 8 condition 2), performed twice.** Shape used both times:
+**rebased on the branch**, so the tested tree *is* the PR head and the PR's own CI verifies what
+actually lands.
+
+| # | Count before | What the base had taken | Replayed | Gate on the merged tree |
+|---|---|---|---|---|
+| 1 | 3 | three unrelated documentation commits | 12 commits, no conflict | clean; test-compile over **784** files |
+| 2 | 1 | the module-budget campaign (#1314) — 281 test modules restructured | 13 commits, no conflict | clean; test-compile over **935** files |
+
+`git rev-list --count HEAD..origin/main` reads **0** after the second.
+
+**The second one is the one that could have failed, and is why the condition exists.** #1314 is a
+pure move of the test corpus onto class boundaries — no file it touches is a file this branch
+touches, so `mergeable_state` would have read `clean` either way, and this branch's own CI was green
+against a base that no longer existed. What a textual check cannot see is a registration collision:
+`conftest.load_script_module` registers under the script stem, and #1314's own record notes that
+collapsing distinct registrations onto a shared one cost an earlier plan 173 order-dependent
+failures. This branch's tests use that helper.
+
+So the merged tree was checked for exactly that, beyond the whole-suite run: the six affected test
+modules were run **serially in declaration order** and again **serially in reverse module order** —
+1937 passed both ways. The whole-suite figure is unchanged at **21381 passed / 14 skipped**, which is
+what a pure move predicts: the restructuring redistributed tests across many more files (784 → 935
+type-checked sources) without gaining or losing one.
 
 If `main` advances again before the merge gate, this is re-done rather than assumed — the count is
-re-read at the gate, and a non-zero count means another merge and another full gate run.
+re-read at the gate, and a non-zero count means another rebase and another full gate run.
 
 ### Mutation sweep — the new guards were shown to fail
 
