@@ -398,11 +398,21 @@ class TestPermissionFixProtectPath:
         ``valid_ops``, so a value dropped from both still fails here.
 
         Deriving it from ``PERMISSION_FIX_OPERATIONS`` instead would forfeit
-        exactly that: shrinking the published set would silently shrink this
-        sweep. But a literal alone goes stale the other way, missing an
-        operation added to the set. So the literal stays as the independent
-        oracle AND is asserted equal to the published tuple — a divergence in
-        either direction fails, rather than one of them passing quietly.
+        exactly that. This sweep's claim is *about the set*: that both runtimes
+        accept the same operations. Derive the population from the set and a
+        **removal** silently shrinks the claim — the sweep keeps passing while
+        covering less — and an **addition** silently widens it to an operation
+        nobody checked OpenCode handles. A non-vacuity guard catches only the
+        empty case, a third failure the equality check already covers.
+
+        So the literal stays as the independent oracle AND is asserted equal to
+        the published tuple: divergence in either direction fails loudly, and
+        "update both deliberately" is the intended cost.
+
+        The sibling in ``test_opencode_runtime.py`` derives from the published
+        set instead, with a non-vacuity guard, because it asserts a property of
+        *whatever* the set contains rather than a property of the set. Both
+        patterns are deliberate; which one fits depends on where the claim lives.
         """
         self._pin_scope_path(monkeypatch, tmp_path / 'settings.json')
         operations = ('normalize', 'add', 'remove', 'ensure', 'consolidate', 'protect-path')
