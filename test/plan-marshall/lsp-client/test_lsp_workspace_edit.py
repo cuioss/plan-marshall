@@ -11,6 +11,7 @@ fails the verdict, and a rollback restores the original bytes.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 import pytest
 from conftest import get_script_path
@@ -146,6 +147,89 @@ def test_apply_rolls_back_every_written_file_when_a_later_one_fails(tmp_path):
     assert raised.value.restore_error is None
     for name, text in originals_text.items():
         assert files[name].read_text() == text
+
+
+def test_a_write_that_fails_PART_WAY_restores_the_file_it_damaged(tmp_path):
+    """The failing file is restored too — it is the one the write already damaged.
+
+    The sibling test above covers a failure that writes nothing (a malformed
+    ``TextEdit``, caught in the transform). This one covers the opposite and far
+    more dangerous shape: the write itself fails **after** truncating the file —
+    ENOSPC, EIO, a full disk mid-refactor. The damaged file must be restored and
+    the rollback must not report success over a tree it left modified.
+
+    Pinned because the code once did exactly that: the failing path was dropped
+    from the restore set in the handler, so the one file that needed restoring
+    was the one that never got restored, ``restore_error`` stayed ``None``, and
+    the payload published ``rolled_back: true`` over a truncated file.
+    """
+    originals_text = {'a.py': 'foo = 1\n', 'b.py': 'bar = 2\n', 'c.py': 'baz = 3\n'}
+    files = {}
+    for name, text in originals_text.items():
+        files[name] = tmp_path / name
+        files[name].write_text(text)
+    edit = {'documentChanges': [
+        {'textDocument': {'uri': we.path_to_uri(files[name])}, 'edits': [_text_edit(0, 0, 0, 3, 'XXX')]}
+        for name in originals_text
+    ]}
+
+    real_write = Path.write_text
+    state = {'failed': False}
+
+    def truncate_then_fail(self, data, *args, **kwargs):
+        if self.name == 'b.py' and not state['failed']:
+            state['failed'] = True
+            real_write(self, '', encoding='utf-8')  # what a partial write leaves behind
+            raise OSError(28, 'No space left on device')
+        return real_write(self, data, *args, **kwargs)
+
+    Path.write_text = truncate_then_fail
+    try:
+        with pytest.raises(we.WorkspaceApplyError) as raised:
+            we.apply_workspace_edit(edit)
+    finally:
+        Path.write_text = real_write
+
+    assert raised.value.path == str(files['b.py'].resolve())
+    assert raised.value.restore_error is None
+    for name, text in originals_text.items():
+        assert files[name].read_text() == text, f'{name} was not restored'
+
+
+def test_a_rollback_that_cannot_restore_the_damaged_file_says_so(tmp_path):
+    """When the restore itself keeps failing, the tree IS modified — and it reports it.
+
+    The honest counterpart to the test above. ``restore_error`` is what turns
+    ``rolled_back`` false in the payload, so a caller can tell a clean rollback
+    from a tree left partly edited. A swallowed error here is the false-clean
+    this whole write path exists to prevent.
+    """
+    files = {}
+    for name, text in (('a.py', 'foo = 1\n'), ('b.py', 'bar = 2\n')):
+        files[name] = tmp_path / name
+        files[name].write_text(text)
+    edit = {'documentChanges': [
+        {'textDocument': {'uri': we.path_to_uri(files[name])}, 'edits': [_text_edit(0, 0, 0, 3, 'XXX')]}
+        for name in files
+    ]}
+
+    real_write = Path.write_text
+
+    def always_fail_on_b(self, data, *args, **kwargs):
+        if self.name == 'b.py':
+            real_write(self, '', encoding='utf-8')
+            raise OSError(28, 'No space left on device')
+        return real_write(self, data, *args, **kwargs)
+
+    Path.write_text = always_fail_on_b
+    try:
+        with pytest.raises(we.WorkspaceApplyError) as raised:
+            we.apply_workspace_edit(edit)
+    finally:
+        Path.write_text = real_write
+
+    assert raised.value.restore_error is not None  # never swallowed
+    assert files['a.py'].read_text() == 'foo = 1\n'  # the restorable one still is
 
 
 # -- diagnostics counting + verdict ------------------------------------------

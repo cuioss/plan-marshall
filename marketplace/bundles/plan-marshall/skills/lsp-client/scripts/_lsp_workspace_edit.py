@@ -195,7 +195,14 @@ def apply_workspace_edit(workspace_edit: dict[str, Any]) -> tuple[list[dict[str,
             originals[path] = original
             file_path.write_text(new_text, encoding='utf-8')
         except Exception as exc:  # noqa: BLE001 — re-raised as WorkspaceApplyError below
-            originals.pop(path, None)
+            # ⛔ The failing path stays IN ``originals``. It is recorded before
+            # the write, so a write that failed part-way — ENOSPC, EIO — has
+            # already truncated or partly rewritten it, and it is the one file
+            # that most needs restoring. Discarding it here left exactly that
+            # file modified while ``restore_error`` stayed ``None``, i.e. the
+            # payload reported a clean rollback over a damaged tree. When the
+            # read or the transform failed instead, nothing was written and the
+            # entry is simply absent, so there is nothing to discard either.
             restore_error: BaseException | None = None
             try:
                 restore_files(originals)

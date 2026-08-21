@@ -6,8 +6,9 @@ requires-python = ">=3.11"
 dependencies = [
     "sample-core>=1.0.0",
     "sample-api>=1.0.0",
-    # `toolbox/` is a discovered module (it has a tests/ directory) that declares
-    # no [project] name, so it publishes no distribution and this entry can only
-    # be the unrelated PyPI package of that name. It must NOT become an edge.
+    # `toolbox/` is a discovered module (it has a tests/ directory) that names
+    # itself in no descriptor at all — no [project], no [tool.poetry], no
+    # setup.cfg — so it publishes no distribution and this entry can only be the
+    # unrelated PyPI package of that name. It must NOT become an edge.
     "toolbox>=1.0.0",
 ]

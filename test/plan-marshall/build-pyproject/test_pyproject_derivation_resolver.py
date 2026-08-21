@@ -5,13 +5,18 @@
 A Python project publishes no ``groupId:artifactId`` coordinate, so the Maven
 join could never match one: before this resolver existed, every Python project's
 internal-dependency set was structurally empty while every graph verb reported
-success. This resolver joins on what Python actually publishes — the PEP 621
-``[project] name`` — and these tests pin that join.
+success. This resolver joins on what Python actually publishes — the distribution name,
+which discovery fills onto ``metadata.name`` from whichever descriptor form
+named the project (PEP 621 ``[project] name``, Poetry ``[tool.poetry] name``, or
+``setup.cfg`` ``[metadata] name``) — and these tests pin that join. The
+sibling ``test_pyproject_descriptor_forms.py`` pins the other two forms; this
+module's own fixture is PEP 621 throughout.
 
 The whole ``multi-module-python`` fixture is driven through the REAL Python
 discovery path, not a hand-built sample of it, so the module dicts under test are
 the ones production code actually produces. No subprocess runs: the Python
-discoverer's dependency extraction is pure ``pyproject.toml`` parsing.
+discoverer reads the descriptors directly — TOML for ``pyproject.toml``,
+``configparser`` for ``setup.cfg``.
 
 The fixture is shaped to make three failure modes falsifiable rather than merely
 absent:
@@ -19,9 +24,9 @@ absent:
 1. ``sample_cli`` spells its dependencies as ``Sample_API`` and ``sample.core``
    — PEP 503-equivalent to the published ``sample-api`` / ``sample-core`` but
    textually different, so a raw string join loses both edges.
-2. ``toolbox`` is a discovered module that declares no ``[project] name``, and
-   the fixture root depends on the same string. A resolver that fell back to the
-   directory name would fabricate that edge.
+2. ``toolbox`` is a discovered module that names itself in **no** descriptor at
+   all, and the fixture root depends on the same string. A resolver that fell
+   back to the directory name would fabricate that edge.
 3. ``sample_cli``'s ``sample.core`` entry is a ``dev`` optional-dependency, so a
    join that dropped the dev scope would lose it.
 """
@@ -128,7 +133,7 @@ def test_dev_scope_dependency_is_an_edge():
 
 
 def test_module_without_a_project_name_is_never_an_edge_target():
-    """``toolbox`` declares no ``[project] name``, so it publishes no distribution.
+    """``toolbox`` names itself in no descriptor, so it publishes no distribution.
 
     The fixture root depends on the string ``toolbox``, which can therefore only
     be the unrelated PyPI package of that name. Falling back to the directory

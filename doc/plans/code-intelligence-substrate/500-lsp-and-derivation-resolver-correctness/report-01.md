@@ -185,10 +185,9 @@ this repository it yields 177 directories. ⚠ **That is 69 of the 70 bundle-ski
 directories holding `.py` files, not all 70** — an earlier revision of this sentence said "every
 `scripts/` directory the plan names", which is false.
 `marketplace/bundles/plan-marshall/skills/platform-runtime/scripts` is excluded because it carries an
-`__init__.py`, so by the structural rule above it *is* a package and needs no search-path entry. Two
-real bare imports nonetheless target it (`from claude_runtime import …` in
-`tools-permission-doctor/scripts/permission_common.py`, `from platform_runtime import _make_runtime`
-in `script-shared/scripts/marketplace_paths.py`). **Bounded:** both importers are inside the
+`__init__.py`, so by the structural rule above it *is* a package and needs no search-path entry. **Three** real bare imports nonetheless target it — `from claude_runtime import …` in
+`tools-permission-doctor/scripts/permission_common.py:26` **and** `permission_doctor.py:27`, and
+`from platform_runtime import _make_runtime` in `script-shared/scripts/marketplace_paths.py:214`. **Bounded:** both importers are inside the
 `plan-marshall` bundle, so neither a cross-bundle reference nor a module edge can be affected — the
 **72** / **10** result is provably unchanged, and that was confirmed by measurement, not argued.
 
@@ -770,6 +769,36 @@ claim about *what the code does* is not swept until the **code that does it** ha
 2–5 swept prose from prose. Round 6 is the first to reach a production docstring in a file the branch
 never opened.
 
+### Round 7 — plan verifier (the method changed, and it found the run's only false-clean)
+
+Round 6 diagnosed *why* the loop was widening: each round's sweep had been aimed at the previous
+round's **claim**. So round 7 was dispatched with a different method — start from the **behaviour**
+each deliverable changed, execute it, and work outward to every statement about it, in whatever file
+that statement lives. ⭐ **The method change is what found A2/B5**, and nothing else would have: five
+consecutive rounds had swept the *statements* about rollback across eight sites without ever running
+the path they describe.
+
+**Nine findings — eight condition-A and one behavioural. All nine closed here, B5 by a fix and a
+guard rather than a bound.**
+
+| # | Finding | Disposition |
+|---|---|---|
+| A2 / B5 | ⛔ **A mid-write failure left a damaged file on disk and reported a clean rollback.** `apply_workspace_edit`'s handler ran `originals.pop(path, None)` — dropping the failing file's pre-edit content from the restore set *exactly and only* when a write had already truncated it. Every other failure shape never records an original, so the `pop` fired **only** in the case where it did harm. Reproduced: a three-file edit whose middle write truncates then raises ENOSPC left `b.py` **empty**, with `restore_error: None` and a payload saying `rolled_back: true`. That is a **false clean** — the single defect class this entire plan exists to remove — inside the code D2 shipped, and it falsified eight statements across three production docstrings, two skill contracts and the user page | **fixed** — the failing path stays in `originals`, so the file the write damaged is the one that gets restored. Two guards pin it: a transient failure now restores all three files, and a persistent one reports `restore_error` instead of claiming success. Red-checked — reinstating the `pop` fails both, and the eight statements are true again without editing any of them |
+| A1 | `_edit_failure`'s docstring, inside round 5's own A1 fix: "every caller passes its own `rolled_back`, and the **three** failure reasons". Executed: `unsupported_resource_operation` passes **no** `rolled_back` and the key is absent from its payload, and the same sentence then enumerates **four** reasons | **fixed** — the four are listed, each with the state it leaves and what it passes |
+| A3 | `corpus-language-server-protocol.adoc:92` — "before that precision work **lands**", the exact phrase round 3's V7 judged false and removed from the corpus `SKILL.md`. Round 4's W1 edited this very line and left it | **fixed** |
+| A4 | `doc/concepts/code-intelligence.adoc:61` — "a Python distribution publishes a single PEP 621 `[project] name`". **Seventh** site of that family; the branch edited this file twice (`:286`, `:308`) and left `:61` | **fixed** |
+| A5 | `test_pyproject_derivation_resolver.py` — the test module of the resolver D4 changed, false at four places: the join described as PEP-621-only, "dependency extraction is pure `pyproject.toml` parsing" (it is `configparser` for `setup.cfg`), and twice that `toolbox` "declares no `[project] name`" where the true premise is that it names itself in **no** descriptor | **fixed** at all four, and in the fixture comment that states the same premise |
+| A6 | § Residue — "this branch's **55** changed files", the **third** recurrence of one unstamped count (50 → 55 → 59). Round 5's A4 fixed it and named the cause; `bb41ae2` re-derived it for § Collateral check and again did not sweep this sibling | **fixed** — and stamped with the commit, so the next drift is visible rather than silent. The intersection itself re-verified **empty** |
+| A7 | § Left open's B1 mutation figure, "58 passed", stale by the very growth B2's row already records | **fixed** — restated so the *greenness* is the finding and the count is stamped, since it rises whenever the directory gains a guard |
+| A8 | § D3 and § Left open both said **two** bare imports target `platform-runtime/scripts`. There are **three** — `permission_doctor.py:27` was unnamed. The bound is unaffected | **fixed** at both |
+
+⚠ **What round 7 changes about this run's story.** Every previous round found statements. This one
+found a **defect**, and it found it by executing the code the statements describe. The eight false
+statements A2 produced needed no editing once the code was fixed — they had been describing the
+*intended* behaviour all along, and the code was the thing that disagreed. ⛔ That inverts the
+sweep's assumption: rounds 2–6 all asked "which statement is stale?", and the answer here was "none
+of them — the code is". A run that only ever sweeps prose against prose cannot reach that answer.
+
 ## Reviewer participation
 
 **Not done — no PR exists.** The run has not reached Step 7: it is still inside Step 6's verification
@@ -821,7 +850,7 @@ rather than trusted from the draft:
 | Files in #1314 | 309 |
 | …under `marketplace/**` or `doc/user/**` | **0** |
 | …in this branch's six changed test directories | **0** |
-| **Intersection with this branch's 55 changed files** | **empty** |
+| **Intersection with this branch's changed files** (**59** at `d893d51`) | **empty** |
 
 The draft-time breakdown, which the landed form did not change:
 
@@ -876,16 +905,19 @@ correction cites no SHA either.
 ⚠ **This list is PROVISIONAL while the loop runs.** The operator extended the budget past round 5, so
 each survivor below is re-put to the verifier in each further round rather than settled here.
 
-⛔ **These are condition-B survivors — behavioural findings the run argues need no fix, each with a
-bound and the evidence for it.** Nothing condition A governs is in this list: every false statement
-the rounds so far found is fixed. Round 3's O2–O4 stand as recorded there; round 5 added B1–B3.
+⛔ **These are condition-B entries.** Two of the five are **closed** rather than bounded — B4 by a
+guard, B5 by a fix — and are kept here because the reasoning that closed them is the record of why a
+bound was refused. The remaining three are genuine survivors, each with a bound and its evidence.
+Nothing condition A governs is in this list: every false statement the rounds so far found is fixed.
+Round 3's O2–O4 stand as recorded there; round 5 added B1–B3, round 6 added B4, round 7 added B5.
 
 | # | Survivor | Bound, with its evidence |
 |---|---|---|
-| B1 | **The restore-failure branch is pinned by no test.** Mutating `_lsp_workspace_edit.py`'s `except OSError as restore_exc: restore_error = restore_exc` to `except OSError: pass` — reverting exactly what D2/G4 requires — leaves **58 passed / 0 failed** across `test/plan-marshall/lsp-client/`. The only assertion touching it is the happy path (`test_lsp_workspace_edit.py:146`, `restore_error is None`) | The behaviour is **correct as written** — traced `apply_workspace_edit` → `WorkspaceApplyError(path, exc, restore_error)` → `rolled_back=exc.restore_error is None` → `payload['restore_error']` — and four documentation sites now describe it. The exposure is a *silent regression later*, not a defect now. Provoking a real restore failure needs a mid-rollback write failure, which no fixture in this tree can create without patching the filesystem layer. ⚠ This is the one vacuity gap in the branch and it is disclosed rather than hidden |
+| B1 | **The restore-failure branch is pinned by no test.** Mutating `_lsp_workspace_edit.py`'s `except OSError as restore_exc: restore_error = restore_exc` to `except OSError: pass` — reverting exactly what D2/G4 requires — leaves the whole of `test/plan-marshall/lsp-client/` green (**61 passed** at this commit; the figure rises as the directory gains guards, and was 58 when first recorded — it is the *greenness* that is the finding, not the count). The only assertion touching it is the happy path (`test_lsp_workspace_edit.py:146`, `restore_error is None`) | The behaviour is **correct as written** — traced `apply_workspace_edit` → `WorkspaceApplyError(path, exc, restore_error)` → `rolled_back=exc.restore_error is None` → `payload['restore_error']` — and four documentation sites now describe it. The exposure is a *silent regression later*, not a defect now. Provoking a real restore failure needs a mid-rollback write failure, which no fixture in this tree can create without patching the filesystem layer. ⚠ This is the one vacuity gap in the branch and it is disclosed rather than hidden |
 | B2 | **Two rollback call sites sit outside the exception boundary** — `restore_files(originals)` at `lsp_client.py:383` (`diagnostics_unavailable`, phase `after`) and `:403` (`diagnostics_worsened`). An `OSError` there escapes `_run_edit` to `safe_main`, so the verb returns a bare `status: error` with the edit still on disk and no `restore_error` | It **cannot produce a false clean**: the return is an error, never a success or a `rolled_back: true`. It requires a write failure *during* rollback. And G4's actual scope — the apply loop — **is** guarded, so the deliverable's clause is met; this is the adjacent case the clause does not name. ⚠ Round 6 sharpened it: when this was recorded the FIRST of the two sites was on a branch **no test executed at all** — an unconditional `raise` at its head left 58/58 green. That is no longer true; the guard added for B4 drives exactly that branch, so the site is now exercised even though its `OSError` path still is not. ⛔ The line numbers above were stale in an earlier revision (`:373`/`:391`, which a later commit's 15 added lines moved) and are re-derived here |
 | B4 | **`phase` and `unverified_path` were asserted by no test** — deleting both kwargs from both production returns left **58 passed / 0 failed**, while **four** documentation sites describe them, all four added by `b0d746c`. The commit that closed round 5 opened a gap of its own, in the one field a task leaf's reading of the payload turns on | **CLOSED by a test rather than bounded.** Two guards now pin both routes through `diagnostics_unavailable`: `phase: before` with `rolled_back: false` and **no** `restore_error`, and `phase: after` with `rolled_back: true` and the file restored. Red-checked — stripping the two kwargs fails both guards, and the real code passes them. Closing it cost less than the disclosure would have |
-| B3 | **One search-path directory is missed.** `platform-runtime/scripts` carries an `__init__.py`, so the structural rule treats it as a package and omits it, yet two real bare imports target it | **Provably cannot affect this deliverable's result**: both importers are inside the `plan-marshall` bundle, so no cross-bundle reference and no module edge can change. Confirmed by measurement, not by argument — the **72** / **10** figures are identical with and without it. Recorded at § D3 alongside the sentence it falsified (A9) |
+| B5 | **A mid-write failure left the damaged file modified while the payload reported a clean rollback** — `originals.pop(path, None)` discarded the failing file's pre-edit content in the one case where a write had already truncated it. Found by round 7, by *executing* the path rather than reading the eight statements about it | **CLOSED by a fix, not bounded.** The failing path stays in the restore set. Two guards pin both outcomes — a transient failure restores every file, a persistent one reports `restore_error` rather than claiming success — and both go red against the reinstated `pop`. ⛔ This was the run's only **false clean**, and condition B never applied to it: a defect that reports success over a damaged tree cannot be left open under any bound |
+| B3 | **One search-path directory is missed.** `platform-runtime/scripts` carries an `__init__.py`, so the structural rule treats it as a package and omits it, yet **three** real bare imports target it (re-derived; an earlier revision said two and named two of the three) | **Provably cannot affect this deliverable's result**: both importers are inside the `plan-marshall` bundle, so no cross-bundle reference and no module edge can change. Confirmed by measurement, not by argument — the **72** / **10** figures are identical with and without it. Recorded at § D3 alongside the sentence it falsified (A9) |
 
 Round 3's observations O1 and O5 are **not** in this list: O1 was overtaken by round 5's A8 (the site
 count was wrong) and remains a handoff to `560-documentation-surface-truthfulness` rather than a

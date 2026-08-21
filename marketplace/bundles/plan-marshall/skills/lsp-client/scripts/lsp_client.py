@@ -274,14 +274,21 @@ def _run_lookup(
 def _edit_failure(language: str, reason: str, footprint: list[dict[str, Any]], **extra: Any) -> dict[str, Any]:
     """Build the write path's failure payload.
 
-    ⛔ This helper does **not** decide what is on disk — every caller passes its
-    own ``rolled_back``, and the three failure reasons reach it in different
-    states. ``unsupported_resource_operation`` and a phase-``before``
-    ``diagnostics_unavailable`` never wrote anything; a phase-``after``
-    ``diagnostics_unavailable`` and ``diagnostics_worsened`` wrote and restored;
-    ``apply_failed`` restored unless the restore itself failed, which is the one
-    case that leaves the tree partly edited and is reported as
-    ``rolled_back=False`` plus ``restore_error``.
+    ⛔ This helper does **not** decide what is on disk. Four reasons reach it,
+    each in a different state, and each caller passes whatever ``rolled_back``
+    its own state warrants:
+
+    * ``unsupported_resource_operation`` — refused before anything was read, so
+      it passes **no** ``rolled_back`` at all and the key is absent from the
+      payload. Nothing was written and nothing was rolled back;
+    * ``diagnostics_unavailable`` at phase ``before`` — the baseline verdict was
+      missing, detected before the first write: ``rolled_back=False`` meaning
+      *there was nothing to roll back*;
+    * ``diagnostics_unavailable`` at phase ``after`` and ``diagnostics_worsened``
+      — written, then restored: ``rolled_back=True``;
+    * ``apply_failed`` — restored, unless the restore itself failed, which is the
+      one case that leaves the tree partly edited and is reported as
+      ``rolled_back=False`` **plus** ``restore_error``.
     """
     payload: dict[str, Any] = {
         'status': 'failed',
