@@ -416,25 +416,42 @@ def _read_setup_cfg(descriptor: Path, metadata: dict, dependencies: list[str]) -
     install_requires`` is a newline-separated requirement list, read at scope
     ``runtime`` through the same PEP 508 name extraction the TOML paths use.
 
-    ⛔ **Interpolation is disabled, and the reads are inside the guard.** A
-    default ``ConfigParser`` applies ``BasicInterpolation``, under which a bare
-    ``%`` in a value — ``description = 100% pure python``, a percent-encoded URL
-    in ``install_requires`` — raises from ``get()`` rather than from ``read()``.
-    With the reads outside the guard that exception escaped
-    ``discover_python_modules`` and took **every** module with it, including the
-    ones whose descriptors parsed perfectly: legal, ordinary input silently
-    costing the whole capability, which is the exact failure this discoverer's
-    narrowed ``_load_toml`` catch exists to prevent. ``setup.cfg`` values here
-    are plain metadata and never templates, so nothing wants interpolation.
+    ⛔ **Every read is inside the guard**, because ``BasicInterpolation`` raises
+    from ``get()`` — not from ``read()``. A bare ``%`` in a value
+    (``description = 100% pure python``, a percent-encoded URL in
+    ``install_requires``) therefore escaped a guard that wrapped only ``read()``,
+    propagated out of ``discover_python_modules``, and took **every** module with
+    it — including the ones whose descriptors parsed perfectly. One module's
+    percent sign cost the whole capability, which is the exact failure this
+    discoverer's narrowed ``_load_toml`` catch exists to prevent.
+
+    ⚠ **Interpolation stays ON, deliberately, and the choice is not free.**
+    setuptools reads ``setup.cfg`` with ``BasicInterpolation`` too: it resolves
+    ``name = acme-%(version)s`` to ``acme-1.0`` and ``50%%`` to ``50%``, and it
+    **rejects** ``100% pure python`` exactly as this does. Disabling
+    interpolation would let that last value through — but at the price of
+    publishing ``acme-%(version)s`` where the ecosystem publishes ``acme-1.0``,
+    in the very field edge derivation joins on, silently making the module an
+    unreachable edge target. Agreeing with setuptools on **all three** matters
+    more than reading one of them: a descriptor setuptools refuses is one this
+    module is right to skip, and skipping it now costs that module alone.
     """
-    parser = configparser.ConfigParser(interpolation=None)
+    parser = configparser.ConfigParser()
+    read_metadata: dict[str, str] = {}
     try:
         parser.read(descriptor, encoding='utf-8')
 
+        # ⛔ Collected into a LOCAL and committed only once every read has
+        # succeeded. Writing straight into ``metadata`` published whatever was
+        # read before the failure — a module whose ``name`` parsed and whose
+        # ``description`` raised kept the name while losing its dependencies,
+        # so it became a valid edge TARGET that declares no outbound edges,
+        # under a warning saying it "publishes no name or dependencies". The
+        # partial state contradicted the message announcing it.
         for key, field in (('name', 'name'), ('version', 'version'), ('description', 'description')):
             value = parser.get('metadata', key, fallback='').strip()
             if value:
-                metadata[field] = value
+                read_metadata[field] = value
 
         requires = parser.get('options', 'install_requires', fallback='')
     except (configparser.Error, OSError, UnicodeDecodeError) as exc:
@@ -445,6 +462,7 @@ def _read_setup_cfg(descriptor: Path, metadata: dict, dependencies: list[str]) -
         )
         return
 
+    metadata.update(read_metadata)
     for line in requires.splitlines():
         name = requirement_name(line)
         if name:

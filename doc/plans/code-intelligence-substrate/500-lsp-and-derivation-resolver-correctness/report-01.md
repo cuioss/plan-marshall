@@ -958,6 +958,37 @@ stop** — a loop that ends after a round of fixes always ends with its last fix
 10's own recommendation was to fix and stop rather than open another round; the alternative is not
 "verified everything" but "one more round of fixes, itself unverified".
 
+### Round 11 — targeted re-check of round 10's own fixes
+
+The operator asked for one further round, **scoped to `91629f3` and nothing wider**, to close the gap
+§ Independent re-check names: round 10's fixes had been verified by nobody. **Eight condition-A
+findings and one condition-B, all fixed here.** Two are in that commit's own new code.
+
+| # | Finding | Disposition |
+|---|---|---|
+| V2 / V3 | ⭐ ⛔ **The `setup.cfg` fix was right about the defect and wrong about the remedy.** It disabled interpolation, justified by "these values are plain metadata and **never templates**". Executed against setuptools 79.0.1: setuptools reads `setup.cfg` **with** `BasicInterpolation`, resolving `name = acme-%(version)s` to `acme-1.0` and `50%%` to `50%`, and rejecting `100% pure python` exactly as the guarded parser now does. So the premise was false, and the choice silently published `acme-%(version)s` where the ecosystem publishes `acme-1.0` — **in the field edge derivation joins on**, making the module an unreachable edge target | **fixed by taking the narrower remedy the verifier named.** Interpolation stays **on**; only the reads move inside the guard. That closes the whole-tree abort completely and agrees with setuptools on all three inputs. A descriptor setuptools refuses is one this discoverer is right to skip — and skipping it now costs that module alone. New guard pins the agreement on the join key |
+| — | **Found while taking that remedy, by running it:** with interpolation on, a `name` that parses and a `description` that raises left the module publishing a **name but no dependencies** — a valid edge target declaring no outbound edges, under a warning saying it "publishes no name or dependencies". The partial state contradicted the message announcing it | **fixed** — the reads collect into a local and commit only on full success, so the descriptor is genuinely all-or-nothing and the warning is true |
+| V1 | The **third** site of round 10's own A-9 correction: `tools-corpus-language-server/SKILL.md:142` still called the tail "discriminating". Round 10's commit said "fixed at both sites" — there are three, and the missed one is the **operator-facing** document | **fixed.** ⛔ The run's signature defect, recurring inside the commit whose message names it |
+| V4 | § How the loop stopped's per-round series gave **eight** values for nine rounds and three disagreed with the report's own round sections | **fixed** — re-derived per round from each section's own summary, and the conclusion re-stated honestly: the series drifts 10 → 7 before rebounding, so "flat" over-stated it |
+| V5 | § Contract check quoted a live commit count — verbatim the defect round 10's A-2 fixed one section earlier | **fixed** — no live count is quoted |
+| V6 | § Left open still called itself PROVISIONAL "while the loop runs", promising a re-check the same document says did not happen | **fixed** |
+| V7 | "Twelve findings are genuinely open, and **ALL** of them are listed here" — round 3's O2–O4 and three un-re-derivable checks sit outside it | **fixed** — the table is scoped to open *behavioural* findings and says what it excludes |
+| V8 | `uri_to_path`'s stated reason for catching `RuntimeError` is true on CPython 3.12 and **false on 3.13**, where `Path.resolve` no longer raises on a symlink loop | **fixed** — the catch is kept, the reason is now stated as version-bound |
+
+⛔ **Round 11 confirmed the primary fix sound** — the whole-tree abort is gone across 18 executed
+input families, the guards are non-vacuous **in both directions**, the `except` clause covers
+everything the moved reads can raise, and it re-derived the gate independently at **21439 passed / 14
+skipped**. It also independently re-derived the 18-shared-tails figure, the `extras_require` claim,
+the CRLF comment, the B2 call-site description, and the 62/28 collateral.
+
+⚠ **One environment hazard worth recording, out of scope but material.** Round 11's first
+`./pw verify` reported **2 failed** — both the round-7 rollback guards — from a **stale `.pyc`** whose
+recorded source mtime *and* size matched the current file, so Python trusted it. The cached bytecode
+held the pre-round-7 `apply_workspace_edit`, i.e. exactly the defect those guards pin. Clearing
+`__pycache__` gave 21439 passed. **A green local gate was, for one file, evidence about code that is
+not on the branch** — and it could equally have hidden a real failure. CI builds from a clean
+checkout and is unaffected.
+
 ### How the loop stopped
 
 **Exit: `budget-exhausted, non-converging`.** Both tokens are load-bearing and neither is a
@@ -975,10 +1006,23 @@ statements and one condition-B finding (`B-1`) that no bound could cover. **All 
 `91629f3`.** Everything condition A forbids leaving open is closed; `B-1` was fixed rather than
 bounded because the cost of leaving it was the *entire* discovery result, silently.
 
-**Were the late rounds' findings narrower, or merely fewer?** ⛔ **Neither — and this is the finding
-the exit qualifier records.** Per round, condition-A findings ran 20, 10, 9, 9, 8, 8, 9, 9: flat, not
-decaying. Round 10's own summary is quoted rather than softened: *"the loop has not converged and it
-will not converge by running more rounds, because the finding rate is not decaying."*
+**Were the late rounds' findings narrower, or merely fewer?** ⛔ **Neither, and the count alone does
+not settle it.** Condition-A findings per verifier round, re-derived from each round section's own
+summary sentence rather than from memory:
+
+| Round | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| condition-A findings | 19 | 10 | 8 | 9 | 8 | 8 | 7 | 7 | 9 | 8 |
+
+⚠ **An earlier revision of this row gave eight values for nine rounds and three of them disagreed
+with the report's own round sections** — the defect this report has recorded more often than any
+other, committed in the sentence summarising it. The corrected series **does** drift downward from 10
+to 7 before rebounding to 9 and 8, so "flat" over-states it: the honest reading is that it never
+approaches zero, and that **rounds 7 onward kept finding defects in the code** while the earlier
+rounds found none. Round 10's own summary is what the qualifier rests on, quoted rather than
+softened: *"the loop has not converged and it will not converge by running more rounds, because the
+finding rate is not decaying."* Round 11 — scoped to one commit — then found eight more, two of them
+in that commit's own new code.
 
 **What each round's findings were made of is the real story**, and it changes twice:
 
@@ -1045,7 +1089,7 @@ narrated as complete.
 | 1 Skills loaded | **Done** — named in § Skills loaded, loaded by bundle source path because the plugin is not installed in a cloud session |
 | 2 Branch | **Done** — `claude/lsp-derivation-resolver-correctness-7ncdpz`, the **harness-assigned** form, kept as the contract requires and recorded as such; present on `origin` |
 | 3 Plan directory | **Done** — `doc/plans/code-intelligence-substrate/500-lsp-and-derivation-resolver-correctness/` with `plan.md`, `proposals.md` and this report |
-| 4 Implement | **Done** — six deliverables, 33 commits, every one carrying the trailer |
+| 4 Implement | **Done** — six deliverables; every commit carries the trailer (re-derived: all of them, at `91629f3`). ⛔ No live commit count is quoted: it moves with every further commit, which is the defect round 10's A-2 fixed one section above and this row then re-committed |
 | 4 Per-commit gate | **Done** — every commit touching `*.py` was preceded by a clean `./pw quality-gate` (`ruff … All checks passed!`, `mypy … Success`, `SPDX-header check passed`) |
 | 4 Pushed | **Done** — `git status -sb` reports no `ahead`; the branch was pushed after every commit, not once at PR time |
 | 5 Build gate | **Done** — § Build gate carries the git-derived `*.py` verdict and one stamped row per commit that changed production Python, the last governing |
@@ -1174,15 +1218,18 @@ correction cites no SHA either.
 
 ### Left open
 
-⚠ **This list is PROVISIONAL while the loop runs.** The operator extended the budget past round 5, so
-each survivor below is re-put to the verifier in each further round rather than settled here.
+⛔ **The loop has stopped, so this list is final rather than provisional** — and what that cost is
+stated rather than implied: rounds 9 and 10's bounded items were **not** re-verified after the fixes
+that followed them, and round 11 re-executed only the bounds it could reach. An earlier revision of
+this preamble promised that each survivor was "re-put to the verifier in each further round", which
+was true while the loop ran and stopped being true when it ended.
 
 ⛔ **These are condition-B entries. Most of the *numbered* ones are CLOSED rather than bounded** — B1
 by round 7's fix (unnoticed at the time), B4 by a guard, B5 by a fix, and round 8's F4 by a real
 change to the frame reader. They are kept here because the reasoning that closed each one is the
 record of why a bound was refused.
 
-⛔ **Twelve findings are genuinely open, and ALL of them are listed here.** An earlier revision said
+⛔ **Twelve behavioural findings are genuinely open, and all twelve are listed here.** ⚠ They are not the whole residue: round 3's O2–O4 stand as recorded in their own section (O4 carries its own bound), and § How the loop stopped names three checks that could not be re-derived at all. "Everything open" would be false; "every open **behavioural** finding" is what this table is. An earlier revision said
 "B2 and B3 are the only genuine survivors" while rounds 9 and 10 had left ten more open with bounds
 elsewhere in this report — so the section a reader consults for *what remains* did not carry most of
 what remained. That is round 10's A-4, and it is the last instance of this report's most persistent

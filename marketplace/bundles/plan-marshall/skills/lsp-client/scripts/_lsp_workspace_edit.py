@@ -94,10 +94,13 @@ def uri_to_path(uri: str) -> str:
     A path that cannot be resolved falls back to the unresolved form: the apply
     loop then fails on it and reports which path, which is a legible failure
     rather than a swallowed one. ⛔ ``RuntimeError`` is caught alongside
-    ``OSError`` because a **symlink loop** raises it rather than an ``OSError``,
-    and that is precisely "the filesystem refuses the walk" — the case this
-    fallback exists for. Catching only ``OSError`` let it escape from a helper
-    whose contract says it degrades.
+    ``OSError`` because on **CPython 3.12** a symlink loop raises it rather than
+    an ``OSError``, and that is precisely "the filesystem refuses the walk" —
+    the case this fallback exists for. ⚠ The *reason* is interpreter-version
+    bound while the catch is not: 3.13 reimplemented ``Path.resolve`` on
+    ``os.path.realpath``, which returns the path instead of raising. These are
+    bundle scripts run by whatever ``python3`` a consumer project has, so both
+    behaviours are live and the catch is kept for the one that raises.
     """
     if not uri.startswith('file:'):
         return uri

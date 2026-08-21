@@ -142,20 +142,19 @@ def test_setup_cfg_metadata_is_published():
     assert metadata['default']['description'].startswith('Fixture root')
 
 
-def test_a_PERCENT_SIGN_in_setup_cfg_does_not_abort_the_whole_discovery(tmp_path):
-    """A `%` is legal in a `setup.cfg` value, and it once cost every module in the tree.
+def test_a_PERCENT_SIGN_in_one_setup_cfg_costs_only_THAT_module(tmp_path):
+    """One module's percent sign must not erase the tree.
 
-    `ConfigParser` applies `BasicInterpolation` by default, under which a bare
-    `%` raises from `get()` — not from `read()`. With the reads outside the
-    guard, `description = 100% pure python` in ONE module's descriptor escaped
-    `discover_python_modules` and took the whole result with it, including the
-    modules whose descriptors parsed perfectly. No malformed input, no
-    filesystem failure, no server: ordinary text in a metadata field, and the
-    capability answered nothing at all.
+    `BasicInterpolation` raises from `get()`, not from `read()`. With the reads
+    outside the guard that wraps `read()`, `description = 100% pure python` in
+    ONE module escaped `discover_python_modules` and took every module with it —
+    including the ones whose descriptors parsed perfectly.
 
-    Asserted over a MULTI-module tree, because the defect's signature is that
-    the innocent siblings vanish too — a single-module fixture would pass while
-    the whole-tree case still failed.
+    The claim is deliberately about the SIBLINGS, not about the offending value.
+    setuptools rejects that descriptor too (it interpolates `setup.cfg` exactly
+    as this does), so refusing the module is the correct answer; refusing the
+    *whole tree* for it was not. A single-module fixture would pass while the
+    whole-tree case still failed, which is why this one has two.
     """
     for name, description in (('core_lib', 'A library'), ('app', '100% pure python')):
         module = tmp_path / name
@@ -168,30 +167,36 @@ def test_a_PERCENT_SIGN_in_setup_cfg_does_not_abort_the_whole_discovery(tmp_path
 
     modules = {m['name']: m for m in discover_python_modules(str(tmp_path))}
 
-    assert set(modules) >= {'core_lib', 'app'}, 'a percent sign in one module erased the others'
-    assert modules['app']['metadata']['description'] == '100% pure python', 'the value was interpolated'
-    assert modules['app']['dependencies'] == ['requests:runtime']
+    assert set(modules) >= {'core_lib', 'app'}, 'the percent sign erased the innocent siblings'
     assert modules['core_lib']['metadata']['name'] == 'pct-core_lib'
+    assert modules['core_lib']['dependencies'] == ['requests:runtime']
+    # The offending module is admitted but publishes nothing — the descriptor is
+    # one setuptools refuses, so there is no name to publish and no edge to draw.
+    assert modules['app']['metadata'].get('name') is None
+    assert modules['app']['dependencies'] == []
 
 
-def test_a_percent_encoded_requirement_url_is_read_verbatim(tmp_path):
-    """The same interpolation trap, reached through `install_requires` instead.
+def test_setup_cfg_interpolation_MATCHES_setuptools(tmp_path):
+    """The name field is what edge derivation joins on, so it must agree.
 
-    A direct-reference URL carries percent-encoding routinely, so this is the
-    shape the defect would most likely have been met in the wild.
+    setuptools reads `setup.cfg` through `BasicInterpolation`. Turning
+    interpolation off here would read `100% pure python` happily — but would
+    then publish `acme-%(version)s` where the ecosystem publishes `acme-1.0`,
+    making the module an unreachable edge target for a name nothing else uses.
+    Agreeing on the resolved value is worth more than reading the value
+    setuptools itself rejects.
     """
     module = tmp_path / 'pkg'
     (module / 'tests').mkdir(parents=True)
     (module / 'setup.cfg').write_text(
-        '[metadata]\nname = url-pkg\n\n[options]\ninstall_requires =\n'
-        '    demo @ https://example.invalid/a%20b/demo-1.0.tar.gz\n',
+        '[metadata]\nversion = 1.0\nname = acme-%(version)s\ndescription = 50%% off\n',
         encoding='utf-8',
     )
 
     modules = {m['name']: m for m in discover_python_modules(str(tmp_path))}
 
-    assert 'pkg' in modules
-    assert modules['pkg']['dependencies'] == ['demo:runtime']
+    assert modules['pkg']['metadata']['name'] == 'acme-1.0', 'the join key disagrees with setuptools'
+    assert modules['pkg']['metadata']['description'] == '50% off'
 
 
 def test_a_setup_py_only_module_still_publishes_no_name(tmp_path):

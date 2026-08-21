@@ -139,8 +139,12 @@ then its sub-documents, for a line that actually carries the target.
 edges are written as `bundle:skill[:script]` in the citing line — a `path` edge appears as a
 relative path, an `import` edge as a bare module name. Matching on the notation alone would mark
 every `path` and `import` edge unverified regardless of whether its site was correct, so a site is
-confirmed when its line carries **either** the full notation **or** the target's discriminating
-final segment (the script name for a three-part notation, the skill name for a two-part one).
+confirmed when its line carries **either** the full notation **or** the target's final segment (the
+script name for a three-part notation, the skill name for a two-part one). ⚠ That tail is **not**
+generally discriminating — measured on this corpus, 18 tails are shared by more than one component
+(`extension` by four, `plan-marshall-plugin` by eleven) — so a tail-only match confirms that the
+cited line mentions *a* component of that name, not necessarily this one. That is why the ranking
+below exists rather than a bare match.
 
 Candidates are **ranked**, not taken first-come: a line carrying the full
 notation outranks one carrying only the tail segment, because the tail alone is
