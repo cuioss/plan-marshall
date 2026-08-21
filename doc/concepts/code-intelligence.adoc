@@ -305,7 +305,7 @@ Finally, the seam derives edges only for module sets that Tier 0 discovered. A r
 * xref:extension-architecture.adoc[Concepts › Extension Architecture] — the plumbing seam these extension points plug into, and the four-axis split they complete.
 * xref:build-management.adoc[Concepts › Build Management] — the `ext-point-build` surface whose `discover_modules()` output is Tier 0, and therefore the map every resolver reads.
 * link:../../marketplace/bundles/plan-marshall/skills/build-maven/SKILL.md[`build-maven/SKILL.md`] — the Axis-B coordinate join, re-homed from `manage-architecture` onto the seam, and the resolver that covers Gradle too.
-* link:../../marketplace/bundles/plan-marshall/skills/build-pyproject/SKILL.md[`build-pyproject/SKILL.md`] — the Axis-B PEP 621 distribution-name join.
+* link:../../marketplace/bundles/plan-marshall/skills/build-pyproject/SKILL.md[`build-pyproject/SKILL.md`] — the Axis-B Python distribution-name join.
 * link:../../marketplace/bundles/plan-marshall/skills/build-npm/SKILL.md[`build-npm/SKILL.md`] — the Axis-B `package.json` package-name join, workspace members included.
 * xref:../user/dependency-intelligence.adoc[User Guide › Dependency Intelligence] — the operator-facing side of the graph family: what each ecosystem derives with no configuration, and how to read an empty answer.
 * link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md[`client-api.md`] — the `graph` / `path` / `neighbors` / `impact` response contracts that carry `resolvers[]` and `resolver_count`, plus the `search` contract with its `match_count` / `files_scanned` / `unreadable[]` fields and every edge case.

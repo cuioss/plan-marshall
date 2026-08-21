@@ -155,6 +155,14 @@ def test_diagnose_reports_unknown_when_the_server_never_publishes(tmp_path):
 
 
 def test_edit_fails_closed_when_the_server_never_publishes(tmp_path):
+    """The BASELINE verdict is missing, so the verb stops before writing anything.
+
+    ``rolled_back`` is ``False`` here because there was nothing to roll back —
+    NOT because a rollback failed. That distinction is what ``phase`` carries,
+    and a leaf that reads the flag without it concludes the tree is damaged when
+    no byte was written. Asserted rather than assumed, because this is the
+    payload a pull-diagnostics server returns on *every* call.
+    """
     target = _module(tmp_path, 'm.py')
     config = {'rename_edit': _rename_edit(target), 'files': {}}
     session = _session(tmp_path, config, timeout=1.0)
@@ -166,7 +174,35 @@ def test_edit_fails_closed_when_the_server_never_publishes(tmp_path):
     assert result['status'] == 'failed'
     assert result['reason'] == REASON_UNAVAILABLE
     assert result['applied'] is False
+    assert result['phase'] == 'before'
+    assert result['rolled_back'] is False
+    assert result['unverified_path'] == str(target)
+    assert 'restore_error' not in result  # the flag's OTHER meaning, absent here
     assert target.read_text() == 'foo = 1\n'
+
+
+def test_a_missing_post_edit_verdict_rolls_back_and_says_so(tmp_path):
+    """The BASELINE arrives and the post-change verdict does not.
+
+    The opposite route to the one above, through the same reason code: the edit
+    WAS applied and then restored, so ``rolled_back`` is ``True``. Both routes
+    are pinned because the two are indistinguishable on ``reason`` alone, and
+    the documented reading of ``rolled_back`` turns entirely on which one ran.
+    """
+    target = _module(tmp_path, 'm.py')
+    config = {'rename_edit': _rename_edit(target), 'files': {'m.py': {'open': []}}}
+    session = _session(tmp_path, config, timeout=1.0)
+    try:
+        result = client._run_edit(session, 'python', str(target), 0, 0, 'bar')
+    finally:
+        session.close()
+
+    assert result['status'] == 'failed'
+    assert result['reason'] == REASON_UNAVAILABLE
+    assert result['phase'] == 'after'
+    assert result['rolled_back'] is True
+    assert result['unverified_path'] == str(target)
+    assert target.read_text() == 'foo = 1\n'  # restored, not left edited
 
 
 # =============================================================================

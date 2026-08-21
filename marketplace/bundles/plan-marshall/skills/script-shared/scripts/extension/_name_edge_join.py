@@ -4,9 +4,11 @@
 
 Maven and Gradle publish a ``groupId:artifactId`` coordinate pair, so their edge
 derivation joins on that pair. Python and npm publish no such pair: a Python
-distribution is identified by its PEP 621 ``[project] name`` and an npm package
-by its ``package.json`` ``name``, and both ecosystems name their dependencies by
-that single string. The join those ecosystems need is therefore keyed on ONE
+distribution is identified by its distribution name — declared as PEP 621
+``[project] name``, Poetry ``[tool.poetry] name`` or ``setup.cfg``
+``[metadata] name``, all of which discovery normalises onto one field — and an
+npm package by its ``package.json`` ``name``, and both ecosystems name their
+dependencies by that single string. The join those ecosystems need is therefore keyed on ONE
 name, not on a coordinate pair — which is what this module owns.
 
 The mechanics are identical across the two ecosystems and only the KEY differs
