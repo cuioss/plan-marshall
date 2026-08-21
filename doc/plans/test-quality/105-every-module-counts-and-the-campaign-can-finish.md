@@ -126,12 +126,26 @@ it reports.
    cites, so the exemption is a decision a reader can find and disagree with rather than a silent
    special case in the analyzer.
    The ceiling is **500 lines**, and it is a decision rather than a derivation — record it as one.
+   ⛔ **The ceiling is measured on the CLASS, not on the module, and all three modules are kept.**
+   That distinction is the whole of the exemption's arithmetic and it is stated because getting it
+   backwards silently drops one of the three:
+
+   | Module | Module lines | Its one class | Exempt? |
+   |---|---:|---:|---|
+   | `plan-retrospective/test_analyze_logs_dispatch_boundary_context_load_columns.py` | 541 | **495** | yes |
+   | `manage-lessons/test_list_stalled.py` | 466 | **424** | yes |
+   | `manage-lessons/test_restore_from_plan.py` | 465 | **422** | yes |
+
+   A module measured on its own lines would exclude the first at 541, which is **not** the intent: the
+   module exceeds its class only by the header, imports and a banner, and none of those is content a
+   split could redistribute. The class is the unit a split would have to divide, so the class is the
+   unit the ceiling governs.
    ⛔ **The exemption must be narrow, and the narrowness is the whole safety property.** It applies
    only where the module is *one* class: a 900-line module holding two 450-line classes is an ordinary
    split and must stay flagged. Verify that with a fixture for each shape before shipping.
-   *Done when:* the three modules are unchanged on disk; the rule no longer flags them; a module of
-   two under-ceiling classes and a module of one over-ceiling class are both still flagged, each pinned
-   by a test; and the standard states the ceiling with its reasoning.
+   *Done when:* **all three** modules are unchanged on disk and none is flagged; a module of two
+   under-ceiling classes and a module of one over-ceiling class are both still flagged, each pinned by
+   a test; and the standard states the ceiling, that it is measured on the class, and the reasoning.
 
 3. **D3 — Make the budget rule see every module in the tree it governs.**
    `analyze_test_module_line_budget` (`marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py`)
