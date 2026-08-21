@@ -16,7 +16,13 @@ The HARD acceptance contract these tests pin:
 3. The four corpus-relational analyzers return byte-identical output whether
    driven via the shared corpus context or their standalone entry point.
 4. The analyze-path dispatch gates the two opt-in clusters
-   (``script_call_drift`` / ``argument_naming``) on ``active_rules``.
+   (``script_call_drift`` / ``argument_naming``) on ``active_rules``, and reaches
+   ``analyze_shim_marker`` — the edit-time surface the rule catalogue says it
+   serves.
+5. A rule that derives a population publishes its size in ``rule_summaries``,
+   from the same derivation the findings came from, and on a CLEAN run — the
+   only state a passing gate is ever in. A rule that derives none omits the key
+   rather than reporting a zero.
 """
 
 from __future__ import annotations
@@ -55,6 +61,10 @@ RuleRunner = _runner_mod.RuleRunner
 _dep_index = __import__('_dep_index')
 AstCache = _dep_index.AstCache
 
+_ashm_runner = _load('_analyze_shim_marker.py', '_ashm_runner_test')
+_atdw_runner = _load(
+    '_analyze_thinking_directive_in_workflow_docs.py', '_atdw_runner_test'
+)
 _apmt = _load('_analyze_provides_method_table.py', '_apmt_runner_test')
 _alc = _load('_analyze_literal_count.py', '_alc_runner_test')
 _armc = _load('_analyze_resolver_matrix_coverage.py', '_armc_runner_test')
@@ -274,3 +284,135 @@ def test_ast_cache_parses_each_file_once():
 
     assert second is first
     assert cache.parse_count == count_after_first
+
+
+# =============================================================================
+# Examined-population publication
+# =============================================================================
+
+# The rules that derive a population and can report its size on a CLEAN run.
+# All three take a ``*_with_population`` entry point on the runner, so the figure
+# comes from the same derivation the findings did.
+POPULATION_PUBLISHING_LABELS = [
+    'analyze_thinking_directive_in_workflow_docs',
+    'analyze_shim_marker',
+    # A clean tree is the only state a passing gate is ever in, so a rule whose
+    # coverage figures ride on its FINDINGS publishes nothing exactly when it
+    # matters. This rule carried the figures per-finding only, while two
+    # reference documents claimed a clean sweep states what it could not check.
+    'canonical-enum-choices-drift',
+]
+
+
+def _real_tree_summaries():
+    runner = RuleRunner(CorpusContext.build(MARKETPLACE_ROOT))
+    _issues, summaries = runner.run_quality_gate(
+        scope_dirs=[],
+        scoped=_identity,
+        suppressed=_identity,
+        scoped_manage_invocation=_no_scoped_manage_invocation,
+    )
+    return {s['rule']: s for s in summaries}
+
+
+def test_population_publishing_rules_report_their_size_on_a_clean_tree():
+    """Over the REAL tree — clean for every one of them — the examined size is published.
+
+    The clean case is the one that matters: ``details.population_size`` rides on
+    a FINDING, so before this the size appeared nowhere on a passing gate, and a
+    rule that examined nothing was indistinguishable from one that examined the
+    whole tree and found it clean. Asserted with ``findings == 0`` alongside, so
+    the test cannot be satisfied by a tree that produced findings.
+    """
+    summaries = _real_tree_summaries()
+
+    for label in POPULATION_PUBLISHING_LABELS:
+        assert summaries[label]['findings'] == 0, f'{label} is not clean on the real tree'
+        assert summaries[label]['population_size'] > 0, (
+            f'{label} reported no examined population on a clean run'
+        )
+
+
+def test_population_size_is_omitted_for_rules_that_do_not_derive_one():
+    """An absent figure is absent, never a zero.
+
+    Writing ``population_size: 0`` for a rule that does not derive a population
+    would be the defect this field exists to remove, one surface over: a reader
+    cannot tell "examined nothing" from "does not report".
+    """
+    summaries = _real_tree_summaries()
+
+    non_publishing = set(summaries) - set(POPULATION_PUBLISHING_LABELS)
+
+    assert non_publishing, 'expected the gate to run rules that publish no population'
+    assert all('population_size' not in summaries[label] for label in non_publishing)
+
+
+def test_published_population_matches_the_analyzer_derivation():
+    """The published figure IS the rule's own derivation, not a re-derived one.
+
+    A second walk to produce the number is a second chance to disagree with the
+    one the findings came from.
+    """
+    summaries = _real_tree_summaries()
+    _shim_findings, shim_population = _ashm_runner.analyze_shim_marker_with_population(
+        MARKETPLACE_ROOT
+    )
+    _td_findings, td_population = (
+        _atdw_runner.analyze_thinking_directive_in_workflow_docs_with_population(
+            MARKETPLACE_ROOT
+        )
+    )
+
+    assert summaries['analyze_shim_marker']['population_size'] == shim_population
+    assert (
+        summaries['analyze_thinking_directive_in_workflow_docs']['population_size']
+        == td_population
+    )
+
+
+def test_with_population_entry_points_agree_with_the_plain_ones():
+    """The plain entry point returns exactly the with-population findings.
+
+    Pins that the delegation did not fork the two into separate code paths.
+    """
+    shim_findings, _ = _ashm_runner.analyze_shim_marker_with_population(MARKETPLACE_ROOT)
+    td_findings, _ = (
+        _atdw_runner.analyze_thinking_directive_in_workflow_docs_with_population(
+            MARKETPLACE_ROOT
+        )
+    )
+
+    assert _ashm_runner.analyze_shim_marker(MARKETPLACE_ROOT) == shim_findings
+    assert (
+        _atdw_runner.analyze_thinking_directive_in_workflow_docs(MARKETPLACE_ROOT)
+        == td_findings
+    )
+
+
+# =============================================================================
+# analyze-pass reachability
+# =============================================================================
+
+
+def test_shim_marker_rule_is_reachable_from_the_analyze_pass(tmp_path):
+    """``analyze_shim_marker`` runs in the analyze pass, as the catalogue states.
+
+    It was emitted only from ``run_quality_gate`` while
+    ``references/rule-catalog.md`` § Discovery approach claimed both passes —
+    so the edit-time surface the rule was built to serve never ran it.
+    """
+    bundles = _clean_bundles(tmp_path)
+    skill_scripts = bundles / 'qg-clean' / 'skills' / 'noop-skill' / 'scripts'
+    skill_scripts.mkdir(parents=True)
+    (skill_scripts / 'shim_mod.py').write_text(
+        'def read_state(data):\n'
+        '    # tolerate a pre-migration key shape written by an older writer\n'
+        "    return data.get('old_key')\n",
+        encoding='utf-8',
+    )
+    runner = RuleRunner(CorpusContext.build(bundles))
+
+    issues = runner.run_analyze_marketplace_rules(active_rules=frozenset())
+
+    assert [i for i in issues if i.get('rule_id') == _ashm_runner.RULE_ID]

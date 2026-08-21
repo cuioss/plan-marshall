@@ -764,11 +764,14 @@ def emit_dispatch_failure_work_log(
 #   - ``audit-plan-id``  — consumed by THIS executor before the target script's
 #                          argparse ever runs, so it appears in no node's help.
 #   - ``plan-id`` /
-#     ``project-dir``    — declared on many ROOT parsers and honoured on every
-#                          subcommand by argparse's parent-flag propagation, but
-#                          rendered only in the root's help. The ancestor union
-#                          already covers the root-declared case; the allowlist
-#                          is the guarantee for the executor-injected one.
+#     ``project-dir``    — declared on many ROOT parsers but rendered only in the
+#                          root's help, so a leaf-only flag set would call them
+#                          unknown. The ancestor union covers the root-declared
+#                          case; the allowlist is the guarantee for the
+#                          executor-injected one. The union is deliberate
+#                          OVER-APPROXIMATION, NOT argparse propagation:
+#                          argparse does not carry a root flag past the verb —
+#                          such a flag belongs BEFORE the subcommand.
 #
 # The arity values are a LAST-RESORT fallback, consulted only for a flag the
 # derived surface has no arity for: the same structural invisibility that puts a

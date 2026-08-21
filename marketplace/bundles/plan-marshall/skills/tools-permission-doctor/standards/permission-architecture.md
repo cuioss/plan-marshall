@@ -65,7 +65,6 @@ runtime.
 
 ## Universal Access Pattern
 
-As of 2025-10-27:
 - `Read(//~/git/**)` provides universal git access (covers all repos)
 - All skills available globally (marketplace skills)
 - WebFetch requires explicit domain permissions (see web-security-standards skill)

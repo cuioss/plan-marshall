@@ -996,10 +996,13 @@ def test_missing_required_flag_is_rejected_before_any_spawn():
 
 
 def test_root_declared_flag_is_accepted_on_a_subcommand():
-    """argparse honours a root flag on every subcommand; so must the check.
+    """A root-declared flag is accepted by this CHECK, by deliberate widening.
 
-    Without the ancestor union this is the classic false rejection: the flag is
-    rendered only in the ROOT help, so a leaf-only flag set calls it unknown.
+    Not because argparse accepts it after the verb — it does not; the subparser
+    owns everything from the verb onward. The ancestor union exists to avoid the
+    classic false rejection: the flag is rendered only in the ROOT help, so a
+    leaf-only flag set calls it unknown. Placement is judged elsewhere, by
+    ``ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED``.
     """
     surfaces = {
         _SPAWN_NOTATION: _surface_entry({'read': _node()}, root_flags=['project-dir'])
@@ -1206,8 +1209,10 @@ def test_unregistered_verb_is_still_rejected_without_a_help_token():
 def test_executor_injected_flags_are_never_rejected():
     """``--plan-id`` / ``--project-dir`` are accepted even on an empty flag set.
 
-    Both are honoured through argparse's parent-flag propagation or injected by
-    the executor, and either way can be absent from the node's rendered help.
+    Both are either declared on a root parser or injected by the executor, and
+    either way can be absent from the node's rendered help. (Not "propagated by
+    argparse" — argparse does not carry a root flag past the verb; the accept-set
+    widens deliberately so a leaf-only set cannot reject the convention.)
     Rejecting them would refuse the worktree-binding convention the whole
     codebase dispatches with.
     """

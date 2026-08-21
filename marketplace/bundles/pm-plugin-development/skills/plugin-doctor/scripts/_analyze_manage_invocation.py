@@ -736,13 +736,19 @@ def _ancestor_union_flags(tree: _ScriptTree, chain: list[str]) -> set[str]:
     - ``parents=[common_parser]`` copies a flag's action into the child parser;
       most argparse versions DO re-render these in the child's ``--help``, but a
       flag added to the ROOT parser before subparser dispatch (e.g. a top-level
-      ``--plan-id`` / ``--project-dir``) is honored on every subcommand yet
-      rendered ONLY in the root ``--help`` options block.
+      ``--plan-id`` / ``--project-dir``) is rendered ONLY in the root ``--help``
+      options block, so the leaf's own ``--help`` does not name it.
 
     The per-leaf validation therefore mis-flags root-declared and parent-only
     flags as unknown — the 106-false-positive failure this union fixes. Walking
-    the resolved chain and unioning each prefix node's ``flags`` set restores
-    argparse's actual acceptance semantics. The union is read-side only — the
+    the resolved chain and unioning each prefix node's ``flags`` set is
+    deliberate OVER-APPROXIMATION, and it is NOT a claim about argparse's
+    acceptance semantics: argparse does not honour a root-declared flag after the
+    verb — the subparser owns everything from the verb onward and rejects it.
+    The union exists so this rule cannot manufacture an unknown-flag finding out
+    of a scope question, which is the false-positive direction. WHERE such a flag
+    belongs is a separate question, answered by
+    ``ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED``. The union is read-side only — the
     cached tree is never mutated.
     """
     union: set[str] = set(tree.root.flags)
@@ -987,8 +993,10 @@ def _analyze_one_invocation(
 
     leaf = node
     # A flag is KNOWN if it is declared on the resolved leaf, on ANY ancestor
-    # along the resolution chain (root parser included — argparse propagates
-    # parent / root flags to every subcommand), or in the universal allowlist
+    # along the resolution chain (root parser included — deliberate
+    # over-approximation, NOT a claim that argparse accepts a root flag after
+    # the verb; it does not, and placement is judged by
+    # ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED), or in the universal allowlist
     # (executor-injected flags that appear in no node's ``--help``). Validating
     # against the leaf's own ``flags`` set alone mis-flags parent-inherited and
     # executor-injected flags as unknown — the 106-false-positive failure this

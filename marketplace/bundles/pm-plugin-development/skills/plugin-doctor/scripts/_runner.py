@@ -6,16 +6,21 @@ The runner builds the file/AST corpus ONCE — a shared parse-once
 :class:`AstCache` — and dispatches the marketplace-wide rules through one
 place.
 
-Byte-identical contract
+Emission-order contract
 -----------------------
 The emitted findings, their ORDER, the per-rule ``_scoped`` / ``_suppressed``
-wrapping, and every ``rule_summaries`` label are preserved byte-for-byte. The
-runner owns ordered per-command dispatch tables that preserve the canonical
-emission sequences exactly. The descriptor ``scope`` field conceptually
-partitions the corpus-relational analyzers (which can read the shared
-:class:`AstCache`) from the file-local ones, but the runner does NOT reorder
-the emitted findings: the shared corpus is the single-pass substrate (AST
-parsing happens at most once per file), while emission order is preserved.
+wrapping, and every ``rule_summaries`` label are preserved exactly. The runner
+owns ordered per-command dispatch tables that reproduce the canonical emission
+sequences. The descriptor ``scope`` field conceptually partitions the
+corpus-relational analyzers (which can read the shared :class:`AstCache`) from
+the file-local ones, but the runner does NOT reorder the emitted findings: the
+shared corpus is the single-pass substrate (AST parsing happens at most once
+per file), while emission order is preserved.
+
+A rule summary is a label plus a finding count, and — for a rule that derives
+and publishes one — an ``population_size``. The extra key is additive and
+appears only where the rule supplies it, so an absent figure is never read as a
+zero; the ORDER and the LABEL set are what this contract fixes.
 
 Wrapping injection
 ------------------
@@ -45,7 +50,10 @@ from _analyze_bash_chain_shapes_in_skills import analyze_bash_chain_shapes_in_sk
 from _analyze_bash_fence_inline_code_exemption import (
     analyze_bash_fence_inline_code_exemption,
 )
-from _analyze_canonical_enum_drift import analyze_canonical_enum_drift
+from _analyze_canonical_enum_drift import (
+    analyze_canonical_enum_drift,
+    analyze_canonical_enum_drift_with_population,
+)
 from _analyze_declared_vs_disk import analyze_declared_vs_disk
 from _analyze_fail_closed_gate_reads import analyze_fail_closed_gate_reads
 from _analyze_finalize_step_token import scan_finalize_step_token
@@ -68,7 +76,10 @@ from _analyze_role_field import analyze_role_field
 from _analyze_script_call_drift import analyze_script_call_drift
 from _analyze_self_declared_rule_compliance import analyze_self_declared_rule_compliance
 from _analyze_shell_substitution_in_skills import analyze_shell_substitution_in_skills
-from _analyze_shim_marker import analyze_shim_marker
+from _analyze_shim_marker import (
+    analyze_shim_marker,
+    analyze_shim_marker_with_population,
+)
 from _analyze_simplicity import scan_simplicity
 from _analyze_skill_mode import analyze_skill_mode
 from _analyze_skill_notation import analyze_skill_notation
@@ -78,6 +89,7 @@ from _analyze_sys_path_bootstrap import analyze_sys_path_bootstrap
 from _analyze_target_scope import analyze_target_scope
 from _analyze_thinking_directive_in_workflow_docs import (
     analyze_thinking_directive_in_workflow_docs,
+    analyze_thinking_directive_in_workflow_docs_with_population,
 )
 from _analyze_tmp_redirect_in_skills import analyze_tmp_redirect_in_skills
 from _analyze_workflow_doc_toon_error_field import analyze_workflow_doc_toon_error_field
@@ -130,21 +142,42 @@ class RuleRunner:
     ) -> tuple[list[dict], list[dict]]:
         """Run the quality-gate invariant rule set; return (issues, rule_summaries).
 
-        Preserves the canonical ``cmd_quality_gate`` dispatch byte-for-byte: the
-        same ordered rule calls, the same ``_scoped`` / ``_suppressed`` wrapping
-        per rule, the same ``rule_summaries`` labels (including the
+        Preserves the canonical ``cmd_quality_gate`` dispatch: the same ordered
+        rule calls, the same ``_scoped`` / ``_suppressed`` wrapping per rule, the
+        same ``rule_summaries`` labels in the same positions (including the
         ``provides-method-table-drift`` / ``literal-count-drift`` rule-name
         labels and the two-entry markdown-mirror split), and the same
-        scoped-vs-unscoped manage-invocation branch.
+        scoped-vs-unscoped manage-invocation branch. Three summaries additionally
+        carry ``population_size`` (see :func:`emit`) — re-count them here rather
+        than carrying this number forward; it said "two" for a round after the
+        third was wired in this same file.
         """
         root = self.context.marketplace_root
         cache = self.context.ast_cache
         all_issues: list[dict] = []
         rule_summaries: list[dict] = []
 
-        def emit(label: str, findings: list[dict]) -> None:
+        def emit(label: str, findings: list[dict], population_size: int | None = None) -> None:
+            """Record a rule's findings and, where the rule knows it, its population.
+
+            ``findings`` alone cannot report coverage: ``details.population_size``
+            rides on a FINDING, so on a clean tree — the only state a passing gate
+            is ever in — the size the rule derived appears nowhere, and a rule
+            that examined nothing is indistinguishable from one that examined the
+            whole tree and found it clean. A rule that can report the figure
+            supplies it here and it is published alongside the count.
+
+            The figure is WHOLE-TREE and is not narrowed by ``--paths``: the rule
+            runs over the whole tree and only its FINDINGS are scope-filtered, so
+            reporting a scope-narrowed population would describe a derivation that
+            never happened. The key is omitted entirely for a rule that does not
+            publish one, so an absent figure is never read as a zero.
+            """
             all_issues.extend(findings)
-            rule_summaries.append({'rule': label, 'findings': len(findings)})
+            summary: dict = {'rule': label, 'findings': len(findings)}
+            if population_size is not None:
+                summary['population_size'] = population_size
+            rule_summaries.append(summary)
 
         emit('scan_argparse_safety', scoped(scan_argparse_safety(root, cache=cache)))
 
@@ -200,11 +233,16 @@ class RuleRunner:
             'analyze_incident_reference_in_docs',
             suppressed(analyze_incident_reference_in_docs(root)),
         )
+        thinking_findings, thinking_population = (
+            analyze_thinking_directive_in_workflow_docs_with_population(root)
+        )
         emit(
             'analyze_thinking_directive_in_workflow_docs',
-            scoped(analyze_thinking_directive_in_workflow_docs(root)),
+            scoped(thinking_findings),
+            thinking_population,
         )
-        emit('analyze_shim_marker', scoped(analyze_shim_marker(root)))
+        shim_findings, shim_population = analyze_shim_marker_with_population(root)
+        emit('analyze_shim_marker', scoped(shim_findings), shim_population)
         emit('scan_finalize_step_token', scoped(scan_finalize_step_token(root)))
         emit(
             'analyze_mutates_source_order',
@@ -249,9 +287,13 @@ class RuleRunner:
         # argparse ``choices=`` (the same mirror-vs-derived shape as the two rules
         # above, one surface over from the flag-name check the argument-naming
         # cluster performs).
+        enum_findings, enum_population = analyze_canonical_enum_drift_with_population(
+            root, cache=cache
+        )
         emit(
             'canonical-enum-choices-drift',
-            scoped(analyze_canonical_enum_drift(root, cache=cache)),
+            scoped(enum_findings),
+            enum_population,
         )
         # readme-skill-registration-drift — a bundle README that fails to name a
         # skill its plugin.json registers (the same mirror-vs-derived shape, one
@@ -335,11 +377,16 @@ class RuleRunner:
     def run_analyze_marketplace_rules(self, *, active_rules: frozenset[str]) -> list[dict]:
         """Run the marketplace-wide rule set for ``cmd_analyze``; return findings.
 
-        Preserves the canonical ``cmd_analyze`` marketplace-wide dispatch
-        byte-for-byte: the same ordered analyzer calls and the same
-        ``active_rules`` gating for the two opt-in clusters (``script_call_drift``
-        and ``argument_naming``). The per-component ``analyze_component`` loop,
-        the suppression filter, and the categorize step stay in ``cmd_analyze``.
+        Ordered analyzer calls with the same ``active_rules`` gating for the two
+        opt-in clusters (``script_call_drift`` and ``argument_naming``). The
+        per-component ``analyze_component`` loop, the suppression filter, and the
+        categorize step stay in ``cmd_analyze``.
+
+        ``analyze_shim_marker`` runs here beside its sibling
+        ``analyze_thinking_directive_in_workflow_docs``: the rule catalogue
+        states it is reachable from both passes, and the edit-time surface is the
+        one an unmarked shim should surface on — while the author is still
+        looking at the file, rather than at the build gate.
         """
         root = self.context.marketplace_root
         cache = self.context.ast_cache
@@ -361,6 +408,7 @@ class RuleRunner:
         issues.extend(analyze_historical_prose_in_skills(root))
         issues.extend(analyze_incident_reference_in_docs(root))
         issues.extend(analyze_thinking_directive_in_workflow_docs(root))
+        issues.extend(analyze_shim_marker(root))
         issues.extend(analyze_agentfile_line_budget(root))
         issues.extend(analyze_agentfile_directory_tree(root))
         issues.extend(analyze_role_field(root))

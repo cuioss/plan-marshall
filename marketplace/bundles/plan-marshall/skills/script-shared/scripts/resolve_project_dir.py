@@ -245,7 +245,19 @@ def emit_worktree_error(plan_id: str, exc: WorktreeResolutionError) -> dict:
 # Re-export json for callers that need to serialise the error payloads
 # without pulling in another import. Kept at module bottom so the
 # import-graph stays clean.
+# The router's own flag names, published once so every mirror derives rather
+# than restates them. ``extract_plan_id`` and ``ci_base.extract_project_dir``
+# consume these; ``ci_base.CI_ROUTER_FLAGS`` builds the diagnostic set from them.
+# A hand-maintained second copy is how a routing change produces a stale
+# placement error that names a flag the router no longer consumes.
+ROUTER_PLAN_ID_FLAG = '--plan-id'
+ROUTER_PROJECT_DIR_FLAG = '--project-dir'
+ROUTER_FLAGS = (ROUTER_PLAN_ID_FLAG, ROUTER_PROJECT_DIR_FLAG)
+
 __all__ = [
+    'ROUTER_FLAGS',
+    'ROUTER_PLAN_ID_FLAG',
+    'ROUTER_PROJECT_DIR_FLAG',
     'MutuallyExclusiveArgsError',
     'WorktreeResolutionError',
     'add_plan_id_arg',

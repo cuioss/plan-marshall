@@ -162,9 +162,18 @@ class TestParseDispatchBoundaryFile:
     def test_malformed_appended_cell_is_unrecognised_not_unmeasured(self, tmp_path):
         """A corrupt appended cell reads as unrecognised, keeping the row.
 
-        The three-way distinction at its sharpest: a legacy row (nothing there),
-        an ``unmeasured`` token (deliberately not measured) and a corrupt cell
-        (a shape the reader failed to parse) must not collapse into one bucket.
+        A corrupt appended cell is ``unrecognised`` and the row is KEPT — the
+        distinction this fixture pins.
+
+        ⛔ Two PROVENANCE cases, not two buckets: a legacy row (the column is
+        absent) and an explicit ``unmeasured`` token are reported through the
+        SAME ``unmeasured_columns`` output by ``analyze-logs.py``. They differ in
+        why the value is missing, not in where the reader files it, and this
+        fixture creates no legacy row at all — that case is covered by the
+        legacy-row test. Naming them as separate reader buckets here described an
+        output shape the parser does not produce. A fourth, ``indeterminate``, exists for a literal ``0`` the
+        reader cannot date; this row carries a nonzero cell, which dates it, so
+        its zeros are measured rather than indeterminate.
         """
         artifact = tmp_path / 'b.toon'
         artifact.write_text(

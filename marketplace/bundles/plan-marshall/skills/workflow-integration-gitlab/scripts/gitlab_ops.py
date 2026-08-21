@@ -98,7 +98,7 @@ from ci_base import (
     make_pr_number_handler,
     make_simple_handler,
     normalize_issue_ref,
-    parse_args_with_toon_errors,
+    parse_ci_args,
     poll_until,
     prepare_body,
     read_and_consume_body,
@@ -2547,7 +2547,7 @@ def main() -> int:
     # GitLab: --pr-number on resolve-thread is required
     add_pr_resolve_thread_pr_number(pr_sub)
 
-    args = parse_args_with_toon_errors(parser)
+    args = parse_ci_args(parser)
     # Surface the router plan_id on args so the checks handlers can pass it to
     # enrich_failing_checks_with_logs without re-parsing argv.
     args.router_plan_id = router_plan_id

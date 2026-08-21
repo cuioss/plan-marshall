@@ -37,7 +37,9 @@ Usage:
 """
 
 import re
+import shlex
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 
 # The plan-less sentinel. Its literal uppercase spelling is deliberate: it is
@@ -979,7 +981,37 @@ def _root_router_option_strings(parser) -> set[str]:
     return options
 
 
-def _augment_misplaced_router_flag(message: str, router_flags: set[str], prog: str) -> str:
+def _move_router_flags_first(argv: list[str], misplaced: list[str]) -> list[str]:
+    """Return ``argv`` with every misplaced router flag moved ahead of the verb.
+
+    A flag written as ``--flag=value`` moves as one token; a flag written as
+    ``--flag value`` takes the following token with it, unless that token is
+    itself a flag (so a boolean router flag does not swallow the verb).
+    """
+    moved: list[str] = []
+    rest: list[str] = []
+    idx = 0
+    while idx < len(argv):
+        token = argv[idx]
+        if token.split('=', 1)[0] in misplaced:
+            moved.append(token)
+            if '=' not in token and idx + 1 < len(argv) and not argv[idx + 1].startswith('-'):
+                idx += 1
+                moved.append(argv[idx])
+        else:
+            rest.append(token)
+        idx += 1
+    return moved + rest
+
+
+def _augment_misplaced_router_flag(
+    message: str,
+    router_flags: set[str],
+    prog: str,
+    *,
+    notation: str | None = None,
+    argv: list[str] | None = None,
+) -> str:
     """Append a positional-fix note when an ``unrecognized arguments`` error names a router flag.
 
     argparse rejects a top-level router flag placed after the subcommand with
@@ -991,6 +1023,20 @@ def _augment_misplaced_router_flag(message: str, router_flags: set[str], prog: s
     moves it rather than hunting for a flag that is right there. The remedy is
     the note itself — the ordering is not something the caller should have to
     read documentation to discover.
+
+    The worked example is built from the CALLER'S OWN ``argv``: every misplaced
+    router flag is moved ahead of the verb and the rest of the invocation is
+    rendered verbatim, so the note prints a command the caller can run. A
+    ``<subcommand>`` placeholder would put the reader back where the raw
+    argparse message left them — the verb was in the failing argv all along.
+
+    ``notation`` is the executor notation of the script being invoked. When
+    supplied the example is rendered through this repository's script-execution
+    convention (``python3 .plan/execute-script.py {notation} …``). ``prog`` is
+    the fallback for a caller that supplies none — and it is only a fallback,
+    because most marketplace scripts leave ``prog=`` unset, which makes it the
+    bare script filename: a spelling the convention forbids and no caller may
+    run.
 
     Returns ``message`` unchanged when the error is not an
     ``unrecognized arguments`` failure or names no known router flag, so a
@@ -1007,7 +1053,19 @@ def _augment_misplaced_router_flag(message: str, router_flags: set[str], prog: s
     if not misplaced:
         return message
     named = ', '.join(misplaced)
-    example = f'{prog} {misplaced[0]} VALUE <subcommand> ...'
+    invocation = (
+        f'python3 .plan/execute-script.py {notation}' if notation else prog
+    )
+    if argv:
+        # ``shlex.join`` on the ARGUMENTS, not on the invocation: the corrected
+        # example is meant to be copied and run, and a value carrying a space or
+        # a shell metacharacter (`--title "a b"`, `--body $x`) would otherwise be
+        # re-split or expanded into a different command than the one the caller
+        # typed. The invocation prefix is composed here and never user data, so
+        # quoting it would only add noise.
+        example = f'{invocation} {shlex.join(_move_router_flags_first(list(argv), misplaced))}'
+    else:
+        example = f'{invocation} {misplaced[0]} VALUE <subcommand> ...'
     return (
         f'{message}\n'
         f'note: {named} is a top-level flag and belongs BEFORE the subcommand (verb), '
@@ -1016,7 +1074,12 @@ def _augment_misplaced_router_flag(message: str, router_flags: set[str], prog: s
     )
 
 
-def parse_args_with_toon_errors(parser):
+def parse_args_with_toon_errors(
+    parser,
+    *,
+    notation: str | None = None,
+    extra_router_flags: Iterable[str] = (),
+):
     """Run ``parser.parse_args()`` and translate validator failures into TOON.
 
     When an argparse ``type=`` validator (e.g. ``validate_plan_id``) raises
@@ -1034,6 +1097,21 @@ def parse_args_with_toon_errors(parser):
     (missing subcommand, unknown flag, etc.) fall through to the original
     behaviour.
 
+    ``notation`` is the executor notation of the script being invoked. Supplying
+    it makes the misplaced-router-flag note render its worked example through
+    this repository's script-execution convention rather than through
+    ``parser.prog``, which for most marketplace scripts is the bare script
+    filename — a spelling no caller may run.
+
+    ``extra_router_flags`` names router flags that are NOT declared on this
+    parser but are nonetheless consumed at the router level. The CI front-ends
+    are the case this exists for: ``ci.py`` strips ``--plan-id`` /
+    ``--project-dir`` with ``extract_routing_args`` BEFORE the provider parser is
+    built, so the provider's root parser declares neither and the note could
+    never fire on the very surface the flags belong to. Naming them here restores
+    the note without declaring the flags on the parser, which would change what
+    argparse actually consumes.
+
     Returns the parsed ``argparse.Namespace`` on success.
     """
     from toon_parser import serialize_toon
@@ -1041,10 +1119,11 @@ def parse_args_with_toon_errors(parser):
     parsers = list(_iter_all_parsers(parser))
     originals = {id(p): p.error for p in parsers}
     # Top-level router flags (declared on the root parser, ahead of the
-    # subparsers) and the root program name — used to turn an "unrecognized
-    # arguments: --flag" rejection of a misplaced router flag into a message
-    # that names the fix instead of the flag alone.
-    router_flags = _root_router_option_strings(parser)
+    # subparsers, plus any the caller consumes before the parser is built) and
+    # the root program name — used to turn an "unrecognized arguments: --flag"
+    # rejection of a misplaced router flag into a message that names the fix
+    # instead of the flag alone.
+    router_flags = _root_router_option_strings(parser) | set(extra_router_flags)
     root_prog = parser.prog
 
     def make_toon_error(orig):
@@ -1076,7 +1155,15 @@ def parse_args_with_toon_errors(parser):
             # flag placed after the verb is rejected as "unrecognized arguments",
             # a message that hides the fact that the flag exists and merely sits
             # in the wrong position.
-            orig(_augment_misplaced_router_flag(message, router_flags, root_prog))
+            orig(
+                _augment_misplaced_router_flag(
+                    message,
+                    router_flags,
+                    root_prog,
+                    notation=notation,
+                    argv=sys.argv[1:],
+                )
+            )
 
         return toon_error
 
