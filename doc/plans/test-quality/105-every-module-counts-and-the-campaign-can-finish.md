@@ -37,9 +37,9 @@
 
 ## Problem
 
-The module-budget campaign's first run landed and left four things behind that **no plan in this epic
-owns**. Three of them are not defects in that run's work — they are gaps in the campaign's own
-apparatus, and each will recur on every one of runs 2 through 7 if it is not closed now.
+The module-budget campaign's first run landed and left five things behind that **no plan in this epic
+owns**. Most are not defects in that run's work — they are gaps in the campaign's own apparatus, and
+each will recur on every one of runs 2 through 7 if it is not closed now.
 
 **The rule's count has three permanent residents, and nobody intends to act on them.** Plan `100`'s
 stated definition of done is that `test-module-line-budget` reaches zero. Three modules in slice `050`
@@ -80,6 +80,22 @@ count was a stale absolute; and a suite baseline was a run of a tree that no lon
 which the branch read 20% slower when it was in fact faster. Six review rounds checked the arithmetic
 of each number and none checked that the two ends were the same measurement. **A committed instrument
 is the structural answer**; a further round of care is the remedy that has already failed four times.
+
+**And the test tree suppresses about 691 lint findings that do not exist.** Stripping every `noqa`
+directive from a scratch copy and re-running `ruff` produces 1,024 violations in four codes, so roughly
+440 directives are load-bearing and the rest suppress nothing. That is not untidiness; it is a **record
+of a refactor nobody swept up**. 361 files carry an `E402` suppression, 148 still manipulate `sys.path`
+and genuinely need it, and 213 do not — of which 123 now call `conftest.load_script_module`, the seam
+that removed the need. The annotation outlived its cause, and nothing in the build notices, because
+`RUF100` is not in the enabled rule set.
+
+Two of the four codes will never be fixable in code and two should never have been configured away, and
+telling them apart is the whole of § D7. `F401` and `F811` are pytest's own semantics — a fixture is
+resolved by name, and the test's parameter shadows the import by design — so ruff is describing Python
+rather than pytest. `E402` and `I001` are a real smell with a real fix, and the fix already exists in
+the tree. Treating all four as one population is why this has not been done before: a bare
+`ruff --fix` deletes 108 directives that record a deliberate subprocess call or broad `except` against
+rule families this project does not run.
 
 ## Goal
 
