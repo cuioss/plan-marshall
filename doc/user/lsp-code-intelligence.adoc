@@ -95,7 +95,9 @@ A `WorkspaceEdit` touching twenty files is a mutation nothing read. The rename p
 
 So a rename that lands is one the language server produced and the parser re-verified; a rename that would have broken the parse never survives in the tree.
 
-There is one more way the write side fails, and it does *not* mean your edit was wrong: if the server produced no verdict at all, the verb returns `reason: diagnostics_unavailable` and rolls back rather than passing an unverified change. Read that as "not checked" and run the build — see the `unknown` row above.
+There is one more way the write side fails, and it does *not* mean your edit was wrong: if the server produced no verdict at all, the verb returns `reason: diagnostics_unavailable` rather than passing an unverified change. Read that as "not checked" and run the build — see the `unknown` row above.
+
+Your tree is unmodified either way, but by two different routes, and the payload's `phase` field says which. `phase: before` means the *baseline* verdict was missing, which is caught before the first byte is written — so `rolled_back` is `false` because there was nothing to roll back, *not* because a rollback failed. `phase: after` means the edit was applied and then restored, so `rolled_back` is `true`. For a server that answers only pull-style diagnostic requests, `phase: before` is what every rename returns.
 
 == Related
 

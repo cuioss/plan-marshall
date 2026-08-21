@@ -110,15 +110,30 @@ that answers it:
    refusal touches nothing, and a restore that succeeds leaves no file modified
    (`rolled_back: true`). ⚠ A restore can itself fail — a read-only path, a full
    disk — and then the tree **is** left partly edited: the payload says so with
-   `rolled_back: false` plus `restore_error`, never swallowing it. Read that
-   flag rather than assuming the tree is clean.
+   `rolled_back: false` plus `restore_error`, never swallowing it. ⛔ Read
+   `rolled_back: false` **together with `restore_error`**, not alone: without
+   `restore_error` it means the verb never wrote anything (see the two phases
+   below), and only *with* it does it mean the tree is partly edited.
 
 ### `diagnostics_unavailable` / `diagnostics_unanswered` mean "not checked", not "wrong"
 
 A file the server publishes **no** diagnostics for has no verdict, and this
 client refuses to invent one: `edit` returns `status: failed` with
-`reason: diagnostics_unavailable` and rolls back, `diagnose` returns
-`state: unknown` with `reason: diagnostics_unanswered`.
+`reason: diagnostics_unavailable`, `diagnose` returns `state: unknown` with
+`reason: diagnostics_unanswered`. Either way **no file is left modified** — but
+`edit` reaches that outcome by two different routes, and it says which in
+`phase`:
+
+| `phase` | What happened | `rolled_back` |
+|---------|---------------|---------------|
+| `before` | The **baseline** diagnostics were missing, which is detected *before the first byte is written*. There is nothing to roll back. | `false` |
+| `after` | The edit was applied, then the **post-edit** verdict was missing. The change is restored. | `true` |
+
+⛔ **`phase: before` is the common case, not a corner** — for a server that
+answers only pull-style diagnostic requests, *every* `edit` call ends there. A
+leaf that reads its `rolled_back: false` as "the tree is partly edited" has it
+exactly backwards: nothing was written at all. The payload also names the file
+whose verdict was missing in `unverified_path`.
 
 **Read that as "unverified", and verify by build.** It does *not* say the edit
 was wrong. The usual cause is the server, not the change: some servers answer

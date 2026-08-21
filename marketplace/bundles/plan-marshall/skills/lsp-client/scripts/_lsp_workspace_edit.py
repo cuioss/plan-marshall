@@ -14,7 +14,9 @@ the write side's core logic is deterministically testable offline:
   post-application diagnostic set can be **rolled back** (``restore_files``).
   The apply loop is all-or-nothing: a failure part-way through restores every
   file already written and raises :class:`WorkspaceApplyError` naming the file
-  that failed, so no caller can observe a half-applied edit;
+  that failed. A caller observes a half-applied edit in exactly one case — the
+  restore itself failed — and the exception says so in ``restore_error`` rather
+  than presenting the tree as clean;
 * the pre/post error **sets** — per file, keyed by
   ``(severity, code, message, line, character)`` — drive an explicit
   ``edit_verdict``: a file that *gained* an error diagnostic fails the step.
