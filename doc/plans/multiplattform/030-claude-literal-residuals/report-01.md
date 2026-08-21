@@ -926,7 +926,12 @@ cannot read the diff are different things, and only the second is evidence about
 
 - **Tokens:** not available to the agent in this session — no harness surface exposes a running
   total, and a figure derived by any other means would be a guess.
-- **Wall-clock:** _recorded at the merge gate._
+- **Wall-clock:** ~30 hours between the branch's first commit (`7b91932`, 2026-08-20 08:48 UTC) and
+  its last before the merge gate (`7727727`, 2026-08-21 14:43 UTC). That is **calendar elapsed, not
+  work**: the span contains long operator-idle gaps, two rebases waiting on an unrelated PR to
+  merge, several 10-to-15-minute full-`verify` runs, and a container restart. It is reported because
+  it is the only duration figure this lane can derive honestly — commit timestamps — and it should
+  not be read as effort.
 - **Population:** whatever is recorded here counts **this single interactive Claude Code cloud
   session**, orchestrator and every dispatched verification sub-agent together, as the harness bills
   it. ⛔ That is **not** comparable to a plan-marshall `metrics.toon` total, which counts a dispatch
