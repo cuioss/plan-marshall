@@ -106,9 +106,12 @@ that answers it:
    unsupported_resource_operation`, with `notes[]` naming each and
    `unapplied_operation_count`) rather than applied minus the part this client
    cannot perform. A failure part-way through the apply loop restores every file
-   already written and returns `reason: apply_failed` with `failed_path`. Either
-   way no file is left modified — and if the rollback itself fails, that is
-   reported in `restore_error`, never swallowed.
+   already written and returns `reason: apply_failed` with `failed_path`. The
+   refusal touches nothing, and a restore that succeeds leaves no file modified
+   (`rolled_back: true`). ⚠ A restore can itself fail — a read-only path, a full
+   disk — and then the tree **is** left partly edited: the payload says so with
+   `rolled_back: false` plus `restore_error`, never swallowing it. Read that
+   flag rather than assuming the tree is clean.
 
 ### `diagnostics_unavailable` / `diagnostics_unanswered` mean "not checked", not "wrong"
 
@@ -122,10 +125,11 @@ was wrong. The usual cause is the server, not the change: some servers answer
 only pull-style diagnostic requests and never push at all, and a busy server can
 miss the wait window. The edit is not implicated by either.
 
-So the next step is the canonical build — run `./pw verify` and judge the change
-on **its** result. Do not revert the change as faulty, do not retry the rename
-expecting a different verdict, and do not report a broken edit: all three read a
-missing measurement as a negative one, which is exactly the confusion this
+So the next step is the canonical build — run the project's architecture-resolved
+`verify` command and judge the change on **its** result. Do not revert the change
+as faulty, do not retry the rename expecting a different verdict, and do not
+report a broken edit: all three read a missing measurement as a negative one,
+which is exactly the confusion this
 fail-closed direction exists to prevent. `reason: diagnostics_worsened` is the
 one that says the edit was wrong; these two say only that nobody checked.
 

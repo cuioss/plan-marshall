@@ -208,7 +208,7 @@ python3 .plan/execute-script.py pm-plugin-development:tools-corpus-language-serv
   --kind references --notation bundle:skill
 ----
 
-`preflight` separates the first cause from the rest; `query` separates the other four, because it is unfiltered, builds a fresh index every call, and shows every site with its `verified` flag.
+`preflight` separates the first cause from the rest; `query` separates three of the remaining four — the real zero, the withheld sites, and a stale index — because it is unfiltered, builds a fresh index every call, and shows every site with its `verified` flag. The fourth, a reference no detector recognises, is *not* separately signalled by anything: `query`'s `completeness_note` states that bound rather than resolving it.
 
 [cols="1,3", options="header"]
 |===

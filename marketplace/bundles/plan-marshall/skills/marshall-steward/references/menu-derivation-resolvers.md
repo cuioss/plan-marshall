@@ -48,7 +48,7 @@ The response carries `resolvers[]` — one `{id, origin, enabled, configured, fi
 | `id` | The resolver's stable provenance id, the value that appears in an edge's `producers[]` |
 | `origin` | The contributing bundle (Axis-A) or build skill (Axis-B) |
 | `enabled` | The **effective** state — `true` when unconfigured, since absent means active |
-| `configured` | Whether an explicit entry exists, distinguishing "left at the default" from "deliberately set" |
+| `configured` | Whether an explicit **mapping** entry exists for this resolver, distinguishing "left at the default" from "deliberately set". A present but malformed entry (anything that is not a mapping) reads as *not* configured — the same definition `manage-run-config`'s store verb applies, so the roster and the store never disagree about one entry |
 | `file_patterns` | The files this resolver derives from, as the resolver itself declares them. **Descriptive only** — see below |
 
 A `count` of `0` means no resolver was discovered in this envelope, which is a truthful answer, not an

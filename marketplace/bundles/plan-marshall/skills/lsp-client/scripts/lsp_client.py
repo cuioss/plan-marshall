@@ -302,7 +302,9 @@ def _run_edit(session: LspSession, language: str, path: str, line: int, characte
       whole (``unsupported_resource_operation``) rather than applied minus the
       part this client cannot perform;
     * a failure part-way through the apply loop restores every file already
-      written and reports the offending path (``apply_failed``);
+      written and reports the offending path (``apply_failed``) — and when the
+      restore itself fails, ``rolled_back`` is ``False`` and ``restore_error``
+      carries the cause, because a partly-edited tree must not read as clean;
     * a file the server returns **no verdict** for is unverified, not clean
       (``diagnostics_unavailable``) — see ``lsp-client/SKILL.md`` § "The write
       side" for what a leaf should do with that.
