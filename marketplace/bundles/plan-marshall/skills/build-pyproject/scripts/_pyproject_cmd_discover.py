@@ -415,10 +415,28 @@ def _read_setup_cfg(descriptor: Path, metadata: dict, dependencies: list[str]) -
     ``[metadata]`` supplies name/version/description; ``[options]
     install_requires`` is a newline-separated requirement list, read at scope
     ``runtime`` through the same PEP 508 name extraction the TOML paths use.
+
+    ⛔ **Interpolation is disabled, and the reads are inside the guard.** A
+    default ``ConfigParser`` applies ``BasicInterpolation``, under which a bare
+    ``%`` in a value — ``description = 100% pure python``, a percent-encoded URL
+    in ``install_requires`` — raises from ``get()`` rather than from ``read()``.
+    With the reads outside the guard that exception escaped
+    ``discover_python_modules`` and took **every** module with it, including the
+    ones whose descriptors parsed perfectly: legal, ordinary input silently
+    costing the whole capability, which is the exact failure this discoverer's
+    narrowed ``_load_toml`` catch exists to prevent. ``setup.cfg`` values here
+    are plain metadata and never templates, so nothing wants interpolation.
     """
-    parser = configparser.ConfigParser()
+    parser = configparser.ConfigParser(interpolation=None)
     try:
         parser.read(descriptor, encoding='utf-8')
+
+        for key, field in (('name', 'name'), ('version', 'version'), ('description', 'description')):
+            value = parser.get('metadata', key, fallback='').strip()
+            if value:
+                metadata[field] = value
+
+        requires = parser.get('options', 'install_requires', fallback='')
     except (configparser.Error, OSError, UnicodeDecodeError) as exc:
         log_entry(
             'script', 'global', 'WARNING',
@@ -427,12 +445,7 @@ def _read_setup_cfg(descriptor: Path, metadata: dict, dependencies: list[str]) -
         )
         return
 
-    for key, field in (('name', 'name'), ('version', 'version'), ('description', 'description')):
-        value = parser.get('metadata', key, fallback='').strip()
-        if value:
-            metadata[field] = value
-
-    for line in parser.get('options', 'install_requires', fallback='').splitlines():
+    for line in requires.splitlines():
         name = requirement_name(line)
         if name:
             dependencies.append(f'{name}:runtime')

@@ -187,7 +187,7 @@ directories holding `.py` files, not all 70** — an earlier revision of this se
 `marketplace/bundles/plan-marshall/skills/platform-runtime/scripts` is excluded because it carries an
 `__init__.py`, so by the structural rule above it *is* a package and needs no search-path entry. **Three** real bare imports nonetheless target it — `from claude_runtime import …` in
 `tools-permission-doctor/scripts/permission_common.py:26` **and** `permission_doctor.py:27`, and
-`from platform_runtime import _make_runtime` in `script-shared/scripts/marketplace_paths.py:214`. **Bounded:** both importers are inside the
+`from platform_runtime import _make_runtime` in `script-shared/scripts/marketplace_paths.py:214`. **Bounded:** all three importers are inside the
 `plan-marshall` bundle, so neither a cross-bundle reference nor a module edge can be affected — the
 **72** / **10** result is provably unchanged, and that was confirmed by measurement, not argued.
 
@@ -886,7 +886,7 @@ strongest evidence yet for the contract change § What have we learned proposes.
 | A4 | § Mutation sweep's "ten mutants, **one per fixed defect**" went false the moment a later round fixed anything; the branch has fourteen | **fixed** — the table is scoped to the defects it covers, and rounds 7–9's eight are recorded as red-checked in place, per finding |
 | A5 | § Red-then-green's "**every** new guard was run … in a detached `origin/main` worktree" is false for thirteen guards — their defects were in the *branch's* code, so no pre-change worktree could exhibit them | **fixed** — the two red-check methods are now distinguished rather than blurred under "every" |
 | A6 | A test docstring generalised "unrecoverable means the bytes were not eaten" across all four arms; false for the short-body arm, which consumed the stream | **fixed** |
-| A7 | "78 added test functions", unstamped and 92 at HEAD | **fixed** — stamped with the commit round 8 read |
+| A7 | "78 added test functions", unstamped | **fixed** — stamped as **78 at `0acfa7e`**, the commit round 8 read. ⛔ The fix's own first draft said "92 at HEAD", which was the count at `e061414` and 96 two commits later: a moving figure restated inside the correction of a moving figure. No live count is quoted here now — the figure is measured per commit and stamped, or not given |
 
 **Left open with bounds** (the verifier's B3, B5–B8): a frame truncated *inside* its header block ends
 the session silently (EOF was genuinely reached, so the session must end either way; only the operator
@@ -896,6 +896,35 @@ malformed `documentChanges` entries (requires a malformed server edit); a `null`
 success); a `request-failed:` discards accumulated notes (`ran=False`, so no caller reads them); and an
 unparseable or BOM-prefixed file is a silent scanned-but-empty file (affects recall only, never
 attribution, and the `unresolved-symbol` count already discloses the shortfall).
+
+### Round 10 — plan verifier (the last of the extended budget)
+
+Round 10 executed the seven behaviour families round 9 named as never swept by any round, and
+re-drove the seams round 9's own fixes created. **Ten findings — nine condition-A and one condition-B
+that no bound could cover. All ten fixed here.**
+
+Three of the seven families came back **genuinely clean** (corpus cache invalidation, the module
+lift, `hover`/`stats`); one clean by measurement with an over-stated word; three yielded — and the
+last of those produced the round's worst finding, on **legal input**, in this branch's own new code.
+
+| # | Finding | Disposition |
+|---|---|---|
+| B-1 | ⛔ ⭐ **A percent sign in a `setup.cfg` value aborted the entire Python module discovery.** `_read_setup_cfg` built a default `ConfigParser`, whose `BasicInterpolation` raises from `get()` — **not** from `read()` — and the `get` calls sat *outside* the guard. `description = 100% pure python`, or a percent-encoded direct-reference URL, therefore escaped `discover_python_modules` and took **every** module with it, including the ones whose descriptors parsed perfectly. No malformed input, no filesystem failure, no server: ordinary text in a metadata field, and the capability answered nothing at all. **New in this branch** — `_read_setup_cfg` is D4's own code, and this is precisely the failure mode D4's narrowed `_load_toml` catch was written to remove, re-committed one function below it | **fixed** — interpolation disabled (these values are metadata, never templates) and every read moved inside the guard. Two guards, over a **multi-module** tree because the defect's signature is that the innocent siblings vanish too; red-checked |
+| A-1 | § Left open's B2 line citations, stale for the **fourth** time — invalidated by round 9's own fix commit | **fixed by removing them.** The two call sites are now named by *what they are*, which no commit can invalidate. Four recurrences of one defect is enough evidence that the remedy is to stop citing lines, not to re-derive them again |
+| A-2 | The row fixing an unstamped moving figure introduced a second one in the same sentence ("92 at HEAD", which was the count at `e061414` and 96 two commits later) | **fixed** — no live count is quoted; the figure is stamped per commit or not given |
+| A-3 | "**both** importers are inside the `plan-marshall` bundle", twice, each within two sentences of correctly saying there are **three**. Residue of round 7's A8, which fixed the count and left the dependent quantifier | **fixed** at both |
+| A-4 | § Left open said "**B2 and B3 are the only genuine survivors**" while rounds 9 and 10 had left ten more open with bounds *elsewhere in this report* — so the section a reader consults for what remains carried almost none of it | **fixed** — all twelve open survivors are now listed there, with their bounds and their reproductions |
+| A-5 | `_still_modified`'s docstring promised that an unreadable file counts as modified; a non-UTF-8 file **raises** instead, because `UnicodeDecodeError` is not an `OSError`. Round 9's own text | **fixed in the code** — the exception is caught, so a file truncated mid-multi-byte-character no longer replaces `WorkspaceApplyError` and cost the caller `failed_path` and `restore_error` |
+| A-6 | `uri_to_path`'s docstring promised a fallback when "the filesystem refuses the walk"; a **symlink loop** raises `RuntimeError`, which `except OSError` does not catch. Round 9's own text | **fixed in the code** |
+| A-7 | "`setup.cfg` gives runtime only … **because it has no `dev` equivalent**" — it has one, `[options.extras_require]`. A true limitation with a false reason | **fixed** — the limit now says the analogue exists and is not read yet |
+| A-8 | The clamp comment's "the LINE LENGTH excludes the terminator" is false for CRLF, where it excludes only the `\n`. Round 9's own text | **fixed** — with the reason it does not arise through `apply_workspace_edit`, and that this is a *disclosed limit* rather than a mitigation |
+| A-9 | `expected_tokens`' "the target's **discriminating** final segment" — measured: **18** tails are shared, `extension` by four components and `plan-marshall-plugin` by eleven | **fixed** at both sites, with the measurement, and with why the full-notation match therefore outranks a tail-only one |
+
+⛔ **Four of round 10's nine condition-A findings are statements round 9 itself wrote** (A-5, A-6, A-8
+in the files its fix edited; A-1 and A-2 in the report commit that accompanied it). Round 9 called its
+own discovery of this "the first fix-induced regression in nine rounds". Round 10 makes it **two
+consecutive rounds**, which is what turns it from an incident into the finding § What have we learned
+is built on.
 
 ## Reviewer participation
 
@@ -1003,20 +1032,43 @@ correction cites no SHA either.
 ⚠ **This list is PROVISIONAL while the loop runs.** The operator extended the budget past round 5, so
 each survivor below is re-put to the verifier in each further round rather than settled here.
 
-⛔ **These are condition-B entries, and most of them are CLOSED rather than bounded** — B1 by round
-7's fix (unnoticed at the time), B4 by a guard, B5 by a fix, and round 8's F4 by a real change to the
-frame reader. They are kept here because the reasoning that closed each one is the record of why a
-bound was refused. **B2 and B3 are the only genuine survivors**, each with a bound and its evidence.
+⛔ **These are condition-B entries. Most of the *numbered* ones are CLOSED rather than bounded** — B1
+by round 7's fix (unnoticed at the time), B4 by a guard, B5 by a fix, and round 8's F4 by a real
+change to the frame reader. They are kept here because the reasoning that closed each one is the
+record of why a bound was refused.
+
+⛔ **Twelve findings are genuinely open, and ALL of them are listed here.** An earlier revision said
+"B2 and B3 are the only genuine survivors" while rounds 9 and 10 had left ten more open with bounds
+elsewhere in this report — so the section a reader consults for *what remains* did not carry most of
+what remained. That is round 10's A-4, and it is the last instance of this report's most persistent
+defect: a claim that was true when written and was not re-derived when the thing it counts moved.
 Nothing condition A governs is in this list: every false statement the rounds so far found is fixed.
 Round 3's O2–O4 stand as recorded there; round 5 added B1–B3, round 6 added B4, round 7 added B5.
 
 | # | Survivor | Bound, with its evidence |
 |---|---|---|
 | B1 | **CLOSED — and the row that said otherwise was false in every clause.** B1 recorded that the restore-failure branch was pinned by no test, that mutating `except OSError as restore_exc: restore_error = restore_exc` to `except OSError: pass` left the whole `lsp-client` directory green, and that no fixture in this tree could provoke a real restore failure without patching the filesystem layer. Round 7's own fix commit refuted all three as a side effect — `test_a_rollback_that_cannot_restore_the_damaged_file_says_so` patches `Path.write_text` and asserts `restore_error is not None` — and **nobody re-derived the survivor row**. Re-run at HEAD: the mutation now yields **1 failed, 60 passed**. ⛔ Round 6's F4 also recorded this row's "the one vacuity gap in the branch" sentence as *fixed*; `git show bb41ae2` shows it as unchanged context, so that disposition was false too | **No bound is owed — there is nothing left open.** The behaviour is correct, pinned, and red-checked. The record is kept because *how it closed* is the finding: a survivor row is a measurement with an expiry date, and this one expired unnoticed across two commits |
-| B2 | **Two rollback call sites sit outside the exception boundary** — `restore_files(originals)` at `lsp_client.py:390` (`diagnostics_unavailable`, phase `after`) and `:410` (`diagnostics_worsened`). An `OSError` there escapes `_run_edit` to `safe_main`, so the verb returns a bare `status: error` with the edit still on disk and no `restore_error` | It **cannot produce a false clean**: the return is an error, never a success or a `rolled_back: true`. It requires a write failure *during* rollback. And G4's actual scope — the apply loop — **is** guarded, so the deliverable's clause is met; this is the adjacent case the clause does not name. ⚠ Round 6 sharpened it: when this was recorded the FIRST of the two sites was on a branch **no test executed at all** — an unconditional `raise` at its head left 58/58 green. That is no longer true; the guard added for B4 drives exactly that branch, so the site is now exercised even though its `OSError` path still is not. ⛔ The line numbers above have now drifted **twice** — `:373`/`:391` → `:383`/`:403` → `:390`/`:410` — each time because a commit added lines above them, and each time the survivor row was not re-derived with it. That recurrence, not the numbers, is what § What have we learned proposes a contract change for |
+| B2 | **Two rollback call sites sit outside the exception boundary** — the two `restore_files(originals)` calls in `_run_edit` — the `diagnostics_unavailable` phase-`after` return and the `diagnostics_worsened` return. An `OSError` there escapes `_run_edit` to `safe_main`, so the verb returns a bare `status: error` with the edit still on disk and no `restore_error` | It **cannot produce a false clean**: the return is an error, never a success or a `rolled_back: true`. It requires a write failure *during* rollback. And G4's actual scope — the apply loop — **is** guarded, so the deliverable's clause is met; this is the adjacent case the clause does not name. ⚠ Round 6 sharpened it: when this was recorded the FIRST of the two sites was on a branch **no test executed at all** — an unconditional `raise` at its head left 58/58 green. That is no longer true; the guard added for B4 drives exactly that branch, so the site is now exercised even though its `OSError` path still is not. ⛔ **The line numbers this row used to carry drifted FOUR times** — `:373`/`:391` → `:383`/`:403` → `:390`/`:410` → `:393`/`:413` — each time because a commit added lines above them, and each time this row was not re-derived with it. They are now gone: the two call sites are named by **what they are**, which no commit can invalidate. That recurrence, and this remedy, are what § What have we learned proposes a contract change for |
 | B4 | **`phase` and `unverified_path` were asserted by no test** — deleting both kwargs from both production returns left **58 passed / 0 failed**, while **four** documentation sites describe them, all four added by `b0d746c`. The commit that closed round 5 opened a gap of its own, in the one field a task leaf's reading of the payload turns on | **CLOSED by a test rather than bounded.** Two guards now pin both routes through `diagnostics_unavailable`: `phase: before` with `rolled_back: false` and **no** `restore_error`, and `phase: after` with `rolled_back: true` and the file restored. Red-checked — stripping the two kwargs fails both guards, and the real code passes them. Closing it cost less than the disclosure would have |
 | B5 | **A mid-write failure left the damaged file modified while the payload reported a clean rollback** — `originals.pop(path, None)` discarded the failing file's pre-edit content in the one case where a write had already truncated it. Found by round 7, by *executing* the path rather than reading the eight statements about it | **CLOSED by a fix, not bounded.** The failing path stays in the restore set. Two guards pin both outcomes — a transient failure restores every file, a persistent one reports `restore_error` rather than claiming success — and both go red against the reinstated `pop`. ⛔ This was the run's only **false clean**, and condition B never applied to it: a defect that reports success over a damaged tree cannot be left open under any bound |
-| B3 | **One search-path directory is missed.** `platform-runtime/scripts` carries an `__init__.py`, so the structural rule treats it as a package and omits it, yet **three** real bare imports target it (re-derived; an earlier revision said two and named two of the three) | **Provably cannot affect this deliverable's result**: both importers are inside the `plan-marshall` bundle, so no cross-bundle reference and no module edge can change. Confirmed by measurement, not by argument — the **72** / **10** figures are identical with and without it. Recorded at § D3 alongside the sentence it falsified (A9) |
+| B3 | **One search-path directory is missed.** `platform-runtime/scripts` carries an `__init__.py`, so the structural rule treats it as a package and omits it, yet **three** real bare imports target it (re-derived; an earlier revision said two and named two of the three) | **Provably cannot affect this deliverable's result**: all three importers are inside the `plan-marshall` bundle, so no cross-bundle reference and no module edge can change. Confirmed by measurement, not by argument — the **72** / **10** figures are identical with and without it. Recorded at § D3 alongside the sentence it falsified (A9) |
+
+**Open survivors from rounds 9 and 10**, each with an executed reproduction rather than an argument:
+
+| # | Survivor | Bound |
+|---|---|---|
+| S1 | **A CRLF file has every line ending rewritten to LF by any edit.** Measured: a 3-character edit turned `b'aaa\r\nbbb\r\nccc\r\n'` into `b'aaa\nBBB\nccc\n'`. Invisible to the diagnostics gate **and to `_still_modified`**, so a rollback reports `rolled_back: true` over a file whose bytes differ from the pre-edit bytes | Line endings only, never content — the one open finding that can produce a *clean-looking* difference, which is why it is named first. **Pre-existing on `origin/main`**; `read_text`/`write_text` translate newlines on both sides. Rare on a Linux Python repo, certain on a Windows-authored or mixed-EOL file. Fixing it means moving the whole write path to binary I/O with explicit newline handling, which is a larger change than this plan's D2 scope |
+| S2 | **A malformed post-edit diagnostic raises after the write**: a non-dict entry, a non-dict `range`, or `range.start: null` escapes `_run_edit` **after** the edit is on disk, so it stays there with no rollback and a bare `status: error` | Same shape and cost as B2 below. Requires a spec-violating server — LSP makes `range` required and non-null. **Not a false clean**: the return is an error, never a success |
+| S3 | A **truncated-mid-multi-byte-character** write whose restore *also* fails makes `_still_modified` raise, replacing `WorkspaceApplyError` and costing the caller `failed_path` and `restore_error` | **Closed at HEAD** by catching `UnicodeDecodeError` (round 10's A-5). Listed because the reproduction is the evidence for that catch |
+| S4 | `[tool.poetry.dev-dependencies]` (the pre-1.2 spelling) and every non-`dev` Poetry group produce no edge, **undisclosed** — while the analogous npm gap was closed *by disclosure* in the same deliverable. `[options.extras_require]` in `setup.cfg` is the third instance | Dev-scope edges only; runtime edges are unaffected. Now disclosed for `setup.cfg` (A-7); the Poetry groups remain a documentation gap, not a wrong answer |
+| S5 | Pre-existing discoverer crashes on **valid-but-wrongly-shaped** descriptors: a `package.json` whose top level is an array or string; `[project]` as a scalar; `dependencies = "core"` yielding one bogus edge per character; `workspaces: ["/etc/*"]`; `workspaces: ["../*"]` globbing outside the project root | All pre-existing on `origin/main`; all require a malformed descriptor. Distinct from round 10's B-1, which this plan **did** fix because that one triggers on *legal* input and is this branch's own code |
+| S6 | Rollback is **last-writer-wins**: an external edit landing between capture and restore is silently discarded, and `_still_modified` reports clean | Inherent to any rollback that captures content up front. Window = the diagnostics wait |
+| S7 | A frame truncated **inside** its header block ends the session silently (no `malformed frame` line), where the same truncation one byte later is audible | EOF was genuinely reached, so the session must end either way; only the operator-facing distinction is lost. `read_message`'s own comment documents the case |
+| S8 | `normalize_changes` silently drops a malformed `documentChanges` entry, and the whole-refusal gate fires only on non-empty `notes[]`, so the remainder is applied and reported `success` | Requires a malformed server edit; the honesty note covers only `create`/`rename`/`delete` |
+| S9 | A `null` `textDocument.uri` raises out of `capture_footprint`, before `_run_edit`'s `try` | Identical in shape and cost to B2 — an error, never a success and never a `rolled_back: true` |
+| S10 | A `request-failed:` discards every note the harvest accumulated | `ran=False`, so no caller reads the outcome as a result |
+| S11 | An **unparseable or BOM-prefixed** file is a silent scanned-but-empty file, while an unreadable one gets a note | Affects recall only, never attribution. Documented in `import_positions`; the `unresolved-symbol` count already discloses the shortfall |
+| S12 | A **dangling symlink** reports the resolved target in `failed_path` rather than the path the server named | Cosmetic; the failure is still reported and still fails closed |
 
 Round 3's observations O1 and O5 are **not** in this list: O1 was overtaken by round 5's A8 (the site
 count was wrong) and remains a handoff to `560-documentation-surface-truthfulness` rather than a

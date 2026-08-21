@@ -115,9 +115,17 @@ def expected_tokens(notation: str) -> list[str]:
     makes the flag noise rather than signal.
 
     So a site is confirmed when the line carries **either** the full notation
-    **or** the target's discriminating final segment — the script name for a
-    three-part notation, the skill name for a two-part one — which is the form
-    every edge kind has in common.
+    **or** the target's final segment — the script name for a three-part
+    notation, the skill name for a two-part one — which is the form every edge
+    kind has in common.
+
+    ⚠ **That tail is not, in general, discriminating**, and calling it so would
+    over-state what a `verified: true` from the tail alone establishes: measured
+    on this corpus, 18 tails are shared by more than one component (`extension`
+    by four, `plan-marshall-plugin` by eleven). The tail confirms that the cited
+    line mentions *a* component by that name, not necessarily *this* one. That
+    is why a line carrying the **full notation** outranks a tail-only match in
+    :meth:`resolve_reference_site` rather than merely tying with it.
     """
     tokens = [notation]
     tail = notation.rsplit(':', 1)[-1]
@@ -220,9 +228,10 @@ class CorpusIndex:
         file.
 
         **Candidates are ranked, not taken first-come.** A line carrying the
-        **full notation** outranks one carrying only the discriminating tail
-        segment, because the tail alone is an ordinary word that prose at the
-        same line number in a sibling document can contain by coincidence. Taking
+        **full notation** outranks one carrying only the tail segment, because
+        the tail alone is an ordinary word that prose at the same line number in
+        a sibling document can contain by coincidence — and, measured on this
+        corpus, 18 tails are shared by several components outright. Taking
         the first match in ``sorted(rglob)`` order made such a decoy win over the
         true citation with ``verified: True`` — a confidently wrong position,
         chosen by filename order.

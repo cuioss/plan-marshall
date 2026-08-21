@@ -91,10 +91,13 @@ def uri_to_path(uri: str) -> str:
     defect, but a false clean is the one outcome this write path may never
     produce, whatever the server does.
 
-    A path that cannot be resolved (it does not exist, or the filesystem refuses
-    the walk) falls back to the unresolved form: the apply loop then fails on it
-    and reports which path, which is a legible failure rather than a swallowed
-    one.
+    A path that cannot be resolved falls back to the unresolved form: the apply
+    loop then fails on it and reports which path, which is a legible failure
+    rather than a swallowed one. ⛔ ``RuntimeError`` is caught alongside
+    ``OSError`` because a **symlink loop** raises it rather than an ``OSError``,
+    and that is precisely "the filesystem refuses the walk" — the case this
+    fallback exists for. Catching only ``OSError`` let it escape from a helper
+    whose contract says it degrades.
     """
     if not uri.startswith('file:'):
         return uri
@@ -102,7 +105,7 @@ def uri_to_path(uri: str) -> str:
     raw = unquote(parsed.path)
     try:
         return str(Path(raw).resolve())
-    except OSError:
+    except (OSError, RuntimeError):
         return raw
 
 
@@ -182,6 +185,13 @@ def _position_to_offset(line_starts: list[int], text_length: int, line: int, cha
     # '\n', so the content ends one before it. The last line has no terminator
     # and ends at EOF. Clamping to the terminator instead would let the
     # end-of-line idiom swallow the newline and join two lines.
+    #
+    # ⚠ "The terminator" here is the single '\n' this offset table is built on.
+    # A CRLF file reaching this function directly through ``apply_text_edits``
+    # would have its '\r' clamped INSIDE the line and eaten by an end-of-line
+    # edit. That does not arise through ``apply_workspace_edit``, whose
+    # ``read_text`` has already translated CRLF to LF — which is its own
+    # disclosed limit, not a mitigation of this one.
     line_end = line_starts[line + 1] - 1 if line + 1 < len(line_starts) else text_length
     return min(line_starts[line] + max(character, 0), line_end)
 
@@ -277,15 +287,23 @@ def _still_modified(originals: dict[str, str]) -> bool:
     """Report whether any path's content on disk differs from what was captured.
 
     The question ``restore_error`` is supposed to answer, asked of the disk
-    instead of inferred from an exception. A path that cannot be read back is
-    counted as modified: the honest answer under an unreadable file is "I cannot
+    instead of inferred from an exception. A path that cannot be read back —
+    missing, unreadable, or **no longer decodable as UTF-8** — is counted as
+    modified: the honest answer under a file this cannot re-read is "I cannot
     show you this tree is clean", and the fail-closed direction here is to warn.
+
+    ⛔ ``UnicodeDecodeError`` is caught explicitly and is **not** an ``OSError``.
+    A write that failed part-way through a multi-byte character leaves exactly
+    that state, so omitting it let this function raise out of the failure
+    handler and REPLACE ``WorkspaceApplyError`` — costing the caller
+    ``failed_path`` and ``restore_error`` over a genuinely damaged file, which
+    is the worst moment to lose them.
     """
     for path, content in originals.items():
         try:
             if Path(path).read_text(encoding='utf-8') != content:
                 return True
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             return True
     return False
 

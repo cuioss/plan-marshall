@@ -81,7 +81,7 @@ A zero row is usually not a defect and not a sign that something is misconfigure
 
 Names are matched the way Python packaging matches them: case-insensitively, with any run of `-`, `_` or `.` treated as equivalent. A module publishing `sample-api` is therefore reached by a dependency spelling it `Sample_API`.
 
-Up to two scopes are read, depending on which descriptor form supplied the name: a runtime dependency list, and a `dev` group. PEP 621 gives both (`[project] dependencies` and the `dev` extra under `[project.optional-dependencies]`); Poetry gives both (`[tool.poetry.dependencies]` and `[tool.poetry.group.dev.dependencies]`); `setup.cfg` gives runtime only (`[options] install_requires`), because it has no `dev` equivalent. A `dev` entry is a real edge, because changing the module you depend on can break your tests.
+Up to two scopes are read, depending on which descriptor form supplied the name: a runtime dependency list, and a `dev` group. PEP 621 gives both (`[project] dependencies` and the `dev` extra under `[project.optional-dependencies]`); Poetry gives both (`[tool.poetry.dependencies]` and `[tool.poetry.group.dev.dependencies]`); `setup.cfg` gives runtime only (`[options] install_requires`). It does have a `dev` analogue — `[options.extras_require]`, the counterpart of `[project.optional-dependencies]` — and that is simply not read yet, so a `dev` extra declared there produces no edge. A `dev` entry is a real edge, because changing the module you depend on can break your tests.
 
 Other extras are *not* read. A sibling named only under a `test`, `docs` or `all` extra produces no edge — move it to `dev` (or to `dependencies`) if you need it in the graph.
 
