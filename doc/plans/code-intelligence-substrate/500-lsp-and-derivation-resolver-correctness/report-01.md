@@ -347,10 +347,13 @@ stale-figure defect this report warns about elsewhere, committed here.
 | `e061414`, round 8's fixes | 21433 passed, 14 skipped, 406.69 s, `verify: SUCCESS` |
 | `f93849e`, round 9's fixes | 21437 passed, 14 skipped, 416.91 s, `verify: SUCCESS` |
 | `91629f3`, round 10's fixes | 21439 passed, 14 skipped, 416.59 s, `verify: SUCCESS` |
-| **`1c234ff`, round 11's fixes — the figure that governs** | **21439 passed, 14 skipped, 435.96 s, `verify: SUCCESS`** |
+| `1c234ff`, round 11's fixes | 21439 passed, 14 skipped, 435.96 s, `verify: SUCCESS` |
+| **`77c1a21`, the tree merged with `origin/main` at `8dd6f1a` — the figure that governs** | **21642 passed, 14 skipped, 486.33 s, `verify: SUCCESS`** |
 
 The figure that governs is the last, because it is the only one measured on the tree that actually
-lands. Rounds 4 through 10 each touch production Python — docstrings at first, then real behaviour changes
+lands — which, once `main` moved under the branch a second time, is the **merged** tree rather than
+the branch's own head. The count rises from 21439 to 21642 because `main` brought 203 tests with it,
+not because this branch added any. Rounds 4 through 10 each touch production Python — docstrings at first, then real behaviour changes
 from round 7 on (`apply_workspace_edit`'s rollback, `read_message`'s frame contract, the harvest's
 failure-mode split, the resolver listing's `configured` flag, round 9's three write-path fixes, and
 round 10's `setup.cfg` interpolation fix) — so the gate was re-run on each rather than carried
