@@ -613,6 +613,56 @@ rather than citing a document that sanctions them. Re-derived: `coupling invento
 and `doc/plans` return nothing across every `marketplace/**` file this run touched. The couplings
 themselves stay registered in the inventory, which is where a registry belongs.
 
+### Verification rounds 5–7 — a different lens each, and why
+
+The first four rounds and the closure pass were all scoped **to the plan**. That scoping is why
+they missed a defect the operator found in seconds: shipped bundle source citing a meta-project
+planning document. Nothing in the plan forbids it, so nothing asked.
+
+The operator authorised five further rounds. Running five more general rounds would have reproduced
+the same blind spot, so each was given a **different lens** instead, and the two whose value depends
+on running against fixed code were held back until 5–7's findings had landed.
+
+| Round | Lens | What it could see that a plan-scoped round could not |
+|---|---|---|
+| 5 | The repository's own standing rules | `CLAUDE.md` documentation standards, the meta-project-leak class, `principles.md` terminology, plugin-doctor rule *intent* rather than what its implementation catches, and the `standards/` sub-documents this run never read |
+| 6 | Adversarial security | The deliverable is a credential-protection mechanism and no pass had reviewed it as one |
+| 7 | Blast radius | Every caller of every changed symbol, the two changed output shapes, and what an OpenCode user actually receives |
+| 8 | Test vacuity at scale | Every test the run added or touched, mutation-proven — not the eighteen the sweep happens to cover |
+| 9 | Cold read | The final state read by someone given no brief, no report and no history |
+
+**Round 6 is the one that changes how this PR should be read.** It found a **fail-open in the
+security command**: `protect-path` discarded `_save_settings`'s return, so an unwritable settings
+file produced `status: success` with a non-zero `rules_added` and **zero rules on disk** — a
+security control telling an operator their credentials were guarded by rules that reached nothing.
+The sibling `ensure_default_permissions`, added in the same commit, consumes that bool correctly:
+the change established the right pattern in one place and violated it in the one that mattered.
+It also found that an empty `--permissions` element rendered `Read(/**)` and
+`Bash(python3 -c **)` — a denial of every absolute read and every inline script — and that a path
+carrying `)` truncates its rule and frees the remainder as rule text.
+
+Every input class round 6 names was **executed**, not argued, on both the current and the retired
+implementation.
+
+**Round 5 answers a question the operator asked directly.** Challenged on whether this run had
+written historical "used to be" prose into documentation, an earlier sweep reported clean — and it
+was clean, over `marketplace/**`. Round 5 read the pytest standard, which forbids a test docstring
+citing "a superseded behaviour", and found **thirteen** such docstrings plus three deliverable-id
+comments in the test tree. The sweep had been scoped to the wrong subtree; the operator's instinct
+was right and the evidence for it was one directory over.
+
+### The over-budget test module
+
+`test_permission_rendering.py` reached 663 lines against the repository's 400-line module budget —
+poor form immediately after the module-budget campaign this branch rebased onto. It is split on its
+class boundaries into four modules (`_defaults`, `_settings_path`, `_deny_rules`, `_protect_path`),
+verified a pure move by multiset of `Class::test` occurrences: **34 before, 34 after, none lost,
+none gained**, and 41 collected items either side.
+
+Three land under budget. `_protect_path` is **409 lines around a single class**, and the campaign's
+own rule forbids splitting a class — the same shape that campaign accepted for four of its own
+modules. Recorded rather than forced.
+
 ## Reviewer participation
 
 _Recorded at the merge gate, from the comment bodies on all three surfaces._
