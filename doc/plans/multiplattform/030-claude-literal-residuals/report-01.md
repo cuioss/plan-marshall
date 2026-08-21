@@ -860,7 +860,7 @@ mutating branches — `normalize`, `add`, `remove`, `ensure`, `consolidate` — 
 That is the **third** instance of one bug in this PR's review. Round 6 found it in `protect-path`;
 round 8 found it in `ensure_default_permissions`; this found the five remaining siblings. All five
 predate this branch. They are fixed anyway, because the alternative was shipping a PR that
-introduced a fail-closed contract, documented `io_error` for `permission fix`, and left four
+introduced a fail-closed contract, documented `io_error` for `permission fix`, and left five
 operations in the same function reporting success after writing nothing — a split population is how
 the next reader concludes the checked one is the exception. One `_write_failed` helper now serves
 every branch including `protect-path`, so there is a single `io_error` site rather than six chances
@@ -1076,10 +1076,22 @@ written, so the protection holds", contradicted itself and is withdrawn. Derived
 reasoned about: a directory under `$HOME` renders **19** rules, both spellings of each vector; one
 outside it renders **10**, the absolute spelling alone.
 
-So the gap is real and narrow: a command naming such a directory by its absolute path is denied; the
-same directory named through its `~`-relative spelling is not. Closing it would mean resolving
+So the gap is **renderer-level, and stated no further than that**: for such a directory the tilde arm
+of every vector is not emitted. Whether a command naming it by its `~`-relative spelling is
+consequently *undenied* is a question about the matcher, which the paragraph below says this
+repository cannot answer — and an earlier version of this passage answered it anyway, asserting the
+spelling "is not" denied. That was the same over-reach one paragraph ahead of its own disclaimer.
+
+Two things follow, and only these. The absolute arm **is** emitted, so a command naming the
+directory absolutely meets a rule that exists. And closing the emission gap would mean resolving
 symlinks, which `resolve()` does by renaming the directory the caller asked to protect — the reason
-the renderer is lexical in the first place. Characterised, not closed.
+the renderer is lexical in the first place.
+
+A reviewer's web search surfaced Claude Code documentation reporting that home-directory deny rules
+match the `~` and `$HOME` forms interchangeably in recognised Bash commands. If accurate, the
+emission gap would matter less than it appears, or not at all. That is **third-party information
+this run could not verify**, so it is recorded as a lead for the operator rather than folded into
+the conclusion. Characterised, not closed.
 
 **The permission matcher's own behaviour is unverified and unverifiable here.** Every deny rule this
 change writes rests on assumptions about how Claude Code matches them — that `~` is expanded at match

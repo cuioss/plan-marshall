@@ -205,5 +205,8 @@ class TestReadOnlyOperationsUseTheReadSelector:
         result = _parse(claude_runtime.ClaudeRuntime().permission_web_analyze('project'))
 
         assert result['status'] == 'success'
-        rendered = str(result)
-        assert 'local.example' in rendered
+        # Presence of the local domain alone would also pass on an implementation
+        # that MERGED both files. Asserting the shared domain is absent is what
+        # pins precedence rather than mere reachability.
+        domains = {row['domain'] for row in result['domains']}
+        assert domains == {'domain:local.example'}

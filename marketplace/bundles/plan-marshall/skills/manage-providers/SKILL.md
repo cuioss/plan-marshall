@@ -174,7 +174,7 @@ It can also fail, and a caller must not read failure as protection:
 |---|---|---|
 | `unknown_target` | `runtime.target` names no registered runtime | Fix `runtime.target` in `marshal.json` |
 | `invalid_operation` | The credentials directory cannot be expressed as a rule — it is relative, is the filesystem root, contains `..` or whitespace, or carries `(`, `)`, `*` or a control character | Set `PLAN_MARSHALL_HOME` to an absolute path, below the root, free of those — so the credentials directory beneath it is renderable. The `message` names the path and the reason |
-| `invalid_settings` | The settings file is malformed, or its `deny` entry is not a list | Repair the settings file; nothing was written |
+| `invalid_settings` | The settings file cannot be used as settings. Four shapes reach this: unparseable JSON; a JSON root that is not an object; a `permissions` value that is not an object; and a `permissions.deny` that is not a list. The middle two parse as valid JSON, so a syntax check does not catch them | Repair the settings file; **nothing was written** in any of the four cases |
 | `io_error` | The rules were rendered but the settings file could not be written | Check permissions on the settings file. **This run writes nothing** — the settings file is unchanged, so its protection is whatever it already contains |
 
 ## Security Model
