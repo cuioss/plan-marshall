@@ -313,6 +313,48 @@ class TestResolveStepDocPath:
         expected = (tmp_path / '.claude' / 'skills' / 'finalize-step-demo' / 'SKILL.md').resolve()
         assert path == expected
 
+    def test_a_step_on_a_lower_priority_root_resolves_to_that_root(
+        self, tmp_path, monkeypatch
+    ):
+        """The resolver searches every declared root, not just the first.
+
+        Discovery scans the same root list. A step it finds under a root this
+        resolver does not search is worse than an invisible one: it is found and
+        then fails to resolve.
+        """
+        import configurable_contract as cc
+        import file_ops
+
+        monkeypatch.setattr(file_ops, '_resolve_plan_root', lambda: tmp_path)
+        monkeypatch.setattr(
+            cc, 'get_project_skill_roots', lambda: ('first/steps', 'second/steps')
+        )
+        on_disk = tmp_path / 'second' / 'steps' / 'finalize-step-demo'
+        on_disk.mkdir(parents=True)
+        (on_disk / 'SKILL.md').write_text('# Step\n', encoding='utf-8')
+
+        assert resolve_step_doc_path('project:finalize-step-demo') == on_disk / 'SKILL.md'
+
+    def test_a_step_on_no_root_is_reported_against_the_highest_priority_one(
+        self, tmp_path, monkeypatch
+    ):
+        """Nothing on disk yields a deterministic path, taken from the FIRST root.
+
+        The caller needs a path to name in its error; taking the last root would
+        name a location the operator has no reason to look at.
+        """
+        import configurable_contract as cc
+        import file_ops
+
+        monkeypatch.setattr(file_ops, '_resolve_plan_root', lambda: tmp_path)
+        monkeypatch.setattr(
+            cc, 'get_project_skill_roots', lambda: ('first/steps', 'second/steps')
+        )
+
+        assert resolve_step_doc_path('project:finalize-step-demo') == (
+            tmp_path / 'first' / 'steps' / 'finalize-step-demo' / 'SKILL.md'
+        )
+
     def test_default_prefix_prefers_workflow_then_standards(self, tmp_path, monkeypatch):
         """A built-in step prefers workflow/{name}.md, falling back to standards/."""
         import configurable_contract as cc

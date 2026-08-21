@@ -8,7 +8,7 @@ Reference document for the manage-providers skill covering threat model, securit
 
 **Primary boundary**: `chmod 700` on `~/.plan-marshall/credentials/` directory (under the machine-global home root, overridable via `PLAN_MARSHALL_HOME`). The OS prevents any process running as a different user from reading.
 
-**Defense-in-depth**: host-platform deny rules covering `Read`, `Bash(cat)`, `Bash(head)`, `Bash(tail)`, `Bash(less)`, `Bash(more)`, `Bash(cp)`, `Bash(grep)`, `Bash(python3 -c)`, `Bash(base64)` — both `~` and absolute path forms.
+**Defense-in-depth**: whatever the active target's runtime uses to deny reads of that directory — on a target with a permission model, rules covering the read tool, the file-dumping shell binaries, and inline-script invocation, in every spelling of the path that model distinguishes. The rules are not enumerated here: the set is rendered by the runtime (`platform-runtime`, `permission fix --operation protect-path`), and a second copy in prose is a copy that goes stale. See [`../SKILL.md`](../SKILL.md) § "Protect the Credentials Directory" for the command and its behaviour on a target with no permission backend.
 
 **Limitation acknowledged**: Deny rules are fundamentally a blocklist. New bypass vectors (e.g., new Bash commands, scripting runtimes) are always possible. `chmod 700` is the real security control.
 
@@ -49,37 +49,30 @@ These constraints apply to all scripts in this skill:
 
 ### Covered Patterns
 
-The rules are single-sourced from `CREDENTIALS_DIR`; every Read/Bash vector is
-emitted in BOTH the tilde and absolute path forms, and the `python3 -c` vector
-uses the distinctive path tail so it matches either spelling in an inline script:
+**The pattern set is not restated here.** It is rendered by the active target's runtime from the
+credentials directory it is asked to protect — `platform-runtime`, `permission fix --operation
+protect-path` — and a copy in prose is a copy that drifts. Read the set from
+`platform-runtime/scripts/claude_runtime.py` (`_protect_path_deny_rules`, and the vectors it
+iterates) or from a settings file the command has written.
 
-```text
-Read(~/.plan-marshall/credentials/**)
-Read({abs_path}/**)
-Bash(cat ~/.plan-marshall/credentials/*)
-Bash(cat {abs_path}/*)
-Bash(head ~/.plan-marshall/credentials/*)
-Bash(head {abs_path}/*)
-Bash(tail ~/.plan-marshall/credentials/*)
-Bash(tail {abs_path}/*)
-Bash(less ~/.plan-marshall/credentials/*)
-Bash(less {abs_path}/*)
-Bash(more ~/.plan-marshall/credentials/*)
-Bash(more {abs_path}/*)
-Bash(cp ~/.plan-marshall/credentials/*)
-Bash(cp {abs_path}/*)
-Bash(grep ~/.plan-marshall/credentials/*)
-Bash(grep {abs_path}/*)
-Bash(base64 ~/.plan-marshall/credentials/*)
-Bash(base64 {abs_path}/*)
-Bash(python3 -c *.plan-marshall/credentials*)
-```
+What the coverage *is*, stated as intent rather than as syntax: the `Read` tool, the file-dumping
+shell binaries the vector list names, and inline-script invocation. Each is rendered in the tilde
+and absolute spellings of the path; a directory outside the home has only one spelling, so it
+yields correspondingly fewer rules covering the same ground.
+
+**What that does not cover** is as important as what it does, so it is stated rather than left to
+be inferred from a pattern list: other spellings of the same directory (an unexpanded `$HOME`, a
+cwd-relative read, a `..`-bearing form) are not rendered, and tools other than `Read` and `Bash`
+— `Grep`, `Glob`, `Write`, `Edit` — get no rule at all. The list below is the standing set of
+acknowledged gaps.
 
 ### Acknowledged Bypass Limitations
 
 - New shell commands not in the blocklist
 - Scripting runtimes (ruby, perl, node) not covered
-- Indirect reads via symlinks (mitigated by `os.path.realpath()` validation)
+- Tools other than `Read` and the named `Bash` binaries — `Grep` returns file content and is not denied; `Write` and `Edit` are not denied either
+- Path spellings other than the two rendered — an unexpanded `$HOME`, a cwd-relative read, a `..`-bearing form
+- Indirect reads via symlinks (mitigated by `os.path.realpath()` validation), and a symlinked credentials directory, whose rules name the link rather than its target
 - Process-level reads by same-user processes
 
 ## Testing Requirements

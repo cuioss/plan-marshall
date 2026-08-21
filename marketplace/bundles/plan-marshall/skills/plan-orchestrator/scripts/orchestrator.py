@@ -55,16 +55,18 @@ operation groups against the main-anchored orchestrator store
   participating rows and the sample instant. An unreadable or disagreeing
   observation resolves to ``indeterminate`` and never to ``not_ready``.
 - ``inbox {write,amend,supersede,close-stream,validate,list,archive,
-  migrate-archive,detect}`` — the epic's plan-writable OUTBOX and its
-  orchestrator-side drain: append one ``inbox/{sender_id}-{NNN}.md`` message,
+  migrate-archive,detect,landing-check}`` — the epic's plan-writable OUTBOX and
+  its orchestrator-side drain: append one ``inbox/{sender_id}-{NNN}.md`` message,
   correct a filed message body in place (``amend`` — preserves ``created``,
   stamps a monotonic ``revision``), retire a message in favour of a successor
   (``supersede`` — tombstone-style), mark a sender's stream ended
   (``close-stream``), validate an existing message against the envelope schema,
   enumerate the queued messages with their validation verdicts and lifecycle,
   retire a consumed message to ``inbox/archive/{sender}/``, fold a flat archive
-  into that per-sender layout (``migrate-archive``), or classify a plan's
-  ``source_id`` pointer as orchestrated. Backed by :mod:`_orchestrator_inbox`;
+  into that per-sender layout (``migrate-archive``), classify a plan's
+  ``source_id`` pointer as orchestrated, or report whether a landing message
+  carries its required machine-readable facts (``landing-check``). Backed by
+  :mod:`_orchestrator_inbox`;
   the write boundary is enforced by construction there (no caller-supplied
   output path exists).
 
@@ -79,7 +81,7 @@ import re
 import shutil
 import subprocess
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from pathlib import Path
 from typing import Any
 
@@ -284,6 +286,40 @@ LIVE_QUEUE_EXCLUDED_STATUSES = TERMINAL_PLAN_STATUSES
 #: because inserting markers into a hand-authored document is a structural edit
 #: the stage has no mandate to make.
 GENERATED_BLOCKS = ('resume-summary', 'ordered-queue')
+
+#: The ``##`` section of ``templates/epic.md`` that OWNS each generated block —
+#: the heading a reader would look under to find that derivable surface. Used
+#: only to key a block's ``markers_absent`` outcome back onto the section the
+#: compaction report names, so a section the stage COULD NOT reach is
+#: distinguishable from one it deliberately left alone. Titles are matched
+#: case-insensitively after stripping, since epic.md is hand-authored. A block
+#: whose owning heading is absent from a given epic.md yields no abstained row at
+#: all; its absence is still reported as that block's ``markers_absent`` outcome
+#: in ``regenerated[]``.
+GENERATED_BLOCK_OWNING_SECTION: dict[str, str] = {
+    'resume-summary': 'START HERE',
+    'ordered-queue': 'Ordered Queue',
+}
+
+#: The two ``abstained[]`` treatments. ``preserved_verbatim`` is a CHOICE — the
+#: section carries no derivable surface, so leaving it alone is the correct
+#: outcome. ``markers_absent_not_regenerated`` is a BLIND SPOT — the section
+#: carries a derivable surface whose marker pair is missing, so the stage could
+#: not reach it and regenerated nothing. Emitting the first for the second would
+#: report a deliberate abstention the stage never made.
+TREATMENT_PRESERVED = 'preserved_verbatim'
+TREATMENT_UNREACHABLE = 'markers_absent_not_regenerated'
+
+# The two block registries must name the SAME blocks. They are kept separate
+# rather than derived from one another because they answer different questions —
+# which blocks the stage regenerates, and which heading owns each — but a block
+# added to one and not the other would either lose its ownership treatment or
+# claim an ownership it has no block for. Neither direction can pass silently.
+assert frozenset(GENERATED_BLOCKS) == frozenset(GENERATED_BLOCK_OWNING_SECTION), (
+    f'GENERATED_BLOCKS {sorted(GENERATED_BLOCKS)} and GENERATED_BLOCK_OWNING_SECTION '
+    f'{sorted(GENERATED_BLOCK_OWNING_SECTION)} name different blocks'
+)
+
 
 def _begin_marker(name: str) -> str:
     return f'<!-- BEGIN GENERATED: {name} -->'
@@ -1802,43 +1838,79 @@ def _running_plans_signal(status_doc: dict[str, Any]) -> dict[str, Any]:
     return _signal('running_plans', READY, 'no plan row is running', population)
 
 
-def _corpus_signal(slug: str) -> dict[str, Any]:
-    """Corpus reconciliation, consuming ``corpus enumerate`` rather than re-deriving it.
+#: The neutral outcome states of the bidirectional queue<->spec reconciliation
+#: read. They are deliberately NOT the readiness vocabulary and NOT the invariant
+#: vocabulary: :func:`_read_queue_spec_reconciliation` is shared by two callers
+#: that grade the same facts into different words, so the shared seam names the
+#: STATE and each caller owns the translation.
+RECONCILE_NOT_ENUMERABLE = 'not_enumerable'
+RECONCILE_UNREADABLE = 'unreadable'
+RECONCILE_ORPHANED = 'orphaned'
+RECONCILE_RECONCILED = 'reconciled'
 
-    An unreadable spec outranks an orphan: a corpus that could not be fully read
-    is unobservable, so it yields ``indeterminate`` even when the readable part
-    also reconciles badly.
+
+def _read_queue_spec_reconciliation(slug: str) -> tuple[str, str, str]:
+    """Read the bidirectional queue<->spec reconciliation as a neutral triple.
+
+    The one branch body behind both :func:`_invariant_queue_spec` (the compact
+    stage's invariant) and :func:`_corpus_signal` (the restart-check's readiness
+    signal). Consumes ``corpus enumerate`` rather than re-deriving the corpus.
+
+    The check that BITES: a count match alone passes with a mismatched pair, so
+    both directions are read — no row without a spec AND no spec without a row.
+    An unreadable spec OUTRANKS an orphan: a corpus that could not be fully read
+    is unobservable, not reconciled-badly, so it yields
+    :data:`RECONCILE_UNREADABLE` even when the readable part also reconciles
+    badly.
+
+    Returns:
+        ``(state, evidence, population)``. ``state`` is one of
+        :data:`RECONCILE_NOT_ENUMERABLE`, :data:`RECONCILE_UNREADABLE`,
+        :data:`RECONCILE_ORPHANED` or :data:`RECONCILE_RECONCILED`; the other two
+        elements are the caller-agnostic prose each caller passes through
+        unchanged.
     """
     result = cmd_corpus_enumerate(argparse.Namespace(slug=slug))
     if result.get('status') != 'success':
-        return _signal(
-            'corpus_reconciliation',
-            READINESS_INDETERMINATE,
+        return (
+            RECONCILE_NOT_ENUMERABLE,
             f'corpus enumerate could not run: {result.get("error", "unknown")}',
             'queue rows and spec files: not enumerable',
         )
-    population = (
-        f'{result["rows_total"]} queue row(s) and {result["specs_total"]} spec file(s)'
-    )
+    population = f'{result["rows_total"]} queue row(s) and {result["specs_total"]} spec file(s)'
     if result['unreadable_count']:
-        return _signal(
-            'corpus_reconciliation',
-            READINESS_INDETERMINATE,
+        return (
+            RECONCILE_UNREADABLE,
             f'{result["unreadable_count"]} spec file(s) could not be read',
             population,
         )
     orphan_rows = result['rows_without_spec_count']
     orphan_specs = result['specs_without_row_count']
     if orphan_rows or orphan_specs:
-        return _signal(
-            'corpus_reconciliation',
-            NOT_READY,
+        return (
+            RECONCILE_ORPHANED,
             f'{orphan_rows} row(s) without a spec and {orphan_specs} spec(s) without a row',
             population,
         )
-    return _signal(
-        'corpus_reconciliation', READY, 'queue and specs reconcile both ways', population
-    )
+    return RECONCILE_RECONCILED, 'queue and specs reconcile both ways', population
+
+
+def _corpus_signal(slug: str) -> dict[str, Any]:
+    """Corpus reconciliation as a restart-readiness signal.
+
+    Maps :func:`_read_queue_spec_reconciliation`'s neutral state into the
+    readiness vocabulary: an unobservable corpus (not enumerable, or not fully
+    readable) is ``indeterminate`` rather than ``not_ready`` — the *unobserved is
+    not failed* rule the other readiness signals hold.
+    """
+    state, evidence, population = _read_queue_spec_reconciliation(slug)
+    verdict = {
+        RECONCILE_NOT_ENUMERABLE: READINESS_INDETERMINATE,
+        RECONCILE_UNREADABLE: READINESS_INDETERMINATE,
+        RECONCILE_ORPHANED: NOT_READY,
+        RECONCILE_RECONCILED: READY,
+    }[state]
+    return _signal('corpus_reconciliation', verdict, evidence, population)
 
 
 def _inbox_signal(slug: str) -> dict[str, Any]:
@@ -2015,27 +2087,36 @@ def _marker_indices(lines: list[str], name: str) -> tuple[int, int]:
     return (begin_idx, end_idx)
 
 
-def _replace_block(text: str, name: str, new_body: str) -> tuple[str, str, int, int]:
+def _replace_block(text: str, name: str, new_body: str) -> tuple[str, str, int, int, str]:
     """Replace one GENERATED block's body in place, reporting the outcome.
 
-    Returns ``(new_text, outcome, lines_before, lines_after)``. ``outcome`` is
-    one of ``regenerated`` (the body changed), ``unchanged`` (byte-identical, so
-    a second run is a no-op), or ``markers_absent`` (the block's markers are not
-    in this epic.md — reported, never fabricated, because inserting markers into
-    a hand-authored document is a structural edit this stage has no mandate for).
-    Splitting on ``\\n`` keeps a trailing newline as a trailing element, so the
-    re-joined text is byte-identical when nothing changed.
+    Returns ``(new_text, outcome, lines_before, lines_after, replaced_body)``.
+    ``outcome`` is one of ``regenerated`` (the body changed), ``unchanged``
+    (byte-identical, so a second run is a no-op), or ``markers_absent`` (the
+    block's markers are not in this epic.md — reported, never fabricated, because
+    inserting markers into a hand-authored document is a structural edit this
+    stage has no mandate for). Splitting on ``\\n`` keeps a trailing newline as a
+    trailing element, so the re-joined text is byte-identical when nothing
+    changed.
+
+    ``replaced_body`` is the PRE-WRITE between-marker text, and it is non-empty
+    only for ``regenerated``. It exists because a line-count delta does not say
+    WHAT was overwritten: a hand-written note someone left inside a generated
+    block is legitimately replaced on the first pass (the region is the
+    generator's), and reporting only ``5 -> 7 lines`` leaves the operator unable
+    to tell which bytes went. The other two outcomes overwrite nothing, so both
+    report ``''``.
     """
     lines = text.split('\n')
     begin_idx, end_idx = _marker_indices(lines, name)
     if begin_idx < 0 or end_idx < 0:
-        return text, 'markers_absent', 0, 0
+        return text, 'markers_absent', 0, 0, ''
     before = lines[begin_idx + 1 : end_idx]
     new_lines = new_body.split('\n')
     if before == new_lines:
-        return text, 'unchanged', len(before), len(new_lines)
+        return text, 'unchanged', len(before), len(new_lines), ''
     updated = lines[: begin_idx + 1] + new_lines + lines[end_idx:]
-    return '\n'.join(updated), 'regenerated', len(before), len(new_lines)
+    return '\n'.join(updated), 'regenerated', len(before), len(new_lines), '\n'.join(before)
 
 
 def _invariant(name: str, verdict: str, evidence: str, population: str) -> dict[str, Any]:
@@ -2049,41 +2130,21 @@ def _invariant(name: str, verdict: str, evidence: str, population: str) -> dict[
 
 
 def _invariant_queue_spec(slug: str) -> dict[str, Any]:
-    """Bidirectional queue <-> spec reconciliation, consuming ``corpus enumerate``.
+    """Bidirectional queue <-> spec reconciliation as a compact-stage invariant.
 
-    The check that BITES: a count match alone passes with a mismatched pair, so
-    both directions are asserted — no row without a spec AND no spec without a
-    row. An unreadable spec outranks an orphan into ``indeterminate``: a corpus
-    that could not be fully read is unobservable, not reconciled-badly.
+    Maps :func:`_read_queue_spec_reconciliation`'s neutral state into the
+    invariant vocabulary: an unobservable corpus (not enumerable, or not fully
+    readable) is ``indeterminate`` rather than ``violated`` — a corpus that could
+    not be fully read is unobserved, not reconciled-badly.
     """
-    result = cmd_corpus_enumerate(argparse.Namespace(slug=slug))
-    if result.get('status') != 'success':
-        return _invariant(
-            'queue_spec_bidirectional',
-            'indeterminate',
-            f'corpus enumerate could not run: {result.get("error", "unknown")}',
-            'queue rows and spec files: not enumerable',
-        )
-    population = f'{result["rows_total"]} queue row(s) and {result["specs_total"]} spec file(s)'
-    if result['unreadable_count']:
-        return _invariant(
-            'queue_spec_bidirectional',
-            'indeterminate',
-            f'{result["unreadable_count"]} spec file(s) could not be read',
-            population,
-        )
-    orphan_rows = result['rows_without_spec_count']
-    orphan_specs = result['specs_without_row_count']
-    if orphan_rows or orphan_specs:
-        return _invariant(
-            'queue_spec_bidirectional',
-            'violated',
-            f'{orphan_rows} row(s) without a spec and {orphan_specs} spec(s) without a row',
-            population,
-        )
-    return _invariant(
-        'queue_spec_bidirectional', 'ok', 'queue and specs reconcile both ways', population
-    )
+    state, evidence, population = _read_queue_spec_reconciliation(slug)
+    verdict = {
+        RECONCILE_NOT_ENUMERABLE: 'indeterminate',
+        RECONCILE_UNREADABLE: 'indeterminate',
+        RECONCILE_ORPHANED: 'violated',
+        RECONCILE_RECONCILED: 'ok',
+    }[state]
+    return _invariant('queue_spec_bidirectional', verdict, evidence, population)
 
 
 def _invariant_no_terminal_in_live_queue(queue_body: str) -> dict[str, Any]:
@@ -2189,15 +2250,46 @@ def _invariant_pointers_reachable(epic_text: str, root: Path) -> dict[str, Any]:
 _SECTION_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+(?P<title>.+?)[ \t]*#*[ \t]*$')
 
 
-def _abstained_sections(text: str) -> list[dict[str, str]]:
-    """Name every ``##`` section the stage left verbatim, and why.
+def _abstained_sections(text: str, unreachable_blocks: Collection[str]) -> list[dict[str, str]]:
+    """Name every ``##`` section the stage did not rewrite, and WHY it did not.
 
     A silent compaction is indistinguishable from a lossy one, so the report
-    names not only what changed but what was deliberately NOT touched. A section
-    is abstained-from unless it CONTAINS a GENERATED marker (which makes it a
-    regenerated surface). This is what lets a reader tell "nothing needed
-    touching" from "the stage could not see it".
+    names not only what changed but what was left alone. A section is listed
+    unless it CONTAINS a GENERATED marker (which makes it a regenerated surface),
+    and each listed section carries the treatment that says which of two very
+    different things happened to it:
+
+    - :data:`TREATMENT_PRESERVED` — a deliberate abstention. The section carries
+      no derivable surface, so leaving it verbatim is the correct outcome.
+    - :data:`TREATMENT_UNREACHABLE` — a blind spot. The section OWNS a block in
+      ``unreachable_blocks`` (one whose :func:`_replace_block` outcome was
+      ``markers_absent``), so the stage could not see the derivable surface and
+      regenerated nothing there.
+
+    That distinction is the whole point of the list — "nothing needed touching"
+    versus "the stage could not see it" — and emitting the first for the second
+    claims a choice the stage never made. On an ``epic.md`` scaffolded before the
+    ``ordered-queue`` marker pair shipped, the second case is the ordinary output,
+    not an edge case.
+
+    Args:
+        text: The ``epic.md`` content to enumerate, read BEFORE any rewrite.
+        unreachable_blocks: Block names whose markers were absent this pass.
+            Mapped onto their owning heading via
+            :data:`GENERATED_BLOCK_OWNING_SECTION`; a name with no mapping, or a
+            mapped heading absent from ``text``, contributes no row.
+            **Required, deliberately undefaulted** — an empty default would make
+            every listed section come back :data:`TREATMENT_PRESERVED`, which is
+            precisely the pre-fix behaviour this function exists to replace. A
+            caller with genuinely no unreachable block passes an empty
+            collection explicitly, so the claim is made rather than defaulted
+            into.
     """
+    unreachable_titles = {
+        GENERATED_BLOCK_OWNING_SECTION[name].casefold()
+        for name in unreachable_blocks
+        if name in GENERATED_BLOCK_OWNING_SECTION
+    }
     lines = text.split('\n')
     fenced = _fenced_mask(lines)
     begins = {_begin_marker(name) for name in GENERATED_BLOCKS}
@@ -2208,9 +2300,21 @@ def _abstained_sections(text: str) -> list[dict[str, str]]:
     abstained: list[dict[str, str]] = []
     for order, (title, start) in enumerate(sections):
         end = sections[order + 1][1] if order + 1 < len(sections) else len(lines)
-        has_generated = any(line.strip() in begins for line in lines[start:end])
-        if not has_generated:
-            abstained.append({'section': title, 'treatment': 'preserved_verbatim'})
+        # An UNREACHABLE section is listed even though it contains a BEGIN marker.
+        # A partial pair — BEGIN present, END absent — is exactly that case:
+        # :func:`_replace_block` reports ``markers_absent`` because it needs BOTH
+        # indices, while a presence scan sees the BEGIN and would skip the section
+        # as a regenerated surface. The blind spot would then be reported by
+        # neither ``abstained[]`` nor ``unreachable_count``, which is the defect
+        # this treatment split exists to close, one level down. So the unreachable
+        # test is applied FIRST and the marker scan only decides whether a
+        # REACHABLE section is a regenerated surface.
+        if title.casefold() in unreachable_titles:
+            abstained.append({'section': title, 'treatment': TREATMENT_UNREACHABLE})
+            continue
+        if any(line.strip() in begins for line in lines[start:end]):
+            continue
+        abstained.append({'section': title, 'treatment': TREATMENT_PRESERVED})
     return abstained
 
 
@@ -2234,11 +2338,22 @@ def cmd_compact(args: argparse.Namespace) -> dict[str, Any]:
     mutated at the active path.
 
     The report names every mutation and every abstention: ``regenerated[]`` (per
-    block: its outcome and line counts), ``invariants[]`` (bidirectional queue
+    block: its outcome, its line counts, and — for a ``regenerated`` block —
+    ``replaced_body``, the pre-write between-marker text, so a first pass over an
+    already-annotated ledger NAMES the content it overwrote rather than reporting
+    only a line-count delta), ``invariants[]`` (bidirectional queue
     reconciliation, no-terminal-in-live-queue, and pointer reachability, each
-    with its verdict, evidence, and population), and ``abstained[]`` (every
-    narrative ``##`` section left verbatim). Idempotent: a second run finds every
-    block ``unchanged`` and writes nothing.
+    with its verdict, evidence, and population), and ``abstained[]`` (every ``##``
+    section not rewritten, each carrying the treatment that says WHY).
+
+    The two treatments are counted apart, because they mean opposite things:
+    ``abstained_count`` counts :data:`TREATMENT_PRESERVED` — deliberate
+    abstentions over sections carrying no derivable surface — while
+    ``unreachable_count`` counts :data:`TREATMENT_UNREACHABLE`, sections whose
+    derivable surface the stage COULD NOT REACH because the block's markers are
+    absent. A blind spot reported as a choice would be the misleading signal this
+    split exists to remove. Idempotent: a second run finds every block
+    ``unchanged`` and writes nothing.
     """
     invalid = _validate_slug(args.slug)
     if invalid:
@@ -2270,13 +2385,16 @@ def cmd_compact(args: argparse.Namespace) -> dict[str, Any]:
     text = original
     regenerated: list[dict[str, Any]] = []
     for name in GENERATED_BLOCKS:
-        text, outcome, lines_before, lines_after = _replace_block(text, name, bodies[name])
+        text, outcome, lines_before, lines_after, replaced_body = _replace_block(
+            text, name, bodies[name]
+        )
         regenerated.append(
             {
                 'surface': name,
                 'outcome': outcome,
                 'lines_before': lines_before,
                 'lines_after': lines_after,
+                'replaced_body': replaced_body,
             }
         )
     changed = text != original
@@ -2287,7 +2405,10 @@ def cmd_compact(args: argparse.Namespace) -> dict[str, Any]:
         _invariant_no_terminal_in_live_queue(bodies['ordered-queue']),
         _invariant_pointers_reachable(text, root),
     ]
-    abstained = _abstained_sections(original)
+    unreachable_blocks = [
+        row['surface'] for row in regenerated if row['outcome'] == 'markers_absent'
+    ]
+    abstained = _abstained_sections(original, unreachable_blocks)
     return {
         'status': 'success',
         'operation': 'compact',
@@ -2298,7 +2419,12 @@ def cmd_compact(args: argparse.Namespace) -> dict[str, Any]:
         'regenerated_count': sum(1 for row in regenerated if row['outcome'] == 'regenerated'),
         'regenerated': regenerated,
         'invariants': invariants,
-        'abstained_count': len(abstained),
+        'abstained_count': sum(
+            1 for row in abstained if row['treatment'] == TREATMENT_PRESERVED
+        ),
+        'unreachable_count': sum(
+            1 for row in abstained if row['treatment'] == TREATMENT_UNREACHABLE
+        ),
         'abstained': abstained,
     }
 
@@ -2520,11 +2646,12 @@ def _add_cleanup_group(subparsers: Any) -> None:
 def _add_inbox_group(subparsers: Any) -> None:
     """Register the ``inbox`` verb group.
 
-    Sub-verbs: ``write``, ``amend``, ``supersede``, ``close-stream``,
-    ``validate``, ``list``, ``archive``, ``migrate-archive``, ``detect``. The
-    handlers live in :mod:`_orchestrator_inbox`; this function only wires argv
-    to them. Note what the surface deliberately does NOT expose: no output
-    path, no sequence number, and no inbox directory — the write and correction
+    Sub-verbs, in registration order: ``write``, ``amend``, ``supersede``,
+    ``close-stream``, ``validate``, ``list``, ``archive``, ``migrate-archive``,
+    ``detect``, ``landing-check``. The handlers live in
+    :mod:`_orchestrator_inbox`; this function only wires argv to them. Note what
+    the surface deliberately does NOT expose: no output path, no sequence
+    number, and no inbox directory — the write and correction
     targets are derived from ``--slug`` plus ``--sender-id`` / a bare
     ``--message`` filename alone, which is what makes the ledger write-boundary
     carve-out enforced by construction. ``archive --as-name`` does not widen
@@ -2536,8 +2663,10 @@ def _add_inbox_group(subparsers: Any) -> None:
     inbox = subparsers.add_parser(
         'inbox',
         help=(
-            'Epic inbox OUTBOX and drain: append, validate, list, or archive a '
-            "message, or detect a plan's orchestration context."
+            'Epic inbox OUTBOX and drain: append, correct (amend/supersede), '
+            'end a sender stream, validate, list, archive or fold the archive '
+            "per sender, detect a plan's orchestration context, or check a "
+            "landing's required facts."
         ),
         allow_abbrev=False,
     )

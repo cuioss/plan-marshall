@@ -786,8 +786,8 @@ def test_walk_resolves_an_allowlisted_flag_arity_the_surface_does_not_declare(
 ):
     """The structural allowlist is the fallback that keeps the common shape precise.
 
-    ``--project-dir`` is honoured on every subcommand but is frequently rendered
-    in no node's help, so the derived map has no arity for it. Without the
+    ``--project-dir`` is accepted on any dispatch by this check but is frequently
+    rendered in no node's help, so the derived map has no arity for it. Without the
     allowlist fallback the single most common dispatch shape in the tree would
     degrade to an unvalidated spawn — the pair with the test above is what shows
     the fallback WIDENS knowledge rather than replacing the derivation.

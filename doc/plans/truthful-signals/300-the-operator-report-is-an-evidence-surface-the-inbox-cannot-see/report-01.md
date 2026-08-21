@@ -223,11 +223,11 @@ pytest. One earlier iteration surfaced 3 failures (two `_resolve_step_order_verd
 Verdict: D0–D3 functionally complete and correct; the intended-order claim (architecture-refresh sorts
 last) verified against `phase-6-finalize/SKILL.md`; the reserved terminal slot (1000–1099, empty)
 verified real; band doc links resolve; no undeclared collateral. **One accepted finding: the D2
-restatement sweep was incomplete** — 11 stale order restatements survived in files the renumber made
+restatement sweep was incomplete** — **13 stale order restatements across 5 files** (8 rows in the disposition table below, whose per-row multiplicities sum to 13 cited line locations) survived in files the renumber made
 false (build-passing, since they were docstrings/comments/prose, but the exact "renumber leaves a false
 statement behind" defect this epic targets).
 
-**Disposition — all 11 fixed** (commit below):
+**Disposition — all 13 fixed** (commit below). The table has 8 rows; two carry a `×2` and one a `×4`, so the rows sum to 13 statements across 5 files. State the figure as 13:
 
 | Stale statement | File | Fix |
 |---|---|---|
@@ -300,7 +300,7 @@ the shortfall is **disclosed, not blocked on** (the merge proceeds).
 | 4 Per-commit gate | Done — `*.py`-touching commits gated via `./pw verify` (read output, not exit code). |
 | 4 Pushed | Done — every commit pushed; no unpushed commit remains. |
 | 5 Build gate | Done — git-derived Python changes present → full `./pw verify` path; whole-tree green (19459 passed) incl. plugin-doctor marketplace-wide. |
-| 6 Verification sub-agent | Done — findings + disposition in § Findings (11 stale restatements caught and fixed). |
+| 6 Verification sub-agent | Done — findings + disposition in § Findings (13 stale restatements across 5 files caught and fixed — see the disposition table, which is the population the figure is derived from). |
 | 7 PR cycle | Done — PR #1211; all three comment surfaces read; no actionable comments; reviewer participation recorded. |
 | 8 Merge gate | Conditions 1–3 met (required checks green, comments handled, report finalized+pushed); 1-of-3 shortfall disclosed; auto-merge armed. Landing delegated to the merge queue (cloud session cannot self-wake — `subscribe_pr_activity` approval-gated). |
 | 8 Bridge | No status/bookkeeping write outside this plan's own directory; the report carries the PR number + per-deliverable outcome for the orchestrator's collect. |
@@ -312,7 +312,7 @@ A cloud run owes **no** `/sync-plugin-cache` (machine-local build step, not a de
 
 **No cloud-lane contract change proposed.** The contract held end to end: the branch/PR/merge cycle, the
 build gate (correctly took the full `*.py` path), the verification sub-agent (its beyond-diff
-staleness-sweep mandate is exactly what caught the 11 stale order restatements the first sweep missed —
+staleness-sweep mandate is exactly what caught the 13 stale order restatements the first sweep missed —
 the contract's existing wording worked as intended), the three-comment-surface read (surfaced the
 rate-limit verdicts correctly), the reviewer-population-from-registry rule, and the shortfall-disclosure
 + arm-and-hand-off completion for an approval-gated cloud session all behaved as written. The one

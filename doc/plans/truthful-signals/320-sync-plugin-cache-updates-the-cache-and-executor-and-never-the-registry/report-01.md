@@ -27,7 +27,7 @@ All obtainable by path; none had to be reported as unavailable.
 | **D6** | `parse_args_with_toon_errors` augments an "unrecognized arguments: --flag" rejection when `--flag` is a declared root-level router flag, naming that it belongs before the verb; unknown flags keep the default rejection; exit code stays 2. | `c4290c9` | 8 tests. SATISFIED. |
 | **D7** | Fixture-driven tests: six shapes + shape-6-distinct-from-shape-1, healthy passes, non-pinned load reported, disagreeing samples → indeterminate, the negative control (two agree third differs → FAIL), and SystemExit → glob fallback keeping `latest.py`. | `f4b7df0`, `c4290c9`, `2aab1be` | 48 new tests, all green. SATISFIED. |
 
-Non-blocking caveat (verified, not a gap): `loader_selected_version` omits the real selector's `is_candidate` predicate, so it diverges only in the practically-unreachable case where the newest-on-disk dir lacks `skills/`. Documented in the module as a deliberate mirror.
+Non-blocking caveat (superseded — this statement was wrong on both counts): `loader_selected_version` omitted the real selector's `is_candidate` predicate, and the divergence it caused is NOT confined to the newest dir lacking `skills/`. That is only `collect_script_dirs`' predicate; `resolve_bundle_path` passes a PER-REQUEST `lambda d: (d / subpath).exists()`, which resolves BACKWARD to an older dir whenever the newest one does not carry the subpath being resolved — the mechanism behind the incident this detector was built for. Nor was the omission documented in the module: it carried no such caveat at all. The model now takes an eligibility set and its docstring names both predicates.
 
 ## Build gate
 

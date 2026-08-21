@@ -362,8 +362,8 @@ halts and reports, and D2–D8 are not attempted.**
      paired observer is the supported producer.
 
    *Done when:* no docstring in the pin-trap module claims that this repository's version selection
-   consults the orphan marker, and `loader_selected_version` contains no branch whose outcome is
-   independent of the marker; the function returns an older dir when the newest is excluded by the
+   consults the orphan marker, and `loader_selected_version` contains no branch whose outcome
+   depends on the marker; the function returns an older dir when the newest is excluded by the
    supplied eligibility set, asserted by a test; the literal older-stale-beside-newest-pin tree has an
    asserted verdict and the shape constant's name matches the condition evaluated; the saturation
    shape no longer appears in the load-safety failure conjunct; the operator remedy names an invocable

@@ -12,7 +12,7 @@ Covers every method defined by the Runtime ABC:
       policy (covered in depth by test__claude_runtime_impl.py)
   5.  permission_configure        — overwrites allow list in settings
   6.  permission_analyze          — audits redundant / suspicious / missing-steps
-  7.  permission_fix              — normalize / add / remove / ensure / consolidate
+  7.  permission_fix              — normalize / add / remove / ensure / consolidate / protect-path
   8.  permission_ensure_wildcards — scans marketplace bundles, adds wildcard perms
   9.  permission_ensure_steps     — ensures project:{skill} step permissions
   10. permission_web_analyze       — audits WebFetch domain permissions
@@ -3303,7 +3303,7 @@ class TestPermissionAnalyze:
         _write_settings(project_settings, [shared_perm, "Edit(**)"])
 
         monkeypatch.setattr(_cr, "_claude_global_settings_path", lambda: global_settings)
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: project_settings)
+        monkeypatch.setattr(_cr, "_claude_project_settings_read_path", lambda *_: project_settings)
 
         result = _parsed(rt.permission_analyze("both", ["redundant"], None))
         assert result["status"] == "success"
@@ -3317,7 +3317,7 @@ class TestPermissionAnalyze:
 
         settings = tmp_path / "settings.json"
         _write_settings(settings, ["Bash(*)", "Read(**)"])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings)
+        monkeypatch.setattr(_cr, "_claude_project_settings_read_path", lambda *_: settings)
 
         result = _parsed(rt.permission_analyze("project", ["suspicious"], None))
         assert result["status"] == "success"
@@ -3602,7 +3602,7 @@ class TestPermissionWebAnalyze:
         _write_settings(global_s, ["WebFetch(a.com)"])
         _write_settings(project_s, ["WebFetch(b.com)"])
         monkeypatch.setattr(_cr, "_claude_global_settings_path", lambda: global_s)
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: project_s)
+        monkeypatch.setattr(_cr, "_claude_project_settings_read_path", lambda *_: project_s)
 
         result = _parsed(rt.permission_web_analyze("both"))
         assert result["total_domains"] == 2
@@ -3613,7 +3613,7 @@ class TestPermissionWebAnalyze:
 
         settings = tmp_path / "settings.json"
         _write_settings(settings, ["WebFetch(github.com)"])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings)
+        monkeypatch.setattr(_cr, "_claude_project_settings_read_path", lambda *_: settings)
 
         result = _parsed(rt.permission_web_analyze("project"))
         assert result["status"] == "success"
@@ -3899,7 +3899,7 @@ class TestHealthCheck:
 
         fake_settings = tmp_path / "project_settings.json"
         _write_settings(fake_settings, ["Read(**)"])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: fake_settings)
+        monkeypatch.setattr(_cr, "_claude_project_settings_read_path", lambda *_: fake_settings)
 
         result = _parsed(rt.health_check("permissions"))
         perm_result = next(r for r in result["results"] if r["check"] == "permissions")

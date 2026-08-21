@@ -122,7 +122,7 @@ from ci_base import (
     dispatch,
     extract_routing_args,
     make_error,
-    parse_args_with_toon_errors,
+    parse_ci_args,
     poll_until,  # noqa: F401 — re-exported as a patchable primitive for submodule handlers
     run_cli,
     safe_main,
@@ -1852,7 +1852,7 @@ def main() -> int:
     if resolve_parser:
         resolve_parser.add_argument('--pr-number', type=int, help='PR number (accepted for API uniformity)')
 
-    args = parse_args_with_toon_errors(parser)
+    args = parse_ci_args(parser)
     # Surface the router plan_id on args so the checks handlers can pass it to
     # enrich_failing_checks_with_logs without re-parsing argv.
     args.router_plan_id = router_plan_id

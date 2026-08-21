@@ -2470,3 +2470,20 @@ def test_adaptive_wait_timeout_set_swallows_failure(monkeypatch):
 
     # Must not raise.
     ci_base._adaptive_wait_timeout_set(415)
+
+
+def test_ci_router_flags_are_derived_from_the_routing_contract():
+    """``CI_ROUTER_FLAGS`` is the router's own set, not a hand-kept copy.
+
+    The placement diagnostic names the flags it believes are router-scoped. When
+    that set is restated rather than derived, a routing change makes the
+    diagnostic name a flag the router no longer consumes — a confidently wrong
+    error message, which is worse than none. Identity, not equality: a copy that
+    happens to match today would pass an equality check and drift tomorrow.
+    """
+    import resolve_project_dir
+    from ci_base import CI_ROUTER_FLAGS
+
+    assert CI_ROUTER_FLAGS is resolve_project_dir.ROUTER_FLAGS
+    assert resolve_project_dir.ROUTER_PLAN_ID_FLAG in CI_ROUTER_FLAGS
+    assert resolve_project_dir.ROUTER_PROJECT_DIR_FLAG in CI_ROUTER_FLAGS

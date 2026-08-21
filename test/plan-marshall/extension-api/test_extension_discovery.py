@@ -823,12 +823,217 @@ def test_extension_discovery_plugin_cache_honours_env_override(
 
 
 # =============================================================================
+# The project-local implementor scan routes through the layout op too
+# =============================================================================
+#
+# A target whose project-local skills live outside the Claude layout must still
+# have its ``project:finalize-step-*`` implementors discovered. A scan anchored
+# on one hardcoded tree loses them silently — it returns an empty list, not an
+# error, which is indistinguishable from a project that has no project steps.
+
+_PROJECT_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
+
+
+def _write_project_step(
+    root: pathlib.Path, name: str, description: str, implements: str = _PROJECT_EXT_POINT
+) -> None:
+    """Create a project-local ``finalize-step-*`` skill declaring an ext-point."""
+    skill_dir = root / name
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / 'SKILL.md').write_text(
+        '---\n'
+        f'name: {name}\n'
+        f'description: {description}\n'
+        f'implements: {implements}\n'
+        'order: 42\n'
+        '---\n\n'
+        '# Step\n',
+        encoding='utf-8',
+    )
+
+
+def _pin_project_roots(monkeypatch, tmp_path: pathlib.Path, roots: tuple[str, ...]) -> None:
+    import file_ops
+
+    monkeypatch.setattr(file_ops, '_resolve_plan_root', lambda: tmp_path)
+    monkeypatch.setattr(_discovery, 'get_project_skill_roots', lambda: roots)
+
+
+def test_project_scan_discovers_through_a_non_default_root_list(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every declared root is scanned — not one hardcoded tree.
+
+    The roots here are deliberately NOT ``.claude/skills``: a scan that still
+    built that path segment-wise would find nothing and return an empty list,
+    which is indistinguishable from "this project has no project steps" unless
+    a test supplies steps that only a routed scan can reach.
+    """
+    _pin_project_roots(monkeypatch, tmp_path, ('first/steps', 'second/steps'))
+    _write_project_step(tmp_path / 'first' / 'steps', 'finalize-step-alpha', 'Alpha.')
+    _write_project_step(tmp_path / 'second' / 'steps', 'finalize-step-beta', 'Beta.')
+
+    records = _discovery._scan_project_for_implementors(_PROJECT_EXT_POINT)
+
+    assert sorted(rec['name'] for rec in records) == [
+        'project:finalize-step-alpha',
+        'project:finalize-step-beta',
+    ]
+    assert {rec['source'] for rec in records} == {'project'}
+
+
+def test_project_scan_lets_the_highest_priority_root_win(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A step id present under two roots is recorded once, from the first root."""
+    _pin_project_roots(monkeypatch, tmp_path, ('first/steps', 'second/steps'))
+    _write_project_step(tmp_path / 'first' / 'steps', 'finalize-step-dup', 'From first.')
+    _write_project_step(tmp_path / 'second' / 'steps', 'finalize-step-dup', 'From second.')
+
+    records = _discovery._scan_project_for_implementors(_PROJECT_EXT_POINT)
+
+    assert len(records) == 1
+    assert records[0]['description'] == 'From first.'
+
+
+def test_a_higher_root_shadows_a_lower_one_even_implementing_another_ext_point(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The highest-priority root owns a step id whatever that step implements.
+
+    A step id resolves — in ``configurable_contract`` — to the first declared
+    root carrying that directory, with no ext-point involved. So if the first
+    root's ``finalize-step-dup`` implements a DIFFERENT ext-point, the lower
+    root's must not be returned for this one: the record would name a file that
+    resolving the same id never lands on.
+    """
+    _pin_project_roots(monkeypatch, tmp_path, ('first/steps', 'second/steps'))
+    _write_project_step(
+        tmp_path / 'first' / 'steps',
+        'finalize-step-dup',
+        'From first.',
+        implements='plan-marshall:extension-api/standards/ext-point-something-else',
+    )
+    _write_project_step(tmp_path / 'second' / 'steps', 'finalize-step-dup', 'From second.')
+
+    records = _discovery._scan_project_for_implementors(_PROJECT_EXT_POINT)
+
+    assert records == []
+
+
+def test_project_scan_ignores_a_declared_root_that_does_not_exist(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A root the target declares but the project does not have is skipped, not fatal."""
+    _pin_project_roots(monkeypatch, tmp_path, ('absent/steps', 'present/steps'))
+    _write_project_step(tmp_path / 'present' / 'steps', 'finalize-step-only', 'Only.')
+
+    records = _discovery._scan_project_for_implementors(_PROJECT_EXT_POINT)
+    assert [rec['name'] for rec in records] == ['project:finalize-step-only']
+
+
+def test_project_scan_skips_a_declared_root_that_is_a_file(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A declared root that exists as a NON-directory is skipped.
+
+    The sibling test about an absent root cannot pin this: ``Path.glob`` on a
+    missing directory yields nothing either way, so the record set is identical
+    with or without the ``is_dir()`` filter. A root that exists but is a file is
+    the only shape the two implementations differ on.
+    """
+    _pin_project_roots(monkeypatch, tmp_path, ('afile', 'present/steps'))
+    (tmp_path / 'afile').write_text('not a directory', encoding='utf-8')
+    _write_project_step(tmp_path / 'present' / 'steps', 'finalize-step-only', 'Only.')
+
+    records = _discovery._scan_project_for_implementors(_PROJECT_EXT_POINT)
+    assert [rec['name'] for rec in records] == ['project:finalize-step-only']
+
+
+def test_project_scan_records_only_finalize_step_directories(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A skill declaring the ext-point but not named ``finalize-step-*`` is not a step.
+
+    Project step ids are path-derived, so a directory outside that naming
+    convention has no well-formed ``project:`` id to be recorded under.
+    """
+    _pin_project_roots(monkeypatch, tmp_path, ('steps',))
+    _write_project_step(tmp_path / 'steps', 'finalize-step-real', 'Real.')
+    _write_project_step(tmp_path / 'steps', 'some-other-skill', 'Not a step.')
+
+    records = _discovery._scan_project_for_implementors(_PROJECT_EXT_POINT)
+    assert [rec['name'] for rec in records] == ['project:finalize-step-real']
+
+
+def test_project_scan_survives_one_unreadable_root(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An OSError on one root skips that root, it does not abandon the scan.
+
+    Returning ``[]`` would let a single unreadable directory silently empty the
+    finalize-step registry — every step missing, no error.
+    """
+    _pin_project_roots(monkeypatch, tmp_path, ('broken', 'present/steps'))
+    (tmp_path / 'broken').mkdir()
+    _write_project_step(tmp_path / 'present' / 'steps', 'finalize-step-only', 'Only.')
+
+    real_glob = pathlib.Path.glob
+
+    def _explode(self, pattern):
+        if self.name == 'broken':
+            raise OSError(13, 'Permission denied')
+        return real_glob(self, pattern)
+
+    monkeypatch.setattr(pathlib.Path, 'glob', _explode)
+
+    records = _discovery._scan_project_for_implementors(_PROJECT_EXT_POINT)
+    assert [rec['name'] for rec in records] == ['project:finalize-step-only']
+
+
+def test_project_scan_resolves_an_absolute_declared_root(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An absolute root resolves independently of the project root.
+
+    Weaker than it reads: ``pathlib``'s ``/`` already discards the left operand
+    for an absolute right one, so bypassing ``_resolve_skill_root`` entirely
+    would still pass this. The tilde sibling is what discriminates; this case
+    documents the absolute form rather than pinning its resolution.
+    """
+    elsewhere = tmp_path / 'elsewhere' / 'steps'
+    _pin_project_roots(monkeypatch, tmp_path / 'project', (str(elsewhere),))
+    _write_project_step(elsewhere, 'finalize-step-abs', 'Absolute.')
+
+    records = _discovery._scan_project_for_implementors(_PROJECT_EXT_POINT)
+    assert [rec['name'] for rec in records] == ['project:finalize-step-abs']
+
+
+def test_project_scan_resolves_a_tilde_anchored_declared_root(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ``~``-anchored root — OpenCode's user-global form — resolves off home.
+
+    Pinned separately from the absolute case because the resolver reaches it by
+    a different branch: ``expanduser()`` runs before the ``is_absolute()`` test,
+    so a root that is relative as written becomes absolute before anchoring.
+    """
+    monkeypatch.setenv('HOME', str(tmp_path / 'home'))
+    _pin_project_roots(monkeypatch, tmp_path / 'project', ('~/global/steps',))
+    _write_project_step(tmp_path / 'home' / 'global' / 'steps', 'finalize-step-home', 'Home.')
+
+    records = _discovery._scan_project_for_implementors(_PROJECT_EXT_POINT)
+    assert [rec['name'] for rec in records] == ['project:finalize-step-home']
+
+
+# =============================================================================
 # find_implementors — the reusable ext-point implementor discovery query
 # =============================================================================
 #
 # find_implementors(ext_point) is the SOLE finalize-step discovery path. It scans
 # three real surfaces (phase-6-finalize/{workflow,standards}/*.md, every bundle's
-# skills/*/SKILL.md, and project-local .claude/skills/finalize-step-*/SKILL.md)
+# skills/*/SKILL.md, and project-local finalize-step-*/SKILL.md under the
+# target's declared skill roots)
 # anchored on the marketplace tree, returning one record per implementor with
 # name / order / default_on / presets / description / source / path.
 

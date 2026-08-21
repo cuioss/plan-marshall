@@ -924,13 +924,19 @@ class TestDocContract:
         assert 'inbox/archive/' in section
 
     def test_inbox_validate_still_lists_every_retained_rejection_code(self):
-        # The archive-probe change narrows file_not_found; it must not quietly
-        # drop any envelope-validation code from the documented surface.
+        # The documented surface must name every code the verb can return. The
+        # tuple is the full reachable set of `cmd_inbox_validate` — the verb's own
+        # pre-resolution and resolution codes, `validate_envelope`'s base sweep,
+        # and `_validate_state_fields`' four state checks — so a code that stops
+        # being documented fails here rather than going quietly missing.
         section = _section(
             _ORCHESTRATOR_SKILL.read_text(encoding='utf-8'), '### inbox validate'
         )
 
         for code in (
+            'invalid_slug',
+            'invalid_message_name',
+            'file_not_found',
             'missing_header_field',
             'unknown_envelope_version',
             'invalid_sender_type',
@@ -938,7 +944,10 @@ class TestDocContract:
             'empty_payload',
             'epic_mismatch',
             'filename_sender_mismatch',
-            'invalid_message_name',
+            'invalid_lifecycle',
+            'invalid_revision',
+            'revision_not_monotonic',
+            'invalid_supersede_state',
         ):
             assert code in section, code
 

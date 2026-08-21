@@ -1968,10 +1968,12 @@ def _parents_inherited_source() -> str:
 
 
 def _root_flag_source() -> str:
-    """A flag declared on the ROOT parser, honored by every subcommand.
+    """A flag declared on the ROOT parser, which this CHECK accepts on any subcommand.
 
     ``--project-dir`` is added to the top-level parser before subparser
-    dispatch. argparse accepts it on every subcommand, but renders it ONLY in
+    dispatch. Argparse itself accepts it only BEFORE the verb — the subparser
+    owns everything from the verb onward — but the check widens deliberately so
+    a leaf-only flag set cannot call it unknown. Argparse renders it ONLY in
     the root ``--help`` options block — never in a subcommand's. The
     ancestor-union must accept it at the leaf; per-leaf validation alone would
     mis-flag it.

@@ -17,6 +17,25 @@ from typing import Any
 
 from toon_parser import serialize_toon
 
+#: The `permission fix` operation set, published once so no site restates it.
+#:
+#: The names were maintained by hand in five places — the argparse ``choices``,
+#: each runtime's ``valid_ops``, and a test sweep. Copies drift in two
+#: directions, and each drift is silent in a different way: a name in the router
+#: but not in a runtime returns ``invalid_operation`` at dispatch, and a name in
+#: a runtime but not in the router is rejected by argparse before that runtime
+#: is ever reached. Every site derives from this tuple instead.
+#:
+#: Order is the argparse help order, so it is meaningful and kept.
+PERMISSION_FIX_OPERATIONS: tuple[str, ...] = (
+    "normalize",
+    "add",
+    "remove",
+    "ensure",
+    "consolidate",
+    "protect-path",
+)
+
 # =============================================================================
 # TOON Response Builders
 #
@@ -559,10 +578,12 @@ class Runtime(ABC):
 
         Args:
             scope: ``"project"`` or ``"global"``.
-            operation: One of ``"normalize"``, ``"add"``, ``"remove"``,
-                ``"ensure"``, ``"consolidate"``.
-            permissions: Patterns for ``add``/``remove``/``ensure`` (may be
-                empty for ``normalize`` and ``consolidate``).
+            operation: One of ``PERMISSION_FIX_OPERATIONS``.
+            permissions: The operation's semantic arguments. Patterns for
+                ``add``/``remove``/``ensure``; directory paths to protect for
+                ``protect-path`` (the target renders the protecting rules
+                itself, so no rule text crosses this boundary in either
+                direction); empty for ``normalize`` and ``consolidate``.
             dry_run: When ``True``, preview changes without applying.
 
         Returns:

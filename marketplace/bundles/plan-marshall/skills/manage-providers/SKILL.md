@@ -51,7 +51,7 @@ Stale prefixed `credentials_config` keys written before this normalization are c
 | `verify` | HTTP connectivity test, writes `verified_at` timestamp into the credential file |
 | `list` | List configured skills by scanning `~/.plan-marshall/credentials/` (no secrets in output) |
 | `remove` | Remove credential file |
-| `ensure-denied` | Add deny rules to the host platform's settings |
+| `ensure-denied` | Protect the credentials directory in the active target's settings (`no-op` on a target with no permission backend) |
 | `migrate-home` | Explicitly run the lazy legacy-path migration (`~/.plan-marshall-credentials/` → `~/.plan-marshall/credentials/`); reports `migrated`, `already_migrated`, or `conflict` |
 
 ## Script Notation
@@ -160,11 +160,22 @@ python3 .plan/execute-script.py plan-marshall:manage-providers:credentials verif
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials remove [--skill <name>] [--scope global|project]
 ```
 
-### Add Deny Rules
+### Protect the Credentials Directory
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials ensure-denied [--target global|project]
 ```
+
+The command states the goal; the active target's runtime decides what expresses it and writes it. A target with no permission backend returns `no-op` with a reason, and the directory's `0700` mode — the primary boundary — is re-asserted either way.
+
+It can also fail, and a caller must not read failure as protection:
+
+| `error` | Meaning | What to do |
+|---|---|---|
+| `unknown_target` | `runtime.target` names no registered runtime | Fix `runtime.target` in `marshal.json` |
+| `invalid_operation` | The credentials directory cannot be expressed as a rule — it is relative, is the filesystem root, contains `..` or whitespace, or carries `(`, `)`, `*` or a control character | Set `PLAN_MARSHALL_HOME` to an absolute path, below the root, free of those — so the credentials directory beneath it is renderable. The `message` names the path and the reason |
+| `invalid_settings` | The settings file cannot be used as settings. Four shapes reach this: unparseable JSON; a JSON root that is not an object; a `permissions` value that is not an object; and a `permissions.deny` that is not a list. The middle two parse as valid JSON, so a syntax check does not catch them | Repair the settings file; **nothing was written** in any of the four cases |
+| `io_error` | The rules were rendered but the settings file could not be written | Check permissions on the settings file. **This run writes nothing** — the settings file is unchanged, so its protection is whatever it already contains |
 
 ## Security Model
 
@@ -262,4 +273,4 @@ python3 .plan/execute-script.py plan-marshall:manage-providers:credentials migra
 | `plan-marshall:marshall-steward` | Invokes credential management via wizard and menu |
 | `plan-marshall:workflow-integration-sonar` | First consumer of credential extension API |
 | `plan-marshall:extension-api` | Discovery pattern reference |
-| `plan-marshall:tools-permission-doctor` | Deny rule manipulation reference |
+| `plan-marshall:tools-permission-doctor` | Allow-list audit (redundancy, security anti-patterns, missing step permissions). It does **not** read the deny rules `ensure-denied` writes, so it will not tell you whether the credentials directory is protected |

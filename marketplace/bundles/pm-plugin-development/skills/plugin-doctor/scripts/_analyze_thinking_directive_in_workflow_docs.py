@@ -103,6 +103,13 @@ RULE_ID = 'thinking-directive-in-workflow-doc'
 RULE_NAME = 'analyze_thinking_directive_in_workflow_docs'
 FINDING_TYPE = 'thinking_directive_in_workflow_doc'
 EMPTY_POPULATION_TYPE = 'thinking_directive_population_empty'
+# A doc that could not be READ. Two distinct cases, both previously silent:
+# during DISCOVERY an unreadable candidate cannot be tested for its
+# ``implements:`` declaration, so the population is under-derived; during
+# SCANNING an unreadable member is counted in ``population_size`` while its
+# bytes were never examined. Either way a clean result would assert coverage the
+# sweep did not obtain — this rule's own subject. Reported, never skipped.
+UNREADABLE_TYPE = 'thinking_directive_target_unreadable'
 
 # The ext-point every dispatched workflow doc declares. Membership in the
 # population is DECLARED on each doc via this ``implements:`` value and DERIVED by
@@ -264,10 +271,24 @@ def enumerate_execution_context_workflow_docs(marketplace_root: Path) -> list[Pa
     population is derived from each doc's own declaration; nothing is hardcoded.
 
     Returns the matching paths in sorted order (empty when the tree is absent).
+    Candidates that could not be read are dropped here; use
+    :func:`_enumerate_with_unreadable` when that set must be reported.
+    """
+    return _enumerate_with_unreadable(marketplace_root)[0]
+
+
+def _enumerate_with_unreadable(marketplace_root: Path) -> tuple[list[Path], list[Path]]:
+    """Return ``(docs, unreadable_candidates)`` from ONE discovery walk.
+
+    A candidate whose bytes cannot be read can be neither included nor ruled
+    out — its ``implements:`` declaration is exactly what could not be tested.
+    Dropping it silently under-derives the population without saying so, which
+    is this rule's own subject. The caller reports the second list.
     """
     marketplace_root = Path(marketplace_root)
     if not marketplace_root.is_dir():
-        return []
+        return [], []
+    unreadable: list[Path] = []
     docs: list[Path] = []
     for bundle_dir in sorted(marketplace_root.iterdir()):
         if not bundle_dir.is_dir() or bundle_dir.name.startswith('.'):
@@ -288,10 +309,15 @@ def enumerate_execution_context_workflow_docs(marketplace_root: Path) -> list[Pa
                 try:
                     text = candidate.read_text(encoding='utf-8')
                 except (OSError, UnicodeDecodeError):
+                    # Cannot test this candidate's ``implements:`` declaration, so
+                    # it can be neither included nor ruled out. Recorded so the
+                    # caller can report it; skipping silently under-derives the
+                    # population without saying so.
+                    unreadable.append(candidate)
                     continue
                 if EXT_POINT in _declared_implements(text):
                     docs.append(candidate)
-    return docs
+    return docs, unreadable
 
 
 # ---------------------------------------------------------------------------
@@ -354,12 +380,45 @@ def _offset_in_inline_code(offset: int, spans: list[tuple[int, int]]) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _unreadable_finding(path: Path, population_size: int, message: str) -> dict:
+    """Build the read-failure finding shared by discovery and scanning."""
+    return Finding(
+        type=UNREADABLE_TYPE,
+        file=str(path),
+        line=0,
+        severity='error',
+        fixable=False,
+        rule_id=RULE_ID,
+        details={'population_size': population_size, 'reason': 'unreadable_target'},
+        extra={
+            'rule': RULE_NAME,
+            'snippet': '',
+            'message': message,
+        },
+    ).to_dict()
+
+
 def _scan_doc(path: Path, population_size: int) -> list[dict]:
-    """Scan one workflow doc and emit a finding per line carrying a directive."""
+    """Scan one workflow doc and emit a finding per line carrying a directive.
+
+    An unreadable member is REPORTED, never skipped — it is counted in
+    ``population_size``, so returning ``[]`` made the published figure claim a
+    file the scan never read.
+    """
     try:
         text = path.read_text(encoding='utf-8')
-    except (OSError, UnicodeDecodeError):
-        return []
+    except (OSError, UnicodeDecodeError) as exc:
+        return [
+            _unreadable_finding(
+                path,
+                population_size,
+                (
+                    f'This doc is in the derived population but could not be read '
+                    f'({type(exc).__name__}), so it was NOT scanned, while still '
+                    f'being counted in population_size.'
+                ),
+            )
+        ]
 
     lines = text.splitlines()
     fence = _build_fence_map(lines)
@@ -437,9 +496,26 @@ def analyze_thinking_directive_in_workflow_docs(marketplace_root: Path) -> list[
     -------
     list[dict]
         List of finding dicts (empty for a clean, non-empty population).
+
+    A CLEAN run carries no findings and therefore no ``population_size`` — which
+    is the only state a passing gate is ever in. Callers that need the figure on
+    a clean run take
+    :func:`analyze_thinking_directive_in_workflow_docs_with_population` instead.
+    """
+    return analyze_thinking_directive_in_workflow_docs_with_population(marketplace_root)[0]
+
+
+def analyze_thinking_directive_in_workflow_docs_with_population(
+    marketplace_root: Path,
+) -> tuple[list[dict], int]:
+    """Return ``(findings, population_size)`` from a single derivation.
+
+    The runner publishes the examined population in its rule summaries, and it
+    must not re-derive the roster to get the number: a second walk is a second
+    chance to disagree with the one the findings were actually produced from.
     """
     marketplace_root = Path(marketplace_root)
-    population = enumerate_execution_context_workflow_docs(marketplace_root)
+    population, unreadable = _enumerate_with_unreadable(marketplace_root)
     population_size = len(population)
 
     if population_size == 0:
@@ -471,10 +547,32 @@ def analyze_thinking_directive_in_workflow_docs(marketplace_root: Path) -> list[
                         ),
                     },
                 ).to_dict()
-            ]
-        return []
+            ] + _unreadable_findings(unreadable, 0), 0
+        return _unreadable_findings(unreadable, 0), 0
 
-    findings: list[dict] = []
+    findings: list[dict] = _unreadable_findings(unreadable, population_size)
     for doc in population:
         findings.extend(_scan_doc(doc, population_size))
-    return findings
+    return findings, population_size
+
+
+def _unreadable_findings(candidates: list[Path], population_size: int) -> list[dict]:
+    """One finding per candidate whose ``implements:`` test could not be run.
+
+    Emitted even when the population is empty: an empty population reached by
+    failing to read every candidate is a different fact from one reached by
+    reading them all and matching none, and the guard above cannot tell them
+    apart on its own.
+    """
+    return [
+        _unreadable_finding(
+            candidate,
+            population_size,
+            (
+                'This candidate could not be read during discovery, so its '
+                '`implements:` declaration was never tested — it is neither in '
+                'nor ruled out of the derived population.'
+            ),
+        )
+        for candidate in candidates
+    ]

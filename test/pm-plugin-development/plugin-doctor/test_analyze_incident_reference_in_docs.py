@@ -111,6 +111,46 @@ class TestPositiveDetection:
         root, _ = _make_skill_file(tmp_path, content)
         assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
 
+    def test_reversed_term_of_art_fires(self, tmp_path: Path) -> None:
+        """``the failure mode #866`` — the noun BEFORE the reference — fires.
+
+        The shipped term-of-art family required the reference first, so the
+        ordering English prose reaches for at least as often passed a rule whose
+        own brief named it.
+        """
+        content = 'This is the failure mode #866 that closed the PR unmerged.\n'
+        root, _ = _make_skill_file(tmp_path, content)
+        findings = assert_analyzer_findings(
+            analyze_incident_reference_in_docs, root, [RULE_ID]
+        )
+        assert findings[0]['pattern_family'] == 'incident_term_of_art_reversed'
+
+    def test_reversed_term_of_art_with_hyphenated_qualifier_fires(self, tmp_path: Path) -> None:
+        """``the shape sibling-worktree #948`` keeps the optional qualifier slot."""
+        content = 'An absent plan is unknown here — the shape sibling-worktree #948.\n'
+        root, _ = _make_skill_file(tmp_path, content)
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
+
+    def test_dated_narration_fires(self, tmp_path: Path) -> None:
+        """``As of 2025-10-27:`` pins prose to a moment and fires.
+
+        Prose anchored to a date states when something WAS true rather than what
+        IS true — the same provenance-as-normative-prose defect a ``#ref``
+        carries, without a reference to carry it.
+        """
+        content = 'As of 2025-10-27:\n- universal git access is provided.\n'
+        root, _ = _make_skill_file(tmp_path, content)
+        findings = assert_analyzer_findings(
+            analyze_incident_reference_in_docs, root, [RULE_ID]
+        )
+        assert findings[0]['pattern_family'] == 'dated_narration'
+
+    def test_version_pinned_narration_fires(self, tmp_path: Path) -> None:
+        """``since 1.2.3`` pins prose to a release the same way a date does."""
+        content = 'The resolver has behaved this way since 1.2.3 was released.\n'
+        root, _ = _make_skill_file(tmp_path, content)
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
+
     def test_temporal_pre_narration_fires(self, tmp_path: Path) -> None:
         """``pre-#NNNN`` temporal narration fires."""
         content = 'The pre-#1067 defect: a resolver id appended behind a bare falsiness check with no dedup.\n'
@@ -146,6 +186,37 @@ class TestPositiveDetection:
         root, _ = _make_skill_file(tmp_path, content)
         findings = assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
         assert findings[0]['snippet'] == 'plan-marshall#101'
+
+    def test_legitimate_version_constraint_is_not_flagged(self, tmp_path: Path) -> None:
+        """A version REQUIREMENT is not dated narration.
+
+        The load-bearing negative for the dated-narration family: "requires
+        Python 3.12", "Node 20.1.0 or newer" and ">= 1.2.3" all state a
+        requirement that holds NOW, not a moment prose is pinned to. The
+        temporal preposition is what separates the two, and a family that fired
+        on every version number would flag most dependency documentation in the
+        tree.
+        """
+        content = (
+            'Requires Python 3.12 or newer.\n'
+            'The frontend targets Node 20.1.0.\n'
+            'Pin the resolver at >= 1.2.3 in the lockfile.\n'
+        )
+        root, _ = _make_skill_file(tmp_path, content)
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
+
+    def test_reversed_term_of_art_with_a_backticked_ref_stays_exempt(self, tmp_path: Path) -> None:
+        """The inline-code exemption applies to the REVERSED form too.
+
+        The exemption is tested at the ``#NNNN`` inside the match rather than at
+        the match's first character — which for this form is the noun, outside
+        the backticks. Testing the match start would fire on a back-ticked
+        reference, narrowing a convention published across the rule catalogue,
+        the provenance table, a named test and a sibling rule.
+        """
+        content = 'This is the failure mode `#866` that closed the PR unmerged.\n'
+        root, _ = _make_skill_file(tmp_path, content)
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
     def test_finding_shape(self, tmp_path: Path) -> None:
         """Finding carries the expected shape fields."""
@@ -319,10 +390,33 @@ class TestSkipContextExemption:
         assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
     def test_backticked_inline_code_ref_is_exempt(self, tmp_path: Path) -> None:
-        """A back-ticked ``#NNNN`` reference is a code token, not narration."""
-        content = 'The `#812` end_time-presence check stays distinguishable.\n'
+        """A back-ticked ``#NNNN`` reference is a code token, not narration.
+
+        The WHOLE narration phrase is quoted, so the family's match starts
+        inside the code span and is skipped. Two earlier framings of this
+        fixture were vacuous for different reasons, and both are worth naming:
+        "the `#812` end_time-presence check" matched no family at all, and
+        "the `#812` failure mode" puts a backtick between the reference and the
+        noun, which breaks the pattern before the exemption is ever consulted.
+        The paired positive below is the control.
+        """
+        content = 'The `#812 failure mode` is documented elsewhere.\n'
         root, _ = _make_skill_file(tmp_path, content)
         assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
+
+    def test_the_same_sentence_unquoted_is_flagged(self, tmp_path: Path) -> None:
+        """The control for the exemption: without the backticks the rule fires.
+
+        This pair is what makes the exemption test evidence — one sentence, one
+        difference, opposite verdicts.
+        """
+        content = 'The #812 failure mode is documented elsewhere.\n'
+        root, _ = _make_skill_file(tmp_path, content)
+        findings = assert_analyzer_findings(
+            analyze_incident_reference_in_docs, root, [RULE_ID]
+        )
+        assert findings[0]['pattern_family'] == 'incident_term_of_art'
+        assert findings[0]['snippet'] == '#812 failure mode'
 
 
 # ===========================================================================
@@ -405,3 +499,115 @@ def test_analyzer_is_registered_in_runner() -> None:
         'pm-plugin-development', 'plugin-doctor', '_runner.py'
     ).read_text(encoding='utf-8')
     assert 'analyze_incident_reference_in_docs' in runner_source
+
+
+class TestBacktickExemptionIsTestedAtTheReference:
+    """The inline-code exemption is tested at the REFERENCE, not the match start.
+
+    Four of the six families have a match that begins before the reference, but
+    the count is not the discriminator: what decides whether the two offsets can
+    land on opposite sides of a code-span boundary is whether the pattern permits
+    a backtick BETWEEN them. Two do — ``observed_on`` (up to 80 arbitrary
+    characters before the ref) and the reversed term-of-art form. Under a
+    match-start test a back-ticked reference still fired in those, making them
+    the exceptions to a convention published project-wide.
+    """
+
+    def test_observed_on_with_a_backticked_ref_is_exempt(self, tmp_path: Path) -> None:
+        """``Observed on … `#812` `` is a code token like every other quoted ref.
+
+        This WIDENED ``observed_on``'s exemption: before the offset change the
+        same line fired, making it the one family in which the back-tick
+        convention did not hold. Bounded — over the whole derived population
+        zero ``observed_on`` lines have a verdict the change flips.
+        """
+        content = 'Observed on the run log: `#812` was the culprit.\n'
+        root, _ = _make_skill_file(tmp_path, content)
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
+
+    def test_observed_on_with_a_bare_ref_still_fires(self, tmp_path: Path) -> None:
+        """The control: the exemption widened, it did not disable the family."""
+        content = 'Observed on the run log: #812 was the culprit.\n'
+        root, _ = _make_skill_file(tmp_path, content)
+        findings = assert_analyzer_findings(
+            analyze_incident_reference_in_docs, root, [RULE_ID]
+        )
+        assert findings[0]['pattern_family'] == 'observed_on'
+
+
+class TestExemptionOffsetMechanism:
+    """The offset rule is a property of each PATTERN, not a count of families.
+
+    Pinned because the count is the thing a maintainer adding a seventh family
+    would reuse to decide whether theirs is in scope, and the count was twice
+    written down wrong.
+    """
+
+    def test_four_families_match_before_the_reference(self) -> None:
+        """Executed per pattern, not reasoned from the regexes."""
+        probes = {
+            'plan_marshall_ref': 'See `plan-marshall#123` here.',
+            'observed_on': 'Observed on the run log: `#812` was the culprit.',
+            'temporal_narration': 'The behaviour changed `post-#900` in the resolver.',
+            'incident_term_of_art': 'The `#948 sibling-worktree shape` recurs.',
+            'incident_term_of_art_reversed': 'This `failure mode #866` closed the PR.',
+            'dated_narration': 'Green `as of 2026-07` on the check.',
+        }
+        differ = set()
+        for name, pattern in _air._PATTERNS:
+            match = pattern.search(probes[name])
+            assert match is not None, f'{name} does not match its own probe'
+            if match.start() != _air._exemption_offset(match):
+                differ.add(name)
+
+        assert differ == {
+            'plan_marshall_ref',
+            'observed_on',
+            'temporal_narration',
+            'incident_term_of_art_reversed',
+        }
+
+    def test_only_two_families_admit_a_backtick_between_start_and_reference(self) -> None:
+        """The discriminator: can a code-span boundary fall strictly between them.
+
+        ``plan-marshall#NNNN`` is contiguous, and ``since #``/``post-#``/``pre-#``
+        stop matching the moment a backtick is inserted — so for those two the
+        offsets always land on the same side of any boundary, however far apart
+        they are.
+        """
+        probes = {
+            'plan_marshall_ref': 'See plan-marshall`#123` here.',
+            'observed_on': 'Observed on the run log: `#812` was the culprit.',
+            'temporal_narration': 'It changed since `#900` landed.',
+            'incident_term_of_art_reversed': 'This is the failure mode `#866` we hit.',
+        }
+        flips = set()
+        for name, pattern in _air._PATTERNS:
+            if name not in probes:
+                continue
+            line = probes[name]
+            match = pattern.search(line)
+            if match is None:
+                continue
+            spans = _air._inline_code_spans(line)
+            if _air._offset_in_inline_code(match.start(), spans) != _air._offset_in_inline_code(
+                _air._exemption_offset(match), spans
+            ):
+                flips.add(name)
+
+        assert flips == {'observed_on', 'incident_term_of_art_reversed'}
+
+    def test_the_change_narrows_as_well_as_widens(self) -> None:
+        """A quoted OPENER with a bare reference fires, where it was exempt before.
+
+        Both directions follow from the same rule — the exemption is about the
+        reference being a code token — and describing the change as a widening
+        alone is half of it.
+        """
+        line = '`Observed on the run log` shows #812.'
+        match = _air._OBSERVED_ON_RE.search(line)
+        assert match is not None
+        spans = _air._inline_code_spans(line)
+
+        assert _air._offset_in_inline_code(match.start(), spans) is True
+        assert _air._offset_in_inline_code(_air._exemption_offset(match), spans) is False

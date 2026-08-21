@@ -118,9 +118,11 @@ The three surviving lifecycle gates ride the `gate_mode` enum (`auto`\|`always`\
 
 ## Orchestrator Configuration (marshal.json)
 
-The `orchestrator` block is a **top-level sibling of `plan`** that governs the epic-orchestration identity (`plan-orchestrator`). It pins the effort of the orchestrator's read-only analysis dispatch surfaces behind a config-resolved uplift ceiling, and holds the project-level `parallelization_scope` default that pre-fills the per-epic interactive ask. An **empty `{}` block is legal** and behaviourally inert: with `orchestrator.*` unset everywhere, every reader resolves EXACTLY as today — `plan.effort` for baseline orchestrator effort, an unset-ceiling no-op for the uplift bound, and the hard-coded `parallelization_scope` default of `1`.
+The `orchestrator` block is a **top-level sibling of `plan`** that governs the epic-orchestration identity (`plan-orchestrator`). It pins the effort of the orchestrator's read-only analysis dispatch surfaces behind a config-resolved uplift ceiling, and holds the project-level `parallelization_scope` default that pre-fills the per-epic interactive ask.
 
-The block is additively shaped: the `orchestrator get/set --field` verb and its known-field whitelist are the extension seam through which a future scalar knob (the reserved PLAN-48 `orchestrator.auto_emit` boolean) folds into the SAME block without a schema rework.
+`init` **seeds every knob the block supports at its effective default**, so an operator reading their own `marshal.json` can discover that each knob exists — the seeded shape is `{"auto_emit": false, "effort": {}, "parallelization_scope": 1}`. Surfacing a knob does not tune it: **each seeded default resolves exactly as the unset key did** — `effort` as an empty `{}` finds no surface, `default` slot or `max` ceiling to resolve, so every orchestrator surface still falls through to `plan.effort` with an unset-ceiling no-op for the uplift bound; `parallelization_scope: 1` equals the ask's own hard-coded `1`; `auto_emit: false` is the off posture an absent key already meant. A **legacy block carrying `auto_emit` alone stays valid** — the validator accepts any subset of the known keys — and `sync-defaults` back-fills the missing knobs into it non-destructively.
+
+The block is additively shaped: the `orchestrator get/set --field` verb and its known-field whitelist are the extension seam through which a further scalar knob folds into the SAME block without a schema rework — the seam `auto_emit` itself came through.
 
 ### `orchestrator.effort` — surfaces, `default` slot, and `max` ceiling
 
@@ -142,17 +144,20 @@ The `reader` surface resolves a LEVEL like the others; the dispatch site compose
 
 ### `orchestrator.parallelization_scope`
 
-`orchestrator.parallelization_scope` is a project-level integer (>= 1) that pre-fills the per-epic parallelization-scope `AskUserQuestion` in `plan-orchestrator` init. When set it seeds the ask's default suggestion (still fully operator-overridable per epic); when unset the ask keeps today's hard-coded `1` default. The stored per-epic answer and the positive-integer reduction are unaffected — the project default only supplies the initial suggestion for a NEW epic's first ask.
+`orchestrator.parallelization_scope` is a project-level integer (>= 1) that pre-fills the per-epic parallelization-scope `AskUserQuestion` in `plan-orchestrator` init. `init` seeds it at **`1`**, the stated default, and that seeded value is what the ask suggests (still fully operator-overridable per epic); raising it raises the suggestion. *Legacy note:* a pre-seed block that omits the key resolves identically — the ask falls back on the same hard-coded `1`. The stored per-epic answer and the positive-integer reduction are unaffected either way — the project default only supplies the initial suggestion for a NEW epic's first ask.
 
 | Path | Set By | Used By | Extension Point Doc |
 |------|--------|---------|---------------------|
-| `orchestrator` (empty `{}` legal; sibling of `plan`) | `init` seed / `sync-defaults` back-fill | Runtime (orchestrator effort + parallelization resolution) | - |
+| `orchestrator` (sibling of `plan`; seeded with every knob at its effective default — a legacy subset stays valid and is back-filled) | `init` seed / `sync-defaults` back-fill | Runtime (orchestrator effort + parallelization resolution) | - |
 | `orchestrator.effort` (string OR object; `default` + `analyze`/`decompose`/`reader` surfaces + `max` ceiling) | User config (`manage-config effort set --scope orchestrator[.{surface}\|.max]`) | `manage-config effort read`/`resolve-target --role orchestrator.{surface}`; plan-orchestrator analyze/decompose dispatch sites | - |
 | `orchestrator.effort.{analyze\|decompose\|reader}` (per-surface override level) | User config | `effort resolve-target --role orchestrator.{surface}` (reader composes `execution-context-reader-{level}`) | - |
 | `orchestrator.effort.max` (uplift ceiling level; clamps resolved surface level; unset = no-op) | User config | manage-config effort resolver (ordinal clamp) | - |
 | `orchestrator.parallelization_scope` (int >= 1; project default) | User config (`manage-config orchestrator set --field parallelization_scope`) | plan-orchestrator init Step 4 (per-epic ask pre-fill) | - |
+| `orchestrator.auto_emit` (bool; default `false`) | User config (`manage-config orchestrator set --field auto_emit`) | plan-orchestrator post-landing queue-fill emit (stage-and-wait when `false`) | - |
 
-> **Reserved extension slot (PLAN-48).** `orchestrator.auto_emit` (a scalar boolean, default-off) folds into this SAME block via the `manage-config orchestrator get/set --field` verb and its `reject_unknown_provisioning_field` whitelist. This plan defines the block and the extensible scalar verb; PLAN-48 extends the whitelist with `auto_emit` and reads it through the same verb — no schema rework is owed.
+### `orchestrator.auto_emit`
+
+`orchestrator.auto_emit` is a scalar boolean, seeded at its default of `false`, read and written through the same `manage-config orchestrator get/set --field` verb as `parallelization_scope` and governed by its `reject_unknown_provisioning_field` whitelist. When `false` the orchestrator's post-landing queue-fill emit stays **stage-and-wait**: it produces the copy-paste block and records the `launched` transition only on operator confirmation. When `true` the emit fires automatically under the existing disjointness, prep-readiness and "only if sensible" guards. The knob automates the *emit*, never the *start* — the emit≠running invariant is absolute, and a colliding, blocked or unprepared candidate emits nothing and logs the shortfall rather than filling a slot with a bad emit.
 
 ## Project Configuration (marshal.json)
 

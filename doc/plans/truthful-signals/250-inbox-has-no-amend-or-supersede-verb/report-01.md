@@ -68,15 +68,16 @@ New file `test/plan-marshall/plan-orchestrator/test_inbox_message_state.py`. Eac
 | (d) monotonicity rejected | `test_should_reject_amended_without_a_revision_bump` (+ the reverse) | monotonicity check disabled → `assert (True,None) == (False,'revision_not_monotonic')` fails |
 | (e) **the control** — no sequence reuse from a foldered archive | `test_next_sequence_advances_past_a_foldered_archived_message` | naive flat-only `next_sequence` → `assert 1 == 2` fails (the silent reuse the control guards against) |
 
-All 41 tests in the new file pass with the fix; all 223 inbox tests and 549 plan-orchestrator tests pass.
+All tests in the new file pass with the fix, as do the whole inbox and plan-orchestrator suites. **Figures re-derived at this plan's landed commit `51d1c9bc`** (its tree extracted to a scratch checkout and re-run with `uv run python -m pytest -o addopts=""`), because the counts this report originally carried — 41 / 223 / 549 — were each one low: `test_inbox_message_state.py` **42 passed**; the four inbox files (`test_inbox_envelope.py`, `test_inbox_message_state.py`, `test_inbox_channel_contract.py`, `test_inbox_drain_contract.py`) **224 passed**; `test/plan-marshall/plan-orchestrator/` **550 passed**.
 
 ## Build gate
 
 `git diff --name-only origin/main...HEAD -- '*.py'` — Python changed (the two scripts + three test files), so the gate takes its full path.
 
 - **Quality gate** (`./pw quality-gate`): CLEAN — `issues[0]`, coverage COMPLETE (mypy production [395 files], ruff [marketplace/bundles, test, .claude], SPDX headers, plugin-doctor marketplace-wide).
-- **Module tests** (`./pw module-tests plan-marshall`): **16287 passed, 1 skipped**; 2 failed + 1 error, ALL in unrelated subsystems (`phase-2-refine/test_phase_2_refine_manage_config_readonly.py`, `phase-5-execute/test_phase5_change_ledger.py` — git change-ledger / marshal.json). Each **passes in isolation** — they are pre-existing xdist test-ordering flakiness in areas my diff does not touch (my change is confined to the plan-orchestrator inbox surface). Recorded as pre-existing, not caused by this change.
-- Direct `uv run pytest` over the four inbox test files: **223 passed**.
+- **Module tests** (`./pw module-tests plan-marshall`, at this plan's landed commit `51d1c9bc`): **16287 passed, 1 skipped**; 2 failed + 1 error, ALL in unrelated subsystems (`phase-2-refine/test_phase_2_refine_manage_config_readonly.py`, `phase-5-execute/test_phase5_change_ledger.py` — git change-ledger / marshal.json). Each **passes in isolation** — they are pre-existing xdist test-ordering flakiness in areas my diff does not touch (my change is confined to the plan-orchestrator inbox surface). Recorded as pre-existing, not caused by this change.
+  - ⚠ **This figure is NOT cleanly re-derivable, and is left standing with its population rather than replaced.** A later re-run over the same commit's extracted tree, with `uv run python -m pytest test/plan-marshall/ -o addopts="" -n auto`, produced **16281 passed, 10 failed, 1 skipped** — **16292** collected at that base. ⛔ **No delta against the report line is measurable**: that line states `16287 passed, 1 skipped; 2 failed + 1 error` and **no collected total at all**. Deriving one as `16287 + 1 + 2 + 1` is an inference, not a reading — a pytest *error* can be a setup/teardown error on an item already counted — so it is not stated here as a figure. The two runs sweep the **same test path** (`build.get_test_path('plan-marshall')` returns `test/plan-marshall`, executed and confirmed), so "different population" is not the reason and is not claimed. ⛔ **No cause is assigned for the difference, deliberately.** Three earlier attempts to name one were each refuted: that `./pw module-tests` applies coverage (it does not — `cmd_coverage` is a separate sibling and `addopts` carries no `--cov`); that clearing `addopts` moves the collected total (it does not — at `51d1c9bc`, the base this figure belongs to, `test/plan-marshall` collects **16292** both with `addopts` applied and with `-o addopts=""`); and that ignored `xdist_group` pinning explains the flake (it does not — neither flaking module carries a group marker, and the `--dist=loadgroup` run itself produced 3 non-passes). What can be stated is the **verified difference set**, with no causal claim attached to it: the runs use different xdist scheduler classes (`--dist=loadgroup` → `LoadGroupScheduling`, versus the default `load` → `LoadScheduling`); `./pw` passes `--basetemp` to a prepared session root while the re-run took pytest's default, which `build.py` itself documents as a cleanup-race source; the invocations differ (`uv run pytest` versus `uv run python -m pytest`, which puts the CWD on `sys.path`); and `addopts` is applied versus cleared. Which of those produced the one-item collected delta, or the differing pass counts, is **not established** — and naming one would be the manufactured provenance this correction exists to remove. What the figure carries instead is its command, its base, and the fact that it is a sample of an order-dependent quantity rather than a stable count. Substituting 16281 would report a number produced under a different invocation as a correction to this one. What is corrected is the figure's **provenance**: it is the `./pw module-tests plan-marshall` count at `51d1c9bc`, and it is a sample of an order-dependent quantity rather than a stable one.
+- Direct `uv run pytest` over the four inbox test files: **224 passed** (re-derived at `51d1c9bc`; the figure originally recorded here was 223).
 
 ## Findings
 
@@ -126,7 +127,7 @@ Re-read `cloud-plan-lane` and checked each step against what happened:
 | 2 Branch | Done — kept the harness-assigned `claude/inbox-amend-supersede-verb-sidmu7`; pushed to `origin` before any work (branch was absent from the remote at start). |
 | 3 Plan directory | Done — `git mv` to `.../250-…/plan.md`; the first-instruction block was present and survives. |
 | 4 Implement / per-commit gate / pushed | Done — commits carry the `Co-Authored-By: Claude` trailer and no "Generated with" footer; each `*.py`-touching commit was preceded by a clean `./pw quality-gate`; every commit pushed (no unpushed commit remains). Staged explicit paths (never `git add -A`); no `uv.lock` churn. |
-| 5 Build gate | Done — Python changed → full path. `./pw quality-gate` clean; `./pw module-tests plan-marshall` 16287 passed (2 unrelated xdist-flaky, pass in isolation). |
+| 5 Build gate | Done — Python changed → full path. `./pw quality-gate` clean; `./pw module-tests plan-marshall` 16287 passed at `51d1c9bc` (2 unrelated xdist-flaky, pass in isolation) — an order-dependent sample, see the § Build gate note on why it is not cleanly re-derivable. |
 | 6 Verification sub-agent | Done — one `general-purpose` pass (clean verdict, 3 findings), all findings fixed, re-verified clean via a focused re-dispatch. Findings + dispositions in § Findings. |
 | 7 PR cycle | Done — PR #1198 (no `skip-bot-review`: the diff touches `marketplace/bundles/**` and `*.py`, so it is reviewed as code). All three comment surfaces read; every comment dispositioned; per-reviewer participation recorded. |
 | 8 Merge gate | Conditions 1–3 met (required contexts green on head `7b503ca` → `mergeable_state: clean`; every comment handled; report finalized as the last pre-merge commit). Coverage shortfall (1-of-3) disclosed. Auto-merge armed (SQUASH). |
@@ -145,19 +146,3 @@ Re-read `cloud-plan-lane` and checked each step against what happened:
 - **Real `.plan/` archive migration is owed on a local run.** `inbox migrate-archive` ships, but the physical fold of the repository's actual archive (git-ignored, absent from this clone) must be run where `.plan/` exists. The dual-layout reads keep allocation safe until then.
 - **Plan "Expected surface" named the pre-rename skill** (`marshall-orchestrator`); re-grounded on `plan-orchestrator`. A plan-authoring staleness for the orchestrator to note, not a lane-contract issue.
 - **Stale plugin-pin hazard** (plan Notes): a stale pinned executor running flat-writing code against a foldered archive is bounded (only this repo, only post-migration) and mitigated by the dual-layout reads; it is the standing plugin-pin issue, noted because it recurs.
-
-## Cost
-
-_pending_
-
-## Contract check (Step 9)
-
-_pending_
-
-## What have we learned (Step 9)
-
-_pending_
-
-## Residue
-
-_pending_

@@ -10,14 +10,27 @@ Claude Code uses a three-level settings hierarchy:
 
 ### Resolution Priority
 
+These are the preferences the `tools-permission-*` selectors apply when they must pick **one**
+project file to read from or write to. They resolve in opposite orders, and each direction picks
+whichever file is more specific to the question it is answering.
+
 **For reading/discovery:**
-- Project settings (`.claude/settings.json`) takes precedence over local settings
-- If `.claude/settings.json` exists, it is used; otherwise `.claude/settings.local.json` is used
-- Global settings always apply as baseline
+- If `.claude/settings.local.json` exists, it is read; otherwise `.claude/settings.json` is read
+- Local settings therefore take precedence over project settings on this path
 
 **For writing:**
 - If `.claude/settings.json` exists, write to it (version-controlled)
 - Otherwise, write to `.claude/settings.local.json` (personal)
+
+Global settings (`~/.claude/settings.json`) are a separate scope, addressed by `--scope global`
+rather than by either preference above; the project selectors never fold them in.
+
+Both selectors return a single path, so neither direction merges the two files — a read that lands
+on one of them does not see the other. The single home for both is
+`platform-runtime/scripts/claude_runtime.py`
+(`_claude_project_settings_read_path` and `_claude_project_settings_path`); this section describes
+what those return, and is not a statement about how Claude Code itself layers the three files at
+runtime.
 
 ### When to Use Each File
 
@@ -52,7 +65,6 @@ Claude Code uses a three-level settings hierarchy:
 
 ## Universal Access Pattern
 
-As of 2025-10-27:
 - `Read(//~/git/**)` provides universal git access (covers all repos)
 - All skills available globally (marketplace skills)
 - WebFetch requires explicit domain permissions (see web-security-standards skill)

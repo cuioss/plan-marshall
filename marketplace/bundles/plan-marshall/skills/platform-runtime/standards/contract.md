@@ -48,7 +48,8 @@ alternative: <what the caller can do instead>
 | `unknown_target` | `runtime.target` value not in the target registry |
 | `unknown_overwrite_key` | `project install-hook --overwrite` names a conflict key the target does not define; rejected fail-closed before any write, so a typo never reads as "do not overwrite" |
 | `hook_not_configured` | SessionStart hook not installed; `$CLAUDE_CODE_SESSION_ID` unset |
-| `invalid_settings` | Settings file is malformed (JSON parse error); fail-closed before any write so a malformed file is never clobbered — returned by `permission configure`, `permission fix`, `permission ensure-wildcards`, `permission ensure-steps`, `permission web-apply` |
+| `invalid_settings` | Settings file cannot be used as settings — **not only a JSON parse error**. Four shapes reach it: unparseable JSON; a JSON root that is not an object; a `permissions` value that is not an object; and a `permissions.deny` that is not a list (`protect-path` only, the sole branch that indexes it). The middle two are valid JSON, so a syntax check does not catch them. Fail-closed before any write, so a malformed file is never clobbered — returned by `permission configure`, `permission fix`, `permission ensure-wildcards`, `permission ensure-steps`, `permission web-apply` |
+| `io_error` | The change was computed but the settings file could not be written; nothing from the run reached disk, and the operation's counters are not reported — returned by every mutating permission op: `permission configure`, `permission fix` (all operations), `permission ensure-wildcards`, `permission ensure-steps`, `permission web-apply` |
 | `invalid_marshal` | `.plan/marshal.json` is malformed (parse error); fail-closed instead of degrading to a zero-step audit — returned by `permission analyze`, `permission ensure-steps` |
 | `unsupported_observable` | `wait for --observable` names a kind outside the closed enumerated set |
 | `invalid_bound` | `wait for --bound-seconds` is not a positive number of seconds |
@@ -415,7 +416,13 @@ message: .plan/marshal.json is malformed JSON; cannot audit missing-steps
 
 Apply hygienic fixes to permission configuration.
 
-**Arguments**: `--scope project|global` (required), `--operation normalize|add|remove|ensure|consolidate` (required), `--permissions <pattern> [...]` (for `add`, `remove`, `ensure`), `--dry-run` (optional)
+**Arguments**: `--scope project|global` (required), `--operation normalize|add|remove|ensure|consolidate|protect-path` (required), `--permissions <argument> [...]`, `--dry-run` (optional)
+
+`--permissions` carries the operation's semantic arguments, not one fixed kind of value: permission patterns for `add`, `remove` and `ensure`; **directory paths** for `protect-path`; nothing for `normalize` and `consolidate`.
+
+`protect-path` is the goal-based deny-rule operation: the caller names directories to protect, and the target renders whatever rules express that on its own permission model and writes them itself. No rule text crosses the boundary in either direction, so the response carries counts rather than rendered rules — `paths_named` (how many paths the caller supplied, **not** how many distinct directories are guarded: three spellings of one directory are three names and one protection) and `rules_total` (the de-duplicated rule set actually applied, which is the honest measure) always, and `proposed_count` in place of the other operations' `proposed_additions` under `--dry-run`, since listing the additions would return the rule text this operation exists to keep inside the target. It is the one fix operation that writes the deny list rather than the allow list.
+
+It is also the one that **writes only when it changed something**: the other operations re-serialize the settings file on every non-dry-run call, while `protect-path` returns without writing when `changes_applied` is `0`. That asymmetry is deliberate — the operation is expected to be re-run for its idempotence, and an operator watching a settings file should not see it modified by a call that had no effect.
 
 **Success**:
 ```toon
@@ -441,12 +448,43 @@ proposed_additions[1]:
   - Bash(python3 scripts/*.py)
 ```
 
+**Success (`protect-path`)**:
+```toon
+status: success
+operation: permission fix
+scope: global
+fix_operation: protect-path
+dry_run: false
+target_file: /home/u/.claude/settings.json
+changes_applied: 19
+paths_named: 1
+rules_total: 19
+```
+
 **Error**:
 ```toon
 status: error
 operation: permission fix
 error: invalid_scope
 message: --scope must be 'project' or 'global'; got 'both'
+```
+
+**Error (`protect-path`, unusable path)**:
+```toon
+status: error
+operation: permission fix
+error: invalid_operation
+message: "cannot protect 'creds': path is not absolute"
+```
+
+`protect-path` refuses a path it cannot render faithfully rather than rendering it approximately, because a deny rule is a security control. Refused: an empty or blank path (which would otherwise render a denial of every absolute read and every inline script), a relative path, a path containing any whitespace (a space ends the argument a `Bash(...)` rule names, so the rule would guard a shorter path than the caller gave), a path containing `..` (which names a different directory than it reads as), the filesystem root `/` (whose distinctive-tail rule becomes `Bash(python3 -c */*)`, matching any inline script carrying a slash), and one carrying `(`, `)`, `*` or a control character — the permission grammar has no escape, so such a path renders as a *different* rule. Every refusal above returns `invalid_operation`, whose `message` names the offending path and the reason. `invalid_operation` covers both an unknown `--operation` value and an operation whose required argument is missing or unusable; the `message` distinguishes them.
+
+**Error (`protect-path`, write failed)**:
+```toon
+status: error
+operation: permission fix
+error: io_error
+message: Failed to write settings to /home/u/.claude/settings.json
 ```
 
 **Error (malformed settings — fail-closed)**:

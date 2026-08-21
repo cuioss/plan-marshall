@@ -278,18 +278,97 @@ class TestApplyFixes:
         assert result['sorted']
 
     def test_adds_default_permissions(self, tmp_path):
-        """Should add default permissions if missing."""
+        """Should report the defaults it added, by semantic id.
+
+        The ids are what the runtime hands back: the permission grammar itself
+        is rendered inside the runtime and never reaches this script, so a
+        caller cannot come to depend on one target's permission-string format.
+        """
         settings_file = tmp_path / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
 
         result = cmd_apply_fixes(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(settings_file), '--dry-run'))
 
         assert result['status'] == 'success'
-        assert 'defaults_added' in result
-        defaults = result['defaults_added']
-        assert 'Edit(.plan/**)' in defaults
-        assert 'Write(.plan/**)' in defaults
-        assert 'Read(~/.claude/plugins/cache/**)' in defaults
+        assert result['defaults_added'] == ['plan-dir-edit', 'plan-dir-write', 'bundle-cache-read']
+        assert result['defaults_added_count'] == 3
+
+    def test_dry_run_writes_nothing(self, tmp_path):
+        """--dry-run must leave the settings file byte-identical.
+
+        The write decision lives inside ``ensure_default_permissions`` rather
+        than in this script, so nothing here would notice that guard being
+        dropped. The seeded file is deliberately un-normalized — duplicated,
+        unsorted, and missing every default — so the run has work in each of
+        the three fixes and a written file could not coincide with the input.
+        """
+        settings_file = tmp_path / 'settings.json'
+        settings_file.write_text(
+            json.dumps({'permissions': {'allow': ['Write(**)', 'Bash(git:*)', 'Bash(git:*)'], 'deny': [], 'ask': []}})
+        )
+        before = settings_file.read_bytes()
+
+        result = cmd_apply_fixes(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(settings_file), '--dry-run'))
+
+        assert result['status'] == 'success'
+        # The run had all three kinds of work to do — otherwise "unchanged"
+        # would be true for a writing implementation too.
+        assert result['duplicates_removed'] == 1
+        assert result['sorted']
+        assert result['defaults_added']
+        assert settings_file.read_bytes() == before
+
+    def test_written_default_set_is_the_pinned_three_rules(self, tmp_path):
+        """The FILE apply-fixes leaves behind must carry the same three rules.
+
+        What an operator's settings end up containing is the observable
+        contract, and it is pinned here against literals rather than against the
+        renderer, which would agree with itself whatever it emitted.
+        """
+        settings_file = tmp_path / 'settings.json'
+        settings_file.write_text(json.dumps({'permissions': {'allow': [], 'deny': [], 'ask': []}}))
+
+        result = cmd_apply_fixes(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(settings_file)))
+
+        assert result['applied'] is True
+        written = json.loads(settings_file.read_text())
+        assert written['permissions']['allow'] == sorted(
+            ['Edit(.plan/**)', 'Write(.plan/**)', 'Read(~/.claude/plugins/cache/**)']
+        )
+
+    def test_normalize_only_change_still_writes(self, tmp_path):
+        """A run that adds no default must still persist the normalization.
+
+        The runtime writes when it adds a default; when it adds none, the save
+        below is the only write, and dropping it would silently discard a
+        dedupe/sort.
+        """
+        settings_file = tmp_path / 'settings.json'
+        settings_file.write_text(
+            json.dumps(
+                {
+                    'permissions': {
+                        'allow': [
+                            'Write(.plan/**)',
+                            'Edit(.plan/**)',
+                            'Read(~/.claude/plugins/cache/**)',
+                            'Bash(git:*)',
+                            'Bash(git:*)',
+                        ],
+                        'deny': [],
+                        'ask': [],
+                    }
+                }
+            )
+        )
+
+        result = cmd_apply_fixes(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(settings_file)))
+
+        assert result['defaults_added'] == []
+        assert result['duplicates_removed'] == 1
+        assert result['applied'] is True
+        written = json.loads(settings_file.read_text())
+        assert written['permissions']['allow'].count('Bash(git:*)') == 1
 
 
 # =============================================================================

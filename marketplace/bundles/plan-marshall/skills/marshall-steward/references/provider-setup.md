@@ -355,11 +355,14 @@ If configure returns `exists_complete`, ask user whether to reuse the existing c
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials verify --skill {skill}
 ```
 
-### Step 13k: Add deny rules
+### Step 13k: Protect the credentials directory
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials ensure-denied --target project
 ```
+
+See [`manage-providers`](../../manage-providers/SKILL.md) for what this command guarantees on a
+target with no permission backend.
 
 ### Step 13l: Sonar integration
 

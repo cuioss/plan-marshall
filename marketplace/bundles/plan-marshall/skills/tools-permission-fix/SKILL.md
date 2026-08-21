@@ -37,6 +37,7 @@ The common permission mutations are platform-neutral: they flow through the `pla
 | Remove a permission | `platform_runtime permission fix --scope project --operation remove --permissions "Bash(docker:*)" [--dry-run]` |
 | Ensure permissions exist | `platform_runtime permission fix --scope global --operation ensure --permissions "Bash(git:*)" "Bash(npm:*)" [--dry-run]` |
 | Consolidate enumerated entries into wildcards | `platform_runtime permission fix --scope project --operation consolidate [--dry-run]` |
+| Protect a directory from being read | `platform_runtime permission fix --scope global --operation protect-path --permissions /absolute/path/to/protect [--dry-run]` |
 | Set the full permission list | `platform_runtime permission configure --scope project --permissions "Read(**)" "Write(.plan/**)"` |
 | Ensure marketplace bundle wildcards | `platform_runtime permission ensure-wildcards --scope project --marketplace-dir marketplace [--dry-run]` |
 | Ensure `project:{skill}` step permissions | `platform_runtime permission ensure-steps --marshal .plan/marshal.json --scope project [--dry-run]` |
@@ -59,7 +60,9 @@ On a platform with no validated permission backend (e.g. OpenCode), each op retu
 
 ## Executor-pattern and marketplace-wildcard operations
 
-These operations have no `platform-runtime` permission op; they run on `permission_fix` directly, addressed by `--scope` / `--target` so the script's settings resolver (delegating to the runtime layer) targets the active platform's settings without a literal path.
+These operations have no `platform-runtime` permission op; they run on `permission_fix` directly, addressed by `--scope` / `--target` so no literal settings path appears in the call.
+
+⚠️ **Every operation on `permission_fix` — those below and `apply-fixes` alike — resolves to Claude's settings whatever the active target is.** `permission_common` binds `claude_runtime` by direct import rather than through the runtime registry, so `--scope` selects *which* Claude settings file, not which platform. On a non-Claude target they write a Claude-shaped file rather than declining. Only the platform-routed ops in the table above honour the target.
 
 ### apply-project-step-permissions — Add Skill() rules for project: steps
 
@@ -72,7 +75,7 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fi
   --dry-run
 ```
 
-`{settings_path}` is the active platform's settings file; resolve it from the platform layer rather than hardcoding a `.claude/` path. Pair with `tools-permission-doctor:detect-missing-project-step-permissions` — run doctor to detect, then fix to apply.
+`{settings_path}` is a **Claude** settings file — the warning above applies to this operation too, so `--settings` selects which Claude file is written, not which platform. Resolve it from the platform layer rather than hardcoding a `.claude/` path, and prefer `--scope` where the subcommand accepts it. Pair with `tools-permission-doctor:detect-missing-project-step-permissions` — run doctor to detect, then fix to apply.
 
 **Output (TOON)**:
 ```text
@@ -188,6 +191,16 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fi
 ```
 
 `--settings` and `--scope` are mutually exclusive.
+
+Among its fixes, `apply-fixes` ensures a default allow set. It reports which defaults it added as `defaults_added`, a list of **semantic ids** rather than rule text — the rendered grammar stays inside the target. The ids are fixed:
+
+| id | Ensures |
+|---|---|
+| `plan-dir-edit` | plan-marshall's own `.plan/` directory is editable |
+| `plan-dir-write` | plan-marshall's own `.plan/` directory is writable |
+| `bundle-cache-read` | the deployed bundle cache is readable, so skills can reach the files they reference by relative path |
+
+`defaults_added_count` carries the same length as a scalar, matching how the neighbouring operations report (`permissions_added`, `rules_total`).
 
 ### add
 

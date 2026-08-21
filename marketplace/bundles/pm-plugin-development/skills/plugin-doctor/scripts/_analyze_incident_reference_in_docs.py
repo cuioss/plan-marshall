@@ -38,13 +38,26 @@ above):
 4. **Incident term-of-art** — a ``#NNNN`` (optionally ``PR #NNNN``) bound to an
    incident noun: ``failure mode`` / ``signature`` / ``shape`` / ``defect`` /
    ``incident`` / ``regression`` (an optional single hyphenated qualifier may
-   sit between, e.g. ``#948 sibling-worktree shape``).
+   sit between, e.g. ``#NNNN sibling-worktree shape``).
+5. **Incident term-of-art, REVERSED** — the same noun set with the reference
+   AFTER it ("the failure mode #NNNN"), same optional hyphenated qualifier.
+   English prose reaches for this ordering at least as often as form 4's.
+6. **Dated / version-pinned narration** — a temporal preposition (``as of`` /
+   ``since`` / ``before`` / ``after``) followed by a ``YYYY``(``-MM``(``-DD``))
+   date or an ``N.N.N`` version. The date is the incident marker: prose pinned
+   to a moment states when something WAS true rather than what IS true.
 
 Deliberately NOT flagged, because the reference is not incident narration the
 reader cannot act without: a bare ``#NNNN`` in prose with no incident noun
 (ordinary provenance / worked-example / external-tracker citation), a
-back-ticked ``#NNNN`` (a code token, exempt as inline code), and a lowercase
-"observed on #NNNN" in an observation record.
+back-ticked ``#NNNN`` (a code token, exempt as inline code — tested at the
+reference's offset inside the match rather than at the match start, so a
+back-ticked reference is exempt in every family, including the two whose
+patterns allow a backtick to sit between the match start and the reference; see
+:func:`_exemption_offset`), a lowercase
+"observed on #NNNN" in an observation record, and a version CONSTRAINT carrying
+no temporal preposition ("requires Python 3.12", "Node 20.1.0 or newer",
+">= 1.2.3"), which states a requirement holding NOW rather than a moment.
 
 Exemption posture
 -----------------
@@ -127,6 +140,53 @@ _TERM_OF_ART_RE = re.compile(
     re.IGNORECASE,
 )
 
+# 5. Incident term-of-art, REVERSED: the noun first, the reference after it
+# ("the failure mode #NNNN"). The shipped form above requires the reference
+# first, so this ordering — the one English prose reaches for at least as often
+# — passed a rule whose own brief named it. Same noun set, same optional
+# hyphenated qualifier, mirrored.
+#
+# The example above spells the reference as a LITERAL ``#NNNN`` placeholder, and
+# every example in this file does the same: the population includes ``*.py``, so
+# a real digit run here is a live match of this module's own rule. Backticks are
+# not a substitute — they only make the match EXEMPT, and an exempt match is
+# still a match, which is enough to change what a disable-the-exemption
+# measurement reports about the tree. That happened: an example written with a
+# real reference became the only ``observed_on`` match in the whole population
+# and shifted a published figure.
+_TERM_OF_ART_REVERSED_RE = re.compile(
+    r'(?:failure mode|signature|shape|defect|incident|regression)\s+'
+    r'(?:[A-Za-z]+-[A-Za-z]+\s+)?`?#\d{3,4}',
+    re.IGNORECASE,
+)
+
+# 6. Dated / version-pinned narration: a temporal preposition followed by a
+# YYYY(-MM(-DD)) date or an N.N.N version. The date or version is the incident
+# marker here — prose anchored to a moment states when something WAS true rather
+# than what IS true, which is the same provenance-as-normative-prose defect a
+# #ref carries.
+#
+# The temporal preposition is REQUIRED, which is what keeps an ordinary version
+# CONSTRAINT ("requires Python 3.12", "Node 20.1.0 or newer") out of scope: those
+# state a requirement that holds now, not a moment prose is pinned to.
+#
+# No example here spells a real date or version after a preposition, for the
+# self-trigger reason given above.
+_DATED_NARRATION_RE = re.compile(
+    # ``19xx`` and ``20xx``, not just ``20xx``: the rule documents
+    # ``YYYY(-MM(-DD))``, so a pre-2000 dated phrase is narration by that
+    # definition and the ``20``-only class disagreed with its own published spec.
+    # ⛔ The example is deliberately NOT spelled out here — writing it literally
+    # made this module a live match of its own rule, which is the same trap the
+    # ``#NNNN`` placeholders below exist to avoid.
+    # ⛔ NOT a bare ``\d{4}``: widening that far matched `after 3600` — a timeout
+    # in SECONDS — in three live scripts, manufacturing findings against correct
+    # code. A four-digit number is not a year; a four-digit number in the range
+    # people actually date documents with is.
+    r'\b(?:as of|since|before|after)\s+(?:(?:19|20)\d{2}(?:-\d{2}(?:-\d{2})?)?|\d+\.\d+\.\d+)\b',
+    re.IGNORECASE,
+)
+
 # All narration forms as (name, compiled_regex) pairs. A single finding family
 # ('incident_reference') is emitted regardless of which form matched.
 _PATTERNS: list[tuple[str, re.Pattern]] = [
@@ -134,7 +194,12 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     ('observed_on', _OBSERVED_ON_RE),
     ('temporal_narration', _TEMPORAL_RE),
     ('incident_term_of_art', _TERM_OF_ART_RE),
+    ('incident_term_of_art_reversed', _TERM_OF_ART_REVERSED_RE),
+    ('dated_narration', _DATED_NARRATION_RE),
 ]
+
+# Locates the ``#NNNN`` reference inside a matched narration span.
+_REF_IN_MATCH_RE = re.compile(r'#\d+')
 
 # Inline-code span detection (matches `...`).
 _INLINE_CODE_RE = re.compile(r'`([^`]+)`')
@@ -213,6 +278,58 @@ def _offset_in_inline_code(offset: int, spans: list[tuple[int, int]]) -> bool:
     return any(start <= offset < end for start, end in spans)
 
 
+def _exemption_offset(match: re.Match) -> int:
+    """The offset the inline-code exemption is tested at, for any narration form.
+
+    The exemption is about the REFERENCE being a code token, so it is tested at
+    the ``#NNNN`` inside the match rather than at the match's first character.
+
+    **FOUR of the six families have a match that begins before the reference** —
+    ``plan_marshall_ref``, ``observed_on``, ``temporal_narration`` and
+    ``incident_term_of_art_reversed`` (verified by execution, not by reading the
+    patterns). Differing offsets are not what matters, though: what matters is
+    whether a code-span BOUNDARY can fall strictly between them, because only
+    then can the two offsets land on opposite sides of it.
+
+    **Two families can.** ``observed_on`` admits up to 80 arbitrary characters
+    between its opener and the reference, and the reversed term-of-art form
+    admits whitespace and an optional qualifier — so a backtick can sit there and
+    the verdict changes. The other two cannot: ``plan-marshall#NNNN`` is
+    contiguous, and ``since #``/``post-#``/``pre-#`` stop matching the moment a
+    backtick is inserted, so no boundary can fall inside either match.
+
+    Do not restate this as "two families are affected" — that was the earlier
+    wording, and it is the sentence a maintainer adding a seventh family would
+    reuse to decide whether theirs is in scope. The test is *can a backtick
+    appear between the match start and the reference*, which is a property of the
+    pattern, not a count.
+
+    For ``observed_on`` this WIDENS the exemption: under the match-start test a
+    back-ticked reference there still fired, making it the one family in which
+    the project-wide "a back-ticked reference is a code token" convention did not
+    hold. The change is not purely a widening, though — it also NARROWS, when the
+    OPENER is quoted and the reference is not: a line quoting the whole clause
+    and leaving the reference bare has its match start inside a code span and its
+    reference outside, so it was exempt before and fires now. Both directions
+    follow from the same rule, that the exemption is about the REFERENCE being a
+    code token. The worked example, with both offsets asserted, lives in
+    ``test_the_change_narrows_as_well_as_widens`` rather than here: spelled out
+    in this docstring it is a live match of this very family, in a file the
+    population includes — which is exactly what happened when it was.
+
+    The widening is deliberate and disclosed rather than silent, and pinned by
+    ``test_observed_on_with_a_backticked_ref_is_exempt``. ⚠️ Its live-incidence
+    bound is **vacuous**: the derived population contains ZERO ``observed_on``
+    matches, so "no live line changes verdict" is not evidence of harmlessness —
+    it is evidence that nothing exercises this family in the tree at all.
+
+    A match carrying no ``#NNNN`` at all (the dated-narration form) has no
+    reference to exempt, so the match start is used.
+    """
+    ref = _REF_IN_MATCH_RE.search(match.group(0))
+    return match.start() + ref.start() if ref else match.start()
+
+
 # ---------------------------------------------------------------------------
 # File-level scanner
 # ---------------------------------------------------------------------------
@@ -275,9 +392,13 @@ def _scan_file(path: Path, rel_to_bundles: str, default_cfg: dict[str, list[str]
         emitted = False
         for family_name, pattern in _PATTERNS:
             for m in pattern.finditer(line):
-                # Skip matches whose start offset is fully inside an inline-code
-                # span — those are code-token references, not narration.
-                if _offset_in_inline_code(m.start(), spans):
+                # Skip matches whose REFERENCE offset is inside an inline-code
+                # span — those are code-token references, not narration. The
+                # test is on the reference, not the match start: two families
+                # match text that can carry a backtick between the two, and
+                # testing the start there gets the opposite answer.
+                # See _exemption_offset.
+                if _offset_in_inline_code(_exemption_offset(m), spans):
                     continue
                 findings.append(
                     Finding(

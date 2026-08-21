@@ -176,7 +176,7 @@ _bootstrap_glob_discover()
 
 from claude_runtime import ClaudeRuntime  # noqa: E402
 from opencode_runtime import OpenCodeRuntime  # noqa: E402
-from runtime_base import Runtime, toon_error  # noqa: E402
+from runtime_base import PERMISSION_FIX_OPERATIONS, Runtime, toon_error  # noqa: E402
 
 _DEFAULT_TARGET = "claude"
 
@@ -454,7 +454,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission fix")
         p.add_argument("--scope", required=True)
         p.add_argument("--operation", required=True,
-                       choices=["normalize", "add", "remove", "ensure", "consolidate"])
+                       choices=list(PERMISSION_FIX_OPERATIONS))
         p.add_argument("--permissions", nargs="*", default=[])
         p.add_argument("--dry-run", action="store_true")
         ns = p.parse_args(remaining)
