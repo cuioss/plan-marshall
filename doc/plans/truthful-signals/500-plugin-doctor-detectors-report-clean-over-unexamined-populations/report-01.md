@@ -607,6 +607,33 @@ anything.
 | `sourcery-ai` | **refused — size ceiling** | **no** | Review body: *"your pull request is larger than the review limit of 150000 diff characters"*. A property of this diff, not a clock: waiting cannot change it, so this is `no-reopen` and is recorded as a shortfall immediately rather than retried. Its check run reads `skipped`; the **body** is what establishes the reason. |
 | `coderabbitai` | see retry log | **yes** | Rate-limited with a countdown on every attempt so far. A countdown is a clock, not a verdict — § Step 7 forbids recording it as a shortfall while attempts remain. |
 
+### Is the reviewer reachable at all? — the repository-wide check
+
+§ Step 7 owes this check once **three** of the run's own windows have passed with
+no review, precisely so a run does not spend its budget waiting on something no
+amount of waiting fixes. Performed after attempt 4, by reading `get_reviews` on
+the most recently updated pull requests (`list_pull_requests`, sorted by update).
+
+**The answer is the opposite of "exhausted": CodeRabbit is actively reviewing in
+this repository.** Sibling PR **#1319** carries full CodeRabbit review bodies at
+13:25:42, 13:26:02 and 14:25:33, with inline replies through 14:36:11. Its own
+review footers state the mechanism: *"Your plan provides up to **1 included
+review per hour**; 0 remain after this review."*
+
+So this is **contention for a one-per-hour account-wide allowance**, not a dead
+mechanism — and the `unobtainable` arm, which requires establishing that no
+attempt can succeed, is **not** available. The retry schedule is the correct
+response and the remaining budget is spent on it.
+
+⛔ **Do not read the growing countdowns (38 → 48 → 59 minutes) as this run's own
+attempts pushing the window out.** § Step 7 is explicit that a refusal *consumes
+nothing* — *"we couldn't start this review"* means nothing ran, and the countdown
+is the allowance returning rather than a balance drawn down. The growth comes
+from the 7-day history window and concurrent volume across the account. That
+inference was drafted here as fact before the contract was re-read, and it was
+wrong; it is recorded because a plausible mechanism asserted without checking is
+this plan's own subject.
+
 ### Condition-6 retry log (CodeRabbit)
 
 An attempt for an auto-review reviewer is a **push**; its trigger comment is
@@ -618,7 +645,8 @@ owed anyway. Budget: six.
 | 1 | 13:21 | `88d22e3` | PR creation | *"Review limit reached … Next review available in: 38 minutes"* |
 | 2 | 13:35 | `b55ad1d` | Condition 2's base merge + condition 4's report push (one push) | Same notice, comment edited in place at 13:35:30 |
 | 3 | 14:29 | `c3fa560` | The report re-commit § Step 8 condition 4 licenses on each wake | *"Review limit reached … Next review available in: **48 minutes**"* — commit status `CodeRabbit: Review rate limited` at 14:30:53, run `45c5231b` |
-| 4 | 15:27 | — | Same carrier | *(read back on the next wake)* |
+| 4 | 15:27 | `680c83e` | Same carrier | *"Review limit reached … Next review available in: **59 minutes**"* at 15:28:37, run `37f7eec4` |
+| 5 | 16:41 | — | Same carrier | *(read back on the next wake)* |
 
 ⛔ **Attempts 1 and 2 fell inside one window and the second was therefore spent
 for nothing.** Both were pushes the run owed on its own schedule (§ Step 4's
