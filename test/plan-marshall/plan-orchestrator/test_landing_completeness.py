@@ -6,8 +6,12 @@
 The terminal ``kind: landing`` message must carry a machine-readable
 ``landing-facts`` block (plan 302 D4). ``check_landing_completeness`` is the
 drain-side validator that lets the orchestrator turn "the queue is empty" into
-"nothing material is outstanding": it reports whether a drained landing carried
-that block with every required fact key.
+"every REQUIRED fact drained": it reports whether a drained landing carried that
+block with every required fact key SUPPLIED — non-empty, and not a sanctioned
+degraded value for the keys that cannot legitimately be unknown. It does NOT
+reach the optional keys (the per-step typed facts, the wall-clock, the repository
+end-state), so a ``complete: true`` landing may carry none of them and the check
+never establishes that nothing whatsoever is outstanding.
 
 The single most important assertion here is that the check is **SEEN to fail on
 a known-incomplete input** — a PRE-FIX, prose-only landing (the historical
@@ -156,6 +160,87 @@ class TestSeenToFailOnPreFixLanding:
         assert 'schema' in LANDING_REQUIRED_KEYS
         assert 'total_tokens' in LANDING_REQUIRED_KEYS
         assert 'steps' in LANDING_REQUIRED_KEYS
+
+
+# =============================================================================
+# A sanctioned degraded value is MISSING, not a fact
+# =============================================================================
+#
+# ``emit-landing.md`` sanctions writing ``n/a`` for a fact the producer could not
+# read. ``n/a`` is a truthy string, so a presence-only check accepts a landing
+# whose token total, step list and deliverable counts all failed to read and
+# reports ``complete: true`` over it. The expectations below are stated as EXACT
+# literal key lists rather than derived from the module's sentinel-rejecting key
+# set: deriving them would make both sides move together, so dropping a key from
+# that set would leave every assertion green.
+
+
+class TestDegradedSentinelFacts:
+    def test_degraded_counts_tokens_and_steps_are_reported_missing(self):
+        """A landing whose mechanisable facts all read ``n/a`` is INCOMPLETE.
+
+        The four keys below can never legitimately be unknown for a landed plan,
+        so a sanctioned degraded value for any of them is a gap the drain must
+        record — not a fact it may reconcile against.
+        """
+        landing = _facts_landing(
+            deliverables_total='n/a',
+            deliverables_done='n/a',
+            total_tokens='n/a',
+            steps='n/a',
+        )
+
+        complete, missing = check_landing_completeness(landing)
+
+        assert complete is False
+        assert missing == [
+            'deliverables_total',
+            'deliverables_done',
+            'total_tokens',
+            'steps',
+        ]
+
+    def test_degraded_plan_id_is_reported_missing(self):
+        """``plan_id`` identifies the landing; a degraded one is not an identity."""
+        landing = _facts_landing(plan_id='n/a')
+
+        complete, missing = check_landing_completeness(landing)
+
+        assert complete is False
+        assert missing == ['plan_id']
+
+    def test_degraded_pr_and_merge_state_stay_complete(self):
+        """The asymmetry: ``pr`` / ``merge_state`` MAY be ``n/a``.
+
+        "No PR exists" is a real end state the payload spec names, so a degraded
+        value there is an answer rather than a gap. Pinning this alongside the
+        rejection cases is what keeps the sentinel rule from being widened into a
+        blanket ban.
+        """
+        landing = _facts_landing(pr='n/a', merge_state='n/a')
+
+        complete, missing = check_landing_completeness(landing)
+
+        assert complete is True
+        assert missing == []
+
+    def test_sentinel_match_ignores_case_and_surrounding_space(self):
+        """A producer's ``N/A`` is the same sanctioned degraded value as ``n/a``."""
+        landing = _facts_landing(total_tokens='  N/A  ')
+
+        complete, missing = check_landing_completeness(landing)
+
+        assert complete is False
+        assert missing == ['total_tokens']
+
+    def test_a_genuine_zero_count_is_not_a_degraded_value(self):
+        """``0`` is a real count, and must not be swept up by the sentinel rule."""
+        landing = _facts_landing(deliverables_done='0')
+
+        complete, missing = check_landing_completeness(landing)
+
+        assert complete is True
+        assert missing == []
 
 
 # =============================================================================

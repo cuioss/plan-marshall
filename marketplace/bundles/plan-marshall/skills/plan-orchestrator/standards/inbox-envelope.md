@@ -18,7 +18,15 @@ The message format of the epic's plan-writable OUTBOX. An executing plan appends
 The orchestrator drains the queue; the two drain verbs are mechanical and carry no judgement.
 
 - **`inbox list` is the enumeration seam.** It returns the queued messages in deterministic (sender, sequence) order, each with its header context and its validation verdict. Nothing under `inbox/archive/` is enumerated. The payload also names WHICH KIND OF ZERO a `count: 0` is, because **a zero meaning *could not look* and a zero meaning *looked, found nothing* do not share a representation**: `epic_not_found` (`status: error` — no epic tree at all), `inbox_state: missing` (the epic is there but has no `inbox/` directory, so the enumeration could not look), and `inbox_state: present` with `count: 0` (it looked and found nothing). `inbox_dir` reports the absolute path actually scanned. The `inbox_state` discriminator is captured ONCE, immediately before the enumeration loop, so it reports the same observation the enumeration acted on — under a concurrent drain that removes `inbox/` mid-scan the payload can never pair a non-zero `count` with `inbox_state: missing`. An absent `inbox/` is NOT a fault — the verb stays `status: success` so a drain is never aborted by it, and the discriminator rides the payload rather than the status.
-- **`inbox list` surfaces each message's lifecycle, and tells a finished stream from an empty queue.** Every row carries `lifecycle`, `revision`, and `superseded_by`, so a revised message is visibly different from a virgin one and a superseded one is visibly retired. The payload also carries `live_count` (VALID messages still presenting as live — excluding `superseded` and `stream-end`) and `closed_senders` (senders that have filed a `stream-end` marker). Those two are the drain's empty-vs-finished discriminator: `live_count: 0` with an empty `closed_senders` is an EMPTY queue that may yet receive more, while `live_count: 0` with the sender in `closed_senders` is a FINISHED stream.
+- **`inbox list` surfaces each message's lifecycle, and tells a finished stream from an empty queue.** Every row carries `lifecycle`, `revision`, and `superseded_by`, so a revised message is visibly different from a virgin one and a superseded one is visibly retired. The payload also carries `live_count` (VALID messages still presenting as live — excluding `superseded` and `stream-end`) and `closed_senders` (senders that have filed a `stream-end` marker). Together with `invalid_count` those are the drain's zero discriminator, and there are **three** zeros to tell apart, not two:
+
+  | `live_count` | `closed_senders` | `invalid_count` | The state |
+  |---|---|---|---|
+  | `0` | empty | `0` | **EMPTY** — nothing queued and no sender has declared closure, so a later message is still possible |
+  | `0` | non-empty | `0` | **FINISHED** — the named senders filed `stream-end` markers and will send no more |
+  | `0` | any | `> 0` | **BLOCKED** — nothing drainable, but messages remain that the drain refuses to consume |
+
+  ⛔ **`live_count: 0` alone is not EMPTY.** `live_count` counts VALID messages presenting as live, so an invalid message is excluded from it exactly as a `superseded` or `stream-end` one is — a queue holding nothing but malformed messages reports `live_count: 0` while carrying work nobody has read. Reading that as an empty queue would claim a completed drain over messages the drain declined. The third zero is BLOCKED, and it is named because the two-way reading silently absorbed it into EMPTY.
 - **A malformed message is reported, never skipped.** Each row carries either `valid: true` or the validator's distinct error code from the table below, so a broken message stays visible to the drain instead of disappearing from it, and one bad message never aborts the enumeration.
 - **An unreadable message is reported the same way.** A message file that cannot even be read — non-UTF-8 bytes, or the file vanishing mid-drain under a concurrent writer — is reported as one row with `valid: false` and the distinct `error: unreadable` code, not confusable with any envelope-validation code below, and enumeration continues to the next message.
 - **Archival is the consume marker.** A message leaves the queue only by being archived, so a re-scan of an already-drained message is a no-op and a repeated `inbox archive` of the same message is idempotent success.
@@ -40,6 +48,16 @@ The guard fires only when `--target-plan` is supplied, and refuses only a plan t
 | `--target-plan` is not a path-safe identifier | `status: error, error: invalid_target_plan` |
 | `--target-plan` names a non-running plan (landed, parked, or absent), or `status.json` is unreadable / carries no queue | the write PROCEEDS — the message queues as an ordinary epic-addressed message the orchestrator drains |
 | `--target-plan` omitted | the write proceeds unchanged (the primary path) |
+
+**Stream closure is the second write-side refusal, and it is about the SENDER rather than the target.** A sender that has filed a valid `lifecycle=stream-end` marker declared its own stream ended, and `inbox close-stream`'s whole meaning is that the sender will send no more. Writing after that would contradict a signal the drain has already reported through `closed_senders`, so it is refused at write time:
+
+| Condition | Outcome |
+|-----------|---------|
+| The sender has a valid `lifecycle=stream-end` marker queued in `inbox/` | `status: error, error: stream_closed` — the message is REFUSED and no file is allocated. The error names the existing marker. |
+| The sender has no such marker, or has only a marker that fails validation | the write PROCEEDS — an invalid marker is not a closure the drain would honour either, so it is not one here |
+| A DIFFERENT sender has closed its stream | the write PROCEEDS — closure is per sender, never epic-wide |
+
+The check runs BEFORE the `--target-plan` guard, because whether this sender may write at all does not depend on where the message was aimed. The scan covers `inbox/` only, never `inbox/archive/`: once the drain consumes and archives the marker, the queue no longer carries the closure and the sender may write again. That bound is deliberate — the queue is the live state — and a sender that must stay closed across a drain is a larger design question this guard does not settle.
 
 The guard makes the existing undeliverability **visible**; it deliberately does NOT build a mid-run delivery channel — routing a message into a running plan is a larger design question this channel does not answer. `--target-plan` never reaches the write path: the message file target stays derived from the epic slug and `--sender-id` alone, so the ledger write-boundary carve-out is untouched. Because these are write-side deliverability outcomes, they are distinct from the envelope-VALIDATION verdicts in § Validator error codes, which govern message FORMAT.
 
@@ -114,7 +132,7 @@ A filed message is corrected through the sanctioned surface, never by a direct f
 
 ## Invariants
 
-- **Append-only, with one sanctioned in-place edit.** A sender creates new message files and never deletes one. The ONLY sanctioned in-place mutations are `amend` (body correction) and `supersede`/`close-stream` (envelope state) — each records its mutation in the envelope, so no in-place edit is ever invisible. A `superseded` message's body is preserved byte-for-byte.
+- **Append-only, with two sanctioned in-place edits.** A sender creates new message files and never deletes one. Exactly two verbs mutate a filed message in place — `amend` (body correction, stamping `amended` plus a monotonic `revision`) and `supersede` (envelope state, stamping `lifecycle=superseded` plus a successor pointer) — and each records its mutation in the envelope, so no in-place edit is ever invisible. A `superseded` message's body is preserved byte-for-byte. **`close-stream` is an APPEND, not an in-place edit**: it composes a fresh envelope and allocates a new sequenced path, opening no existing file — the same classification [`orchestration-model.md` § Ledger Write-Boundary](../../persona-plan-orchestrator/standards/orchestration-model.md) states.
 - **One file per message.** A message is never appended to an existing file; each emitted item gets its own sequence.
 - **Own-file-only.** A sender writes only files whose `{sender_id}` segment is its own id.
 - **One-way.** The plan writes; the orchestrator drains. A plan never reads the ledger to make a decision.
@@ -148,6 +166,6 @@ The state checks (8–11) run AFTER the base checks (1–7), so the base rejecti
 ## Related
 
 - [`persona-plan-orchestrator/standards/orchestration-model.md`](../../persona-plan-orchestrator/standards/orchestration-model.md) — § Ledger Write-Boundary, the contract that sanctions this channel
-- [`../SKILL.md`](../SKILL.md) § Canonical invocations — the `inbox write` / `inbox validate` / `inbox list` / `inbox archive` / `inbox detect` / `inbox landing-check` argument surfaces
+- [`../SKILL.md`](../SKILL.md) § Canonical invocations — the `inbox write` / `inbox amend` / `inbox supersede` / `inbox close-stream` / `inbox validate` / `inbox list` / `inbox archive` / `inbox migrate-archive` / `inbox detect` / `inbox landing-check` argument surfaces, one `### inbox {verb}` section each
 - [`landing-payload-spec.md`](landing-payload-spec.md) — the machine-readable `landing` payload body contract (required fact keys, the report↔inbox delta)
 - [`manage-lessons/standards/file-format.md`](../../manage-lessons/standards/file-format.md) — the lesson body shape a `candidate-lesson` payload carries

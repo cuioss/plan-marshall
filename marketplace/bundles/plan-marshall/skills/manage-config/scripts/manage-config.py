@@ -593,7 +593,7 @@ def main() -> int:
     # Scalar (non-effort) knobs of the top-level `orchestrator` block. The
     # effort knobs live on the `effort` noun (`--role orchestrator.{surface}` /
     # `--scope orchestrator[.{surface}|.max]`); this noun owns only the
-    # provisioning scalars (parallelization_scope today; PLAN-48 adds auto_emit).
+    # provisioning scalars: parallelization_scope and auto_emit.
     p_orch = subparsers.add_parser(
         'orchestrator',
         help='Manage the top-level orchestrator block scalar knobs (get/set --field)',

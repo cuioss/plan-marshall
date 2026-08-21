@@ -2013,6 +2013,47 @@ def test_committed_marshal_json_top_level_keys_already_canonical():
     )
 
 
+def test_committed_marshal_json_surfaces_every_orchestrator_knob():
+    """The committed .plan/marshal.json must surface every settable orchestrator knob.
+
+    Default-surfacing guard for the file an operator actually reads. The seed
+    materialises every key of ``ORCHESTRATOR_KNOWN_KEYS``
+    (``test_get_default_config_includes_orchestrator_block``), but this project's
+    own committed config predates that seed, so a knob can be settable in code and
+    invisible in the shipped file. The expectation is derived from the
+    authoritative key set, never transcribed, so a key added there fails this test
+    until the committed file surfaces it too.
+    """
+    assert _COMMITTED_MARSHAL_PATH.exists(), (
+        f'committed marshal.json must exist at {_COMMITTED_MARSHAL_PATH}'
+    )
+    committed = json.loads(_COMMITTED_MARSHAL_PATH.read_text(encoding='utf-8'))
+
+    assert 'orchestrator' in committed, (
+        'the committed marshal.json must carry a top-level orchestrator block'
+    )
+    block = committed['orchestrator']
+    # Shape before contents: a JSON ARRAY of the key names satisfies the set
+    # comparison below, so without this the guard accepts a block that is not a
+    # block at all.
+    assert isinstance(block, dict), (
+        f'the committed orchestrator value must be an object, got {type(block).__name__}'
+    )
+    known = set(_config_defaults_mod.ORCHESTRATOR_KNOWN_KEYS)
+    assert set(block) == known, (
+        f'committed orchestrator block surfaces {sorted(block)}, '
+        f'expected every settable knob {sorted(known)}'
+    )
+    # The keys being present is not the claim — surfacing a knob must not CHANGE
+    # its effective default, so the committed values are pinned against the seed
+    # the surfacing rule is defined by.
+    seeded = _config_defaults_mod.get_default_config()['orchestrator']
+    assert block == seeded, (
+        f'committed orchestrator block {block} must equal the seeded defaults {seeded}; '
+        'a differing value would be a tuning change wearing a surfacing change\'s clothes'
+    )
+
+
 def test_committed_marshal_json_round_trips_through_save_config_unchanged(tmp_path, monkeypatch):
     """The committed marshal.json must round-trip through save_config unchanged.
 

@@ -30,9 +30,14 @@ retired sequence number is ever re-opened during a partial migration.
 The orchestrator-side drain surface (:func:`cmd_inbox_list`,
 :func:`cmd_inbox_archive`) is bounded by the same construction: both derive
 their target from the validated slug plus a bare message filename, and the only
-path they ever write is ``inbox/archive/`` joined with either the source
-message's own bare filename or the bare, sender-constrained ``--as-name``
-override — never a caller-supplied path.
+path they ever write is ``inbox/archive/{sender}/`` — the per-sender layout
+above — joined with either the source message's own bare filename or the bare,
+sender-constrained ``--as-name`` override. One carve-out is deliberate: a source
+name matching no message-name pattern yields no sender, so its destination stays
+FLAT under ``inbox/archive/`` and its ``os.link`` failure still surfaces as
+``invalid_message_name`` rather than being masked by a foldering step. In both
+branches the destination is composed here from validated parts — never a
+caller-supplied path.
 
 The message format is markdown with the repo's existing ``key=value`` metadata
 header (``file_ops.parse_markdown_metadata`` /
@@ -804,15 +809,21 @@ LANDING_FACTS_SCHEMA = 'landing-facts/1'
 #: The required machine-readable fact keys a COMPLETE landing carries — the
 #: mechanisable half of the report<->inbox delta the payload spec derives. A
 #: landing missing any one is INCOMPLETE, and the drain records the gap rather
-#: than reconciling as if the inbox had drained everything material. The set is
-#: the single source of truth the producer (``emit-landing.md``) and this
-#: validator share. Two documents DO re-list it — ``landing-payload-spec.md``'s
-#: key table and ``emit-landing.md``'s prose enumeration — so each is bound back
-#: to this tuple by a test (``test_landing_completeness.py``
+#: than reconciling as if the inbox had drained everything material.
+#:
+#: This tuple is the EXECUTABLE AUTHORITY: it is what
+#: :func:`check_landing_completeness` actually enforces, so a key's presence here
+#: is what makes it required in fact. Two documents restate the same set for
+#: their own readers — ``landing-payload-spec.md`` § "Required machine-readable
+#: fact keys" (the consumer-side contract) and ``emit-landing.md`` Step 2 (the
+#: producer-side instruction) — and each is bound back to this tuple by a test
+#: (``test_landing_completeness.py``
 #: ``test_payload_spec_table_names_exactly_the_required_keys`` and
 #: ``test_emit_landing_enumeration_names_exactly_the_required_keys``). Adding a
 #: key here without updating both surfaces turns those tests red; that is the
-#: intended failure, not a reason to relax them.
+#: intended failure, not a reason to relax them. Which document wins a prose
+#: disagreement is settled by ``landing-payload-spec.md``'s own tie-break
+#: sentence, which this comment does not restate or override.
 LANDING_REQUIRED_KEYS: tuple[str, ...] = (
     'schema',
     'plan_id',
@@ -823,6 +834,51 @@ LANDING_REQUIRED_KEYS: tuple[str, ...] = (
     'total_tokens',
     'steps',
 )
+
+#: Values a producer is SANCTIONED to write in place of a fact it could not read
+#: (``phase-6-finalize/standards/emit-landing.md``). Compared case-insensitively
+#: after stripping. Each is a truthy string, which is why a presence-only check
+#: accepts them silently — the very defect :data:`LANDING_SENTINEL_REJECTING_KEYS`
+#: exists to close.
+LANDING_DEGRADED_SENTINELS: frozenset[str] = frozenset({'n/a'})
+
+#: The required keys for which a sanctioned degraded value is NOT an answer. Each
+#: names something a landed plan always has, so ``n/a`` there records a producer
+#: that could not read it — a gap the drain must report, never a fact it may
+#: reconcile against.
+#:
+#: The set is deliberately a SUBSET of :data:`LANDING_REQUIRED_KEYS`, and the
+#: asymmetry is the point: ``pr`` and ``merge_state`` stay allowed to be ``n/a``
+#: because "no PR exists" is a real end state the payload spec names, so a
+#: degraded value there is an answer rather than a gap. ``schema`` needs no entry
+#: — :func:`check_landing_completeness` fail-closes on any value other than
+#: :data:`LANDING_FACTS_SCHEMA` before the required-key sweep runs, so a sentinel
+#: is already rejected there by the stricter check.
+LANDING_SENTINEL_REJECTING_KEYS: frozenset[str] = frozenset({
+    'plan_id',
+    'deliverables_total',
+    'deliverables_done',
+    'total_tokens',
+    'steps',
+})
+
+
+def _is_unsupplied(key: str, facts: dict[str, str]) -> bool:
+    """Return whether ``key`` carries no usable value in ``facts``.
+
+    A key is unsupplied when it is absent or empty, and — for a key in
+    :data:`LANDING_SENTINEL_REJECTING_KEYS` — when its value is a sanctioned
+    degraded sentinel. The sentinel comparison is exact after stripping and
+    case-folding, so a real value that merely contains the sentinel's letters is
+    unaffected.
+    """
+    value = facts.get(key, '')
+    if not value:
+        return True
+    if key not in LANDING_SENTINEL_REJECTING_KEYS:
+        return False
+    return value.strip().lower() in LANDING_DEGRADED_SENTINELS
+
 
 #: Matches the first ``landing-facts`` fenced block in a payload body. DOTALL so
 #: the body spans lines; non-greedy so it stops at the first closing fence.
@@ -865,8 +921,10 @@ def check_landing_completeness(payload_body: str) -> tuple[bool, list[str]]:
     """Return ``(complete, missing_keys)`` for a landing payload body.
 
     A landing is COMPLETE when it carries a ``landing-facts`` block whose ``schema``
-    is :data:`LANDING_FACTS_SCHEMA` and which supplies every key in
-    :data:`LANDING_REQUIRED_KEYS` with a non-empty value. Otherwise it is
+    is :data:`LANDING_FACTS_SCHEMA` and which SUPPLIES every key in
+    :data:`LANDING_REQUIRED_KEYS`. Non-empty is necessary but NOT sufficient: a
+    sanctioned degraded value counts as unsupplied for the keys
+    :data:`LANDING_SENTINEL_REJECTING_KEYS` names — see the fourth bullet below. Otherwise it is
     INCOMPLETE and ``missing_keys`` names why:
 
     - No block at all (a prose-only landing) -> every required key is missing. This
@@ -878,6 +936,15 @@ def check_landing_completeness(payload_body: str) -> tuple[bool, list[str]]:
       payload version is never best-effort-accepted.
     - Block present with the right schema but missing (or empty) required keys ->
       exactly those keys.
+    - Block present with the right schema but a SANCTIONED DEGRADED VALUE (``n/a``,
+      per :data:`LANDING_DEGRADED_SENTINELS`) where a fact belongs -> that key too.
+      The producer is allowed to write ``n/a`` for a fact it could not read, and
+      ``n/a`` is truthy, so a presence-only check would accept a landing whose
+      token total, step list and deliverable counts all failed to read. This
+      applies only to :data:`LANDING_SENTINEL_REJECTING_KEYS`: ``pr`` and
+      ``merge_state`` stay allowed to be ``n/a``, because "no PR exists" is a real
+      end state the payload spec names and a degraded value there is an answer
+      rather than a gap.
 
     A check that PASSED on a prose-only landing would be the vacuous guard this one
     exists to replace; the no-block branch is what keeps it non-vacuous, and it is
@@ -888,8 +955,69 @@ def check_landing_completeness(payload_body: str) -> tuple[bool, list[str]]:
         return False, list(LANDING_REQUIRED_KEYS)
     if facts.get('schema') != LANDING_FACTS_SCHEMA:
         return False, ['schema']
-    missing = [key for key in LANDING_REQUIRED_KEYS if not facts.get(key)]
+    missing = [key for key in LANDING_REQUIRED_KEYS if _is_unsupplied(key, facts)]
     return (not missing), missing
+
+
+def find_stream_end_marker(inbox_dir: Path, epic: str, sender_id: str) -> str | None:
+    """Return the name of ``sender_id``'s queued stream-end marker, or ``None``.
+
+    The ONE predicate behind both stream-closure entry points — the write-side
+    refusal (:func:`cmd_inbox_write`) and the close-side idempotence
+    (:func:`cmd_inbox_close_stream`). A single seam is what keeps the two from
+    disagreeing about whether a stream is closed: they would otherwise be two
+    independent scans that could drift.
+
+    Only a marker that VALIDATES counts. A malformed file claiming
+    ``lifecycle=stream-end`` is not a closure the drain would honour either — it
+    is excluded from ``inbox list``'s ``closed_senders`` for the same reason — so
+    treating it as one here would refuse writes on the strength of a message the
+    drain will report as invalid.
+
+    ⛔ **The scan covers ``inbox/`` only, never ``inbox/archive/``.** That bound
+    is deliberate and is a real limitation, stated rather than hidden: once the
+    drain consumes and archives a sender's marker, this predicate no longer finds
+    it and that sender may write again. The queue is the live state, and a
+    consumed marker has been acted on; re-refusing against the archive would make
+    the guard depend on drain history rather than on queue state. A sender that
+    must stay closed across a drain is a larger design question this guard does
+    not settle.
+
+    **Cost, stated precisely because the two bounds differ.** The enumeration is
+    O(n log n) in the queue depth: :func:`list_messages` lists the directory once
+    and sorts the result. The FILE READS are
+    not — the loop skips a path whose filename sender segment does not match
+    ``sender_id`` *before* opening it, so ``read_text`` and
+    :func:`validate_envelope` run at most once per message **that sender** has
+    queued. So a write costs one directory listing plus O(this sender's queued
+    messages) reads, not O(queue) reads. Both are accepted rather than optimised:
+    the queue is drained between plans and is small by construction, and the
+    alternative (an index, or trusting the filename) would either add a second
+    source of truth or honour a marker the validator would reject. Revisit only
+    if a queue is ever allowed to grow unbounded.
+
+    Args:
+        inbox_dir: The epic's ``inbox/`` directory.
+        epic: The epic slug, passed through as ``expected_epic`` so a marker
+            filed against a different epic is not honoured here.
+        sender_id: The sender whose closure is being tested.
+
+    Returns:
+        The bare filename of the first validating stream-end marker for that
+        sender in enumeration order, or ``None`` when the sender has none.
+    """
+    for path in list_messages(inbox_dir):
+        match = _MESSAGE_NAME_RE.match(path.name)
+        if match is None or match.group('sender') != sender_id:
+            continue
+        try:
+            text = path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            continue
+        ok, _, header = validate_envelope(text, expected_epic=epic, filename=path.name)
+        if ok and header.get(_LIFECYCLE_FIELD) == LIFECYCLE_STREAM_END:
+            return path.name
+    return None
 
 
 def cmd_inbox_write(args: Any) -> dict[str, Any]:
@@ -901,6 +1029,12 @@ def cmd_inbox_write(args: Any) -> dict[str, Any]:
     caller-supplied output path exists in the argument surface. The payload
     arrives via ``--payload-file`` (staged with the Write tool) so no message
     body ever passes through a shell argument.
+
+    Refuses a sender that has already closed its stream (``stream_closed``). The
+    check runs BEFORE the ``--target-plan`` deliverability guard, because it is
+    about whether this sender may write at all, which does not depend on where
+    the message was aimed. Without it the ``stream-end`` marker declared a
+    closure nothing enforced.
     """
     invalid = _validate_identifier(args.slug)
     if invalid:
@@ -926,6 +1060,24 @@ def cmd_inbox_write(args: Any) -> dict[str, Any]:
             'epic_not_found',
             f'epic {args.slug!r} has no tree at {root}; run scaffold first',
             slug=args.slug,
+        )
+    # Stream-closure guard. A sender that filed a ``lifecycle=stream-end`` marker
+    # declared its stream ended; without this refusal that declaration meant
+    # nothing and the sender could keep writing, so every consumer reading
+    # ``closed_senders`` as "this sender will send no more" was reading a claim
+    # the machinery did not support.
+    closed_by = find_stream_end_marker(root / INBOX_SUBDIR, args.slug, args.sender_id)
+    if closed_by is not None:
+        return _error(
+            'stream_closed',
+            f'sender {args.sender_id!r} closed its stream in epic {args.slug!r} '
+            f'with marker {closed_by}; a closed stream accepts no further '
+            'messages. The marker is the sender\'s own declaration that it will '
+            'send no more, and the drain reports it as such — writing after it '
+            'would contradict a signal the orchestrator has already acted on.',
+            slug=args.slug,
+            sender_id=args.sender_id,
+            marker=closed_by,
         )
     # Deliverability guard. ``--target-plan`` NAMES a plan the message is aimed
     # at, but the inbox is the epic's plan->orchestrator OUTBOX, drained BETWEEN
@@ -1136,12 +1288,20 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
             }
         )
     # ``live_count`` is the drainable set — VALID messages still presenting as
-    # live, so a superseded message (resolvable but retired) and a stream-end
-    # marker are both excluded. ``closed_senders`` is what lets the drain tell an
-    # empty queue from a finished one: a sender that has filed a valid stream-end
-    # marker will send no more, so live_count == 0 with a non-empty
-    # ``closed_senders`` is *finished*, while live_count == 0 with an empty one
-    # is merely *empty*.
+    # live, so a superseded message (resolvable but retired), a stream-end marker,
+    # AND an invalid message are all excluded. That last exclusion is why
+    # ``live_count`` alone does not discriminate: with ``closed_senders`` and
+    # ``invalid_count`` it separates THREE zeros, not two.
+    #
+    #   live_count 0 + closed_senders empty     + invalid_count 0  -> EMPTY
+    #   live_count 0 + closed_senders non-empty + invalid_count 0  -> FINISHED
+    #   live_count 0 + closed_senders any       + invalid_count >0 -> BLOCKED
+    #
+    # BLOCKED is the one a two-way reading absorbs into EMPTY: a queue holding
+    # nothing but malformed messages reports ``live_count: 0`` while carrying work
+    # nobody has read, so reading it as empty claims a completed drain over
+    # messages the drain declined. See ``standards/inbox-envelope.md`` § Drain
+    # semantics, which is the same table for the drain's own reader.
     live_count = sum(
         1 for row in messages if row['valid'] and row['lifecycle'] == LIFECYCLE_LIVE
     )
@@ -1619,9 +1779,21 @@ def cmd_inbox_close_stream(args: Any) -> dict[str, Any]:
     ``--reason`` note, or a default sentence) — so no message-class branch is
     needed anywhere; the terminal signal rides ``lifecycle`` alone.
 
-    The drain reads the closure from ``inbox list``'s ``closed_senders``: an
-    empty ``live_count`` with the sender present there is a *finished* stream,
-    distinct from an empty queue that may yet receive more.
+    The drain reads the closure from ``inbox list``'s ``closed_senders``. That is
+    one of THREE zeros, not one of two: ``live_count: 0`` with the sender present
+    in ``closed_senders`` and ``invalid_count: 0`` is a *finished* stream;
+    ``live_count: 0`` with an empty ``closed_senders`` and ``invalid_count: 0`` is
+    an *empty* queue that may yet receive more; and ``live_count: 0`` with
+    ``invalid_count > 0`` is *blocked* — nothing drainable, but messages the drain
+    refuses to consume. See ``standards/inbox-envelope.md`` § Drain semantics.
+
+    **Idempotent.** Closing a stream that is already closed returns SUCCESS
+    naming the existing marker, with ``already_closed: true``, and allocates
+    nothing — the caller asked for a state that already holds. A first close
+    reports ``already_closed: false``. Allocating a second marker instead would
+    be a second declaration of one fact, and it would be effectively invisible:
+    ``inbox list``'s ``closed_senders`` is a SET, so the duplicate dedups away
+    and shows up only as an unexplained extra row in ``count``.
 
     Refuses an unsafe slug (``invalid_slug``), an unsafe sender id
     (``invalid_sender_id``), an out-of-enum sender type (``invalid_sender_type``),
@@ -1646,6 +1818,27 @@ def cmd_inbox_close_stream(args: Any) -> dict[str, Any]:
             f'epic {args.slug!r} has no tree at {root}; run scaffold first',
             slug=args.slug,
         )
+    inbox_dir = root / INBOX_SUBDIR
+    # Idempotence, not refusal: closing an already-closed stream asks for a state
+    # that already holds, so the call SUCCEEDS and names the existing marker
+    # rather than allocating a second one. A second marker would be a second
+    # declaration of the same fact, invisible in ``inbox list``'s
+    # ``closed_senders`` (a set, so the duplicate dedups away) and visible only as
+    # an unexplained extra message in ``count``.
+    existing = find_stream_end_marker(inbox_dir, args.slug, args.sender_id)
+    if existing is not None:
+        return {
+            'status': 'success',
+            'operation': 'inbox-close-stream',
+            'slug': args.slug,
+            'store': ORCHESTRATOR_STORE,
+            'sender_type': args.sender_type,
+            'sender_id': args.sender_id,
+            'lifecycle': LIFECYCLE_STREAM_END,
+            'already_closed': True,
+            'message': existing,
+            'path': str(inbox_dir / existing),
+        }
     reason = (getattr(args, 'reason', None) or '').strip() or STREAM_END_DEFAULT_NOTE
     text = compose_envelope(
         args.sender_type,
@@ -1655,7 +1848,7 @@ def cmd_inbox_close_stream(args: Any) -> dict[str, Any]:
         reason,
         lifecycle=LIFECYCLE_STREAM_END,
     )
-    message_path = allocate_message_path(root / INBOX_SUBDIR, args.sender_id, text)
+    message_path = allocate_message_path(inbox_dir, args.sender_id, text)
     return {
         'status': 'success',
         'operation': 'inbox-close-stream',
@@ -1664,6 +1857,7 @@ def cmd_inbox_close_stream(args: Any) -> dict[str, Any]:
         'sender_type': args.sender_type,
         'sender_id': args.sender_id,
         'lifecycle': LIFECYCLE_STREAM_END,
+        'already_closed': False,
         'message': message_path.name,
         'path': str(message_path),
     }
@@ -1764,8 +1958,11 @@ def cmd_inbox_landing_check(args: Any) -> dict[str, Any]:
     landing that carried only narrative — transmitting none of the mechanisable
     report<->inbox delta — is recorded as an incompleteness rather than reconciled
     as if the inbox had drained everything material. That is what lets the
-    orchestrator establish, after a drain reports zero, that nothing material is
-    outstanding.
+    orchestrator establish, after a drain reports zero, that every REQUIRED fact
+    drained — which is narrower than "nothing is outstanding". Several
+    mechanisable facts ride OPTIONAL keys this check does not require (the
+    per-step typed facts, the wall-clock, the repository end-state), so a
+    ``complete: true`` landing may carry none of them.
 
     ``complete: false`` is a VERDICT, not a fault: the verb stays ``status:
     success`` and rides the completeness on the payload, so a drain is never

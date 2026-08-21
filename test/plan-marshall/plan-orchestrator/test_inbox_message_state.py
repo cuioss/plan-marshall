@@ -16,8 +16,11 @@ exercised in-process against the ``_orchestrator_inbox`` handlers under
 - **validate** (D2): the revision-monotonicity and lifecycle invariants are
   enforced — a claimed amendment with no advanced revision is rejected.
 - **close-stream + drain** (D3): a sender marks its stream ended with one
-  ``lifecycle=stream-end`` marker, and ``list``'s ``live_count`` /
-  ``closed_senders`` let the drain tell an empty queue from a finished one.
+  ``lifecycle=stream-end`` marker; a closed sender's later ``write`` is refused
+  (``stream_closed``) and a second ``close-stream`` is idempotent. ``list``'s
+  ``live_count`` / ``closed_senders`` / ``invalid_count`` separate THREE zeros —
+  empty, finished, and BLOCKED (nothing drainable, messages the drain refuses to
+  consume) — not two.
 - **foldered archive** (D4): the archive is per-sender
   (``inbox/archive/{sender}/``); ``next_sequence`` sees a foldered archived twin
   so no retired sequence is re-opened (the D5(e) control), ``migrate-archive``
@@ -466,8 +469,11 @@ class TestCloseStreamAndDrain:
         assert marker == f'{SENDER}-002.md'
 
     def test_drain_tells_an_empty_queue_from_a_finished_one(self, plan_context, tmp_path):
-        # (D3) The drain distinguishes empty (live_count 0, no closed sender)
-        # from finished (live_count 0, the sender has closed its stream).
+        # (D3) Two of the three zeros: empty (live_count 0, no closed sender)
+        # versus finished (live_count 0, the sender has closed its stream). The
+        # third — BLOCKED, live_count 0 with invalid_count > 0 — is pinned by
+        # test_a_blocked_queue_zero_is_distinct_from_an_empty_queue_zero; this
+        # case holds invalid_count at 0 throughout.
         cmd_scaffold(Namespace(slug=EPIC))
         empty = cmd_inbox_list(Namespace(slug=EPIC))
         assert empty['live_count'] == 0
@@ -499,6 +505,78 @@ class TestCloseStreamAndDrain:
 
 
 # =============================================================================
+# The stream-end marker MEANS what the documents say it means
+# =============================================================================
+#
+# The marker declares a sender's stream ended. Nothing enforced that: a sender
+# could write after closing, and could close twice — and ``closed_senders``' set
+# dedup hid the second marker, so the queue looked identical either way.
+
+
+class TestStreamClosureIsEnforced:
+    def test_a_write_after_close_stream_is_refused(self, plan_context, tmp_path):
+        """A closed sender writes no more — the refusal is what makes that true."""
+        cmd_scaffold(Namespace(slug=EPIC))
+        marker = cmd_inbox_close_stream(_close_stream_args())['message']
+
+        result = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'stream_closed'
+        assert marker in result['message']
+
+    def test_a_refused_write_queues_nothing(self, plan_context, tmp_path):
+        """The refusal is a refusal, not a warning: no message file is allocated."""
+        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_inbox_close_stream(_close_stream_args())
+        before = cmd_inbox_list(Namespace(slug=EPIC))['count']
+
+        cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
+
+        assert cmd_inbox_list(Namespace(slug=EPIC))['count'] == before
+
+    def test_a_write_before_close_stream_still_succeeds(self, plan_context, tmp_path):
+        """The control: an open sender is not affected by the guard."""
+        cmd_scaffold(Namespace(slug=EPIC))
+
+        result = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
+
+        assert result['status'] == 'success'
+
+    def test_another_senders_closure_does_not_block_this_sender(self, plan_context, tmp_path):
+        """The guard is PER SENDER: one sender's closure closes only its own stream."""
+        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_inbox_close_stream(_close_stream_args(sender_id='other-sender'))
+
+        result = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
+
+        assert result['status'] == 'success'
+
+    def test_a_second_close_stream_is_idempotent_success(self, plan_context, tmp_path):
+        """Closing twice reports the EXISTING marker rather than allocating a second."""
+        cmd_scaffold(Namespace(slug=EPIC))
+        first = cmd_inbox_close_stream(_close_stream_args())
+
+        second = cmd_inbox_close_stream(_close_stream_args())
+
+        assert second['status'] == 'success'
+        assert second['message'] == first['message']
+        assert first['already_closed'] is False
+        assert second['already_closed'] is True
+
+    def test_a_second_close_stream_allocates_no_second_marker(self, plan_context, tmp_path):
+        """The set dedup in ``closed_senders`` must not be what hides a second marker."""
+        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_inbox_close_stream(_close_stream_args())
+
+        cmd_inbox_close_stream(_close_stream_args())
+
+        listing = cmd_inbox_list(Namespace(slug=EPIC))
+        assert listing['count'] == 1
+        assert listing['closed_senders'] == [SENDER]
+
+
+# =============================================================================
 # list surfaces the state (D2)
 # =============================================================================
 
@@ -517,6 +595,38 @@ class TestListSurfacesState:
         assert rows[virgin]['lifecycle'] == LIFECYCLE_LIVE
         assert rows[amended]['revision'] == '1'
         assert rows[virgin] != rows[amended]
+
+    def test_a_blocked_queue_zero_is_distinct_from_an_empty_queue_zero(
+        self, plan_context, tmp_path
+    ):
+        """``live_count: 0`` alone is not EMPTY — the third zero is BLOCKED.
+
+        A queue holding nothing but malformed messages reports ``live_count: 0``
+        (they are not valid, so they are not live) with no closed sender, which is
+        byte-identical to the EMPTY reading on those two fields alone.
+        ``invalid_count`` is what separates them, so the two states are asserted
+        against each other rather than each in isolation.
+        """
+        cmd_scaffold(Namespace(slug=EPIC))
+        empty = cmd_inbox_list(Namespace(slug=EPIC))
+
+        # A malformed message: a header-only file. It carries one of the six base
+        # header fields, so validate_envelope rejects it as missing_header_field
+        # (asserted below, so the code cannot drift out from under this comment).
+        (_inbox_dir(plan_context) / f'{SENDER}-001.md').write_text(
+            'envelope_version=1\n', encoding='utf-8'
+        )
+        blocked = cmd_inbox_list(Namespace(slug=EPIC))
+
+        # The rejection code is pinned, so the comment above cannot go stale.
+        assert [row['error'] for row in blocked['messages']] == ['missing_header_field']
+        # The two states agree on every field the two-way reading looked at...
+        assert empty['live_count'] == blocked['live_count'] == 0
+        assert empty['closed_senders'] == blocked['closed_senders'] == []
+        # ...and are told apart only by the third.
+        assert empty['invalid_count'] == 0
+        assert blocked['invalid_count'] == 1
+        assert blocked['count'] == 1
 
 
 # =============================================================================

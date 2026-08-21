@@ -180,7 +180,9 @@
     "finding_raw_input_max_bytes": 65536
   },
   "orchestrator": {
-    "auto_emit": false
+    "auto_emit": false,
+    "effort": {},
+    "parallelization_scope": 1
   },
   "build": {
     "queue": {
