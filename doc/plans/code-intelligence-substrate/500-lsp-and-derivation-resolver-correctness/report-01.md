@@ -344,19 +344,22 @@ stale-figure defect this report warns about elsewhere, committed here.
 | `b0d746c`, round 5's fixes | 21419 passed, 14 skipped, 404.89 s, `verify: SUCCESS` |
 | `d893d51`, round 6's fixes | 21420 passed, 14 skipped, 490.34 s, `verify: SUCCESS` |
 | `def48c4`, round 7's fix | 21422 passed, 14 skipped, 400.14 s, `verify: SUCCESS` |
-| **`e061414`, round 8's fixes — the figure that governs** | **21433 passed, 14 skipped, 406.69 s, `verify: SUCCESS`** |
+| `e061414`, round 8's fixes | 21433 passed, 14 skipped, 406.69 s, `verify: SUCCESS` |
+| **`f93849e`, round 9's fixes — the figure that governs** | **21437 passed, 14 skipped, 416.91 s, `verify: SUCCESS`** |
 
 The figure that governs is the last, because it is the only one measured on the tree that actually
-lands. Rounds 4 through 8 each touch production Python — docstrings at first, then real behaviour changes
+lands. Rounds 4 through 9 each touch production Python — docstrings at first, then real behaviour changes
 from round 7 on (`apply_workspace_edit`'s rollback, `read_message`'s frame contract, the harvest's
-failure-mode split, and the resolver listing's `configured` flag) — so the gate was re-run on each
-rather than carried forward, which is the stale-figure defect this section already records once. The
+failure-mode split, the resolver listing's `configured` flag, and round 9's three write-path fixes) —
+so the gate was re-run on each rather than carried forward, which is the stale-figure defect this
+section already records once. The
 count rises with each round that closes a finding by adding a guard rather than by bounding it:
 21419 → 21420 is round 6's single B4 guard, 21420 → 21422 is round 7's pair pinning the partial-write
-rollback (B5), and 21422 → 21433 is round 8's eleven — eight driving the seven bad-frame shapes and a
+rollback (B5), 21422 → 21433 is round 8's eleven — eight driving the seven bad-frame shapes and a
 clean-EOF control through the real `serve` subprocess, one for the harvest's `request-failed:` mode,
-one for the third `configured` reader, and one for the recoverable-frame stream alignment. Each delta
-is exactly the guards named and nothing else.
+one for the third `configured` reader, and one for the recoverable-frame stream alignment — and
+21433 → 21437 is round 9's four: the clean-tree `restore_error` case, the URI-alias normalisation,
+and the two line-length clamp guards. Each delta is exactly the guards named and nothing else.
 ⛔ **Every commit after the governing one is report-only**, and that is established rather than
 asserted: `git diff --name-only {governing}..HEAD -- '*.py'` returns nothing. All three sub-steps ran
 on the governing commit: quality-gate (`ruff … All checks passed!`, `mypy … Success: no issues found
