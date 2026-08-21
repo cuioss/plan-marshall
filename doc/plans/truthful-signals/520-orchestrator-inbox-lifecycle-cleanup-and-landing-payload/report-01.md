@@ -55,36 +55,36 @@ The plan carries three asserted-absence claims and flags them as the higher-risk
 
 All eight shipped. One commit per deliverable, in the plan's stated order so the later edit sees the earlier one.
 
-**D1 — Derivation gate** (`58359f9b` established the plan directory; D1 itself mutates nothing). All four populations derived and recorded verbatim above with their file and symbol. No premise failed, so the plan did not halt.
+**D1 — Derivation gate** (`e3b4d883` established the plan directory; D1 itself mutates nothing). All four populations derived and recorded verbatim above with their file and symbol. No premise failed, so the plan did not halt.
 
-**D2 — The orchestrator block is discoverable where operators read it** (`5078593e`).
+**D2 — The orchestrator block is discoverable where operators read it** (`25649ae0`).
 (i) `.plan/marshal.json`'s `orchestrator` block seeded with `effort: {}` and `parallelization_scope: 1`, preserving `auto_emit: false` and the file's top-level key order. `sync-defaults` was **not** run, per the plan's ⛔.
 (ii) `test_committed_marshal_json_surfaces_every_orchestrator_knob` added, deriving its expectation from `ORCHESTRATOR_KNOWN_KEYS` rather than transcribing it. **Seen RED** against the pre-edit block: `AssertionError: committed orchestrator block surfaces ['auto_emit'], expected every settable knob ['auto_emit', 'effort', 'parallelization_scope']` — `1 failed, 2 passed, 232 deselected`. The two existing committed-file tests were re-run and still pass (they assert top-level key order only and read inside no block).
 (iii) `marshal-json-reference.md` § Orchestrator Configuration now states that `init` seeds every knob at its effective default, that each seeded default resolves exactly as the unset key did (with the fall-through per knob), and that a legacy `auto_emit`-only block stays valid and is back-filled by `sync-defaults`. The table row's parenthetical reflects the seeded shape; the `parallelization_scope` paragraph makes the seeded `1` the stated default with the unset case as a legacy note. `auto_emit` gained a real reference section and table row.
 
 *Both sweeps clean.* **PLAN-48 sweep** over `marketplace/`: 4 hits before (`manage-config.py:596`, `effort-roles.md:88`, `marshal-json-reference.md:123` and `:155` — the four the gap names, re-derived and confirmed), **0 after**. **Empty-block sweep** for `empty \`{}\` block is legal` / `empty \`{}\` legal` / `when unset the ask keeps`: 3 hits before (all in `marshal-json-reference.md`), **0 after**. The remaining `empty {}` hits in the tree describe the `effort` sub-block and the config-less finalize steps — both still true, so untouched.
 
-**D3 — A degraded landing fact is missing** (`28e1cbff`).
+**D3 — A degraded landing fact is missing** (`cc596947`).
 (i) `LANDING_DEGRADED_SENTINELS` and `LANDING_SENTINEL_REJECTING_KEYS` added; `_is_unsupplied` treats a sentinel as missing for `plan_id`, `deliverables_total`, `deliverables_done`, `total_tokens`, `steps`. `pr` and `merge_state` stay allowed to be `n/a`, and the docstring states that asymmetry. `schema` has no entry — the preceding schema branch already fail-closes.
 (ii) `landing-payload-spec.md`'s delta table corrected: `steps` carries per-step outcomes only; the typed facts, the wall-clock and the repository end-state ride optional keys. A note states that MECHANISABLE does not mean required. `analyze.md`'s `complete: true` bullet — **and the two further sentences restating the same overclaim**, at the `complete: false` paragraph's tail and in the `landings_incomplete` field contract — now claim only what the required set covers. The alternative (promoting those rows to required) is recorded below as an operator proposal, not work done.
 (iii) The `LANDING_REQUIRED_KEYS` comment rewritten: the constant is the executable authority, and `landing-payload-spec.md` § "Required machine-readable fact keys" and `emit-landing.md` Step 2 restate it for their readers. It defers the prose tie-break to the spec's own sentence rather than restating or overriding it.
 
 *Red-first:* the three rejection cases **seen RED** — `3 failed, 2 passed, 17 deselected` — while the two must-stay-complete cases (`pr`/`merge_state` degraded; a genuine `0` count) were green before and after, which is what shows the rule was not widened into a blanket ban.
 
-**D4 — could-not is distinguishable from chose-not** (`2d7accb9`).
+**D4 — could-not is distinguishable from chose-not** (`d607b003`).
 (i) `cmd_compact`'s per-block `markers_absent` outcomes are passed into `_abstained_sections`, keyed to the owning heading via `GENERATED_BLOCK_OWNING_SECTION`; such a section emits `markers_absent_not_regenerated` and is counted by a new `unreachable_count`, leaving `abstained_count` counting deliberate abstentions only. **Four** report-contract statements updated — `_abstained_sections`' docstring, `cmd_compact`'s docstring, `plan-orchestrator/SKILL.md`, and `orchestration-model.md` § Ledger-Compaction Stage. The plan named three; the fourth was found by sweeping for the vocabulary rather than trusting the list. **Seen RED**: `3 failed, 2 passed, 31 deselected`, the two passes being the purely-narrative and reachable-ledger controls.
 (ii) `cleanup.md`'s `## Output` block declares `compaction_regenerated[]`, `compaction_invariants[]` and `compaction_abstained[]`, each required-never-omitted the way `declined[]` is, and the Step 8 instruction names them. **Deviation from the plan, recorded:** the plan proposed `compaction_abstained[A]`, but `applied[A]` already occupies that letter in the same TOON block; `[B]` is used instead, since two independent counts sharing a letter is exactly the ambiguity the declaration exists to remove.
 (iii) The tautology in `test_every_hand_authored_section_survives_verbatim` repaired by performing the second `_run()` the comment claimed and asserting byte-identity across THAT pass. **Seen RED with the first disjunct alone against the pre-fix tree: `1 failed, 31 passed`** — re-derived, and it happens to match the figure the gap recorded. The failure diff shows exactly why the disjunct mattered: `text` was read BEFORE the first `_run()`, so it carried the pre-regeneration resume body. The two comments describing operations the test never performed are corrected. **Mutation-tested**: with `_replace_block`'s `unchanged` branch mutated to append a drifting line, the repaired assertion goes RED (`1 failed, 31 deselected`); the file was restored from a byte snapshot, not with a git command, and the restore was verified.
 (iv) The branch body shared by `_invariant_queue_spec` and `_corpus_signal` extracted into `_read_queue_spec_reconciliation`, returning a neutral `(state, evidence, population)` triple each caller maps into its own vocabulary. Both public shapes unchanged (the existing suites pass unedited). **Done-when re-derived:** `unreadable_count` / `rows_without_spec_count` / `specs_without_row_count` are now branched on in **exactly one** function — `_read_queue_spec_reconciliation`, named rather than line-cited, since a line number goes stale on the next edit; every other occurrence — five sites across three functions (`cmd_corpus_enumerate`, `cmd_corpus_verdicts`, `cmd_corpus_cross_check`) — is a dict-literal *producer*, not a branch.
 
-**D5 — The drain acts on lifecycle** (`3ab7623f`).
+**D5 — The drain acts on lifecycle** (`1619c4e8`).
 (i) `analyze.md` Step 3 item 2 now reads `lifecycle` before `kind`: a `superseded` row is recorded `retired_by_successor` and a `stream-end` row `stream_end_noted`, neither running its `kind` branch. Both archive, so both count inside `messages_archived` and the closure equation needs no fourth term — stated explicitly at the equation. The new rules defer to item 3 for an invalid row, because an unvalidated header's `lifecycle` is not a fact the drain may act on. Item numbering was deliberately **not** shifted: inserting a numbered item would have renumbered `4a`/`4b` into `5a`/`5b`, colliding with the existing "Step 5b" references.
 Step 6 keys the empty-vs-finished conclusion on `live_count` + `closed_senders` + `invalid_count`.
 (ii) `cleanup.md` Step 9 fact 2 rewritten. The refusal stands on a true reason: `closed_senders` is a per-sender closure over an **open** sender population — a plan not yet emitted, or emitted and not yet started, has filed nothing and so appears in neither `closed_senders` nor `live_count` — so a `closed_senders` covering every sender seen so far is consistent with a sender about to appear, which is what quiescence must rule out. The deferred-mechanism block is kept as the surface a successor reuses, and `archive_drain_reason` updated to match. "Drain per closed sender" is recorded below as an operator proposal.
 (iii) One shared predicate `find_stream_end_marker` consulted at both entry points: `cmd_inbox_write` refuses with the new `stream_closed` code, `cmd_inbox_close_stream` returns idempotent success naming the existing marker with `already_closed`. Documented in `inbox-envelope.md` § Write-side deliverability beside the `undeliverable_to_running_plan` precedent, and in `SKILL.md` § `inbox write` / § `inbox close-stream`. **Seen RED: `4 failed, 2 passed, 43 deselected`**, the two passes being the open-sender and other-sender controls — confirming the gap's record of both calls succeeding pre-fix.
 (iv) `inbox-envelope.md` § Drain semantics and `SKILL.md` § `inbox list` now tabulate **three** zeros, naming BLOCKED (`live_count: 0` with `invalid_count > 0`) explicitly. A test pins the blocked zero as distinct from the empty one *on the two fields the old two-way reading looked at*, so the two states are asserted against each other rather than each in isolation.
 
-**D6 — the epic tree, the migration, and the dispatch label** (`c924026d`).
+**D6 — the epic tree, the migration, and the dispatch label** (`f6721f9b`).
 (i) `settled.md` declared in the Directory Layout block between `history.md` and `references.json`, commented as mid-life relocated settled narrative with pointers resolving there, and added to the § Carve-outs ledger-document list.
 (ii)/(iii) `cleanup.md` § Step 8 carries the migration **before** the script call, as **two mutually-exclusive rules** rather than one — the shape the cold read forced (§ Three cold reads). **Rule 1** applies only when a `## Ordered Queue` is present with **no** `BEGIN GENERATED: ordered-queue` marker: move per-row `Notes` into the annotation zone **first**, then insert the marker pair around the existing table, fabricating no rows. **Rule 2** applies to the opposite case — markers already present with a hand-written line between them — and evacuates that line to the same zone. Only Rule 1 is one-time (its precondition self-destructs); Rule 2 is checked every pass. § Ledger-Compaction Stage states the same obligation next to the never-fabricate rule so the refusal and its remedy read together. `replaced_body` added to `_replace_block`'s return and `cmd_compact`'s `regenerated[]` rows, carrying the pre-write between-marker text for a `regenerated` block and `''` otherwise; **both tests seen RED** (`2 failed, 36 deselected`).
 (iv) The canonical-form resolve now carries `--role orchestrator.{surface}`, `--plan-id none`, `--caller` and `--workflow`, with one sentence stating that the resolve seam emits the `[DISPATCH]` line and its paired decision-log record per firing.
@@ -97,7 +97,7 @@ Step 6 keys the empty-vs-finished conclusion on `live_count` + `closed_senders` 
 
 with the paired decision-log record `(plan-marshall:manage-config) effort resolve-target role=orchestrator.analyze -> target=execution-context-level-3 level=level-3`. The `--default` counterfactual was run on the same site and produced `role=default` on an otherwise identical line — which is precisely why `--default` is not distinguishable between the `analyze` and `decompose` surfaces, and why the explicit `--role` is mandated.
 
-**D7 — every `inbox` enumeration names the registered set** (`b2d56dbb`).
+**D7 — every `inbox` enumeration names the registered set** (`7eb8b61f`).
 (i) `SKILL.md` § `inbox validate` enumerated **seven** of the fourteen D1(b) codes. It now tables all fourteen in check order with the raising seam, and the "checked in that order" clause is made exact (state checks run after the base sweep). The unreachable `invalid_envelope` fallback is named as the defensive default rather than as a fifteenth outcome. The pinned tuple in `test_inbox_validate_still_lists_every_retained_rejection_code` extended to the full set; **the guard was verified to bite** by deleting `revision_not_monotonic` from the section and seeing `1 failed, 53 deselected` (file restored from a byte snapshot, verified).
 (ii) `inbox-envelope.md` § Related extended to the full ten-verb surface. **Every added name was confirmed to have a `### inbox {verb}` target in `SKILL.md` before being written** — all ten resolve.
 (iii) The `inbox` subparser's `help=` literal replaced.
@@ -107,7 +107,7 @@ with the paired decision-log record `(plan-marshall:manage-config) effort resolv
 
 ⚠ **A plan premise was refuted here and the deviation is recorded rather than followed.** D7(iii) instructs the run to "mirror the already-correct module docstring". Re-derivation showed that docstring was **itself one verb short** — both its brace list and its prose omitted `landing-check`. Mirroring it would have propagated the defect. It was corrected instead, making this a **fourth** `orchestrator.py` site D7 touched rather than the three the plan enumerated.
 
-**D8 — records and registration cosmetics** (`7e269c79`).
+**D8 — records and registration cosmetics** (`5c4b9922`).
 (i) `plugin.json`: `persona-plan-orchestrator` moved after `persona-plan-marshall-agent`, `plan-orchestrator` after `plan-marshall-plugin`, leaving `marshall-steward` directly after `manage-terminal-title`. **Out-of-order adjacent pairs re-derived before and after: 6 → 4**, and the four survivors are exactly the pre-existing inversions § Out of scope leaves alone (`ref-code-quality > persona-auditor`, `persona-security-expert > execute-task`, `manage-ci-artifacts > manage-change-ledger`, `platform-runtime > plan-doctor`). The diff is 2 insertions / 2 deletions — only the two named entries moved.
 (ii)–(iv) recorded in § Report-figure re-derivations below.
 
@@ -123,16 +123,7 @@ Each figure is stated with the base or population it was derived at.
 - **Population bullet corrected.** It claimed ripgrep's `.gitignore` handling excluded `.plan/` as a whole. It does not: `.gitignore` ignores `.plan/*` and re-includes `!.plan/marshal.json` and `project-architecture/`, so **13 tracked files** at that base were *inside* the swept population. They returned zero hits, which is why their inclusion was invisible in the result.
 - **D6 rationale corrected** to name the git-ignored part precisely (`.plan/local/**`, the generated executor) and to state that the two tracked paths were searched and returned nothing — an empty result, not an exclusion.
 
-**250 report.** The duplicated tail of four unfilled `_pending_` sections (`## Cost
-
-Each figure carries its population.
-
-- **Tokens (this session):** **not available to the agent** in this Claude Code cloud session — stated plainly rather than estimated.
-- **Verification sub-agent tokens (harness-reported):** round 1 ≈ 281,258 · round 2 ≈ 232,386 · round 3 ≈ 197,259 · round 4 ≈ 157,147 · round 5 ≈ 151,512 · round 6 ≈ 255,043 · cold read 4 ≈ 101,462. Round 7's figure is not included — it was still running when this section was written. **Population:** output tokens for the dispatched verification agents only, as the harness counts them; it excludes the main session, which is the larger share and is unavailable.
-- **Wall-clock:** not separately instrumented. The two long build gates are measured: the final `./pw verify` took **535.49 s** (module-tests sub-step), and the historical re-derivation run at `51d1c9bc` took **421.71 s**.
-- ⛔ **Not comparable to a plan-marshall `metrics.toon` total.** That figure counts the orchestrator-plus-agent dispatch tree under plan-marshall's own per-task billing boundary, which a single interactive cloud session does not share. No parity is claimed, and the figures above are not offered as a substitute.
-
-## Contract check (Step 9)`, `## What have we learned (Step 9)`, `## Residue`, each already filled earlier in the file) was deleted — 16 lines, verified before deletion to contain only those four headings and `_pending_` bodies. Every `## ` heading now appears exactly once.
+**250 report.** The duplicated tail of four unfilled `_pending_` sections (`## Cost`, `## Contract check (Step 9)`, `## What have we learned (Step 9)`, `## Residue`, each already filled earlier in the file) was deleted — 16 lines, verified before deletion to contain only those four headings and `_pending_` bodies. Every `## ` heading now appears exactly once.
 
 Test counts re-derived at **this plan's own landed commit `51d1c9bc`** (the state the report describes — its tree extracted and re-run with `uv run python -m pytest -o addopts=""`). All three were one low:
 
@@ -187,13 +178,13 @@ The id set was re-derived from the seven source `gaps.md` files rather than from
 
 **Full `./pw verify` on the final head** — all three sub-steps, each confirmed separately rather than from the summary line:
 
-It was run **twice** — once on the pre-rebase head, and again on the rebased tree, because PR #1314 rewrote 280 test files beneath it and a green run on the old base says nothing about the new one.
+It was run on **both** the pre-rebase head and the final rebased head, because PR #1314 rewrote 280 test files beneath this branch and a green run on the old base says nothing about the new one. The rebased column is the final head, after the CodeRabbit fixes — its **+1** over the pre-rebase count is the red-first regression test for the partial-marker-pair defect (CR-1).
 
 | Sub-step | Pre-rebase | **Rebased onto #1314 (the head that ships)** |
 |---|---|---|
 | quality-gate | mypy **416** files clean; ruff **All checks passed!**; **SPDX passed**; `issues[0]` | mypy **416** files clean; ruff **All checks passed!**; **SPDX passed**; `issues[0]` |
 | test-compile | `mypy test` clean, **783** source files | `mypy test` clean, **934** source files |
-| module-tests | **21353 passed, 14 skipped** (535.49s) | **21353 passed, 14 skipped** (421.50s) |
+| module-tests | **21353 passed, 14 skipped** (535.49s) | **21354 passed, 14 skipped** (433.54s) |
 
 `=== verify: SUCCESS ===` both times. The authoritative figures are the rebased column.
 
@@ -286,7 +277,7 @@ Round 4 asked one question: **did removing the causal claims break the generator
 | V4-3 | "Three configurations diverge … their complements do not" reads as exhaustive and omits the **scalar shorthand** (`orchestrator.effort: "level-6"`), a first-class CLI-writable form that `effort-roles.md` names. The R3-3 defect one iteration later. | **fixed** — restated as a **rule** with illustrative examples and an explicit non-exhaustiveness ⛔. The shorthand case was **run** before being written: `level-6` vs `level-1` |
 | V4-4 | Round 3 deleted the hedge on `16291` and kept the number — converting a correctly-flagged inference into a bare assertion, in the commit whose stated purpose was to stop asserting unverified things. The one-item delta the note is organised around may not exist. | **fixed** — the hedge is restored at both sites that STATE the figure (`250:79`, `520:138`; the other occurrences are meta-references to this finding). Round 5 then established the stronger result: no delta is measurable at all, because the report line states no collected total |
 | V4-5 | R3-9 claimed cold-read passes were renamed "throughout"; one site kept "round 1 / round 2", and the new parenthetical made it an explicit self-contradiction. | **fixed** |
-| V4-6 | § "The generator, named" **mis-attributed both of round 3's cited mechanisms to round 3**. `git log -S` places both at `166fea79` — they are round 2's. The section's headline analytical claim was unsupported by its own evidence. | **fixed** — attribution corrected, and the count restated as four-for-four measured on each round's own commit |
+| V4-6 | § "The generator, named" **mis-attributed both of round 3's cited mechanisms to round 3**. `git log -S` places both at `e5fa2502` — they are round 2's. The section's headline analytical claim was unsupported by its own evidence. | **fixed** — attribution corrected, and the count restated as four-for-four measured on each round's own commit |
 | V4-7 | `17710 either way` is the branch head's population, not the note's base — inside the note that establishes the state-your-base rule, three sentences from "its command, its base". At `51d1c9bc` the figure is 16292. | **fixed** — both figures now carry their base |
 | V4-8 | "Three actions in that case, not two" is false on the ledger round 3's *own* adjacent bullet describes (Rule 1 applies, no `Notes` content → no zone, so two actions). Both sentences were written in the same commit. | **fixed** |
 | V4-9 | `18 → 14 → 10` counts round 1's table at 18 while § Rejected says "1 through 18, plus 15b" — 19 under the section's own one-finding-per-instance rule. | **fixed** |
@@ -296,17 +287,17 @@ Round 4 asked one question: **did removing the causal claims break the generator
 
 ### Round 5 — independent verification sub-agent
 
-Round 5 targeted `ec223e2e` and found **15**. Its central result is a sharper diagnosis than round 3's: the recurring class is not "unverified mechanisms" but **prose that narrates its own verification** — clauses of the form *"each run rather than reasoned"*, *"`git log -S` places all three"*, *"both figures now carry their base"*, *"all three sites"*, *"four rounds for four"*. Each is a claim **about having checked something**, and correcting one in the same register produces the next.
+Round 5 targeted `27ecdb93` and found **15**. Its central result is a sharper diagnosis than round 3's: the recurring class is not "unverified mechanisms" but **prose that narrates its own verification** — clauses of the form *"each run rather than reasoned"*, *"`git log -S` places all three"*, *"both figures now carry their base"*, *"all three sites"*, *"four rounds for four"*. Each is a claim **about having checked something**, and correcting one in the same register produces the next.
 
 | # | Finding | Disposition |
 |---|---|---|
 | R5-1 | The cold-read pass-3 write-up still asserted, in present tense, the exact universal round 4's own V4-2 row calls a refuted regression — 53 lines apart in one file, so the report asserted and refuted the same sentence. The under-scoped-sweep shape, same finding, **fourth** consecutive round. | **fixed** — neither direction is asserted; both rationales are recorded as withdrawn |
 | R5-2 | ⛔ **Shipped text, false by execution.** "the scalar shorthand … **which the walk reads at the `default` rung**" — it does not: a string is handled at its own branch with source `orchestrator.effort`, so unlike `default` it **cannot be clamped by `max`** (which is read only from the object form). Written inside the sentence advertising "each run rather than reasoned". | **fixed** — the shorthand's actual rung and its clamp consequence stated |
-| R5-3 | "`git log -S` places all three at `166fea79`" — the O(queue) bound was added at `7d308fab` (round 1), as the report's own R2-4 row and row 17 both say. An attribution asserted *with its method named*, and wrong. | **fixed** |
-| R5-4 | "Round 1's was the `--default` tier claim" — `git log -S` places its introduction at `c924026d`, the original run, and its deletion at `7d308fab`. Round 1 **found and removed** it. | **fixed** |
-| R5-5 | "**four rounds for four**" — the fourth data point required a fresh mechanism in `ec223e2e`, which nobody had reviewed when the sentence was written. A prediction stated as a measured score, in the section whose thesis is that unmeasured claims are the defect. | **fixed** — the section no longer scores itself |
+| R5-3 | "`git log -S` places all three at `e5fa2502`" — the O(queue) bound was added at `accfb74a` (round 1), as the report's own R2-4 row and row 17 both say. An attribution asserted *with its method named*, and wrong. | **fixed** |
+| R5-4 | "Round 1's was the `--default` tier claim" — `git log -S` places its introduction at `f6721f9b`, the original run, and its deletion at `accfb74a`. Round 1 **found and removed** it. | **fixed** |
+| R5-5 | "**four rounds for four**" — the fourth data point required a fresh mechanism in `27ecdb93`, which nobody had reviewed when the sentence was written. A prediction stated as a measured score, in the section whose thesis is that unmeasured claims are the defect. | **fixed** — the section no longer scores itself |
 | R5-6 | "**Across three rounds** the count **fell** (19 → 14 → 10 → 12)" — four counts under "three rounds", and 10 → 12 is a rise. | **fixed** |
-| R5-7 | "three of them fresh unverified mechanisms" under-counted: V4-8 and V4-12 are also at `c239c9aa`, and V4-8 is a false completeness claim — the class the same paragraph was defining. | **fixed** |
+| R5-7 | "three of them fresh unverified mechanisms" under-counted: V4-8 and V4-12 are also at `a0b5eb40`, and V4-8 is a false completeness claim — the class the same paragraph was defining. | **fixed** |
 | R5-8 | "both figures now carry their base" — only the 250 note was fixed; the 520 note still carried a bare `17710`, inside the note establishing the state-your-base rule. Third site of the same figure. | **fixed at all three sites**, and the figure replaced by `16292`, which is the one belonging to that base |
 | R5-9 | ⛔ **Shipped text.** The order's sole surviving justification — "fixed so that two orchestrators on the same ledger produce the same result" — is not established: the relocation half is operator-confirmed and defers entirely when no operator is reachable, so two orchestrators can differ regardless of order. | **fixed** — stated as a convention of the document, with no outcome claim |
 | R5-10 | ⛔ **Shipped text.** Fixing V4-8 opened a new hole in the same sentence: `(markers absent, Notes present, zone ALREADY present)` was covered by the pre-image's complement and by neither branch of the replacement. | **fixed** — zone creation is described by its own condition rather than by an action count |
@@ -357,23 +348,23 @@ Run in parallel with round 6, against the shipped text — the pass § Three col
 
 ### Round 7 — final round, frozen tree, scoped to the young corrections
 
-Round 6 recommended stopping but raised one caveat against its own verdict: `cleanup.md` was being rewritten by cold-read fixes **while it verified**. Round 7 ran against a frozen tree (no edit was made between dispatch and result) and targeted only `git diff f2f0013d~1..HEAD -- marketplace/ test/` — the corrections themselves, which five rounds of evidence identify as the highest-risk text.
+Round 6 recommended stopping but raised one caveat against its own verdict: `cleanup.md` was being rewritten by cold-read fixes **while it verified**. Round 7 ran against a frozen tree (no edit was made between dispatch and result) and targeted only `git diff 13d32a18~1..HEAD -- marketplace/ test/` — the corrections themselves, which five rounds of evidence identify as the highest-risk text.
 
 **It confirmed both predictions rather than refuting them.** 3 findings, all shipped text, all mechanical.
 
 | # | Finding | Disposition |
 |---|---|---|
 | R7-1 | ⛔ **The D3 overclaim at a FOURTH site** — `test_landing_completeness.py`'s own module docstring, a test file's statement of what the code under test guarantees. Round 6's fix reached three of four. Established by execution: `pr=n/a & merge_state=n/a` → `(True, [])`. | **fixed**; the sweep now returns **zero** across `marketplace/`, `test/` and `.claude/` |
-| R7-2 | ⛔ **A FRESH self-contradiction, introduced by `f2f0013d` in the bullet it was editing.** `orchestration-model.md` described Rule 2 as applying to "the opposite case" and then, one clause later, said the two rules are NOT complements — but if Rule 2 were the opposite case they would be. Established by fixture: after one pass the markers are present with no hand-written line and `_replace_block` returns `unchanged`, the state matching neither rule — **the steady state of every ledger after its first compaction**, not an edge case. | **fixed** |
+| R7-2 | ⛔ **A FRESH self-contradiction, introduced by `13d32a18` in the bullet it was editing.** `orchestration-model.md` described Rule 2 as applying to "the opposite case" and then, one clause later, said the two rules are NOT complements — but if Rule 2 were the opposite case they would be. Established by fixture: after one pass the markers are present with no hand-written line and `_replace_block` returns `unchanged`, the state matching neither rule — **the steady state of every ledger after its first compaction**, not an edge case. | **fixed** |
 | R7-3 | The same commit added a fourth `compaction_*` key and left "The three `compaction_*` keys" standing two paragraphs above it. | **fixed** |
 
-Round 7 additionally found a **fail-open in the phase gate `f2f0013d` added**: a `manage-status read` that errors, or a payload carrying no `phase`, was read as *not-closed* rather than *unobserved* — in the one gate whose entire purpose is that the writes it protects happen before anything else can refuse them. **Fixed**: it now fails closed and reports `ledger_compaction: indeterminate`.
+Round 7 additionally found a **fail-open in the phase gate `13d32a18` added**: a `manage-status read` that errors, or a payload carrying no `phase`, was read as *not-closed* rather than *unobserved* — in the one gate whose entire purpose is that the writes it protects happen before anything else can refuse them. **Fixed**: it now fails closed and reports `ledger_compaction: indeterminate`.
 
 **All three survivors re-checked by execution; all bounds hold.** S3 proved **tighter** than this report had claimed: a `superseded` row is dispositioned `retired_by_successor` and archived, after which `inbox list` reports `count: 0` — the message is consumed, not silently ignored. The characterisation was pessimistic and is corrected in § Survivors.
 
 ### The independent read of round 7's own fixes
 
-Round 7's closing recommendation — because each round's corrections have carried the next round's defects for five consecutive rounds — was that its fixes be read by someone who did not write them before a PR is opened. That read ran against `afd77903` alone.
+Round 7's closing recommendation — because each round's corrections have carried the next round's defects for five consecutive rounds — was that its fixes be read by someone who did not write them before a PR is opened. That read ran against `56f1006c` alone.
 
 ⭐ **Verdict: no fresh false clause. The first round in eight whose corrections introduced nothing false.** Every added clause was established by running the code or the sweep: eight `check_landing_completeness` fixtures covering the optional-key, degraded-value and empty-value claims; a two-pass `cmd_compact` fixture confirming the "steady state after first compaction" clause; and `cmd_orchestrator_read` driven over three states, which showed the phase-less-but-**successful** payload is genuinely reachable — the fail-open hole was not hypothetical.
 
@@ -393,15 +384,15 @@ no longer contains any.
 
 | Round | Findings | Fixed in |
 |---|---|---|
-| 1 | 19 (18 rows + 15b) | `7d308fab` |
-| 2 | 14 | `166fea79` |
-| 3 | 10 | `c239c9aa` |
-| 4 | 12 | `ec223e2e` |
-| 5 | 15 | `8cc21926` |
-| 6 (shipped text only) | 9 | `e6360dd1` |
-| cold read 4 | 8 | `f2f0013d` |
-| 7 (frozen tree, corrections only) | 3 | `afd77903` |
-| read of round 7's fixes | 1 (no fresh false clause) | `d43680a4` |
+| 1 | 19 (18 rows + 15b) | `accfb74a` |
+| 2 | 14 | `e5fa2502` |
+| 3 | 10 | `a0b5eb40` |
+| 4 | 12 | `27ecdb93` |
+| 5 | 15 | `83a0861f` |
+| 6 (shipped text only) | 9 | `8d1cfb0e` |
+| cold read 4 | 8 | `13d32a18` |
+| 7 (frozen tree, corrections only) | 3 | `56f1006c` |
+| read of round 7's fixes | 1 (no fresh false clause) | `6756cf1f` |
 
 Cold reads of `cleanup.md` § Step 8: three passes. Pass 1 found two defects, pass 2 found three, pass 3
 took the intended reading on all four scenarios put to it and found three further defects.
@@ -416,8 +407,8 @@ checked.
 **Exit: `verifier-clear`.** Not `budget-exhausted`, and the distinction is the whole point of recording it.
 
 - **Budget.** The contract's default is five rounds. Round 5 exhausted it; the operator was reachable, was asked at that boundary with the counts and the survivors, and **granted five more** (rounds 6–10) on identical terms. Rounds 6 and 7 plus two dispatched reads were spent; **three rounds went unused**, which is what makes this a verifier exit rather than a budget one.
-- **The round that ended it.** The independent read of `afd77903`, answering the stop question over its own findings and all three survivors.
-- **The verifier's own last answer, not the author's:** *"Does this commit introduce any fresh false clause — **no**. Every clause the four edits added is true, and each was established by running the code or the sweep, not by reading a callee and judging it compatible."* Its one finding was an unsatisfiable instruction, fixed in `d43680a4`.
+- **The round that ended it.** The independent read of `56f1006c`, answering the stop question over its own findings and all three survivors.
+- **The verifier's own last answer, not the author's:** *"Does this commit introduce any fresh false clause — **no**. Every clause the four edits added is true, and each was established by running the code or the sweep, not by reading a callee and judging it compatible."* Its one finding was an unsatisfiable instruction, fixed in `6756cf1f`.
 - **The evidence it rests on is stronger than a read.** Eight `check_landing_completeness` fixtures; a two-pass `cmd_compact` fixture establishing the steady-state clause; `cmd_orchestrator_read` driven over three states, showing the phase-less-but-successful payload is genuinely reachable; and a whole-tree sweep for the corrected phrase returning zero. Each could have come back different.
 - **Were the late rounds narrower, or merely fewer?** **Narrower, measurably.** Rounds 2–5 found their defects overwhelmingly in the report's own prose about itself; the counts did not fall (19 → 14 → 10 → 12 → 15). Scoping round 6 to shipped text alone changed both: 9 findings, **0 in the report**, and its six independent spot-checks of report figures all correct. Round 7, frozen and scoped to the corrections, found 3. The read found 1, and none false.
 - **What residue to assume remains.** The deliverables should be read as still carrying defects of the kind the last rounds found — an enumeration falsified by a later edit, a claim fixed at n−1 of n sites, an instruction ordering a field the schema does not define. Two shipped-text surfaces are the likeliest: `cleanup.md` § Step 8, rewritten six times and the source of a finding in every round that examined it, and any prose written to explain a fix. **The last round found nothing false; that is not the same as there being nothing false.**
@@ -438,6 +429,16 @@ checked.
 **S3 — a fourth zero the three-zero table absorbs into EMPTY** (R6-B2). A queue holding only `lifecycle: superseded` messages yields `live_count 0 / closed_senders empty / invalid_count 0` — the EMPTY triple — while `count > 0`.
 
 *(b) Bounded — and round 7 established the bound is TIGHTER than first stated.* A `superseded` row is dispositioned `retired_by_successor` and archived by `analyze.md` Step 3 item 2, after which `inbox list` reports `count: 0`: the message is **consumed, not ignored**, and Step 6's classification is therefore recorded after the drain, when the queue genuinely is empty. The imprecision is confined to reading the EMPTY row's gloss against the enumeration-time payload. It mislabels **no report line in the conforming flow** and changes no drain behaviour: a superseded row is correctly excluded from `live_count` by design, is correctly not a closed sender, and is correctly valid. Reachability requires a superseded row to outlive its successor in the queue — normally impossible, since `supersede` names a successor that is itself enumerated, and reachable only after an `archive_failed` strands one. The promise it stays outside of: `count` is reported alongside the three discriminators at every one of the four sites, so a reader who checks `count` is never misled. Closing it means a fourth discriminator column across four surfaces plus the code comment, which is a wider edit than the defect warrants. **Recorded, not fixed.**
+
+**S4 — a TOCTOU window between the stream-closure check and message allocation** (`_orchestrator_inbox.py`, `cmd_inbox_write` / `cmd_inbox_close_stream`). Raised by CodeRabbit (CR-8).
+
+*(b) Bounded.* `find_stream_end_marker` and `allocate_message_path` are separate operations, so two concurrent processes writing **as the same sender** could both observe no marker — a write could land after a close, or two closes could each allocate a marker. What bounds it:
+
+- `allocate_message_path` claims each filename with `O_EXCL`, so the two writers cannot collide on a path or overwrite each other. The failure is an ordering anomaly, never a lost message.
+- It requires **two concurrent processes for one sender**. The inbox is a per-plan OUTBOX and a plan is a single executing lifecycle, so the shipped flow has one writer per `sender_id`.
+- The blast radius is one extra queued message or one duplicate marker, both of which the drain reports: a post-closure message is enumerated normally, and a duplicate marker is a second `stream-end` row that `closed_senders` dedups but `count` still shows.
+
+**The promise it stays outside of:** it changes no verdict any check emits and loses no message. Closing it properly means a per-sender lock held across check-and-allocate — a real concurrency mechanism, beyond what D5(iii) asked for ("consult it at both entry points") and not something to bolt on at a merge gate. **Named as the follow-up it is**, not as a small thing.
 
 ### Rejected — none
 
@@ -510,25 +511,105 @@ After PR #1314 merged, the operator directed a **rebase** onto `main` rather tha
 - **3 stayed valid** and were left alone — `51d1c9bc`, `68a21cac`, `6939a0c2` are reachable from `origin/main`, so a rebase does not touch their object ids.
 - **17 were proven stale** and rewritten to their paired replacements — **31 citations** across this report. A post-rewrite sweep for all 25 old SHAs across `doc/` returns **zero**.
 
-⛔ **Two commit MESSAGES still cite stale SHAs, and this is disclosed rather than chased.** `afd77903` cites `c843a0f6`; `d43680a4` cites `eb49a7a6`. Both replacements exist (`f2f0013d`, `afd77903`), but a commit message cannot be corrected without another history rewrite, which would invalidate a fresh set of citations in turn. The lane's own rule applies: a stale SHA in an already-written commit message is accepted and disclosed. **The forward-looking rule it implies — do not quote a same-branch SHA in a commit message on a branch that may still be rebased — was violated by this run and is recorded as a lesson, not as a fix.**
+⛔ **Two commit MESSAGES still cite stale SHAs, and this is disclosed rather than chased.** `56f1006c` cites `c843a0f6`; `6756cf1f` cites `eb49a7a6`. Both replacements exist (`13d32a18`, `56f1006c`), but a commit message cannot be corrected without another history rewrite, which would invalidate a fresh set of citations in turn. The lane's own rule applies: a stale SHA in an already-written commit message is accepted and disclosed. **The forward-looking rule it implies — do not quote a same-branch SHA in a commit message on a branch that may still be rebased — was violated by this run and is recorded as a lesson, not as a fix.**
 
 **The branch form changed, and that is recorded because it is a deviation.** § Contract check records this run as harness-assigned; the rebase keeps that branch NAME (`claude/orchestrator-inbox-lifecycle-cleanup-kxrzew`), so session resumability is unaffected — what changed is the history under it, which required a force-push with lease.
 
 ## Reviewer participation
 
-_pending_
+**Population derived from configuration, not transcribed here**: the `author_login` of each registry doc under `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`. **M = 3.** The PR carries **no `skip-bot-review` label** (§ Contract check), so all three were invited and no silence is label-explained.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence |
+|---|---|---|---|
+| `coderabbitai` | **reviewed** | — | A review summary carrying **15 actionable findings**, at `c4c25ef8`. Its own inline posting failed ("Inline review comments failed to post … likely a permissions issue"), so all 14 postable findings ride the summary body — which is exactly why `get_reviews` is read and not only `get_review_comments`. |
+| `cuioss-review-bot` | **reviewed** | — | "PR Reviewer Guide 🔍 — PR contains tests · No security concerns identified · No major issues detected". A review that reports nothing to act on is still a review. |
+| `sourcery-ai` | **rate-limited** | **no** | "Sorry @cuioss-oliver, your pull request is larger than the review limit of **150000 diff characters**". A property of THIS diff, not a clock — waiting cannot change it, so it is recorded rather than retried. |
+
+**Coverage: 2 of 3.** The shortfall is `sourcery-ai`, and it **does not reopen** — so no retry budget applies and none was spent.
+
+**§ Step 8 condition 6 — arm `obtained`.** CodeRabbit reviewed. Its later "Review limit reached … next review available in 50 minutes" notice on the newest head is a *subsequent* refusal, not the review: the review it already filed is what satisfies the condition. **No PR-open review was missed and no post-open review was suppressed** — the PR was created open and unlabelled.
+
+### The 15 CodeRabbit findings, dispositioned
+
+Six fixed, one refuted with evidence, eight rejected with reasons or already-characterised.
+
+| # | Finding | Disposition |
+|---|---|---|
+| CR-1 | **Partial marker pair.** `_replace_block` needs both indices, so `BEGIN` with no `END` reports `markers_absent` — while `_abstained_sections` scanned for marker PRESENCE and skipped the owning section as a regenerated surface. The blind spot appeared in neither `abstained[]` nor `unreachable_count`. | ⭐ **FIXED** — reproduced by execution before the fix (`unreachable_count: 0`, no `Ordered Queue` row), red-first test added. **This is D4's own defect class inside D4's own code**, and seven verification rounds plus four cold reads walked past it. The single most valuable finding of the review. |
+| CR-2 | `GENERATED_BLOCKS` and `GENERATED_BLOCK_OWNING_SECTION` must stay aligned and nothing enforced it. | **FIXED** — import-time parity assertion, both directions. |
+| CR-3 | The committed-marshal guard compares a key SET: a JSON **array** of the key names passes, as does any wrong value. | **FIXED** — asserts the block is an object AND equals the seeded defaults, which is the actual claim (surfacing must not change the effective default). |
+| CR-4 | `analyze.md` / `decompose.md` name the effort resolve without `--workflow`, so the real dispatch sites emit no `[DISPATCH]` record. | **FIXED at all three sites** (`effort-roles.md` too). Round 6 reached this independently as survivor **S2**; two independent reviewers finding it is why it was closed rather than left characterised. 280/G7's symptom is now closed where it occurs. |
+| CR-5 | MD037 — a raw `manage-*` asterisk parses as an emphasis marker. | **FIXED**. |
+| CR-6 | 250 report: an unclosed inline code span at `## Cost`, and four `_pending_` placeholders at lines 513–529 despite a stated removal. | ⛔ **REFUTED, with evidence.** That file is **148 lines**; backticks are **balanced** (552, even); `_pending_` count is **0**. The finding conflated the 250 report with the 520 one, whose `_pending_` sections were live at review time and are filled by this commit. Recorded rather than silently dropped. |
+| CR-7 | Persist closed-sender state after archival — once the drain archives a `stream-end` marker, a later `write` no longer sees the closure. | **REJECTED — already a documented, deliberate bound.** `find_stream_end_marker`'s docstring states the `inbox/`-only scope and *why*: the queue is the live state, and re-refusing against the archive would make the guard depend on drain history rather than queue state. Widening it is the larger design question the docstring names. |
+| CR-8 | Make closure enforcement atomic — `find_stream_end_marker` then `allocate_message_path` is a TOCTOU window; two concurrent closes could both allocate. | **ACCEPTED AS SURVIVOR S4** (§ Survivors), not fixed. Real, and characterised rather than waved away. |
+| CR-9 | A superseded-only queue satisfies the EMPTY triple while `count > 0`. | **Already characterised as S3** — found independently by round 6, and round 7 established the bound is tighter than first claimed (such a row is archived by the drain, after which `count: 0`). |
+| CR-10 | Implement executable `auto_emit` — no `next` path reads it. | **REJECTED — pre-existing and out of scope.** `auto_emit` shipped before this plan; D2 surfaces the knob in the committed config and documents it. Implementing the emit mechanism is a different plan's deliverable. |
+| CR-11 | Add an executable marker migration to `cmd_compact`. | **REJECTED — inverts D6's design.** Inserting markers into a hand-authored document is a *judgement* act; the never-fabricate rule is precisely why the script refuses it and the orchestrator performs it inline under the carve-out. Making it a script act would re-introduce the fabrication risk the refusal exists to prevent. |
+| CR-12 | Move the closed-phase gate into a write-owning command. | **REJECTED, same ground** — the judgement half is inline by the Dispatch Decision Rule's write-freedom test. The gate is placed before both judgement writes, which is the reachable remedy; moving the writes into a script is a re-architecture. |
+| CR-13 | Derive the rejection-code population from production rather than hardcoding the tuple. | ⛔ **REJECTED — this would make the guard vacuous.** The test exists to detect the DOC disagreeing with the CODE. Deriving both sides from one source makes them agree by construction, which is the "a guard must not derive its expectation from the code it guards" trap. The literal IS the contract here. |
+| CR-14 | Add `compaction_migrated[]` to the plan's D4(ii)/D6 done-when. | **REJECTED — the plan is the input specification, not an output.** Editing it to match what was built would destroy the record of what was asked for. The array is declared in the shipped contract and recorded here as a deviation. |
+| CR-15 | Assert seeded configuration VALUES, not only the key set. | **FIXED** — folded into CR-3. |
+
+**Merge-risk verdict, stated rather than hidden.** CodeRabbit rendered `Merge Risk: 🟠 High` and "not merge-ready until these issues are fixed **or explicitly accepted by the owners**". Six are fixed; the remainder are explicitly accepted above, each with its reason, and two are recorded as characterised survivors. That is the second branch of its own condition, taken deliberately and in writing.
 
 ## Cost
 
-_pending_
+Each figure carries its population.
+
+- **Tokens (this session):** **not available to the agent** in this Claude Code cloud session — stated plainly rather than estimated.
+- **Verification sub-agent tokens (harness-reported):** round 1 ≈ 281,258 · round 2 ≈ 232,386 · round 3 ≈ 197,259 · round 4 ≈ 157,147 · round 5 ≈ 151,512 · round 6 ≈ 255,043 · cold read 4 ≈ 101,462. Round 7's figure is not included — it was still running when this section was written. **Population:** output tokens for the dispatched verification agents only, as the harness counts them; it excludes the main session, which is the larger share and is unavailable.
+- **Wall-clock:** not separately instrumented. The two long build gates are measured: the final `./pw verify` took **535.49 s** (module-tests sub-step), and the historical re-derivation run at `51d1c9bc` took **421.71 s**.
+- ⛔ **Not comparable to a plan-marshall `metrics.toon` total.** That figure counts the orchestrator-plus-agent dispatch tree under plan-marshall's own per-task billing boundary, which a single interactive cloud session does not share. No parity is claimed, and the figures above are not offered as a substitute.
 
 ## Contract check (Step 9)
 
-_pending_
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | **Done** — five, by bundle path, named in § Skills loaded with the reason each was needed and why three others were not. |
+| 2 Branch | **Done** — the harness-assigned `claude/orchestrator-inbox-lifecycle-cleanup-kxrzew`, kept throughout; on `origin` before the first edit. Rebased **twice** at operator direction (§ Rebase onto main); the branch NAME never changed, so resumability is unaffected. |
+| 3 Plan directory | **Done** — `doc/plans/truthful-signals/520-…/plan.md` exists and opens with the first-instruction block, which was present and needed no repair. |
+| 4 Implement | **Done** — every commit carries the `Co-Authored-By` trailer and no "Generated with" footer; deliverable paths staged explicitly, never `git add -A`; `git status` checked for lockfile churn before each commit. |
+| 4 Per-commit gate | **Done** — every `*.py`-touching commit preceded by `./pw quality-gate`, read for the tool-level clean lines rather than the exit code. |
+| 4 Pushed | **Done** — no unpushed commit remains. |
+| 5 Build gate | **Done** — § Build gate records the git-derived verdict (8 `*.py`) and BOTH full `verify` runs, pre- and post-rebase. |
+| 6 Verification sub-agent | **Done** — 7 rounds + 4 cold reads + an independent read of the final round's fixes; exit `verifier-clear` (§ When the loop stopped), with the budget, the operator's extension, the round that ended it, the verifier's own last answer, the evidence stronger than a read, the narrowing assessment, four survivors each with its bound, and the residue to assume remains. |
+| 7 PR cycle | **Done** — PR #1317; all three comment surfaces read; participation recorded per reviewer from the bodies; all 15 findings dispositioned. |
+| 8 Merge gate | Conditions 1–4 and 6 addressed below; condition 5's disclosure made. |
+| 8 Bridge | **Done** — no status or bookkeeping write landed under `doc/plans/` outside this plan's own directory. Three sibling **report** files were edited, but as D8's declared deliverables, not as records of this run. |
+| 9 This check | Recorded here. |
+| 9 What have we learned | Below. |
+
+**GitHub access path:** the GitHub MCP server (the cloud path); no `gh` CLI in this session.
+**Branch form:** harness-assigned.
+**`skip-bot-review` decision, as five facts:** (1) state — **`not-applied`**; (2) arm — **`reviewable`**, row 1 of § Step 7's table, which fires on any R1/R2/R3 membership (8 `*.py`, 13 `marketplace/**`, 5 `doc/plans/**`, and **zero** `.claude/skills/**`); (3) read back — **n/a**, no label was applied, and the PR payload's `labels` is empty; (4) suppression verified — **n/a**; (5) disclosure — made to the operator before creation, naming the arm and the path counts.
+**Plugin cache sync:** a cloud run neither performs nor owes one.
 
 ## What have we learned (Step 9)
 
-_pending_
+**Two contract changes are proposed, both on evidence this run produced. Neither is self-approved; both are for the operator, and if accepted they ship as a separate `chore/` PR touching only the skill.**
+
+### Proposal 1 — the contract should say that a rebase costs a citation sweep, and how to avoid paying it repeatedly
+
+**Evidence.** § Step 2 tells a resumed run to rebase and then to repair quoted SHAs with `git range-diff`. This run rebased **twice** at operator direction and paid that sweep twice — **31 citations**, then **35**. The procedure worked perfectly both times; that is not the problem. The problem is that the report's own commit is on the branch being rebased, so the document is chasing its tail: every rebase invalidates the citations *including the ones added by the previous rebase's repair commit*.
+
+**Proposed edit**, to § Step 2's rebase block: after the `range-diff` instruction, add —
+
+> ⛔ **Prefer a STABLE identifier to a SHA in run-report prose.** A SHA is invalidated by every later rebase, and a report on a rebasable branch cites its own branch. Where a document needs to attribute something to a point in the run, name the **round** or the **deliverable** — those do not move — and confine SHAs to a single table that maps them, so a rebase repairs one place instead of thirty. This run rewrote 31 citations after one rebase and 35 after the next; the second sweep repaired citations the first had written.
+
+**Why it is worth making.** The run report is the lane's only channel back, and the lane explicitly anticipates rebases. A structure that costs O(citations) per rebase will drift the moment a run is less careful than this one was.
+
+### Proposal 2 — the verification loop's budget rule should name the target, not only the count
+
+**Evidence.** The five-round budget was spent without converging (19 → 14 → 10 → 12 → 15). The operator granted five more. What changed the outcome was **not** the extra rounds — it was **scoping round 6 to shipped marketplace text and forbidding it to audit the run report**. That single change took findings from 15 (mostly report prose) to 9 (all shipped text, none in the report), then 3, then 1. Rounds 2–5 had spent most of a budget finding defects in prose the previous round wrote to explain itself — a loop the report was generating for itself.
+
+**Proposed edit**, to § Step 6's "When the loop stops" —
+
+> **Scope every round after the second to the SHIPPED deliverable, not to the run's own record.** A verification round aimed at the whole tree will find its richest seam in the previous round's explanatory prose, because that text is young, unreviewed, and written under pressure to justify a fix. Those findings are real but they are not about the product, and chasing them does not converge: each correction is new unreviewed prose. From round 3 onward, point the verifier at what consumers execute and tell it explicitly not to audit the report. Correct the report's figures as condition A requires, but do not spend a verification round hunting them.
+
+**Why it is worth making.** This is the difference between a loop that terminates and one that does not, measured on this run rather than argued.
+
+**One further observation, recorded but NOT proposed as an edit**, because one run is not enough evidence: the highest-value single finding of the entire exercise — the partial-marker-pair defect (CR-1) — was found by **CodeRabbit**, not by any of the seven rounds or four cold reads. It is a code defect of exactly the class the loop was hunting, in the code the loop was hunting it in. That may say something about diminishing returns on self-directed verification versus an independent reviewer with a different method, but it is a single data point and is recorded as one.
 
 ## Residue
 
@@ -546,5 +627,6 @@ Everything left open, with an owner. Five items are **pre-existing defects this 
 
 **Residue of this run's own process:**
 
-- **The shipped `cleanup.md` § Step 8 text has not been cold-read in its current form.** Three passes were run; rounds 4 and 5 then rewrote the passage again. A fourth pass is the obvious next check and was not performed.
-- **The verification loop did not converge** (19 → 14 → 10 → 12 → 15). Round 5's recommendation, recorded but not acted on here, is to point any further round at the shipped marketplace text alone — `orchestration-model.md` § Dispatch Decision Rule and `cleanup.md` § Step 8 — since that is what consumers execute, and to leave the run report alone.
+- **The shipped `cleanup.md` § Step 8 text has not been cold-read in its current form.** FOUR passes were run — the fourth against the rewritten passage, and it found eight defects including a closed epic being hand-edited. Rounds 6 and 7 and the CodeRabbit cycle then rewrote the passage again, so the *current* text has had no cold read. A fifth pass is the obvious next check and was not performed.
+- **The verification loop did not converge for its first five rounds** (19 → 14 → 10 → 12 → 15). Round 5's recommendation — point further rounds at shipped marketplace text alone and leave the run report alone — WAS acted on: round 6 found 9 (all shipped text, none in the report), round 7 found 3, and the independent read of round 7's fixes found no fresh false clause. That is what closed the loop `verifier-clear`. The residue is not the loop's shape but its blind spot: **the single most valuable defect of the whole exercise (CR-1, the partial marker pair) was found by CodeRabbit, not by any of the seven rounds or four cold reads** — a code defect of exactly the class they were hunting, in the code they were hunting it in.
+- ⛔ **This run introduced a document corruption while filling this very report, and it is recorded rather than quietly repaired.** Three sections were spliced into the MIDDLE of a sentence because the edit located them with a plain string match, and the section names also appear *quoted inside that sentence* — which is the 250-report clean-up this report describes. The structure was rebuilt from explicit line ranges and the sentence rejoined. **The lesson generalises past this run:** an edit that locates a heading by substring will match the heading's own prose description first, and a document that discusses its own structure is exactly the document where that happens.
