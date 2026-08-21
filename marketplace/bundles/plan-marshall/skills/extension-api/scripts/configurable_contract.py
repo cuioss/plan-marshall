@@ -44,6 +44,7 @@ from typing import Any
 
 # Direct import - executor sets up PYTHONPATH for cross-skill imports.
 from marketplace_bundles import resolve_skills_root
+from marketplace_paths import _resolve_skill_root, get_project_skill_roots
 from toon_parser import serialize_toon
 
 # The three mandatory sub-fields every ``configurable`` entry MUST declare.
@@ -103,9 +104,13 @@ def resolve_step_doc_path(step_id: str) -> Path:
 
     Resolution rules (mirroring manage-execution-manifest):
 
-    - ``project:``-prefixed steps resolve to
-      ``.claude/skills/{bare-name}/SKILL.md`` relative to the project root
-      (cwd-resolved via ``file_ops._resolve_plan_root``).
+    - ``project:``-prefixed steps resolve to ``{bare-name}/SKILL.md`` under the
+      target's declared project-local skill roots, in priority order, relative
+      to the project root (cwd-resolved via ``file_ops._resolve_plan_root``).
+      The first root holding the file wins; when no root holds it the path is
+      reported against the highest-priority root, so the caller's error names a
+      deterministic location. On Claude the root list is the single entry
+      ``.claude/skills``, which is why that spelling is no longer written here.
     - Built-in steps (bare or ``default:``-prefixed) resolve to the
       ``phase-6-finalize`` body doc, searching ``workflow/`` first then
       ``standards/``. When neither exists the ``workflow/`` path is returned so
@@ -124,20 +129,35 @@ def resolve_step_doc_path(step_id: str) -> Path:
     """
     if step_id.startswith('project:'):
         bare = step_id[len('project:'):]
-        # Project-local steps live under the PROJECT root's ``.claude/skills/``,
-        # resolved cwd-relatively (ADR-002) via ``file_ops._resolve_plan_root`` —
-        # the SAME anchor ``extension_discovery._scan_project_for_implementors``
-        # adopted for this identical concern. It is deliberately NOT anchored on
+        # Project-local steps live under the PROJECT root's declared skill
+        # root(s), resolved cwd-relatively (ADR-002) via
+        # ``file_ops._resolve_plan_root`` — the SAME anchor and the SAME root
+        # list ``extension_discovery._scan_project_for_implementors`` uses. The
+        # two must agree: discovery finding a step under a root this resolver
+        # does not search turns a step that was merely invisible into one that
+        # is found and then fails to resolve. It is deliberately NOT anchored on
         # this script's ``__file__``: when the code ships from the plugin cache a
-        # ``__file__``-derived repo root lands in ``~/.claude/plugins`` where
-        # ``.claude/skills/`` does not exist, so every ``project:`` step's
+        # ``__file__``-derived repo root lands in the plugin tree, where no
+        # project-local skill root exists, so every ``project:`` step's
         # configurable block silently resolves to a non-existent path.
         from file_ops import _resolve_plan_root
 
         project_root = _resolve_plan_root() or Path.cwd()
-        skills_root = project_root / '.claude' / 'skills'
-        candidate = skills_root / bare / 'SKILL.md'
-        return _guard_within(candidate, skills_root, step_id)
+        roots = [
+            _resolve_skill_root(root, project_root) for root in get_project_skill_roots()
+        ]
+        for skills_root in roots:
+            # Guard BEFORE probing: ``bare`` is externally controlled, so
+            # testing the unguarded path would let a traversal value stat a
+            # location outside ``skills_root`` — once per declared root — before
+            # anything rejected it.
+            candidate = _guard_within(skills_root / bare / 'SKILL.md', skills_root, step_id)
+            if candidate.is_file():
+                return candidate
+        # Nothing on disk: report against the highest-priority root, so the
+        # caller gets a deterministic path to name rather than ``None``.
+        first = roots[0]
+        return _guard_within(first / bare / 'SKILL.md', first, step_id)
 
     # Promoted built-in-equivalent bundle finalize step: it was promoted out of a
     # former ``phase-6-finalize/workflow/`` body doc into a top-level bundle

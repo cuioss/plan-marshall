@@ -1538,3 +1538,91 @@ def test_get_base_path_auto_resolves_explicit_anchor(tmp_path, monkeypatch):
     assert result == tmp_path / 'marketplace' / 'bundles', (
         f"get_base_path('auto') should resolve the synthetic anchor, got {result}"
     )
+
+
+# =============================================================================
+# runtime_mount derives from the resolved project-local skill root
+# =============================================================================
+#
+# The ``path_formats.runtime`` display string derives from the ``layout
+# skill-roots`` op, so it names the active target's layout rather than one
+# target's.
+
+
+def test_runtime_mount_prefix_defaults_to_the_claude_skill_root():
+    """On the default (Claude) target the displayed mount is unchanged."""
+    module = _scan_module()
+    assert module.runtime_mount_prefix() == './.claude/skills'
+
+
+def test_runtime_mount_prefix_follows_a_relocated_skill_root(monkeypatch):
+    """Change the target's declared root and the display string follows it."""
+    module = _scan_module()
+    monkeypatch.setattr(module, 'get_project_skill_roots', lambda: ('somewhere/skills',))
+    assert module.runtime_mount_prefix() == './somewhere/skills'
+
+
+def test_runtime_mount_prefix_takes_the_highest_priority_root(monkeypatch):
+    """With several declared roots, the FIRST is the mount point.
+
+    Every other fixture here supplies one root, where first and last coincide —
+    so this is the only case that pins the docstring's "highest-priority" claim.
+    """
+    module = _scan_module()
+    monkeypatch.setattr(
+        module, 'get_project_skill_roots', lambda: ('first/skills', 'second/skills')
+    )
+    assert module.runtime_mount_prefix() == './first/skills'
+
+
+def test_runtime_mount_prefix_leaves_an_anchored_root_alone(monkeypatch):
+    """A ``~``-anchored or absolute root is already a location — do not prepend ``./``."""
+    module = _scan_module()
+    monkeypatch.setattr(module, 'get_project_skill_roots', lambda: ('~/.config/skills',))
+    assert module.runtime_mount_prefix() == '~/.config/skills'
+    monkeypatch.setattr(module, 'get_project_skill_roots', lambda: ('/opt/skills',))
+    assert module.runtime_mount_prefix() == '/opt/skills'
+
+
+def _emitted_mounts(scan) -> list[str]:
+    """Return every ``path_formats.runtime`` the scan emits."""
+    import json
+
+    result = scan('--direct-result', '--full', '--format', 'json')
+    assert result.returncode == 0, f'Script returned error: {result.stdout}'
+
+    data = json.loads(result.stdout)
+    mounts = [
+        script['path_formats']['runtime']
+        for bundle in data.get('bundles', {}).values()
+        for script in bundle.get('scripts', [])
+    ]
+    assert mounts, 'the synthetic tree must yield at least one script'
+    return mounts
+
+
+def test_discovered_scripts_carry_the_claude_runtime_mount(scan):
+    """On the default (Claude) target the emitted mount is unchanged."""
+    assert _emitted_mounts(scan) == ['./.claude/skills/plan-alpha/scripts/run-alpha.py']
+
+
+def test_discovered_scripts_follow_a_relocated_skill_root(
+    synthetic_marketplace, monkeypatch, capsys
+):
+    """The emitted mount is WIRED to the derivation, not merely equal to it.
+
+    On the default target the derived prefix and the literal ``./.claude/skills``
+    coincide, so the sibling above passes just as well against a hardcoded
+    literal — the exact residue this change exists to delete. Relocating the
+    root is what separates the two.
+
+    The runner is built here rather than taken from the ``scan`` fixture because
+    ``_scan_module()`` loads a fresh module object per call: patching one copy
+    would leave the fixture's copy — the one that actually runs — untouched, and
+    the test would pass against the hardcode it is written to catch.
+    """
+    module = _scan_module()
+    monkeypatch.setattr(module, 'get_project_skill_roots', lambda: ('somewhere/skills',))
+    run = _make_runner(module, monkeypatch, capsys)
+
+    assert _emitted_mounts(run) == ['./somewhere/skills/plan-alpha/scripts/run-alpha.py']

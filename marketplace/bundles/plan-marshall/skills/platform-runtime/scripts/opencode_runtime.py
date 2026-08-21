@@ -29,7 +29,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from runtime_base import Runtime, toon_error, toon_noop, toon_success
+from runtime_base import PERMISSION_FIX_OPERATIONS, Runtime, toon_error, toon_noop, toon_success
 
 
 class OpenCodeRuntime(Runtime):
@@ -352,7 +352,7 @@ class OpenCodeRuntime(Runtime):
                 "invalid_scope",
                 f"--scope must be 'project' or 'global'; got {scope!r}",
             )
-        valid_ops = {"normalize", "add", "remove", "ensure", "consolidate"}
+        valid_ops = set(PERMISSION_FIX_OPERATIONS)
         if operation not in valid_ops:
             return toon_error(
                 "permission fix",

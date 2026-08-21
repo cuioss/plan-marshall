@@ -31,8 +31,29 @@ from typing import Any
 import claude_runtime
 import session_binding
 from manage_terminal_title import _compose_body, compose
-from runtime_base import Runtime, toon_error, toon_noop, toon_success
+from runtime_base import PERMISSION_FIX_OPERATIONS, Runtime, toon_error, toon_noop, toon_success
 from toon_parser import serialize_toon
+
+
+def _persisted(settings_path: Any, settings: dict[str, Any]) -> bool:
+    """Write *settings*, returning whether the bytes actually reached disk."""
+    return bool(claude_runtime._save_settings(settings_path, settings))
+
+
+def _write_failed(settings_path: Any) -> str:
+    """The single `io_error` response for a `permission fix` write that failed.
+
+    Every mutating branch of ``permission_fix`` reports an unwritable settings
+    file the same way, because the caller's situation is the same in each: the
+    change was computed, nothing reached disk, and a `success` here would be a
+    report of work that did not happen. Discarding the save result is the
+    fail-open this shares its shape with — the counters would still be non-zero.
+    """
+    return toon_error(
+        "permission fix",
+        "io_error",
+        f"Failed to write settings to {settings_path}",
+    )
 
 
 class ClaudeRuntime(Runtime):
@@ -285,14 +306,19 @@ class ClaudeRuntime(Runtime):
         """Return the Claude deployed-bundle cache root.
 
         ``~/.claude/plugins/cache/plan-marshall`` — the single flat cache root
-        under which installed marketplace bundles live on Claude.
+        under which installed marketplace bundles live on Claude. The path is
+        composed in ``claude_runtime._claude_bundle_cache_root``, which shares
+        its cache segments with the default-permission renderer, so those two
+        cannot drift. Other sites compose the same segments themselves because
+        they cannot reach this helper — the steward's bootstrap detector runs
+        before the plugin is resolvable, the resolver ``generate_executor.py``
+        embeds runs standalone, and ``marketplace_paths`` composes the fallback
+        this op's own consumers use when the layout op is unreachable, which
+        importing back here would make circular.
         """
-        import pathlib
-
-        cache_root = pathlib.Path.home() / ".claude" / "plugins" / "cache" / "plan-marshall"
         return toon_success(
             "layout bundle-cache-root",
-            {"target": "claude", "roots": [str(cache_root)]},
+            {"target": "claude", "roots": [str(claude_runtime._claude_bundle_cache_root())]},
         )
 
     # ------------------------------------------------------------------
@@ -959,7 +985,11 @@ class ClaudeRuntime(Runtime):
 
         # Load settings files.
         global_path = claude_runtime._claude_global_settings_path()
-        project_path = claude_runtime._claude_project_settings_path()
+        # The READ selector: this operation audits, so it must inspect the file
+        # whose entries actually take effect. The write selector prefers the
+        # shared file, which would make the audit report on rules an operator's
+        # own settings.local.json overrides.
+        project_path = claude_runtime._claude_project_settings_read_path()
         global_settings = claude_runtime._load_settings(global_path) if scope in ("global", "both") else {}
         project_settings = claude_runtime._load_settings(project_path) if scope in ("project", "both") else {}
 
@@ -1046,13 +1076,31 @@ class ClaudeRuntime(Runtime):
                 f"--scope must be 'project' or 'global'; got {scope!r}",
             )
 
-        valid_ops = ("normalize", "add", "remove", "ensure", "consolidate")
+        valid_ops = PERMISSION_FIX_OPERATIONS
         if operation not in valid_ops:
             return toon_error(
                 "permission fix",
                 "invalid_operation",
                 f"--operation must be one of {valid_ops}; got {operation!r}",
             )
+        if operation == "protect-path":
+            if not permissions:
+                return toon_error(
+                    "permission fix",
+                    "invalid_operation",
+                    "--permissions must name at least one directory path for 'protect-path'",
+                )
+            # Validate BEFORE loading settings, so an unprotectable path cannot
+            # reach the renderer. A deny rule is a security control: a path this
+            # cannot render faithfully is refused, never rendered approximately.
+            for candidate in permissions:
+                refusal = claude_runtime._reject_unprotectable_path(candidate)
+                if refusal is not None:
+                    return toon_error(
+                        "permission fix",
+                        "invalid_operation",
+                        f"cannot protect {candidate!r}: {refusal}",
+                    )
 
         settings_path = claude_runtime._settings_path_for_scope(scope)
         settings = claude_runtime._load_settings(settings_path)
@@ -1062,17 +1110,19 @@ class ClaudeRuntime(Runtime):
 
         changes_applied = 0
         proposed_additions: list[str] = []
+        proposed_count = 0
+        rules_rendered = 0
 
         if operation == "normalize":
             original = list(allow)
             # Remove duplicates and sort.
             deduped = list(dict.fromkeys(allow))
             sorted_allow = sorted(deduped)
-            # Add defaults if missing.
+            # Add defaults if missing. The plan-directory and bundle-cache rules
+            # come from the single renderer in the entry module; the executor
+            # permission is normalize's own addition.
             defaults = [
-                "Edit(.plan/**)",
-                "Write(.plan/**)",
-                "Read(~/.claude/plugins/cache/**)",
+                *(rule for _rule_id, rule in claude_runtime._default_permission_rules()),
                 "Bash(python3 .plan/execute-script.py *)",
             ]
             for d in defaults:
@@ -1084,7 +1134,8 @@ class ClaudeRuntime(Runtime):
             )
             if not dry_run:
                 settings["permissions"]["allow"] = sorted_allow
-                claude_runtime._save_settings(settings_path, settings)
+                if not _persisted(settings_path, settings):
+                    return _write_failed(settings_path)
 
         elif operation == "add":
             for perm in permissions:
@@ -1096,7 +1147,8 @@ class ClaudeRuntime(Runtime):
                         proposed_additions.append(perm)
             if not dry_run:
                 settings["permissions"]["allow"] = allow
-                claude_runtime._save_settings(settings_path, settings)
+                if not _persisted(settings_path, settings):
+                    return _write_failed(settings_path)
 
         elif operation == "remove":
             original_len = len(allow)
@@ -1104,7 +1156,8 @@ class ClaudeRuntime(Runtime):
             changes_applied = original_len - len(allow)
             if not dry_run:
                 settings["permissions"]["allow"] = allow
-                claude_runtime._save_settings(settings_path, settings)
+                if not _persisted(settings_path, settings):
+                    return _write_failed(settings_path)
 
         elif operation == "ensure":
             for perm in permissions:
@@ -1116,7 +1169,8 @@ class ClaudeRuntime(Runtime):
                         proposed_additions.append(perm)
             if not dry_run:
                 settings["permissions"]["allow"] = allow
-                claude_runtime._save_settings(settings_path, settings)
+                if not _persisted(settings_path, settings):
+                    return _write_failed(settings_path)
 
         elif operation == "consolidate":
             # Group permissions by tool type and base pattern; merge enumerated into wildcards.
@@ -1144,7 +1198,55 @@ class ClaudeRuntime(Runtime):
 
             if not dry_run:
                 settings["permissions"]["allow"] = new_allow
-                claude_runtime._save_settings(settings_path, settings)
+                if not _persisted(settings_path, settings):
+                    return _write_failed(settings_path)
+
+        elif operation == "protect-path":
+            # Goal-based: the caller names DIRECTORIES to protect; the deny-rule
+            # grammar is rendered here and never crosses back. This is the one
+            # fix operation that writes the deny list rather than the allow list.
+            deny_value = settings["permissions"]["deny"]
+            if not isinstance(deny_value, list):
+                # Fail closed rather than raising out of the operation. This
+                # is the only branch that indexes ``["deny"]``, so it is the
+                # only one that can meet a `deny` of the wrong type, and the
+                # only place the type can be checked.
+                return toon_error(
+                    "permission fix",
+                    "invalid_settings",
+                    f"permissions.deny must be a list; found {type(deny_value).__name__}",
+                )
+            deny: list[str] = deny_value
+            # De-duplicate ACROSS the named paths, not only within each: two
+            # paths can render the same rule (the same directory named twice,
+            # or two spellings of one directory), and a `rules_total` that
+            # counted them separately would report rules the caller will not
+            # get — the count the per-path renderer already refuses to inflate.
+            rendered: list[str] = []
+            for protected_dir in permissions:
+                rendered.extend(claude_runtime._protect_path_deny_rules(protected_dir))
+            rendered = list(dict.fromkeys(rendered))
+            rules_rendered = len(rendered)
+            for rule in rendered:
+                if rule in deny:
+                    continue
+                if dry_run:
+                    proposed_count += 1
+                else:
+                    deny.append(rule)
+                    changes_applied += 1
+            # Write only when a rule was actually added: this operation is meant
+            # to be re-run for its idempotence, and re-serializing an operator's
+            # settings file on a call that changed nothing is a modification
+            # they can see for no effect. The sibling branches save
+            # unconditionally; `contract.md` records the asymmetry.
+            if not dry_run and changes_applied:
+                settings["permissions"]["deny"] = deny
+                if not _persisted(settings_path, settings):
+                    # A security control that reports success when the write
+                    # failed tells an operator their credentials are guarded by
+                    # rules that reached nothing. Fail loudly instead.
+                    return _write_failed(settings_path)
 
         result: dict[str, Any] = {
             "scope": scope,
@@ -1153,7 +1255,16 @@ class ClaudeRuntime(Runtime):
             "target_file": str(settings_path),
             "changes_applied": 0 if dry_run else changes_applied,
         }
-        if dry_run and proposed_additions:
+        if operation == "protect-path":
+            # Counts only — a rendered deny rule must not reach the caller.
+            # Named, not protected: three spellings of one directory are three
+            # names and one protection. `rules_total` is the honest measure of
+            # what was written.
+            result["paths_named"] = len(permissions)
+            result["rules_total"] = rules_rendered
+            if dry_run:
+                result["proposed_count"] = proposed_count
+        elif dry_run and proposed_additions:
             result["proposed_additions"] = proposed_additions
 
         return toon_success("permission fix", result)
@@ -1209,7 +1320,8 @@ class ClaudeRuntime(Runtime):
 
         if not dry_run:
             settings["permissions"]["allow"] = allow
-            claude_runtime._save_settings(settings_path, settings)
+            if not _persisted(settings_path, settings):
+                return _write_failed(settings_path)
 
         result: dict[str, Any] = {
             "scope": scope,
@@ -1276,7 +1388,8 @@ class ClaudeRuntime(Runtime):
 
         if not dry_run:
             settings["permissions"]["allow"] = allow
-            claude_runtime._save_settings(settings_path, settings)
+            if not _persisted(settings_path, settings):
+                return _write_failed(settings_path)
 
         result: dict[str, Any] = {
             "marshal": marshal_path,
@@ -1320,7 +1433,10 @@ class ClaudeRuntime(Runtime):
             global_allow = gs.get("permissions", {}).get("allow", [])
 
         if scope in ("project", "both"):
-            ps = claude_runtime._load_settings(claude_runtime._claude_project_settings_path())
+            # Read-side, so the read selector — same reason as permission_analyze.
+            ps = claude_runtime._load_settings(
+                claude_runtime._claude_project_settings_read_path()
+            )
             project_allow = ps.get("permissions", {}).get("allow", [])
 
         global_domains = _extract_webfetch_domains(global_allow)
@@ -1408,7 +1524,8 @@ class ClaudeRuntime(Runtime):
             domains_removed = original_len - len(allow)
 
             settings["permissions"]["allow"] = allow
-            claude_runtime._save_settings(settings_path, settings)
+            if not _persisted(settings_path, settings):
+                return _write_failed(settings_path)
         else:
             domains_added = sum(1 for d in add if d not in current_domains)
             domains_removed = 0
@@ -1795,13 +1912,20 @@ class ClaudeRuntime(Runtime):
         all_healthy = True
 
         if "permissions" in checks_to_run:
-            project_settings = claude_runtime._claude_project_settings_path()
+            # Read-side, so the read selector — uniform with the other audits.
+            # The two selectors agree on this particular boolean (either answers
+            # "some project settings file exists"), but a reader should not have
+            # to re-derive that to know the rule has no exceptions.
+            project_settings = claude_runtime._claude_project_settings_read_path()
             healthy = project_settings.is_file()
+            # Name the file actually checked. This reported "settings.local.json"
+            # unconditionally, so on a project carrying only the shared file the
+            # detail named a file the check had not looked at.
             detail = (
-                f"settings.local.json present; allow array has "
+                f"{project_settings.name} present; allow array has "
                 f"{len(claude_runtime._load_settings(project_settings).get('permissions', {}).get('allow', []))} entries"
                 if healthy
-                else "settings.local.json not found; run permission configure"
+                else f"{project_settings.name} not found; run permission configure"
             )
             results.append({"check": "permissions", "healthy": healthy, "detail": detail})
             if not healthy:

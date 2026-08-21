@@ -57,6 +57,7 @@ DEFAULT_OUTPUT_SUBDIR = 'tools-marketplace-inventory'
 from marketplace_bundles import extract_bundle_name, find_bundles  # noqa: E402, I001
 from marketplace_paths import (  # noqa: E402, I001
     get_base_path as _shared_get_base_path,
+    get_project_skill_roots,
     get_temp_dir,
     iter_project_skill_dirs,
     safe_relative_path,
@@ -254,6 +255,20 @@ def discover_skills(
     return skills
 
 
+def runtime_mount_prefix() -> str:
+    """Return the display prefix for a skill script's runtime mount point.
+
+    Derives from the active target's highest-priority project-local skill root
+    (the platform-runtime ``layout skill-roots`` op, via
+    ``marketplace_paths.get_project_skill_roots``) rather than naming one
+    target's layout; on Claude this is ``./.claude/skills``. A relative root is
+    shown ``./``-anchored to read as a mount point; a ``~``-anchored or absolute
+    root is shown as-is.
+    """
+    root = get_project_skill_roots()[0]
+    return root if root.startswith(('/', '~', './')) else f'./{root}'
+
+
 def discover_scripts(bundle_dir: Path, bundle_name: str) -> list[dict[str, Any]]:
     """Discover script files (.sh, .py) in skill/scripts/ directories.
 
@@ -267,6 +282,7 @@ def discover_scripts(bundle_dir: Path, bundle_name: str) -> list[dict[str, Any]]
         return []
 
     scripts = []
+    mount_prefix = runtime_mount_prefix()
     # Find all .sh and .py files in scripts/ directories and their subdirectories
     # (e.g., scripts/build/*.py for organized script-shared skill)
     for script_file in sorted(skills_dir.rglob('scripts/**/*.sh')) + sorted(skills_dir.rglob('scripts/**/*.py')):
@@ -286,7 +302,7 @@ def discover_scripts(bundle_dir: Path, bundle_name: str) -> list[dict[str, Any]]
 
             # Generate path formats
             relative_path = safe_relative_path(script_file)
-            runtime_mount = f'./.claude/skills/{skill_name}/scripts/{script_file.name}'
+            runtime_mount = f'{mount_prefix}/{skill_name}/scripts/{script_file.name}'
 
             scripts.append(
                 {

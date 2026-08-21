@@ -4,7 +4,7 @@
 Credential management CLI dispatcher.
 
 Routes subcommands to individual command modules for secure credential
-storage, configuration, verification, and deny rule management.
+storage, configuration, verification, and credential-directory protection.
 
 Usage:
     credentials.py configure --skill <name> [--scope global|project]
@@ -130,7 +130,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # ensure-denied
     denied_parser = subparsers.add_parser(
-        'ensure-denied', help='Add deny rules to Claude Code settings', allow_abbrev=False
+        'ensure-denied',
+        help="Protect the credentials directory in the active target's settings",
+        allow_abbrev=False,
     )
     denied_parser.add_argument(
         '--target', choices=['global', 'project'], default='project', help='Settings target (default: project)'

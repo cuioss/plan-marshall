@@ -16,7 +16,12 @@ from typing import Any
 # Direct import - executor sets up PYTHONPATH for cross-skill imports
 import resolve_project_dir as _routing
 from marketplace_bundles import resolve_bundle_path, resolve_bundles_root, resolve_skills_root
-from marketplace_paths import find_marketplace_path, get_bundle_cache_roots
+from marketplace_paths import (
+    _resolve_skill_root,
+    find_marketplace_path,
+    get_bundle_cache_roots,
+    get_project_skill_roots,
+)
 from plan_logging import log_entry
 from toon_parser import serialize_toon
 
@@ -1281,13 +1286,37 @@ def _scan_phase5_for_implementors(ext_point: str) -> list[dict[str, Any]]:
     return records
 
 
-def _scan_project_for_implementors(ext_point: str) -> list[dict[str, Any]]:
-    """Scan project-local ``.claude/skills/finalize-step-*/SKILL.md`` implementors.
+def _project_skill_trees(project_root: Path) -> list[Path]:
+    """Return the project-local-skill root directories that exist on disk.
 
-    Project-local finalize steps live under the PROJECT root's ``.claude/skills/``.
-    Only directories matching ``finalize-step-*`` are scanned. Returns nothing
-    when there is no resolvable project root, or no ``.claude/skills/`` root (a
-    consumer project without the meta-project's project-local steps).
+    Routes through the platform-runtime ``layout skill-roots`` op (via
+    ``marketplace_paths.get_project_skill_roots``), so discovery covers whatever
+    layout the active target declares rather than one hardcoded tree. Each root
+    is anchored by the shared ``marketplace_paths._resolve_skill_root`` — a
+    relative root under *project_root*, a ``~``-anchored or absolute one
+    independently. Roots are returned in the op's own priority order.
+    """
+    trees: list[Path] = []
+    for root in get_project_skill_roots():
+        candidate = _resolve_skill_root(root, project_root)
+        if candidate.is_dir():
+            trees.append(candidate)
+    return trees
+
+
+def _scan_project_for_implementors(ext_point: str) -> list[dict[str, Any]]:
+    """Scan project-local ``finalize-step-*/SKILL.md`` implementors.
+
+    Project-local finalize steps live under the PROJECT root's project-local
+    skill tree, resolved per target through the layout op (on Claude that is
+    ``.claude/skills/``). Only directories matching ``finalize-step-*`` are
+    scanned. Returns nothing when there is no resolvable project root, or when
+    no declared skill root exists on disk (a consumer project without the
+    meta-project's project-local steps).
+
+    When the target declares several roots they are scanned in priority order
+    and the first root carrying a given step id wins, matching the executor's
+    own first-match discovery.
 
     Discovery is PROJECT-ROOT-anchored, resolved cwd-relatively by the uniform
     cwd rule (ADR-002): the project root is the nearest ancestor of the current
@@ -1298,9 +1327,10 @@ def _scan_project_for_implementors(ext_point: str) -> list[dict[str, Any]]:
     PROJECT, not of the marketplace tree the scripts ship from. When the scanning
     code ships from the plugin cache tree, a ``__file__``-derived anchor (the
     former ``configurable_contract._repo_root()``) resolves into the cache tree
-    where ``.claude/skills/`` does not exist, so every ``project:finalize-step-*``
-    implementor is silently missed. Anchoring on the project root makes discovery
-    correct from BOTH a source-tree and a cache-tree execution context.
+    where the project-local skill tree does not exist, so every
+    ``project:finalize-step-*`` implementor is silently missed. Anchoring on the
+    project root makes discovery correct from BOTH a source-tree and a
+    cache-tree execution context.
 
     Returns:
         One ``project`` record per matching ``finalize-step-*/SKILL.md``.
@@ -1311,28 +1341,34 @@ def _scan_project_for_implementors(ext_point: str) -> list[dict[str, Any]]:
     if project_root is None:
         return []
 
-    skills_root = project_root / '.claude' / 'skills'
-    if not skills_root.is_dir():
-        return []
-
     records: list[dict[str, Any]] = []
-    try:
-        skill_dirs = sorted(skills_root.glob('finalize-step-*'))
-    except OSError:
-        return []
-    for skill_dir in skill_dirs:
-        if not skill_dir.is_dir():
+    seen_step_ids: set[str] = set()
+    for skills_root in _project_skill_trees(project_root):
+        try:
+            skill_dirs = sorted(skills_root.glob('finalize-step-*'))
+        except OSError:
             continue
-        skill_md = skill_dir / 'SKILL.md'
-        if not skill_md.is_file():
-            continue
-        if ext_point not in read_implements_field(skill_md):
-            continue
-        # Project step ids are PATH-derived (``project:{skill-dir}``), matching
-        # the existing _discover_all_finalize_steps contract — not the SKILL.md
-        # registration ``name`` (a plain skill name with no ``project:`` prefix).
-        step_id = f'project:{skill_dir.name}'
-        records.append(_build_implementor_record(skill_md, 'project', name_override=step_id))
+        for skill_dir in skill_dirs:
+            if not skill_dir.is_dir():
+                continue
+            skill_md = skill_dir / 'SKILL.md'
+            if not skill_md.is_file():
+                continue
+            # Project step ids are PATH-derived (``project:{skill-dir}``), matching
+            # the existing _discover_all_finalize_steps contract — not the SKILL.md
+            # registration ``name`` (a plain skill name with no ``project:`` prefix).
+            step_id = f'project:{skill_dir.name}'
+            if step_id in seen_step_ids:
+                continue
+            # Claim the id BEFORE the ext-point filter, so the highest-priority
+            # root owns the id whatever it implements. ``configurable_contract``
+            # resolves a step id to the first root carrying that directory, with
+            # no ext-point involved; claiming only on a match would let a lower
+            # root supply a record whose file that resolution never lands on.
+            seen_step_ids.add(step_id)
+            if ext_point not in read_implements_field(skill_md):
+                continue
+            records.append(_build_implementor_record(skill_md, 'project', name_override=step_id))
 
     return records
 
@@ -1360,7 +1396,8 @@ def find_implementors(ext_point: str) -> list[dict[str, Any]]:
     - ``phase-6-finalize/workflow/*.md`` + ``standards/*.md`` (finalize ``built-in``
       steps, ``workflow/`` winning on a bare-name collision);
     - ``phase-5-execute/standards/*.md`` (verify ``built-in`` steps);
-    - project-local ``.claude/skills/finalize-step-*/SKILL.md`` (``project`` steps).
+    - project-local ``finalize-step-*/SKILL.md`` under the target's declared
+      project-local skill root(s) (``project`` steps).
 
     Each surface reuses the cache-aware ``configurable_contract`` primitives for
     doc-root resolution and frontmatter parsing.

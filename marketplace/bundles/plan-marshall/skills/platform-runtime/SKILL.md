@@ -38,7 +38,7 @@ Twenty-four operations covering the full platform lifecycle:
 | `session capture` | APPEND current session id to `status.metadata.session_ids` via `manage-status`; no-op on OpenCode |
 | `permission configure` | Write raw permission list to platform settings |
 | `permission analyze` | Read-only audit of permission hygiene, redundancy, and missing-steps |
-| `permission fix` | Apply hygienic fixes: normalize, add, remove, ensure, consolidate |
+| `permission fix` | Apply hygienic fixes: normalize, add, remove, ensure, consolidate, protect-path |
 | `permission ensure-wildcards` | Add marketplace bundle wildcard permissions |
 | `permission ensure-steps` | Add missing skill permissions for `marshal.json` phase steps |
 | `permission web-analyze` | Read-only analysis of WebFetch/webfetch domain permissions |
