@@ -55,36 +55,36 @@ The plan carries three asserted-absence claims and flags them as the higher-risk
 
 All eight shipped. One commit per deliverable, in the plan's stated order so the later edit sees the earlier one.
 
-**D1 — Derivation gate** (`94984c81` established the plan directory; D1 itself mutates nothing). All four populations derived and recorded verbatim above with their file and symbol. No premise failed, so the plan did not halt.
+**D1 — Derivation gate** (`58359f9b` established the plan directory; D1 itself mutates nothing). All four populations derived and recorded verbatim above with their file and symbol. No premise failed, so the plan did not halt.
 
-**D2 — The orchestrator block is discoverable where operators read it** (`04c81b31`).
+**D2 — The orchestrator block is discoverable where operators read it** (`5078593e`).
 (i) `.plan/marshal.json`'s `orchestrator` block seeded with `effort: {}` and `parallelization_scope: 1`, preserving `auto_emit: false` and the file's top-level key order. `sync-defaults` was **not** run, per the plan's ⛔.
 (ii) `test_committed_marshal_json_surfaces_every_orchestrator_knob` added, deriving its expectation from `ORCHESTRATOR_KNOWN_KEYS` rather than transcribing it. **Seen RED** against the pre-edit block: `AssertionError: committed orchestrator block surfaces ['auto_emit'], expected every settable knob ['auto_emit', 'effort', 'parallelization_scope']` — `1 failed, 2 passed, 232 deselected`. The two existing committed-file tests were re-run and still pass (they assert top-level key order only and read inside no block).
 (iii) `marshal-json-reference.md` § Orchestrator Configuration now states that `init` seeds every knob at its effective default, that each seeded default resolves exactly as the unset key did (with the fall-through per knob), and that a legacy `auto_emit`-only block stays valid and is back-filled by `sync-defaults`. The table row's parenthetical reflects the seeded shape; the `parallelization_scope` paragraph makes the seeded `1` the stated default with the unset case as a legacy note. `auto_emit` gained a real reference section and table row.
 
 *Both sweeps clean.* **PLAN-48 sweep** over `marketplace/`: 4 hits before (`manage-config.py:596`, `effort-roles.md:88`, `marshal-json-reference.md:123` and `:155` — the four the gap names, re-derived and confirmed), **0 after**. **Empty-block sweep** for `empty \`{}\` block is legal` / `empty \`{}\` legal` / `when unset the ask keeps`: 3 hits before (all in `marshal-json-reference.md`), **0 after**. The remaining `empty {}` hits in the tree describe the `effort` sub-block and the config-less finalize steps — both still true, so untouched.
 
-**D3 — A degraded landing fact is missing** (`24e1d24a`).
+**D3 — A degraded landing fact is missing** (`28e1cbff`).
 (i) `LANDING_DEGRADED_SENTINELS` and `LANDING_SENTINEL_REJECTING_KEYS` added; `_is_unsupplied` treats a sentinel as missing for `plan_id`, `deliverables_total`, `deliverables_done`, `total_tokens`, `steps`. `pr` and `merge_state` stay allowed to be `n/a`, and the docstring states that asymmetry. `schema` has no entry — the preceding schema branch already fail-closes.
 (ii) `landing-payload-spec.md`'s delta table corrected: `steps` carries per-step outcomes only; the typed facts, the wall-clock and the repository end-state ride optional keys. A note states that MECHANISABLE does not mean required. `analyze.md`'s `complete: true` bullet — **and the two further sentences restating the same overclaim**, at the `complete: false` paragraph's tail and in the `landings_incomplete` field contract — now claim only what the required set covers. The alternative (promoting those rows to required) is recorded below as an operator proposal, not work done.
 (iii) The `LANDING_REQUIRED_KEYS` comment rewritten: the constant is the executable authority, and `landing-payload-spec.md` § "Required machine-readable fact keys" and `emit-landing.md` Step 2 restate it for their readers. It defers the prose tie-break to the spec's own sentence rather than restating or overriding it.
 
 *Red-first:* the three rejection cases **seen RED** — `3 failed, 2 passed, 17 deselected` — while the two must-stay-complete cases (`pr`/`merge_state` degraded; a genuine `0` count) were green before and after, which is what shows the rule was not widened into a blanket ban.
 
-**D4 — could-not is distinguishable from chose-not** (`b8f2286e`).
+**D4 — could-not is distinguishable from chose-not** (`2d7accb9`).
 (i) `cmd_compact`'s per-block `markers_absent` outcomes are passed into `_abstained_sections`, keyed to the owning heading via `GENERATED_BLOCK_OWNING_SECTION`; such a section emits `markers_absent_not_regenerated` and is counted by a new `unreachable_count`, leaving `abstained_count` counting deliberate abstentions only. **Four** report-contract statements updated — `_abstained_sections`' docstring, `cmd_compact`'s docstring, `plan-orchestrator/SKILL.md`, and `orchestration-model.md` § Ledger-Compaction Stage. The plan named three; the fourth was found by sweeping for the vocabulary rather than trusting the list. **Seen RED**: `3 failed, 2 passed, 31 deselected`, the two passes being the purely-narrative and reachable-ledger controls.
 (ii) `cleanup.md`'s `## Output` block declares `compaction_regenerated[]`, `compaction_invariants[]` and `compaction_abstained[]`, each required-never-omitted the way `declined[]` is, and the Step 8 instruction names them. **Deviation from the plan, recorded:** the plan proposed `compaction_abstained[A]`, but `applied[A]` already occupies that letter in the same TOON block; `[B]` is used instead, since two independent counts sharing a letter is exactly the ambiguity the declaration exists to remove.
 (iii) The tautology in `test_every_hand_authored_section_survives_verbatim` repaired by performing the second `_run()` the comment claimed and asserting byte-identity across THAT pass. **Seen RED with the first disjunct alone against the pre-fix tree: `1 failed, 31 passed`** — re-derived, and it happens to match the figure the gap recorded. The failure diff shows exactly why the disjunct mattered: `text` was read BEFORE the first `_run()`, so it carried the pre-regeneration resume body. The two comments describing operations the test never performed are corrected. **Mutation-tested**: with `_replace_block`'s `unchanged` branch mutated to append a drifting line, the repaired assertion goes RED (`1 failed, 31 deselected`); the file was restored from a byte snapshot, not with a git command, and the restore was verified.
 (iv) The branch body shared by `_invariant_queue_spec` and `_corpus_signal` extracted into `_read_queue_spec_reconciliation`, returning a neutral `(state, evidence, population)` triple each caller maps into its own vocabulary. Both public shapes unchanged (the existing suites pass unedited). **Done-when re-derived:** `unreadable_count` / `rows_without_spec_count` / `specs_without_row_count` are now branched on in **exactly one** function — `_read_queue_spec_reconciliation`, named rather than line-cited, since a line number goes stale on the next edit; every other occurrence — five sites across three functions (`cmd_corpus_enumerate`, `cmd_corpus_verdicts`, `cmd_corpus_cross_check`) — is a dict-literal *producer*, not a branch.
 
-**D5 — The drain acts on lifecycle** (`024bffb9`).
+**D5 — The drain acts on lifecycle** (`3ab7623f`).
 (i) `analyze.md` Step 3 item 2 now reads `lifecycle` before `kind`: a `superseded` row is recorded `retired_by_successor` and a `stream-end` row `stream_end_noted`, neither running its `kind` branch. Both archive, so both count inside `messages_archived` and the closure equation needs no fourth term — stated explicitly at the equation. The new rules defer to item 3 for an invalid row, because an unvalidated header's `lifecycle` is not a fact the drain may act on. Item numbering was deliberately **not** shifted: inserting a numbered item would have renumbered `4a`/`4b` into `5a`/`5b`, colliding with the existing "Step 5b" references.
 Step 6 keys the empty-vs-finished conclusion on `live_count` + `closed_senders` + `invalid_count`.
 (ii) `cleanup.md` Step 9 fact 2 rewritten. The refusal stands on a true reason: `closed_senders` is a per-sender closure over an **open** sender population — a plan not yet emitted, or emitted and not yet started, has filed nothing and so appears in neither `closed_senders` nor `live_count` — so a `closed_senders` covering every sender seen so far is consistent with a sender about to appear, which is what quiescence must rule out. The deferred-mechanism block is kept as the surface a successor reuses, and `archive_drain_reason` updated to match. "Drain per closed sender" is recorded below as an operator proposal.
 (iii) One shared predicate `find_stream_end_marker` consulted at both entry points: `cmd_inbox_write` refuses with the new `stream_closed` code, `cmd_inbox_close_stream` returns idempotent success naming the existing marker with `already_closed`. Documented in `inbox-envelope.md` § Write-side deliverability beside the `undeliverable_to_running_plan` precedent, and in `SKILL.md` § `inbox write` / § `inbox close-stream`. **Seen RED: `4 failed, 2 passed, 43 deselected`**, the two passes being the open-sender and other-sender controls — confirming the gap's record of both calls succeeding pre-fix.
 (iv) `inbox-envelope.md` § Drain semantics and `SKILL.md` § `inbox list` now tabulate **three** zeros, naming BLOCKED (`live_count: 0` with `invalid_count > 0`) explicitly. A test pins the blocked zero as distinct from the empty one *on the two fields the old two-way reading looked at*, so the two states are asserted against each other rather than each in isolation.
 
-**D6 — the epic tree, the migration, and the dispatch label** (`c94b87a9`).
+**D6 — the epic tree, the migration, and the dispatch label** (`c924026d`).
 (i) `settled.md` declared in the Directory Layout block between `history.md` and `references.json`, commented as mid-life relocated settled narrative with pointers resolving there, and added to the § Carve-outs ledger-document list.
 (ii)/(iii) `cleanup.md` § Step 8 carries the migration **before** the script call, as **two mutually-exclusive rules** rather than one — the shape the cold read forced (§ Three cold reads). **Rule 1** applies only when a `## Ordered Queue` is present with **no** `BEGIN GENERATED: ordered-queue` marker: move per-row `Notes` into the annotation zone **first**, then insert the marker pair around the existing table, fabricating no rows. **Rule 2** applies to the opposite case — markers already present with a hand-written line between them — and evacuates that line to the same zone. Only Rule 1 is one-time (its precondition self-destructs); Rule 2 is checked every pass. § Ledger-Compaction Stage states the same obligation next to the never-fabricate rule so the refusal and its remedy read together. `replaced_body` added to `_replace_block`'s return and `cmd_compact`'s `regenerated[]` rows, carrying the pre-write between-marker text for a `regenerated` block and `''` otherwise; **both tests seen RED** (`2 failed, 36 deselected`).
 (iv) The canonical-form resolve now carries `--role orchestrator.{surface}`, `--plan-id none`, `--caller` and `--workflow`, with one sentence stating that the resolve seam emits the `[DISPATCH]` line and its paired decision-log record per firing.
@@ -97,7 +97,7 @@ Step 6 keys the empty-vs-finished conclusion on `live_count` + `closed_senders` 
 
 with the paired decision-log record `(plan-marshall:manage-config) effort resolve-target role=orchestrator.analyze -> target=execution-context-level-3 level=level-3`. The `--default` counterfactual was run on the same site and produced `role=default` on an otherwise identical line — which is precisely why `--default` is not distinguishable between the `analyze` and `decompose` surfaces, and why the explicit `--role` is mandated.
 
-**D7 — every `inbox` enumeration names the registered set** (`c7e0e1c9`).
+**D7 — every `inbox` enumeration names the registered set** (`b2d56dbb`).
 (i) `SKILL.md` § `inbox validate` enumerated **seven** of the fourteen D1(b) codes. It now tables all fourteen in check order with the raising seam, and the "checked in that order" clause is made exact (state checks run after the base sweep). The unreachable `invalid_envelope` fallback is named as the defensive default rather than as a fifteenth outcome. The pinned tuple in `test_inbox_validate_still_lists_every_retained_rejection_code` extended to the full set; **the guard was verified to bite** by deleting `revision_not_monotonic` from the section and seeing `1 failed, 53 deselected` (file restored from a byte snapshot, verified).
 (ii) `inbox-envelope.md` § Related extended to the full ten-verb surface. **Every added name was confirmed to have a `### inbox {verb}` target in `SKILL.md` before being written** — all ten resolve.
 (iii) The `inbox` subparser's `help=` literal replaced.
@@ -107,7 +107,7 @@ with the paired decision-log record `(plan-marshall:manage-config) effort resolv
 
 ⚠ **A plan premise was refuted here and the deviation is recorded rather than followed.** D7(iii) instructs the run to "mirror the already-correct module docstring". Re-derivation showed that docstring was **itself one verb short** — both its brace list and its prose omitted `landing-check`. Mirroring it would have propagated the defect. It was corrected instead, making this a **fourth** `orchestrator.py` site D7 touched rather than the three the plan enumerated.
 
-**D8 — records and registration cosmetics** (`d9c8b7e9`).
+**D8 — records and registration cosmetics** (`7e269c79`).
 (i) `plugin.json`: `persona-plan-orchestrator` moved after `persona-plan-marshall-agent`, `plan-orchestrator` after `plan-marshall-plugin`, leaving `marshall-steward` directly after `manage-terminal-title`. **Out-of-order adjacent pairs re-derived before and after: 6 → 4**, and the four survivors are exactly the pre-existing inversions § Out of scope leaves alone (`ref-code-quality > persona-auditor`, `persona-security-expert > execute-task`, `manage-ci-artifacts > manage-change-ledger`, `platform-runtime > plan-doctor`). The diff is 2 insertions / 2 deletions — only the two named entries moved.
 (ii)–(iv) recorded in § Report-figure re-derivations below.
 
@@ -282,7 +282,7 @@ Round 4 asked one question: **did removing the causal claims break the generator
 | V4-3 | "Three configurations diverge … their complements do not" reads as exhaustive and omits the **scalar shorthand** (`orchestrator.effort: "level-6"`), a first-class CLI-writable form that `effort-roles.md` names. The R3-3 defect one iteration later. | **fixed** — restated as a **rule** with illustrative examples and an explicit non-exhaustiveness ⛔. The shorthand case was **run** before being written: `level-6` vs `level-1` |
 | V4-4 | Round 3 deleted the hedge on `16291` and kept the number — converting a correctly-flagged inference into a bare assertion, in the commit whose stated purpose was to stop asserting unverified things. The one-item delta the note is organised around may not exist. | **fixed** — the hedge is restored at both sites that STATE the figure (`250:79`, `520:138`; the other occurrences are meta-references to this finding). Round 5 then established the stronger result: no delta is measurable at all, because the report line states no collected total |
 | V4-5 | R3-9 claimed cold-read passes were renamed "throughout"; one site kept "round 1 / round 2", and the new parenthetical made it an explicit self-contradiction. | **fixed** |
-| V4-6 | § "The generator, named" **mis-attributed both of round 3's cited mechanisms to round 3**. `git log -S` places both at `c077d177` — they are round 2's. The section's headline analytical claim was unsupported by its own evidence. | **fixed** — attribution corrected, and the count restated as four-for-four measured on each round's own commit |
+| V4-6 | § "The generator, named" **mis-attributed both of round 3's cited mechanisms to round 3**. `git log -S` places both at `166fea79` — they are round 2's. The section's headline analytical claim was unsupported by its own evidence. | **fixed** — attribution corrected, and the count restated as four-for-four measured on each round's own commit |
 | V4-7 | `17710 either way` is the branch head's population, not the note's base — inside the note that establishes the state-your-base rule, three sentences from "its command, its base". At `51d1c9bc` the figure is 16292. | **fixed** — both figures now carry their base |
 | V4-8 | "Three actions in that case, not two" is false on the ledger round 3's *own* adjacent bullet describes (Rule 1 applies, no `Notes` content → no zone, so two actions). Both sentences were written in the same commit. | **fixed** |
 | V4-9 | `18 → 14 → 10` counts round 1's table at 18 while § Rejected says "1 through 18, plus 15b" — 19 under the section's own one-finding-per-instance rule. | **fixed** |
@@ -292,17 +292,17 @@ Round 4 asked one question: **did removing the causal claims break the generator
 
 ### Round 5 — independent verification sub-agent
 
-Round 5 targeted `635dd345` and found **15**. Its central result is a sharper diagnosis than round 3's: the recurring class is not "unverified mechanisms" but **prose that narrates its own verification** — clauses of the form *"each run rather than reasoned"*, *"`git log -S` places all three"*, *"both figures now carry their base"*, *"all three sites"*, *"four rounds for four"*. Each is a claim **about having checked something**, and correcting one in the same register produces the next.
+Round 5 targeted `ec223e2e` and found **15**. Its central result is a sharper diagnosis than round 3's: the recurring class is not "unverified mechanisms" but **prose that narrates its own verification** — clauses of the form *"each run rather than reasoned"*, *"`git log -S` places all three"*, *"both figures now carry their base"*, *"all three sites"*, *"four rounds for four"*. Each is a claim **about having checked something**, and correcting one in the same register produces the next.
 
 | # | Finding | Disposition |
 |---|---|---|
 | R5-1 | The cold-read pass-3 write-up still asserted, in present tense, the exact universal round 4's own V4-2 row calls a refuted regression — 53 lines apart in one file, so the report asserted and refuted the same sentence. The under-scoped-sweep shape, same finding, **fourth** consecutive round. | **fixed** — neither direction is asserted; both rationales are recorded as withdrawn |
 | R5-2 | ⛔ **Shipped text, false by execution.** "the scalar shorthand … **which the walk reads at the `default` rung**" — it does not: a string is handled at its own branch with source `orchestrator.effort`, so unlike `default` it **cannot be clamped by `max`** (which is read only from the object form). Written inside the sentence advertising "each run rather than reasoned". | **fixed** — the shorthand's actual rung and its clamp consequence stated |
-| R5-3 | "`git log -S` places all three at `c077d177`" — the O(queue) bound was added at `f03e9a0a` (round 1), as the report's own R2-4 row and row 17 both say. An attribution asserted *with its method named*, and wrong. | **fixed** |
-| R5-4 | "Round 1's was the `--default` tier claim" — `git log -S` places its introduction at `c94b87a9`, the original run, and its deletion at `f03e9a0a`. Round 1 **found and removed** it. | **fixed** |
-| R5-5 | "**four rounds for four**" — the fourth data point required a fresh mechanism in `635dd345`, which nobody had reviewed when the sentence was written. A prediction stated as a measured score, in the section whose thesis is that unmeasured claims are the defect. | **fixed** — the section no longer scores itself |
+| R5-3 | "`git log -S` places all three at `166fea79`" — the O(queue) bound was added at `7d308fab` (round 1), as the report's own R2-4 row and row 17 both say. An attribution asserted *with its method named*, and wrong. | **fixed** |
+| R5-4 | "Round 1's was the `--default` tier claim" — `git log -S` places its introduction at `c924026d`, the original run, and its deletion at `7d308fab`. Round 1 **found and removed** it. | **fixed** |
+| R5-5 | "**four rounds for four**" — the fourth data point required a fresh mechanism in `ec223e2e`, which nobody had reviewed when the sentence was written. A prediction stated as a measured score, in the section whose thesis is that unmeasured claims are the defect. | **fixed** — the section no longer scores itself |
 | R5-6 | "**Across three rounds** the count **fell** (19 → 14 → 10 → 12)" — four counts under "three rounds", and 10 → 12 is a rise. | **fixed** |
-| R5-7 | "three of them fresh unverified mechanisms" under-counted: V4-8 and V4-12 are also at `7e4c1734`, and V4-8 is a false completeness claim — the class the same paragraph was defining. | **fixed** |
+| R5-7 | "three of them fresh unverified mechanisms" under-counted: V4-8 and V4-12 are also at `c239c9aa`, and V4-8 is a false completeness claim — the class the same paragraph was defining. | **fixed** |
 | R5-8 | "both figures now carry their base" — only the 250 note was fixed; the 520 note still carried a bare `17710`, inside the note establishing the state-your-base rule. Third site of the same figure. | **fixed at all three sites**, and the figure replaced by `16292`, which is the one belonging to that base |
 | R5-9 | ⛔ **Shipped text.** The order's sole surviving justification — "fixed so that two orchestrators on the same ledger produce the same result" — is not established: the relocation half is operator-confirmed and defers entirely when no operator is reachable, so two orchestrators can differ regardless of order. | **fixed** — stated as a convention of the document, with no outcome claim |
 | R5-10 | ⛔ **Shipped text.** Fixing V4-8 opened a new hole in the same sentence: `(markers absent, Notes present, zone ALREADY present)` was covered by the pre-image's complement and by neither branch of the replacement. | **fixed** — zone creation is described by its own condition rather than by an action count |
@@ -353,23 +353,23 @@ Run in parallel with round 6, against the shipped text — the pass § Three col
 
 ### Round 7 — final round, frozen tree, scoped to the young corrections
 
-Round 6 recommended stopping but raised one caveat against its own verdict: `cleanup.md` was being rewritten by cold-read fixes **while it verified**. Round 7 ran against a frozen tree (no edit was made between dispatch and result) and targeted only `git diff c843a0f6~1..HEAD -- marketplace/ test/` — the corrections themselves, which five rounds of evidence identify as the highest-risk text.
+Round 6 recommended stopping but raised one caveat against its own verdict: `cleanup.md` was being rewritten by cold-read fixes **while it verified**. Round 7 ran against a frozen tree (no edit was made between dispatch and result) and targeted only `git diff f2f0013d~1..HEAD -- marketplace/ test/` — the corrections themselves, which five rounds of evidence identify as the highest-risk text.
 
 **It confirmed both predictions rather than refuting them.** 3 findings, all shipped text, all mechanical.
 
 | # | Finding | Disposition |
 |---|---|---|
 | R7-1 | ⛔ **The D3 overclaim at a FOURTH site** — `test_landing_completeness.py`'s own module docstring, a test file's statement of what the code under test guarantees. Round 6's fix reached three of four. Established by execution: `pr=n/a & merge_state=n/a` → `(True, [])`. | **fixed**; the sweep now returns **zero** across `marketplace/`, `test/` and `.claude/` |
-| R7-2 | ⛔ **A FRESH self-contradiction, introduced by `c843a0f6` in the bullet it was editing.** `orchestration-model.md` described Rule 2 as applying to "the opposite case" and then, one clause later, said the two rules are NOT complements — but if Rule 2 were the opposite case they would be. Established by fixture: after one pass the markers are present with no hand-written line and `_replace_block` returns `unchanged`, the state matching neither rule — **the steady state of every ledger after its first compaction**, not an edge case. | **fixed** |
+| R7-2 | ⛔ **A FRESH self-contradiction, introduced by `f2f0013d` in the bullet it was editing.** `orchestration-model.md` described Rule 2 as applying to "the opposite case" and then, one clause later, said the two rules are NOT complements — but if Rule 2 were the opposite case they would be. Established by fixture: after one pass the markers are present with no hand-written line and `_replace_block` returns `unchanged`, the state matching neither rule — **the steady state of every ledger after its first compaction**, not an edge case. | **fixed** |
 | R7-3 | The same commit added a fourth `compaction_*` key and left "The three `compaction_*` keys" standing two paragraphs above it. | **fixed** |
 
-Round 7 additionally found a **fail-open in the phase gate `c843a0f6` added**: a `manage-status read` that errors, or a payload carrying no `phase`, was read as *not-closed* rather than *unobserved* — in the one gate whose entire purpose is that the writes it protects happen before anything else can refuse them. **Fixed**: it now fails closed and reports `ledger_compaction: indeterminate`.
+Round 7 additionally found a **fail-open in the phase gate `f2f0013d` added**: a `manage-status read` that errors, or a payload carrying no `phase`, was read as *not-closed* rather than *unobserved* — in the one gate whose entire purpose is that the writes it protects happen before anything else can refuse them. **Fixed**: it now fails closed and reports `ledger_compaction: indeterminate`.
 
 **All three survivors re-checked by execution; all bounds hold.** S3 proved **tighter** than this report had claimed: a `superseded` row is dispositioned `retired_by_successor` and archived, after which `inbox list` reports `count: 0` — the message is consumed, not silently ignored. The characterisation was pessimistic and is corrected in § Survivors.
 
 ### The independent read of round 7's own fixes
 
-Round 7's closing recommendation — because each round's corrections have carried the next round's defects for five consecutive rounds — was that its fixes be read by someone who did not write them before a PR is opened. That read ran against `eb49a7a6` alone.
+Round 7's closing recommendation — because each round's corrections have carried the next round's defects for five consecutive rounds — was that its fixes be read by someone who did not write them before a PR is opened. That read ran against `afd77903` alone.
 
 ⭐ **Verdict: no fresh false clause. The first round in eight whose corrections introduced nothing false.** Every added clause was established by running the code or the sweep: eight `check_landing_completeness` fixtures covering the optional-key, degraded-value and empty-value claims; a two-pass `cmd_compact` fixture confirming the "steady state after first compaction" clause; and `cmd_orchestrator_read` driven over three states, which showed the phase-less-but-**successful** payload is genuinely reachable — the fail-open hole was not hypothetical.
 
@@ -389,15 +389,15 @@ no longer contains any.
 
 | Round | Findings | Fixed in |
 |---|---|---|
-| 1 | 19 (18 rows + 15b) | `f03e9a0a` |
-| 2 | 14 | `c077d177` |
-| 3 | 10 | `7e4c1734` |
-| 4 | 12 | `635dd345` |
-| 5 | 15 | `de1eaabe` |
-| 6 (shipped text only) | 9 | `17d86ceb` |
-| cold read 4 | 8 | `c843a0f6` |
-| 7 (frozen tree, corrections only) | 3 | `eb49a7a6` |
-| read of round 7's fixes | 1 (no fresh false clause) | `d6c26ede` |
+| 1 | 19 (18 rows + 15b) | `7d308fab` |
+| 2 | 14 | `166fea79` |
+| 3 | 10 | `c239c9aa` |
+| 4 | 12 | `ec223e2e` |
+| 5 | 15 | `8cc21926` |
+| 6 (shipped text only) | 9 | `e6360dd1` |
+| cold read 4 | 8 | `f2f0013d` |
+| 7 (frozen tree, corrections only) | 3 | `afd77903` |
+| read of round 7's fixes | 1 (no fresh false clause) | `d43680a4` |
 
 Cold reads of `cleanup.md` § Step 8: three passes. Pass 1 found two defects, pass 2 found three, pass 3
 took the intended reading on all four scenarios put to it and found three further defects.
@@ -412,8 +412,8 @@ checked.
 **Exit: `verifier-clear`.** Not `budget-exhausted`, and the distinction is the whole point of recording it.
 
 - **Budget.** The contract's default is five rounds. Round 5 exhausted it; the operator was reachable, was asked at that boundary with the counts and the survivors, and **granted five more** (rounds 6–10) on identical terms. Rounds 6 and 7 plus two dispatched reads were spent; **three rounds went unused**, which is what makes this a verifier exit rather than a budget one.
-- **The round that ended it.** The independent read of `eb49a7a6`, answering the stop question over its own findings and all three survivors.
-- **The verifier's own last answer, not the author's:** *"Does this commit introduce any fresh false clause — **no**. Every clause the four edits added is true, and each was established by running the code or the sweep, not by reading a callee and judging it compatible."* Its one finding was an unsatisfiable instruction, fixed in `d6c26ede`.
+- **The round that ended it.** The independent read of `afd77903`, answering the stop question over its own findings and all three survivors.
+- **The verifier's own last answer, not the author's:** *"Does this commit introduce any fresh false clause — **no**. Every clause the four edits added is true, and each was established by running the code or the sweep, not by reading a callee and judging it compatible."* Its one finding was an unsatisfiable instruction, fixed in `d43680a4`.
 - **The evidence it rests on is stronger than a read.** Eight `check_landing_completeness` fixtures; a two-pass `cmd_compact` fixture establishing the steady-state clause; `cmd_orchestrator_read` driven over three states, showing the phase-less-but-successful payload is genuinely reachable; and a whole-tree sweep for the corrected phrase returning zero. Each could have come back different.
 - **Were the late rounds narrower, or merely fewer?** **Narrower, measurably.** Rounds 2–5 found their defects overwhelmingly in the report's own prose about itself; the counts did not fall (19 → 14 → 10 → 12 → 15). Scoping round 6 to shipped text alone changed both: 9 findings, **0 in the report**, and its six independent spot-checks of report figures all correct. Round 7, frozen and scoped to the corrections, found 3. The read found 1, and none false.
 - **What residue to assume remains.** The deliverables should be read as still carrying defects of the kind the last rounds found — an enumeration falsified by a later edit, a claim fixed at n−1 of n sites, an instruction ordering a field the schema does not define. Two shipped-text surfaces are the likeliest: `cleanup.md` § Step 8, rewritten six times and the source of a finding in every round that examined it, and any prose written to explain a fix. **The last round found nothing false; that is not the same as there being nothing false.**
@@ -492,6 +492,23 @@ The plan makes two decisions itself so the run needs no mid-run judgement call, 
 **One operator obligation, for a machine that holds the orchestrator store.** 250/G4 — running the physical `inbox/archive/` per-sender migration and reporting the per-sender counts — is excluded under § Out of scope because its population lives under the git-ignored `.plan/local/orchestrator/{epic}/inbox/archive/`, absent from this clone. `inbox migrate-archive` ships and is idempotent; the fold must be run where `.plan/local/` exists, and its per-sender counts read there.
 
 **One pair a follower must land together.** 302/G5 (the dispatch/inline roster row) and 302/G7 (the `plan.phase-6-finalize.steps.default:emit-landing` registration in `.plan/marshal.json`) are coupled to each other and to neither half of this plan. Landing either without the other turns the roster closure test red in one direction or the other. This plan's D2 deliberately touches only the `orchestrator` block, so it leaves both untouched.
+
+## Rebase onto main (operator-directed)
+
+After PR #1314 merged, the operator directed a **rebase** onto `main` rather than the merge this lane defaults to. The hazard was raised before the first bring-in and the operator reaffirmed the rebase, so it was performed — and its consequence, that every replayed commit changes SHA, was handled rather than absorbed.
+
+**What was rebased onto.** `origin/main` at `a34819d9` — PR #1314, the module-budget campaign that split 66 over-budget test modules into 199 test modules plus 64 fixture modules (280 files, +50,276/−42,870). **It touches nothing this branch touches**: `git diff --name-only <merge-base> <#1314 head> -- test/plan-marshall/plan-orchestrator/ test/plan-marshall/manage-config/` returns empty, which is why the rebase of 25 commits produced **zero conflicts**.
+
+**Old→new pairing was established by PATCH CONTENT, not by subject.** `git range-diff 30835539..backup-pre-rebase origin/main..HEAD` paired all **25** commits `1:…=…:1` through `25:…=…:25` — every one an exact `=` match, **zero** dropped, zero altered. Subject-and-order matching would have been a guess; the range-diff is a measurement.
+
+**Only citations proven stale were rewritten.** Each cited SHA was tested with `git merge-base --is-ancestor {sha} HEAD`:
+
+- **3 stayed valid** and were left alone — `51d1c9bc`, `68a21cac`, `6939a0c2` are reachable from `origin/main`, so a rebase does not touch their object ids.
+- **17 were proven stale** and rewritten to their paired replacements — **31 citations** across this report. A post-rewrite sweep for all 25 old SHAs across `doc/` returns **zero**.
+
+⛔ **Two commit MESSAGES still cite stale SHAs, and this is disclosed rather than chased.** `afd77903` cites `c843a0f6`; `d43680a4` cites `eb49a7a6`. Both replacements exist (`f2f0013d`, `afd77903`), but a commit message cannot be corrected without another history rewrite, which would invalidate a fresh set of citations in turn. The lane's own rule applies: a stale SHA in an already-written commit message is accepted and disclosed. **The forward-looking rule it implies — do not quote a same-branch SHA in a commit message on a branch that may still be rebased — was violated by this run and is recorded as a lesson, not as a fix.**
+
+**The branch form changed, and that is recorded because it is a deviation.** § Contract check records this run as harness-assigned; the rebase keeps that branch NAME (`claude/orchestrator-inbox-lifecycle-cleanup-kxrzew`), so session resumability is unaffected — what changed is the history under it, which required a force-push with lease.
 
 ## Reviewer participation
 
