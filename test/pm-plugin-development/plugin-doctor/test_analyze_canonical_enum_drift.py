@@ -595,13 +595,21 @@ def test_coverage_over_an_empty_population_reports_zero_not_a_division_error():
 
 
 def test_a_flag_with_no_choices_is_a_different_cause_from_an_unresolvable_one(tmp_path):
-    """The two fail-closed skips carry OPPOSITE risk and are reported apart.
+    """The two fail-closed skips carry DIFFERENT risk and are reported apart.
 
-    A flag declaring no ``choices=`` makes no enum claim the script can
-    contradict — nothing to check. A ``choices=`` the resolver cannot reduce IS
-    an unverified claim. Merged into one bucket a reader cannot tell whether a
-    large unresolved share is mostly harmless or mostly blind, which is the
-    declared-coverage figure failing at the job it exists for.
+    ``no_choices_declared`` means this rule's authority is established as ABSENT:
+    the parser was fully modelled and declares no ``choices=`` for the flag.
+    ``choices_unresolvable`` means a real enum claim was made and went
+    unverified. Only the second is a blind spot, which is why the census sums
+    ``blind_spots`` over every cause except the first.
+
+    ⛔ Established-absent is NOT harmless, and this docstring said so twice —
+    "makes no enum claim the script can contradict, nothing to check" and
+    "mostly harmless" — both being the exact phrasings the analyzer's own ⛔
+    forbids. A flag in that bucket is routinely constrained somewhere this rule
+    does not read: ``untrusted-ingestion validate --schema`` rejects an unknown
+    value and names the four it accepts. What the bucket licenses is "this rule
+    has no oracle here", never "nothing constrains this flag".
     """
     script = '''\
 import argparse
@@ -702,10 +710,20 @@ def test_a_parser_built_by_an_imported_helper_is_a_blind_spot_not_nothing_to_che
 
 
 def test_a_modelled_parser_with_no_choices_is_not_a_blind_spot(tmp_path):
-    """The control: a flag the modelled parser declares free-form has nothing to check.
+    """The control: an established-absent authority is not counted as a blind spot.
 
-    Without this the split above would be indistinguishable from calling every
-    unresolved site a blind spot.
+    The fixture's parser IS fully modelled and declares no ``choices=`` for the
+    flag, so this rule's authority over it is established as absent rather than
+    merely unread — the one cause ``blind_spots`` excludes. Without this control
+    the split above would be indistinguishable from calling every unresolved site
+    a blind spot.
+
+    Phrased as "declares free-form … nothing to check" until round 8. That is
+    true of THIS fixture's flag and false as a description of the bucket, which
+    is why the analyzer's ⛔ forbids both words: a live member of it
+    (``untrusted-ingestion validate --schema``) rejects unknown values in its
+    handler. A control's docstring should describe the property it controls for,
+    not generalise from its own fixture.
     """
     _write_bundle(tmp_path, doc_enum='x|y|z', script_body=_SCRIPT_LITERAL_CHOICES, flag='freeform')
 

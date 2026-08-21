@@ -147,8 +147,10 @@ class RuleRunner:
         same ``rule_summaries`` labels in the same positions (including the
         ``provides-method-table-drift`` / ``literal-count-drift`` rule-name
         labels and the two-entry markdown-mirror split), and the same
-        scoped-vs-unscoped manage-invocation branch. Two summaries additionally
-        carry ``population_size`` (see :func:`emit`).
+        scoped-vs-unscoped manage-invocation branch. Three summaries additionally
+        carry ``population_size`` (see :func:`emit`) — re-count them here rather
+        than carrying this number forward; it said "two" for a round after the
+        third was wired in this same file.
         """
         root = self.context.marketplace_root
         cache = self.context.ast_cache

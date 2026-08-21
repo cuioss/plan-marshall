@@ -41,9 +41,14 @@ below; the four that most often need stating up front are:
 
 - the owning script file is missing or unparseable
   (``notation_unresolved`` / ``script_unparseable``);
-- the documented flag is never declared with ``choices=`` (a free-form flag such
-  as ``--promoted`` documented as ``{true|false}`` has no ``choices=`` authority
-  to compare against) — ``no_choices_declared``;
+- the documented flag is never declared with ``choices=`` on a parser this walk
+  fully modelled — ``no_choices_declared``. Its two live members are
+  ``untrusted-ingestion validate --schema`` and ``manage-config finalize-steps
+  set-lane --lane``; re-derive them rather than copying this pair forward. ⛔ Do
+  NOT reach for ``--promoted {true|false}`` as the example: it reads as one, and
+  it is filed under ``authority_incomplete``. It was named here for a round
+  after the census moved it, which is the failure the ⛔ below was written to
+  stop;
 - the same ``(subcommand_path, flag)`` is declared TWICE with conflicting sets
   (ambiguous — there is no single authority to compare against), which includes
   a script mixing the declarative dict-spec and an explicit ``add_argument``
@@ -225,12 +230,18 @@ refusal to invent an authority:
   publishes no figure for it is the exact failure this census exists to prevent.
 * ``choices_unresolvable`` — the parser was modelled and declares a ``choices=``
   this resolver cannot reduce to a concrete member set. A blind spot: a real enum
-  claim went unverified. The structural case is a ``choices=`` naming a constant
-  IMPORTED from another module — resolving it would need a cross-module parser
-  walk (an import hop), deliberately out of scope; the resolver follows same-file
-  constants, same-file aliases, sequence wrappers, and the declarative dict-spec
-  form, and stops there. A conflicting re-declaration of the same ``(path, flag)``
-  also lands here, by design.
+  claim went unverified. ⛔ An imported constant is NOT the case: the resolver
+  follows ``_import_sources`` into the defining module, including a re-export
+  hop (see :class:`_Resolver`), and that hop is what resolves
+  ``manage-lessons add --category`` from ``constants.LESSON_CATEGORIES``. This
+  bullet claimed the opposite — "an import hop, deliberately out of scope … and
+  stops there" — while ``rule-provenance.md`` claimed the reverse, so the two
+  shipped documents contradicted each other and execution refuted this one.
+  The live causes, re-derived over the seven members, are: a list of ``Name``
+  elements (``choices=[KIND_BUILD, KIND_CHANGE, KIND_JOB]``), a set-union
+  ``BinOp`` (``A | B``), and a function CALL (``_registry_bot_kinds()``) — a
+  value that does not exist until run time. A conflicting re-declaration of the
+  same ``(path, flag)`` also lands here, by design.
 
 The actionable number is published rather than left to a reader who would have
 to know which causes count: on a finding as
@@ -818,9 +829,13 @@ def _authority_by_subcommand_flag(
     another's — is never conflated (the ``manage-tasks`` ``--status`` case:
     ``list`` declares them, ``update`` does not and validates in its handler
     instead, so this rule has no authority to compare against there). A value of ``None`` means the ``choices=`` could not be resolved to a
-    concrete set (fail-closed); an entry is absent when the flag has no
-    ``choices=`` on that parser, which the caller treats as "no enum claim to
-    check". A conflicting re-declaration of the same ``(path, flag)`` resolves to
+    concrete set (fail-closed); an entry is ABSENT in four distinct states, which this
+    map cannot tell apart: the script was unparseable, the parser surface was
+    never modelled, the module's authority could not be fully read, or the flag
+    genuinely declares no ``choices=``. The caller separates them — that
+    separation is the whole point of the cause census — and treats NONE of them
+    as "no enum claim to check", the reading this sentence carried and which is
+    the exact defect the census was built to remove. A conflicting re-declaration of the same ``(path, flag)`` resolves to
     ``None``.
     """
     parser_paths = _build_parser_path_sets(tree)

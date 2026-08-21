@@ -291,7 +291,7 @@ def test_ast_cache_parses_each_file_once():
 # =============================================================================
 
 # The rules that derive a population and can report its size on a CLEAN run.
-# Both take a ``*_with_population`` entry point on the runner, so the figure
+# All three take a ``*_with_population`` entry point on the runner, so the figure
 # comes from the same derivation the findings did.
 POPULATION_PUBLISHING_LABELS = [
     'analyze_thinking_directive_in_workflow_docs',
@@ -316,7 +316,7 @@ def _real_tree_summaries():
 
 
 def test_population_publishing_rules_report_their_size_on_a_clean_tree():
-    """Over the REAL tree — clean for both rules — the examined size is published.
+    """Over the REAL tree — clean for every one of them — the examined size is published.
 
     The clean case is the one that matters: ``details.population_size`` rides on
     a FINDING, so before this the size appeared nowhere on a passing gate, and a
