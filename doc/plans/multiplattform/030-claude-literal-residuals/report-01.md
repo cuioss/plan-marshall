@@ -184,23 +184,54 @@ satisfied — see F30.
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD -- '*.py'` is **non-empty** — 19 Python files: production
-code in the `plan-marshall` and `pm-plugin-development` bundles across the `extension-api`,
-`manage-providers`, `plan-retrospective`, `platform-runtime`, `tools-permission-doctor`,
-`tools-permission-fix` and `tools-marketplace-inventory` skills, plus six test modules. The gate
-therefore applies.
+`git diff --name-only $(git merge-base origin/main HEAD) HEAD -- '*.py'` is **non-empty** — **26
+Python files**: 14 production modules across the `extension-api`, `manage-providers`,
+`plan-retrospective`, `platform-runtime`, `tools-permission-doctor`, `tools-permission-fix` and
+`tools-marketplace-inventory` skills of the `plan-marshall` and `pm-plugin-development` bundles,
+plus 12 test modules. The gate therefore applies.
 
-`./pw verify` was run from the repository root over the whole tree and read from the streamed tool
-output rather than the exit code. **The figures below are re-derived at the current head**, not
-carried forward: verification round 2 caught an earlier version of this section quoting a run that
-predated the round-1 fix commit, which is how a gate figure goes quietly stale.
+**Every figure below is re-derived at the head it names**, not carried forward. Two separate
+corrections forced that discipline: verification round 2 caught an earlier version of this section
+quoting a run that predated the round-1 fix commit, and the review caught the section still saying
+19 files after the count had grown to 26.
 
-- quality-gate — `mypy … Success: no issues found in 416 source files`; `ruff … All checks passed!`;
-  `SPDX-header check passed`; plugin-doctor `status: pass`, `total_issues: 0`.
-- test-compile — no issues found over 935 source files (one `no-any-return` in a new test was found
-  and fixed here; the narrower `quality-gate` + `module-tests` pair does **not** run this step, which
-  is why the full `verify` was used).
-- module-tests — **21381 passed, 14 skipped**.
+**The gate is read from the exit status, not from the streamed output.** An earlier version of this
+section said the opposite, in the report's own words, and the reviewer was right to call it a
+defect rather than a disclosure. It matters concretely here, not just in principle: `./pw verify`
+chains `quality-gate` → `test-compile` → `module-tests`, so a reader scanning a streamed log for
+`passed` sees the pytest line whether or not an earlier step failed — which is not hypothetical,
+since a run during this task printed `verify: quality-gate failed` above a pytest summary that
+looked identical either way.
+
+Run as `./pw verify; echo "PW_VERIFY_EXIT=$?"`:
+
+```
+PW_VERIFY_EXIT=0    HEAD=a0210d9
+Success: no issues found in 416 source files
+Success: no issues found in 938 source files
+================ 21426 passed, 14 skipped in 441.62s (0:07:21) =================
+```
+
+- quality-gate — mypy(production) `Success: no issues found in 416 source files`; `ruff … All checks
+  passed!`; `SPDX-header check passed`; plugin-doctor `status: pass`, `total_issues: 0`, `issues[0]`.
+- test-compile — no issues over **938** source files (the narrower `quality-gate` + `module-tests`
+  pair does **not** run this step, which is why the full `verify` was used; it caught a
+  `no-any-return` in a new test earlier in the run).
+- module-tests — **21426 passed, 14 skipped** in 7m21s.
+
+Two honesty notes on that block, since a gate record that hides its own caveats is the failure this
+section exists to avoid. First, the exit status alone is **not sufficient** in this repository:
+`CLAUDE.md` records that the build wrapper exits 0 even on failure for the architecture-resolved
+envelope, so the result's `status`/`errors[]` still have to be read — both are quoted above rather
+than either. Second, the run was launched at `7727727` and reports `HEAD=a0210d9`, because a
+**documentation-only** commit landed while it was executing; no source file differs between those
+two commits, so the figures describe the code at both.
+
+**CI agrees, on the exact pushed head.** `verify / verify` ran to completion on `7727727` and
+concluded `success`, alongside `verify / gate`, `verify / conclusion`, `dependency-review` and
+`generate-check`. On `a0210d9` the heavy build is skipped by the workflow's `skip-on-docs-only`
+footprint gate — by design, since that commit changes only this report — so `7727727` remains the
+authoritative CI run for the code.
 
 `git status --porcelain` was empty before each commit; no `uv.lock` churn reached a commit, and paths
 were staged explicitly rather than with `git add -A`.
