@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import claude_runtime
+from runtime_base import PERMISSION_FIX_OPERATIONS
 import pytest
 from opencode_runtime import OpenCodeRuntime
 from toon_parser import parse_toon
@@ -395,9 +396,19 @@ class TestPermissionFixProtectPath:
         rejecting one OpenCode accepts would be the same gap mirrored. The
         operation list is spelled out rather than read from either runtime's own
         ``valid_ops``, so a value dropped from both still fails here.
+
+        Deriving it from ``PERMISSION_FIX_OPERATIONS`` instead would forfeit
+        exactly that: shrinking the published set would silently shrink this
+        sweep. But a literal alone goes stale the other way, missing an
+        operation added to the set. So the literal stays as the independent
+        oracle AND is asserted equal to the published tuple — a divergence in
+        either direction fails, rather than one of them passing quietly.
         """
         self._pin_scope_path(monkeypatch, tmp_path / 'settings.json')
         operations = ('normalize', 'add', 'remove', 'ensure', 'consolidate', 'protect-path')
+        assert operations == PERMISSION_FIX_OPERATIONS, (
+            'the published operation set and this sweep have diverged; update both deliberately'
+        )
 
         for operation in operations:
             claude = _parse(

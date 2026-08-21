@@ -16,9 +16,16 @@ machine.
 conftest.py sets up PYTHONPATH so the cross-skill imports resolve without manual
 sys.path manipulation.
 """
+import json
 from pathlib import Path
 
 import claude_runtime
+from toon_parser import parse_toon
+
+
+def _parse(raw: str) -> dict:
+    """Parse a runtime's TOON response."""
+    return parse_toon(raw)
 
 # =============================================================================
 # The settings read path
@@ -142,3 +149,61 @@ class TestSettingsShapeIsMalformedToo:
         loaded = self._load(tmp_path, '{"permissions": {"allow": ["Read(a)"]}}')
         assert 'error' not in loaded
         assert loaded['permissions'] == {'allow': ['Read(a)'], 'deny': [], 'ask': []}
+
+
+class TestReadOnlyOperationsUseTheReadSelector:
+    """An audit must inspect the file whose entries actually take effect.
+
+    The write selector prefers the shared `settings.json`; the read selector
+    prefers an operator's `settings.local.json`. With both present they name
+    different files, so a read-side operation on the write selector reports on
+    rules the operator's own settings override — the audit describing a
+    configuration that is not in force.
+    """
+
+    def _project(self, tmp_path: Path, shared: list, local: list) -> Path:
+        claude_dir = tmp_path / '.claude'
+        claude_dir.mkdir()
+        (claude_dir / 'settings.json').write_text(
+            json.dumps({'permissions': {'allow': shared, 'deny': [], 'ask': []}}),
+            encoding='utf-8',
+        )
+        (claude_dir / 'settings.local.json').write_text(
+            json.dumps({'permissions': {'allow': local, 'deny': [], 'ask': []}}),
+            encoding='utf-8',
+        )
+        return tmp_path
+
+    def test_analyze_reads_the_effective_file_not_the_shared_one(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """`Bash(*)` lives only in the LOCAL file, so only a read-side audit sees it."""
+        project = self._project(tmp_path, shared=['Read(.plan/**)'], local=['Bash(*)'])
+        monkeypatch.chdir(project)
+
+        result = _parse(
+            claude_runtime.ClaudeRuntime().permission_analyze('project', ['suspicious'], None)
+        )
+
+        assert result['status'] == 'success'
+        findings = [f for f in result.get('findings', []) if f['check'] == 'suspicious']
+        assert any('Bash(*)' in f['details'] for f in findings), (
+            'the audit read the shared file and missed the local rule'
+        )
+
+    def test_web_analyze_reads_the_effective_file_too(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """The same rule holds for the WebFetch-domain audit."""
+        project = self._project(
+            tmp_path,
+            shared=['WebFetch(domain:shared.example)'],
+            local=['WebFetch(domain:local.example)'],
+        )
+        monkeypatch.chdir(project)
+
+        result = _parse(claude_runtime.ClaudeRuntime().permission_web_analyze('project'))
+
+        assert result['status'] == 'success'
+        rendered = str(result)
+        assert 'local.example' in rendered

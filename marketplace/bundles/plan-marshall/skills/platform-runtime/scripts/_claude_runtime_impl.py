@@ -985,7 +985,11 @@ class ClaudeRuntime(Runtime):
 
         # Load settings files.
         global_path = claude_runtime._claude_global_settings_path()
-        project_path = claude_runtime._claude_project_settings_path()
+        # The READ selector: this operation audits, so it must inspect the file
+        # whose entries actually take effect. The write selector prefers the
+        # shared file, which would make the audit report on rules an operator's
+        # own settings.local.json overrides.
+        project_path = claude_runtime._claude_project_settings_read_path()
         global_settings = claude_runtime._load_settings(global_path) if scope in ("global", "both") else {}
         project_settings = claude_runtime._load_settings(project_path) if scope in ("project", "both") else {}
 
@@ -1429,7 +1433,10 @@ class ClaudeRuntime(Runtime):
             global_allow = gs.get("permissions", {}).get("allow", [])
 
         if scope in ("project", "both"):
-            ps = claude_runtime._load_settings(claude_runtime._claude_project_settings_path())
+            # Read-side, so the read selector — same reason as permission_analyze.
+            ps = claude_runtime._load_settings(
+                claude_runtime._claude_project_settings_read_path()
+            )
             project_allow = ps.get("permissions", {}).get("allow", [])
 
         global_domains = _extract_webfetch_domains(global_allow)
@@ -1905,13 +1912,20 @@ class ClaudeRuntime(Runtime):
         all_healthy = True
 
         if "permissions" in checks_to_run:
-            project_settings = claude_runtime._claude_project_settings_path()
+            # Read-side, so the read selector — uniform with the other audits.
+            # The two selectors agree on this particular boolean (either answers
+            # "some project settings file exists"), but a reader should not have
+            # to re-derive that to know the rule has no exceptions.
+            project_settings = claude_runtime._claude_project_settings_read_path()
             healthy = project_settings.is_file()
+            # Name the file actually checked. This reported "settings.local.json"
+            # unconditionally, so on a project carrying only the shared file the
+            # detail named a file the check had not looked at.
             detail = (
-                f"settings.local.json present; allow array has "
+                f"{project_settings.name} present; allow array has "
                 f"{len(claude_runtime._load_settings(project_settings).get('permissions', {}).get('allow', []))} entries"
                 if healthy
-                else "settings.local.json not found; run permission configure"
+                else f"{project_settings.name} not found; run permission configure"
             )
             results.append({"check": "permissions", "healthy": healthy, "detail": detail})
             if not healthy:

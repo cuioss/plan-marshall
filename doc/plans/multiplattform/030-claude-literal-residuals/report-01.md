@@ -837,6 +837,36 @@ and each fix closed only the instance in front of it. A fail-open is a *class*, 
 finds the whole class costs one command — which is worth more than the three lenses that found
 members of it one at a time.
 
+### The read selector I added and then did not use
+
+The second review's merge-risk banner also said read-only audits "can inspect the wrong effective
+settings file". It was right, and the shape is this run's own:
+
+`_claude_project_settings_read_path` was added by this change, documented in its own docstring as
+"the read-side twin", and given tests. Then **both read-only operations kept using the write
+selector** — `permission_analyze` and `permission_web_analyze`. The write selector prefers the
+shared `settings.json`; the read selector prefers an operator's `settings.local.json`. With both
+files present they name different files, so an audit reported on rules the operator's own settings
+override: a description of a configuration that is not in force.
+
+Both now route through the read selector, and the sweep across every remaining
+`_claude_project_settings_path` call turned up a third site — `health_check` — carrying a second
+defect nobody had reported: its detail string said `settings.local.json present` unconditionally,
+while the selector could return `settings.json`, so on a project carrying only the shared file the
+health report named a file the check had not looked at. It now names the file it actually read.
+
+Two integration tests cover the conflicting-files case the reviewer asked for, and both were
+checked against the old wiring before being kept: each fails when the operation is put back on the
+write selector. Five existing tests failed on the change and were repointed at the read selector
+rather than made to patch both — patching both would have made them pass under either wiring, which
+is how a regression gets through.
+
+**This is the same half-migration shape a third time.** Round 9 found `extension_discovery` migrated
+while its sibling was not; the second review found the multi-root loop's precedence disagreeing with
+the same sibling; this is a selector added, documented and tested while its two callers stayed on the
+old one. Adding the right helper is not the migration — the migration is the call sites, and the
+helper's existence is what makes the omission invisible.
+
 ### A false sentence that survived nine rounds and a review
 
 Worth recording on its own, because it is the clearest instance of this run's characteristic residue
