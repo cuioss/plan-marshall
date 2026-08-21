@@ -126,6 +126,40 @@ wrong-edge half is unreachable).
 | `unresolved-symbol` | 6094 | 293 |
 | Wall-clock | 169.2 s | 83.4 s |
 
+⛔ **Both columns are ONE paired measurement, on the pre-rebase tree** — base `3083553`, the left
+column with this branch's D3 change absent and the right column with it applied. They are comparable
+to each other and to nothing else. An earlier revision of this section carried them with no such
+stamp, and the rebase onto `a34819d` (PR #1314, +204 test modules) then made the right-hand column
+read as current when it was not — round 4's W7.
+
+**Re-measured at HEAD, after the rebase.** Run twice, byte-identical on every figure but wall-clock:
+
+| Metric | After G1 + G13 (pre-rebase) | At HEAD (post-rebase, ×2) |
+|---|---|---|
+| `files_scanned` | 1398 | **1602** |
+| References | 3189 | **3549** |
+| **Cross-bundle references** | 72 | **72** |
+| **Module edges** | 10 | **10** |
+| References targeting `.venv/**` | 0 | **0** |
+| `unattributable-endpoint` suppressed | 1879 | **2239** |
+| `out-of-workspace` | 12965 | **13839** |
+| `vendor-tree` | 422 | **0** |
+| `unresolved-symbol` | 293 | **751** |
+| Wall-clock | 83.4 s | **64.8 s / 63.4 s** |
+
+The three figures D3's claims actually rest on — **72** cross-bundle references, **10** module edges
+(all still `pm-* → plan-marshall`), and **0** references targeting `.venv/**` — are unchanged. The
+file-count-driven figures moved with #1314's 204 added test modules, as expected.
+
+⚠ **Two figures moved further than the file count explains, and the cause is NOT established:**
+`vendor-tree` fell 422 → 0 while `unresolved-symbol` rose 293 → 751. The magnitudes nearly offset,
+which is consistent with the ~422 positions that previously resolved *into* a vendored tree now
+failing to resolve at all — but that is a reading of two numbers, not a measurement, and it is
+recorded as an open observation rather than an explanation. It does not touch this deliverable's
+verdict: the vendored trees are present on this clone (`.venv` 923 `.py` files, `.pyprojectx` 817),
+the `.venv`-targeting count is **0** either way, and both the exclusion and its suppression note are
+pinned by tests that do not depend on this repository's contents.
+
 The baseline showed zero cross-bundle edges, so the premise held and the **G1 half proceeded** rather
 than halting.
 
@@ -269,8 +303,8 @@ G10, G25, G12 and the three handed-up proposals are recorded in
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD -- '*.py'` → **24 files**. Python changed, so the full
-`./pw verify` ran. Working tree confirmed clean (`git status --porcelain` empty) before the diff was
+`git diff --name-only origin/main...HEAD -- '*.py'` → **24 files** (re-derived at `b364322`). Python
+changed, so the full `./pw verify` ran. Working tree confirmed clean (`git status --porcelain` empty) before the diff was
 taken, so the gate saw all the work.
 
 **Result: passed.** All three sub-steps ran: quality-gate (`ruff … All checks passed!`,
@@ -286,10 +320,12 @@ stale-figure defect this report warns about elsewhere, committed here.
 |---|---|
 | `a230637` | 21414 passed, 14 skipped, 583.66 s |
 | `f5bc086` (independently re-run by the round-3 verifier) | 21419 passed, 14 skipped, 507.80 s |
-| **`be54037`, the REBASED tree — the figure that governs** | **21419 passed, 14 skipped, 412.44 s, `verify: SUCCESS`** |
+| `be54037`, the REBASED tree | 21419 passed, 14 skipped, 412.44 s, `verify: SUCCESS` |
+| **`b364322`, round 4's fixes — the figure that governs** | **21419 passed, 14 skipped, 385.38 s, `verify: SUCCESS`** |
 
 The figure that governs is the last, because it is the only one measured on the tree that actually
-lands. All three sub-steps ran on it: quality-gate (`ruff … All checks passed!`, `mypy … Success: no
+lands. Round 4's commit touches production Python (one docstring in `lsp_client.py`), so the gate was
+re-run rather than carried forward — the stale-figure defect this section already records once. All three sub-steps ran on it: quality-gate (`ruff … All checks passed!`, `mypy … Success: no
 issues found in 416 source files`, `SPDX-header check passed`), test-compile, and module-tests.
 
 ⚠ **The first `./pw verify` FAILED**, and the failure is worth recording because it is exactly the
@@ -385,9 +421,11 @@ surface". Both halves were wrong** — the count was stale, and files outside th
 present when it was written. Verification item 5 requires every such file **accounted for**, not
 absent. Re-derived at the moment of this claim:
 
-`git diff --name-only origin/main...HEAD` → **50 files** (re-derived at `ec3a919`; `report-01.md` is
-already in that set, so committing this section does not move it). **Seven fall outside** the plan's
-Expected surface, each for a stated reason:
+`git diff --name-only origin/main...HEAD` → **55 files** (re-derived at `b364322`, the round-4 fix
+commit; `report-01.md` is already in that set, so committing this section does not move it).
+**Twelve fall outside** the plan's Expected surface, each for a stated reason — the first seven from
+the deliverables, the last five added by round 4's sweep-and-count over claims this run had corrected
+at only some of their sites:
 
 | File | Why it was touched |
 |---|---|
@@ -398,12 +436,22 @@ Expected surface, each for a stated reason:
 | `.../manage-run-config/standards/run-config-standard.md` | D6/G9 made its definition of `configured` **false**. |
 | `test/plan-marshall/extension-api/test_derivation_resolver_roster.py` | D6/G9's *Done when* requires a test **on each side** of the store; this is one side. |
 | `test/plan-marshall/manage-run-config/test_run_config_derivation_resolver.py` | The other side. |
+| `doc/concepts/code-intelligence.adoc` | Round 4 / sweep: it restated the retired ~97 % false-positive premise as "dominated by", which D5's re-measurement **inverted**. |
+| `doc/developer/corpus-language-server-protocol.adoc` | Round 4 / W1: the same retired premise, at the surface a *developer* reads. |
+| `.../extension-api/standards/module-discovery.md` | Round 4 / W6: D4 made its Python dependency-string contract (PEP 621 only) **false**. |
+| `.../manage-architecture/standards/architecture-persistence.md` | Round 4 / sweep: the same claim as W6, third consumer kind. |
+| `.../marshall-steward/references/menu-derivation-resolvers.md` | Round 4 / W2: D6 made its definition of `configured` **false**, at the agent-facing menu that renders the field. |
 
-The first five are the plan's own carve-in: § Out of scope states this plan changes *"the
-documentation that is **inseparable from a behaviour change it lands**"*, and a statement this run's
-change renders false is exactly that. The last two are named by a *Done when* clause. Nothing else
-lies outside; the plan's own directory carries `plan.md`, `proposals.md` and this report, as the
+All of them except the two tests are the plan's own carve-in: § Out of scope states this plan changes
+*"the documentation that is **inseparable from a behaviour change it lands**"*, and a statement this
+run's change renders false is exactly that. The two tests are named by a *Done when* clause. Nothing
+else lies outside; the plan's own directory carries `plan.md`, `proposals.md` and this report, as the
 Expected surface anticipates.
+
+⚠ **Five of the twelve were reached only by round 4**, and every one of them was already false before
+this branch touched anything adjacent — they state a claim this run corrected elsewhere. That is the
+n−1-of-n shape the contract's sweep-and-count rule names, and it is why the outside-surface count grew
+in a round that fixed no code.
 
 ## Gap coverage
 
@@ -565,7 +613,38 @@ sweep did.
 | O2 | `_report_omitted`'s notification names the bare script rather than the executor form | Incomplete, not false |
 | O3 | `lsp_client.py`'s module docstring enumerates two outcomes; `unknown` is a third, unnamed **there** (it is named in `SKILL.md`, the user page and the code) | Incomplete, not false |
 | O4 | The ambiguity guard drops a reference whenever the **target basename** is ambiguous, even for a dotted or relative import to a uniquely-located file | **Bounded:** 0 hits on this repository, always counted under `ambiguous-module-name`, and it is the conservative direction the plan's ⚠ mandates. Cannot change this deliverable's verdict |
-| O5 | The D3 "after" figures drift at HEAD (`files_scanned` 1400 vs 1398, references 3194 vs 3189, wall-clock 86.2 s vs 83.4 s) | Explained: ~2 test files added after the measurement commit. The report frames these as measurements taken at a point, which is what they are |
+| O5 | The D3 "after" figures drift at HEAD (`files_scanned` 1400 vs 1398, references 3194 vs 3189, wall-clock 86.2 s vs 83.4 s) | **Overtaken by the rebase, and both the figures and the explanation given here went false with it** — the drift is not "~2 test files" but PR #1314's 204 added test modules. Round 4 caught it (W7/W8); § D3 now carries the stamped pre-rebase pair plus a re-measurement at HEAD |
+
+### Round 4 — plan verifier
+
+The verifier re-checked all ten round-3 fixes site by site, re-resolved every one of the 15 SHA
+citations the rebase forced this report to re-derive, and re-ran the `pm-plugin-development` suite
+(**2621 passed / 0 skipped**). Confirmed: all ten V-fixes landed; no retired SHA survives anywhere in
+the report; **no vacuous guard**; all six deliverables complete with every ⛔ and ⚠ in the plan
+honoured.
+
+**Nine findings — eight of them false statements (condition A), and four of those the *same claim this
+run had already fixed at a sibling site*.** That n−1-of-n shape is now the run's dominant defect
+class: rounds 2, 3 and 4 each produced it, and each time the missed site was reached by a *different*
+kind of consumer than the ones fixed. All nine closed in this commit.
+
+| # | Finding | Disposition |
+|---|---|---|
+| W1 | `doc/developer/corpus-language-server-protocol.adoc:92` — a **fifth** site of the retired ~97 % false-positive premise. The run fixed four, then V7 fixed a fifth; this is the sixth surface and the one a *developer* reads | **fixed** — the decision (withheld) is kept, the retired figure is marked retired, and the open question is xref'd to the skill rather than restated |
+| W2 | `menu-derivation-resolvers.md:51` still defined `configured` as "whether an explicit entry exists" — the pre-D6 definition, at the **agent-facing menu** that `extension_api.py`'s own new comment names by hand as the reason the definition was tightened | **fixed** — an explicit **mapping** entry, with the malformed-entry case stated |
+| W3 | `doc/user/corpus-language-server.adoc:211` — "`query` separates the other four" is contradicted by its own table two rows later: cause 3 is "Not separately signalled" | **fixed** — three of four, with the fourth named and its bound stated |
+| W4 | `doc/user/lsp-code-intelligence.adoc`'s NOTE said `preflight` "reports the same situations" over a table that gained an `unknown` row in this branch. V10 fixed the `lsp-client/SKILL.md` sibling of exactly this sentence and left the user page | **fixed** — the note now names the configuration states it does report and says `preflight` never returns `unknown` |
+| W5 | Inside **V6's own new sentence** in `execute-task/SKILL.md`: "nothing on disk changed in either case" is false for `apply_failed` when the rollback itself fails — the very case D2 added `restore_error` for | **fixed**, and the same omission fixed at its three siblings (`lsp-client/SKILL.md`, `lsp_client.py`'s docstring, the user page), which the verifier did not name |
+| W6 | `extension-api/standards/module-discovery.md:300` still described the Python dependency string as PEP-621-only after D4 taught the discoverer Poetry and `setup.cfg` | **fixed**, and the same claim fixed at `manage-architecture/standards/architecture-persistence.md:167` — a site the verifier did not name, and the *third* consumer kind of this one sentence |
+| W7 | § D3's baseline table went stale in the rebase (`files_scanned`, references, `out-of-workspace`, `vendor-tree`, wall-clock), and carried no stamp saying which tree it was measured on | **fixed** — the pair is stamped as one measurement on the pre-rebase tree, and re-measured at HEAD |
+| W8 | § Findings O5's numbers **and** its explanation both went false in the rebase: the cause is #1314's 204 added test modules, not "~2 test files" | **fixed** — the row records that it was overtaken, rather than being quietly restated |
+| W9 | The new fail-closed paragraph in `lsp-client/SKILL.md` added a **`./pw verify`** instruction — this repository's wrapper — to a skill that ships to consumer projects of any ecosystem. The verifier offered a bound and recommended the fix instead | **fixed** — "the project's architecture-resolved `verify` command". ⚠ The two pre-existing sites and the module docstring (round 3's O1) are **untouched**: they predate this branch and are owned by `560-documentation-surface-truthfulness`. This branch no longer *adds* to them |
+
+⚠ **What round 4 says about this run.** Four of its eight condition-A findings (W1, W2, W4, W6) are
+sibling sites of claims this run had already corrected, and two more (W5 inside V6's sentence, W8
+inside the round-3 record) are defects introduced by the *previous round's own fixes*. The lesson is
+recorded in § What have we learned rather than repaired by one more sweep: a fix to a false statement
+is not complete until the claim — not the file — has been swept.
 
 ## Reviewer participation
 
