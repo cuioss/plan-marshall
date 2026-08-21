@@ -187,13 +187,17 @@ The id set was re-derived from the seven source `gaps.md` files rather than from
 
 **Full `./pw verify` on the final head** — all three sub-steps, each confirmed separately rather than from the summary line:
 
-| Sub-step | Result |
-|---|---|
-| quality-gate | `mypy` **Success: no issues found in 416 source files**; `ruff` **All checks passed!**; **SPDX-header check passed**; `issues[0]` |
-| test-compile | `mypy test` **Success: no issues found in 783 source files** |
-| module-tests | **21353 passed, 14 skipped** in 535.49s |
+It was run **twice** — once on the pre-rebase head, and again on the rebased tree, because PR #1314 rewrote 280 test files beneath it and a green run on the old base says nothing about the new one.
 
-`=== verify: SUCCESS ===`.
+| Sub-step | Pre-rebase | **Rebased onto #1314 (the head that ships)** |
+|---|---|---|
+| quality-gate | mypy **416** files clean; ruff **All checks passed!**; **SPDX passed**; `issues[0]` | mypy **416** files clean; ruff **All checks passed!**; **SPDX passed**; `issues[0]` |
+| test-compile | `mypy test` clean, **783** source files | `mypy test` clean, **934** source files |
+| module-tests | **21353 passed, 14 skipped** (535.49s) | **21353 passed, 14 skipped** (421.50s) |
+
+`=== verify: SUCCESS ===` both times. The authoritative figures are the rebased column.
+
+⭐ **Two of those numbers corroborate #1314's own central claim, and are recorded because they could have come back otherwise.** `test-compile` rises **783 → 934** (+151), consistent with that PR splitting 66 over-budget modules into 199 test modules plus 64 fixture modules. Meanwhile `module-tests` is **identical at 21353** across a +50,276/−42,870 restructure — which is what a *pure move* produces and what a lossy one would not. That is corroboration of a sibling PR's claim, not of this plan's; it is stated as the observation it is.
 
 ⛔ **`test-compile` is why the narrower calls are not a substitute.** Neither `quality-gate` nor `module-tests` type-checks the test tree, and a test-only type error is exactly what would pass locally and fail CI. It was run.
 
