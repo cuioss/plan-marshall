@@ -669,7 +669,7 @@ band. Waiting it out would have burned 45 minutes against a shared allowance for
 nothing. Derive the delay from the clock at the moment of arming, not from when
 the wake's context was assembled.
 
-## CodeRabbit review — 18 findings, all dispositioned
+## CodeRabbit review — 19 findings, all dispositioned
 
 ⛔ **The review found this plan's own defect class in the code this plan
 produced, four times over.** That is the single most important fact in this
@@ -696,6 +696,12 @@ tree it audits while committing the same class in its own output.
 | C16 | The per-column docstring contradicted the row-level zero rule. | **Fixed** — "nonzero measured cells", with the row-level qualifier stated. |
 | C17 | Legacy-absent and explicit `unmeasured` are provenance cases reported through ONE output, not two reader buckets. | **Fixed.** |
 | C18 | Two of three assertions were current-census facts labelled invariants; an improvement would redden them. | **Fixed.** The identity is marked as the invariant; the other two are marked current-census tripwires, to be DELETED rather than "fixed" when a real improvement falsifies them. |
+
+| C19 | `plan.md:364-366` — the D7 acceptance criterion required `loader_selected_version` to contain "no branch whose outcome is **independent of** the marker", while line 331 of the same item requires that "the marker is **never consulted**". Self-contradictory: if the marker is never read, every branch is independent of it, so the criterion forbade the design it specified. | **Fixed in the PLAN**, which this run otherwise treats as read-only input. The correction is a single word (`independent of` → `depends on`) and it makes the criterion match the item's own prose and the shipped `max(pool, key=...)` implementation, which consults no marker. Recorded rather than applied silently, because editing the plan mid-execution is not routine: a run that quietly rewrites its own acceptance criteria can satisfy anything. |
+
+**All nineteen threads carry a substantive reply, and CodeRabbit resolved every
+one it could.** Its own acknowledgements are on the threads; two remain open by
+design — the follow-ups below — and it offered to file issues for both.
 
 **Two findings were raised rather than taken (C4, C7).** Both need changes wider
 than the note they were filed against — one threads flag arity through the
