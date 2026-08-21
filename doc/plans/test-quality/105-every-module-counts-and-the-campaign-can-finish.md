@@ -225,37 +225,58 @@ the ~108 that record a judgement the current rule set does not ask about.
    was deliberately left; and no `report-NN.md`, `verification.md` or `gaps.md` has been edited.
 
 
-7. **D7 — Clear the suppressions whose cause is gone, and refuse to clear the ones whose cause is not.**
-   The tree carries about **1,130** `noqa` directives; about **691** suppress nothing. They are not one
-   population and a bare `ruff --fix` is wrong for a third of them:
+7. **D7 — Remove the suppressions by removing their causes, not by deleting the comments.**
+   The tree carries about **1,130** `noqa` directives. Stripping every one from a scratch copy and
+   re-running `ruff` yields **1,024** violations in exactly four codes — and the four fall into two
+   groups that need **opposite** treatment. Deleting comments one file at a time treats them as one
+   group, which is why that approach is not taken here.
 
-   | Kind | ~Count | What it is | Disposition |
+   | Code | Count | Cause | Remedy |
    |---|---:|---|---|
-   | Shadowed | 364 | a line-level `# noqa: E402` in a file whose header already says `# ruff: noqa: I001, E402` | **delete the line-level one**; the file header already covers it |
-   | Stale | 219 | rule enabled, nothing shadowing, code no longer triggers it | **delete** |
-   | Non-enabled | 108 | names a rule this project does not run — `S603`, `BLE001`, `PLC0415`, `ANN*`, `D*` | ⛔ **do not delete** — see below |
+   | `F811` | 362 | a fixture is imported, then named as a test's parameter — ruff reads the parameter as a redefinition | **configure** |
+   | `F401` | 191 | a fixture is resolved *by name*, so the import that makes it visible looks unused | **configure** |
+   | `E402` | 237 | an import that must follow a `sys.path` manipulation | **fix the code** |
+   | `I001` | 232 | the import block that manipulation splits in two | **fix the code** |
 
-   ⛔ **The third kind is why this is not `--fix`.** `# noqa: S603` marks a subprocess call the author
-   judged deliberate; `# noqa: BLE001` marks an intentional broad `except`. Those families are absent
-   from `select`, so the directives suppress nothing today and `--fix` deletes every one of them —
-   discarding the annotation that would matter the moment anyone enables `S` or `BLE`. Convert each to
-   a plain comment that states the intent in words (`# deliberate: fixed argv, no shell`), so the
-   judgement survives the rule set it was written against. Where the intent cannot be recovered from
-   the code, **leave the directive and record it** rather than guess.
+   **`F401` and `F811` are pytest's semantics, and no code change reaches them.** A fixture is looked
+   up by name; the import exists so pytest can see it, and the test's parameter shadows it by design.
+   Ruff is simply describing Python rather than pytest. Add a `per-file-ignores` entry for the test
+   tree and state the reason in the config, so the next reader learns the rule was wrong here rather
+   than that someone got tired of it. ⚠️ **Say what this costs**: `F401` also catches genuinely dead
+   imports, and this turns that off across `test/**`. Record it as an accepted cost with the number
+   it covers.
+
+   **`E402` and `I001` are a real code smell, and the fix is a migration.** `conftest.load_script_module`
+   already resolves any module inside a skill's `scripts/` directory — helpers included, since
+   `script_file` is relative to that directory — and doing the load through it removes the need for the
+   caller's own `sys.path` line. **132 test modules still hand-roll it**; 81 do not call the loader at
+   all, and one representative inserts `manage-config/scripts` only to `import _config_defaults`, which
+   is precisely a `load_script_module('plan-marshall', 'manage-config', '_config_defaults.py')` call.
+   Migrate them, and 469 suppressions lose their cause **with both rules left enabled** — which is
+   strictly better than configuring them away.
+   ⛔ **`load_script_module` registers in `sys.modules` and a registration collision is the failure that
+   cost plan `030` 173 order-dependent tests.** Read that function's docstring before migrating a
+   single file: it documents `module_name=` and `register=False`, and there is an existing guard test
+   that fails when a loaded name is also imported plainly. Run the affected directories in **reverse**
+   order as well as default after each batch.
+
+   **Then make it impossible to regrow.** Add `RUF100` to the `select` list, so a directive that stops
+   suppressing anything becomes a red build rather than something a later run rediscovers. This is the
+   part that makes D7 a gate rather than a one-off sweep — without it the tree simply re-accumulates.
+   ⛔ **`RUF100` cannot be enabled until the two steps above have landed**, or it turns ~691 findings
+   red at once. Order is: configure → migrate → sweep → enable.
+
+   **What is left after all three is the ~108 that name rules this project does not run** — `S603`,
+   `BLE001`, `PLC0415`, `ANN*`, `D*`. These suppress nothing today, so `ruff --fix` deletes every one
+   and takes the author's judgement with it: `# noqa: S603` marks a subprocess call someone decided was
+   safe. Convert each to a plain-language comment stating the intent; where the intent cannot be
+   recovered from the code, **leave it and record it** rather than guess.
    ⚠️ **Measure with `--extend-select RUF100`, never `--select RUF100`** — the latter replaces the
-   configured rule set and inflates the count by about 60%. D1 states this; it is repeated here because
-   this is the deliverable that acts on the number.
-   ⚠️ **This deliverable alone touches ~391 files and will push the PR past both automated reviewers'
-   ceilings** (100 and 300 files), forfeiting the review run 1 already lost once. It is taken anyway,
-   by decision, because the alternative is carrying it indefinitely. Land it as **its own commit**, so
-   a reviewer can verify it by re-running the tool over that commit rather than by reading 391 diffs,
-   and say so in the PR body.
-   ⛔ **Do not touch the ~148 live E402 suppressions**, which sit on imports that genuinely follow a
-   `sys.path` manipulation. Those have a cause; D7 removes annotations whose cause is gone, and
-   removing a live one turns a green build red.
-   *Done when:* `ruff check --extend-select RUF100` reports zero over the two kinds this deliverable
-   clears; every non-enabled directive is either converted to an intent comment or recorded with why it
-   was left; `./pw verify` is green; and the count is reported by kind, not as one number.
+   configured rule set and inflates the count by about 60%.
+   *Done when:* `ruff check --extend-select RUF100` is clean; `RUF100` is in `select` and `./pw verify`
+   is green with it; no test module manipulates `sys.path` where the loader could have; the whole tree
+   passes in default **and** reverse order; every non-enabled directive is converted or recorded; and
+   the report gives before/after by code, not one number.
 
 
 ## Out of scope
@@ -293,11 +314,15 @@ the ~108 that record a judgement the current rule set does not ask about.
   `550-*.md`, `doc/plans/test-quality/050-*/plan.md` — D6's five pointers, **other epics' plan
   directories**, edited here only to repoint a dead module name
 - `marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md` — D6's three specimens
-- **~391 files across `test/` and `marketplace/bundles/`** — D7, one line removed or reworded per dead
-  directive. ⛔ **This is by far the widest surface in the plan and it reaches deep into `090`'s tree.**
-  It is mechanical and tool-reproducible, but it is not small: check the matrix for `090` immediately
-  before running D7, not only at the start, and take D7 **last** so a collision costs only that
-  commit
+- `pyproject.toml` — D7's `per-file-ignores` entry and the `RUF100` addition to `select`. Small, but
+  it is the highest-leverage file in the plan: two entries retire 553 directives
+- **~132 test modules** — D7's migration off `sys.path` onto `load_script_module`. ⛔ **This is the
+  risky part of D7, not the sweep**: the loader registers in `sys.modules`, and a collision is what
+  cost plan `030` 173 order-dependent tests
+- **~391 files across `test/` and `marketplace/bundles/`** — D7's final sweep, one line removed or
+  reworded per directive. ⛔ **The widest surface in the plan, and it reaches into `090`'s tree.**
+  Mechanical and tool-reproducible, but not small: check the matrix for `090` immediately before it,
+  not only at the start, and take the sweep **last** so a collision costs only that commit
 
 ⚠️ **This surface crosses two other plans' territory** — `090`'s (`marketplace/bundles/**`, both at
 one analyzer for D3 and across ~250 files for D7) and two other epics' plan directories. Look this plan up in `doc/plans/test-quality/README.md` § "The
@@ -316,6 +341,7 @@ names or for the files above, and **halt and report** rather than editing a file
 | The slice's duplication figure is currently unknown, because run 1's two ends used two definitions | OBSERVED | `report-01.md` § Findings, M45, which records the two definitions and the re-measurement. This is why D1 does **not** ask for a duplication number and D5 waits on D4 |
 | About six references in **staged, unexecuted** plans name a module run 1 deleted, against ~270 hits tree-wide of which ~200 are dated records | HYPOTHESIS — **re-derive, and re-derive the CLASSIFICATION, not just the count** | Sweep `doc/` for `test_*.py` names not present under `test/`, then partition by document kind. This claim was itself wrong on first derivation: an unpartitioned sweep returns ~270 and reads as a large defect, when the great majority are `report-NN.md` / `verification.md` / `gaps.md` records the standards exempt, plus the `plan.md` of plans that have already run. `report-01.md` § Residue puts the live set at five; the partition puts it at six. **The number is not the risk — treating a record as a defect is**, and rewriting one would be the worse error |
 | Plan `100` § D2 forbids splitting a class, so a follow-up run under it cannot close the three — and the campaign's subject was excessively large files, which these are not | OBSERVED for the first half, **a DECISION for the second** | `doc/plans/test-quality/100-module-budget-campaign/plan.md` § D2 and `report-01.md` § Contract check confirm the prohibition and the reading run 1 applied. That these three should be *kept* rather than split is **not derivable from any artifact** — it is an operator decision taken while authoring this plan, on the reasoning that the slice's original subject was an 8,705-line module and a 466-line one is a different thing. It is recorded as a decision so a reviewer can reject it; if rejected, D2 inverts to a split and D1's gate is unchanged |
+| `load_script_module` can address ANY module in a skill's `scripts/` directory, helpers included — so the 132 hand-rolled `sys.path` modules are migratable | OBSERVED — **and the opposite was asserted while authoring, then refuted by reading the code** | `test/conftest.py` — `load_script_module`, whose docstring states `script_file` is relative to the skill's `scripts/` directory. Confirmed against callers that load private helpers, e.g. `load_script_module('plan-marshall', 'build-gradle', '_gradle_execute')`. ⚠️ An earlier draft of this plan claimed the loader reached only top-level scripts and that the migration therefore needed a loader change first. That was wrong, and it is recorded because the wrong version would have sent the run to build something that already exists — the asserted-absence failure § Claim labels warns about |
 | No party the collision matrix names against this plan is in flight | HYPOTHESIS — **gating and halting; check before D2 and again before D3** | `doc/plans/test-quality/README.md` § "The collision matrix", read there rather than restated here |
 
 ## Verification
@@ -375,6 +401,12 @@ figure is comparable with one produced by a different definition, the output fai
   named modules keeps the blast radius to what has actually been examined. If runs 2 through 7 hit the
   same wall repeatedly, *that* is the evidence for amending the standard, and it will be a better
   argument than this one.
+* **Seven deliverables is at the template's split threshold, and D7 is the reason.** D7 is four ordered
+  steps — configure, migrate, sweep, gate — and would be a plan on its own in another epic. It is kept
+  here because its subject *is* run 1's residue and because splitting it would put the migration in one
+  plan and the sweep that depends on it in another. If a run finds D7 too large to finish, **stop after
+  the migration and report** rather than half-sweeping: configure-and-migrate is a coherent landing
+  point, sweep-without-gate is not.
 * **This plan will forfeit its automated review, and that is a decision rather than an oversight.**
   Run 1's PR reached 309 files and both automated reviewers refused it on file-count ceilings — 100
   and 300 — so two thirds of the repository's review capacity was structurally unreachable. D7 alone
