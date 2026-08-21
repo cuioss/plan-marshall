@@ -2492,11 +2492,10 @@ def _save_settings(path: Path, settings: dict[str, Any]) -> bool:
 # them. What still crosses is the settings MAPPING that
 # ``ensure_default_permissions`` takes — a Claude-shaped dict whose allow list
 # holds rendered rules the caller loaded. §1 names the settings-file shape as a
-# format that must not cross, so that is real residue, not a technicality; it is
-# the ``tools-permission-*`` scripts' pre-existing coupling (they load, mutate
-# and save that mapping throughout), registered in the epic's coupling
-# inventory, and closing it means restructuring every subcommand rather than one
-# call.
+# format that must not cross, so that is real residue, not a technicality. It is
+# the ``tools-permission-*`` scripts' coupling rather than this helper's — they
+# load, mutate and save that mapping throughout — so closing it means
+# restructuring every subcommand, not one call.
 # ---------------------------------------------------------------------------
 
 _CLAUDE_PLUGIN_CACHE_SEGMENTS = (".claude", "plugins", "cache")

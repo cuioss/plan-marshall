@@ -585,6 +585,34 @@ claimed to be exhausted. What *is* claimed, and was tested by execution rather t
 no behavioural defect is open: the last change to executing code was round 3's, and the two passes
 since found none.
 
+### Post-loop: a meta-project leak the verification passes never looked for
+
+Raised by the operator after the loop closed, and worth recording because five verification passes
+missed it — none of them was asked whether shipped bundle source may reference the meta-project's
+own planning documents.
+
+**The question asked** was whether this run violated the documentation standard *"Current state only
+— do not describe transitional information"* by writing history into prose. Swept: **it did not.**
+No added line under `marketplace/**` carries `used to`, `no longer`, `previously`, `formerly`,
+`retired`, `deprecated`, `legacy`, `this plan`, or `since plan`. The history in this run lives in
+`doc/plans/**` — this report and the coupling inventory — where `CLAUDE.md` places it: a run report
+is a dated **record**, and the standard governs documentation rather than records.
+
+**What the sweep did find** is a different defect, and a real one: **five references from shipped
+bundle source into `doc/plans/multiplattform/reference/coupling-inventory.md`** —
+in `claude_runtime.py`, `_claude_runtime_impl.py`, `permission_common.py` (twice) and
+`permission_fix.py`. Bundles ship to consumer projects, and no consumer project has that file. Each
+was a pointer added to make a claim checkable; the effect was to make four scripts depend on a
+document only this repository holds — the meta-project-leak class this repo keeps a dedicated audit
+recipe for, and one no plugin-doctor rule catches.
+
+All five are gone. What each pointer was carrying is kept where it was load-bearing and made
+self-contained instead: the layout docstring now says *why* the other two cache-segment spellings are
+deliberate (one runs before the plugin is resolvable, the other is generated to run standalone)
+rather than citing a document that sanctions them. Re-derived: `coupling inventory`, `multiplattform`
+and `doc/plans` return nothing across every `marketplace/**` file this run touched. The couplings
+themselves stay registered in the inventory, which is where a registry belongs.
+
 ## Reviewer participation
 
 _Recorded at the merge gate, from the comment bodies on all three surfaces._

@@ -11,10 +11,9 @@ behaviour and no runtime->script back-import.
 
 The forwarding is to ``claude_runtime`` **by direct import**, not through the
 runtime registry, so every delegator here resolves to the Claude implementation
-whatever ``runtime.target`` says. That is this module's long-standing binding
-rather than a property of any one delegator, and it is why the module is a
-Claude-bound script rather than a target-neutral one; it is registered open in
-the multiplattform epic's coupling inventory.
+whatever ``runtime.target`` says. That is the module's binding rather than a
+property of any one delegator, and it is why this is a Claude-bound script
+rather than a target-neutral one.
 """
 
 import sys
@@ -130,8 +129,7 @@ def ensure_default_permissions(
     by direct import rather than through the runtime registry, so the set it
     ensures is Claude's whatever ``runtime.target`` says. That binding is the
     module's own, not something this function introduces — see the module
-    docstring — and it is registered open in the multiplattform epic's coupling
-    inventory.
+    docstring.
     """
     return _runtime_ensure_default_permissions(settings, Path(settings_path), dry_run)
 

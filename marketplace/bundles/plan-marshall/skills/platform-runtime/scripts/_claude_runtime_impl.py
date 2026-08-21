@@ -288,11 +288,11 @@ class ClaudeRuntime(Runtime):
         under which installed marketplace bundles live on Claude. The path is
         composed in ``claude_runtime._claude_bundle_cache_root``, which shares
         its cache segments with the default-permission renderer, so those two
-        cannot drift. It is not the only spelling in the tree: the steward's
-        bootstrap detector and the resolver ``generate_executor.py`` embeds into
-        the executor each compose the same segments, and the multiplattform
-        epic's coupling inventory sanctions both as Claude-specific-by-design
-        rather than registering them open.
+        cannot drift. It is not the only spelling in the tree, and the other two
+        are deliberate: the steward's bootstrap detector runs *before* the plugin
+        is resolvable, and the resolver ``generate_executor.py`` embeds into the
+        executor runs standalone — neither can reach this helper, so each
+        composes the segments itself.
         """
         return toon_success(
             "layout bundle-cache-root",
