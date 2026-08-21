@@ -293,6 +293,31 @@ class TestApplyFixes:
         assert result['defaults_added'] == ['plan-dir-edit', 'plan-dir-write', 'bundle-cache-read']
         assert result['defaults_added_count'] == 3
 
+    def test_dry_run_writes_nothing(self, tmp_path):
+        """--dry-run must leave the settings file byte-identical.
+
+        The write decision lives inside ``ensure_default_permissions`` rather
+        than in this script, so nothing here would notice that guard being
+        dropped. The seeded file is deliberately un-normalized — duplicated,
+        unsorted, and missing every default — so the run has work in each of
+        the three fixes and a written file could not coincide with the input.
+        """
+        settings_file = tmp_path / 'settings.json'
+        settings_file.write_text(
+            json.dumps({'permissions': {'allow': ['Write(**)', 'Bash(git:*)', 'Bash(git:*)'], 'deny': [], 'ask': []}})
+        )
+        before = settings_file.read_bytes()
+
+        result = cmd_apply_fixes(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(settings_file), '--dry-run'))
+
+        assert result['status'] == 'success'
+        # The run had all three kinds of work to do — otherwise "unchanged"
+        # would be true for a writing implementation too.
+        assert result['duplicates_removed'] == 1
+        assert result['sorted']
+        assert result['defaults_added']
+        assert settings_file.read_bytes() == before
+
     def test_written_default_set_is_the_pinned_three_rules(self, tmp_path):
         """The FILE apply-fixes leaves behind must carry the same three rules.
 

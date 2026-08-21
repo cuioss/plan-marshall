@@ -59,6 +59,34 @@ class TestProjectSettingsReadPath:
             tmp_path / '.claude' / 'settings.json'
         )
 
+    def test_a_directory_at_the_local_path_does_not_shadow_the_shared_file(
+        self, tmp_path: Path
+    ) -> None:
+        """A DIRECTORY named settings.local.json must not be selected.
+
+        Selecting it would load as the empty-permissions skeleton and hide the
+        real shared file — an operator's rules silently absent rather than an
+        error. The selector tests ``is_file``, so the shared file wins.
+        """
+        claude_dir = tmp_path / '.claude'
+        claude_dir.mkdir()
+        (claude_dir / 'settings.local.json').mkdir()
+        (claude_dir / 'settings.json').write_text('{}', encoding='utf-8')
+        assert claude_runtime._claude_project_settings_read_path(str(tmp_path)) == (
+            claude_dir / 'settings.json'
+        )
+
+    def test_a_directory_at_the_shared_path_does_not_capture_the_write(
+        self, tmp_path: Path
+    ) -> None:
+        """The write selector makes the same distinction, in the other direction."""
+        claude_dir = tmp_path / '.claude'
+        claude_dir.mkdir()
+        (claude_dir / 'settings.json').mkdir()
+        assert claude_runtime._claude_project_settings_path(str(tmp_path)) == (
+            claude_dir / 'settings.local.json'
+        )
+
     def test_read_and_write_preferences_are_opposites(self, tmp_path: Path) -> None:
         """Both files present: the read path takes local, the write path takes shared."""
         claude_dir = tmp_path / '.claude'

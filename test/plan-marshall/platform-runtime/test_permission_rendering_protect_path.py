@@ -56,7 +56,7 @@ class TestPermissionFixProtectPath:
         )
         assert result['status'] == 'success'
         assert result['fix_operation'] == 'protect-path'
-        assert result['paths_protected'] == 1
+        assert result['paths_named'] == 1
         assert result['rules_total'] == self.RULE_COUNT
         assert result['changes_applied'] == self.RULE_COUNT
 
@@ -219,7 +219,7 @@ class TestPermissionFixProtectPath:
             )
         )
 
-        assert result['paths_protected'] == 2
+        assert result['paths_named'] == 2
         assert result['rules_total'] == self.RULE_COUNT
         assert result['changes_applied'] == self.RULE_COUNT
         written = json.loads(settings_path.read_text(encoding='utf-8'))
@@ -242,7 +242,7 @@ class TestPermissionFixProtectPath:
             )
         )
 
-        assert result['paths_protected'] == 2
+        assert result['paths_named'] == 2
         assert result['rules_total'] == self.RULE_COUNT * 2
         written = json.loads(settings_path.read_text(encoding='utf-8'))
         assert 'Read(~/creds/**)' in written['permissions']['deny']
@@ -268,6 +268,9 @@ class TestPermissionFixProtectPath:
             ('/home/u/cre(ds', 'a "(" is the other delimiter'),
             ('/home/u/x*', 'a "*" widens the rule past what was asked for'),
             ('/home/u/a\nb', 'a newline splits one rule into two'),
+            ('/home/u/my creds', 'a space moves the argument boundary in a Bash rule'),
+            ('/', 'the filesystem root renders Read(/**) — every read on the machine'),
+            ('/home/u/../../etc', 'a ".." silently renames the directory the caller named'),
         ],
     )
     def test_refuses_a_path_it_cannot_render_faithfully(
@@ -315,7 +318,7 @@ class TestPermissionFixProtectPath:
             )
         )
 
-        assert result['paths_protected'] == 3
+        assert result['paths_named'] == 3
         assert result['rules_total'] == self.RULE_COUNT
         written = json.loads(settings_path.read_text(encoding='utf-8'))
         assert len(written['permissions']['deny']) == self.RULE_COUNT
@@ -349,8 +352,8 @@ class TestPermissionFixProtectPath:
     def test_a_malformed_deny_value_fails_closed(self, tmp_path: Path, monkeypatch) -> None:
         """A `deny` of the wrong type is an error, not an uncaught AttributeError.
 
-        Every sibling branch indexes `["allow"]`, so this state had never been
-        reached before this operation existed; it raised out of the op.
+        `protect-path` is the only operation that indexes `["deny"]`, so it is
+        the only one that can meet this state and the only one that guards it.
         """
         protected = str(self._protected(monkeypatch, tmp_path))
         settings_path = tmp_path / 'settings.json'

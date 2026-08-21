@@ -834,15 +834,17 @@ def test_extension_discovery_plugin_cache_honours_env_override(
 _PROJECT_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
 
 
-def _write_project_step(root: pathlib.Path, name: str, description: str) -> None:
-    """Create a project-local ``finalize-step-*`` skill declaring the ext-point."""
+def _write_project_step(
+    root: pathlib.Path, name: str, description: str, implements: str = _PROJECT_EXT_POINT
+) -> None:
+    """Create a project-local ``finalize-step-*`` skill declaring an ext-point."""
     skill_dir = root / name
     skill_dir.mkdir(parents=True, exist_ok=True)
     (skill_dir / 'SKILL.md').write_text(
         '---\n'
         f'name: {name}\n'
         f'description: {description}\n'
-        f'implements: {_PROJECT_EXT_POINT}\n'
+        f'implements: {implements}\n'
         'order: 42\n'
         '---\n\n'
         '# Step\n',
@@ -892,6 +894,31 @@ def test_project_scan_lets_the_highest_priority_root_win(
 
     assert len(records) == 1
     assert records[0]['description'] == 'From first.'
+
+
+def test_a_higher_root_shadows_a_lower_one_even_implementing_another_ext_point(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The highest-priority root owns a step id whatever that step implements.
+
+    A step id resolves — in ``configurable_contract`` — to the first declared
+    root carrying that directory, with no ext-point involved. So if the first
+    root's ``finalize-step-dup`` implements a DIFFERENT ext-point, the lower
+    root's must not be returned for this one: the record would name a file that
+    resolving the same id never lands on.
+    """
+    _pin_project_roots(monkeypatch, tmp_path, ('first/steps', 'second/steps'))
+    _write_project_step(
+        tmp_path / 'first' / 'steps',
+        'finalize-step-dup',
+        'From first.',
+        implements='plan-marshall:extension-api/standards/ext-point-something-else',
+    )
+    _write_project_step(tmp_path / 'second' / 'steps', 'finalize-step-dup', 'From second.')
+
+    records = _discovery._scan_project_for_implementors(_PROJECT_EXT_POINT)
+
+    assert records == []
 
 
 def test_project_scan_ignores_a_declared_root_that_does_not_exist(

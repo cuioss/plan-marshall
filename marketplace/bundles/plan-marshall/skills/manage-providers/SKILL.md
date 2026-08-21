@@ -173,9 +173,9 @@ It can also fail, and a caller must not read failure as protection:
 | `error` | Meaning | What to do |
 |---|---|---|
 | `unknown_target` | `runtime.target` names no registered runtime | Fix `runtime.target` in `marshal.json` |
-| `invalid_operation` | The credentials directory cannot be expressed as a rule — it is relative, or carries a character the permission grammar cannot hold | Point `PLAN_MARSHALL_CREDENTIALS_DIR` at an absolute path without `(`, `)` or `*` |
+| `invalid_operation` | The credentials directory cannot be expressed as a rule — it is relative, contains `..` or whitespace, or carries `(`, `)` or `*` | Set `PLAN_MARSHALL_HOME` to an absolute path free of those, so the credentials directory beneath it is renderable |
 | `invalid_settings` | The settings file is malformed, or its `deny` entry is not a list | Repair the settings file; nothing was written |
-| `io_error` | The rules were rendered but the settings file could not be written | Check permissions on the settings file; **the directory is not protected** |
+| `io_error` | The rules were rendered but the settings file could not be written | Check permissions on the settings file. **This run writes nothing** — the settings file is unchanged, so its protection is whatever it already contains |
 
 ## Security Model
 

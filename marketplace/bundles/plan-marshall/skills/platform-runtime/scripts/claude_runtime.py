@@ -2388,13 +2388,16 @@ def _claude_shared_settings_path(project_dir: str | None = None) -> Path:
 def _claude_project_settings_path(project_dir: str | None = None) -> Path:
     """Return the Claude project settings file path to write to.
 
-    Prefers ``.claude/settings.json`` when it already exists; otherwise targets
-    ``.claude/settings.local.json``. This is the single home for Claude project
+    Prefers ``.claude/settings.json`` when it is already a regular file;
+    otherwise targets ``.claude/settings.local.json``. The test is ``is_file``
+    rather than ``exists`` because a *directory* at either candidate path would
+    otherwise be selected, load as the empty skeleton, and shadow a real file
+    at the other candidate. This is the single home for Claude project
     settings-path resolution — the ``tools-permission-*`` scripts delegate here
     rather than owning the path-resolution logic themselves.
     """
     settings_json = _claude_shared_settings_path(project_dir)
-    if settings_json.exists():
+    if settings_json.is_file():
         return settings_json
     return _claude_local_settings_path(project_dir)
 
@@ -2406,7 +2409,9 @@ def _claude_project_settings_read_path(project_dir: str | None = None) -> Path:
     operator-local ``.claude/settings.local.json`` wins when it exists, because
     it is the file whose entries actually take effect for that operator;
     otherwise the shared ``.claude/settings.json`` is read, whether or not it
-    exists (a missing file loads as the empty-permissions skeleton).
+    exists (a missing file loads as the empty-permissions skeleton). As on the
+    write side, the test is ``is_file``, so a directory at the local path does
+    not shadow a real shared file.
 
     This is the read-side twin of ``_claude_project_settings_path`` and exists
     for the same reason: so ``tools-permission-*`` scripts delegate the whole
@@ -2414,7 +2419,7 @@ def _claude_project_settings_read_path(project_dir: str | None = None) -> Path:
     one path while delegating the other.
     """
     settings_local = _claude_local_settings_path(project_dir)
-    if settings_local.exists():
+    if settings_local.is_file():
         return settings_local
     return _claude_shared_settings_path(project_dir)
 
@@ -2622,9 +2627,13 @@ def _reject_unprotectable_path(protected_dir: str) -> str | None:
       so a relative path denies an unrelated location or nothing at all;
     - **carrying a delimiter or glob** — see
       ``_PATH_CHARS_THE_DSL_CANNOT_CARRY``. A ``)`` truncates the rule and lets
-      the remainder of the path become rule text of its own.
+      the remainder of the path become rule text of its own;
+    - **the filesystem root** — ``/`` renders ``Read(/**)``, denying every read
+      on the machine. A request to protect one directory must never be able to
+      deny all of them.
 
     Control characters are refused with them: a newline splits one rule into two.
+    Whitespace and ``..`` are refused for the reasons given at each check.
     """
     if not protected_dir or not protected_dir.strip():
         return "path is empty"
@@ -2633,8 +2642,24 @@ def _reject_unprotectable_path(protected_dir: str) -> str | None:
             return f"path contains {char!r}, which the permission grammar cannot carry"
     if any(ord(char) < 0x20 or ord(char) == 0x7F for char in protected_dir):
         return "path contains a control character"
-    if not Path(protected_dir).is_absolute():
+    if any(char.isspace() for char in protected_dir):
+        # A `Bash(...)` rule is matched as a command prefix, so a space inside
+        # the path moves the argument boundary: `Bash(cat ~/my creds/*)` is not
+        # a rule about `~/my creds`. Refusing is fail-closed; rendering it would
+        # report a protection that does not hold.
+        return "path contains whitespace, which moves the argument boundary in a Bash rule"
+    path = Path(protected_dir)
+    if not path.is_absolute():
         return "path is not absolute"
+    if ".." in path.parts:
+        # Collapsing `..` lexically renames the directory whenever a parent
+        # segment is a symlink, so the caller would get rules for somewhere
+        # else while being told it succeeded.
+        return "path contains '..'; name the directory to protect directly"
+    if path == path.parent:
+        # `/` renders `Read(/**)`: a request to protect one directory would
+        # deny every read on the machine.
+        return "path is the filesystem root"
     return None
 
 

@@ -31,7 +31,7 @@ from typing import Any
 import claude_runtime
 import session_binding
 from manage_terminal_title import _compose_body, compose
-from runtime_base import Runtime, toon_error, toon_noop, toon_success
+from runtime_base import PERMISSION_FIX_OPERATIONS, Runtime, toon_error, toon_noop, toon_success
 from toon_parser import serialize_toon
 
 
@@ -1051,7 +1051,7 @@ class ClaudeRuntime(Runtime):
                 f"--scope must be 'project' or 'global'; got {scope!r}",
             )
 
-        valid_ops = ("normalize", "add", "remove", "ensure", "consolidate", "protect-path")
+        valid_ops = PERMISSION_FIX_OPERATIONS
         if operation not in valid_ops:
             return toon_error(
                 "permission fix",
@@ -1177,9 +1177,10 @@ class ClaudeRuntime(Runtime):
             # fix operation that writes the deny list rather than the allow list.
             deny_value = settings["permissions"]["deny"]
             if not isinstance(deny_value, list):
-                # Fail closed rather than raising out of the operation. Every
-                # sibling branch indexes ``["allow"]``, so a `deny` of the wrong
-                # type had never been reached before this operation existed.
+                # Fail closed rather than raising out of the operation. This
+                # is the only branch that indexes ``["deny"]``, so it is the
+                # only one that can meet a `deny` of the wrong type, and the
+                # only place the type can be checked.
                 return toon_error(
                     "permission fix",
                     "invalid_settings",
@@ -1230,7 +1231,10 @@ class ClaudeRuntime(Runtime):
         }
         if operation == "protect-path":
             # Counts only — a rendered deny rule must not reach the caller.
-            result["paths_protected"] = len(permissions)
+            # Named, not protected: three spellings of one directory are three
+            # names and one protection. `rules_total` is the honest measure of
+            # what was written.
+            result["paths_named"] = len(permissions)
             result["rules_total"] = rules_rendered
             if dry_run:
                 result["proposed_count"] = proposed_count

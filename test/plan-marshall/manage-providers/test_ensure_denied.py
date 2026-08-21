@@ -7,8 +7,8 @@ target's runtime renders and writes whatever expresses that on its own
 permission model. So these tests cover the CALLER's contract (what it asks for,
 what it reports, how it handles a target that declines) and leave the rule
 content to the runtime's own pins in
-``test/plan-marshall/platform-runtime/test_permission_rendering.py``, which is
-where the grammar now lives.
+the ``test_permission_rendering_*`` modules under
+``test/plan-marshall/platform-runtime/``, which is where the grammar lives.
 """
 
 import json
@@ -70,7 +70,8 @@ class TestEnsureDeniedCLI:
         assert f'Read({protected}/**)' in deny
         assert f'Bash(cat {protected}/*)' in deny
         assert f'Bash(base64 {protected}/*)' in deny
-        # No rule may name the legacy credentials location.
+        # Protection covers the canonical directory only: no rule may name
+        # the pre-migration location that `migrate-home` moves away from.
         assert not any('.plan-marshall-credentials' in rule for rule in deny)
 
         reported = capsys.readouterr().out
@@ -158,6 +159,37 @@ class TestEnsureDeniedCLI:
 
         reported = capsys.readouterr().out
         assert 'status: error' in reported
+
+
+    def test_an_unenforceable_directory_mode_does_not_cost_the_deny_rules(
+        self, claude_project, monkeypatch, capsys
+    ) -> None:
+        """A `chmod` this process cannot perform must not abort the subcommand.
+
+        The 0700 mode is the primary boundary and the deny rules are the
+        defence-in-depth layer, so the layer is worth applying precisely when
+        the boundary cannot be re-asserted. Raising would also replace the TOON
+        payload with a traceback.
+        """
+        import _cred_ensure_denied
+
+        _cred_ensure_denied.CREDENTIALS_DIR.mkdir(parents=True, exist_ok=True)
+        # 0o755 puts the directory in the state that calls for a chmod, so the
+        # refusal below is reached rather than skipped.
+        _cred_ensure_denied.os.chmod(str(_cred_ensure_denied.CREDENTIALS_DIR), 0o755)
+
+        def _refuse(*_args, **_kwargs):
+            raise PermissionError(13, 'Operation not permitted')
+
+        monkeypatch.setattr(_cred_ensure_denied.os, 'chmod', _refuse)
+
+        assert _cred_ensure_denied.run_ensure_denied(Namespace(target='project')) == 0
+
+        captured = capsys.readouterr()
+        assert 'Could not enforce 0o700' in captured.err
+        # The rules still reached disk: the point of not raising.
+        assert 'status: success' in captured.out
+        assert _deny_list(claude_project)
 
 
 class TestEnsureDeniedRendersNoGrammar:

@@ -91,7 +91,7 @@ pinned; it is pinned now.)
 target's runtime through the router's own registration block
 (`platform_runtime._make_runtime`) and calls
 `permission fix --operation protect-path --permissions {credentials dir}`. The runtime renders the
-deny grammar, writes it, and returns counts only (`paths_protected`, `rules_total`,
+deny grammar, writes it, and returns counts only (`paths_named`, `rules_total`,
 `changes_applied`); `test_no_rendered_rule_crosses_back_to_the_caller` asserts the raw TOON contains
 neither `Read(` nor `Bash(`.
 
@@ -341,7 +341,7 @@ is recorded in the report and made minimally, not silently" — so this is the r
   fixed kind of value: permission patterns for `add`/`remove`/`ensure`, **directory paths** for
   `protect-path`, nothing for `normalize`/`consolidate`. A path is normalized data, so principles §1
   is satisfied: the grammar is rendered inside the target.
-- **Response fields added for that operation:** `paths_protected`, `rules_total`, and (dry-run)
+- **Response fields added for that operation:** `paths_named`, `rules_total`, and (dry-run)
   `proposed_count`. Counts, never rendered rules.
 - `contract.md` carries the new enum, the `--permissions` clarification, and a worked TOON example
   generated from the real serializer (the doc's TOON blocks are round-trip-validated by test).
@@ -499,7 +499,7 @@ sentence *about* the artifact. Worse, the same shape was then found in a claim w
 |---|---|---|---|
 | R4-01 | round 4 | R3-01 withdrew the `bootstrap_plugin.py` row from the inventory, but the report section asserting that registration was not updated: it still read "three live sites … all three are registered in the coupling inventory §B", and F23's row inherited the over-count | **fixed** — the section is restructured by *what became of each site* rather than by a count, and names the withdrawn one explicitly. A site the sweep examined and correctly dismissed is different evidence from one it never looked at, so it is named rather than deleted |
 | R4-02 | round 4 | a **shipped code comment** in `permission_fix.py` — written by round 1's F3 fix — claimed its residual DSL knowledge was "registered open in the multiplattform epic's coupling inventory". No row named it: the one row mentioning that file registers a different coupling entirely | **fixed by registering it.** The claim named real open work, so the honest close is the row, not a retraction: §B now carries a row naming `EXECUTOR_PERMISSION`, `OVERLY_BROAD_PYTHON`, the `Skill(…)`/`SlashCommand(…)` generators and the timestamp patterns, as the same grammar-in-a-general-script class `workflow-permission-web` already holds. The comment now points at that row |
-| R4-03 | round 4 | `contract.md` documented `protect-path`'s response as `paths_protected` and `rules_total`, omitting `proposed_count` — and its only dry-run example shows `proposed_additions`, which this operation never returns. The plan required the schema addition be made "not silently" | **fixed** — the op-schema document names `proposed_count`, and says why this operation substitutes a count for the additions list |
+| R4-03 | round 4 | `contract.md` documented `protect-path`'s response as `paths_named` and `rules_total`, omitting `proposed_count` — and its only dry-run example shows `proposed_additions`, which this operation never returns. The plan required the schema addition be made "not silently" | **fixed** — the op-schema document names `proposed_count`, and says why this operation substitutes a count for the additions list |
 | R4-04 | round 4 | the `tools-permission-doctor` row this run rewrote asserts the skill "never writes itself"; its `scripts/permission_common.py` exposes `save_settings` and now `ensure_default_permissions` | **fixed twice.** The first attempt replaced the false absolute with "its `detect-*` subcommands inspect what the protection wrote" — also false, and the closure pass caught it: `permission_doctor.py` contains no occurrence of `deny` at all, and all three `detect-*` subcommands read only `permissions.allow`. The row now says what the doctor does audit, and states plainly that it does **not** read the deny rules `ensure-denied` writes — which is the fact a reader of this skill actually needs |
 | R4-05 | round 4 | the newly-corrected § "Resolution Priority" framed its bullets as "the preferences the `tools-permission-*` selectors apply", under which the pre-existing "Global settings always apply as baseline" bullet is false — no selector applies a global baseline | **fixed** — global scope is described as a separate scope addressed by `--scope global`, outside either project preference |
 
@@ -662,6 +662,47 @@ none gained**, and 41 collected items either side.
 Three land under budget. `_protect_path` is **409 lines around a single class**, and the campaign's
 own rule forbids splitting a class — the same shape that campaign accepted for four of its own
 modules. Recorded rather than forced.
+
+### Verification round 9 — dispositions
+
+Round 9 read the final state cold: no brief, no report, no history. It returned four blockers and
+a set of smaller findings.
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | The split permission-rendering modules failed with `NameError: name '_parse' is not defined` | **Fixed** before the round reported — the shared `_parse` helper was lost when the module header was trimmed twice. Restored, with `from __future__ import annotations` |
+| 2 | Project-skill-root resolution half-migrated: `extension_discovery.py` iterates the declared roots, its sibling `configurable_contract.py` still built `.claude/skills` inline | **Fixed.** This is a regression the run itself introduced: migrating one of a pair turned a silent miss on a non-Claude target into a runtime error. `configurable_contract.py` now resolves through `get_project_skill_roots()` too |
+| 3 | `paths_protected` counted paths the caller *named*, not directories protected — three spellings of one directory read as three protections | **Fixed.** Renamed `paths_named`, and `contract.md` now states the distinction rather than leaving the name to imply it |
+| 4 | `manage-providers/SKILL.md` contradicted itself on `PLAN_MARSHALL_CREDENTIALS_DIR` versus `PLAN_MARSHALL_HOME` | **Fixed** |
+| 5 | The `defaults_added` semantic ids are a caller-visible vocabulary documented nowhere outside the source; `defaults_added_count` duplicates `len(defaults_added)` | **Ids documented** in `tools-permission-fix/SKILL.md`. The count is **kept**: on a TOON text surface a scalar is not redundant with a list, and every neighbouring operation reports one (`permissions_added`, `rules_total`, `proposed_count`). Documented rather than removed |
+| 6 | `apply-fixes --dry-run` had no test pinning that it writes nothing — the write decision moved into `ensure_default_permissions`, and nothing in the calling script would notice the guard being dropped | **Fixed.** A test seeds a file needing all three fixes, asserts each was found, and asserts the file is byte-identical after. Proven discriminating by calling the same function with `dry_run=False` and observing the file change |
+| 7 | `contract.md` understated `protect-path`'s refusal set — it named empty/blank, relative, `(`, `)`, `*` and control characters, but not whitespace or `..`, both of which the code refuses | **Fixed.** A doc that understates a security control's strictness is the safer direction to be wrong in, but it is still wrong |
+| 8 | `Grep` is not among the denied tools on the credentials directory | **Open — raised with the operator.** `Read`, `Bash(cat …)` and the other exfiltration vectors are denied; whether `Grep` belongs in that set is a policy call about the tool surface, not a defect in this change |
+| 9 | The `target` field's meaning is ambiguous in one response shape | **Open, minor** |
+
+Round 9 also had to be told what it could not see. Its verdict rested partly on a full-suite run it
+never completed — its own timeout killed it at 900s — and partly on reading a tree the run was
+actively editing under it. It reported both honestly rather than inferring a result, which is the
+behaviour that made the pass worth having. Its three "baseline failures" in
+`test_extension_discovery.py` were an artefact of its own sandbox: the same suite runs 332 passed,
+0 failed on the tree.
+
+### The historical-prose rule caught the run a second time
+
+The quality gate's `no-historical-prose-in-skills` rule failed the build on a sentence this run had
+just written into `manage-providers/SKILL.md` — an `io_error` row explaining that protection is
+"whatever an earlier run left". The operator's challenge had already established this rule as
+binding, and the run still produced a fresh violation while fixing the old ones.
+
+A sweep of every line the branch adds under `marketplace/**` and `test/**` then found two more the
+gate does not reach, because the rule is scoped to skill bodies: two code comments and a test
+docstring explaining a guard by what the code did *before* the operation existed. All three are
+rewritten to state the present rule — *this branch is the only one that indexes `["deny"]`, so it is
+the only one that can meet this state* — which is both true now and still true later. The sweep is
+re-derived against the working tree, not the last commit.
+
+The lesson is not "remember the rule". It is that prose explaining a *fix* is the place this rule
+gets broken, because the natural way to explain a fix is to describe what was wrong.
 
 ## Reviewer participation
 

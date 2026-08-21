@@ -43,16 +43,30 @@ def _resolve_runtime() -> Any | None:
 
 
 def _ensure_credentials_dir_mode() -> None:
-    """Re-assert 0700 on the credentials directory — the primary boundary."""
+    """Re-assert 0700 on the credentials directory — the primary boundary.
+
+    Both `stat` and `chmod` can fail on a directory this process does not own
+    or on a read-only mount. That failure is reported and swallowed rather than
+    raised: it must not cost the caller the deny rules, which are the
+    defence-in-depth layer and are worth applying precisely when the primary
+    boundary cannot be re-asserted. Raising here would also replace the
+    subcommand's TOON payload with a traceback.
+    """
     if not CREDENTIALS_DIR.exists():
         return
-    current_mode = CREDENTIALS_DIR.stat().st_mode & 0o777
-    if current_mode != 0o700:
+    try:
+        current_mode = CREDENTIALS_DIR.stat().st_mode & 0o777
+        if current_mode != 0o700:
+            print(
+                f'WARNING: Credentials directory has permissions {oct(current_mode)}, expected 0o700. Fixing...',
+                file=sys.stderr,
+            )
+            os.chmod(str(CREDENTIALS_DIR), 0o700)
+    except OSError as exc:
         print(
-            f'WARNING: Credentials directory has permissions {oct(current_mode)}, expected 0o700. Fixing...',
+            f'WARNING: Could not enforce 0o700 on {CREDENTIALS_DIR}: {exc}',
             file=sys.stderr,
         )
-        os.chmod(str(CREDENTIALS_DIR), 0o700)
 
 
 def run_ensure_denied(args: argparse.Namespace) -> int:

@@ -1354,15 +1354,20 @@ def _scan_project_for_implementors(ext_point: str) -> list[dict[str, Any]]:
             skill_md = skill_dir / 'SKILL.md'
             if not skill_md.is_file():
                 continue
-            if ext_point not in read_implements_field(skill_md):
-                continue
             # Project step ids are PATH-derived (``project:{skill-dir}``), matching
             # the existing _discover_all_finalize_steps contract — not the SKILL.md
             # registration ``name`` (a plain skill name with no ``project:`` prefix).
             step_id = f'project:{skill_dir.name}'
             if step_id in seen_step_ids:
                 continue
+            # Claim the id BEFORE the ext-point filter, so the highest-priority
+            # root owns the id whatever it implements. ``configurable_contract``
+            # resolves a step id to the first root carrying that directory, with
+            # no ext-point involved; claiming only on a match would let a lower
+            # root supply a record whose file that resolution never lands on.
             seen_step_ids.add(step_id)
+            if ext_point not in read_implements_field(skill_md):
+                continue
             records.append(_build_implementor_record(skill_md, 'project', name_override=step_id))
 
     return records

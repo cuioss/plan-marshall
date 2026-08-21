@@ -16,6 +16,7 @@ import pytest
 
 # conftest.py sets up PYTHONPATH so imports resolve without manual sys.path work.
 from opencode_runtime import OpenCodeRuntime
+from runtime_base import PERMISSION_FIX_OPERATIONS
 from toon_parser import parse_toon
 
 
@@ -311,8 +312,15 @@ def test_permission_fix_is_noop(runtime: OpenCodeRuntime) -> None:
 
 
 def test_permission_fix_all_valid_operations_are_noop(runtime: OpenCodeRuntime) -> None:
-    """permission_fix accepts all documented operation names and returns no-op for each."""
-    for op in ("normalize", "add", "remove", "ensure", "consolidate", "protect-path"):
+    """permission_fix accepts every published operation name and no-ops for each.
+
+    The population is derived from ``PERMISSION_FIX_OPERATIONS`` rather than
+    restated, so an operation added there is swept here without an edit. The
+    non-vacuity guard matters for exactly that reason: a derived sweep over an
+    empty population passes without asserting anything.
+    """
+    assert PERMISSION_FIX_OPERATIONS, "the operation set must not be empty"
+    for op in PERMISSION_FIX_OPERATIONS:
         result = _parse(runtime.permission_fix("global", op, [], False))
         assert result["status"] == "no-op", f"Expected no-op for operation {op!r}"
 
