@@ -33,16 +33,46 @@ INTERNAL_ERROR = -32603
 Handler = Callable[[dict[str, Any]], Any]
 
 
+class FrameError(Exception):
+    """A frame that could not be decoded — distinct from the stream ending.
+
+    ⛔ **The distinction is the whole point.** ``read_message`` used to return
+    ``None`` for both, and the serve loop reads ``None`` as "the client is gone".
+    So a single malformed frame ended a resident session **silently**, with
+    nothing on stderr — the one failure shape the surface is named for
+    surviving, and the only one it did not survive.
+
+    ``recoverable`` says whether the stream is still frame-aligned. It is
+    ``True`` when the declared body was read whole and only its *content* was
+    bad, so the next read starts on a frame boundary and the session can go on.
+    It is ``False`` when the length itself was unusable or the body was short,
+    because the reader then has no idea where the next frame begins: continuing
+    would resynchronise on arbitrary bytes, which is worse than stopping. An
+    unrecoverable frame still ends the session — but loudly, never silently.
+    """
+
+    def __init__(self, detail: str, recoverable: bool) -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.recoverable = recoverable
+
+
 def read_message(stream: BinaryIO) -> dict[str, Any] | None:
     """Read one ``Content-Length``-framed JSON-RPC message.
 
-    Returns ``None`` at end of stream or on a header that never yields a length,
-    which the serve loop treats as "the client is gone" rather than as an error.
+    Returns ``None`` **only** at end of stream — the client is gone.
+
+    Raises:
+        FrameError: the bytes were not a decodable frame. See that class for
+            what ``recoverable`` means and why the two cases must not be
+            collapsed into one another, or into end-of-stream.
     """
     content_length: int | None = None
     while True:
         line = stream.readline()
         if not line:
+            # True end of stream. If a header block had already begun, the
+            # client died mid-frame; either way there is nothing more to read.
             return None
         header = line.decode('ascii', errors='replace').strip()
         if not header:
@@ -52,7 +82,7 @@ def read_message(stream: BinaryIO) -> dict[str, Any] | None:
             try:
                 parsed = int(value.strip())
             except ValueError:
-                return None
+                raise FrameError(f'non-integer Content-Length {value.strip()!r}', recoverable=False) from None
             # ⚠ A NEGATIVE length must be rejected, not passed through. Python's
             # ``read(-1)`` means *read to EOF*, so a negative Content-Length would
             # make the server swallow the rest of the stream — accepting a frame it
@@ -61,18 +91,28 @@ def read_message(stream: BinaryIO) -> dict[str, Any] | None:
             # content_length``) cannot catch it either, since any real length is
             # greater than a negative one.
             if parsed < 0:
-                return None
+                raise FrameError(f'negative Content-Length {parsed}', recoverable=False)
             content_length = parsed
     if content_length is None:
-        return None
+        raise FrameError('header block carried no Content-Length', recoverable=False)
     body = stream.read(content_length)
     if body is None or len(body) < content_length:
-        return None
+        raise FrameError(
+            f'body ended after {0 if body is None else len(body)} of {content_length} bytes',
+            recoverable=False,
+        )
+    # From here the declared body has been consumed in full, so the stream is
+    # back on a frame boundary whatever the content turns out to be: these are
+    # the shapes a session can genuinely skip and carry on from.
     try:
         parsed = json.loads(body.decode('utf-8'))
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return None
-    return parsed if isinstance(parsed, dict) else None
+    except UnicodeDecodeError:
+        raise FrameError('body is not valid UTF-8', recoverable=True) from None
+    except json.JSONDecodeError as exc:
+        raise FrameError(f'body is not valid JSON: {exc.msg}', recoverable=True) from None
+    if not isinstance(parsed, dict):
+        raise FrameError(f'body decoded to {type(parsed).__name__}, not a JSON-RPC object', recoverable=True)
+    return parsed
 
 
 def write_message(stream: BinaryIO, payload: dict[str, Any]) -> None:
@@ -178,15 +218,29 @@ class LspServer:
     def serve(self, stdin: BinaryIO, stdout: BinaryIO) -> int:
         """Run the read/dispatch/write loop until the client exits.
 
-        The loop body is itself guarded: :meth:`handle` already contains every
-        handler defect, so what reaches here is a defect in dispatch or in
-        serialising a response — still not a reason to end a session a client is
-        holding open.
+        Two independent boundaries, because a session dies at two layers and
+        only one of them was ever guarded:
+
+        * **the frame**, below — a malformed frame whose declared body was read
+          whole leaves the stream aligned, so it is logged and skipped and the
+          session goes on. One whose length was unusable leaves the reader with
+          no idea where the next frame starts, so the session ends — but it says
+          so on stderr rather than presenting as a client that hung up;
+        * **the handler**, in the inner ``try`` — :meth:`handle` already
+          contains every handler defect, so what reaches there is a defect in
+          dispatch or in serialising a response, still not a reason to end a
+          session a client is holding open.
         """
         self._stdout = stdout
         try:
             while True:
-                message = read_message(stdin)
+                try:
+                    message = read_message(stdin)
+                except FrameError as frame_error:
+                    _log_frame_error(frame_error)
+                    if frame_error.recoverable:
+                        continue
+                    return 0
                 if message is None:
                     return 0
                 try:
@@ -200,6 +254,20 @@ class LspServer:
                     return 0
         finally:
             self._stdout = None
+
+
+def _log_frame_error(frame_error: FrameError) -> None:
+    """Report an undecodable frame on **stderr**, whether or not it ends the session.
+
+    ⛔ Both arms log. A skipped frame is evidence of a client defect that an
+    operator needs even though the session survived; an unrecoverable one is the
+    difference between "the client hung up" and "the client sent something this
+    server could not parse", which is the whole reason the session must not end
+    in silence.
+    """
+    outcome = 'skipping the frame' if frame_error.recoverable else 'ending the session — the stream is not frame-aligned'
+    print(f'[corpus-lsp] malformed frame: {frame_error.detail}; {outcome}', file=sys.stderr)
+    sys.stderr.flush()
 
 
 def _log_exception(method: Any, exc: BaseException) -> None:

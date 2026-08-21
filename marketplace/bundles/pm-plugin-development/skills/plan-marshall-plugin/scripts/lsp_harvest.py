@@ -62,15 +62,24 @@ than collapsing into a silent zero-edge success.
 """
 
 DEFAULT_TIMEOUT_S = 300.0
-"""Whole-harvest wall-clock budget, after which the harvest reports a timeout."""
+"""Whole-harvest wall-clock budget, checked BETWEEN files and between positions.
+
+⚠ It is a *stopping* condition, not a deadline: exceeding it ends the crawl and
+reports ``ran=True`` with a ``harvest-budget:`` note saying how many files were
+covered, never a timeout. And because it is only checked between calls, a single
+request that hangs runs past it — the bound on one call is the shared
+transport's own default, which this module does not set. Calling this an
+enforcement of total wall-clock would promise something the loop cannot do.
+"""
 
 DEFAULT_REQUEST_TIMEOUT_S = 15.0
 """Handshake budget, scaled to bound the ``initialize`` round trip.
 
-⚠ This does **not** bound the individual definition requests. The shared
-``LspSession`` exposes no per-call timeout, so those use the transport's own
-default; the whole-harvest ``timeout_s`` is what bounds them in aggregate. Naming
-this a per-request budget would promise an enforcement that does not exist.
+⚠ This does **not** bound the individual definition requests, and neither does
+anything else here. The shared ``LspSession`` exposes no per-call timeout, so
+those use the transport's own default; ``timeout_s`` cannot substitute, because
+it is tested between calls and so cannot interrupt one in flight. Naming either
+of them a per-request budget would promise an enforcement that does not exist.
 """
 
 INITIALIZE_BUDGET_FACTOR = 2.0
@@ -105,6 +114,18 @@ REASON_SERVER_FAILED = 'server-failed-to-start: {binary} could not be launched (
 REASON_SERVER_TIMEOUT = 'server-timeout: {binary} did not respond within {budget:.0f}s ({detail})'
 REASON_WORKSPACE_UNSUPPORTED = 'workspace-unsupported: no {language} sources found under the project root'
 REASON_SERVER_REJECTED = 'server-rejected: {binary} answered the handshake with an error ({detail})'
+REASON_REQUEST_FAILED = (
+    'request-failed: {binary} completed the handshake, then failed on a per-file request after '
+    '{elapsed:.0f}s of harvesting ({detail})'
+)
+# ⛔ A post-handshake failure states NO budget, because none was set for it. The
+# harvest passes a budget to `initialize` only; the per-file calls take the
+# shared transport's own default, which this module neither chooses nor knows.
+# Interpolating `initialize_budget` here — which this code did — reported the
+# handshake's number against a request that never waited on it, and sent an
+# operator to look at a budget that had nothing to do with the failure. Elapsed
+# harvest time is reported instead: it is a figure this module actually measured.
+
 
 # A server that answers `initialize` with a JSON-RPC error REFUSED the
 # workspace; it did not fail to respond. Reporting that as a timeout sends an
@@ -364,8 +385,10 @@ def harvest_workspace(
         server_cmd: Language-server argv, from the shared binding.
         language_id: LSP ``languageId`` for opened documents.
         suffix: File suffix selecting workspace sources.
-        timeout_s: Whole-harvest wall-clock budget, and the only bound on the
-            definition requests in aggregate.
+        timeout_s: Whole-harvest stopping condition, tested BETWEEN calls.
+            Exceeding it truncates the crawl and reports ``ran=True`` with a
+            ``harvest-budget:`` note — never a timeout — and it cannot interrupt
+            a request already in flight.
         request_timeout_s: Handshake budget, scaled by
             :data:`INITIALIZE_BUDGET_FACTOR`. It does NOT bound individual
             definition calls — the shared session exposes no per-call timeout.
@@ -476,7 +499,15 @@ def harvest_workspace(
         # and a protocol error alike as LspError. None of them may escape into
         # the crawl, and none may read as a successful empty harvest — but they
         # are not one failure either, so the handshake's two outcomes are split.
-        if not handshake_done and _TIMEOUT_MESSAGE_MARKER not in str(exc):
+        # Three outcomes, not two: the handshake can be REFUSED or can TIME OUT,
+        # and a request after a completed handshake is neither. Only the
+        # handshake's two may cite `initialize_budget` — it is the only budget
+        # this module set.
+        if handshake_done:
+            reason = REASON_REQUEST_FAILED.format(
+                binary=binary, elapsed=time.monotonic() - started, detail=exc,
+            )
+        elif _TIMEOUT_MESSAGE_MARKER not in str(exc):
             reason = REASON_SERVER_REJECTED.format(binary=binary, detail=exc)
         else:
             reason = REASON_SERVER_TIMEOUT.format(binary=binary, budget=initialize_budget, detail=exc)

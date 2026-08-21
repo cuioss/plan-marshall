@@ -148,7 +148,7 @@ def test_get_reports_unconfigured_but_enabled(plan_context):
     assert got['enabled'] is True
 
 
-def test_list_reports_configured_entries_only(plan_context):
+def test_list_reports_every_entry_the_store_holds(plan_context):
     listed = run_config.cmd_derivation_resolver_list(argparse.Namespace())
     assert listed['resolvers'] == []
     assert listed['count'] == 0
@@ -158,10 +158,37 @@ def test_list_reports_configured_entries_only(plan_context):
     run_config.cmd_derivation_resolver_set(_set('python', enabled=True, disabled=False))
     listed = run_config.cmd_derivation_resolver_list(argparse.Namespace())
     assert listed['resolvers'] == [
-        {'id': 'lsp', 'enabled': False},
-        {'id': 'python', 'enabled': True},
+        {'id': 'lsp', 'enabled': False, 'configured': True},
+        {'id': 'python', 'enabled': True, 'configured': True},
     ]
     assert listed['count'] == 2
+
+
+def test_list_shows_a_MALFORMED_entry_and_flags_it_unconfigured(plan_context):
+    """The third reader of this store must not disagree with the other two.
+
+    ``configured`` means a well-formed (dict) entry to ``get`` and to
+    ``extension-api``'s roster. This listing is keyed on mere PRESENCE, so a
+    malformed entry appears in it — and both halves of that are deliberate:
+    omitting it would hide an operator's own typo from the one verb that exists
+    to show them the store, while calling it configured would make a third
+    reader say something the other two contradict about one entry.
+    """
+    run_config.cmd_derivation_resolver_set(_set('lsp'))
+    _write_raw_section({'lsp': {'enabled': False}, 'markdown': 'yes'})
+
+    listed = run_config.cmd_derivation_resolver_list(argparse.Namespace())
+
+    by_id = {row['id']: row for row in listed['resolvers']}
+    assert set(by_id) == {'lsp', 'markdown'}, 'the malformed entry was hidden from the operator'
+    assert by_id['markdown']['configured'] is False
+    assert by_id['lsp']['configured'] is True
+    # And the other two readers agree with it, entry for entry.
+    got = run_config.cmd_derivation_resolver_get(argparse.Namespace(resolver='markdown'))
+    assert got['configured'] is False
+    # Fails OPEN on the malformed entry, exactly as `get` does.
+    assert by_id['markdown']['enabled'] is True
+    assert got['enabled'] is True
 
 
 def test_remove_returns_resolver_to_default_active(plan_context):
@@ -228,7 +255,7 @@ def test_list_survives_a_raising_entry_read(plan_context, monkeypatch):
 
     listed = run_config.cmd_derivation_resolver_list(argparse.Namespace())
     assert listed['status'] == 'success'
-    assert listed['resolvers'] == [{'id': 'lsp', 'enabled': True}]
+    assert listed['resolvers'] == [{'id': 'lsp', 'enabled': True, 'configured': True}]
 
 
 # ---------------------------------------------------------------------------

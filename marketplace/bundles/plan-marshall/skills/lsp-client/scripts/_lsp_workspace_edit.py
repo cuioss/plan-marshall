@@ -52,10 +52,13 @@ _RESOURCE_OP_KINDS = frozenset({'create', 'rename', 'delete'})
 class WorkspaceApplyError(Exception):
     """A workspace edit failed part-way through; the caller must not see a partial write.
 
-    Raised by :func:`apply_workspace_edit` once every file it had already
-    rewritten has been restored. ``restore_error`` is non-``None`` only when the
-    rollback *itself* failed — the one case in which files really are left
-    modified, and which the caller must report rather than swallow.
+    Raised by :func:`apply_workspace_edit` **after** it has attempted to restore
+    every file it wrote — including the one the failing write itself damaged.
+    Whether that attempt succeeded is exactly what ``restore_error`` reports: it
+    is ``None`` when the tree is back as it was, and non-``None`` in the one case
+    where files really are left modified, which the caller must surface rather
+    than swallow. ⛔ Read the attribute, not this sentence: "has been restored"
+    is the intent, and only ``restore_error is None`` is the fact.
     """
 
     def __init__(self, path: str, cause: BaseException, restore_error: BaseException | None = None) -> None:

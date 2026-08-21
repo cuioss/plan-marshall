@@ -9,6 +9,7 @@ import io
 import json
 import sys
 
+import pytest
 from conftest import get_scripts_dir
 
 SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'tools-corpus-language-server')
@@ -30,16 +31,27 @@ class TestFraming:
         protocol.write_message(out, message)
         assert protocol.read_message(io.BytesIO(out.getvalue())) == message
 
-    def test_end_of_stream_yields_none(self) -> None:
+    def test_ONLY_end_of_stream_yields_none(self) -> None:
+        """``None`` means the client is gone, and it means nothing else.
+
+        ⛔ Every malformed shape below used to return ``None`` too, which the
+        serve loop reads as end-of-stream — so one junk frame ended a resident
+        session, silently. Keeping ``None`` for this case alone is what lets the
+        loop tell "hung up" from "sent something I cannot parse".
+        """
         assert protocol.read_message(io.BytesIO(b'')) is None
 
-    def test_missing_content_length_yields_none(self) -> None:
-        assert protocol.read_message(io.BytesIO(b'X-Other: 1\r\n\r\n{}')) is None
+    def test_missing_content_length_is_unrecoverable(self) -> None:
+        with pytest.raises(protocol.FrameError) as raised:
+            protocol.read_message(io.BytesIO(b'X-Other: 1\r\n\r\n{}'))
+        assert raised.value.recoverable is False
 
-    def test_non_integer_content_length_yields_none(self) -> None:
-        assert protocol.read_message(io.BytesIO(b'Content-Length: abc\r\n\r\n{}')) is None
+    def test_non_integer_content_length_is_unrecoverable(self) -> None:
+        with pytest.raises(protocol.FrameError) as raised:
+            protocol.read_message(io.BytesIO(b'Content-Length: abc\r\n\r\n{}'))
+        assert raised.value.recoverable is False
 
-    def test_negative_content_length_yields_none(self) -> None:
+    def test_negative_content_length_is_unrecoverable(self) -> None:
         """``read(-1)`` means read-to-EOF, so a negative length must be refused.
 
         Left unchecked it swallows the rest of the stream: an invalid frame is
@@ -48,28 +60,62 @@ class TestFraming:
         any real body length exceeds a negative one.
         """
         body = json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize'}).encode('utf-8')
-        assert protocol.read_message(io.BytesIO(b'Content-Length: -1\r\n\r\n' + body)) is None
+        with pytest.raises(protocol.FrameError) as raised:
+            protocol.read_message(io.BytesIO(b'Content-Length: -1\r\n\r\n' + body))
+        assert raised.value.recoverable is False
 
     def test_negative_content_length_does_not_consume_the_stream(self) -> None:
-        """The next frame must still be readable after a rejected negative one."""
+        """The refusal must not swallow the bytes that follow it.
+
+        Unrecoverable means *this reader* cannot say where the next frame
+        begins — not that the bytes were eaten. The distinction matters because
+        `read(-1)` would have consumed everything.
+        """
         good = framed({'jsonrpc': '2.0', 'id': 2, 'method': 'shutdown'})
         stream = io.BytesIO(b'Content-Length: -5\r\n\r\n' + good)
-        assert protocol.read_message(stream) is None
+        with pytest.raises(protocol.FrameError):
+            protocol.read_message(stream)
+        # The refusal happens ON the header line, before the blank line that
+        # ends the block — so what remains is that terminator plus the whole of
+        # the next frame. Every byte is still there, which is the point; the
+        # reader simply cannot vouch for where the boundary is.
+        assert stream.read().endswith(good)
 
     def test_zero_content_length_is_not_rejected_as_negative(self) -> None:
-        """Zero is a valid length; only negatives are refused. An empty body is
-        still not a JSON object, so the result is None — but by the JSON check,
-        not by the sign check."""
-        assert protocol.read_message(io.BytesIO(b'Content-Length: 0\r\n\r\n')) is None
+        """Zero is a valid length; only negatives are refused.
 
-    def test_truncated_body_yields_none(self) -> None:
-        assert protocol.read_message(io.BytesIO(b'Content-Length: 100\r\n\r\n{"a":1}')) is None
+        An empty body is still not a JSON object, so the frame is refused — but
+        by the JSON check, not the sign check, which is why it comes back
+        RECOVERABLE: nothing was left unread, so the stream is still aligned.
+        """
+        with pytest.raises(protocol.FrameError) as raised:
+            protocol.read_message(io.BytesIO(b'Content-Length: 0\r\n\r\n'))
+        assert raised.value.recoverable is True
 
-    def test_malformed_json_yields_none(self) -> None:
-        assert protocol.read_message(io.BytesIO(b'Content-Length: 5\r\n\r\n{not}')) is None
+    def test_truncated_body_is_unrecoverable(self) -> None:
+        with pytest.raises(protocol.FrameError) as raised:
+            protocol.read_message(io.BytesIO(b'Content-Length: 100\r\n\r\n{"a":1}'))
+        assert raised.value.recoverable is False
 
-    def test_non_object_payload_yields_none(self) -> None:
-        assert protocol.read_message(io.BytesIO(framed_list())) is None
+    def test_malformed_json_is_RECOVERABLE(self) -> None:
+        """The declared body was read whole, so the next read starts on a boundary."""
+        with pytest.raises(protocol.FrameError) as raised:
+            protocol.read_message(io.BytesIO(b'Content-Length: 5\r\n\r\n{not}'))
+        assert raised.value.recoverable is True
+
+    def test_non_object_payload_is_RECOVERABLE(self) -> None:
+        with pytest.raises(protocol.FrameError) as raised:
+            protocol.read_message(io.BytesIO(framed_list()))
+        assert raised.value.recoverable is True
+
+    def test_a_recoverable_frame_leaves_the_next_one_readable(self) -> None:
+        """The property `recoverable` actually claims, asserted rather than assumed."""
+        good = framed({'jsonrpc': '2.0', 'id': 7, 'method': 'shutdown'})
+        stream = io.BytesIO(b'Content-Length: 5\r\n\r\n{not}' + good)
+        with pytest.raises(protocol.FrameError) as raised:
+            protocol.read_message(stream)
+        assert raised.value.recoverable is True
+        assert protocol.read_message(stream) == {'jsonrpc': '2.0', 'id': 7, 'method': 'shutdown'}
 
 
 def framed_list() -> bytes:

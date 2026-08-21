@@ -864,11 +864,13 @@ def is_derivation_resolver_enabled(resolver_id: str, section: dict[str, Any] | N
 def cmd_derivation_resolver_get(args: argparse.Namespace) -> dict:
     """Get the binding for a resolver id.
 
-    ``configured`` reports whether a **well-formed** (dict) entry exists;
+    ``configured`` reports whether a **well-formed** (dict) entry exists — the
+    same test the ``list`` verb and ``extension-api``'s roster apply;
     ``enabled`` reports the EFFECTIVE state, which is the default when no entry
     does. The dict test is the shared definition: ``extension_api``'s resolver
-    roster applies the same one, so the two readers of this store cannot report
-    different things about a malformed entry.
+    roster and this module's ``list`` verb apply the same one, so the three
+    readers of this store cannot report different things about a malformed
+    entry.
     """
     try:
         entry = read_derivation_resolvers_section().get(args.resolver)
@@ -904,12 +906,24 @@ def cmd_derivation_resolver_set(args: argparse.Namespace) -> dict:
 
 
 def cmd_derivation_resolver_list(args: argparse.Namespace) -> dict:
-    """List the configured resolver entries.
+    """List every resolver entry the store holds, well-formed or not.
 
     Reports what the STORE holds, not what is discovered — an empty list means
-    nothing is configured, which is the default-everything-active state. The
+    the store is empty, which is the default-everything-active state. The
     discovered set joined against this one is served by
     ``extension-api:extension_api derivation-resolvers list``.
+
+    ⛔ **"Every entry" is not "every configured entry", and the difference is
+    the reason each row carries its own ``configured`` flag.** ``configured``
+    means a **well-formed (dict)** entry everywhere else in this store —
+    ``derivation-resolver get`` and ``extension-api``'s roster both apply that
+    test — while this listing is keyed on mere presence. A malformed entry such
+    as ``{"markdown": "yes"}`` therefore appears here and reads ``configured:
+    false``, which is deliberate in both halves: **omitting** it would hide the
+    operator's own typo from the one verb that exists to show them the store,
+    and **calling it configured** would make a third reader disagree with the
+    other two about one entry. Listing it, flagged, is the only answer that is
+    complete and consistent at once.
     """
     del args  # unused — fixed-shape verb
     try:
@@ -924,7 +938,9 @@ def cmd_derivation_resolver_list(args: argparse.Namespace) -> dict:
                 enabled = is_derivation_resolver_enabled(key, section)
             except Exception:
                 enabled = DERIVATION_RESOLVER_ENABLED_DEFAULT
-            resolvers.append({'id': key, 'enabled': enabled})
+            # Same definition of `configured` the get verb and the extension-api
+            # roster apply, so the three readers of this store cannot disagree.
+            resolvers.append({'id': key, 'enabled': enabled, 'configured': isinstance(section.get(key), dict)})
         return {
             'status': 'success',
             'resolvers': resolvers,
@@ -1138,7 +1154,7 @@ Examples:
   # Switch a derivation resolver off for this checkout (machine-local)
   %(prog)s derivation-resolver set --resolver lsp --disabled
 
-  # List the configured resolver entries (empty => every resolver active)
+  # List every resolver entry the store holds, each flagged `configured` (empty => every resolver active)
   %(prog)s derivation-resolver list
 
   # Drop a resolver entry, returning it to the default-active state

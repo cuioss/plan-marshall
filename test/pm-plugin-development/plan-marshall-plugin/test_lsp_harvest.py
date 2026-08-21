@@ -350,6 +350,68 @@ def _rejecting_server(tmp_path):
     return [PYTHON, str(launcher)]
 
 
+_HANDSHAKE_THEN_SILENT_SERVER = r"""
+import json, sys, time
+
+def read_message():
+    header = b""
+    while b"\r\n\r\n" not in header:
+        c = sys.stdin.buffer.read(1)
+        if not c:
+            return None
+        header += c
+    length = 0
+    for line in header.split(b"\r\n"):
+        if line.lower().startswith(b"content-length:"):
+            length = int(line.split(b":", 1)[1].strip())
+    return json.loads(sys.stdin.buffer.read(length))
+
+# Answer `initialize` immediately and completely, then answer nothing ever
+# again. The handshake SUCCEEDS; the first per-file request hangs.
+while True:
+    message = read_message()
+    if message is None:
+        break
+    if message.get("method") != "initialize":
+        continue
+    body = json.dumps({"jsonrpc": "2.0", "id": message["id"], "result": {"capabilities": {}}}).encode()
+    sys.stdout.buffer.write(b"Content-Length: %d\r\n\r\n" % len(body) + body)
+    sys.stdout.buffer.flush()
+    time.sleep(120.0)
+"""
+
+
+def _handshake_then_silent_server(tmp_path):
+    """Completes the handshake, then never answers a per-file request."""
+    launcher = tmp_path / 'handshake_then_silent_server.py'
+    launcher.write_text(_HANDSHAKE_THEN_SILENT_SERVER, encoding='utf-8')
+    return [PYTHON, str(launcher)]
+
+
+def test_a_failure_AFTER_the_handshake_does_not_cite_the_handshake_budget(tmp_path):
+    """A per-file failure is its own mode, and it may quote no budget at all.
+
+    The handshake budget is the only one this module sets. Reporting it against
+    a request that never waited on it — which the code did, for both branches of
+    one `else` — sends an operator to look at a number the failure had nothing
+    to do with, which is the exact defect the server-rejected split was added to
+    remove, one layer further in.
+    """
+    # Arrange
+    (tmp_path / 'x.py').write_text('import os\n')
+
+    # Act
+    outcome = harvest_workspace(
+        tmp_path, server_cmd=_handshake_then_silent_server(tmp_path), timeout_s=90.0, request_timeout_s=0.5
+    )
+
+    # Assert
+    assert outcome.ran is False
+    assert outcome.reason.startswith('request-failed:'), outcome.reason
+    assert 'did not respond within' not in outcome.reason, 'a handshake budget was quoted for a per-file failure'
+    assert outcome.references == []
+
+
 def test_a_server_that_refuses_the_handshake_is_not_reported_as_a_timeout(tmp_path):
     """A JSON-RPC error reply is a refusal; only wait-expiry is a timeout."""
     # Arrange
@@ -525,6 +587,12 @@ def test_every_failure_mode_states_a_distinct_reason(tmp_path):
             ),
             harvest_workspace(empty, server_cmd=[PYTHON, '-c', 'pass']),
             harvest_workspace(sourced, server_cmd=_rejecting_server(tmp_path), timeout_s=20.0, request_timeout_s=5.0),
+            harvest_workspace(
+                sourced,
+                server_cmd=_handshake_then_silent_server(tmp_path),
+                timeout_s=90.0,
+                request_timeout_s=0.5,
+            ),
         )
     }
 
@@ -535,6 +603,7 @@ def test_every_failure_mode_states_a_distinct_reason(tmp_path):
         'server-timeout',
         'workspace-unsupported',
         'server-rejected',
+        'request-failed',
     }
 
 

@@ -11,9 +11,12 @@ headers, and routes the three inbound message kinds a real server emits:
   built-in handler (``workspace/configuration`` returns an analysis config that
   enables workspace indexing so ``workspace/symbol`` searches unopened files;
   progress / capability-registration requests are acked with ``null``);
-* **notifications** (no ``id``) — buffered, with ``publishDiagnostics`` tracked
-  per URI *and counted per URI* so a post-edit re-diagnose can wait for the
-  **next** push rather than settling for the one cached before the edit.
+* **notifications** (no ``id``) — **discarded**, except ``publishDiagnostics``,
+  which is tracked per URI *and counted per URI* so a post-edit re-diagnose can
+  wait for the **next** push rather than settling for the one cached before the
+  edit. Nothing else is retained: a busy server's ``$/progress`` and
+  ``window/logMessage`` stream is arbitrarily large and nobody here reads it, so
+  buffering it would be an unbounded cost for no reader.
 
 The diagnostics wait answers with three outcomes, never two:
 ``[]`` means *the server examined this file and found nothing*, a non-empty list
@@ -241,8 +244,12 @@ class StdioTransport:
 
         Waits for a ``publishDiagnostics`` for ``uri`` **later than**
         ``after_seq`` (or, when ``after_seq`` is ``None``, for any push at all),
-        then for ``settle`` seconds of quiet on the inbound stream so a
-        multi-push sequence lands whole.
+        then for ``settle`` seconds with **no further ``publishDiagnostics`` for
+        any URI**, so a multi-push sequence lands whole. ⚠ Quiet is measured on
+        diagnostics alone, not on the inbound stream: a server chattering
+        ``$/progress`` throughout does not extend the wait, which is deliberate —
+        the wait is for the parser's verdict to settle, and unrelated traffic
+        would otherwise hold it open until the timeout.
 
         Returns:
             The diagnostics for ``uri`` — an empty list when the server examined

@@ -38,6 +38,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from conftest import get_script_path, get_scripts_dir
 
 SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'tools-corpus-language-server')
@@ -151,6 +152,92 @@ def test_a_contained_exception_is_reported_on_stderr(tmp_path):
 
     assert b'corpus-lsp' in result.stderr
     assert b'textDocument/definition' in result.stderr
+
+
+# -- the FRAMING layer, which is a separate boundary from the handler ---------
+
+# Each entry is (label, raw bytes, whether the stream stays frame-aligned).
+# A frame whose declared body was read whole leaves the reader on a boundary and
+# the session can skip it; one whose LENGTH was unusable does not, and the
+# session must end — but audibly.
+_RECOVERABLE_FRAMES = [
+    ('bad-json', b'Content-Length: 7\r\n\r\n{"a":,}', True),
+    ('not-an-object', b'Content-Length: 9\r\n\r\n[1, 2, 3]', True),
+    ('bad-utf8', b'Content-Length: 4\r\n\r\n\xff\xfe\xfd\xfc', True),
+]
+_UNRECOVERABLE_FRAMES = [
+    ('negative-length', b'Content-Length: -1\r\n\r\n{}', False),
+    ('non-integer-length', b'Content-Length: abc\r\n\r\n{}', False),
+    ('no-length-header', b'X-Other: 1\r\n\r\n{}', False),
+    ('short-body', b'Content-Length: 99\r\n\r\n{"a":1}', False),
+]
+
+
+@pytest.mark.parametrize(('label', 'raw'), [(label, raw) for label, raw, _ in _RECOVERABLE_FRAMES])
+def test_a_recoverable_bad_frame_is_skipped_and_the_session_continues(tmp_path, label, raw):
+    """The declared body was read whole, so the next read starts on a boundary.
+
+    This is the deliverable's own title clause — *survives a bad frame* — and it
+    was false for every frame shape until this guard existed: `read_message`
+    returned ``None`` for a malformed frame exactly as it does at end of stream,
+    and the loop reads ``None`` as "the client is gone". A single junk frame
+    ended a resident session, and stderr said nothing at all.
+    """
+    project = _project(tmp_path)
+    frames = (
+        _framed({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}})
+        + raw
+        + _framed({'jsonrpc': '2.0', 'id': 9, 'method': 'initialize', 'params': {}})
+        + _framed({'jsonrpc': '2.0', 'method': 'exit'})
+    )
+
+    result = _serve(project, frames)
+
+    assert result.returncode == 0
+    answered = {message.get('id') for message in _messages(result.stdout)}
+    assert 1 in answered
+    assert 9 in answered, f'{label}: the request AFTER the bad frame was never answered'
+    assert b'malformed frame' in result.stderr, f'{label}: the skip was silent'
+
+
+@pytest.mark.parametrize(('label', 'raw'), [(label, raw) for label, raw, _ in _UNRECOVERABLE_FRAMES])
+def test_an_unrecoverable_bad_frame_ends_the_session_AUDIBLY(tmp_path, label, raw):
+    """The length was unusable, so nobody knows where the next frame begins.
+
+    Ending is correct here — resynchronising on arbitrary bytes is worse. What
+    must not happen is ending the way end-of-stream ends, because an operator
+    then sees a client that hung up rather than a client that sent something
+    unparseable. stderr is the only channel that can carry the difference:
+    stdout is the protocol.
+    """
+    project = _project(tmp_path)
+    frames = (
+        _framed({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}})
+        + raw
+        + _framed({'jsonrpc': '2.0', 'id': 9, 'method': 'initialize', 'params': {}})
+    )
+
+    result = _serve(project, frames)
+
+    answered = {message.get('id') for message in _messages(result.stdout)}
+    assert 1 in answered, f'{label}: the frame BEFORE the bad one must still be answered'
+    assert b'malformed frame' in result.stderr, f'{label}: the session died silently'
+
+
+def test_a_clean_end_of_stream_is_not_reported_as_a_bad_frame(tmp_path):
+    """The control that keeps the guard above honest.
+
+    A client closing its end is the ordinary way a session finishes. If EOF
+    started logging "malformed frame" the two would be conflated again, just in
+    the opposite direction, and the stderr signal would mean nothing.
+    """
+    project = _project(tmp_path)
+    frames = _framed({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}})
+
+    result = _serve(project, frames)
+
+    assert result.returncode == 0
+    assert b'malformed frame' not in result.stderr
 
 
 def test_a_failing_notification_is_swallowed_without_a_response(tmp_path):

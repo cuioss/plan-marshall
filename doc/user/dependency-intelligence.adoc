@@ -91,9 +91,11 @@ Three descriptor forms are read, in this order: PEP 621 `[project]`; then `[tool
 
 [WARNING]
 ====
-*The fallback is all-or-nothing per file, and one hybrid layout loses its edges because of it.* If `[project]` supplies a `name`, `[tool.poetry]` is not consulted at all — including its dependency lists. So a `pyproject.toml` with a `[project]` table carrying the name and its dependencies under `[tool.poetry.dependencies]` publishes the name and *no dependencies*: the module becomes a valid edge target and contributes no outbound edges, with nothing in the output saying why.
+*The NAME decides which forms are read, and one hybrid layout loses its edges because of it.* If `[project]` supplies a `name`, no later form is consulted at all — including its dependency lists. So a `pyproject.toml` with a `[project]` table carrying the name and its dependencies under `[tool.poetry.dependencies]` publishes the name and *no dependencies*: the module becomes a valid edge target and contributes no outbound edges, with nothing in the output saying why.
 
-It is all-or-nothing on purpose — `metadata` and `dependencies` are read by consumers beyond edge derivation, and a per-field merge would let one form silently override the other's answer. If your project is in this shape, move the dependencies under `[project] dependencies`, or remove the `name` from `[project]` so the Poetry table is read whole.
+The gate is the name on purpose: `metadata` and `dependencies` are read by consumers beyond edge derivation, and letting a later form supply a name the earlier one already gave would make which descriptor wins depend on read order. If your project is in this shape, move the dependencies under `[project] dependencies`, or remove the `name` from `[project]` so the Poetry table is read whole.
+
+NOTE: When an earlier form supplies dependencies but *no* name — `[project]` with a `dependencies` list and no `name`, which is invalid PEP 621 — the later form is consulted and its dependencies are *added* to what the earlier one already contributed. The result is a union, never an override, so no declaration is lost; but it does mean "only one form is read" holds for the name, not for every field.
 ====
 
 `setup.cfg` behaves the same way for the same reason: it is consulted only when neither table in `pyproject.toml` supplied a name.
