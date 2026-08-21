@@ -589,6 +589,43 @@ Both recorded consequences were discharged:
   skipped` in 424.49s, all six dimensions clean. The pre-rebase green is
   evidence about a tree that no longer exists and is not carried forward.
 
+## Review participation (Step 7)
+
+PR **#1320**, created **open and unlabelled** — § Step 7's table re-derived at
+creation over `git diff --name-only origin/main...HEAD` gave 28 R1 paths, 23 R2,
+5 R3 and **0 S**, so row 1 fires: arm `reviewable`. **No `skip-bot-review`
+label was ever applied**, so neither coverage-loss phrase is owed and no
+reviewer's silence is attributable to suppression.
+
+Every verdict below is read from the comment and review **bodies**, never from a
+check-run conclusion — a green check is not evidence that a reviewer read
+anything.
+
+| Reviewer | Verdict | Reopens? | Basis |
+|---|---|---|---|
+| `cuioss-review-bot` | **reviewed** | — | Posted its Reviewer Guide: tests present, no security concerns, no major issues. **No actionable finding**, so nothing to disposition. |
+| `sourcery-ai` | **refused — size ceiling** | **no** | Review body: *"your pull request is larger than the review limit of 150000 diff characters"*. A property of this diff, not a clock: waiting cannot change it, so this is `no-reopen` and is recorded as a shortfall immediately rather than retried. Its check run reads `skipped`; the **body** is what establishes the reason. |
+| `coderabbitai` | see retry log | **yes** | Rate-limited with a countdown on every attempt so far. A countdown is a clock, not a verdict — § Step 7 forbids recording it as a shortfall while attempts remain. |
+
+### Condition-6 retry log (CodeRabbit)
+
+An attempt for an auto-review reviewer is a **push**; its trigger comment is
+inapplicable. No head was manufactured for any attempt — each is a push the run
+owed anyway. Budget: six.
+
+| # | Time (UTC) | Head | What carried it | Notice drawn |
+|---|---|---|---|---|
+| 1 | 13:21 | `88d22e3` | PR creation | *"Review limit reached … Next review available in: 38 minutes"* |
+| 2 | 13:35 | `b55ad1d` | Condition 2's base merge + condition 4's report push (one push) | Same notice, comment edited in place at 13:35:30 |
+| 3 | 14:29 | — | This section's own commit — the report re-commit § Step 8 condition 4 licenses on each wake | *(recorded below on the next read)* |
+
+⛔ **Attempts 1 and 2 fell inside one window and the second was therefore spent
+for nothing.** Both were pushes the run owed on its own schedule (§ Step 4's
+cadence outranks this retry schedule, and a finished commit is never held back
+to time an attempt), so neither was avoidable — but the budget counts the run's
+effort, not the provider's accounting, so it cost 2 of 6 regardless. Attempt 3
+was timed to the stated window plus jitter.
+
 ## Contract check (Step 9)
 
 Each step re-checked against what actually happened, and against the artifact on
