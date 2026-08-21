@@ -11,11 +11,11 @@ plumbing roundtrip that proves the cross-skill ``validate_struct`` import chain
 resolves at subprocess runtime.
 """
 
-from conftest import get_script_path, load_script_module, run_script
+from _manage_findings_fixtures import SCRIPT_PATH
+
+from conftest import load_script_module, run_script
 
 # Script path for the CLI plumbing (subprocess) test.
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-findings', 'manage-findings.py')
-
 # Tier 2 direct imports — load the underscore-prefixed sibling modules. Loading
 # _findings_core first registers it in sys.modules so _findings_ingest's
 # `from _findings_core import ...` resolves to the same instance.

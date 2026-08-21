@@ -290,7 +290,7 @@ class TestDeletePlanCorpusLossDirection:
         incumbent remained — the carried lesson's content was gone from disk.
 
         **Distinguishing premise vs its deliverable-1 siblings** (the outcome-code
-        cases in ``test_manage_status_transition.py``): those assert the
+        cases in ``test_manage_status_transition*.py``): those assert the
         reported OUTCOME (``skipped_lessons``, ``lesson_carry_back_incomplete``).
         This case asserts **survival of the file's content** and makes no
         assertion about any outcome code. That is the only formulation that

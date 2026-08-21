@@ -5,7 +5,7 @@
 
 The happy paths and the most common rejections for ``prepare-add`` /
 ``commit-add`` / ``batch-add`` / ``update`` / ``remove`` are already covered by
-the sibling suites (test_manage_tasks_add.py, test_manage_tasks_batch_add.py,
+the sibling suites (test_manage_tasks_add.py, test_manage_tasks_batch_add_*.py,
 test_manage_tasks_update_remove.py, test_tasks_writeback.py). This module fills
 the remaining branches in ``_tasks_crud.py``:
 

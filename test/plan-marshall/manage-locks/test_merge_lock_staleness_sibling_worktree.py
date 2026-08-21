@@ -40,6 +40,7 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
+from _manage_locks_fixtures import _write_lock
 
 from conftest import load_script_module
 
@@ -83,10 +84,6 @@ def sibling_worktree_scene(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> d
         'lock_path': base / 'merge.lock',
         'querier_wt': querier_wt,
     }
-
-
-def _write_lock(lock_path: Path, holder: str) -> None:
-    lock_path.write_text(holder + '\n', encoding='utf-8')
 
 
 def _make_sibling_worktree_live_plan(base: Path, holder: str) -> None:

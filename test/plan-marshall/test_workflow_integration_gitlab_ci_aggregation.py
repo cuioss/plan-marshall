@@ -27,7 +27,7 @@ invocations.
 import argparse
 
 import gitlab_ops
-from _ci_wait_contract import _noop_sleep, _ok_auth
+from _ci_wait_contract import _ci_wait_args, _noop_sleep, _ok_auth
 
 # =============================================================================
 # Helpers
@@ -329,10 +329,6 @@ def test_ci_status_returns_none_for_empty_jobs_and_unknown_pipeline(monkeypatch)
 # =============================================================================
 # cmd_ci_wait — final_status derivation after wait completes
 # =============================================================================
-
-
-def _ci_wait_args(pr_number=42, timeout=5, interval=0):
-    return argparse.Namespace(pr_number=pr_number, timeout=timeout, interval=interval)
 
 
 def test_ci_wait_final_status_success_for_pass_plus_skipped(monkeypatch):

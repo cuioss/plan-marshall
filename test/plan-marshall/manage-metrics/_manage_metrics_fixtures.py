@@ -21,7 +21,7 @@ right value into the wrong field. Keyword-only makes that a ``TypeError``.
 
 from argparse import Namespace
 
-from conftest import parse_ns
+from conftest import get_script_path, parse_ns
 
 BUNDLE = 'plan-marshall'
 SKILL = 'manage-metrics'
@@ -184,3 +184,6 @@ def raw_ns(command: str, **fields: object) -> Namespace:
     every other call site builds its namespace from the real parser.
     """
     return Namespace(command=command, **fields)
+
+
+SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')

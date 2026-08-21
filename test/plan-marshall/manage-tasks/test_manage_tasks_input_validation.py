@@ -14,11 +14,9 @@ from _input_validation_fixtures import (
     assert_invalid_field,
     assert_plan_id_axis_rejected,
 )
+from _manage_tasks_fixtures import SCRIPT_PATH
 
-from conftest import get_script_path, run_script
-
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-tasks', 'manage-tasks.py')
-
+from conftest import run_script
 
 # =============================================================================
 # --plan-id (list, read, exists, next, etc.)

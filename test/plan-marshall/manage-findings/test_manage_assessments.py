@@ -9,13 +9,13 @@ import importlib.util
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import get_script_path, run_script
+from _manage_findings_fixtures import SCRIPT_PATH
 
 # Script path for remaining subprocess (CLI plumbing) tests
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-findings', 'manage-findings.py')
-
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # noqa: E402
+
+from conftest import run_script
 
 # Tier 2 direct imports - load hyphenated module via importlib
 _MANAGE_FINDINGS_SCRIPT = str(

@@ -35,34 +35,20 @@ D3 coverage (each of a–d from the plan's deliverable 4):
   ``light`` would pass every OTHER test here).
 """
 
+
 from __future__ import annotations
 
-import json
-from argparse import Namespace
-from pathlib import Path
-
-from conftest import load_script_module
-
-_mod = load_script_module(
-    'plan-marshall', 'manage-status', '_cmd_planning_lane.py', '_cmd_planning_lane_corroboration'
+from _planning_lane_corroboration_fixtures import (
+    _RECORDED_VECTOR,
+    _ns_route,
+    _write_marshal,
+    _write_orchestrator_request,
+    _write_plaintext_request,
+    _write_references,
+    _write_status,
+    cmd_planning_lane_route,
+    evaluate_signals_pure,
 )
-evaluate_signals_pure = _mod.evaluate_signals_pure
-cmd_planning_lane_route = _mod.cmd_planning_lane_route
-
-
-# The EXACT recorded signal vector from the observed over-route (plan 240 § Problem),
-# transcribed so D3(a) can replay it without the archived decision log (which lives
-# under .plan/, absent from this clone). fired=['S7:risk_prose'] alone bought deep.
-_RECORDED_VECTOR = {
-    'plan_source': None,
-    'scope_estimate': 'single_module',
-    'change_type': None,
-    'compatibility': None,
-    'request_concrete': True,
-    'risk_prose': True,
-    'override': None,
-}
-
 
 # =============================================================================
 # D3(a) — replay the recorded vector: NOT deep
@@ -100,6 +86,38 @@ def test_recorded_vector_routes_deep_without_the_corroboration_fix():
     assert result['lane'] == 'light'
     assert result['fired_signals'] == []
     assert result['suppressed_signals'] == []
+
+
+# =============================================================================
+# D0/D3(b) — the orchestrator-spec plan_source bridge (end-to-end via the router)
+# =============================================================================
+
+def test_recorded_case_end_to_end_routes_light(plan_context):
+    """End-to-end wiring of D3(a): a single_module request whose body fires ONLY S7
+    routes light through the real command entry point.
+
+    The scope is persisted ``single_module`` and the body names a concrete path (so
+    S5 / S1 stay quiet) while carrying one risk-prose phrase (``foundation``), so S7
+    is the sole fired signal. The corroboration then denies it the lane: ``light``,
+    with S7 suppressed — the recorded over-route, corrected, proven through the
+    reader rather than only the pure scorer.
+    """
+    plan_dir = plan_context.plan_dir_for('pl-recorded-e2e')
+    _write_orchestrator_request(
+        plan_dir,
+        '.plan/local/orchestrator/y/plans/PLAN-03-y.md',
+        'Update pkg/one.py. This is foundation work the rest builds on.',
+    )
+    _write_status(plan_dir, metadata={})
+    _write_references(plan_dir, scope_estimate='single_module')
+    _write_marshal(plan_context.fixture_dir)
+
+    result = cmd_planning_lane_route(_ns_route('pl-recorded-e2e'))
+
+    assert result['signals']['risk_prose'] is True
+    assert result['planning_lane'] == 'light'
+    assert result['fired_signals'] == []
+    assert result['suppressed_signals'] == ['S7:risk_prose']
 
 
 # =============================================================================
@@ -261,87 +279,6 @@ def test_confidence_high_when_most_signals_resolve():
 # D0/D3(b) — the orchestrator-spec plan_source bridge (end-to-end via the router)
 # =============================================================================
 
-
-def _write_orchestrator_request(plan_dir: Path, source_id: str, body: str) -> None:
-    """Author a ``request.md`` in phase-1-init's file-pointer (orchestrator-spec) shape.
-
-    ``source: description`` with a non-empty ``source_id`` header — the exact shape
-    phase-1-init writes via ``request create --source-id`` on the file-pointer
-    branch, and the one it never mirrors into ``status.metadata.plan_source``.
-    """
-    plan_dir.mkdir(parents=True, exist_ok=True)
-    content = (
-        '# Request: An ingested orchestrator plan spec\n'
-        '\n'
-        f'plan_id: {plan_dir.name}\n'
-        'source: description\n'
-        f'source_id: {source_id}\n'
-        'created: 2026-01-01T00:00:00Z\n'
-        '\n'
-        '## Original Input\n'
-        '\n'
-        f'{body}\n'
-    )
-    (plan_dir / 'request.md').write_text(content, encoding='utf-8')
-
-
-def _write_plaintext_request(plan_dir: Path, body: str) -> None:
-    """A plain-text ``description`` request: ``source: description``, NO ``source_id``.
-
-    phase-1-init strips the ``source_id`` line for a plain-text description (the
-    template placeholder is cleaned when unset), so this is the shape that must NOT
-    resolve orchestrator provenance.
-    """
-    plan_dir.mkdir(parents=True, exist_ok=True)
-    content = (
-        '# Request: A plain-text description\n'
-        '\n'
-        f'plan_id: {plan_dir.name}\n'
-        'source: description\n'
-        'created: 2026-01-01T00:00:00Z\n'
-        '\n'
-        '## Original Input\n'
-        '\n'
-        f'{body}\n'
-    )
-    (plan_dir / 'request.md').write_text(content, encoding='utf-8')
-
-
-def _write_status(plan_dir: Path, metadata: dict | None = None) -> None:
-    plan_dir.mkdir(parents=True, exist_ok=True)
-    (plan_dir / 'status.json').write_text(
-        json.dumps({'plan_id': plan_dir.name, 'phases': [], 'metadata': metadata or {}}),
-        encoding='utf-8',
-    )
-
-
-def _write_references(plan_dir: Path, scope_estimate: str | None) -> None:
-    plan_dir.mkdir(parents=True, exist_ok=True)
-    refs: dict = {'base_branch': 'main'}
-    if scope_estimate is not None:
-        refs['scope_estimate'] = scope_estimate
-    (plan_dir / 'references.json').write_text(json.dumps(refs), encoding='utf-8')
-
-
-def _write_marshal(fixture_dir: Path) -> None:
-    (fixture_dir / 'marshal.json').write_text(
-        json.dumps(
-            {
-                'plan': {
-                    'phase-1-init': {'deep_lane': 'auto'},
-                    'phase-2-refine': {'compatibility': 'deprecation'},
-                }
-            },
-            indent=2,
-        ),
-        encoding='utf-8',
-    )
-
-
-def _ns_route(plan_id: str) -> Namespace:
-    return Namespace(plan_id=plan_id, lane_override=None, persist=False)
-
-
 def test_d3b_orchestrator_spec_resolves_plan_source_nonnull(plan_context):
     """(b) An orchestrator-spec-sourced request resolves ``plan_source`` non-null.
 
@@ -399,31 +336,3 @@ def test_plaintext_description_does_not_resolve_orchestrator_provenance(plan_con
 
     assert result['signals']['plan_source'] is None
     assert 'plan_source' in result['confidence']['null_signals']
-
-
-def test_recorded_case_end_to_end_routes_light(plan_context):
-    """End-to-end wiring of D3(a): a single_module request whose body fires ONLY S7
-    routes light through the real command entry point.
-
-    The scope is persisted ``single_module`` and the body names a concrete path (so
-    S5 / S1 stay quiet) while carrying one risk-prose phrase (``foundation``), so S7
-    is the sole fired signal. The corroboration then denies it the lane: ``light``,
-    with S7 suppressed — the recorded over-route, corrected, proven through the
-    reader rather than only the pure scorer.
-    """
-    plan_dir = plan_context.plan_dir_for('pl-recorded-e2e')
-    _write_orchestrator_request(
-        plan_dir,
-        '.plan/local/orchestrator/y/plans/PLAN-03-y.md',
-        'Update pkg/one.py. This is foundation work the rest builds on.',
-    )
-    _write_status(plan_dir, metadata={})
-    _write_references(plan_dir, scope_estimate='single_module')
-    _write_marshal(plan_context.fixture_dir)
-
-    result = cmd_planning_lane_route(_ns_route('pl-recorded-e2e'))
-
-    assert result['signals']['risk_prose'] is True
-    assert result['planning_lane'] == 'light'
-    assert result['fired_signals'] == []
-    assert result['suppressed_signals'] == ['S7:risk_prose']

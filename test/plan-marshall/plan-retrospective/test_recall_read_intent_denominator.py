@@ -14,59 +14,12 @@ excluded, and everything else — including an unannotated declaration, which
 states no intent and must not be assumed read-only — still counts.
 """
 
+
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
-from conftest import load_script_module
-
-_cac = load_script_module(
-    'plan-marshall', 'plan-retrospective', 'check-artifact-consistency.py', 'cac_read_intent_mod'
-)
-
-#: The check passes at or above this recall. Restated from the module under test
-#: so a threshold change surfaces here as a failure rather than silently
-#: re-tuning what these fixtures prove.
-_THRESHOLD = 0.70
-
-_ONE_DELIVERABLE = [{'number': '1', 'title': 'Deliverable 1'}]
-
-
-def _outline(entries: list[tuple[str, str | None]], *, backticked: bool = True) -> str:
-    """Build a one-deliverable outline whose bullets carry per-file intents.
-
-    ``entries`` is ``(path, intent)``; an intent of ``None`` emits the
-    unannotated bullet form. ``backticked`` selects the canonical
-    ``- `path` (intent)`` form or the bare ``- path (intent)`` form.
-    """
-    bullets = []
-    for path, intent in entries:
-        rendered = f'`{path}`' if backticked else path
-        suffix = f' ({intent})' if intent else ''
-        bullets.append(f'- {rendered}{suffix}')
-    return (
-        '# Solution: Intent\n\n'
-        '## Summary\n\nFixture.\n\n'
-        '## Overview\n\nOverview.\n\n'
-        '## Deliverables\n\n'
-        '### 1. Deliverable 1\n\n'
-        '**Affected files:**\n' + '\n'.join(bullets) + '\n'
-    )
-
-
-def _plan_dir(tmp_path: Path, footprint: list[str]) -> Path:
-    """Seed a plan dir whose footprint resolves from the tier-2 capture.
-
-    Using ``realized_footprint`` keeps the fixture deterministic: the resolver
-    answers from the file, so no worktree or git history is involved.
-    """
-    plan_dir = tmp_path / 'plan'
-    plan_dir.mkdir()
-    (plan_dir / 'references.json').write_text(
-        json.dumps({'realized_footprint': footprint}), encoding='utf-8'
-    )
-    return plan_dir
+from _recall_read_intent_denominator_fixtures import _ONE_DELIVERABLE, _cac, _outline, _plan_dir
 
 
 class TestReadIntentExcludedFromDenominator:
@@ -162,6 +115,107 @@ class TestReadIntentExcludedFromDenominator:
 
         assert _cac.extract_affected_files_per_deliverable(outline) == ['src/w.py', 'src/r.py']
         assert _cac.extract_modification_intent_files(outline) == ['src/w.py']
+
+
+class TestReadIntentExcludedIsPublishedOnEveryBranch:
+    """The docs state this key lets a reader tell a small denominator from a
+    filtered one. That is only true if every branch publishes it — an absent key
+    reads as "nothing was filtered", which is the same absent-vs-zero collapse
+    this plan exists to remove.
+    """
+
+    def test_published_on_the_unresolvable_footprint_branch(self, tmp_path):
+        """The branch this plan is centrally about."""
+        outline = _outline([('src/w.py', 'write-new'), ('src/r.py', 'read')])
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        (plan_dir / 'references.json').write_text(json.dumps({'domains': []}), encoding='utf-8')
+
+        status, _message, details = _cac.check_affected_files_recall(
+            outline, plan_dir, _ONE_DELIVERABLE
+        )
+
+        assert status == 'inconclusive'
+        assert details['read_intent_excluded'] == 1
+
+    def test_published_on_the_unparseable_fail_branch(self, tmp_path):
+        """That verdict reads the UNFILTERED bullets, published under its own name.
+
+        ``declared`` keeps one meaning on every branch so the reconstruction
+        identity holds; the unfiltered population it actually consulted is
+        reported as ``declared_unfiltered`` rather than by overloading it.
+        """
+        outline = (
+            '# Solution\n\n## Summary\n\ns\n\n## Overview\n\no\n\n## Deliverables\n\n'
+            '### 1. One\n\n**Affected files:**\n\n### 2. Two\n\n'
+            '**Affected files:**\n- `src/r.py` (read)\n'
+        )
+        plan_dir = _plan_dir(tmp_path, ['src/w.py'])
+
+        status, _message, details = _cac.check_affected_files_recall(
+            outline, plan_dir, _ONE_DELIVERABLE
+        )
+
+        assert status == 'fail'
+        assert details['declared'] == 0
+        assert details['declared_unfiltered'] == 1
+        assert details['read_intent_excluded'] == 1
+
+    def test_published_on_the_unreadable_references_fail_branch(self, tmp_path):
+        """The branch round 1 added the key to but never asserted."""
+        outline = _outline([('src/w.py', 'write-new'), ('src/r.py', 'read')])
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        (plan_dir / 'references.json').write_text('{not json', encoding='utf-8')
+
+        status, message, details = _cac.check_affected_files_recall(
+            outline, plan_dir, _ONE_DELIVERABLE
+        )
+
+        assert status == 'fail'
+        assert 'references.json unreadable' in message
+        assert details['read_intent_excluded'] == 1
+
+    def test_published_on_the_no_declaration_skip_branch(self, tmp_path):
+        outline = (
+            '# Solution\n\n## Summary\n\ns\n\n## Overview\n\no\n\n'
+            '## Deliverables\n\n### 1. One\n\nNo files.\n'
+        )
+        plan_dir = _plan_dir(tmp_path, ['src/a.py'])
+
+        status, _message, details = _cac.check_affected_files_recall(
+            outline, plan_dir, _ONE_DELIVERABLE
+        )
+
+        assert status == 'skip'
+        assert details['read_intent_excluded'] == 0
+
+    def test_the_reconstruction_identity_recovers_distinct_declared_paths(self, tmp_path):
+        """``declared + read_intent_excluded`` recovers the DISTINCT declared paths.
+
+        The identity is what makes the key useful; a branch where ``declared``
+        silently means something else double-counts. Both operands are set
+        cardinalities, so the reconstructed total counts distinct paths and NOT
+        bullets — this fixture declares one path twice to pin that difference,
+        which a fixture of all-unique paths cannot express.
+        """
+        outline = _outline(
+            [
+                ('src/w.py', 'write-new'),
+                ('src/w.py', 'write-new'),
+                ('src/r.py', 'read'),
+            ]
+        )
+        plan_dir = _plan_dir(tmp_path, ['src/w.py'])
+
+        _status, _message, details = _cac.check_affected_files_recall(
+            outline, plan_dir, _ONE_DELIVERABLE
+        )
+
+        assert len(_cac.extract_affected_files_per_deliverable(outline)) == 3, 'three bullets'
+        assert details['declared'] + details['read_intent_excluded'] == 2, (
+            'two DISTINCT declared paths, not three bullets'
+        )
 
 
 class TestIntentCaptureNeverBreaksParsing:
@@ -295,107 +349,6 @@ class TestAllReadIntentIsSkippedNotFailed:
         # from the every-declaration-is-read-intent one without knowing which
         # declaration form the outline used.
         assert 'Files expected to mutate' in message
-
-
-class TestReadIntentExcludedIsPublishedOnEveryBranch:
-    """The docs state this key lets a reader tell a small denominator from a
-    filtered one. That is only true if every branch publishes it — an absent key
-    reads as "nothing was filtered", which is the same absent-vs-zero collapse
-    this plan exists to remove.
-    """
-
-    def test_published_on_the_unresolvable_footprint_branch(self, tmp_path):
-        """The branch this plan is centrally about."""
-        outline = _outline([('src/w.py', 'write-new'), ('src/r.py', 'read')])
-        plan_dir = tmp_path / 'plan'
-        plan_dir.mkdir()
-        (plan_dir / 'references.json').write_text(json.dumps({'domains': []}), encoding='utf-8')
-
-        status, _message, details = _cac.check_affected_files_recall(
-            outline, plan_dir, _ONE_DELIVERABLE
-        )
-
-        assert status == 'inconclusive'
-        assert details['read_intent_excluded'] == 1
-
-    def test_published_on_the_unparseable_fail_branch(self, tmp_path):
-        """That verdict reads the UNFILTERED bullets, published under its own name.
-
-        ``declared`` keeps one meaning on every branch so the reconstruction
-        identity holds; the unfiltered population it actually consulted is
-        reported as ``declared_unfiltered`` rather than by overloading it.
-        """
-        outline = (
-            '# Solution\n\n## Summary\n\ns\n\n## Overview\n\no\n\n## Deliverables\n\n'
-            '### 1. One\n\n**Affected files:**\n\n### 2. Two\n\n'
-            '**Affected files:**\n- `src/r.py` (read)\n'
-        )
-        plan_dir = _plan_dir(tmp_path, ['src/w.py'])
-
-        status, _message, details = _cac.check_affected_files_recall(
-            outline, plan_dir, _ONE_DELIVERABLE
-        )
-
-        assert status == 'fail'
-        assert details['declared'] == 0
-        assert details['declared_unfiltered'] == 1
-        assert details['read_intent_excluded'] == 1
-
-    def test_published_on_the_unreadable_references_fail_branch(self, tmp_path):
-        """The branch round 1 added the key to but never asserted."""
-        outline = _outline([('src/w.py', 'write-new'), ('src/r.py', 'read')])
-        plan_dir = tmp_path / 'plan'
-        plan_dir.mkdir()
-        (plan_dir / 'references.json').write_text('{not json', encoding='utf-8')
-
-        status, message, details = _cac.check_affected_files_recall(
-            outline, plan_dir, _ONE_DELIVERABLE
-        )
-
-        assert status == 'fail'
-        assert 'references.json unreadable' in message
-        assert details['read_intent_excluded'] == 1
-
-    def test_published_on_the_no_declaration_skip_branch(self, tmp_path):
-        outline = (
-            '# Solution\n\n## Summary\n\ns\n\n## Overview\n\no\n\n'
-            '## Deliverables\n\n### 1. One\n\nNo files.\n'
-        )
-        plan_dir = _plan_dir(tmp_path, ['src/a.py'])
-
-        status, _message, details = _cac.check_affected_files_recall(
-            outline, plan_dir, _ONE_DELIVERABLE
-        )
-
-        assert status == 'skip'
-        assert details['read_intent_excluded'] == 0
-
-    def test_the_reconstruction_identity_recovers_distinct_declared_paths(self, tmp_path):
-        """``declared + read_intent_excluded`` recovers the DISTINCT declared paths.
-
-        The identity is what makes the key useful; a branch where ``declared``
-        silently means something else double-counts. Both operands are set
-        cardinalities, so the reconstructed total counts distinct paths and NOT
-        bullets — this fixture declares one path twice to pin that difference,
-        which a fixture of all-unique paths cannot express.
-        """
-        outline = _outline(
-            [
-                ('src/w.py', 'write-new'),
-                ('src/w.py', 'write-new'),
-                ('src/r.py', 'read'),
-            ]
-        )
-        plan_dir = _plan_dir(tmp_path, ['src/w.py'])
-
-        _status, _message, details = _cac.check_affected_files_recall(
-            outline, plan_dir, _ONE_DELIVERABLE
-        )
-
-        assert len(_cac.extract_affected_files_per_deliverable(outline)) == 3, 'three bullets'
-        assert details['declared'] + details['read_intent_excluded'] == 2, (
-            'two DISTINCT declared paths, not three bullets'
-        )
 
 
 class TestExactMatchSharesTheFilteredDenominator:

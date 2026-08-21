@@ -16,6 +16,8 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
+from _manage_status_fixtures import _write_status
+
 from conftest import load_script_module
 
 _mod = load_script_module(
@@ -46,15 +48,6 @@ def _write_request(plan_dir: Path, body: str, section: str = 'clarified_request'
             f'{body}\n'
         )
     (plan_dir / 'request.md').write_text(content, encoding='utf-8')
-
-
-def _write_status(plan_dir: Path) -> None:
-    """Seed a minimal status.json so --persist write paths can read it."""
-    plan_dir.mkdir(parents=True, exist_ok=True)
-    (plan_dir / 'status.json').write_text(
-        json.dumps({'plan_id': plan_dir.name, 'phases': [], 'metadata': {}}),
-        encoding='utf-8',
-    )
 
 
 # =============================================================================

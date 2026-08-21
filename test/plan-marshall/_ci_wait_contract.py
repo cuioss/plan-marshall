@@ -468,3 +468,7 @@ CONTRACT_TESTS = (
     'test_issue_wait_for_label_absent_completes_when_label_disappears',
     'test_issue_wait_for_label_times_out_when_label_state_never_changes',
 )
+
+
+def _ci_wait_args(pr_number=42, timeout=5, interval=0):
+    return argparse.Namespace(pr_number=pr_number, timeout=timeout, interval=interval)

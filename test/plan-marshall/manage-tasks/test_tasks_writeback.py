@@ -22,24 +22,22 @@ Tier 2 (direct import via ``_manage_tasks_fixtures``) tests exercise the ``cmd_u
 ``cmd_next`` round-trip with the ``plan_context`` PLAN_BASE_DIR sandbox; Tier 3
 subprocess tests exercise the CLI plumbing (flag acceptance, the status: error
 TOON on validation rejection, and the argparse type rejection on a
-non-integer token count). The sibling ``test_tasks_cost.py`` mirrors the same
+non-integer token count). The sibling ``test_tasks_cost*.py`` mirrors the same
 Tier-2/Tier-3 split for the pure deriver.
 """
 
 import pytest
 
-from conftest import get_script_path, run_script
+from conftest import run_script
 
 from _manage_tasks_fixtures import (
+    SCRIPT_PATH,
     _next_ns,
     _update_ns,
     add_basic_task,
     cmd_next,
     cmd_update,
 )
-
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-tasks', 'manage-tasks.py')
-
 
 # =============================================================================
 # Tier 2 — write-back round-trip (cmd_update -> cmd_next / cmd_read)

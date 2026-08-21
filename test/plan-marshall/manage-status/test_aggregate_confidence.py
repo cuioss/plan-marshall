@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import json
 from argparse import Namespace
-from pathlib import Path
+
+from _manage_status_fixtures import _write_status
 
 from conftest import load_script_module
 
@@ -45,14 +46,6 @@ def _ns(
         module_mapping=module_mapping,
         scores_file=scores_file,
         persist=persist,
-    )
-
-
-def _write_status(plan_dir: Path) -> None:
-    plan_dir.mkdir(parents=True, exist_ok=True)
-    (plan_dir / 'status.json').write_text(
-        json.dumps({'plan_id': plan_dir.name, 'phases': [], 'metadata': {}}),
-        encoding='utf-8',
     )
 
 

@@ -9,21 +9,16 @@ from pathlib import Path
 
 from _audit_fixtures import (
     _EXECUTE_PHASE,
+    _LEDGER_HEADER,
     _billing_row,
     _clean_metrics_body,
     _write_billing_plan,
     audit,
 )
 
+
 # The canonical nine-column dispatch-boundary ledger header
 # (`data-format.md` § Per-Dispatch Context-Load Attribution).
-_LEDGER_HEADER = (
-    'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
-    'input_tokens,output_tokens,cache_read_input_tokens,'
-    'cache_creation_input_tokens}:'
-)
-
-
 def _ledger_body(phase: str, rows: list[tuple[int, ...]]) -> str:
     """Render a dispatch-boundary ledger carrying *rows* in canonical column order."""
     lines = ['plan_id: ledger-plan', f'phase: {phase}', _LEDGER_HEADER]

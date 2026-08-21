@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """In-process behavioral tests for ``analyze-logs.py``.
 
-The sibling ``test_analyze_logs.py`` covers the phase-5 fact extractors and the
-folded-global-log analyzer directly, but drives the top-level ``cmd_run``
+The siblings ``test_analyze_logs_phase5_logging_gap_extractors.py`` and
+``test_analyze_logs_analyze_folded_global.py`` cover the phase-5 fact extractors
+and the folded-global-log analyzer directly, but drive the top-level ``cmd_run``
 orchestration only through ``run_script`` (subprocess — not counted for
 coverage). This module fills the in-process gaps: ``cmd_run`` itself (and its
 finding-emitting branches), the dispatch-boundary file parser's malformed/OSError
@@ -13,23 +14,14 @@ paths, the duration/percentile/notation extractors' skip branches, and the
 from __future__ import annotations
 
 import json
-from argparse import Namespace
 from pathlib import Path
 
 import pytest
+from _plan_retrospective_fixtures import _run_args
 
 from conftest import load_script_module
 
 _al = load_script_module('plan-marshall', 'plan-retrospective', 'analyze-logs.py', 'al_behavior_mod')
-
-
-def _run_args(plan_dir: Path) -> Namespace:
-    return Namespace(
-        command='run',
-        plan_id=None,
-        archived_plan_path=str(plan_dir),
-        mode='archived',
-    )
 
 
 def _line(ts: str, level: str, rest: str) -> str:

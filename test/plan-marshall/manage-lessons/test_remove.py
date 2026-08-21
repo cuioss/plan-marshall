@@ -32,38 +32,15 @@ CLI plumbing (subprocess) tests for the ``remove`` subcommand live in
 ``test_remove_supersede_cli.py``.
 """
 
+
 import json
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
-
 import pytest
-
 from _lessons_helpers import SCRIPT_PATH, _mod, cmd_remove
 from conftest import run_script
-
-# The verdicts that assert a weaker claim than ``completely_covered`` and
-# therefore require no evidence pair. Derived from the production vocabulary so
-# a new verdict cannot be added without this test set being reconsidered.
-_NON_EVIDENCE_VERDICTS = [v for v in _mod.COVERAGE_VERDICTS if v != _mod.EVIDENCE_REQUIRED_VERDICT]
-
-_CLAUSE = 'manage-lessons/SKILL.md Canonical invocations -> remove'
-_INPUT = 'remove --coverage-verdict completely_covered with no --covering-clause'
-
-
-def _seed_lesson_file(lessons_dir: Path, lesson_id: str) -> Path:
-    """Write a minimal, canonically-shaped lesson file and return its path."""
-    content = (
-        f'id={lesson_id}\n'
-        'component=test\n'
-        'category=bug\n'
-        'status=active\n'
-        'created=2025-01-01\n\n'
-        f'# {lesson_id} Title\n\nBody.\n'
-    )
-    path = lessons_dir / f'{lesson_id}.md'
-    path.write_text(content, encoding='utf-8')
-    return path
+from _remove_fixtures import _CLAUSE, _INPUT, _NON_EVIDENCE_VERDICTS, _seed_lesson_file
 
 
 class TestCmdRemove:

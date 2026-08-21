@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """End-to-end loop-back re-entry regression test for manage-metrics.
 
-Where the write-site unit tests in ``test_manage_metrics_phase_boundary.py``
+Where the write-site unit tests in ``test_manage_metrics_phase_boundary*.py``
 exercise ``cmd_end_phase`` / ``cmd_phase_boundary`` one call at a time, this
 module drives the WHOLE loop-back sequence through the public command surface
 and asserts against the two persisted artifacts a consumer actually reads —
@@ -54,7 +54,7 @@ cmd_generate = manage_metrics.cmd_generate
 # guard that returns ``error: plan_not_found`` unless the plan directory holds a
 # ``status.json`` sentinel. The ``plan_context`` fixture creates plan dirs without
 # it, so the autouse fixture below patches the guard chokepoint to auto-seed the
-# sentinel — the same pattern used in test_manage_metrics_phase_boundary.py.
+# sentinel — the same pattern used in test_manage_metrics_phase_boundary*.py.
 
 
 @pytest.fixture(autouse=True)

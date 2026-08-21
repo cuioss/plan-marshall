@@ -15,6 +15,7 @@ plan-marshall test-collection namespace.
 from __future__ import annotations
 
 import json
+from argparse import Namespace
 from pathlib import Path
 
 # The summarize-invariants script now reads ``<plan_dir>/handshakes.toon``
@@ -25,6 +26,8 @@ from pathlib import Path
 # already puts every skill's ``scripts/`` directory — including
 # ``manage-files/scripts`` — on ``sys.path`` at collection time.
 from toon_parser import serialize_toon
+
+from conftest import MARKETPLACE_ROOT
 
 # Mirrors HANDSHAKE_FIELDS in
 # marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_handshake_store.py.
@@ -383,3 +386,16 @@ def chat_tool_use(name: str, use_id: str) -> str:
 def chat_tool_result(use_id: str, text: str) -> str:
     """Produce a user turn carrying a ``tool_result`` — the gated-decision channel."""
     return chat_turn('user', [{'type': 'tool_result', 'tool_use_id': use_id, 'content': text}])
+
+
+def _run_args(plan_dir: Path) -> Namespace:
+    """Build the archived-mode ``argparse.Namespace`` ``cmd_run`` consumes."""
+    return Namespace(
+        command='run',
+        plan_id=None,
+        archived_plan_path=str(plan_dir),
+        mode='archived',
+    )
+
+
+ANALYZE_LOGS = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'analyze-logs.py'

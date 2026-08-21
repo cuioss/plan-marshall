@@ -1,239 +1,30 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""In-process behavioral tests for ``check-routing-decisions.py``.
+"""In-process behavioral tests for ``check-routing-decisions.py``."""
 
-The aspect's headline defect was inferring a removal *cause* from a removal
-*fact*: any prunable step absent from ``phase_6.steps`` was treated as proof its
-``no_code_delta`` predicate had fired, so a step dropped by the posture cutoff
-(or by any of the three other recorded non-predicate mechanisms) was reported as
-a mis-prune whenever the realized footprint touched production code.
-
-These tests pin the corrected contract: the recorded decision log is consulted
-FIRST, and ``log_readable`` is the sole discriminator between a substantiated
-``fail`` and an honest ``inconclusive``.
-"""
 
 from __future__ import annotations
 
-import json
-from argparse import Namespace
-from pathlib import Path
-
 import pytest
-from _decision_line_shapes import format_dropped_record
-from toon_parser import serialize_toon
+from _check_routing_decisions_fixtures import (
+    _STEPS_WITH_BOTH,
+    _STEPS_WITHOUT_SIMPLIFY,
+    _STEPS_WITHOUT_SONAR,
+    CEREMONY_ADDED_LINE,
+    CEREMONY_DROPPED_LINE,
+    DECISION_MATRIX_LINE,
+    LANE_RESOLUTION_LINE,
+    LANE_RESOLUTION_PREFIXED_LINE,
+    PRODUCTION_PATH,
+    SIMPLIFY_INACTIVE_LINE,
+    UNRESOLVED_ASK_LINE,
+    _build_plan,
+    _check,
+    _crd,
+    _diff_file,
+    _run_args,
+)
 
 from conftest import load_script_module
-
-_crd = load_script_module(
-    'plan-marshall', 'plan-retrospective', 'check-routing-decisions.py', 'crd_behavior_mod'
-)
-
-
-# The recorded non-predicate removal mechanisms.
-#
-# The composer's subtraction-record lines are rendered by the WRITER'S OWN
-# formatter, imported from production. Importing the writer (never the reader's
-# regexes) is what makes these a real contract check: the reader is exercised
-# against bytes the emitter actually produces, so a change to the shape breaks
-# writer and reader together instead of leaving the reader matching a form
-# nothing emits.
-#
-# These fixtures were previously hand-written from the standards document and had
-# drifted from it: they encoded a retired aggregate shape (a Python-list step
-# repr, `execution_profile=` before the verb, a `(tier above posture cutoff)`
-# trailing clause) that the composer had long since replaced with one line per
-# dropped step. The tests passed against a reader that could not match a single
-# real emission — the hand-written fixture drifted in lock-step with the wrong
-# copy, which is precisely what it could not catch.
-#
-# The three mechanisms below render their own line shapes rather than reporting
-# through the shared formatter, so their fixtures stay literal, each transcribed
-# from its own emitter.
-_LANE_TARGET = ' from phase_6.steps (execution_profile=minimal)'
-_TIER_REASON = 'effective tier full exceeds the minimal posture cutoff'
-
-LANE_RESOLUTION_LINE = '[2026-04-17T10:00:00Z] [INFO] [aaaaaa] ' + format_dropped_record(
-    'lane_resolution', 'sonar-roundtrip', _TIER_REASON, target=_LANE_TARGET
-)
-LANE_RESOLUTION_SECOND_STEP_LINE = (
-    '[2026-04-17T10:00:01Z] [INFO] [aaaaab] '
-    + format_dropped_record(
-        'lane_resolution', 'plan-retrospective', _TIER_REASON, target=_LANE_TARGET
-    )
-)
-LANE_RESOLUTION_PREFIXED_LINE = '[2026-04-17T10:00:00Z] [INFO] [aaaaaa] ' + format_dropped_record(
-    'lane_resolution', 'default:sonar-roundtrip', _TIER_REASON, target=_LANE_TARGET
-)
-DECISION_MATRIX_LINE = '[2026-04-17T10:00:02Z] [INFO] [ffffff] ' + format_dropped_record(
-    'decision_matrix',
-    'sonar-roundtrip',
-    "decide rule 'early_terminate_analysis' narrowed phase_6 to the analysis minimum",
-)
-UNRESOLVED_ASK_LINE = (
-    '[2026-04-17T10:00:00Z] [INFO] [bbbbbb] '
-    '(plan-marshall:manage-execution-manifest:compose) unresolved_ask_provider_drop — '
-    'dropped default:sonar-roundtrip from phase_6.steps '
-    '(unresolved lane:ask, provider absent)'
-)
-SIMPLIFY_INACTIVE_LINE = (
-    '[2026-04-17T10:00:00Z] [INFO] [cccccc] '
-    '(plan-marshall:manage-execution-manifest:compose) finalize-step-simplify omitted — '
-    'change_type=analysis affected_files_count=0'
-)
-CEREMONY_DROPPED_LINE = (
-    '[2026-04-17T10:00:00Z] [INFO] [dddddd] '
-    '(plan-marshall:manage-execution-manifest:compose) ceremony_finalize selection — '
-    'finalize.simplify=never, dropped finalize-step-simplify from phase_6.steps'
-)
-CEREMONY_ADDED_LINE = (
-    '[2026-04-17T10:00:00Z] [INFO] [eeeeee] '
-    '(plan-marshall:manage-execution-manifest:compose) ceremony_finalize selection — '
-    'finalize.simplify=always, added finalize-step-simplify to phase_6.steps'
-)
-
-# A production path — non-bookkeeping, non-doc, non-test — so
-# ``footprint_has_production`` is True and the predicate would be FALSE.
-PRODUCTION_PATH = 'marketplace/bundles/plan-marshall/skills/demo/scripts/demo.py'
-
-
-def _manifest_toon(steps: list[str]) -> str:
-    """Render a minimal ``execution.toon`` carrying only ``phase_6.steps``.
-
-    Serialized with the same ``serialize_toon`` the manifest writer uses, so the
-    fixture round-trips through the production ``parse_toon`` reader exactly as a
-    real manifest does.
-    """
-    return serialize_toon({'plan_id': 'demo', 'phase_6': {'steps': steps}}) + '\n'
-
-
-def _build_plan(
-    plan_dir: Path,
-    *,
-    steps: list[str],
-    decision_lines: list[str] | None = None,
-    write_decision_log: bool = True,
-    metadata: dict | None = None,
-) -> Path:
-    """Materialize a plan directory the aspect can read.
-
-    ``write_decision_log=False`` omits ``logs/decision.log`` entirely, which is
-    the ``log_readable == False`` input state.
-    """
-    plan_dir.mkdir(parents=True, exist_ok=True)
-    (plan_dir / 'execution.toon').write_text(_manifest_toon(steps), encoding='utf-8')
-    (plan_dir / 'status.json').write_text(
-        json.dumps({'metadata': metadata if metadata is not None else {}}), encoding='utf-8'
-    )
-    if write_decision_log:
-        logs = plan_dir / 'logs'
-        logs.mkdir(exist_ok=True)
-        (logs / 'decision.log').write_text('\n'.join(decision_lines or []) + '\n', encoding='utf-8')
-    return plan_dir
-
-
-def _diff_file(tmp_path: Path, paths: list[str], name: str = 'diff.txt') -> str:
-    path = tmp_path / name
-    path.write_text('\n'.join(paths) + '\n', encoding='utf-8')
-    return str(path)
-
-
-def _run_args(plan_dir: Path, diff_file: str | None) -> Namespace:
-    return Namespace(
-        command='run',
-        plan_id=None,
-        archived_plan_path=str(plan_dir),
-        mode='archived',
-        diff_file=diff_file,
-    )
-
-
-def _check(checks: list[dict], name: str) -> dict | None:
-    return next((c for c in checks if c.get('check') == name), None)
-
-
-# All phase_6 steps EXCEPT sonar-roundtrip — so sonar-roundtrip is the absent
-# prunable step under test while finalize-step-simplify stays present.
-_STEPS_WITHOUT_SONAR = ['finalize-step-simplify', 'lessons-capture', 'archive-plan']
-# All phase_6 steps EXCEPT finalize-step-simplify.
-_STEPS_WITHOUT_SIMPLIFY = ['sonar-roundtrip', 'lessons-capture', 'archive-plan']
-_STEPS_WITH_BOTH = ['sonar-roundtrip', 'finalize-step-simplify', 'lessons-capture', 'archive-plan']
-
-
-class TestFootprintResolverFallback:
-    """When ``--diff-file`` is absent, the mis-prune check recovers the footprint
-    through the SHARED resolver — the D4 "one footprint resolution, two consumers".
-
-    A post-merge run has no ``--diff-file`` and no live worktree, so before D4 the
-    mis-prune checks SKIPPED for want of a footprint. They now resolve the realized
-    footprint (capture → merge-commit → legacy) exactly as the recall check does.
-    """
-
-    def _write_refs(self, plan_dir: Path, refs: dict) -> None:
-        (plan_dir / 'references.json').write_text(json.dumps(refs), encoding='utf-8')
-
-    def test_diff_file_absent_recovers_footprint_from_capture(self, tmp_path):
-        """No diff-file + realized_footprint present → the predicate re-evaluates."""
-        plan_dir = _build_plan(
-            tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, decision_lines=['unrelated line']
-        )
-        self._write_refs(plan_dir, {'realized_footprint': [PRODUCTION_PATH]})
-
-        result = _crd.cmd_run(_run_args(plan_dir, None))
-        assert result['footprint_source'] == 'resolved'
-        check = _check(result['mis_prune_checks'], 'mis_prune:sonar-roundtrip')
-        assert check is not None
-        # no_code_delta is now FALSE (the realized footprint touched production), and
-        # the readable log names no removal cause → a substantiated mis-prune.
-        assert check['status'] == 'fail'
-
-    def test_diff_file_absent_and_unresolvable_footprint_skips(self, tmp_path):
-        """Negative control: nothing resolvable → SKIP, never a fabricated fail."""
-        plan_dir = _build_plan(
-            tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, decision_lines=['unrelated line']
-        )
-        self._write_refs(plan_dir, {'base_branch': 'main'})
-
-        result = _crd.cmd_run(_run_args(plan_dir, None))
-        assert result['footprint_source'] == 'unresolved'
-        check = _check(result['mis_prune_checks'], 'mis_prune:sonar-roundtrip')
-        assert check is not None
-        assert check['status'] == 'skip'
-        assert check['removal_cause'] == 'not_evaluated'
-
-    def test_diff_file_present_takes_precedence_over_capture(self, tmp_path):
-        """An explicit --diff-file wins over the recorded capture."""
-        plan_dir = _build_plan(
-            tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, decision_lines=['unrelated line']
-        )
-        # The capture is doc-only (no production) — if it were consulted the predicate
-        # would still hold and the check would PASS. The production diff-file must win.
-        self._write_refs(plan_dir, {'realized_footprint': ['doc/only.md']})
-        diff = _diff_file(tmp_path, [PRODUCTION_PATH])
-
-        result = _crd.cmd_run(_run_args(plan_dir, diff))
-        assert result['footprint_source'] == 'diff_file'
-        check = _check(result['mis_prune_checks'], 'mis_prune:sonar-roundtrip')
-        assert check is not None
-        assert check['status'] == 'fail'
-
-
-class TestResolvePlanDir:
-    """``resolve_plan_dir`` validates its mode/argument combinations."""
-
-    def test_live_without_plan_id_raises(self):
-        with pytest.raises(ValueError, match='--plan-id is required'):
-            _crd.resolve_plan_dir('live', None, None)
-
-    def test_archived_without_path_raises(self):
-        with pytest.raises(ValueError, match='--archived-plan-path is required'):
-            _crd.resolve_plan_dir('archived', None, None)
-
-    def test_unknown_mode_raises(self):
-        with pytest.raises(ValueError, match='Unknown mode'):
-            _crd.resolve_plan_dir('frobnicate', 'p', None)
-
-    def test_archived_returns_supplied_path(self, tmp_path):
-        assert _crd.resolve_plan_dir('archived', None, str(tmp_path)) == tmp_path
 
 
 class TestLoadDecisionLogLines:
@@ -277,112 +68,67 @@ class TestLoadDecisionLogLines:
         assert readable is False
 
 
-class TestResolveRemovalCauses:
-    """The pure cause resolver covers every recorded mechanism."""
+class TestLoadDiffFiles:
+    """An ABSENT ``--diff-file`` and a SUPPLIED-but-unresolvable one are different.
 
-    def test_lane_resolution_drop_is_recorded_against_its_gate(self):
-        """The posture-cutoff drop the reader could previously never see."""
-        causes = _crd.resolve_removal_causes(
-            [LANE_RESOLUTION_LINE, LANE_RESOLUTION_SECOND_STEP_LINE]
-        )
-        assert causes['sonar-roundtrip'] == 'lane_resolution'
-        assert causes['plan-retrospective'] == 'lane_resolution'
+    The absent case yields an empty list so the caller can recover the footprint
+    through the shared whole-chain resolver. A supplied path that resolves to
+    nothing RAISES: reporting it as an empty diff gave a could-not-look the same
+    token as a nothing-to-look-at, and that token degrades to a benign-reading
+    ``skip`` in every downstream summary.
+    """
 
-    def test_decision_matrix_drop_is_recorded(self):
-        """The matrix rows that narrow phase_6 to the analysis minimum.
+    def test_absent_argument_yields_the_omitted_sentinel(self, tmp_path):
+        """OMITTED returns ``None``, distinct from a supplied-and-empty ``[]``."""
+        assert _crd.load_diff_files(None, tmp_path) is None
 
-        Unrecognised before the shared shape was adopted, so a plan under
-        ``early_terminate_analysis`` or ``verification_no_files`` had both
-        prunable steps re-evaluated against a footprint that never removed them.
+    def test_empty_string_argument_is_supplied_input_not_omission(self, tmp_path):
+        """``--diff-file ""`` is supplied, so it takes the supplied path and raises.
+
+        A truthiness test would send it down the omitted path, which is the same
+        could-not-look-versus-nothing-to-look-at conflation the raise exists to
+        prevent, arriving by a different door.
         """
-        causes = _crd.resolve_removal_causes([DECISION_MATRIX_LINE])
-        assert causes == {'sonar-roundtrip': 'decision_matrix'}
+        with pytest.raises(ValueError, match='names no path'):
+            _crd.load_diff_files('', tmp_path)
+        with pytest.raises(ValueError, match='names no path'):
+            _crd.load_diff_files('   ', tmp_path)
 
-    def test_prefixed_step_key_normalizes_to_bare(self):
-        causes = _crd.resolve_removal_causes([LANE_RESOLUTION_PREFIXED_LINE])
-        assert causes == {'sonar-roundtrip': 'lane_resolution'}
+    def test_supplied_file_naming_nothing_is_a_resolved_empty_footprint(self, tmp_path):
+        """An existing but EMPTY diff file resolves to ``[]``, never to ``None``."""
+        path = tmp_path / 'empty.txt'
+        path.write_text('', encoding='utf-8')
+        assert _crd.load_diff_files(str(path), tmp_path) == []
 
-    def test_archived_legacy_aggregate_line_still_resolves_its_cause(self):
-        """An ARCHIVED log written under the retired aggregate emitter.
+    def test_missing_file_raises_rather_than_reporting_an_empty_diff(self, tmp_path):
+        with pytest.raises(ValueError, match='Diff file does not exist'):
+            _crd.load_diff_files(str(tmp_path / 'nope.txt'), tmp_path)
 
-        This shape is transcribed literally on purpose: no live emitter produces
-        it any more, so there is no writer to render it from. Archived decision
-        logs are immutable history, and dropping the pattern would leave every
-        pre-change archive resolving NO cause for its posture-cutoff drops —
-        falling through to predicate re-evaluation and producing exactly the false
-        `mis_prune` this check exists to end.
-        """
-        legacy = (
-            '[2026-04-17T10:00:00Z] [INFO] [aaaaaa] '
-            '(plan-marshall:manage-execution-manifest:compose) lane_resolution — '
-            "execution_profile=minimal, dropped ['sonar-roundtrip', 'plan-retrospective'] "
-            'from phase_6.steps (tier above posture cutoff)'
-        )
-        causes = _crd.resolve_removal_causes([legacy])
+    def test_unreadable_file_raises(self, tmp_path):
+        target = tmp_path / 'diff.txt'
+        target.mkdir()
+        with pytest.raises(ValueError, match='could not be read'):
+            _crd.load_diff_files(str(target), tmp_path)
 
-        assert causes['sonar-roundtrip'] == 'posture_cutoff_legacy_aggregate'
-        assert causes['plan-retrospective'] == 'posture_cutoff_legacy_aggregate'
+    def test_blank_lines_dropped(self, tmp_path):
+        path = tmp_path / 'diff.txt'
+        path.write_text('a.py\n\n  b.py  \n', encoding='utf-8')
+        assert _crd.load_diff_files(str(path), tmp_path) == ['a.py', 'b.py']
 
-    def test_the_legacy_pattern_is_the_only_route_to_the_list_repr_branch(self):
-        """Pins the COUPLING, not the splitter.
+    def test_relative_argument_resolves_against_the_plan_directory(self, tmp_path):
+        """The documented ``--diff-file work/footprint.txt`` form, resolved."""
+        work = tmp_path / 'work'
+        work.mkdir()
+        (work / 'footprint.txt').write_text('a.py\n', encoding='utf-8')
+        assert _crd.load_diff_files('work/footprint.txt', tmp_path) == ['a.py']
 
-        The predecessor of this test asserted `_parse_step_tokens("['a','b']")`
-        directly, which passes whether or not any pattern can ever hand it a list
-        repr — it pinned neither reachability nor uniqueness while claiming both.
-
-        These assertions fail if the legacy pattern is removed (the branch becomes
-        dead) and if some other pattern starts capturing a list repr (the
-        uniqueness claim becomes false).
-        """
-        legacy_capture = "['sonar-roundtrip', 'plan-retrospective']"
-
-        # Reachability: exactly one pattern can produce a list-repr capture.
-        producers = [
-            cause
-            for cause, pattern in _crd._REMOVAL_CAUSE_PATTERNS
-            if pattern.search(
-                '(plan-marshall:manage-execution-manifest:compose) lane_resolution — '
-                f'execution_profile=minimal, dropped {legacy_capture} '
-                'from phase_6.steps (tier above posture cutoff)'
-            )
-        ]
-        assert producers == ['posture_cutoff_legacy_aggregate']
-
-        # Uniqueness: the shared shape cannot capture one (its capture is `\\S+`).
-        assert not _crd._DROPPED_RECORD_RE.search(
-            '[STATUS] lane_resolution — dropped '
-            f'{legacy_capture} from phase_6.steps: a reason'
-        )
-
-    def test_unknown_future_gate_in_the_shared_shape_is_still_a_cause(self):
-        """Gate-agnostic by construction — a new composer gate needs no edit here.
-
-        This is the property that replaces the hand-written enumeration: the
-        reader's coverage follows the shape, not a list.
-        """
-        line = '[2026-04-17T10:00:03Z] [INFO] [gggggg] ' + format_dropped_record(
-            'some_future_gate', 'sonar-roundtrip', 'a reason', target=' from phase_6.steps'
-        )
-        assert _crd.resolve_removal_causes([line]) == {'sonar-roundtrip': 'some_future_gate'}
-
-    def test_unresolved_ask_provider_drop(self):
-        causes = _crd.resolve_removal_causes([UNRESOLVED_ASK_LINE])
-        assert causes == {'sonar-roundtrip': 'unresolved_ask_provider_drop'}
-
-    def test_simplify_inactive(self):
-        causes = _crd.resolve_removal_causes([SIMPLIFY_INACTIVE_LINE])
-        assert causes == {'finalize-step-simplify': 'simplify_inactive'}
-
-    def test_ceremony_finalize_never(self):
-        causes = _crd.resolve_removal_causes([CEREMONY_DROPPED_LINE])
-        assert causes == {'finalize-step-simplify': 'ceremony_finalize_never'}
-
-    def test_ceremony_added_direction_is_not_a_removal(self):
-        """A force-include shares the line shape and MUST NOT read as a cause."""
-        assert _crd.resolve_removal_causes([CEREMONY_ADDED_LINE]) == {}
-
-    def test_unrelated_lines_yield_no_causes(self):
-        assert _crd.resolve_removal_causes(['some unrelated decision line']) == {}
+    def test_relative_argument_falls_back_to_cwd(self, tmp_path, monkeypatch):
+        """A cwd-relative argument that predates the plan-relative form still works."""
+        (tmp_path / 'cwd-diff.txt').write_text('b.py\n', encoding='utf-8')
+        monkeypatch.chdir(tmp_path)
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        assert _crd.load_diff_files('cwd-diff.txt', plan_dir) == ['b.py']
 
 
 class TestLaneResolutionView:
@@ -573,69 +319,6 @@ class TestManifestAbsent:
         assert result['status'] == 'skipped'
         assert result['manifest_present'] is False
         assert result['checks'] == []
-
-
-class TestLoadDiffFiles:
-    """An ABSENT ``--diff-file`` and a SUPPLIED-but-unresolvable one are different.
-
-    The absent case yields an empty list so the caller can recover the footprint
-    through the shared whole-chain resolver. A supplied path that resolves to
-    nothing RAISES: reporting it as an empty diff gave a could-not-look the same
-    token as a nothing-to-look-at, and that token degrades to a benign-reading
-    ``skip`` in every downstream summary.
-    """
-
-    def test_absent_argument_yields_the_omitted_sentinel(self, tmp_path):
-        """OMITTED returns ``None``, distinct from a supplied-and-empty ``[]``."""
-        assert _crd.load_diff_files(None, tmp_path) is None
-
-    def test_empty_string_argument_is_supplied_input_not_omission(self, tmp_path):
-        """``--diff-file ""`` is supplied, so it takes the supplied path and raises.
-
-        A truthiness test would send it down the omitted path, which is the same
-        could-not-look-versus-nothing-to-look-at conflation the raise exists to
-        prevent, arriving by a different door.
-        """
-        with pytest.raises(ValueError, match='names no path'):
-            _crd.load_diff_files('', tmp_path)
-        with pytest.raises(ValueError, match='names no path'):
-            _crd.load_diff_files('   ', tmp_path)
-
-    def test_supplied_file_naming_nothing_is_a_resolved_empty_footprint(self, tmp_path):
-        """An existing but EMPTY diff file resolves to ``[]``, never to ``None``."""
-        path = tmp_path / 'empty.txt'
-        path.write_text('', encoding='utf-8')
-        assert _crd.load_diff_files(str(path), tmp_path) == []
-
-    def test_missing_file_raises_rather_than_reporting_an_empty_diff(self, tmp_path):
-        with pytest.raises(ValueError, match='Diff file does not exist'):
-            _crd.load_diff_files(str(tmp_path / 'nope.txt'), tmp_path)
-
-    def test_unreadable_file_raises(self, tmp_path):
-        target = tmp_path / 'diff.txt'
-        target.mkdir()
-        with pytest.raises(ValueError, match='could not be read'):
-            _crd.load_diff_files(str(target), tmp_path)
-
-    def test_blank_lines_dropped(self, tmp_path):
-        path = tmp_path / 'diff.txt'
-        path.write_text('a.py\n\n  b.py  \n', encoding='utf-8')
-        assert _crd.load_diff_files(str(path), tmp_path) == ['a.py', 'b.py']
-
-    def test_relative_argument_resolves_against_the_plan_directory(self, tmp_path):
-        """The documented ``--diff-file work/footprint.txt`` form, resolved."""
-        work = tmp_path / 'work'
-        work.mkdir()
-        (work / 'footprint.txt').write_text('a.py\n', encoding='utf-8')
-        assert _crd.load_diff_files('work/footprint.txt', tmp_path) == ['a.py']
-
-    def test_relative_argument_falls_back_to_cwd(self, tmp_path, monkeypatch):
-        """A cwd-relative argument that predates the plan-relative form still works."""
-        (tmp_path / 'cwd-diff.txt').write_text('b.py\n', encoding='utf-8')
-        monkeypatch.chdir(tmp_path)
-        plan_dir = tmp_path / 'plan'
-        plan_dir.mkdir()
-        assert _crd.load_diff_files('cwd-diff.txt', plan_dir) == ['b.py']
 
 
 class TestExecutionLogPopulation:

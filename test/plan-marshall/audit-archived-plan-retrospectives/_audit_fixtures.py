@@ -661,3 +661,10 @@ def minimal_corpus(repo_root: Path) -> list:
         '{"metadata": {"change_type": "bug_fix"}}', encoding="utf-8"
     )
     return [audit.collect_inputs(plan_dir)]
+
+
+_LEDGER_HEADER = (
+    'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
+    'input_tokens,output_tokens,cache_read_input_tokens,'
+    'cache_creation_input_tokens}:'
+)
