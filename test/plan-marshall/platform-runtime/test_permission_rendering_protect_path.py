@@ -411,3 +411,79 @@ class TestPermissionFixProtectPath:
                 OpenCodeRuntime().permission_fix('global', operation, [str(tmp_path / 'arg')], True)
             )
             assert opencode['status'] == 'no-op', operation
+
+
+class TestEveryMutatingBranchReportsAFailedWrite:
+    """`io_error` is not `protect-path`'s alone — every write path reports it.
+
+    `protect-path` was the only branch that checked `_save_settings`; the five
+    allow-list operations discarded it and returned `status: success` with a
+    non-zero `changes_applied` after writing nothing. Splitting the population
+    across a fixed and an unfixed half is how the next reader concludes the
+    checked one is the exception.
+    """
+
+    def _pin_scope_path(self, monkeypatch, settings_path: Path) -> None:
+        monkeypatch.setattr(
+            claude_runtime, '_settings_path_for_scope', lambda scope: settings_path
+        )
+
+    @pytest.mark.parametrize(
+        ('operation', 'permissions'),
+        [
+            ('normalize', []),
+            ('add', ['Read(/tmp/x)']),
+            ('remove', ['Read(/tmp/seeded)']),
+            ('ensure', ['Read(/tmp/x)']),
+            ('consolidate', []),
+        ],
+    )
+    def test_an_unwritable_settings_file_is_an_error(
+        self, tmp_path: Path, monkeypatch, operation: str, permissions: list
+    ) -> None:
+        settings_path = tmp_path / 'settings.json'
+        settings_path.write_text(
+            json.dumps(
+                {
+                    'permissions': {
+                        # Seeded so every operation has real work to do: an
+                        # operation that changed nothing could report success
+                        # honestly, and prove nothing here.
+                        'allow': ['Read(/tmp/b)', 'Read(/tmp/a)', 'Read(/tmp/seeded)'],
+                        'deny': [],
+                        'ask': [],
+                    }
+                }
+            ),
+            encoding='utf-8',
+        )
+        self._pin_scope_path(monkeypatch, settings_path)
+        monkeypatch.setattr(claude_runtime, '_save_settings', lambda _p, _s: False)
+
+        result = _parse(
+            claude_runtime.ClaudeRuntime().permission_fix(
+                'global', operation, permissions, False
+            )
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'io_error'
+        assert 'changes_applied' not in result
+
+    def test_a_writable_file_still_succeeds(self, tmp_path: Path, monkeypatch) -> None:
+        """The guard must not turn a working write into an error."""
+        settings_path = tmp_path / 'settings.json'
+        settings_path.write_text(
+            json.dumps({'permissions': {'allow': ['Read(/tmp/b)'], 'deny': [], 'ask': []}}),
+            encoding='utf-8',
+        )
+        self._pin_scope_path(monkeypatch, settings_path)
+
+        result = _parse(
+            claude_runtime.ClaudeRuntime().permission_fix(
+                'global', 'add', ['Read(/tmp/x)'], False
+            )
+        )
+
+        assert result['status'] == 'success'
+        assert 'Read(/tmp/x)' in json.loads(settings_path.read_text())['permissions']['allow']

@@ -104,9 +104,13 @@ def resolve_step_doc_path(step_id: str) -> Path:
 
     Resolution rules (mirroring manage-execution-manifest):
 
-    - ``project:``-prefixed steps resolve to
-      ``.claude/skills/{bare-name}/SKILL.md`` relative to the project root
-      (cwd-resolved via ``file_ops._resolve_plan_root``).
+    - ``project:``-prefixed steps resolve to ``{bare-name}/SKILL.md`` under the
+      target's declared project-local skill roots, in priority order, relative
+      to the project root (cwd-resolved via ``file_ops._resolve_plan_root``).
+      The first root holding the file wins; when no root holds it the path is
+      reported against the highest-priority root, so the caller's error names a
+      deterministic location. On Claude the root list is the single entry
+      ``.claude/skills``, which is why that spelling is no longer written here.
     - Built-in steps (bare or ``default:``-prefixed) resolve to the
       ``phase-6-finalize`` body doc, searching ``workflow/`` first then
       ``standards/``. When neither exists the ``workflow/`` path is returned so
@@ -143,9 +147,13 @@ def resolve_step_doc_path(step_id: str) -> Path:
             _resolve_skill_root(root, project_root) for root in get_project_skill_roots()
         ]
         for skills_root in roots:
-            candidate = skills_root / bare / 'SKILL.md'
+            # Guard BEFORE probing: ``bare`` is externally controlled, so
+            # testing the unguarded path would let a traversal value stat a
+            # location outside ``skills_root`` — once per declared root — before
+            # anything rejected it.
+            candidate = _guard_within(skills_root / bare / 'SKILL.md', skills_root, step_id)
             if candidate.is_file():
-                return _guard_within(candidate, skills_root, step_id)
+                return candidate
         # Nothing on disk: report against the highest-priority root, so the
         # caller gets a deterministic path to name rather than ``None``.
         first = roots[0]

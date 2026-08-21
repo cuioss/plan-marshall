@@ -35,6 +35,27 @@ from runtime_base import PERMISSION_FIX_OPERATIONS, Runtime, toon_error, toon_no
 from toon_parser import serialize_toon
 
 
+def _persisted(settings_path: Any, settings: dict[str, Any]) -> bool:
+    """Write *settings*, returning whether the bytes actually reached disk."""
+    return bool(claude_runtime._save_settings(settings_path, settings))
+
+
+def _write_failed(settings_path: Any) -> str:
+    """The single `io_error` response for a `permission fix` write that failed.
+
+    Every mutating branch of ``permission_fix`` reports an unwritable settings
+    file the same way, because the caller's situation is the same in each: the
+    change was computed, nothing reached disk, and a `success` here would be a
+    report of work that did not happen. Discarding the save result is the
+    fail-open this shares its shape with — the counters would still be non-zero.
+    """
+    return toon_error(
+        "permission fix",
+        "io_error",
+        f"Failed to write settings to {settings_path}",
+    )
+
+
 class ClaudeRuntime(Runtime):
     """Claude Code implementation of all 24 platform-runtime operations."""
 
@@ -1109,7 +1130,8 @@ class ClaudeRuntime(Runtime):
             )
             if not dry_run:
                 settings["permissions"]["allow"] = sorted_allow
-                claude_runtime._save_settings(settings_path, settings)
+                if not _persisted(settings_path, settings):
+                    return _write_failed(settings_path)
 
         elif operation == "add":
             for perm in permissions:
@@ -1121,7 +1143,8 @@ class ClaudeRuntime(Runtime):
                         proposed_additions.append(perm)
             if not dry_run:
                 settings["permissions"]["allow"] = allow
-                claude_runtime._save_settings(settings_path, settings)
+                if not _persisted(settings_path, settings):
+                    return _write_failed(settings_path)
 
         elif operation == "remove":
             original_len = len(allow)
@@ -1129,7 +1152,8 @@ class ClaudeRuntime(Runtime):
             changes_applied = original_len - len(allow)
             if not dry_run:
                 settings["permissions"]["allow"] = allow
-                claude_runtime._save_settings(settings_path, settings)
+                if not _persisted(settings_path, settings):
+                    return _write_failed(settings_path)
 
         elif operation == "ensure":
             for perm in permissions:
@@ -1141,7 +1165,8 @@ class ClaudeRuntime(Runtime):
                         proposed_additions.append(perm)
             if not dry_run:
                 settings["permissions"]["allow"] = allow
-                claude_runtime._save_settings(settings_path, settings)
+                if not _persisted(settings_path, settings):
+                    return _write_failed(settings_path)
 
         elif operation == "consolidate":
             # Group permissions by tool type and base pattern; merge enumerated into wildcards.
@@ -1169,7 +1194,8 @@ class ClaudeRuntime(Runtime):
 
             if not dry_run:
                 settings["permissions"]["allow"] = new_allow
-                claude_runtime._save_settings(settings_path, settings)
+                if not _persisted(settings_path, settings):
+                    return _write_failed(settings_path)
 
         elif operation == "protect-path":
             # Goal-based: the caller names DIRECTORIES to protect; the deny-rule
@@ -1212,15 +1238,11 @@ class ClaudeRuntime(Runtime):
             # unconditionally; `contract.md` records the asymmetry.
             if not dry_run and changes_applied:
                 settings["permissions"]["deny"] = deny
-                if not claude_runtime._save_settings(settings_path, settings):
+                if not _persisted(settings_path, settings):
                     # A security control that reports success when the write
                     # failed tells an operator their credentials are guarded by
                     # rules that reached nothing. Fail loudly instead.
-                    return toon_error(
-                        "permission fix",
-                        "io_error",
-                        f"Failed to write settings to {settings_path}",
-                    )
+                    return _write_failed(settings_path)
 
         result: dict[str, Any] = {
             "scope": scope,
@@ -1294,7 +1316,8 @@ class ClaudeRuntime(Runtime):
 
         if not dry_run:
             settings["permissions"]["allow"] = allow
-            claude_runtime._save_settings(settings_path, settings)
+            if not _persisted(settings_path, settings):
+                return _write_failed(settings_path)
 
         result: dict[str, Any] = {
             "scope": scope,
@@ -1361,7 +1384,8 @@ class ClaudeRuntime(Runtime):
 
         if not dry_run:
             settings["permissions"]["allow"] = allow
-            claude_runtime._save_settings(settings_path, settings)
+            if not _persisted(settings_path, settings):
+                return _write_failed(settings_path)
 
         result: dict[str, Any] = {
             "marshal": marshal_path,
@@ -1493,7 +1517,8 @@ class ClaudeRuntime(Runtime):
             domains_removed = original_len - len(allow)
 
             settings["permissions"]["allow"] = allow
-            claude_runtime._save_settings(settings_path, settings)
+            if not _persisted(settings_path, settings):
+                return _write_failed(settings_path)
         else:
             domains_added = sum(1 for d in add if d not in current_domains)
             domains_removed = 0

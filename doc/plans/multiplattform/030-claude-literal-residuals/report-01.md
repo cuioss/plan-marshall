@@ -623,7 +623,7 @@ rather than citing a document that sanctions them. Re-derived: `coupling invento
 and `doc/plans` return nothing across every `marketplace/**` file this run touched. The couplings
 themselves stay registered in the inventory, which is where a registry belongs.
 
-### Verification rounds 5–7 — a different lens each, and why
+### Verification rounds 5–9 — a different lens each, and why
 
 The first four rounds and the closure pass were all scoped **to the plan**. That scoping is why
 they missed a defect the operator found in seconds: shipped bundle source citing a meta-project
@@ -631,7 +631,7 @@ planning document. Nothing in the plan forbids it, so nothing asked.
 
 The operator authorised five further rounds. Running five more general rounds would have reproduced
 the same blind spot, so each was given a **different lens** instead, and the two whose value depends
-on running against fixed code were held back until 5–7's findings had landed.
+on running against fixed code were held back until 5–6's findings had landed.
 
 | Round | Lens | What it could see that a plan-scoped round could not |
 |---|---|---|
@@ -640,6 +640,14 @@ on running against fixed code were held back until 5–7's findings had landed.
 | 7 | Blast radius | Every caller of every changed symbol, the two changed output shapes, and what an OpenCode user actually receives |
 | 8 | Test vacuity at scale | Every test the run added or touched, mutation-proven — not the eighteen the sweep happens to cover |
 | 9 | Cold read | The final state read by someone given no brief, no report and no history |
+
+**Round 7 is the one to read sceptically.** Rounds 5, 6, 8 and 9 each have recorded findings and a
+section below; round 7 has neither. Its lens was planned and nothing in this run's record shows it
+produced a result, so it is counted as **planned, not evidenced** rather than as a clean pass — an
+unrun round and a round that found nothing are indistinguishable from the outside, and only one of
+them is reassuring. Its stated scope, blast radius over changed symbols and output shapes, was
+substantially covered afterwards: round 8 enumerated every changed production surface and round 9's
+cold read covered the two changed output shapes.
 
 **Round 6 is the one that changes how this PR should be read.** It found a **fail-open in the
 security command**: `protect-path` discarded `_save_settings`'s return, so an unwritable settings
@@ -786,6 +794,49 @@ platform-routed ones that already work correctly; the correct remedy — routing
 — is the open coupling a later plan in this epic draws. The fallback-layout lockstep check is the
 inventory's own recorded remedy candidate for a row that stays open.
 
+### The second review round — the same fail-open, a third time
+
+Re-reviewing the fixed head, CodeRabbit dropped its merge risk from 🟠 High to 🟡 Moderate and
+returned five more findings. Three are mine and narrow; two matter more than their severity labels.
+
+| Finding | Disposition |
+|---|---|
+| `configurable_contract` probes `candidate.is_file()` **before** `_guard_within` rejects traversal, so an externally-controlled `bare` stats a location outside `skills_root` — once per declared root | **Fixed.** Guard first, then probe. Introduced by this run's own multi-root loop: the single-root version guarded on the one path it built |
+| Its docstring still said `project:` steps resolve under `.claude/skills/` only | **Fixed** — it now documents the ordered root search, and why that spelling is gone |
+| Neither `contract.md` nor `manage-providers/SKILL.md` listed the filesystem-root refusal | **Fixed** in both, with the refusal code stated |
+| The report claimed nine verification passes while separately counting four general rounds, a closure pass, and rounds 5–9 | **Fixed** — see § Cost. The arithmetic was wrong and, re-derived, exposed something worse |
+| The report said a symlinked path "renders in absolute form only" and then that "both spellings are still written" | **Fixed** — self-contradictory, and derived rather than reasoned about this time: 19 rules inside `$HOME`, 10 outside |
+
+**The finding that was not in a thread.** The review's merge-risk banner also said normalization
+"can report success without persisting defaults". Checked directly: five of `permission_fix`'s six
+mutating branches — `normalize`, `add`, `remove`, `ensure`, `consolidate` — discarded
+`_save_settings`'s return, so an unwritable settings file produced `status: success` with a non-zero
+`changes_applied` and nothing on disk.
+
+That is the **third** instance of one bug in this PR's review. Round 6 found it in `protect-path`;
+round 8 found it in `ensure_default_permissions`; this found the five remaining siblings. All five
+predate this branch. They are fixed anyway, because the alternative was shipping a PR that
+introduced a fail-closed contract, documented `io_error` for `permission fix`, and left four
+operations in the same function reporting success after writing nothing — a split population is how
+the next reader concludes the checked one is the exception. One `_write_failed` helper now serves
+every branch including `protect-path`, so there is a single `io_error` site rather than six chances
+to diverge, and a parametrized test drives all five with a seeded file so no operation can pass by
+having had nothing to do.
+
+**The sweep nobody had run.** Rather than fix the five and stop, the obvious question got asked at
+last: *where else does this shape live?* One grep over every `_save_settings` call whose return is
+discarded found **three more** — `permission ensure-wildcards`, `permission ensure-steps` and
+`permission web-apply`, none of which any reviewer or round had mentioned. So the class had **nine**
+members, of which the eight-round, two-review process had identified six.
+
+All nine are closed and the sweep re-derived clean: every remaining call either branches on the
+result or is the helper itself.
+
+**The generalisable point.** The same defect appeared three times, found by three different lenses,
+and each fix closed only the instance in front of it. A fail-open is a *class*, and the sweep that
+finds the whole class costs one command — which is worth more than the three lenses that found
+members of it one at a time.
+
 ### A false sentence that survived nine rounds and a review
 
 Worth recording on its own, because it is the clearest instance of this run's characteristic residue
@@ -852,22 +903,28 @@ cannot read the diff are different things, and only the second is evidence about
   tree under plan-marshall's own per-task billing boundary — a boundary this lane does not have. The
   two figures answer different questions and must not be put side by side.
 
-**What the run cost in verification effort, which is the figure that matters here.** Nine
-verification passes ran, plus an external review. The first five — four general rounds and a
-targeted closure pass — returned 30, 15, 10, 5 and 2 findings, 62 in total, of which two changed
-code behaviour; that phase's mutation sweep ran four times, ending at 18 mutations with none
-surviving.
+**What the run cost in verification effort, which is the figure that matters here.** Counted
+explicitly, because an earlier version of this paragraph said "nine passes" while separately
+counting four general rounds, a closure pass and rounds 5–9, which is ten — the reviewer caught the
+arithmetic.
 
-The four the operator authorised next were each given a **different lens**, and the return profile
-inverts: far fewer findings, far more of them behavioural. Round 5 (repository standards) found
-thirteen forbidden test docstrings and five meta-project leaks; round 6 (adversarial security) found
-the fail-open in the security command; round 8 (mutation-proven vacuity) ran 104 mutations, proved
-58 of 58 tests non-vacuous, and enumerated nine unguarded code paths; round 9 (cold read) found four
-blockers including a regression this run had introduced. The review then found six more.
+**Ten passes were commissioned; nine are evidenced.** Four general rounds (1–4), one targeted
+closure pass, and five lensed rounds (5–9), of which **round 7 produced no recorded result** and is
+counted above as planned-not-evidenced. An external review then ran twice.
+
+The first five passes returned 30, 15, 10, 5 and 2 findings — 62 in total, of which two changed code
+behaviour; that phase's mutation sweep ran four times, ending at 18 mutations with none surviving.
+
+The four evidenced lensed rounds inverted the return profile: far fewer findings, far more of them
+behavioural. Round 5 (repository standards) found thirteen forbidden test docstrings and five
+meta-project leaks; round 6 (adversarial security) found the fail-open in the security command;
+round 8 (mutation-proven vacuity) ran 104 mutations, proved 58 of 58 tests non-vacuous and
+enumerated nine unguarded code paths; round 9 (cold read) found four blockers including a regression
+this run had introduced. The two review rounds added eleven more.
 
 The comparison worth carrying: **62 findings from five same-lens passes changed code behaviour
-twice; roughly 30 from four different-lens passes and a review changed it more than a dozen times.**
-Rounds are not the unit of verification effort — lenses are.
+twice; roughly 40 from four different-lens passes and two reviews changed it more than a dozen
+times.** Rounds are not the unit of verification effort — lenses are.
 
 ## Contract check (Step 9)
 
@@ -935,8 +992,15 @@ half to contain the broken one.
 construction, re-derived gone from the tree before removal, per the inventory's own closing rule.
 
 **`_tilde_form` is path-lexical**, so a directory reached through a symlink into the home directory
-renders in absolute form only. Both spellings are still written, so the protection holds; the tilde
-arm simply does not fire. Characterised, not closed.
+renders in **absolute form only** — and the earlier claim here, that "both spellings are still
+written, so the protection holds", contradicted itself and is withdrawn. Derived rather than
+reasoned about: a directory under `$HOME` renders **19** rules, both spellings of each vector; one
+outside it renders **10**, the absolute spelling alone.
+
+So the gap is real and narrow: a command naming such a directory by its absolute path is denied; the
+same directory named through its `~`-relative spelling is not. Closing it would mean resolving
+symlinks, which `resolve()` does by renaming the directory the caller asked to protect — the reason
+the renderer is lexical in the first place. Characterised, not closed.
 
 **The permission matcher's own behaviour is unverified and unverifiable here.** Every deny rule this
 change writes rests on assumptions about how Claude Code matches them — that `~` is expanded at match

@@ -49,7 +49,7 @@ alternative: <what the caller can do instead>
 | `unknown_overwrite_key` | `project install-hook --overwrite` names a conflict key the target does not define; rejected fail-closed before any write, so a typo never reads as "do not overwrite" |
 | `hook_not_configured` | SessionStart hook not installed; `$CLAUDE_CODE_SESSION_ID` unset |
 | `invalid_settings` | Settings file is malformed (JSON parse error); fail-closed before any write so a malformed file is never clobbered — returned by `permission configure`, `permission fix`, `permission ensure-wildcards`, `permission ensure-steps`, `permission web-apply` |
-| `io_error` | The rules or permissions were rendered but the settings file could not be written; nothing from the run reached disk — returned by `permission fix --operation protect-path` |
+| `io_error` | The change was computed but the settings file could not be written; nothing from the run reached disk, and the operation's counters are not reported — returned by every mutating permission op: `permission configure`, `permission fix` (all operations), `permission ensure-wildcards`, `permission ensure-steps`, `permission web-apply` |
 | `invalid_marshal` | `.plan/marshal.json` is malformed (parse error); fail-closed instead of degrading to a zero-step audit — returned by `permission analyze`, `permission ensure-steps` |
 | `unsupported_observable` | `wait for --observable` names a kind outside the closed enumerated set |
 | `invalid_bound` | `wait for --bound-seconds` is not a positive number of seconds |
@@ -477,7 +477,7 @@ error: invalid_operation
 message: "cannot protect 'creds': path is not absolute"
 ```
 
-`protect-path` refuses a path it cannot render faithfully rather than rendering it approximately, because a deny rule is a security control. Refused: an empty or blank path (which would otherwise render a denial of every absolute read and every inline script), a relative path, a path containing any whitespace (a space ends the argument a `Bash(...)` rule names, so the rule would guard a shorter path than the caller gave), a path containing `..` (which names a different directory than it reads as), and one carrying `(`, `)`, `*` or a control character — the permission grammar has no escape, so such a path renders as a *different* rule. `invalid_operation` covers both an unknown `--operation` value and an operation whose required argument is missing or unusable; the `message` distinguishes them.
+`protect-path` refuses a path it cannot render faithfully rather than rendering it approximately, because a deny rule is a security control. Refused: an empty or blank path (which would otherwise render a denial of every absolute read and every inline script), a relative path, a path containing any whitespace (a space ends the argument a `Bash(...)` rule names, so the rule would guard a shorter path than the caller gave), a path containing `..` (which names a different directory than it reads as), the filesystem root `/` (whose distinctive-tail rule becomes `Bash(python3 -c */*)`, matching any inline script carrying a slash), and one carrying `(`, `)`, `*` or a control character — the permission grammar has no escape, so such a path renders as a *different* rule. Every refusal above returns `invalid_operation`, whose `message` names the offending path and the reason. `invalid_operation` covers both an unknown `--operation` value and an operation whose required argument is missing or unusable; the `message` distinguishes them.
 
 **Error (`protect-path`, write failed)**:
 ```toon
