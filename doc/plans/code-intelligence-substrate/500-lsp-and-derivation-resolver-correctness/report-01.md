@@ -927,6 +927,37 @@ own discovery of this "the first fix-induced regression in nine rounds". Round 1
 consecutive rounds**, which is what turns it from an incident into the finding § What have we learned
 is built on.
 
+### Independent re-check of round 9's fixes, and what carries NO independent verification
+
+⭐ **Round 9's verifier re-ran its own harnesses against `91629f3` after the fixes landed** — not a
+re-read, the same executed reproductions — and closed five findings on its own evidence:
+
+| id | At `a2bff58` | At `91629f3` |
+|---|---|---|
+| A2 | immutable file → `restore_error: PermissionError` over a **clean tree** | `restore_error: None`, tree clean |
+| B4 | two URI spellings → two footprint rows, rollback left `THREE\n` with `rolled_back: true` | one key, `edit_count: 2`, **`ROLLBACK CORRECT: True`** |
+| B1 | `[0,0]–[0,2147483647]` replaced the whole file with `'X'` | `'X\nbeta\ngamma\n'` |
+| B2 | mutation M1 left the directory **100 passed** | M1 **killed** |
+| A1 | the comment described the conjunction already replaced | states the handshake-only bound |
+
+It also confirmed **no regression from the A2 fix**: reinstating round 7's defect is still killed by
+its own guard, and the two suites carrying the new guards report **126 passed**.
+
+⛔ **What no verifier has independently checked**, stated plainly rather than left to inference:
+
+- **Round 10's own ten fixes.** Round 10 *found* them; the run fixed them and red-checked each by
+  reinstating the defect, but no verification round has run against `91629f3`. The `setup.cfg`
+  percent-sign fix (`B-1`) is the one that matters most here — it is a **behaviour** change to
+  production code, and its evidence is the run's own two guards and its own red-check.
+- **Which four report claims `f93849e` corrected.** Round 9's re-check names this as unre-derived.
+- **Round 9's bounded B-items** (`S2`, `S4`–`S12` in § Left open) were not re-verified after the
+  fixes; their bounds rest on round 9's and round 10's original reproductions.
+
+⚠ **This is a consequence of stopping on a spent budget, and it is the honest shape of that
+stop** — a loop that ends after a round of fixes always ends with its last fixes unverified. Round
+10's own recommendation was to fix and stop rather than open another round; the alternative is not
+"verified everything" but "one more round of fixes, itself unverified".
+
 ### How the loop stopped
 
 **Exit: `budget-exhausted, non-converging`.** Both tokens are load-bearing and neither is a
