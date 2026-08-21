@@ -38,14 +38,14 @@ real-server assertions run and their results are reported below. The CI-portable
 
 | # | Deliverable | Commit | Verification state |
 |---|---|---|---|
-| D1 | lsp-client diagnostics answer contract, per-file worsened-set verdict | `ea8fadf` | Done. 4 CI-portable red/green pairs; all four "Done when" clauses met |
-| D2 | Lookup rows carry their file; the write path is all-or-nothing | `ea8fadf` | Done. (a)–(e) met; (a)/(b) in both real-server and fake-transport form; one assertion per verb through the CLI seam |
-| D3 | The `lsp` harvest resolves real imports, refuses vendored targets, names its failure | `1d2731d` | Done. Gating baseline taken; G1 proceeded; all five "Done when" clauses met |
-| D4 | Python/npm discoverers stop reporting a missing capability as a measured absence | `253bf44`, `94cd8ba` | Done. (a)–(g) met, including (g) unchanged |
-| D5 | Corpus server survives a bad frame, resolves the right site, never presents an unconfirmed one as exact | `87e888e` | Done. (a)–(e) met |
-| D6 | One store, one meaning of `configured`; four standing questions recorded | `accf6ed` | Done. G9 fixed both sides; G10/G25/G12 and the three handed-up proposals recorded, none acted on |
+| D1 | lsp-client diagnostics answer contract, per-file worsened-set verdict | `7f36c76` | Done. 4 CI-portable red/green pairs; all four "Done when" clauses met |
+| D2 | Lookup rows carry their file; the write path is all-or-nothing | `7f36c76` | Done. (a)–(e) met; (a)/(b) in both real-server and fake-transport form; one assertion per verb through the CLI seam |
+| D3 | The `lsp` harvest resolves real imports, refuses vendored targets, names its failure | `3331bfa` | Done. Gating baseline taken; G1 proceeded; all five "Done when" clauses met |
+| D4 | Python/npm discoverers stop reporting a missing capability as a measured absence | `8f468a4`, `a230637` | Done. (a)–(g) met, including (g) unchanged |
+| D5 | Corpus server survives a bad frame, resolves the right site, never presents an unconfirmed one as exact | `9d375df` | Done. (a)–(e) met |
+| D6 | One store, one meaning of `configured`; four standing questions recorded | `573580c` | Done. G9 fixed both sides; G10/G25/G12 and the three handed-up proposals recorded, none acted on |
 
-Plan directory established in `bc72501`.
+Plan directory established in `cdf8062`.
 
 ### D1 — the diagnostics answer contract
 
@@ -279,13 +279,13 @@ module-tests.
 
 ⛔ **This figure moves with every commit, so it is stamped with the commit it was measured at rather
 than carried forward.** An earlier revision of this section reported `21414 passed, 14 skipped` from
-`94cd8ba` and left it standing across three later commits that changed **production** Python — the
+`a230637` and left it standing across three later commits that changed **production** Python — the
 stale-figure defect this report warns about elsewhere, committed here.
 
 | Measured at | Result |
 |---|---|
-| `94cd8ba` | 21414 passed, 14 skipped, 583.66 s |
-| `9cf5001` (independently re-run by the round-3 verifier) | 21419 passed, 14 skipped, 507.80 s |
+| `a230637` | 21414 passed, 14 skipped, 583.66 s |
+| `f5bc086` (independently re-run by the round-3 verifier) | 21419 passed, 14 skipped, 507.80 s |
 | **Final, on the merged tree** | recorded at the stale-base re-verification below — and it is the one that governs |
 
 The figure that governs is the last: merge-gate condition 2 re-runs the full gate on the tree that
@@ -294,7 +294,7 @@ actually lands, and no intermediate figure substitutes for it.
 ⚠ **The first `./pw verify` FAILED**, and the failure is worth recording because it is exactly the
 class the contract warns about: `test-compile` — the only sub-step that type-checks the test tree, and
 the one neither `quality-gate` nor `module-tests` runs — rejected two unused `type: ignore` comments
-that were green under both narrower calls. Fixed in `94cd8ba`; the figures above are the re-run.
+that were green under both narrower calls. Fixed in `a230637`; the figures above are the re-run.
 
 **Stale-base re-verification (§ Step 8 condition 2):** recorded at the merge gate below.
 
@@ -362,7 +362,7 @@ surface". Both halves were wrong** — the count was stale, and files outside th
 present when it was written. Verification item 5 requires every such file **accounted for**, not
 absent. Re-derived at the moment of this claim:
 
-`git diff --name-only origin/main...HEAD` → **50 files** (re-derived at `50bf05b`; `report-01.md` is
+`git diff --name-only origin/main...HEAD` → **50 files** (re-derived at `ec3a919`; `report-01.md` is
 already in that set, so committing this section does not move it). **Seven fall outside** the plan's
 Expected surface, each for a stated reason:
 
@@ -424,7 +424,7 @@ build"* (B), the attribution docstrings read as *a caller-supplied prefix table*
 bound read as *"answers may be stale"* (A), and every item of `proposals.md` read as *proposal
 recorded* (with `D1` correctly read as a decision record). No wording failure by the plan's own
 criterion — but the reader named four places where it nearly took the wrong one, and one sentence
-that is false as written. All five fixed in `8128115`.
+that is false as written. All five fixed in `ef3e165`.
 
 | # | Finding | Disposition |
 |---|---|---|
@@ -437,7 +437,7 @@ that is false as written. All five fixed in `8128115`.
 ### Round 2 — plan verifier
 
 Twenty findings. The verifier ran the claims rather than reading them, which is what produced most of
-these. All fixed in `d63bfc0`.
+these. All fixed in `6bbd765`.
 
 | # | Finding | Disposition |
 |---|---|---|
@@ -456,7 +456,7 @@ these. All fixed in `d63bfc0`.
 | F13 | The nine-way vendored sweep asserted only an empty reference list — which a fake server that never spawned satisfies nine times | **fixed** — asserts `outcome.ran` |
 | F14 | `test_the_query_verb_...` called the index, not `cmd_query`, and its final assertion could not fail | **fixed** — drives `cmd_query` |
 | F15 | `test_the_skip_set_is_one_constant_used_for_sources_and_targets` asserted only membership, never the coupling its name claims | **fixed** — renamed, plus a new test that **moves** the constant and watches all three consumers follow |
-| F16 | No run report existed, so the report-bound *Done when* clauses were unverifiable | **not a gap** — the report was untracked at the time and is committed in `d63bfc0`. Round 3 verifies its content |
+| F16 | No run report existed, so the report-bound *Done when* clauses were unverifiable | **not a gap** — the report was untracked at the time and is committed in `6bbd765`. Round 3 verifies its content |
 | F17 | The run **measured** a shipped figure false and left it shipped: the ~380-of-~5300 / ~97 %-false-positive premise, against this run's 61-of-5083 / 43 % | **fixed** at four sites. ⚠ These surfaces belong to sibling plan `560`, which should **reconcile rather than duplicate**; leaving a knowingly-false figure shipped was the worse option |
 | F18 | The new user-page sentence "a `pyproject.toml` that does not parse publishes nothing" is false when a `setup.cfg` is present | **fixed** |
 | F19 | `bare_import_roots`' "no `__init__.py` is not a package" — under PEP 420 it is a namespace-package **portion** | **fixed** — the real reason is that a portion is importable only under its dotted path |
@@ -464,7 +464,7 @@ these. All fixed in `d63bfc0`.
 
 ### Round 2b — the run's own sweep of its round-2 prose
 
-Fixed in `6185ba1`, found by this run rather than by a verifier, applying the rule that the previous
+Fixed in `b2b6988`, found by this run rather than by a verifier, applying the rule that the previous
 round's own prose is the highest-risk surface:
 
 | # | Finding | Disposition |
@@ -480,7 +480,7 @@ also confirmed five of this run's mechanism claims by executing them — the Axi
 `LspError` raised for both causes, D6/G10's 308 / 5083 / 5022 / 61 and its 26 / 4 / 31 split, and
 G25's asserted absence — each reproduced exactly.
 
-Seven findings, all fixed in `bd4053f`. **Four of the seven are defects the previous round's own
+Seven findings, all fixed in `c944289`. **Four of the seven are defects the previous round's own
 fixes introduced**, which is the pattern the contract predicts: by round N the highest-risk text is
 what round N−1 wrote.
 
@@ -504,7 +504,7 @@ now stated rather than implied.
 
 The verifier re-checked all twelve round-2 fixes site by site, re-derived every figure this run
 publishes by **executing** it, and ran the full `./pw verify` itself. **Ten findings, every one a
-false statement (condition A); one additionally resets condition B.** All fixed in `50bf05b` and this
+false statement (condition A); one additionally resets condition B.** All fixed in `ec3a919` and this
 commit.
 
 Confirmed independently: the Axis-D claim set (5 claims / 3 attributors, `None` for a marketplace
@@ -521,7 +521,7 @@ guard**.
 | V2 | The PEP 420 paragraph round 2 wrote is **wrong**: a namespace portion's modules *are* importable as `{dir}.{module}` from the parent, and the paragraph contradicted itself two clauses later. Re-run here — dotted import succeeds, bare import does not | **fixed**; `__init__.py` is a *convention* discriminator, not a semantic one, and it now says so |
 | V3 | `lift_to_modules`' docstring still said vendored exclusion happens "before a target ever reaches this function" — round 2 added exactly that exclusion **inside** it, so the contract list told a reader the opposite of what the code does | **fixed** |
 | V4 | This report's Collateral check claimed "44 files, every one inside the Expected surface". **Both halves false** — stale count, and outside files were already present | **fixed** — re-derived, all seven outside files accounted for |
-| V5 | This report's Build gate carried figures measured at `94cd8ba`, unchanged across three later commits that touched production Python | **fixed** — stamped per commit, with the merged-tree run named as governing |
+| V5 | This report's Build gate carried figures measured at `a230637`, unchanged across three later commits that touched production Python | **fixed** — stamped per commit, with the merged-tree run named as governing |
 | V6 | **`execute-task/SKILL.md`** — the skill that drives the leaf — still said "treat a `failed` return as a rejected edit (investigate the reported diagnostics)". After D1 that is wrong for three of four reasons, and it is the misreading D1 exists to prevent, at its **only consuming site** | **fixed** — the four reasons split, each with what to do |
 | V7 | The corpus `SKILL.md` still asserted the gate is "hard-gated on the validator-precision work" and that diagnostics would ship "before that precision work lands" — asserting work has not landed that G10 re-derived as inverted. The least-corrected of the four sites | **fixed** |
 | V8 | `[[unverified]]` was stacked above `[[staleness]]` on one section title, so the new five-causes table's xref resolved to the **wrong section** | **fixed** — anchor moved to the section it names |
@@ -600,12 +600,28 @@ is re-run on the merged tree — which condition 2 requires whenever the base ha
 no step that was not already owed. Recorded under § Build gate → stale-base re-verification with the
 merge commit that was tested.
 
-⚠ **Brought in by a merge rather than a rebase**, against the operator's phrasing and for a stated
-reason: this report and the PR description quote **ten** commit SHAs from this branch, and a rebase
-replaces every one of them, leaving both documents citing commits on no branch under review — the
-lane contract's own warning. A merge fetches the same change with no SHA churn. Say so rather than
-silently substituting one for the other; a true rebase is a one-command change if it is wanted, and
-the SHA citations would then be re-derived.
+**Brought in by a REBASE.** The run first proposed a merge, on the ground that this report quotes
+commit SHAs a rebase would invalidate. The operator reaffirmed the rebase; that is their decision,
+and the citations were re-derived rather than the instruction reinterpreted.
+
+⛔ **A rebase changes the SHA of every commit it replays, so every document quoting one is stale by
+construction.** What was done, in order:
+
+1. A safety ref (`pre-rebase-backup`) was set at the pre-rebase head before anything was rewritten.
+2. `git rebase origin/main` — all **16** commits replayed, **no conflicts**.
+3. Old and new were paired by **patch content**, not by subject:
+   `git range-diff pre-rebase-backup...origin/main origin/main...HEAD` reported every one of the 16 as
+   `=` (identical patch), with **none dropped, squashed or changed**. Subject-and-order matching was
+   not used — subjects repeat, and a dropped commit would be silently remapped onto its neighbour.
+4. Each replayed SHA was proved reachable (`git merge-base --is-ancestor {sha} HEAD`) **before** being
+   written down.
+5. **20 citations** were rewritten across this report, and every remaining 7-hex token in it was
+   re-checked to resolve to a commit on this branch. A grep for all sixteen retired SHAs across
+   `doc/` returns nothing.
+
+The other rebase hazard the contract names does **not** apply here: no commit *message* on this
+branch quotes a same-branch SHA, so nothing unfixable was left stale. The `020` report's appended
+correction cites no SHA either.
 
 ### Left open
 
