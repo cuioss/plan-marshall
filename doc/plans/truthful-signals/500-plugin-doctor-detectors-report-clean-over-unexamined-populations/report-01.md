@@ -591,11 +591,141 @@ Both recorded consequences were discharged:
 
 ## Contract check (Step 9)
 
-*Pending — performed and appended as the last pre-merge commit.*
+Each step re-checked against what actually happened, and against the artifact on
+disk rather than against this report's own earlier claims.
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | done | `cloud-plan-lane`, loaded as the first action from the plan's first-instruction block. Named in § Deliverables' lead-in. |
+| 2 Branch | done | `claude/plugin-doctor-detectors-report-ar5emr` on `origin` — the **harness-assigned** name, kept rather than renamed to a closed-set prefix, per § Branch naming in a cloud session. |
+| 3 Plan directory | done | `doc/plans/truthful-signals/500-…/plan.md` exists and opens with the ⛔ first-instruction block (verified by reading the file, not from memory of moving it). |
+| 4 Implement | done | 23 commits, **every one carrying the trailer** (`git log --format=%(trailers:…)` → 23 of 23). All 8 deliverables addressed; § Coverage check records the three gaps the plan's paraphrase lost and the one recorded as a proposal. |
+| 4 Per-commit gate | done | Every `*.py`-touching commit preceded by a clean gate; ruff / both mypy passes / SPDX reporting clean each time. |
+| 4 Pushed | done | `git status -sb` reports no `ahead` after the final push. |
+| 5 Build gate | done | § Build gate states the git-derived Python-change verdict and every run's outcome, including the two re-runs the base moves forced. |
+| 6 Verification sub-agent | done, **with a non-standard exit** — see below | § Findings, § Round record, § Item accounting, § Characterised survivors. |
+| 7 PR cycle | done | PR **#1320**, created open and **unlabelled**: § Step 7's table re-derived at creation over `git diff --name-only origin/main...HEAD` gives 28 R1 paths, 23 R2, 5 R3, **0 S** → row 1, arm `reviewable`. No `skip-bot-review`, so no coverage-loss phrase is owed. Review participation recorded below as it arrives. |
+| 8 Merge gate | conditions 1–4 assessed below | Condition 2 established: base had advanced by one commit (`c294e86`), merged **on the branch** (the default shape), merge commit `0533633` gated with a full `./pw verify` → `21424 passed, 14 skipped` in 594.60s, all six dimensions clean. |
+| 8 Bridge | done | No status or bookkeeping write landed under `doc/plans/` outside this plan's directory. The two sibling-report edits (`060-…`, `320-…`) are **declared-deliverable** corrections required by their own gaps, recorded in § Collateral — not ledger or status writes. |
+| 9 This check | done | This table. |
+| 9 What have we learned | done | Below — two proposals, presented to the operator, **not self-approved**. |
+
+### Step 6's exit — stated precisely, because it is neither of the two the contract names
+
+⛔ The contract names two exits: `verifier-clear` (the verifier answers that nothing
+remains) and `budget-exhausted`. **This run hit neither.**
+
+- **Budget:** five default + an operator grant of five. **Eight rounds used; two of
+  the grant remained unspent.** Not exhausted.
+- **Verifier's own last answer** (round 8, quoted, not paraphrased): *"Yes — findings
+  remain that condition A or condition B forbids leaving open."* Not clear.
+- **What actually stopped it:** the run recommended stopping and the operator agreed
+  (*"move on as proposed"*). That is an **operator-directed stop with budget
+  remaining** — a third exit the contract does not model. Recording it as either
+  named token would be false, so it is recorded as `operator-stop`.
+
+The recommendation rested on a measured change in the finding class, not on fatigue:
+
+| Round | Items | Shipped | Behavioural defects found |
+|---|---:|---:|---|
+| 5 | 11 | 8 (73%) | yes |
+| 6 | 17 | 10 (59%) | yes |
+| 7 | 13 | 8 (62%) | yes — round 6's own fix leaked |
+| 8 | 13 | 9 (69%) | **none** |
+
+**Everything condition A forbids was fixed regardless**, in every round including the
+last: all 13 of round 8's items were condition A and all 13 were fixed before this
+commit. What is *not* claimed is that a ninth round would find nothing — on this
+run's evidence it would very likely find more prose defects, because **writing a
+correction is itself what introduces the next stale sentence** (round 8 found three
+defects inside hunks round 7 had just written).
+
+**Residue to assume remains:** further false STATEMENTS in shipped comments,
+docstrings, reference docs and this report — not further wrong behaviour. The
+distinction is evidenced, not asserted: round 8 mutated the resolver, the laundering
+guard and the population publication and all three held.
+
+**Were the late rounds' findings narrower, or merely fewer?** ⛔ **Neither.** The
+count was flat (13 → 13) and the shipped share rose (62% → 69%). The findings
+narrowed in **kind** — behavioural → prose — and in nothing else. Reporting this as
+convergence would overstate it.
+
+**Condition B survivors, each re-put to the verifier in the stopping round:**
+
+| Survivor | Bound | What closing it would take |
+|---|---|---|
+| argparse `parents=[base]` — a child parser inherits the parent's actions; this walk attributes the parent's `choices=` to the parent's paths only | **0 live sites**, measured over all 53 notations in the population | Model `parents=` in `_build_parser_path_sets` by unioning the parent's paths into the child's |
+| R5-4 — a parser rebound to a local (`x = y`) then used as an `add_argument` receiver | **0 live sites**, measured | Track intra-function aliasing in the parser-path walk |
+| R5-7 — a parser bound by `for` / `with` / `lambda` / a comprehension | **0 live sites**, measured | Extend the binding walk beyond `ast.Assign` |
+| Collection-time drops with no census figure: an enum above its block's first invocation, a member set containing `--`, an empty split | **0 live sites each**, measured | Give each a cause in `UNRESOLVED_CAUSES` so a declined token always carries a figure |
+
+Every bound above was **re-measured in round 8**, not carried forward from the round
+that first stated it.
 
 ## What have we learned (Step 9)
 
-*Pending.*
+Two proposals, both from evidence this run produced. **Presented to the operator,
+not self-approved**, and to be shipped — if approved — as a separate `chore/` PR
+touching only the skill, never in this plan's PR.
+
+### Proposal 1 — the verification loop has no exit for "behaviourally converged, still drifting on prose"
+
+**What happened.** § Step 6 defines the loop's stopping rule over whether *findings
+remain*, and names two exits. This run reached a state neither describes: round 8
+returned 13 findings — so not `verifier-clear` — with two grant rounds unspent, so
+not `budget-exhausted`. Every one of the 13 was a false *statement*; **zero** were
+wrong behaviour, and the three guards round 8 mutated all held. Rounds 1–7 had each
+found real behavioural defects, five of them in the *previous* round's own fix.
+
+**Why it is a contract gap and not just this run's situation.** The two classes have
+different economics. A behavioural finding is closed by a fix that is then pinned by
+a mutation-killed test, so it stays closed. A prose finding is closed by writing a
+sentence — and writing sentences is what *creates* the next stale sentence: round 8
+found three defects inside hunks round 7 had just written, and § Collateral's
+derivation rule was invalidated by the commit immediately after the one that wrote
+it. A loop that cannot distinguish the classes cannot see that one of them has
+converged, so it either stops on a hunch or runs until the budget is gone.
+
+**Proposed edit.** Have § Step 6 require the verifier to report **findings split by
+class** (behavioural vs statement), and add a third exit — `behaviourally-clear` —
+available when a round returns **zero behavioural findings with its behavioural
+guards mutation-confirmed**, with condition A still discharged in full for that
+round. The report then states the residue in the honest form this run had to invent
+by hand: *"further false statements, not further wrong behaviour."*
+
+**Cost of not doing it.** A run in this state either burns its remaining budget
+correcting prose at one full `./pw verify` per round, or stops without a token that
+describes what it did — which is what happened here.
+
+### Proposal 2 — a derivation rule stated next to the defect does not prevent the defect
+
+**What happened.** Three instances, one round:
+
+1. § Collateral's derivation was rewritten in round 7 to *"derived from `git diff`
+   against `origin/main`, not from the round record"*. **The very next commit** added
+   a file to that diff without re-running it.
+2. The enum analyzer carries a ⛔ reading *"re-derive these examples whenever the
+   census changes"*. Round 8 found a worked example naming a site the census had
+   moved — **two lines below that ⛔**.
+3. A count of population-publishing rules went stale **inside the hunk that made it
+   stale**, five lines above the list the same commit added the third entry to.
+
+**The lesson.** Co-locating guidance with the defect is the intervention this
+repository reaches for by default, and this run is three-for-three evidence that it
+does not work. What distinguishes the claims that *stayed* true is that something
+**re-ran a derivation at a checkpoint** — the census figures held because § Step 6's
+sweeps re-derive them every round.
+
+**Proposed edit.** Add to § Step 9's re-verification pass a fourth claim class:
+**derived** claims — any report figure or list the report itself says is derived
+from a command. Step 9 already re-checks *tree* and *history* claims because they
+rot invisibly; a derived claim rots the same way and for the same reason. The check
+is mechanical: re-run each stated derivation command and diff its output against
+what the report says.
+
+**Scope note.** Proposal 2 is about the *contract's* checkpoints, not about adding
+more ⛔ prose — adding more of the intervention that failed would be the same
+mistake one level up.
 
 ## Residue
 
