@@ -54,11 +54,16 @@ class WorkspaceApplyError(Exception):
 
     Raised by :func:`apply_workspace_edit` **after** it has attempted to restore
     every file it wrote — including the one the failing write itself damaged.
-    Whether that attempt succeeded is exactly what ``restore_error`` reports: it
-    is ``None`` when the tree is back as it was, and non-``None`` in the one case
-    where files really are left modified, which the caller must surface rather
-    than swallow. ⛔ Read the attribute, not this sentence: "has been restored"
-    is the intent, and only ``restore_error is None`` is the fact.
+    Whether the TREE is back as it was is exactly what ``restore_error`` reports:
+    it is ``None`` when every captured path holds its captured content, and
+    non-``None`` only when some file really is left modified, which the caller
+    must surface rather than swallow. ⛔ It is derived from re-reading the
+    footprint, **not** from whether the restore call raised — a write refused
+    before it touched anything (EACCES, EPERM, an immutable file) makes that
+    path's restore fail for the same reason, over a file nothing modified, and
+    reporting it would raise an alarm about a clean tree. Read the attribute,
+    not this sentence: "has been restored" is the intent, and only
+    ``restore_error is None`` is the fact.
     """
 
     def __init__(self, path: str, cause: BaseException, restore_error: BaseException | None = None) -> None:
@@ -74,11 +79,31 @@ def path_to_uri(path: str | Path) -> str:
 
 
 def uri_to_path(uri: str) -> str:
-    """Return the filesystem path for a ``file://`` URI (or ``uri`` verbatim)."""
+    """Return the filesystem path for a ``file://`` URI (or ``uri`` verbatim).
+
+    ⛔ The result is **resolved**, matching :func:`path_to_uri`, so that two
+    spellings of one document — ``/t/a.py`` and ``/t/./a.py``, or a symlink and
+    its target — normalise to the same key. They used not to, and the cost was a
+    false clean: ``normalize_changes`` produced two entries for one file, the
+    second entry's captured "original" was the first entry's *output*, and
+    rolling back therefore restored the file to a state it had never been in
+    while the payload reported ``rolled_back: true``. Aliasing is a server
+    defect, but a false clean is the one outcome this write path may never
+    produce, whatever the server does.
+
+    A path that cannot be resolved (it does not exist, or the filesystem refuses
+    the walk) falls back to the unresolved form: the apply loop then fails on it
+    and reports which path, which is a legible failure rather than a swallowed
+    one.
+    """
     if not uri.startswith('file:'):
         return uri
     parsed = urlparse(uri)
-    return unquote(parsed.path)
+    raw = unquote(parsed.path)
+    try:
+        return str(Path(raw).resolve())
+    except OSError:
+        return raw
 
 
 def normalize_changes(workspace_edit: dict[str, Any]) -> tuple[dict[str, list[dict[str, Any]]], list[str]]:
@@ -137,12 +162,28 @@ def _line_start_offsets(text: str) -> list[int]:
 
 
 def _position_to_offset(line_starts: list[int], text_length: int, line: int, character: int) -> int:
-    """Convert an LSP ``{line, character}`` position to an absolute offset."""
+    """Convert an LSP ``{line, character}`` position to an absolute offset.
+
+    ⛔ An over-long ``character`` clamps to the END OF ITS OWN LINE, which is
+    what LSP 3.17 requires of ``Position.character``: *"If the character value
+    is greater than the line length it defaults back to the line length."*
+    Clamping to the length of the whole FILE instead — which this did — turns
+    the standard end-of-line idiom ``[line, 0]-[line, 2147483647]`` into a range
+    covering everything from that line to EOF, so replacing one line silently
+    replaced the rest of the file. The write path's diagnostics gate catches
+    most such truncations because the wreckage gains errors, but a tail of
+    comments or data adds no NEW error diagnostic and the edit is accepted.
+    """
     if line < 0:
         return 0
     if line >= len(line_starts):
         return text_length
-    return min(line_starts[line] + max(character, 0), text_length)
+    # The LINE LENGTH excludes the terminator: the next line starts one past the
+    # '\n', so the content ends one before it. The last line has no terminator
+    # and ends at EOF. Clamping to the terminator instead would let the
+    # end-of-line idiom swallow the newline and join two lines.
+    line_end = line_starts[line + 1] - 1 if line + 1 < len(line_starts) else text_length
+    return min(line_starts[line] + max(character, 0), line_end)
 
 
 def apply_text_edits(text: str, edits: list[dict[str, Any]]) -> str:
@@ -210,7 +251,17 @@ def apply_workspace_edit(workspace_edit: dict[str, Any]) -> tuple[list[dict[str,
             try:
                 restore_files(originals)
             except OSError as restore_exc:
-                restore_error = restore_exc
+                # ⛔ A failed restore is not the same as an unrestored tree, and
+                # only the second one may set ``restore_error``. A write that
+                # fails at ``open()`` — EACCES, EPERM, EROFS, an immutable file —
+                # never truncates anything, so the "restore" of that path is a
+                # rewrite of content already on disk: it fails for the same
+                # reason the write did, over a file that was never modified.
+                # Reporting that as ``restore_error`` raises a false alarm about
+                # a clean tree, which is the mirror of the false clean this
+                # boundary exists to prevent and just as misleading. So the
+                # claim is CHECKED rather than inferred from the exception.
+                restore_error = restore_exc if _still_modified(originals) else None
             raise WorkspaceApplyError(path, exc, restore_error) from exc
         footprint.append({'path': path, 'edit_count': len(changes[path])})
     return footprint, originals
@@ -220,6 +271,23 @@ def restore_files(originals: dict[str, str]) -> None:
     """Restore each path to the content captured before the edit was applied."""
     for path, content in originals.items():
         Path(path).write_text(content, encoding='utf-8')
+
+
+def _still_modified(originals: dict[str, str]) -> bool:
+    """Report whether any path's content on disk differs from what was captured.
+
+    The question ``restore_error`` is supposed to answer, asked of the disk
+    instead of inferred from an exception. A path that cannot be read back is
+    counted as modified: the honest answer under an unreadable file is "I cannot
+    show you this tree is clean", and the fail-closed direction here is to warn.
+    """
+    for path, content in originals.items():
+        try:
+            if Path(path).read_text(encoding='utf-8') != content:
+                return True
+        except OSError:
+            return True
+    return False
 
 
 def count_error_diagnostics(diagnostics: list[dict[str, Any]]) -> int:

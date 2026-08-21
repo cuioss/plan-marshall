@@ -411,9 +411,18 @@ and the toolchain stayed reachable while `shutil.which('pyright-langserver')` re
 
 ### Mutation sweep — every guard shown to fail against the defect it names
 
-Ten mutants, one per fixed defect, each run with **pyright hidden**. Files were snapshotted by the
-harness itself and written back in a `finally` — never a git command, which would have rewritten the
-tree from the index. `git status --porcelain` was empty before the sweep and empty after it.
+Ten mutants, each run with **pyright hidden**. Files were snapshotted by the harness itself and
+written back in a `finally` — never a git command, which would have rewritten the tree from the
+index. `git status --porcelain` was empty before the sweep and empty after it.
+
+⛔ **These ten cover the defects fixed up to `9d375df`, not the branch's full set** — an earlier
+revision of this line said "one per fixed defect", which stopped being true the moment a later round
+fixed anything. Rounds 7, 8 and 9 fixed eight more (the rollback `pop`, D5's frame contract, the
+harvest's budget attribution, the third `configured` reader, the spurious `restore_error`, the
+line-length clamp, the URI alias, and B4's absent assertions). **Each of those was red-checked
+individually at the time it was fixed** — by reinstating the defect and observing its own guards go
+red, recorded per finding in § Findings rounds 7–9 — rather than by extending this table. The two
+methods are equivalent in what they establish; the table is simply not the record for those eight.
 
 | Mutant | Verdict |
 |---|---|
@@ -432,10 +441,18 @@ tree from the index. `git status --porcelain` was empty before the sweep and emp
 
 ## Red-then-green, per fixed defect
 
-Every new guard was run against the pre-change tree in a detached `origin/main` worktree before being
-declared green. Where a guard would have failed on a *signature* rather than on behaviour, the
-pre-change copy was adapted (old constructor call, pre-change defaults, `getattr` fallbacks for
-absent names) so the observed failure is the **defect**, not the API change.
+Every guard added by the **deliverable commits** was run against the pre-change tree in a detached
+`origin/main` worktree before being declared green. Where a guard would have failed on a *signature*
+rather than on behaviour, the pre-change copy was adapted (old constructor call, pre-change defaults,
+`getattr` fallbacks for absent names) so the observed failure is the **defect**, not the API change.
+
+⛔ **The guards added by rounds 7–9 were red-checked differently, and the distinction is recorded
+rather than blurred under "every".** Those defects did not exist on `origin/main` — they were in the
+branch's own code — so a pre-change worktree could not exhibit them. Each was instead red-checked by
+**reinstating the defect in place** and observing its own guards fail: the rollback `pop`, `serve`'s
+silent end-of-stream, the harvest's `else` arm, the `configured` key-presence test, the
+`restore_error` inference, the file-length clamp, and the unresolved URI. Every one is reported with
+its red result in § Findings rounds 7–9.
 
 | Group | Pre-change result | Representative observed failure |
 |---|---|---|
@@ -815,8 +832,9 @@ Round 7's method — execute the behaviour, then sweep outward — was applied t
 **Nine findings across five deliverables, two of them defects in the CODE rather than in a statement
 about it. All nine closed here; three closed by changing behaviour, not prose.**
 
-The verifier ran 17 mutations (17 killed, 0 survivors), a static AST scan of all 78 added test
-functions (no assertion-free and no constant-assertion test), and re-derived every load-bearing
+The verifier ran 17 mutations (17 killed, 0 survivors), a static AST scan of every added test
+function (**78** at `0acfa7e`, the commit round 8 read; the branch carries more now, and the figure is
+stamped because it moves with every guard a later round adds), and re-derived every load-bearing
 figure by execution: `files_scanned` **1602**, references **3549**, cross-bundle **72**, module edges
 **10**, `.venv` targets **0**, **177** search paths, one ambiguous basename, **70** bundle-skill
 `scripts/` dirs with exactly one carrying `__init__.py`, the validator's 308 / 5083 / **61**, all SHA
@@ -824,7 +842,7 @@ tokens ancestors of HEAD, and the gate at **21422 passed / 14 skipped**.
 
 | # | Finding | Disposition |
 |---|---|---|
-| F4 | ⭐ ⛔ **D5's own title clause — "survives a bad frame" — was false, and had been since `9d375df`.** That commit guarded the *handler*; `read_message` sits **outside** the guard and returns `None` for every malformed shape, which the loop reads as "the client is gone". Measured across seven frame shapes — bad JSON, short body, negative length, non-integer length, JSON array, invalid UTF-8, no `Content-Length` — **all seven ended the session, and every one wrote nothing to stderr.** The plan's paired requirement (a stderr line so a swallowed failure cannot hide) was unmet on this path. The contrast is inside this branch: the *client* transport it shipped is explicitly per-message resilient | **fixed in the code.** `read_message` now raises `FrameError` and keeps `None` for end-of-stream alone. A frame whose declared body was read whole leaves the stream aligned, so it is logged and **skipped**; one whose length was unusable ends the session — but on stderr, never silently. Eleven guards drive all seven shapes plus a clean-EOF control through the real `serve` subprocess; all seven go red against the old behaviour |
+| F4 | ⭐ ⛔ **D5's own title clause — "survives a bad frame" — was false, and had been since `9d375df`.** That commit guarded the *handler*; `read_message` sits **outside** the guard and returns `None` for every malformed shape, which the loop reads as "the client is gone". Measured across seven frame shapes — bad JSON, short body, negative length, non-integer length, JSON array, invalid UTF-8, no `Content-Length` — **all seven ended the session, and every one wrote nothing to stderr.** The plan's paired requirement (a stderr line so a swallowed failure cannot hide) was unmet on this path. The contrast is inside this branch: the *client* transport it shipped is explicitly per-message resilient | **fixed in the code.** `read_message` now raises `FrameError` and keeps `None` for end-of-stream alone. A frame whose declared body was read whole leaves the stream aligned, so it is logged and **skipped**; one whose length was unusable ends the session — but on stderr, never silently. **Eight** guards drive all seven shapes plus a clean-EOF control through the real `serve` subprocess (the round's other three cover the harvest's new mode, the third `configured` reader, and frame alignment at the unit level); all seven go red against the old behaviour |
 | F3 | **A post-handshake failure reported the *handshake's* budget.** One `else` covered both branches, so a per-file request that failed after 35 s was reported as "did not respond within 1s" — the exact defect the `server-rejected` split was added to remove, one layer further in, in an operator-facing string. Four docstrings around it were false too: `timeout_s` "bounds the definition requests in aggregate" (it is tested *between* calls, so it cannot interrupt one in flight, and exceeding it reports `ran=True` with a `harvest-budget:` note, never a timeout) | **fixed in the code** — a distinct `request-failed:` mode that quotes **no** budget, because none was set for it, and reports elapsed harvest time instead. A guard drives a server that completes the handshake and then answers nothing; the failure-mode set assertion gained the sixth prefix. Red-checked |
 | F5 | **A third reader of the `configured` store, using the pre-D6 definition.** D6 unified two readers; `cmd_derivation_resolver_list` iterates on key presence and called its result "the configured resolver entries" — in a docstring, an argparse **epilog**, a standards table and a SKILL body | **fixed in the code**, and the fix is deliberately not "make `list` hide malformed entries": omitting one would hide an operator's own typo from the verb that exists to show them the store. Each row now carries its own `configured` flag under the shared dict test, so the listing stays complete **and** the three readers agree. A guard asserts both halves against `{"markdown": "yes"}` |
 | F6 | `dependency-intelligence.adoc`'s "*The fallback is all-or-nothing per file*" over-states the rule. Executed: when an earlier form supplies dependencies but **no name**, the later form is consulted and its dependencies are **appended** | **fixed** — the gate is the *name*, and the union case is stated with its bound (reachable only from an invalid PEP 621 descriptor; a union, never an override, so no declaration is lost) |
@@ -842,6 +860,39 @@ single most valuable thing this verification loop produced.
 (a)–(e) met* across seven verification rounds did not have the property its own title claims. Nothing
 caught it because every round read the *handler* boundary — where G1's evidence was — and no round
 had ever fed the server a malformed frame.
+
+### Round 9 — plan verifier (the seams the previous rounds' own fixes opened)
+
+Round 9 drove the behaviour round 8's fixes created, and executed families no round had ever run.
+**Fifteen findings — seven condition-A and eight condition-B, three of the latter defects in the
+code.** All seven condition-A findings are fixed here; four condition-B findings are **closed** by a
+fix and a guard rather than bounded, and the remainder carry bounds.
+
+⭐ **The round's most important finding is that round 7's own fix falsified four statements the loop
+had just declared true.** This is the first fix-induced regression in nine rounds, and it is the
+strongest evidence yet for the contract change § What have we learned proposes.
+
+| # | Finding | Disposition |
+|---|---|---|
+| A2 / B | ⛔ ⭐ **A write that fails BEFORE truncating reported a partly-edited tree over a clean one.** Round 7 correctly stopped discarding the failing path from `originals` — but a write that fails at `open()` (EACCES, EPERM, EROFS, an immutable file) never truncates, so "restoring" that path is a rewrite of untouched content that fails for the same reason, setting `restore_error` over a tree nothing modified. Reproduced with a real immutable file, **not a monkeypatch**: `restore_error: PermissionError`, `TREE CLEAN: True`. Four contracts assert the converse — and `lsp-client/SKILL.md` named **"a read-only path"** as its example, the exact input that refutes it | **fixed in the code.** `restore_error` is now derived by **re-reading the footprint**: it is set only when some file's content actually differs from what was captured, and an unreadable file counts as modified (fail-closed). The false alarm is the mirror of a false clean and misleads a leaf as much. The four statements are true again — and the SKILL example is corrected, since a read-only path now reports **no** `restore_error`. Guard added, red-checked |
+| B4 | ⛔ **Two URI spellings for one file produced a genuine false clean.** `path_to_uri` resolves, `uri_to_path` did not, so `/t/a.py` and `/t/./a.py` became two entries for one document; the second captured its "original" from disk *after* the first had written it, and the rollback restored a state the file had never been in while reporting `rolled_back: true`. The same defect class round 7 closed, reached by a different input | **fixed in the code** — `uri_to_path` resolves, so aliases normalise to one key and one footprint row. Guard added, red-checked. Aliasing is a server defect; a false clean is the one outcome this write path may not produce whatever the server does |
+| B1 | ⛔ **`_position_to_offset` clamped an over-long `character` to the FILE length, not the line length**, in violation of an explicit LSP 3.17 rule. The standard end-of-line idiom `[line, 0]-[line, 2147483647]` therefore replaced everything from that line to EOF: a one-line rename silently truncated the file. **Pre-existing on `origin/main`**, covered by no test | **fixed in the code** — the clamp stops at the line's content, excluding the terminator (clamping one character further would join two lines, a subtler wrong answer). Two guards, red-checked. The diagnostics gate caught most such wreckage because it gained errors; a tail of comments or data added no *new* error diagnostic and was accepted |
+| A1 | The comment justifying the fallback's **direction** in `lsp_harvest.py` described the conjunction `e061414` had just replaced — i.e. it described defect F3 itself. The fix commit edited six lines below it and did not sweep it | **fixed** — the marker is consulted for the handshake only, and the comment now states the bound that follows |
+| B2 | The unrecoverable arm's "ends the session" half was pinned by **no** test: deleting its `return 0` left the directory 100/100 green, because a desynchronised reader fails to answer the next request whether it stopped or not | **closed by a guard, not bounded** — asserted on the stderr line **count**, the one thing that distinguishes ending from stumbling on. Three of the four arms now kill the mutant; the short-body arm consumes the rest of the stream and is inherently unobservable, which is recorded rather than papered over |
+| A3 | § Findings round 8 said "**eleven** guards … through the real `serve` subprocess". Eight do; the other three cover the harvest, the `configured` reader and unit-level alignment — **the report contradicted its own commit message** | **fixed** |
+| A4 | § Mutation sweep's "ten mutants, **one per fixed defect**" went false the moment a later round fixed anything; the branch has fourteen | **fixed** — the table is scoped to the defects it covers, and rounds 7–9's eight are recorded as red-checked in place, per finding |
+| A5 | § Red-then-green's "**every** new guard was run … in a detached `origin/main` worktree" is false for thirteen guards — their defects were in the *branch's* code, so no pre-change worktree could exhibit them | **fixed** — the two red-check methods are now distinguished rather than blurred under "every" |
+| A6 | A test docstring generalised "unrecoverable means the bytes were not eaten" across all four arms; false for the short-body arm, which consumed the stream | **fixed** |
+| A7 | "78 added test functions", unstamped and 92 at HEAD | **fixed** — stamped with the commit round 8 read |
+
+**Left open with bounds** (the verifier's B3, B5–B8): a frame truncated *inside* its header block ends
+the session silently (EOF was genuinely reached, so the session must end either way; only the operator
+distinction is lost, and `read_message`'s own comment documents it); `normalize_changes` silently drops
+malformed `documentChanges` entries (requires a malformed server edit); a `null` URI raises out of
+`capture_footprint` to `safe_main` (identical in shape and cost to survivor B2 — an error, never a
+success); a `request-failed:` discards accumulated notes (`ran=False`, so no caller reads them); and an
+unparseable or BOM-prefixed file is a silent scanned-but-empty file (affects recall only, never
+attribution, and the `unresolved-symbol` count already discloses the shortfall).
 
 ## Reviewer participation
 

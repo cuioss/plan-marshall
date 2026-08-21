@@ -222,6 +222,20 @@ def test_an_unrecoverable_bad_frame_ends_the_session_AUDIBLY(tmp_path, label, ra
     answered = {message.get('id') for message in _messages(result.stdout)}
     assert 1 in answered, f'{label}: the frame BEFORE the bad one must still be answered'
     assert b'malformed frame' in result.stderr, f'{label}: the session died silently'
+    assert 9 not in answered, (
+        f'{label}: the session continued past a frame whose length was unusable, '
+        'so the reader resynchronised on bytes it cannot vouch for'
+    )
+    # ⛔ The half the test NAME advertises — that the session ENDS — pinned by
+    # the one thing that distinguishes ending from carrying on here. A loop that
+    # kept going would stumble through the remaining desynchronised bytes and
+    # log a *further* malformed frame for each stumble; ending logs exactly one.
+    # Without this the guard passes either way, because a desynchronised reader
+    # fails to answer the next request whether it stopped or not.
+    assert result.stderr.count(b'malformed frame') == 1, (
+        f'{label}: expected exactly one malformed-frame line (the session ends there), '
+        f'got {result.stderr.count(b"malformed frame")}'
+    )
 
 
 def test_a_clean_end_of_stream_is_not_reported_as_a_bad_frame(tmp_path):

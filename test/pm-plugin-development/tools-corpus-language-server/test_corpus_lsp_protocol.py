@@ -79,6 +79,12 @@ class TestFraming:
         # ends the block — so what remains is that terminator plus the whole of
         # the next frame. Every byte is still there, which is the point; the
         # reader simply cannot vouch for where the boundary is.
+        #
+        # ⚠ This holds for the three arms that raise while reading a HEADER.
+        # The short-body arm is different: it reached EOF trying to read a body
+        # it had already committed to, so it has consumed whatever was left.
+        # `recoverable=False` means "I cannot say where the next frame begins",
+        # never "the bytes are untouched".
         assert stream.read().endswith(good)
 
     def test_zero_content_length_is_not_rejected_as_negative(self) -> None:

@@ -136,10 +136,14 @@ REASON_REQUEST_FAILED = (
 # transport raises one exception type for both, and this marker is the string it
 # uses for the wait-expiry case. A typed discriminator on the transport's error
 # is the better fix; it lives in the lsp-client bundle and is recorded as a
-# proposal rather than reached across for here. If that string changes, this
-# split silently degrades to reporting every handshake failure as a rejection —
-# which is why the direction of the fallback matters: an unrecognised message
-# from a *completed* handshake stays a timeout.
+# proposal rather than reached across for here.
+#
+# ⛔ The marker is consulted for the HANDSHAKE ONLY. A failure once
+# `handshake_done` is set reports `request-failed:` whether or not the marker is
+# present, because the budget the timeout reason quotes is the handshake's and a
+# per-file request never waited on it. So if this string changes, the damage is
+# bounded to the handshake's two outcomes: they collapse onto `server-rejected:`,
+# and every post-handshake failure is unaffected.
 _TIMEOUT_MESSAGE_MARKER = 'timed out waiting for response'
 
 VENDORED_TREE_DIRS = frozenset({

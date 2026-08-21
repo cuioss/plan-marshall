@@ -108,12 +108,22 @@ that answers it:
    cannot perform. A failure part-way through the apply loop restores every file
    already written and returns `reason: apply_failed` with `failed_path`. The
    refusal touches nothing, and a restore that succeeds leaves no file modified
-   (`rolled_back: true`). ⚠ A restore can itself fail — a read-only path, a full
-   disk — and then the tree **is** left partly edited: the payload says so with
-   `rolled_back: false` plus `restore_error`, never swallowing it. ⛔ Read
-   `rolled_back: false` **together with `restore_error`**, not alone: without
-   `restore_error` it means the verb never wrote anything (see the two phases
-   below), and only *with* it does it mean the tree is partly edited.
+   (`rolled_back: true`). ⚠ A restore can itself fail — a full disk, a device
+   error part-way through rewriting a file — and then the tree **is** left
+   partly edited: the payload says so with `rolled_back: false` plus
+   `restore_error`, never swallowing it. ⛔ Read `rolled_back: false`
+   **together with `restore_error`**, not alone: without `restore_error` it
+   means the verb never wrote anything (see the two phases below), and only
+   *with* it does it mean the tree is partly edited.
+
+   ⛔ **`restore_error` is a statement about the TREE, not about the restore
+   call.** A write that fails before touching anything — a read-only path, an
+   immutable file, EPERM — makes the restore of *that* path fail too, for the
+   same reason, over a file nothing modified. The verb therefore re-reads the
+   footprint and reports `restore_error` only when some file's content actually
+   differs from what was captured. Raising the alarm on the failed *call* would
+   report a partly-edited tree over a clean one, which misleads a leaf exactly
+   as much as the false clean this boundary exists to prevent.
 
 ### `diagnostics_unavailable` / `diagnostics_unanswered` mean "not checked", not "wrong"
 

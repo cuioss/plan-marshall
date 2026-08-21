@@ -286,9 +286,12 @@ def _edit_failure(language: str, reason: str, footprint: list[dict[str, Any]], *
       *there was nothing to roll back*;
     * ``diagnostics_unavailable`` at phase ``after`` and ``diagnostics_worsened``
       — written, then restored: ``rolled_back=True``;
-    * ``apply_failed`` — restored, unless the restore itself failed, which is the
-      one case that leaves the tree partly edited and is reported as
-      ``rolled_back=False`` **plus** ``restore_error``.
+    * ``apply_failed`` — restored, unless the tree could not be put back, which
+      is the one case that leaves it partly edited and is reported as
+      ``rolled_back=False`` **plus** ``restore_error``. That is a statement
+      about the tree, re-read from disk: a write refused before it touched
+      anything makes its own restore fail too, and reporting *that* would raise
+      an alarm over a clean tree.
     """
     payload: dict[str, Any] = {
         'status': 'failed',
