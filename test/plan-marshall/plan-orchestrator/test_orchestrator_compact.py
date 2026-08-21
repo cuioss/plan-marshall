@@ -541,6 +541,55 @@ class TestMarkersAbsent:
 
         assert _abstained(result, 'Decisions')['treatment'] == 'preserved_verbatim'
 
+    def test_a_partial_marker_pair_is_reported_unreachable(self, plan_context):
+        """A BEGIN with no END is a blind spot, and must not read as nothing at all.
+
+        ``_replace_block`` reports ``markers_absent`` for a partial pair, but the
+        owning section CONTAINS a BEGIN marker — so a section scan keyed on marker
+        presence alone skips it, and the blind spot is reported by neither
+        ``abstained[]`` nor ``unreachable_count``. That is the exact defect this
+        treatment split exists to close, one level down.
+        """
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+        path = _epic_dir(plan_context) / 'epic.md'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # A queue section carrying BEGIN and no END.
+        path.write_text(
+            '\n'.join(
+                [
+                    '# Epic: Fixture Compact Epic',
+                    '',
+                    f'slug: {SLUG}',
+                    '',
+                    '## START HERE',
+                    '',
+                    _orch._begin_marker('resume-summary'),
+                    'body',
+                    _orch._end_marker('resume-summary'),
+                    '',
+                    '## Ordered Queue',
+                    '',
+                    _orch._begin_marker('ordered-queue'),
+                    '| # | Plan | Workstream | Status | Surface (expected) |',
+                    '',
+                    '## Decisions',
+                    '',
+                    RETRACTION,
+                    '',
+                ]
+            ),
+            encoding='utf-8',
+        )
+
+        result = _run()
+
+        assert _regenerated(result, 'ordered-queue')['outcome'] == 'markers_absent'
+        assert _abstained(result, 'Ordered Queue')['treatment'] == (
+            'markers_absent_not_regenerated'
+        )
+        assert result['unreachable_count'] == 1
+
     def test_a_reachable_ledger_reports_no_unreachable_section(self, plan_context):
         """With both marker pairs present nothing is unreachable, and the count says so."""
         _live_epic(plan_context)

@@ -84,7 +84,7 @@ Two bounded carve-outs define what the orchestrator may do directly. Everything 
 
 ### Direct-file-write carve-out
 
-The orchestrator MAY use Write/Edit directly — but ONLY within its own `.plan/local/orchestrator/{slug}/` tree. This is a deliberate, bounded exception to the ".plan/ access via manage-* scripts only" rule: the orchestrator's ledger documents (`epic.md`, workstream charters, plan specs, landing records, `history.md`, `settled.md`, `references.json`) are free-form authored artifacts with no owning manage-* script.
+The orchestrator MAY use Write/Edit directly — but ONLY within its own `.plan/local/orchestrator/{slug}/` tree. This is a deliberate, bounded exception to the `.plan/` access via `manage-*` scripts only rule: the orchestrator's ledger documents (`epic.md`, workstream charters, plan specs, landing records, `history.md`, `settled.md`, `references.json`) are free-form authored artifacts with no owning manage-* script.
 
 Two state surfaces stay script-mediated even inside the tree:
 

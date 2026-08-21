@@ -2032,10 +2032,25 @@ def test_committed_marshal_json_surfaces_every_orchestrator_knob():
     assert 'orchestrator' in committed, (
         'the committed marshal.json must carry a top-level orchestrator block'
     )
+    block = committed['orchestrator']
+    # Shape before contents: a JSON ARRAY of the key names satisfies the set
+    # comparison below, so without this the guard accepts a block that is not a
+    # block at all.
+    assert isinstance(block, dict), (
+        f'the committed orchestrator value must be an object, got {type(block).__name__}'
+    )
     known = set(_config_defaults_mod.ORCHESTRATOR_KNOWN_KEYS)
-    assert set(committed['orchestrator']) == known, (
-        f'committed orchestrator block surfaces {sorted(committed["orchestrator"])}, '
+    assert set(block) == known, (
+        f'committed orchestrator block surfaces {sorted(block)}, '
         f'expected every settable knob {sorted(known)}'
+    )
+    # The keys being present is not the claim — surfacing a knob must not CHANGE
+    # its effective default, so the committed values are pinned against the seed
+    # the surfacing rule is defined by.
+    seeded = _config_defaults_mod.get_default_config()['orchestrator']
+    assert block == seeded, (
+        f'committed orchestrator block {block} must equal the seeded defaults {seeded}; '
+        'a differing value would be a tuning change wearing a surfacing change\'s clothes'
     )
 
 

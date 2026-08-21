@@ -310,6 +310,16 @@ GENERATED_BLOCK_OWNING_SECTION: dict[str, str] = {
 TREATMENT_PRESERVED = 'preserved_verbatim'
 TREATMENT_UNREACHABLE = 'markers_absent_not_regenerated'
 
+# The two block registries must name the SAME blocks. They are kept separate
+# rather than derived from one another because they answer different questions —
+# which blocks the stage regenerates, and which heading owns each — but a block
+# added to one and not the other would either lose its ownership treatment or
+# claim an ownership it has no block for. Neither direction can pass silently.
+assert frozenset(GENERATED_BLOCKS) == frozenset(GENERATED_BLOCK_OWNING_SECTION), (
+    f'GENERATED_BLOCKS {sorted(GENERATED_BLOCKS)} and GENERATED_BLOCK_OWNING_SECTION '
+    f'{sorted(GENERATED_BLOCK_OWNING_SECTION)} name different blocks'
+)
+
 
 def _begin_marker(name: str) -> str:
     return f'<!-- BEGIN GENERATED: {name} -->'
@@ -2290,15 +2300,21 @@ def _abstained_sections(text: str, unreachable_blocks: Collection[str]) -> list[
     abstained: list[dict[str, str]] = []
     for order, (title, start) in enumerate(sections):
         end = sections[order + 1][1] if order + 1 < len(sections) else len(lines)
-        has_generated = any(line.strip() in begins for line in lines[start:end])
-        if has_generated:
+        # An UNREACHABLE section is listed even though it contains a BEGIN marker.
+        # A partial pair — BEGIN present, END absent — is exactly that case:
+        # :func:`_replace_block` reports ``markers_absent`` because it needs BOTH
+        # indices, while a presence scan sees the BEGIN and would skip the section
+        # as a regenerated surface. The blind spot would then be reported by
+        # neither ``abstained[]`` nor ``unreachable_count``, which is the defect
+        # this treatment split exists to close, one level down. So the unreachable
+        # test is applied FIRST and the marker scan only decides whether a
+        # REACHABLE section is a regenerated surface.
+        if title.casefold() in unreachable_titles:
+            abstained.append({'section': title, 'treatment': TREATMENT_UNREACHABLE})
             continue
-        treatment = (
-            TREATMENT_UNREACHABLE
-            if title.casefold() in unreachable_titles
-            else TREATMENT_PRESERVED
-        )
-        abstained.append({'section': title, 'treatment': treatment})
+        if any(line.strip() in begins for line in lines[start:end]):
+            continue
+        abstained.append({'section': title, 'treatment': TREATMENT_PRESERVED})
     return abstained
 
 
