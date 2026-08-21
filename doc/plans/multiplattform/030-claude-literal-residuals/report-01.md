@@ -1,6 +1,6 @@
 # Run report — 030-claude-literal-residuals (run 01)
 
-**Date (UTC):** 2026-08-20    **Branch:** `claude/claude-literal-residuals-tcyauu`    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-21    **Branch:** `claude/claude-literal-residuals-tcyauu`    **PR:** [#1319](https://github.com/cuioss/plan-marshall/pull/1319)    **Outcome:** completed
 
 > **Verification loop exit:** `verifier-clear`
 
@@ -55,7 +55,7 @@ delegates to `claude_runtime.ensure_default_permissions`: the runtime renders th
 *Done-when:* no `.claude/` literal remains in `permission_fix.py`, and no rendered `Read(...)` value
 is received — the ids are `plan-dir-edit`, `plan-dir-write`, `bundle-cache-read`. The written set is
 pinned byte-identically against literals by
-`test_permission_fix.py::test_written_default_set_is_unchanged_by_the_relocation` and by the
+`test_permission_fix.py::test_written_default_set_is_the_pinned_three_rules` and by the
 pre-existing `test_permission_fix_behavior.py:117`, which already encoded the same three rules and
 would have failed had the relocation changed them.
 

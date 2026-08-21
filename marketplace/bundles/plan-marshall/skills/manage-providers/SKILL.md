@@ -168,6 +168,15 @@ python3 .plan/execute-script.py plan-marshall:manage-providers:credentials ensur
 
 The command states the goal; the active target's runtime decides what expresses it and writes it. A target with no permission backend returns `no-op` with a reason, and the directory's `0700` mode — the primary boundary — is re-asserted either way.
 
+It can also fail, and a caller must not read failure as protection:
+
+| `error` | Meaning | What to do |
+|---|---|---|
+| `unknown_target` | `runtime.target` names no registered runtime | Fix `runtime.target` in `marshal.json` |
+| `invalid_operation` | The credentials directory cannot be expressed as a rule — it is relative, or carries a character the permission grammar cannot hold | Point `PLAN_MARSHALL_CREDENTIALS_DIR` at an absolute path without `(`, `)` or `*` |
+| `invalid_settings` | The settings file is malformed, or its `deny` entry is not a list | Repair the settings file; nothing was written |
+| `io_error` | The rules were rendered but the settings file could not be written | Check permissions on the settings file; **the directory is not protected** |
+
 ## Security Model
 
 See `standards/security-considerations.md` for full threat model and implementation constraints.

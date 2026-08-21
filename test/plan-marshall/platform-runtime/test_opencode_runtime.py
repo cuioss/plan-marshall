@@ -312,7 +312,7 @@ def test_permission_fix_is_noop(runtime: OpenCodeRuntime) -> None:
 
 def test_permission_fix_all_valid_operations_are_noop(runtime: OpenCodeRuntime) -> None:
     """permission_fix accepts all documented operation names and returns no-op for each."""
-    for op in ("normalize", "add", "remove", "ensure", "consolidate"):
+    for op in ("normalize", "add", "remove", "ensure", "consolidate", "protect-path"):
         result = _parse(runtime.permission_fix("global", op, [], False))
         assert result["status"] == "no-op", f"Expected no-op for operation {op!r}"
 

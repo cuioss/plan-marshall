@@ -12,7 +12,7 @@ Covers every method defined by the Runtime ABC:
       policy (covered in depth by test__claude_runtime_impl.py)
   5.  permission_configure        — overwrites allow list in settings
   6.  permission_analyze          — audits redundant / suspicious / missing-steps
-  7.  permission_fix              — normalize / add / remove / ensure / consolidate
+  7.  permission_fix              — normalize / add / remove / ensure / consolidate / protect-path
   8.  permission_ensure_wildcards — scans marketplace bundles, adds wildcard perms
   9.  permission_ensure_steps     — ensures project:{skill} step permissions
   10. permission_web_analyze       — audits WebFetch domain permissions

@@ -293,12 +293,12 @@ class TestApplyFixes:
         assert result['defaults_added'] == ['plan-dir-edit', 'plan-dir-write', 'bundle-cache-read']
         assert result['defaults_added_count'] == 3
 
-    def test_written_default_set_is_unchanged_by_the_relocation(self, tmp_path):
+    def test_written_default_set_is_the_pinned_three_rules(self, tmp_path):
         """The FILE apply-fixes leaves behind must carry the same three rules.
 
-        The relocation moved the rendering into the runtime; what an operator's
-        settings end up containing is the observable contract, and it is pinned
-        here against literals rather than against the renderer.
+        What an operator's settings end up containing is the observable
+        contract, and it is pinned here against literals rather than against the
+        renderer, which would agree with itself whatever it emitted.
         """
         settings_file = tmp_path / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': [], 'deny': [], 'ask': []}}))

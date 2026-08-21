@@ -361,9 +361,8 @@ python3 .plan/execute-script.py plan-marshall:manage-providers:credentials verif
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials ensure-denied --target project
 ```
 
-The active target's runtime decides what expresses the protection and writes it; a target with no
-permission backend reports `no-op` and the step continues. The directory's `0700` mode — the
-primary boundary — is re-asserted either way.
+See [`manage-providers`](../../manage-providers/SKILL.md) for what this command guarantees on a
+target with no permission backend.
 
 ### Step 13l: Sonar integration
 

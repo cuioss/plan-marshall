@@ -468,6 +468,24 @@ error: invalid_scope
 message: --scope must be 'project' or 'global'; got 'both'
 ```
 
+**Error (`protect-path`, unusable path)**:
+```toon
+status: error
+operation: permission fix
+error: invalid_operation
+message: "cannot protect 'creds': path is not absolute"
+```
+
+`protect-path` refuses a path it cannot render faithfully rather than rendering it approximately, because a deny rule is a security control. Refused: an empty or blank path (which would otherwise render a denial of every absolute read and every inline script), a relative path, and one carrying `(`, `)`, `*` or a control character — the permission grammar has no escape, so such a path renders as a *different* rule. `invalid_operation` covers both an unknown `--operation` value and an operation whose required argument is missing or unusable; the `message` distinguishes them.
+
+**Error (`protect-path`, write failed)**:
+```toon
+status: error
+operation: permission fix
+error: io_error
+message: Failed to write settings to /home/u/.claude/settings.json
+```
+
 **Error (malformed settings — fail-closed)**:
 ```toon
 status: error

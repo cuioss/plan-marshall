@@ -2482,20 +2482,15 @@ def _save_settings(path: Path, settings: dict[str, Any]) -> bool:
 # Permission-grammar rendering
 #
 # The Claude permission DSL (``Read(...)``, ``Write(...)``, ``Bash(...)``) is a
-# target wire format, so per principles §1 it is rendered HERE. General scripts
+# target wire format, so it is rendered here rather than by a caller. Callers
 # state intent — "the default permission set", "protect this directory" — and
-# receive normalized status back; the helpers below are what turns that intent
-# into grammar.
+# receive normalized status back.
 #
-# Stated exactly, because the general claim would be false: no rendered rule
-# crosses the boundary as an ARGUMENT to these helpers or as a RETURN value from
-# them. What still crosses is the settings MAPPING that
-# ``ensure_default_permissions`` takes — a Claude-shaped dict whose allow list
-# holds rendered rules the caller loaded. §1 names the settings-file shape as a
-# format that must not cross, so that is real residue, not a technicality. It is
-# the ``tools-permission-*`` scripts' coupling rather than this helper's — they
-# load, mutate and save that mapping throughout — so closing it means
-# restructuring every subcommand, not one call.
+# One exception, stated because the general claim would be false: no rendered
+# rule crosses as an argument or a return value, but the settings MAPPING
+# ``ensure_default_permissions`` takes is Claude-shaped, and its allow list
+# holds rendered rules. That mapping is the ``tools-permission-*`` scripts' own
+# — they load, mutate and save it throughout.
 # ---------------------------------------------------------------------------
 
 _CLAUDE_PLUGIN_CACHE_SEGMENTS = (".claude", "plugins", "cache")
@@ -2605,6 +2600,44 @@ def ensure_default_permissions(
     }
 
 
+#: Characters that cannot appear in a path this renderer will accept. ``(`` and
+#: ``)`` delimit a rule, and ``*`` is the glob metacharacter, so a path carrying
+#: one does not merely render badly — it renders as a DIFFERENT rule. The DSL
+#: has no escape, so the only fail-closed answer is to refuse.
+_PATH_CHARS_THE_DSL_CANNOT_CARRY = ("(", ")", "*")
+
+
+def _reject_unprotectable_path(protected_dir: str) -> str | None:
+    """Return why *protected_dir* cannot be protected, or ``None`` if it can.
+
+    A deny rule is a security control, so every input this cannot render
+    faithfully is refused rather than rendered approximately. Three classes are
+    refused, each because the rendered rule would mean something other than what
+    the caller asked for:
+
+    - **empty or blank** — ``Path("")`` is ``"."``, which renders ``Read(/**)``
+      and ``Bash(python3 -c **)``: a denial of every absolute read and every
+      inline script, from an argument that named nothing;
+    - **relative** — the rules are matched against whatever the tool resolves,
+      so a relative path denies an unrelated location or nothing at all;
+    - **carrying a delimiter or glob** — see
+      ``_PATH_CHARS_THE_DSL_CANNOT_CARRY``. A ``)`` truncates the rule and lets
+      the remainder of the path become rule text of its own.
+
+    Control characters are refused with them: a newline splits one rule into two.
+    """
+    if not protected_dir or not protected_dir.strip():
+        return "path is empty"
+    for char in _PATH_CHARS_THE_DSL_CANNOT_CARRY:
+        if char in protected_dir:
+            return f"path contains {char!r}, which the permission grammar cannot carry"
+    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in protected_dir):
+        return "path contains a control character"
+    if not Path(protected_dir).is_absolute():
+        return "path is not absolute"
+    return None
+
+
 def _protect_path_deny_rules(protected_dir: str) -> list[str]:
     """Render the deny rules that guard *protected_dir* against reads.
 
@@ -2620,9 +2653,20 @@ def _protect_path_deny_rules(protected_dir: str) -> list[str]:
     forms collapse to one string; the result is de-duplicated, and the count a
     caller receives is therefore rules it will actually get rather than rules
     that were drafted.
+
+    **Both spellings are normalized from one `Path`.** Rendering the tilde arm
+    through `Path` and the absolute arm from the caller's raw string let the two
+    disagree — `"/a//b"` and `"/a/b/"` produced one live rule and one keyed on a
+    spelling nothing matches, and two spellings of one directory then survived
+    de-duplication as distinct. `..` is collapsed lexically rather than by
+    `resolve()`, which would follow symlinks and rename the directory the caller
+    asked to protect.
+
+    Callers validate with `_reject_unprotectable_path` first; this renders.
     """
-    absolute = str(protected_dir)
-    tilde = _tilde_form(Path(absolute))
+    normalized = Path(os.path.normpath(str(protected_dir)))
+    absolute = str(normalized)
+    tilde = _tilde_form(normalized)
     distinctive = tilde[2:] if tilde.startswith("~/") else absolute
 
     rules = [
@@ -2709,7 +2753,7 @@ def _find_agent_file(agent_name: str) -> Path | None:
     """Locate an agent markdown under the marketplace tree."""
     # Look under the plugin cache and source tree in sequence.
     search_roots: list[Path] = []
-    cache_base = Path.home() / ".claude" / "plugins" / "cache" / "plan-marshall"
+    cache_base = _claude_bundle_cache_root()
     if cache_base.exists():
         search_roots.append(cache_base)
     # Script-relative walk to find marketplace.

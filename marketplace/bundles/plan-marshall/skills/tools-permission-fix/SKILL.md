@@ -37,7 +37,7 @@ The common permission mutations are platform-neutral: they flow through the `pla
 | Remove a permission | `platform_runtime permission fix --scope project --operation remove --permissions "Bash(docker:*)" [--dry-run]` |
 | Ensure permissions exist | `platform_runtime permission fix --scope global --operation ensure --permissions "Bash(git:*)" "Bash(npm:*)" [--dry-run]` |
 | Consolidate enumerated entries into wildcards | `platform_runtime permission fix --scope project --operation consolidate [--dry-run]` |
-| Protect a directory from being read | `platform_runtime permission fix --scope global --operation protect-path --permissions "$HOME/.plan-marshall/credentials" [--dry-run]` |
+| Protect a directory from being read | `platform_runtime permission fix --scope global --operation protect-path --permissions /absolute/path/to/protect [--dry-run]` |
 | Set the full permission list | `platform_runtime permission configure --scope project --permissions "Read(**)" "Write(.plan/**)"` |
 | Ensure marketplace bundle wildcards | `platform_runtime permission ensure-wildcards --scope project --marketplace-dir marketplace [--dry-run]` |
 | Ensure `project:{skill}` step permissions | `platform_runtime permission ensure-steps --marshal .plan/marshal.json --scope project [--dry-run]` |
@@ -60,7 +60,9 @@ On a platform with no validated permission backend (e.g. OpenCode), each op retu
 
 ## Executor-pattern and marketplace-wildcard operations
 
-These operations have no `platform-runtime` permission op; they run on `permission_fix` directly, addressed by `--scope` / `--target` so the script's settings resolver (delegating to the runtime layer) targets the active platform's settings without a literal path.
+These operations have no `platform-runtime` permission op; they run on `permission_fix` directly, addressed by `--scope` / `--target` so no literal settings path appears in the call.
+
+⚠️ **Unlike the platform-routed ops above, these resolve to Claude's settings whatever the active target is.** `permission_common` binds `claude_runtime` by direct import rather than through the runtime registry, so `--scope` selects *which* Claude settings file, not which platform. On a non-Claude target they write a Claude-shaped file rather than declining.
 
 ### apply-project-step-permissions — Add Skill() rules for project: steps
 

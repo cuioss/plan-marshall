@@ -288,11 +288,12 @@ class ClaudeRuntime(Runtime):
         under which installed marketplace bundles live on Claude. The path is
         composed in ``claude_runtime._claude_bundle_cache_root``, which shares
         its cache segments with the default-permission renderer, so those two
-        cannot drift. It is not the only spelling in the tree, and the other two
-        are deliberate: the steward's bootstrap detector runs *before* the plugin
-        is resolvable, and the resolver ``generate_executor.py`` embeds into the
-        executor runs standalone — neither can reach this helper, so each
-        composes the segments itself.
+        cannot drift. Other sites compose the same segments themselves because
+        they cannot reach this helper — the steward's bootstrap detector runs
+        before the plugin is resolvable, the resolver ``generate_executor.py``
+        embeds runs standalone, and ``marketplace_paths`` composes the fallback
+        this op's own consumers use when the layout op is unreachable, which
+        importing back here would make circular.
         """
         return toon_success(
             "layout bundle-cache-root",
@@ -1057,12 +1058,24 @@ class ClaudeRuntime(Runtime):
                 "invalid_operation",
                 f"--operation must be one of {valid_ops}; got {operation!r}",
             )
-        if operation == "protect-path" and not permissions:
-            return toon_error(
-                "permission fix",
-                "invalid_operation",
-                "--permissions must name at least one directory path for 'protect-path'",
-            )
+        if operation == "protect-path":
+            if not permissions:
+                return toon_error(
+                    "permission fix",
+                    "invalid_operation",
+                    "--permissions must name at least one directory path for 'protect-path'",
+                )
+            # Validate BEFORE loading settings, so an unprotectable path cannot
+            # reach the renderer. A deny rule is a security control: a path this
+            # cannot render faithfully is refused, never rendered approximately.
+            for candidate in permissions:
+                refusal = claude_runtime._reject_unprotectable_path(candidate)
+                if refusal is not None:
+                    return toon_error(
+                        "permission fix",
+                        "invalid_operation",
+                        f"cannot protect {candidate!r}: {refusal}",
+                    )
 
         settings_path = claude_runtime._settings_path_for_scope(scope)
         settings = claude_runtime._load_settings(settings_path)
@@ -1162,7 +1175,17 @@ class ClaudeRuntime(Runtime):
             # Goal-based: the caller names DIRECTORIES to protect; the deny-rule
             # grammar is rendered here and never crosses back. This is the one
             # fix operation that writes the deny list rather than the allow list.
-            deny: list[str] = settings["permissions"]["deny"]
+            deny_value = settings["permissions"]["deny"]
+            if not isinstance(deny_value, list):
+                # Fail closed rather than raising out of the operation. Every
+                # sibling branch indexes ``["allow"]``, so a `deny` of the wrong
+                # type had never been reached before this operation existed.
+                return toon_error(
+                    "permission fix",
+                    "invalid_settings",
+                    f"permissions.deny must be a list; found {type(deny_value).__name__}",
+                )
+            deny: list[str] = deny_value
             # De-duplicate ACROSS the named paths, not only within each: two
             # paths can render the same rule (the same directory named twice,
             # or two spellings of one directory), and a `rules_total` that
@@ -1181,14 +1204,22 @@ class ClaudeRuntime(Runtime):
                 else:
                     deny.append(rule)
                     changes_applied += 1
-            # Write only when a rule was actually added. The sibling branches
-            # above save unconditionally, but this one replaces a caller that
-            # did not, and a settings file re-serialized on every idempotent
-            # re-run is a change an operator can see (mtime, key order, keys the
-            # load skeleton supplies) for no effect.
+            # Write only when a rule was actually added: this operation is meant
+            # to be re-run for its idempotence, and re-serializing an operator's
+            # settings file on a call that changed nothing is a modification
+            # they can see for no effect. The sibling branches save
+            # unconditionally; `contract.md` records the asymmetry.
             if not dry_run and changes_applied:
                 settings["permissions"]["deny"] = deny
-                claude_runtime._save_settings(settings_path, settings)
+                if not claude_runtime._save_settings(settings_path, settings):
+                    # A security control that reports success when the write
+                    # failed tells an operator their credentials are guarded by
+                    # rules that reached nothing. Fail loudly instead.
+                    return toon_error(
+                        "permission fix",
+                        "io_error",
+                        f"Failed to write settings to {settings_path}",
+                    )
 
         result: dict[str, Any] = {
             "scope": scope,

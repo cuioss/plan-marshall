@@ -1544,9 +1544,9 @@ def test_get_base_path_auto_resolves_explicit_anchor(tmp_path, monkeypatch):
 # runtime_mount derives from the resolved project-local skill root
 # =============================================================================
 #
-# The ``path_formats.runtime`` display string used to be built as
-# ``./.claude/skills/{skill}/scripts/{file}``, naming one target's layout in a
-# general script. It now derives from the ``layout skill-roots`` op.
+# The ``path_formats.runtime`` display string derives from the ``layout
+# skill-roots`` op, so it names the active target's layout rather than one
+# target's.
 
 
 def test_runtime_mount_prefix_defaults_to_the_claude_skill_root():

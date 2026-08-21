@@ -2,11 +2,11 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for _cred_ensure_denied.py module.
 
-The module no longer builds permission rules: it states the goal — protect the
-credentials directory — and the active target's runtime renders and writes
-whatever expresses that on its own permission model. So these tests cover the
-CALLER's contract (what it asks for, what it reports, how it handles a target
-that declines) and leave the rule content to the runtime's own pins in
+The module states a goal — protect the credentials directory — and the active
+target's runtime renders and writes whatever expresses that on its own
+permission model. So these tests cover the CALLER's contract (what it asks for,
+what it reports, how it handles a target that declines) and leave the rule
+content to the runtime's own pins in
 ``test/plan-marshall/platform-runtime/test_permission_rendering.py``, which is
 where the grammar now lives.
 """
@@ -26,13 +26,11 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-providers', 'credentials.
 def claude_project(tmp_path, monkeypatch):
     """Make *tmp_path* a claude-target project with cwd pinned to it.
 
-    The runtime resolves the settings file from the working directory, so a test
-    that does not pin cwd writes into the checkout's own ``.claude/settings.json``.
-    That is not hypothetical: the predecessors of these tests kept themselves out
-    of the real tree by patching ``permission_common.save_settings`` with a mock,
-    and the routed call bypasses ``permission_common`` entirely — so they wrote
-    for real the first time they ran against it. Pinning cwd is the isolation
-    that does not depend on which module performs the write.
+    The runtime resolves the settings file from the working directory, so a
+    test that does not pin cwd writes into the checkout's own
+    ``.claude/settings.json``. Pinning cwd is the isolation that holds whichever
+    module performs the write — mocking a save function does not, because the
+    call routes through the runtime rather than through this skill.
     """
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir(parents=True, exist_ok=True)
@@ -72,7 +70,7 @@ class TestEnsureDeniedCLI:
         assert f'Read({protected}/**)' in deny
         assert f'Bash(cat {protected}/*)' in deny
         assert f'Bash(base64 {protected}/*)' in deny
-        # And the retired path is named by none of them.
+        # No rule may name the legacy credentials location.
         assert not any('.plan-marshall-credentials' in rule for rule in deny)
 
         reported = capsys.readouterr().out

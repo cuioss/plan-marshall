@@ -826,10 +826,10 @@ def test_extension_discovery_plugin_cache_honours_env_override(
 # The project-local implementor scan routes through the layout op too
 # =============================================================================
 #
-# It used to build ``project_root / '.claude' / 'skills'`` segment-wise, so a
-# target whose project-local skills live anywhere else lost every
-# ``project:finalize-step-*`` implementor silently — discovery returned an empty
-# list rather than an error.
+# A target whose project-local skills live outside the Claude layout must still
+# have its ``project:finalize-step-*`` implementors discovered. A scan anchored
+# on one hardcoded tree loses them silently — it returns an empty list, not an
+# error, which is indistinguishable from a project that has no project steps.
 
 _PROJECT_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
 

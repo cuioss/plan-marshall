@@ -31,8 +31,13 @@ def _resolve_runtime() -> Any | None:
 
     Instantiates through the router's own registration block
     (``platform_runtime._make_runtime``) so this module never names a runtime
-    class or enumerates targets — the same route
-    ``marketplace_paths._invoke_layout_op`` takes.
+    class or enumerates targets.
+
+    An unregistered target yields ``None`` and the caller reports an error. That
+    is deliberately stricter than ``marketplace_paths._invoke_layout_op``, which
+    substitutes the default runtime: a layout lookup has no error channel and
+    must answer with something, while writing a security control has one and
+    should not guess which target it is writing for.
     """
     return _make_runtime(_read_runtime_target())
 
@@ -61,6 +66,7 @@ def run_ensure_denied(args: argparse.Namespace) -> int:
         output_toon(
             {
                 'status': 'error',
+                'error': 'unknown_target',
                 'target': target,
                 'message': 'No runtime is registered for the configured target',
             }
@@ -87,9 +93,12 @@ def run_ensure_denied(args: argparse.Namespace) -> int:
         return 0
 
     if status != 'success':
+        # Forward the runtime's OWN error code rather than only its prose: a
+        # caller branching on `error` needs the code the runtime produced.
         output_toon(
             {
                 'status': 'error',
+                'error': payload.get('error', 'protect_path_failed'),
                 'target': target,
                 'message': payload.get('message', 'permission fix protect-path failed'),
             }

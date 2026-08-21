@@ -3,18 +3,16 @@
 """Pins for the permission grammar the Claude runtime renders.
 
 The permission DSL is a target wire format, so it is rendered inside
-``claude_runtime`` and never crosses the runtime boundary. Two callers used to
-render it themselves — ``permission_fix.DEFAULT_PERMISSIONS`` and
-``_cred_ensure_denied.DENY_RULES`` — and the strings those produced are the
-observable contract a user's settings file already carries. These tests pin the
-rendered output BYTE-FOR-BYTE against what those callers produced, so the
-relocation cannot quietly change what lands in anyone's settings.
+``claude_runtime`` and never crosses the runtime boundary. The exact strings it
+renders are the observable contract: they land in an operator's settings file
+and a permission that changes spelling stops matching what it guards. These
+tests pin that output BYTE-FOR-BYTE.
 
-They are written as literals rather than derived from the renderer: an
+The expectations are literals rather than values derived from the renderer. An
 expectation computed by the code under test agrees with it by construction and
-would pass against any rewrite, which is precisely the defect a relocation pin
-exists to catch. The one value that cannot be a literal is the home directory,
-which differs per machine.
+holds against any rewrite, which is exactly what a byte-level pin must not do.
+The one value that cannot be a literal is the home directory, which differs per
+machine.
 
 conftest.py sets up PYTHONPATH so the cross-skill imports resolve without manual
 sys.path manipulation.
@@ -26,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 import claude_runtime
+import pytest
 from opencode_runtime import OpenCodeRuntime
 from toon_parser import parse_toon
 
@@ -35,14 +34,14 @@ def _parse(output: str) -> dict[str, Any]:
 
 
 # =============================================================================
-# D1 — the default permission set
+# The default permission set
 # =============================================================================
 
 
 class TestDefaultPermissionRules:
-    """``_default_permission_rules`` renders exactly the former DEFAULT_PERMISSIONS."""
+    """``_default_permission_rules`` renders exactly these three rules."""
 
-    def test_rendered_rules_are_byte_identical_to_the_former_literals(self) -> None:
+    def test_rendered_rules_are_the_pinned_literals(self) -> None:
         rendered = [rule for _rule_id, rule in claude_runtime._default_permission_rules()]
         assert rendered == [
             'Edit(.plan/**)',
@@ -146,7 +145,7 @@ class TestEnsureDefaultPermissions:
 
 
 # =============================================================================
-# D2 — the settings read path
+# The settings read path
 # =============================================================================
 
 
@@ -179,7 +178,7 @@ class TestProjectSettingsReadPath:
         )
 
     def test_returns_settings_json_when_neither_exists(self, tmp_path: Path) -> None:
-        """The pre-delegation behaviour: an absent pair reads as the shared file."""
+        """An absent pair reads as the shared file."""
         assert claude_runtime._claude_project_settings_read_path(str(tmp_path)) == (
             tmp_path / '.claude' / 'settings.json'
         )
@@ -197,14 +196,14 @@ class TestProjectSettingsReadPath:
 
 
 # =============================================================================
-# D3 — the credential-protection deny rules
+# The credential-protection deny rules
 # =============================================================================
 
 
 class TestProtectPathDenyRules:
-    """``_protect_path_deny_rules`` renders exactly the former DENY_RULES."""
+    """``_protect_path_deny_rules`` renders one pinned rule set per protected path."""
 
-    def test_rules_are_byte_identical_to_the_former_builder(self) -> None:
+    def test_rules_are_the_pinned_set_for_a_directory_under_home(self) -> None:
         home = claude_runtime.resolve_home()
         protected = home / '.plan-marshall' / 'credentials'
         vectors = ('cat', 'head', 'tail', 'less', 'more', 'cp', 'grep', 'base64')
@@ -357,7 +356,7 @@ class TestPermissionFixProtectPath:
     def test_a_no_change_rerun_does_not_rewrite_the_file(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        """Adding nothing writes nothing — the retired caller behaved this way too.
+        """Adding nothing writes nothing.
 
         The file is re-serialized in a DIFFERENT formatting before the second
         call, which is what makes this a guard rather than a tautology: the
@@ -511,6 +510,119 @@ class TestPermissionFixProtectPath:
         )
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_operation'
+
+    @pytest.mark.parametrize(
+        ('path', 'why'),
+        [
+            ('', 'an empty argument renders Read(/**) and Bash(python3 -c **)'),
+            ('   ', 'whitespace is empty by another spelling'),
+            ('./creds', 'a relative path denies an unrelated location or nothing'),
+            ('creds', 'likewise, with no leading dot'),
+            ('/home/u/cre)ds', 'a ")" truncates the rule and frees the remainder'),
+            ('/home/u/cre(ds', 'a "(" is the other delimiter'),
+            ('/home/u/x*', 'a "*" widens the rule past what was asked for'),
+            ('/home/u/a\nb', 'a newline splits one rule into two'),
+        ],
+    )
+    def test_refuses_a_path_it_cannot_render_faithfully(
+        self, tmp_path: Path, monkeypatch, path: str, why: str
+    ) -> None:
+        """A deny rule is a security control: refuse rather than approximate.
+
+        Each of these renders *something* — that is the danger. An empty
+        argument produced a denial of every absolute read and every inline
+        script; a `)` let the rest of the path become rule text of its own.
+        """
+        settings_path = tmp_path / 'settings.json'
+        self._pin_scope_path(monkeypatch, settings_path)
+
+        result = _parse(
+            claude_runtime.ClaudeRuntime().permission_fix(
+                'global', 'protect-path', [path], False
+            )
+        )
+
+        assert result['status'] == 'error', why
+        assert result['error'] == 'invalid_operation'
+        assert not settings_path.exists(), 'a refused path must not reach the settings file'
+
+    def test_one_directory_spelled_two_ways_protects_it_once(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Both spellings normalize from one `Path`, so de-duplication sees them.
+
+        Rendering the tilde arm through `Path` and the absolute arm from the raw
+        string let `"/a//b"` and `"/a/b/"` produce one live rule and one keyed on
+        a spelling nothing matches — and two spellings of one directory then
+        survived de-duplication as separate protections.
+        """
+        protected = self._protected(monkeypatch, tmp_path)
+        settings_path = tmp_path / 'settings.json'
+        self._pin_scope_path(monkeypatch, settings_path)
+
+        result = _parse(
+            claude_runtime.ClaudeRuntime().permission_fix(
+                'global',
+                'protect-path',
+                [str(protected), str(protected) + '/', str(protected).replace('/creds', '//creds')],
+                False,
+            )
+        )
+
+        assert result['paths_protected'] == 3
+        assert result['rules_total'] == self.RULE_COUNT
+        written = json.loads(settings_path.read_text(encoding='utf-8'))
+        assert len(written['permissions']['deny']) == self.RULE_COUNT
+        assert not any('//' in rule for rule in written['permissions']['deny'])
+
+    def test_a_failed_write_is_an_error_not_a_reported_success(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """⛔ The fail-open this closes: a security control claiming rules it never wrote.
+
+        `_save_settings` returns False on OSError, and the return was discarded
+        — so an unwritable settings file produced `status: success` with a
+        non-zero `rules_added`, telling an operator their credentials were
+        guarded by rules that had reached nothing.
+        """
+        protected = str(self._protected(monkeypatch, tmp_path))
+        settings_path = tmp_path / 'settings.json'
+        self._pin_scope_path(monkeypatch, settings_path)
+        monkeypatch.setattr(claude_runtime, '_save_settings', lambda path, settings: False)
+
+        result = _parse(
+            claude_runtime.ClaudeRuntime().permission_fix(
+                'global', 'protect-path', [protected], False
+            )
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'io_error'
+        assert 'changes_applied' not in result
+
+    def test_a_malformed_deny_value_fails_closed(self, tmp_path: Path, monkeypatch) -> None:
+        """A `deny` of the wrong type is an error, not an uncaught AttributeError.
+
+        Every sibling branch indexes `["allow"]`, so this state had never been
+        reached before this operation existed; it raised out of the op.
+        """
+        protected = str(self._protected(monkeypatch, tmp_path))
+        settings_path = tmp_path / 'settings.json'
+        settings_path.write_text(
+            json.dumps({'permissions': {'allow': [], 'deny': {}, 'ask': []}}), encoding='utf-8'
+        )
+        self._pin_scope_path(monkeypatch, settings_path)
+        before = settings_path.read_bytes()
+
+        result = _parse(
+            claude_runtime.ClaudeRuntime().permission_fix(
+                'global', 'protect-path', [protected], False
+            )
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_settings'
+        assert settings_path.read_bytes() == before
 
     def test_opencode_declines_with_an_honest_noop(self) -> None:
         """A target with no permission backend declines — it does not error."""
