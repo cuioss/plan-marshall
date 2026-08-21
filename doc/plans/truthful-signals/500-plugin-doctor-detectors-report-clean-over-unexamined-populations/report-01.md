@@ -259,6 +259,18 @@ change edits Python under `marketplace/bundles/` and `test/` — so the full
   `8f1a67c`'s own message said "Full verify green" while the section it shipped
   denied it.
 
+- **Final run, on the shipped tree** (the CodeRabbit-fix commit `2ac93468` plus
+  the docs-only `edec1856`): **`21425 passed, 14 skipped`** in 528.38s,
+  `VERIFY EXIT: 0`, `=== verify: SUCCESS ===`. One test more than the previous
+  run — the quoted-value regression the review asked for.
+
+  ⛔ **The exit status is read from `verify` itself, never from a pipeline.**
+  Twice in this run a `./pw verify … | grep …` reported exit 0 while `verify`
+  had exited 1 — once on a ruff import-order error, once on two failing tests —
+  because the status belonged to `grep`. Both were caught only by re-running
+  with the output redirected and `$?` echoed. A green claim sourced from a pipe
+  is a claim about the last command in the pipe.
+
 **Stale-base re-verification (§ Step 8 condition 2): discharged for the current
 base.** `origin/main` advanced past this branch's original merge base three
 times while the run was in progress (66b686b → 0682705 → 3083553 → `a34819d`,
