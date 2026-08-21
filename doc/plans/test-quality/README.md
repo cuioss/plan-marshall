@@ -290,6 +290,9 @@ it, and where a run cannot finish, **report what was not reached rather than thi
 
 090 harness & rule gaps ──→ unblocks the B6/B7 halves of 070 and 080 (see the collision matrix)
 100 module-budget campaign ──→ one slice per run; takes 070's and 080's slices after they land
+105 every module counts ──→ closes run 1's leftovers: the classes over budget alone, the helper
+                            modules the rule cannot see, and the campaign's uncommitted instruments;
+                            run it before 100's run 2
 110 every test runs, no slowdown ──→ builds the instruments conditions 3 and 4 rely on
 120 derive the cross-file sets ──→ computes the partition, the matrix and the attribution, and
                                    fails when a document disagrees; land it early
@@ -302,6 +305,7 @@ it, and where a run cannot finish, **report what was not reached rather than thi
 | `030`–`080` | one disjoint slice of `test/` each, listed in the plan | each other, once `010` **and** `020` have landed |
 | `090` | `marketplace/bundles/**` (the doctor analyzers, `script-shared`, `manage-providers`) — **the only plan in the epic that may edit it** — plus `test/conftest.py`'s loader mechanics, and the tests for its own production changes | see § "The collision matrix" — it is the authoritative set, and this cell deliberately does not restate it |
 | `100` | one reduction slice per run, `test_*.py` only — plus a seventh run for the one over-budget module plan `010` owns, which no reduction slice covers | nothing running against the same slice; and see § "The collision matrix" for the runs that additionally collide with `090` |
+| `105` | the three slice-`050` modules whose one class is over budget alone; `analyze_test_module_line_budget` in `plugin-doctor/scripts/_analyze_test_conventions.py` (**`090`'s tree** — see § "The collision matrix"); the campaign's three instruments and their tests; and the dead module names five documents in **other epics** still point at | see § "The collision matrix" — it is the authoritative set, and this cell deliberately does not restate it |
 | `110` | the tree's skip sites, which **cross** several slices — `test/sync-plugin-cache/`, `test/pm-plugin-development/`, `test/marketplace/` and scattered others — plus `test/conftest.py`'s session preflight and skip guard | see § "The collision matrix" — it is the authoritative set, and this cell deliberately does not restate it |
 | `120` | repository tooling — the checker, placed per `pm-plugin-development:plugin-script-architecture` (which may put it under `marketplace/bundles/**`); its tests under `test/`, because `pyproject.toml` collects nowhere else; D3's baseline and gate configuration; and one row in § "The partition, and how a run re-derives it" registering that test location. It **modifies** no existing plan document and no existing test module | see § "The collision matrix" — it is the authoritative set, and this cell deliberately does not restate it |
 
@@ -345,6 +349,9 @@ instead.**
 | `090` | `100` run 3 | `test/plan-marshall/script-shared/`, `…/manage-providers/` — `060`'s | `090` § D1 adds parser seams and their tests there; run 3 splits that slice |
 | `090` | `100` run 6 | `plugin-doctor/test_analyze_lesson_id_in_skill_prose.py` — `080`'s | Same module as row 1: `090` § D5 amends its cases, run 6 splits it (1,020 lines, over budget) |
 | `090` | `100` run 7 | `plugin-doctor/test_test_conventions_rule*.py` — `010`'s | `090` § D4 amends the rule whose tests live in `rule6.py`; run 7 splits that same module |
+| `105` | `090` | `plugin-doctor/scripts/_analyze_test_conventions.py` — `090`'s, exclusively | `105` § D3 widens `analyze_test_module_line_budget` so it measures non-collected modules; `090` is otherwise the only plan licensed to edit that tree, and its § D4 amends rules in the same file |
+| `105` | `100` | slice `050`'s ten directories under `test/plan-marshall/` — `050`'s, campaign-held | `105` § D2 splits three modules there and § D5 rewrites duplicated definitions across all ten; any campaign run against slice `050` edits the same files |
+| `105` | `110` | `test/_shared/**` and `test/conftest.py` — `020`'s, then shared | `105` § D4 places three instruments where the tree's conventions put shared test tooling; `110` writes its session preflight and skip guard in the same place. `105` does **not** edit `conftest.py`'s loader mechanics, so this row is narrower than the `090`/`110` row above |
 | `110` | `040` | `phase-6-finalize/`, `workflow-integration-git/`, `workflow-integration-github/` — `040`'s | `110` D1–D5 rewrite skip sites in all three |
 | `110` | `060` | `lsp-client/`, `platform-runtime/`, `tools-file-ops/` — `060`'s | `110` D5's in-process stub and D1's scattered sites are written there; `110`'s Expected surface names all three |
 | `110` | `070` | `build-server/` — `070`'s | `110` records that skip as a platform exception; it does not write it, so this is the weakest row in the table — but the file is shared |
