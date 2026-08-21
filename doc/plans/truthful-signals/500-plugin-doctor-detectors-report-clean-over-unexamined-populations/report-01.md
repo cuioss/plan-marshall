@@ -30,15 +30,15 @@ D1 is the plan's GATE. Its derivation succeeded, so D2–D8 were attempted.
 
 | # | What was done | Commit | Verification state |
 |---|---|---|---|
-| D1 | Root-anchored anti-vacuity findings survive a scoped run. The population was **re-derived** from `_runner.py` rather than taken from the plan's trio: every rule routed through `scoped(...)` or `suppressed(...)` was enumerated, and each routed analyzer read for a finding anchored at the marketplace root. The derived set is exactly the three the plan named. The fix keys on the finding's **anchor** (`_finding_is_tree_wide`), not on a finding-type list, so a fourth such rule is covered without registration. | `1e66475` | 7 tests; mutation-confirmed (§ Mutation register) |
-| D2 | Pin-trap oracle: empty content comparison unrepresentable as a pass; union denominator so a pin superset is a divergence; content counts in the volatile signature; `partial` reachable from the adapter; four-state executor anchor. | `4bab9f8` | 5 guards mutation-confirmed; `partial` seen RED first |
-| D3 | Enum notation latch replaced with a per-line search; router-flag placement rule added against each subcommand's OWN flags; leading router flags skipped when locating the verb. | `8889526` | 4 mutants, each killed by the test that names it |
-| D4 | Two vacuous tests replaced, each seen RED against the defect it names. | `decd27b` | red observed, both directions |
-| D5 | Runner publishes each rule's examined population from the same derivation the findings came from; `analyze_shim_marker` wired into the analyze pass. | `1a4b64c` | 6 tests incl. real-tree clean-run assertion |
-| D6 | Router-flag note built from the caller's own argv through the executor notation; CI front-ends name their router flags; fifth (mirror) recurrence signature. | `807c825` | 15 tests incl. the REAL CI parser |
-| D7 | `loader_selected_version` reduced to the line it always evaluated, with an eligibility parameter; saturation re-ranked; shape-3 constant renamed and the literal tree pinned; remedy names invocable surfaces; paired observer added. | `f879130` | 57 tests |
-| D8 | Brace-less enum form + declarative dict-spec authority + declared coverage; two new incident-reference narration families; mirror rule-pack completed; two retrospective docstrings; one report count. | `e4e3515` | see § Findings |
-| — | Round-1 fixes from the cold read and the plan's own coverage check. | `b3786f6` | see § Findings |
+| D1 | Root-anchored anti-vacuity findings survive a scoped run. The population was **re-derived** from `_runner.py` rather than taken from the plan's trio: every rule routed through `scoped(...)` or `suppressed(...)` was enumerated, and each routed analyzer read for a finding anchored at the marketplace root. The derived set is exactly the three the plan named. The fix keys on the finding's **anchor** (`_finding_is_tree_wide`), not on a finding-type list, so a fourth such rule is covered without registration. | `ce99f1b` | 7 tests; mutation-confirmed (§ Mutation register) |
+| D2 | Pin-trap oracle: empty content comparison unrepresentable as a pass; union denominator so a pin superset is a divergence; content counts in the volatile signature; `partial` reachable from the adapter; four-state executor anchor. | `81aeb5b` | 5 guards mutation-confirmed; `partial` seen RED first |
+| D3 | Enum notation latch replaced with a per-line search; router-flag placement rule added against each subcommand's OWN flags; leading router flags skipped when locating the verb. | `feb15c7` | 4 mutants, each killed by the test that names it |
+| D4 | Two vacuous tests replaced, each seen RED against the defect it names. | `2f13bc6` | red observed, both directions |
+| D5 | Runner publishes each rule's examined population from the same derivation the findings came from; `analyze_shim_marker` wired into the analyze pass. | `b359405` | 6 tests incl. real-tree clean-run assertion |
+| D6 | Router-flag note built from the caller's own argv through the executor notation; CI front-ends name their router flags; fifth (mirror) recurrence signature. | `c580089` | 15 tests incl. the REAL CI parser |
+| D7 | `loader_selected_version` reduced to the line it always evaluated, with an eligibility parameter; saturation re-ranked; shape-3 constant renamed and the literal tree pinned; remedy names invocable surfaces; paired observer added. | `821c467` | 57 tests |
+| D8 | Brace-less enum form + declarative dict-spec authority + declared coverage; two new incident-reference narration families; mirror rule-pack completed; two retrospective docstrings; one report count. | `740d635` | see § Findings |
+| — | Round-1 fixes from the cold read and the plan's own coverage check. | `c494c8a` | see § Findings |
 
 ### Mutation register
 
@@ -227,36 +227,42 @@ present behaviour is recorded rather than assumed.
 change edits Python under `marketplace/bundles/` and `test/` — so the full
 `./pw verify` applies.
 
-- **`./pw verify` green** at the D8 commit (`e4e3515`): `21402 passed, 14
+- **`./pw verify` green** at the D8 commit (`740d635`): `21402 passed, 14
   skipped` in 412.51s, with `ruff … All checks passed!`, `mypy … Success: no
   issues found in 416 source files`, and `SPDX-header check passed`.
-- **`./pw verify` green** at the round-5 commit (`570c6ca`): `21420 passed, 14
+- **`./pw verify` green** at the round-5 commit (`8f1a67c`): `21420 passed, 14
   skipped` in 445.94s, with ruff, both mypy passes (416 production / 784 test
   files), the SPDX check and the marketplace-wide plugin-doctor pass all clean.
 - **Nine commits landed between those two runs**, six of them touching `.py`
-  (`b3786f6`, `a38c52a`, `0e07c43`, `a09e46f`, `a6ec688`, `93f95dc`), and this
+  (`c494c8a`, `297249b`, `2beea88`, `4ce4cf4`, `7d5ffcb`, `7b1f07f`), and this
   section named only the first of them for several rounds — an entry that was
   accurate when written and never re-derived. It is derived from
   `git log e4e3515..HEAD` at each update now.
 - **`./pw verify` green** at the round-6 commit: `21422 passed, 14 skipped` in
   437.59s, and at the round-7 commit: `21424 passed, 14 skipped` in 438.59s —
   both with all six dimensions clean.
-- **Owed on the merged tree** once the base moves — the full run is re-taken
-  after the rebase onto PR #1314. Stated rather than left implicit: a green recorded against an
-  earlier commit is not evidence about this one, and commit `570c6ca`'s own
-  message said "Full verify green" while the section it shipped denied it.
+- **Re-taken on the merged tree.** The rebase onto PR #1314 landed and the full
+  run was re-taken on the rebased tree: `21424 passed, 14 skipped` in 424.49s,
+  all six dimensions clean. Stated rather than left implicit: a green recorded
+  against an earlier commit is not evidence about this one, and commit
+  `8f1a67c`'s own message said "Full verify green" while the section it shipped
+  denied it.
 
-**Stale-base re-verification (§ Step 8 condition 2): pending.** `origin/main`
-has already advanced past this branch's merge base (66b686b → 0682705) while the
-run was in progress, so the condition will apply; the count, the shape used, the
-tested merge commit and the gate's result on it are recorded before arming.
+**Stale-base re-verification (§ Step 8 condition 2): discharged for the current
+base.** `origin/main` advanced past this branch's original merge base three
+times while the run was in progress (66b686b → 0682705 → 3083553 → `a34819d`,
+the last being #1314 itself). The branch is rebased onto `a34819d` and verified
+green there, so the branch's history now sits directly on the current tip and no
+merge-commit test is outstanding. **The condition re-arms if `origin/main` moves
+again before merge**; the count, the shape used, the tested commit and the gate's
+result on it are recorded before arming.
 
 ### Per-commit gate
 
 Every commit touching `*.py` was preceded by `./pw quality-gate`, each reporting
 `ruff … All checks passed!`, `mypy … Success: no issues found`, and
 `SPDX-header check passed`. Two commits took no gate and needed none: the plan
-directory move (`2c67ed2`, a `git mv` with no content change) and the initial
+directory move (`78e5f0d`, a `git mv` with no content change) and the initial
 branch push (no content at all).
 
 ## Findings
@@ -305,7 +311,7 @@ documents.
 | RY-5 | round-4 verifier (V4-4, V4-5) | Round 3's own new prose claimed "every example in this file" uses a placeholder; two examples spell `#103`. And two of the recipe skill's restatements of the signature list survived, contradicting that file's own rule against restating them. | Fixed. |
 | RY-6 | round-4 verifier (V4-6) | The nameless-spec test pinned only the early return: deleting the recursion branch left the suite green, while the docstring, comment and commit message all advertised that nested entries are still walked. | Fixed by adding the nested case to the test's fixture and assertion. |
 | RY-7 | round-4 verifier (V4-11) | Three files round 3 edited appear in neither the Expected surface nor § Collateral — the obligation established one round earlier. | Rows added. |
-| RZ-1 | round-5 verifier (V5-1) | **Fourth consecutive round in which `no_choices_declared` was false of its own bucket, and the second running in which the falsifier was a real analyzer defect.** Three `phase_handshake --phase` sites were filed "authority established as ABSENT" while `input_validation.add_phase_arg` declares `choices=PHASES` matching the documented enum exactly. Round 4's audit missed them because it searched each site's own file and these `choices=` are in an imported module. | **Fixed in the resolver.** A parser handed to a call this walk cannot model now marks that PARSER'S path authority-incomplete (`_paths_with_incomplete_authority`). ⚠️ **Two claims first written here were wrong and are corrected by round 6.** (i) *"The three sites moved"* — **17 moved**: `no_choices_declared` fell 20 → 2 and `authority_incomplete` rose 1 → 18, across six notations, with `blind_spots` 51 → 68. The three `phase_handshake` sites are the ones that MOTIVATED the fix, not its extent; the figure `18 → 2` in commit `570c6ca`'s message is likewise wrong, and wrong against evidence the round-5 verifier had already supplied (*"3 of the 20"*) — it was read off a census taken **after** the fix was already on disk, which is this plan's own stale-figure signature. (ii) *"both mutation-confirmed"* — one of the two was the `_ARGPARSE_CONSTRUCTION_CALLS` control, which round 6 showed could not be reddened by any mutation of the guard it named, because the guard was inert (see RZ-9). It is replaced by a test written against the structural reason, which the sweep does redden. |
+| RZ-1 | round-5 verifier (V5-1) | **Fourth consecutive round in which `no_choices_declared` was false of its own bucket, and the second running in which the falsifier was a real analyzer defect.** Three `phase_handshake --phase` sites were filed "authority established as ABSENT" while `input_validation.add_phase_arg` declares `choices=PHASES` matching the documented enum exactly. Round 4's audit missed them because it searched each site's own file and these `choices=` are in an imported module. | **Fixed in the resolver.** A parser handed to a call this walk cannot model now marks that PARSER'S path authority-incomplete (`_paths_with_incomplete_authority`). ⚠️ **Two claims first written here were wrong and are corrected by round 6.** (i) *"The three sites moved"* — **17 moved**: `no_choices_declared` fell 20 → 2 and `authority_incomplete` rose 1 → 18, across six notations, with `blind_spots` 51 → 68. The three `phase_handshake` sites are the ones that MOTIVATED the fix, not its extent; the figure `18 → 2` in commit `8f1a67c`'s message is likewise wrong, and wrong against evidence the round-5 verifier had already supplied (*"3 of the 20"*) — it was read off a census taken **after** the fix was already on disk, which is this plan's own stale-figure signature. (ii) *"both mutation-confirmed"* — one of the two was the `_ARGPARSE_CONSTRUCTION_CALLS` control, which round 6 showed could not be reddened by any mutation of the guard it named, because the guard was inert (see RZ-9). It is replaced by a test written against the structural reason, which the sweep does redden. |
 | RZ-2 | round-5 verifier (V5-2) | **Half-application #6, in the same docstring round 4 had just edited.** The `parser_surface_not_derived` bullet still said a passed-into-helper site "lands in `no_choices_declared` instead — verified by executing that shape", which RZ-1's fix made false. | Fixed at all three sites that asserted it: the module docstring, the `authority_incomplete` bullet, and `rule-catalog.md`. The corrected claim names the three live instances rather than asserting a mechanism. |
 | RZ-3 | round-5 verifier (V5-3) | **The shadowing guard was defeated by one indirection.** `grp = parser.add_mutually_exclusive_group()` inside `def _extra(parser)` gave `grp` the module-level parser's ROOT paths, so a `grp.add_argument(..., choices=...)` was filed against the root — the wrong-authority comparison `_shadowed_receivers`' docstring promises is impossible. No live instance; zero guard. | Fixed: group inheritance is scope-gated and a group off a shadowed owner is itself reported shadowed. Both branches asserted, and the fixture builds the parser BEFORE the helper on purpose — the first draft passed for a source-ORDER reason and left the gate deletable, caught by the mutation sweep. |
 | RZ-4 | round-5 verifier (V5-5) | `rule-catalog.md` claimed a token is an enum "only when it parses into two or more members" and the module claimed a placeholder metavar makes no enum claim. **Both false**: the braced pattern had no member minimum while its brace-less sibling required a pipe. Live: `manage-config/SKILL.md:1212` `--scope {phase}.{role}\|plan\|…` entered the population as the one-member enum `{phase}`. | **Fixed in the collector, not the prose** — the minimum is applied to the parsed member SET, so it covers both notations and collapsing duplicates. Population 152 → 151. One pre-existing control fixture spelled its drift with one member and was widened to two, its intent unchanged. |
@@ -317,7 +323,7 @@ documents.
 | RZ-10 | round-6 verifier (V6-6) | **A silent narrowing, in the analyzer whose subject is silent narrowing.** Round 5's two-member minimum DROPPED one-member groups at collection, defended by a comment saying such a group "carries no drift signal anyway". False: `--kind {bug}` against a live `choices=['bug','improvement']` is this rule's own headline truncated-oracle shape, and it was reported clean. No published figure said the token had been examined and skipped. | **Fixed by counting, not by dropping.** One-member groups stay in the population under a new `single_member_ambiguous` cause, included in `blind_spots`: the notation genuinely cannot tell a template slot from a truncated enum, so the honest act is to declare the ambiguity, not to resolve it silently. Census: population 151 → 152, blind spots 68 → 69. Two tests, mutation-confirmed. |
 | RZ-11 | round-6 verifier (V6-8) | **The fix for round 5's laundering discarded a correct authority.** `_group_vars_off_shadowed_owner` returned bare group NAMES, unioned into every `add_argument`'s shadowed set — so one helper binding `grp` marked the name shadowed file-wide, including a correctly-attributed module-level `grp = p_add.add_argument_group('g')`. A false negative manufactured by the guard against false positives. Zero live instances. | Fixed: the `(group, owner)` pair is carried and a group is laundered only where its owner is shadowed too — the scope the shadowing itself has. Both directions pinned in one test. |
 | RZ-12 | round-6 verifier (V6-1, V6-2) | **A fail-closed skip that does not exist**, claimed in two files: *"the flag resolves to MORE THAN ONE distinct `choices=` set across the script → SKIP"*. The authority is keyed by `(subcommand_path, flag)`, so `add --kind` and `remove --kind` resolve independently and are each compared. True before the authority was path-scoped, false after, and the same module says so 727 lines later. | Fixed in the module docstring and `rule-provenance.md`, restated as what the code does: only a conflicting re-declaration of the SAME `(path, flag)` is ambiguous. Half-application #7. |
-| RZ-13 | round-6 verifier (V6-4) | **`no_choices_declared`'s prose false of its own bucket for the FIFTH consecutive round** — and this time caused by round 5's own fix. Two of the three sites the bullet used as worked examples (`manage-tasks update --status`, `manage-execution-manifest record-step --phase`) were moved into `authority_incomplete` by commit `570c6ca` itself. | Fixed with the two sites actually in the bucket, plus a standing instruction to re-derive the examples whenever the census moves. The recurrence is now named in the bullet rather than silently corrected a fifth time. |
+| RZ-13 | round-6 verifier (V6-4) | **`no_choices_declared`'s prose false of its own bucket for the FIFTH consecutive round** — and this time caused by round 5's own fix. Two of the three sites the bullet used as worked examples (`manage-tasks update --status`, `manage-execution-manifest record-step --phase`) were moved into `authority_incomplete` by commit `8f1a67c` itself. | Fixed with the two sites actually in the bucket, plus a standing instruction to re-derive the examples whenever the census moves. The recurrence is now named in the bullet rather than silently corrected a fifth time. |
 | RZ-14 | round-6 verifier (V6-3) | The `authority_incomplete` bullet said *"the live instances are the three `phase_handshake` `--phase` sites"*. There are **18, across six notations** — the sentence was written from the sites that motivated the fix rather than from the census it produced. | Fixed with the full attribution, and `phase_handshake` demoted to the worked example it is. |
 | RZ-15 | round-6 verifier (V6-5, V6-9, V6-17) | Three smaller false statements: `rule-provenance.md` still listed the placeholder-metavar case as a fail-closed SKIP (round 5 removed it from the module for the reason that it never enters the population at all — half-application #8); `_split_enum_members`' worked example had both halves backwards; and RY-1 cited a finding id that does not exist. | All three fixed. |
 | RZ-16 | round-6 verifier (V6-10) | `_DefaultingParams.__missing__` was unreachable — the walk recurses with `ast.iter_child_nodes`, reaching exactly what `ast.walk` reaches; `__missing__` fired **zero** times over the whole marketplace, and deleting the subclass left the suite green. A defensive branch describing a state that cannot arise, whose declared return type also hid the defaulting from a caller annotated for a plain `dict`. | Removed. A missing key is a real bug and now raises. |
@@ -362,7 +368,7 @@ DO with each. Readings taken:
 
 - **Round 1** — two verifiers: a code/deliverable verifier and a cold-read
   verifier. The cold read returned CR-1 and CR-2; the code verifier returned
-  RV-1..RV-11. All fixed (`b3786f6`, `fdfb054`, `a38c52a`).
+  RV-1..RV-11. All fixed (`c494c8a`, `e7b402b`, `297249b`).
 - **Round 2** — one verifier, aimed at what round 1's OWN FIXES made false.
   Returned RW-1..RW-8. **Round 1's failure signature repeated exactly**: three of
   its eleven fixes were half-applied, and one replaced a wrong mechanism with a
@@ -397,7 +403,7 @@ DO with each. Readings taken:
   found this plan's own subject uncorrected for a third rule — the gate published
   no population for `canonical-enum-choices-drift`, while two reference documents
   asserted that it did. Half-application recurred for the ninth and tenth time,
-  both inside files commit `6ab55a1` had itself edited.
+  both inside files commit `fcfbc8c` had itself edited.
 - **One round-7 finding did not survive checking.** V7-6's published mechanism
   did not reproduce as written; the underlying defect was real and was confirmed
   by constructing the shape it actually needs. Recorded because a verifier's
@@ -428,7 +434,7 @@ DO with each. Readings taken:
   five more — *"continue with up to 5 rounds if sensible"*. **Rounds used: 5 of
   the default and 2 of the grant (rounds 6 and 7); 3 of the grant remain.** This
   line said "0 of the grant. A sixth round is warranted" for a round after round
-  6 had landed as commit `6ab55a1` and was recorded above it — a prospective
+  6 had landed as commit `fcfbc8c` and was recorded above it — a prospective
   sentence left standing as a record of the past. Re-derive it from the round
   bullets above whenever a round closes.
 
@@ -518,40 +524,35 @@ places where the plan's paraphrase omitted something its gap document required:
 320/G10's exported symbol name. Checking against the plan's restatement rather
 than the gap's own text would have recorded all three as met.
 
-## Interaction with PR #1314 (test-module-budget campaign)
+## Interaction with PR #1314 (test-module-budget campaign) — merged and rebased
 
 Flagged by the operator mid-run: PR #1314 restructures the test corpus and this
-branch must rebase onto it once it lands. Assessed at the time of writing —
-**#1314 is open and unmerged**, `mergeable_state: clean`, 281 files,
-+50848/−42993; `origin/main` is at `0682705`, which does not contain it.
+branch must rebase onto it once it lands. **#1314 has merged** as `a34819d` and
+this branch is rebased onto it. The pre-merge assessment predicted the overlap
+exactly, so both halves are recorded — the prediction and what the rebase did.
 
-The overlap with this branch is **two files**, both from D8's 460/G5 item:
+The overlap was **two files**, both from D8's 460/G5 item:
 
-| File | What #1314 does | Consequence |
+| File | What #1314 did | Rebase outcome |
 |---|---|---|
-| `test/plan-marshall/plan-retrospective/test_analyze_logs.py` | **deleted outright** (2440 lines removed, 0 added) | this run's docstring fix is lost on rebase and must be re-applied |
-| `test/plan-marshall/plan-retrospective/test_analyze_logs_behavior.py` | survives, +3/−2 | this run's fix conflicts or needs re-application |
+| `test/plan-marshall/plan-retrospective/test_analyze_logs.py` | **deleted outright** (2440 lines removed, 0 added) | modify/delete conflict; deletion accepted. The docstring fix was re-applied by hand at the test's new home, `test_analyze_logs_dispatch_boundary_context_load_columns.py`. |
+| `test/plan-marshall/plan-retrospective/test_analyze_logs_behavior.py` | survives, +3/−2 | auto-merged. The correction was **verified present** at line 168 by grep rather than assumed to have survived. |
 
-The deleted file's `test_per_column_mix_of_measured_and_unmeasured` moves to
-`test_analyze_logs_dispatch_boundary_context_load_columns.py`, where it **still
-carries the stale "three-way read" docstring**, as does
-`test_analyze_logs_behavior.py`. So both 460/G5 sites survive #1314 unfixed and
-re-applying is a re-edit at two known anchors, not a merge resolution.
-
-Nothing else is exposed: #1314 touches neither `test/conftest.py` nor any file
+Nothing else was exposed: #1314 touches neither `test/conftest.py` nor any file
 under `test/pm-plugin-development/plugin-doctor/`, which is where this run's
-remaining test work sits.
+remaining test work sits. That prediction held.
 
-Two consequences recorded now so they are not forgotten at rebase time:
+Both recorded consequences were discharged:
 
-- A rebase **rewrites every commit SHA on this branch**. No commit message here
-  quotes a same-branch SHA, so none goes stale — but the commit column in
-  § Deliverables above does, and is re-derived after the rebase by pairing old
-  to new with `git range-diff origin/main...{old} origin/main...{new}` (by patch
-  content, never by subject).
-- The full `./pw verify` is re-run on the **rebased** tree. #1314 restructures
-  281 test modules; a green run on the pre-rebase tree is evidence about a tree
-  that no longer exists.
+- The rebase **rewrote every commit SHA on this branch**. All 20 were re-paired
+  with `git range-diff 3083553...eb2123a a34819d...323bb12`, by patch content
+  and never by subject; 19 paired `=` and one paired `!` — `e4e3515 → 740d635`,
+  the commit carrying the conflict resolution, which is the only one whose patch
+  legitimately changed. Every SHA cited in this report was rewritten from that
+  pairing.
+- The full `./pw verify` was re-run on the **rebased** tree: `21424 passed, 14
+  skipped` in 424.49s, all six dimensions clean. The pre-rebase green is
+  evidence about a tree that no longer exists and is not carried forward.
 
 ## Contract check (Step 9)
 
