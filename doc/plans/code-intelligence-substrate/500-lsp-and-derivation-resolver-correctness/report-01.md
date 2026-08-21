@@ -346,7 +346,8 @@ stale-figure defect this report warns about elsewhere, committed here.
 | `def48c4`, round 7's fix | 21422 passed, 14 skipped, 400.14 s, `verify: SUCCESS` |
 | `e061414`, round 8's fixes | 21433 passed, 14 skipped, 406.69 s, `verify: SUCCESS` |
 | `f93849e`, round 9's fixes | 21437 passed, 14 skipped, 416.91 s, `verify: SUCCESS` |
-| **`91629f3`, round 10's fixes — the figure that governs** | **21439 passed, 14 skipped, 416.59 s, `verify: SUCCESS`** |
+| `91629f3`, round 10's fixes | 21439 passed, 14 skipped, 416.59 s, `verify: SUCCESS` |
+| **`1c234ff`, round 11's fixes — the figure that governs** | **21439 passed, 14 skipped, 435.96 s, `verify: SUCCESS`** |
 
 The figure that governs is the last, because it is the only one measured on the tree that actually
 lands. Rounds 4 through 10 each touch production Python — docstrings at first, then real behaviour changes
@@ -360,7 +361,10 @@ rollback (B5), 21422 → 21433 is round 8's eleven — eight driving the seven b
 clean-EOF control through the real `serve` subprocess, one for the harvest's `request-failed:` mode,
 one for the third `configured` reader, and one for the recoverable-frame stream alignment — 21433 → 21437 is round 9's four (the clean-tree `restore_error` case, the URI-alias normalisation,
 and the two line-length clamp guards), and 21437 → 21439 is round 10's pair pinning the `setup.cfg`
-interpolation abort. Each delta is exactly the guards named and nothing else.
+interpolation abort. Round 11 replaced that pair rather than adding to it — the count is unchanged
+because its two guards assert the *corrected* contract (the siblings survive; the join key agrees
+with setuptools) in place of the two that asserted the retired one. Each delta is exactly the guards
+named and nothing else.
 ⛔ **Every commit after the governing one is report-only**, and that is established rather than
 asserted: `git diff --name-only {governing}..HEAD -- '*.py'` returns nothing. All three sub-steps ran
 on the governing commit: quality-gate (`ruff … All checks passed!`, `mypy … Success: no issues found
@@ -945,10 +949,14 @@ its own guard, and the two suites carrying the new guards report **126 passed**.
 
 ⛔ **What no verifier has independently checked**, stated plainly rather than left to inference:
 
-- **Round 10's own ten fixes.** Round 10 *found* them; the run fixed them and red-checked each by
-  reinstating the defect, but no verification round has run against `91629f3`. The `setup.cfg`
-  percent-sign fix (`B-1`) is the one that matters most here — it is a **behaviour** change to
-  production code, and its evidence is the run's own two guards and its own red-check.
+- **Round 11's own fixes**, at `1c234ff`. Round 11 verified `91629f3` and found its `setup.cfg`
+  remedy wrong; the correction — and the all-or-nothing read that taking it exposed — carries the
+  run's own guards and red-check and no independent round. ⛔ This is the same gap one commit later,
+  and it is **structural**: a loop that ends after a round of fixes always ends with its last fixes
+  unverified. Round 9's verifier made the point precisely on re-notification: its own confirmation
+  was stamped at `91629f3` and *"does not extend to `1c234ff`"*.
+- **Round 10's ten fixes** were verified — that was round 11's whole scope, and it found eight
+  condition-A statements and one condition-B among them, all now fixed.
 - **Which four report claims `f93849e` corrected.** Round 9's re-check names this as unre-derived.
 - **Round 9's bounded B-items** (`S2`, `S4`–`S12` in § Left open) were not re-verified after the
   fixes; their bounds rest on round 9's and round 10's original reproductions.
