@@ -11,7 +11,9 @@ fails the verdict, and a rollback restores the original bytes.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
+import pytest
 from conftest import get_script_path
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'lsp-client', 'lsp_client.py')
@@ -104,6 +106,67 @@ def test_apply_insertion_edit():
 # -- apply_workspace_edit + restore ------------------------------------------
 
 
+def test_two_URI_SPELLINGS_for_one_file_normalise_to_one_entry(tmp_path):
+    """Otherwise the rollback restores a state the file was never in — a false clean.
+
+    ``path_to_uri`` resolves and ``uri_to_path`` did not, so ``/t/a.py`` and
+    ``/t/./a.py`` produced two entries for one document. The apply loop then
+    captured the SECOND entry's "original" from disk *after* the first had
+    already written it, and restoring walked them in that order — leaving the
+    file holding the first edit's output while the payload reported
+    ``rolled_back: true``. Aliasing is a server defect; a false clean is the one
+    outcome this write path may not produce whatever the server does.
+    """
+    target = tmp_path / 'a.py'
+    target.write_text('one\n')
+    edit = {'changes': {
+        we.path_to_uri(target): [_text_edit(0, 0, 0, 3, 'TWO')],
+        f'file://{tmp_path}/./a.py': [_text_edit(0, 0, 0, 3, 'THREE')],
+    }}
+
+    changes, _notes = we.normalize_changes(edit)
+    assert len(changes) == 1, f'one file produced {len(changes)} entries: {list(changes)}'
+
+    _footprint, originals = we.apply_workspace_edit(edit)
+    we.restore_files(originals)
+
+    assert target.read_text() == 'one\n', 'the rollback restored a state the file was never in'
+
+
+def test_an_over_long_character_clamps_to_ITS_LINE_not_to_the_file(tmp_path):
+    """LSP 3.17: an out-of-range `character` defaults back to the LINE length.
+
+    ``[line, 0]-[line, 2147483647]`` is the standard way a server says "replace
+    this line". Clamping the end to the length of the whole FILE instead turns
+    it into "replace this line and everything after it", so a one-line rename
+    silently truncates the file from that point to EOF. The diagnostics gate
+    catches most such wreckage because it gains errors — but a tail of comments
+    or data adds no NEW error diagnostic, and the edit is then accepted.
+    """
+    del tmp_path
+    text = 'alpha\nbeta\ngamma\n'
+
+    replaced = we.apply_text_edits(text, [_text_edit(0, 0, 0, 2147483647, 'X')])
+
+    assert replaced == 'X\nbeta\ngamma\n', 'the edit reached past the end of its own line'
+
+
+def test_an_over_long_character_does_not_swallow_the_line_terminator(tmp_path):
+    """The clamp stops at the line CONTENT, not at the newline that ends it.
+
+    Clamping one character further would join the line to the next one — a
+    subtler wrong answer than the truncation above, and one no diagnostic need
+    catch, since the joined result often still parses.
+    """
+    del tmp_path
+    text = 'alpha\nbeta\n'
+
+    joined = we.apply_text_edits(text, [_text_edit(0, 0, 0, 99, 'X')])
+
+    assert joined == 'X\nbeta\n'
+    assert joined.count('\n') == text.count('\n'), 'a line terminator was consumed'
+
+
 def test_apply_and_restore_round_trip(tmp_path):
     a = tmp_path / 'a.py'
     b = tmp_path / 'b.py'
@@ -123,6 +186,153 @@ def test_apply_and_restore_round_trip(tmp_path):
     assert b.read_text() == 'bar = 2\n'
 
 
+def test_apply_rolls_back_every_written_file_when_a_later_one_fails(tmp_path):
+    """A malformed TextEdit on the middle file leaves all three byte-identical."""
+    originals_text = {'a.py': 'foo = 1\n', 'b.py': 'bar = 2\n', 'c.py': 'baz = 3\n'}
+    files = {}
+    for name, text in originals_text.items():
+        files[name] = tmp_path / name
+        files[name].write_text(text)
+    edit = {'documentChanges': [
+        {'textDocument': {'uri': we.path_to_uri(files['a.py'])}, 'edits': [_text_edit(0, 0, 0, 3, 'AAA')]},
+        # No 'range' — the exact shape a server bug produces, raising mid-apply
+        # after a.py has already been rewritten.
+        {'textDocument': {'uri': we.path_to_uri(files['b.py'])}, 'edits': [{'newText': 'oops'}]},
+        {'textDocument': {'uri': we.path_to_uri(files['c.py'])}, 'edits': [_text_edit(0, 0, 0, 3, 'CCC')]},
+    ]}
+
+    with pytest.raises(we.WorkspaceApplyError) as raised:
+        we.apply_workspace_edit(edit)
+
+    assert raised.value.path == str(files['b.py'].resolve())
+    assert raised.value.restore_error is None
+    for name, text in originals_text.items():
+        assert files[name].read_text() == text
+
+
+def test_a_write_that_fails_PART_WAY_restores_the_file_it_damaged(tmp_path):
+    """The failing file is restored too — it is the one the write already damaged.
+
+    The sibling test above covers a failure that writes nothing (a malformed
+    ``TextEdit``, caught in the transform). This one covers the opposite and far
+    more dangerous shape: the write itself fails **after** truncating the file —
+    ENOSPC, EIO, a full disk mid-refactor. The damaged file must be restored and
+    the rollback must not report success over a tree it left modified.
+
+    Pinned because the code once did exactly that: the failing path was dropped
+    from the restore set in the handler, so the one file that needed restoring
+    was the one that never got restored, ``restore_error`` stayed ``None``, and
+    the payload published ``rolled_back: true`` over a truncated file.
+    """
+    originals_text = {'a.py': 'foo = 1\n', 'b.py': 'bar = 2\n', 'c.py': 'baz = 3\n'}
+    files = {}
+    for name, text in originals_text.items():
+        files[name] = tmp_path / name
+        files[name].write_text(text)
+    edit = {'documentChanges': [
+        {'textDocument': {'uri': we.path_to_uri(files[name])}, 'edits': [_text_edit(0, 0, 0, 3, 'XXX')]}
+        for name in originals_text
+    ]}
+
+    real_write = Path.write_text
+    state = {'failed': False}
+
+    def truncate_then_fail(self, data, *args, **kwargs):
+        if self.name == 'b.py' and not state['failed']:
+            state['failed'] = True
+            real_write(self, '', encoding='utf-8')  # what a partial write leaves behind
+            raise OSError(28, 'No space left on device')
+        return real_write(self, data, *args, **kwargs)
+
+    Path.write_text = truncate_then_fail
+    try:
+        with pytest.raises(we.WorkspaceApplyError) as raised:
+            we.apply_workspace_edit(edit)
+    finally:
+        Path.write_text = real_write
+
+    assert raised.value.path == str(files['b.py'].resolve())
+    assert raised.value.restore_error is None
+    for name, text in originals_text.items():
+        assert files[name].read_text() == text, f'{name} was not restored'
+
+
+def test_a_rollback_that_cannot_restore_the_damaged_file_says_so(tmp_path):
+    """When the restore itself keeps failing, the tree IS modified — and it reports it.
+
+    The honest counterpart to the test above. ``restore_error`` is what turns
+    ``rolled_back`` false in the payload, so a caller can tell a clean rollback
+    from a tree left partly edited. A swallowed error here is the false-clean
+    this whole write path exists to prevent.
+    """
+    files = {}
+    for name, text in (('a.py', 'foo = 1\n'), ('b.py', 'bar = 2\n')):
+        files[name] = tmp_path / name
+        files[name].write_text(text)
+    edit = {'documentChanges': [
+        {'textDocument': {'uri': we.path_to_uri(files[name])}, 'edits': [_text_edit(0, 0, 0, 3, 'XXX')]}
+        for name in files
+    ]}
+
+    real_write = Path.write_text
+
+    def always_fail_on_b(self, data, *args, **kwargs):
+        if self.name == 'b.py':
+            real_write(self, '', encoding='utf-8')
+            raise OSError(28, 'No space left on device')
+        return real_write(self, data, *args, **kwargs)
+
+    Path.write_text = always_fail_on_b
+    try:
+        with pytest.raises(we.WorkspaceApplyError) as raised:
+            we.apply_workspace_edit(edit)
+    finally:
+        Path.write_text = real_write
+
+    assert raised.value.restore_error is not None  # never swallowed
+    assert files['a.py'].read_text() == 'foo = 1\n'  # the restorable one still is
+
+
+def test_a_write_that_fails_BEFORE_truncating_reports_no_restore_error(tmp_path):
+    """A failure at ``open()`` damages nothing, so the tree is clean and says so.
+
+    The mirror of the false clean this boundary exists to prevent, and just as
+    misleading: EACCES, EPERM, EROFS and an immutable file all fail *before* a
+    byte is written, so the failing path's "restore" is a rewrite of content
+    already on disk — which fails for the same reason the write did. Inferring
+    ``restore_error`` from that exception raises an alarm about a tree nothing
+    touched, and four contracts read ``restore_error`` as *the tree is partly
+    edited*. So the claim is checked against the disk rather than inferred.
+    """
+    originals_text = {'a.py': 'foo = 1\n', 'b.py': 'bar = 2\n', 'c.py': 'baz = 3\n'}
+    files = {}
+    for name, text in originals_text.items():
+        files[name] = tmp_path / name
+        files[name].write_text(text)
+    edit = {'documentChanges': [
+        {'textDocument': {'uri': we.path_to_uri(files[name])}, 'edits': [_text_edit(0, 0, 0, 3, 'XXX')]}
+        for name in originals_text
+    ]}
+
+    real_write = Path.write_text
+
+    def refuse_b_without_touching_it(self, data, *args, **kwargs):
+        if self.name == 'b.py':
+            raise PermissionError(1, 'Operation not permitted')  # nothing written
+        return real_write(self, data, *args, **kwargs)
+
+    Path.write_text = refuse_b_without_touching_it
+    try:
+        with pytest.raises(we.WorkspaceApplyError) as raised:
+            we.apply_workspace_edit(edit)
+    finally:
+        Path.write_text = real_write
+
+    assert raised.value.restore_error is None, 'a clean tree was reported as partly edited'
+    for name, text in originals_text.items():
+        assert files[name].read_text() == text
+
+
 # -- diagnostics counting + verdict ------------------------------------------
 
 
@@ -131,12 +341,52 @@ def test_count_error_diagnostics_counts_only_errors():
     assert we.count_error_diagnostics(diags) == 2
 
 
-def test_edit_verdict_fails_on_worsened():
-    assert we.edit_verdict(0, 1) == 'failed'
-    assert we.edit_verdict(2, 5) == 'failed'
+def _error(message, line=0, code='E'):
+    return {'severity': 1, 'code': code, 'message': message,
+            'range': {'start': {'line': line, 'character': 0}}}
 
 
-def test_edit_verdict_passes_on_equal_or_improved():
-    assert we.edit_verdict(0, 0) == 'success'
-    assert we.edit_verdict(3, 3) == 'success'
-    assert we.edit_verdict(3, 1) == 'success'
+def test_edit_verdict_fails_when_any_file_gained_an_error():
+    assert we.edit_verdict({'/a.py': [_error('boom')]}) == 'failed'
+    assert we.edit_verdict({'/a.py': [], '/b.py': [_error('boom')]}) == 'failed'
+
+
+def test_edit_verdict_passes_when_no_file_gained_an_error():
+    assert we.edit_verdict({}) == 'success'
+    assert we.edit_verdict({'/a.py': [], '/b.py': []}) == 'success'
+
+
+# -- diagnostic set delta -----------------------------------------------------
+
+
+def test_delta_sees_a_swapped_error_that_a_count_cannot():
+    """[A] -> [B] is one error out, one in: the count is unchanged, the set is not."""
+    added, removed = we.diagnostic_delta([_error('A')], [_error('B')])
+    assert [diag['message'] for diag in added] == ['B']
+    assert [diag['message'] for diag in removed] == ['A']
+
+
+def test_delta_reports_only_the_new_error_not_the_pre_existing_one():
+    added, removed = we.diagnostic_delta([_error('A')], [_error('A'), _error('B', line=4)])
+    assert [diag['message'] for diag in added] == ['B']
+    assert removed == []
+
+
+def test_delta_is_a_multiset_so_a_repeated_error_gaining_one_is_visible():
+    before = [_error('dup'), _error('dup')]
+    after = [_error('dup'), _error('dup'), _error('dup')]
+    added, removed = we.diagnostic_delta(before, after)
+    assert len(added) == 1
+    assert removed == []
+
+
+def test_delta_ignores_non_error_severities():
+    warning = {'severity': 2, 'message': 'style', 'range': {'start': {'line': 0, 'character': 0}}}
+    added, removed = we.diagnostic_delta([], [warning])
+    assert added == []
+    assert removed == []
+
+
+def test_delta_distinguishes_same_message_at_a_different_line():
+    added, _removed = we.diagnostic_delta([_error('A', line=1)], [_error('A', line=1), _error('A', line=9)])
+    assert [diag['range']['start']['line'] for diag in added] == [9]

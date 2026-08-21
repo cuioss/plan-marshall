@@ -60,8 +60,8 @@ Nothing here is opt-in. If your project is one of the ecosystems below, the grap
 | The same coordinate join — Gradle publishes the same pair. See <<gradle-limit>> for the one form it misses.
 
 | Python
-| The PEP 621 `[project] name`
-| Each module's `pyproject.toml` name against every module's `dependencies` and its `optional-dependencies.dev` extra.
+| The declared distribution name
+| Each module's declared name — PEP 621 `[project]`, else `[tool.poetry]`, else `setup.cfg` — against every module's dependency lists (runtime, plus `dev` where the descriptor form has one).
 
 | npm / yarn / pnpm
 | The `package.json` `name`
@@ -81,11 +81,28 @@ A zero row is usually not a defect and not a sign that something is misconfigure
 
 Names are matched the way Python packaging matches them: case-insensitively, with any run of `-`, `_` or `.` treated as equivalent. A module publishing `sample-api` is therefore reached by a dependency spelling it `Sample_API`.
 
-Two scopes are read: `[project] dependencies`, and the `dev` extra under `[project.optional-dependencies]`. A `dev` entry is a real edge, because changing the module you depend on can break your tests.
+Up to two scopes are read, depending on which descriptor form supplied the name: a runtime dependency list, and a `dev` group. PEP 621 gives both (`[project] dependencies` and the `dev` extra under `[project.optional-dependencies]`); Poetry gives both (`[tool.poetry.dependencies]` and `[tool.poetry.group.dev.dependencies]`); `setup.cfg` gives runtime only (`[options] install_requires`). It does have a `dev` analogue — `[options.extras_require]`, the counterpart of `[project.optional-dependencies]` — and that is simply not read yet, so a `dev` extra declared there produces no edge. A `dev` entry is a real edge, because changing the module you depend on can break your tests.
 
 Other extras are *not* read. A sibling named only under a `test`, `docs` or `all` extra produces no edge — move it to `dev` (or to `dependencies`) if you need it in the graph.
 
-A directory with no `[project] name` publishes no distribution, so nothing can depend on it. It still appears as a module and its own dependencies still produce edges — it simply cannot be the *target* of one.
+A directory that names no distribution in any of the descriptor forms below publishes nothing, so nothing can depend on it. It still appears as a module and its own dependencies still produce edges — it simply cannot be the *target* of one.
+
+Three descriptor forms are read, in this order: PEP 621 `[project]`; then `[tool.poetry]` in the same `pyproject.toml`, when `[project]` is absent or names nothing; then `setup.cfg` (`[metadata]` for the name, `[options] install_requires` for runtime dependencies). The later forms are strict fallbacks — neither overrides a name PEP 621 already supplied.
+
+[WARNING]
+====
+*The NAME decides which forms are read, and one hybrid layout loses its edges because of it.* If `[project]` supplies a `name`, no later form is consulted at all — including its dependency lists. So a `pyproject.toml` with a `[project]` table carrying the name and its dependencies under `[tool.poetry.dependencies]` publishes the name and *no dependencies*: the module becomes a valid edge target and contributes no outbound edges, with nothing in the output saying why.
+
+The gate is the name on purpose: `metadata` and `dependencies` are read by consumers beyond edge derivation, and letting a later form supply a name the earlier one already gave would make which descriptor wins depend on read order. If your project is in this shape, move the dependencies under `[project] dependencies`, or remove the `name` from `[project]` so the Poetry table is read whole.
+
+NOTE: When an earlier form supplies dependencies but *no* name — `[project]` with a `dependencies` list and no `name`, which is invalid PEP 621 — the later form is consulted and its dependencies are *added* to what the earlier one already contributed. The result is a union, never an override, so no declaration is lost; but it does mean "only one form is read" holds for the name, not for every field.
+====
+
+`setup.cfg` behaves the same way for the same reason: it is consulted only when neither table in `pyproject.toml` supplied a name.
+
+`setup.py` is *not* read, and cannot be: it is executable Python rather than a declaration, so no static reader can tell what it will pass to `setup()`. A module whose only descriptor is `setup.py` therefore publishes no name and no dependencies — it appears as a module, but nothing can depend on it and it declares nothing. Add a `[project]` table or a `setup.cfg` to bring it into the graph.
+
+A `pyproject.toml` that does not parse — an unbalanced bracket, a bad encoding — publishes nothing *from that file*, and a *warning naming it* is written to the run log. The `setup.cfg` fallback still applies, so a module with both may still publish a name; a module with only the broken `pyproject.toml` publishes none. That warning is the difference between the module declaring nothing and its descriptor being broken, and the second case also silently costs you every edge pointing *at* that module, because the name those edges match on was never published.
 
 === npm specifics
 
@@ -94,6 +111,8 @@ Workspace members need no setup. Plan Marshall resolves the `workspaces` globs f
 Scoped names work unchanged: `@scope/pkg` is one name, and the scope is part of it. The `workspace:*` protocol never reaches the join, because only the dependency's *name* is read — the version specifier is irrelevant to whether the edge exists.
 
 `devDependencies` count, for the same reason `dev` extras do in Python.
+
+Two of npm's four dependency kinds are read: `dependencies` and `devDependencies`. `peerDependencies` and `optionalDependencies` are *not*. A package that names a sibling only under one of those produces no edge — which matters most for `peerDependencies`, the idiomatic way a plugin package declares its dependency on a workspace's core package. Move the sibling to `dependencies` or `devDependencies` if you need it in the graph.
 
 A package with no `name` in its `package.json` cannot be published, so nothing can depend on it — same rule as Python, same consequence: a source of edges, never a target.
 

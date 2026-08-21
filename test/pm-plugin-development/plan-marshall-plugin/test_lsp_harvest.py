@@ -309,6 +309,140 @@ def _unlaunchable_server(tmp_path):
     return [str(launcher)]
 
 
+_REJECTING_SERVER = r'''
+import json, sys
+
+def read_message():
+    header = b""
+    while b"\r\n\r\n" not in header:
+        c = sys.stdin.buffer.read(1)
+        if not c:
+            return None
+        header += c
+    length = 0
+    for line in header.split(b"\r\n"):
+        if line.lower().startswith(b"content-length:"):
+            length = int(line.split(b":", 1)[1].strip())
+    return json.loads(sys.stdin.buffer.read(length))
+
+message = read_message()
+body = json.dumps({
+    "jsonrpc": "2.0", "id": message["id"],
+    "error": {"code": -32603, "message": "this workspace is not supported"},
+}).encode()
+sys.stdout.buffer.write(b"Content-Length: %d\r\n\r\n" % len(body) + body)
+sys.stdout.buffer.flush()
+import time
+time.sleep(5.0)
+'''
+
+
+def _rejecting_server(tmp_path):
+    """A server that answers `initialize` IMMEDIATELY, with a JSON-RPC error.
+
+    Distinct from every other mode: it is installed, it launches, and it
+    responds — it simply refuses the workspace. Reported as a timeout, that
+    sends an operator to look at budgets and machine load for a server that
+    answered in milliseconds.
+    """
+    launcher = tmp_path / 'rejecting_server.py'
+    launcher.write_text(_REJECTING_SERVER, encoding='utf-8')
+    return [PYTHON, str(launcher)]
+
+
+_HANDSHAKE_THEN_SILENT_SERVER = r"""
+import json, sys, time
+
+def read_message():
+    header = b""
+    while b"\r\n\r\n" not in header:
+        c = sys.stdin.buffer.read(1)
+        if not c:
+            return None
+        header += c
+    length = 0
+    for line in header.split(b"\r\n"):
+        if line.lower().startswith(b"content-length:"):
+            length = int(line.split(b":", 1)[1].strip())
+    return json.loads(sys.stdin.buffer.read(length))
+
+# Answer `initialize` immediately and completely, then answer nothing ever
+# again. The handshake SUCCEEDS; the first per-file request hangs.
+while True:
+    message = read_message()
+    if message is None:
+        break
+    if message.get("method") != "initialize":
+        continue
+    body = json.dumps({"jsonrpc": "2.0", "id": message["id"], "result": {"capabilities": {}}}).encode()
+    sys.stdout.buffer.write(b"Content-Length: %d\r\n\r\n" % len(body) + body)
+    sys.stdout.buffer.flush()
+    time.sleep(120.0)
+"""
+
+
+def _handshake_then_silent_server(tmp_path):
+    """Completes the handshake, then never answers a per-file request."""
+    launcher = tmp_path / 'handshake_then_silent_server.py'
+    launcher.write_text(_HANDSHAKE_THEN_SILENT_SERVER, encoding='utf-8')
+    return [PYTHON, str(launcher)]
+
+
+def test_a_failure_AFTER_the_handshake_does_not_cite_the_handshake_budget(tmp_path):
+    """A per-file failure is its own mode, and it may quote no budget at all.
+
+    The handshake budget is the only one this module sets. Reporting it against
+    a request that never waited on it — which the code did, for both branches of
+    one `else` — sends an operator to look at a number the failure had nothing
+    to do with, which is the exact defect the server-rejected split was added to
+    remove, one layer further in.
+    """
+    # Arrange
+    (tmp_path / 'x.py').write_text('import os\n')
+
+    # Act
+    outcome = harvest_workspace(
+        tmp_path, server_cmd=_handshake_then_silent_server(tmp_path), timeout_s=90.0, request_timeout_s=0.5
+    )
+
+    # Assert
+    assert outcome.ran is False
+    assert outcome.reason.startswith('request-failed:'), outcome.reason
+    assert 'did not respond within' not in outcome.reason, 'a handshake budget was quoted for a per-file failure'
+    assert outcome.references == []
+
+
+def test_a_server_that_refuses_the_handshake_is_not_reported_as_a_timeout(tmp_path):
+    """A JSON-RPC error reply is a refusal; only wait-expiry is a timeout."""
+    # Arrange
+    (tmp_path / 'x.py').write_text('import os\n')
+
+    # Act
+    outcome = harvest_workspace(
+        tmp_path, server_cmd=_rejecting_server(tmp_path), timeout_s=20.0, request_timeout_s=5.0
+    )
+
+    # Assert
+    assert outcome.ran is False
+    assert outcome.reason.startswith('server-rejected:')
+    assert 'this workspace is not supported' in outcome.reason
+    assert outcome.references == []
+
+
+def test_a_wait_expiry_is_still_reported_as_a_timeout(tmp_path):
+    """The control for the split: a silent server must keep the timeout reason."""
+    # Arrange
+    (tmp_path / 'x.py').write_text('import os\n')
+
+    # Act
+    outcome = harvest_workspace(
+        tmp_path, server_cmd=[PYTHON, '-c', 'import sys; sys.stdin.read()'], timeout_s=2.0, request_timeout_s=0.5
+    )
+
+    # Assert
+    assert outcome.reason.startswith('server-timeout:')
+
+
 def test_server_that_cannot_be_launched_reports_ran_false(tmp_path):
     """Mode 2: the binary is present and executable but the spawn fails."""
     # Arrange
@@ -419,7 +553,15 @@ def test_skip_list_still_excludes_vendor_trees_inside_the_workspace(tmp_path):
 
 
 def test_every_failure_mode_states_a_distinct_reason(tmp_path):
-    """The four modes must be tellable apart, not collapsed into one message."""
+    """Each mode must be tellable apart BY ITS PREFIX, not merely by its text.
+
+    Collecting whole interpolated strings and counting them cannot fail: the
+    strings already differ by interpolated binary name, so two modes can collapse
+    onto one prefix — the part a reader classifies by — and the count stays
+    right. The assertion is therefore over the set of prefixes, and it is an
+    equality rather than a length, so a mode reporting under the *wrong*
+    prefix is caught as well as one reporting under a duplicate.
+    """
     # Arrange
     sourced = tmp_path / 'sourced'
     sourced.mkdir()
@@ -428,24 +570,41 @@ def test_every_failure_mode_states_a_distinct_reason(tmp_path):
     empty.mkdir()
     (empty / 'README.md').write_text('none\n')
 
-    # Act — one call per plan-named mode: absent, fails-to-start, times-out,
-    # and a workspace with nothing to scan.
-    reasons = {
-        harvest_workspace(sourced, server_cmd=['definitely-not-a-real-language-server-xyz']).reason,
-        harvest_workspace(
-            sourced, server_cmd=_unlaunchable_server(tmp_path), timeout_s=20.0, request_timeout_s=5.0
-        ).reason,
-        harvest_workspace(
-            sourced,
-            server_cmd=[PYTHON, '-c', 'import sys; sys.stdin.read()'],
-            timeout_s=2.0,
-            request_timeout_s=0.5,
-        ).reason,
-        harvest_workspace(empty, server_cmd=[PYTHON, '-c', 'pass']).reason,
+    # Act — one call per mode: absent, fails-to-start, times-out, a workspace
+    # with nothing to scan, and a server that REFUSES the handshake.
+    prefixes = {
+        outcome.reason.split(':', 1)[0]
+        for outcome in (
+            harvest_workspace(sourced, server_cmd=['definitely-not-a-real-language-server-xyz']),
+            harvest_workspace(
+                sourced, server_cmd=_unlaunchable_server(tmp_path), timeout_s=20.0, request_timeout_s=5.0
+            ),
+            harvest_workspace(
+                sourced,
+                server_cmd=[PYTHON, '-c', 'import sys; sys.stdin.read()'],
+                timeout_s=2.0,
+                request_timeout_s=0.5,
+            ),
+            harvest_workspace(empty, server_cmd=[PYTHON, '-c', 'pass']),
+            harvest_workspace(sourced, server_cmd=_rejecting_server(tmp_path), timeout_s=20.0, request_timeout_s=5.0),
+            harvest_workspace(
+                sourced,
+                server_cmd=_handshake_then_silent_server(tmp_path),
+                timeout_s=90.0,
+                request_timeout_s=0.5,
+            ),
+        )
     }
 
     # Assert
-    assert len(reasons) == 4
+    assert prefixes == {
+        'server-absent',
+        'server-failed-to-start',
+        'server-timeout',
+        'workspace-unsupported',
+        'server-rejected',
+        'request-failed',
+    }
 
 
 def test_no_failure_mode_reports_a_zero_edge_success(tmp_path):

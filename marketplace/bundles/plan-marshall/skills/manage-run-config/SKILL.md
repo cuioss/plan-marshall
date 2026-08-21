@@ -258,12 +258,12 @@ Manage the machine-local `derivation_resolvers` binding deciding **which derivat
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config derivation-resolver set \
   --resolver lsp --disabled
 
-# Read the effective state (configured: false when no entry exists)
+# Read the effective state (configured: false when no well-formed dict entry exists)
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config derivation-resolver get \
   --resolver markdown
 ```
 
-The key is the resolver **id**, not a file pattern: a resolver returns `(module, module)` pairs carrying no file provenance, so there is no dispatch point at which a per-file binding could apply. `list` reports the configured entries (empty means everything is active); `remove` returns a resolver to default-active. To see the *discovered* resolvers joined against this binding — the roster the configuration menu renders — use [`extension-api:extension_api derivation-resolvers list`](../extension-api/SKILL.md).
+The key is the resolver **id**, not a file pattern: a resolver returns `(module, module)` pairs carrying no file provenance, so there is no dispatch point at which a per-file binding could apply. `list` reports **every** entry the store holds — each with its own `configured` flag, so a malformed entry is shown rather than hidden and still reads `configured: false` (empty means everything is active); `remove` returns a resolver to default-active. To see the *discovered* resolvers joined against this binding — the roster the configuration menu renders — use [`extension-api:extension_api derivation-resolvers list`](../extension-api/SKILL.md).
 
 ### display-timezone get / set
 

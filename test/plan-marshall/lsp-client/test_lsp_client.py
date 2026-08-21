@@ -28,12 +28,22 @@ from _lsp_workspace_edit import path_to_uri  # noqa: E402
 
 
 class FakeTransport:
-    """A canned transport: requests return fixtures, diagnostics pop a queue."""
+    """A canned transport: requests return fixtures, diagnostics pop a queue.
 
-    def __init__(self, responses: dict[str, Any] | None = None, diagnostics: list[list[dict[str, Any]]] | None = None):
+    An exhausted queue answers ``None`` — *unknown*, the honest stand-in for a
+    server that published no verdict. It must not answer ``[]``, which would
+    make the fake claim a clean file the fake never examined.
+    """
+
+    def __init__(
+        self,
+        responses: dict[str, Any] | None = None,
+        diagnostics: list[list[dict[str, Any]] | None] | None = None,
+    ):
         self._responses = responses or {}
         self._diagnostics = list(diagnostics or [])
         self.notifications: list[tuple[str, dict[str, Any]]] = []
+        self.diagnostics_calls: list[tuple[str, int | None]] = []
         self.closed = False
 
     def request(self, method: str, params: dict[str, Any], timeout: float = 30.0) -> dict[str, Any]:
@@ -42,8 +52,14 @@ class FakeTransport:
     def notify(self, method: str, params: dict[str, Any]) -> None:
         self.notifications.append((method, params))
 
-    def wait_for_diagnostics(self, uri: str, settle: float = 2.0, timeout: float = 15.0) -> list[dict[str, Any]]:
-        return self._diagnostics.pop(0) if self._diagnostics else []
+    def diagnostics_seq(self, uri: str) -> int:
+        return sum(1 for method, _params in self.notifications if method == 'textDocument/didOpen')
+
+    def wait_for_diagnostics(
+        self, uri: str, settle: float = 2.0, timeout: float = 15.0, after_seq: int | None = None
+    ) -> list[dict[str, Any]] | None:
+        self.diagnostics_calls.append((uri, after_seq))
+        return self._diagnostics.pop(0) if self._diagnostics else None
 
     def wait_until_idle(self, settle: float = 1.5, timeout: float = 8.0) -> None:
         return None

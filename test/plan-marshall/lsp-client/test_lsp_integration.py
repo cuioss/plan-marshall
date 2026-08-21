@@ -35,6 +35,7 @@ from _lsp_jsonrpc import LspSession, StdioTransport  # noqa: E402
 from _lsp_workspace_edit import (  # noqa: E402
     apply_workspace_edit,
     count_error_diagnostics,
+    diagnostic_delta,
     edit_verdict,
     path_to_uri,
     restore_files,
@@ -92,6 +93,39 @@ def test_real_workspace_symbol_after_indexing(plan_context, tmp_path):
     assert any(row['name'] == 'compute' for row in result['locations'])
 
 
+def test_real_workspace_symbol_rows_name_the_defining_file(plan_context, tmp_path):
+    """The cross-file lookup answers *which file*, over a module the call never opens."""
+    project = _sample_project(tmp_path)
+    defining = project / 'other.py'
+    defining.write_text('class WidgetFromOtherModule:\n    def spin(self):\n        return 1\n')
+    _configure(project)
+
+    result = client.cmd_lookup(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'lookup', '--language', 'python', '--project-path', str(project), '--kind', 'workspace-symbol', '--line', '0', '--character', '0', '--symbol', 'WidgetFromOtherModule'))
+
+    assert result['state'] == client.STATE_OK
+    matches = [row for row in result['locations'] if row['name'] == 'WidgetFromOtherModule']
+    assert matches, f'workspace-symbol found nothing: {result}'
+    for row in matches:
+        assert row['path'] == str(defining.resolve())
+
+
+def test_real_document_symbol_flattens_a_class_and_carries_its_path(plan_context, tmp_path):
+    """A class's methods are present, with the queried file on every row."""
+    project = _sample_project(tmp_path)
+    target = project / 'widget.py'
+    target.write_text('class Widget:\n    def spin(self):\n        return 1\n\n    def stop(self):\n        return 2\n\n\ndef top_level():\n    return 3\n')
+    _configure(project)
+
+    result = client.cmd_lookup(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'lookup', '--language', 'python', '--project-path', str(project), '--kind', 'document-symbol', '--file', str(target), '--line', '0', '--character', '0'))
+
+    by_name = {row['name']: row for row in result['locations']}
+    assert {'Widget', 'spin', 'stop', 'top_level'} <= set(by_name)
+    assert by_name['spin']['line'] == 1
+    assert by_name['spin']['container'] == 'Widget'
+    for row in result['locations']:
+        assert row['path'] == str(target.resolve())
+
+
 def test_real_clean_rename_edit(plan_context, tmp_path):
     project = _sample_project(tmp_path)
     _configure(project)
@@ -116,7 +150,9 @@ def test_real_adversarial_defect_fails_and_rolls_back(plan_context, tmp_path):
     try:
         session.initialize()
         session.open(str(target))
-        errors_before = count_error_diagnostics(session.diagnostics(str(target)))
+        before = session.diagnostics(str(target))
+        assert before is not None  # the real server DID publish a baseline verdict
+        errors_before = count_error_diagnostics(before)
 
         # Replace a valid line with a reference to an undefined symbol.
         defect = {'documentChanges': [{
@@ -125,11 +161,15 @@ def test_real_adversarial_defect_fails_and_rolls_back(plan_context, tmp_path):
                        'newText': 'return undefined_symbol_xyz'}],
         }]}
         _footprint, originals = apply_workspace_edit(defect)
-        session.change_to_disk(str(target))
-        errors_after = count_error_diagnostics(session.diagnostics(str(target)))
+        seq_before_change = session.change_to_disk(str(target))
+        after = session.diagnostics(str(target), after_seq=seq_before_change)
+        assert after is not None  # a verdict about the EDITED content, not the cached one
+        errors_after = count_error_diagnostics(after)
 
         assert errors_after > errors_before  # the real parser caught the defect
-        assert edit_verdict(errors_before, errors_after) == 'failed'
+        added, _removed = diagnostic_delta(before, after)
+        assert added  # the defect is in the ADDED set, not merely in a larger count
+        assert edit_verdict({str(target): added}) == 'failed'
 
         restore_files(originals)
         assert target.read_text() == original

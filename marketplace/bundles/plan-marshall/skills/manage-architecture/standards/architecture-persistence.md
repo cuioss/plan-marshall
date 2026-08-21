@@ -164,7 +164,7 @@ Dependencies use technology-native format without prefixes:
 |--------------|--------|---------|
 | Maven | `groupId:artifactId:scope` | `de.cuioss:cui-java-tools:compile` |
 | Gradle | `groupId:artifactId:compile`, or `project:{name}:compile` for an inter-project dependency | `com.google.guava:guava:compile`, `project:core:compile` |
-| Python | `name:scope` (`runtime` from `[project] dependencies`, `dev` from `[project.optional-dependencies].dev`) | `typing-extensions:runtime`, `pytest:dev` |
+| Python | `name:scope`, read from whichever descriptor form the module uses — PEP 621 (`[project] dependencies` / `[project.optional-dependencies].dev`), Poetry (`[tool.poetry.dependencies]` / `[tool.poetry.group.dev.dependencies]`), or `setup.cfg` (`[options] install_requires`, `runtime` only) | `typing-extensions:runtime`, `pytest:dev` |
 | npm | `name:scope` (`runtime` from `dependencies`, `dev` from `devDependencies`) | `lit:runtime`, `@testing-library/dom:dev` |
 
 ### `files:` block — categorised inventory

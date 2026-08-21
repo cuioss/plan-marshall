@@ -10,8 +10,12 @@ Owns TWO axes of the extension contract for the Python build system:
 - **Axis-C** (:class:`DerivationResolverBase`) — the ``pyproject`` distribution-name
   join that derives which modules depend on which. A Python project publishes no
   ``groupId:artifactId`` coordinate, so the Maven join can never match it; what a
-  Python distribution DOES publish is its PEP 621 ``[project] name``, and that is
-  what this resolver joins on.
+  Python distribution DOES publish is its **distribution name**, and that is what
+  this resolver joins on. The name reaches ``metadata.name`` from whichever
+  descriptor form the project uses — PEP 621 ``[project] name``, Poetry's
+  ``[tool.poetry] name``, or ``setup.cfg``'s ``[metadata] name`` — and this
+  resolver reads the field, never the descriptor, so it is indifferent to which
+  supplied it.
 
 Skill-loading (Axis-A) is NOT here — it lives on the Python domain extension that
 subclasses ``ExtensionBase``. The three Axis-C methods are opted into by multiple
@@ -310,17 +314,22 @@ class BuildExtension(BuildExtensionBase, DerivationResolverBase):
 
     @staticmethod
     def _distribution_name(module_data: dict) -> str | None:
-        """Return the module's published PEP 621 distribution name, or ``None``.
+        """Return the module's published distribution name, or ``None``.
 
         The name lives in ``metadata.name``, which the Python discoverer fills
-        from ``pyproject.toml``'s ``[project] name``. There is deliberately NO
-        fallback to the module's own ``name``: that field is directory-derived
-        when no descriptor names the project, and a directory that declares no
-        ``[project] name`` publishes no distribution, so nothing can depend on it
-        by name. Falling back would invent a join key the ecosystem never
-        publishes and could match an unrelated third-party package that happens
-        to share the directory's name — a fabricated edge, which is worse than
-        the missing one it would paper over.
+        from whichever descriptor form named the project — ``pyproject.toml``'s
+        PEP 621 ``[project] name``, its Poetry ``[tool.poetry] name``, or
+        ``setup.cfg``'s ``[metadata] name``. This method reads the field alone
+        and never re-opens a descriptor, so all three forms join identically.
+
+        There is deliberately NO fallback to the module's own ``name``: that
+        field is directory-derived when **no** descriptor names the project, and
+        a directory that names itself in none of the three publishes no
+        distribution, so nothing can depend on it by name. Falling back would
+        invent a join key the ecosystem never publishes and could match an
+        unrelated third-party package that happens to share the directory's
+        name — a fabricated edge, which is worse than the missing one it would
+        paper over.
         """
         name = (module_data.get('metadata') or {}).get('name')
         return name if isinstance(name, str) else None
@@ -330,11 +339,11 @@ class BuildExtension(BuildExtensionBase, DerivationResolverBase):
         derived_by_name: dict,
         enriched_by_name: dict,
     ) -> tuple[list[tuple[str, str]], list[str]]:
-        """Derive module edges by joining PEP 621 distribution names.
+        """Derive module edges by joining published distribution names.
 
         A Python project states its internal structure in distribution names:
-        each module publishes a ``[project] name`` and names its dependencies as
-        ``name:scope`` strings. An edge exists wherever one module's dependency
+        each module publishes a name — from PEP 621, Poetry or ``setup.cfg``,
+        indifferently — and names its dependencies as ``name:scope`` strings. An edge exists wherever one module's dependency
         name matches another module's published name, compared in PEP 503
         normalised form so the ``-``/``_``/``.``/case variants of one distribution
         resolve to the same module.

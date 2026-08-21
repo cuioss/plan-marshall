@@ -59,9 +59,9 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config langu
 
 `--disabled` on `set` keeps the binding on file but inactive — useful to turn the capability off without re-entering the command. The full schema is in the xref:../../marketplace/bundles/plan-marshall/skills/manage-run-config/standards/run-config-standard.md[run-configuration standard] § "Language-Servers Section".
 
-== The three states you can always tell apart
+== The states you can always tell apart
 
-The client never returns a bare empty result. Every response makes three situations distinguishable, so you can tell a *missing capability* from a *real answer*:
+The client never returns a bare empty result. Every response makes these situations distinguishable, so you can tell a *missing capability* from a *real answer* — and, for diagnostics, an *unmeasured* file from a clean one:
 
 [cols="1,3", options="header"]
 |===
@@ -75,19 +75,29 @@ The client never returns a bare empty result. Every response makes three situati
 
 | `ok`
 | A server ran. A result with `provider_count: 1` and an empty location list is then a *real* "found nothing" — genuinely no references, not a missing server.
+
+| `unknown`
+| Diagnostics only: a server ran but published *no verdict* for the file — it never pushes diagnostics, or the wait expired. The payload carries `answered: false` and `reason: diagnostics_unanswered`, and deliberately carries *no* `error_count` at all, because a zero there would be a clean signal nobody measured. Read it as "not checked", and verify by running the build.
 |===
 
 The `unreachable` state is why a broken configuration is a reported degradation rather than a silent one: you can tell "I never configured a server" from "the server I configured is broken", and act on each differently.
+
+NOTE: The `preflight` verb reports the *configuration* situations — `not_configured` and `unreachable` — but names the healthy one `ready`, configured *and* reachable, rather than `ok`. `ready` is a *precondition* check; `ok` is the outcome of a verb that actually ran. It never returns `unknown`, which is a statement about one file's diagnostics rather than about the server. Check `preflight` for `state: ready` before calling a run verb, and expect `ready` rather than `ok` in its answer.
 
 == The write side, and why it is safe
 
 A `WorkspaceEdit` touching twenty files is a mutation nothing read. The rename path is built so that an edit nobody read is at minimum an edit the parser re-checked:
 
 * the touched-file list is captured *from the edit*, never inferred from a later `git diff`;
-* the edit is applied, then diagnostics are re-run over exactly those files;
-* if the error count went *up*, the step *fails* and the change is *rolled back*.
+* the edit is applied, then diagnostics are re-run over exactly those files — each wait requiring a *newer* verdict than the one cached before the change, so the check cannot settle for the server's opinion of the pre-edit content;
+* if *any* file gained an error diagnostic, the step *fails* with `reason: diagnostics_worsened` — the one reason code that means your edit was wrong — and the whole change is *rolled back*. A per-file set rather than a footprint-wide count, because a count cannot see one error swapped for a different one, or an error moving between two files in the same edit: both net to zero;
+* an edit carrying a file create/rename/delete is *refused whole* rather than applied minus the part the client cannot perform, and a failure part-way through the apply restores every file already written — reporting `rolled_back: false` with a `restore_error` in the one case where the tree could not be put back, rather than letting a partly-edited tree read as clean. That field is derived by re-reading the files, not from whether the restore call raised, so a write the filesystem refused outright reports no `restore_error`: it damaged nothing.
 
 So a rename that lands is one the language server produced and the parser re-verified; a rename that would have broken the parse never survives in the tree.
+
+There is one more way the write side fails, and it does *not* mean your edit was wrong: if the server produced no verdict at all, the verb returns `reason: diagnostics_unavailable` rather than passing an unverified change. Read that as "not checked" and run the build — see the `unknown` row above.
+
+Your tree is unmodified either way, but by two different routes, and the payload's `phase` field says which. `phase: before` means the *baseline* verdict was missing, which is caught before the first byte is written — so `rolled_back` is `false` because there was nothing to roll back, *not* because a rollback failed. `phase: after` means the edit was applied and then restored, so `rolled_back` is `true`. For a server that answers only pull-style diagnostic requests, `phase: before` is what every rename returns.
 
 == Related
 

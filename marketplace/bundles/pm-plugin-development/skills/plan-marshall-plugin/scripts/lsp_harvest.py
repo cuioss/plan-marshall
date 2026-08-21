@@ -41,7 +41,7 @@ import shutil
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 DEP_TYPE_LSP = 'lsp'
@@ -62,15 +62,24 @@ than collapsing into a silent zero-edge success.
 """
 
 DEFAULT_TIMEOUT_S = 300.0
-"""Whole-harvest wall-clock budget, after which the harvest reports a timeout."""
+"""Whole-harvest wall-clock budget, checked BETWEEN files and between positions.
+
+⚠ It is a *stopping* condition, not a deadline: exceeding it ends the crawl and
+reports ``ran=True`` with a ``harvest-budget:`` note saying how many files were
+covered, never a timeout. And because it is only checked between calls, a single
+request that hangs runs past it — the bound on one call is the shared
+transport's own default, which this module does not set. Calling this an
+enforcement of total wall-clock would promise something the loop cannot do.
+"""
 
 DEFAULT_REQUEST_TIMEOUT_S = 15.0
 """Handshake budget, scaled to bound the ``initialize`` round trip.
 
-⚠ This does **not** bound the individual definition requests. The shared
-``LspSession`` exposes no per-call timeout, so those use the transport's own
-default; the whole-harvest ``timeout_s`` is what bounds them in aggregate. Naming
-this a per-request budget would promise an enforcement that does not exist.
+⚠ This does **not** bound the individual definition requests, and neither does
+anything else here. The shared ``LspSession`` exposes no per-call timeout, so
+those use the transport's own default; ``timeout_s`` cannot substitute, because
+it is tested between calls and so cannot interrupt one in flight. Naming either
+of them a per-request budget would promise an enforcement that does not exist.
 """
 
 INITIALIZE_BUDGET_FACTOR = 2.0
@@ -104,6 +113,57 @@ REASON_SERVER_ABSENT = 'server-absent: {binary} is not on PATH'
 REASON_SERVER_FAILED = 'server-failed-to-start: {binary} could not be launched ({detail})'
 REASON_SERVER_TIMEOUT = 'server-timeout: {binary} did not respond within {budget:.0f}s ({detail})'
 REASON_WORKSPACE_UNSUPPORTED = 'workspace-unsupported: no {language} sources found under the project root'
+REASON_SERVER_REJECTED = 'server-rejected: {binary} answered the handshake with an error ({detail})'
+REASON_REQUEST_FAILED = (
+    'request-failed: {binary} completed the handshake, then failed on a per-file request after '
+    '{elapsed:.0f}s of harvesting ({detail})'
+)
+# ⛔ A post-handshake failure states NO budget, because none was set for it. The
+# harvest passes a budget to `initialize` only; the per-file calls take the
+# shared transport's own default, which this module neither chooses nor knows.
+# Interpolating `initialize_budget` here — which this code did — reported the
+# handshake's number against a request that never waited on it, and sent an
+# operator to look at a budget that had nothing to do with the failure. Elapsed
+# harvest time is reported instead: it is a figure this module actually measured.
+
+
+# A server that answers `initialize` with a JSON-RPC error REFUSED the
+# workspace; it did not fail to respond. Reporting that as a timeout sends an
+# operator to look at budgets and load for a server that answered immediately —
+# an observed run reported "did not respond within 10s" after 5.03s.
+#
+# ⚠ The two are told apart by MESSAGE TEXT, which is fragile: the shared
+# transport raises one exception type for both, and this marker is the string it
+# uses for the wait-expiry case. A typed discriminator on the transport's error
+# is the better fix; it lives in the lsp-client bundle and is recorded as a
+# proposal rather than reached across for here.
+#
+# ⛔ The marker is consulted for the HANDSHAKE ONLY. A failure once
+# `handshake_done` is set reports `request-failed:` whether or not the marker is
+# present, because the budget the timeout reason quotes is the handshake's and a
+# per-file request never waited on it. So if this string changes, the damage is
+# bounded to the handshake's two outcomes: they collapse onto `server-rejected:`,
+# and every post-handshake failure is unaffected.
+_TIMEOUT_MESSAGE_MARKER = 'timed out waiting for response'
+
+VENDORED_TREE_DIRS = frozenset({
+    '.git', 'node_modules', 'target', '.venv', 'venv', '__pycache__', '.plan', '.pyprojectx', 'site-packages',
+})
+"""Path components marking a tree no crawl should descend into, or resolve INTO.
+
+One constant for both directions, deliberately. Applied only to the files the
+harvest QUERIES, a third-party target still reaches the lift, where it counts
+against ``unattributable-endpoint`` — a number an operator reads as "the
+attribution seam has gaps" when it actually means "the server resolved an import
+into site-packages". Worse, the count moves with which interpreter the server
+resolved against, so the same tree and the same code report different figures on
+different machines.
+
+``.pyprojectx`` and ``site-packages`` are here because a baseline over this
+repository found them reached as both source and target: the wrapper vendors a
+whole interpreter tree under ``.pyprojectx/`` that the source-side skip list did
+not name.
+"""
 
 
 @dataclass
@@ -207,15 +267,104 @@ def _candidate_files(project_root: Path, suffix: str, file_budget: int | None) -
     stated-but-wrong reason, which is worse than a silent one because it looks
     considered.
     """
-    skip = {'.git', 'node_modules', 'target', '.venv', 'venv', '__pycache__', '.plan'}
     found: list[Path] = []
     for path in sorted(project_root.rglob(f'*{suffix}')):
-        if skip.intersection(path.relative_to(project_root).parts):
+        if _in_vendored_tree(path, project_root):
             continue
         found.append(path)
         if file_budget is not None and len(found) >= file_budget:
             break
     return found
+
+
+def is_vendored_path(relative_path: str) -> bool:
+    """Report whether a repo-relative path lies inside a vendored tree.
+
+    The string form, for callers that already hold repo-relative paths (the
+    lift). :func:`_in_vendored_tree` is the ``Path`` form for callers that hold
+    absolute ones (the harvest).
+    """
+    return bool(VENDORED_TREE_DIRS.intersection(PurePosixPath(relative_path).parts))
+
+
+def _in_vendored_tree(path: Path, root: Path) -> bool:
+    """Report whether ``path`` lies inside a vendored tree under ``root``.
+
+    Matched against the path RELATIVE to the workspace root — see
+    :func:`_candidate_files` for why an absolute match would let a component of
+    the root's own location veto the whole workspace.
+    """
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        return False
+    return is_vendored_path(relative.as_posix())
+
+
+def bare_import_roots(files: Iterable[Path], root: Path) -> list[str]:
+    """Derive the directories a bare ``import x`` can be satisfied from.
+
+    A language server rooted at the project root resolves an import the way the
+    interpreter would from that root — and that is not how this kind of project
+    runs. Scripts that import each other by bare name are satisfied at runtime by
+    a launcher that puts their own directory on ``sys.path``, so a server given
+    only the root resolves **none** of them and the harvest derives no
+    cross-component edge at all.
+
+    The derivation is structural rather than layout-specific: a directory holding
+    Python files but **no** ``__init__.py`` is not a *regular* package, so an
+    import of one of its files by bare module name can only resolve with that
+    directory itself on the search path. That is exactly the set a launcher
+    synthesizes, and it is computed from the tree rather than from any knowledge
+    of this repository's shape.
+
+    ⚠ ``__init__.py`` is a **convention** discriminator here, not a semantic one,
+    and the honest statement is narrower than "is not a package". Under PEP 420 a
+    directory without ``__init__.py`` is an implicit namespace-package portion,
+    and its modules ARE importable as ``{dir}.{module}`` with the *parent* on the
+    path — exactly as a regular package's are. What separates the two is how each
+    is conventionally imported: a package's modules by their dotted path, a
+    loose ``scripts/`` directory's by bare name. Only the bare form needs the
+    directory itself on the search path, so ``__init__.py``'s absence is the
+    signal that bare imports are what this directory's files use.
+
+    The consequence to keep in view: a directory whose modules really are
+    imported dotted, and which happens to lack ``__init__.py``, contributes a
+    search path nothing needs. That is inert — an unused ``extraPaths`` entry
+    resolves nothing — but it is why the ambiguity guard below matters, since a
+    wider path is what makes two same-named modules reachable at once.
+
+    Args:
+        files: The candidate files the harvest will query.
+        root: Workspace root; results are returned as absolute paths under it.
+
+    Returns:
+        Sorted absolute directory paths, for ``python.analysis.extraPaths``.
+    """
+    roots: set[Path] = set()
+    for path in files:
+        parent = path.parent
+        if not (parent / '__init__.py').exists():
+            roots.add(parent)
+    return sorted(str(directory) for directory in roots if _within(directory, root))
+
+
+def ambiguous_module_names(search_paths: Iterable[str], suffix: str = '.py') -> set[str]:
+    """Return module names that more than one search path could supply.
+
+    A widened search path is what makes the harvest resolve anything at all, and
+    it is also what makes it capable of resolving a name to the **wrong**
+    component's same-named module — a confidently-labelled wrong edge, which this
+    substrate holds to be worse than a missing one. Where two search paths offer
+    the same module name, no search-path order is more correct than another, so
+    the reference is dropped and counted rather than attributed to whichever
+    directory happened to sort first.
+    """
+    seen: dict[str, int] = {}
+    for directory in search_paths:
+        for path in Path(directory).glob(f'*{suffix}'):
+            seen[path.stem] = seen.get(path.stem, 0) + 1
+    return {name for name, count in seen.items() if count > 1}
 
 
 def harvest_workspace(
@@ -240,8 +389,10 @@ def harvest_workspace(
         server_cmd: Language-server argv, from the shared binding.
         language_id: LSP ``languageId`` for opened documents.
         suffix: File suffix selecting workspace sources.
-        timeout_s: Whole-harvest wall-clock budget, and the only bound on the
-            definition requests in aggregate.
+        timeout_s: Whole-harvest stopping condition, tested BETWEEN calls.
+            Exceeding it truncates the crawl and reports ``ran=True`` with a
+            ``harvest-budget:`` note — never a timeout — and it cannot interrupt
+            a request already in flight.
         request_timeout_s: Handshake budget, scaled by
             :data:`INITIALIZE_BUDGET_FACTOR`. It does NOT bound individual
             definition calls — the shared session exposes no per-call timeout.
@@ -268,19 +419,30 @@ def harvest_workspace(
     if not files:
         return HarvestOutcome(ran=False, reason=REASON_WORKSPACE_UNSUPPORTED.format(language=language_id))
 
+    # Hand the server the module search path a bare import actually resolves
+    # against; without it nothing cross-component resolves and the harvest
+    # reports a measured zero. Ambiguous names are computed from the same set so
+    # a widened path cannot buy edges by guessing which directory a name meant.
+    search_paths = bare_import_roots(files, root)
+    ambiguous = ambiguous_module_names(search_paths, suffix)
+    analysis_config = client.analysis_config_with_extra_paths(search_paths)
+
     try:
-        transport = client.StdioTransport(server_cmd, str(root))
+        transport = client.StdioTransport(server_cmd, str(root), analysis_config=analysis_config)
     except OSError as exc:
         return HarvestOutcome(ran=False, reason=REASON_SERVER_FAILED.format(binary=binary, detail=exc))
 
     deadline = started + timeout_s
-    session = client.LspSession(transport, str(root))
+    session = client.LspSession(transport, str(root), analysis_config=analysis_config)
     references: set[tuple[str, str]] = set()
     notes: list[str] = []
     scanned = 0
     external = 0
+    vendored = 0
+    ambiguous_hits = 0
     unresolved = 0
     truncated = False
+    handshake_done = False
     # Bind the handshake budget once so the failure reason can report the budget
     # that was ACTUALLY waited on. Interpolating the whole-harvest timeout here
     # would state a number no code used.
@@ -288,6 +450,7 @@ def harvest_workspace(
 
     try:
         session.initialize(timeout=initialize_budget)
+        handshake_done = True
 
         for path in files:
             if time.monotonic() >= deadline:
@@ -322,17 +485,39 @@ def harvest_workspace(
                     if not _within(target, root):
                         external += 1
                         continue
+                    if _in_vendored_tree(target, root):
+                        # Counted apart from `out-of-workspace`: both are "no
+                        # module owns this", but one is the standard library and
+                        # the other is a dependency tree checked out INSIDE the
+                        # project. Collapsing them hides that the second figure
+                        # moves with the interpreter the server resolved against.
+                        vendored += 1
+                        continue
+                    if target.stem in ambiguous:
+                        ambiguous_hits += 1
+                        continue
                     references.add((_rel(path, root), _rel(target, root)))
 
     except client.LspError as exc:
-        # The shared transport reports a wedged server, a dead server, and a
-        # protocol error alike as LspError — it returns on EOF without waking its
-        # waiters, so a server that died on launch is indistinguishable here from
-        # one that is merely slow. None of them may escape into the crawl, and
-        # none may read as a successful empty harvest.
+        # The shared transport reports a wedged server, a dead server, a refusal
+        # and a protocol error alike as LspError. None of them may escape into
+        # the crawl, and none may read as a successful empty harvest — but they
+        # are not one failure either, so the handshake's two outcomes are split.
+        # Three outcomes, not two: the handshake can be REFUSED or can TIME OUT,
+        # and a request after a completed handshake is neither. Only the
+        # handshake's two may cite `initialize_budget` — it is the only budget
+        # this module set.
+        if handshake_done:
+            reason = REASON_REQUEST_FAILED.format(
+                binary=binary, elapsed=time.monotonic() - started, detail=exc,
+            )
+        elif _TIMEOUT_MESSAGE_MARKER not in str(exc):
+            reason = REASON_SERVER_REJECTED.format(binary=binary, detail=exc)
+        else:
+            reason = REASON_SERVER_TIMEOUT.format(binary=binary, budget=initialize_budget, detail=exc)
         return HarvestOutcome(
             ran=False,
-            reason=REASON_SERVER_TIMEOUT.format(binary=binary, budget=initialize_budget, detail=exc),
+            reason=reason,
             files_scanned=scanned,
             elapsed_s=time.monotonic() - started,
         )
@@ -353,6 +538,16 @@ def harvest_workspace(
         )
     if external:
         notes.append(f'out-of-workspace: {external} reference(s) resolved outside the project root and own no module')
+    if vendored:
+        notes.append(
+            f'vendor-tree: {vendored} reference(s) resolved into a vendored or third-party tree inside the '
+            f'project root ({", ".join(sorted(VENDORED_TREE_DIRS))}) and own no module'
+        )
+    if ambiguous_hits:
+        notes.append(
+            f'ambiguous-module-name: {ambiguous_hits} reference(s) resolved to a module name more than one '
+            f'search path supplies, so no search-path order makes the attribution correct'
+        )
     if unresolved:
         notes.append(f'unresolved-symbol: {unresolved} position(s) the server could not resolve to a definition')
 
@@ -413,20 +608,42 @@ def lift_to_modules(
 ) -> tuple[list[tuple[str, str]], list[str]]:
     """Lift file-granular references to module-granular pairs.
 
-    Symbol references are file-granular; edges are module-granular. The lift goes
-    through the path-attribution seam — the ``attribute`` callable is that seam's
-    ``path -> owning module`` answer — because a resolver may not invent an owner
-    for a path.
+    Symbol references are file-granular; edges are module-granular. The
+    ``attribute`` callable is a **caller-supplied** ``path -> owning module``
+    lookup — in the shipped path, the discovery-derived longest-prefix table
+    :func:`make_prefix_attributor` builds from the module set
+    (:func:`build_lsp_component_refs` supplies it). It is **not** the Axis-D
+    path-attribution seam, and this is a substitution rather than a shortcut:
+    no attributor on that seam claims a ``marketplace/bundles/**`` path at all —
+    the live claim set is ``.claude``, ``.plan`` and three documentation paths
+    (``doc``, ``README.md``, ``CONTRIBUTING.md``) — so
+    ``lookup_claim('marketplace/bundles/…/scripts/y.py', …)`` returns ``None``
+    and routing through it would guarantee zero edges.
 
-    An endpoint the seam cannot attribute produces **no edge and a note**, never a
-    guessed module. That is the rule the whole substrate turns on: a
-    confidently-labelled wrong edge is worse than a missing one, and this function
-    is capable of producing them at volume.
+    Two obligations the Axis-D seam carries do **not** come with the substitute,
+    and a caller must not assume them:
+
+    * **Ambiguous ownership.** The prefix table's stable sort resolves an
+      equal-length tie by iteration order, which
+      ``ext-point-path-attribution.md`` explicitly forbids. Not reachable today,
+      because bundle directory names are unique.
+    * **Vendored-tree exclusion.** The table attributes whatever it is asked
+      about — including a site-packages path, which a root-scoped module would
+      then own. So this function performs that exclusion **itself**, before
+      consulting the table (see the ``vendor-tree`` suppression below);
+      :func:`harvest_workspace` also drops such targets upstream, and the
+      redundancy is deliberate — this function is public and its contract must
+      hold for a caller that did not filter.
+
+    An endpoint the lookup cannot attribute produces **no edge and a note**,
+    never a guessed module. That is the rule the whole substrate turns on: a
+    confidently-labelled wrong edge is worse than a missing one, and this
+    function is capable of producing them at volume.
 
     Args:
         file_references: ``(from_file, to_file)`` repo-relative pairs.
-        attribute: Path-attribution seam lookup; returns ``None`` when no
-            attributor claims the path.
+        attribute: Caller-supplied path-to-module lookup; returns ``None`` when
+            nothing claims the path.
         known_modules: The discovered module set. An attributed name outside it is
             dropped, since a resolver cannot invent a node.
 
@@ -437,12 +654,26 @@ def lift_to_modules(
     known = set(known_modules)
     edges: set[tuple[str, str]] = set()
     suppressed: dict[str, list[str]] = {
+        'vendor-tree': [],
         'unattributable-endpoint': [],
         'unknown-endpoint': [],
         'self-edge': [],
     }
 
     for from_file, to_file in file_references:
+        # Refused HERE as well as at the harvest, and the redundancy is the
+        # point: a root-scoped module (``paths.module`` of ``.``, a value the
+        # Python discoverer really emits) owns whatever nothing else claims, so
+        # the attributor below would hand a site-packages file a real module name
+        # and this function would emit a confidently wrong edge with no note.
+        # The harvest never passes one in, but this function is public and its
+        # contract must hold for any caller, not only for the one that filters
+        # upstream.
+        vendored = [path for path in (from_file, to_file) if is_vendored_path(path)]
+        if vendored:
+            suppressed['vendor-tree'].append(f'{from_file} -> {to_file} ({vendored[0]} is in a vendored tree)')
+            continue
+
         from_module = attribute(from_file)
         to_module = attribute(to_file)
 

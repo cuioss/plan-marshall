@@ -1,0 +1,16 @@
+# A Poetry-managed monorepo root. Every name and dependency lives under
+# [tool.poetry]; there is deliberately NO [project] table anywhere in this
+# fixture, so a reader that only knows PEP 621 derives nothing at all from it
+# while still reporting the modules as discovered.
+[tool.poetry]
+name = "poetry-platform"
+version = "1.0.0"
+description = "Fixture root aggregating the Poetry-managed distributions."
+
+[tool.poetry.dependencies]
+python = "^3.11"
+poetry-core-lib = "^1.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

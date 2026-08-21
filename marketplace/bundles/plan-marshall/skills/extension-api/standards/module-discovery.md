@@ -297,7 +297,7 @@ Technology-native format without prefixes:
 
 - Maven: `groupId:artifactId:scope` (e.g., `org.projectlombok:lombok:compile`)
 - Gradle: `groupId:artifactId:compile`, plus `project:{name}:compile` for an inter-project dependency
-- Python: `name:scope` where scope is `runtime` (from `[project] dependencies`) or `dev` (from `[project.optional-dependencies].dev`) — e.g., `typing-extensions:runtime`, `pytest:dev`
+- Python: `name:scope` where scope is `runtime` or `dev`, read from whichever descriptor form the module uses — PEP 621 (`[project] dependencies` / `[project.optional-dependencies].dev`), Poetry (`[tool.poetry.dependencies]` / `[tool.poetry.group.dev.dependencies]`, with the `python` interpreter constraint skipped), or `setup.cfg` (`[options] install_requires`, runtime only) — e.g., `typing-extensions:runtime`, `pytest:dev`. `name` is the PEP 508 distribution name with any extras, version specifier, environment marker, or direct-reference URL stripped
 - npm: `name:scope` where scope is `runtime` (from `dependencies`) or `dev` (from `devDependencies`) — e.g., `lit:runtime`, `@testing-library/dom:dev`
 
 The first colon-separated segment is the identity a derivation resolver joins on: the `groupId` for the coordinate ecosystems (matched together with the `artifactId`), and the whole distribution/package name for Python and npm. See [ext-point-derivation-resolver.md](ext-point-derivation-resolver.md) § Current implementations.

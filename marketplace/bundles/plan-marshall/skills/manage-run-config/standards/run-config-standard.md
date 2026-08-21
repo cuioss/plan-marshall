@@ -340,9 +340,9 @@ returns, and the value that appears in an edge's `producers[]`.
 
 | Subcommand | Purpose |
 |------------|---------|
-| `derivation-resolver get --resolver <id>` | Read the effective state (`configured` reports whether an entry exists; `enabled` reports the effective answer) |
+| `derivation-resolver get --resolver <id>` | Read the effective state (`configured` reports whether a **well-formed (dict) entry** exists — a non-dict entry counts as unconfigured, the same definition the `list` verb and `extension-api`'s resolver roster apply, so the **three** readers of this store cannot disagree; `enabled` reports the effective answer, and fails **open** on a malformed entry — which includes a malformed *value*: **only the literal JSON `false` disables**, so `0`, `""`, `null` and `[]` in the `enabled` field all read as active rather than silently turning a typo into a resolver nobody runs) |
 | `derivation-resolver set --resolver <id> (--enabled \| --disabled)` | Persist the binding (exactly one of the two flags) |
-| `derivation-resolver list` | List the configured entries — an empty list means every discovered resolver is active |
+| `derivation-resolver list` | List **every** entry the store holds, keyed on presence, each carrying `id`, `enabled` and `configured`. A malformed entry is listed (so an operator sees their own typo) and reads `configured: false` (so this reader agrees with the other two). An empty list means every discovered resolver is active |
 | `derivation-resolver remove --resolver <id>` | Drop the entry, returning the resolver to default-active |
 
 ```bash

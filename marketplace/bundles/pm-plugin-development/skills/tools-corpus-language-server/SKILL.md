@@ -41,11 +41,38 @@ Building the index costs about **1.9 s**, and that cost is paid **per process**.
 A warm index then answers cheaply — though not uniformly, so it is worth stating precisely: `definition` and `hover` answer in microseconds. `references` pays a one-off directory walk the first time a citing component is seen (up to ~20 ms on the most-referenced component measured, 443 inbound edges) and answers in under 5 ms thereafter, because that walk is cached for the life of the server. A surface that forks a process
 per request is therefore a ~2 s-per-request surface no matter which protocol it
 speaks, and a resident server is the only shape in which this substrate is
-interactive at all — it pays the build once at `initialize`.
+interactive at all — it pays the build **once per process**, on the first request
+that actually needs the index. Not at `initialize`: the index is a lazy property,
+so the handshake itself builds nothing and the cost lands on the first
+`definition` / `references` / `hover`.
 
 This is the measured reason the surface is a server rather than a one-shot verb.
 The `query` verb exists for scripted and one-shot use and *does* pay the full
 build each time; it is a convenience, not the interactive path.
+
+### The staleness bound residency buys
+
+⚠ **Answers may be stale after an edit.** Paying the index build once is exactly
+what makes the index a *snapshot*: it is built at the first request and **never
+rebuilt or invalidated** for the life of the process. `textDocument/didOpen`,
+`didChange` and `didClose` update the synced document text — which is what
+position resolution reads — and touch nothing else. So for the whole session:
+
+- a component **added** after the server started is invisible;
+- a component **removed** after the server started is still answered for;
+- an edge added or removed by an edit is not reflected;
+- a reference site's line/file caches keep their first-read contents, so a site
+  that moved still resolves to where it was.
+
+**Restart the server to pick up corpus changes.** The `query` verb is unaffected
+— it builds a fresh index every call, which is the trade it makes for paying the
+full build each time.
+
+This bounds "re-read before it is reported" below: the re-read happens against
+the *cached* line contents, once per file per process, not against the file as it
+stands at the moment of the request. An invalidate-and-debounce design is
+recorded as a proposal rather than implemented, because a rebuild costs a full
+index build and choosing a debounce policy is a design decision.
 
 ## Opt-in, and where it is enforced
 
@@ -112,23 +139,56 @@ then its sub-documents, for a line that actually carries the target.
 edges are written as `bundle:skill[:script]` in the citing line — a `path` edge appears as a
 relative path, an `import` edge as a bare module name. Matching on the notation alone would mark
 every `path` and `import` edge unverified regardless of whether its site was correct, so a site is
-confirmed when its line carries **either** the full notation **or** the target's discriminating
-final segment (the script name for a three-part notation, the skill name for a two-part one).
+confirmed when its line carries **either** the full notation **or** the target's final segment (the
+script name for a three-part notation, the skill name for a two-part one). ⚠ That tail is **not**
+generally discriminating — measured on this corpus, 18 tails are shared by more than one component
+(`extension` by four, `plan-marshall-plugin` by eleven) — so a tail-only match confirms that the
+cited line mentions *a* component of that name, not necessarily this one. That is why the ranking
+below exists rather than a bare match.
+
+Candidates are **ranked**, not taken first-come: a line carrying the full
+notation outranks one carrying only the tail segment, because the tail alone is
+an ordinary word a sibling document can contain at the same line number by
+coincidence. Where two candidates match at the same rank the tie is **not**
+broken — no file ordering makes one of them more correct — so the site is
+reported against the owner and flagged unverified.
 
 | `verified` | Meaning |
 |---|---|
-| `true` | The cited line was re-read and carries the target — an exact location. |
-| `false` | The site could not be confirmed (a non-positional frontmatter edge, or a line that no longer matches). Reported against the owner's file, and **never presented as exact**. |
+| `true` | The cited line was re-read and carries the target, in exactly one candidate file — an exact location. |
+| `false` | The site could not be confirmed: a non-positional frontmatter edge, a line that no longer matches, or **two candidates matching equally well**. Reported against the owner's file, and **never presented as exact**. |
+
+⛔ **`textDocument/references` omits unverified sites entirely.** LSP has no
+weaker form than `Location`, so emitting one would present an unconfirmed site as
+an exact position — the thing the row above says never happens. Omission alone
+would trade one false signal for another, so the withheld count travels with the
+answer: on each returned `Location` as `omittedUnverifiedCount`, and as a
+`window/logMessage` notification, which is the only channel left when every site
+was withheld and the list is empty.
+
+The `query` verb is **not** filtered. It emits every site with its `verified`
+flag, and is the surface on which an unconfirmed site is legible as unconfirmed.
 
 ## Diagnostics are deliberately absent
 
 ⛔ No diagnostic provider is advertised. Live broken-reference diagnostics are
-deliverable D3 of the `240-skill-lsp-server` plan, **hard-gated** on the
-validator-precision work: the validator's current unresolved set is
-overwhelmingly false positives (documentation placeholders, foreign namespaces
-such as build-command and Maven coordinates, and verb-suffixed notations whose
-skill exists). Advertising a diagnostic provider before that precision work lands
-would ship confident-wrong squiggles at the corpus's most visible surface.
+deliverable D3 of the `240-skill-lsp-server` plan, deferred because advertising a
+diagnostic provider binds this surface permanently to the validator's precision,
+and the validator's unresolved set is not all real: some entries are
+documentation placeholders, foreign namespaces such as build-command and Maven
+coordinates, or verb-suffixed notations whose skill exists.
+
+⚠ **The figures that deferral was argued on no longer hold, and the gate has
+not been re-decided.** It rested on an unresolved set that was overwhelmingly
+false positives — roughly 380 of about 5,300, near 97 %. Re-measured: **61 of
+5,083** dependencies over 308 components, of which about **43 %** are
+non-notations and **57 %** are well-formed notations whose target does not
+exist. That reverses the ratio. Whether it is now grounds to advertise
+diagnostics is an **open question, recorded rather than settled** — see the
+proposal in `doc/plans/code-intelligence-substrate/500-lsp-and-derivation-resolver-correctness/proposals.md`
+§ P6, which states the argument on both sides and the criterion that would
+settle it. ⛔ Re-derive the figures before acting on them; they move with every
+commit.
 
 ## How `serve` is launched
 
@@ -207,8 +267,17 @@ trade-off is real and is stated rather than hidden — without the declaration t
 automatic consumer, and the `query` verb below is the reachable path until an operator wires one.
 
 Two details in the block are load-bearing. `--project-path ${CLAUDE_PROJECT_DIR}` pins the workspace
-explicitly: without it the server resolves its project from the client's working directory, and a cwd
-outside the project yields empty capabilities that are indistinguishable from a deliberate opt-out.
+explicitly, and an explicit value always **wins** over anything the client declares — so the block's
+behaviour does not depend on what your editor sends.
+
+⭐ **Omitting the flag is no longer silent.** When `--project-path` is *not* passed, the `initialize`
+handler adopts the workspace root the client declares — `rootUri`, then the deprecated `rootPath`,
+then the first entry of `workspaceFolders` — and rebuilds config and corpus resolution from it before
+advertising capabilities. Previously the root came only from the CLI, defaulting to whatever directory
+the client happened to launch the server in, so a cwd outside the project yielded empty capabilities
+indistinguishable from a deliberate opt-out. A client that declares no root at all still falls back to
+the launch directory, which is why the flag remains the recommendation rather than an optional extra.
+
 `diagnostics: false` is set rather than left to the default (`true`), because the server advertises no
 diagnostic provider while D3 is gated.
 

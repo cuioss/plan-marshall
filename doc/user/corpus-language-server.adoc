@@ -175,19 +175,84 @@ Every answer says which of those two happened, so a blank result is never ambigu
 
 So an empty result means *the index found no reference*, not *the corpus contains none*. Every references answer carries that bound in its payload rather than leaving you to assume completeness.
 
+[[unverified]]
 === References are checked before they are offered
 
 When a reference is cited inside a skill's sub-document, the index records it against the *owning skill* — whose own file is `SKILL.md` — while the line number belongs to the sub-document. Following that pairing naively lands you on that line number in `SKILL.md`: usually a blank line, in the wrong file.
 
-So every site is re-read before it is reported. A site whose line genuinely refers to the target is marked `verified`; one that cannot be confirmed is still shown, but never presented as an exact location.
+So every site is re-read before it is reported — once per file, against the contents the server cached when it first read that file, not against the file as it stands at the moment you ask (see <<staleness>>). A site whose line genuinely refers to the target is marked `verified`.
 
-What counts as referring to the target is not the notation alone, because not every reference is written as one — a relative-path reference appears as a path and an import as a bare module name. A line qualifies when it carries the full notation *or* the target's final segment, which is the form every kind of reference has in common.
+What counts as referring to the target is not the notation alone, because not every reference is written as one — a relative-path reference appears as a path and an import as a bare module name. A line qualifies when it carries the full notation *or* the target's final segment, which is the form every kind of reference has in common. A line carrying the full notation wins over one carrying only the final segment, since that segment is an ordinary word another document can happen to contain at the same line number. Where two files match equally well, neither is picked: the site is reported against the owning skill and left unconfirmed, because no file ordering makes one of them the right answer.
+
+*In your editor, unconfirmed sites are not shown at all.* Go-to-references has no way to say "roughly here" — every result it returns is an exact position — so showing one would present a guess as a fact. The count of what was withheld comes back with the answer — on each returned location, and as an LSP log message. ⚠ Neither is reliably visible in an editor: with every site withheld there are no locations left to carry the count, and many clients hide log messages by default. So an empty editor result is *not* self-explaining — see <<empty-references>>. To see the withheld sites *as* unconfirmed, ask for them directly:
+
+[source,bash]
+----
+python3 .plan/execute-script.py pm-plugin-development:tools-corpus-language-server:corpus_lsp query \
+  --kind references --notation bundle:skill
+----
+
+That verb lists every site with its `verified` flag.
+
+[[empty-references]]
+=== If find-references comes back empty
+
+An empty result in your editor has five possible causes, and *the editor cannot tell you which* — an off server advertises no capabilities, the completeness note rides in a payload field no editor renders, and the withheld-site count arrives as an LSP log message many clients hide by default.
+
+So do not read an empty editor result as "nothing references this". Step out of the editor and ask directly:
+
+[source,bash]
+----
+python3 .plan/execute-script.py pm-plugin-development:tools-corpus-language-server:corpus_lsp preflight
+python3 .plan/execute-script.py pm-plugin-development:tools-corpus-language-server:corpus_lsp query \
+  --kind references --notation bundle:skill
+----
+
+`preflight` separates the first cause from the rest; `query` separates three of the remaining four — the real zero, the withheld sites, and a stale index — because it is unfiltered, builds a fresh index every call, and shows every site with its `verified` flag. The fourth, a reference no detector recognises, is *not* separately signalled by anything: `query`'s `completeness_note` states that bound rather than resolving it.
+
+[cols="1,3", options="header"]
+|===
+| Cause | How you tell
+
+| The server is off, or `corpus_path` does not exist
+| `preflight` reports `not_configured`. Invisible in the editor — no capabilities are advertised, so your client simply never asks.
+
+| The index genuinely found no inbound edge
+| `query` reports `state: ok` with an empty `references[]` and a `reference_count` of 0. This is the real zero.
+
+| The reference exists but no detector recognises its form
+| Not separately signalled. `query`'s `completeness_note` states the bound: an empty result means *the index* found none, never that the corpus contains none.
+
+| Every site was withheld as unverified
+| `query` shows them, with `verified: false`. In the editor the only signal is a `window/logMessage` carrying the withheld count — see <<unverified>>.
+
+| Your edit is newer than the server's index
+| Not signalled at all. Restart the server, or use `query`, which is always current — see <<staleness>>.
+|===
+
+[[staleness]]
+=== Answers may be stale after an edit
+
+The server builds its index once, when the first *lookup* arrives — not during the handshake, which builds nothing — and *does not rebuild it* while it runs. That is the same decision that makes it fast: the ~2 second build is paid once instead of per request. The cost is that everything it tells you describes the corpus *as it was when the server started*.
+
+For the life of the session, that means:
+
+* a skill or script you *add* is invisible to it;
+* one you *delete* is still answered for;
+* a reference you add or remove is not reflected;
+* a reference that moved to a different line still resolves to the old one.
+
+*Restart the language server to pick up corpus changes.* If you would rather not, the `query` verb builds a fresh index on every call and is always current — it simply pays the full build each time.
 
 == What it deliberately does not do
 
 *It does not flag broken references.* Live diagnostics — red squiggles on a reference that does not resolve — are not part of this surface, and no diagnostic capability is advertised.
 
-The reason is precision. The underlying validator reports roughly 380 unresolved references across a corpus of about 5,300, and close to 97% of them are not broken references at all: documentation placeholders like `bundle:skill:script`, build-command names like `default:verify:compile`, Maven coordinates, and notations whose third segment is a subcommand rather than a script. Turning that into editor diagnostics would put hundreds of confident, wrong warnings in front of you. It waits until the validator can tell those apart.
+The reason is precision. Not every unresolved reference the underlying validator reports is a broken reference: some are documentation placeholders like `bundle:skill:script`, build-command names like `default:verify:compile`, Maven coordinates, or notations whose third segment is a subcommand rather than a script. Turning those into editor diagnostics would put confident, wrong warnings in front of you.
+
+The deferral was argued on figures that no longer hold — roughly 380 unresolved across about 5,300, with close to 97% of them not broken references. Re-measured: *61* unresolved across *5,083* dependencies over 308 components, of which about *43%* are non-notations and about *57%* are well-formed notations whose target genuinely does not exist. The ratio has reversed, and the absolute count has fallen by roughly a factor of six. Whether that is now grounds to turn diagnostics on is an open question rather than a settled one, and it is recorded as such rather than decided here.
+
+⛔ These figures move with every commit and were measured once. Re-derive them before acting on them: `resolve-dependencies validate --scope marketplace`.
 
 == Related
 

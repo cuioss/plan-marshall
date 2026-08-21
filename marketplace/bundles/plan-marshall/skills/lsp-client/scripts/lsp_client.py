@@ -40,13 +40,17 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from _lsp_jsonrpc import LspError, LspSession, StdioTransport
+from _lsp_jsonrpc import LspError, LspSession, StdioTransport, default_analysis_config
 from _lsp_workspace_edit import (
+    WorkspaceApplyError,
     apply_workspace_edit,
     capture_footprint,
     count_error_diagnostics,
+    diagnostic_delta,
     edit_verdict,
+    normalize_changes,
     restore_files,
+    uri_to_path,
 )
 from file_ops import output_toon, safe_main
 from run_config import get_run_config_path, read_run_config
@@ -56,6 +60,15 @@ STATE_NOT_CONFIGURED = 'not_configured'  # no server configured/enabled for the 
 STATE_UNREACHABLE = 'unreachable'  # configured, but the server did not start/initialise
 STATE_OK = 'ok'  # a run verb's server ran (an empty result is then a real answer)
 STATE_READY = 'ready'  # preflight only: configured AND reachable (the precondition for STATE_OK)
+STATE_UNKNOWN = 'unknown'  # the server ran but published no verdict for the file — not "clean"
+
+# Failure reasons the write path returns. Each names a distinct cause, so a leaf
+# reading only the reason can tell "the edit was wrong" from "we could not check".
+REASON_DIAGNOSTICS_WORSENED = 'diagnostics_worsened'  # the parser found NEW errors — the edit was wrong
+REASON_DIAGNOSTICS_UNAVAILABLE = 'diagnostics_unavailable'  # no verdict was obtainable — verify by build
+REASON_UNSUPPORTED_RESOURCE_OPERATION = 'unsupported_resource_operation'  # create/rename/delete file
+REASON_APPLY_FAILED = 'apply_failed'  # a file failed mid-apply; the change was rolled back
+REASON_DIAGNOSTICS_UNANSWERED = 'diagnostics_unanswered'  # diagnose: the server published no verdict
 
 # The D3 boundary, carried in every diagnose payload so a consumer cannot read
 # the signal as a gate replacement even when it reads only the machine output.
@@ -101,6 +114,33 @@ def resolve_language_server(language: str) -> dict[str, Any] | None:
     return select_language_server(read_run_config(get_run_config_path()), language)
 
 
+def analysis_config_with_extra_paths(extra_paths: list[str]) -> dict[str, Any]:
+    """This client's analysis settings, plus a module search path for bare imports.
+
+    A server rooted at the project root resolves an import the way the
+    interpreter would from that root. Where a project's own scripts import each
+    other by bare name — satisfied at runtime by a launcher that puts their
+    directory on ``sys.path`` — that is the wrong root and **nothing** resolves.
+    ``extraPaths`` hands the server the same search path.
+
+    Deriving *which* paths is the caller's job, since it depends on how that
+    project is laid out and launched; assembling them into the settings this
+    client speaks is this module's.
+
+    Args:
+        extra_paths: Absolute directories to add to the server's search path.
+
+    Returns:
+        A config accepted by :class:`StdioTransport` and :class:`LspSession` as
+        ``analysis_config``. Pass it to **both**: a server may read its settings
+        from the handshake, from a ``workspace/configuration`` pull, or from
+        both, and the two must not disagree.
+    """
+    config = default_analysis_config()
+    config['extraPaths'] = list(extra_paths)
+    return config
+
+
 # =============================================================================
 # Payload helpers
 # =============================================================================
@@ -121,8 +161,6 @@ def _degraded(state: str, language: str, **extra: Any) -> dict[str, Any]:
 
 def _location_rows(locations: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Flatten LSP Location / SymbolInformation objects into coordinate rows."""
-    from _lsp_workspace_edit import uri_to_path
-
     rows: list[dict[str, Any]] = []
     for item in locations:
         location = item.get('location') if 'location' in item else item
@@ -144,21 +182,50 @@ def _location_rows(locations: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
-def _symbol_rows(symbols: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Flatten documentSymbol / workspace symbol results into coordinate rows."""
+def _symbol_rows(symbols: list[dict[str, Any]], default_path: str = '') -> list[dict[str, Any]]:
+    """Flatten documentSymbol / workspace symbol results into coordinate rows.
+
+    Every row carries ``path``. Without it a ``workspace-symbol`` row — the only
+    lookup kind that spans files — gives a line number and no file, which is
+    exactly the ``Grep``/``Read`` round-trip this capability exists to remove.
+    ``SymbolInformation`` rows take it from the server's ``location.uri``;
+    hierarchical ``DocumentSymbol`` rows have no ``location``, so the caller
+    passes the queried file as ``default_path`` and both kinds emit one key set.
+
+    The walk is depth-first through ``children``, so a class's methods appear
+    rather than only the top level the client's
+    ``hierarchicalDocumentSymbolSupport`` asked the server to send. Each row
+    records its ``container`` (the enclosing symbol's name, or the server's
+    ``containerName`` for a flat result) and its ``depth``.
+    """
     rows: list[dict[str, Any]] = []
-    for symbol in symbols:
-        rng = symbol.get('selectionRange') or symbol.get('range') or {}
-        location = symbol.get('location')
-        if isinstance(location, dict):
-            rng = location.get('range') or rng
-        start = rng.get('start') or {}
-        rows.append({
-            'name': symbol.get('name', ''),
-            'kind': symbol.get('kind', 0),
-            'line': start.get('line', 0),
-            'character': start.get('character', 0),
-        })
+
+    def _walk(items: list[dict[str, Any]], container: str, depth: int) -> None:
+        for symbol in items:
+            if not isinstance(symbol, dict):
+                continue
+            rng = symbol.get('selectionRange') or symbol.get('range') or {}
+            path = default_path
+            location = symbol.get('location')
+            if isinstance(location, dict):
+                rng = location.get('range') or rng
+                path = uri_to_path(location.get('uri', '')) or default_path
+            start = rng.get('start') or {}
+            name = symbol.get('name', '')
+            rows.append({
+                'name': name,
+                'kind': symbol.get('kind', 0),
+                'path': path,
+                'line': start.get('line', 0),
+                'character': start.get('character', 0),
+                'container': container or symbol.get('containerName', '') or '',
+                'depth': depth,
+            })
+            children = symbol.get('children')
+            if isinstance(children, list):
+                _walk(children, name, depth + 1)
+
+    _walk(symbols, '', 0)
     return rows
 
 
@@ -182,7 +249,7 @@ def _run_lookup(
     elif kind == 'document-symbol':
         assert path is not None
         session.open(path)
-        rows = _symbol_rows(session.document_symbols(path))
+        rows = _symbol_rows(session.document_symbols(path), default_path=str(Path(path).resolve()))
     elif kind == 'definition':
         assert path is not None
         session.open(path)
@@ -204,16 +271,77 @@ def _run_lookup(
     }
 
 
+def _edit_failure(language: str, reason: str, footprint: list[dict[str, Any]], **extra: Any) -> dict[str, Any]:
+    """Build the write path's failure payload.
+
+    ⛔ This helper does **not** decide what is on disk. Four reasons reach it,
+    each in a different state, and each caller passes whatever ``rolled_back``
+    its own state warrants:
+
+    * ``unsupported_resource_operation`` — refused before anything was read, so
+      it passes **no** ``rolled_back`` at all and the key is absent from the
+      payload. Nothing was written and nothing was rolled back;
+    * ``diagnostics_unavailable`` at phase ``before`` — the baseline verdict was
+      missing, detected before the first write: ``rolled_back=False`` meaning
+      *there was nothing to roll back*;
+    * ``diagnostics_unavailable`` at phase ``after`` and ``diagnostics_worsened``
+      — written, then restored: ``rolled_back=True``;
+    * ``apply_failed`` — restored, unless the tree could not be put back, which
+      is the one case that leaves it partly edited and is reported as
+      ``rolled_back=False`` **plus** ``restore_error``. That is a statement
+      about the tree, re-read from disk: a write refused before it touched
+      anything makes its own restore fail too, and reporting *that* would raise
+      an alarm over a clean tree.
+    """
+    payload: dict[str, Any] = {
+        'status': 'failed',
+        'state': STATE_OK,
+        'language': language,
+        'provider_count': 1,
+        'applied': False,
+        'reason': reason,
+        'file_count': len(footprint),
+        'files': footprint,
+    }
+    payload.update(extra)
+    return payload
+
+
 def _run_edit(session: LspSession, language: str, path: str, line: int, character: int, new_name: str) -> dict[str, Any]:
     """Rename a symbol via a WorkspaceEdit, capture footprint, apply, re-verify.
 
-    The footprint is captured from the edit; the edit is applied; diagnostics are
-    re-run over exactly the footprint files; a worsened error set fails the step
-    and the change is rolled back.
+    The footprint is captured from the edit; the edit is applied all-or-nothing;
+    diagnostics are re-run over exactly the footprint files, each wait requiring
+    a push **newer** than the pre-change one; and a file that gained an error
+    diagnostic fails the step and rolls the whole change back.
+
+    The verb **fails closed** in three further ways, each of which used to be
+    reported as a pass:
+
+    * an edit carrying a create/rename/delete-file resource operation is refused
+      whole (``unsupported_resource_operation``) rather than applied minus the
+      part this client cannot perform;
+    * a failure part-way through the apply loop restores every file already
+      written and reports the offending path (``apply_failed``) — and when the
+      restore itself fails, ``rolled_back`` is ``False`` and ``restore_error``
+      carries the cause, because a partly-edited tree must not read as clean;
+    * a file the server returns **no verdict** for is unverified, not clean
+      (``diagnostics_unavailable``) — see ``lsp-client/SKILL.md`` § "The write
+      side" for what a leaf should do with that.
     """
     session.open(path)
     workspace_edit = session.rename(path, line, character, new_name)
+    _changes, notes = normalize_changes(workspace_edit)
     footprint = capture_footprint(workspace_edit)
+
+    if notes:
+        # A resource operation cannot be performed here. Applying the text-edit
+        # remainder would land a partial refactor reported as a success.
+        return _edit_failure(
+            language, REASON_UNSUPPORTED_RESOURCE_OPERATION, footprint,
+            notes=notes, unapplied_operation_count=len(notes),
+        )
+
     if not footprint:
         return {
             'status': 'success',
@@ -227,40 +355,82 @@ def _run_edit(session: LspSession, language: str, path: str, line: int, characte
         }
 
     paths = [row['path'] for row in footprint]
+    before_by_path: dict[str, list[dict[str, Any]]] = {}
     errors_before = 0
     for target in paths:
         session.open(target)
-        errors_before += count_error_diagnostics(session.diagnostics(target))
+        diagnostics = session.diagnostics(target)
+        if diagnostics is None:
+            # No baseline verdict — nothing has been written yet, so there is
+            # nothing to roll back, but the edit cannot be verified either.
+            return _edit_failure(
+                language, REASON_DIAGNOSTICS_UNAVAILABLE, footprint,
+                rolled_back=False, unverified_path=target, phase='before',
+            )
+        before_by_path[target] = diagnostics
+        errors_before += count_error_diagnostics(diagnostics)
 
-    _applied_footprint, originals = apply_workspace_edit(workspace_edit)
+    try:
+        _applied_footprint, originals = apply_workspace_edit(workspace_edit)
+    except WorkspaceApplyError as exc:
+        payload = _edit_failure(
+            language, REASON_APPLY_FAILED, footprint,
+            failed_path=exc.path,
+            rolled_back=exc.restore_error is None,
+            detail=str(exc.cause),
+        )
+        if exc.restore_error is not None:
+            payload['restore_error'] = str(exc.restore_error)
+        return payload
 
     errors_after = 0
+    added_by_path: dict[str, list[dict[str, Any]]] = {}
     new_diagnostics: list[dict[str, Any]] = []
-    for target in paths:
-        session.change_to_disk(target)
-        diagnostics = session.diagnostics(target)
-        errors_after += count_error_diagnostics(diagnostics)
-        for diag in diagnostics:
-            if diag.get('severity') == 1:
-                new_diagnostics.append({'path': target, 'message': diag.get('message', '')})
 
-    verdict = edit_verdict(errors_before, errors_after)
+    # ⛔ Notify EVERY path before collecting ANY verdict. `apply_workspace_edit`
+    # has already written all of them, but the server only learns of a file when
+    # its `didChange` arrives — so interleaving notify-then-wait asked the server
+    # about file 1 while it still believed files 2..n held their pre-edit
+    # content. For a **cross-file rename** — the case this verb exists for —
+    # that intermediate workspace is genuinely inconsistent, the transient
+    # errors are real, and `edit_verdict` rolled back a correct edit because of
+    # them. The pre-change sequence is captured per path as the notification is
+    # sent, so each wait still requires a strictly later push and the
+    # settled-for-the-pre-edit-verdict guarantee is unchanged.
+    seq_before_change = {target: session.change_to_disk(target) for target in paths}
+
+    for target in paths:
+        diagnostics = session.diagnostics(target, after_seq=seq_before_change[target])
+        if diagnostics is None:
+            restore_files(originals)
+            return _edit_failure(
+                language, REASON_DIAGNOSTICS_UNAVAILABLE, footprint,
+                rolled_back=True, unverified_path=target, phase='after',
+                errors_before=errors_before,
+            )
+        errors_after += count_error_diagnostics(diagnostics)
+        added, _removed = diagnostic_delta(before_by_path[target], diagnostics)
+        added_by_path[target] = added
+        new_diagnostics.extend(
+            {
+                'path': target,
+                'line': (diag.get('range') or {}).get('start', {}).get('line', 0),
+                'message': diag.get('message', ''),
+            }
+            for diag in added
+        )
+
+    verdict = edit_verdict(added_by_path)
     if verdict == 'failed':
         restore_files(originals)
-        return {
-            'status': 'failed',
-            'state': STATE_OK,
-            'language': language,
-            'provider_count': 1,
-            'applied': False,
-            'reason': 'diagnostics_worsened',
-            'rolled_back': True,
-            'errors_before': errors_before,
-            'errors_after': errors_after,
-            'file_count': len(footprint),
-            'files': footprint,
-            'new_diagnostics': new_diagnostics,
-        }
+        return _edit_failure(
+            language, REASON_DIAGNOSTICS_WORSENED, footprint,
+            rolled_back=True,
+            errors_before=errors_before,
+            errors_after=errors_after,
+            new_diagnostic_count=len(new_diagnostics),
+            new_diagnostics=new_diagnostics,
+        )
     return {
         'status': 'success',
         'state': STATE_OK,
@@ -276,9 +446,29 @@ def _run_edit(session: LspSession, language: str, path: str, line: int, characte
 
 
 def _run_diagnose(session: LspSession, language: str, path: str) -> dict[str, Any]:
-    """Return diagnostics for ``path`` as a pre-build correctness signal."""
+    """Return diagnostics for ``path`` as a pre-build correctness signal.
+
+    ``answered`` is the field that separates the two outcomes a count cannot:
+    ``answered: true`` with ``error_count: 0`` means the server examined the file
+    and found nothing, while ``state: unknown`` / ``answered: false`` means it
+    published no verdict at all — a server that never pushes diagnostics, or a
+    wait that expired. The unknown payload deliberately carries **no**
+    ``error_count``, ``warning_count`` or ``diagnostics``: a zero there is the
+    false clean signal this verb exists not to emit.
+    """
     session.open(path)
     diagnostics = session.diagnostics(path)
+    if diagnostics is None:
+        return {
+            'status': 'success',
+            'state': STATE_UNKNOWN,
+            'language': language,
+            'provider_count': 1,
+            'file': path,
+            'answered': False,
+            'reason': REASON_DIAGNOSTICS_UNANSWERED,
+            'boundary_note': DIAGNOSTICS_BOUNDARY_NOTE,
+        }
     rows = [
         {
             'severity': diag.get('severity', 0),
@@ -295,6 +485,7 @@ def _run_diagnose(session: LspSession, language: str, path: str) -> dict[str, An
         'language': language,
         'provider_count': 1,
         'file': path,
+        'answered': True,
         'error_count': count_error_diagnostics(diagnostics),
         'warning_count': sum(1 for diag in diagnostics if diag.get('severity') == 2),
         'diagnostics': rows,

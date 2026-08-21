@@ -19,7 +19,9 @@ Output:
     JSON array of module objects conforming to module-discovery.md contract.
 """
 
+import configparser
 from pathlib import Path
+from typing import Any
 
 try:
     import tomllib  # Python 3.11+
@@ -39,6 +41,10 @@ from _build_discover import (
 )
 from _build_shared import build_canonical_commands
 from plan_logging import log_entry
+
+# Bound once so the narrowed descriptor catch names a real exception class even
+# on an interpreter where no TOML reader could be imported at all.
+TOML_DECODE_ERROR: type[Exception] = getattr(tomllib, 'TOMLDecodeError', ValueError)
 
 # Directories that indicate a test module
 TEST_DIR_NAMES = {'test', 'tests'}
@@ -255,10 +261,64 @@ def _find_python_test_dirs(module_path: Path) -> list[str]:
     return test_dirs
 
 
-def _parse_pyproject_metadata(module_path: Path) -> dict:
-    """Extract metadata and dependencies from pyproject.toml.
+def requirement_name(requirement: str) -> str:
+    """Return the bare distribution name from one PEP 508 requirement string.
 
-    Reads the [project] section for name, version, description, and dependencies.
+    The order matters, and two of the three steps exist because the specifier
+    chain alone silently mangles perfectly ordinary requirements:
+
+    1. **Environment marker first.** ``m-core; python_version >= "3.11"``
+       truncates at the first ``>`` if the specifier chain runs first, leaving
+       ``m-core; python_version`` — a mangled key that survives PEP 503
+       normalisation looking plausible, so nothing downstream can spot it.
+    2. **Direct reference next, on the BARE ``@``.** PEP 508 spells the URL form
+       ``urlspec = AT wsp* URI_reference``, so the whitespace around ``@`` is
+       optional and ``m-core@file:///./core`` — the spelling ``pip freeze``
+       emits — is as legal as the spaced one. Splitting on ``' @ '`` would fix
+       only the spaced form. The bare ``@`` is safe to split on: it is not legal
+       in a PEP 508 name, and an npm-style ``@scope/`` never appears in a Python
+       requirement.
+    3. **Extras and version specifiers last.**
+
+    Args:
+        requirement: One PEP 508 requirement string.
+
+    Returns:
+        The distribution name, or ``''`` when the string carries none.
+    """
+    head = requirement.split(';', 1)[0]
+    head = head.split('@', 1)[0]
+    # ``(`` is in the set because PEP 508 permits the specifier in parentheses —
+    # ``sample-core (>=1.0)``. Splitting on ``>`` alone left ``sample-core (``,
+    # which survives PEP 503 normalisation and joins against nothing: the exact
+    # mangled-key failure this function exists to prevent, in the one spelling
+    # the separator list omitted.
+    for separator in ('(', '[', '<', '>', '=', '!', '~'):
+        head = head.split(separator)[0]
+    return head.strip()
+
+
+def _parse_pyproject_metadata(module_path: Path) -> dict:
+    """Extract metadata and dependencies from the module's Python descriptor.
+
+    Reads PEP 621 ``[project]`` first. When that table is absent or carries no
+    ``name``, falls back to ``[tool.poetry]`` in the same file and then to
+    ``setup.cfg`` — because a module whose descriptor this function cannot read
+    is admitted to the module set anyway, stamped ``build_systems: ['python']``
+    and given a real ``paths.descriptor``, and then contributes nothing. The
+    seam reports that as ``status: ok, edge_count: 0``, which the shipped
+    documentation defines as a real, positive result. It is not one: it is a
+    descriptor nobody parsed.
+
+    The fallbacks are **strict** — neither fires while ``[project]`` supplies a
+    name — because ``metadata`` and ``dependencies`` are read by consumers
+    beyond edge derivation, and a fallback that overrode a PEP 621 declaration
+    would change what those consumers see.
+
+    ``setup.py`` is deliberately not attempted: it is executable Python and not
+    statically parseable in general. A ``setup.py``-only module keeps publishing
+    no name, and ``doc/user/dependency-intelligence.adoc`` § Python specifics
+    states that limit rather than leaving it silent.
 
     Args:
         module_path: Path to module directory.
@@ -266,43 +326,197 @@ def _parse_pyproject_metadata(module_path: Path) -> dict:
     Returns:
         Dict with 'metadata' and 'dependencies' keys.
     """
-    pyproject = module_path / 'pyproject.toml'
     metadata: dict = {}
     dependencies: list[str] = []
 
-    if not pyproject.exists() or tomllib is None:
-        return {'metadata': metadata, 'dependencies': dependencies}
+    pyproject = module_path / 'pyproject.toml'
+    if pyproject.exists() and tomllib is not None:
+        data = _load_toml(pyproject)
+        if data is not None:
+            _read_pep621(data, metadata, dependencies)
+            if not metadata.get('name'):
+                _read_poetry(data, metadata, dependencies)
+        if metadata.get('name'):
+            return {'metadata': metadata, 'dependencies': dependencies}
 
-    try:
-        with open(pyproject, 'rb') as f:
-            data = tomllib.load(f)
-    except Exception:
-        return {'metadata': metadata, 'dependencies': dependencies}
-
-    project = data.get('project', {})
-    if project.get('name'):
-        metadata['name'] = project['name']
-    if project.get('version'):
-        metadata['version'] = project['version']
-    if project.get('description'):
-        metadata['description'] = project['description']
-    if project.get('requires-python'):
-        metadata['requires_python'] = project['requires-python']
-
-    # Dependencies
-    for dep in project.get('dependencies', []):
-        # Extract package name (before version specifier)
-        dep_name = dep.split('[')[0].split('<')[0].split('>')[0].split('=')[0].split('!')[0].split('~')[0].strip()
-        if dep_name:
-            dependencies.append(f'{dep_name}:runtime')
-
-    # Dev dependencies from optional-dependencies
-    for dep in project.get('optional-dependencies', {}).get('dev', []):
-        dep_name = dep.split('[')[0].split('<')[0].split('>')[0].split('=')[0].split('!')[0].split('~')[0].strip()
-        if dep_name:
-            dependencies.append(f'{dep_name}:dev')
+    setup_cfg = module_path / 'setup.cfg'
+    if not metadata.get('name') and setup_cfg.exists():
+        _read_setup_cfg(setup_cfg, metadata, dependencies)
 
     return {'metadata': metadata, 'dependencies': dependencies}
+
+
+def _load_toml(descriptor: Path) -> dict | None:
+    """Parse a TOML descriptor, or log a WARNING naming the file and return None.
+
+    The catch is narrowed to the three exceptions a *descriptor problem* raises.
+    A bare ``except Exception`` made a malformed descriptor indistinguishable
+    from one declaring nothing — and that silence kills the **dependent's**
+    declared edge too, because the unparsed module published no name for the
+    dependent's requirement to match. Anything outside this set is a defect in
+    this code and propagates.
+    """
+    try:
+        with open(descriptor, 'rb') as handle:
+            data: dict = tomllib.load(handle)
+    except (TOML_DECODE_ERROR, OSError, UnicodeDecodeError) as exc:
+        log_entry(
+            'script', 'global', 'WARNING',
+            f'[PYTHON-DISCOVER] Unreadable descriptor {descriptor}: {type(exc).__name__}: {exc} — '
+            f'the module publishes no name or dependencies, and any edge declared ON it is lost',
+        )
+        return None
+    return data
+
+
+def _table(container: Any, key: str) -> dict:
+    """Return ``container[key]`` when it is a table, and an empty one otherwise.
+
+    ⛔ **A descriptor may be well-formed TOML and still wrongly shaped.**
+    ``project = "invalid"`` parses; so does ``[tool.poetry.group]`` with
+    ``dev = "notatable"``. Reaching ``.get()`` straight through such a value
+    raises ``AttributeError``, which is not caught anywhere on this path — so a
+    **single** mis-shaped descriptor propagated out of
+    ``discover_python_modules`` and took every module in the tree with it,
+    including the ones that parsed perfectly.
+
+    That is the same blast radius as the ``setup.cfg`` interpolation abort fixed
+    in :func:`_read_setup_cfg`, reached through a different door, and it gets the
+    same answer: the mis-shaped table reads as absent, so the module publishes
+    nothing and is still **discovered**. One bad descriptor costs its own module
+    and no other.
+    """
+    value = container.get(key) if isinstance(container, dict) else None
+    return value if isinstance(value, dict) else {}
+
+
+def _sequence(container: Any, key: str) -> list:
+    """Return ``container[key]`` when it is a list, and an empty one otherwise.
+
+    The companion of :func:`_table` for the fields that hold requirement lists.
+    ``dependencies = "core"`` parses as a string, and iterating a string yields
+    its characters — which produced one fabricated edge **per character** rather
+    than an error. Silent nonsense is worse than a missing answer, so a
+    non-list reads as absent.
+    """
+    value = container.get(key) if isinstance(container, dict) else None
+    return value if isinstance(value, list) else []
+
+
+def _read_pep621(data: dict, metadata: dict, dependencies: list[str]) -> None:
+    """Read the PEP 621 ``[project]`` table into ``metadata`` / ``dependencies``.
+
+    Every table and list is taken through :func:`_table` / :func:`_sequence`, so
+    a well-formed-but-mis-shaped descriptor costs its own module and never the
+    crawl.
+    """
+    project = _table(data, 'project')
+    for key, field in (('name', 'name'), ('version', 'version'), ('description', 'description'),
+                       ('requires-python', 'requires_python')):
+        if project.get(key):
+            metadata[field] = project[key]
+
+    for dep in _sequence(project, 'dependencies'):
+        name = requirement_name(dep)
+        if name:
+            dependencies.append(f'{name}:runtime')
+
+    for dep in _sequence(_table(project, 'optional-dependencies'), 'dev'):
+        name = requirement_name(dep)
+        if name:
+            dependencies.append(f'{name}:dev')
+
+
+def _read_poetry(data: dict, metadata: dict, dependencies: list[str]) -> None:
+    """Read ``[tool.poetry]`` into ``metadata`` / ``dependencies``.
+
+    A Poetry dependency's **value** may be a version string or an inline table
+    (``{version = "^1.0", optional = true}``); only the key carries the name, so
+    the value is not inspected. ``python`` is skipped — it is the interpreter
+    constraint, not a package, and Poetry records it alongside the real ones.
+    """
+    poetry = _table(_table(data, 'tool'), 'poetry')
+    if not poetry:
+        return
+    for key, field in (('name', 'name'), ('version', 'version'), ('description', 'description')):
+        if poetry.get(key):
+            metadata[field] = poetry[key]
+
+    # The empty-name guard matches the PEP 621 path: a specifier-shaped or empty
+    # table key would otherwise publish the bare scope string ``':runtime'``.
+    for name in _table(poetry, 'dependencies'):
+        if name == 'python':
+            continue
+        extracted = requirement_name(name)
+        if extracted:
+            dependencies.append(f'{extracted}:runtime')
+
+    for name in _table(_table(_table(poetry, 'group'), 'dev'), 'dependencies'):
+        if name == 'python':
+            continue
+        extracted = requirement_name(name)
+        if extracted:
+            dependencies.append(f'{extracted}:dev')
+
+
+def _read_setup_cfg(descriptor: Path, metadata: dict, dependencies: list[str]) -> None:
+    """Read a setuptools ``setup.cfg`` into ``metadata`` / ``dependencies``.
+
+    ``[metadata]`` supplies name/version/description; ``[options]
+    install_requires`` is a newline-separated requirement list, read at scope
+    ``runtime`` through the same PEP 508 name extraction the TOML paths use.
+
+    ⛔ **Every read is inside the guard**, because ``BasicInterpolation`` raises
+    from ``get()`` — not from ``read()``. A bare ``%`` in a value
+    (``description = 100% pure python``, a percent-encoded URL in
+    ``install_requires``) therefore escaped a guard that wrapped only ``read()``,
+    propagated out of ``discover_python_modules``, and took **every** module with
+    it — including the ones whose descriptors parsed perfectly. One module's
+    percent sign cost the whole capability, which is the exact failure this
+    discoverer's narrowed ``_load_toml`` catch exists to prevent.
+
+    ⚠ **Interpolation stays ON, deliberately, and the choice is not free.**
+    setuptools reads ``setup.cfg`` with ``BasicInterpolation`` too: it resolves
+    ``name = acme-%(version)s`` to ``acme-1.0`` and ``50%%`` to ``50%``, and it
+    **rejects** ``100% pure python`` exactly as this does. Disabling
+    interpolation would let that last value through — but at the price of
+    publishing ``acme-%(version)s`` where the ecosystem publishes ``acme-1.0``,
+    in the very field edge derivation joins on, silently making the module an
+    unreachable edge target. Agreeing with setuptools on **all three** matters
+    more than reading one of them: a descriptor setuptools refuses is one this
+    module is right to skip, and skipping it now costs that module alone.
+    """
+    parser = configparser.ConfigParser()
+    read_metadata: dict[str, str] = {}
+    try:
+        parser.read(descriptor, encoding='utf-8')
+
+        # ⛔ Collected into a LOCAL and committed only once every read has
+        # succeeded. Writing straight into ``metadata`` published whatever was
+        # read before the failure — a module whose ``name`` parsed and whose
+        # ``description`` raised kept the name while losing its dependencies,
+        # so it became a valid edge TARGET that declares no outbound edges,
+        # under a warning saying it "publishes no name or dependencies". The
+        # partial state contradicted the message announcing it.
+        for key, field in (('name', 'name'), ('version', 'version'), ('description', 'description')):
+            value = parser.get('metadata', key, fallback='').strip()
+            if value:
+                read_metadata[field] = value
+
+        requires = parser.get('options', 'install_requires', fallback='')
+    except (configparser.Error, OSError, UnicodeDecodeError) as exc:
+        log_entry(
+            'script', 'global', 'WARNING',
+            f'[PYTHON-DISCOVER] Unreadable descriptor {descriptor}: {type(exc).__name__}: {exc} — '
+            f'the module publishes no name or dependencies, and any edge declared ON it is lost',
+        )
+        return
+
+    metadata.update(read_metadata)
+    for line in requires.splitlines():
+        name = requirement_name(line)
+        if name:
+            dependencies.append(f'{name}:runtime')
 
 
 def _find_descriptor_file(module_path: Path) -> Path | None:

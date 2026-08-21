@@ -17,7 +17,9 @@ rather than once.
 """
 
 import argparse
+import json
 
+import pytest
 import run_config
 
 from conftest import get_script_path, run_script
@@ -147,7 +149,7 @@ def test_get_reports_unconfigured_but_enabled(plan_context):
     assert got['enabled'] is True
 
 
-def test_list_reports_configured_entries_only(plan_context):
+def test_list_reports_every_entry_the_store_holds(plan_context):
     listed = run_config.cmd_derivation_resolver_list(argparse.Namespace())
     assert listed['resolvers'] == []
     assert listed['count'] == 0
@@ -157,10 +159,37 @@ def test_list_reports_configured_entries_only(plan_context):
     run_config.cmd_derivation_resolver_set(_set('python', enabled=True, disabled=False))
     listed = run_config.cmd_derivation_resolver_list(argparse.Namespace())
     assert listed['resolvers'] == [
-        {'id': 'lsp', 'enabled': False},
-        {'id': 'python', 'enabled': True},
+        {'id': 'lsp', 'enabled': False, 'configured': True},
+        {'id': 'python', 'enabled': True, 'configured': True},
     ]
     assert listed['count'] == 2
+
+
+def test_list_shows_a_MALFORMED_entry_and_flags_it_unconfigured(plan_context):
+    """The third reader of this store must not disagree with the other two.
+
+    ``configured`` means a well-formed (dict) entry to ``get`` and to
+    ``extension-api``'s roster. This listing is keyed on mere PRESENCE, so a
+    malformed entry appears in it — and both halves of that are deliberate:
+    omitting it would hide an operator's own typo from the one verb that exists
+    to show them the store, while calling it configured would make a third
+    reader say something the other two contradict about one entry.
+    """
+    run_config.cmd_derivation_resolver_set(_set('lsp'))
+    _write_raw_section({'lsp': {'enabled': False}, 'markdown': 'yes'})
+
+    listed = run_config.cmd_derivation_resolver_list(argparse.Namespace())
+
+    by_id = {row['id']: row for row in listed['resolvers']}
+    assert set(by_id) == {'lsp', 'markdown'}, 'the malformed entry was hidden from the operator'
+    assert by_id['markdown']['configured'] is False
+    assert by_id['lsp']['configured'] is True
+    # And the other two readers agree with it, entry for entry.
+    got = run_config.cmd_derivation_resolver_get(argparse.Namespace(resolver='markdown'))
+    assert got['configured'] is False
+    # Fails OPEN on the malformed entry, exactly as `get` does.
+    assert by_id['markdown']['enabled'] is True
+    assert got['enabled'] is True
 
 
 def test_remove_returns_resolver_to_default_active(plan_context):
@@ -227,7 +256,7 @@ def test_list_survives_a_raising_entry_read(plan_context, monkeypatch):
 
     listed = run_config.cmd_derivation_resolver_list(argparse.Namespace())
     assert listed['status'] == 'success'
-    assert listed['resolvers'] == [{'id': 'lsp', 'enabled': True}]
+    assert listed['resolvers'] == [{'id': 'lsp', 'enabled': True, 'configured': True}]
 
 
 # ---------------------------------------------------------------------------
@@ -270,3 +299,62 @@ def test_cli_list_and_remove(plan_context):
     removed = run_script(SCRIPT_PATH, 'derivation-resolver', 'remove', '--resolver', 'lsp')
     assert removed.success, removed.stderr
     assert removed.toon().get('action') == 'removed'
+
+
+# ---------------------------------------------------------------------------
+# One store, one meaning of `configured`
+# ---------------------------------------------------------------------------
+
+
+def _write_raw_section(section: dict) -> None:
+    """Write the section verbatim, bypassing the `set` verb's own validation."""
+    path = run_config.get_run_config_path()
+    config = run_config.read_run_config(path)
+    config['derivation_resolvers'] = section
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(config), encoding='utf-8')
+
+
+@pytest.mark.parametrize('stored', [0, '', None, [], {}, 'false', 'no'])
+def test_only_literal_FALSE_disables_a_resolver(plan_context, stored):
+    """Every other value for `enabled` is malformed, and malformed fails OPEN.
+
+    `bool()` coerced `0`, `""`, `null` and `[]` to "disabled" — turning a typo
+    in the run-configuration into a resolver nobody runs, silently. This store's
+    stated rule is that a malformed entry fails **open**, and a non-boolean in a
+    boolean field is malformed. Reported by CodeRabbit against the standard that
+    documents the rule.
+    """
+    _write_raw_section({'markdown': {'enabled': stored}})
+
+    assert run_config.is_derivation_resolver_enabled('markdown') is True
+
+
+def test_literal_false_still_disables(plan_context):
+    """The control: the fail-open widening must not disable the off switch."""
+    _write_raw_section({'markdown': {'enabled': False}})
+
+    assert run_config.is_derivation_resolver_enabled('markdown') is False
+
+
+def test_get_reports_a_non_dict_entry_as_not_configured(plan_context):
+    """An entry that is not a dict carries no binding, so nothing was set.
+
+    This is the store side of a definition the resolver roster shares. Written
+    on one side alone the pair could drift again — see the roster's own
+    agreement test, which compares the two answers directly.
+    """
+    _write_raw_section({'markdown': 'yes'})
+
+    got = run_config.cmd_derivation_resolver_get(
+        argparse.Namespace(resolver='markdown')
+    )
+
+    assert got['configured'] is False
+
+
+def test_a_non_dict_entry_still_leaves_the_resolver_enabled(plan_context):
+    """`configured` is a statement about the store; `enabled` fails OPEN."""
+    _write_raw_section({'markdown': 'yes'})
+
+    assert run_config.cmd_derivation_resolver_get(argparse.Namespace(resolver='markdown'))['enabled'] is True
