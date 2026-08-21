@@ -72,6 +72,7 @@ operator decision, or an unvalidated behaviour.
 010 runtime seam neutrality ─┬─ sequential, either order ─┬─ 030 claude-literal residuals
                              └─ (shared: claude_runtime) ─┘
 010, 030 ──────────────→ 070 runtime-fact prose (runs after both)
+030 ──────────────────→ 080 permission skills through the registry (runs after 030)
 020 ─ sequential with 050 (shared: marketplace/targets) and 060 (shared: plugin-doctor)
 040 sync-opencode inner loop ── independent of everything
 ```
@@ -87,6 +88,12 @@ Plan `060` also runs after `010` (its default-target fix consumes `010`'s single
 | `050` | `marketplace/targets/**` (engine + opencode mapping), the §M2-named bundle files across seven bundles incl. the single `ext-triage-plugin` disposition standard carved out of `060`, `test/marketplace/targets/**` | `010`, `030`, `040`, `060`, `070` — not `020` (shared `marketplace/targets`) |
 | `060` | `marketplace/bundles/pm-plugin-development/**` **except** `skills/ext-triage-plugin/standards/pr-comment-disposition.md` (plan `050`'s), `test/pm-plugin-development/**`, conditionally `platform-runtime/standards/contract.md` | `040`, `050` — not `020` (plugin-doctor), `030` (inventory scripts), or `070` (both conditionally touch platform-runtime docs); after `010` (default-target source) |
 | `070` | `marketplace/bundles/plan-marshall/**` prose + the M5 code sites, `test/plan-marshall/**`, platform-runtime docs | `040`, `050` — not `060`; runs after `010` and `030` |
+| `080` | `tools-permission-doctor/scripts/**`, `tools-permission-fix/scripts/**` and both SKILL.md bodies, `platform-runtime/scripts/**` (ABC, router, both runtimes), `platform-runtime/standards/contract.md`, `reference/coupling-inventory.md`, their `test/` subtrees | `040`, `050` — not `010`/`030` (shared `platform-runtime/scripts`), not `060`/`070` (both conditionally touch `contract.md`); runs after `030` |
+
+**`080` runs after `030`, never beside it.** `030` moved the default-permission renderer and the
+credential deny rules behind the runtime; `080` starts from that shape to move what `030` left —
+the direct `claude_runtime` binding in `permission_common`/`permission_doctor` and the permission-DSL
+arguments the routed ops still carry. Both edit `claude_runtime.py` and `_claude_runtime_impl.py`.
 
 **`010` and `030` must not run concurrently.** Both edit `claude_runtime.py` /
 `_claude_runtime_impl.py` — `010` moves the install-op vocabulary in, `030` moves permission
