@@ -330,11 +330,18 @@ stale-figure defect this report warns about elsewhere, committed here.
 | `a230637` | 21414 passed, 14 skipped, 583.66 s |
 | `f5bc086` (independently re-run by the round-3 verifier) | 21419 passed, 14 skipped, 507.80 s |
 | `be54037`, the REBASED tree | 21419 passed, 14 skipped, 412.44 s, `verify: SUCCESS` |
-| **`b364322`, round 4's fixes — the figure that governs** | **21419 passed, 14 skipped, 385.38 s, `verify: SUCCESS`** |
+| `b364322`, round 4's fixes | 21419 passed, 14 skipped, 385.38 s, `verify: SUCCESS` |
+| **`b0d746c`, round 5's fixes — the figure that governs** | **21419 passed, 14 skipped, 404.89 s, `verify: SUCCESS`** |
 
 The figure that governs is the last, because it is the only one measured on the tree that actually
-lands. Round 4's commit touches production Python (one docstring in `lsp_client.py`), so the gate was
-re-run rather than carried forward — the stale-figure defect this section already records once. All three sub-steps ran on it: quality-gate (`ruff … All checks passed!`, `mypy … Success: no
+lands. Rounds 4 and 5 each touch production Python (docstrings in `lsp_client.py` and
+`_lsp_workspace_edit.py`), so the gate was re-run on each rather than carried forward — the
+stale-figure defect this section already records once. ⛔ **`c12fcaa` follows `b0d746c` and is
+report-only**, so the Python tree it governs is byte-identical: `git diff --name-only b0d746c..HEAD
+-- '*.py'` is empty, which is why the gate was not re-run for it. All three sub-steps ran on the
+governing commit: quality-gate (`ruff … All checks passed!`, `mypy … Success: no issues found in 416
+source files`, `SPDX-header check passed`), test-compile (`mypy … 939 source files`), and
+module-tests. All three sub-steps ran on it: quality-gate (`ruff … All checks passed!`, `mypy … Success: no
 issues found in 416 source files`, `SPDX-header check passed`), test-compile, and module-tests.
 
 ⚠ **The first `./pw verify` FAILED**, and the failure is worth recording because it is exactly the
