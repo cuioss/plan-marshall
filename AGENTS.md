@@ -84,3 +84,7 @@ This copies to `~/.claude/plugins/cache/plan-marshall/` via rsync `--delete`.
 ## Git Commit Guidelines
 
 - Git commit `Co-Authored-By` trailer: use the **active assistant's** co-author identity — target-aware, not hardcoded to one assistant. On Claude it is `Co-Authored-By: Claude <noreply@anthropic.com>`; on another target it is that target's assistant co-author identity. This is the convention `plan-marshall:workflow-integration-git` applies at commit time. No marketing claims.
+
+## Temporary Files
+
+Use `.plan/temp/` for ALL temporary and generated files (covered by `Write(.plan/**)` permission — avoids permission prompts).

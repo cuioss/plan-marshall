@@ -353,7 +353,7 @@
       "no_plan_body_days": 7,
       "build_results_days": 5
     },
-    "provisioned_version": "0.1.1526",
+    "provisioned_version": "0.1.1527",
     "config_seed_fingerprint": "58fc3cfc"
   }
 }

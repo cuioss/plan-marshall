@@ -119,3 +119,8 @@ Source of truth is `marketplace/bundles/*` (Claude Code native format). The mult
 - **Git/GitHub**: `gh` tool (via the CI abstraction) for issue/PR management.
 - **Build Systems**: Pyprojectx wrapper (`./pw`) for Python testing/linting — invoked only through the resolved executor.
 - **IDE**: IntelliJ MCP for diagnostics (file must be active in editor).
+
+## Tool Usage
+
+- Use proper tools (Edit, Read, Write) instead of shell commands (echo, cat)
+- Never use Bash for file operations (find, grep, cat, ls) — use Glob, Read, Grep tools instead
