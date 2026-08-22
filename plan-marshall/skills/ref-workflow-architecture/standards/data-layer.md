@@ -1,0 +1,273 @@
+# Data Layer (manage-* Skills)
+
+The plan-marshall bundle uses manage-* skills as the data access layer for all plan files.
+
+---
+
+## Overview
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│                          DATA LAYER ARCHITECTURE                            │
+│                                                                             │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │                                                                      │  │
+│  │   WORKFLOW SKILLS                                                    │  │
+│  │   ═══════════════                                                    │  │
+│  │   phase-1-init  phase-2-refine  phase-3-outline  phase-4-plan  phase-5-execute  phase-6-finalize │
+│  │       │           │               │            │             │       │  │
+│  │       │           │               │            │             │       │  │
+│  │       ▼           ▼               ▼            ▼             ▼       │  │
+│  │  ┌──────────────────────────────────────────────────────────────┐   │  │
+│  │  │                                                              │   │  │
+│  │  │                    execute-script.py                         │   │  │
+│  │  │                    ═════════════════                         │   │  │
+│  │  │                                                              │   │  │
+│  │  └──────────────────────────────────────────────────────────────┘   │  │
+│  │       │           │               │            │             │       │  │
+│  │       ▼           ▼               ▼            ▼             ▼       │  │
+│  │  ┌─────────┐ ┌─────────┐ ┌───────────────┐ ┌─────────┐ ┌─────────┐  │
+│  │  │ manage- │ │ manage- │ │   manage-     │ │ manage- │ │ manage- │  │
+│  │  │referenc.│ │ status  │ │solution-      │ │  tasks  │ │  files  │  │
+│  │  │         │ │         │ │outline        │ │         │ │         │  │
+│  │  └────┬────┘ └────┬────┘ └───────┬───────┘ └────┬────┘ └────┬────┘  │
+│  │       │           │               │             │            │       │
+│  │       ▼           ▼               ▼             ▼            ▼       │
+│  │  ┌─────────┐ ┌─────────┐ ┌───────────────┐ ┌─────────┐ ┌─────────┐  │
+│  │  │referenc.│ │ status  │ │  solution_    │ │ TASK-*  │ │ plan    │  │
+│  │  │ .json   │ │ .json   │ │  outline.md   │ │ .json   │ │directory│  │
+│  │  └─────────┘ └─────────┘ └───────────────┘ └─────────┘ └─────────┘  │
+│  │                                                                      │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## manage-* Skill Inventory
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│                       MANAGE-* SKILL INVENTORY                              │
+│                                                                             │
+│  ┌───────────────────────┬───────────────────┬──────────────────────────┐  │
+│  │ SKILL                 │ FILE              │ PURPOSE                  │  │
+│  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
+│  │                       │                   │                          │  │
+│  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
+│  │                       │                   │                          │  │
+│  │ manage-status         │ status.json       │ Plan status              │  │
+│  │                       │                   │ • current phase          │  │
+│  │                       │                   │ • phase statuses         │  │
+│  │                       │                   │ • metadata               │  │
+│  │                       │                   │                          │  │
+│  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
+│  │                       │                   │                          │  │
+│  │ manage-status         │ (phase routing)   │ Plan lifecycle           │  │
+│  │   (lifecycle ops)     │                   │ • phase transitions      │  │
+│  │                       │                   │ • phase routing          │  │
+│  │                       │                   │ • plan discovery         │  │
+│  │                       │                   │                          │  │
+│  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
+│  │                       │                   │                          │  │
+│  │ manage-plan-documents │ request.md        │ Typed documents          │  │
+│  │                       │                   │ • request creation       │  │
+│  │                       │                   │ • document templates     │  │
+│  │                       │                   │                          │  │
+│  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
+│  │                       │                   │                          │  │
+│  │ manage-solution-      │ solution_         │ Solution document        │  │
+│  │ outline               │ outline.md        │ • write (with validate)  │  │
+│  │                       │                   │ • list-deliverables      │  │
+│  │                       │                   │ • get-module-context     │  │
+│  │                       │                   │                          │  │
+│  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
+│  │                       │                   │                          │  │
+│  │ manage-tasks          │ TASK-*.json       │ Task files               │  │
+│  │                       │                   │ • add (create task)      │  │
+│  │                       │                   │ • get (read task)        │  │
+│  │                       │                   │ • next (get pending)     │  │
+│  │                       │                   │ • finalize-step (mark)   │  │
+│  │                       │                   │                          │  │
+│  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
+│  │                       │                   │                          │  │
+│  │ manage-references     │ references.json   │ Plan references & config │  │
+│  │                       │                   │ • domains array          │  │
+│  │                       │                   │ • branch name            │  │
+│  │                       │                   │ • issue URL              │  │
+│  │                       │                   │                          │  │
+│  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
+│  │                       │                   │                          │  │
+│  │ manage-files          │ directory         │ Directory operations     │  │
+│  │                       │                   │ • create-or-reference    │  │
+│  │                       │                   │ • delete-plan            │  │
+│  │                       │                   │                          │  │
+│  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
+│  │                       │                   │                          │  │
+│  │ manage-findings       │ findings/         │ Findings + Q-Gate +      │  │
+│  │                       │                   │ Assessments              │  │
+│  │                       │                   │ (see cross-ref below)    │  │
+│  │                       │                   │                          │  │
+│  └───────────────────────┴───────────────────┴──────────────────────────┘  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+> **Findings pipeline**: see [`findings-pipeline.md`](findings-pipeline.md) for the canonical producer→store→consumer→gate flow, the per-type / per-phase JSONL layout, the `manage-findings` CLI surface, and the invariant gate. This data-layer document does not restate the pipeline narrative inline.
+
+---
+
+## Script Invocation Pattern
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│                      SCRIPT INVOCATION PATTERN                              │
+│                                                                             │
+│  ALL plan file access uses this pattern:                                    │
+│                                                                             │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │                                                                      │  │
+│  │  python3 .plan/execute-script.py                                     │  │
+│  │    {bundle}:{skill}:{script}                                         │  │
+│  │    {subcommand}                                                      │  │
+│  │    --plan-id {plan_id}                                               │  │
+│  │    [additional args]                                                 │  │
+│  │                                                                      │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  EXAMPLES:                                                                  │
+│  ═════════                                                                  │
+│                                                                             │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │                                                                      │  │
+│  │  # Read references                                                    │  │
+│  │  python3 .plan/execute-script.py \                                   │  │
+│  │    plan-marshall:manage-references:manage-references \                 │  │
+│  │    read --plan-id my-feature                                         │  │
+│  │                                                                      │  │
+│  │  # Create task                                                       │  │
+│  │  python3 .plan/execute-script.py \                                   │  │
+│  │    plan-marshall:manage-tasks:manage-tasks \                           │  │
+│  │    add --plan-id my-feature <<'EOF'                                  │  │
+│  │  title: Implement feature                                            │  │
+│  │  domain: java                                                        │  │
+│  │  profile: implementation                                             │  │
+│  │  ...                                                                 │  │
+│  │  EOF                                                                 │  │
+│  │                                                                      │  │
+│  │  # Create status                                                     │  │
+│  │  python3 .plan/execute-script.py \                                   │  │
+│  │    plan-marshall:manage-status:manage-status \                         │  │
+│  │    create --plan-id my-feature --title "Title" --phases 1-init,...   │  │
+│  │                                                                      │  │
+│  │  # Transition phase                                                  │  │
+│  │  python3 .plan/execute-script.py \                                   │  │
+│  │    plan-marshall:manage-status:manage-status \                            │  │
+│  │    transition --plan-id my-feature --completed 1-init                │  │
+│  │                                                                      │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+For full command details and script notations, see each manage-* skill's SKILL.md. For file formats, see [artifacts.md](artifacts.md). For file access rules and enforcement, see [manage-contract.md](manage-contract.md).
+
+---
+
+## Plan Directory Structure
+
+See [artifacts.md — Plan Directory Structure](artifacts.md#plan-directory-structure) for the canonical directory tree.
+
+---
+
+## Dependency Graph
+
+```text
+manage-config (configuration authority)
+├── manage-architecture (reads skill_domains for module resolution)
+│   └── manage-solution-outline (primary consumer of architecture data)
+├── manage-solution-outline (validates domains against config)
+│   └── manage-tasks (deliverables → tasks 1:N mapping)
+├── manage-tasks (inherits domain/profile from deliverables)
+├── manage-status (routes phases using config workflow_skills)
+│   └── manage-metrics (parallels phase transitions with timing)
+└── manage-run-config (reads retention from marshal.json for cleanup)
+
+manage-findings
+└── manage-lessons (promotion: findings → lessons)
+
+manage-logging (independent, fire-and-forget)
+manage-files (low-level utility, used by other manage-* skills)
+manage-references (independent plan metadata)
+manage-plan-documents (independent request storage)
+```
+
+---
+
+## Data Flow Through Phases
+
+```text
+Phase 1 (init):
+  manage-status create → manage-references create → manage-plan-documents request create
+
+Phase 2 (refine):
+  manage-plan-documents request clarify
+
+Phase 3 (outline):
+  manage-architecture → manage-solution-outline write
+
+Phase 4 (plan):
+  manage-solution-outline list-deliverables → manage-tasks prepare-add → commit-add (per deliverable)
+
+Phase 5 (execute):
+  manage-tasks next → [execute task] → manage-tasks finalize-step
+  manage-findings add (during verification)
+
+Phase 6 (finalize):
+  manage-findings qgate add → manage-findings promote → manage-lessons add
+  manage-metrics generate → manage-status archive
+```
+
+---
+
+## Shared Infrastructure
+
+All manage-* skills share:
+
+| Component | Source | Purpose |
+|-----------|--------|---------|
+| `file_ops` | Shared Python module | Path resolution, JSON I/O, TOON output, timestamps |
+| `input_validation` | Shared Python module | Plan ID validation, field type checks |
+| `toon_parser` | Shared Python module | TOON serialization/deserialization |
+| `constants` | Shared Python module | Phase names, Q-Gate phases, valid resolutions |
+| [manage-contract.md](manage-contract.md) | This bundle | Shared contract, formats, error codes |
+| `ref-toon-format` | This bundle | TOON format specification |
+
+---
+
+## Path Construction Convention
+
+All plan-scoped path resolution follows a consistent pattern:
+
+- **Canonical factory**: `file_ops.get_plan_dir(plan_id)` returns `.plan/plans/{plan_id}/`
+- **Artifact paths**: Each manage-* module defines its own `get_*_path(plan_id)` function that delegates to `get_plan_dir(plan_id) / CONSTANT`
+- **Project-scoped paths**: Use `file_ops.get_base_dir()` for `.plan/` root
+- **Environment override**: `PLAN_BASE_DIR` env var overrides `.plan/` root (used in tests)
+
+Thin wrappers (e.g., `plan_logging.get_plan_base_dir()`, `_status_core.get_plans_dir()`) that delegate to file_ops are acceptable. Direct reimplementation of `PLAN_BASE_DIR` logic is avoided except in `bootstrap_plugin.py` which runs before the executor sets up PYTHONPATH.
+
+---
+
+## Related
+
+| Document | Purpose |
+|----------|---------|
+| [artifacts.md](artifacts.md) | Plan file formats in detail |
+| [phases.md](phases.md) | Which phase uses which files |
+| [manage-contract.md](manage-contract.md) | Shared contract, formats, error codes |

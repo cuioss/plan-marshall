@@ -1,0 +1,795 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""
+Platform router for plan-marshall — dispatches 24 operations to the correct
+target implementation based on ``runtime.target`` in ``.plan/marshal.json``.
+
+Usage:
+    python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \\
+        <operation> [operation-specific args...]
+
+Operations:
+    project initial-setup   --project-dir <path>  --target <target-id>
+    project install-hook    --target <target-id>  [--overwrite <key>]  [--enforcement]
+    layout skill-roots      (no arguments)
+    layout bundle-cache-root (no arguments)
+    session capture         --plan-id <id>
+    session render-title    (no arguments)
+    session push-title-token --plan-id <id>  [--icon <glyph>]  [--store plans|orchestrator]  [--slug <slug>]
+    session bind            --plan-id <id>  [--session-id <id>]
+    session resolve-plan    [--session-id <id>]
+    session doctor          [--fix]
+    session teardown        (no arguments)
+    session reload-directive (no arguments)
+    permission configure    --scope project|global  --permissions <p1> [<p2> ...]
+    permission analyze      --scope global|project|both  --checks <c1>[,<c2>]  [--marshal <path>]
+    permission fix          --scope project|global  --operation <op>  [--permissions <p> ...] [--dry-run]
+    permission ensure-wildcards  --scope project|global  [--marketplace-dir <path>] [--dry-run]
+    permission ensure-steps --marshal <path>  --scope project|global  [--dry-run]
+    permission web-analyze  --scope global|project|both
+    permission web-apply    --scope project|global  [--add <json>]  [--remove <json>]  [--dry-run]
+    metrics capture         --plan-id <id>  --phase <phase>  [--total-tokens <n>]
+    metrics normalized-tokens  --session-id <id>  --windows-file <path>  --output-file <path>
+    subagent dispatch       --agent <name>  [--prompt-file <path>]  [--context <json>]
+    wait for                --observable <kind>  --reference <id>  --bound-seconds <n>
+    health-check            --checks all|permissions|display|mcp-diagnostics
+
+The router resolves ``PLAN_DIR_NAME`` (default ``.plan``) from the environment,
+reads ``marshal.json``, looks up ``runtime.target``, and dispatches to the
+``Runtime`` subclass the registration block registers for that target.
+
+Exit codes:
+    0 — TOON printed on stdout (success, error, or no-op)
+    1 — argument or routing error (printed to stderr)
+    2 — runtime I/O error (printed to stderr)
+
+TOON contract: see standards/contract.md
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Any
+
+# ---------------------------------------------------------------------------
+# Bootstrap: resolve sibling script directories onto sys.path.
+# The executor sets PYTHONPATH before invocation, but the bootstrap guard
+# ensures the router works when invoked directly (e.g., during bootstrap
+# before the executor exists).
+#
+# The bootstrap is target-aware: it adds common libs (ref-toon-format,
+# platform-runtime) unconditionally, then adds target-specific libs based
+# on the detected platform.  Call _bootstrap_glob_discover() with the
+# resolved target string to activate the full set.
+# ---------------------------------------------------------------------------
+
+# Libraries required by every target.
+_COMMON_BOOTSTRAP_LIBS: tuple[str, ...] = (
+    "ref-toon-format",
+    "platform-runtime",
+)
+
+
+def _find_skills_root() -> Path | None:
+    """Walk ancestors of this file to locate the marketplace ``skills/`` root.
+
+    The root is the first ancestor directory named ``skills`` whose parent
+    contains a ``.claude-plugin/plugin.json`` bundle manifest.
+
+    Returns:
+        The ``skills/`` ``Path`` when found, or ``None`` if not found.
+    """
+    for ancestor in Path(__file__).resolve().parents:
+        if ancestor.name == "skills" and (
+            ancestor.parent / ".claude-plugin" / "plugin.json"
+        ).is_file():
+            return ancestor
+    return None
+
+
+def _bootstrap_glob_discover(target: str | None = None) -> Path | None:
+    """Add skill script directories to ``sys.path``, routing by target.
+
+    Discovers the marketplace ``skills/`` root via ``_find_skills_root()``,
+    then appends:
+
+    1. Every directory in ``_COMMON_BOOTSTRAP_LIBS`` (always).
+    2. Every directory in ``_TARGET_BOOTSTRAP_LIBS[target]`` when *target*
+       is a known key (silently skipped for unknown or ``None`` targets).
+
+    Each directory is appended only when it exists on disk and is not already
+    present in ``sys.path``, so repeated calls are idempotent.
+
+    ``_TARGET_BOOTSTRAP_LIBS`` lives further down, in the registration block
+    that also declares ``_REGISTRY`` — that block cannot be hoisted above this
+    function because it names classes only importable once the common bootstrap
+    below has run. The ``target is None`` guard is what makes the ordering safe:
+    the pre-import call passes ``None`` and therefore never evaluates the name.
+
+    Args:
+        target: Platform target identifier — a key of the registration block's
+                ``_TARGET_BOOTSTRAP_LIBS``. Pass ``None`` to add only the
+                common libs.
+
+    Returns:
+        The resolved ``skills/`` root ``Path`` when the root was found, or
+        ``None`` when the ancestor walk found no marketplace root.
+    """
+    skills_root = _find_skills_root()
+    if skills_root is None:
+        return None
+
+    libs = list(_COMMON_BOOTSTRAP_LIBS)
+    if target is not None:
+        libs.extend(_TARGET_BOOTSTRAP_LIBS.get(target, ()))
+
+    for lib_name in libs:
+        lib_dir = skills_root / lib_name / "scripts"
+        if not lib_dir.is_dir():
+            continue
+        lib_path = str(lib_dir)
+        if lib_path not in sys.path:
+            sys.path.append(lib_path)
+
+    return skills_root
+
+
+# Run the common bootstrap immediately (before imports that depend on it).
+# The target-specific libs are added in main() once the target is resolved
+# from marshal.json.  This two-phase approach ensures the router's own
+# imports (claude_runtime, opencode_runtime, runtime_base) work correctly
+# while keeping target-specific paths out of the global sys.path when only
+# the common libs are needed.
+_bootstrap_glob_discover()
+
+# ---------------------------------------------------------------------------
+# Target registration block — the ONE place a runtime target is registered, and
+# the only part of this module a new target edits.
+#
+# Everything a target needs is here: its import, its ``Runtime`` subclass in
+# ``_REGISTRY``, and its extra bootstrap libraries in ``_TARGET_BOOTSTRAP_LIBS``.
+# The imports sit inside the block rather than with the module's other imports so
+# that a registration is one contiguous edit instead of one split across thirty
+# lines. Every import here is deferred until after ``_bootstrap_glob_discover()``
+# above has put the sibling script directories on ``sys.path`` — importing
+# ``runtime_base`` before it raises ``ModuleNotFoundError`` on ``toon_parser`` —
+# which is why they carry ``noqa: E402`` and cannot move to the top of the file.
+#
+# ``runtime_base`` is grouped with them for proximity, not necessity: it is the
+# shared base contract rather than a target, and a new target never touches that
+# line. Splitting it out needs a BLANK line to end the import group — a comment
+# alone does not, and ruff's own fix for the resulting I001 is to insert one.
+# It is kept here so the deferred imports read as a single block.
+#
+# The two dicts are declared adjacently so they cannot drift unnoticed, and a
+# lockstep test asserts their key sets stay equal.
+#
+# ``_DEFAULT_TARGET`` is the single fallback identifier: every argparse default
+# and every "no target resolved" fallback in this module reads it rather than
+# repeating a literal. The companion default in
+# ``script-shared/scripts/marketplace_paths.py`` is held equal to this one by
+# the same lockstep test.
+# ---------------------------------------------------------------------------
+
+from claude_runtime import ClaudeRuntime  # noqa: E402
+from opencode_runtime import OpenCodeRuntime  # noqa: E402
+from runtime_base import PERMISSION_FIX_OPERATIONS, Runtime, toon_error  # noqa: E402
+
+_DEFAULT_TARGET = "claude"
+
+_REGISTRY: dict[str, type[Runtime]] = {
+    "claude": ClaudeRuntime,
+    "opencode": OpenCodeRuntime,
+}
+
+# Additional libraries required per target, discovered via glob within the
+# skills root.  Keys match the ``runtime.target`` values in marshal.json, and
+# must cover exactly the ``_REGISTRY`` key set.
+_TARGET_BOOTSTRAP_LIBS: dict[str, tuple[str, ...]] = {
+    "claude": (
+        "tools-file-ops",
+        "tools-permission-doctor",
+        "tools-permission-fix",
+        "workflow-permission-web",
+        "script-shared",
+    ),
+    "opencode": (),
+}
+
+_PLAN_DIR_NAME = os.environ.get("PLAN_DIR_NAME", ".plan")
+
+
+# ---------------------------------------------------------------------------
+# Marshal.json loader
+# ---------------------------------------------------------------------------
+
+
+def _read_marshal(project_dir: str | None = None) -> dict[str, Any] | None:
+    """Read .plan/marshal.json from project_dir (or cwd walk fallback)."""
+    if project_dir:
+        candidate = Path(project_dir) / _PLAN_DIR_NAME / "marshal.json"
+        if candidate.is_file():
+            try:
+                data = json.loads(candidate.read_text(encoding="utf-8"))
+                return data if isinstance(data, dict) else None
+            except (OSError, json.JSONDecodeError):
+                return None
+        return None
+
+    # Walk up from cwd to find the nearest marshal.json.
+    for parent in [Path.cwd(), *Path.cwd().parents]:
+        candidate = parent / _PLAN_DIR_NAME / "marshal.json"
+        if candidate.is_file():
+            try:
+                data = json.loads(candidate.read_text(encoding="utf-8"))
+                return data if isinstance(data, dict) else None
+            except (OSError, json.JSONDecodeError):
+                return None
+    return None
+
+
+def _resolve_target(marshal: dict[str, Any]) -> str | None:
+    """Extract runtime.target from marshal data."""
+    runtime = marshal.get("runtime")
+    if not isinstance(runtime, dict):
+        return None
+    target = runtime.get("target")
+    return str(target) if target else None
+
+
+def _make_runtime(target: str) -> Runtime | None:
+    """Instantiate the Runtime subclass for target, or None if unknown."""
+    cls = _REGISTRY.get(target)
+    if cls is None:
+        return None
+    return cls()
+
+
+# ---------------------------------------------------------------------------
+# Operation parsers
+# ---------------------------------------------------------------------------
+
+
+def _parse_json_list(raw: str) -> list[str]:
+    """Parse a JSON array string to a list of strings, or raise ValueError."""
+    parsed = json.loads(raw)
+    if not isinstance(parsed, list):
+        raise ValueError(f"expected JSON array, got {type(parsed).__name__}")
+    return [str(item) for item in parsed]
+
+
+def _parse_context(raw: str) -> dict[str, Any] | None:
+    """Parse a JSON object string to a dict, or raise ValueError."""
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise ValueError(f"expected JSON object, got {type(parsed).__name__}")
+    return parsed
+
+
+def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
+    """Parse remaining args for the given operation and call runtime method."""
+
+    # ------------------------------------------------------------------
+    # project initial-setup
+    # ------------------------------------------------------------------
+    if operation == "project initial-setup":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime project initial-setup")
+        p.add_argument("--project-dir", default=".")
+        p.add_argument("--target", default=_DEFAULT_TARGET, choices=list(_REGISTRY))
+        ns = p.parse_args(remaining)
+        return runtime.project_initial_setup(ns.project_dir, ns.target)
+
+    # ------------------------------------------------------------------
+    # project install-hook
+    # ------------------------------------------------------------------
+    if operation == "project install-hook":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime project install-hook")
+        p.add_argument("--target", required=True,
+                       help="Platform target identifier, as in marshal.json runtime.target")
+        p.add_argument("--overwrite", action="append", default=[], metavar="KEY",
+                       help="Conflict key this call may overwrite instead of preserving and "
+                            "reporting (repeatable; the key set is target-defined, and a "
+                            "target that defines one rejects a key outside it)")
+        p.add_argument("--enforcement", action="store_true",
+                       help="Wire the target's tool-invocation enforcement integration instead "
+                            "of its session/display one")
+        ns = p.parse_args(remaining)
+        return runtime.project_install_hook(
+            ns.target,
+            overwrite=tuple(ns.overwrite),
+            enforcement=ns.enforcement,
+        )
+
+    # ------------------------------------------------------------------
+    # layout skill-roots
+    # ------------------------------------------------------------------
+    if operation == "layout skill-roots":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime layout skill-roots")
+        p.parse_args(remaining)
+        return runtime.layout_skill_roots()
+
+    # ------------------------------------------------------------------
+    # layout bundle-cache-root
+    # ------------------------------------------------------------------
+    if operation == "layout bundle-cache-root":
+        p = argparse.ArgumentParser(
+            allow_abbrev=False, prog="platform_runtime layout bundle-cache-root"
+        )
+        p.parse_args(remaining)
+        return runtime.layout_bundle_cache_root()
+
+    # ------------------------------------------------------------------
+    # session capture
+    # ------------------------------------------------------------------
+    if operation == "session capture":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session capture")
+        p.add_argument("--plan-id", required=True)
+        ns = p.parse_args(remaining)
+        return runtime.session_capture(ns.plan_id)
+
+    # ------------------------------------------------------------------
+    # session render-title
+    # ------------------------------------------------------------------
+    if operation == "session render-title":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session render-title")
+        p.add_argument("--statusline", action="store_true",
+                       help="Emit the title as plain text on the target's persistent "
+                            "status-readout channel, instead of the structured envelope "
+                            "its event-driven channel expects")
+        ns = p.parse_args(remaining)
+        return runtime.session_render_title(statusline=ns.statusline)
+
+    # ------------------------------------------------------------------
+    # session push-title-token
+    # ------------------------------------------------------------------
+    if operation == "session push-title-token":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session push-title-token")
+        p.add_argument("--plan-id", default=None,
+                       help="Plan identifier (required for the default plans store)")
+        p.add_argument("--icon", default=None,
+                       help="Optional push-mode icon glyph; omit for a plain repaint "
+                            "with the default active icon")
+        p.add_argument("--store", choices=["plans", "orchestrator"], default="plans",
+                       help="State store the title state is read from; "
+                            "'orchestrator' resolves the epic's status.json via "
+                            "get_store_dir('orchestrator', slug)")
+        p.add_argument("--slug", default=None,
+                       help="Epic slug (required with --store orchestrator)")
+        ns = p.parse_args(remaining)
+        if ns.store == "orchestrator" and not ns.slug:
+            return toon_error(
+                "session push-title-token",
+                "invalid_argument",
+                "--slug is required with --store orchestrator",
+            )
+        if ns.store == "plans" and not ns.plan_id:
+            return toon_error(
+                "session push-title-token",
+                "invalid_argument",
+                "--plan-id is required with the default plans store",
+            )
+        return runtime.session_push_title_token(
+            ns.plan_id or "", ns.icon, store=ns.store, slug=ns.slug
+        )
+
+    # ------------------------------------------------------------------
+    # session bind
+    # ------------------------------------------------------------------
+    if operation == "session bind":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session bind")
+        p.add_argument("--plan-id", required=True)
+        p.add_argument("--session-id", default=None,
+                       help="Optional explicit session id; falls back to whatever "
+                            "session identifier the active target exposes")
+        ns = p.parse_args(remaining)
+        return runtime.session_bind(ns.plan_id, ns.session_id)
+
+    # ------------------------------------------------------------------
+    # session resolve-plan
+    # ------------------------------------------------------------------
+    if operation == "session resolve-plan":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session resolve-plan")
+        p.add_argument("--session-id", default=None,
+                       help="Optional explicit session id; falls back to whatever "
+                            "session identifier the active target exposes")
+        ns = p.parse_args(remaining)
+        return runtime.session_resolve_plan(ns.session_id)
+
+    # ------------------------------------------------------------------
+    # session doctor
+    # ------------------------------------------------------------------
+    if operation == "session doctor":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session doctor")
+        p.add_argument("--fix", action="store_true",
+                       help="GC (remove) each stale slot whose plan is archived/deleted")
+        ns = p.parse_args(remaining)
+        return runtime.session_doctor(ns.fix)
+
+    # ------------------------------------------------------------------
+    # session teardown
+    # ------------------------------------------------------------------
+    if operation == "session teardown":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session teardown")
+        p.parse_args(remaining)
+        return runtime.session_teardown()
+
+    # ------------------------------------------------------------------
+    # session reload-directive
+    # ------------------------------------------------------------------
+    if operation == "session reload-directive":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session reload-directive")
+        p.parse_args(remaining)
+        return runtime.session_reload_directive()
+
+    # ------------------------------------------------------------------
+    # permission configure
+    # ------------------------------------------------------------------
+    if operation == "permission configure":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission configure")
+        p.add_argument("--scope", required=True, choices=["project", "global"])
+        p.add_argument("--permissions", nargs="+", required=True)
+        ns = p.parse_args(remaining)
+        return runtime.permission_configure(ns.scope, ns.permissions)
+
+    # ------------------------------------------------------------------
+    # permission analyze
+    # ------------------------------------------------------------------
+    if operation == "permission analyze":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission analyze")
+        p.add_argument("--scope", required=True)
+        p.add_argument("--checks", required=True,
+                       help="Comma-separated: redundant,suspicious,missing-steps,all")
+        p.add_argument("--marshal", default=None)
+        ns = p.parse_args(remaining)
+        checks = [c.strip() for c in ns.checks.split(",") if c.strip()]
+        return runtime.permission_analyze(ns.scope, checks, ns.marshal)
+
+    # ------------------------------------------------------------------
+    # permission fix
+    # ------------------------------------------------------------------
+    if operation == "permission fix":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission fix")
+        p.add_argument("--scope", required=True)
+        p.add_argument("--operation", required=True,
+                       choices=list(PERMISSION_FIX_OPERATIONS))
+        p.add_argument("--permissions", nargs="*", default=[])
+        p.add_argument("--dry-run", action="store_true")
+        ns = p.parse_args(remaining)
+        return runtime.permission_fix(ns.scope, ns.operation, ns.permissions, ns.dry_run)
+
+    # ------------------------------------------------------------------
+    # permission ensure-wildcards
+    # ------------------------------------------------------------------
+    if operation == "permission ensure-wildcards":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission ensure-wildcards")
+        p.add_argument("--scope", required=True)
+        p.add_argument("--marketplace-dir", default="marketplace/")
+        p.add_argument("--dry-run", action="store_true")
+        ns = p.parse_args(remaining)
+        return runtime.permission_ensure_wildcards(ns.scope, ns.marketplace_dir, ns.dry_run)
+
+    # ------------------------------------------------------------------
+    # permission ensure-steps
+    # ------------------------------------------------------------------
+    if operation == "permission ensure-steps":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission ensure-steps")
+        p.add_argument("--marshal", required=True)
+        p.add_argument("--scope", required=True)
+        p.add_argument("--dry-run", action="store_true")
+        ns = p.parse_args(remaining)
+        return runtime.permission_ensure_steps(ns.marshal, ns.scope, ns.dry_run)
+
+    # ------------------------------------------------------------------
+    # permission web-analyze
+    # ------------------------------------------------------------------
+    if operation == "permission web-analyze":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission web-analyze")
+        p.add_argument("--scope", required=True)
+        ns = p.parse_args(remaining)
+        return runtime.permission_web_analyze(ns.scope)
+
+    # ------------------------------------------------------------------
+    # permission web-apply
+    # ------------------------------------------------------------------
+    if operation == "permission web-apply":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission web-apply")
+        p.add_argument("--scope", required=True)
+        p.add_argument("--add", default="[]")
+        p.add_argument("--remove", default="[]")
+        p.add_argument("--dry-run", action="store_true")
+        ns = p.parse_args(remaining)
+        try:
+            add_list = _parse_json_list(ns.add)
+            remove_list = _parse_json_list(ns.remove)
+        except (json.JSONDecodeError, ValueError) as exc:
+            return toon_error(
+                "permission web-apply",
+                "invalid_argument",
+                f"--add / --remove must be JSON arrays: {exc}",
+            )
+        return runtime.permission_web_apply(ns.scope, add_list, remove_list, ns.dry_run)
+
+    # ------------------------------------------------------------------
+    # metrics capture
+    # ------------------------------------------------------------------
+    if operation == "metrics capture":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime metrics capture")
+        p.add_argument("--plan-id", required=True)
+        p.add_argument("--phase", required=True)
+        p.add_argument("--total-tokens", type=int, default=None)
+        ns = p.parse_args(remaining)
+        return runtime.metrics_capture(ns.plan_id, ns.phase, ns.total_tokens)
+
+    # ------------------------------------------------------------------
+    # metrics normalized-tokens
+    # ------------------------------------------------------------------
+    if operation == "metrics normalized-tokens":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime metrics normalized-tokens")
+        p.add_argument("--session-id", required=True)
+        p.add_argument("--windows-file", required=True,
+                       help="Path to a JSON file holding the [[phase, start_iso, end_iso], ...] windows")
+        p.add_argument("--output-file", required=True,
+                       help="Path the per-phase normalized-token JSON result is written to")
+        ns = p.parse_args(remaining)
+        try:
+            raw = Path(ns.windows_file).read_text(encoding="utf-8")
+            parsed = json.loads(raw)
+        except (OSError, json.JSONDecodeError) as exc:
+            return toon_error(
+                "metrics normalized-tokens",
+                "invalid_argument",
+                f"--windows-file must be a readable JSON file: {exc}",
+            )
+        if not isinstance(parsed, list):
+            return toon_error(
+                "metrics normalized-tokens",
+                "invalid_argument",
+                "--windows-file must hold a JSON array of [phase, start_iso, end_iso] triples",
+            )
+        windows = [
+            (str(entry[0]), str(entry[1]), str(entry[2]))
+            for entry in parsed
+            if isinstance(entry, list) and len(entry) == 3
+        ]
+        return runtime.metrics_normalized_tokens(ns.session_id, windows, ns.output_file)
+
+    # ------------------------------------------------------------------
+    # subagent dispatch
+    # ------------------------------------------------------------------
+    if operation == "subagent dispatch":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime subagent dispatch")
+        p.add_argument("--agent", required=True)
+        p.add_argument("--prompt-file", default=None)
+        p.add_argument("--context", default=None)
+        ns = p.parse_args(remaining)
+        context: dict[str, Any] | None = None
+        if ns.context:
+            try:
+                context = _parse_context(ns.context)
+            except (json.JSONDecodeError, ValueError) as exc:
+                return toon_error(
+                    "subagent dispatch",
+                    "invalid_argument",
+                    f"--context must be a JSON object: {exc}",
+                )
+        return runtime.subagent_dispatch(ns.agent, ns.prompt_file, context)
+
+    # ------------------------------------------------------------------
+    # wait for
+    # ------------------------------------------------------------------
+    if operation == "wait for":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime wait for")
+        p.add_argument("--observable", required=True,
+                       help="Observable KIND to inspect (closed set; e.g. build-job). "
+                            "An opaque condition descriptor is NOT accepted — a runtime "
+                            "subprocess cannot evaluate one")
+        p.add_argument("--reference", required=True,
+                       help="Concrete instance identifier within the observable kind "
+                            "(e.g. the build-server job_id)")
+        p.add_argument("--bound-seconds", type=int, required=True,
+                       help="Maximum wall-clock seconds to hold the wait. A BOUND, not a "
+                            "verdict: exhausting it yields outcome: pending, never a pass")
+        ns = p.parse_args(remaining)
+        return runtime.wait_for(ns.observable, ns.reference, ns.bound_seconds)
+
+    # ------------------------------------------------------------------
+    # health-check
+    # ------------------------------------------------------------------
+    if operation == "health-check":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime health-check")
+        p.add_argument("--checks", required=True,
+                       help="Comma-separated: all,permissions,display,mcp-diagnostics")
+        ns = p.parse_args(remaining)
+        return runtime.health_check(ns.checks)
+
+    # Unrecognized operation.
+    return toon_error(
+        operation,
+        "unknown_operation",
+        f"Unknown operation {operation!r}; "
+        "valid operations: project initial-setup, project install-hook, "
+        "layout skill-roots, layout bundle-cache-root, "
+        "session capture, session render-title, session push-title-token, "
+        "session bind, session resolve-plan, session doctor, session teardown, "
+        "session reload-directive, "
+        "permission configure, permission analyze, permission fix, "
+        "permission ensure-wildcards, permission ensure-steps, "
+        "permission web-analyze, permission web-apply, "
+        "metrics capture, metrics normalized-tokens, subagent dispatch, "
+        "wait for, health-check",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+
+
+def _build_operation(argv: list[str]) -> tuple[str, list[str]]:
+    """Determine the two-word operation from argv and return (operation, remaining).
+
+    Operations are two-word identifiers (e.g. ``project initial-setup``).
+    Some are single-hyphenated second words (``health-check``).
+
+    Supported prefix tokens: project, layout, session, permission, metrics, subagent, wait, health-check.
+    """
+    if not argv:
+        return ("", [])
+
+    # health-check is a special case — single token.
+    if argv[0] == "health-check":
+        return ("health-check", argv[1:])
+
+    # All other operations have the form: <group> <subcommand>
+    if len(argv) >= 2:
+        group = argv[0]
+        subcommand = argv[1]
+        operation = f"{group} {subcommand}"
+        return (operation, argv[2:])
+
+    return (argv[0], [])
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Router entry point. Returns exit code."""
+    if argv is None:
+        argv = sys.argv[1:]
+
+    if not argv:
+        print(
+            "usage: platform_runtime.py <operation> [args...]\n"
+            "See standards/contract.md for supported operations.",
+            file=sys.stderr,
+        )
+        return 1
+
+    operation, remaining = _build_operation(argv)
+
+    # ------------------------------------------------------------------
+    # Determine project_dir for marshal.json lookup.
+    # ``project initial-setup`` is the only operation that explicitly
+    # supplies --project-dir before the executor exists; extract it here
+    # so the marshal lookup works correctly for that path.
+    # All other operations use cwd-walk.
+    # ------------------------------------------------------------------
+    project_dir: str | None = None
+    if operation == "project initial-setup":
+        # Peek at --project-dir without consuming remaining.
+        peek = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
+        peek.add_argument("--project-dir", default=None)
+        peek.add_argument("--target", default=_DEFAULT_TARGET)
+        ns_peek, _ = peek.parse_known_args(remaining)
+        if ns_peek.project_dir:
+            project_dir = ns_peek.project_dir
+
+    # ------------------------------------------------------------------
+    # Load marshal.json and resolve target.
+    # ``project initial-setup`` may run before marshal.json exists, so we
+    # attempt the read but fall back to the --target argument when the
+    # file is absent.
+    # ------------------------------------------------------------------
+    marshal = _read_marshal(project_dir)
+
+    if marshal is not None:
+        target = _resolve_target(marshal)
+        if not target:
+            # marshal.json found but runtime.target missing — fall back to the
+            # registered default target.
+            target = _DEFAULT_TARGET
+    else:
+        # marshal.json absent — only valid for ``project initial-setup``.
+        if operation == "project initial-setup":
+            # Extract --target from remaining to bootstrap the correct runtime.
+            peek2 = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
+            peek2.add_argument("--target", default=_DEFAULT_TARGET)
+            ns_peek2, _ = peek2.parse_known_args(remaining)
+            target = ns_peek2.target
+        else:
+            print(
+                toon_error(
+                    operation,
+                    "marshal_not_found",
+                    ".plan/marshal.json not found; run 'project initial-setup' first",
+                )
+            )
+            return 0
+
+    # Activate target-specific bootstrap libs now that the target is known.
+    # This extends sys.path with platform-specific skill libraries (e.g.
+    # tools-permission-doctor for claude) so runtime subclasses can import
+    # them without maintaining their own duplicate bootstrap blocks.
+    _bootstrap_glob_discover(target)
+
+    # Validate target against registry.
+    runtime = _make_runtime(target)
+    if runtime is None:
+        print(
+            toon_error(
+                operation,
+                "unknown_target",
+                f"runtime.target {target!r} is not in the registry; "
+                f"valid targets are: {', '.join(sorted(_REGISTRY))}",
+            )
+        )
+        return 0
+
+    # ------------------------------------------------------------------
+    # ``project install-hook`` is the one operation that takes a target
+    # identifier as an ARGUMENT while the runtime serving it was selected
+    # independently from marshal.json. Two identifiers that can disagree is
+    # a silent-wrong-answer seam: a project whose marshal.json says
+    # ``opencode`` invoked with ``--target claude`` would reach
+    # ``OpenCodeRuntime``, which declines every invocation without reading
+    # the argument at all — so the caller asked for the Claude integration
+    # and was told OpenCode has no hook channel. The inverse mismatch
+    # reaches ClaudeRuntime and reports ``unknown_target``, which is an
+    # error about the wrong thing.
+    #
+    # Refuse the disagreement here, where both identifiers are in scope.
+    # The check fires ONLY when the requested target names a REGISTERED
+    # target: an absolute settings-file path is the documented test and
+    # recovery override, is not a registry key, and still reaches the
+    # implementation that defines it.
+    # ------------------------------------------------------------------
+    if operation == "project install-hook":
+        peek_target = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
+        peek_target.add_argument("--target", default=None)
+        ns_target, _ = peek_target.parse_known_args(remaining)
+        requested = ns_target.target
+        if requested in _REGISTRY and requested != target:
+            print(
+                toon_error(
+                    operation,
+                    "target_mismatch",
+                    f"--target {requested!r} names a different target than this "
+                    f"project's runtime.target {target!r}; the install would be "
+                    f"served by the {target!r} runtime and could not honour the "
+                    f"request. Run this from a {requested!r} project, or change "
+                    f"runtime.target in .plan/marshal.json.",
+                )
+            )
+            return 0
+
+    # ------------------------------------------------------------------
+    # Dispatch to the runtime implementation.
+    # ------------------------------------------------------------------
+    result = _dispatch(runtime, operation, remaining)
+    # An empty string is the stdout-is-final signal from ``session render-title``
+    # on a target that renders the title itself. It carries NO outcome: the render
+    # may have written its bytes, had nothing to write, or FAILED to write, and all
+    # three return "". So this branch means only "the runtime owns stdout here" —
+    # never "the title was emitted". A target that renders names its real outcome on
+    # a side channel (the Claude runtime writes an ``outcome:`` row to stderr).
+    # Whatever happened, the caller MUST NOT append a trailing newline that would
+    # render as an empty row under the prompt. Every TOON return path produces a
+    # non-empty string, so the truthiness check is sufficient.
+    if result:
+        print(result)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

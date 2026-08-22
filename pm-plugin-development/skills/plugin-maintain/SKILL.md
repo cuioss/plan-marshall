@@ -1,0 +1,447 @@
+---
+name: plugin-maintain
+description: Comprehensive maintenance skill for marketplace components - update components, manage knowledge, maintain READMEs, restructure, and apply orchestration compliance
+user-invocable: true
+mode: workflow
+---
+
+# Plugin Maintain Skill
+
+Comprehensive maintenance automation for marketplace bundles. Consolidates update, knowledge management, README maintenance, refactoring, and orchestration compliance into a single skill with progressive disclosure.
+
+## Enforcement
+
+**Execution mode**: Select workflow based on parameters and execute. Load only the reference guide needed for that workflow.
+
+**Prohibited actions:**
+- Do not add content without checking for duplication first
+- Do not skip quality analysis before and after updates
+- Do not make structural changes without running diagnosis afterward
+
+**Constraints:**
+- Target 0 to -10% line change when updating components (anti-bloat)
+- Prefer consolidation over addition; prefer skill references over duplicating content
+- Extract to a skill if content appears in 3+ components
+- Verify quality score does not decrease significantly after changes
+- Check duplication before adding knowledge; consolidate at >40% overlap, skip at >70%
+- Git provides version control — no manual backup files needed; prompt user for risky changes
+- Each workflow step that performs a script operation has an explicit bash code block with the full `python3 .plan/execute-script.py` command
+
+### Lint-rule-authoring discipline (corpus-validation before static rule)
+
+Before encoding any doc/prose convention as a **blocking static lint rule** (a plugin-doctor rule that fails the quality-gate), apply this discipline:
+
+- **(a) Enumerate the corpus first.** Before writing the rule, enumerate every actual value the target field carries across the marketplace corpus — not a sample, the full set. A rule designed against an imagined value space, rather than the values that actually occur, mis-fires the moment it meets real data.
+- **(b) Textually-indistinguishable convention → checklist, not a rule.** If the defect pattern is textually indistinguishable from legitimate usage (a human needs context or judgment to tell a violation from a valid use), the convention belongs in a **review checklist / authoring standard**, NOT a blocking static rule. A static rule can only enforce what is mechanically separable; encoding a judgment-call convention as a hard rule guarantees false positives on legitimate content.
+- **(c) A false-positive flood is the kill signal.** When a deployed rule produces a flood of false positives, the correct response is to **REMOVE the rule** — do not downgrade it to advisory and leave it in place. An advisory rule that everyone learns to ignore is corpus noise that erodes trust in the whole gate; a rule that cannot cleanly distinguish violations from valid usage has failed its design test and must go.
+
+## Overview
+
+This skill provides 5 maintenance workflows:
+
+1. **update-component** - Update existing agents or commands with improvements
+2. **add-knowledge** - Add external knowledge to skills with duplication prevention
+3. **update-readme** - Synchronize README files with current marketplace state
+4. **refactor-structure** - Restructure components for better organization
+5. **apply-orchestration** - Apply bundle-by-bundle orchestration compliance patterns
+
+## Progressive Disclosure Strategy
+
+**Context Reduction**: Load only what's needed per workflow.
+
+| Workflow | Reference Loaded | Lines |
+|----------|------------------|-------|
+| update-component | component-update-guide.md | ~650 |
+| add-knowledge | knowledge-management-guide.md | ~600 |
+| update-readme | readme-maintenance-guide.md | ~550 |
+| refactor-structure | refactoring-strategies-guide.md | ~600 |
+| apply-orchestration | orchestration-compliance.md | ~600 |
+
+**Total Context Per Workflow**: ~1,400 lines (SKILL.md + reference)
+**vs Loading Everything**: ~3,800 lines (75% reduction)
+
+## Scripts
+
+Script: `pm-plugin-development:plugin-maintain` → `maintain.py`
+
+| Subcommand | Purpose |
+|------------|---------|
+| `analyze` | Analyze component for quality and improvement opportunities |
+| `check-duplication` | Check for duplicate knowledge when adding content |
+| `update` | Apply updates to a component file |
+| `readme` | Generate README content from bundle inventory |
+
+All scripts are stdlib-only with TOON output.
+
+## Assets Available
+
+| Asset | Purpose |
+|-------|---------|
+| `readme-template.md` | Template for README generation (`assets/readme-template.md`) |
+
+## Workflow 1: update-component
+
+**Goal**: Update existing agent or command with improvements.
+
+**Parameters**:
+- `component_path` (required): Path to component file
+- `improvements` (required): Description of improvements to apply
+- `verify` (optional): Run diagnosis after update (default: true)
+
+### Steps
+
+#### Step 1: Load Foundation Skills
+
+```text
+Skill: pm-plugin-development:plugin-architecture
+Skill: plan-marshall:persona-plan-marshall-agent
+```
+
+These provide architecture principles and non-prompting tool usage patterns.
+
+#### Step 2: Load Reference Guide
+
+```text
+Read: references/component-update-guide.md
+```
+
+#### Step 3: Analyze Current State
+
+Run component analysis:
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-maintain:maintain analyze --component {component_path}
+```
+
+Parse JSON output to understand:
+- Current quality score
+- Existing issues
+- Section structure
+- Line count
+
+#### Step 4: Validate Improvements
+
+Check that proposed improvements:
+- Apply to this component's purpose
+- Are specific enough to implement
+- Follow anti-bloat rules (target 0 to -10% line change)
+- Don't duplicate existing content
+
+#### Step 5: Apply Updates
+
+Use `maintain.py update` or Edit tool to apply changes:
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-maintain:maintain update --component {component_path} --updates '{"updates": [...]}'
+```
+
+Or use Edit tool for precise modifications.
+
+#### Step 6: Verify Update
+
+If `verify=true`:
+- Re-run analyze-component.py
+- Compare quality scores
+- Check for new issues introduced
+
+Report results including:
+- Lines added/removed
+- Quality score change
+- Any warnings
+
+## Workflow 2: add-knowledge
+
+**Goal**: Add external knowledge to skill with duplication prevention.
+
+**Parameters**:
+- `skill_path` (required): Path to skill directory
+- `source` (required): URL or file path to knowledge source
+- `topic` (required): Topic/category for the knowledge
+- `load_type` (optional): How to load - on-demand, conditional, always (default: on-demand)
+
+### Steps
+
+#### Step 1: Load Foundation Skills
+
+```text
+Skill: pm-plugin-development:plugin-architecture
+Skill: plan-marshall:persona-plan-marshall-agent
+```
+
+These provide architecture principles and non-prompting tool usage patterns.
+
+#### Step 2: Load Reference Guide
+
+```text
+Read: references/knowledge-management-guide.md
+```
+
+#### Step 3: Validate Skill
+
+Verify skill directory exists and has:
+- SKILL.md file
+- references/ or standards/ directory (create if missing)
+
+#### Step 4: Fetch Source Content
+
+If URL: Use WebFetch to retrieve content
+If file: Read the file
+
+#### Step 5: Check for Duplication
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-maintain:maintain check-duplication --skill-path {skill_path} --content-file {content_file}
+```
+
+Parse JSON output:
+- `duplication_detected`: Boolean
+- `duplication_percentage`: 0-100
+- `recommendation`: proceed, consolidate, or skip
+
+#### Step 6: Handle Duplication
+
+If duplication found:
+- Present findings to user
+- Ask: Proceed anyway, Consolidate, or Skip
+
+Use AskUserQuestion for confirmation.
+
+#### Step 7: Create Knowledge Document
+
+Create reference file in skill/references/:
+- Add source attribution header
+- Convert content to Markdown if needed
+- Preserve all code examples
+
+#### Step 8: Update SKILL.md
+
+Add reference based on load_type:
+- on-demand: Add to optional loading section
+- conditional: Add with condition
+- always: Add to main loading section
+
+## Workflow 3: update-readme
+
+**Goal**: Synchronize README with current marketplace state.
+
+**Parameters**:
+- `bundle_path` (optional): Path to bundle (default: all bundles)
+- `force` (optional): Overwrite even if manual edits detected (default: false)
+
+### Steps
+
+#### Step 1: Load Foundation Skills
+
+```text
+Skill: pm-plugin-development:plugin-architecture
+Skill: plan-marshall:persona-plan-marshall-agent
+```
+
+These provide architecture principles and non-prompting tool usage patterns.
+
+#### Step 2: Load Reference Guide
+
+```text
+Read: references/readme-maintenance-guide.md
+```
+
+#### Step 3: Generate README Content
+
+For each bundle:
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-maintain:maintain readme --bundle-path {bundle_path}
+```
+
+Parse JSON output for:
+- Bundle name
+- Commands, agents, skills with descriptions
+- Generated README content
+
+#### Step 4: Compare with Existing
+
+Read current README.md if exists:
+- Identify manual edits (content not matching generated)
+- Check for outdated component listings
+- Detect missing or obsolete components
+
+#### Step 5: Handle Manual Edits
+
+If manual edits detected and not `force`:
+- Display differences
+- Ask user: Update, Skip, or Force
+
+#### Step 6: Write Updated README
+
+Use Write tool to update README.md.
+
+Report:
+- Components added
+- Components removed
+- Descriptions updated
+
+## Workflow 4: refactor-structure
+
+**Goal**: Restructure components for better organization.
+
+**Parameters**:
+- `scope` (required): What to refactor - component, bundle, or marketplace
+- `strategy` (required): Refactoring strategy to apply
+
+### Steps
+
+#### Step 1: Load Foundation Skills
+
+```text
+Skill: pm-plugin-development:plugin-architecture
+Skill: plan-marshall:persona-plan-marshall-agent
+```
+
+These provide architecture principles and non-prompting tool usage patterns.
+
+#### Step 2: Load Reference Guide
+
+```text
+Read: references/refactoring-strategies-guide.md
+```
+
+#### Step 3: Analyze Current Structure
+
+For each component in scope:
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-maintain:maintain analyze --component {component_path}
+```
+
+Identify:
+- Bloated components (>500 lines)
+- Missing sections
+- Quality issues
+- Duplication across components
+
+#### Step 4: Generate Refactoring Plan
+
+Based on strategy:
+- **consolidate**: Merge related components
+- **split**: Break large components into smaller ones
+- **extract**: Move shared content to skill
+- **reorganize**: Restructure directory layout
+
+#### Step 5: Apply Refactoring
+
+Execute refactoring plan:
+- Rename/move files
+- Update cross-references
+- Modify plugin.json entries
+- Run verification
+
+#### Step 6: Verify Results
+
+Run plugin-doctor on affected components.
+Report any issues introduced.
+
+## Workflow 5: apply-orchestration
+
+**Goal**: Apply bundle-by-bundle orchestration compliance patterns.
+
+**Parameters**:
+- `command_path` (required): Path to diagnose command to update
+- `verify` (optional): Verify compliance after update (default: true)
+
+### Steps
+
+#### Step 1: Load Foundation Skills
+
+```text
+Skill: pm-plugin-development:plugin-architecture
+Skill: plan-marshall:persona-plan-marshall-agent
+```
+
+These provide architecture principles and non-prompting tool usage patterns.
+
+#### Step 2: Load Reference Guide
+
+```text
+Read: references/orchestration-compliance.md
+```
+
+This contains:
+- Bundle-by-bundle processing rules
+- Mandatory completion checklists
+- Anti-skip protections
+- Post-fix verification requirements
+
+#### Step 3: Validate Command
+
+Verify command is a diagnose command:
+- Check name contains "diagnose"
+- Verify it processes bundles
+
+#### Step 4: Analyze Current Implementation
+
+Read command file and check for:
+- Bundle iteration pattern
+- Completion checklist
+- Stop points
+- Verification gates
+
+#### Step 5: Apply Compliance Patterns
+
+Using Edit tool, add or update:
+- Bundle-by-bundle iteration (Step 5)
+- Anti-skip protections for steps 5e-5i
+- Mandatory completion checklist (10 items)
+- Post-fix verification with git status
+
+#### Step 6: Verify Compliance
+
+If `verify=true`:
+- Check all required patterns present
+- Validate checklist completeness
+- Test command with sample bundle
+
+## Error Handling
+
+Each workflow handles errors:
+1. Log error details
+2. Restore from backup if applicable
+3. Continue with next item if batch processing
+4. Report all errors in summary
+
+## Canonical invocations
+
+The canonical argparse surface for `maintain.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### update
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-maintain:maintain update \
+  --component COMPONENT [--updates UPDATES]
+```
+
+### check-duplication
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-maintain:maintain check-duplication \
+  --skill-path SKILL_PATH --content-file CONTENT_FILE
+```
+
+### analyze
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-maintain:maintain analyze \
+  --component COMPONENT
+```
+
+### readme
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-maintain:maintain readme \
+  --bundle-path BUNDLE_PATH
+```
+
+## Related Resources
+
+- **plugin-doctor skill** - Diagnose and fix quality issues in components
+- **plugin-create skill** - Create new components
+
