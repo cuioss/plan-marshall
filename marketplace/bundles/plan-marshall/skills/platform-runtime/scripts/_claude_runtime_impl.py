@@ -10,7 +10,7 @@ the ``class ClaudeRuntime(Runtime)`` operation implementations.
 Correctness contract: the entry module (imported here as ``claude_runtime``) owns
 the monkeypatchable constants (``_CLAUDE_PROJECTS_DIR``, ``_PLAN_DIR_NAME``) and
 settings-path functions
-(``_claude_global_settings_path``, ``_claude_project_settings_path``) plus every
+(``_claude_global_settings_path``, ``_claude_local_settings_path``) plus every
 other module-level helper the operations depend on. This module reaches each of
 those names via ATTRIBUTE ACCESS at call time (``claude_runtime.<name>``) — never
 a ``from``-import — so a test's monkeypatch of ``claude_runtime.<name>`` is
@@ -76,7 +76,7 @@ class ClaudeRuntime(Runtime):
         plan_dir = pd / claude_runtime._PLAN_DIR_NAME
         temp_dir = plan_dir / "temp"
         marshal_path = plan_dir / "marshal.json"
-        settings_path = pd / ".claude" / "settings.local.json"
+        settings_path = claude_runtime._claude_local_settings_path(str(pd))
 
         # Create directory structure.
         try:
@@ -1927,12 +1927,12 @@ class ClaudeRuntime(Runtime):
                 all_healthy = False
 
         if "display" in checks_to_run:
-            # Read BOTH settings files — a hook entry can legitimately sit in
-            # either (the install resolver prefers a pre-existing shared
-            # settings.json; the enforcement install pins settings.local.json).
-            # The sibling ``hook`` check already treats either file as
-            # authoritative; the display check must too, or an install that
-            # lands in the other file reports a false MISSING.
+            # Read BOTH settings files — the install resolver pins
+            # settings.local.json for the terminal-title and the enforcement
+            # install alike, but a project set up before that pin can still
+            # carry an entry in the shared settings.json. The sibling ``hook``
+            # check already treats either file as authoritative; the display
+            # check must too, or such an install reports a false MISSING.
             display_main = claude_runtime._read_json(Path(".claude") / "settings.json") or {}
             display_local = claude_runtime._read_json(Path(".claude") / "settings.local.json") or {}
             merged = claude_runtime._merge_display_settings(display_main, display_local)

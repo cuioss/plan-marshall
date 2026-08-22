@@ -1209,7 +1209,7 @@ results[4]{check,healthy,detail}:
   permissions,true,settings.local.json present; allow array has 12 entries
   display,true,render-title hook entry present in .claude/settings.local.json
   mcp-diagnostics,true,"MCP server reachable at 127.0.0.1:64342"
-  hook,true,SessionStart hook entry present in .claude/settings.json
+  hook,true,SessionStart hook entry present in .claude/settings.local.json
 ```
 
 **Success (some checks failing)**:
@@ -1222,7 +1222,7 @@ checks_run[2]:
 all_healthy: false
 results[2]{check,healthy,detail}:
   permissions,true,settings.local.json present; allow array has 12 entries
-  hook,false,SessionStart hook entry missing from .claude/settings.json; run marshall-steward to install
+  hook,false,SessionStart hook entry missing from both .claude/settings.json and .claude/settings.local.json; run marshall-steward to install
 ```
 
 **Error**:
