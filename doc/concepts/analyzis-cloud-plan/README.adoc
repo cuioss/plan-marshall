@@ -24,6 +24,10 @@ adjudicates it against three candidate explanations:
 | 45
 | xref:truthfull-signals.adoc[Cloud-run quality analysis: truthful-signals]
 
+| `code-intelligence-substrate`
+| 37
+| xref:code-intelligence-substrate.adoc[Cloud-run quality analysis: code-intelligence-substrate]
+
 |===
 
 == How to produce one of these reports
