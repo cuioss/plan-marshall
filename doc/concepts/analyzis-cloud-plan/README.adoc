@@ -1,0 +1,243 @@
+= Cloud-run quality analyses
+:toc: left
+:toclevels: 2
+
+Comparative quality analyses of epics whose plans were exported to `doc/plans/{epic}/` and executed as
+standalone cloud runs, measured against plans executed locally through the full plan-marshall
+lifecycle.
+
+Each report answers one question — *why did the cloud runs produce the gap count they did?* — and
+adjudicates it against three candidate explanations:
+
+. **plan-marshall shows its benefit** — the local lane's in-run gates are the difference.
+. **The lane contract is faulty** — `.claude/skills/cloud-plan-lane/SKILL.md` and
+  `.claude/skills/author-cloud-plan/SKILL.md` have named, evidenced defects.
+. **A general Claude Code issue** — the cause is environmental and affects both lanes equally.
+
+== Reports
+
+[cols="2,1,4",options="header"]
+|===
+| Epic | Plans | Report
+
+| `truthful-signals`
+| 45
+| xref:truthfull-signals.adoc[Cloud-run quality analysis: truthful-signals]
+
+|===
+
+== How to produce one of these reports
+
+Written for an orchestrator analysing its own epic. Follow it in order; every step names the artifact
+it consumes so nothing is asserted that was not measured.
+
+=== Preconditions
+
+The epic's cloud runs must already be **ingested** into the orchestrator ledger — the plan artifacts
+live under `.plan/local/orchestrator/{epic}/cloud-runs/{NNN}-{slug}/` with all four files
+(`plan.md`, `report-01.md`, `verification.md`, `gaps.md`) per plan.
+
+⛔ If the runs are still in `doc/plans/{epic}/`, ingest first. An analysis run against a tree that is
+about to move produces path-scoped findings that evaporate on ingestion.
+
+⛔ If a plan has **no `verification.md`**, it was never post-verified. Produce one before analysing —
+otherwise its deliverable fidelity is unmeasurable and it silently drops out of every ratio.
+
+=== Step 0 — Exclude the lane-fix PRs before anything else
+
+An epic's cloud PRs come in **two kinds**, and only one belongs in a quality analysis:
+
+* **Plan work** — a run of an authored `plan.md` under the `cloud-plan-lane` rule-set. **Analyse these.**
+* **Fixes to the `cloud-plan-lane` skill itself** — ad-hoc edits made *outside* the rule-set, with no
+  plan directory and no gates. **Exclude these completely.** They were never governed by the contract
+  the report evaluates, so their defects measure the wrong thing.
+
+**Derive the exclusion, do not eyeball the titles.** The criterion:
+
+[quote]
+____
+A PR is a lane-fix when the ONLY production file it touches is `.claude/skills/cloud-plan-lane/SKILL.md`
+— plan documents under `doc/plans/` are not production files.
+____
+
+⚠ **`only` is load-bearing, not `any`.** A large plan can legitimately edit the lane skill among many
+other files. In `truthful-signals`, `#1162` touches that file with **64** production files and is plan
+work; `#1137` and `#1147` touch it with **one** and are lane-fixes.
+
+⛔ **Resolve each PR's landing commit by anchoring to the END of the SUBJECT line.** A bare
+`git log --grep "(#NNNN)"` also matches commits that merely *mention* the number in their body and will
+hand you a plausible wrong commit. In this analysis that misclassified `#1213` as a lane-fix until the
+match was anchored. State how many lane-fix PRs existed in total, how many were already outside the
+corpus, and how many you removed from it.
+
+=== Step 1 — Establish the three populations, and never mix them
+
+Derive and publish each denominator before any ratio:
+
+* **Plans** — directories under `cloud-runs/` excluding `_epic`.
+* **Deliverables** — distinct `D<n>` rows in each `verification.md` deliverable table.
+* **Gaps** — `## G<n>` sections in each `gaps.md`, *excluding* the `## Refuted during adversarial
+  review` section. A refuted gap is evidence, not an open item.
+
+=== Step 2 — Measure deliverable fidelity
+
+For each `verification.md` deliverable row, the four axes are *implemented at all* / *as documented* /
+*correctly* / *completely*. A row carrying any non-`yes` value is a **fidelity failure**: the plan
+claimed it and the tree disagreed. This is the "claimed to fix but didn't" number.
+
+Report it as `D-fail / deliverables` with a percentage.
+
+=== Step 3 — Classify every gap by its own `Kind` field
+
+⛔ **First, read the verification prompt that produced these gaps.** The gap count is substantially a
+function of what that call asked for. If the brief asked for a repository-wide review of correctness,
+edge cases, security fail-closed posture, test quality, generator usage, positive/negative coverage
+and documentation structure, then the taxonomy will mirror that checklist — and the count is the yield
+of *that question*, not a lane-quality constant. Quote the brief in the report and say so explicitly.
+
+⭐ **Separate the prompt-dependent findings from the claim-relative ones.** Two measurements survive
+any change of brief because they are taken against the plans' *own claims* rather than an external
+checklist: **deliverable fidelity failures** (Step 2) and **unresolved reviewer findings** (Step 5).
+Rest the verdict on those; never on the raw gap total.
+
+Then partition by `Kind` into three classes:
+
+[cols="3,4",options="header"]
+|===
+| Class | Kinds
+
+| Real defect in what was claimed done
+| `bug`, `vacuous-test`, `vacuous-guard`, `missing-test`, `false-signal`, `false-absence`,
+  `wrong-behaviour`, `missing-implementation`, `incomplete-guard`, `unenforced-invariant`
+
+| Incomplete sweep — fixed one site, missed others
+| `incomplete-sweep`
+
+| Documentation / prose accuracy only
+| `stale-statement`, `doc-drift`, `doc-conflict`, `omission`, `incomplete-statement`, `duplication`
+|===
+
+Then classify by **target**: does the gap point at a live repo surface, or at the run's *own*
+`report-01.md`? Report-targeting gaps are the plan's paperwork about itself. In `truthful-signals`
+they were 16.6% of the total.
+
+=== Step 4 — Build the local comparison set
+
+Extract from `.plan/local/archived-plans/`. Use the **whole archive** if it is small; if you sample,
+say so and give the population.
+
+Per plan: PR number (from `metadata.phase_steps["6-finalize"]["create-pr"].display_detail`),
+deliverables (`### <n>.` under `## Deliverables` in `solution_outline.md`), findings from
+`artifacts/findings/*.jsonl`, and the `**Total**` row of `metrics.md`.
+
+⛔ **Separate the finding types.** `qgate` + `pr-comment` are defect-shaped; `test-failure` and
+`build-error` are in-run build signal and will inflate the count several-fold if mixed in.
+
+=== Step 5 — Measure the reviewer signal (CodeRabbit)
+
+An independent reviewer's findings are the one quality measurement neither lane authors about itself.
+Fetch per PR with `ci pr comments --pr-number N` and classify:
+
+* A **finding** is an inline comment authored by `coderabbitai` carrying a `cr-comment:v1` fingerprint.
+  That marker is what separates an originating finding from CodeRabbit's own auto-generated replies —
+  counting raw inline comments over-counts by roughly 3x.
+* **Resolved** is the thread's `resolved` flag.
+
+⛔ **Distinguish three states, never two.** `-` = CodeRabbit produced no review (quota, label, or
+absence). `0` = it reviewed and found nothing. These are different facts and collapsing them
+manufactures a clean result out of a missing one — the archetype these reports exist to find. Sample
+the decline notices and say *why*: an account quota is environmental, a `skip-bot-review` label is a
+lane decision.
+
+⭐ **Validate the classifier against an independent measurement** before trusting it. If any plan in
+the corpus ran `finalize-step-review-retrospective`, its per-reviewer actionable count is ground truth
+for that PR — check your number reproduces it exactly.
+
+The discriminating metric is **not coverage, it is resolution rate**: of the findings a reviewer did
+raise, what share was resolved before merge. Coverage is usually environmental and shared across
+lanes; resolution is a property of the lane's findings pipeline.
+
+=== Step 6 — State the confound before stating the comparison
+
+[WARNING]
+====
+**The two defect counts are not the same measurement and must not be subtracted.**
+
+Cloud gaps are found by an *independent post-hoc audit* after merge. Local findings are raised by the
+plan's *own in-run gates* and resolved before merge. One measures escapes; the other measures catches.
+
+Unless a post-hoc audit has been run over the local plans — it has not — **the local escape rate is
+unknown, not zero.** Any report that presents the two counts as comparable is committing the epic's
+own archetype.
+====
+
+The honest claim available from this data is *"the local lane demonstrably catches more before
+merge"*, never *"the local lane ships fewer bugs"*.
+
+=== Step 7 — Cost: count all THREE cloud expenditures
+
+A cloud-lane plan is billed in three separate places, and "running the plan" is only the middle one:
+
+. **Authoring** — the `author-cloud-plan` pass that produces `plan.md`.
+. **Running** — the branch/PR/merge cycle that produces `report-01.md`.
+. **Verifying** — the separate operator-issued review call that produces `verification.md` + `gaps.md`.
+
+A local plan-marshall plan carries all three functions *inside one lifecycle* and reports them in one
+`metrics.md` total.
+
+⛔ **Do not compare a one-bucket cloud number against a three-bucket local number.** The cloud lane
+publishes no token figure at all, so the split is unmeasured; say so and treat any
+percentage-of-weekly-limit observation as unattributed. State which side is measured and which is
+observed.
+
+=== Step 8 — Record the model and effort setting of BOTH lanes
+
+The lanes are typically not run at the same setting, and the asymmetry has to be stated because it
+cuts in opposite directions:
+
+* Cloud runs in this project used **Opus at max effort**, uniform, chosen deliberately to anticipate
+  the guardrails the lane does not have.
+* Local runs use a **per-phase resolved effort level** — read it, do not assume it:
+  `manage-config effort resolve-target --phase {phase}` for each phase, plus
+  `manage-config effort identify` for the preset.
+
+⛔ **On cost this weakens the comparison** — part of any cloud-vs-local gap is the model tier, so the
+cost figures are *not effort-controlled* and must not be presented as if they were.
+
+⭐ **On quality it strengthens the conclusion** — if the cloud lane had the more expensive setting and
+still under-performed on the claim-relative metrics, the difference is structural rather than a matter
+of thinking harder. Say which direction each of your findings moves under this confound.
+
+⚠ The cloud setting is usually an **operator statement with no artifact** in the corpus; the local one
+is machine-readable. Label each accordingly.
+
+=== Step 9 — Adjudicate, and look for a cross-lane control
+
+For each candidate explanation, require a *named mechanism with a measured consequence*. "The lane is
+worse" is not a finding; "the run report is self-assessed, and 51 of 308 gaps are corrections to those
+reports" is.
+
+⭐ **Actively hunt for a dimension where both lanes behave identically.** In `truthful-signals` that
+was reviewer coverage — 1-of-3 in both lanes — which *removed* it as an explanation for the gap count.
+A control that eliminates a candidate is worth more than one that supports it.
+
+=== Step 10 — Derive, do not transcribe
+
+Generate every table with a script that reads the corpus. The strongest single finding in the
+`truthful-signals` report is that mechanically-derived figures survived a run in which hand-written
+prose went stale in five places — do not then hand-type the comparison tables.
+
+=== Step 11 — Record the measurement instant
+
+State the HEAD sha and the date at the top. The project documentation standard forbids timestamps;
+this is a deliberate, stated exception, because a comparative measurement without its instant is
+exactly the untruthful signal these reports exist to find.
+
+== Conventions for these reports
+
+* One file per epic: `{epic}.adoc`, linked from the table above.
+* Every count rides with its population. A bare `0` must state *which* zero it is — *examined N, none
+  found* is a result; *could not look* is not.
+* Refuted findings are retained with the evidence that refuted them, never deleted.
+* Where the analysis corrects a figure it inherited, record the correction rather than silently
+  fixing it.
