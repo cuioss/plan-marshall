@@ -163,16 +163,27 @@ lanes; resolution is a property of the lane's findings pipeline.
 ====
 **The two defect counts are not the same measurement and must not be subtracted.**
 
-Cloud gaps are found by an *independent post-hoc audit* after merge. Local findings are raised by the
-plan's *own in-run gates* and resolved before merge. One measures escapes; the other measures catches.
-
-Unless a post-hoc audit has been run over the local plans — it has not — **the local escape rate is
-unknown, not zero.** Any report that presents the two counts as comparable is committing the epic's
-own archetype.
+Cloud gaps come from a verification pass sweeping against a broad checklist. Local findings are raised
+by the plan's *own in-run gates* and resolved before merge. One counts what a sweep found; the other
+counts what the gates caught.
 ====
 
-The honest claim available from this data is *"the local lane demonstrably catches more before
-merge"*, never *"the local lane ships fewer bugs"*.
+⛔ **Do NOT write that local plans are unverified post-hoc — they are.** The orchestrator contract
+requires every landed plan's result to be passed back and **verified against ground truth** before it
+is recorded; a pasted claim is a lead, never a fact. The `landings/*.md` records are that
+verification's output and are directly measurable.
+
+**Measure it.** Over the orchestrator-written landing records (exclude any you generated yourself
+during ingestion), count how many record at least one **CONTRADICTED / REFUTED** claim. In
+`truthful-signals` that is **20 of 61 = 33%**, against a cloud rate of **26 of 45 = 58%** plans with at
+least one deliverable failing a fidelity axis.
+
+⚠ **State that the instruments differ in depth.** The cloud pass checks every deliverable on four axes
+and sweeps adjacent surfaces; the orchestrator checks the claims the plan actually made. Some of any
+gap is instrument depth, not plan quality — it is a comparison, not a controlled experiment.
+
+The defensible claims are *"the local lane catches more before merge"* and *"its post-hoc check
+contradicts a plan claim less often"*, never *"the local lane ships fewer bugs"*.
 
 === Step 7 — Cost: count all THREE cloud expenditures
 
