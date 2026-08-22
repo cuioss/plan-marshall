@@ -55,59 +55,63 @@ resolved by any number below.
 any of the four fidelity axes (implemented at all / as documented / correctly / completely) —
 **the plan claimed it and the tree disagreed**.
 
-[cols="1,1,3,1,1,1,1,1",options="header"]
+[cols="1,1,3,1,1,1,1,1,1,1",options="header"]
 |===
-| Plan | PR | Verdict | Deliv | D-fail | Gaps | Closed | Open
+| Plan | PR | Verdict | Deliv | D-fail | Gaps | Closed | Open | CR find | CR fixed
 
-| `030` | #1137 | partially-implemented | 6 | 2 | 4 | 0 | 4
-| `040` | #1138 | implemented-with-gaps | 3 | 0 | 6 | 4 | 2
-| `050` | #1153 | implemented-with-gaps | 4 | 0 | 7 | 3 | 4
-| `060` | #1150 | partially-implemented | 2 | 0 | 7 | 5 | 2
-| `070` | #1152 | implemented-with-gaps | 6 | 0 | 6 | 0 | 6
-| `080` | #1156 | implemented-with-gaps | 10 | 2 | 9 | 0 | 9
-| `090` | #1155 | implemented-with-gaps | 5 | 1 | 3 | 3 | 0
-| `100` | #1158 | implemented-with-gaps | 6 | 0 | 10 | 3 | 7
-| `110` | #1169 | implemented-with-gaps | 4 | 2 | 7 | 0 | 7
-| `120` | #1162 | fully-implemented | 7 | 1 | 4 | 4 | 0
-| `130` | #1163 | implemented-with-gaps | 6 | 4 | 6 | 3 | 3
-| `140` | #1171 | implemented-with-gaps | 4 | 1 | 5 | 0 | 5
-| `150` | #1172 | implemented-with-gaps | 5 | 3 | 5 | 0 | 5
-| `160` | #1174 | implemented-with-gaps | 6 | 1 | 10 | 2 | 8
-| `170` | #1296 | implemented-with-gaps | 5 | 0 | 5 | 0 | 5
-| `180` | #1183 | implemented-with-gaps | 5 | 3 | 7 | 7 | 0
-| `190` | #1179 | implemented-with-gaps | 6 | 1 | 8 | 3 | 5
-| `200` | #1181 | implemented-with-gaps | 5 | 1 | 8 | 0 | 8
-| `210` | #1186 | implemented-with-gaps | 3 | 0 | 5 | 0 | 5
-| `220` | #1224 | implemented-with-gaps | 4 | 2 | 7 | 0 | 7
-| `230` | #1194 | partially-implemented | 6 | 5 | 4 | 1 | 3
-| `240` | #1188 | implemented-with-gaps | 4 | 0 | 5 | 0 | 5
-| `250` | #1198 | partially-implemented | 6 | 1 | 12 | 11 | 1
-| `260` | #1197 | implemented-with-gaps | 4 | 2 | 7 | 0 | 7
-| `270` | #1195 | implemented-with-gaps | 6 | 1 | 7 | 0 | 7
-| `280` | #1200 | implemented-with-gaps | 4 | 2 | 7 | 0 | 7
-| `290` | #1205 | implemented-with-gaps | 2 | 1 | 5 | 0 | 5
-| `300` | #1211 | implemented-with-gaps | 4 | 0 | 9 | 9 | 0
-| `302` | #1215 | implemented-with-gaps | 6 | 0 | 9 | 8 | 1
-| `310` | #1206 | implemented-with-gaps | 6 | 2 | 8 | 5 | 3
-| `320` | #1213 | implemented-with-gaps | 8 | 2 | 10 | 10 | 0
-| `330` | #1217 | implemented-with-gaps | 6 | 1 | 5 | 1 | 4
-| `340` | #1222 | implemented-with-gaps | 5 | 0 | 4 | 0 | 4
-| `350` | #1221 | implemented-with-gaps | 5 | 0 | 4 | 0 | 4
-| `360` | #1223 | partially-implemented | 7 | 4 | 6 | 1 | 5
-| `370` | #1228 | implemented-with-gaps | 8 | 0 | 7 | 0 | 7
-| `380` | #1229 | partially-implemented | 7 | 3 | 8 | 0 | 8
-| `390` | #1230 | implemented-with-gaps | 9 | 2 | 5 | 0 | 5
-| `410` | #1231 | implemented-with-gaps | 4 | 0 | 4 | 2 | 2
-| `420` | #1255 | implemented-with-gaps | 5 | 1 | 3 | 0 | 3
-| `430` | #1193 | implemented-with-gaps | 4 | 0 | 9 | 0 | 9
-| `440` | #1235 | partially-implemented | 5 | 1 | 6 | 4 | 2
-| `450` | #1147 | implemented-with-gaps | 5 | 2 | 5 | 0 | 5
-| `460` | #1278 | fully-implemented | 4 | 0 | 5 | 1 | 4
-| `500` | #1320 | implemented-with-gaps | 8 | 0 | 8 | 0 | 8
-| `510` | #1309 | implemented-with-gaps | 8 | 0 | 9 | 0 | 9
-| `520` | #1317 | implemented-with-gaps | 8 | 0 | 8 | 0 | 8
-| *TOTAL* | *47 PRs* | | *256* | *54* | *308* | *90* | *218*
+| `030` | #1137 | partially-implemented | 6 | 2 | 4 | 0 | 4 | - | -
+| `040` | #1138 | implemented-with-gaps | 3 | 0 | 6 | 4 | 2 | 3 | 3
+| `050` | #1153 | implemented-with-gaps | 4 | 0 | 7 | 3 | 4 | - | -
+| `060` | #1150 | partially-implemented | 2 | 0 | 7 | 5 | 2 | - | -
+| `070` | #1152 | implemented-with-gaps | 6 | 0 | 6 | 0 | 6 | - | -
+| `080` | #1156 | implemented-with-gaps | 10 | 2 | 9 | 0 | 9 | - | -
+| `090` | #1155 | implemented-with-gaps | 5 | 1 | 3 | 3 | 0 | 1 | 0
+| `100` | #1158 | implemented-with-gaps | 6 | 0 | 10 | 3 | 7 | - | -
+| `110` | #1169 | implemented-with-gaps | 4 | 2 | 7 | 0 | 7 | - | -
+| `120` | #1162 | fully-implemented | 7 | 1 | 4 | 4 | 0 | - | -
+| `130` | #1163 | implemented-with-gaps | 6 | 4 | 6 | 3 | 3 | 6 | 0
+| `140` | #1171 | implemented-with-gaps | 4 | 1 | 5 | 0 | 5 | - | -
+| `150` | #1172 | implemented-with-gaps | 5 | 3 | 5 | 0 | 5 | - | -
+| `160` | #1174 | implemented-with-gaps | 6 | 1 | 10 | 2 | 8 | - | -
+| `170` | #1296 | implemented-with-gaps | 5 | 0 | 5 | 0 | 5 | - | -
+| `180` | #1183 | implemented-with-gaps | 5 | 3 | 7 | 7 | 0 | 7 | 0
+| `190` | #1179 | implemented-with-gaps | 6 | 1 | 8 | 3 | 5 | - | -
+| `200` | #1181 | implemented-with-gaps | 5 | 1 | 8 | 0 | 8 | - | -
+| `210` | #1186 | implemented-with-gaps | 3 | 0 | 5 | 0 | 5 | 1 | 1
+| `220` | #1224 | implemented-with-gaps | 4 | 2 | 7 | 0 | 7 | - | -
+| `230` | #1194 | partially-implemented | 6 | 5 | 4 | 1 | 3 | - | -
+| `240` | #1188 | implemented-with-gaps | 4 | 0 | 5 | 0 | 5 | - | -
+| `250` | #1198 | partially-implemented | 6 | 1 | 12 | 11 | 1 | 3 | 0
+| `260` | #1197 | implemented-with-gaps | 4 | 2 | 7 | 0 | 7 | - | -
+| `270` | #1195 | implemented-with-gaps | 6 | 1 | 7 | 0 | 7 | 6 | 6
+| `280` | #1200 | implemented-with-gaps | 4 | 2 | 7 | 0 | 7 | - | -
+| `290` | #1205 | implemented-with-gaps | 2 | 1 | 5 | 0 | 5 | - | -
+| `300` | #1211 | implemented-with-gaps | 4 | 0 | 9 | 9 | 0 | 10 | 0
+| `302` | #1215 | implemented-with-gaps | 6 | 0 | 9 | 8 | 1 | - | -
+| `310` | #1206 | implemented-with-gaps | 6 | 2 | 8 | 5 | 3 | - | -
+| `320` | #1213 | implemented-with-gaps | 8 | 2 | 10 | 10 | 0 | - | -
+| `330` | #1217 | implemented-with-gaps | 6 | 1 | 5 | 1 | 4 | 1 | 1
+| `340` | #1222 | implemented-with-gaps | 5 | 0 | 4 | 0 | 4 | - | -
+| `350` | #1221 | implemented-with-gaps | 5 | 0 | 4 | 0 | 4 | - | -
+| `360` | #1223 | partially-implemented | 7 | 4 | 6 | 1 | 5 | - | -
+| `370` | #1228 | implemented-with-gaps | 8 | 0 | 7 | 0 | 7 | - | -
+| `380` | #1229 | partially-implemented | 7 | 3 | 8 | 0 | 8 | - | -
+| `390` | #1230 | implemented-with-gaps | 9 | 2 | 5 | 0 | 5 | 7 | 0
+| `410` | #1231 | implemented-with-gaps | 4 | 0 | 4 | 2 | 2 | 3 | 3
+| `420` | #1255 | implemented-with-gaps | 5 | 1 | 3 | 0 | 3 | - | -
+| `430` | #1193 | implemented-with-gaps | 4 | 0 | 9 | 0 | 9 | - | -
+| `440` | #1235 | partially-implemented | 5 | 1 | 6 | 4 | 2 | 3 | 2
+| `450` | #1147 | implemented-with-gaps | 5 | 2 | 5 | 0 | 5 | - | -
+| `460` | #1278 | fully-implemented | 4 | 0 | 5 | 1 | 4 | 2 | 2
+| `500` | #1320 | implemented-with-gaps | 8 | 0 | 8 | 0 | 8 | 17 | 17
+| `510` | #1309 | implemented-with-gaps | 8 | 0 | 9 | 0 | 9 | 14 | 13
+| `520` | #1317 | implemented-with-gaps | 8 | 0 | 8 | 0 | 8 | 0 | 0
+| *TOTAL* | *47 PRs* | | *256* | *54* | *308* | *90* | *218* | *84* | *48*
 |===
+
+`CR find` / `CR fixed` are CodeRabbit review findings and how many were resolved. **`-` means
+CodeRabbit produced no review for that PR** — see xref:_codeRabbit_the_reviewer_signal[the reviewer
+section]; it is never a zero-findings result.
 
 Derived ratios:
 
@@ -187,25 +191,89 @@ Adjusting for both effects, the defect density that actually matters is:
 * of which 45 were rated `high` across the whole corpus
 ====
 
+[#_codeRabbit_the_reviewer_signal]
+== CodeRabbit: the reviewer signal
+
+Review findings are an independent measurement of plan quality — a reviewer that had to raise a
+finding is a defect the plan shipped into review. Measured per PR from `ci pr comments`, counting
+inline comments authored by `coderabbitai` that carry a `cr-comment:v1` fingerprint (the marker that
+distinguishes an originating finding from CodeRabbit's own auto-generated replies).
+
+[NOTE]
+====
+**The classifier was validated against an independent measurement.** For PR #1134 it returns 10
+findings; the `review-retrospective` step run separately over the same PR reported *10 actionable*
+(of 13 raw, 3 meta). The two agree exactly.
+====
+
+[cols="4,2,2",options="header"]
+|===
+| | Cloud lane | Local plan-marshall
+
+| PRs | 47 | 10
+| CodeRabbit **reviewed** | 16 (34%) | 6 (60%)
+| CodeRabbit **declined** (quota) | 31 | 4
+| Findings raised | 84 | 47
+| Findings per reviewed PR | 5.2 | 7.8
+| Findings **resolved** | 48 (**57.1%**) | 47 (**100%**)
+| PRs with findings and **zero** resolved | 6 | 0
+|===
+
+=== The resolution rate is the discriminator
+
+**Local plans resolved 47 of 47 CodeRabbit findings — 100%. Cloud plans resolved 48 of 84 — 57.1%.**
+
+6 cloud PRs received CodeRabbit findings and resolved **none of them**: `090`, `130`, `180`, `250`, `300`, `390` — 34 findings left on the table.
+
+This is the cleanest evidence in the report for outcome 1. The local lane has a *findings pipeline*
+— `automatic-review` files each comment as a `pr-comment` finding, a unified triage dispositions
+every one, and the blocking-finding invariant refuses the phase transition while any actionable
+finding is still `pending`. **A local plan structurally cannot merge with an unresolved review
+finding.** The cloud lane reads comments and relies on the run to act on them, so 43% simply were
+not acted on.
+
+=== Why coverage was low in BOTH lanes — and what that does to the argument
+
+Every decline sampled, in both lanes, carries the identical notice:
+
+[quote]
+____
+Review limit reached — `@cuioss-oliver`, you've reached your PR review limit, so we couldn't start
+this review.
+____
+
+This is an **account-level quota**, not a `skip-bot-review` label and not a lane decision. It affects
+both lanes: the local lane also lost 4 of 10 PRs to it.
+
+[IMPORTANT]
+====
+**A second-order effect worth naming.** The cloud lane pushed 47 PRs through review in a short
+window. That volume is itself a plausible driver of the quota exhaustion that then degraded review
+for *everything* in the same period — including the local plans, 4 of which were declined.
+
+So the reviewer dimension splits in two: **coverage** is environmental and shared (outcome 3), while
+**resolution of what the reviewer did find** is entirely a lane property (outcomes 1 and 2). Only
+the second explains the gap corpus.
+====
 == Comparison: the 10 most recent local plan-marshall plans
 
 The complete local archive, not a sample.
 
-[cols="4,1,1,1,1,1,1",options="header"]
+[cols="4,1,1,1,1,1,1,1,1",options="header"]
 |===
-| Plan | PR | Deliv | In-run findings | per-Deliv | Tokens | Billing
+| Plan | PR | Deliv | In-run findings | per-Deliv | CR find | CR fixed | Tokens | Billing
 
-| `absent-names-two-states-with-opposite-remedi` | #1118 | 5 | 35 | 7.0 | 6,928,350 | 65,088,306
-| `daemon-baseline-interpreter-is-unregistrable` | #1122 | 3 | 6 | 2.0 | 4,626,351 | 34,901,688
-| `provider-logging-path-containment` | #1123 | 3 | 23 | 7.7 | 5,633,452 | 32,034,376
-| `executor-rejects-invalid-invocations-before-` | #1127 | 5 | 35 | 7.0 | 9,179,597 | 158,854,939
-| `generic-charter-language-specific-defect` | #1130 | 8 | 11 | 1.4 | 4,781,368 | 102,618,506
-| `hook-timeout-unit-confusion` | #1131 | 2 | 23 | 11.5 | 7,850,309 | 109,408,471
-| `metrics-record-cannot-represent-re-entered-p` | #1129 | 4 | 21 | 5.2 | 7,509,007 | 134,398,855
-| `runtime-edge-paths-crash-or-silently-lose-da` | #1132 | 5 | 1 | 0.2 | 3,284,200 | 79,784,599
-| `self-review-resweeps-full-surface-every-roun` | #1126 | 6 | 28 | 4.7 | 5,771,590 | 108,860,690
-| `two-producers-one-marker-field-two-encodings` | #1125 | 5 | 20 | 4.0 | 6,439,391 | 104,906,508
-| *TOTAL / MEAN* | *10 PRs* | *46* | *203* | *4.41* | *6,200,361* | *93,085,693*
+| `absent-names-two-states-with-opposite-remedi` | #1118 | 5 | 35 | 7.0 | 8 | 8 | 6,928,350 | 65,088,306
+| `daemon-baseline-interpreter-is-unregistrable` | #1122 | 3 | 6 | 2.0 | - | - | 4,626,351 | 34,901,688
+| `provider-logging-path-containment` | #1123 | 3 | 23 | 7.7 | 9 | 9 | 5,633,452 | 32,034,376
+| `executor-rejects-invalid-invocations-before-` | #1127 | 5 | 35 | 7.0 | 12 | 12 | 9,179,597 | 158,854,939
+| `generic-charter-language-specific-defect` | #1130 | 8 | 11 | 1.4 | - | - | 4,781,368 | 102,618,506
+| `hook-timeout-unit-confusion` | #1131 | 2 | 23 | 11.5 | 7 | 7 | 7,850,309 | 109,408,471
+| `metrics-record-cannot-represent-re-entered-p` | #1129 | 4 | 21 | 5.2 | 7 | 7 | 7,509,007 | 134,398,855
+| `runtime-edge-paths-crash-or-silently-lose-da` | #1132 | 5 | 1 | 0.2 | - | - | 3,284,200 | 79,784,599
+| `self-review-resweeps-full-surface-every-roun` | #1126 | 6 | 28 | 4.7 | - | - | 5,771,590 | 108,860,690
+| `two-producers-one-marker-field-two-encodings` | #1125 | 5 | 20 | 4.0 | 4 | 4 | 6,439,391 | 104,906,508
+| *TOTAL / MEAN* | *10 PRs* | *46* | *203* | *4.41* | *47* | *47* | *6,200,361* | *93,085,693*
 |===
 
 === The comparison, stated honestly
@@ -334,15 +402,14 @@ What is genuinely environmental rather than contractual:
 
 [NOTE]
 ====
-**Cross-lane control: the review shortfall is NOT cloud-specific.** `PLAN-TRUTH-074`, a *local*
-plan-marshall plan finalized during this analysis, recorded reviewer coverage of **1 of 3** — exactly
-the cloud rate. Its `review-retrospective` measured `coderabbitai` at 13 raw / 10 actionable / 90%
-resolved-as-fixed, while `cuioss-review-bot` and `sourcery-ai` were both **unmeasurable** (no
-participation artifact).
+**Cross-lane control: the review *coverage* shortfall is not cloud-specific.** Every CodeRabbit
+decline sampled in *both* lanes carries the same account-quota notice, and the local lane lost 4 of
+its 10 PRs to it. `PLAN-TRUTH-074`, a local plan finalized during this analysis, recorded 1-of-3
+coverage across the whole bot roster — `cuioss-review-bot` and `sourcery-ai` were both unmeasurable.
 
-This is the one dimension where the two lanes are indistinguishable, which places it squarely in
-outcome 3 and **removes it as an explanation for the cloud gap count**. Whatever produced 308 gaps,
-it was not the review-bot shortfall — the local lane has the same shortfall and does not produce them.
+Coverage is therefore environmental and shared, which **removes it as an explanation for the gap
+count**. What is *not* shared is what happens to a finding once raised: local **100%** resolved,
+cloud **57.1%**. See xref:_codeRabbit_the_reviewer_signal[the reviewer section].
 ====
 
 None of these explains the gap count. They explain why *review* was thin, not why the *plans*
@@ -363,6 +430,12 @@ it shipped **308 gaps across 256 deliverables**, 218 of them still open, with a
 The corpus's own best evidence for this reading is that the three *remediation* plans — which ran in
 the same cloud lane — closed 90 gaps and **filed 25 new ones**, two of them `high`. The lane does not
 self-correct; it re-introduces its own defect class at each pass.
+
+**The reviewer signal is the sharpest single discriminator in this report.** Of the CodeRabbit findings
+raised against each lane, the local lane resolved **47 of 47 (100%)** and the cloud lane **48 of 84
+(57.1%)**, with six cloud PRs resolving *none* of what they were given. That is not a quality-of-work
+difference — it is the presence or absence of a findings pipeline. A local plan structurally cannot
+merge while an actionable finding is `pending`; a cloud plan can, and 36 findings did.
 ====
 
 == What the cloud lane is genuinely good at
@@ -387,14 +460,17 @@ Ordered by measured value.
    breadth work — audits, sweeps, verification fan-outs — where its parallelism is the point.
 2. **Add a mandatory final re-derivation step** after the review cycle closes. This single change
    addresses mechanism (b) and a large share of the 51 report-correction gaps.
-3. **Stop self-assessing the run report**, or stop treating it as evidence. An independent pass over
+3. **Give the lane a blocking findings gate.** This is the highest-value single change: 36 CodeRabbit
+   findings were raised and never resolved because nothing refused the merge. The local equivalent is
+   the `pending_findings_blocking_count` invariant.
+4. **Stop self-assessing the run report**, or stop treating it as evidence. An independent pass over
    the report — not the work — would have caught all three self-contradictory reports.
-4. **Make the docs-only build-gate skip explicit as a coverage gap**, not a pass. It should read
+5. **Make the docs-only build-gate skip explicit as a coverage gap**, not a pass. It should read
    *could not look*, never *clean* — the epic's own namesake rule.
-5. **Give the lane a cost measurement.** It currently cannot report its own consumption at all.
-6. **Add a concurrent-working-tree rule** to § Step 6: dirty-check before mutating, scratch in
+6. **Give the lane a cost measurement.** It currently cannot report its own consumption at all.
+7. **Add a concurrent-working-tree rule** to § Step 6: dirty-check before mutating, scratch in
    `$TMPDIR`. The audit hit this and fixed it in-flight; the contract still does not carry it.
-7. **Route `.plan/`-dependent gates to a local run.** Three plans failed a gate for this reason; the
+8. **Route `.plan/`-dependent gates to a local run.** Three plans failed a gate for this reason; the
    staged `PLAN-TRUTH-097` now carries that constraint explicitly.
 
 == Reproducing this analysis

@@ -106,7 +106,31 @@ deliverables (`### <n>.` under `## Deliverables` in `solution_outline.md`), find
 ⛔ **Separate the finding types.** `qgate` + `pr-comment` are defect-shaped; `test-failure` and
 `build-error` are in-run build signal and will inflate the count several-fold if mixed in.
 
-=== Step 6 — State the confound before stating the comparison
+=== Step 6 — Measure the reviewer signal (CodeRabbit)
+
+An independent reviewer's findings are the one quality measurement neither lane authors about itself.
+Fetch per PR with `ci pr comments --pr-number N` and classify:
+
+* A **finding** is an inline comment authored by `coderabbitai` carrying a `cr-comment:v1` fingerprint.
+  That marker is what separates an originating finding from CodeRabbit's own auto-generated replies —
+  counting raw inline comments over-counts by roughly 3x.
+* **Resolved** is the thread's `resolved` flag.
+
+⛔ **Distinguish three states, never two.** `-` = CodeRabbit produced no review (quota, label, or
+absence). `0` = it reviewed and found nothing. These are different facts and collapsing them
+manufactures a clean result out of a missing one — the archetype these reports exist to find. Sample
+the decline notices and say *why*: an account quota is environmental, a `skip-bot-review` label is a
+lane decision.
+
+⭐ **Validate the classifier against an independent measurement** before trusting it. If any plan in
+the corpus ran `finalize-step-review-retrospective`, its per-reviewer actionable count is ground truth
+for that PR — check your number reproduces it exactly.
+
+The discriminating metric is **not coverage, it is resolution rate**: of the findings a reviewer did
+raise, what share was resolved before merge. Coverage is usually environmental and shared across
+lanes; resolution is a property of the lane's findings pipeline.
+
+=== Step 7 — State the confound before stating the comparison
 
 [WARNING]
 ====
@@ -123,13 +147,13 @@ own archetype.
 The honest claim available from this data is *"the local lane demonstrably catches more before
 merge"*, never *"the local lane ships fewer bugs"*.
 
-=== Step 7 — Cost
+=== Step 8 — Cost
 
 The cloud lane does not measure its own consumption; expect `not available` and record that as a
 finding rather than a blank. Use the operator's percentage-of-weekly-limit observation for the cloud
 side and the measured `metrics.md` totals for the local side, and label which is which.
 
-=== Step 8 — Adjudicate, and look for a cross-lane control
+=== Step 9 — Adjudicate, and look for a cross-lane control
 
 For each candidate explanation, require a *named mechanism with a measured consequence*. "The lane is
 worse" is not a finding; "the run report is self-assessed, and 51 of 308 gaps are corrections to those
@@ -139,13 +163,13 @@ reports" is.
 was reviewer coverage — 1-of-3 in both lanes — which *removed* it as an explanation for the gap count.
 A control that eliminates a candidate is worth more than one that supports it.
 
-=== Step 9 — Derive, do not transcribe
+=== Step 10 — Derive, do not transcribe
 
 Generate every table with a script that reads the corpus. The strongest single finding in the
 `truthful-signals` report is that mechanically-derived figures survived a run in which hand-written
 prose went stale in five places — do not then hand-type the comparison tables.
 
-=== Step 10 — Record the measurement instant
+=== Step 11 — Record the measurement instant
 
 State the HEAD sha and the date at the top. The project documentation standard forbids timestamps;
 this is a deliberate, stated exception, because a comparative measurement without its instant is
