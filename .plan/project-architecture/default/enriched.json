@@ -104,5 +104,6 @@
     "The default pseudo-module owns marketplace/targets and test/marketplace/targets but has NO bundle directory, so per-module verify scoping cannot target it. verify default fails deterministically with Error Bundle not found marketplace/bundles/default. A plan touching marketplace/targets code cannot locally scope-verify that module. Its tests run only via a whole-tree verify pass or in CI. Do not hand back pending_verify_modules listing default expecting a scoped verify to succeed.",
     "Ruff isort in this repo sets combine-as-imports = false, so an aliased member import (from X import Y as Z) must live in its own from-statement and cannot be combined with unaliased members of the same module. Combining them fails the quality-gate isort check.",
     "pyprojectx: tool.pyprojectx.lock-python-version pins ONLY the bootstrap venv, it does not bind the interpreter aliases run under. The binding key is UV_PYTHON declared in tool.pyprojectx.env, which cli.py _run_alias merges into every alias environment and which nested uv run calls in build.py inherit. Dev tools live in the PEP 735 dependency-groups.dev group resolved by uv into uv.lock, and tool.pyprojectx.main requires uv only. To confirm the actual build interpreter, read the build log header lines Using CPython X.Y.Z interpreter at ... and platform ... -- Python X.Y.Z, never a config declaration."
-  ]
+  ],
+  "type": "module"
 }
