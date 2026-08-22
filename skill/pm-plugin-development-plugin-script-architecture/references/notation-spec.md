@@ -1,0 +1,94 @@
+# Script Notation Specification
+
+Portable notation format for referencing skill scripts across different installations.
+
+## Format
+
+```text
+bundle:skill/scripts/name.ext
+```
+
+### Components
+
+| Component | Description | Example |
+|-----------|-------------|---------|
+| `bundle` | Bundle name (from plugin.json) | `pm-plugin-development` |
+| `skill` | Skill directory name | `marketplace-inventory` |
+| `scripts/` | Literal path segment (always `scripts/`) | `scripts/` |
+| `name.ext` | Script filename with extension | `scan-marketplace-inventory.sh` |
+
+### Valid Extensions
+
+| Extension | Type | Execution |
+|-----------|------|-----------|
+| `.sh` | Bash script | `bash {path}` |
+| `.py` | Python script | `python3 {path}` |
+
+## Examples
+
+### Bash Scripts
+
+```text
+pm-documents:ref-asciidoc/scripts/asciidoc.py
+pm-plugin-development:plugin-doctor/scripts/analyze-markdown-file.sh
+```
+
+### Python Scripts
+
+```text
+pm-plugin-development:tools-marketplace-inventory/scripts/scan-marketplace-inventory.py
+plan-marshall:tools-permission-doctor/scripts/permission_doctor.py
+pm-dev-java:java-core/scripts/analyze-logging-violations.py
+plan-marshall:workflow-integration-github/scripts/fetch-pr-comments.py
+```
+
+## Resolution
+
+The notation resolves to an absolute path based on the plugin's install location. The resolved path has the shape `{install_path}` / `skills/{skill}` / `scripts/{name.ext}` (joined as a single filesystem path).
+
+Where `{install_path}` comes from `~/.claude/plugins/installed_plugins.json`.
+
+### Example Resolution
+
+Notation:
+```text
+pm-plugin-development:tools-marketplace-inventory/scripts/scan-marketplace-inventory.py
+```
+
+Install path (from installed_plugins.json):
+```text
+/Users/oliver/git/plan-marshall/marketplace/bundles/plan-marshall-core
+```
+
+Resolved absolute path:
+```text
+/Users/oliver/git/plan-marshall/marketplace/bundles/plan-marshall-core/skills/tools-marketplace-inventory/scripts/scan-marketplace-inventory.py
+```
+
+## Validation Rules
+
+1. **Bundle must exist**: Bundle name must match an installed plugin
+2. **Skill must exist**: Skill directory must exist under `{install_path}/skills/`
+3. **Script must exist**: Script file must exist in skill's `scripts/` directory
+4. **Extension must be valid**: Only `.sh` and `.py` extensions are supported
+
+## Error Cases
+
+| Error | Cause | Resolution |
+|-------|-------|------------|
+| Bundle not found | Bundle not in installed_plugins.json | Install the plugin |
+| Skill not found | Skill directory doesn't exist | Check skill name |
+| Script not found | Script file doesn't exist | Check script name |
+| Invalid extension | Extension not .sh or .py | Use supported extension |
+
+## Permission Pattern
+
+Each skill with scripts generates ONE permission wildcard per script type:
+
+```text
+Bash(bash <install_path>/skills/<skill>/scr*ts/*.sh:*)
+Bash(python3 <install_path>/skills/<skill>/scr*ts/*.py:*)
+```
+(The `scr*ts` glob above represents the literal `scripts` subdirectory; it is typeset to avoid scanner false positives.)
+
+This allows all scripts in that skill to execute without individual permissions.

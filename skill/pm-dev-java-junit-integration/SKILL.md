@@ -1,0 +1,224 @@
+---
+name: pm-dev-java-junit-integration
+description: Maven integration testing with Failsafe plugin, IT naming conventions, and profile configuration
+compatibility: Adapted from plan-marshall marketplace (Claude Code native)
+---
+
+# JUnit Integration Skill
+
+**REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
+
+Integration testing standards for Maven projects using the Failsafe plugin. This skill covers test separation, naming conventions, and profile configuration.
+
+## Prerequisites
+
+This skill applies to Maven projects:
+- `maven-surefire-plugin` (unit tests)
+- `maven-failsafe-plugin` (integration tests)
+
+## Key Principles
+
+### Test Separation
+
+Integration tests should be completely separated from unit tests to ensure:
+
+* Fast unit test execution during regular development builds
+* Isolated integration test execution that can be run independently
+* Clear distinction between test types for CI/CD pipelines
+* Proper resource management for integration tests requiring external dependencies
+
+### Maven Plugin Usage
+
+* **Maven Surefire Plugin**: Handles unit tests during the `test` phase
+* **Maven Failsafe Plugin**: Handles integration tests during the `integration-test` and `verify` phases
+
+## Naming Conventions
+
+Integration tests must follow Maven's standard naming conventions:
+
+* `**/*IT.java` - Integration Test classes
+* `**/*ITCase.java` - Alternative integration test naming
+
+```java
+// Preferred: Correct naming
+public class TokenKeycloakIT extends KeycloakITBase {
+    // Integration test implementation
+}
+
+// Avoid: Incorrect naming (would be treated as unit test)
+public class TokenKeycloakITTest extends KeycloakITBase {
+    // This follows unit test naming convention
+}
+```
+
+## Maven Configuration
+
+### Base Configuration
+
+Configure surefire plugin to exclude integration tests from normal builds:
+
+```xml
+<plugin>
+    <groupId>org.apache.maven.plugins</groupId>
+    <artifactId>maven-surefire-plugin</artifactId>
+    <configuration>
+        <excludes>
+            <exclude>**/*IT.java</exclude>
+            <exclude>**/*ITCase.java</exclude>
+        </excludes>
+    </configuration>
+</plugin>
+```
+
+### Integration Test Profile
+
+Create a dedicated profile for integration tests:
+
+```xml
+<profile>
+    <id>integration-tests</id>
+    <build>
+        <plugins>
+            <!-- Skip Surefire Plugin (unit tests) when running integration tests -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <skipTests>true</skipTests>
+                </configuration>
+            </plugin>
+            <!-- Maven Failsafe Plugin for Integration Tests -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <includes>
+                        <include>**/*IT.java</include>
+                        <include>**/*ITCase.java</include>
+                    </includes>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>integration-test</id>
+                        <goals>
+                            <goal>integration-test</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>verify</id>
+                        <goals>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</profile>
+```
+
+## Critical Configuration Details
+
+### Why Skip Unit Tests in Integration Profile
+
+**Problem**: Without explicit unit test skipping, the integration-tests profile would run:
+1. All unit tests (via surefire)
+2. All integration tests (via failsafe)
+
+**Solution**: Configure surefire to skip tests when the integration-tests profile is active.
+
+### Failsafe Goals
+
+Both goals are required for proper integration test execution:
+
+* `integration-test`: Runs the integration tests
+* `verify`: Checks the results and fails the build if tests failed
+
+## Build Commands
+
+Build commands are resolved via the architecture API — never hardcode build tool invocations.
+
+- **Unit tests only**: `architecture resolve --command module-tests`
+- **Full verify**: `architecture resolve --command verify`
+- **Integration tests**: `architecture resolve --command integration-tests`
+
+### Build Verification
+
+Ensure both scenarios work correctly:
+
+1. **Normal Build**: Should only run unit tests
+2. **Integration Profile**: Should skip unit tests and only run integration tests
+
+## JUnit 5 Nested Tests
+
+Integration tests can use JUnit 5 nested test classes. The naming convention applies to the outer class:
+
+```java
+public class TokenKeycloakIT {
+
+    @Nested
+    class AccessTokenTests {
+        @Test
+        void shouldValidateAccessToken() {
+            // Test implementation
+        }
+    }
+
+    @Nested
+    class IdTokenTests {
+        @Test
+        void shouldValidateIdToken() {
+            // Test implementation
+        }
+    }
+}
+```
+
+## Step 2: Load Additional Standards (As Needed)
+
+**External Integration Testing** (load for Docker-based IT):
+```text
+Read: standards/external-integration-testing.md
+```
+
+Use when: Implementing external API integration tests with Docker containers, REST Assured over HTTPS, script-based lifecycle management, and management interface testing.
+
+## Common Pitfalls
+
+### FAIL Incorrect Naming Convention
+
+```java
+// Wrong - will be treated as unit test
+public class TokenKeycloakITTest { }
+```
+
+### FAIL Missing Surefire Skip Configuration
+
+Without `<skipTests>true</skipTests>` in the integration-tests profile, both unit and integration tests will run.
+
+### FAIL Wrong Maven Goal
+
+Integration tests require the `verify` goal (runs failsafe). The `test` goal only runs surefire (unit tests) — it will not execute `*IT.java` files even with the integration-tests profile active.
+
+### FAIL Missing Failsafe Executions
+
+Without proper `<executions>` configuration, failsafe tests might not run or results might not be verified.
+
+## Verify
+
+- Normal build excludes integration tests
+- Integration profile skips unit tests and only runs integration tests
+- CI/CD workflow includes integration test execution
+- Integration test naming follows Maven conventions (`*IT.java`)
+- Both surefire exclusions and failsafe inclusions are properly configured
+
+## Related Skills
+
+- `pm-dev-java:junit-core` - JUnit 5 core patterns
+- `pm-dev-java:java-cdi` - CDI patterns and container configuration
+
+## Additional Resources
+
+* [Maven Surefire Plugin Documentation](https://maven.apache.org/surefire/maven-surefire-plugin/)
+* [Maven Failsafe Plugin Documentation](https://maven.apache.org/surefire/maven-failsafe-plugin/)
+* [Maven Build Lifecycle](https://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html)

@@ -1,0 +1,239 @@
+---
+name: pm-plugin-development-plugin-plan-implement
+description: Implement plugin tasks from plan with step iteration and progress tracking
+compatibility: Adapted from plan-marshall marketplace (Claude Code native)
+---
+
+# Plugin Plan Implement Skill
+
+**Role**: Implement plugin-domain tasks by iterating through steps (file paths) and applying changes.
+
+**Execution Pattern**: Load task → Load skills → Iterate steps → Apply changes → Verify → Return result
+
+## Step 1: Load Foundational Practices
+
+```text
+Call the `skill` tool with `{ name: "plan-marshall-persona-plan-marshall-agent" }` before continuing.
+```
+
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `plan-marshall:manage-tasks:manage-tasks` | Task retrieval and progress tracking |
+| `plan-marshall:manage-logging:manage-logging` | Work log entries |
+| `plan-marshall:manage-config:manage-config` | Domain skill retrieval |
+
+## Standards (Load On-Demand)
+
+### Step Execution
+```text
+Read standards/step-execution.md
+```
+Contains: How to execute each step type (modify, create, etc.)
+
+---
+
+## Input
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `plan_id` | string | Yes | Plan identifier |
+| `task_number` | number | Yes | Task to execute |
+
+## Workflow
+
+### Step 2: Load Task Details
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read \
+  --plan-id {plan_id} \
+  --task-number {task_number}
+```
+
+Extract from response:
+- `title`: Task title for logging
+- `description`: What changes to apply
+- `delegation.domain`: For loading default skills
+- `delegation.context_skills`: Additional skills
+- `steps[]`: File paths to process
+- `verification`: Commands and criteria
+
+### Step 3: Load Domain Skills
+
+#### 2a. Get Domain Defaults
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  skill-domains get-defaults \
+  --domain {delegation.domain}
+```
+
+#### 2b. Load Default Skills
+
+```text
+Skill: {default_skill_1}
+Skill: {default_skill_2}
+```
+
+#### 2c. Load Context Skills
+
+From task delegation block:
+
+```text
+Skill: {delegation.context_skills[0]}
+Skill: {delegation.context_skills[1]}
+```
+
+### Step 4: Log Task Start
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[TASK] (pm-plugin-development:plugin-plan-implement) Starting task {task_number}: {title}"
+```
+
+### Step 5: Execute Steps
+
+For each step WHERE `status == pending`:
+
+#### 4a. Execute Step
+
+The step `title` is a file path. Apply changes based on:
+1. Task `description` - overall change guidance
+2. Loaded skills - implementation patterns
+3. File type - markdown with YAML frontmatter for plugins
+
+**For plugin files** (agents, commands, skills):
+- Read the file
+- Identify sections to update
+- Apply changes per task description
+- Write updated content
+
+**Infeasible step — report, never silently substitute**: when a step's declared deliverable turns out to be infeasible during execution — the target cannot be cleanly built as the task specifies (the required surface does not exist, a precondition the deliverable assumed is false, or building the named artifact is structurally impossible as scoped) — report the infeasibility as a recoverable error in the **Step 7 return** (`status: error`, `next_action: requires_attention`) naming the infeasibility reason. Do NOT mark the step done, and do NOT narrow the deliverable into a buildable-but-valueless substitute under the original name so the step "passes" while delivering none of the declared value. The infeasibility is a real failure that belongs in the structured return, not hidden behind a substituted deliverable.
+
+Load step execution patterns if needed:
+```text
+Read standards/step-execution.md
+```
+
+#### 4b. Log Step Progress
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[STEP] (pm-plugin-development:plugin-plan-implement) Completed step {step_number}: {file_path}"
+```
+
+#### 4c. Finalize Step
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step \
+  --plan-id {plan_id} \
+  --task-number {task_number} \
+  --step {step_number} \
+  --outcome done
+```
+
+### Step 6: Run Verification
+
+After all steps complete:
+
+```bash
+# Execute each verification command
+{verification.commands[0]}
+{verification.commands[1]}
+```
+
+Log result:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[VERIFY] (pm-plugin-development:plugin-plan-implement) Verification {passed|failed}: {criteria}"
+```
+
+### Step 7: Return Result
+
+**Success Output**:
+
+```toon
+status: success
+plan_id: {plan_id}
+task_number: {task_number}
+
+execution_summary:
+  steps_completed: {N}
+  steps_total: {M}
+  files_modified[N]:
+    - {path1}
+    - {path2}
+
+verification:
+  passed: true
+  command: "{verification command}"
+
+next_action: task_complete
+```
+
+**Error Output**:
+
+```toon
+status: error
+plan_id: {plan_id}
+task_number: {task_number}
+
+execution_summary:
+  steps_completed: {N}
+  steps_failed: {M}
+
+failure:
+  step: {step_number}
+  file: "{file path}"
+  error: "{error message}"
+  recoverable: true
+
+next_action: requires_attention
+```
+
+---
+
+## Error Handling
+
+### Step Failure
+
+If a step fails:
+1. Log error to work-log
+2. Do NOT mark step as done
+3. Continue to next step OR stop (based on severity)
+4. Include failure in result
+
+### Verification Failure
+
+If verification fails:
+1. Log what failed
+2. Return error status with `recoverable: true`
+3. Task remains in_progress for retry
+
+---
+
+## Constraints
+
+### Progress Tracking
+- Execute step
+- Mark finalize-step AFTER success (outcome: done or skipped)
+- Log progress at each step
+
+---
+
+## Integration
+
+### Called By
+- `plan-marshall:execution-context-{level}` - Generic execution-context dispatcher (loaded via the `workflow` prompt-body field)
+
+### Uses
+- `pm-plugin-development:plugin-architecture` - Architecture principles
+- `plan-marshall:manage-tasks` - Task and step management
+- `plan-marshall:manage-logging:manage-logging` - Work logging
+- Context skills from task delegation (loaded dynamically)
+
+### Related Skills
+- `plan-marshall:phase-5-execute` - Generic plan execution orchestrator
+- `pm-plugin-development:plugin-maintain` - Plugin maintenance operations

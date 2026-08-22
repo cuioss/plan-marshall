@@ -1,0 +1,476 @@
+# Menu Option: Terminal Title
+
+Configure the dynamic terminal-title integration or override the active plan
+for the current Claude Code session. When the integration is enabled, each
+terminal tab shows the active plan-marshall plan, phase, and a live status
+icon for the Claude Code session running in it. The same body also drives the
+Claude Code statusLine inside the TUI.
+
+Terminal-title configuration is a three-way split across surfaces shipped with
+the plan-marshall bundle:
+
+- **State** — `manage-status` persists `current_phase`, `short_description`, and
+  the `title_token` field into `status.json` (the single source of persisted
+  title state) on the relevant mutation paths. `title_token` is a structured
+  `{owner, state, set_at}` record: `owner` names the writer (`build-hook`,
+  `merge-lock`, or `cli`), and a record older than an hour reads as absent, so a
+  token stranded by a dead process self-heals with no operator action. No user
+  configuration is required. See
+  [`../../manage-status/standards/status-lifecycle.md` § Title Token](../../manage-status/standards/status-lifecycle.md)
+  for the state contract.
+- **Composer** — the pure `plan-marshall:manage-terminal-title` library owns the
+  `compose(state_dict, process_state, icon_override=None)` function plus the
+  glyph and icon vocabulary; it is imported by the resolve+emit layer.
+- **Resolve + emit** — the per-target `session render-title` operation
+  (implemented in `plan-marshall:platform-runtime`) reads the title state from
+  `status.json`, composes `{icon} {glyph} {body}` via the composer, and hands
+  the resulting OSC sequence to Claude Code in the hook `terminalSequence`
+  envelope (hook mode), or writes plain text to stdout (statusLine mode).
+  Claude Code writes the escape on the hook's behalf, so no controlling
+  terminal is required.
+
+See
+[`../../manage-terminal-title/standards/terminal-title-architecture.md`](../../manage-terminal-title/standards/terminal-title-architecture.md)
+for the full end-to-end architecture.
+
+The remaining wiring is the set of hook entries that drive the reader on every
+render-trigger event. **Action A** installs those entries into the resolved
+Claude settings file. **Action B** sets the active-plan cache mapping for the
+current session, overriding whichever plan id the executor's write-through last
+published.
+
+**Which settings file.** The terminal-title install does NOT pin
+`settings.local.json`. `--target claude` resolves through
+`_claude_project_settings_path()`, which prefers `.claude/settings.json` when
+that file exists and falls back to `.claude/settings.local.json`; the `display`
+health check reads BOTH files, so an entry in either counts as present. Only the
+orthogonal `--enforcement` install pins the local file. Report the file the call
+actually wrote by reading `settings_path` from the install response rather than
+naming a path this flow does not control.
+
+## Reachability
+
+This option is reachable from the marshall-steward **Configuration** menu
+(Main Menu → "3. Configuration" → "Terminal Title"), regardless of whether the
+project is being set up for the first time or is already configured. A project
+that already has a Claude settings file and `.plan/marshal.json` reaches this
+option the same way a fresh project does — the Configuration menu is not gated
+behind first-run setup.
+
+---
+
+## Sub-Menu Prompt
+
+Before either action runs, ask the user which one to take:
+
+```text
+AskUserQuestion:
+  question: "Terminal Title — what would you like to do?"
+  header: "Terminal Title"
+  options:
+    - label: "Configure hook wiring"
+      description: "Install or repair the SessionStart (matcher-less), SessionStart:clear, UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion, PreToolUse:Bash, PostToolUse:AskUserQuestion, PostToolUse:Bash render entries plus statusLine and env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE in the resolved Claude settings file (Action A)"
+    - label: "Override active-plan for this session"
+      description: "Write the cache mapping ${XDG_CACHE_HOME:-$HOME/.cache}/plan-marshall/sessions/$CLAUDE_CODE_SESSION_ID/active-plan so the next render trigger uses the selected plan (Action B)"
+  multiSelect: false
+```
+
+On **Configure hook wiring** proceed to Action A. On **Override active-plan for
+this session** proceed to Action B. The user may always return to the
+Configuration menu by cancelling the prompt.
+
+---
+
+## Action A — Configure hook wiring
+
+The detect → confirm → install flow below is the add/fix-into-existing-config
+path: it installs every missing render entry, preserves entries already present,
+and surfaces explicit prompts for the two conflict cases (`statusLine` /
+`env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE` set to a different value).
+
+### Step 1: Detect
+
+Probe the resolved Claude settings file to discover what is already wired
+up. Because the install operation never duplicates an entry and reports a
+precise per-event summary, the same call drives both detect and install — the
+`installed_events` / `already_present_events` / `migrated_events` /
+`capture_status` / `statusLine_status` / `env_status` fields in the response
+distinguish the cases.
+
+For a non-mutating probe before any user prompt, use the platform-runtime
+health-check:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
+  health-check --checks all
+```
+
+Inspect the `display` entry in the `results` array. Its `detail` field reports
+every piece on its own line, each ending in `present` or `MISSING`. Once the
+overall `status` has routed the flow (see the branch rule below), the `detail`
+lines are how a PARTIAL install is diagnosed — each `MISSING` line names one
+render entry, statusLine, or env value still to be installed. Read them as a
+diagnosis, never as the branch condition: one label on this list is deliberately
+non-blocking, so the presence of a `MISSING` line does not imply an unhealthy
+check.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
+  health-check --checks display
+```
+
+The `detail` field enumerates all of these labels, in order:
+
+- `SessionStart:matcher-less`
+- `SessionStart:clear`
+- `UserPromptSubmit`
+- `Notification`
+- `Stop`
+- `PreToolUse:AskUserQuestion`
+- `PreToolUse:Bash`
+- `PostToolUse:AskUserQuestion`
+- `PostToolUse:Bash`
+- `PreToolUse:enforcement`
+- `statusLine`
+- `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE`
+
+`PreToolUse:enforcement` is the **non-blocking** label. It keys on the
+enforcement hook command, not the render command, and its absence deliberately
+does NOT mark the display unhealthy — the enforcement hook is an orthogonal
+opt-in a project may skip while running terminal titles. It is listed here
+because it appears in `detail`, not because this flow installs it; that is
+[`menu-enforcement-hook.md`](menu-enforcement-hook.md)'s job.
+
+`PostToolUse` is **matcher-scoped** — two entries, `AskUserQuestion` and `Bash`,
+never a matcher-less one. The narrow shape is deliberate: the render command is
+among the largest recurring script costs in this project, and `PostToolUse:Bash`
+is the entry the machine-owned `build-busy` clear rides, so widening and pruning
+would delete the entry that clear depends on.
+
+`SessionStart:clear` **is** installed as its own entry — it is what routes the
+session teardown when a session is cleared.
+
+**The check is fail-closed.** A divergence between the expected and installed
+sets returns `status: error` with `error: display_unhealthy`, not a `success`
+carrying `all_healthy: false`. Branch on the status, not on the text.
+
+When `display` reports `status: success`, every required entry is present.
+
+**Branch on the status, never on a `MISSING` text scan.** A text scan is not a
+narrower spelling of the status check — it disagrees with it in the ordinary
+case. `_diagnose_display_entries` also emits a `PreToolUse:enforcement:
+present|MISSING` label, and that label's absence deliberately does NOT set
+`healthy = False`, because the enforcement hook is an orthogonal opt-in. So a
+project with the terminal title fully installed and enforcement simply not
+enabled reports `status: success` **and** carries a line containing `MISSING`. A
+scan would route that healthy project to the Step 2 enable prompt and offer to
+install what is already installed.
+
+**Presence is not correctness**: the `display` check keys on the hook command
+string alone and never inspects an entry's `timeout`, so a present entry can
+still carry a stale one. A re-run of the install converges any such entry, so
+this branch offers the re-run rather than returning silently:
+
+```text
+Terminal title is already configured.
+
+All nine render-trigger hook entries, the statusLine command, and the
+CLAUDE_CODE_DISABLE_TERMINAL_TITLE env entry are present in
+the resolved Claude settings file.
+
+The presence check does not inspect hook timeouts, so a present entry may still
+carry a stale one. Re-running the install rewrites only stale values and leaves
+everything else untouched.
+```
+
+```text
+AskUserQuestion:
+  question: "Every entry is present. Re-run the install to converge any stale hook timeouts in the resolved Claude settings file?"
+  header: "Terminal Title"
+  options:
+    - label: "Re-run install"
+      description: "Rewrite any hook timeout that falls outside the plausible seconds range; entries already correct are left untouched and nothing is duplicated"
+    - label: "Leave as is"
+      description: "Make no changes and return to the Configuration menu"
+  multiSelect: false
+```
+
+On **Leave as is**: write nothing and return to the Configuration menu. The
+detect probe above is non-mutating, so declining leaves the settings file
+exactly as found.
+
+On **Re-run install**: proceed to Step 3 (Install), skipping the Step 2 enable
+prompt — the user has already consented to this write. Report the outcome from
+the per-event summary below; `migrated_events` names each render entry that was
+converged, and `capture_status` reports the SessionStart capture entry, which
+carries no render label. Read `already_present: true` for "nothing changed at all" rather than deriving
+it: it is strictly narrower than those two signals, also requiring
+`installed_events` empty and both `statusLine_status` and `env_status` in
+{`already_present`, `already_present_other`} — a preserved foreign value still
+counts as "nothing changed", because nothing was written. A run that installed one missing render entry reports empty
+`migrated_events` and `capture_status: already_present` while `already_present`
+is `false`.
+
+When `display` reports `status: error` with `error: display_unhealthy`, proceed
+to Step 2. A `PreToolUse:enforcement: MISSING` line on an otherwise-successful
+check is NOT that signal — enforcement is enabled from its own menu action (see
+[`menu-enforcement-hook.md`](menu-enforcement-hook.md)), never from this flow.
+
+### Step 2: Confirm
+
+Prompt the user before writing anything:
+
+```text
+AskUserQuestion:
+  question: "Enable the dynamic terminal title and statusLine? This installs nine render-trigger hook entries, a statusLine command, and an env entry into the resolved Claude settings file."
+  header: "Terminal Title"
+  options:
+    - label: "Enable"
+      description: "Install the SessionStart (matcher-less), SessionStart:clear, UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion, PreToolUse:Bash, PostToolUse:AskUserQuestion, PostToolUse:Bash hook entries plus statusLine and env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE"
+    - label: "Skip"
+      description: "Make no changes; the terminal title stays disabled"
+  multiSelect: false
+```
+
+On **Skip**: write nothing and return to the Configuration menu.
+
+On **Enable**: proceed to Step 3.
+
+### Step 3: Install
+
+Install the full wiring by invoking `project install-hook`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
+  project install-hook --target claude
+```
+
+Inspect the TOON response:
+
+- `status: success` — the call landed; consult the per-piece summary below.
+- `status: error` — report the `message` field and advise the user to check
+  write permissions on `the resolved Claude settings file`. Do not proceed to the
+  conflict-resolution prompts.
+
+#### Per-event summary
+
+Three fields list which render-trigger events landed, which were converged, and
+which needed nothing:
+
+- `installed_events` — the events whose render entry was freshly inserted on
+  this call.
+- `migrated_events` — the events where our render entry was already installed
+  but carried a stale `timeout` that this call rewrote.
+- `already_present_events` — the events where our render entry was already
+  installed and already correct.
+
+The union of the three lists is always `["SessionStart:matcher-less",
+"SessionStart:clear", "UserPromptSubmit", "Notification", "Stop",
+"PreToolUse:AskUserQuestion", "PreToolUse:Bash", "PostToolUse:AskUserQuestion",
+"PostToolUse:Bash"]` — the same nine labels the `display` check reports, so the
+installer's output and the health check's expectation can be compared directly.
+The three lists PARTITION those labels: each label appears in exactly one of
+them, so a converged event is never also reported as already-present.
+
+The SessionStart **capture** entry (the `claude_hook` session-id capture) is
+outside that partition — it carries none of the nine render labels — so its
+outcome is reported on its own field:
+
+- `capture_status` — `installed` when the capture entry was freshly inserted,
+  `migrated` when an already-present one carried a stale `timeout` that this
+  call rewrote, `already_present` when it was already there and already correct.
+
+Report the breakdown so the user can see exactly which entries were added and
+which were rewritten:
+
+```text
+Installed render entries: <installed_events>
+Converged (stale timeout): <migrated_events>
+Already present:          <already_present_events>
+SessionStart capture:     <capture_status>
+```
+
+#### statusLine conflict resolution
+
+`statusLine_status` is one of `installed`, `already_present`,
+`already_present_other`, or `overwritten`.
+
+- `installed` / `already_present` / `overwritten` — no further prompt needed.
+- `already_present_other` — the resolved Claude settings file already defines a
+  `statusLine` whose command differs from the renderer. The install operation
+  preserved that value. Prompt the user before overwriting:
+
+  ```text
+  AskUserQuestion:
+    question: "An existing statusLine command was found in the resolved Claude settings file. Overwrite it with the plan-marshall renderer?"
+    header: "Existing statusLine"
+    options:
+      - label: "Overwrite"
+        description: "Replace the existing statusLine with `session render-title --statusline`"
+      - label: "Keep existing"
+        description: "Leave the existing statusLine command untouched; only hook entries and env will be installed"
+    multiSelect: false
+  ```
+
+  On **Overwrite**: re-invoke `project install-hook`, authorising the
+  `statusline` conflict key:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
+    project install-hook --target claude --overwrite statusline
+  ```
+
+  Expect `statusLine_status: overwritten` in the response.
+
+  On **Keep existing**: skip; report that the existing statusLine was kept.
+
+#### env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE conflict resolution
+
+`env_status` follows the same enum (`installed`, `already_present`,
+`already_present_other`, `overwritten`).
+
+- `installed` / `already_present` / `overwritten` — no further prompt needed.
+- `already_present_other` — the env entry is already set to a value other than
+  `"1"`. Prompt the user before overwriting:
+
+  ```text
+  AskUserQuestion:
+    question: "env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE is already set in the resolved Claude settings file to a value other than \"1\". Overwrite it?"
+    header: "Existing env"
+    options:
+      - label: "Overwrite"
+        description: "Set CLAUDE_CODE_DISABLE_TERMINAL_TITLE to \"1\" so Claude Code does not overwrite our title"
+      - label: "Keep existing"
+        description: "Leave the existing env value untouched"
+    multiSelect: false
+  ```
+
+  On **Overwrite**: re-invoke `project install-hook`, authorising the
+  `env-disable` conflict key:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
+    project install-hook --target claude --overwrite env-disable
+  ```
+
+  Expect `env_status: overwritten` in the response.
+
+  On **Keep existing**: skip; report that the existing env value was kept.
+
+The two prompts and re-invocations are independent — handle them in sequence
+when both `already_present_other` signals fire, passing the appropriate flag(s)
+on the follow-up call. The follow-up call may carry both flags at once when the
+user consented to both overwrites.
+
+#### Final report
+
+Once all conflicts (if any) are resolved, report the outcome:
+
+```text
+Terminal title enabled.
+
+Render hooks:        <installed_events ∪ migrated_events ∪ already_present_events>
+SessionStart capture: <capture_status>
+statusLine:          <statusLine_status>
+env entry:           <env_status>
+
+Start a fresh Claude Code session to see the live tab title and statusline
+(plan, phase, status icon).
+```
+
+After completion, return to the Configuration menu.
+
+---
+
+## Action B — Override active-plan for this session
+
+The active-plan cache mapping at
+`${XDG_CACHE_HOME:-$HOME/.cache}/plan-marshall/sessions/$CLAUDE_CODE_SESSION_ID/active-plan`
+is normally populated on the first `/plan-marshall` invocation in a session
+(the executor's write-through publishes the plan id alongside the command it
+ran). Until that first invocation lands, a fresh session shows the host
+terminal's default title; this action is the explicit override path for setting
+the active plan up front, or for switching to a different plan mid-session.
+
+The override is **session-scoped**: the cache mapping lives under the current
+`$CLAUDE_CODE_SESSION_ID` directory, so closing the terminal and opening a new
+one starts from an empty mapping again (the next `/plan-marshall` invocation
+in the new session will repopulate it via the executor write-through).
+
+### Step 1: Precondition — session id must be set
+
+Read `$CLAUDE_CODE_SESSION_ID`. When unset, print:
+
+```text
+Cannot override active plan: $CLAUDE_CODE_SESSION_ID is not set. The override
+sub-action must be invoked from inside a Claude Code session.
+```
+
+and return to the Configuration menu.
+
+### Step 2: Enumerate active plans
+
+List all plans whose `current_phase ∉ {complete, archived}`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status list
+```
+
+The TOON contract for `list` carries `current_phase` per row; filter
+client-side to retain only non-terminal plans. For each surviving plan, capture
+`plan_id`, `current_phase`, and `short_description` from the row.
+
+- **Zero active plans** → print `No active plans to choose from.` and return
+  to the Configuration menu.
+- **One active plan** → confirm via `AskUserQuestion`:
+
+  ```text
+  AskUserQuestion:
+    question: "Set active plan for this session to `<plan_id>`?"
+    header: "Override active plan"
+    options:
+      - label: "Confirm"
+        description: "<current_phase> — <short_description>"
+      - label: "Cancel"
+        description: "Leave the current mapping untouched"
+    multiSelect: false
+  ```
+
+  On **Confirm**: proceed to Step 3 with the single plan id. On **Cancel**:
+  return to the Configuration menu.
+
+- **Multiple active plans** → present them via `AskUserQuestion` with
+  `multiSelect: false`; each option carries `label: <plan_id>` and
+  `description: "<current_phase> — <short_description>"` sourced from
+  `status.json`. The user's selection is the override target.
+
+### Step 3: Write the cache mapping
+
+Resolve the cache path with `XDG_CACHE_HOME` honored:
+
+```text
+${XDG_CACHE_HOME:-$HOME/.cache}/plan-marshall/sessions/$CLAUDE_CODE_SESSION_ID/active-plan
+```
+
+Write atomically (write to a sibling temp file, then rename) so a partial write
+cannot corrupt the cache. Create the session directory with parents as needed.
+
+### Step 4: Report
+
+On success, print:
+
+```text
+Active plan for session $CLAUDE_CODE_SESSION_ID set to <plan_id>.
+The next render-trigger event (next prompt, notification, or stop) will
+update the tab title.
+```
+
+On any I/O failure, surface the OS error and advise the user to check write
+permissions on the cache directory:
+
+```text
+Failed to write active-plan cache mapping: <os_error>.
+Check write permissions on ${XDG_CACHE_HOME:-$HOME/.cache}/plan-marshall/sessions/.
+```
+
+After completion, return to the Configuration menu.

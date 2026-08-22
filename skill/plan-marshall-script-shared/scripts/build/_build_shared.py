@@ -1,0 +1,899 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Shared utilities for build-* skills.
+
+Provides command implementations, constants, and factories used across
+Maven, Gradle, npm, and Python build skills.
+
+CLI scaffolding (subparser helpers, registration, main) lives in _build_cli.py.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+
+from _build_format import format_json, format_toon
+from _build_parse import (
+    SEVERITY_ERROR,
+    Issue,
+    UnitTestSummary,
+    filter_warnings,
+    generate_summary_from_issues,
+    load_acceptable_warnings,
+    partition_issues,
+)
+from _build_result import (
+    ERROR_BUILD_FAILED,
+    ERROR_EXECUTION_FAILED,
+    ERROR_LOG_FILE_FAILED,
+    STATUS_INDETERMINATE,
+    STATUS_KILLED,
+    DirectCommandResult,
+    assert_truthful_status,
+    error_result,
+    indeterminate_result,
+    killed_result,
+    success_result,
+    timeout_result,
+)
+from marketplace_paths import names_real_plan
+
+# ---------------------------------------------------------------------------
+# Canonical command generation (merged from _build_commands.py)
+# ---------------------------------------------------------------------------
+
+EXECUTOR_PREFIX = 'python3 .plan/execute-script.py'
+"""Base executor command shared by all build skills."""
+
+
+def build_canonical_commands(
+    skill_notation: str,
+    command_map: dict[str, str],
+) -> dict[str, str]:
+    """Generate canonical command invocation strings.
+
+    Each entry in command_map maps a canonical command name to its
+    tool-specific arguments. This function wraps each with the
+    standard executor invocation.
+
+    Args:
+        skill_notation: Three-part skill notation (e.g., 'plan-marshall:build-maven:maven').
+        command_map: Dict mapping canonical name -> tool-specific command args.
+            Example: {'clean': 'clean -pl core', 'verify': 'verify -pl core'}
+
+    Returns:
+        Dict mapping canonical name -> full executor command string.
+    """
+    base = f'{EXECUTOR_PREFIX} {skill_notation} run'
+    return {name: f'{base} --command-args "{args}"' for name, args in command_map.items()}
+
+
+def build_chained_commands(
+    skill_notation: str,
+    command_list: list[str],
+) -> str:
+    """Generate a chained command string (cmd1 && cmd2).
+
+    Used by npm's verify command which chains build + test.
+
+    Args:
+        skill_notation: Three-part skill notation.
+        command_list: List of tool-specific command args to chain.
+
+    Returns:
+        Chained command string with ' && ' between each invocation.
+    """
+    base = f'{EXECUTOR_PREFIX} {skill_notation} run'
+    parts = [f'{base} --command-args "{args}"' for args in command_list]
+    return ' && '.join(parts)
+
+
+# Type alias for parser functions.
+# Accepts (log_file,) or (log_file, command) and returns (issues, test_summary, build_status).
+ParserFn = Callable[..., tuple[list[Issue], UnitTestSummary | None, str]]
+
+
+def create_subcommand_handler(base_fn: Callable[..., int], **kwargs) -> Callable[..., int]:
+    """Generic factory: bind keyword arguments to a base subcommand function.
+
+    The returned handler accepts (args) and delegates to base_fn(args, **kwargs).
+
+    Args:
+        base_fn: Base function with signature (args, **config) -> int.
+        **kwargs: Configuration arguments to bind to base_fn.
+
+    Returns:
+        A handler(args) -> int function ready for argparse set_defaults.
+
+    Example::
+
+        cmd_coverage_report = create_subcommand_handler(
+            cmd_coverage_report_base,
+            search_paths=[('target/site/jacoco/jacoco.xml', 'jacoco')],
+            not_found_message='No JaCoCo XML report found.',
+        )
+    """
+
+    def handler(args) -> int:
+        return base_fn(args, **kwargs)
+
+    return handler
+
+
+def cmd_parse_common(
+    args,
+    parse_log_fn: ParserFn,
+    *,
+    extra_filters: dict[str, Callable[[Issue], bool]] | None = None,
+    parser_needs_command: bool = False,
+    output_format: str = 'toon',
+) -> int:
+    """Common parse subcommand logic shared across all build skills.
+
+    Reads a log file, calls the tool-specific parse_log function, applies
+    mode filters, and outputs the result in the requested format.
+
+    Args:
+        args: Parsed argparse namespace with 'log', 'mode', optional 'format'.
+        parse_log_fn: Tool-specific log parser function.
+        extra_filters: Additional mode filters beyond 'errors'.
+            Maps mode name -> filter predicate (keep issues where predicate is True).
+            Example: {'no-openrewrite': lambda i: i.category != 'openrewrite_info'}
+        parser_needs_command: If True, passes command string as second arg to parser_fn.
+        output_format: Output format ('toon' or 'json'). Overridden by args.format if present.
+
+    Returns:
+        Exit code (0 for success, 1 for failure).
+    """
+    log_path = Path(args.log)
+    if not log_path.exists():
+        print(format_toon({'status': 'error', 'error': f'Log file not found: {args.log}'}))
+        return 1
+
+    if parser_needs_command:
+        issues, test_summary, build_status = parse_log_fn(log_path, getattr(args, 'command', ''))
+    else:
+        issues, test_summary, build_status = parse_log_fn(log_path)
+
+    # Apply mode filters
+    mode = getattr(args, 'mode', 'structured')
+    if mode == 'errors':
+        issues = [i for i in issues if i.severity == SEVERITY_ERROR]
+    elif extra_filters and mode in extra_filters:
+        issues = [i for i in issues if extra_filters[mode](i)]
+
+    summary = generate_summary_from_issues(issues)
+    # Fail-closed truthful-status derivation (ADR-009): a BUILD SUCCESS marker is
+    # not sufficient on its own. Surefire can print `BUILD SUCCESS` alongside a
+    # `Tests run: N, Failures: 0, Errors: M>0` summary (testFailureIgnore /
+    # reactor --fail-never), and detect_build_status only flags failure markers.
+    # Resolve to error when the build did not succeed OR any test failed, so an
+    # indeterminate outcome never reports success.
+    tests_failed = test_summary is not None and test_summary.failed > 0
+    result = {
+        'status': 'success' if (build_status == 'SUCCESS' and not tests_failed) else 'error',
+        'data': {
+            'build_status': build_status,
+            'issues': [i.to_dict() for i in issues],
+            'summary': summary,
+        },
+        'metrics': {
+            'tests_run': test_summary.total if test_summary else 0,
+            'tests_failed': test_summary.failed if test_summary else 0,
+        },
+    }
+
+    # Fail-closed guard: never emit an untruthful success (success over a
+    # non-zero exit code) from the parse choke point.
+    assert_truthful_status(result)
+
+    fmt = getattr(args, 'format', None) or output_format
+    if fmt == 'toon':
+        print(format_toon(result))
+    else:
+        print(json.dumps(result, indent=2))
+    return 0
+
+
+# Default build timeout in seconds for all build systems.
+# Used by ExecuteConfig instances across Maven, Gradle, npm, and Python.
+# Related constants in _build_execute.py: MIN_TIMEOUT=60, MAX_TIMEOUT=1800
+DEFAULT_BUILD_TIMEOUT = 300
+
+# Buffer added to inner timeout for Bash tool timeout calculation.
+# Bash tool timeout = inner script timeout + OUTER_TIMEOUT_BUFFER.
+# This prevents the Bash tool from killing the process before the script's
+# own timeout handling can produce a structured timeout result.
+OUTER_TIMEOUT_BUFFER = 30
+
+
+def get_bash_timeout(inner_timeout_seconds: int) -> int:
+    """Calculate Bash tool timeout with buffer.
+
+    Args:
+        inner_timeout_seconds: The shell timeout in seconds.
+
+    Returns:
+        Bash tool timeout in seconds (inner + buffer).
+    """
+    return inner_timeout_seconds + OUTER_TIMEOUT_BUFFER
+
+
+def cmd_discover_common(args, discover_fn: Callable) -> int:
+    """Common discover subcommand logic shared across all build skills.
+
+    Args:
+        args: Parsed argparse namespace with 'root' and 'format'.
+        discover_fn: Tool-specific discover function.
+
+    Returns:
+        Exit code (0 for success, 1 for failure).
+    """
+    try:
+        modules = discover_fn(args.root)
+        result = {
+            'status': 'success',
+            'modules': modules,
+            'count': len(modules),
+        }
+        fmt = getattr(args, 'format', 'toon')
+        if fmt == 'json':
+            print(json.dumps(result, indent=2))
+        else:
+            print(format_toon(result))
+        return 0
+    except Exception as e:
+        error_output = {'status': 'error', 'error': f'discovery_failed: {e}'}
+        fmt = getattr(args, 'format', 'toon')
+        if fmt == 'json':
+            print(json.dumps(error_output, indent=2))
+        else:
+            print(format_toon(error_output))
+        return 1
+
+
+# ---------------------------------------------------------------------------
+# Issue → finding-type routing (used by the --plan-id auto-store path)
+# ---------------------------------------------------------------------------
+
+# The three per-type finding stores a build run writes to. A green build run
+# reconciles them via the path below (see ``_reconcile_pending_build_findings``):
+# build-error / lint-issue clear on any green build, while test-failure clears
+# only when the run actually executed tests (a non-zero executed-test count).
+BUILD_FINDING_TYPES: tuple[str, ...] = ('build-error', 'test-failure', 'lint-issue')
+
+
+def _classify_issue_finding_type(issue: Issue) -> str:
+    """Map a parsed build Issue to one of three finding-store types.
+
+    Returns one of:
+    - ``test-failure`` — test runner failures (category ``test_failure`` or
+      similar). Test failures take precedence over lint hints.
+    - ``lint-issue`` — linter / style / formatter findings (category contains
+      ``lint`` or ``style``).
+    - ``build-error`` — everything else (compilation, dependency, plugin,
+      execution failures).
+    """
+    category = (issue.category or '').lower()
+    if 'test' in category and 'failure' in category:
+        return 'test-failure'
+    if category in ('test_failure',) or category.startswith('test_'):
+        return 'test-failure'
+    if 'lint' in category or 'style' in category:
+        return 'lint-issue'
+    return 'build-error'
+
+
+def _classify_finding_severity(issue: Issue) -> str:
+    """Map an Issue.severity (``error``/``warning``) to the finding store
+    severity vocabulary (``error``/``warning``/``info``)."""
+    if issue.severity == SEVERITY_ERROR:
+        return 'error'
+    return 'warning'
+
+
+def _store_build_findings(
+    plan_id: str,
+    tool_name: str,
+    issues: list[Issue],
+    command_str: str,
+) -> tuple[int, int, list[str]]:
+    """Store parsed build issues as findings.
+
+    Returns a ``(count_seen, count_stored, store_failures)`` tuple. The
+    "expected_stored" value equals ``count_seen`` because every parsed issue
+    must be stored (no producer-side filtering). Mismatches between
+    ``count_seen`` and ``count_stored`` are surfaced by the caller as a Q-Gate
+    finding with title prefix ``(producer-mismatch)``.
+    """
+    from _findings_core import add_finding
+
+    count_seen = len(issues)
+    count_stored = 0
+    store_failures: list[str] = []
+
+    for issue in issues:
+        finding_type = _classify_issue_finding_type(issue)
+        severity = _classify_finding_severity(issue)
+        file_path = issue.file or None
+        line = issue.line if isinstance(issue.line, int) and issue.line > 0 else None
+
+        title_prefix = {
+            'test-failure': 'Test failure',
+            'lint-issue': 'Lint issue',
+            'build-error': 'Build error',
+        }[finding_type]
+
+        location = ''
+        if file_path:
+            location = f' in {file_path}'
+            if line:
+                location = f' in {file_path}:{line}'
+        category_suffix = f' [{issue.category}]' if issue.category else ''
+        title = f'{title_prefix}{location}{category_suffix}: {issue.message[:80]}'
+
+        detail_lines = [
+            f'tool: {tool_name}',
+            f'command: {command_str}',
+            f'category: {issue.category or "(none)"}',
+            f'severity: {issue.severity}',
+        ]
+        if file_path:
+            detail_lines.append(f'file: {file_path}')
+        if line:
+            detail_lines.append(f'line: {line}')
+        if issue.stack_trace:
+            detail_lines.append('')
+            detail_lines.append('--- stack trace ---')
+            detail_lines.append(issue.stack_trace)
+        # The representative per-signature failure block (deliverable 9) carries
+        # the *why* of a failure — round-trip it into the finding store so a
+        # triage reader gets the traceback/assertion body without a raw-log
+        # re-read. Present only for parsers that populate it (pyproject today).
+        if issue.detail:
+            detail_lines.append('')
+            detail_lines.append('--- failure detail ---')
+            detail_lines.append(issue.detail)
+        detail_lines.append('')
+        detail_lines.append('--- message ---')
+        detail_lines.append(issue.message)
+        detail = '\n'.join(detail_lines)
+
+        add_result = add_finding(
+            plan_id=plan_id,
+            finding_type=finding_type,
+            title=title,
+            detail=detail,
+            file_path=file_path,
+            line=line,
+            module=tool_name,
+            rule=issue.category or None,
+            severity=severity,
+        )
+        if add_result.get('status') == 'success':
+            count_stored += 1
+        else:
+            store_failures.append(issue.message[:60])
+
+    return count_seen, count_stored, store_failures
+
+
+def _record_producer_mismatch(
+    plan_id: str,
+    tool_name: str,
+    command_str: str,
+    count_seen: int,
+    count_stored: int,
+    store_failures: list[str],
+) -> dict[str, str] | None:
+    """Emit a Q-Gate finding when a build run's parsed-issue count does not
+    match the count successfully stored in the findings store.
+
+    This emitter's whole purpose is to report findings that were lost, so its own
+    persist can never be fire-and-forget. Returns ``None`` when the finding
+    reached the store (status in ``QGATE_PERSIST_OK``), and a failure descriptor
+    — ``{'title', 'detail', 'message'}`` — when the primitive REJECTED it, so the
+    caller propagates ``qgate_persist_failed`` into the build result instead of
+    swallowing the loss at the emitter.
+    """
+    from _findings_core import QGATE_PERSIST_OK, add_qgate_finding
+
+    detail = (
+        f'count_seen={count_seen}, '
+        f'count_stored={count_stored}, '
+        f'expected_stored={count_seen}, '
+        f'store_failures={store_failures}'
+    )
+    title = f'(producer-mismatch) {tool_name} build run'
+    full_detail = f'command={command_str} ; {detail}'
+    result = add_qgate_finding(
+        plan_id=plan_id,
+        phase='5-execute',
+        source='qgate',
+        finding_type='build-error',
+        title=title,
+        detail=full_detail,
+    )
+    if result.get('status') not in QGATE_PERSIST_OK:
+        return {
+            'title': title,
+            'detail': full_detail,
+            'message': str(result.get('message', '')),
+        }
+    return None
+
+
+def _reconcile_pending_build_findings(plan_id: str, command_str: str, tests_run: int) -> int:
+    """Terminalize pending build findings when the build run is green.
+
+    A prior failing run appends ``build-error`` / ``test-failure`` /
+    ``lint-issue`` findings to the per-type store. When the build subsequently
+    succeeds, those findings are stale — the failure they recorded has been
+    fixed — yet nothing resolves them, leaving the Q-Gate store dirty.
+
+    A ``test-failure`` finding is different in kind from the other two: ONLY a
+    run that actually executed tests proves a recorded test failure is gone. A
+    green build that ran zero tests — a ``compile``, a lint-only gate, or a test
+    command that collected nothing — proves the code compiles and lints, but it
+    tested nothing, so it must NOT clear a stale ``test-failure`` finding.
+    Clearing one on a zero-test build is the exact false-green this guard
+    exists to stop: a command that tested nothing would otherwise destroy a
+    true, already-recorded test-failure signal.
+
+    So ``build-error`` / ``lint-issue`` clear on any green build, while
+    ``test-failure`` clears only when ``tests_run > 0``. The executed-test count
+    is stamped into the resolution detail so the population the clearing
+    decision was made on is PUBLISHED, never left implicit.
+
+    Args:
+        plan_id: The plan owning the finding store.
+        command_str: The green command that cleared the findings.
+        tests_run: The number of tests this run executed (0 when the run parsed
+            no test summary — a non-test command or a zero-collection run).
+
+    Returns:
+        The count of findings resolved (0 when none were pending).
+    """
+    from _findings_core import resolve_findings_by_type
+
+    # build-error / lint-issue clear on any green build; test-failure requires
+    # evidence that tests actually ran. Derived from BUILD_FINDING_TYPES so the
+    # canonical set stays the single source of truth for what a build reconciles.
+    clearable_types = [t for t in BUILD_FINDING_TYPES if t != 'test-failure']
+    if tests_run > 0:
+        clearable_types.append('test-failure')
+
+    reconcile_result = resolve_findings_by_type(
+        plan_id=plan_id,
+        finding_types=tuple(clearable_types),
+        to_resolution='fixed',
+        detail=f'auto-resolved by green build ({tests_run} test(s) executed): {command_str}',
+    )
+    if reconcile_result.get('status') == 'success':
+        return int(reconcile_result.get('resolved_count', 0))
+    return 0
+
+
+# Maximum number of error rows surfaced on a failing build result. The cap
+# bounds output size; the `truncated` marker (see `_cap_errors_with_truncation`)
+# reconciles it against the true total so count-vs-shown never silently disagree.
+_ERRORS_EMIT_CAP = 20
+
+
+def _issue_failure_signature(issue: Issue) -> str:
+    """Return the dedup key for a test-failure Issue.
+
+    Keys on ``issue.signature`` — the full, un-truncated parser-computed identity
+    (assertion type + normalized message + failing frame), which is identical
+    across failures that share one root cause, so it collapses N failures sharing
+    a cause to one shown row. ``issue.detail`` is NOT used as identity: it is the
+    truncated presentation block (capped to a display length by the parser), so
+    two distinct root causes whose blocks share a truncated prefix would collide.
+    Parsers that do not populate ``signature`` (Maven/Gradle/npm, the out-of-scope
+    follow-on) fall back to a per-failure ``category:file:line:message`` key, which
+    never over-dedups distinct terse failures.
+    """
+    if issue.signature:
+        return f'sig:{issue.signature}'
+    return f'msg:{issue.category}:{issue.file}:{issue.line}:{issue.message}'
+
+
+def _cap_errors_with_truncation(errors: list[Issue], cap: int = _ERRORS_EMIT_CAP) -> tuple[list[Issue], int]:
+    """Dedup test-failure errors by signature, then cap, reconciling the total.
+
+    Test-failure errors are collapsed to one row per unique failure signature so
+    the shown set represents ALL root causes rather than the first ``cap`` raw
+    lines; non-test errors (build / lint) are never deduped. The shown set is
+    then capped at ``cap``. The returned ``truncated`` count equals
+    ``len(errors) - len(shown)`` so ``len(shown) + truncated`` always reconstructs
+    the true total — count-vs-shown can never silently disagree.
+
+    Because this cap lives in the SHARED helper, the reconciliation benefits
+    Maven/Gradle/npm as well as pyproject: their parsers still emit terse
+    per-failure messages until the follow-on, but the cap and the ``truncated``
+    marker are now correct for every build tool.
+    """
+    total = len(errors)
+    deduped: list[Issue] = []
+    seen_signatures: set[str] = set()
+    for issue in errors:
+        if _classify_issue_finding_type(issue) == 'test-failure':
+            signature = _issue_failure_signature(issue)
+            if signature in seen_signatures:
+                continue
+            seen_signatures.add(signature)
+        deduped.append(issue)
+
+    shown = deduped[:cap]
+    truncated = total - len(shown)
+    return shown, truncated
+
+
+def _non_finish_evidence(
+    log_file: str,
+    command_str: str,
+    parser_fn: ParserFn,
+    parser_needs_command: bool,
+    label: str,
+) -> dict:
+    """Parse the partial log of a NON-FINISH for the evidence it actually proves.
+
+    Shared by the ``timeout`` and ``killed`` branches of :func:`cmd_run_common`.
+    A run that did not finish may still have completed its whole test suite
+    before the kill (a hang in teardown, coverage aggregation, or process
+    shutdown), and discarding the log would make every non-finish look equally
+    uninformative.
+
+    Only a ZERO-FAILURE summary is returned. A summary carrying failures is not
+    evidence that the suite completed — those failures may be the partial output
+    of a run that was interrupted mid-flight — so surfacing them would assert
+    more than the log proves, and would let a non-finish present itself as a red
+    test. A missing or unparseable log degrades to no evidence with a
+    ``[WARNING]`` on stderr, never a crash.
+
+    Args:
+        log_file: Path to the partial captured output.
+        command_str: The command that was executed (for command-aware parsers).
+        parser_fn: The tool's log parser.
+        parser_needs_command: Whether ``parser_fn`` takes the command string.
+        label: Condition name used in the stderr warning (``Timeout`` /
+            ``Killed``).
+
+    Returns:
+        ``{'tests': summary}`` (plus ``tool_duration_seconds`` when the parser
+        supplied one) for a zero-failure summary, else ``{}``.
+    """
+    try:
+        if parser_needs_command:
+            _, test_summary, _ = parser_fn(log_file, command_str)
+        else:
+            _, test_summary, _ = parser_fn(log_file)
+    except Exception as parse_err:
+        print(f'[WARNING] {label} evidence parse failed: {parse_err}', file=sys.stderr)
+        return {}
+
+    extra: dict = {}
+    if test_summary is not None and test_summary.failed == 0:
+        extra['tests'] = test_summary
+        tool_duration = getattr(test_summary, 'duration_seconds', None)
+        if tool_duration is not None:
+            extra['tool_duration_seconds'] = tool_duration
+    return extra
+
+
+def cmd_run_common(
+    result: DirectCommandResult,
+    parser_fn: ParserFn,
+    tool_name: str,
+    output_format: str = 'toon',
+    mode: str = 'actionable',
+    project_dir: str = '.',
+    parser_needs_command: bool = False,
+    plan_id: str | None = None,
+) -> int:
+    """Common cmd_run logic shared across all build skills.
+
+    Handles the execute_direct() result: routes each status to the appropriate
+    formatter and parses build failures for structured errors.
+
+    **Only a genuine failure reaches the build-failure path.** The two
+    NON-FINISHES (``timeout``, ``killed``) and the undetermined outcome
+    (``indeterminate``) each get their own branch, and none of them stores
+    findings or synthesises an ``errors[]`` row. That asymmetry is the point: the
+    build-failure path below asserts the build ran and failed — it stores every
+    parsed issue as a finding and, when the parser found none, manufactures a
+    synthetic ``build_failure`` row so ``status`` and ``errors[]`` cannot
+    contradict each other. Routing anything but a real failure through it
+    fabricates exactly that failure out of a log that proves nothing, which is how
+    a harness kill came to be presented as a red test.
+
+    Note: Uses format_toon()/format_json() from _build_format for all output.
+    Both paths share the same normalization logic — format_toon delegates to
+    serialize_toon after ordering fields; format_json normalizes Issue objects.
+
+    Args:
+        result: DirectCommandResult from execute_direct().
+        parser_fn: Log parser function. Called as parser_fn(log_file) or
+            parser_fn(log_file, command) depending on parser_needs_command.
+        tool_name: Build tool name for acceptable warnings lookup
+            (e.g., 'maven', 'gradle', 'npm', 'python').
+        output_format: Output format ('toon' or 'json').
+        mode: Output mode ('actionable', 'structured', 'errors').
+        project_dir: Project root directory for warning pattern lookup.
+        parser_needs_command: If True, passes command string as second arg to parser_fn.
+        plan_id: The plan owning the finding store. Producer-side finding
+            storage and green-build reconciliation engage ONLY when
+            :func:`names_real_plan` accepts it, so a plan-less build parses and
+            formats exactly as it always has.
+
+    Returns:
+        Exit code (0 for success, 1 for failure).
+    """
+    formatter = format_json if output_format == 'json' else format_toon
+
+    log_file = result['log_file']
+    command_str = result['command']
+    print(f'[EXEC] {command_str}', file=sys.stderr)
+
+    # Handle execution errors (wrapper not found, log file creation failed)
+    if result['status'] == 'error' and result['exit_code'] == -1:
+        error_type = ERROR_EXECUTION_FAILED
+        if 'log file' in result.get('error', '').lower():
+            error_type = ERROR_LOG_FILE_FAILED
+
+        err_output = error_result(
+            error=error_type,
+            exit_code=-1,
+            duration_seconds=0,
+            log_file=log_file,
+            command=command_str,
+        )
+        print(formatter(err_output))
+        return 1
+
+    # Handle an EXTERNAL KILL — a signal this stack did not send.
+    #
+    # This branch precedes the timeout branch deliberately: a kill and a timeout
+    # are the two non-finishes, and the one thing that separates them is WHO
+    # sent the signal. The timeout branch may only claim a run our own bound
+    # terminated, so a kill must be routed out before it can be read as one.
+    # The result carries the kill's own diagnostic fields (`error: killed` and
+    # the shared no-blind-retry `message`), and BOTH are propagated onto the
+    # emitted payload rather than reconstructed — an earlier shape built a fresh
+    # `error_result` here and silently dropped them, so the discriminator the
+    # daemon had already computed never reached any consumer.
+    if result['status'] == STATUS_KILLED:
+        killed_extra = _non_finish_evidence(
+            log_file, command_str, parser_fn, parser_needs_command, 'Killed'
+        )
+        # The bound that did NOT fire is still diagnostic: it says how much
+        # headroom the run had left when the kill arrived, which is what
+        # separates "killed near its limit" from "killed early". The timeout
+        # branch preserves it, so this one does too.
+        if result.get('timeout_used_seconds') is not None:
+            killed_extra['timeout_used_seconds'] = result['timeout_used_seconds']
+        killed_output = killed_result(
+            exit_code=result['exit_code'],
+            duration_seconds=result['duration_seconds'],
+            log_file=log_file,
+            command=command_str,
+            **killed_extra,
+        )
+        message = result.get('message')
+        if message:
+            killed_output['message'] = message
+        print(formatter(killed_output))
+        return 0  # Status modeled in output, not exit code
+
+    # Handle an UNDETERMINED outcome — no branch above could resolve it.
+    #
+    # It needs its own branch for the same reason the two non-finishes do: the
+    # build-failure path below would parse the log, store findings, and
+    # synthesise a `build_failure` row, manufacturing a verdict out of a case
+    # whose defining property is that no verdict exists. The producer's own
+    # `message` says WHY it could not be determined and is carried through — it
+    # is the only actionable content such a result has.
+    if result['status'] == STATUS_INDETERMINATE:
+        indeterminate_output = indeterminate_result(
+            str(result.get('message') or 'the build outcome could not be determined'),
+            result['duration_seconds'],
+            log_file,
+            command_str,
+            exit_code=result['exit_code'],
+            **_non_finish_evidence(
+                log_file, command_str, parser_fn, parser_needs_command, 'Indeterminate'
+            ),
+        )
+        print(formatter(indeterminate_output))
+        return 0  # Status modeled in output, not exit code
+
+    # Handle timeout
+    if result['status'] == 'timeout':
+        timeout_output = timeout_result(
+            timeout_used_seconds=result['timeout_used_seconds'],
+            duration_seconds=result['duration_seconds'],
+            log_file=log_file,
+            command=command_str,
+            **_non_finish_evidence(log_file, command_str, parser_fn, parser_needs_command, 'Timeout'),
+        )
+        print(formatter(timeout_output))
+        return 0  # Status modeled in output, not exit code
+
+    # Success case
+    if result['status'] == 'success':
+        # Fail-closed truthful-status cross-check (ADR-009): a zero exit code is
+        # not sufficient to declare success. Surefire testFailureIgnore and a
+        # reactor --fail-never can exit 0 while tests errored, so parse the log
+        # and downgrade to the build-failure path when any test failed — an
+        # exit-0-with-test-errors run reports error, never success. A genuine
+        # BUILD FAILURE already carries a non-zero exit and never reaches here.
+        try:
+            if parser_needs_command:
+                _, test_summary, _ = parser_fn(log_file, command_str)
+            else:
+                _, test_summary, _ = parser_fn(log_file)
+        except Exception as parse_err:
+            print(f'[WARNING] Truthful-status cross-check parse failed: {parse_err}', file=sys.stderr)
+            test_summary = None
+
+        if test_summary is None or test_summary.failed == 0:
+            # The executed-test count is the evidence that authorises clearing a
+            # test-failure finding. A run that parsed no test summary
+            # (``test_summary is None`` — a non-test command, or a test command
+            # that collected nothing) executed zero tests, so a stale
+            # test-failure finding must survive it. The count is published on the
+            # emitted result as ``tests_run`` (the same field the ``parse`` verb
+            # emits) so the clearing decision's population is never implicit.
+            tests_run = test_summary.total if test_summary is not None else 0
+            print(
+                f'[EXEC] green build: {tests_run} test(s) executed'
+                + ('' if tests_run > 0 else ' — test-failure findings retained (this run tested nothing)'),
+                file=sys.stderr,
+            )
+
+            # Terminalize pending build findings from a prior failing run: the
+            # build is now green. build-error / lint-issue clear unconditionally;
+            # test-failure clears only with executed-test evidence (see
+            # _reconcile_pending_build_findings). A plan-less build owns no
+            # finding store and reconciles nothing, exactly as before.
+            if names_real_plan(plan_id):
+                try:
+                    _reconcile_pending_build_findings(
+                        plan_id=plan_id, command_str=command_str, tests_run=tests_run
+                    )
+                except Exception as e:
+                    print(f"[WARNING] Failed to reconcile pending build findings: {e}", file=sys.stderr)
+
+            success_output = success_result(
+                duration_seconds=result['duration_seconds'],
+                log_file=log_file,
+                command=command_str,
+                exit_code=result['exit_code'],
+                tests_run=tests_run,
+            )
+            # Fail-closed guard: never emit an untruthful success (success over a
+            # non-zero exit code) from the run choke point.
+            assert_truthful_status(success_output)
+            print(formatter(success_output))
+            return 0
+
+        # Erroring tests over a zero exit code — fall through to the
+        # build-failure path below so the emitted result reports error.
+        print(
+            f'[EXEC] truthful-status: {test_summary.failed} failed test(s) over exit 0 — reporting error',
+            file=sys.stderr,
+        )
+
+    # Build failed - parse the log file for errors.
+    # A producer-mismatch finding the persist primitive REJECTED is propagated
+    # onto the emitted result rather than swallowed at the emitter, so a reader
+    # cannot take a build result at face value while the mismatch finding was
+    # lost.
+    qgate_persist_failure: dict[str, str] | None = None
+    try:
+        if parser_needs_command:
+            issues, test_summary, build_status = parser_fn(log_file, command_str)
+        else:
+            issues, test_summary, build_status = parser_fn(log_file)
+
+        # Auto-store parsed issues as findings when --plan-id is provided.
+        # Always-on: every parsed issue (build-error / test-failure /
+        # lint-issue) is appended to the per-type finding store before any
+        # mode-specific warning filtering is applied. Producer-side mismatch
+        # (parsed != stored) is surfaced as a Q-Gate finding. A plan-less build
+        # owns no finding store and stores nothing, exactly as before.
+        if names_real_plan(plan_id):
+            count_seen, count_stored, store_failures = _store_build_findings(
+                plan_id=plan_id,
+                tool_name=tool_name,
+                issues=issues,
+                command_str=command_str,
+            )
+            if count_stored != count_seen:
+                qgate_persist_failure = _record_producer_mismatch(
+                    plan_id=plan_id,
+                    tool_name=tool_name,
+                    command_str=command_str,
+                    count_seen=count_seen,
+                    count_stored=count_stored,
+                    store_failures=store_failures,
+                )
+
+        # Partition issues into errors and warnings
+        errors, warnings = partition_issues(issues)
+
+        # SAFETY-NET: this branch is reached only when the build genuinely
+        # failed (non-zero exit → error_result below sets status=error). If the
+        # log parser extracted no structured error, the returned TOON would
+        # carry status=error with an empty errors[] — a self-contradictory
+        # result that hides the failure. Emit exactly one synthetic error row
+        # pointing at the full log so status and errors[] can never contradict
+        # each other, regardless of which tool parser ran.
+        if not errors:
+            errors = [
+                Issue(
+                    file=log_file,
+                    line=None,
+                    message=f'Build failed but no structured errors were parsed; see full log: {log_file}',
+                    severity=SEVERITY_ERROR,
+                    category='build_failure',
+                )
+            ]
+
+        # Load acceptable warnings and filter based on mode
+        patterns = load_acceptable_warnings(project_dir, tool_name)
+        filtered_warnings = filter_warnings(warnings, patterns, mode)
+
+        # Build result dict
+        output: dict[str, Any] = error_result(
+            error=ERROR_BUILD_FAILED,
+            exit_code=result['exit_code'],
+            duration_seconds=result['duration_seconds'],
+            log_file=log_file,
+            command=command_str,
+        )
+
+        # Add errors if present. Dedup test-failures by signature so the shown
+        # set covers ALL root causes (not the first N raw lines), cap it, and
+        # emit an explicit `truncated: N` marker whenever the shown set is
+        # smaller than the total so count-vs-shown can never silently disagree.
+        if errors:
+            shown_errors, truncated_count = _cap_errors_with_truncation(errors)
+            output['errors'] = shown_errors
+            if truncated_count > 0:
+                output['truncated'] = truncated_count
+
+        # Add warnings if present
+        if filtered_warnings:
+            output['warnings'] = filtered_warnings[:10]
+
+        # Add test summary if present
+        if test_summary:
+            output['tests'] = test_summary
+
+        if qgate_persist_failure is not None:
+            output['qgate_persist_failed'] = True
+            output['qgate_persist_failure'] = qgate_persist_failure
+
+        print(formatter(output))
+
+    except Exception as parse_err:
+        # If parsing fails, still return the build failure but log the parse error
+        print(f'[WARNING] Log parsing failed: {parse_err}', file=sys.stderr)
+        output = error_result(
+            error=ERROR_BUILD_FAILED,
+            exit_code=result['exit_code'],
+            duration_seconds=result['duration_seconds'],
+            log_file=log_file,
+            command=command_str,
+        )
+        if qgate_persist_failure is not None:
+            output['qgate_persist_failed'] = True
+            output['qgate_persist_failure'] = qgate_persist_failure
+        print(formatter(output))
+
+    return 0  # Status modeled in output, not exit code
