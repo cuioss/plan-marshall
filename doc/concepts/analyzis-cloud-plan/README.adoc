@@ -52,18 +52,7 @@ Derive and publish each denominator before any ratio:
 * **Gaps** — `## G<n>` sections in each `gaps.md`, *excluding* the `## Refuted during adversarial
   review` section. A refuted gap is evidence, not an open item.
 
-=== Step 2 — Re-ground every gap at HEAD before counting it
-
-⛔ **This is the step most likely to be skipped, and it moved the `truthful-signals` count by 90.**
-
-A `gaps.md` is a snapshot at the audit's commit. Later remediation plans close gaps and record it
-nowhere. For each gap, check whether it still reproduces at HEAD, and record `closed` / `open` per
-plan. Publish `gaps`, `closed`, and `open` as three separate columns — never a single "open" figure.
-
-Treat a *closed* gap as a lead too: partial closures are common (a fix that lands the documentation
-half and not the code half).
-
-=== Step 3 — Measure deliverable fidelity
+=== Step 2 — Measure deliverable fidelity
 
 For each `verification.md` deliverable row, the four axes are *implemented at all* / *as documented* /
 *correctly* / *completely*. A row carrying any non-`yes` value is a **fidelity failure**: the plan
@@ -71,9 +60,20 @@ claimed it and the tree disagreed. This is the "claimed to fix but didn't" numbe
 
 Report it as `D-fail / deliverables` with a percentage.
 
-=== Step 4 — Classify every gap by its own `Kind` field
+=== Step 3 — Classify every gap by its own `Kind` field
 
-This is what explains the headline count. Partition into three classes:
+⛔ **First, read the verification prompt that produced these gaps.** The gap count is substantially a
+function of what that call asked for. If the brief asked for a repository-wide review of correctness,
+edge cases, security fail-closed posture, test quality, generator usage, positive/negative coverage
+and documentation structure, then the taxonomy will mirror that checklist — and the count is the yield
+of *that question*, not a lane-quality constant. Quote the brief in the report and say so explicitly.
+
+⭐ **Separate the prompt-dependent findings from the claim-relative ones.** Two measurements survive
+any change of brief because they are taken against the plans' *own claims* rather than an external
+checklist: **deliverable fidelity failures** (Step 2) and **unresolved reviewer findings** (Step 5).
+Rest the verdict on those; never on the raw gap total.
+
+Then partition by `Kind` into three classes:
 
 [cols="3,4",options="header"]
 |===
@@ -94,7 +94,7 @@ Then classify by **target**: does the gap point at a live repo surface, or at th
 `report-01.md`? Report-targeting gaps are the plan's paperwork about itself. In `truthful-signals`
 they were 16.6% of the total.
 
-=== Step 5 — Build the local comparison set
+=== Step 4 — Build the local comparison set
 
 Extract from `.plan/local/archived-plans/`. Use the **whole archive** if it is small; if you sample,
 say so and give the population.
@@ -106,7 +106,7 @@ deliverables (`### <n>.` under `## Deliverables` in `solution_outline.md`), find
 ⛔ **Separate the finding types.** `qgate` + `pr-comment` are defect-shaped; `test-failure` and
 `build-error` are in-run build signal and will inflate the count several-fold if mixed in.
 
-=== Step 6 — Measure the reviewer signal (CodeRabbit)
+=== Step 5 — Measure the reviewer signal (CodeRabbit)
 
 An independent reviewer's findings are the one quality measurement neither lane authors about itself.
 Fetch per PR with `ci pr comments --pr-number N` and classify:
@@ -130,7 +130,7 @@ The discriminating metric is **not coverage, it is resolution rate**: of the fin
 raise, what share was resolved before merge. Coverage is usually environmental and shared across
 lanes; resolution is a property of the lane's findings pipeline.
 
-=== Step 7 — State the confound before stating the comparison
+=== Step 6 — State the confound before stating the comparison
 
 [WARNING]
 ====
@@ -147,13 +147,23 @@ own archetype.
 The honest claim available from this data is *"the local lane demonstrably catches more before
 merge"*, never *"the local lane ships fewer bugs"*.
 
-=== Step 8 — Cost
+=== Step 7 — Cost: count all THREE cloud expenditures
 
-The cloud lane does not measure its own consumption; expect `not available` and record that as a
-finding rather than a blank. Use the operator's percentage-of-weekly-limit observation for the cloud
-side and the measured `metrics.md` totals for the local side, and label which is which.
+A cloud-lane plan is billed in three separate places, and "running the plan" is only the middle one:
 
-=== Step 9 — Adjudicate, and look for a cross-lane control
+. **Authoring** — the `author-cloud-plan` pass that produces `plan.md`.
+. **Running** — the branch/PR/merge cycle that produces `report-01.md`.
+. **Verifying** — the separate operator-issued review call that produces `verification.md` + `gaps.md`.
+
+A local plan-marshall plan carries all three functions *inside one lifecycle* and reports them in one
+`metrics.md` total.
+
+⛔ **Do not compare a one-bucket cloud number against a three-bucket local number.** The cloud lane
+publishes no token figure at all, so the split is unmeasured; say so and treat any
+percentage-of-weekly-limit observation as unattributed. State which side is measured and which is
+observed.
+
+=== Step 8 — Adjudicate, and look for a cross-lane control
 
 For each candidate explanation, require a *named mechanism with a measured consequence*. "The lane is
 worse" is not a finding; "the run report is self-assessed, and 51 of 308 gaps are corrections to those
@@ -163,13 +173,13 @@ reports" is.
 was reviewer coverage — 1-of-3 in both lanes — which *removed* it as an explanation for the gap count.
 A control that eliminates a candidate is worth more than one that supports it.
 
-=== Step 10 — Derive, do not transcribe
+=== Step 9 — Derive, do not transcribe
 
 Generate every table with a script that reads the corpus. The strongest single finding in the
 `truthful-signals` report is that mechanically-derived figures survived a run in which hand-written
 prose went stale in five places — do not then hand-type the comparison tables.
 
-=== Step 11 — Record the measurement instant
+=== Step 10 — Record the measurement instant
 
 State the HEAD sha and the date at the top. The project documentation standard forbids timestamps;
 this is a deliberate, stated exception, because a comparative measurement without its instant is

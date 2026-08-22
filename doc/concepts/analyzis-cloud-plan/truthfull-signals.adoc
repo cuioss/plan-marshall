@@ -122,6 +122,35 @@ Derived ratios:
 
 == Why so many gaps? The taxonomy answers it
 
+[IMPORTANT]
+====
+**The gap count is substantially a function of what the verification call ASKED FOR.**
+
+`verification.md` and `gaps.md` were not produced by the plan runs. They come from a separate,
+operator-issued verification pass whose brief asks for a *thorough review of all code and
+documentation in the repository*, explicitly covering: correctness and edge cases; hidden traps and
+false security; whether the security posture fails closed; whether tests are real content tests
+rather than coverage tests; whether generators and positive/negative cases are used correctly; and
+whether documentation — both Javadoc and AsciiDoc — is sensibly structured and matches the code.
+
+**Read the taxonomy below against that checklist and the correspondence is close to exact.** The
+dominant kinds are documentation accuracy, incomplete sweeps, and vacuous tests — which are the
+prompt's own headings. A verification call that asked a narrower question would return a smaller
+number over the same plans.
+
+⇒ **`308` is the yield of one particular review question, not a lane-quality constant.** Comparing it
+to any figure produced by a different question is invalid, and this report does not do so.
+
+⛔ **Two findings are NOT prompt artifacts and survive this caveat intact**, because they are measured
+against the plans' own claims rather than against an external checklist:
+
+* the **21.1% deliverable fidelity failure rate** — the plan said it did something and the tree disagreed;
+* the **57.1% CodeRabbit resolution rate** — findings an independent reviewer raised and the run never resolved.
+
+Those two carry the verdict. The raw gap count does not.
+====
+
+
 The headline `308` is not 308 shipped code defects. Classifying every gap by its own declared
 `Kind` field:
 
@@ -300,6 +329,37 @@ A defect caught in-run is a working gate. A defect found post-hoc is an escape.
 
 == Cost
 
+=== A cloud plan is billed THREE times, not once
+
+Token spend on a cloud-lane plan lands in three separate places, and only the middle one is what
+"running a plan" usually means:
+
+[cols="1,3,3",options="header"]
+|===
+| # | Expenditure | Produces
+
+| 1 | **Authoring** the plan | the `plan.md` staged under `doc/plans/{epic}/` — one `author-cloud-plan` pass
+| 2 | **Running** the plan | the branch, the PR, the merge, and `report-01.md`
+| 3 | **Verifying** the plan | `verification.md` + `gaps.md` — a separate operator-issued review call
+|===
+
+A local plan-marshall plan carries the equivalent of all three *inside one lifecycle*: outline and
+plan phases author it, phase-5 executes it, and phase-6's gates plus `plan-retrospective` verify it —
+all inside the single `metrics.md` total.
+
+[WARNING]
+====
+**The 2–4% figure cannot be attributed across these three buckets from this corpus.** No cloud run
+published a token figure, so the split between authoring, running and verifying is **unmeasured**. If
+2–4% covers only bucket 2, the true cloud cost per plan is higher than this report's headline
+comparison implies — possibly materially.
+
+What is certain is directional: the local lane's 1–2% is a *single, fully-measured* number covering
+all three functions, while the cloud lane's 2–4% is an *unattributed* number covering at least one of
+them.
+====
+
+
 [IMPORTANT]
 ====
 **The cloud lane cannot measure its own cost.** The epic audit's own § Cost section reads
@@ -451,13 +511,22 @@ shipped incomplete sweeps and vacuous guards.
 
 The cloud lane is not defective in the sense of being broken; it is defective in the sense of being
 **thin**. It deliberately gives up the in-run verification machinery that produces plan-marshall's
-quality, and the gap corpus is the measured price of that trade: at roughly **2× the cost per plan**,
-it shipped **308 gaps across 256 deliverables**, 218 of them still open, with a
-**21% deliverable fidelity failure rate**.
+quality — and then has to buy that verification back as a **separate, separately-billed third call**,
+which is where all 308 gaps came from.
+
+The verdict does **not** rest on the raw gap count, which is a function of what that verification call
+asked for (see § Why so many gaps). It rests on the two measurements taken against the plans' *own
+claims*: a **21.1% deliverable fidelity failure rate** — claimed done, tree disagreed — and a
+**57.1% CodeRabbit resolution rate** against the local lane's 100%.
 
 The corpus's own best evidence for this reading is that the three *remediation* plans — which ran in
 the same cloud lane — closed 90 gaps and **filed 25 new ones**, two of them `high`. The lane does not
 self-correct; it re-introduces its own defect class at each pass.
+
+**The cost picture is worse than the headline.** A cloud plan is billed three times — authoring,
+running, verifying — against a local plan's single fully-measured lifecycle total. The 2–4%
+observation cannot be attributed across those three, so the real multiple over the local lane's 1–2%
+is unknown and is bounded below, not above, by 2x.
 
 **The reviewer signal is the sharpest single discriminator in this report.** Of the CodeRabbit findings
 raised against each lane, the local lane resolved **47 of 47 (100%)** and the cloud lane **48 of 84
