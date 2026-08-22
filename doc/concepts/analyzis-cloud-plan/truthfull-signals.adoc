@@ -1,0 +1,403 @@
+= Cloud-run quality analysis: `truthful-signals`
+:toc: left
+:toclevels: 3
+:sectnums:
+
+Analysis of the 47 plans from the `truthful-signals` epic that were exported to
+`doc/plans/truthful-signals/` and executed as standalone cloud runs, against the 10 most recent
+plans executed locally through the full plan-marshall lifecycle.
+
+[IMPORTANT]
+====
+**Measured at repository HEAD `5e9c0865d`, 2026-08-22.** Every figure here is point-in-time and
+re-derivable from the ingested corpus at `.plan/local/orchestrator/truthful-signals/cloud-runs/`.
+
+This document carries a measurement instant, which the project documentation standard otherwise
+forbids. The deviation is deliberate and is the subject of the analysis itself: a comparative
+measurement without its instant is exactly the untruthful signal this epic exists to remove. The
+gap counts below moved by 90 between the audit that produced them and this analysis.
+====
+
+== Scope, populations, and how each number was derived
+
+Three populations. Every count in this report rides with the population it was computed over.
+
+[cols="1,1,4",options="header"]
+|===
+| Population | n | Derivation
+
+| Cloud plans | 47 | Directories under the ingested `cloud-runs/` tree, each holding `plan.md`, `report-01.md`, `verification.md`, `gaps.md`. 44 original (`030`–`460`, no `400`) plus 3 audit-derived (`500`/`510`/`520`).
+| Cloud deliverables | 256 | Distinct `D<n>` rows in each run's `verification.md` deliverable-by-deliverable table.
+| Cloud gaps | 308 | `## G<n>` sections in each `gaps.md`, excluding each file's `## Refuted during adversarial review` section.
+| Local plans | 10 | Every plan in `.plan/local/archived-plans/` — the complete local archive, not a sample.
+| Local deliverables | 46 | `### <n>.` headings under `## Deliverables` in each `solution_outline.md`.
+| Local findings | 203 | `qgate` + `pr-comment` entries in each plan's `artifacts/findings/*.jsonl`.
+|===
+
+[WARNING]
+====
+**The two defect counts are not the same measurement and must not be subtracted.**
+
+The cloud gaps were found by an *independent post-hoc audit* (PR #1298) run over plans that had
+already merged — 44 verification agents plus 44 adversarial re-review agents, with mutation
+testing. The local findings were raised by each plan's *own in-run gates* and resolved before
+merge. One measures what escaped; the other measures what was caught.
+
+**No equivalent post-hoc audit has ever been run over the local plans**, so this report cannot
+state a local escape rate. That asymmetry is the single largest confound here and is not
+resolved by any number below.
+====
+
+== Per-PR ledger: closed / open / fidelity failures
+
+`Closed` = gaps closed at HEAD by a later remediation plan (#1320, #1309, #1317, #1326).
+`Open` = still live. `D-fail` = deliverables whose verification row carries a non-`yes` value on
+any of the four fidelity axes (implemented at all / as documented / correctly / completely) —
+**the plan claimed it and the tree disagreed**.
+
+[cols="1,1,3,1,1,1,1,1",options="header"]
+|===
+| Plan | PR | Verdict | Deliv | D-fail | Gaps | Closed | Open
+
+| `030` | #1137 | partially-implemented | 6 | 2 | 4 | 0 | 4
+| `040` | #1138 | implemented-with-gaps | 3 | 0 | 6 | 4 | 2
+| `050` | #1153 | implemented-with-gaps | 4 | 0 | 7 | 3 | 4
+| `060` | #1150 | partially-implemented | 2 | 0 | 7 | 5 | 2
+| `070` | #1152 | implemented-with-gaps | 6 | 0 | 6 | 0 | 6
+| `080` | #1156 | implemented-with-gaps | 10 | 2 | 9 | 0 | 9
+| `090` | #1155 | implemented-with-gaps | 5 | 1 | 3 | 3 | 0
+| `100` | #1158 | implemented-with-gaps | 6 | 0 | 10 | 3 | 7
+| `110` | #1169 | implemented-with-gaps | 4 | 2 | 7 | 0 | 7
+| `120` | #1162 | fully-implemented | 7 | 1 | 4 | 4 | 0
+| `130` | #1163 | implemented-with-gaps | 6 | 4 | 6 | 3 | 3
+| `140` | #1171 | implemented-with-gaps | 4 | 1 | 5 | 0 | 5
+| `150` | #1172 | implemented-with-gaps | 5 | 3 | 5 | 0 | 5
+| `160` | #1174 | implemented-with-gaps | 6 | 1 | 10 | 2 | 8
+| `170` | #1296 | implemented-with-gaps | 5 | 0 | 5 | 0 | 5
+| `180` | #1183 | implemented-with-gaps | 5 | 3 | 7 | 7 | 0
+| `190` | #1179 | implemented-with-gaps | 6 | 1 | 8 | 3 | 5
+| `200` | #1181 | implemented-with-gaps | 5 | 1 | 8 | 0 | 8
+| `210` | #1186 | implemented-with-gaps | 3 | 0 | 5 | 0 | 5
+| `220` | #1224 | implemented-with-gaps | 4 | 2 | 7 | 0 | 7
+| `230` | #1194 | partially-implemented | 6 | 5 | 4 | 1 | 3
+| `240` | #1188 | implemented-with-gaps | 4 | 0 | 5 | 0 | 5
+| `250` | #1198 | partially-implemented | 6 | 1 | 12 | 11 | 1
+| `260` | #1197 | implemented-with-gaps | 4 | 2 | 7 | 0 | 7
+| `270` | #1195 | implemented-with-gaps | 6 | 1 | 7 | 0 | 7
+| `280` | #1200 | implemented-with-gaps | 4 | 2 | 7 | 0 | 7
+| `290` | #1205 | implemented-with-gaps | 2 | 1 | 5 | 0 | 5
+| `300` | #1211 | implemented-with-gaps | 4 | 0 | 9 | 9 | 0
+| `302` | #1215 | implemented-with-gaps | 6 | 0 | 9 | 8 | 1
+| `310` | #1206 | implemented-with-gaps | 6 | 2 | 8 | 5 | 3
+| `320` | #1213 | implemented-with-gaps | 8 | 2 | 10 | 10 | 0
+| `330` | #1217 | implemented-with-gaps | 6 | 1 | 5 | 1 | 4
+| `340` | #1222 | implemented-with-gaps | 5 | 0 | 4 | 0 | 4
+| `350` | #1221 | implemented-with-gaps | 5 | 0 | 4 | 0 | 4
+| `360` | #1223 | partially-implemented | 7 | 4 | 6 | 1 | 5
+| `370` | #1228 | implemented-with-gaps | 8 | 0 | 7 | 0 | 7
+| `380` | #1229 | partially-implemented | 7 | 3 | 8 | 0 | 8
+| `390` | #1230 | implemented-with-gaps | 9 | 2 | 5 | 0 | 5
+| `410` | #1231 | implemented-with-gaps | 4 | 0 | 4 | 2 | 2
+| `420` | #1255 | implemented-with-gaps | 5 | 1 | 3 | 0 | 3
+| `430` | #1193 | implemented-with-gaps | 4 | 0 | 9 | 0 | 9
+| `440` | #1235 | partially-implemented | 5 | 1 | 6 | 4 | 2
+| `450` | #1147 | implemented-with-gaps | 5 | 2 | 5 | 0 | 5
+| `460` | #1278 | fully-implemented | 4 | 0 | 5 | 1 | 4
+| `500` | #1320 | implemented-with-gaps | 8 | 0 | 8 | 0 | 8
+| `510` | #1309 | implemented-with-gaps | 8 | 0 | 9 | 0 | 9
+| `520` | #1317 | implemented-with-gaps | 8 | 0 | 8 | 0 | 8
+| *TOTAL* | *47 PRs* | | *256* | *54* | *308* | *90* | *218*
+|===
+
+Derived ratios:
+
+* **1.20 gaps per deliverable**
+* **21.1% deliverable fidelity failure rate** — 54 of 256 deliverables were claimed done but did not fully hold up
+* **29.2% of gaps already closed** by three later remediation plans
+* Verdicts: 2 fully-implemented, 38 implemented-with-gaps, 7 partially-implemented
+
+== Why so many gaps? The taxonomy answers it
+
+The headline `308` is not 308 shipped code defects. Classifying every gap by its own declared
+`Kind` field:
+
+[cols="3,1,1,1,1,1",options="header"]
+|===
+| Kind | n | % | high | med | low
+
+| `stale-statement` | 81 | 26.3% | 6 | 34 | 41
+| `incomplete-sweep` | 55 | 17.9% | 5 | 39 | 11
+| `doc-drift` | 50 | 16.2% | 0 | 17 | 33
+| `omission` | 37 | 12.0% | 1 | 28 | 8
+| `bug` | 33 | 10.7% | 14 | 12 | 7
+| `vacuous-test` | 16 | 5.2% | 9 | 6 | 1
+| `missing-test` | 10 | 3.2% | 2 | 6 | 2
+| `vacuous-guard` | 6 | 1.9% | 5 | 1 | 0
+| `incomplete-statement` | 4 | 1.3% | 0 | 2 | 2
+| `false-signal` | 3 | 1.0% | 1 | 1 | 1
+| `incomplete` | 2 | 0.6% | 0 | 0 | 2
+| `wrong-behaviour` | 1 | 0.3% | 0 | 1 | 0
+| `false-positive` | 1 | 0.3% | 0 | 1 | 0
+| `wrong` | 1 | 0.3% | 1 | 0 | 0
+| `doc-conflict` | 1 | 0.3% | 0 | 1 | 0
+| `false-absence` | 1 | 0.3% | 0 | 1 | 0
+| `guard-blind-spot` | 1 | 0.3% | 1 | 0 | 0
+| `duplication` | 1 | 0.3% | 0 | 0 | 1
+| `unenforced-invariant` | 1 | 0.3% | 0 | 1 | 0
+| `incomplete-guard` | 1 | 0.3% | 0 | 1 | 0
+| `missing-implementation` | 1 | 0.3% | 0 | 1 | 0
+| `process` | 1 | 0.3% | 0 | 0 | 1
+| *TOTAL* | *308* | | *45* | *153* | *110*
+|===
+
+=== The three-way partition
+
+[cols="4,1,1",options="header"]
+|===
+| Class | n | %
+
+| Documentation / prose accuracy only | 177 | 57.5%
+| Incomplete sweep — fixed one site, missed others | 55 | 17.9%
+| Real defect in what was claimed done | 76 | 24.7%
+|===
+
+**More than half of the gap count is prose accuracy, not broken code.** The single largest kind is
+`stale-statement` at 26.3% — a document asserting something the tree contradicts.
+
+=== Where the gaps point
+
+[cols="4,1,1",options="header"]
+|===
+| Target | n | %
+
+| live repo surface | 255 | 82.8%
+| own report-01.md | 51 | 16.6%
+| other plan-dir doc | 2 | 0.6%
+|===
+
+**51 gaps (16.6%) are corrections to the runs' OWN run reports** — the plans'
+paperwork about themselves, not the product. Those reports are now archived out of version control,
+so those gaps are closed-as-recorded and buy nothing if 'fixed'.
+
+[NOTE]
+====
+Adjusting for both effects, the defect density that actually matters is:
+
+* 76 real defects over 256 deliverables = **0.30 shipped defects per deliverable**
+* of which 45 were rated `high` across the whole corpus
+====
+
+== Comparison: the 10 most recent local plan-marshall plans
+
+The complete local archive, not a sample.
+
+[cols="4,1,1,1,1,1,1",options="header"]
+|===
+| Plan | PR | Deliv | In-run findings | per-Deliv | Tokens | Billing
+
+| `absent-names-two-states-with-opposite-remedi` | #1118 | 5 | 35 | 7.0 | 6,928,350 | 65,088,306
+| `daemon-baseline-interpreter-is-unregistrable` | #1122 | 3 | 6 | 2.0 | 4,626,351 | 34,901,688
+| `provider-logging-path-containment` | #1123 | 3 | 23 | 7.7 | 5,633,452 | 32,034,376
+| `executor-rejects-invalid-invocations-before-` | #1127 | 5 | 35 | 7.0 | 9,179,597 | 158,854,939
+| `generic-charter-language-specific-defect` | #1130 | 8 | 11 | 1.4 | 4,781,368 | 102,618,506
+| `hook-timeout-unit-confusion` | #1131 | 2 | 23 | 11.5 | 7,850,309 | 109,408,471
+| `metrics-record-cannot-represent-re-entered-p` | #1129 | 4 | 21 | 5.2 | 7,509,007 | 134,398,855
+| `runtime-edge-paths-crash-or-silently-lose-da` | #1132 | 5 | 1 | 0.2 | 3,284,200 | 79,784,599
+| `self-review-resweeps-full-surface-every-roun` | #1126 | 6 | 28 | 4.7 | 5,771,590 | 108,860,690
+| `two-producers-one-marker-field-two-encodings` | #1125 | 5 | 20 | 4.0 | 6,439,391 | 104,906,508
+| *TOTAL / MEAN* | *10 PRs* | *46* | *203* | *4.41* | *6,200,361* | *93,085,693*
+|===
+
+=== The comparison, stated honestly
+
+[cols="3,2,2",options="header"]
+|===
+| | Cloud lane | Local plan-marshall
+
+| Plans | 47 | 10
+| Deliverables | 256 | 46
+| Defects found | 308 (post-hoc audit) | 203 (in-run gates)
+| Per deliverable | 1.20 | 4.41
+| When found | **after merge**, by an external audit | **before merge**, by the plan's own gates
+| Disposition | 218 still open | ~all resolved in-run
+| Fidelity failures | 54 of 256 (21.1%) | not measured post-hoc
+|===
+
+**The local plans register a HIGHER defect count per deliverable (4.41 vs 1.20) — and that is the
+point.** Those defects were surfaced and closed by quality gates, self-review, and review bots
+before the code merged. The cloud figure counts defects that survived to production and needed an
+external audit eight days later to find.
+
+A defect caught in-run is a working gate. A defect found post-hoc is an escape.
+
+== Cost
+
+[IMPORTANT]
+====
+**The cloud lane cannot measure its own cost.** The epic audit's own § Cost section reads
+*"Tokens: not available to the agent in this session"*, and no cloud run in this corpus published
+a token or billing figure. Every cost number below is therefore the operator's observation, not a
+measurement the lane produced.
+
+This is itself a finding: a lane that cannot report its own consumption cannot be cost-optimised,
+and cannot be compared on any basis except an external one.
+====
+
+[cols="3,2,2",options="header"]
+|===
+| | Cloud plan | Local plan-marshall plan
+
+| Cost per plan (operator observation) | **2–4%** of weekly limit | **1–2%** of weekly limit
+| Measured tokens per plan | not produced | 6,200,361
+| Measured billing-weighted per plan | not produced | 93,085,693
+| Self-measurement | none | full per-phase breakdown in `metrics.md`
+|===
+
+At the operator's figures, the 47 cloud plans in this corpus consumed roughly **94–188% of a
+weekly limit** — the equivalent of **47–94 local plans**. What that bought is recorded above:
+308 gaps, of which **218 are still open**, and a 21% deliverable fidelity failure rate.
+
+== Adjudication of the three candidate explanations
+
+=== 1. plan-marshall shows its benefit — *SUPPORTED, and it is mostly a machinery argument*
+
+The local lane runs gates the cloud lane structurally does not have. Enumerated from the
+phase-6-finalize manifest of the local plans in this corpus:
+
+[cols="3,3",options="header"]
+|===
+| Local gate | Cloud-lane equivalent
+
+| `pre-push-quality-gate` — per-bundle + whole-tree build and tests | conditional `./pw verify`, skipped entirely on a docs-only footprint
+| `pre-submission-self-review` — structural sweep over ext-point-derived candidates | none
+| `automatic-review` + unified triage + findings pipeline | review bots only, no triage pipeline
+| Q-Gate findings captured and blocked at **every** phase boundary | none
+| `phase_handshake` invariants incl. blocking-finding gate | none
+| `finalize-step-simplify`, `finalize-step-security-audit` | none
+| `plan-retrospective` + `review-retrospective` | none
+| Per-phase metrics, token and billing accounting | none
+|===
+
+The evidence is direct: the local plans surfaced **4.41 defects per deliverable and closed them
+before merge**; the cloud plans shipped **1.20 gaps per deliverable that an external audit had to
+find afterwards**. The gates are the difference, and the cloud lane declares most of them out of
+scope by construction.
+
+[WARNING]
+====
+**Do not over-claim this.** The comparison is confounded — see the warning in § Scope. No post-hoc
+audit has been run over the local plans, so their escape rate is *unknown*, not zero. The honest
+claim is: **the local lane demonstrably catches more before merge**, not that it ships fewer bugs.
+====
+
+=== 2. `cloud-plan-lane` / `author-cloud-plan` is faulty — *SUPPORTED, with named mechanisms*
+
+Five contract-level defects are evidenced in this corpus, each with a measured consequence:
+
+**(a) The run report is self-assessed.** The same agent that does the work writes the report that
+attests to it, with no independent pass. Consequence: **51 of 308 gaps (16.6%) are corrections to
+the runs' own reports.** Three reports were internally self-contradictory (`060` and `310` said
+`_pending_` on a merged PR; `500` said "PR not yet opened" against PR #1320; `450` denied opening a
+PR in five cells while describing it in five others).
+
+**(b) Derived figures are taken before the review cycle closes.** The review cycle widens the diff.
+Measured: `520` had two files added by CodeRabbit after its counts were taken, making three separate
+report figures one low; `500` omitted a *production* file from its § Collateral for the same reason;
+`510` used a floating `origin/main` endpoint three sections after its own § Build gate corrects that
+exact defect. The contract does not require a final re-derivation.
+
+**(c) The build gate skips on a docs-only footprint.** `git diff --name-only -- '*.py'` returning
+zero files skips the build. Legitimate for the audit's own docs-only diff, but it means a
+markdown-only plan ships with **no gate at all** — and 56.8% of this corpus's gaps are prose defects.
+
+**(d) The lane assumes affordances a fresh clone does not have.** Three plans had a GATE deliverable
+that could not be opened from a cloud clone — `230/D0` (archived CI manifests), `440/D4` (a real
+finalize to measure), `030/D0` (the ruleset API returns `403`). Those three are precisely why `230`
+and `440` carry `partially-implemented`. `.plan/` state is git-ignored and therefore absent.
+
+**(e) Nothing governs many agents in one working tree.** The audit run itself hit this: agents
+mutation-testing concurrently could snapshot a file another had already mutated and "restore" it to
+a corrupted state, and two agents wrote scratch files into the repository. Found and closed
+*during* the run; the contract still carries no rule.
+
+=== 3. A general Claude Code issue — *WEAKLY SUPPORTED, and mostly external-service limits*
+
+What is genuinely environmental rather than contractual:
+
+* **Review-bot coverage was degraded on essentially every PR** — 1-of-3 or 2-of-3 throughout.
+  `coderabbitai` rate-limited on a rolling window, `sourcery-ai` on a weekly quota and, on large
+  diffs, on a hard **150,000 diff-character ceiling** that no wait clears.
+* **Squash merges make per-commit claims uncheckable.** Every run report cites pre-squash SHAs that
+  resolve to nothing in a clone, so no "seen to fail pre-fix" assertion in this corpus is verifiable.
+* **Verification base commits vanish.** Four `verification.md` headers cite base commits absent from
+  the clone.
+
+[NOTE]
+====
+**Cross-lane control: the review shortfall is NOT cloud-specific.** `PLAN-TRUTH-074`, a *local*
+plan-marshall plan finalized during this analysis, recorded reviewer coverage of **1 of 3** — exactly
+the cloud rate. Its `review-retrospective` measured `coderabbitai` at 13 raw / 10 actionable / 90%
+resolved-as-fixed, while `cuioss-review-bot` and `sourcery-ai` were both **unmeasurable** (no
+participation artifact).
+
+This is the one dimension where the two lanes are indistinguishable, which places it squarely in
+outcome 3 and **removes it as an explanation for the cloud gap count**. Whatever produced 308 gaps,
+it was not the review-bot shortfall — the local lane has the same shortfall and does not produce them.
+====
+
+None of these explains the gap count. They explain why *review* was thin, not why the *plans*
+shipped incomplete sweeps and vacuous guards.
+
+== Verdict
+
+[IMPORTANT]
+====
+**Outcomes 1 and 2, jointly — and they are the same finding seen from two sides.**
+
+The cloud lane is not defective in the sense of being broken; it is defective in the sense of being
+**thin**. It deliberately gives up the in-run verification machinery that produces plan-marshall's
+quality, and the gap corpus is the measured price of that trade: at roughly **2× the cost per plan**,
+it shipped **308 gaps across 256 deliverables**, 218 of them still open, with a
+**21% deliverable fidelity failure rate**.
+
+The corpus's own best evidence for this reading is that the three *remediation* plans — which ran in
+the same cloud lane — closed 90 gaps and **filed 25 new ones**, two of them `high`. The lane does not
+self-correct; it re-introduces its own defect class at each pass.
+====
+
+== What the cloud lane is genuinely good at
+
+Recorded so the verdict is not read as "never use it":
+
+* **Breadth under parallelism.** 44 plans executed and then 44 verified plus 44 adversarially
+  re-reviewed — 99 agents in one session. No local lane does that.
+* **Mechanically-derived figures survive.** In `500`, *every* census figure re-derived exactly
+  (152/81/71/69, the 43/18/2/7/1 split, 46/21, 29 rows) while five narrative sections went stale.
+  **Derivation held; assertion did not.**
+* **The adversarial second pass works.** It refuted 11 gap sets' supporting clauses, corrected
+  verdicts in both directions, and caught defects in the *fixes being proposed*.
+* **`320` and `520` are genuine successes** — 10 of 10 and 29 of 30 upstream gaps closed, the latter
+  verified by execution rather than reading.
+
+== Recommendations
+
+Ordered by measured value.
+
+1. **Do not run implementation plans in the cloud lane without a verification gate.** Reserve it for
+   breadth work — audits, sweeps, verification fan-outs — where its parallelism is the point.
+2. **Add a mandatory final re-derivation step** after the review cycle closes. This single change
+   addresses mechanism (b) and a large share of the 51 report-correction gaps.
+3. **Stop self-assessing the run report**, or stop treating it as evidence. An independent pass over
+   the report — not the work — would have caught all three self-contradictory reports.
+4. **Make the docs-only build-gate skip explicit as a coverage gap**, not a pass. It should read
+   *could not look*, never *clean* — the epic's own namesake rule.
+5. **Give the lane a cost measurement.** It currently cannot report its own consumption at all.
+6. **Add a concurrent-working-tree rule** to § Step 6: dirty-check before mutating, scratch in
+   `$TMPDIR`. The audit hit this and fixed it in-flight; the contract still does not carry it.
+7. **Route `.plan/`-dependent gates to a local run.** Three plans failed a gate for this reason; the
+   staged `PLAN-TRUTH-097` now carries that constraint explicitly.
+
+== Reproducing this analysis
+
+See xref:README.adoc[the README] for the instruction set. Every figure here was derived by script
+from the ingested corpus; none was transcribed by hand.

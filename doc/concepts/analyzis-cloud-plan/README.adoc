@@ -1,0 +1,161 @@
+= Cloud-run quality analyses
+:toc: left
+:toclevels: 2
+
+Comparative quality analyses of epics whose plans were exported to `doc/plans/{epic}/` and executed as
+standalone cloud runs, measured against plans executed locally through the full plan-marshall
+lifecycle.
+
+Each report answers one question — *why did the cloud runs produce the gap count they did?* — and
+adjudicates it against three candidate explanations:
+
+. **plan-marshall shows its benefit** — the local lane's in-run gates are the difference.
+. **The lane contract is faulty** — `.claude/skills/cloud-plan-lane/SKILL.md` and
+  `.claude/skills/author-cloud-plan/SKILL.md` have named, evidenced defects.
+. **A general Claude Code issue** — the cause is environmental and affects both lanes equally.
+
+== Reports
+
+[cols="2,1,4",options="header"]
+|===
+| Epic | Plans | Report
+
+| `truthful-signals`
+| 47
+| xref:truthfull-signals.adoc[Cloud-run quality analysis: truthful-signals]
+
+|===
+
+== How to produce one of these reports
+
+Written for an orchestrator analysing its own epic. Follow it in order; every step names the artifact
+it consumes so nothing is asserted that was not measured.
+
+=== Preconditions
+
+The epic's cloud runs must already be **ingested** into the orchestrator ledger — the plan artifacts
+live under `.plan/local/orchestrator/{epic}/cloud-runs/{NNN}-{slug}/` with all four files
+(`plan.md`, `report-01.md`, `verification.md`, `gaps.md`) per plan.
+
+⛔ If the runs are still in `doc/plans/{epic}/`, ingest first. An analysis run against a tree that is
+about to move produces path-scoped findings that evaporate on ingestion.
+
+⛔ If a plan has **no `verification.md`**, it was never post-verified. Produce one before analysing —
+otherwise its deliverable fidelity is unmeasurable and it silently drops out of every ratio.
+
+=== Step 1 — Establish the three populations, and never mix them
+
+Derive and publish each denominator before any ratio:
+
+* **Plans** — directories under `cloud-runs/` excluding `_epic`.
+* **Deliverables** — distinct `D<n>` rows in each `verification.md` deliverable table.
+* **Gaps** — `## G<n>` sections in each `gaps.md`, *excluding* the `## Refuted during adversarial
+  review` section. A refuted gap is evidence, not an open item.
+
+=== Step 2 — Re-ground every gap at HEAD before counting it
+
+⛔ **This is the step most likely to be skipped, and it moved the `truthful-signals` count by 90.**
+
+A `gaps.md` is a snapshot at the audit's commit. Later remediation plans close gaps and record it
+nowhere. For each gap, check whether it still reproduces at HEAD, and record `closed` / `open` per
+plan. Publish `gaps`, `closed`, and `open` as three separate columns — never a single "open" figure.
+
+Treat a *closed* gap as a lead too: partial closures are common (a fix that lands the documentation
+half and not the code half).
+
+=== Step 3 — Measure deliverable fidelity
+
+For each `verification.md` deliverable row, the four axes are *implemented at all* / *as documented* /
+*correctly* / *completely*. A row carrying any non-`yes` value is a **fidelity failure**: the plan
+claimed it and the tree disagreed. This is the "claimed to fix but didn't" number.
+
+Report it as `D-fail / deliverables` with a percentage.
+
+=== Step 4 — Classify every gap by its own `Kind` field
+
+This is what explains the headline count. Partition into three classes:
+
+[cols="3,4",options="header"]
+|===
+| Class | Kinds
+
+| Real defect in what was claimed done
+| `bug`, `vacuous-test`, `vacuous-guard`, `missing-test`, `false-signal`, `false-absence`,
+  `wrong-behaviour`, `missing-implementation`, `incomplete-guard`, `unenforced-invariant`
+
+| Incomplete sweep — fixed one site, missed others
+| `incomplete-sweep`
+
+| Documentation / prose accuracy only
+| `stale-statement`, `doc-drift`, `doc-conflict`, `omission`, `incomplete-statement`, `duplication`
+|===
+
+Then classify by **target**: does the gap point at a live repo surface, or at the run's *own*
+`report-01.md`? Report-targeting gaps are the plan's paperwork about itself. In `truthful-signals`
+they were 16.6% of the total.
+
+=== Step 5 — Build the local comparison set
+
+Extract from `.plan/local/archived-plans/`. Use the **whole archive** if it is small; if you sample,
+say so and give the population.
+
+Per plan: PR number (from `metadata.phase_steps["6-finalize"]["create-pr"].display_detail`),
+deliverables (`### <n>.` under `## Deliverables` in `solution_outline.md`), findings from
+`artifacts/findings/*.jsonl`, and the `**Total**` row of `metrics.md`.
+
+⛔ **Separate the finding types.** `qgate` + `pr-comment` are defect-shaped; `test-failure` and
+`build-error` are in-run build signal and will inflate the count several-fold if mixed in.
+
+=== Step 6 — State the confound before stating the comparison
+
+[WARNING]
+====
+**The two defect counts are not the same measurement and must not be subtracted.**
+
+Cloud gaps are found by an *independent post-hoc audit* after merge. Local findings are raised by the
+plan's *own in-run gates* and resolved before merge. One measures escapes; the other measures catches.
+
+Unless a post-hoc audit has been run over the local plans — it has not — **the local escape rate is
+unknown, not zero.** Any report that presents the two counts as comparable is committing the epic's
+own archetype.
+====
+
+The honest claim available from this data is *"the local lane demonstrably catches more before
+merge"*, never *"the local lane ships fewer bugs"*.
+
+=== Step 7 — Cost
+
+The cloud lane does not measure its own consumption; expect `not available` and record that as a
+finding rather than a blank. Use the operator's percentage-of-weekly-limit observation for the cloud
+side and the measured `metrics.md` totals for the local side, and label which is which.
+
+=== Step 8 — Adjudicate, and look for a cross-lane control
+
+For each candidate explanation, require a *named mechanism with a measured consequence*. "The lane is
+worse" is not a finding; "the run report is self-assessed, and 51 of 308 gaps are corrections to those
+reports" is.
+
+⭐ **Actively hunt for a dimension where both lanes behave identically.** In `truthful-signals` that
+was reviewer coverage — 1-of-3 in both lanes — which *removed* it as an explanation for the gap count.
+A control that eliminates a candidate is worth more than one that supports it.
+
+=== Step 9 — Derive, do not transcribe
+
+Generate every table with a script that reads the corpus. The strongest single finding in the
+`truthful-signals` report is that mechanically-derived figures survived a run in which hand-written
+prose went stale in five places — do not then hand-type the comparison tables.
+
+=== Step 10 — Record the measurement instant
+
+State the HEAD sha and the date at the top. The project documentation standard forbids timestamps;
+this is a deliberate, stated exception, because a comparative measurement without its instant is
+exactly the untruthful signal these reports exist to find.
+
+== Conventions for these reports
+
+* One file per epic: `{epic}.adoc`, linked from the table above.
+* Every count rides with its population. A bare `0` must state *which* zero it is — *examined N, none
+  found* is a result; *could not look* is not.
+* Refuted findings are retained with the evidence that refuted them, never deleted.
+* Where the analysis corrects a figure it inherited, record the correction rather than silently
+  fixing it.
