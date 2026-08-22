@@ -42,10 +42,14 @@ if str(_RETRO_SCRIPTS) not in sys.path:
 
 import review_gate_delta as delta  # noqa: E402
 
-# `review_retrospective` is project-local under `.claude/skills/`, outside every
-# path mypy is pointed at, so it has no discoverable stub — hence
-# `import-not-found` rather than the `import-untyped` a bundle module would give.
-import review_retrospective as retro  # type: ignore[import-not-found]  # noqa: E402
+# A bare ``type: ignore`` is deliberate here, not laziness: mypy resolves this
+# project-local import differently depending on which roots are on its search
+# path, so it raises ``import-untyped`` in some environments and
+# ``import-not-found`` in others (locally vs CI). A code-scoped ignore is
+# therefore "unused" in whichever environment raises the OTHER code, and
+# ``--warn-unused-ignores`` turns that into a hard error. The bare form is used
+# in both.
+import review_retrospective as retro  # type: ignore  # noqa: E402
 
 #: One corpus, exercising every axis the rule distinguishes. Each entry carries the
 #: REAL record shape — `title`/`detail` built from structured metadata, the comment

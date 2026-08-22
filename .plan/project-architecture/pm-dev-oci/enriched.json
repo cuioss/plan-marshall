@@ -67,5 +67,6 @@
     }
   },
   "skills_by_profile_reasoning": "Batch: marshall-plugin build_system detected; all marketplace bundles host skills/scripts authored under plugin-architecture standards",
-  "tips": []
+  "tips": [],
+  "type": "module"
 }

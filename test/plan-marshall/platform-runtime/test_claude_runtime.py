@@ -184,7 +184,7 @@ class TestProjectInitialSetup:
         project_dir.mkdir()
         rt.project_initial_setup(str(project_dir), "claude")
         rt.project_initial_setup(str(project_dir), "claude")
-        settings = json.loads((project_dir / ".claude" / "settings.json").read_text())
+        settings = json.loads((project_dir / ".claude" / "settings.local.json").read_text())
         session_starts = settings.get("hooks", {}).get("SessionStart", [])
         hook_count = sum(
             sum(1 for h in entry.get("hooks", []) if h.get("command") == _HOOK_COMMAND)
@@ -194,12 +194,12 @@ class TestProjectInitialSetup:
         assert hook_count == 1
 
     def test_installs_session_start_hook(self, rt, tmp_path):
-        """project_initial_setup writes the SessionStart hook to .claude/settings.json."""
+        """project_initial_setup writes the SessionStart hook to .claude/settings.local.json."""
         project_dir = tmp_path / "proj4"
         project_dir.mkdir()
         result = _parsed(rt.project_initial_setup(str(project_dir), "claude"))
         assert result["hook_installed"] is True
-        settings_path = project_dir / ".claude" / "settings.json"
+        settings_path = project_dir / ".claude" / "settings.local.json"
         assert settings_path.is_file()
         settings = json.loads(settings_path.read_text())
         session_starts = settings.get("hooks", {}).get("SessionStart", [])
@@ -235,8 +235,8 @@ class TestProjectInitialSetupFreshInit:
         assert marshal["runtime"]["target"] == "claude"
         assert "project_dir" in marshal
 
-        # SessionStart hook in settings.json
-        settings_path = project_dir / ".claude" / "settings.json"
+        # SessionStart hook in settings.local.json
+        settings_path = project_dir / ".claude" / "settings.local.json"
         assert settings_path.is_file()
         settings = json.loads(settings_path.read_text())
         session_starts = settings.get("hooks", {}).get("SessionStart", [])
@@ -1091,12 +1091,12 @@ class TestInstallTerminalTitleHooks:
 
     def test_shared_helper_parity_with_initial_setup(self, rt, tmp_path):
         """project_install_hook produces the same SessionStart wiring as project_initial_setup."""
-        # project_initial_setup writes to .claude/settings.json.
+        # project_initial_setup writes to .claude/settings.local.json.
         setup_project = tmp_path / "setup-proj"
         setup_project.mkdir()
         rt.project_initial_setup(str(setup_project), "claude")
         setup_settings = json.loads(
-            (setup_project / ".claude" / "settings.json").read_text()
+            (setup_project / ".claude" / "settings.local.json").read_text()
         )
 
         # project_install_hook writes to an arbitrary target file.
@@ -1113,18 +1113,26 @@ class TestInstallTerminalTitleHooks:
     # (g) Target argument shape — platform identifier vs absolute path.
     # ------------------------------------------------------------------
 
-    def test_target_claude_resolves_to_project_settings_path(self, rt, tmp_path, monkeypatch):
-        """``--target claude`` MUST resolve via _claude_project_settings_path(), NOT be treated as a literal ./claude file path."""
+    def test_target_claude_pins_settings_local_when_no_settings_json_exists(
+        self, rt, tmp_path, monkeypatch
+    ):
+        """``--target claude`` resolves ``.claude/settings.local.json``, never a literal ``./claude`` path.
+
+        The matched negative control for the settings.json-present case below:
+        the resolved file is the SAME one whether or not a shared
+        ``settings.json`` exists, which is what makes the pair prove a pin
+        rather than re-observe a preferred-on-absence fallback.
+        """
         monkeypatch.chdir(tmp_path)
-        # Ensure .claude/settings.json does NOT exist so the helper falls
-        # through to .claude/settings.local.json (the preferred-on-absence path).
+
         result = _parsed(rt.project_install_hook("claude"))
+
         assert result["status"] == "success"
         # The resolved path lives under .claude/ — never a stray ./claude file.
         resolved = Path(result["settings_path"])
         assert resolved.is_absolute()
         assert resolved.parent.name == ".claude"
-        assert resolved.name in ("settings.json", "settings.local.json")
+        assert resolved.name == "settings.local.json"
         # No stray ./claude file in cwd.
         assert not (tmp_path / "claude").exists()
         # The actual settings file got the wiring.
@@ -1132,6 +1140,42 @@ class TestInstallTerminalTitleHooks:
         wiring = json.loads(resolved.read_text())
         assert "hooks" in wiring
         assert "UserPromptSubmit" in wiring["hooks"]
+
+    def test_target_claude_pins_settings_local_even_when_settings_json_exists(
+        self, rt, tmp_path, monkeypatch
+    ):
+        """``--target claude`` pins settings.local.json even when settings.json exists.
+
+        The terminal-title bundle is machine-local operator wiring — absolute
+        per-user paths and an operator's own render cadence — so it belongs in
+        the gitignored ``.claude/settings.local.json``, the same file the
+        ``--enforcement`` install pins. A resolver preferring a pre-existing
+        shared ``settings.json`` would scatter that wiring into a file that
+        enters version control.
+        """
+        monkeypatch.chdir(tmp_path)
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        settings_json = claude_dir / "settings.json"
+        settings_json.write_text(
+            json.dumps({"permissions": {"allow": []}}), encoding="utf-8"
+        )
+        shared_before = settings_json.read_text()
+
+        result = _parsed(rt.project_install_hook("claude"))
+
+        assert result["status"] == "success"
+        assert Path(result["settings_path"]).name == "settings.local.json"
+
+        # The full terminal-title bundle landed in settings.local.json.
+        local = json.loads((claude_dir / "settings.local.json").read_text())
+        assert _count_command(local["hooks"]["UserPromptSubmit"], _RENDER_HOOK_COMMAND) == 1
+        assert local["statusLine"]["command"] == _STATUSLINE_COMMAND
+        assert local["env"]["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"] == "1"
+        # The shared settings.json was NOT touched — byte-identical, not merely
+        # "no hooks block" (an in-place rewrite without hooks would be a bug too).
+        assert settings_json.read_text() == shared_before
+        assert "hooks" not in json.loads(shared_before)
 
     def test_target_relative_path_or_bare_identifier_rejected(self, rt, tmp_path, monkeypatch):
         """Any target value that is neither 'claude' nor an absolute .json path MUST be rejected with unknown_target."""

@@ -39,14 +39,14 @@ Claude settings file. **Action B** sets the active-plan cache mapping for the
 current session, overriding whichever plan id the executor's write-through last
 published.
 
-**Which settings file.** The terminal-title install does NOT pin
-`settings.local.json`. `--target claude` resolves through
-`_claude_project_settings_path()`, which prefers `.claude/settings.json` when
-that file exists and falls back to `.claude/settings.local.json`; the `display`
-health check reads BOTH files, so an entry in either counts as present. Only the
-orthogonal `--enforcement` install pins the local file. Report the file the call
-actually wrote by reading `settings_path` from the install response rather than
-naming a path this flow does not control.
+**Which settings file.** `--target claude` writes `.claude/settings.local.json`
+in both install modes — the terminal-title install and the orthogonal
+`--enforcement` install alike — because both are machine-local operator wiring
+and that file is gitignored, so absolute per-user paths never enter version
+control. The `display` health check reads BOTH files, so an entry in either
+counts as present. Report the file the call actually wrote by reading
+`settings_path` from the install response rather than naming a path this flow
+does not control.
 
 ## Reachability
 

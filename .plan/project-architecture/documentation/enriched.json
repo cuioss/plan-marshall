@@ -1,0 +1,62 @@
+{
+  "best_practices": [],
+  "generation": {
+    "by": "architecture",
+    "tree_sha": "443d3db6e0f753d26e47462d6cae1d8ac0bf17a2201d1c7eac47a732d142dd97"
+  },
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [],
+  "key_dependencies_reasoning": "",
+  "key_packages": {
+    "doc/adr": {
+      "description": "Architectural decision records, one numbered .adoc per settled decision. These are the durable rationale the skills cross-reference by ADR number rather than restating."
+    },
+    "doc/concepts": {
+      "description": "Concept narratives explaining how each subsystem works \u2014 orchestration, verification, token management, process enforcement, build management and the rest. The explanatory layer that skills point at instead of duplicating."
+    },
+    "doc/plans": {
+      "description": "The standalone cloud-lane plan corpus, grouped by epic. Each plan directory carries its plan, gaps, verification and dated run reports \u2014 the git-resident state the cloud lane uses because .plan/ is git-ignored."
+    },
+    "doc/user": {
+      "description": "Operator-facing guides: installation, configuration, commands, recipes, efforts, and per-feature usage docs such as terminal-title and the enforcement hook. This is the published contract a skill's behaviour must match."
+    }
+  },
+  "purpose": "documentation",
+  "purpose_reasoning": "The module contains only prose artifacts (.adoc and .md) and ships no executable or packaged unit, so it is a documentation surface rather than a library, extension, or deployment.",
+  "responsibility": "The repository's prose documentation tree. Carries the architectural decision records (doc/adr), the concept narratives that explain how the system works (doc/concepts), the contributor-facing build and layout guides (doc/developer), the operator-facing usage guides (doc/user), and the standalone cloud-lane plan corpus (doc/plans).",
+  "responsibility_reasoning": "Derived from the module's file inventory: 346 files, all category=doc, partitioned across doc/adr, doc/concepts, doc/developer, doc/user and doc/plans. It carries no source, test, or skill files.",
+  "skills_by_profile": {
+    "implementation": {
+      "defaults": [
+        {
+          "description": "AsciiDoc formatting, link verification, and template standards - the tree is predominantly .adoc",
+          "skill": "pm-documents:ref-asciidoc"
+        },
+        {
+          "description": "Content quality, tone, and organization standards for technical documentation",
+          "skill": "pm-documents:ref-documentation"
+        }
+      ]
+    },
+    "triage": {
+      "defaults": [
+        {
+          "description": "Registered triage extension for the documentation domain",
+          "skill": "pm-documents:ext-triage-docs"
+        }
+      ]
+    },
+    "verification": {
+      "defaults": [
+        {
+          "description": "Documentation verification recipe",
+          "skill": "pm-documents:recipe-doc-verify"
+        }
+      ]
+    }
+  },
+  "skills_by_profile_reasoning": "The module is prose-only, so the pm-documents bundle is the whole applicable surface. No language or build skills apply - the module ships no source, test, or skill files.",
+  "tips": [],
+  "type": "module"
+}
