@@ -21,7 +21,7 @@ adjudicates it against three candidate explanations:
 | Epic | Plans | Report
 
 | `truthful-signals`
-| 47
+| 45
 | xref:truthfull-signals.adoc[Cloud-run quality analysis: truthful-signals]
 
 |===
@@ -42,6 +42,33 @@ about to move produces path-scoped findings that evaporate on ingestion.
 
 ⛔ If a plan has **no `verification.md`**, it was never post-verified. Produce one before analysing —
 otherwise its deliverable fidelity is unmeasurable and it silently drops out of every ratio.
+
+=== Step 0 — Exclude the lane-fix PRs before anything else
+
+An epic's cloud PRs come in **two kinds**, and only one belongs in a quality analysis:
+
+* **Plan work** — a run of an authored `plan.md` under the `cloud-plan-lane` rule-set. **Analyse these.**
+* **Fixes to the `cloud-plan-lane` skill itself** — ad-hoc edits made *outside* the rule-set, with no
+  plan directory and no gates. **Exclude these completely.** They were never governed by the contract
+  the report evaluates, so their defects measure the wrong thing.
+
+**Derive the exclusion, do not eyeball the titles.** The criterion:
+
+[quote]
+____
+A PR is a lane-fix when the ONLY production file it touches is `.claude/skills/cloud-plan-lane/SKILL.md`
+— plan documents under `doc/plans/` are not production files.
+____
+
+⚠ **`only` is load-bearing, not `any`.** A large plan can legitimately edit the lane skill among many
+other files. In `truthful-signals`, `#1162` touches that file with **64** production files and is plan
+work; `#1137` and `#1147` touch it with **one** and are lane-fixes.
+
+⛔ **Resolve each PR's landing commit by anchoring to the END of the SUBJECT line.** A bare
+`git log --grep "(#NNNN)"` also matches commits that merely *mention* the number in their body and will
+hand you a plausible wrong commit. In this analysis that misclassified `#1213` as a lane-fix until the
+match was anchored. State how many lane-fix PRs existed in total, how many were already outside the
+corpus, and how many you removed from it.
 
 === Step 1 — Establish the three populations, and never mix them
 

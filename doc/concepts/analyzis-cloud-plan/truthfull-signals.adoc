@@ -3,91 +3,95 @@
 :toclevels: 3
 :sectnums:
 
-Analysis of the 47 plans from the `truthful-signals` epic that were exported to
-`doc/plans/truthful-signals/` and executed as standalone cloud runs, against the 10 most recent
-plans executed locally through the full plan-marshall lifecycle.
+Analysis of the `truthful-signals` plans executed as standalone cloud runs, measured against the 10
+most recent plans executed locally through the full plan-marshall lifecycle.
 
 [IMPORTANT]
 ====
-**Measured at repository HEAD `5e9c0865d`, 2026-08-22.** Every figure here is point-in-time and
-re-derivable from the ingested corpus at `.plan/local/orchestrator/truthful-signals/cloud-runs/`.
+**Measured at repository HEAD `3e9ce88e1`, 2026-08-22.** Every figure is re-derivable by script from
+the ingested corpus at `.plan/local/orchestrator/truthful-signals/cloud-runs/`.
 
 This document carries a measurement instant, which the project documentation standard otherwise
-forbids. The deviation is deliberate and is the subject of the analysis itself: a comparative
-measurement without its instant is exactly the untruthful signal this epic exists to remove. The
-gap counts below moved by 90 between the audit that produced them and this analysis.
+forbids. The deviation is deliberate and is the subject of the analysis: a comparative measurement
+without its instant is exactly the untruthful signal this epic exists to remove.
 ====
 
-== Scope, populations, and how each number was derived
+== Population, and the two PRs excluded from it
 
-Three populations. Every count in this report rides with the population it was computed over.
+The epic's cloud PRs are of **two kinds**, and only one belongs in a quality analysis:
 
-[cols="1,1,4",options="header"]
+[cols="2,4",options="header"]
 |===
-| Population | n | Derivation
+| Kind | Treatment
 
-| Cloud plans | 47 | Directories under the ingested `cloud-runs/` tree, each holding `plan.md`, `report-01.md`, `verification.md`, `gaps.md`. 44 original (`030`–`460`, no `400`) plus 3 audit-derived (`500`/`510`/`520`).
-| Cloud deliverables | 256 | Distinct `D<n>` rows in each run's `verification.md` deliverable-by-deliverable table.
-| Cloud gaps | 308 | `## G<n>` sections in each `gaps.md`, excluding each file's `## Refuted during adversarial review` section.
-| Local plans | 10 | Every plan in `.plan/local/archived-plans/` — the complete local archive, not a sample.
-| Local deliverables | 46 | `### <n>.` headings under `## Deliverables` in each `solution_outline.md`.
-| Local findings | 203 | `qgate` + `pr-comment` entries in each plan's `artifacts/findings/*.jsonl`.
+| **Plan work** — a run of an authored `plan.md` under the `cloud-plan-lane` rule-set | **analysed**
+| **Fixes to the `cloud-plan-lane` skill itself** — ad-hoc edits made *outside* the rule-set | **excluded**
 |===
 
-[WARNING]
-====
-**The two defect counts are not the same measurement and must not be subtracted.**
+Excluding the second kind is not a judgement call: those PRs were never governed by the contract
+this report evaluates, so counting their defects against it would measure the wrong thing.
 
-The cloud gaps were found by an *independent post-hoc audit* (PR #1298) run over plans that had
-already merged — 44 verification agents plus 44 adversarial re-review agents, with mutation
-testing. The local findings were raised by each plan's *own in-run gates* and resolved before
-merge. One measures what escaped; the other measures what was caught.
+=== The exclusion, derived rather than asserted
 
-**No equivalent post-hoc audit has ever been run over the local plans**, so this report cannot
-state a local escape rate. That asymmetry is the single largest confound here and is not
-resolved by any number below.
+Criterion: a PR is a lane-fix when **the only production file it touches is
+`.claude/skills/cloud-plan-lane/SKILL.md`** (plan documents under `doc/plans/` are not production).
+Applied to every landed commit in the repository:
+
+* **44 cloud-plan-lane fix PRs exist in total.**
+* **42 are outside this corpus already** — ad-hoc `chore(cloud-plan-lane):` edits with no plan
+  directory, so they never entered the analysis.
+* **2 were inside it and are now removed**: `030` / #1137 and `450` / #1147. Both touch exactly one
+  production file, and that file is the lane skill.
+
+⚠ **`120` / #1162 also edits that file and is deliberately NOT excluded** — it touches **64**
+production files (the `marshall-orchestrator` → `plan-orchestrator` rename) and is plan work that
+happens to include the lane skill among its targets. The criterion is *only* production file, not
+*any*.
+
+[NOTE]
 ====
+**A resolution defect was caught and corrected while deriving this.** Resolving each PR's landing
+commit with `git log --grep "(#NNNN)"` matched a *different* commit whose body mentioned the number,
+which falsely classified `320` / #1213 as a lane-fix. Anchoring the match to the end of the **subject
+line** resolves it correctly to `4ac413261`, six production files, not a lane-fix.
+
+Recorded because an unanchored `--grep` silently returns a plausible wrong commit, and the resulting
+exclusion would have been invisible in the output.
+====
+
+**Analysed population: 45 plans, 245 deliverables, 299 gaps.**
 
 == The comparison is not effort-controlled
 
-The two lanes were deliberately run at different model and effort settings, and this cuts in opposite
-directions for the two conclusions.
+The two lanes were run at different model and effort settings, and this cuts in opposite directions.
 
 [cols="2,3,3",options="header"]
 |===
 | | Cloud lane | Local plan-marshall
 
-| Model / effort | **Opus at max effort**, uniform for the whole run | resolved **per phase**, custom preset
-| Rationale | chosen deliberately **to anticipate the missing plan-marshall guardrails** | effort is a per-phase knob, spent where it pays
-| Observed levels | one setting, no per-phase variation | `phase-3-outline` level-5 · `phase-4-plan` **level-3** · `phase-5-execute` level-5 · `phase-6-finalize` level-5
-| Source | operator statement — no cloud artifact records it | verified from `manage-config effort resolve-target`
+| Model / effort | **Opus at max effort**, uniform | resolved **per phase**, custom preset
+| Rationale | chosen **to anticipate the missing plan-marshall guardrails** | effort is a per-phase knob, spent where it pays
+| Observed | one setting, no per-phase variation | outline level-5 · **plan level-3** · execute level-5 · finalize level-5
+| Source | operator statement, no artifact in the corpus | verified from `manage-config effort resolve-target`
 |===
 
-**On cost, this weakens the comparison.** Part of the 2–4% versus 1–2% gap is the model tier and a
-uniform max setting, not the lane. The cost comparison in this report is therefore **not
-effort-controlled** and should not be read as one.
+**On cost this weakens the comparison** — part of any gap is the model tier, so the cost figures are
+*not effort-controlled*.
 
-**On quality, this strengthens the conclusion — considerably.** The cloud lane was given the most
-expensive setting available, *explicitly as compensation for the guardrails it does not have*. It
-still produced a **21.1% deliverable fidelity failure rate** and left **43% of its CodeRabbit findings
-unresolved**, against a local lane that resolved 100% while spending level-3 on a whole phase.
+**On quality it strengthens the conclusion** — the cloud lane had the most expensive setting
+available, explicitly as compensation for absent guardrails, and still produced the fidelity and
+resolution figures below. ⇒ **Raising effort did not substitute for the machinery.**
 
-⇒ **Raising effort did not substitute for the machinery.** That is the single most useful thing this
-asymmetry tells us: the gap is structural, not a matter of thinking harder, and buying a higher tier
-will not close it.
+== Per-PR ledger
 
-== Per-PR ledger: closed / open / fidelity failures
-
-`Closed` = gaps closed at HEAD by a later remediation plan (#1320, #1309, #1317, #1326).
-`Open` = still live. `D-fail` = deliverables whose verification row carries a non-`yes` value on
-any of the four fidelity axes (implemented at all / as documented / correctly / completely) —
-**the plan claimed it and the tree disagreed**.
+`D-fail` = deliverables whose verification row carries a non-`yes` value on any of the four fidelity
+axes — **the plan claimed it and the tree disagreed**. `CR` = CodeRabbit; `-` means it produced no
+review for that PR, never a zero-findings result.
 
 [cols="1,1,3,1,1,1,1,1,1,1",options="header"]
 |===
 | Plan | PR | Verdict | Deliv | D-fail | Gaps | Closed | Open | CR find | CR fixed
 
-| `030` | #1137 | partially-implemented | 6 | 2 | 4 | 0 | 4 | - | -
 | `040` | #1138 | implemented-with-gaps | 3 | 0 | 6 | 4 | 2 | 3 | 3
 | `050` | #1153 | implemented-with-gaps | 4 | 0 | 7 | 3 | 4 | - | -
 | `060` | #1150 | partially-implemented | 2 | 0 | 7 | 5 | 2 | - | -
@@ -129,24 +133,17 @@ any of the four fidelity axes (implemented at all / as documented / correctly / 
 | `420` | #1255 | implemented-with-gaps | 5 | 1 | 3 | 0 | 3 | - | -
 | `430` | #1193 | implemented-with-gaps | 4 | 0 | 9 | 0 | 9 | - | -
 | `440` | #1235 | partially-implemented | 5 | 1 | 6 | 4 | 2 | 3 | 2
-| `450` | #1147 | implemented-with-gaps | 5 | 2 | 5 | 0 | 5 | - | -
 | `460` | #1278 | fully-implemented | 4 | 0 | 5 | 1 | 4 | 2 | 2
 | `500` | #1320 | implemented-with-gaps | 8 | 0 | 8 | 0 | 8 | 17 | 17
 | `510` | #1309 | implemented-with-gaps | 8 | 0 | 9 | 0 | 9 | 14 | 13
 | `520` | #1317 | implemented-with-gaps | 8 | 0 | 8 | 0 | 8 | 0 | 0
-| *TOTAL* | *47 PRs* | | *256* | *54* | *308* | *90* | *218* | *84* | *48*
+| *TOTAL* | *45 PRs* | | *245* | *50* | *299* | *90* | *209* | *84* | *48*
 |===
 
-`CR find` / `CR fixed` are CodeRabbit review findings and how many were resolved. **`-` means
-CodeRabbit produced no review for that PR** — see xref:_codeRabbit_the_reviewer_signal[the reviewer
-section]; it is never a zero-findings result.
-
-Derived ratios:
-
-* **1.20 gaps per deliverable**
-* **21.1% deliverable fidelity failure rate** — 54 of 256 deliverables were claimed done but did not fully hold up
-* **29.2% of gaps already closed** by three later remediation plans
-* Verdicts: 2 fully-implemented, 38 implemented-with-gaps, 7 partially-implemented
+* **1.22 gaps per deliverable**
+* **20.4% deliverable fidelity failure rate** — 50 of 245
+* **30.1% of gaps already closed** by three later remediation plans (#1320, #1309, #1317, #1326)
+* Verdicts: 2 fully-implemented, 37 implemented-with-gaps, 6 partially-implemented
 
 == Why so many gaps? The taxonomy answers it
 
@@ -156,47 +153,38 @@ Derived ratios:
 
 `verification.md` and `gaps.md` were not produced by the plan runs. They come from a separate,
 operator-issued verification pass whose brief asks for a *thorough review of all code and
-documentation in the repository*, explicitly covering: correctness and edge cases; hidden traps and
+documentation in the repository*, explicitly covering correctness and edge cases; hidden traps and
 false security; whether the security posture fails closed; whether tests are real content tests
 rather than coverage tests; whether generators and positive/negative cases are used correctly; and
-whether documentation — both Javadoc and AsciiDoc — is sensibly structured and matches the code.
+whether documentation — Javadoc and AsciiDoc — is sensibly structured and matches the code.
 
-**Read the taxonomy below against that checklist and the correspondence is close to exact.** The
-dominant kinds are documentation accuracy, incomplete sweeps, and vacuous tests — which are the
-prompt's own headings. A verification call that asked a narrower question would return a smaller
-number over the same plans.
+**Read the taxonomy below against that checklist and the correspondence is close to exact.**
+⇒ **`299` is the yield of one particular review question, not a lane-quality constant.**
 
-⇒ **`308` is the yield of one particular review question, not a lane-quality constant.** Comparing it
-to any figure produced by a different question is invalid, and this report does not do so.
+⛔ **Two findings are NOT prompt artifacts**, because they are measured against the plans' own
+claims rather than an external checklist:
 
-⛔ **Two findings are NOT prompt artifacts and survive this caveat intact**, because they are measured
-against the plans' own claims rather than against an external checklist:
-
-* the **21.1% deliverable fidelity failure rate** — the plan said it did something and the tree disagreed;
-* the **57.1% CodeRabbit resolution rate** — findings an independent reviewer raised and the run never resolved.
+* the **20.4% deliverable fidelity failure rate**;
+* the **57.1% CodeRabbit resolution rate**.
 
 Those two carry the verdict. The raw gap count does not.
 ====
-
-
-The headline `308` is not 308 shipped code defects. Classifying every gap by its own declared
-`Kind` field:
 
 [cols="3,1,1,1,1,1",options="header"]
 |===
 | Kind | n | % | high | med | low
 
-| `stale-statement` | 81 | 26.3% | 6 | 34 | 41
-| `incomplete-sweep` | 55 | 17.9% | 5 | 39 | 11
-| `doc-drift` | 50 | 16.2% | 0 | 17 | 33
-| `omission` | 37 | 12.0% | 1 | 28 | 8
-| `bug` | 33 | 10.7% | 14 | 12 | 7
-| `vacuous-test` | 16 | 5.2% | 9 | 6 | 1
-| `missing-test` | 10 | 3.2% | 2 | 6 | 2
-| `vacuous-guard` | 6 | 1.9% | 5 | 1 | 0
+| `stale-statement` | 79 | 26.4% | 5 | 33 | 41
+| `incomplete-sweep` | 54 | 18.1% | 5 | 38 | 11
+| `doc-drift` | 46 | 15.4% | 0 | 15 | 31
+| `omission` | 35 | 11.7% | 1 | 27 | 7
+| `bug` | 33 | 11.0% | 14 | 12 | 7
+| `vacuous-test` | 16 | 5.4% | 9 | 6 | 1
+| `missing-test` | 10 | 3.3% | 2 | 6 | 2
+| `vacuous-guard` | 6 | 2.0% | 5 | 1 | 0
 | `incomplete-statement` | 4 | 1.3% | 0 | 2 | 2
 | `false-signal` | 3 | 1.0% | 1 | 1 | 1
-| `incomplete` | 2 | 0.6% | 0 | 0 | 2
+| `incomplete` | 2 | 0.7% | 0 | 0 | 2
 | `wrong-behaviour` | 1 | 0.3% | 0 | 1 | 0
 | `false-positive` | 1 | 0.3% | 0 | 1 | 0
 | `wrong` | 1 | 0.3% | 1 | 0 | 0
@@ -208,7 +196,7 @@ The headline `308` is not 308 shipped code defects. Classifying every gap by its
 | `incomplete-guard` | 1 | 0.3% | 0 | 1 | 0
 | `missing-implementation` | 1 | 0.3% | 0 | 1 | 0
 | `process` | 1 | 0.3% | 0 | 0 | 1
-| *TOTAL* | *308* | | *45* | *153* | *110*
+| *TOTAL* | *299* | | *44* | *148* | *107*
 |===
 
 === The three-way partition
@@ -217,13 +205,12 @@ The headline `308` is not 308 shipped code defects. Classifying every gap by its
 |===
 | Class | n | %
 
-| Documentation / prose accuracy only | 177 | 57.5%
-| Incomplete sweep — fixed one site, missed others | 55 | 17.9%
-| Real defect in what was claimed done | 76 | 24.7%
+| Documentation / prose accuracy only | 169 | 56.5%
+| Incomplete sweep — fixed one site, missed others | 54 | 18.1%
+| Real defect in what was claimed done | 76 | 25.4%
 |===
 
-**More than half of the gap count is prose accuracy, not broken code.** The single largest kind is
-`stale-statement` at 26.3% — a document asserting something the tree contradicts.
+**More than half of the gap count is prose accuracy, not broken code.**
 
 === Where the gaps point
 
@@ -231,47 +218,44 @@ The headline `308` is not 308 shipped code defects. Classifying every gap by its
 |===
 | Target | n | %
 
-| live repo surface | 255 | 82.8%
-| own report-01.md | 51 | 16.6%
-| other plan-dir doc | 2 | 0.6%
+| live repo surface | 249 | 83.3%
+| own report-01.md | 48 | 16.1%
+| other plan-dir doc | 2 | 0.7%
 |===
 
-**51 gaps (16.6%) are corrections to the runs' OWN run reports** — the plans'
-paperwork about themselves, not the product. Those reports are now archived out of version control,
-so those gaps are closed-as-recorded and buy nothing if 'fixed'.
+**48 gaps (16.1%) are corrections to the runs' OWN reports** — the plans'
+paperwork about themselves. Those reports are now archived out of version control, so those gaps are
+closed-as-recorded.
 
 [NOTE]
 ====
-Adjusting for both effects, the defect density that actually matters is:
-
-* 76 real defects over 256 deliverables = **0.30 shipped defects per deliverable**
-* of which 45 were rated `high` across the whole corpus
+Adjusting for both effects: **76 real defects over 245 deliverables = 0.31 shipped defects per
+deliverable**, of which **44** were rated `high`.
 ====
 
 [#_codeRabbit_the_reviewer_signal]
 == CodeRabbit: the reviewer signal
 
-Review findings are an independent measurement of plan quality — a reviewer that had to raise a
-finding is a defect the plan shipped into review. Measured per PR from `ci pr comments`, counting
-inline comments authored by `coderabbitai` that carry a `cr-comment:v1` fingerprint (the marker that
-distinguishes an originating finding from CodeRabbit's own auto-generated replies).
+Measured per PR from `ci pr comments`, counting inline comments authored by `coderabbitai` carrying a
+`cr-comment:v1` fingerprint — the marker separating an originating finding from CodeRabbit's own
+auto-generated replies.
 
 [NOTE]
 ====
-**The classifier was validated against an independent measurement.** For PR #1134 it returns 10
-findings; the `review-retrospective` step run separately over the same PR reported *10 actionable*
-(of 13 raw, 3 meta). The two agree exactly.
+**Validated against an independent measurement.** For PR #1134 the classifier returns 10 findings;
+the `review-retrospective` step run separately over the same PR reported *10 actionable* (of 13 raw,
+3 meta). Exact agreement.
 ====
 
 [cols="4,2,2",options="header"]
 |===
 | | Cloud lane | Local plan-marshall
 
-| PRs | 47 | 10
-| CodeRabbit **reviewed** | 16 (34%) | 6 (60%)
-| CodeRabbit **declined** (quota) | 31 | 4
+| PRs | 45 | 10
+| CodeRabbit **reviewed** | 16 (36%) | 6 (60%)
+| **Declined** (account quota) | 29 | 4
 | Findings raised | 84 | 47
-| Findings per reviewed PR | 5.2 | 7.8
+| Per reviewed PR | 5.2 | 7.8
 | Findings **resolved** | 48 (**57.1%**) | 47 (**100%**)
 | PRs with findings and **zero** resolved | 6 | 0
 |===
@@ -280,38 +264,29 @@ findings; the `review-retrospective` step run separately over the same PR report
 
 **Local plans resolved 47 of 47 CodeRabbit findings — 100%. Cloud plans resolved 48 of 84 — 57.1%.**
 
-6 cloud PRs received CodeRabbit findings and resolved **none of them**: `090`, `130`, `180`, `250`, `300`, `390` — 34 findings left on the table.
+6 cloud PRs received findings and resolved **none**: `090`, `130`, `180`, `250`, `300`, `390`.
 
-This is the cleanest evidence in the report for outcome 1. The local lane has a *findings pipeline*
-— `automatic-review` files each comment as a `pr-comment` finding, a unified triage dispositions
-every one, and the blocking-finding invariant refuses the phase transition while any actionable
-finding is still `pending`. **A local plan structurally cannot merge with an unresolved review
-finding.** The cloud lane reads comments and relies on the run to act on them, so 43% simply were
-not acted on.
+This is the cleanest evidence for outcome 1. The local lane has a *findings pipeline* —
+`automatic-review` files each comment as a `pr-comment` finding, a unified triage dispositions every
+one, and the blocking-finding invariant refuses the phase transition while any actionable finding is
+`pending`. **A local plan structurally cannot merge with an unresolved review finding.**
 
-=== Why coverage was low in BOTH lanes — and what that does to the argument
+=== Why coverage was low in BOTH lanes
 
-Every decline sampled, in both lanes, carries the identical notice:
-
-[quote]
-____
-Review limit reached — `@cuioss-oliver`, you've reached your PR review limit, so we couldn't start
-this review.
-____
-
-This is an **account-level quota**, not a `skip-bot-review` label and not a lane decision. It affects
-both lanes: the local lane also lost 4 of 10 PRs to it.
+Every decline sampled, in both lanes, carries the identical notice: *Review limit reached — you've
+reached your PR review limit.* An **account-level quota**, not a `skip-bot-review` label and not a
+lane decision. The local lane also lost 4 of 10 PRs to it.
 
 [IMPORTANT]
 ====
-**A second-order effect worth naming.** The cloud lane pushed 47 PRs through review in a short
-window. That volume is itself a plausible driver of the quota exhaustion that then degraded review
-for *everything* in the same period — including the local plans, 4 of which were declined.
+**A second-order effect.** The cloud lane pushed dozens of PRs through review in a short window, which
+is itself a plausible driver of the quota exhaustion that then degraded review for *everything* in
+the same period — including the local plans.
 
-So the reviewer dimension splits in two: **coverage** is environmental and shared (outcome 3), while
-**resolution of what the reviewer did find** is entirely a lane property (outcomes 1 and 2). Only
-the second explains the gap corpus.
+So the reviewer dimension splits: **coverage** is environmental and shared (outcome 3), while
+**resolution** is a lane property (outcomes 1 and 2). Only the second explains the corpus.
 ====
+
 == Comparison: the 10 most recent local plan-marshall plans
 
 The complete local archive, not a sample.
@@ -335,275 +310,185 @@ The complete local archive, not a sample.
 
 === The comparison, stated honestly
 
+[WARNING]
+====
+**The two defect counts are not the same measurement and must not be subtracted.**
+
+Cloud gaps were found by an *independent post-hoc audit* after merge. Local findings were raised by
+each plan's *own in-run gates* and resolved before merge. One measures escapes; the other catches.
+
+**No equivalent post-hoc audit has ever been run over the local plans**, so this report cannot state
+a local escape rate. That asymmetry is the largest confound here and is not resolved by any number.
+====
+
 [cols="3,2,2",options="header"]
 |===
 | | Cloud lane | Local plan-marshall
 
-| Plans | 47 | 10
-| Deliverables | 256 | 46
-| Defects found | 308 (post-hoc audit) | 203 (in-run gates)
-| Per deliverable | 1.20 | 4.41
-| When found | **after merge**, by an external audit | **before merge**, by the plan's own gates
-| Disposition | 218 still open | ~all resolved in-run
-| Fidelity failures | 54 of 256 (21.1%) | not measured post-hoc
+| Plans | 45 | 10
+| Deliverables | 245 | 46
+| Defects found | 299 (post-hoc audit) | 203 (in-run gates)
+| Per deliverable | 1.22 | 4.41
+| When found | **after merge**, externally | **before merge**, by its own gates
+| Reviewer findings resolved | **57.1%** | **100%**
+| Fidelity failures | 50 of 245 (20.4%) | not measured post-hoc
 |===
 
-**The local plans register a HIGHER defect count per deliverable (4.41 vs 1.20) — and that is the
-point.** Those defects were surfaced and closed by quality gates, self-review, and review bots
-before the code merged. The cloud figure counts defects that survived to production and needed an
-external audit eight days later to find.
-
-A defect caught in-run is a working gate. A defect found post-hoc is an escape.
+**The local plans register a HIGHER defect count per deliverable — and that is the point.** Those
+defects were surfaced and closed before merge. A defect caught in-run is a working gate; a defect
+found post-hoc is an escape.
 
 == Cost
 
-=== A cloud plan is billed THREE times, not once
-
-Token spend on a cloud-lane plan lands in three separate places, and only the middle one is what
-"running a plan" usually means:
+=== A cloud plan is billed THREE times
 
 [cols="1,3,3",options="header"]
 |===
 | # | Expenditure | Produces
 
-| 1 | **Authoring** the plan | the `plan.md` staged under `doc/plans/{epic}/` — one `author-cloud-plan` pass
-| 2 | **Running** the plan | the branch, the PR, the merge, and `report-01.md`
-| 3 | **Verifying** the plan | `verification.md` + `gaps.md` — a separate operator-issued review call
+| 1 | **Authoring** | the `plan.md` staged under `doc/plans/{epic}/`
+| 2 | **Running** | the branch, PR, merge, and `report-01.md`
+| 3 | **Verifying** | `verification.md` + `gaps.md` — a separate operator-issued review call
 |===
 
-A local plan-marshall plan carries the equivalent of all three *inside one lifecycle*: outline and
-plan phases author it, phase-5 executes it, and phase-6's gates plus `plan-retrospective` verify it —
-all inside the single `metrics.md` total.
+A local plan carries all three *inside one lifecycle* and reports them in one `metrics.md` total.
 
 [WARNING]
 ====
-**The 2–4% figure cannot be attributed across these three buckets from this corpus.** No cloud run
-published a token figure, so the split between authoring, running and verifying is **unmeasured**. If
-2–4% covers only bucket 2, the true cloud cost per plan is higher than this report's headline
-comparison implies — possibly materially.
-
-What is certain is directional: the local lane's 1–2% is a *single, fully-measured* number covering
-all three functions, while the cloud lane's 2–4% is an *unattributed* number covering at least one of
-them.
-====
-
-
-[IMPORTANT]
-====
-**The cloud lane cannot measure its own cost.** The epic audit's own § Cost section reads
-*"Tokens: not available to the agent in this session"*, and no cloud run in this corpus published
-a token or billing figure. Every cost number below is therefore the operator's observation, not a
-measurement the lane produced.
-
-This is itself a finding: a lane that cannot report its own consumption cannot be cost-optimised,
-and cannot be compared on any basis except an external one.
+**The 2–4% figure cannot be attributed across these three.** No cloud run published a token figure.
+If 2–4% covers only bucket 2, the true cloud cost is higher than the headline implies. The local
+lane's 1–2% is a *single fully-measured* number covering all three functions.
 ====
 
 [cols="3,2,2",options="header"]
 |===
-| | Cloud plan | Local plan-marshall plan
+| | Cloud plan | Local plan
 
 | Cost per plan (operator observation) | **2–4%** of weekly limit | **1–2%** of weekly limit
-| Measured tokens per plan | not produced | 6,200,361
-| Measured billing-weighted per plan | not produced | 93,085,693
-| Self-measurement | none | full per-phase breakdown in `metrics.md`
+| Measured tokens | not produced | 6,200,361
+| Measured billing-weighted | not produced | 93,085,693
+| Self-measurement | none | full per-phase `metrics.md`
 |===
-
-At the operator's figures, the 47 cloud plans in this corpus consumed roughly **94–188% of a
-weekly limit** — the equivalent of **47–94 local plans**. What that bought is recorded above:
-308 gaps, of which **218 are still open**, and a 21% deliverable fidelity failure rate.
 
 === What a measured local plan actually costs
 
-`PLAN-TRUTH-074`, finalized during this analysis, was measured end-to-end by its own
-`plan-retrospective`:
-
-* **5,432,972 tokens** — and the retrospective labels this a *floor* (`n=5/6` phases), rather than
-  publishing it as a total.
-* **3.4x its own error anchor** for a `single_module` + `feature` plan (1.6M).
-* **`6-finalize` alone was 59.2%** of the spend, against 16.8% for `5-execute`.
-
-The last figure is the one worth carrying: on a local plan, *finalizing* costs three and a half times
-what *implementing* costs. The gates are not free, and this report's argument that they are worth it
-should be read against that price, not around it.
+`PLAN-TRUTH-074`, finalized during this analysis: **5,432,972 tokens** (labelled a *floor*, n=5/6),
+**3.4x its error anchor**, with **`6-finalize` at 59.2%** against `5-execute`'s 16.8%. Finalizing
+costs three and a half times what implementing costs; the gates are not free.
 
 [NOTE]
 ====
-**The local lane's measurement is not clean either — and it says so.** The same retrospective reported
-that the change-ledger recorded **0 build rows while 144 `pyproject_build` calls ran** (62.4% of script
-wall time), and that all 25 dispatch-boundary rows carry their four context-load columns unpopulated,
-so `billing_weighted_total` is 0 over a population of 0 and the `Billing (cost)` column is empty for
-every phase.
-
-That is a real defect, and it is recorded here rather than omitted because it cuts against this
-report's own thesis. The distinction that survives it: the local lane **measures, publishes a
-population, and flags its own holes**; the cloud lane produces no figure at all. A wrong number with a
-declared population is auditable. An absent one is not.
+**The local lane's measurement is not clean either — and it says so.** The same retrospective found
+the change-ledger held **0 build rows while 144 `pyproject_build` calls ran**, and all 25
+dispatch-boundary rows carry unpopulated context-load columns, so the billing column is empty for
+every phase. Recorded because it cuts against this report's thesis. The surviving distinction is
+**auditability**: a wrong number with a declared population is catchable; an absent one is not.
 ====
 
 == Adjudication of the three candidate explanations
 
-=== 1. plan-marshall shows its benefit — *SUPPORTED, and it is mostly a machinery argument*
+=== 1. plan-marshall shows its benefit — *SUPPORTED*
 
-The local lane runs gates the cloud lane structurally does not have. Enumerated from the
-phase-6-finalize manifest of the local plans in this corpus:
+The local lane runs gates the cloud lane structurally does not have:
 
 [cols="3,3",options="header"]
 |===
 | Local gate | Cloud-lane equivalent
 
-| `pre-push-quality-gate` — per-bundle + whole-tree build and tests | conditional `./pw verify`, skipped entirely on a docs-only footprint
-| `pre-submission-self-review` — structural sweep over ext-point-derived candidates | none
+| `pre-push-quality-gate` — per-bundle + whole-tree build and tests | conditional `./pw verify`, skipped on a docs-only footprint
+| `pre-submission-self-review` | none
 | `automatic-review` + unified triage + findings pipeline | review bots only, no triage pipeline
-| Q-Gate findings captured and blocked at **every** phase boundary | none
+| Q-Gate findings blocked at **every** phase boundary | none
 | `phase_handshake` invariants incl. blocking-finding gate | none
 | `finalize-step-simplify`, `finalize-step-security-audit` | none
 | `plan-retrospective` + `review-retrospective` | none
 | Per-phase metrics, token and billing accounting | none
 |===
 
-The evidence is direct: the local plans surfaced **4.41 defects per deliverable and closed them
-before merge**; the cloud plans shipped **1.20 gaps per deliverable that an external audit had to
-find afterwards**. The gates are the difference, and the cloud lane declares most of them out of
-scope by construction.
+Direct evidence: local resolved **100%** of reviewer findings, cloud **57.1%**; cloud shipped a
+**20.4%** deliverable fidelity failure rate.
 
 [WARNING]
 ====
-**Do not over-claim this.** The comparison is confounded — see the warning in § Scope. No post-hoc
-audit has been run over the local plans, so their escape rate is *unknown*, not zero. The honest
-claim is: **the local lane demonstrably catches more before merge**, not that it ships fewer bugs.
+**Do not over-claim.** No post-hoc audit has been run over the local plans, so their escape rate is
+*unknown*, not zero. The honest claim: **the local lane demonstrably catches more before merge**.
 ====
 
 === 2. `cloud-plan-lane` / `author-cloud-plan` is faulty — *SUPPORTED, with named mechanisms*
 
-Five contract-level defects are evidenced in this corpus, each with a measured consequence:
+**(a) The run report is self-assessed.** The agent that does the work writes the report attesting to
+it. Consequence: **48 of 299 gaps (16.1%) are corrections to the runs' own reports.** Three reports
+were internally self-contradictory (`060`, `310`, `500`).
 
-**(a) The run report is self-assessed.** The same agent that does the work writes the report that
-attests to it, with no independent pass. Consequence: **51 of 308 gaps (16.6%) are corrections to
-the runs' own reports.** Three reports were internally self-contradictory (`060` and `310` said
-`_pending_` on a merged PR; `500` said "PR not yet opened" against PR #1320; `450` denied opening a
-PR in five cells while describing it in five others).
+**(b) Derived figures are taken before the review cycle closes.** `520` had two files added by
+CodeRabbit after its counts were taken; `500` omitted a *production* file from § Collateral for the
+same reason; `510` used a floating `origin/main` endpoint three sections after its own § Build gate
+corrects that defect.
 
-**(b) Derived figures are taken before the review cycle closes.** The review cycle widens the diff.
-Measured: `520` had two files added by CodeRabbit after its counts were taken, making three separate
-report figures one low; `500` omitted a *production* file from its § Collateral for the same reason;
-`510` used a floating `origin/main` endpoint three sections after its own § Build gate corrects that
-exact defect. The contract does not require a final re-derivation.
+**(c) The build gate skips on a docs-only footprint** — so a markdown-only plan ships with no gate,
+and over half this corpus's gaps are prose defects.
 
-**(c) The build gate skips on a docs-only footprint.** `git diff --name-only -- '*.py'` returning
-zero files skips the build. Legitimate for the audit's own docs-only diff, but it means a
-markdown-only plan ships with **no gate at all** — and 56.8% of this corpus's gaps are prose defects.
+**(d) The lane assumes affordances a fresh clone lacks.** `230/D0`, `440/D4` had gates that could not
+be opened; `.plan/` state is git-ignored.
 
-**(d) The lane assumes affordances a fresh clone does not have.** Three plans had a GATE deliverable
-that could not be opened from a cloud clone — `230/D0` (archived CI manifests), `440/D4` (a real
-finalize to measure), `030/D0` (the ruleset API returns `403`). Those three are precisely why `230`
-and `440` carry `partially-implemented`. `.plan/` state is git-ignored and therefore absent.
+**(e) Nothing governs many agents in one working tree.** The audit run hit this itself — agents
+mutation-testing concurrently corrupted each other's snapshots. Fixed in-flight; the contract still
+carries no rule.
 
-**(e) Nothing governs many agents in one working tree.** The audit run itself hit this: agents
-mutation-testing concurrently could snapshot a file another had already mutated and "restore" it to
-a corrupted state, and two agents wrote scratch files into the repository. Found and closed
-*during* the run; the contract still carries no rule.
+=== 3. A general Claude Code issue — *WEAKLY SUPPORTED*
 
-=== 3. A general Claude Code issue — *WEAKLY SUPPORTED, and mostly external-service limits*
+* **Reviewer coverage** degraded in both lanes, same account-quota cause — see the reviewer section.
+* **Squash merges** make every per-commit claim uncheckable; four `verification.md` headers cite base
+  commits absent from the clone.
 
-What is genuinely environmental rather than contractual:
-
-* **Review-bot coverage was degraded on essentially every PR** — 1-of-3 or 2-of-3 throughout.
-  `coderabbitai` rate-limited on a rolling window, `sourcery-ai` on a weekly quota and, on large
-  diffs, on a hard **150,000 diff-character ceiling** that no wait clears.
-* **Squash merges make per-commit claims uncheckable.** Every run report cites pre-squash SHAs that
-  resolve to nothing in a clone, so no "seen to fail pre-fix" assertion in this corpus is verifiable.
-* **Verification base commits vanish.** Four `verification.md` headers cite base commits absent from
-  the clone.
-
-[NOTE]
-====
-**Cross-lane control: the review *coverage* shortfall is not cloud-specific.** Every CodeRabbit
-decline sampled in *both* lanes carries the same account-quota notice, and the local lane lost 4 of
-its 10 PRs to it. `PLAN-TRUTH-074`, a local plan finalized during this analysis, recorded 1-of-3
-coverage across the whole bot roster — `cuioss-review-bot` and `sourcery-ai` were both unmeasurable.
-
-Coverage is therefore environmental and shared, which **removes it as an explanation for the gap
-count**. What is *not* shared is what happens to a finding once raised: local **100%** resolved,
-cloud **57.1%**. See xref:_codeRabbit_the_reviewer_signal[the reviewer section].
-====
-
-None of these explains the gap count. They explain why *review* was thin, not why the *plans*
-shipped incomplete sweeps and vacuous guards.
+None of these explains the corpus. They explain why *review* was thin.
 
 == Verdict
 
 [IMPORTANT]
 ====
-**Outcomes 1 and 2, jointly — and they are the same finding seen from two sides.**
+**Outcomes 1 and 2, jointly — the same finding seen from two sides.**
 
-The cloud lane is not defective in the sense of being broken; it is defective in the sense of being
-**thin**. It deliberately gives up the in-run verification machinery that produces plan-marshall's
-quality — and then has to buy that verification back as a **separate, separately-billed third call**,
-which is where all 308 gaps came from.
+The cloud lane is not broken; it is **thin**. It gives up the in-run verification machinery that
+produces plan-marshall's quality — and then buys that verification back as a **separate,
+separately-billed third call**, which is where every gap in this report came from.
 
-The verdict does **not** rest on the raw gap count, which is a function of what that verification call
-asked for (see § Why so many gaps). It rests on the two measurements taken against the plans' *own
-claims*: a **21.1% deliverable fidelity failure rate** — claimed done, tree disagreed — and a
-**57.1% CodeRabbit resolution rate** against the local lane's 100%.
+The verdict does **not** rest on the raw gap count, which is a function of what that call asked for.
+It rests on the two measurements taken against the plans' *own claims*: a
+**20.4% deliverable fidelity failure rate** and a **57.1% reviewer resolution rate** against
+the local lane's 100%.
 
-The corpus's own best evidence for this reading is that the three *remediation* plans — which ran in
-the same cloud lane — closed 90 gaps and **filed 25 new ones**, two of them `high`. The lane does not
-self-correct; it re-introduces its own defect class at each pass.
+**Raising effort did not substitute for the machinery.** The cloud runs used Opus at max effort,
+chosen to compensate for the absent guardrails, and still landed those figures — while the local lane
+spent level-3 on an entire phase and resolved every reviewer finding. The gap is structural.
 
-**And raising effort did not substitute for the machinery.** The cloud runs used Opus at max effort,
-chosen deliberately to compensate for the absent guardrails, and still landed a 21.1% fidelity failure
-rate — while the local lane spent level-3 on an entire phase and resolved every reviewer finding. The
-gap is structural. A higher tier does not close it.
-
-**The cost picture is worse than the headline.** A cloud plan is billed three times — authoring,
-running, verifying — against a local plan's single fully-measured lifecycle total. The 2–4%
-observation cannot be attributed across those three, so the real multiple over the local lane's 1–2%
-is unknown and is bounded below, not above, by 2x.
-
-**The reviewer signal is the sharpest single discriminator in this report.** Of the CodeRabbit findings
-raised against each lane, the local lane resolved **47 of 47 (100%)** and the cloud lane **48 of 84
-(57.1%)**, with six cloud PRs resolving *none* of what they were given. That is not a quality-of-work
-difference — it is the presence or absence of a findings pipeline. A local plan structurally cannot
-merge while an actionable finding is `pending`; a cloud plan can, and 36 findings did.
+The corpus's own best evidence: the three *remediation* plans, run in the same lane, closed 90 gaps
+and **filed 25 new ones**, two `high`. The lane does not self-correct.
 ====
 
 == What the cloud lane is genuinely good at
 
-Recorded so the verdict is not read as "never use it":
-
-* **Breadth under parallelism.** 44 plans executed and then 44 verified plus 44 adversarially
-  re-reviewed — 99 agents in one session. No local lane does that.
-* **Mechanically-derived figures survive.** In `500`, *every* census figure re-derived exactly
-  (152/81/71/69, the 43/18/2/7/1 split, 46/21, 29 rows) while five narrative sections went stale.
-  **Derivation held; assertion did not.**
-* **The adversarial second pass works.** It refuted 11 gap sets' supporting clauses, corrected
-  verdicts in both directions, and caught defects in the *fixes being proposed*.
-* **`320` and `520` are genuine successes** — 10 of 10 and 29 of 30 upstream gaps closed, the latter
-  verified by execution rather than reading.
+* **Breadth under parallelism** — 44 plans verified and adversarially re-reviewed, 99 agents in one session.
+* **Mechanically-derived figures survive.** In `500`, *every* census figure re-derived exactly while
+  five narrative sections went stale. **Derivation held; assertion did not.**
+* **The adversarial second pass works** — it corrected verdicts in both directions and caught defects
+  in the *fixes being proposed*.
+* **`320` and `520` are genuine successes** — 10 of 10 and 29 of 30 upstream gaps closed.
 
 == Recommendations
 
-Ordered by measured value.
-
 1. **Do not run implementation plans in the cloud lane without a verification gate.** Reserve it for
-   breadth work — audits, sweeps, verification fan-outs — where its parallelism is the point.
-2. **Add a mandatory final re-derivation step** after the review cycle closes. This single change
-   addresses mechanism (b) and a large share of the 51 report-correction gaps.
-3. **Give the lane a blocking findings gate.** This is the highest-value single change: 36 CodeRabbit
-   findings were raised and never resolved because nothing refused the merge. The local equivalent is
-   the `pending_findings_blocking_count` invariant.
-4. **Stop self-assessing the run report**, or stop treating it as evidence. An independent pass over
-   the report — not the work — would have caught all three self-contradictory reports.
-5. **Make the docs-only build-gate skip explicit as a coverage gap**, not a pass. It should read
-   *could not look*, never *clean* — the epic's own namesake rule.
-6. **Give the lane a cost measurement.** It currently cannot report its own consumption at all.
-7. **Add a concurrent-working-tree rule** to § Step 6: dirty-check before mutating, scratch in
-   `$TMPDIR`. The audit hit this and fixed it in-flight; the contract still does not carry it.
-8. **Route `.plan/`-dependent gates to a local run.** Three plans failed a gate for this reason; the
-   staged `PLAN-TRUTH-097` now carries that constraint explicitly.
+   breadth work — audits, sweeps, verification fan-outs.
+2. **Add a mandatory final re-derivation** after the review cycle closes.
+3. **Give the lane a blocking findings gate.** Highest-value single change: reviewer findings were
+   raised and never resolved because nothing refused the merge.
+4. **Stop self-assessing the run report**, or stop treating it as evidence.
+5. **Make the docs-only build-gate skip explicit as a coverage gap** — *could not look*, never *clean*.
+6. **Give the lane a cost measurement.** It cannot currently report its own consumption.
+7. **Add a concurrent-working-tree rule** to § Step 6.
+8. **Route `.plan/`-dependent gates to a local run** — `PLAN-TRUTH-097` carries that constraint.
 
 == Reproducing this analysis
 
-See xref:README.adoc[the README] for the instruction set. Every figure here was derived by script
-from the ingested corpus; none was transcribed by hand.
+See xref:README.adoc[the README] for the instruction set. Every figure was derived by script from the
+ingested corpus; none was transcribed by hand.
