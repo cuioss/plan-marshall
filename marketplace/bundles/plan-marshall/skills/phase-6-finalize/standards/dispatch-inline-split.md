@@ -46,6 +46,7 @@ The inline steps are pure scripts or trivial orchestration that earn no envelope
 - `default:finalize-step-preference-emitter` — deterministic within-plan disposition aggregation whose owed `architecture enrich` hints are filed as a follow-up record (post-merge-ordered, so it never calls `enrich` itself)
 - `default:record-metrics` — record final plan metrics before archive
 - `default:finalize-step-print-phase-breakdown` — capture the Phase Breakdown table from `metrics.md`
+- `default:emit-landing` — terminal machine-readable emission; assembles the run's already-recorded facts into the `kind: landing` inbox message the epic drains and writes it via `orchestrator inbox write`, taking no reasoning of its own
 - `default:archive-plan` — archive the completed plan
 - `project:finalize-step-era-stamp-fill` — `mode: script-executor`; resolves the `PR-PENDING` era-stamp sentinel to the real PR number and pushes the correction
 - `project:finalize-step-deploy-target` — generate Claude Code target output via the multi-target generator
