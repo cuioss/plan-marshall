@@ -13,7 +13,7 @@ requires-python = ">=3.12"
 # answered by three different indentation rules. See
 # marketplace/targets/component_targets.py for the contract this now inherits.
 dependencies = [
-    "PyYAML>=6.0.2",
+    "PyYAML>=6.0.3",
 ]
 
 # =============================================================================
