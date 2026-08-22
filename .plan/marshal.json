@@ -167,6 +167,9 @@
         "default:finalize-step-print-phase-breakdown": {
           "lane": "minimal"
         },
+        "default:emit-landing": {
+          "lane": "off"
+        },
         "default:archive-plan": {
           "lane": "minimal"
         }
@@ -350,7 +353,7 @@
       "no_plan_body_days": 7,
       "build_results_days": 5
     },
-    "provisioned_version": "0.1.1331",
-    "config_seed_fingerprint": "714f8058"
+    "provisioned_version": "0.1.1526",
+    "config_seed_fingerprint": "58fc3cfc"
   }
 }
