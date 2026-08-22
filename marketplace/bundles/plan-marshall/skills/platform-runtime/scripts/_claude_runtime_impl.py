@@ -76,7 +76,7 @@ class ClaudeRuntime(Runtime):
         plan_dir = pd / claude_runtime._PLAN_DIR_NAME
         temp_dir = plan_dir / "temp"
         marshal_path = plan_dir / "marshal.json"
-        settings_path = pd / ".claude" / "settings.json"
+        settings_path = pd / ".claude" / "settings.local.json"
 
         # Create directory structure.
         try:
@@ -100,7 +100,7 @@ class ClaudeRuntime(Runtime):
                 f"Failed to write marshal.json at {marshal_path}",
             )
 
-        # Install the full terminal-title hook wiring into .claude/settings.json.
+        # Install the full terminal-title hook wiring into .claude/settings.local.json.
         install_result = claude_runtime._install_terminal_title_hooks(settings_path)
         hook_installed = install_result["io_ok"]
 
@@ -157,14 +157,13 @@ class ClaudeRuntime(Runtime):
         here:
 
         - ``"claude"`` — the canonical invocation, and the only shape the router
-          help documents. For the terminal-title install it resolves to the
-          project's Claude Code settings file via
-          ``_claude_project_settings_path()`` (``.claude/settings.json`` when
-          present, else ``.claude/settings.local.json``). For the ``enforcement``
-          install it pins ``.claude/settings.local.json`` via
-          ``_claude_local_settings_path()`` — the operator-local opt-in belongs
-          there and that is the file the ``display`` health-check enforcement
-          label and the install contract both reference.
+          help documents. It resolves to ``.claude/settings.local.json`` via
+          ``_claude_local_settings_path()`` for BOTH the terminal-title install
+          and the ``enforcement`` install: both payloads are machine-local
+          operator wiring, and ``.claude/settings.local.json`` is the gitignored
+          file that never enters version control. That is also the file the
+          ``display`` health-check enforcement label and the install contract
+          both reference.
         - An absolute path ending in ``.json`` — a Claude-INTERNAL test and
           recovery override that names a specific settings file. It is not part
           of the ABC contract and is not advertised by the router; other targets
@@ -200,11 +199,7 @@ class ClaudeRuntime(Runtime):
         overwrite_env_disable = self._OVERWRITE_ENV_DISABLE in overwrite
 
         if target == "claude":
-            settings_path = (
-                claude_runtime._claude_local_settings_path()
-                if enforcement
-                else claude_runtime._claude_project_settings_path()
-            )
+            settings_path = claude_runtime._claude_local_settings_path()
         else:
             candidate = Path(target)
             if candidate.is_absolute() and candidate.suffix == ".json":

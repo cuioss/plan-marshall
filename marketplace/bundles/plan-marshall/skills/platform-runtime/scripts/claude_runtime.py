@@ -620,11 +620,12 @@ def _merge_display_settings(*sources: dict[str, Any]) -> dict[str, Any]:
 
     The ``display`` health-check must reflect entries wherever they legitimately
     live — ``.claude/settings.json`` OR ``.claude/settings.local.json``. The
-    install resolver prefers a pre-existing shared ``settings.json``, while the
-    enforcement install pins ``settings.local.json``, so a hook entry can sit in
-    either file. This mirrors the ``hook`` check, which already treats either
-    file as authoritative. Per-event ``hooks`` entry lists are concatenated; the
-    first present ``statusLine`` and each first-seen ``env`` key win.
+    install resolver pins ``settings.local.json`` for the terminal-title and the
+    enforcement install alike, while an operator may hold hook entries of their
+    own in the shared ``settings.json``, so a hook entry can sit in either file.
+    This mirrors the ``hook`` check, which already treats either file as
+    authoritative. Per-event ``hooks`` entry lists are concatenated; the first
+    present ``statusLine`` and each first-seen ``env`` key win.
     """
     merged_hooks: dict[str, list[Any]] = {}
     merged_env: dict[str, Any] = {}
@@ -2427,13 +2428,14 @@ def _claude_project_settings_read_path(project_dir: str | None = None) -> Path:
 def _claude_local_settings_path(project_dir: str | None = None) -> Path:
     """Return the operator-local Claude settings file path (always settings.local.json).
 
-    The PreToolUse enforcement hook is an operator-local opt-in, so its
-    registration pins here rather than delegating to
-    ``_claude_project_settings_path()`` — which prefers a pre-existing shared
-    ``settings.json`` and would therefore scatter the enforcement entry into the
-    shared file. Pinning keeps the enforcement entry in the single file the
-    documented install contract (``pretooluse-enforcement.md``) names, regardless
-    of whether a shared ``settings.json`` already exists.
+    Both hook installs — the terminal-title bundle and the PreToolUse
+    enforcement entry — are machine-local operator wiring, so each pins here
+    rather than delegating to ``_claude_project_settings_path()``, which prefers
+    a pre-existing shared ``settings.json`` and would therefore scatter hook
+    entries into a file that enters version control. Pinning keeps both in the
+    single gitignored file the documented install contracts
+    (``contract.md``, ``pretooluse-enforcement.md``) name, regardless of whether
+    a shared ``settings.json`` already exists.
     """
     base = Path(project_dir) if project_dir else Path.cwd()
     return base / ".claude" / "settings.local.json"
