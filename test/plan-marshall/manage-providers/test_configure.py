@@ -29,6 +29,22 @@ _SONAR_PROVIDER = {
 }
 
 
+def assert_no_mismatch_reported(result) -> None:
+    """Assert the configure result reported no pom-mismatch warning.
+
+    Scoped to the parsed result fields rather than to raw stdout. ``configure``
+    emits ``warnings`` and ``mismatches`` only when a supplied value disagrees
+    with the pom, so their absence IS the contract — while the same payload also
+    carries a ``path`` key holding an absolute credential-file path. A
+    whole-stdout substring check for 'warning' or 'mismatch' therefore matches
+    whatever the enclosing directory names happen to contain, and fails on a
+    machine whose checkout path contains either word.
+    """
+    parsed = result.toon()
+    assert 'warnings' not in parsed
+    assert 'mismatches' not in parsed
+
+
 class TestConfigureCLI:
     """Tests for configure subcommand via subprocess."""
 
@@ -494,8 +510,7 @@ class TestConfigureSonarPomDerive:
             env_overrides=creds_env,
         )
         assert result.returncode == 0
-        assert 'warning' not in result.stdout.lower()
-        assert 'mismatch' not in result.stdout.lower()
+        assert_no_mismatch_reported(result)
 
         provider_config = read_provider_config(skill)
         assert provider_config.get('organization') == 'cuioss-pom-org'
@@ -520,7 +535,7 @@ class TestConfigureSonarPomDerive:
             env_overrides=creds_env,
         )
         assert result.returncode == 0
-        assert 'warning' in result.stdout.lower()
+        assert 'warnings' in result.toon()
 
         provider_config = read_provider_config(skill)
         # User's explicit value is preserved, NOT overwritten by the pom value.
@@ -544,7 +559,7 @@ class TestConfigureSonarPomDerive:
             env_overrides=creds_env,
         )
         assert result.returncode == 0
-        assert 'warning' not in result.stdout.lower()
+        assert_no_mismatch_reported(result)
 
         provider_config = read_provider_config(skill)
         assert provider_config.get('organization') == 'user-org'
@@ -567,7 +582,7 @@ class TestConfigureSonarPomDerive:
             env_overrides=creds_env,
         )
         assert result.returncode == 0
-        assert 'warning' not in result.stdout.lower()
+        assert_no_mismatch_reported(result)
 
         provider_config = read_provider_config(skill)
         assert 'organization' not in provider_config

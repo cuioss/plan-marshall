@@ -19,7 +19,6 @@ def get_provider_declarations():
             'skill_name': 'plan-marshall:workflow-integration-github',
             'category': 'ci',
             'display_name': 'GitHub CLI (gh)',
-            'default_url': 'https://api.github.com',
             'description': 'GitHub CI provider via gh CLI — PRs, issues, CI status, reviews',
             'verify_command': 'gh auth status',
             'detection': {

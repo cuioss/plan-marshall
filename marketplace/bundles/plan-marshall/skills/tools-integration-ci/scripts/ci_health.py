@@ -23,6 +23,7 @@ import argparse
 import re
 from pathlib import Path
 
+from _providers_core import _system_auth_succeeded
 from ci_base import run_cli, safe_main, serialize_toon
 
 # Tool definitions: {tool: requires_auth}
@@ -119,6 +120,11 @@ def verify_tool(tool: str) -> dict:
     """
     Verify a tool is installed and authenticated.
 
+    The auth decision is delegated to ``_providers_core._system_auth_succeeded``
+    — the single implementation shared with ``verify_system_auth()`` — so the
+    active account decides the verdict instead of the aggregate exit code, which
+    ``gh auth status`` sets non-zero whenever ANY configured account fails.
+
     Returns: {"installed": bool, "authenticated": bool, "version": str | None}
     """
     # Check installed
@@ -131,8 +137,8 @@ def verify_tool(tool: str) -> dict:
     # Check authenticated (if applicable)
     requires_auth = TOOLS.get(tool, False)
     if requires_auth:
-        auth_returncode, _, _ = run_command([tool, 'auth', 'status'])
-        authenticated = auth_returncode == 0
+        auth_returncode, auth_stdout, auth_stderr = run_command([tool, 'auth', 'status'])
+        authenticated = _system_auth_succeeded(auth_returncode, auth_stdout or auth_stderr or '')
     else:
         authenticated = True  # No auth needed
 

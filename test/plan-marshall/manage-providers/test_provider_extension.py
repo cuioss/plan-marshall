@@ -24,11 +24,13 @@ _SONAR_PROVIDER_CONFIG = {
     ],
 }
 
+# The CLI lane declares no ``default_url``: gh resolves its own host, so the
+# provider carries no URL at all. Only the REST lane (Sonar above) and the
+# version-control git-remote resolution produce one.
 _GITHUB_PROVIDER = {
     'skill_name': 'workflow-integration-github',
     'display_name': 'GitHub CLI (gh)',
     'auth_type': 'system',
-    'default_url': 'https://github.com',
     'verify_command': 'gh auth status',
     'description': 'GitHub integration',
 }
@@ -111,7 +113,6 @@ class TestCIProviderFromMarshalJson:
                     'skill_name': 'workflow-integration-gitlab',
                     'display_name': 'GitLab CLI (glab)',
                     'auth_type': 'system',
-                    'default_url': 'https://gitlab.com',
                     'verify_command': 'glab auth status',
                     'description': 'GitLab integration',
                 },
@@ -124,7 +125,12 @@ class TestCIProviderFromMarshalJson:
         assert 'workflow-integration-gitlab' in names
 
     def test_system_provider_has_no_http_auth_fields(self, tmp_path, monkeypatch):
-        """System-auth providers loaded from marshal.json should not have HTTP auth fields."""
+        """A CLI-lane provider carries no HTTP auth fields and no URL.
+
+        The URL assertions are the abstraction boundary: a ``gh``-transport
+        provider that declared a REST base URL invited callers to build an HTTP
+        client against a lane that has none.
+        """
         stage_marshal(tmp_path, monkeypatch, {'providers': [_GITHUB_PROVIDER]})
 
         providers = load_declared_providers()
@@ -134,3 +140,18 @@ class TestCIProviderFromMarshalJson:
         assert 'header_value_template' not in github
         assert 'verify_endpoint' not in github
         assert 'verify_method' not in github
+        assert 'default_url' not in github
+        assert 'url' not in github
+
+    def test_rest_lane_provider_keeps_its_default_url(self, tmp_path, monkeypatch):
+        """Negative control: the REST lane still declares its base URL.
+
+        Without this, dropping ``default_url`` from every provider would satisfy
+        the CLI-lane assertions above while breaking the lane that needs it.
+        """
+        stage_marshal(tmp_path, monkeypatch, _SONAR_PROVIDER_CONFIG)
+
+        providers = load_declared_providers()
+        sonar = next(p for p in providers if p['skill_name'] == 'workflow-integration-sonar')
+
+        assert sonar['default_url'] == 'https://sonarcloud.io'

@@ -330,6 +330,28 @@ def run_find_by_category(args: argparse.Namespace) -> int:
     return 0
 
 
+def _format_listed_provider(provider: dict[str, Any]) -> dict[str, Any]:
+    """Format one persisted provider entry for ``list-providers`` output.
+
+    A CLI-lane provider (``gh``, ``glab``) persists no ``url``: it declares no
+    ``default_url`` and resolves its own host, so ``_build_persisted_entry``
+    emits no ``url`` key for it. Only the REST lane's ``default_url`` and the
+    ``version-control`` git-remote resolution produce one. The key is therefore
+    omitted when absent rather than rendered as ``''``, which would read as a
+    provider configured with a blank URL.
+    """
+    formatted: dict[str, Any] = {
+        'skill_name': provider.get('skill_name', ''),
+        'category': provider.get('category', ''),
+        'verify_command': provider.get('verify_command', ''),
+    }
+    url = provider.get('url')
+    if url:
+        formatted['url'] = url
+    formatted['description'] = provider.get('description', '')
+    return formatted
+
+
 def run_list_providers(args: argparse.Namespace) -> int:
     """Execute the list-providers subcommand.
 
@@ -340,16 +362,7 @@ def run_list_providers(args: argparse.Namespace) -> int:
     config = load_config()
     providers: list[dict[str, Any]] = config.get('providers', [])
 
-    formatted = [
-        {
-            'skill_name': p.get('skill_name', ''),
-            'category': p.get('category', ''),
-            'verify_command': p.get('verify_command', ''),
-            'url': p.get('url', ''),
-            'description': p.get('description', ''),
-        }
-        for p in providers
-    ]
+    formatted = [_format_listed_provider(p) for p in providers]
 
     output_toon(
         {

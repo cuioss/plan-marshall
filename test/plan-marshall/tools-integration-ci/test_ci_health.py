@@ -19,6 +19,7 @@ from conftest import get_script_path, run_script
 SCRIPT_PATH = get_script_path('plan-marshall', 'tools-integration-ci', 'ci_health.py')
 
 # Tier 2 direct imports — resolved after conftest bootstraps PYTHONPATH above.
+import ci_health  # noqa: E402
 from ci_health import (  # noqa: E402
     _match_directory,
     _match_url,
@@ -26,6 +27,7 @@ from ci_health import (  # noqa: E402
     cmd_status,
     cmd_verify,
     detect_provider,
+    verify_tool,
 )
 
 # =============================================================================
@@ -76,6 +78,161 @@ def test_verify_unknown_tool():
     result = cmd_verify(Namespace(tool='unknown_tool_xyz'))
     assert result['status'] == 'error'
     assert 'error' in result
+
+
+# =============================================================================
+# Tier 2: verify_tool() authentication verdict
+# =============================================================================
+#
+# ``gh auth status`` exits non-zero when ANY configured account fails, so the
+# aggregate exit code reported a developer with one stale account alongside a
+# healthy active one as unauthenticated. verify_tool() delegates the verdict to
+# ``_providers_core._system_auth_succeeded`` — the same implementation
+# ``verify_system_auth()`` uses — which reads the active account from the
+# command's captured output.
+#
+# The report fixtures are verbatim ``gh auth status`` shapes: here the literal
+# IS the contract, so they are pinned exactly rather than generated.
+
+_GH_MIXED_ACCOUNT_REPORT = """github.com
+  X Failed to log in to github.com account stale-bot (keyring)
+  - Active account: false
+  - The token in keyring is no longer valid.
+  ✓ Logged in to github.com account octocat (keyring)
+  - Active account: true
+  - Git operations protocol: https
+"""
+
+_GH_NO_ACTIVE_ACCOUNT_REPORT = """github.com
+  X Failed to log in to github.com account stale-bot (keyring)
+  - Active account: false
+"""
+
+
+class TestVerifyToolAuthentication:
+    """Tests for verify_tool()'s authenticated verdict.
+
+    ``run_command`` is stubbed so the auth-status report — not the developer's
+    real ``gh`` state — drives every assertion.
+    """
+
+    @staticmethod
+    def _wire(monkeypatch, auth_returncode, auth_stdout, auth_stderr=''):
+        """Stub run_command: a healthy --version, then the supplied auth report.
+
+        Returns the list of argv lists the stub was called with, so the
+        constructed command is assertable at the lowest primitive verify_tool
+        actually calls.
+        """
+        calls: list[list[str]] = []
+
+        def _fake_run_command(cmd, *args, **kwargs):
+            calls.append(list(cmd))
+            if list(cmd[1:]) == ['--version']:
+                return 0, f'{cmd[0]} version 2.45.0\n', ''
+            return auth_returncode, auth_stdout, auth_stderr
+
+        monkeypatch.setattr('ci_health.run_command', _fake_run_command)
+        return calls
+
+    def test_active_healthy_account_is_authenticated_despite_nonzero_exit(self, monkeypatch):
+        """A healthy ACTIVE account authenticates even though gh exits non-zero.
+
+        This is the field failure: the stale sibling account sets the aggregate
+        exit code, but the active account is fully authenticated.
+        """
+        self._wire(monkeypatch, 1, _GH_MIXED_ACCOUNT_REPORT)
+
+        result = verify_tool('gh')
+
+        assert result['installed'] is True
+        assert result['authenticated'] is True
+        assert result['version'] == '2.45.0'
+
+    def test_no_active_account_is_not_authenticated(self, monkeypatch):
+        """An account report with no active account is unauthenticated.
+
+        Asserted on a ZERO exit code so a fix that merely inverted or ignored
+        the exit code cannot satisfy both this and the case above.
+        """
+        self._wire(monkeypatch, 0, _GH_NO_ACTIVE_ACCOUNT_REPORT)
+
+        assert verify_tool('gh')['authenticated'] is False
+
+    def test_output_without_account_block_keeps_exit_code_semantics(self, monkeypatch):
+        """Output carrying no account report defers to the exit code, both ways."""
+        self._wire(monkeypatch, 0, 'Logged in to github.com\n')
+        assert verify_tool('gh')['authenticated'] is True
+
+        self._wire(monkeypatch, 1, '')
+        assert verify_tool('gh')['authenticated'] is False
+
+    def test_captured_stdout_is_passed_to_the_auth_decision(self, monkeypatch):
+        """The captured stdout — not an empty string — drives the verdict.
+
+        Pins the wiring the fix introduced: the pre-fix branch discarded both
+        captured streams (``_, _``) and read only the exit code. Passing an
+        empty output here would make ``_system_auth_succeeded`` fall back to the
+        non-zero exit code and report False, so a True verdict can only come
+        from the report actually reaching the decision.
+        """
+        seen: list[tuple[int, str]] = []
+        real_decision = ci_health._system_auth_succeeded
+
+        def _spy(returncode, output):
+            seen.append((returncode, output))
+            return real_decision(returncode, output)
+
+        self._wire(monkeypatch, 1, _GH_MIXED_ACCOUNT_REPORT)
+        monkeypatch.setattr('ci_health._system_auth_succeeded', _spy)
+
+        assert verify_tool('gh')['authenticated'] is True
+        assert seen == [(1, _GH_MIXED_ACCOUNT_REPORT)]
+
+    def test_report_arriving_on_stderr_is_still_consulted(self, monkeypatch):
+        """The report is read when the CLI writes it to stderr rather than stdout.
+
+        ``gh auth status`` has emitted its report on stderr across versions; a
+        decision wired to stdout alone would silently regress to exit-code-only
+        semantics on those versions.
+        """
+        self._wire(monkeypatch, 1, '', auth_stderr=_GH_MIXED_ACCOUNT_REPORT)
+
+        assert verify_tool('gh')['authenticated'] is True
+
+    def test_auth_status_argv_is_constructed_for_the_tool(self, monkeypatch):
+        """The auth probe invokes ``{tool} auth status`` at the lowest primitive."""
+        calls = self._wire(monkeypatch, 1, _GH_MIXED_ACCOUNT_REPORT)
+
+        verify_tool('gh')
+
+        assert calls == [['gh', '--version'], ['gh', 'auth', 'status']]
+
+    def test_tool_not_requiring_auth_is_never_probed(self, monkeypatch):
+        """Negative control: git needs no auth, so no auth probe is issued.
+
+        Without this, an implementation that ran ``git auth status`` — which
+        does not exist — would report git unauthenticated on every machine.
+        """
+        calls = self._wire(monkeypatch, 1, _GH_NO_ACTIVE_ACCOUNT_REPORT)
+
+        result = verify_tool('git')
+
+        assert result['authenticated'] is True
+        assert calls == [['git', '--version']]
+
+    def test_uninstalled_tool_short_circuits_before_the_auth_probe(self, monkeypatch):
+        """A tool whose --version fails reports uninstalled and is never probed."""
+        calls: list[list[str]] = []
+
+        def _fake_run_command(cmd, *args, **kwargs):
+            calls.append(list(cmd))
+            return 1, '', 'Command not found: gh'
+
+        monkeypatch.setattr('ci_health.run_command', _fake_run_command)
+
+        assert verify_tool('gh') == {'installed': False, 'authenticated': False, 'version': None}
+        assert calls == [['gh', '--version']]
 
 
 # =============================================================================

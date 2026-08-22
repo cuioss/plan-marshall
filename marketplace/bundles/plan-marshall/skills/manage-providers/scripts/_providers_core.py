@@ -888,11 +888,74 @@ def get_authenticated_client(skill_name: str, project_name: str | None = None) -
         raise ValueError(f'Failed to load credentials for {skill_name}') from None
 
 
+# Per-account header emitted by a CLI auth-status report, e.g.
+# ``✓ Logged in to github.com account octocat`` / ``X Failed to log in to
+# github.com account stale``. The VERB is the discriminator rather than the
+# ✓/X glyph, which varies with terminal capabilities and CLI version. The
+# failure verb is matched first because "Failed to log in" does not contain
+# the substring "Logged in", so the two alternatives are disjoint.
+_ACCOUNT_HEADER_PATTERN = re.compile(r'(?P<failed>Failed to log in)|(?:Logged in)', re.IGNORECASE)
+# The per-account activity marker, e.g. ``- Active account: true``.
+_ACTIVE_ACCOUNT_PATTERN = re.compile(r'Active account:\s*(?P<value>\S+)', re.IGNORECASE)
+
+
+def _system_auth_succeeded(returncode: int, output: str) -> bool:
+    """Decide system-auth success from the ACTIVE account, not the exit code.
+
+    ``gh auth status`` exits non-zero when ANY configured account fails to
+    authenticate, so a developer holding one stale account alongside a healthy
+    active account is reported unauthenticated by the aggregate exit code. This
+    helper reads the per-account report instead and answers for the account the
+    CLI marks active.
+
+    The parse only takes effect for output that actually presents per-account
+    state: this is the single decision point for every system-authenticated
+    provider, and a provider's ``verify_command`` is arbitrary (``git config
+    user.name`` today). When ``output`` carries no ``Active account:`` marker
+    there is no account block to read and the decision degrades to
+    ``returncode == 0``.
+
+    Args:
+        returncode: Exit code of the provider's ``verify_command``.
+        output: The command's captured output (untruncated).
+
+    Returns:
+        True when the active account is authenticated; False when an account
+        report exists but no active account is authenticated; otherwise the
+        exit-code verdict.
+    """
+    block_authenticated: bool | None = None
+    saw_account_marker = False
+
+    for line in output.splitlines():
+        header = _ACCOUNT_HEADER_PATTERN.search(line)
+        if header:
+            block_authenticated = header.group('failed') is None
+            continue
+        active = _ACTIVE_ACCOUNT_PATTERN.search(line)
+        if active:
+            saw_account_marker = True
+            if active.group('value').lower() == 'true':
+                # An active marker with no preceding header cannot be
+                # attributed, so fall through to the exit code rather than
+                # asserting a state the report never stated.
+                if block_authenticated is not None:
+                    return block_authenticated
+                return returncode == 0
+
+    if saw_account_marker:
+        return False
+    return returncode == 0
+
+
 def verify_system_auth(provider: dict[str, Any]) -> dict[str, Any]:
     """Verify system-authenticated provider by running its verify_command.
 
     System providers (gh, git) are authenticated at the OS level.
-    Verification runs the provider's declared command and checks the exit code.
+    Verification runs the provider's declared command and decides success via
+    :func:`_system_auth_succeeded`, which reads the active account from the
+    command's output and falls back to the exit code when the output carries
+    no account report.
 
     Args:
         provider: Provider declaration dict with 'verify_command' and 'skill_name'
@@ -919,12 +982,13 @@ def verify_system_auth(provider: dict[str, Any]) -> dict[str, Any]:
             text=True,
             timeout=30,
         )
+        captured = result.stdout or result.stderr or ''
         return {
-            'success': result.returncode == 0,
+            'success': _system_auth_succeeded(result.returncode, captured),
             'skill': skill_name,
             'command': verify_command,
             'exit_code': result.returncode,
-            'output': (result.stdout or result.stderr or '').strip()[:500],
+            'output': captured.strip()[:500],
         }
     except FileNotFoundError:
         return {
