@@ -314,12 +314,55 @@ The complete local archive, not a sample.
 ====
 **The two defect counts are not the same measurement and must not be subtracted.**
 
-Cloud gaps were found by an *independent post-hoc audit* after merge. Local findings were raised by
-each plan's *own in-run gates* and resolved before merge. One measures escapes; the other catches.
-
-**No equivalent post-hoc audit has ever been run over the local plans**, so this report cannot state
-a local escape rate. That asymmetry is the largest confound here and is not resolved by any number.
+Cloud gaps were found by a verification pass that swept the repository against a broad checklist.
+Local findings were raised by each plan's *own in-run gates* and resolved before merge. One counts
+what a sweep found; the other counts what the gates caught.
 ====
+
+==== Local plans ARE post-hoc verified — and the rate is measurable
+
+An earlier draft of this report claimed no post-hoc verification exists for local plans and that their
+escape rate is therefore unknown. **That was false**, and the correction matters enough to state
+rather than quietly fix.
+
+The orchestrator contract requires it: every landed plan's result is passed back to the orchestrator,
+and the `analyze` verb **must verify each claim against ground truth — actual code, artifacts, PR
+state — before recording it.** A pasted claim is explicitly a lead, never a fact. The landing records
+under `landings/` are that verification's output.
+
+Measured over the **61 orchestrator-written landing records**:
+
+[cols="4,1",options="header"]
+|===
+| Signal | n
+
+| Landings recording at least one **CONTRADICTED / REFUTED** plan claim | **20 of 61 (33%)**
+| Total contradiction / refutation occurrences | 35
+| Landings explicitly recording corroboration | 38 of 61
+| Total `corroborat*` occurrences | 88
+|===
+
+So the local lane has a post-hoc ground-truth check, it fires, and **it contradicts something a plan
+claimed in a third of landings.**
+
+===== The nearest like-for-like comparison
+
+Both lanes measure *a claim the producer made against what the tree actually shows*, at plan
+granularity:
+
+[cols="3,2,2",options="header"]
+|===
+| Plans with ≥1 claim contradicted by ground truth | Cloud | Local
+
+| Rate | **26 of 45 — 58%** | **20 of 61 — 33%**
+| Instrument | verification pass, deliverable fidelity axes | orchestrator `analyze`, landing corroboration
+|===
+
+⚠ **Still not identical instruments.** The cloud pass checks every deliverable on four axes and sweeps
+adjacent surfaces; the orchestrator checks the claims a plan actually made in its landing message and
+report. The cloud instrument is the more searching of the two, so some of the 58-vs-33 gap is
+instrument depth rather than plan quality. It is a *comparison*, not a controlled experiment — but it
+is no longer an absence.
 
 [cols="3,2,2",options="header"]
 |===
@@ -331,7 +374,7 @@ a local escape rate. That asymmetry is the largest confound here and is not reso
 | Per deliverable | 1.22 | 4.41
 | When found | **after merge**, externally | **before merge**, by its own gates
 | Reviewer findings resolved | **57.1%** | **100%**
-| Fidelity failures | 50 of 245 (20.4%) | not measured post-hoc
+| Plans with ≥1 ground-truth-contradicted claim | 26 of 45 (58%) | 20 of 61 (33%)
 |===
 
 **The local plans register a HIGHER defect count per deliverable — and that is the point.** Those
@@ -410,8 +453,11 @@ Direct evidence: local resolved **100%** of reviewer findings, cloud **57.1%**; 
 
 [WARNING]
 ====
-**Do not over-claim.** No post-hoc audit has been run over the local plans, so their escape rate is
-*unknown*, not zero. The honest claim: **the local lane demonstrably catches more before merge**.
+**Do not over-claim.** The two instruments differ in depth — the cloud verification pass checks every
+deliverable on four axes and sweeps adjacent surfaces, while the orchestrator's `analyze` checks the
+claims a plan actually made. Some of the 58%-vs-33% gap is instrument depth, not plan quality. The
+defensible claims are: **the local lane catches more before merge**, and **its post-hoc check
+contradicts a plan claim less often**.
 ====
 
 === 2. `cloud-plan-lane` / `author-cloud-plan` is faulty — *SUPPORTED, with named mechanisms*
@@ -468,7 +514,12 @@ and **filed 25 new ones**, two `high`. The lane does not self-correct.
 
 == What the cloud lane is genuinely good at
 
-* **Breadth under parallelism** — 44 plans verified and adversarially re-reviewed, 99 agents in one session.
+* **Breadth under parallelism** — 44 plans verified and adversarially re-reviewed. ⚠ The audit report's
+  own § Cost claims "99 agents … this single Claude Code cloud session's dispatch tree"; the operator
+  reports the work actually spanned **multiple sessions at a maximum of 3 parallel runs**. The
+  single-session framing is **corrected here**, and it is worth noting *how* the error entered this
+  report: it was taken from a self-assessed run report, which is the exact defect class § Adjudication
+  (a) files against. The breadth is real; the concurrency figure was not.
 * **Mechanically-derived figures survive.** In `500`, *every* census figure re-derived exactly while
   five narrative sections went stale. **Derivation held; assertion did not.**
 * **The adversarial second pass works** — it corrected verdicts in both directions and caught defects
