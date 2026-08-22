@@ -325,6 +325,34 @@ At the operator's figures, the 47 cloud plans in this corpus consumed roughly **
 weekly limit** — the equivalent of **47–94 local plans**. What that bought is recorded above:
 308 gaps, of which **218 are still open**, and a 21% deliverable fidelity failure rate.
 
+=== What a measured local plan actually costs
+
+`PLAN-TRUTH-074`, finalized during this analysis, was measured end-to-end by its own
+`plan-retrospective`:
+
+* **5,432,972 tokens** — and the retrospective labels this a *floor* (`n=5/6` phases), rather than
+  publishing it as a total.
+* **3.4x its own error anchor** for a `single_module` + `feature` plan (1.6M).
+* **`6-finalize` alone was 59.2%** of the spend, against 16.8% for `5-execute`.
+
+The last figure is the one worth carrying: on a local plan, *finalizing* costs three and a half times
+what *implementing* costs. The gates are not free, and this report's argument that they are worth it
+should be read against that price, not around it.
+
+[NOTE]
+====
+**The local lane's measurement is not clean either — and it says so.** The same retrospective reported
+that the change-ledger recorded **0 build rows while 144 `pyproject_build` calls ran** (62.4% of script
+wall time), and that all 25 dispatch-boundary rows carry their four context-load columns unpopulated,
+so `billing_weighted_total` is 0 over a population of 0 and the `Billing (cost)` column is empty for
+every phase.
+
+That is a real defect, and it is recorded here rather than omitted because it cuts against this
+report's own thesis. The distinction that survives it: the local lane **measures, publishes a
+population, and flags its own holes**; the cloud lane produces no figure at all. A wrong number with a
+declared population is auditable. An absent one is not.
+====
+
 == Adjudication of the three candidate explanations
 
 === 1. plan-marshall shows its benefit — *SUPPORTED, and it is mostly a machinery argument*
