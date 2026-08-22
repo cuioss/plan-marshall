@@ -48,6 +48,34 @@ state a local escape rate. That asymmetry is the single largest confound here an
 resolved by any number below.
 ====
 
+== The comparison is not effort-controlled
+
+The two lanes were deliberately run at different model and effort settings, and this cuts in opposite
+directions for the two conclusions.
+
+[cols="2,3,3",options="header"]
+|===
+| | Cloud lane | Local plan-marshall
+
+| Model / effort | **Opus at max effort**, uniform for the whole run | resolved **per phase**, custom preset
+| Rationale | chosen deliberately **to anticipate the missing plan-marshall guardrails** | effort is a per-phase knob, spent where it pays
+| Observed levels | one setting, no per-phase variation | `phase-3-outline` level-5 · `phase-4-plan` **level-3** · `phase-5-execute` level-5 · `phase-6-finalize` level-5
+| Source | operator statement — no cloud artifact records it | verified from `manage-config effort resolve-target`
+|===
+
+**On cost, this weakens the comparison.** Part of the 2–4% versus 1–2% gap is the model tier and a
+uniform max setting, not the lane. The cost comparison in this report is therefore **not
+effort-controlled** and should not be read as one.
+
+**On quality, this strengthens the conclusion — considerably.** The cloud lane was given the most
+expensive setting available, *explicitly as compensation for the guardrails it does not have*. It
+still produced a **21.1% deliverable fidelity failure rate** and left **43% of its CodeRabbit findings
+unresolved**, against a local lane that resolved 100% while spending level-3 on a whole phase.
+
+⇒ **Raising effort did not substitute for the machinery.** That is the single most useful thing this
+asymmetry tells us: the gap is structural, not a matter of thinking harder, and buying a higher tier
+will not close it.
+
 == Per-PR ledger: closed / open / fidelity failures
 
 `Closed` = gaps closed at HEAD by a later remediation plan (#1320, #1309, #1317, #1326).
@@ -522,6 +550,11 @@ claims*: a **21.1% deliverable fidelity failure rate** — claimed done, tree di
 The corpus's own best evidence for this reading is that the three *remediation* plans — which ran in
 the same cloud lane — closed 90 gaps and **filed 25 new ones**, two of them `high`. The lane does not
 self-correct; it re-introduces its own defect class at each pass.
+
+**And raising effort did not substitute for the machinery.** The cloud runs used Opus at max effort,
+chosen deliberately to compensate for the absent guardrails, and still landed a 21.1% fidelity failure
+rate — while the local lane spent level-3 on an entire phase and resolved every reviewer finding. The
+gap is structural. A higher tier does not close it.
 
 **The cost picture is worse than the headline.** A cloud plan is billed three times — authoring,
 running, verifying — against a local plan's single fully-measured lifecycle total. The 2–4%

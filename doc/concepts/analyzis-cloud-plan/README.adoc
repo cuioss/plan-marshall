@@ -163,7 +163,28 @@ publishes no token figure at all, so the split is unmeasured; say so and treat a
 percentage-of-weekly-limit observation as unattributed. State which side is measured and which is
 observed.
 
-=== Step 8 — Adjudicate, and look for a cross-lane control
+=== Step 8 — Record the model and effort setting of BOTH lanes
+
+The lanes are typically not run at the same setting, and the asymmetry has to be stated because it
+cuts in opposite directions:
+
+* Cloud runs in this project used **Opus at max effort**, uniform, chosen deliberately to anticipate
+  the guardrails the lane does not have.
+* Local runs use a **per-phase resolved effort level** — read it, do not assume it:
+  `manage-config effort resolve-target --phase {phase}` for each phase, plus
+  `manage-config effort identify` for the preset.
+
+⛔ **On cost this weakens the comparison** — part of any cloud-vs-local gap is the model tier, so the
+cost figures are *not effort-controlled* and must not be presented as if they were.
+
+⭐ **On quality it strengthens the conclusion** — if the cloud lane had the more expensive setting and
+still under-performed on the claim-relative metrics, the difference is structural rather than a matter
+of thinking harder. Say which direction each of your findings moves under this confound.
+
+⚠ The cloud setting is usually an **operator statement with no artifact** in the corpus; the local one
+is machine-readable. Label each accordingly.
+
+=== Step 9 — Adjudicate, and look for a cross-lane control
 
 For each candidate explanation, require a *named mechanism with a measured consequence*. "The lane is
 worse" is not a finding; "the run report is self-assessed, and 51 of 308 gaps are corrections to those
@@ -173,13 +194,13 @@ reports" is.
 was reviewer coverage — 1-of-3 in both lanes — which *removed* it as an explanation for the gap count.
 A control that eliminates a candidate is worth more than one that supports it.
 
-=== Step 9 — Derive, do not transcribe
+=== Step 10 — Derive, do not transcribe
 
 Generate every table with a script that reads the corpus. The strongest single finding in the
 `truthful-signals` report is that mechanically-derived figures survived a run in which hand-written
 prose went stale in five places — do not then hand-type the comparison tables.
 
-=== Step 10 — Record the measurement instant
+=== Step 11 — Record the measurement instant
 
 State the HEAD sha and the date at the top. The project documentation standard forbids timestamps;
 this is a deliberate, stated exception, because a comparative measurement without its instant is
