@@ -62,12 +62,17 @@ module pins that declaration against every surface that can carry or state it:
 (8) **The selector that makes (5) well-defined** is itself bound and controlled.
     (5) quantifies over "the step's prompt-body-field input table", so it is only
     as well-defined as the rule picking that table out of a doc carrying several.
-    That rule — the first header cell equals ``prompt-body field`` — is stated
-    normatively in the ext-point standard and BOUND to it here, so the selector
-    and the prose cannot drift. A matched control pair (two docs differing in
-    that one cell and nothing else) shows the selector firing in both directions,
-    and the matched-doc count is published on a clean run, so "no divergence
-    found" is distinguishable from "no table was ever selected".
+    That rule — the first header cell, stripped of markdown emphasis, equals
+    ``prompt-body field`` — is stated normatively in the ext-point standard and
+    BOUND to it here, so the selector and the prose cannot drift. The binding
+    covers BOTH halves of the rule: the literal AND the emphasis clause, because
+    a selector honouring only one emphasis delimiter would leave a table the
+    prose calls conformant silently unselected. A matched control pair (two docs
+    differing in that one cell and nothing else) shows the selector firing in
+    both directions, and a second pair holds emphasis constant while varying the
+    literal, so widening the strip set cannot quietly turn the selector into a
+    match-anything. The matched-doc count is published on a clean run, so "no
+    divergence found" is distinguishable from "no table was ever selected".
 
 Every assertion is **population-derived**: the step set comes from
 ``find_implementors()`` and the obligation from each doc's own frontmatter, so a
@@ -84,6 +89,8 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+
+import pytest
 
 import extension_discovery
 from extension_discovery import find_implementors
@@ -455,13 +462,34 @@ def _is_delimiter_row(cells: list[str]) -> bool:
     return bool(cells) and all(re.fullmatch(r':?-{2,}:?', cell) for cell in cells)
 
 
+#: One layer of markdown emphasis: a MATCHED pair of delimiters wrapping the whole
+#: cell. Both delimiter characters are recognised because both are markdown
+#: emphasis — see the standard's "What 'stripped of markdown emphasis' means,
+#: exactly" paragraph, which this pattern implements.
+_EMPHASIS_PAIR = re.compile(r'^([*_]{1,3})(.+?)\1$')
+
+
+def _strip_emphasis(cell: str) -> str:
+    """A table cell with every wrapping layer of markdown emphasis removed.
+
+    Only MATCHED pairs are stripped, so an unpaired delimiter stays part of the
+    text: ``_field_`` reduces to ``field`` while ``_field`` is left alone. That
+    distinction is what makes this safe to run over key cells, whose names
+    legitimately contain underscores.
+    """
+    text = cell.strip()
+    while (match := _EMPHASIS_PAIR.match(text)) is not None:
+        text = match.group(2).strip()
+    return text
+
+
 def _normalize_key(cell: str) -> str:
     """A table row's key cell reduced to a bare field name.
 
     Strips markdown code fencing and emphasis, then drops any bracketed index so
     ``skills[]`` normalizes to ``skills`` exactly as the block parser does.
     """
-    key = cell.strip().strip('*').strip('`').strip()
+    key = _strip_emphasis(cell).strip('`').strip()
     return re.sub(r'\[[^\]]*\]$', '', key)
 
 
@@ -485,12 +513,12 @@ def _required_table_keys(doc_path: Path) -> set[str]:
             index += 1
             continue
         row_index = index + 2
-        if header[0].strip().strip('*').lower() == _INPUT_TABLE_HEADER:
+        if _strip_emphasis(header[0]).lower() == _INPUT_TABLE_HEADER:
             required_at = next(
                 (
                     position
                     for position, cell in enumerate(header)
-                    if cell.strip().strip('*').lower() == 'required'
+                    if _strip_emphasis(cell).lower() == 'required'
                 ),
                 None,
             )
@@ -498,7 +526,7 @@ def _required_table_keys(doc_path: Path) -> set[str]:
                 while row_index < len(lines) and lines[row_index].strip().startswith('|'):
                     row = _table_cells(lines[row_index])
                     if len(row) > required_at and (
-                        row[required_at].strip().strip('*').lower() in _REQUIRED_AFFIRMATIVE
+                        _strip_emphasis(row[required_at]).lower() in _REQUIRED_AFFIRMATIVE
                     ):
                         keys.add(_normalize_key(row[0]))
                     row_index += 1
@@ -628,6 +656,29 @@ def test_input_table_header_literal_is_the_documented_one():
         f'discrimination, or a step author cannot know how to title the table.'
     )
 
+    # The emphasis clause is the OTHER half of the rule, and it went unbound
+    # while the selector stripped one delimiter and the prose said "markdown
+    # emphasis" — a table headed the other way satisfied the prose and was
+    # silently unselected. Bind every spelling the selector accepts to a
+    # spelling the standard shows as matching, so the two cannot part again.
+    unstated = [
+        spelling
+        for spelling in _EMPHASIS_SPELLINGS
+        if spelling.format(_INPUT_TABLE_HEADER) not in lowered
+    ]
+    assert unstated == [], (
+        f'{_ext_point_doc()} does not show these emphasis spellings of the header '
+        f'as matching: {unstated}. The selector strips them, so the standard '
+        f'either states an emphasis rule narrower than the code enforces, or the '
+        f'code strips an emphasis form no document backs — both are the drift '
+        f'this binding exists to catch.'
+    )
+
+
+#: The emphasis spellings the selector accepts, as ``{}``-format templates. Both
+#: delimiter characters, single and double, because both ARE markdown emphasis —
+#: the standard shows all four as matching and the binding above holds it there.
+_EMPHASIS_SPELLINGS = ('*{}*', '_{}_', '**{}**', '__{}__')
 
 #: A one-table step doc whose first header cell is the ``{header}`` parameter.
 #: The two controls below differ in that cell and in NOTHING else — same columns,
@@ -705,6 +756,121 @@ def test_input_table_selector_is_matched_by_the_documented_header_alone(tmp_path
         'A step whose table header is undocumented declares `candidates` that no '
         'selected table marks Required, but the divergence core did not flag it. '
         'The negative control must go RED, or the selector is unfalsifiable.'
+    )
+
+
+def _differing_lines(left: Path, right: Path) -> list[int]:
+    """Indices of the lines on which two same-length fixtures differ."""
+    left_lines = left.read_text(encoding='utf-8').splitlines()
+    right_lines = right.read_text(encoding='utf-8').splitlines()
+    assert len(left_lines) == len(right_lines), (
+        f'{left.name} and {right.name} differ in line COUNT, so a difference in '
+        f'outcome cannot be attributed to the header cell alone.'
+    )
+    return [
+        index
+        for index, (one, other) in enumerate(zip(left_lines, right_lines, strict=True))
+        if one != other
+    ]
+
+
+@pytest.mark.parametrize('spelling', _EMPHASIS_SPELLINGS, ids=list(_EMPHASIS_SPELLINGS))
+def test_input_table_selector_strips_either_emphasis_delimiter(
+    tmp_path: Path, spelling: str
+):
+    """(8) Matched control pair over the EMPHASIS clause specifically.
+
+    The literal half of the rule already had a control; the emphasis half did
+    not, which is how the selector came to strip one delimiter while the
+    standard said "markdown emphasis". A table headed ``_Prompt-body field_``
+    then satisfied the documented rule and was silently unselected — dropped
+    from the only direction that reaches a generic-template-dispatched step,
+    with nothing going red.
+
+    POSITIVE control — the documented header wearing this emphasis spelling,
+    differing from the plain-header fixture in that and NOTHING else — must
+    select exactly as the plain one does, so the step is not flagged.
+
+    NEGATIVE control — the SAME emphasis spelling over a reworded literal
+    (``Field``) — must NOT select, so its Required row never reaches the
+    comparison and the declaration is flagged RED. Holding the emphasis
+    constant while varying the literal is what shows the widened strip set did
+    not turn the selector into a match-anything: without this direction,
+    "strips emphasis" and "matches every header" produce the same green.
+    """
+    plain = tmp_path / 'plain_header.md'
+    plain.write_text(_SYNTH_TABLE_DOC.format(header=_INPUT_TABLE_HEADER), encoding='utf-8')
+    emphasised = tmp_path / 'emphasised_header.md'
+    emphasised.write_text(
+        _SYNTH_TABLE_DOC.format(header=spelling.format(_INPUT_TABLE_HEADER)),
+        encoding='utf-8',
+    )
+    reworded = tmp_path / 'emphasised_reworded_header.md'
+    reworded.write_text(
+        _SYNTH_TABLE_DOC.format(header=spelling.format('Field')), encoding='utf-8'
+    )
+
+    # The emphasis is really present, and it is the ONLY difference from the
+    # plain fixture — otherwise "differs only in using emphasis" is a claim
+    # about two identical files.
+    assert _differing_lines(plain, emphasised) == [0], (
+        f'The {spelling!r} fixture differs from the plain one on lines '
+        f'{_differing_lines(plain, emphasised)}, not on the header row alone.'
+    )
+    assert _differing_lines(emphasised, reworded) == [0], (
+        'The positive and negative controls must differ on the header row alone.'
+    )
+
+    # POSITIVE: emphasis changes nothing about selection.
+    assert _table_step_specific_keys(emphasised) == _table_step_specific_keys(plain) == {
+        'candidates'
+    }, (
+        f'A header wearing {spelling!r} emphasis parsed as '
+        f'{sorted(_table_step_specific_keys(emphasised))} while the plain header '
+        f'parsed as {sorted(_table_step_specific_keys(plain))}. The standard calls '
+        f'both the same header, so a step titling its table that way is dropped '
+        f'from (5) — the only direction reaching a template-dispatched step.'
+    )
+    assert _undeclared({'candidates'}, _table_step_specific_keys(emphasised)) == [], (
+        'A step declaring exactly what its emphasised-header table marks Required '
+        'was flagged. The positive control must stay green.'
+    )
+
+    # NEGATIVE: same emphasis, different literal -> still not selected.
+    assert _table_step_specific_keys(reworded) == set(), (
+        f'A {spelling!r}-emphasised table headed `Field` was selected; parsed '
+        f'{sorted(_table_step_specific_keys(reworded))}. Stripping emphasis must '
+        f'not make the literal stop mattering, or every CLI-parameter table folds in.'
+    )
+    assert _orphans({'candidates'}, _table_step_specific_keys(reworded)) == ['candidates'], (
+        'A step whose emphasised table header is undocumented declares '
+        '`candidates` that no selected table marks Required, but the divergence '
+        'core did not flag it. The negative control must go RED.'
+    )
+
+
+def test_input_table_selector_requires_a_matched_emphasis_pair(tmp_path: Path):
+    """(8) An UNPAIRED delimiter is text, not emphasis — the standard says so.
+
+    ``_prompt-body field`` (one leading underscore, no closing one) is a
+    different string, not an emphasised header. Pinning it keeps the strip
+    keyed on matched pairs: a naive ``strip('*_')`` would swallow the unpaired
+    delimiter too and, applied to the key cells that share this helper, would
+    mangle any field name that legitimately begins or ends with one.
+    """
+    unpaired = tmp_path / 'unpaired_delimiter.md'
+    unpaired.write_text(
+        _SYNTH_TABLE_DOC.format(header=f'_{_INPUT_TABLE_HEADER}'), encoding='utf-8'
+    )
+
+    assert _table_step_specific_keys(unpaired) == set(), (
+        f'A header with ONE unpaired delimiter was selected; parsed '
+        f'{sorted(_table_step_specific_keys(unpaired))}. The strip is keyed on '
+        f'matched pairs, so an unpaired delimiter is part of the cell text.'
+    )
+    assert _normalize_key('`_leading_underscore_field`') == '_leading_underscore_field', (
+        'The shared emphasis strip mangled a key cell whose field name begins '
+        'with an underscore. Only matched pairs may be stripped.'
     )
 
 

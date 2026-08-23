@@ -39,12 +39,13 @@ file pins ONLY the orchestration contract documented in the standard.
 
 from __future__ import annotations
 
+import re
 import sys
 from typing import Any
 
 import pytest
 from _dispatch_roster import parse_roster
-from _push_prescription_scan import scan_push_prescriptions
+from _push_prescription_scan import fenced_command_lines, scan_push_prescriptions
 from conftest import MARKETPLACE_ROOT
 
 # ---------------------------------------------------------------------------
@@ -71,6 +72,54 @@ if str(_PHASE_HANDSHAKE_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_PHASE_HANDSHAKE_SCRIPTS_DIR))
 
 import _invariants as inv  # noqa: E402
+
+
+# ---------------------------------------------------------------------------
+# PR-operation prescription scan (order-10 contract).
+# ---------------------------------------------------------------------------
+#
+# ``default:architecture-refresh`` is order 10 and ``default:create-pr`` is
+# order 20, so NO PR exists while this step runs and no PR operation may be
+# prescribed here. The standard still NAMES the three calls it used to
+# prescribe, inside an owed-follow-up note, so a substring search over the
+# whole document cannot tell a live prescription from its own retraction.
+#
+# The scan therefore reuses ``fenced_command_lines`` — the same fence-tracking
+# primitive the push scan uses — rather than filtering prose. Reuse, not a
+# second implementation: a private copy is how two guards come to disagree
+# about what counts as a command.
+
+#: The PR operations that cannot run at order 10. Matched as command WORDS with
+#: flexible inner whitespace, so the pseudo-code assignment forms
+#: (``existing := ci pr view --head …``), the multi-line executor form (whose
+#: ``pr view`` sits on a continuation line carrying neither the script name nor
+#: a leading ``ci``), and a bare ``ci pr edit …`` are all one pattern. Keying on
+#: the leading ``ci`` token or on ``execute-script.py`` is what let two of the
+#: three retired shapes through.
+_PR_OPERATION = re.compile(r'\bpr\s+(?:view|edit)\b|\bprepare-body\b')
+
+
+def _scan_pr_operation_prescriptions(text: str) -> tuple[list[str], int]:
+    """Return ``(PR-operation-prescribing lines, fenced command lines examined)``.
+
+    The second element is the published population: a document whose fences
+    resolve no command lines yields ``(…, 0)``, which the caller MUST treat as
+    an unresolved scan rather than a clean one.
+    """
+    commands = fenced_command_lines(text)
+    offenders = [line.strip() for line in commands if _PR_OPERATION.search(line)]
+    return offenders, len(commands)
+
+
+#: The three call shapes this step retired, verbatim from the removed pseudo-code
+#: and command blocks. Two are ``:=`` assignment forms whose line begins with the
+#: assigned name, and the third is a bare invocation — the spread is the point:
+#: a guard keyed on how a line STARTS catches only the third.
+_RETIRED_PR_CALL_SHAPES = (
+    'existing := ci pr view --head {worktree_branch}',
+    'body_path := ci pr prepare-body --plan-id {plan_id} --for edit',
+    'ci pr edit --pr-number {pr_number} --plan-id {plan_id}',
+)
 
 
 # ===========================================================================
@@ -739,29 +788,81 @@ class TestNarrativeContract:
         )
 
     def test_does_not_prescribe_a_pr_body_write_at_order_10(self, standard_text: str):
-        """No `pr edit` / `prepare-body` CALL may be prescribed before create-pr.
+        """No `pr view` / `prepare-body` / `pr edit` CALL may be prescribed here.
 
         The literals still appear in the standard, but only inside the
         owed-follow-up note that names them as what this branch USED to
-        prescribe. A substring check therefore cannot distinguish a live
-        prescription from its own retraction — so this guard scans command
-        lines (fenced `python3 .plan/execute-script.py ... ci ...` invocations)
-        rather than prose, and publishes how many it examined.
+        prescribe. A substring check over the whole document therefore cannot
+        distinguish a live prescription from its own retraction — so this guard
+        looks only at lines inside fenced code blocks (comments excluded), via
+        the same `fenced_command_lines` primitive the push scan uses, and
+        publishes how many it examined.
         """
-        command_lines = [
-            line for line in standard_text.splitlines() if 'execute-script.py' in line or line.strip().startswith('ci ')
-        ]
-        assert command_lines, (
-            'Command-line scan resolved 0 invocations in architecture-refresh.md — '
-            'a clean result would be vacuous.'
+        offenders, examined = _scan_pr_operation_prescriptions(standard_text)
+
+        assert examined, (
+            'Fenced-command scan resolved 0 command lines in '
+            'architecture-refresh.md — a clean result would be vacuous.'
         )
-        offenders = [
-            line for line in command_lines if 'pr edit' in line or 'prepare-body' in line or 'pr view' in line
-        ]
+        print(f'architecture-refresh PR-operation scan: examined={examined} command lines')
         assert offenders == [], (
             f'architecture-refresh.md (order 10) prescribes {len(offenders)} PR '
-            f'operation(s) across {len(command_lines)} examined command lines, but '
+            f'operation(s) across {examined} examined command lines, but '
             f'default:create-pr is order 20 — no PR exists yet. Offenders: {offenders}'
+        )
+
+    @pytest.mark.parametrize(
+        'retired_call', _RETIRED_PR_CALL_SHAPES, ids=['pr-view', 'prepare-body', 'pr-edit']
+    )
+    def test_pr_operation_scan_fires_on_each_retired_call_shape(
+        self, standard_text: str, retired_call: str
+    ):
+        """Matched control pair, per retired shape, over the real document.
+
+        POSITIVE control — the retired call re-introduced inside a fence — must
+        be flagged. This is the regression the guard above exists to prevent, so
+        each of the three shapes is driven through it individually. Two of them
+        are `:=` assignment forms whose lines start with the assigned name and
+        carry no `execute-script.py`; a guard keyed on how a line starts, or on
+        the script token, reports them clean, which is exactly the blind spot
+        this control closes.
+
+        NEGATIVE controls — the SAME line as prose outside any fence, and the
+        SAME line as a comment inside a fence — must stay green. The first is
+        the owed-follow-up note that legitimately names these calls as retired;
+        the second is a pseudo-code comment recording their absence. Without
+        both, "flags a live prescription" and "flags every mention" produce the
+        same red, and the guard would fire on the standard's own retraction.
+        """
+        # The negatives run FIRST so neither direction can hide behind the
+        # other's short-circuit: each assertion below is reachable, and reached,
+        # whenever the ones before it hold.
+
+        # NEGATIVE 1: the same text as prose -> not flagged.
+        as_prose = f'{standard_text}\n\nThis branch previously prescribed {retired_call}.\n'
+        prose_offenders, _ = _scan_pr_operation_prescriptions(as_prose)
+        assert prose_offenders == [], (
+            f'The guard flagged {retired_call!r} written as PROSE '
+            f'(offenders={prose_offenders}). A retraction that names the retired '
+            f'call would then be indistinguishable from a live prescription.'
+        )
+
+        # NEGATIVE 2: the same text as a fenced comment -> not flagged.
+        as_comment = f'{standard_text}\n\n```text\n# no PR at order 10: {retired_call}\n```\n'
+        comment_offenders, _ = _scan_pr_operation_prescriptions(as_comment)
+        assert comment_offenders == [], (
+            f'The guard flagged {retired_call!r} written as a fenced COMMENT '
+            f'(offenders={comment_offenders}). A comment recording the absence of '
+            f'a call is the opposite of prescribing one.'
+        )
+
+        # POSITIVE: the same text as a fenced command line -> flagged.
+        injected = f'{standard_text}\n\n```text\n{retired_call}\n```\n'
+        offenders, examined = _scan_pr_operation_prescriptions(injected)
+        assert offenders == [retired_call], (
+            f'Re-introducing {retired_call!r} inside a fence was NOT flagged '
+            f'(offenders={offenders}, examined={examined}). The guard does not '
+            f'defend against the regression it names.'
         )
 
     def test_documents_enrich_call_in_auto_branch(self, standard_text: str):
