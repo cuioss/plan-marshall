@@ -66,11 +66,26 @@ honors_skip_label: true           # UNVERIFIED — #103 carried no skip label, s
                                   # exercised. Kept because it is enforced by the reusable
                                   # workflow's if: guard, NOT by bot config (see "Central config")
 # participation_evidence: two publish shapes. The Guide comment is unconditional; inline comments
-# are published when `/improve` is enabled for the repository (label-gated in the reusable
-# workflow) and absent when it is not. An absent inline count is therefore NOT evidence of
-# non-participation, while a present one IS evidence of participation. The bot still posts NO
-# check-run, so a check-run state remains no evidence for it on either path. See "Participation
-# evidence" below.
+# are published when `/improve` is enabled and it has something to suggest. An absent inline count
+# is therefore NOT evidence of non-participation, while a present one IS evidence of participation.
+# The bot still posts NO check-run, so a check-run state remains no evidence for it on either path.
+# See "Participation evidence" below.
+#
+# ⚠ /improve HAS TWO GATING MODES, and reading only the label one misreads participation:
+#   - repository-wide — the caller passes `auto-improve: true` to reusable-pr-agent-review.yml.
+#     THIS REPOSITORY IS IN THAT MODE as of #1334 (a measured pilot; see that PR for why /review
+#     is not the finding surface). No label appears on the pull request, and none is expected.
+#   - per pull request — the `pr-agent-improve` label, the org default while `auto-improve` is
+#     false. This remains the mode for every consumer repository that has not opted in.
+# The reusable workflow ORs the two (`inputs.auto-improve || contains(labels, 'pr-agent-improve')`),
+# so an ABSENT label is not evidence that /improve did not run.
+#
+# ⚠ THIRD SHAPE, CONFIRMED on #1334: when /improve runs and finds nothing it does NOT stay silent —
+# it publishes a separate `issue_comment` headed `## PR Code Suggestions ✨` reading "No code
+# suggestions found for the PR." So at the PULL REQUEST surface the empty result IS distinguishable
+# from a run that never happened. That distinction does NOT extend to the workflow gate: the
+# reusable workflow's fail-closed gate keys on the `review` output and is deliberately not extended
+# to /improve, which writes the separate `improve` key. Gate-level, the two remain one signal.
 #
 # ORDERING IS LOAD-BEARING: `inline` is APPENDED after `issue_comment` and must never be placed
 # before it. `bot_registry.participation_evidence(bot)` returns the declared order, and
@@ -85,7 +100,7 @@ participation_requires_update: true   # a re-review EDITS that same comment in p
                                   # presence proves only that it reviewed once, at some earlier HEAD.
                                   # Evidence therefore requires first presence OR updated_at movement.
 # ignore_patterns: CONFIRMED on #103 — the first two did not fire, and neither
-# wrongly dropped the review.
+# wrongly dropped the review. The fourth is CONFIRMED on #1334, the /improve pilot's own PR.
 ignore_patterns:
   - "## PR Agent Walkthrough"     # /help output — commands reference, never a finding
   - "### Question:"               # /ask answer — a reply to a human, not a review finding
@@ -94,6 +109,17 @@ ignore_patterns:
                                   # finding. Suppressed at source by final_update_message = false
                                   # in cuioss/pr-agent-settings; this pattern covers the ones
                                   # already posted and any recurrence if that setting is lost.
+  - "No code suggestions found for the PR"   # CONFIRMED on #1334 — /improve's EMPTY result. It is
+                                  # published as a SECOND, separate `issue_comment` headed
+                                  # `## PR Code Suggestions ✨`, distinct from the Guide, and it
+                                  # carries no finding. Without this entry every clean pull request
+                                  # under repository-wide auto-improve files one junk finding for
+                                  # triage — the same shape the `**[Persistent review]` entry above
+                                  # exists to absorb, and newly reachable the moment /improve stops
+                                  # being label-gated. Keyed on the inner sentence rather than the
+                                  # `## PR Code Suggestions` heading on purpose: that heading is
+                                  # ALSO the heading of a suggestion-BEARING result, so ignoring it
+                                  # would drop real suggestions published in table form.
 # contentless_review_markers: CORRECTED against #1078 — the three literals the Guide carries when
 # it found nothing: the heading that identifies the review, plus the 🔒 and 🧪 rows' clean
 # assertions, each as BARE INNER TEXT. The bare form is load-bearing, not a style choice: the two
