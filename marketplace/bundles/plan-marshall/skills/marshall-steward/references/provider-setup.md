@@ -191,15 +191,28 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health ver
 
 ## Credential Setup (Step 13, Optional)
 
-### Step 13e: Read activated providers
+### Step 13e: Select the credential-bearing providers
 
-Read activated providers from marshal.json (only providers selected by the user in Step 7 are present; filter out CI providers like `plan-marshall:workflow-integration-github` and `plan-marshall:workflow-integration-gitlab` since those are handled in Steps 13a-13d):
+Read the activated providers from marshal.json (only providers selected by the user in Step 7 are present):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list-providers
 ```
 
-Parse the `providers` mapping from output. If `count == 0`, skip to Step 15 (Summary).
+Parse the `providers` mapping. **Ignore the top-level `count`** — it reports every activated provider, and a valid project always has at least one, because `_validate_provider_selection` requires exactly one `version-control` provider. `count` can therefore never be `0` and is not a usable skip signal.
+
+Filter on **lane**, not on skill name. Credentials exist only for the REST/token-auth lane; the CLI/system-auth lane holds no credential at rest and was already verified in Steps 13a-13d. The two lanes are told apart by which selector the entry carries:
+
+| Lane | Entry carries | Credential to collect |
+|------|---------------|-----------------------|
+| CLI / system-auth | `verify_command` | none — the CLI owns its own authentication |
+| REST / token-auth | `url` and **no** `verify_command` | base URL, auth type, token placeholder, `extra_fields` |
+
+The credential-bearing set is therefore exactly the entries that carry **no** `verify_command`.
+
+Do NOT filter on the hardcoded names `plan-marshall:workflow-integration-github` and `plan-marshall:workflow-integration-gitlab`: `plan-marshall:workflow-integration-git` is CLI-lane too, and a name-based filter lets it reach Step 13g's option list with nothing to collect. The presence of `url` is not a lane selector either — the `version-control` provider resolves one from the git remote while staying CLI-lane.
+
+If the filtered set is empty, skip to Step 15 (Summary). Otherwise carry the **filtered** set — not the full mapping — into Steps 13f-13i: it is the option list Step 13g offers and the `extra_fields` source Step 13h reads.
 
 ### Step 13f: Ask user
 
@@ -249,7 +262,7 @@ AskUserQuestion:
     - question: "Which credential provider?"
       header: "Provider"
       options:
-        # Dynamic from Step 13e provider list
+        # Dynamic from the Step 13e filtered (REST-lane) provider list
         - label: "{provider_display_name}"
           description: "{provider_description}"
       multiSelect: false
