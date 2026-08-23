@@ -5,6 +5,9 @@
 
 
 from __future__ import annotations
+from pathlib import Path
+from typing import Any
+
 from _record_model_representability_fixtures import (
     _AFFECTED_FILES,
     _COMPLETED_TASKS,
@@ -322,3 +325,260 @@ def test_undatable_zeros_are_not_measurements_in_either_reader():
     # `indeterminate`, in the shape this reader can express.
     for column in _CONTEXT_COLUMNS:
         assert column not in totals, column
+
+
+# =============================================================================
+# Divergence-class fixtures: one artifact, both readers, one verdict
+# =============================================================================
+#
+# The two readers hand-mirror ONE `data-format.md` contract from separate trees —
+# `analyze-logs.py` under `marketplace/bundles/`, `audit.py` under
+# `.claude/skills/`, which the architecture inventory does not crawl — and they
+# used to resolve the four context-load columns two DIFFERENT ways: the audit
+# reader BY NAME from the declared `rows[]{...}:` header, the retrospective reader
+# POSITIONALLY, ignoring the header entirely.
+#
+# Those two strategies agree on every artifact the current writer produces, which
+# is why the divergence went unseen: the writer emits the canonical order, so name
+# and position coincide. They come apart exactly where a header disagrees with the
+# canonical position — and then the SAME BYTES yield a different measured set and
+# a different datability verdict in each reader.
+#
+# One fixture per divergence class. Each is driven through BOTH readers off ONE
+# file and asserted to produce the same measured set, which is the property that
+# was false before the retrospective reader adopted header-name resolution.
+
+#: The canonical nine-column header, in the order the writer emits.
+_DIVERGENCE_CANONICAL_HEADER = (
+    'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
+    'input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens}:\n'
+)
+
+#: (a) A header declaring only the legacy five, above a row carrying all nine.
+_SHORT_HEADER_BYTES = (
+    'plan_id: divergence-short-header\n'
+    'phase: 5-execute\n'
+    'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms}:\n'
+    '2026-07-01T09:00:00Z,clean_exit_queue_empty,50000,20,120000,38000,4000,210000,12000\n'
+)
+
+#: (b) A corrupt legacy `total_tokens` beside a NONZERO context-load cell.
+_MALFORMED_LEGACY_BYTES = (
+    'plan_id: divergence-malformed-legacy\n'
+    'phase: 5-execute\n'
+    + _DIVERGENCE_CANONICAL_HEADER
+    + '2026-07-01T09:00:00Z,clean_exit_queue_empty,not-an-int,7,30000,9100,0,0,0\n'
+)
+
+#: (c) No `rows[]{...}:` header line at all — nothing declares what the cells mean.
+_NO_HEADER_BYTES = (
+    'plan_id: divergence-no-header\n'
+    'phase: 5-execute\n'
+    '2026-07-01T09:00:00Z,clean_exit_queue_empty,50000,20,120000,38000,4000,210000,12000\n'
+)
+
+#: (d) A header REORDERING the last two context columns. The cells follow the
+#: header, so name-resolution and position-resolution disagree on exactly those
+#: two — and the two values are far apart, so a transposition cannot pass.
+_REORDERED_HEADER_BYTES = (
+    'plan_id: divergence-reordered-header\n'
+    'phase: 5-execute\n'
+    'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
+    'input_tokens,output_tokens,cache_creation_input_tokens,cache_read_input_tokens}:\n'
+    '2026-07-01T09:00:00Z,clean_exit_queue_empty,50000,20,120000,38000,4000,12000,210000\n'
+)
+
+
+def _write_divergence_fixture(tmp_path: Path, name: str, body: str) -> Path:
+    """Materialise one divergence-class artifact and return its path."""
+    path = tmp_path / name / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding='utf-8')
+    return path
+
+
+def _reader_verdicts(path: Path) -> tuple[dict[str, Any], dict[str, int]]:
+    """Drive BOTH readers over ONE artifact.
+
+    The claim under test is that these two agree, so they are always handed the
+    same file rather than each an equivalent copy of its own.
+    """
+    return (
+        analyze_logs._parse_dispatch_boundary_file(path),
+        audit._parse_dispatch_boundary_totals(path),
+    )
+
+
+def _measured_context(parsed: dict[str, Any]) -> dict[str, int]:
+    """The context-load columns the RETROSPECTIVE reader measured, with values.
+
+    Presence-keyed, because that reader signals "not measured" by OMITTING the
+    key — for an unmeasured, an unrecognised and an indeterminate cell alike.
+    """
+    return {
+        column: row[column]
+        for row in parsed['rows']
+        for column in _CONTEXT_COLUMNS
+        if column in row
+    }
+
+
+def _assert_same_measured_context(parsed: dict[str, Any], totals: dict[str, int]) -> None:
+    """Both readers measured the SAME context-load columns, at the SAME values.
+
+    Every fixture here is single-row, so the audit reader's per-file SUM for a
+    column is exactly the retrospective reader's value for that column — which is
+    what makes the two directly comparable rather than merely both-non-empty.
+    Comparing the whole MAPPING, not just its key set, is what catches a reader
+    that measured the right columns with the wrong values: precisely the
+    reordered-header case, where both readers report all four columns measured and
+    only the values betray the transposition.
+    """
+    audited = {column: totals[column] for column in _CONTEXT_COLUMNS if column in totals}
+    assert _measured_context(parsed) == audited
+
+
+def test_short_header_leaves_undeclared_columns_unmeasured_in_both_readers(tmp_path):
+    """(a) A header narrower than its rows: the undeclared cells measure NOTHING.
+
+    The header declares only the legacy five, so the four trailing cells are
+    values that no column name claims. Both readers must decline them — reading
+    them would attribute four measurements to columns the file never said it was
+    recording.
+
+    RED against the pre-fix retrospective reader, which ignored the header and
+    read positions 5-8 as the four context-load columns, reporting 38000 / 4000 /
+    210000 / 12000 as measured while the audit reader reported none of them.
+    """
+    path = _write_divergence_fixture(tmp_path, 'short-header', _SHORT_HEADER_BYTES)
+
+    parsed, totals = _reader_verdicts(path)
+
+    _assert_same_measured_context(parsed, totals)
+
+    # Concretely: neither reader measured any context-load column ...
+    assert _measured_context(parsed) == {}
+    for column in _CONTEXT_COLUMNS:
+        assert column not in totals, column
+    # ... and the retrospective reader files them as UNMEASURED rather than
+    # unrecognised: an undeclared column is one the row states nothing about, not
+    # a cell the reader tried and failed to parse.
+    assert len(parsed['rows']) == 1
+    row = parsed['rows'][0]
+    assert row['unmeasured_columns'] == list(_CONTEXT_COLUMNS)
+    assert row['unrecognised_columns'] == []
+    assert row['indeterminate_columns'] == []
+
+    # The five columns the header DOES declare still read, in both readers — the
+    # row is kept, not discarded for being wider than its header.
+    assert row['total_tokens'] == 50000
+    assert row['tool_uses'] == 20
+    assert row['duration_ms'] == 120000
+    assert totals['total_tokens'] == 50000
+
+
+def test_corrupt_legacy_cell_keeps_its_row_readable_in_both_readers(tmp_path):
+    """(b) A corrupt `total_tokens` must not discard the row's context-load cells.
+
+    The legacy five carry a numeric default and predate the `unmeasured` token, so
+    a corrupt cell there degrades to `0` in both readers — the one place a default
+    is correct, because those columns cannot abstain. What must NOT happen is
+    losing the rest of the row with it: this row's `9100` is a real measurement
+    the reader parsed perfectly well.
+
+    RED against the pre-fix retrospective reader, whose `int(parts[2])` raised and
+    dropped the whole row — reporting zero rows and zero measured columns, while
+    the audit reader kept the row and measured all four.
+    """
+    path = _write_divergence_fixture(tmp_path, 'malformed-legacy', _MALFORMED_LEGACY_BYTES)
+
+    parsed, totals = _reader_verdicts(path)
+
+    _assert_same_measured_context(parsed, totals)
+
+    # The row survived its corrupt legacy cell.
+    assert len(parsed['rows']) == 1
+    row = parsed['rows'][0]
+
+    # The nonzero cell is measured — and it DATES the row, so its three sibling
+    # zeros are genuine measured zeros rather than undatable ones.
+    assert row['input_tokens'] == 9100
+    assert row['output_tokens'] == 0
+    assert row['cache_read_input_tokens'] == 0
+    assert row['cache_creation_input_tokens'] == 0
+    assert row['indeterminate_columns'] == []
+    assert row['unmeasured_columns'] == []
+    assert row['unrecognised_columns'] == []
+
+    # The corrupt legacy cell degrades to 0 in BOTH readers ...
+    assert row['total_tokens'] == 0
+    assert totals['total_tokens'] == 0
+    # ... and its intact legacy neighbours are untouched by that degrade.
+    assert row['tool_uses'] == 7
+    assert row['duration_ms'] == 30000
+
+
+def test_missing_header_measures_nothing_in_either_reader(tmp_path):
+    """(c) With no `rows[]{...}:` header, no cell has a declared meaning.
+
+    Column names come from the header; a file carrying none declares nothing, so
+    neither reader may attribute its cells to columns. Both report an empty
+    measured set rather than falling back on the canonical order — a guess that
+    would be indistinguishable from a measurement.
+
+    RED against the pre-fix retrospective reader, which skipped the two scalar
+    lines by prefix and parsed the bare data line positionally, reporting one
+    fully-measured row against the audit reader's empty totals.
+    """
+    path = _write_divergence_fixture(tmp_path, 'no-header', _NO_HEADER_BYTES)
+
+    parsed, totals = _reader_verdicts(path)
+
+    _assert_same_measured_context(parsed, totals)
+
+    # The file EXISTS — this is not the absent-artifact path — and still yields no
+    # rows. "Present but undeclared" and "missing" are different facts, and only
+    # the first one keeps `present` True.
+    assert parsed['present'] is True
+    assert parsed['rows'] == []
+    assert parsed['clean_exit_queue_empty_count'] == 0
+    assert parsed['unknown_count'] == 0
+    assert totals == {}
+
+
+def test_reordered_header_is_read_by_name_not_by_position_in_both_readers(tmp_path):
+    """(d) A header that reorders two columns must not transpose their values.
+
+    The header declares `cache_creation_input_tokens` BEFORE
+    `cache_read_input_tokens` and the cells follow the header, so name-resolution
+    and position-resolution disagree on exactly these two columns.
+
+    RED against the pre-fix retrospective reader, which read position 7 as
+    cache-read and position 8 as cache-creation, reporting the two values
+    transposed relative to the audit reader. The two magnitudes are deliberately
+    far apart so the transposition cannot pass unnoticed.
+    """
+    path = _write_divergence_fixture(tmp_path, 'reordered-header', _REORDERED_HEADER_BYTES)
+
+    parsed, totals = _reader_verdicts(path)
+
+    _assert_same_measured_context(parsed, totals)
+
+    assert len(parsed['rows']) == 1
+    row = parsed['rows'][0]
+    # Each value lands under the name the HEADER gave it, in both readers ...
+    assert row['cache_read_input_tokens'] == 210000
+    assert row['cache_creation_input_tokens'] == 12000
+    assert totals['cache_read_input_tokens'] == 210000
+    assert totals['cache_creation_input_tokens'] == 12000
+    # ... and the two are genuinely distinct, so this assertion is falsifiable by
+    # exactly the transposition a positional reader produces.
+    assert row['cache_read_input_tokens'] != row['cache_creation_input_tokens']
+
+    # The two columns the reorder did not touch are unaffected, so the fixture
+    # isolates the reorder rather than perturbing the whole row.
+    assert row['input_tokens'] == 38000
+    assert row['output_tokens'] == 4000
+    assert row['unmeasured_columns'] == []
+    assert row['unrecognised_columns'] == []
+    assert row['indeterminate_columns'] == []
