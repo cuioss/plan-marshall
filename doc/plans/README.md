@@ -48,7 +48,6 @@ doc/plans/
 │   └── 020-{plan-name}/             # a run has started on it
 │       ├── plan.md                  # the plan
 │       └── report-NN.md             # one run report per run
-├── review-apparatus/
 ├── code-intelligence-substrate/
 └── test-quality/                    # standalone epic — no orchestrator ledger counterpart
 ```
@@ -81,6 +80,10 @@ handed over without them gets built against a thinner brief than its author imag
 epics whose ledgers live under `.plan/local/orchestrator/`. Those ledgers stay machine-local and
 authoritative for queue state; this tree carries only the plans handed off for standalone execution,
 plus their reports.
+
+An epic's directory therefore exists only while it has plans handed off. Once a wave is collected back
+into its ledger the directory is removed, and it reappears on the next hand-off — an absent directory
+means nothing is currently exported for that epic, never that the epic is closed.
 
 `test-quality` is a **standalone epic**: it has no orchestrator-ledger counterpart, because it was
 opened directly from a whole-corpus test review rather than derived from a staged orchestrator plan.
