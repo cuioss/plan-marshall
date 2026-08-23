@@ -629,8 +629,18 @@ def _filter_main_dirty_paths(paths: list[str], tree: str | Path) -> list[str]:
     one IS a real leak into the main checkout that must be reported. A path
     outside ``.plan/`` is kept unchanged.
 
+    The two sides of that trackedness comparison must speak ONE path encoding, or
+    the exemption silently mis-fires. :func:`_git_helpers.git_dirty_files` observes
+    with ``git status --porcelain -z`` and decodes through the shared
+    :func:`_porcelain.parse_porcelain_z`, and
+    :func:`_plan_state_exemption.tracked_plan_paths` reads NUL-delimited git output
+    too — so both spell a path verbatim. Under the previous un-``-z`` observation a
+    tracked ``.plan/`` path git chose to QUOTE arrived quote-stripped but still
+    C-escaped, matched nothing in the tracked set, and was exempted as untracked.
+
     Args:
-        paths: The porcelain-string set from :func:`_git_helpers.git_dirty_files`.
+        paths: The NUL-decoded dirty-path set from
+            :func:`_git_helpers.git_dirty_files`.
         tree: The main-checkout root ``paths`` were observed against, used to
             resolve trackedness.
 

@@ -17,6 +17,13 @@ TRACKEDNESS, not on the ``.plan/`` prefix:
   candidates are RETAINED — the guards must never hide a possibly-tracked edit
   behind a silent exemption (fail closed).
 
+"Tracked" is the UNION of the index and HEAD, not the index alone: a ``git rm``'d
+``.plan/`` file has left the index while HEAD still carries it, and an index-only
+oracle would exempt exactly the deletion the guards exist to surface. The oracle
+also reads NUL-delimited git output throughout, so a path whose name git QUOTES in
+the default porcelain line form is spelled verbatim here — that spelling is the
+contract the dirty-side observation must meet.
+
 The trackedness cases run against throwaway git repositories because trackedness
 is a property only a real index can answer.
 """
@@ -68,6 +75,66 @@ def _repo_with_tracked_plan_file(tmp_path: Path) -> Path:
     _git(repo, 'add', '-f', '.plan/marshal.json', 'README.md')
     _git(repo, 'commit', '-m', 'chore: seed')
     return repo
+
+
+def _index_paths(repo: Path) -> set[str]:
+    """The ``.plan/`` paths the INDEX holds — the ``git ls-files -z`` half alone.
+
+    Used to state the precondition of the staged-deletion cases directly: the
+    union is only load-bearing when the index really has stopped reporting the
+    path, so the tests assert that rather than assuming it.
+    """
+    out = _git(repo, 'ls-files', '-z', '--', '.plan/').stdout
+    return {entry for entry in out.split('\0') if entry}
+
+
+#: Probe filename for the quoted-path cases. A NON-ASCII name is the first
+#: choice because ``core.quotePath`` (on by default) makes git render it both
+#: quoted AND ``\NNN``-escaped in the default porcelain line form while ``-z``
+#: emits it verbatim — the exact divergence the shared encoding closes. A
+#: space-containing name is NOT a usable substitute: git quotes it but does not
+#: escape it, so naive quote-stripping recovers the byte-identical spelling and
+#: the probe would prove nothing.
+_QUOTED_PROBE_RELPATH = '.plan/ünï.json'
+
+
+def _repo_with_quoted_tracked_plan_file(root: Path, name: str) -> tuple[Path, str]:
+    """A repo whose one tracked ``.plan/`` file is committed, dirtied, and quoted by git.
+
+    Returns ``(repo, spelling)`` where ``spelling`` is how ``git ls-files -z``
+    reports the path. The spelling is READ BACK from git rather than reused from
+    the source literal on purpose: a filesystem that normalises the filename
+    (macOS stores NFD) would otherwise make the literal and the on-disk name
+    disagree for a reason that has nothing to do with the encoding contract
+    under test.
+
+    The helper asserts its own anti-vacuity precondition — git must actually
+    render the probe path differently in the default porcelain line form than in
+    ``-z``. A name git spells identically in both modes exercises nothing.
+    """
+    repo = root / name
+    repo.mkdir(parents=True)
+    _git(repo, 'init', '--initial-branch=main')
+    target = repo / _QUOTED_PROBE_RELPATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text('{"schema": 1}\n', encoding='utf-8')
+    _git(repo, 'add', '-f', _QUOTED_PROBE_RELPATH)
+    _git(repo, 'commit', '-m', 'chore: seed a quoted plan path')
+    target.write_text('{"schema": 1, "dirty": true}\n', encoding='utf-8')
+
+    tracked = sorted(_index_paths(repo))
+    assert len(tracked) == 1, (
+        f'probe repo must hold exactly one tracked .plan/ path, got {tracked}'
+    )
+    spelling = tracked[0]
+
+    line_form = _git(repo, 'status', '--porcelain').stdout.strip()
+    assert line_form != f'M {spelling}', (
+        'precondition: git must render this probe path differently in the '
+        'default porcelain line form than in -z, or the probe is vacuous. Got '
+        f'{line_form!r} against the -z spelling {spelling!r}'
+    )
+    return repo, spelling
 
 
 # =============================================================================
@@ -127,6 +194,79 @@ def test_partition_exempts_untracked_plan_file(tmp_path: Path) -> None:
     assert exempted == ['.plan/local/status.json']
 
 
+def test_partition_retains_staged_deleted_tracked_plan_file(tmp_path: Path) -> None:
+    """A ``git rm``'d tracked ``.plan/`` file is RETAINED, not exempted.
+
+    ``git rm`` drops the path from the INDEX while HEAD still carries it. An
+    index-only trackedness oracle answers "untracked" there and exempts exactly
+    the edit the guards exist to surface — the deletion of tracked plan state.
+    Trackedness is the UNION of index and HEAD, so the path stays tracked and
+    the deletion is reported.
+    """
+    repo = _repo_with_tracked_plan_file(tmp_path)
+    _git(repo, 'rm', '.plan/marshal.json')
+    assert '.plan/marshal.json' not in _index_paths(repo), (
+        'precondition: the staged deletion must have removed the path from the '
+        'index, or the union is not what this test exercises'
+    )
+
+    retained, exempted = pse.partition_plan_state_exemption(['.plan/marshal.json'], repo)
+
+    assert retained == ['.plan/marshal.json']
+    assert exempted == []
+
+
+def test_partition_still_exempts_untracked_plan_file_after_a_staged_deletion(
+    tmp_path: Path,
+) -> None:
+    """(matched negative control) The index∪HEAD widening does not over-reach.
+
+    In the SAME repository whose tracked ``.plan/marshal.json`` has been
+    ``git rm``'d, a never-tracked ``.plan/`` path is STILL exempted. Without
+    this control, an oracle that simply retained every ``.plan/`` candidate
+    would satisfy the positive case above while silently reinstating the
+    prefix-blind behaviour the module exists to correct.
+    """
+    repo = _repo_with_tracked_plan_file(tmp_path)
+    _git(repo, 'rm', '.plan/marshal.json')
+
+    retained, exempted = pse.partition_plan_state_exemption(
+        ['.plan/marshal.json', '.plan/local/status.json'], repo
+    )
+
+    assert retained == ['.plan/marshal.json']
+    assert exempted == ['.plan/local/status.json']
+
+
+def test_partition_retains_tracked_plan_file_whose_name_git_quotes(
+    outside_repo_dir: Path,
+) -> None:
+    """A tracked ``.plan/`` path git renders QUOTED is retained, spelled verbatim.
+
+    This is the TRACKED side of the one-encoding contract: the oracle reads
+    NUL-delimited git output, so it reports the path byte-for-byte as
+    ``git ls-files -z`` spells it — never quote-wrapped and never
+    ``\\NNN``-escaped. The dirty side must meet that spelling; its red-first
+    partner is ``test_capture_main_dirty_files_spells_a_quoted_tracked_plan_path_as_git_does``
+    in ``test/plan-marshall/plan-marshall/test_invariants.py``, where the
+    default porcelain line form used to produce a spelling that matched nothing
+    here.
+
+    The throwaway repository is created under ``outside_repo_dir`` — outside
+    this repository's own tree — so a probe filename git has to quote never
+    lands inside the checkout.
+    """
+    repo, spelling = _repo_with_quoted_tracked_plan_file(outside_repo_dir, 'quoted-tracked')
+
+    assert pse.tracked_plan_paths(repo) == {spelling}
+    assert not spelling.startswith('"'), 'the -z spelling must not be quote-wrapped'
+
+    retained, exempted = pse.partition_plan_state_exemption([spelling], repo)
+
+    assert retained == [spelling]
+    assert exempted == []
+
+
 def test_partition_mixed_population(tmp_path: Path) -> None:
     """Tracked ``.plan/`` and non-``.plan/`` retained; untracked ``.plan/`` exempted."""
     repo = _repo_with_tracked_plan_file(tmp_path)
@@ -179,6 +319,41 @@ def test_tracked_plan_paths_returns_tracked_set(tmp_path: Path) -> None:
     (repo / '.plan' / 'local' / 'status.json').write_text('{}\n', encoding='utf-8')
     tracked = pse.tracked_plan_paths(repo)
     assert tracked == {'.plan/marshal.json'}
+
+
+def test_tracked_plan_paths_unions_index_and_head(tmp_path: Path) -> None:
+    """The oracle is index ∪ HEAD — a HEAD-only path is reported as tracked.
+
+    After ``git rm`` the index half is empty for ``.plan/`` while HEAD still
+    carries the file. Asserting the index half separately is what makes this a
+    union test rather than a restatement of the plain tracked case.
+    """
+    repo = _repo_with_tracked_plan_file(tmp_path)
+    _git(repo, 'rm', '.plan/marshal.json')
+
+    assert _index_paths(repo) == set(), 'precondition: the index half must be empty'
+    assert pse.tracked_plan_paths(repo) == {'.plan/marshal.json'}
+
+
+def test_tracked_plan_paths_falls_back_to_index_when_head_unresolvable(
+    tmp_path: Path,
+) -> None:
+    """A repository with NO commits has no HEAD — the index answer is still usable.
+
+    ``ls-tree HEAD`` exits non-zero in a fresh repository, which is a legitimate
+    state rather than an unusable observation. The oracle keeps the index answer
+    instead of failing closed to ``None``, so the fail-closed contract stays
+    keyed on the ``ls-files`` observation alone.
+    """
+    repo = tmp_path / 'no-commits'
+    repo.mkdir()
+    _git(repo, 'init', '--initial-branch=main')
+    staged = repo / '.plan' / 'marshal.json'
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    staged.write_text('{"schema": 1}\n', encoding='utf-8')
+    _git(repo, 'add', '-f', '.plan/marshal.json')
+
+    assert pse.tracked_plan_paths(repo) == {'.plan/marshal.json'}
 
 
 def test_tracked_plan_paths_none_when_not_a_repo(outside_repo_dir: Path) -> None:
