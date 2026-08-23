@@ -997,16 +997,21 @@ def artifact_emission_population(
 # so these three are a hand-mirror of that section and MUST move with it.
 #
 # LOCK-STEP OBLIGATION. That section's "Restating surfaces (lock-step
-# obligation)" paragraph names FOUR surfaces that restate this schema and must
-# move together; this reader is one of them. The other three are the writer in
+# obligation)" paragraph names FIVE surfaces that restate this schema and must
+# move together; this reader is one of them. The other four are the writer in
 # `manage-metrics.py` (`cmd_record_dispatch_boundary` +
 # `_DISPATCH_CONTEXT_LOAD_COLUMNS`), the `record-dispatch-boundary` operation
-# block in `manage-metrics/SKILL.md`, and the hand-copied `_BC_LEDGER_COLUMNS` /
-# `_BC_LEDGER_UNMEASURED_TOKEN` pair in
-# `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`. That last
-# one lives in a tree the architecture inventory does not crawl, so a content
-# sweep will NOT find it — changing the schema here means editing all four by
-# reading the list, never by searching.
+# block in `manage-metrics/SKILL.md`, the hand-copied `_BC_LEDGER_COLUMNS` /
+# `_BC_LEDGER_UNMEASURED_TOKEN` pair — together with the
+# `_parse_dispatch_boundary_totals` cell read and the row-level provenance gate
+# that consume them — in
+# `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`, and the
+# `billing-composition` check's restatement of the column set, the four-way cell
+# read and that same provenance gate in
+# `.claude/skills/audit-archived-plan-retrospectives/checks/billing-composition.md`.
+# The last TWO live in a tree the architecture inventory does not crawl, so a
+# content sweep will NOT find them — changing the schema here means editing all
+# five by reading the list, never by searching.
 _LEGACY_COLUMN_COUNT = 5
 _CONTEXT_LOAD_COLUMNS = (
     'input_tokens',
@@ -1062,10 +1067,12 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
     * the literal ``unmeasured`` — recognised, and deliberately not measured.
       The key is OMITTED from the row dict; the column name is listed in the
       row's ``unmeasured_columns``.
-    * anything else, and a column a short row does not have — UNRECOGNISED. The
+    * anything else — UNRECOGNISED. The
       key is omitted too, but the column name is listed in the row's
       ``unrecognised_columns``, which is a different fact: the writer made a
       statement this reader failed to parse, rather than declining to measure.
+      A column a short row does not have is NOT this state — see the legacy-row
+      sentence below, which owns that case and reads it as unmeasured.
     * a literal ``0`` the reader cannot date — INDETERMINATE. The pre-token
       writer defaulted every omitted context-load column to a literal ``0``, so
       "measured zero" and "wrote 0 because it had nothing" are byte-identical.
