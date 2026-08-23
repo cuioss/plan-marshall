@@ -13,7 +13,12 @@ from marketplace.targets.claude.emitter import (
     emit_bundle_verbatim,
     iter_bundle_dirs,
 )
-from marketplace.targets.claude.target import EMIT_MARKER_FILENAME, ClaudeTarget
+from marketplace.targets.claude.equality_check import run_equality_check
+from marketplace.targets.claude.target import (
+    EMIT_MARKER_FILENAME,
+    ClaudeTarget,
+    prune_removed_bundles,
+)
 
 # SHA-1 of empty input — the regression signal that the sentinel writer
 # computed the fingerprint against the wrong repo_root (one level too
@@ -241,6 +246,128 @@ def test_emit_bundle_verbatim_legitimate_output_still_wipes(fixture_marketplace:
     assert not stale.exists()  # the stale artifact was wiped
     assert (out_dir / 'demo' / 'agents' / 'demo-agent.md').is_file()  # fresh emit
     assert written  # a non-empty emit occurred
+
+
+# =============================================================================
+# Removed-bundle prune (D7/G7)
+# =============================================================================
+#
+# ``emit_bundle_verbatim`` wipes and rewrites only the directories it emits, so
+# a bundle DELETED from source leaves its whole emitted directory behind. The
+# equality check cannot see it — that engine iterates the SOURCE bundles, so a
+# directory no source bundle names is never looked at, and its silence is an
+# absence of a look rather than a clean verdict. Both directions are pinned:
+# the prune must remove the orphan, and must not remove anything else.
+
+#: A directory name no source bundle will ever have, injected into the output
+#: tree to stand in for a bundle that was deleted from source.
+_ORPHAN_DIR_NAME = 'zz-removed'
+
+
+def _synthetic_marketplace(root: Path, bundle_names: list[str]) -> Path:
+    """Build a source marketplace of ``bundle_names`` and return its bundles dir.
+
+    Laid out as the real tree is — ``{root}/.claude-plugin/marketplace.json``
+    beside ``{root}/bundles/{name}/`` — because ``ClaudeTarget.generate``
+    regenerates the top-level manifest from ``marketplace_dir.parent``.
+    """
+    bundles = root / 'bundles'
+    bundles.mkdir(parents=True, exist_ok=True)
+    for name in bundle_names:
+        _write_bundle(
+            bundles,
+            name,
+            {
+                '.claude-plugin/plugin.json': json.dumps(
+                    {'name': name, 'version': '0.0.1', 'description': name}, indent=2
+                ) + '\n',
+                f'agents/{name}-agent.md': f'---\nname: {name}-agent\n---\nbody',
+            },
+        )
+    manifest = {
+        'name': 'demo-marketplace',
+        'plugins': [
+            {'name': n, 'description': n, 'source': f'./bundles/{n}'} for n in bundle_names
+        ],
+    }
+    manifest_path = root / '.claude-plugin' / 'marketplace.json'
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+    return bundles
+
+
+def _plant_orphan(output_dir: Path) -> Path:
+    orphan = output_dir / _ORPHAN_DIR_NAME / 'agents' / 'ghost.md'
+    orphan.parent.mkdir(parents=True, exist_ok=True)
+    orphan.write_text('---\nname: ghost\n---\nleft over from a deleted bundle', encoding='utf-8')
+    return output_dir / _ORPHAN_DIR_NAME
+
+
+def test_prune_removed_bundles_removes_only_the_directories_no_source_names(tmp_path: Path):
+    """The unit contract: unnamed bundle dirs go, everything else stays.
+
+    ``.claude-plugin`` holds the top-level marketplace.json and is not a
+    bundle; root-level files (the emit sentinel, dist-manifest.json) are not
+    bundles either. A prune that took them would break the published tree it
+    was meant to clean.
+    """
+    output_dir = tmp_path / 'out'
+    (output_dir / 'alpha').mkdir(parents=True)
+    (output_dir / '.claude-plugin').mkdir(parents=True)
+    orphan = _plant_orphan(output_dir)
+    sentinel = output_dir / EMIT_MARKER_FILENAME
+    sentinel.write_text('{}\n', encoding='utf-8')
+
+    pruned = prune_removed_bundles(output_dir, {'alpha'})
+
+    assert pruned == [orphan]
+    assert not orphan.exists()
+    assert (output_dir / 'alpha').is_dir()
+    assert (output_dir / '.claude-plugin').is_dir()
+    assert sentinel.is_file()
+
+
+def test_an_unscoped_emit_prunes_a_bundle_removed_from_source(tmp_path: Path):
+    """End to end: the orphan is gone and the verdict counts only source bundles.
+
+    The count matters as much as the removal: a stamp that grew with the
+    orphan would be reporting the output tree's size as though it were the
+    source's, which is the same overstatement one level up.
+    """
+    marketplace = _synthetic_marketplace(tmp_path / 'src', ['alpha', 'beta'])
+    output_dir = tmp_path / 'out'
+    orphan = _plant_orphan(output_dir)
+
+    ClaudeTarget().generate(marketplace, output_dir)
+
+    assert not orphan.exists()
+    source_bundles = list(iter_bundle_dirs(marketplace, None))
+    assert (output_dir / 'alpha').is_dir() and (output_dir / 'beta').is_dir()
+    result = run_equality_check(output_dir, source_bundles)
+    assert result.passed is True
+    assert f'{len(source_bundles)} bundles' in result.summary
+
+
+def test_a_scoped_emit_prunes_nothing(tmp_path: Path):
+    """The gate's other direction — a subset run must not delete a sibling.
+
+    A ``--bundles`` subset cannot tell "removed from source" from "not part of
+    this run", so pruning on a scoped emit would delete a live bundle's output
+    on every partial build. Both an unrelated leftover and a real sibling
+    bundle's directory must survive.
+    """
+    marketplace = _synthetic_marketplace(tmp_path / 'src', ['alpha', 'beta'])
+    output_dir = tmp_path / 'out'
+    orphan = _plant_orphan(output_dir)
+    sibling = output_dir / 'beta' / 'agents' / 'beta-agent.md'
+    sibling.parent.mkdir(parents=True, exist_ok=True)
+    sibling.write_text('---\nname: beta-agent\n---\nemitted earlier', encoding='utf-8')
+
+    ClaudeTarget().generate(marketplace, output_dir, ['alpha'])
+
+    assert orphan.is_dir(), 'a scoped emit must not prune — it cannot attribute the leftover'
+    assert sibling.is_file(), 'a scoped emit must leave a non-emitted bundle untouched'
+    assert (output_dir / 'alpha' / 'agents' / 'alpha-agent.md').is_file()
 
 
 def test_emit_marker_fingerprint_non_empty_for_real_worktree(tmp_path: Path):

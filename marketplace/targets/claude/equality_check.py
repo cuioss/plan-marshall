@@ -61,18 +61,29 @@ from marketplace.targets.claude.plugin_json_gen import build_plugin_json
 
 
 class CorruptEmittedPluginJsonError(RuntimeError):
-    """Raised when an emitted ``plugin.json`` exists but is not valid JSON.
+    """Raised when an emitted ``plugin.json`` exists but is unusable.
 
-    Distinct from a corrupt *source* ``plugin.json`` (which stays a hard
-    error): an unreadable emitted artifact is resolved by re-running the
-    emit step, so ``run_equality_check`` turns this into the documented
-    "re-run emit" diagnostic rather than letting a traceback escape.
+    Two ways an artifact is unusable, both resolved the same way — by
+    re-running the emit step: the file is not valid JSON at all, or it parses
+    as valid JSON that is not an object (``[]``, ``"x"``, ``null``, ``3``).
+    The second is the one a decode-error-only guard misses: every subsequent
+    reader calls ``.get(...)`` on the parsed value, so a JSON array reaches
+    them and raises ``AttributeError`` from deep inside the diff instead of
+    the documented diagnostic.
+
+    Distinct from a corrupt *source* ``plugin.json``, which stays a hard
+    error: ``run_equality_check`` turns this one into the documented "re-run
+    emit" diagnostic rather than letting a traceback escape.
+
+    ``reason`` names which of the two it was, so the caller's message can
+    stay specific rather than collapsing both into "not valid JSON".
     """
 
-    def __init__(self, bundle_name: str, path: Path, exc: json.JSONDecodeError) -> None:
+    def __init__(self, bundle_name: str, path: Path, reason: str) -> None:
         self.bundle_name = bundle_name
         self.path = path
-        super().__init__(f'{path} is not valid JSON: {exc}')
+        self.reason = reason
+        super().__init__(f'{path} {reason}')
 
 
 @dataclass
@@ -94,7 +105,12 @@ class EqualityResult:
     passed: bool
     diffs: list[BundleDiff]
     summary: str
-    missing_target_bundles: list[str] = _dc_field(default_factory=list)
+    #: Bundles whose emitted plugin.json could not be compared — absent, or
+    #: present but unusable. Named for the outcome rather than for one of its
+    #: two causes: a field called ``missing`` that also carries the corrupt
+    #: bundles tells its reader the artifact is not there, when in fact it is
+    #: there and unreadable, which is a different repair.
+    unusable_target_bundles: list[str] = _dc_field(default_factory=list)
     marketplace_json_drift: bool = False
 
 
@@ -135,12 +151,25 @@ def _read_emitted_plugin_json(bundle_dir: Path, target_dir: Path) -> dict:
     the equality-gate source of truth; the bundle's committed
     ``.claude-plugin/plugin.json`` is canonical-only and not consulted
     here.
+
+    Both halves of "unusable" are refused here, because the caller's contract
+    is that this returns a mapping: a decode failure, and a successful decode
+    that yielded something other than an object. Checking only the first lets
+    ``[]`` through to a ``.get`` call two frames away.
     """
     plugin_json = _emitted_plugin_json_path(target_dir, bundle_dir.name)
     try:
-        parsed: dict = json.loads(plugin_json.read_text(encoding='utf-8'))
+        parsed = json.loads(plugin_json.read_text(encoding='utf-8'))
     except json.JSONDecodeError as exc:
-        raise CorruptEmittedPluginJsonError(bundle_dir.name, plugin_json, exc) from exc
+        raise CorruptEmittedPluginJsonError(
+            bundle_dir.name, plugin_json, f'is not valid JSON: {exc}'
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise CorruptEmittedPluginJsonError(
+            bundle_dir.name,
+            plugin_json,
+            f'is valid JSON but not an object (found {type(parsed).__name__})',
+        )
     return parsed
 
 
@@ -254,6 +283,14 @@ def run_equality_check(
     drifts, the engine returns a failing ``EqualityResult`` whose
     ``summary`` directs the caller to re-run the emit step rather than
     crashing.
+
+    The CORRUPT case is handled the same way and is named here because it is
+    the one a reader would not predict from "missing or drifts": an emitted
+    plugin.json that is present but unusable — not valid JSON, or valid JSON
+    that is not an object — is also reported as a failing result directing
+    the caller to re-emit, never as a raised exception. Those bundles are
+    listed in ``unusable_target_bundles`` alongside the absent ones, because
+    both are "could not be compared" and both are repaired by re-emitting.
     """
     bundles_list = list(bundle_dirs)
     bundle_count = len(bundles_list)
@@ -267,7 +304,7 @@ def run_equality_check(
             passed=False,
             diffs=[],
             summary=summary,
-            missing_target_bundles=[b.name for b in bundles_list],
+            unusable_target_bundles=[b.name for b in bundles_list],
         )
 
     all_diffs: list[BundleDiff] = []
@@ -291,7 +328,8 @@ def run_equality_check(
         if missing:
             reasons.append(f"missing for: {', '.join(sorted(missing))}")
         if corrupt:
-            reasons.append(f"not valid JSON for: {', '.join(sorted(corrupt))}")
+            reasons.append(f"unusable (not valid JSON, or valid JSON that is not "
+                           f"an object) for: {', '.join(sorted(corrupt))}")
         summary = (
             f"target/claude/{{bundle}}/.claude-plugin/plugin.json {'; '.join(reasons)} — "
             "run 'uv run python marketplace/targets/generate.py --target claude --output target/claude' first"
@@ -300,7 +338,10 @@ def run_equality_check(
             passed=False,
             diffs=all_diffs,
             summary=summary,
-            missing_target_bundles=sorted(missing) + sorted(corrupt),
+            # One sort over the union, not two sorted halves concatenated: the
+            # latter is only sorted within each half, so the list it hands the
+            # reader is not in the order its own name implies.
+            unusable_target_bundles=sorted(missing + corrupt),
         )
 
     # Compare the top-level marketplace.json. Bundles are sourced from

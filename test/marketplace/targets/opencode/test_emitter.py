@@ -299,3 +299,73 @@ def test_resolvers_preserve_a_leading_dot_directory_reference(tmp_path: Path):
 
     assert skills == [bundle / '.hidden' / 'dot-skill']
     assert agents == [bundle / '.hidden' / 'dot-agent.md']
+
+
+# =============================================================================
+# Source-tree refusal, matched control (G3)
+# =============================================================================
+#
+# This emitter is destructive in two places — ``_copy_verbatim``'s safe_rmtree
+# and ``_prune_stale_outputs``'s unlink sweep — and ``safe_rmtree``'s
+# containment check does NOT cover an output_dir that IS the source tree: every
+# path inside the source is then inside output_dir, so the guard passes and the
+# delete proceeds. The sibling Claude emitter has refused this overlap all
+# along; that this one did not was an asymmetry. Both halves are pinned, because
+# a refusal that also refused legitimate emits would be worse than the gap.
+
+
+def test_emit_bundles_refuses_an_output_dir_inside_the_source_tree(
+    fixture_bundle: Path, opencode_config_dir: Path
+):
+    """Negative half: the overlap is refused and the source survives intact."""
+    source_skill = fixture_bundle / 'demo' / 'skills' / 'demo-skill' / 'SKILL.md'
+    source_bytes = source_skill.read_bytes()
+    standards_file = fixture_bundle / 'demo' / 'skills' / 'demo-skill' / 'standards' / 'rule.md'
+
+    with pytest.raises(ValueError, match='source tree'):
+        emit_bundles(fixture_bundle, fixture_bundle, opencode_config_dir)
+
+    assert source_skill.read_bytes() == source_bytes
+    assert standards_file.is_file()
+
+
+def test_emit_bundles_refuses_before_writing_or_unlinking_anything(
+    fixture_bundle: Path, opencode_config_dir: Path
+):
+    """The refusal precedes every side effect — no partial emit is left behind.
+
+    Asserting only that it raises would not distinguish "refused up front" from
+    "refused after wiping half the tree", and the second is the outcome that
+    costs source. The emitter's own output roots are the observable: none may
+    appear inside the source tree, and ``opencode.json`` — written last on the
+    success path — must be absent.
+    """
+    before = {p.relative_to(fixture_bundle).as_posix() for p in fixture_bundle.rglob('*')}
+
+    with pytest.raises(ValueError, match='source tree'):
+        emit_bundles(fixture_bundle, fixture_bundle, opencode_config_dir)
+
+    after = {p.relative_to(fixture_bundle).as_posix() for p in fixture_bundle.rglob('*')}
+    assert after == before, f'the refused emit changed the source tree: {after ^ before}'
+    assert not (fixture_bundle / 'opencode.json').exists()
+
+
+def test_emit_bundles_still_emits_and_prunes_to_a_legitimate_output_dir(
+    fixture_bundle: Path, tmp_path: Path, opencode_config_dir: Path
+):
+    """Positive half: a distinct output dir still emits, and still prunes.
+
+    Without this direction the guard could refuse everything and every test
+    above would still pass. The stale file also proves the prune sweep — the
+    other destructive path the refusal protects — is still reached.
+    """
+    out = tmp_path / 'out'
+    stale = out / 'agent' / 'removed-agent.md'
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    stale.write_text('---\ndescription: gone from source\n---\nbody\n', encoding='utf-8')
+
+    written = emit_bundles(fixture_bundle, out, opencode_config_dir)
+
+    assert written
+    assert (out / 'agent' / 'demo-agent.md').is_file()
+    assert not stale.exists(), 'the stale-output prune must still run on a legitimate emit'

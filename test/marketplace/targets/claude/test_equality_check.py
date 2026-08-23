@@ -247,7 +247,7 @@ def test_missing_target_dir_returns_diagnostic(clean_marketplace: tuple[Path, Pa
     assert result.passed is False
     assert 'not generated' in result.summary
     assert 'generate.py --target claude' in result.summary
-    assert result.missing_target_bundles == ['demo']
+    assert result.unusable_target_bundles == ['demo']
 
 
 def test_missing_per_bundle_target_returns_diagnostic(clean_marketplace: tuple[Path, Path]):
@@ -260,7 +260,7 @@ def test_missing_per_bundle_target_returns_diagnostic(clean_marketplace: tuple[P
     assert result.passed is False
     assert 'demo' in result.summary
     assert 'missing' in result.summary
-    assert result.missing_target_bundles == ['demo']
+    assert result.unusable_target_bundles == ['demo']
 
 
 def test_corrupt_emitted_plugin_json_returns_diagnostic(clean_marketplace: tuple[Path, Path]):
@@ -278,4 +278,84 @@ def test_corrupt_emitted_plugin_json_returns_diagnostic(clean_marketplace: tuple
     assert result.passed is False
     assert 'demo' in result.summary
     assert 'generate.py --target claude' in result.summary
-    assert 'demo' in result.missing_target_bundles
+    assert 'demo' in result.unusable_target_bundles
+
+
+#: Valid JSON documents that are NOT objects. Each parses without a
+#: ``JSONDecodeError``, so a decode-only guard passes them straight through to
+#: readers that call ``.get(...)`` on them.
+_VALID_JSON_NON_OBJECTS = ['[]', '"x"', 'null', '3']
+
+
+@pytest.mark.parametrize('payload', _VALID_JSON_NON_OBJECTS, ids=['array', 'string', 'null', 'number'])
+def test_valid_json_that_is_not_an_object_returns_the_diagnostic(
+    clean_marketplace: tuple[Path, Path], payload: str
+):
+    """A parseable non-object is unusable too, and must not escape as a traceback.
+
+    A guard keyed on ``JSONDecodeError`` alone covers only half of "unusable":
+    each payload here decodes cleanly, then fails several frames away when the
+    diff calls ``.get('agents')`` on a list, a string, ``None`` or an int. The
+    documented contract is a structured re-run-emit result for every emitted
+    artifact the engine cannot compare — not for the subset that happens to be
+    syntactically broken.
+    """
+    marketplace, target = clean_marketplace
+    plugin_path = target / 'demo' / '.claude-plugin' / 'plugin.json'
+    plugin_path.write_text(payload, encoding='utf-8')
+
+    bundles = list(iter_bundle_dirs(marketplace, None))
+    result = run_equality_check(target, bundles)
+
+    assert result.passed is False
+    assert 'demo' in result.unusable_target_bundles
+    assert 'generate.py --target claude' in result.summary
+
+
+def test_the_unusable_list_is_named_for_the_outcome_not_one_of_its_causes(
+    clean_marketplace: tuple[Path, Path]
+):
+    """A present-but-corrupt bundle is reported as unusable, never as missing.
+
+    The field carries both causes, so naming it ``missing`` told its reader the
+    artifact was absent when in fact it was present and unreadable — a
+    different repair. The rename is a clean break: the old name must be gone,
+    not aliased, or a caller reading it would keep getting the wrong story.
+    """
+    marketplace, target = clean_marketplace
+    (target / 'demo' / '.claude-plugin' / 'plugin.json').write_text('[]', encoding='utf-8')
+
+    bundles = list(iter_bundle_dirs(marketplace, None))
+    result = run_equality_check(target, bundles)
+
+    assert result.unusable_target_bundles == ['demo']
+    assert not hasattr(result, 'missing_target_bundles'), (
+        'the old field name must not survive as an alias — compatibility for '
+        'this plan is "breaking", and an alias would let a caller keep reading '
+        'a corrupt bundle as a missing one'
+    )
+
+
+def test_the_unusable_list_is_sorted_across_both_causes(clean_marketplace: tuple[Path, Path]):
+    """One sort over the union, not two sorted halves concatenated.
+
+    Sorting each cause separately and joining them yields a list that is
+    ordered only within each half. The names here are chosen so the two forms
+    disagree: the missing bundle sorts AFTER the corrupt one, so a concatenated
+    ``sorted(missing) + sorted(corrupt)`` returns them in the wrong order while
+    still looking sorted at a glance.
+    """
+    marketplace, target = clean_marketplace
+    # A second source bundle whose emitted artifact is present but unusable.
+    _write(
+        marketplace / 'aaa' / '.claude-plugin' / 'plugin.json',
+        json.dumps({'name': 'aaa', 'version': '0.0.1', 'description': 'a'}, indent=2) + '\n',
+    )
+    _write(target / 'aaa' / '.claude-plugin' / 'plugin.json', '[]')
+    # ...and the first bundle's artifact is absent.
+    (target / 'demo' / '.claude-plugin' / 'plugin.json').unlink()
+
+    bundles = list(iter_bundle_dirs(marketplace, None))
+    result = run_equality_check(target, bundles)
+
+    assert result.unusable_target_bundles == ['aaa', 'demo']
