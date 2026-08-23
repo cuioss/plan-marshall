@@ -2100,6 +2100,60 @@ def test_canonical_forms_row_still_reports_drift_against_confident_surface(tmp_p
     assert findings[0]['details']['reason'] == 'flag_drift'
 
 
+# -----------------------------------------------------------------------------
+# The analyzer half of the scope-filter pair
+# -----------------------------------------------------------------------------
+#
+# The runner half lives in ``test_runner.py``: it drives the ``scoped`` closure
+# ``doctor-marketplace.py::cmd_quality_gate`` injects into
+# ``RuleRunner.run_quality_gate`` over two byte-identical defects, and asserts
+# only the in-scope one is reported.
+#
+# That assertion rests on a premise about THIS layer, and the premise has to be
+# checked here or the pair proves nothing: a run reporting one finding is
+# equally consistent with "the filter dropped the other" and with "the analyzer
+# only ever found one". The analyzer is scope-blind by contract — it walks the
+# whole corpus and only its FINDINGS are filtered downstream — so the control
+# below is that both defects exist and are indistinguishable apart from their
+# anchor. Without it the runner-side negative control is unfalsifiable.
+
+
+def test_the_analyzer_reports_both_defects_because_scoping_is_not_its_job(tmp_path):
+    """Two byte-identical defects both surface: the cluster narrows nothing itself.
+
+    ``scoped`` is the runner's closure and this layer never sees it. Asserting
+    the two findings agree on everything except ``file`` is what makes them a
+    matched pair — findings that differed in reason or flag would leave the
+    downstream filter test comparing two different defects.
+    """
+    marketplace_root = _build_fixture_root(tmp_path)
+    notation = 'plan-marshall:manage-tasks:manage-tasks'
+    write_dispatching_executor(tmp_path / '.plan', [notation])
+    _write_fake_script(marketplace_root, notation, subcommands={'read': ['plan-id']})
+    body = (
+        '# Fixture\n\n```bash\n'
+        f'python3 .plan/execute-script.py {notation} read --invented X\n'
+        '```\n'
+    )
+    inside = _write_skill_md(marketplace_root, 'plan-marshall', 'inside-skill', body)
+    outside = _write_skill_md(marketplace_root, 'plan-marshall', 'outside-skill', body)
+
+    findings = _findings_by_rule(
+        _analyze_argument_naming_mod.analyze_argument_naming(marketplace_root),
+        'ARGUMENT_NAMING_FLAG_UNKNOWN',
+    )
+
+    assert {Path(f['file']).resolve() for f in findings} == {
+        inside.resolve(),
+        outside.resolve(),
+    }
+    assert len(findings) == 2, findings
+    assert findings[0]['details'] == findings[1]['details'], (
+        'the two sites must be indistinguishable apart from their anchor, or the '
+        'runner-side scope pair is comparing two different defects'
+    )
+
+
 # =============================================================================
 # Simplification Rule Cluster Tests (SIMPLICITY_*) - Tier 2 direct import
 # =============================================================================

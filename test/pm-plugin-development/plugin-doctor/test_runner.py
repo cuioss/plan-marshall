@@ -28,6 +28,11 @@ The HARD acceptance contract these tests pin:
    alone cannot separate a rule that resolved an authority for every site from
    one that resolved it for two thirds, and this cluster's authority is
    git-ignored, so the unresolved share is a state a checkout is routinely in.
+7. The ``scoped`` closure ``cmd_quality_gate`` injects really filters: a matched
+   pair puts byte-identical argument-naming defects inside and outside the
+   ``--paths`` scope and asserts only the first is reported. Every OTHER test in
+   this module passes ``scoped=_identity`` — the neutralized filter — so without
+   that pair nothing here judges scoping at all.
 """
 
 from __future__ import annotations
@@ -80,6 +85,11 @@ _apmt = _load('_analyze_provides_method_table.py', '_apmt_runner_test')
 _alc = _load('_analyze_literal_count.py', '_alc_runner_test')
 _armc = _load('_analyze_resolver_matrix_coverage.py', '_armc_runner_test')
 _aan = _load('_analyze_argument_naming.py', '_aan_runner_test')
+# The command body that OWNS the `scoped` closure injected into
+# `run_quality_gate`. The matched pair at the bottom of this module drives that
+# real closure; every other test here passes `_identity`, which is the
+# neutralized filter and judges nothing about scoping.
+_doctor = _load('doctor-marketplace.py', '_doctor_marketplace_runner_test')
 
 
 # The canonical quality-gate emission order, captured verbatim. This is the
@@ -165,6 +175,41 @@ def _identity(findings):
 
 def _no_scoped_manage_invocation(_root, _scope_dirs):
     return []
+
+
+#: The one notation the argument-naming fixtures below register and document.
+#:
+#: It resolves to a REAL script under the fixture tree, so the dispatching
+#: executor can probe its ``--help`` and the cluster derives a genuine
+#: accept-set. Every judgement the fixtures assert — a correct call staying
+#: silent, an invented flag being reported — rests on that surface existing.
+PROBE_NOTATION = 'qg-probe:probe-skill:probe'
+
+
+def _write_probe_script(scripts_dir: Path) -> Path:
+    """Write the synthetic argparse surface ``PROBE_NOTATION`` resolves to.
+
+    One verb (``run``) declaring one flag (``--thing``). That is the whole
+    accept-set the fixtures judge against, which is what lets a documented
+    ``--invented`` be an unambiguous drift finding rather than a gap.
+    """
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    script = scripts_dir / 'probe.py'
+    script.write_text(
+        '#!/usr/bin/env python3\n'
+        '"""Synthetic argparse surface for the argument-naming controls."""\n'
+        'import argparse\n'
+        '\n'
+        'parser = argparse.ArgumentParser()\n'
+        'subparsers = parser.add_subparsers(dest="command")\n'
+        'p_run = subparsers.add_parser("run")\n'
+        'p_run.add_argument("--thing")\n'
+        '\n'
+        'if __name__ == "__main__":\n'
+        '    parser.parse_args()\n',
+        encoding='utf-8',
+    )
+    return script
 
 
 # =============================================================================
@@ -488,26 +533,11 @@ def _corpus_with_one_decidable_and_one_undecidable_site(root: Path) -> Path:
     implementation that simply returned the population size would pass.
     """
     marketplace_root = root / 'marketplace'
-    probe_notation = 'qg-probe:probe-skill:probe'
+    probe_notation = PROBE_NOTATION
     write_dispatching_executor(root / '.plan', [probe_notation, FIXTURE_NOTATION])
 
     skill_dir = marketplace_root / 'bundles' / 'qg-probe' / 'skills' / 'probe-skill'
-    scripts_dir = skill_dir / 'scripts'
-    scripts_dir.mkdir(parents=True)
-    (scripts_dir / 'probe.py').write_text(
-        '#!/usr/bin/env python3\n'
-        '"""Synthetic argparse surface for the blind-spot control."""\n'
-        'import argparse\n'
-        '\n'
-        'parser = argparse.ArgumentParser()\n'
-        'subparsers = parser.add_subparsers(dest="command")\n'
-        'p_run = subparsers.add_parser("run")\n'
-        'p_run.add_argument("--thing")\n'
-        '\n'
-        'if __name__ == "__main__":\n'
-        '    parser.parse_args()\n',
-        encoding='utf-8',
-    )
+    _write_probe_script(skill_dir / 'scripts')
     (skill_dir / 'SKILL.md').write_text(
         '# Probe\n'
         '\n'
@@ -603,3 +633,122 @@ def test_shim_marker_rule_is_reachable_from_the_analyze_pass(tmp_path):
     issues = runner.run_analyze_marketplace_rules(active_rules=frozenset())
 
     assert [i for i in issues if i.get('rule_id') == _ashm_runner.RULE_ID]
+
+
+# =============================================================================
+# The injected `scoped` filter — a matched positive/negative pair
+# =============================================================================
+#
+# Every other test in this module passes `scoped=_identity`. That is the filter
+# NEUTRALIZED, so none of them judges anything about scoping — a control naming
+# a behaviour it never exercises. The pair below drives the REAL closure
+# `doctor-marketplace.py::cmd_quality_gate` injects into
+# `RuleRunner.run_quality_gate`, over two byte-identical argument-naming defects
+# that differ only in where they sit relative to the `--paths` scope.
+
+
+class _Args:
+    """Minimal argparse-Namespace stand-in for ``cmd_quality_gate``.
+
+    ``marketplace_root`` is the parent of ``bundles/``; ``paths`` is the
+    ``--paths`` scope the real ``scoped`` closure is built from.
+    """
+
+    def __init__(self, marketplace_root: str, paths: list[str] | None = None):
+        self.marketplace_root = marketplace_root
+        self.paths = paths
+
+
+#: The defect both fixture documents carry, character for character.
+#:
+#: `--invented` is absent from the probe script's accept-set, so each document
+#: earns one ARGUMENT_NAMING_FLAG_UNKNOWN. Identical bodies are what make the
+#: pair matched: the only difference between the two sites is their path.
+_DEFECTIVE_BODY = (
+    '# Probe\n'
+    '\n'
+    '```bash\n'
+    f'python3 .plan/execute-script.py {PROBE_NOTATION} run --invented\n'
+    '```\n'
+)
+
+
+def _two_documents_one_in_scope_one_out(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+    """Build the matched pair; return ``(marketplace, bundles, in_scope, out_of_scope)``.
+
+    ``in_scope`` and ``out_of_scope`` are the two SKILL.md paths. The scope dir
+    handed to ``--paths`` is ``in_scope.parent``, and it EXISTS — a non-existent
+    scope dir is dropped by ``_resolve_scope_dirs``, which leaves ``scoped`` as
+    the identity and makes every assertion below pass without the filter.
+    """
+    repo = tmp_path / 'repo'
+    marketplace = repo / 'marketplace'
+    bundles = marketplace / 'bundles'
+    write_dispatching_executor(repo / '.plan', [PROBE_NOTATION])
+    _write_probe_script(bundles / 'qg-probe' / 'skills' / 'probe-skill' / 'scripts')
+
+    in_scope = bundles / 'qg-probe' / 'skills' / 'inside-skill' / 'SKILL.md'
+    out_of_scope = bundles / 'qg-probe' / 'skills' / 'outside-skill' / 'SKILL.md'
+    for path in (in_scope, out_of_scope):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(_DEFECTIVE_BODY, encoding='utf-8')
+    return marketplace, bundles, in_scope, out_of_scope
+
+
+def _argument_naming_anchors(issues: list[dict]) -> set[Path]:
+    """The resolved files the cluster's findings are anchored at."""
+    return {
+        Path(issue['file']).resolve()
+        for issue in issues
+        if str(issue.get('rule_id', '')).startswith('ARGUMENT_NAMING_')
+    }
+
+
+def test_the_injected_scope_filter_reports_the_in_scope_argument_naming_defect(tmp_path):
+    """POSITIVE control: a defect inside ``--paths`` is reported by the real gate.
+
+    Driven through ``cmd_quality_gate``, which is where the ``scoped`` closure is
+    built from the resolved scope dirs — asserting against the analyzer's own
+    output instead would exercise no filter at all.
+    """
+    marketplace, _bundles, in_scope, _out = _two_documents_one_in_scope_one_out(tmp_path)
+
+    result = _doctor.cmd_quality_gate(
+        _Args(marketplace_root=str(marketplace), paths=[str(in_scope.parent)])
+    )
+
+    assert _argument_naming_anchors(result['issues']) == {in_scope.resolve()}
+
+
+def test_the_injected_scope_filter_is_what_drops_the_out_of_scope_defect(tmp_path):
+    """NEGATIVE control, with the evidence that it can go RED.
+
+    The out-of-scope document carries the SAME defect, so its absence from the
+    scoped run is attributable to the filter and to nothing else. The second
+    assertion is that proof rather than a note about one: the identical tree run
+    with ``scoped`` neutralized to the identity reports BOTH anchors, so a
+    ``scoped`` that stopped filtering would make the first assertion fail here.
+    A negative control whose subject is never shown present is indistinguishable
+    from one asserting a defect that was never written.
+    """
+    marketplace, bundles, in_scope, out_of_scope = _two_documents_one_in_scope_one_out(
+        tmp_path
+    )
+
+    scoped_result = _doctor.cmd_quality_gate(
+        _Args(marketplace_root=str(marketplace), paths=[str(in_scope.parent)])
+    )
+    neutralized_issues, _summaries = RuleRunner(
+        CorpusContext.build(bundles)
+    ).run_quality_gate(
+        scope_dirs=[in_scope.parent],
+        scoped=_identity,
+        suppressed=_identity,
+        scoped_manage_invocation=_no_scoped_manage_invocation,
+    )
+
+    assert _argument_naming_anchors(scoped_result['issues']) == {in_scope.resolve()}
+    assert _argument_naming_anchors(neutralized_issues) == {
+        in_scope.resolve(),
+        out_of_scope.resolve(),
+    }
