@@ -58,7 +58,7 @@ Stale prefixed `credentials_config` keys written before this normalization are c
 
 | Subcommand | Description |
 |------------|-------------|
-| `configure` | Create credential file with placeholder secrets |
+| `configure` | Token-auth lane: create a credential file with placeholder secrets. A CLI-lane provider stores nothing — it reports `system_auth` and persists neither a credential file nor a provider config |
 | `check` | Check if credential is complete (no placeholders remaining) |
 | `discover-and-persist` | Scan PYTHONPATH for provider modules and persist declarations to marshal.json |
 | `list-providers` | List available credential providers from marshal.json |

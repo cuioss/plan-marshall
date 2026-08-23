@@ -687,16 +687,18 @@ class TestConfigureAuthTypeMismatch:
 
 
 class TestConfigureSystemAuth:
-    """Tests for configure with auth_type=system via direct import.
+    """Tests for configure against a system-auth (CLI) provider via direct import.
 
+    A system-auth provider authenticates through its own vendor CLI, so configure
+    persists nothing for it: no credential file and no credentials_config block.
     Each test isolates credential I/O to a per-test tmp_path by patching
     `_providers_core.CREDENTIALS_DIR` (evaluated at module import) and uses
     the `plan_context` fixture to pin `PLAN_BASE_DIR`. tmp_path auto-cleans,
     so no manual unlink is required.
     """
 
-    def test_system_auth_creates_credential_without_secrets(self, plan_context, monkeypatch):
-        """Configure with system auth creates credential file with no secret placeholders."""
+    def test_system_auth_persists_no_credential_file(self, plan_context, monkeypatch):
+        """Configure against a system-auth provider writes no credential file."""
         from _cred_configure import run_configure
         from _providers_core import (
             check_credential_completeness,
@@ -727,27 +729,32 @@ class TestConfigureSystemAuth:
             url = None
             extra = None
 
+        captured_output: dict = {}
+
         monkeypatch.setattr('_cred_configure.load_declared_providers', lambda: [mock_provider])
         monkeypatch.setattr(
             '_cred_configure.find_provider_with_details',
             lambda s: mock_provider if s == mock_provider['skill_name'] else None,
         )
+        monkeypatch.setattr('_cred_configure.output_toon', captured_output.update)
         run_configure(MockArgs())
 
-        loaded = load_credential('test-system-provider', 'global')
-        assert loaded is not None
-        assert loaded['auth_type'] == 'system'
-        assert 'token' not in loaded
-        assert 'username' not in loaded
-        assert 'password' not in loaded
+        assert captured_output['status'] == 'system_auth'
+        assert captured_output['credential_stored'] is False
+        assert captured_output['verify_command'] == 'echo ok'
+        assert 'path' not in captured_output
 
-        completeness = check_credential_completeness('test-system-provider', 'global')
-        assert completeness['complete'] is True
+        assert load_credential('test-system-provider', 'global') is None
+        assert check_credential_completeness('test-system-provider', 'global')['exists'] is False
 
-    def test_system_auth_does_not_require_url(self, plan_context, monkeypatch):
-        """Configure with system auth succeeds without --url."""
+    def test_system_auth_persists_no_blank_provider_url(self, plan_context, monkeypatch):
+        """Configure against a urlless system-auth provider writes no provider config.
+
+        A CI declaration carries no default_url, so persisting one would store a
+        blank url — the state a provider config must never carry.
+        """
         from _cred_configure import run_configure
-        from _providers_core import load_credential
+        from _providers_core import read_provider_config
 
         tmp_path = plan_context.fixture_dir
         creds_dir = tmp_path / 'creds'
@@ -781,9 +788,7 @@ class TestConfigureSystemAuth:
         ret = run_configure(MockArgs())
 
         assert ret == 0
-        loaded = load_credential('test-system-no-url', 'global')
-        assert loaded is not None
-        assert loaded['auth_type'] == 'system'
+        assert read_provider_config('test-system-no-url') == {}
 
     def test_system_auth_override_accepted(self, plan_context, monkeypatch):
         """Configure accepts explicit --auth-type override for system provider."""

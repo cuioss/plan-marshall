@@ -5,6 +5,10 @@ Credential configuration with file-based secret entry.
 Creates credential files with placeholder values for secrets.
 The user edits the file directly to add real secrets.
 No interactive input, no secrets through the LLM.
+
+This is the token-auth lane's machinery. A system-auth (CLI) provider
+authenticates through its own vendor CLI, so ``configure`` persists nothing for
+it and reports ``status: system_auth`` instead.
 """
 
 import argparse
@@ -146,9 +150,36 @@ def run_configure(args: argparse.Namespace) -> int:
         inferred_auth = 'token'
     auth_type = getattr(args, 'auth_type', None) or inferred_auth
 
+    # System-auth (CLI) lane: the vendor CLI owns its own token store, so
+    # plan-marshall persists nothing for this provider — neither a credential
+    # file nor a credentials_config block. Returning here, ahead of the url
+    # resolution below, is what makes the blank-url write structurally
+    # impossible: a CI declaration carries no default_url, so falling through
+    # would persist {'url': ''} — the "provider configured with a blank URL"
+    # state list-providers deliberately never emits. The marshall-steward wizard
+    # filters these providers out of credential setup, but `configure --skill` is
+    # a supported entry point that reached this path directly.
+    if auth_type == 'system':
+        output_toon(
+            {
+                'status': 'system_auth',
+                'skill': skill_name,
+                'scope': scope,
+                'auth_type': auth_type,
+                'verify_command': provider.get('verify_command', ''),
+                'credential_stored': False,
+                'message': (
+                    f'{skill_name} authenticates through its own CLI — plan-marshall stores no '
+                    f'credential and writes no provider config. Authenticate with the CLI itself, '
+                    f'then run: credentials verify --skill {skill_name}'
+                ),
+            }
+        )
+        return 0
+
     default_url = provider.get('url', '') or provider.get('default_url', '')
     url = getattr(args, 'url', None) or default_url
-    if not url and auth_type != 'system':
+    if not url:
         output_toon({'status': 'error', 'message': 'URL is required — provide --url'})
         return 0
 
@@ -194,7 +225,7 @@ def run_configure(args: argparse.Namespace) -> int:
                 return 0
         # auth_type or URL mismatch — fall through to reconfigure
 
-    # Build credential data — secrets only (system auth has no secrets)
+    # Build credential data — secrets only
     data: dict = {
         'skill': skill_name,
         'auth_type': auth_type,
@@ -207,7 +238,6 @@ def run_configure(args: argparse.Namespace) -> int:
     elif auth_type == 'basic':
         data['username'] = SECRET_PLACEHOLDERS['username']
         data['password'] = SECRET_PLACEHOLDERS['password']
-    # auth_type == 'system': no secrets needed, just skill + auth_type for registration
 
     # Save credential file (secrets only)
     path = save_credential(skill_name, data, scope, project_name)
