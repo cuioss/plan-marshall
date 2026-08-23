@@ -35,16 +35,9 @@ The credential machinery below — `configure`, `check`, `verify`, `remove`, the
 
 ### Two transport lanes
 
-A declaration's own fields select its lane — there is no separate flag:
+A declaration's own fields select its lane — there is no separate flag. Which field selects which lane, and what each lane authenticates and verifies with, is the declaration contract: see [`extension-api/standards/ext-point-provider.md`](../extension-api/standards/ext-point-provider.md) § "Two transport lanes". On this skill's side the split is `_providers_core.verify_system_auth()` running a declared `verify_command` for the CLI lane, against a `RestClient` round-trip for the REST lane.
 
-| Declared field | Lane | Authentication | Verified by |
-|----------------|------|----------------|-------------|
-| `verify_command` | System-auth (CLI) | The vendor CLI's own token store — plan-marshall writes no credential file | `_providers_core.verify_system_auth()`, which runs the command |
-| `header_name` + `verify_endpoint` | Token-auth (REST) | A token stored under `~/.plan-marshall/credentials/` | An HTTP round-trip via `RestClient` |
-
-A system-auth provider carries **no HTTP field** — no `default_url`, `header_name`, `header_value_template`, `verify_endpoint`, or `verify_method`. The CLI resolves its own host, including an enterprise host, so a declared base URL would be inert.
-
-This split is why the marshall-steward wizard's credential-setup flow **filters CI providers out**: `provider-setup.md` Step 13e excludes `workflow-integration-github` and `workflow-integration-gitlab` from the list it offers, because there is no credential for the wizard to collect. Steps 13a–13d handle those providers through their own CLI login instead. The decision behind the split is recorded in [ADR-018](../../../../../doc/adr/018-CI_providers_integrate_via_their_official_CLI_API_providers_via_RestClient.adoc); the declaration contract is [`extension-api/standards/ext-point-provider.md`](../extension-api/standards/ext-point-provider.md).
+This split is why the marshall-steward wizard's credential-setup flow **filters CI providers out**: `provider-setup.md` Step 13e excludes `workflow-integration-github` and `workflow-integration-gitlab` from the list it offers, because there is no credential for the wizard to collect. Steps 13a–13d handle those providers through their own CLI login instead. The decision behind the split is recorded in [ADR-018](../../../../../doc/adr/018-CI_providers_integrate_via_their_official_CLI_API_providers_via_RestClient.adoc).
 
 ### Discovery
 
@@ -55,13 +48,7 @@ Provider discovery uses a two-phase approach based on `marshal.json` declaration
 
 Each provider module exports `get_provider_declarations()` returning a list of declaration dicts. Four fields are persisted to marshal.json — `skill_name`, `category`, `verify_command`, `description` — plus `url` when one resolves. All other fields (`display_name`, `default_url`, `header_name`, `header_value_template`, `verify_endpoint`, `verify_method`, `extra_fields`, `detection`) are wizard-time or runtime-only and are not stored. The `skill_name` field uses bundle-prefixed format (e.g., `plan-marshall:workflow-integration-sonar`).
 
-`url` is derived rather than declared, and not every provider has one:
-
-| Provider | `url` in marshal.json |
-|----------|-----------------------|
-| Token-auth (REST) | The declaration's `default_url`, mapped to `url` on persist — this is the REST lane's field |
-| `version-control` | Resolved from `git remote get-url origin` |
-| `ci` (CLI lane) | **Absent** — these declare no `default_url` and resolve their own host, so no `url` key is written and `list-providers` omits it rather than emitting an empty string |
+`url` is derived rather than declared, and not every provider has one — [`ext-point-provider.md`](../extension-api/standards/ext-point-provider.md) § "Persisted vs Wizard-time Fields" carries the per-lane derivation. A CLI-lane provider resolves none, and `list-providers` omits the key rather than emitting an empty string, which would read as a provider configured with a blank URL.
 
 `providers[].skill_name` stays bundle-prefixed, but the `credentials_config` storage key is canonicalized to the prefix-stripped form (e.g. `workflow-integration-sonar`), matching the credential filename under `~/.plan-marshall/credentials/`. Writes always key the block by that canonical form and drop any pre-existing key whose canonical form is the same, so a re-configure never leaves two shadow blocks for one provider; reads accept either spelling — an exact `skill_name` match first, then a canonical-equality scan.
 
