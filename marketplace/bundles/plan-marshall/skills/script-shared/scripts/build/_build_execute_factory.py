@@ -1004,6 +1004,12 @@ def create_execute_handlers(
                     project_dir=project_dir,
                     parser_needs_command=config.parser_needs_command,
                     plan_id=plan_id,
+                    # The routed leg carries the SAME canonical args as the
+                    # in-process one. Passing it on only one leg would make a
+                    # build's finding-clearing entitlement depend on whether the
+                    # daemon happened to be up, which is not a property of what
+                    # the build examined.
+                    command_args=command_args,
                 )
             # Routing did not happen; ``reason`` names why. In daemon mode a
             # genuine unavailability is fatal — the sole in-process exception is
@@ -1061,6 +1067,7 @@ def create_execute_handlers(
             project_dir=project_dir,
             parser_needs_command=config.parser_needs_command,
             plan_id=plan_id,
+            command_args=command_args,
         )
 
     # Preserve useful names for debugging

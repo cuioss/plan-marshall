@@ -226,11 +226,20 @@ class TestCmdRunCommonPlanIdGuard:
 
 
 class TestReconcilePendingBuildFindings:
-    """A green build clears pending build findings from a prior failing run —
-    but a ``test-failure`` finding is cleared ONLY when the run actually
-    executed tests (``tests_run > 0``). A green build that tested nothing (a
-    compile, a lint-only gate, a zero-collection run) clears build-error and
-    lint-issue findings but must leave a stale test-failure finding standing."""
+    """A green build clears only the pending findings it was ENTITLED to clear.
+
+    Entitlement has two independent conditions, and the reproduced defect
+    (findings 5a4412 / f9ff9d) violated both: a green ``./pw compile`` cleared a
+    ``lint-issue`` record that no compile can evaluate, from a run whose own
+    resolution detail recorded ``0 test(s) executed``.
+
+    * A type is cleared only when the run performed an analysis that can REACH it
+      (``build-error`` ← compile, ``lint-issue`` ← lint, ``test-failure`` ← test).
+    * ``test-failure`` additionally requires a MEASURED non-zero executed count.
+
+    Each negative below is stated beside the positive that must disagree with it,
+    so a refusal cannot pass because the reconciler refuses everything.
+    """
 
     def _seed_pending_build_findings(self, plan_id):
         from _findings_core import add_finding
@@ -254,17 +263,21 @@ class TestReconcilePendingBuildFindings:
             detail='E501',
         )
 
+    _ALL_ANALYSES = frozenset({'compile', 'lint', 'test'})
+    _COMPILE_ONLY = frozenset({'compile'})
+
     def test_reconcile_resolves_all_pending_build_findings_when_tests_ran(self, plan_context):
         from _build_shared import _reconcile_pending_build_findings
         from _findings_core import query_findings
 
         self._seed_pending_build_findings(plan_context.plan_id)
 
-        # A run that executed tests (tests_run > 0) clears all three types,
-        # test-failure included.
+        # A `verify`-class run performs every analysis AND measured 7 tests, so
+        # all three types are within its entitlement.
         resolved = _reconcile_pending_build_findings(
             plan_id=plan_context.plan_id,
             command_str='verify plan-marshall',
+            analyses=self._ALL_ANALYSES,
             tests_run=7,
         )
 
@@ -275,8 +288,9 @@ class TestReconcilePendingBuildFindings:
                 assert record['resolution'] == 'fixed'
                 detail = record.get('resolution_detail') or ''
                 assert 'auto-resolved by green build' in detail
-                # The executed-test population is published in the detail.
+                # BOTH population facts are published in the detail.
                 assert '7 test(s) executed' in detail
+                assert 'analyses examined: compile, lint, test' in detail
 
     def test_reconcile_retains_test_failure_when_no_tests_ran(self, plan_context):
         from _build_shared import _reconcile_pending_build_findings
@@ -284,12 +298,13 @@ class TestReconcilePendingBuildFindings:
 
         self._seed_pending_build_findings(plan_context.plan_id)
 
-        # D2: a green build that executed ZERO tests proves the code compiles
-        # and lints but tested nothing, so build-error / lint-issue clear while
-        # the stale test-failure finding MUST survive.
+        # A green quality-gate proves the code compiles and lints but tested
+        # nothing, so build-error / lint-issue clear while the stale
+        # test-failure finding MUST survive.
         resolved = _reconcile_pending_build_findings(
             plan_id=plan_context.plan_id,
-            command_str='compile plan-marshall',
+            command_str='quality-gate plan-marshall',
+            analyses=frozenset({'compile', 'lint'}),
             tests_run=0,
         )
 
@@ -305,12 +320,116 @@ class TestReconcilePendingBuildFindings:
             # The zero population is published, not left implicit.
             assert '0 test(s) executed' in (q['findings'][0].get('resolution_detail') or '')
 
+    def test_reconcile_retains_lint_issue_on_a_compile_only_run(self, plan_context):
+        """The reproduced defect (5a4412 / f9ff9d), at the reconciler.
+
+        A green ``compile`` cannot evaluate the lint dimension at any scope, so
+        its green is an un-asked question about ``lint-issue`` — not a clean
+        answer. Only ``build-error`` is within its entitlement.
+        """
+        from _build_shared import _reconcile_pending_build_findings
+        from _findings_core import query_findings
+
+        self._seed_pending_build_findings(plan_context.plan_id)
+
+        resolved = _reconcile_pending_build_findings(
+            plan_id=plan_context.plan_id,
+            command_str='compile pm-plugin-development',
+            analyses=self._COMPILE_ONLY,
+            tests_run=0,
+        )
+
+        assert resolved == 1  # build-error only
+
+        li = query_findings(plan_context.plan_id, finding_type='lint-issue')
+        assert li['findings'][0]['resolution'] == 'pending'  # survived the compile
+        tf = query_findings(plan_context.plan_id, finding_type='test-failure')
+        assert tf['findings'][0]['resolution'] == 'pending'
+        be = query_findings(plan_context.plan_id, finding_type='build-error')
+        assert be['findings'][0]['resolution'] == 'fixed'
+
+    def test_reconcile_clears_lint_issue_on_a_lint_bearing_run(self, plan_context):
+        """The matched positive for the row above.
+
+        Same seeded ``lint-issue``, same reconciler, a build class that DOES
+        evaluate the lint dimension: it clears. Without this half, the refusal
+        above is satisfied by a reconciler that clears nothing at all.
+        """
+        from _build_shared import _reconcile_pending_build_findings
+        from _findings_core import query_findings
+
+        self._seed_pending_build_findings(plan_context.plan_id)
+
+        _reconcile_pending_build_findings(
+            plan_id=plan_context.plan_id,
+            command_str='quality-gate pm-plugin-development',
+            analyses=frozenset({'compile', 'lint'}),
+            tests_run=0,
+        )
+
+        li = query_findings(plan_context.plan_id, finding_type='lint-issue')
+        assert li['findings'][0]['resolution'] == 'fixed'
+
+    def test_reconcile_clears_nothing_when_the_population_is_unknown(self, plan_context):
+        """An undetermined population is no basis for clearing anything."""
+        from _build_shared import _reconcile_pending_build_findings
+        from _findings_core import query_findings
+
+        self._seed_pending_build_findings(plan_context.plan_id)
+
+        resolved = _reconcile_pending_build_findings(
+            plan_id=plan_context.plan_id,
+            command_str='./pw publish-artifacts',
+            analyses=None,
+            tests_run=None,
+        )
+
+        assert resolved == 0
+        for ftype in ('build-error', 'test-failure', 'lint-issue'):
+            q = query_findings(plan_context.plan_id, finding_type=ftype)
+            assert q['findings'][0]['resolution'] == 'pending'
+
+    def test_reconcile_retains_test_failure_when_the_count_is_unmeasured(self, plan_context):
+        """Unknown is not zero, and neither clears — the daemon-routed case."""
+        from _build_shared import _reconcile_pending_build_findings
+        from _findings_core import query_findings
+
+        self._seed_pending_build_findings(plan_context.plan_id)
+
+        _reconcile_pending_build_findings(
+            plan_id=plan_context.plan_id,
+            command_str='module-tests plan-marshall',
+            analyses=frozenset({'test'}),
+            tests_run=None,
+        )
+
+        tf = query_findings(plan_context.plan_id, finding_type='test-failure')
+        assert tf['findings'][0]['resolution'] == 'pending'
+
+    def test_reconcile_clears_test_failure_when_the_count_is_measured(self, plan_context):
+        """The matched positive: same gate, same seed, a measured count."""
+        from _build_shared import _reconcile_pending_build_findings
+        from _findings_core import query_findings
+
+        self._seed_pending_build_findings(plan_context.plan_id)
+
+        _reconcile_pending_build_findings(
+            plan_id=plan_context.plan_id,
+            command_str='module-tests plan-marshall',
+            analyses=frozenset({'test'}),
+            tests_run=2750,
+        )
+
+        tf = query_findings(plan_context.plan_id, finding_type='test-failure')
+        assert tf['findings'][0]['resolution'] == 'fixed'
+
     def test_reconcile_with_no_pending_findings_returns_zero(self, plan_context):
         from _build_shared import _reconcile_pending_build_findings
 
         resolved = _reconcile_pending_build_findings(
             plan_id=plan_context.plan_id,
             command_str='verify',
+            analyses=self._ALL_ANALYSES,
             tests_run=42,
         )
         assert resolved == 0
@@ -347,15 +466,18 @@ class TestCmdRunCommonGreenBuildReconciliation:
                     parser_fn=self._fake_parser,
                     tool_name='python',
                     plan_id=plan_context.plan_id,
+                    command_args='verify',
                 )
 
         assert rc == 0
-        # The zero-test parser (_fake_parser returns test_summary=None) means the
-        # run executed no tests, so cmd_run_common passes tests_run=0.
+        # `verify` performs all three analyses; the zero-test parser
+        # (_fake_parser returns test_summary=None) leaves the count of a
+        # test-bearing gate UNMEASURED, so cmd_run_common passes None — never 0.
         mock_reconcile.assert_called_once_with(
             plan_id=plan_context.plan_id,
             command_str='verify',
-            tests_run=0,
+            analyses=frozenset({'compile', 'lint', 'test'}),
+            tests_run=None,
         )
 
     def test_green_build_without_plan_id_skips_reconciliation(self, plan_context):
@@ -398,12 +520,48 @@ class TestCmdRunCommonGreenBuildReconciliation:
                 parser_fn=self._fake_parser,
                 tool_name='python',
                 plan_id=plan_context.plan_id,
+                command_args='compile',
             )
 
         assert rc == 0
         q = query_findings(plan_context.plan_id, finding_type='build-error')
         assert q['filtered_count'] == 1
         assert q['findings'][0]['resolution'] == 'fixed'
+
+    def test_green_build_without_command_args_clears_nothing_end_to_end(self, plan_context):
+        """The fail-closed default, end-to-end against the real store.
+
+        The matched negative for the row above: an identical seeded
+        ``build-error`` and an identical green run, differing ONLY in that the
+        caller supplied no canonical args. The population is unknown, so the
+        finding survives.
+        """
+        from _build_shared import cmd_run_common
+        from _findings_core import add_finding, query_findings
+
+        add_finding(
+            plan_id=plan_context.plan_id,
+            finding_type='build-error',
+            title='Build error: stale failure',
+            detail='from a prior red run',
+        )
+
+        log_file = plan_context.fixture_dir / 'green.log'
+        log_file.write_text('BUILD SUCCESS\n')
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = cmd_run_common(
+                result=self._make_success_result(log_file),
+                parser_fn=self._fake_parser,
+                tool_name='python',
+                plan_id=plan_context.plan_id,
+            )
+
+        assert rc == 0
+        q = query_findings(plan_context.plan_id, finding_type='build-error')
+        assert q['filtered_count'] == 1
+        assert q['findings'][0]['resolution'] == 'pending'
 
     def _fake_parser_with_tests(self, _log_file):
         # A green run that actually executed tests: a non-None UnitTestSummary
@@ -437,14 +595,17 @@ class TestCmdRunCommonGreenBuildReconciliation:
                 parser_fn=self._fake_parser,
                 tool_name='python',
                 plan_id=plan_context.plan_id,
+                command_args='quality-gate plan-marshall',
             )
 
         assert rc == 0
         tf = query_findings(plan_context.plan_id, finding_type='test-failure')
         assert tf['filtered_count'] == 1
         assert tf['findings'][0]['resolution'] == 'pending'  # survived a zero-test green build
-        # The run published the population it counted (zero) on its output.
-        assert 'tests_run' in buf.getvalue()
+        # The run published the population it counted — a MEASURED zero, because
+        # a quality-gate is a non-test gate that genuinely executed none.
+        assert 'tests_population: measured' in buf.getvalue()
+        assert 'tests_run: 0' in buf.getvalue()
 
     def test_green_build_that_ran_tests_clears_test_failure_and_publishes_population(self, plan_context):
         # The positive half: a green build that DID execute tests clears the
@@ -470,6 +631,7 @@ class TestCmdRunCommonGreenBuildReconciliation:
                 parser_fn=self._fake_parser_with_tests,
                 tool_name='python',
                 plan_id=plan_context.plan_id,
+                command_args='module-tests plan-marshall',
             )
 
         assert rc == 0
@@ -479,7 +641,7 @@ class TestCmdRunCommonGreenBuildReconciliation:
         assert record['resolution'] == 'fixed'  # cleared by a build that ran tests
         # Published population is non-empty on a normal (test-running) build.
         assert '5 test(s) executed' in (record.get('resolution_detail') or '')
-        assert 'tests_run' in buf.getvalue()
+        assert 'tests_run: 5' in buf.getvalue()
 
 
 class TestFailureDetailRoundTrip:

@@ -84,14 +84,36 @@ exit_code	0
 duration_seconds	45
 log_file	.plan/local/plans/{plan_id}/build-results/default/{tool}-{timestamp}.log
 command	{wrapper} {args}
+analyses_examined	compile, lint, test
+tests_population	measured
 tests_run	40
 ```
 
-`tests_run` is the number of tests this run executed (0 for a non-test command
-such as `compile`, or a test command that collected nothing). It is the
-population the green-build finding reconciliation is decided on: a `test-failure`
-finding is cleared by a green build only when `tests_run > 0`, so a build that
-tested nothing cannot clear a stale test failure.
+Three fields publish **what the run actually examined** — the population the
+green-build finding reconciliation is decided on. They exist because a green exit
+code proves nothing on its own: it does not say that anything was examined, and it
+does not say that what was examined could reach the finding being cleared.
+
+- `analyses_examined` — the analysis kinds this invocation performs, derived from
+  its canonical command: `compile`, `lint`, `test`, or the literal `unknown` when
+  the invocation is not one the canonical vocabulary describes. `none` marks a
+  command that measurably examines nothing.
+- `tests_population` — `measured` or `unmeasured`, the discriminator for the field
+  below.
+- `tests_run` — the executed-test count. **Present only when
+  `tests_population: measured`.** A run that was supposed to execute tests but
+  produced no parseable summary omits the key entirely rather than publishing a
+  `0`, so a consumer can never read an unmeasured run as one that tested nothing.
+
+**Reconciliation contract.** A green build clears a pending finding of type `T`
+only when the analyses it performed intersect the analyses that can EXERCISE `T`
+(`build-error` ← `compile`, `lint-issue` ← `lint`, `test-failure` ← `test`), and
+`test-failure` additionally requires a measured `tests_run > 0`. A `compile` run
+therefore clears no `lint-issue`: it cannot evaluate that dimension at any scope,
+so its green is an un-asked question rather than a clean answer. An `unknown`
+population clears nothing at all. The rule and its tables live in
+`script-shared/scripts/build/_build_examined.py`, which is the single source of
+truth for both maps.
 
 Build Failure:
 ```text
