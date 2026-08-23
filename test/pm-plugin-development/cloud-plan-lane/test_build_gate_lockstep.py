@@ -2,17 +2,32 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Lockstep guard: the cloud-plan-lane build-gate vocabulary is stated once.
 
-``.claude/skills/cloud-plan-lane/SKILL.md`` states the build-gate outcome
-vocabulary **twice** — normatively in the ``## Step 5`` trigger table, and again
-as a restatement in the run-report template's ``## Build gate`` block. Nothing
-inside the document keeps the two in step, and they have drifted before.
+``.claude/skills/cloud-plan-lane/SKILL.md`` states the build gate's rule in more
+than one place, and the two tokens it restates do **not** have the same number of
+sites. Stating that precisely matters: an earlier draft of this docstring said the
+vocabulary appears "twice", which is true of the phrase and false of the glob, and
+would have told a maintainer not to look past the two sites this guard then pinned.
 
-This module extracts both statements *from the document itself* — it hard-codes
-neither side — and asserts they agree:
+* the **skip phrase** appears twice — normatively in the ``## Step 5`` trigger
+  table, and restated in the run-report template's ``## Build gate`` block;
+* the **trigger glob** appears at the Step 5 table (normative), in the report
+  block's ``git diff … -- '<glob>'`` pathspec, and at every prose site that
+  declares itself a restatement of the Step 5 predicate.
+
+Nothing inside the document keeps any of them in step, and they have drifted
+before. This module extracts every statement *from the document itself* — it
+hard-codes no side and no site list — and asserts they agree:
 
 1. the skip phrase the two surfaces quote is identical;
 2. the report block's ``git diff … -- '<glob>'`` pathspec is the same glob the
-   Step 5 trigger table keys on.
+   Step 5 trigger table keys on;
+3. every self-declaring restatement of the Step 5 predicate states that same glob.
+
+Assertion 3 is **population-derived, not site-enumerated**: the restatements are
+found by the marker phrase they use to point back at Step 5, so a restatement
+added later is covered the day it is written. A restatement that points back
+without using the marker is outside this guard's reach — that is a real boundary,
+and it is stated here rather than left for a reader to discover.
 
 Two properties keep the guard from being vacuous:
 
@@ -49,6 +64,11 @@ _STEP5_HEADING_PREFIX = '## Step 5'
 _REPORT_HEADING = '## Report'
 _BUILD_GATE_HEADING = '## Build gate'
 
+# A prose site restates the Step 5 trigger predicate by pointing back at it in
+# these words. The marker is what makes assertion 3 population-derived: the sites
+# are discovered from the document, never enumerated here by line number.
+_STEP5_REFERENCE_MARKER = 'predicate Step 5 uses'
+
 _QUOTED = re.compile(r'"([^"]+)"')
 _BACKTICKED = re.compile(r'`([^`]+)`')
 # The pathspec the report's git-diff spelling filters on: the quoted token after
@@ -72,6 +92,14 @@ class ReportSurface(NamedTuple):
     block_found: bool
     diff_pathspec: str | None
     skip_phrase: str | None
+
+
+class ReferringSite(NamedTuple):
+    """One prose site that declares itself a restatement of the Step 5 predicate."""
+
+    line_number: int
+    glob: str | None
+    text: str
 
 
 def _is_fence(line: str) -> bool:
@@ -225,6 +253,29 @@ def extract_report_build_gate_surface(document: str) -> ReportSurface:
     )
 
 
+def extract_step5_referring_globs(document: str) -> list[ReferringSite]:
+    """Pure extractor: every prose site restating the Step 5 trigger predicate.
+
+    Sites are found by the marker phrase they use to point back at Step 5, so the
+    population comes from the document rather than from a list maintained here.
+    A site whose glob could not be extracted is returned with ``glob=None`` rather
+    than dropped — a silently skipped site is exactly the hole this guard closes.
+    """
+    sites: list[ReferringSite] = []
+    for line_number, line in enumerate(document.splitlines(), 1):
+        if _STEP5_REFERENCE_MARKER not in line:
+            continue
+        glob_match = _BACKTICKED.search(line)
+        sites.append(
+            ReferringSite(
+                line_number=line_number,
+                glob=glob_match.group(1) if glob_match else None,
+                text=line.strip(),
+            )
+        )
+    return sites
+
+
 def _read_live_document() -> str:
     assert _SKILL_PATH.is_file(), (
         f'The cloud-plan-lane contract is missing from the repository: {_SKILL_PATH}. '
@@ -291,6 +342,9 @@ Two gates, because the quality gate and the test suite have different trigger su
 ## Step 6 — Something else
 
 Prose that must not be mistaken for the trigger table.
+
+When a commit touches any `*.md` — the **same** predicate Step 5 uses to decide whether to
+build — run the quality gate first.
 
 ## Report
 
@@ -364,6 +418,73 @@ def test_report_diff_pathspec_matches_the_step5_trigger_glob() -> None:
         'question than the gate asked.\n'
         f'  Surface 1 — "{_STEP5_HEADING_PREFIX}" trigger glob: "{step5.trigger_glob}"\n'
         f'  Surface 2 — "{_BUILD_GATE_HEADING}" diff pathspec: "{report.diff_pathspec}"'
+    )
+
+
+def test_every_step5_referring_site_states_the_same_trigger_glob() -> None:
+    """Prose restatements of the Step 5 predicate must state Step 5's own glob.
+
+    The Step 5 table and the report block are pinned to each other by the two
+    tests above. This one covers the remaining sites: the prose that says it is
+    re-using Step 5's predicate. Without it, widening the glob at Step 5 and the
+    report leaves those sites stating the old predicate while the guard stays
+    green — the n-1-of-n shape this document exists to prevent.
+    """
+    document = _read_live_document()
+
+    step5 = extract_step5_trigger_surface(document)
+    sites = extract_step5_referring_globs(document)
+
+    assert step5.section_found and step5.trigger_glob, (
+        f'Surface 1 NOT LOCATED in {_SKILL_PATH}: the Step 5 trigger glob could not be '
+        'extracted, so the referring sites had nothing to be compared against.'
+    )
+    assert sites, (
+        f'Population EMPTY in {_SKILL_PATH}: no line contains the marker '
+        f'"{_STEP5_REFERENCE_MARKER}", so this assertion compared nothing. Either every prose '
+        'restatement was removed, or the marker wording changed and this guard has gone blind '
+        'to the sites it is supposed to cover — the second is far likelier than the first.'
+    )
+
+    unextracted = [site for site in sites if not site.glob]
+    assert not unextracted, (
+        f'Token NOT EXTRACTED in {_SKILL_PATH}: a site declares itself a restatement of the '
+        'Step 5 predicate but states no backticked glob, so it could not be compared:\n'
+        + '\n'.join(f'  line {site.line_number}: {site.text}' for site in unextracted)
+    )
+
+    mismatched = [site for site in sites if site.glob != step5.trigger_glob]
+    assert not mismatched, (
+        f'The cloud-plan-lane trigger predicate has drifted between its sites in {_SKILL_PATH}. '
+        'Step 5 is normative; a prose site claiming to use "the same predicate" must state the '
+        'same glob, or it silently sends a run down a different branch than the gate defines.\n'
+        f'  Step 5 trigger table (NORMATIVE): "{step5.trigger_glob}"\n'
+        + '\n'.join(
+            f'  line {site.line_number} states "{site.glob}": {site.text}' for site in mismatched
+        )
+    )
+
+
+def test_negative_control_referring_site_divergence_is_detected() -> None:
+    """Matched negative control for the referring-site assertion.
+
+    The synthetic document carries a prose site that claims Step 5's predicate
+    while stating a different glob. Both values are asserted positively first, so
+    the control proves the extractor reached the site rather than passing on a
+    pair of ``None``s.
+    """
+    step5 = extract_step5_trigger_surface(_DIVERGING_DOCUMENT)
+    sites = extract_step5_referring_globs(_DIVERGING_DOCUMENT)
+
+    assert step5.trigger_glob == '*.py'
+    assert len(sites) == 1
+    assert sites[0].glob == '*.md'
+
+    mismatched = [site for site in sites if site.glob != step5.trigger_glob]
+    assert mismatched, (
+        'Negative control did not fire: the referring-site comparison agreed on a document whose '
+        'prose site deliberately states a different glob than its Step 5 table, so the live '
+        'referring-site assertion cannot be trusted to fail on real drift.'
     )
 
 
