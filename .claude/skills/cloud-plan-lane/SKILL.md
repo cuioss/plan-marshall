@@ -2047,7 +2047,7 @@ Per deliverable: what was done, in which commit, and its verification state.
 
 ## Build gate
 The `git diff --name-only origin/main...HEAD -- '*.py'` verdict, and the build result — or
-"no Python changes, build skipped".
+"no buildable footprint, build skipped".
 
 Then the stale-base re-verification (§ Step 8 condition 2): the `git rev-list --count HEAD..origin/main`
 figure at the gate, and — when it was non-zero — which shape was used (merged on the branch and pushed,

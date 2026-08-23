@@ -230,10 +230,13 @@ def test_a_declared_glob_escaping_the_repo_is_unmeasured_not_empty():
     this module reports on outlines, committed by the module itself.
     """
     # parts[0] is '/', so the remaining count is the depth to climb to reach it.
+    # BOTH sides of the precondition must be resolved: on macOS /etc is a symlink
+    # to /private/etc, so comparing a resolved path against the bare literal
+    # Path('/etc') is machine-dependent in the same way the hard-coded depth was.
     up = '/'.join(['..'] * (len(PROJECT_ROOT.resolve().parts) - 1))
     escape = f'{up}/etc/*.conf'
     outside = (PROJECT_ROOT / f'{up}/etc').resolve()
-    assert outside == Path('/etc'), 'precondition: the pattern must leave the repo'
+    assert outside == Path('/etc').resolve(), 'precondition: the pattern must leave the repo'
     assert list(outside.glob('*.conf')), 'precondition: the escape target must be populated'
 
     expansion = expand_declared_glob(escape, PROJECT_ROOT)
