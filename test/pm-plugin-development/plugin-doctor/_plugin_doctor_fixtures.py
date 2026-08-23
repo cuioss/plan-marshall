@@ -1367,6 +1367,28 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
             ),
         },
     )
+    # ARGUMENT_NAMING_SUBSTRATE_ABSENT — the could_not_look outcome. Unlike its
+    # five siblings above, this rule lives in the CLUSTER ENTRY POINT's substrate
+    # check rather than in a sub-scanner, so it is fired through
+    # ``analyze_argument_naming`` itself; a sub-function call could not reach it.
+    #
+    # The fixture condition is an ABSENCE: a scratch tree carrying a non-empty
+    # bundles corpus (so ``_markdown_targets`` has files to report as unjudged)
+    # and NO ``{marketplace_root.parent}/.plan/execute-script.py``. Producing it
+    # takes writing nothing at all, which is precisely why this rule belongs here
+    # and NOT in ``EXEMPT_RULE_IDS`` — that door is for a rule that structurally
+    # cannot fire on a static fixture, and this is the cheapest static fixture in
+    # the corpus. Payload assertions (the ``details.reason`` discriminator across
+    # all three substrate states) live in
+    # ``test_argument_naming_absent_substrate.py``.
+    corpus['ARGUMENT_NAMING_SUBSTRATE_ABSENT'] = FixtureSpec(
+        analyzer=lambda root: _aan.analyze_argument_naming(root / 'marketplace'),
+        files={
+            'marketplace/bundles/b/skills/s/SKILL.md': (
+                '# F\n\nA skill body carrying no executor invocation to judge.\n'
+            ),
+        },
+    )
 
     # triage-reads-top-level-only: a triage-surface doc (basename triage.md)
     # that READS a concrete raw_input field — the prompt-injection-surface

@@ -30,6 +30,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from _plugin_doctor_dispatching_executor import seed_notation_registry
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, get_scripts_dir, load_script_module
 
 SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'plugin-doctor')
@@ -122,7 +123,15 @@ def _clean_bundles(root: Path) -> Path:
     resolves back to the test's own isolated ``tmp_path`` instead of escaping
     to the shared pytest-xdist base temp directory and scanning sibling tests'
     CLAUDE.md fixtures.
+
+    That same two-level nesting is what puts the seeded notation registry at
+    ``root/.plan/execute-script.py``, which is where the runner's
+    ``analyze_argument_naming(root.parent)`` call resolves it from. Without the
+    seed the tree is unexaminable rather than finding-free, and
+    ``ARGUMENT_NAMING_SUBSTRATE_ABSENT`` says so — correctly. See
+    ``seed_notation_registry``.
     """
+    seed_notation_registry(root)
     bundles = root / 'marketplace' / 'bundles'
     bundle = bundles / 'qg-clean'
     (bundle / '.claude-plugin').mkdir(parents=True)

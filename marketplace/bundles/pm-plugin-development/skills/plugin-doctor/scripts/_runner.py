@@ -200,7 +200,15 @@ class RuleRunner:
             {'rule': 'validate_extension_contracts', 'findings': len(contract_errors)}
         )
 
-        emit('analyze_argument_naming', scoped(analyze_argument_naming(root)))
+        # ``root`` is the BUNDLES dir (see CorpusContext), but
+        # analyze_argument_naming derives ``root/'bundles'`` for its markdown
+        # corpus and ``root.parent/'.plan'`` for the executor registry — so it
+        # takes the MARKETPLACE dir, exactly like validate_extension_contracts
+        # above. Passing ``root`` here resolved the executor to
+        # ``marketplace/.plan/execute-script.py``, which does not exist: the
+        # registry came back empty and the cluster returned [] before scanning a
+        # single file, reporting a clean zero it had never derived.
+        emit('analyze_argument_naming', scoped(analyze_argument_naming(root.parent)))
         emit(
             'analyze_shell_substitution_in_skills',
             scoped(analyze_shell_substitution_in_skills(root)),
@@ -428,6 +436,10 @@ class RuleRunner:
             issues.extend(analyze_script_call_drift(root))
 
         if 'argument_naming' in active_rules:
-            issues.extend(analyze_argument_naming(root))
+            # ``root.parent`` for the same reason as the quality-gate dispatch
+            # above: the analyzer takes the MARKETPLACE dir, not the bundles
+            # dir. This call carried the bug too, so opting the cluster in on
+            # the analyze path silently produced nothing on every run.
+            issues.extend(analyze_argument_naming(root.parent))
 
         return issues

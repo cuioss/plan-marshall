@@ -51,10 +51,28 @@ This rule cluster is unconditionally active across all marketplace markdown.
 Recurring stale-flag drift in skill workflows motivated default-on
 enforcement rather than a gated transitional period.
 
+Absent substrate is an outcome, not a no-op
+-------------------------------------------
+The accept-set is derived from the generated executor at
+``{repo}/.plan/execute-script.py``, and that file is git-ignored — a fresh clone
+carries none. The cluster used to answer an unreadable or empty registry with
+``return []``, which is byte-identical to the answer it gives a corpus it read
+in full and found clean. A gate cannot tell those apart, so an absent substrate
+read as a pass over 600-odd unexamined markdown files.
+
+An unusable registry now emits :data:`RULE_SUBSTRATE_ABSENT` carrying the
+``could_not_look`` outcome — the same third state, distinct from both pass and
+fail, that ``_plugin_pin_trap`` models for its own three stores. The finding is
+anchored at the BUNDLES root so ``cmd_quality_gate``'s ``_finding_is_tree_wide``
+bypass keeps it under a ``--paths``-scoped run, exactly as the other
+anti-vacuity guards are kept.
+
 Public API
 ----------
 - ``analyze_argument_naming(marketplace_root)``: entry point — returns
   findings for every rule ID in the cluster, combined.
+- ``read_notation_registry(executor_path)``: reads the executor's notation
+  registry AND why it is empty when it is (``NotationRegistry.status``).
 - ``scan_notation(marketplace_root, registered_notations)``: detects
   ``ARGUMENT_NAMING_NOTATION_INVALID``.
 - ``scan_subcommand(marketplace_root, script_index)``: detects
@@ -81,6 +99,7 @@ Rule IDs registered
 - ``ARGUMENT_NAMING_FLAG_UNKNOWN``
 - ``ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED``
 - ``ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT``
+- ``ARGUMENT_NAMING_SUBSTRATE_ABSENT``
 """
 
 from __future__ import annotations
@@ -107,6 +126,48 @@ RULE_SUBCOMMAND_UNKNOWN = 'ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN'
 RULE_FLAG_UNKNOWN = 'ARGUMENT_NAMING_FLAG_UNKNOWN'
 RULE_CANONICAL_FORMS_DRIFT = 'ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT'
 RULE_ROUTER_FLAG_MISPLACED = 'ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED'
+RULE_SUBSTRATE_ABSENT = 'ARGUMENT_NAMING_SUBSTRATE_ABSENT'
+
+# =============================================================================
+# Substrate states — the could_not_look axis
+# =============================================================================
+
+#: The outcome name this cluster shares with ``_plugin_pin_trap``: a state that
+#: is neither a pass nor a fail, because the run never got to look.
+OUTCOME_COULD_NOT_LOOK = 'could_not_look'
+
+#: Registry-substrate states. The two executor states are kept apart from
+#: ``registry_empty`` for the reason ``_plugin_pin_trap`` keeps its four
+#: ``EXECUTOR_*`` statuses apart: an executor that IS present and registers
+#: nothing is a different defect from one that is not there at all, and
+#: collapsing them files a demonstrated defect as a missing file.
+SUBSTRATE_PRESENT = 'present'
+SUBSTRATE_EXECUTOR_ABSENT = 'executor_absent'
+SUBSTRATE_EXECUTOR_UNREADABLE = 'executor_unreadable'
+SUBSTRATE_REGISTRY_EMPTY = 'registry_empty'
+
+_SUBSTRATE_EXPLANATIONS: dict[str, str] = {
+    SUBSTRATE_EXECUTOR_ABSENT: (
+        'the generated executor does not exist, so the notation registry every '
+        'invocation is judged against was never read'
+    ),
+    SUBSTRATE_EXECUTOR_UNREADABLE: (
+        'the generated executor exists but could not be read or decoded, so the '
+        'notation registry was never read'
+    ),
+    SUBSTRATE_REGISTRY_EMPTY: (
+        'the generated executor was read but its SCRIPTS literal registers no '
+        'notation, so the registry is empty'
+    ),
+}
+
+REMEDY_SUBSTRATE = (
+    'Regenerate the executor with the steward wizard (`/marshall-steward`), which '
+    'rewrites `.plan/execute-script.py` from the plugin cache. The executor is '
+    'git-ignored, so a fresh clone never carries one: run this gate from a '
+    'bootstrapped checkout, or read the outcome as "this cluster could not report '
+    'on this tree" — never as a clean one.'
+)
 
 # Opt-in cluster descriptor. The ARGUMENT_NAMING_* rules are produced by a
 # single ``analyze_argument_naming`` pass gated atomically by the
@@ -267,17 +328,46 @@ class _ScriptEntry:
 # =============================================================================
 
 
-def load_registered_notations(executor_path: Path) -> set[str]:
-    """Parse the executor's ``SCRIPTS = { ... }`` block and return its keys.
+@dataclass(frozen=True)
+class NotationRegistry:
+    """The executor-derived notation set, plus WHY it is empty when it is.
 
-    Uses a line-by-line regex rather than full Python parsing so the
-    function works against the generated executor without importing it.
-    Returns an empty set if the file is missing or unreadable.
+    An empty ``notations`` alone cannot say whether the registry was read and
+    found empty or never read at all, and the cluster's whole accept-set hangs
+    off it. :attr:`status` carries the discriminator, so a caller can report the
+    absence instead of silently answering as though the corpus had been judged.
+    """
+
+    notations: frozenset[str]
+    status: str
+    executor_path: Path
+
+    @property
+    def usable(self) -> bool:
+        """True when the registry is evidence about at least one notation."""
+        return self.status == SUBSTRATE_PRESENT
+
+    @property
+    def unusable_because(self) -> str | None:
+        """Why this registry is not an accept-set, or ``None`` when it is."""
+        return None if self.usable else _SUBSTRATE_EXPLANATIONS[self.status]
+
+
+def read_notation_registry(executor_path: Path) -> NotationRegistry:
+    """Read the executor's ``SCRIPTS = { ... }`` block into a :class:`NotationRegistry`.
+
+    Uses a line-by-line regex rather than full Python parsing so the function
+    works against the generated executor without importing it. ``FileNotFoundError``
+    is caught BEFORE its ``OSError`` base so an absent executor stays
+    distinguishable from an unreadable one — the two call for different operator
+    action (bootstrap the checkout vs. repair a corrupt file).
     """
     try:
         text = executor_path.read_text(encoding='utf-8')
+    except FileNotFoundError:
+        return NotationRegistry(frozenset(), SUBSTRATE_EXECUTOR_ABSENT, executor_path)
     except (OSError, UnicodeDecodeError):
-        return set()
+        return NotationRegistry(frozenset(), SUBSTRATE_EXECUTOR_UNREADABLE, executor_path)
 
     notations: set[str] = set()
     in_block = False
@@ -292,7 +382,58 @@ def load_registered_notations(executor_path: Path) -> set[str]:
         match = _SCRIPTS_DICT_KEY.match(line)
         if match:
             notations.add(match.group('notation'))
-    return notations
+    status = SUBSTRATE_PRESENT if notations else SUBSTRATE_REGISTRY_EMPTY
+    return NotationRegistry(frozenset(notations), status, executor_path)
+
+
+def load_registered_notations(executor_path: Path) -> set[str]:
+    """Return the registered notation keys, dropping the substrate status.
+
+    Kept as the plain-set accessor for callers that only need the accept-set.
+    A caller that must distinguish "read and empty" from "never read" uses
+    :func:`read_notation_registry` instead.
+    """
+    return set(read_notation_registry(executor_path).notations)
+
+
+def _substrate_absent_finding(
+    bundles_root: Path,
+    registry: NotationRegistry,
+    markdown_targets: int,
+) -> dict:
+    """The ``could_not_look`` finding emitted when the registry is not evidence.
+
+    Anchored at ``bundles_root`` — the root ``cmd_quality_gate`` compares against
+    in ``_finding_is_tree_wide`` — so a ``--paths``-scoped run keeps it. A
+    file-anchored guard would be dropped by the scope filter, which is how the
+    other anti-vacuity guards in this tree learned to anchor here.
+
+    ``markdown_targets`` is published because it is the figure that makes the
+    outcome legible: it is the corpus the cluster WOULD have judged, and none of
+    it was. A bare zero-findings result says nothing about that number.
+    """
+    return Finding(
+        type=RULE_SUBSTRATE_ABSENT,
+        file=str(bundles_root),
+        line=0,
+        severity='error',
+        fixable=False,
+        rule_id=RULE_SUBSTRATE_ABSENT,
+        description=(
+            f'{OUTCOME_COULD_NOT_LOOK}: {registry.unusable_because} '
+            f'({registry.executor_path}). {markdown_targets} markdown file(s) were '
+            'in scope and NONE were judged — this run is not a clean result. '
+            + REMEDY_SUBSTRATE
+        ),
+        details={
+            'outcome': OUTCOME_COULD_NOT_LOOK,
+            'reason': registry.status,
+            'substrate': str(registry.executor_path),
+            'population_size': 0,
+            'markdown_targets': markdown_targets,
+            'remedy': REMEDY_SUBSTRATE,
+        },
+    ).to_dict()
 
 
 # =============================================================================
@@ -943,14 +1084,30 @@ def analyze_argument_naming(marketplace_root: Path) -> list[dict]:
 
     Returns a flat list of finding dicts (one per detected drift). Use
     ``rule_id`` to differentiate rule clusters.
+
+    ``marketplace_root`` is the MARKETPLACE dir (the parent of ``bundles/``):
+    the markdown corpus is derived as ``marketplace_root/'bundles'`` and the
+    executor as ``marketplace_root.parent/'.plan'``. Passing the bundles dir
+    instead resolves the executor to a path that does not exist, which is
+    exactly the substrate absence the guard below now reports.
     """
     executor_path = marketplace_root.parent / '.plan' / 'execute-script.py'
-    registered = load_registered_notations(executor_path)
-    if not registered:
-        # No executor or empty registry — cluster has no ground truth and
-        # would produce false positives. Treat as a no-op.
-        return []
+    registry = read_notation_registry(executor_path)
+    if not registry.usable:
+        # ⛔ NOT a no-op. Answering an unread registry with ``[]`` gives the
+        # caller the same answer as a corpus read in full and found clean, so a
+        # gate cannot tell the two apart — and the executor is git-ignored, so
+        # the unread case is the DEFAULT in any fresh clone. The absence is
+        # reported as its own outcome instead.
+        return [
+            _substrate_absent_finding(
+                marketplace_root / 'bundles',
+                registry,
+                len(_markdown_targets(marketplace_root)),
+            )
+        ]
 
+    registered = set(registry.notations)
     script_index = build_script_index(registered, marketplace_root)
 
     findings: list[dict] = []
