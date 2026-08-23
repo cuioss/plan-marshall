@@ -34,9 +34,11 @@ primitive. It exposes three verbs on the shared deterministic core
     verdict: ``externally_killed`` (the job reported killed, no row was
     stamped AND the output was empty — the whole-tree-kill signature — or
     the matching row itself carries ``status: killed``), ``timeout``,
-    ``success``, or ``undecidable``. The ``externally_killed`` verdict
-    renders "externally killed — not flaky, do not blind-retry" so the
-    call site never mistakes a harness kill for a flaky build.
+    ``error``, ``success``, or ``undecidable``. The ``externally_killed``
+    verdict renders "externally killed — not flaky, do not blind-retry" so
+    the call site never mistakes a harness kill for a flaky build, and
+    ``error`` is kept apart from ``undecidable`` so a build that ran and
+    reported failures is never presented as one whose outcome nobody read.
 
 The ledger resolves under the tracked-config dir (``get_tracked_config_dir()``),
 NOT plan-scoped, so plan-less orchestrator builds are covered. ``compute_worktree_sha``
@@ -178,6 +180,28 @@ def run_append(args: Namespace) -> dict[str, Any]:
 
 
 _NO_BLIND_RETRY_MESSAGE = 'externally killed — not flaky, do not blind-retry'
+_ERROR_DISPLAY_DETAIL = 'build reported failure — read the named log'
+
+
+def _error_message(row: dict[str, Any]) -> str:
+    """Name what reported the failure behind a ``status: error`` ledger row.
+
+    The row is the only witness this verb has, so the message carries the three
+    fields that identify the failing build — the notation that was dispatched,
+    the exit code it returned, and the log file holding the reported failures
+    themselves. A verdict rendering only the word "error" sends the caller
+    looking for the build; naming the log sends them to the failures.
+    """
+    exit_code = row.get('exit_code')
+    return (
+        'build ran to completion and reported failure — ledger row carries '
+        'status: error (notation={notation}, exit_code={exit_code}, '
+        'log_file={log_file}); the reported failures are in that log'
+    ).format(
+        notation=row.get('notation') or '-',
+        exit_code='-' if exit_code is None else exit_code,
+        log_file=row.get('log_file') or '-',
+    )
 
 
 def run_classify_outcome(args: Namespace) -> dict[str, Any]:
@@ -203,11 +227,19 @@ def run_classify_outcome(args: Namespace) -> dict[str, Any]:
         stamped the ``killed`` outcome. Both render the no-blind-retry
         message.
     (b) ``timeout`` — a matching row carries ``status: timeout``.
-    (c) ``success`` — a matching row carries ``status: success``.
+    (c) ``error`` — a matching row carries ``status: error``: the build RAN TO
+        COMPLETION and reported failures. This is a verdict, not a non-finish,
+        which is why it does not share an arm with (d): the caller's remedy is
+        to read the reported failures, never to re-dispatch. The message names
+        the notation, exit code and log file so the failures themselves are one
+        hop away.
     (d) ``undecidable`` — anything else, INCLUDING a matching row carrying the
         derived-only ``status: unknown``. That row records an outcome the
         dispatch boundary could not determine, so it supports no verdict of its
-        own and must not be read as either a kill or a success.
+        own and must not be read as either a kill or a success. ``undecidable``
+        means NO decisive signal was found — it never means "a failure was
+        reported"; a reported failure has its own arm at (c) and reaching this
+        one would misreport a read verdict as an unread one.
     """
     entries = [
         e
@@ -225,6 +257,9 @@ def run_classify_outcome(args: Namespace) -> dict[str, Any]:
     elif matching_row is not None and matching_row.get('status') == 'timeout':
         verdict = 'timeout'
         message = 'build timed out — ledger row carries status: timeout'
+    elif matching_row is not None and matching_row.get('status') == 'error':
+        verdict = 'error'
+        message = _error_message(matching_row)
     elif matching_row is not None and matching_row.get('status') == 'success':
         verdict = 'success'
         message = 'build succeeded — ledger row carries status: success'
@@ -232,10 +267,15 @@ def run_classify_outcome(args: Namespace) -> dict[str, Any]:
         verdict = 'undecidable'
         message = 'no decisive signal — job completed but no conclusive ledger row'
 
+    # ``message`` names the reported failures, so the error arm's text carries a
+    # log path and outruns the bounded one-line summary; every other arm's text
+    # is already short enough to be its own summary.
+    display_detail = _ERROR_DISPLAY_DETAIL if verdict == 'error' else message
+
     return {
         'status': 'success',
         'verdict': verdict,
-        'display_detail': message,
+        'display_detail': display_detail,
         'message': message,
         'matched_row': matching_row is not None,
     }
@@ -371,7 +411,7 @@ Examples:
             },
             {
                 'name': 'classify-outcome',
-                'help': 'Deterministic verdict over a finished/killed job (externally_killed / timeout / success / undecidable)',
+                'help': 'Deterministic verdict over a finished/killed job (externally_killed / timeout / error / success / undecidable)',
                 'handler': run_classify_outcome,
                 'args': [
                     {

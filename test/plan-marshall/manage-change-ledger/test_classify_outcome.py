@@ -17,8 +17,14 @@ returning a fixed ``verdict``:
   do not blind-retry" in the agent-readable TOON.
 * ``timeout`` — a matching row carries ``status: timeout`` (a clean timeout is
   never classified as a kill).
+* ``error`` — a matching row carries ``status: error``: the build RAN TO
+  COMPLETION and reported failures. It is a READ verdict, held apart from
+  ``undecidable`` so a build whose failures were reported is never presented
+  as one whose outcome nobody read; the remedy is to read the named log, never
+  to re-dispatch.
 * ``success`` — a matching row carries ``status: success``.
-* ``undecidable`` — anything else.
+* ``undecidable`` — anything else, INCLUDING a matching row carrying the
+  derived-only ``status: unknown``, which supports no verdict of its own.
 
 Tests drive the CLI end-to-end through :func:`conftest.run_script`, seeding
 ledger rows through the ``append`` verb (the sole write path — a supplied
@@ -58,12 +64,23 @@ def env(tmp_path: Path):
                 _SCRIPT, *args, cwd=str(base), env_overrides=self.overrides
             )
 
-        def append_build(self, *, status: str, worktree_sha: str = _SHA_A):
-            result = self.run(
-                'append', '--kind', 'build', '--notation', 'n',
-                '--exit-code', '0', '--status', status,
+        def append_build(
+            self,
+            *,
+            status: str,
+            worktree_sha: str = _SHA_A,
+            notation: str = 'n',
+            exit_code: int = 0,
+            log_file: str | None = None,
+        ):
+            argv = [
+                'append', '--kind', 'build', '--notation', notation,
+                '--exit-code', str(exit_code), '--status', status,
                 '--worktree-sha', worktree_sha,
-            )
+            ]
+            if log_file is not None:
+                argv += ['--log-file', log_file]
+            result = self.run(*argv)
             assert result.success, result.stderr
             return result
 
@@ -201,13 +218,128 @@ def test_completed_with_output_but_no_row_is_undecidable(env) -> None:
     assert data['verdict'] == 'undecidable', data
 
 
-def test_error_row_is_undecidable(env) -> None:
-    """A matching row with ``status: error`` maps to no fixed verdict => undecidable."""
-    env.append_build(status='error')
+def test_unknown_row_is_undecidable(env) -> None:
+    """The derived-only ``status: unknown`` supports no verdict of its own.
+
+    ``unknown`` records an outcome the dispatch boundary could not determine,
+    so it must read as "nobody decided" — never as a kill, a success, or a
+    reported failure. This is the matched negative control for the ``error``
+    arm below: it is the ONE status that legitimately reaches ``undecidable``
+    through a present row, which is what makes the ``error`` arm's separate
+    verdict meaningful rather than a relabelling of the same bucket.
+    """
+    env.append_build(status='unknown')
 
     data = env.classify(job_status='completed', output_bytes=42, worktree_sha=_SHA_A)
 
     assert data['verdict'] == 'undecidable', data
+
+
+# ---------------------------------------------------------------------------
+# error — a build that RAN and reported failures is not an unread outcome
+# ---------------------------------------------------------------------------
+
+
+def test_error_row_classifies_error_not_undecidable(env) -> None:
+    """A matching row with ``status: error`` classifies ``error``.
+
+    Regression for the pre-fix classifier, which carried no ``error`` arm and
+    let such a row fall through to ``undecidable``. That was a factual
+    misreport rather than a harmless imprecision: ``undecidable`` asserts that
+    NO decisive signal was found, so it sent the caller to re-dispatch a build
+    that had already run to completion and reported its failures. Against the
+    pre-fix chain this assertion observes ``undecidable`` and fails.
+    """
+    env.append_build(status='error', exit_code=1, log_file='/tmp/build.log')
+
+    data = env.classify(job_status='completed', output_bytes=42, worktree_sha=_SHA_A)
+
+    assert data['verdict'] == 'error', data
+
+
+def test_error_and_unknown_rows_yield_distinguishable_verdicts(env) -> None:
+    """``error`` and ``unknown`` must not collapse into one verdict.
+
+    Both are non-success outcomes and the pre-fix classifier returned the SAME
+    ``undecidable`` value for both, so a caller could not tell a build that
+    reported failures from one whose outcome the boundary never determined —
+    two states with opposite remedies. Scoping the two rows to different
+    worktree shas lets a single test observe both verdicts and compare them
+    directly, rather than inferring the distinction from two isolated runs.
+    """
+    env.append_build(
+        status='error', exit_code=1, log_file='/tmp/build.log', worktree_sha=_SHA_A
+    )
+    env.append_build(status='unknown', worktree_sha=_SHA_B)
+
+    error_data = env.classify(
+        job_status='completed', output_bytes=42, worktree_sha=_SHA_A
+    )
+    unknown_data = env.classify(
+        job_status='completed', output_bytes=42, worktree_sha=_SHA_B
+    )
+
+    assert error_data['verdict'] == 'error', error_data
+    assert unknown_data['verdict'] == 'undecidable', unknown_data
+    assert error_data['verdict'] != unknown_data['verdict']
+
+
+def test_error_message_names_notation_exit_code_and_log(env) -> None:
+    """The ``error`` message carries the three fields that locate the failures.
+
+    The verdict's value is that the caller can go read the reported failures,
+    so a message rendering only the word "error" sends them looking for the
+    build instead. The row is the verb's only witness, so the notation that was
+    dispatched, the exit code it returned, and the log path must all survive
+    into the message.
+    """
+    env.append_build(
+        status='error',
+        notation='plan-marshall:build-pyproject:pyproject_build',
+        exit_code=2,
+        log_file='/tmp/pm-build-4711.log',
+    )
+
+    data = env.classify(job_status='completed', output_bytes=42, worktree_sha=_SHA_A)
+
+    assert data['verdict'] == 'error', data
+    assert 'plan-marshall:build-pyproject:pyproject_build' in data['message']
+    assert 'exit_code=2' in data['message']
+    assert '/tmp/pm-build-4711.log' in data['message']
+    assert NO_BLIND_RETRY not in data['message']
+
+
+def test_error_display_detail_is_the_bounded_summary(env) -> None:
+    """``display_detail`` stays bounded while ``message`` carries the log path.
+
+    The error arm is the one verdict whose message embeds a filesystem path, so
+    it can outrun the one-line summary the field is meant to hold; every other
+    arm's text is already short enough to serve as its own summary. The two
+    fields therefore diverge here and only here.
+    """
+    env.append_build(
+        status='error', exit_code=1, log_file='/tmp/a-very-long-build-log-path.log'
+    )
+
+    data = env.classify(job_status='completed', output_bytes=42, worktree_sha=_SHA_A)
+
+    assert data['display_detail'] == 'build reported failure — read the named log'
+    assert data['display_detail'] != data['message']
+
+
+def test_killed_job_report_wins_over_error_row(env) -> None:
+    """A harness-reported kill outranks a matching ``error`` row.
+
+    The ``error`` arm was inserted into an ordered ``elif`` chain, so this pins
+    the branch order: a kill the harness observed is the stronger signal and
+    must not be masked by the failure the build managed to report first.
+    """
+    env.append_build(status='error', exit_code=1, log_file='/tmp/build.log')
+
+    data = env.classify(job_status='killed', output_bytes=0, worktree_sha=_SHA_A)
+
+    assert data['verdict'] == 'externally_killed', data
+    assert NO_BLIND_RETRY in data['message']
 
 
 # ---------------------------------------------------------------------------

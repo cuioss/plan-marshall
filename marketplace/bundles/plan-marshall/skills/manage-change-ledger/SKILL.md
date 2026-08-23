@@ -72,15 +72,32 @@ Every entry carries a `kind` discriminator, a `worktree_sha`, and a
 `timestamp_iso` (UTC ISO-8601). Three kinds:
 
 - **`kind=build`** — written by the executor dispatch boundary after every
-  build-**executing** invocation that runs to completion. Build-class-ness is a
-  **conjunction**: the notation must sit under a `build-*` skill AND the
-  dispatched subcommand must be the build-executing verb (`run`). A query
-  subcommand under a `build-*` skill — `parse`, `discover`, `coverage-report`,
-  `check-warnings`, `run-config-key`, `rewrite-log`, `find-project`,
-  `resolve-test-scope`, `analyze` — writes **no row**, and neither does a bare
-  `--help` dispatch that carries no subcommand at all. This is load-bearing for
-  the freshness gate below: a query exits 0 without building anything, so a row
-  stamped for it would read as proof that the current working tree was built.
+  build-**executing** invocation that runs to completion. The stamp predicate is
+  a **three-way conjunction**, and all three conjuncts must hold: the notation
+  must sit under a `build-*` skill, **AND** the dispatched subcommand must be
+  the build-executing verb (`run`), **AND** no help spelling may appear anywhere
+  in argv. Each conjunct suppresses a different dispatch, so the no-row set is
+  the union of three cases: a query subcommand under a `build-*` skill —
+  `parse`, `discover`, `coverage-report`, `check-warnings`, `run-config-key`,
+  `rewrite-log`, `find-project`, `resolve-test-scope`, `analyze` — writes **no
+  row**; neither does a bare `--help` dispatch that carries no subcommand at
+  all; and neither does a help probe that *does* carry the `run` verb —
+  `run --help` and `run -h` both satisfy the first two conjuncts and are
+  suppressed by the third alone. This is load-bearing for the freshness gate
+  below: a query and a help probe each exit 0 without building anything, so a
+  row stamped for either would read as proof that the current working tree was
+  built.
+
+  ⚠ `_is_build_class_notation` implements only **two** of the three conjuncts
+  (the `build-*` skill and the `run` verb); the third is `_mentions_help`, a
+  separate predicate ANDed with it at the boundary. Reading
+  `_is_build_class_notation` alone as "the stamp predicate" therefore states the
+  rule one conjunct short and admits `run --help` as a build — see
+  [`../extension-api/standards/build-systems-common.md`](../extension-api/standards/build-systems-common.md)
+  § "The `kind=build` change-ledger row is the substitute oracle", which states
+  the same three-way conjunction, and the discriminator test
+  `test/plan-marshall/tools-script-executor/test_build_class_stamp_discriminator.py`
+  that pins it.
   Fields: `kind: "build"`,
   `notation`, `plan_id` (str, **never null** — a build dispatched outside any
   plan, including an orchestrator global-tier build, is recorded under the
@@ -248,11 +265,22 @@ job as `success`. Every call site already holds the sha at call time (the
   a retry.
 - `timeout` — a matching row carries `status: timeout` (a clean timeout is
   never classified as a kill).
+- `error` — a matching row carries `status: error`: the build **ran to
+  completion and reported failures**. It is a verdict, not a non-finish, and it
+  is deliberately kept apart from `undecidable`: the remedy is to read the
+  reported failures, never to re-dispatch. The `message` names the row's
+  `notation`, `exit_code` and `log_file`, so the failures themselves are one hop
+  from the verdict; `display_detail` carries the bounded one-line summary
+  because a log path outruns it.
 - `success` — a matching row carries `status: success`.
 - `undecidable` — anything else, which includes a matching row carrying
   `status: unknown`. That row records an outcome the dispatch boundary could
   not determine, so it supports no verdict of its own and must not be read as
-  either a kill or a success.
+  either a kill or a success. `undecidable` means **no decisive signal was
+  found** — it never means "a failure was reported". A reported failure has its
+  own `error` arm above; folding it in here would present a verdict that WAS
+  read as one nobody could read, which is the same absence-as-measurement
+  confusion the `unknown` status exists to prevent.
 
 The classifier reads the ledger through `_ledger_core.read_entries` — never a
 re-implemented JSONL read.
@@ -283,6 +311,12 @@ from _ledger_core import (
 | `build-server-client` `submit` verb | produces | imports `job_record` + `append_entry`; writes `kind=job` at submit time for re-attach |
 | `build-server-client` `wait` re-attach | consumes | imports `read_entries`; reads the latest `kind=job` for the plan to recover `job_id` |
 | `manage-tasks:pre-commit-verify-freshness` gate | consumes | imports `read_entries` + `compute_worktree_sha`; scans `kind=build` by `status == success` + `worktree_sha`, then cross-checks each matching row's `notation` against the project's architecture-resolved build notations |
+| `plan-retrospective:analyze-logs` `summarize_build_ledger` | consumes | imports `read_entries`; keeps `kind=build` rows for one `plan_id` and partitions their `status` into `pass`/`error`/`timeout`/`killed`/`status_unknown` alongside the `duration_seconds` sum |
+
+The consuming rows are a derived set, not a maintained one — the derivation
+command and the three spellings it must cover are stated in
+[`../extension-api/standards/build-systems-common.md`](../extension-api/standards/build-systems-common.md)
+§ "Re-derive the ledger-reading rows".
 
 ## Related
 

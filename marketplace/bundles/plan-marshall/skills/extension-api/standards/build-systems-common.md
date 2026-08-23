@@ -140,7 +140,8 @@ conclusion in either direction.
 
 **Four outcome surfaces carry these conditions, and the consuming gates read them.** The table is
 the derived consumer set — every reader of each surface, enumerated from that surface's closed import
-set (`read_entries` + `kind == build` for the ledger, `read_log_verdict` /
+set (`read_entries` + a build-kind filter in any of its three spellings for the ledger — the command
+that derives those members is stated below the table — `read_log_verdict` /
 `WRAPPER_CLAIMABLE_BUILD_STATUSES` for the wrapper TOON, `job_status` for the daemon wire, and every
 reference to `pre-commit-verify-freshness` for the freshness verdict). It is the list a change to the
 vocabulary must walk:
@@ -154,6 +155,7 @@ vocabulary must walk:
 | `build_server.py::_render_job_status` | daemon `job_status` |
 | `manage-change-ledger classify-outcome` | ledger `kind=build` `status` |
 | `manage-tasks pre-commit-verify-freshness` | ledger `kind=build` `status` + `notation` |
+| `plan-retrospective analyze-logs.py::summarize_build_ledger` | ledger `kind=build` `status` + `duration_seconds` |
 | The agent reading the emitted build TOON | wrapper TOON `status` / `errors[]` |
 | `plan-marshall/workflow/execution.md` § Orchestrator-tier phase-5 verification | the orchestrator-tier build's `status` |
 | `phase-5-execute/SKILL.md` Step 12a | the freshness verdict's `status` + `reason` |
@@ -166,6 +168,37 @@ reads a build outcome the orchestrator (not a leaf) obtained. A consumer set der
 halt a phase transition, halt a push, and decide whether findings get triaged. **Derive the set
 transitively — a gate that consumes a verdict derived from the outcome is a consumer of the
 outcome.**
+
+#### Re-derive the ledger-reading rows — do not trust the row count
+
+The rows that read the ledger surface directly are derivable by mechanical search, so **run the
+derivation rather than trusting this table's length.** Take the intersection of these two sweeps and
+drop `_ledger_core.py`, which is the definer of both symbols rather than a consumer of them:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "\bread_entries\b" --category script
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "kind.{0,14}[!=]=\s*.build\b|\bKIND_BUILD\b" --category script
+```
+
+⛔ **The second pattern must cover all three spellings of the build-kind filter** — `== 'build'`,
+`!= 'build'` paired with a `continue`, and the `KIND_BUILD` constant. A pattern written for the `==`
+form alone under-reports: run against this tree it returns a single file that is not even an importer,
+so two of the three ledger-reading members go missing behind a clean-looking `count`. That is the
+defect class this whole section names — a sweep that returns a number is not thereby a measurement.
+
+Read the sweep's `truncated`, `unreadable[]` and `elided[]` fields before believing either result.
+`search --content` is inventory-scoped, so a zero is a trustworthy *"not in any inventoried file"* and
+never *"not in the tree"* — see
+[`../../manage-architecture/standards/client-api.md`](../../manage-architecture/standards/client-api.md) § search.
+
+⚠ **The derived set is a completeness FLOOR for the ledger-reading rows, never a replacement for the
+table.** The table is a deliberate superset: it also carries the wrapper-TOON, daemon-wire and
+freshness-verdict readers, plus the three second-order gates named above — none of which import the
+ledger, and none of which any ledger-anchored sweep can return. A row leaves this table only when the
+surface it reads is gone, never because a derivation did not produce it.
 
 **A gate that reads the status field is not thereby discriminating.** Every gate above reads one, so
 a list of "gates that read `status`" identifies nothing on its own — the question is whether reading

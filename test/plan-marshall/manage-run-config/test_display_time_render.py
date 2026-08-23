@@ -27,8 +27,9 @@ from datetime import UTC, datetime
 
 import file_ops
 from _display_time import render_timestamp, resolve_display_timezone
-from conftest import load_script_module
 from run_config import DISPLAY_TIMEZONE_DEFAULT, read_display_timezone
+
+from conftest import load_script_module
 
 # A fixed UTC instant: 2026-08-11 14:30:45 UTC. In Asia/Kolkata (+05:30, no DST)
 # this is 20:00:45; that pair is the deterministic conversion checked below.

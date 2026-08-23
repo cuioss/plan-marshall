@@ -597,15 +597,21 @@ def test_pm_marketplace_root_with_trailing_slash_rewrites(two_marketplace_trees,
 # boundary predicate requires) the boundary
 # appends one kind=build change-ledger row whose `status` is derived via
 # _derive_build_status — (1) negative returncode (POSIX signal death) =>
-# `killed` (reserved for this branch only); (2) any other nonzero returncode =>
+# `killed`; (2) any other nonzero returncode =>
 # `error`, AUTHORITATIVE over any contradictory stdout status (a stdout
 # `status: success` with exit 1 must not launder into a fresh-looking build);
 # (3) exit 0 => the wrapper's stdout TOON `status` when it is one the WRAPPER is
 # entitled to claim (the timeout fix: the wrapper exits 0 on timeout, the TOON
-# carries the truth; a stdout `killed` claim at exit 0 stamps `error`, since
-# `killed` is derived-only); (4) else exit 0 => `unknown`, NEVER `success` — a
-# payload carrying no claimable status leaves the outcome undetermined, and
-# `unknown` is the derived-only verdict that records exactly that.
+# carries the truth; a stdout `killed` claim at exit 0 is likewise BELIEVED —
+# the wrapper reaped the child it is reporting on, so the claim is a first-hand
+# observation exactly like its `timeout` one, and demoting it to `error` made
+# every inner kill indistinguishable from a red build); (4) else exit 0 =>
+# `unknown`, NEVER `success` — a payload carrying no claimable status leaves the
+# outcome undetermined, and `unknown` is the ONLY derived-only verdict, the one
+# the boundary reserves to itself to record exactly that. A stdout
+# `indeterminate` claim at exit 0 therefore stamps `unknown`: `indeterminate` is
+# the wrapper-side name for the same condition, and the boundary records its own
+# verdict for it rather than accepting the wrapper's word.
 # These tests drive a rendered executor end-to-end against a fake build-class
 # script that emits controlled stdout/exit, then assert the stamped row.
 
