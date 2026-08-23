@@ -1123,9 +1123,20 @@ class ClaudeRuntime(Runtime):
             for d in defaults:
                 if d not in sorted_allow:
                     sorted_allow.append(d)
-            sorted_allow = sorted(sorted_allow)
-            changes_applied = len([p for p in sorted_allow if p not in original]) + (
-                len(original) - len(deduped)
+            # Ensuring the defaults is two-sided, and this op is the second
+            # surface that ensures them: a rule the renderer has retired is
+            # pruned here for the same reason `ensure_default_permissions`
+            # prunes it. Reading the same renderer but not the same retired set
+            # would leave the two surfaces disagreeing on what "the defaults"
+            # means, and an operator whose flow is `normalize` would keep the
+            # startup warning the retirement exists to clear.
+            retired = {rule for _rule_id, rule in claude_runtime._RETIRED_DEFAULT_RULES}
+            pruned = len(retired.intersection(deduped))
+            sorted_allow = sorted(p for p in sorted_allow if p not in retired)
+            changes_applied = (
+                len([p for p in sorted_allow if p not in original])
+                + (len(original) - len(deduped))
+                + pruned
             )
             if not dry_run:
                 settings["permissions"]["allow"] = sorted_allow

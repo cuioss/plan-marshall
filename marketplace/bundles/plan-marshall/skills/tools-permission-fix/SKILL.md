@@ -32,13 +32,13 @@ The common permission mutations are platform-neutral: they flow through the `pla
 
 | Intent | Platform-routed command |
 |--------|-------------------------|
-| Normalize / dedupe / sort + add defaults | `platform_runtime permission fix --scope project --operation normalize [--dry-run]` |
+| Normalize / dedupe / sort + ensure defaults | `platform_runtime permission fix --scope project --operation normalize [--dry-run]` |
 | Add a permission | `platform_runtime permission fix --scope project --operation add --permissions "Bash(docker:*)" [--dry-run]` |
 | Remove a permission | `platform_runtime permission fix --scope project --operation remove --permissions "Bash(docker:*)" [--dry-run]` |
 | Ensure permissions exist | `platform_runtime permission fix --scope global --operation ensure --permissions "Bash(git:*)" "Bash(npm:*)" [--dry-run]` |
 | Consolidate enumerated entries into wildcards | `platform_runtime permission fix --scope project --operation consolidate [--dry-run]` |
 | Protect a directory from being read | `platform_runtime permission fix --scope global --operation protect-path --permissions /absolute/path/to/protect [--dry-run]` |
-| Set the full permission list | `platform_runtime permission configure --scope project --permissions "Read(**)" "Write(.plan/**)"` |
+| Set the full permission list | `platform_runtime permission configure --scope project --permissions "Read(**)" "Edit(.plan/**)"` |
 | Ensure marketplace bundle wildcards | `platform_runtime permission ensure-wildcards --scope project --marketplace-dir marketplace [--dry-run]` |
 | Ensure `project:{skill}` step permissions | `platform_runtime permission ensure-steps --marshal .plan/marshal.json --scope project [--dry-run]` |
 
@@ -196,11 +196,18 @@ Among its fixes, `apply-fixes` ensures a default allow set. It reports which def
 
 | id | Ensures |
 |---|---|
-| `plan-dir-edit` | plan-marshall's own `.plan/` directory is editable |
-| `plan-dir-write` | plan-marshall's own `.plan/` directory is writable |
+| `plan-dir-edit` | plan-marshall's own `.plan/` directory is writable by every file-editing tool |
 | `bundle-cache-read` | the deployed bundle cache is readable, so skills can reach the files they reference by relative path |
 
-`defaults_added_count` carries the same length as a scalar, matching how the neighbouring operations report (`permissions_added`, `rules_total`).
+Ensuring is two-sided: the target also prunes rules it has **retired** as defaults, reported the same way under `defaults_removed`. A retired rule is removed rather than left alone because an allow rule that matches no tool call is reported by the host as unmatched on every startup. One id is currently retired:
+
+| id | Retires |
+|---|---|
+| `plan-dir-write` | the separate `.plan/` write rule — file permission checks match `Edit(...)` rules, which already cover every file-editing tool, so it guarded nothing |
+
+`defaults_added_count` and `defaults_removed_count` carry the same lengths as scalars, matching how the neighbouring operations report (`permissions_added`, `rules_total`).
+
+The same two-sided ensure applies to `permission fix --operation normalize` in the platform-routed table above — it is the other surface that ensures this set, and it prunes the retired ids too. It reports the net effect as `changes_applied` rather than as semantic-id lists.
 
 ### add
 

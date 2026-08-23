@@ -121,9 +121,12 @@ def ensure_default_permissions(
 
     Goal-based: the caller states the goal and receives normalized status —
     ``{'defaults_added': [semantic ids], 'defaults_added_count': int,
-    'applied': bool}``. The permission grammar is rendered inside the runtime
-    and never crosses back, so a caller cannot come to depend on one target's
-    permission-string format.
+    'defaults_removed': [semantic ids], 'defaults_removed_count': int,
+    'applied': bool}``. Ensuring is two-sided: the runtime also prunes rules it
+    has retired as defaults. The permission grammar is rendered inside the
+    runtime and never crosses back, so a caller cannot come to depend on one
+    target's permission-string format — which is why a retirement is reported
+    as a semantic id here and explained at the runtime's own declaration.
 
     Like every other delegator in this module, it resolves to ``claude_runtime``
     by direct import rather than through the runtime registry, so the set it

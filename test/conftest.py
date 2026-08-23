@@ -36,7 +36,7 @@ MARKETPLACE_ROOT = PROJECT_ROOT / 'marketplace' / 'bundles'
 PLAN_DIR_NAME = '.plan'  # Tracked config sub-directory inside the repo.
 # Standalone test fixtures live under the repo-local .plan/temp/ so each
 # worktree keeps its own isolated fixture tree and the existing
-# ``Write(.plan/**)`` permission keeps covering them.
+# ``Edit(.plan/**)`` permission keeps covering them.
 TEST_FIXTURE_BASE = PROJECT_ROOT / PLAN_DIR_NAME / 'temp' / 'test-fixture'
 
 

@@ -189,7 +189,7 @@ Grep(pattern="...", path="...")               # instead of grep > file && other
 Glob(pattern="src/*", path="...")             # instead of ls > files.txt && wc -l files.txt
 ```
 
-Use `.plan/temp/` for transient artifacts when a Bash redirect is genuinely necessary — `.plan/temp/` is covered by the `Write(.plan/**)` permission and lives inside the workspace, while `/tmp/` is not pre-approved by the harness.
+Use `.plan/temp/` for transient artifacts when a Bash redirect is genuinely necessary — `.plan/temp/` is covered by the `Edit(.plan/**)` permission and lives inside the workspace, while `/tmp/` is not pre-approved by the harness.
 
 ### No shell constructs
 

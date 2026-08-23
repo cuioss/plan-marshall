@@ -35,20 +35,19 @@ def _parse(output: str) -> dict[str, Any]:
 
 
 class TestDefaultPermissionRules:
-    """``_default_permission_rules`` renders exactly these three rules."""
+    """``_default_permission_rules`` renders exactly these two rules."""
 
     def test_rendered_rules_are_the_pinned_literals(self) -> None:
         rendered = [rule for _rule_id, rule in claude_runtime._default_permission_rules()]
         assert rendered == [
             'Edit(.plan/**)',
-            'Write(.plan/**)',
             'Read(~/.claude/plugins/cache/**)',
         ]
 
     def test_semantic_ids_are_the_only_thing_a_caller_receives(self) -> None:
         """The ids name the goal, not the grammar — no id may contain DSL syntax."""
         ids = [rule_id for rule_id, _rule in claude_runtime._default_permission_rules()]
-        assert ids == ['plan-dir-edit', 'plan-dir-write', 'bundle-cache-read']
+        assert ids == ['plan-dir-edit', 'bundle-cache-read']
         for rule_id in ids:
             assert '(' not in rule_id and ')' not in rule_id
 
@@ -83,6 +82,13 @@ class TestDefaultPermissionRules:
         assert rendered['bundle-cache-read'] == f'Read({expected_dir}/**)'
 
 
+class TestRetiredDefaultRules:
+    """The rules the renderer prunes rather than emits."""
+
+    def test_retired_rules_are_the_pinned_literals(self) -> None:
+        assert claude_runtime._RETIRED_DEFAULT_RULES == (('plan-dir-write', 'Write(.plan/**)'),)
+
+
 class TestEnsureDefaultPermissions:
     """The goal-based entry point merges the defaults and performs the write."""
 
@@ -94,20 +100,36 @@ class TestEnsureDefaultPermissions:
         settings = self._settings(['Bash(git:*)'])
         result = claude_runtime.ensure_default_permissions(settings, path)
 
-        assert result['defaults_added'] == ['plan-dir-edit', 'plan-dir-write', 'bundle-cache-read']
-        assert result['defaults_added_count'] == 3
+        assert result['defaults_added'] == ['plan-dir-edit', 'bundle-cache-read']
+        assert result['defaults_added_count'] == 2
         assert result['applied'] is True
         written = json.loads(path.read_text(encoding='utf-8'))
         assert written['permissions']['allow'] == sorted(
             [
                 'Bash(git:*)',
                 'Edit(.plan/**)',
-                'Write(.plan/**)',
                 'Read(~/.claude/plugins/cache/**)',
             ]
         )
 
     def test_is_idempotent_and_writes_nothing_when_already_present(self, tmp_path: Path) -> None:
+        path = tmp_path / 'settings.json'
+        settings = self._settings(['Edit(.plan/**)', 'Read(~/.claude/plugins/cache/**)'])
+        result = claude_runtime.ensure_default_permissions(settings, path)
+
+        assert result['defaults_added'] == []
+        assert result['defaults_added_count'] == 0
+        assert result['defaults_removed'] == []
+        assert result['applied'] is False
+        assert not path.exists()
+
+    def test_prunes_a_retired_rule_and_reports_its_semantic_id(self, tmp_path: Path) -> None:
+        """A settings file written by an earlier version loses the dead rule.
+
+        The seed is otherwise default-complete, so pruning is the ONLY work in
+        the run — an implementation that merely stopped rendering the rule
+        would report no change and write nothing here.
+        """
         path = tmp_path / 'settings.json'
         settings = self._settings(
             ['Edit(.plan/**)', 'Read(~/.claude/plugins/cache/**)', 'Write(.plan/**)']
@@ -115,7 +137,36 @@ class TestEnsureDefaultPermissions:
         result = claude_runtime.ensure_default_permissions(settings, path)
 
         assert result['defaults_added'] == []
-        assert result['defaults_added_count'] == 0
+        assert result['defaults_removed'] == ['plan-dir-write']
+        assert result['defaults_removed_count'] == 1
+        assert result['applied'] is True
+        written = json.loads(path.read_text(encoding='utf-8'))
+        assert written['permissions']['allow'] == sorted(
+            ['Edit(.plan/**)', 'Read(~/.claude/plugins/cache/**)']
+        )
+
+    def test_prunes_every_copy_of_a_duplicated_retired_rule(self, tmp_path: Path) -> None:
+        """A hand-edited file can carry the rule twice; one left standing still warns."""
+        path = tmp_path / 'settings.json'
+        settings = self._settings(
+            [
+                'Edit(.plan/**)',
+                'Read(~/.claude/plugins/cache/**)',
+                'Write(.plan/**)',
+                'Write(.plan/**)',
+            ]
+        )
+        result = claude_runtime.ensure_default_permissions(settings, path)
+
+        assert result['defaults_removed'] == ['plan-dir-write']
+        assert 'Write(.plan/**)' not in settings['permissions']['allow']
+
+    def test_dry_run_prunes_in_memory_and_writes_nothing(self, tmp_path: Path) -> None:
+        path = tmp_path / 'settings.json'
+        settings = self._settings(['Write(.plan/**)'])
+        result = claude_runtime.ensure_default_permissions(settings, path, dry_run=True)
+
+        assert result['defaults_removed_count'] == 1
         assert result['applied'] is False
         assert not path.exists()
 
@@ -124,7 +175,7 @@ class TestEnsureDefaultPermissions:
         settings = self._settings([])
         result = claude_runtime.ensure_default_permissions(settings, path, dry_run=True)
 
-        assert result['defaults_added_count'] == 3
+        assert result['defaults_added_count'] == 2
         assert result['applied'] is False
         assert not path.exists()
         assert 'Edit(.plan/**)' in settings['permissions']['allow']
@@ -134,9 +185,9 @@ class TestEnsureDefaultPermissions:
         settings: dict[str, Any] = {}
         result = claude_runtime.ensure_default_permissions(settings, path)
 
-        assert result['defaults_added_count'] == 3
+        assert result['defaults_added_count'] == 2
         assert settings['permissions']['allow'] == sorted(
-            ['Edit(.plan/**)', 'Write(.plan/**)', 'Read(~/.claude/plugins/cache/**)']
+            ['Edit(.plan/**)', 'Read(~/.claude/plugins/cache/**)']
         )
 
     def test_a_failed_write_is_not_reported_as_applied(
@@ -157,5 +208,5 @@ class TestEnsureDefaultPermissions:
         result = claude_runtime.ensure_default_permissions(settings, path)
 
         # There WAS work to do — otherwise `applied is False` proves nothing.
-        assert result['defaults_added_count'] == 3
+        assert result['defaults_added_count'] == 2
         assert result['applied'] is False

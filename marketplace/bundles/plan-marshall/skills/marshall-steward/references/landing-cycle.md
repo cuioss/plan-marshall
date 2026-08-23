@@ -129,7 +129,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare
 
 Read the `path` field from the returned TOON and author the PR body to it with
 the `Write` tool (the path is under `.plan/`, pre-approved via
-`Write(.plan/**)`), then create the PR:
+`Edit(.plan/**)`), then create the PR:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \

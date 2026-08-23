@@ -100,7 +100,7 @@ python3 .plan/execute-script.py \
   --plan-id {plan_id}
 # Returns: path: .plan/plans/{plan_id}/solution_outline.md
 
-# 2. Write content directly (Write tool — already permitted via Write(.plan/**))
+# 2. Write content directly (Write tool — already permitted via Edit(.plan/**))
 Write({resolved_path}) with solution outline content
 
 # 3. Validate

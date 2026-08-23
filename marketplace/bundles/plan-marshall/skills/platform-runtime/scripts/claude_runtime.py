@@ -2578,15 +2578,36 @@ def _default_permission_rules() -> tuple[tuple[str, str], ...]:
     this side of the boundary. ``.plan`` is plan-marshall's own directory rather
     than a Claude one, so it is spelled literally; the bundle-cache read
     permission is derived from the resolved cache root instead.
+
+    ``Edit(.plan/**)`` is the only write-side rule, and the absent ``Write(...)``
+    twin is deliberate — see ``_RETIRED_DEFAULT_RULES`` below.
     """
     cache_glob = f"{_tilde_form(_claude_plugin_cache_dir())}/**"
     return (
         ("plan-dir-edit", "Edit(.plan/**)"),
-        ("plan-dir-write", "Write(.plan/**)"),
         # Skills reference files via relative paths, so the deployed bundle tree
         # must be readable.
         ("bundle-cache-read", f"Read({cache_glob})"),
     )
+
+
+#: Rules this renderer once emitted as defaults and now actively prunes. This is
+#: the canonical home for WHY; the surfaces that prune point here.
+#:
+#: ``Write(.plan/**)`` is matched by nothing: Claude's file permission checks
+#: consult ``Edit(...)`` rules only, and an ``Edit`` rule already covers every
+#: file-editing tool — ``Write`` and ``NotebookEdit`` included — so the rule
+#: guards no tool call and the harness reports it as unmatched on every startup.
+#: Dropping it from ``_default_permission_rules`` stops it being written afresh
+#: but leaves it standing in every settings file an earlier version touched, so
+#: it is removed as part of ensuring the defaults.
+#:
+#: **Entry criterion — a retired rule MUST be inert.** Retirement deletes a rule
+#: from an operator's settings without asking, which is only defensible because
+#: this rule grants nothing by construction. A rule that still guards a real
+#: tool call does not belong here however obsolete it looks: deprecate it where
+#: the operator can see it, rather than silently revoking a live grant.
+_RETIRED_DEFAULT_RULES: tuple[tuple[str, str], ...] = (("plan-dir-write", "Write(.plan/**)"),)
 
 
 def ensure_default_permissions(
@@ -2596,18 +2617,23 @@ def ensure_default_permissions(
 
     The goal-based entry point behind ``permission_fix.apply-fixes``: the caller
     states the goal (ensure the defaults) and this function renders the grammar,
-    merges it into the allow list, and — unless *dry_run* — performs the write
-    itself. Nothing rendered crosses back.
+    merges it into the allow list, prunes the rules that are no longer defaults,
+    and — unless *dry_run* — performs the write itself. Nothing rendered crosses
+    back.
+
+    Ensuring is therefore two-sided — see ``_RETIRED_DEFAULT_RULES`` for why a
+    retired rule is removed rather than left alone.
 
     Args:
         settings: A loaded settings mapping. Mutated in place when a default is
-            missing; the allow list is re-sorted in that case, matching the
-            surrounding ``apply-fixes`` normalization.
-        settings_path: Where to write when a default was added.
+            missing or a retired rule is present; the allow list is re-sorted in
+            either case, matching the surrounding ``apply-fixes`` normalization.
+        settings_path: Where to write when the allow list changed.
         dry_run: When ``True``, merge in memory and write nothing.
 
     Returns:
         ``{'defaults_added': [semantic ids], 'defaults_added_count': int,
+        'defaults_removed': [semantic ids], 'defaults_removed_count': int,
         'applied': bool}`` — normalized status only.
     """
     allow: list[str] = settings.setdefault("permissions", {}).setdefault("allow", [])
@@ -2617,13 +2643,25 @@ def ensure_default_permissions(
             allow.append(rule)
             added_ids.append(rule_id)
 
-    if added_ids:
+    removed_ids: list[str] = []
+    for rule_id, rule in _RETIRED_DEFAULT_RULES:
+        if rule in allow:
+            # Rebuilt rather than ``remove``d: a hand-edited file can carry the
+            # rule more than once, and a single ``remove`` would leave the
+            # duplicate — and the warning — in place.
+            allow[:] = [existing for existing in allow if existing != rule]
+            removed_ids.append(rule_id)
+
+    if added_ids or removed_ids:
         settings["permissions"]["allow"] = sorted(allow)
 
-    applied = bool(added_ids) and not dry_run and _save_settings(settings_path, settings)
+    changed = bool(added_ids or removed_ids)
+    applied = changed and not dry_run and _save_settings(settings_path, settings)
     return {
         "defaults_added": added_ids,
         "defaults_added_count": len(added_ids),
+        "defaults_removed": removed_ids,
+        "defaults_removed_count": len(removed_ids),
         "applied": applied,
     }
 

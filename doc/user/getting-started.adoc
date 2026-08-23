@@ -119,7 +119,7 @@ In addition to scaffolding `.plan/`, the first-run wizard *appends* a small set 
 | Temporary Files
 | `CLAUDE.md`, `AGENTS.md`
 | File already contains the substring `.plan/temp`
-| A `## Temporary Files` section pointing all temporary and generated files at `.plan/temp/` (covered by the `Write(.plan/**)` permission).
+| A `## Temporary Files` section pointing all temporary and generated files at `.plan/temp/` (covered by the `Edit(.plan/**)` permission).
 
 | Tool Usage
 | `CLAUDE.md`

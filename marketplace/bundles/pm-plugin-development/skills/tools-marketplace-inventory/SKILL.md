@@ -133,7 +133,7 @@ This skill is designed to run without user prompts. Required permissions:
 **Ensuring Non-Prompting:**
 - Resolve script paths from `.plan/scripts-library.toon` (system convention)
 - Script reads marketplace directory structure
-- Writes inventory to `.plan/temp/` (covered by `Write(.plan/**)` permission)
+- Writes inventory to `.plan/temp/` (covered by `Edit(.plan/**)` permission)
 - All output is TOON format
 
 ---

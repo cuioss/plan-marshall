@@ -111,7 +111,7 @@ The executor is written directly to `<root>/.plan/execute-script.py`.
 Runtime state (plans, archived-plans, run-configuration.json,
 lessons-learned, memory, logs) lives at `<root>/.plan/local/` — the same
 tracked `.plan/` tree, under a dedicated `local/` subdirectory covered
-by the existing `Write(.plan/**)` permission.
+by the existing `Edit(.plan/**)` permission.
 
 ---
 
@@ -212,7 +212,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config clean
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config cleanup --dry-run
 ```
 
-**NOTE**: The `.plan/temp/` directory is the default temp directory for ALL temporary files. It is covered by the existing `Write(.plan/**)` permission (avoiding permission prompts for `/tmp/`) and cleaned during maintenance.
+**NOTE**: The `.plan/temp/` directory is the default temp directory for ALL temporary files. It is covered by the existing `Edit(.plan/**)` permission (avoiding permission prompts for `/tmp/`) and cleaned during maintenance.
 
 ---
 

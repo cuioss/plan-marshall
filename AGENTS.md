@@ -87,4 +87,4 @@ This copies to `~/.claude/plugins/cache/plan-marshall/` via rsync `--delete`.
 
 ## Temporary Files
 
-Use `.plan/temp/` for ALL temporary and generated files (covered by `Write(.plan/**)` permission — avoids permission prompts).
+Use `.plan/temp/` for ALL temporary and generated files (covered by `Edit(.plan/**)` permission — avoids permission prompts).
