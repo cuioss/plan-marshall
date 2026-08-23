@@ -835,25 +835,51 @@ LANDING_REQUIRED_KEYS: tuple[str, ...] = (
     'steps',
 )
 
-#: Values a producer is SANCTIONED to write in place of a fact it could not read
-#: (``phase-6-finalize/standards/emit-landing.md``). Compared case-insensitively
-#: after stripping. Each is a truthy string, which is why a presence-only check
-#: accepts them silently — the very defect :data:`LANDING_SENTINEL_REJECTING_KEYS`
-#: exists to close.
-LANDING_DEGRADED_SENTINELS: frozenset[str] = frozenset({'n/a'})
+#: The ANSWERED-degraded class: a value a producer is SANCTIONED to write
+#: (``phase-6-finalize/standards/emit-landing.md``) that ASSERTS A REAL END STATE.
+#: ``n/a`` says "there is no such thing", so at a key where that state is
+#: legitimate it IS the fact rather than a gap. Compared case-insensitively after
+#: stripping.
+#:
+#: This class is gated PER KEY by :data:`LANDING_SENTINEL_REJECTING_KEYS` —
+#: unsupplied at the keys named there, an answer everywhere else.
+LANDING_ANSWERED_SENTINELS: frozenset[str] = frozenset({'n/a'})
 
-#: The required keys for which a sanctioned degraded value is NOT an answer. Each
-#: names something a landed plan always has, so ``n/a`` there records a producer
-#: that could not read it — a gap the drain must report, never a fact it may
-#: reconcile against.
+#: The COULD-NOT-READ class: a value that asserts only that NOTHING WAS OBSERVED.
+#: ``unknown`` is named by ``standards/landing-payload-spec.md`` as "a PR whose
+#: state could not be read, and asserts only that nothing was observed" — a
+#: FAILED READ, never an end state. Compared case-insensitively after stripping.
+#:
+#: ⛔ This class carries **NO allow-list and no per-key gate**: a key holding one
+#: of these values is unsupplied at EVERY key, ``pr`` and ``merge_state``
+#: included — precisely the two keys :data:`LANDING_SENTINEL_REJECTING_KEYS`
+#: deliberately omits. That asymmetry between the two classes is the whole point
+#: of splitting them. Gating this class the way the answered class is gated would
+#: reintroduce the defect the split closes: ``merge_state=unknown`` would drain as
+#: a settled merge fact while recording that the merge state could not be read.
+LANDING_COULD_NOT_READ_SENTINELS: frozenset[str] = frozenset({'unknown'})
+
+#: The allow-list gate for the ANSWERED class ALONE
+#: (:data:`LANDING_ANSWERED_SENTINELS`): the required keys at which ``n/a`` is NOT
+#: an answer. Each names something a landed plan always has, so ``n/a`` there
+#: records a producer that could not read it — a gap the drain must report, never
+#: a fact it may reconcile against.
+#:
+#: ⛔ It does NOT gate :data:`LANDING_COULD_NOT_READ_SENTINELS`, which is
+#: unsupplied at every key with no allow-list. Reading this set as "the keys at
+#: which a degraded value is rejected" — as though one vocabulary existed — is
+#: exactly the conflation the two-class split removes.
 #:
 #: The set is deliberately a SUBSET of :data:`LANDING_REQUIRED_KEYS`, and the
 #: asymmetry is the point: ``pr`` and ``merge_state`` stay allowed to be ``n/a``
-#: because "no PR exists" is a real end state the payload spec names, so a
-#: degraded value there is an answer rather than a gap. ``schema`` needs no entry
-#: — :func:`check_landing_completeness` fail-closes on any value other than
+#: because "no PR exists" is a real end state the payload spec names, so an
+#: ANSWERED-degraded value there is an answer rather than a gap. They are NOT
+#: thereby allowed to be ``unknown`` — that value is a failed read at every key,
+#: which is why the fix is this split and NOT the widening of this set to include
+#: ``merge_state``. ``schema`` needs no entry —
+#: :func:`check_landing_completeness` fail-closes on any value other than
 #: :data:`LANDING_FACTS_SCHEMA` before the required-key sweep runs, so a sentinel
-#: is already rejected there by the stricter check.
+#: of either class is already rejected there by the stricter check.
 LANDING_SENTINEL_REJECTING_KEYS: frozenset[str] = frozenset({
     'plan_id',
     'deliverables_total',
@@ -866,18 +892,35 @@ LANDING_SENTINEL_REJECTING_KEYS: frozenset[str] = frozenset({
 def _is_unsupplied(key: str, facts: dict[str, str]) -> bool:
     """Return whether ``key`` carries no usable value in ``facts``.
 
-    A key is unsupplied when it is absent or empty, and — for a key in
-    :data:`LANDING_SENTINEL_REJECTING_KEYS` — when its value is a sanctioned
-    degraded sentinel. The sentinel comparison is exact after stripping and
-    case-folding, so a real value that merely contains the sentinel's letters is
-    unaffected.
+    The SINGLE named predicate both degraded-value classes route through, so the
+    two vocabularies stay one decision rather than two drifting checks. A key is
+    unsupplied in exactly three cases, tested in this order:
+
+    1. **Absent or empty** — nothing was written at all.
+    2. **A COULD-NOT-READ sentinel** (:data:`LANDING_COULD_NOT_READ_SENTINELS`) —
+       unsupplied at EVERY key, with no allow-list. The value asserts only that
+       nothing was observed, which is never an answer, so there is no key at
+       which it could legitimately stand in for a fact. This test runs BEFORE the
+       per-key gate below precisely so the gate cannot exempt it: ``pr`` and
+       ``merge_state`` are outside
+       :data:`LANDING_SENTINEL_REJECTING_KEYS`, and a gated could-not-read value
+       would drain there as a settled fact.
+    3. **An ANSWERED sentinel** (:data:`LANDING_ANSWERED_SENTINELS`) at a key
+       named by :data:`LANDING_SENTINEL_REJECTING_KEYS` — the per-key gate. At
+       every other key the value asserts a real end state and IS the fact.
+
+    Both sentinel comparisons are exact after stripping and case-folding, so a
+    real value that merely CONTAINS a sentinel's letters is unaffected.
     """
     value = facts.get(key, '')
     if not value:
         return True
+    normalised = value.strip().lower()
+    if normalised in LANDING_COULD_NOT_READ_SENTINELS:
+        return True
     if key not in LANDING_SENTINEL_REJECTING_KEYS:
         return False
-    return value.strip().lower() in LANDING_DEGRADED_SENTINELS
+    return normalised in LANDING_ANSWERED_SENTINELS
 
 
 #: Matches the first ``landing-facts`` fenced block in a payload body. DOTALL so
@@ -923,9 +966,10 @@ def check_landing_completeness(payload_body: str) -> tuple[bool, list[str]]:
     A landing is COMPLETE when it carries a ``landing-facts`` block whose ``schema``
     is :data:`LANDING_FACTS_SCHEMA` and which SUPPLIES every key in
     :data:`LANDING_REQUIRED_KEYS`. Non-empty is necessary but NOT sufficient: a
-    sanctioned degraded value counts as unsupplied for the keys
-    :data:`LANDING_SENTINEL_REJECTING_KEYS` names — see the fourth bullet below. Otherwise it is
-    INCOMPLETE and ``missing_keys`` names why:
+    degraded value counts as unsupplied — at the keys
+    :data:`LANDING_SENTINEL_REJECTING_KEYS` names for the ANSWERED class, and at
+    EVERY key for the COULD-NOT-READ class. See the fourth bullet below.
+    Otherwise it is INCOMPLETE and ``missing_keys`` names why:
 
     - No block at all (a prose-only landing) -> every required key is missing. This
       is the case the drain-completeness check exists to catch: a landing carrying
@@ -936,15 +980,25 @@ def check_landing_completeness(payload_body: str) -> tuple[bool, list[str]]:
       payload version is never best-effort-accepted.
     - Block present with the right schema but missing (or empty) required keys ->
       exactly those keys.
-    - Block present with the right schema but a SANCTIONED DEGRADED VALUE (``n/a``,
-      per :data:`LANDING_DEGRADED_SENTINELS`) where a fact belongs -> that key too.
-      The producer is allowed to write ``n/a`` for a fact it could not read, and
-      ``n/a`` is truthy, so a presence-only check would accept a landing whose
-      token total, step list and deliverable counts all failed to read. This
-      applies only to :data:`LANDING_SENTINEL_REJECTING_KEYS`: ``pr`` and
-      ``merge_state`` stay allowed to be ``n/a``, because "no PR exists" is a real
-      end state the payload spec names and a degraded value there is an answer
-      rather than a gap.
+    - Block present with the right schema but a DEGRADED VALUE where a fact
+      belongs -> that key too. Every degraded value is truthy, so a presence-only
+      check would accept a landing whose token total, step list and deliverable
+      counts all failed to read. The two classes are rejected on DIFFERENT terms,
+      and the difference is the point:
+
+      - An ANSWERED sentinel (``n/a``, per :data:`LANDING_ANSWERED_SENTINELS`) is
+        rejected only at :data:`LANDING_SENTINEL_REJECTING_KEYS`. ``pr`` and
+        ``merge_state`` stay allowed to be ``n/a``, because "no PR exists" is a
+        real end state the payload spec names and the value there is an answer
+        rather than a gap.
+      - A COULD-NOT-READ sentinel (``unknown``, per
+        :data:`LANDING_COULD_NOT_READ_SENTINELS`) is rejected at EVERY key, with
+        no allow-list — ``pr`` and ``merge_state`` included. It asserts only that
+        nothing was observed, so it is a failed read wherever it appears. This is
+        why the fix was to SPLIT the vocabulary rather than to add ``merge_state``
+        to the rejecting set: ``merge_state=n/a`` must stay an answer while
+        ``merge_state=unknown`` must read as a gap, and one gated vocabulary
+        cannot express both.
 
     A check that PASSED on a prose-only landing would be the vacuous guard this one
     exists to replace; the no-block branch is what keeps it non-vacuous, and it is
@@ -1963,6 +2017,17 @@ def cmd_inbox_landing_check(args: Any) -> dict[str, Any]:
     mechanisable facts ride OPTIONAL keys this check does not require (the
     per-step typed facts, the wall-clock, the repository end-state), so a
     ``complete: true`` landing may carry none of them.
+
+    **A degraded value is judged by which of TWO classes it belongs to**, so
+    ``missing_keys`` can name a key the producer did write. An ANSWERED sentinel
+    (``n/a``, :data:`LANDING_ANSWERED_SENTINELS`) asserts a real end state and is
+    reported missing only at :data:`LANDING_SENTINEL_REJECTING_KEYS`; a
+    COULD-NOT-READ sentinel (``unknown``,
+    :data:`LANDING_COULD_NOT_READ_SENTINELS`) asserts only that nothing was
+    observed and is reported missing at EVERY key, ``pr`` and ``merge_state``
+    included. So ``merge_state=n/a`` leaves a landing complete while
+    ``merge_state=unknown`` does not — the drain records the failed read as a gap
+    instead of reconciling against it as a settled merge fact.
 
     ``complete: false`` is a VERDICT, not a fault: the verb stays ``status:
     success`` and rides the completeness on the payload, so a drain is never

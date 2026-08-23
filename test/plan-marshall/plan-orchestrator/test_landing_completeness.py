@@ -7,8 +7,11 @@ The terminal ``kind: landing`` message must carry a machine-readable
 ``landing-facts`` block (plan 302 D4). ``check_landing_completeness`` is the
 drain-side validator that lets the orchestrator turn "the queue is empty" into
 "every REQUIRED fact drained": it reports whether a drained landing carried that
-block with every required fact key SUPPLIED — non-empty, and not a sanctioned
-degraded value for the keys that cannot legitimately be unknown. It does NOT
+block with every required fact key SUPPLIED — non-empty, and not a degraded
+value. Degraded values come in TWO classes, rejected on different terms: an
+ANSWERED one (``n/a``) asserts a real end state and is rejected only at the keys
+that cannot legitimately be absent, while a COULD-NOT-READ one (``unknown``)
+asserts that nothing was observed and is rejected at EVERY key. It does NOT
 reach the optional keys (the per-step typed facts, the wall-clock, the repository
 end-state), so a ``complete: true`` landing may carry none of them and the check
 never establishes that nothing whatsoever is outstanding.
@@ -35,6 +38,7 @@ Covered:
 from __future__ import annotations
 
 import re
+from contextlib import contextmanager
 from pathlib import Path
 
 from conftest import MARKETPLACE_ROOT, get_script_path, load_script_module, run_script
@@ -163,16 +167,54 @@ class TestSeenToFailOnPreFixLanding:
 
 
 # =============================================================================
-# A sanctioned degraded value is MISSING, not a fact
+# A degraded value is MISSING, not a fact — across TWO classes
 # =============================================================================
 #
-# ``emit-landing.md`` sanctions writing ``n/a`` for a fact the producer could not
-# read. ``n/a`` is a truthy string, so a presence-only check accepts a landing
-# whose token total, step list and deliverable counts all failed to read and
-# reports ``complete: true`` over it. The expectations below are stated as EXACT
-# literal key lists rather than derived from the module's sentinel-rejecting key
-# set: deriving them would make both sides move together, so dropping a key from
-# that set would leave every assertion green.
+# A producer may write a degraded value in place of a fact, and every such value
+# is a truthy string, so a presence-only check accepts a landing whose token
+# total, step list and deliverable counts all failed to read and reports
+# ``complete: true`` over it. Two classes are rejected on DIFFERENT terms, and
+# the asymmetry between them is what these tests pin:
+#
+# - ANSWERED-degraded (``n/a``) asserts a real end state — "there is no such
+#   thing" — so it is rejected only at the keys
+#   ``LANDING_SENTINEL_REJECTING_KEYS`` names, and stays a legal answer at ``pr``
+#   and ``merge_state``.
+# - COULD-NOT-READ (``unknown``) asserts only that nothing was observed, so it is
+#   rejected at EVERY key with no allow-list — ``pr`` and ``merge_state``
+#   included.
+#
+# That is why the fix was to SPLIT the vocabulary rather than to add
+# ``merge_state`` to the rejecting set: ``merge_state=n/a`` must stay an answer
+# while ``merge_state=unknown`` must read as a gap, and one gated vocabulary
+# cannot express both. The retained negative control
+# (``test_degraded_pr_and_merge_state_stay_complete``) is the half that would
+# have gone red under the widening, so it is what keeps the split honest.
+#
+# The expectations below are stated as EXACT literal key lists rather than
+# derived from the module's sentinel vocabularies: deriving them would make both
+# sides move together, so dropping a member from either set would leave every
+# assertion green. The mutation pin at the end of the class proves that
+# non-vacuity by execution rather than by assertion.
+
+
+@contextmanager
+def _without_could_not_read_sentinels():
+    """Empty the COULD-NOT-READ vocabulary for the duration of the block.
+
+    The mutation vehicle for the non-vacuity pin. It rebinds the MODULE
+    attribute — not a local copy — because ``_is_unsupplied`` reads
+    ``LANDING_COULD_NOT_READ_SENTINELS`` as a module global at call time, so a
+    local rebinding would leave the predicate reading the shipped value and the
+    pin would silently prove nothing. Restored in a ``finally`` so a failing
+    assertion inside the block cannot leak the mutation into a later test.
+    """
+    original = _inbox.LANDING_COULD_NOT_READ_SENTINELS
+    _inbox.LANDING_COULD_NOT_READ_SENTINELS = frozenset()
+    try:
+        yield
+    finally:
+        _inbox.LANDING_COULD_NOT_READ_SENTINELS = original
 
 
 class TestDegradedSentinelFacts:
@@ -241,6 +283,104 @@ class TestDegradedSentinelFacts:
 
         assert complete is True
         assert missing == []
+
+    # -- COULD-NOT-READ class: positive controls -----------------------------
+
+    def test_could_not_read_merge_state_is_reported_missing(self):
+        """POSITIVE CONTROL: ``merge_state=unknown`` is a GAP, not a fact.
+
+        The defect this split closes. ``merge_state`` is deliberately OUTSIDE
+        ``LANDING_SENTINEL_REJECTING_KEYS`` — so that ``n/a`` stays an answer
+        there — which meant the single-vocabulary check absorbed ``unknown`` as a
+        settled merge fact. The payload spec defines ``unknown`` as "a PR whose
+        state could not be read, and asserts only that nothing was observed", so
+        reconciling against it would drain a failed read as a merge outcome.
+        """
+        landing = _facts_landing(merge_state='unknown')
+
+        complete, missing = check_landing_completeness(landing)
+
+        assert complete is False
+        assert missing == ['merge_state']
+
+    def test_could_not_read_pr_is_reported_missing(self):
+        """``pr`` is the other key outside the rejecting set — same rule applies."""
+        landing = _facts_landing(pr='unknown')
+
+        complete, missing = check_landing_completeness(landing)
+
+        assert complete is False
+        assert missing == ['pr']
+
+    def test_could_not_read_at_a_rejecting_set_key_is_reported_missing(self):
+        """The class also rejects at a key the ANSWERED gate already covers.
+
+        ``total_tokens`` is in ``LANDING_SENTINEL_REJECTING_KEYS``, so both
+        classes are unsupplied there. Pinning it proves the could-not-read rule
+        is unconditional rather than an else-branch that only fires at the two
+        keys the gate omits.
+        """
+        landing = _facts_landing(total_tokens='unknown')
+
+        complete, missing = check_landing_completeness(landing)
+
+        assert complete is False
+        assert missing == ['total_tokens']
+
+    def test_could_not_read_match_ignores_case_and_surrounding_space(self):
+        """A producer's ``  UNKNOWN  `` is the same could-not-read value.
+
+        Mirrors ``test_sentinel_match_ignores_case_and_surrounding_space`` for
+        the ANSWERED class, so both vocabularies are pinned to the same
+        strip-then-casefold normalisation.
+        """
+        landing = _facts_landing(merge_state='  UNKNOWN  ')
+
+        complete, missing = check_landing_completeness(landing)
+
+        assert complete is False
+        assert missing == ['merge_state']
+
+    def test_a_value_merely_containing_unknown_is_not_swept_up(self):
+        """The comparison is EXACT after normalisation, never a substring test.
+
+        A real value that happens to contain the sentinel's letters is a fact.
+        Checked at a key outside the rejecting set AND at one inside it, so the
+        exactness holds on both branches of the predicate rather than only on the
+        one a single sample would have exercised.
+        """
+        landing = _facts_landing(
+            merge_state='unknown_at_dequeue', deliverables_done='3 unknown-to-spec'
+        )
+
+        complete, missing = check_landing_completeness(landing)
+
+        assert complete is True
+        assert missing == []
+
+    # -- The mutation pin ----------------------------------------------------
+
+    def test_mutation_pin_dropping_unknown_turns_the_positive_control_red(self):
+        """The positive controls pass BECAUSE ``unknown`` is in the vocabulary.
+
+        A guard that would pass no matter what the module declared proves
+        nothing. This drops ``unknown`` from the could-not-read vocabulary and
+        observes the SAME input flip to complete — so the assertions above are
+        load-bearing — then confirms the restore. The mutation is applied to the
+        module attribute rather than to a local copy because
+        ``_is_unsupplied`` reads the module global at call time.
+        """
+        landing = _facts_landing(merge_state='unknown')
+
+        # Baseline: the positive control holds against the shipped vocabulary.
+        assert check_landing_completeness(landing) == (False, ['merge_state'])
+
+        # Mutation: with the vocabulary emptied, the same landing reads complete.
+        with _without_could_not_read_sentinels():
+            assert check_landing_completeness(landing) == (True, [])
+
+        # Restored: the mutation was scoped, not permanent.
+        assert check_landing_completeness(landing) == (False, ['merge_state'])
 
 
 # =============================================================================

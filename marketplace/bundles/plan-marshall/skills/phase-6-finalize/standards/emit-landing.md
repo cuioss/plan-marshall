@@ -99,6 +99,23 @@ after every reporting step. It runs BEFORE `archive-plan` (1100), which `destroy
 when this step runs. `1001–1099` stays reserved for a future co-terminal step; this step does not consume
 the whole band.
 
+**The derived-figure timing rule.** Every count a landing carries is DERIVED, not authored — the token
+totals, the deliverable counts, the per-step outcomes, the merge state. A derived figure is taken AFTER
+the last event that can change it; taken any earlier it is not an early reading of the same number but a
+different number, and the landing reports it as settled. The rule has two distinct consequences, and the
+`order: 1000` placement is what satisfies both:
+
+- **The last event may be a step that has not run yet.** A figure derived before the review cycle closes
+  misses whatever that cycle changes, which is why this step sits after `branch-cleanup` (70) and
+  `record-metrics` (998) rather than beside the step that happens to produce each input.
+- **The producer completes before the consumer reads.** The landing is drained by the orchestrator well
+  after this step returns, so a figure that is still moving when the message is written is read by the
+  consumer as a final one. There is no later correction path: `archive-plan` (1100) destroys the plan
+  directory immediately after, so whatever this step emits is what the epic sees.
+
+Where a figure genuinely cannot be settled by the time this step runs, it is recorded as a gap through
+the degraded-value vocabulary above — never as a provisional number presented as final.
+
 ## Workflow
 
 ### Step 0: Defensive orchestration guard
@@ -165,8 +182,13 @@ run yet). A read that fails degrades its field to `n/a` (Error Handling), never 
    in item 1 — do NOT re-parse either out of a `display_detail` string:
 
    - `pr` ← `create-pr`'s `pr_number` fact, rendered as `#{pr_number}`.
-   - `merge_state` ← `branch-cleanup`'s `merge_state` fact, transcribed verbatim
-     (`merged` / `open` / `n/a`).
+   - `merge_state` ← `branch-cleanup`'s `merge_state` fact, transcribed verbatim over the payload
+     spec's full five-value vocabulary: `merged` / `open` / `closed` / `unknown` / `n/a`. `closed` is
+     a PR the merge queue dequeued without merging and `unknown` is a PR whose state could not be
+     read — neither collapses into `open`. See
+     [`../../plan-orchestrator/standards/landing-payload-spec.md`](../../plan-orchestrator/standards/landing-payload-spec.md)
+     § "Required machine-readable fact keys" for what each value asserts. Transcribe whatever the step
+     recorded; never narrow it to a shorter set, and never substitute a value the run did not observe.
 
    A fact absent because its step did not run (the manifest excluded it, or it has no record) is
    written as `n/a`, its key still present, per the Error Handling table.
@@ -183,7 +205,7 @@ Write {plan_dir}/work/inbox-payload.md
 The body has three parts, in order:
 
 1. **An optional one-line narrative headline** under a `## What landed` heading — e.g. `{plan_id} shipped as {pr} ({merge_state}).`
-2. **The required `landing-facts` fenced block** — it MUST open with a ` landing-facts ` info-string fence and close with a bare fence, and MUST carry every required key from the payload spec — `schema=landing-facts/1`, `plan_id`, `pr`, `merge_state`, `deliverables_total`, `deliverables_done`, `total_tokens`, and `steps` (comma-joined `{step}:{outcome}` in composed order). A value that could not be read is written as `n/a` (its key still present). ⚠ **A degraded value is not a fact, and the consumer says so:** `n/a` is accepted for `pr` and `merge_state` — "no PR exists" is a real end state — but for `plan_id`, `deliverables_total`, `deliverables_done`, `total_tokens` and `steps` the drain's completeness check reads it as MISSING and reports the landing INCOMPLETE. Writing `n/a` there is still the correct thing to do when a read genuinely failed (it never blocks the emission), but it is recorded as a gap rather than absorbed as a value — see [`landing-payload-spec.md`](../../plan-orchestrator/standards/landing-payload-spec.md) § "Required machine-readable fact keys". Optional keys (`epic`, `total_wall_seconds`, per-step `step.{name}.{fact}=…`) MAY follow. The block's contents are `key=value` lines:
+2. **The required `landing-facts` fenced block** — it MUST open with a ` landing-facts ` info-string fence and close with a bare fence, and MUST carry every required key from the payload spec — `schema=landing-facts/1`, `plan_id`, `pr`, `merge_state`, `deliverables_total`, `deliverables_done`, `total_tokens`, and `steps` (comma-joined `{step}:{outcome}` in composed order). A value that could not be read is written as `n/a` (its key still present). ⚠ **A degraded value is not a fact, and the consumer says so:** `n/a` is accepted for `pr` and `merge_state` — "no PR exists" is a real end state — but for `plan_id`, `deliverables_total`, `deliverables_done`, `total_tokens` and `steps` the drain's completeness check reads it as MISSING and reports the landing INCOMPLETE. Writing `n/a` there is still the correct thing to do when a read genuinely failed (it never blocks the emission), but it is recorded as a gap rather than absorbed as a value — see [`landing-payload-spec.md`](../../plan-orchestrator/standards/landing-payload-spec.md) § "Required machine-readable fact keys". ⚠ **The could-not-read class is stricter, and it has no carve-out:** a value asserting only that a state could not be READ — written `merge_state=unknown` — is a gap at EVERY required key, `pr` and `merge_state` included, so it never inherits the exemption `n/a` gets at those two. Writing it when a state genuinely could not be read stays CORRECT producer behaviour and never blocks the emission; the landing is simply recorded INCOMPLETE at that key, which is the honest outcome. Never substitute a settled-looking value for one the run did not observe — a fabricated state is worse than a recorded gap. Optional keys (`epic`, `total_wall_seconds`, per-step `step.{name}.{fact}=…`) MAY follow. The block's contents are `key=value` lines:
 
 ```landing-facts
 schema=landing-facts/1

@@ -41,7 +41,7 @@ of each:
 |---|---|---|---|
 | PR number + merge/landing state (headline token `MERGED`/`OPEN`/…) | narrative "the PR reference" | MECHANISABLE | `pr`, `merge_state` |
 | Deliverables `N_done/N_total` + titles | narrative "what shipped" | MECHANISABLE | `deliverables_total`, `deliverables_done` |
-| Per-step outcome + `display_detail` for every finalize step, in composed order | absent | MECHANISABLE | **required** `steps`, which carries the per-step `{step}:{outcome}` pairs ONLY; each step's typed `facts` ride the **optional** `step.{name}.{fact_key}` keys |
+| Per-step outcome + `display_detail` for every finalize step, in composed order | absent | MECHANISABLE | **required** `steps`, which carries the per-step `{step}:{outcome}` pairs ONLY (split each element on its LAST colon — a namespaced step id contains one); each step's typed `facts` ride the **optional** `step.{name}.{fact_key}` keys |
 | Token totals + wall-clock (`record-metrics`) | absent | MECHANISABLE | **required** `total_tokens`; the wall-clock rides the **optional** `total_wall_seconds` |
 | Repository end-state (main up-to-date, worktree removed, tree clean) | absent | MECHANISABLE | the **optional** `step.branch-cleanup.{fact_key}` typed-fact keys; `steps` carries that step's outcome alone, not its end-state facts |
 | Anomaly the operator noticed but no step recorded (a false-merge claim, a bot withdrawal) | narrative | NARRATIVE-ONLY | prose `## Residue` section |
@@ -94,18 +94,31 @@ the drain consumes. These keys are **required** — a landing missing any of the
 | `deliverables_total` | Total deliverable count from the solution outline | run |
 | `deliverables_done` | Completed deliverable count | run |
 | `total_tokens` | The run's token total (raw integer) | `record-metrics` facts |
-| `steps` | Comma-joined `{step}:{outcome}` for every finalize step in composed order | `manage-status read` phase_steps |
+| `steps` | Comma-joined `{step}:{outcome}` for every finalize step in composed order. **A consumer splits each element on its LAST colon**, never its first: a namespaced step id contains a colon itself (`project:finalize-step-plugin-doctor:done`, `plan-marshall:plan-retrospective:done`), so a first-colon split yields the bare namespace as the step and the rest as the outcome | `manage-status read` phase_steps |
 
 Optional keys a landing MAY carry (not required, so their absence is not incompleteness): `epic`,
 `total_wall_seconds`, and any per-step typed fact transcribed as `step.{name}.{fact_key}={value}`.
 
-**A degraded value is not a fact.** `emit-landing.md` sanctions writing `n/a` for a field the producer
+**A degraded value is not a fact.** A degraded value comes in TWO classes, and they are rejected on
+different terms because they assert different things.
+
+The **answered-degraded** class is `n/a`. `emit-landing.md` sanctions writing it for a field the producer
 could not read. For `pr` and `merge_state` that IS an answer — "no PR exists" is a real end state, which
 is why both rows above name `n/a` as a legal value. For the remaining required keys — `plan_id`,
 `deliverables_total`, `deliverables_done`, `total_tokens`, `steps` — it is not: each names something a
 landed plan always has, so `n/a` there records a read that failed. `check_landing_completeness` treats
 those as MISSING and names them, so a landing whose token total, step list and deliverable counts all
-degraded is INCOMPLETE rather than silently accepted. `schema` needs no such rule: any value other than
+degraded is INCOMPLETE rather than silently accepted.
+
+The **could-not-read** class is `unknown` — the value the `merge_state` row above defines as a state that
+could not be read, asserting only that nothing was observed. It is therefore a GAP AT EVERY REQUIRED KEY,
+with no carve-out: `merge_state=unknown` is INCOMPLETE exactly as `total_tokens=unknown` is, and `pr` is
+no exception either. The carve-out above belongs to the answered class ALONE. The asymmetry is the reason
+the two are separate vocabularies rather than one list: `merge_state=n/a` must stay an answer while
+`merge_state=unknown` must read as a gap, and a single per-key allow-list cannot express both — widening
+the allow-list to cover `merge_state` would reject the legitimate `n/a` alongside the failed read.
+
+`schema` needs no such rule for either class: any value other than
 `landing-facts/1` is already fail-closed by the stricter check below.
 
 The block is **schema-versioned and fail-closed**: a block whose `schema` is not `landing-facts/1` is
