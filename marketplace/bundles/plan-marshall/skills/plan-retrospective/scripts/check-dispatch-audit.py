@@ -77,6 +77,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from _step_completion_marker import COMPLETION_MARKER_RE
 from file_ops import base_path, output_toon, safe_main
 from input_validation import (
     add_plan_id_arg,
@@ -113,7 +114,15 @@ _RESOLVE_ROLE_RE = re.compile(r'\brole=(?P<eq>\S+)|--role\s+(?P<flag>\S+)')
 #: side effect of every finalize terminal write (``_emit_completion_marker``).
 #: Fires for BOTH dispatched and inline steps, so it is a *completion* witness,
 #: never a *dispatch* witness — it is the D3 denominator, never a D2 discriminator.
-_STEP_COMPLETED_RE = re.compile(r'\[STEP\].*?Completed step:\s*(?P<step>\S+)')
+#:
+#: Bound to the SHARED marker-shape module rather than re-typed here: the producer
+#: formats from the same module's template, so widening the emitted line cannot
+#: leave this consumer matching a shape that is no longer written. The pattern
+#: treats the ``(outcome=…)`` suffix as optional because a retrospective reads
+#: work logs from earlier runs, whose completion lines carry none — requiring it
+#: would silently drop every historical completion from ``completion_count`` and
+#: grade the D3 ratio against a zero denominator.
+_STEP_COMPLETED_RE = COMPLETION_MARKER_RE
 
 #: A direct ``Task: general-purpose`` spawn in the work log — a generic subagent
 #: that bypassed the dispatcher entirely. (Documentation mentions live in ``.md``

@@ -256,6 +256,21 @@ class TestDetectorsBite:
             'Hand-written-emit detector failed to flag the known pre-fusion emit line '
             '— the fusion sweep would be vacuous'
         )
+        # The detector is prefix-anchored, so it also flags a hand-written emit of
+        # the WIDENED line — the shape someone would copy out of the docs today.
+        # Without this, the sweep could silently stop covering the current form
+        # while still passing against the historical one above.
+        widened = (
+            '  4b. Lessons-capture Signal Gate:\n'
+            '      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \\\n'
+            '        work --plan-id {plan_id} --level INFO --message "[STEP] '
+            '(plan-marshall:phase-6-finalize) Completed step: {step_ref} (outcome=done)"\n'
+        )
+        assert _hand_written_completion_emits(widened), (
+            'Hand-written-emit detector did not flag the WIDENED emit shape. The '
+            'sweep would then police only the retired narrow form while a copy of '
+            'the current line went undetected.'
+        )
         # The fused-emission prose (no --message "[STEP] …") must NOT match.
         post_fix = (
             '      The `outcome=skipped` recording above already emitted this step\'s\n'

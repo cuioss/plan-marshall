@@ -75,6 +75,7 @@ from pathlib import Path
 from typing import Any
 
 from _status_core import require_status, write_status
+from _step_completion_marker import format_completion_marker
 from _step_key_canonical import canonicalize_step_key
 from plan_logging import log_entry
 
@@ -179,7 +180,9 @@ def _with_warning(result: dict[str, Any], warning: str | None) -> dict[str, Any]
     return result
 
 
-def _emit_completion_marker(plan_id: str, phase: str, step: str, suppress: bool) -> None:
+def _emit_completion_marker(
+    plan_id: str, phase: str, step: str, outcome: str, suppress: bool
+) -> None:
     """Emit the ``[STEP] … Completed step:`` work-log line from the handshake write.
 
     Recording a finalize step's terminal outcome and emitting its completion line
@@ -205,6 +208,16 @@ def _emit_completion_marker(plan_id: str, phase: str, step: str, suppress: bool)
     write, so it MUST emit and does NOT carry the flag. Best-effort:
     :func:`plan_logging.log_entry` swallows every error, so
     a logging failure never turns a successful record into a failed one.
+
+    ``outcome`` is the terminal outcome this write is recording — already
+    validated against :data:`VALID_OUTCOMES` by the caller. The line carries it
+    because the writer already holds it: a completion marker that named only the
+    step said a step *finished* without saying how it finished, so a reader
+    counting completions could not tell a ``done`` from a ``failed`` or a
+    ``loop_back`` without re-reading ``status.metadata.phase_steps``. The shape
+    comes from the shared :data:`COMPLETION_MARKER_TEMPLATE` rather than a local
+    f-string, so the help string and the retrospective's read pattern cannot
+    drift from what is emitted here.
     """
     if suppress or phase != _COMPLETION_MARKER_PHASE:
         return
@@ -212,7 +225,7 @@ def _emit_completion_marker(plan_id: str, phase: str, step: str, suppress: bool)
         'work',
         plan_id,
         'INFO',
-        f'[STEP] (plan-marshall:phase-{phase}) Completed step: {step}',
+        format_completion_marker(phase=phase, step=step, outcome=outcome),
     )
 
 
@@ -418,7 +431,7 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
             phase_entry[step] = new_entry
             write_status(args.plan_id, status)
             _emit_completion_marker(
-                args.plan_id, phase, step, getattr(args, 'no_completion_log', False)
+                args.plan_id, phase, step, outcome, getattr(args, 'no_completion_log', False)
             )
             return _with_warning(
                 {
@@ -476,7 +489,7 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
     phase_entry[step] = new_entry
     write_status(args.plan_id, status)
     _emit_completion_marker(
-        args.plan_id, phase, step, getattr(args, 'no_completion_log', False)
+        args.plan_id, phase, step, outcome, getattr(args, 'no_completion_log', False)
     )
 
     return _with_warning(
