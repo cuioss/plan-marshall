@@ -326,10 +326,13 @@ verification:
   diff_assertion:
     passed: true | false
     missing_count: N
+    parametrized_match_count: N
     missing[]: [identifier, ...]
 ```
 
 Note: `diff_assertion.passed: false` overrides `tests_passed` — a green test count does not imply a successful run if written identifiers are absent from the log.
+
+Note: `parametrized_match_count` is how many identifiers matched only via a per-case nodeid (`name[case]`) rather than exactly. A `@pytest.mark.parametrize` function never appears bare in the log, so a bare stem legitimately matches this way — the count is what keeps that case distinguishable from an exact match, and it carries no failure meaning on its own.
 
 ### Error Handling
 

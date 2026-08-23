@@ -550,3 +550,82 @@ def test_cli_exit_code_matrix(tmp_path, identifiers, found_count, missing_count,
     assert data['status'] == 'success'
     assert int(data['found_count']) == found_count
     assert int(data['missing_count']) == missing_count
+
+
+# =============================================================================
+# Parametrized-nodeid matching (regression: finding 07775b)
+# =============================================================================
+
+
+class TestParametrizedIdentifierIsFound:
+    """A parametrize stem must match the per-case nodeids the log carries.
+
+    A ``@pytest.mark.parametrize`` function is written in source once but
+    appears in a pytest log **only** as ``name[case]`` — never bare. The
+    helper previously anchored on ``(?:\\s|$)`` alone, so the bare stem an
+    author naturally supplies was reported missing for a test that provably
+    ran: a guard reporting an absence it had not measured.
+    """
+
+    def test_bare_stem_matches_per_case_nodeids(self, tmp_path: Path) -> None:
+        """The stem is found, and the form is reported as parametrized."""
+        # Arrange — a log carrying only per-case nodeids, as pytest writes them.
+        log_path = tmp_path / 'module-tests.log'
+        log_path.write_text(
+            'test/foo/test_thing.py::test_shapes[alias] PASSED\n'
+            'test/foo/test_thing.py::test_shapes[constant] PASSED\n',
+            encoding='utf-8',
+        )
+
+        # Act
+        result = assert_identifiers_in_log(['test/foo/test_thing.py::test_shapes'], log_path)
+
+        # Assert
+        assert result.passed is True
+        assert result.missing == ()
+        assert result.found == ('test/foo/test_thing.py::test_shapes',)
+        assert result.found_forms == ('parametrized',)
+
+    def test_exact_match_is_still_reported_as_exact(self, tmp_path: Path) -> None:
+        """A non-parametrized test keeps the exact form — the two stay distinct."""
+        # Arrange
+        log_path = tmp_path / 'module-tests.log'
+        log_path.write_text('test/foo/test_thing.py::test_plain PASSED\n', encoding='utf-8')
+
+        # Act
+        result = assert_identifiers_in_log(['test/foo/test_thing.py::test_plain'], log_path)
+
+        # Assert
+        assert result.passed is True
+        assert result.found_forms == ('exact',)
+
+    def test_prefix_collision_is_still_refused(self, tmp_path: Path) -> None:
+        """Negative control: the bracket alternative must not weaken the anchor.
+
+        A colliding sibling continues with an identifier character, not ``[``,
+        so it must still be reported missing. Without this control the fix
+        could pass by matching everything.
+        """
+        # Arrange — only the LONGER name ran.
+        log_path = tmp_path / 'module-tests.log'
+        log_path.write_text('test/foo/test_thing.py::test_login_failure PASSED\n', encoding='utf-8')
+
+        # Act — ask for the shorter name, which did NOT run.
+        result = assert_identifiers_in_log(['test/foo/test_thing.py::test_login'], log_path)
+
+        # Assert
+        assert result.passed is False
+        assert result.missing == ('test/foo/test_thing.py::test_login',)
+
+    def test_genuine_absence_is_still_missing(self, tmp_path: Path) -> None:
+        """Negative control: a test that never ran stays missing."""
+        # Arrange
+        log_path = tmp_path / 'module-tests.log'
+        log_path.write_text('test/foo/test_thing.py::test_other[a] PASSED\n', encoding='utf-8')
+
+        # Act
+        result = assert_identifiers_in_log(['test/foo/test_thing.py::test_absent'], log_path)
+
+        # Assert
+        assert result.passed is False
+        assert result.missing == ('test/foo/test_thing.py::test_absent',)
