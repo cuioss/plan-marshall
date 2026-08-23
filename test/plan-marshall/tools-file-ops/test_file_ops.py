@@ -559,7 +559,7 @@ def test_base_path_respects_custom_base():
 #
 # Worktrees migrated from ``<root>/.claude/worktrees/`` to
 # ``<root>/.plan/local/worktrees/`` so they inherit the existing
-# ``Write(.plan/**)`` permission and live alongside the rest of plan-local
+# ``Edit(.plan/**)`` permission and live alongside the rest of plan-local
 # runtime state. These tests pin the new layout to the constant
 # ``.plan/local/worktrees`` — no ``.claude/worktrees/`` fallback exists
 # (compatibility: breaking).

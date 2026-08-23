@@ -625,7 +625,7 @@ def get_temp_dir(subdir: str) -> Path:
 
     temp/ stays alongside the runtime state resolved by the uniform cwd rule so
     each worktree keeps its own isolated temp and the existing
-    ``Write(.plan/**)`` permission keeps covering it.
+    ``Edit(.plan/**)`` permission keeps covering it.
 
     Resolution precedence: ``PLAN_BASE_DIR`` override (tests) → cwd walk-up to
     the nearest ``.plan/local`` ancestor → relative ``.plan/temp`` fallback.

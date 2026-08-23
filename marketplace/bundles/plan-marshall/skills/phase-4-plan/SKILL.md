@@ -542,7 +542,7 @@ Each step is a `{target, intent}` object — bare-string steps are rejected by `
 
 Sequential numbering is assigned in array order at call time. On any validation failure no `TASK-NNN.json` is written.
 
-**Step 6a — Stage the JSON array under the plan's `work/` tree via the `Write` tool.** Use the `Write` tool directly to write the batch JSON to `.plan/local/plans/{plan_id}/work/tasks-batch.json`. This path is covered by the `Write(.plan/**)` permission rule, so no permission prompt is triggered, and writing through a structured tool keeps the JSON payload off the shell argument boundary.
+**Step 6a — Stage the JSON array under the plan's `work/` tree via the `Write` tool.** Use the `Write` tool directly to write the batch JSON to `.plan/local/plans/{plan_id}/work/tasks-batch.json`. This path is covered by the `Edit(.plan/**)` permission rule, so no permission prompt is triggered, and writing through a structured tool keeps the JSON payload off the shell argument boundary.
 
 If a script-mediated path is preferred (for example, when the staging file already lives outside `.plan/`), the optional `manage-files write --content-file PATH` form is documented separately in `marketplace/bundles/plan-marshall/skills/manage-files/SKILL.md` (write subcommand reference). Both forms produce the same staged file; only the canonical `Write`-tool form is exercised by this phase.
 

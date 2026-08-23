@@ -235,7 +235,7 @@ class TestFixDocsSubcommand:
 
         content = claude_md.read_text()
         assert '.plan/temp/' in content
-        assert 'Write(.plan/**)' in content
+        assert 'Edit(.plan/**)' in content
 
     def test_fixes_missing_file_ops(self, tmp_path):
         """Should append file_ops content to CLAUDE.md."""

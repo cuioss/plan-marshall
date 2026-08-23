@@ -114,7 +114,7 @@ class TestApplyFixesApplied:
         # Pre-seed with all defaults + a sorted extra so nothing is added/sorted/fixed.
         _write_settings(
             settings_file,
-            sorted(['Bash(git:*)', 'Edit(.plan/**)', 'Write(.plan/**)', 'Read(~/.claude/plugins/cache/**)']),
+            sorted(['Bash(git:*)', 'Edit(.plan/**)', 'Read(~/.claude/plugins/cache/**)']),
         )
 
         result = pf.cmd_apply_fixes(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(settings_file)))

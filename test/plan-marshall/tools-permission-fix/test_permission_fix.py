@@ -290,8 +290,8 @@ class TestApplyFixes:
         result = cmd_apply_fixes(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(settings_file), '--dry-run'))
 
         assert result['status'] == 'success'
-        assert result['defaults_added'] == ['plan-dir-edit', 'plan-dir-write', 'bundle-cache-read']
-        assert result['defaults_added_count'] == 3
+        assert result['defaults_added'] == ['plan-dir-edit', 'bundle-cache-read']
+        assert result['defaults_added_count'] == 2
 
     def test_dry_run_writes_nothing(self, tmp_path):
         """--dry-run must leave the settings file byte-identical.
@@ -333,7 +333,7 @@ class TestApplyFixes:
         assert result['applied'] is True
         written = json.loads(settings_file.read_text())
         assert written['permissions']['allow'] == sorted(
-            ['Edit(.plan/**)', 'Write(.plan/**)', 'Read(~/.claude/plugins/cache/**)']
+            ['Edit(.plan/**)', 'Read(~/.claude/plugins/cache/**)']
         )
 
     def test_normalize_only_change_still_writes(self, tmp_path):
@@ -349,7 +349,6 @@ class TestApplyFixes:
                 {
                     'permissions': {
                         'allow': [
-                            'Write(.plan/**)',
                             'Edit(.plan/**)',
                             'Read(~/.claude/plugins/cache/**)',
                             'Bash(git:*)',
@@ -482,7 +481,7 @@ class TestRemoveRedundant:
         global_file = tmp_path / 'global_settings.json'
         local_file = tmp_path / 'local_settings.json'
         self._write_settings(global_file, ['Bash(git:*)'])
-        self._write_settings(local_file, ['Edit(.plan/**)', 'Write(.plan/**)'])
+        self._write_settings(local_file, ['Edit(.plan/**)', 'Read(docs/**)'])
 
         result = cmd_remove_redundant(
             parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file))

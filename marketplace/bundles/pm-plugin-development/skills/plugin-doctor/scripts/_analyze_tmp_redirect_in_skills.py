@@ -15,7 +15,7 @@ The canonical violation example (from the source lesson) is:
 
 Writing to ``/tmp/`` from an LLM-authored Bash command in a skill workflow
 violates the project policy that all temporary files must live under
-``.plan/temp/`` (covered by ``Write(.plan/**)`` permission — avoids
+``.plan/temp/`` (covered by ``Edit(.plan/**)`` permission — avoids
 permission prompts and ensures the file tree is self-consistent).  In
 addition, using ``>`` / ``>>`` to redirect into a temporary file is
 frequently paired with a compound chain (``;``, ``&&``) to subsequently

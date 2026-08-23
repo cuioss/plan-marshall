@@ -179,7 +179,7 @@ def get_worktree_root() -> Path:
     production this is ``<plan-root>/.plan/local/worktrees`` where
     ``<plan-root>`` is resolved by the uniform cwd rule (ADR-002) — worktrees
     live under the existing plan-local tree so they inherit the
-    ``Write(.plan/**)`` permission and sit next to other plan-scoped state.
+    ``Edit(.plan/**)`` permission and sit next to other plan-scoped state.
 
     Anchoring on :func:`get_base_dir` (the uniform cwd-relative resolver, ADR-002)
     means ``get_worktree_root`` honours the ``PLAN_BASE_DIR`` env var and the
@@ -444,7 +444,7 @@ def get_temp_dir(subdir: str | None = None) -> Path:
         temp/ intentionally stays project-local (unlike the runtime state
         under get_base_dir()) so each worktree gets its own isolated temp,
         build logs sit next to the source they came from, and the existing
-        ``Write(.plan/**)`` permission keeps covering it. Resolution
+        ``Edit(.plan/**)`` permission keeps covering it. Resolution
         honours PLAN_TRACKED_CONFIG_DIR / PLAN_BASE_DIR overrides via
         get_tracked_config_dir().
     """

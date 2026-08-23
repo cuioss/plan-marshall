@@ -172,7 +172,7 @@ FIX_CONTENT: dict[str, str] = {
         '\n## Temporary Files\n'
         '\n'
         'Use `.plan/temp/` for ALL temporary and generated files '
-        '(covered by `Write(.plan/**)` permission — avoids permission prompts).\n'
+        '(covered by `Edit(.plan/**)` permission — avoids permission prompts).\n'
     ),
     'file_ops': (
         '\n## Tool Usage\n'

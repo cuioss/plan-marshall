@@ -415,7 +415,7 @@ Forward-looking lint rules.
 
 **Scope**: All `*.md` files under `marketplace/bundles/plan-marshall/{skills,agents,commands}/`.
 
-**Intent**: Enforce the project policy that all temporary files must live under `.plan/temp/` (covered by `Write(.plan/**)` permission, which avoids permission prompts and ensures the file tree is self-consistent). A `> /tmp/` redirect in a workflow doc signals that the subagent will write a temp file outside the pre-approved `.plan/temp/` tree, which either triggers a permission prompt or leaves an unreachable artefact. The rule also catches the compound-violation pattern (redirect + chain) documented by the originating source, where the `/tmp/` write was paired with a `; grep` chain on the same line.
+**Intent**: Enforce the project policy that all temporary files must live under `.plan/temp/` (covered by `Edit(.plan/**)` permission, which avoids permission prompts and ensures the file tree is self-consistent). A `> /tmp/` redirect in a workflow doc signals that the subagent will write a temp file outside the pre-approved `.plan/temp/` tree, which either triggers a permission prompt or leaves an unreachable artefact. The rule also catches the compound-violation pattern (redirect + chain) documented by the originating source, where the `/tmp/` write was paired with a `; grep` chain on the same line.
 
 **Detection logic**: Scans every line of fenced `bash` or `sh` blocks in every in-scope markdown file. Each occurrence of `>` or `>>` followed (optionally with whitespace) by `/tmp/` or `/var/tmp/` on a non-comment line is a candidate finding, unless it falls into one of the exempt contexts below.
 
@@ -424,7 +424,7 @@ Forward-looking lint rules.
 2. **Inline-code span** — A redirect inside a backtick span (`` `…` ``). Token references are not runnable commands.
 3. **Lines outside bash/sh fenced blocks** — Only lines inside fenced blocks whose info-string is `bash` or `sh` are scanned.
 
-**Recommended fix**: Replace the `/tmp/` write with a `Write` tool call targeting `.plan/temp/{plan_id}-<descriptive-name>` (the `.plan/temp/` prefix is covered by the `Write(.plan/**)` pre-approved permission). Alternatively, if the value is small, pass it through a TOON field in the previous command's stdout instead of writing it to a file.
+**Recommended fix**: Replace the `/tmp/` write with a `Write` tool call targeting `.plan/temp/{plan_id}-<descriptive-name>` (the `.plan/temp/` prefix is covered by the `Edit(.plan/**)` pre-approved permission). Alternatively, if the value is small, pass it through a TOON field in the previous command's stdout instead of writing it to a file.
 
 **Suppression mechanism**: None — fix the redirect target. If the occurrence is genuinely documentary (a standards doc naming the forbidden pattern), wrap it in an inline-code span or a `markdown`/`text` fence.
 

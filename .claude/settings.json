@@ -22,8 +22,7 @@
       "Skill(finalize-step-plugin-doctor)",
       "Skill(finalize-step-sync-plugin-cache)",
       "Skill(sync-plugin-cache)",
-      "Skill(sync-plugin-cache:*)",
-      "Write(.plan/**)"
+      "Skill(sync-plugin-cache:*)"
     ],
     "deny": [],
     "ask": []

@@ -173,16 +173,25 @@ def cmd_apply_fixes(args: argparse.Namespace) -> dict:
     # normalize-only change.
     defaults = ensure_default_permissions(settings, settings_path, args.dry_run)
     defaults_added = defaults['defaults_added']
-    if defaults_added:
+    defaults_removed = defaults['defaults_removed']
+    if defaults_added or defaults_removed:
         was_sorted = True
 
-    changes_made = total_duplicates > 0 or total_paths_fixed > 0 or len(defaults_added) > 0 or was_sorted
+    changes_made = (
+        total_duplicates > 0
+        or total_paths_fixed > 0
+        or len(defaults_added) > 0
+        or len(defaults_removed) > 0
+        or was_sorted
+    )
 
     result = {
         'duplicates_removed': total_duplicates,
         'paths_fixed': total_paths_fixed,
         'defaults_added': defaults_added,
         'defaults_added_count': defaults['defaults_added_count'],
+        'defaults_removed': defaults_removed,
+        'defaults_removed_count': defaults['defaults_removed_count'],
         'sorted': was_sorted,
         'changes_made': changes_made,
         'dry_run': args.dry_run,
