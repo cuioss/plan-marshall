@@ -53,7 +53,7 @@ Provider discovery uses a two-phase approach based on `marshal.json` declaration
 1. **Setup time** (`discover-and-persist`): Scans PYTHONPATH for `*_provider.py` files, calls `get_provider_declarations()` on each, and persists the combined declarations to `marshal.json` under the `providers` key. The marshall-steward wizard runs this during project setup.
 2. **Runtime** (`list-providers`): Reads provider declarations directly from `marshal.json`. No filesystem scanning occurs at runtime.
 
-Each provider module exports `get_provider_declarations()` returning a list of declaration dicts. Four fields are always persisted to marshal.json — `skill_name`, `category`, `verify_command`, `description` — plus `url` when one resolves. All other fields (`display_name`, `default_url`, `header_name`, `header_value_template`, `verify_endpoint`, `verify_method`, `extra_fields`, `detection`) are wizard-time or runtime-only and are not stored. The `skill_name` field uses bundle-prefixed format (e.g., `plan-marshall:workflow-integration-sonar`).
+Each provider module exports `get_provider_declarations()` returning a list of declaration dicts. Four fields are persisted to marshal.json — `skill_name`, `category`, `verify_command`, `description` — plus `url` when one resolves. All other fields (`display_name`, `default_url`, `header_name`, `header_value_template`, `verify_endpoint`, `verify_method`, `extra_fields`, `detection`) are wizard-time or runtime-only and are not stored. The `skill_name` field uses bundle-prefixed format (e.g., `plan-marshall:workflow-integration-sonar`).
 
 `url` is derived rather than declared, and not every provider has one:
 
