@@ -28,7 +28,21 @@ adjudicates it against three candidate explanations:
 | 37
 | xref:code-intelligence-substrate.adoc[Cloud-run quality analysis: code-intelligence-substrate]
 
+| `review-apparatus`
+| 13
+| xref:review-apparatus.adoc[Cloud-run quality analysis: review-apparatus]
+
 |===
+
+[IMPORTANT]
+====
+**Figures are comparable ACROSS reports only where the instruments match.** The `review-apparatus`
+corpus was audited by a *plan-scoped claim audit* and scored deliverables on a **prose verdict**,
+where `truthful-signals` used a *repository-wide checklist sweep* and **four boolean axes**. Its gap
+count and its deliverable-fidelity rate therefore do not sit beside the others; each report states
+which of its figures travel and which do not. The **local** comparison set is the same archive in
+every report and is directly comparable.
+====
 
 == How to produce one of these reports
 
