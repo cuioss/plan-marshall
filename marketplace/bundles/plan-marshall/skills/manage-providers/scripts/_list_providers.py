@@ -99,13 +99,14 @@ def _build_persisted_entry(p: dict[str, Any]) -> dict[str, Any]:
     """Build a minimal provider entry for marshal.json persistence.
 
     Persists only project activation config: skill_name, category,
-    verify_command, url, description. Implementation details
-    (detection, verify_endpoint, header_name, extra_fields) are NOT
-    persisted — consumers load those from *_provider.py at runtime
-    via find_full_provider().
+    verify_command, description, plus url when the provider resolves one.
+    Implementation details (detection, verify_endpoint, header_name,
+    extra_fields) are NOT persisted — consumers load those from
+    *_provider.py at runtime via find_full_provider().
 
-    Maps default_url to url. For version-control providers without
-    default_url, resolves url from git remote origin.
+    Maps default_url to url. A CLI-lane provider declares no default_url,
+    so no url key is persisted for it. For version-control providers
+    without default_url, resolves url from git remote origin.
     """
     entry: dict[str, Any] = {k: p[k] for k in ('skill_name', 'category', 'verify_command', 'description') if k in p}
     if p.get('default_url'):

@@ -15,8 +15,7 @@ JSON structure and field definitions for project configuration.
       "skill_name": "plan-marshall:workflow-integration-github",
       "category": "ci",
       "verify_command": "gh auth status",
-      "description": "GitHub CI provider via gh CLI",
-      "url": "https://api.github.com"
+      "description": "GitHub CI provider via gh CLI"
     }
   ],
   "project": {
