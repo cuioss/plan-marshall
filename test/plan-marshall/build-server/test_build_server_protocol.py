@@ -336,6 +336,99 @@ def test_wire_status_mapping_round_trip():
     assert proto.result_status_from_wire(proto.STATUS_KILLED) == proto.STATUS_KILLED
 
 
+def test_indeterminate_translates_to_a_terminal_wire_status():
+    """``indeterminate`` has an explicit row, and it lands on a TERMINAL status.
+
+    It previously had none and fell to the pass-through, so the daemon published
+    the literal string ``indeterminate`` — which is not in ``TERMINAL_STATUSES``
+    — and a client waiting for a terminal status re-polled forever. The wire
+    vocabulary is four-valued and a fifth wire status was deliberately not added,
+    so the row targets ``failure``: terminality is the property the waiting
+    client's liveness depends on.
+    """
+    wire = proto.wire_status_from_result('indeterminate')
+
+    assert wire == proto.STATUS_FAILURE
+    assert wire in proto.TERMINAL_STATUSES
+    assert 'indeterminate' in proto._RESULT_STATUS_TO_WIRE
+
+
+def test_the_second_row_onto_failure_does_not_rebind_the_inverse():
+    """``failure`` still inverts to ``error``, not to ``indeterminate``.
+
+    Two result statuses now map onto ``failure``. An inverse derived by
+    comprehending over the forward table would bind ``failure`` to whichever row
+    came last, silently changing this answer with nothing in the forward
+    direction to notice — so the inverse is an explicit table and this asserts
+    the binding from the wire side.
+    """
+    assert proto.result_status_from_wire(proto.STATUS_FAILURE) == 'error'
+
+
+def test_a_build_result_status_with_no_row_raises(monkeypatch):
+    """The totality guard fires on real drift — a row REMOVED, not a status invented.
+
+    Removing a row is what a sixth ``STATUS_*`` added without a translation looks
+    like from this function's side. Passing in a made-up string would not reach
+    the branch at all, because a value outside both vocabularies legitimately
+    passes through.
+    """
+    table = dict(proto._RESULT_STATUS_TO_WIRE)
+    table.pop('killed')
+    monkeypatch.setattr(proto, '_RESULT_STATUS_TO_WIRE', table)
+
+    with pytest.raises(ValueError, match='killed'):
+        proto.wire_status_from_result('killed')
+
+
+def test_control_the_raise_is_scoped_to_the_build_result_vocabulary():
+    """CONTROL: values outside both vocabularies still pass through unchanged.
+
+    Without this the guard above would be satisfied by a function that raised on
+    everything unfamiliar — which, at the daemon's log-verdict call site, would
+    turn a truncated job log into a crash instead of an ``indeterminate``
+    outcome. The empty string is included because ``status_from_result``
+    defaults to it for a result carrying no status.
+    """
+    assert proto.wire_status_from_result('speculative') == 'speculative'
+    assert proto.wire_status_from_result('') == ''
+    # Idempotent on the wire vocabulary: an already-wire status is not a
+    # _build_result status, so it passes through rather than raising.
+    assert proto.wire_status_from_result(proto.STATUS_FAILURE) == proto.STATUS_FAILURE
+
+
+def test_read_log_verdict_reads_the_published_executed_count(tmp_path):
+    """``tests_run:`` is read back so the routed arm can propagate it.
+
+    The outer wrapper on the routed arm cannot re-derive this: the log it holds
+    is the daemon's JOB log, which carries the inner wrapper's result TOON and
+    none of the test runner's output.
+    """
+    log = tmp_path / 'job.log'
+    log.write_text('status: success\nexit_code: 0\ntests_run: 1082\n', encoding='utf-8')
+
+    verdict = proto.read_log_verdict(str(log))
+
+    assert verdict is not None
+    assert verdict.tests_run == 1082
+
+
+def test_read_log_verdict_reports_an_absent_count_as_none(tmp_path):
+    """No ``tests_run:`` line means "the log stated no count" — NOT zero.
+
+    Collapsing the absence into ``0`` would let a log that said nothing about
+    tests suppress the caller's own fallback parse, and would look identical to
+    a measured "executed nothing".
+    """
+    log = tmp_path / 'job.log'
+    log.write_text('status: success\nexit_code: 0\n', encoding='utf-8')
+
+    verdict = proto.read_log_verdict(str(log))
+
+    assert verdict is not None
+    assert verdict.tests_run is None
+
+
 def test_status_payload_omits_absent_optionals():
     payload = proto.status_payload(proto.STATUS_RUNNING, eta=30)
 

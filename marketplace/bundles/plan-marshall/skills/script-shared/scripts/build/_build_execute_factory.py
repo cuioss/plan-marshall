@@ -496,6 +496,12 @@ def _daemon_result_to_direct(waited: dict[str, Any], command_str: str) -> Direct
         # under a distinct key so the renderer can tell "the routed build
         # measured it" from "nothing measured it"; an absent verdict or an
         # absent key leaves it off entirely, which reads as UNKNOWN downstream.
+        #
+        # This is a RECURRENCE of a boundary defect, not a new field bug: the
+        # identical substitution was fixed field-scoped for ``duration_seconds``
+        # at this same boundary, and the test count was left behind. The fix
+        # belongs to the boundary — a routed result carries what the routed job
+        # measured, and the outer wrapper re-derives nothing it was handed.
         routed_extra: dict[str, Any] = {}
         if verdict is not None and verdict.tests_run is not None:
             routed_extra['routed_tests_run'] = verdict.tests_run

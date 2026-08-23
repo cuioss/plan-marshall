@@ -25,6 +25,7 @@ SCRIPTS_DIR = SCRIPT_PATH.parent
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+import _build_server_protocol as protocol  # noqa: E402
 import _marshalld_supervisor as supervisor  # noqa: E402
 
 # Child programs run through run_job. Each writes the shape of build-wrapper
@@ -38,6 +39,10 @@ _EMIT_NO_TOON = "print('some build chatter with no build TOON at all')"
 # negative returncode of the wrapper itself).
 _EMIT_KILLED_TOON = "print('status: killed'); print('exit_code: -9')"
 _EMIT_TIMEOUT_TOON = "print('status: timeout'); print('exit_code: -1')"
+# The fifth _build_result status: the wrapper could not establish an outcome at
+# all. It is not a non-finish and not a failure, and it had no wire row until the
+# translation table was made total.
+_EMIT_INDETERMINATE_TOON = "print('status: indeterminate'); print('exit_code: -1')"
 _EMIT_SUCCESS_THEN_HANG = "print('status: success', flush=True); import time; time.sleep(30)"
 _EMIT_SUCCESS_THEN_SUICIDE = (
     "import os, signal; print('status: success', flush=True); os.kill(os.getpid(), signal.SIGKILL)"
@@ -249,6 +254,66 @@ class TestRunJobTruthfulStatus:
         payload = _run(_EMIT_SUCCESS_THEN_SUICIDE, tmp_path)
 
         assert payload['status'] == 'killed'
+
+    def test_exit_zero_with_indeterminate_toon_is_a_terminal_wire_status(self, tmp_path):
+        """A routed ``indeterminate`` reaches the wire as a TERMINAL status.
+
+        It previously had no wire row, so the narrowing published the literal
+        string ``indeterminate`` — absent from ``TERMINAL_STATUSES`` — and a
+        client waiting for a terminal status re-polled forever. Driven through
+        the real ``run_job`` against a real child, so the assertion is about what
+        the daemon publishes rather than about a translation composed in the test.
+        """
+        payload = _run(_EMIT_INDETERMINATE_TOON, tmp_path)
+
+        assert payload['status'] in protocol.TERMINAL_STATUSES
+        assert payload['status'] == protocol.STATUS_FAILURE
+
+
+class TestRunJobFailsClosedOnAnUntranslatableLogStatus:
+    """ADR-009 at the log-verdict seam: never crash the job over a translation gap.
+
+    ``wire_status_from_result`` raises on a ``_build_result`` status the wire
+    table cannot translate — a deliberate totality guard on a value that normally
+    comes from code in this tree. The status here did not: it was read off a JOB
+    LOG, so a version-skewed wrapper binary can emit one this daemon's protocol
+    module predates. Letting the raise escape would abort ``run_job`` and lose the
+    whole result, converting a vocabulary gap into a daemon crash.
+    """
+
+    def test_an_untranslatable_log_status_becomes_indeterminate_not_a_crash(self, monkeypatch):
+        """The gap resolves to ``indeterminate``'s wire status, and the call returns."""
+        narrowed = dict(protocol._RESULT_STATUS_TO_WIRE)
+        narrowed.pop('error')
+        monkeypatch.setattr(protocol, '_RESULT_STATUS_TO_WIRE', narrowed)
+
+        translated = supervisor._wire_status_from_log_verdict('error')
+
+        assert translated == protocol.wire_status_from_result('indeterminate')
+        assert translated in protocol.TERMINAL_STATUSES
+
+    def test_control_a_translatable_status_is_not_diverted(self):
+        """CONTROL: the fallback only fires on the gap.
+
+        Without it, a helper that returned ``indeterminate``'s wire status
+        unconditionally would satisfy the case above while destroying every
+        non-finish the narrowing exists to preserve.
+        """
+        assert supervisor._wire_status_from_log_verdict('killed') == protocol.STATUS_KILLED
+        assert supervisor._wire_status_from_log_verdict('timeout') == protocol.STATUS_TIMEOUT
+        assert supervisor._wire_status_from_log_verdict('error') == protocol.STATUS_FAILURE
+
+    def test_a_status_outside_both_vocabularies_still_passes_through(self):
+        """The OTHER unrecognised class keeps its existing route.
+
+        A truncated or foreign log yielding arbitrary text never reaches the
+        fallback: it passes through the translator unchanged and
+        ``_terminal_payload`` renders it verbatim for the client to map. Both
+        unrecognised classes end at ``indeterminate``, by two different routes,
+        and neither aborts the job — which is why the fallback is scoped to the
+        raise rather than to everything unfamiliar.
+        """
+        assert supervisor._wire_status_from_log_verdict('speculative') == 'speculative'
 
 
 class TestRunJobNarrowingPreservesTheNonFinish:

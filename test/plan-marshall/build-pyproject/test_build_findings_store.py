@@ -644,6 +644,192 @@ class TestCmdRunCommonGreenBuildReconciliation:
         assert 'tests_run: 5' in buf.getvalue()
 
 
+def _tests_run_from_toon(text: str) -> int:
+    """Extract the published ``tests_run`` scalar from an emitted build TOON."""
+    from toon_parser import parse_toon
+
+    return int(parse_toon(text)['tests_run'])
+
+
+class TestPublishedCountIsTheExecutedCount:
+    """``tests_run`` publishes EXECUTED tests, at both emission sites.
+
+    ``UnitTestSummary.total`` counts skips; ``executed`` does not. The
+    distinction only shows up in a summary that HAS skips, so every case here
+    carries them — a 5-passed/0-skipped summary reads the same either way and
+    would pin nothing.
+
+    The stakes are not cosmetic. ``tests_run`` is the population the green-build
+    reconciliation clears a ``test-failure`` finding on, so publishing the
+    collected total would let a run that executed nothing destroy a true,
+    already-recorded test failure.
+    """
+
+    def _make_success_result(self, log_file_path, **extra):
+        return {
+            'status': 'success',
+            'exit_code': 0,
+            'duration_seconds': 0.1,
+            'log_file': str(log_file_path),
+            'command': 'verify',
+            **extra,
+        }
+
+    @staticmethod
+    def _parser_for(summary):
+        def _parse(_log_file):
+            return [], summary, 'success'
+
+        return _parse
+
+    def test_a_skips_only_green_build_publishes_zero_and_keeps_the_finding(self, plan_context):
+        """All-skips: ``total`` is 9, the published count is 0, the finding survives.
+
+        The false-green in full — nine tests collected, none executed, a green
+        build. Publishing 9 here would clear a stale test failure on the
+        strength of a run that tested nothing.
+        """
+        from _build_parse import UnitTestSummary
+        from _build_shared import cmd_run_common
+        from _findings_core import add_finding, query_findings
+
+        add_finding(
+            plan_id=plan_context.plan_id,
+            finding_type='test-failure',
+            title='Test failure: stale assertion',
+            detail='from a prior red run',
+        )
+        log_file = plan_context.fixture_dir / 'skips.log'
+        log_file.write_text('9 skipped\n')
+        summary = UnitTestSummary(passed=0, failed=0, skipped=9, total=9)
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = cmd_run_common(
+                result=self._make_success_result(log_file),
+                parser_fn=self._parser_for(summary),
+                tool_name='python',
+                plan_id=plan_context.plan_id,
+            )
+
+        assert rc == 0
+        assert summary.total == 9, 'precondition: the summary must carry a non-zero total'
+        assert _tests_run_from_toon(buf.getvalue()) == 0
+        tf = query_findings(plan_context.plan_id, finding_type='test-failure')
+        assert tf['findings'][0]['resolution'] == 'pending'
+
+    def test_a_partially_skipped_green_build_publishes_only_what_ran(self, plan_context):
+        """``2 passed, 9 skipped`` publishes 2, not 11."""
+        from _build_parse import UnitTestSummary
+        from _build_shared import cmd_run_common
+
+        log_file = plan_context.fixture_dir / 'partial.log'
+        log_file.write_text('2 passed, 9 skipped\n')
+        summary = UnitTestSummary(passed=2, failed=0, skipped=9, total=11)
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = cmd_run_common(
+                result=self._make_success_result(log_file),
+                parser_fn=self._parser_for(summary),
+                tool_name='python',
+                plan_id=plan_context.plan_id,
+            )
+
+        assert rc == 0
+        assert _tests_run_from_toon(buf.getvalue()) == 2
+
+    def test_run_and_parse_publish_the_same_count_for_one_summary(self, plan_context):
+        """The two emission sites agree about one log.
+
+        They are separate code paths reading the same property, so they can
+        drift; a consumer comparing a ``run`` result against a later ``parse`` of
+        the same log would then see two different populations for one build.
+        """
+        from types import SimpleNamespace
+
+        from _build_parse import UnitTestSummary
+        from _build_shared import cmd_parse_common, cmd_run_common
+
+        log_file = plan_context.fixture_dir / 'both.log'
+        log_file.write_text('2 passed, 9 skipped\n')
+        summary = UnitTestSummary(passed=2, failed=0, skipped=9, total=11)
+
+        run_buf = io.StringIO()
+        with redirect_stdout(run_buf):
+            cmd_run_common(
+                result=self._make_success_result(log_file),
+                parser_fn=self._parser_for(summary),
+                tool_name='python',
+                plan_id=plan_context.plan_id,
+            )
+
+        parse_buf = io.StringIO()
+        with redirect_stdout(parse_buf):
+            cmd_parse_common(
+                SimpleNamespace(log=str(log_file), mode='structured', format='json'),
+                self._parser_for(summary),
+            )
+
+        import json as _json
+
+        parsed = _json.loads(parse_buf.getvalue())
+        assert parsed['metrics']['tests_run'] == 2
+        assert _tests_run_from_toon(run_buf.getvalue()) == parsed['metrics']['tests_run']
+
+    def test_a_propagated_count_wins_over_the_local_reparse(self, plan_context):
+        """A count the PRODUCER measured beats one this renderer could re-derive.
+
+        The daemon-routed arm stamps the routed job's ``tests_run`` onto the
+        result, because on that arm the log this renderer would parse is the
+        daemon's JOB log — the inner wrapper's result TOON with none of the test
+        runner's output. Re-deriving from it publishes 0 for a run that executed
+        the whole suite, which is the boundary defect this pins closed.
+        """
+        from _build_shared import cmd_run_common
+
+        log_file = plan_context.fixture_dir / 'routed.log'
+        log_file.write_text('status: success\ntests_run: 1082\n')
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = cmd_run_common(
+                # The routed job measured 1082; a parse of this log finds none.
+                result=self._make_success_result(log_file, tests_run=1082),
+                parser_fn=self._parser_for(None),
+                tool_name='python',
+                plan_id=plan_context.plan_id,
+            )
+
+        assert rc == 0
+        assert _tests_run_from_toon(buf.getvalue()) == 1082
+
+    def test_control_no_propagated_count_falls_back_to_the_local_parse(self, plan_context):
+        """CONTROL: the in-process arm is unaffected — it still parses its own log.
+
+        Without this the propagation could be satisfied by a change that ignored
+        the parse entirely, which would zero out every non-routed build.
+        """
+        from _build_parse import UnitTestSummary
+        from _build_shared import cmd_run_common
+
+        log_file = plan_context.fixture_dir / 'inprocess.log'
+        log_file.write_text('2 passed, 9 skipped\n')
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            cmd_run_common(
+                result=self._make_success_result(log_file),
+                parser_fn=self._parser_for(
+                    UnitTestSummary(passed=2, failed=0, skipped=9, total=11)
+                ),
+                tool_name='python',
+                plan_id=plan_context.plan_id,
+            )
+
+        assert _tests_run_from_toon(buf.getvalue()) == 2
+
+
 class TestFailureDetailRoundTrip:
     """The per-signature failure-detail block (deliverable 9) round-trips into
     the ``manage-findings --type test-failure`` store via ``_store_build_findings``."""

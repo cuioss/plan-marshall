@@ -145,6 +145,77 @@ def test_test_summary_zero_values():
     assert all(v == 0 for v in result.values())
 
 
+# =============================================================================
+# UnitTestSummary.executed — the EXECUTED count, distinct from the collected one
+# =============================================================================
+#
+# ``executed`` is ``passed + failed``. ``total`` additionally counts SKIPPED
+# tests, so the two answer different questions and diverge exactly when it
+# matters: a summary that is all skips has a non-zero ``total`` and executed
+# nothing. Publishing ``total`` under a name that says "executed" is what let a
+# skips-only run present itself as evidence that the suite ran.
+
+
+def test_executed_is_passed_plus_failed():
+    """The executed count sums the two outcomes that required running a test."""
+    summary = UnitTestSummary(passed=10, failed=2, skipped=1, total=13)
+
+    assert summary.executed == 12
+
+
+def test_executed_excludes_skips_so_it_differs_from_total():
+    """A skips-bearing summary's ``executed`` is strictly below its ``total``.
+
+    The discriminating case, asserted with a summary whose two values cannot
+    coincide: were ``executed`` ever redefined as ``total``, this is the shape
+    that catches it. A summary with no skips would not — both would read 12.
+    """
+    summary = UnitTestSummary(passed=10, failed=2, skipped=1, total=13)
+
+    assert summary.executed == 12
+    assert summary.total == 13
+    assert summary.executed != summary.total
+
+
+def test_a_skips_only_summary_executed_nothing():
+    """``2 passed, 9 skipped`` executes 2; all-skips executes 0.
+
+    The second half is the false-green case in full: eleven tests collected,
+    every one of them skipped, and the honest executed count is zero — even
+    though ``total`` reports eleven.
+    """
+    partial = UnitTestSummary(passed=2, failed=0, skipped=9, total=11)
+    all_skipped = UnitTestSummary(passed=0, failed=0, skipped=11, total=11)
+
+    assert partial.executed == 2
+    assert all_skipped.executed == 0
+    assert all_skipped.total == 11
+
+
+def test_executed_counts_a_failing_run_as_executed():
+    """A test that FAILED still ran, so it counts toward ``executed``.
+
+    Guards the opposite error from the skip one: defining ``executed`` as
+    ``passed`` alone would report zero for a run that executed every test and
+    failed them, and a zero there suppresses the reconciliation the count gates.
+    """
+    summary = UnitTestSummary(passed=0, failed=7, skipped=0, total=7)
+
+    assert summary.executed == 7
+
+
+def test_executed_is_not_serialised_by_to_dict():
+    """``executed`` is derived, and the serialised summary shape is unchanged.
+
+    The wire/JSON test-summary shape is a consumed contract and ``executed`` is
+    computable from the fields already in it, so the property exists to let an
+    emission site NAME what it means rather than to add a field.
+    """
+    summary = UnitTestSummary(passed=10, failed=2, skipped=1, total=13)
+
+    assert set(summary.to_dict()) == {'passed', 'failed', 'skipped', 'total'}
+
+
 @contextlib.contextmanager
 def _plan_base_dir(tmpdir: str):
     """Set PLAN_BASE_DIR for the duration of a test, restoring on exit."""

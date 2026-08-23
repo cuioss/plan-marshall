@@ -33,14 +33,26 @@ the client-side ``_build_execute_factory`` cross-check consume — and
 ``exit_code``) whenever the verdict does not affirmatively agree.
 
 **The downgrade preserves WHICH non-green the verdict reported.** The wrapper's
-vocabulary has three non-green values and two of them are NON-FINISHES it
-observed first-hand — ``timeout`` (its own bound fired) and ``killed`` (its build
-child was signalled while it survived: the INNER kill). The narrowed status is
-therefore the verdict's own status translated through
+vocabulary has four non-green values and three of them are not a build that ran
+and failed — ``timeout`` (its own bound fired) and ``killed`` (its build child
+was signalled while it survived: the INNER kill) are NON-FINISHES it observed
+first-hand, and ``indeterminate`` is an outcome it could not establish at all.
+The narrowed status is therefore the verdict's own status translated through
 :func:`_build_server_protocol.wire_status_from_result`, never a hard-coded
 ``failure``; flattening them here would re-collapse at the daemon precisely what
 the wrapper distinguished, and a routed timeout or kill would reach every
 downstream gate as a red build.
+
+The one place fidelity is knowingly given up is at the wire boundary itself: the
+wire vocabulary is four-valued, so ``indeterminate`` translates onto ``failure``
+because every published status must be terminal or a waiting client never stops.
+That trade is the protocol module's, documented at
+:data:`_build_server_protocol._RESULT_STATUS_TO_WIRE`, and it is a translation —
+not this supervisor deciding a non-finish was a failure. Because the verdict
+status here is read off a LOG rather than produced by this tree, the translation
+goes through :func:`_wire_status_from_log_verdict`, which is fail-closed: a
+status this daemon's protocol module cannot translate becomes ``indeterminate``
+rather than aborting the job.
 
 This supervisor's OWN ``timeout`` and ``killed`` legs are not subject to the
 narrowing at all — a supervisor timeout and an external kill of the child always
@@ -73,6 +85,7 @@ from _build_result import (
     success_result,
     timeout_result,
 )
+from _build_result import STATUS_INDETERMINATE as RESULT_STATUS_INDETERMINATE
 from _build_result import STATUS_SUCCESS as RESULT_STATUS_SUCCESS
 from _build_server_protocol import (
     MARSHALLD_JOB_ENV,
@@ -225,6 +238,42 @@ def _terminal_payload(
     )
 
 
+def _wire_status_from_log_verdict(verdict_status: str) -> str:
+    """Translate a LOG-SOURCED verdict status to the wire vocabulary, fail-closed.
+
+    :func:`wire_status_from_result` raises when handed a :mod:`_build_result`
+    status the wire table cannot translate — a deliberate totality guard on a
+    value that normally arrives from code in this same tree. Here the value did
+    not: it was READ OFF A JOB LOG, so it can come from a version-skewed wrapper
+    binary emitting a status this daemon's protocol module predates (the
+    condition ``manage-build-server status`` reports as ``binary_diverges``).
+
+    Letting that raise escape would abort :func:`run_job` mid-job and lose the
+    whole result, turning a translation gap into a daemon crash. ADR-009's
+    fail-closed rule applies instead: an untranslatable log status becomes
+    ``indeterminate`` — the value that exists precisely for "the outcome could
+    not be established" — and the job still returns a terminal payload.
+
+    A status outside BOTH vocabularies (a truncated or foreign log yielding
+    arbitrary text) does not reach this branch at all: it passes through
+    :func:`wire_status_from_result` unchanged and
+    :func:`_terminal_payload` renders it verbatim for the client to map. Both
+    unrecognised classes therefore end at ``indeterminate``, by two different
+    routes, and neither crashes the daemon.
+
+    Args:
+        verdict_status: The ``status:`` value read back from the job log.
+
+    Returns:
+        The corresponding wire status, or the wire status for ``indeterminate``
+        when the value cannot be translated.
+    """
+    try:
+        return wire_status_from_result(verdict_status)
+    except ValueError:
+        return wire_status_from_result(RESULT_STATUS_INDETERMINATE)
+
+
 async def run_job(
     command: list[str],
     cwd: str,
@@ -302,7 +351,7 @@ async def run_job(
     if status == 'success':
         verdict = read_log_verdict(log_file)
         if verdict is not None and verdict.status != RESULT_STATUS_SUCCESS:
-            status = wire_status_from_result(verdict.status)
+            status = _wire_status_from_log_verdict(verdict.status)
             returncode = verdict.exit_code
     return _terminal_payload(
         status,

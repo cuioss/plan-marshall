@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -189,8 +189,13 @@ def cmd_parse_common(
             'issues': [i.to_dict() for i in issues],
             'summary': summary,
         },
+        # ``tests_run`` is the EXECUTED count (passed + failed), not the collected
+        # total: a summary of "0 passed, 9 skipped" executed nothing, and
+        # publishing 9 there would turn an un-run suite into evidence that the
+        # suite ran. ``run`` publishes the same quantity from the same property,
+        # so the two verbs cannot disagree about one log.
         'metrics': {
-            'tests_run': test_summary.total if test_summary else 0,
+            'tests_run': test_summary.executed if test_summary else 0,
             'tests_failed': test_summary.failed if test_summary else 0,
         },
     }
@@ -470,7 +475,10 @@ def _reconcile_pending_build_findings(
         command_str: The green command whose entitlement is being spent.
         analyses: The analyses this run performed, or ``None`` when the population
             could not be determined.
-        tests_run: The measured executed-test count, or ``None`` when unknown.
+        tests_run: The measured executed-test count — ``passed + failed``
+            (:attr:`UnitTestSummary.executed`), NOT the collected ``total``, which
+            also counts SKIPPED tests — or ``None`` when unknown. A skips-only run
+            executed nothing, so it may clear no ``test-failure`` finding.
 
     Returns:
         The count of findings resolved — ``0`` both when nothing was pending and
@@ -791,8 +799,16 @@ def cmd_run_common(
             # re-parsing it yields no summary and the count would collapse to a
             # false zero over a fully-examined population. An in-process build
             # carries no such key and falls through to its own parse unchanged.
+            #
+            # `executed` (passed + failed), NOT `total`: `total` counts SKIPPED
+            # tests too, so a suite that collected N and skipped every one of them
+            # would present a non-zero executed-test count and clear a true,
+            # already-recorded test-failure finding on the strength of a run that
+            # tested nothing. That is the precise false-green the reconciliation
+            # guard exists to prevent, so the guard must be fed the quantity its
+            # own name states.
             routed_total = result.get('routed_tests_run')
-            parsed_total = test_summary.total if test_summary is not None else None
+            parsed_total = test_summary.executed if test_summary is not None else None
             if routed_total is not None:
                 parsed_total = int(routed_total)
             tests_run = resolve_tests_run(analyses, parsed_total)

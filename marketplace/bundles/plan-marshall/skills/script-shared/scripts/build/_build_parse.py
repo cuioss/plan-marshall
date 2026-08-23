@@ -178,7 +178,8 @@ class UnitTestSummary:
         passed: Number of tests that passed.
         failed: Number of tests that failed.
         skipped: Number of tests that were skipped.
-        total: Total number of tests (should equal passed + failed + skipped).
+        total: Total number of tests COLLECTED — passed + failed + skipped. It is
+            the collected count, NOT the executed one; see :attr:`executed`.
         duration_seconds: Test-tool-internal run duration as the tool itself
             reported it (e.g. pytest's `in 12.34s`), or None when the tool's
             output carries no duration. This is NOT wall-clock time for the
@@ -193,6 +194,25 @@ class UnitTestSummary:
     skipped: int
     total: int
     duration_seconds: float | None = None
+
+    @property
+    def executed(self) -> int:
+        """Number of tests that actually RAN — ``passed + failed``.
+
+        Distinct from :attr:`total`, which additionally counts SKIPPED tests. A
+        published "tests executed" count must not include a test the runner
+        declined to run: a suite that collected N tests and skipped every one of
+        them executed nothing, and publishing N there turns an un-run suite into
+        evidence that the suite ran. ``total`` keeps its collected-count meaning
+        and is unchanged — the two answer different questions and both are
+        legitimate, so the fix is to publish the one whose name is being used.
+
+        Deliberately NOT added to :meth:`to_dict`: the serialised test-summary
+        shape is a consumed contract, and ``executed`` is derivable from the
+        fields already there. It exists so an emission site that means "executed"
+        can SAY so at the call site rather than open-coding ``passed + failed``.
+        """
+        return self.passed + self.failed
 
     def to_dict(self) -> dict:
         """Convert to dict for JSON serialization.

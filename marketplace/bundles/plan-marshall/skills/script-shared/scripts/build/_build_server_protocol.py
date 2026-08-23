@@ -27,7 +27,10 @@ Three concerns live here:
   :mod:`_build_result` result shape (``errors[N]{file,line,message,category}``,
   ``log_file``, ``duration_seconds``) so a terminal result crosses the wire in
   the daemon's status vocabulary (``success|failure|timeout|killed``) without
-  either side re-implementing the result contract.
+  either side re-implementing the result contract. The wire vocabulary is
+  four-valued while ``_build_result``'s is five-valued, so the forward
+  translation is total but not injective — see
+  :data:`_RESULT_STATUS_TO_WIRE`.
 
 Usage:
     from _build_server_protocol import (
@@ -52,6 +55,8 @@ import struct
 from dataclasses import dataclass
 from hashlib import sha256
 from typing import Any
+
+import _build_result
 
 # =============================================================================
 # Framing constants
@@ -138,22 +143,67 @@ TERMINAL_STATUSES = frozenset(
 )
 """The four terminal job statuses — a wait resolves once one of these is seen."""
 
-# Map the shared _build_result status vocabulary (success|error|timeout|killed)
-# to the wire vocabulary (success|failure|timeout|killed).
+_RESULT_STATUSES: frozenset[str] = frozenset(
+    value
+    for name, value in vars(_build_result).items()
+    if name.startswith('STATUS_') and isinstance(value, str)
+)
+"""Every ``_build_result`` status value, DERIVED from that module's namespace.
+
+Derived rather than restated so the totality guard in
+:func:`wire_status_from_result` cannot be checking a stale copy of the
+vocabulary. A hand-maintained list here would go quietly out of date the moment a
+sixth ``STATUS_*`` is added to :mod:`_build_result` — which is precisely the
+event the guard exists to catch, so the guard would fail exactly when it was
+needed. ``_build_result`` imports no ``STATUS_``-prefixed name from anywhere
+else, so this scan sees its own constants and nothing borrowed.
+"""
+
+# Map the shared _build_result status vocabulary
+# (success|error|timeout|killed|indeterminate) to the wire vocabulary
+# (success|failure|timeout|killed).
 #
-# ``killed`` is listed EXPLICITLY rather than left to the pass-through fallback
-# in :func:`wire_status_from_result`. The two spellings coincide, so the fallback
-# produces the right answer today — but only by accident of naming, and a table
-# that silently omits a status it must translate is one rename away from mapping
-# a kill onto nothing. The wrapper CAN now claim ``killed`` (it reaps a signalled
-# build child first-hand), so this row is a real translation, not a placeholder.
+# The table is TOTAL over :data:`_RESULT_STATUSES` — every result status has a
+# row, and :func:`wire_status_from_result` raises rather than passing through if
+# one ever does not. It is not total by accident: ``indeterminate`` previously had
+# no row and fell through the pass-through fallback, so the daemon published the
+# literal string ``indeterminate`` — a value absent from
+# :data:`TERMINAL_STATUSES` — and a waiting client re-polled forever.
+#
+# ``killed`` is listed EXPLICITLY rather than left to that fallback. The two
+# spellings coincide, so the fallback produced the right answer — but only by
+# accident of naming, and a table that silently omits a status it must translate
+# is one rename away from mapping a kill onto nothing.
+#
+# ``indeterminate`` maps onto ``failure``, and that is a deliberate
+# TERMINALITY-OVER-FIDELITY trade rather than the folding :mod:`_build_result`
+# forbids. The wire vocabulary is four-valued and adding a fifth wire status is
+# explicitly not taken here, so the only alternative to a terminal row is the
+# non-terminal string that hung the client. A waiting client must be able to
+# stop; what it loses is the distinction between "ran and failed" and "could not
+# be established", which the log the result points at still carries. The
+# direction is one-way: see :data:`_WIRE_STATUS_TO_RESULT`.
 _RESULT_STATUS_TO_WIRE = {
-    'success': STATUS_SUCCESS,
-    'error': STATUS_FAILURE,
-    'timeout': STATUS_TIMEOUT,
-    'killed': STATUS_KILLED,
+    _build_result.STATUS_SUCCESS: STATUS_SUCCESS,
+    _build_result.STATUS_ERROR: STATUS_FAILURE,
+    _build_result.STATUS_TIMEOUT: STATUS_TIMEOUT,
+    _build_result.STATUS_KILLED: STATUS_KILLED,
+    _build_result.STATUS_INDETERMINATE: STATUS_FAILURE,
 }
-_WIRE_STATUS_TO_RESULT = {wire: res for res, wire in _RESULT_STATUS_TO_WIRE.items()}
+
+# The inverse is an EXPLICIT table, NOT an inversion of the one above. Two result
+# statuses now map onto ``failure``, so a dict comprehension over
+# ``_RESULT_STATUS_TO_WIRE.items()`` would silently rebind ``failure`` to
+# whichever row came last — making ``result_status_from_wire('failure')`` return
+# ``indeterminate`` instead of ``error``, a break with no error and no test
+# touching the forward direction. Stating the four wire rows here makes the
+# forward table's non-injectivity harmless.
+_WIRE_STATUS_TO_RESULT = {
+    STATUS_SUCCESS: _build_result.STATUS_SUCCESS,
+    STATUS_FAILURE: _build_result.STATUS_ERROR,
+    STATUS_TIMEOUT: _build_result.STATUS_TIMEOUT,
+    STATUS_KILLED: _build_result.STATUS_KILLED,
+}
 
 ERROR_FIELDS = ('file', 'line', 'message', 'category')
 """Canonical field order for a single ``errors[]`` entry on the wire."""
@@ -558,27 +608,66 @@ def wire_status_from_result(result_status: str) -> str:
     """Map a :mod:`_build_result` status to the wire status vocabulary.
 
     ``success`` → ``success``, ``error`` → ``failure``, ``timeout`` →
-    ``timeout``, ``killed`` → ``killed``. An already-wire status (or an unknown
-    value) passes through unchanged, so this is idempotent on the wire
-    vocabulary.
+    ``timeout``, ``killed`` → ``killed``, ``indeterminate`` → ``failure``. Every
+    one of the five lands on a member of :data:`TERMINAL_STATUSES`, which is the
+    property a waiting client depends on to stop polling.
+
+    An already-wire status (so the function is idempotent on the wire
+    vocabulary), the empty string (:func:`status_from_result`'s default for a
+    result carrying no status), and any value from outside both vocabularies pass
+    through unchanged.
+
+    Raises rather than passing through for exactly one input class: a value that
+    IS a :mod:`_build_result` status (a member of :data:`_RESULT_STATUSES`) yet
+    has no row in :data:`_RESULT_STATUS_TO_WIRE`. That is the drift this guard
+    exists for — a sixth ``STATUS_*`` added to :mod:`_build_result` without a
+    translation here — and passing it through is what published a non-terminal
+    string onto the wire. The guard is UNREACHABLE while the table stays total,
+    which is the intended steady state; a test proves it fires by REMOVING a row
+    (simulating the real drift), never by inventing a status the vocabulary does
+    not contain, because such a value legitimately passes through.
 
     Args:
-        result_status: A ``_build_result`` status
-            (``success``/``error``/``timeout``/``killed``).
+        result_status: A ``_build_result`` status (``success`` / ``error`` /
+            ``timeout`` / ``killed`` / ``indeterminate``), an already-wire
+            status, or the empty string.
 
     Returns:
-        The corresponding wire status.
+        The corresponding wire status, or the input unchanged when it belongs to
+        neither vocabulary.
+
+    Raises:
+        ValueError: when ``result_status`` is a ``_build_result`` status with no
+            row in the translation table.
     """
-    return _RESULT_STATUS_TO_WIRE.get(result_status, result_status)
+    mapped = _RESULT_STATUS_TO_WIRE.get(result_status)
+    if mapped is not None:
+        return mapped
+    if result_status in _RESULT_STATUSES:
+        raise ValueError(
+            f'_build_result status {result_status!r} has no wire translation; '
+            f'_RESULT_STATUS_TO_WIRE must be total over the {len(_RESULT_STATUSES)} '
+            f'_build_result STATUS_* values. Passing it through would publish a '
+            f'status outside the terminal wire vocabulary and hang a waiting client.'
+        )
+    return result_status
 
 
 def result_status_from_wire(wire_status: str) -> str:
-    """Inverse of :func:`wire_status_from_result`.
+    """Map a wire status back to the :mod:`_build_result` vocabulary.
 
     ``success`` → ``success``, ``failure`` → ``error``, ``timeout`` →
     ``timeout``, ``killed`` → ``killed``. Statuses without a ``_build_result``
-    equivalent (``running``, ``queued``, ``not_found``, …) pass through
+    equivalent (``running``, ``queued``, ``not_found``, ``refused``) pass through
     unchanged.
+
+    **Not a true inverse of :func:`wire_status_from_result`**, and deliberately
+    named without claiming to be. That function is non-injective — both ``error``
+    and ``indeterminate`` map onto ``failure`` — so ``indeterminate`` has no wire
+    representation to come back from. ``failure`` resolves to ``error``, the
+    reading that was true before ``indeterminate`` gained a row and the one every
+    caller already depends on; the ``indeterminate`` origin is not recoverable
+    from the wire status alone and must be read from the job log if it is needed.
 
     Args:
         wire_status: A wire status value.
@@ -676,21 +765,32 @@ class LogVerdict:
 
     Attributes:
         status: The ``status:`` value the emitted build TOON carried
-            (``success`` / ``error`` / ``timeout`` / ``killed`` — the
-            :mod:`_build_result` vocabulary, NOT the daemon's wire vocabulary).
+            (``success`` / ``error`` / ``timeout`` / ``killed`` /
+            ``indeterminate`` — the five-valued :mod:`_build_result` vocabulary,
+            NOT the daemon's four-valued wire vocabulary).
             **Both readers must preserve WHICH of these it is.** ``timeout`` and
-            ``killed`` are NON-FINISHES: the wrapper reported no verdict at all,
-            so collapsing either into a failure at the cross-check reinstates the
-            very false signal this shared reader exists to catch, one layer in.
+            ``killed`` are NON-FINISHES and ``indeterminate`` is an unestablished
+            outcome: in none of the three did the wrapper report a verdict, so
+            collapsing any of them into a failure at the cross-check reinstates
+            the very false signal this shared reader exists to catch, one layer
+            in.
+
+            The field is a value READ OFF A LOG, so it is not guaranteed to be a
+            member of that vocabulary at all — a truncated or foreign log can
+            yield anything. A consumer that must translate it therefore treats an
+            unrecognised value fail-closed as ``indeterminate`` (ADR-009) rather
+            than passing it on or raising; see
+            :mod:`_marshalld_supervisor`'s use of this reader.
         exit_code: The ``exit_code:`` value, or ``None`` when the log carried no
             parseable one.
-        tests_run: The ``tests_run:`` value — the executed-test count the INNER
-            wrapper measured and published. ``None`` when the log carried no
-            parseable one, which means UNKNOWN and never zero: the routed client
-            reconstructs its own count from this field, and a zero substituted for
-            an absent one is what made a 2750-test run announce that it had tested
-            nothing. Only a green run publishes the key at all, so ``None`` is the
-            normal value on every non-green verdict.
+        tests_run: The ``tests_run:`` value — the EXECUTED-test count the INNER
+            wrapper measured and published (``passed + failed``, never the
+            collected total). ``None`` when the log carried no parseable one,
+            which means UNKNOWN and never zero: the routed client reconstructs its
+            own count from this field, and a zero substituted for an absent one is
+            what made a 2750-test run announce that it had tested nothing. Only a
+            green run publishes the key at all, so ``None`` is the normal value on
+            every non-green verdict.
     """
 
     status: str
@@ -716,12 +816,16 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     of each key wins, because the wrapper emits its result TOON after any progress
     output it already wrote to the same log.
 
+    ``status:`` is what makes a verdict exist; the other two are enrichment.
     ``tests_run`` is read here rather than re-derived by the client because the
     client's own parser sees only THIS log — the wrapper's emitted TOON — and not
     the raw test-runner output the inner build parsed. Re-parsing therefore yields
     no test summary, and reporting that as a zero is a false could-not-look over a
     fully-examined population. The inner wrapper already measured the count; the
-    reader's job is to carry it, not to recompute it.
+    reader's job is to carry it, not to recompute it. A log with a ``status:`` but
+    no ``tests_run:`` therefore yields a verdict whose ``tests_run`` is ``None`` —
+    the honest "the log stated no count", which a caller must not collapse into
+    ``0``.
 
     Args:
         log_file: Path to the job log the supervisor streamed the child into.
