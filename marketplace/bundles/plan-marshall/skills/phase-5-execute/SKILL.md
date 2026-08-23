@@ -573,7 +573,9 @@ python3 .plan/execute-script.py plan-marshall:phase-5-execute:scope_creep_check 
   check --plan-id {plan_id}
 ```
 
-The helper reads `plan_creation_sha` from `references.json`, computes `git diff --name-only {plan_creation_sha}..HEAD` against the worktree, subtracts the union of `affected_files` from every deliverable, and returns:
+The helper reads `plan_creation_sha` from `references.json`, computes `git diff --name-only {plan_creation_sha}..HEAD` against the worktree, subtracts the union of `affected_files` from every deliverable, and returns ONE of two shapes.
+
+**Measured** — the comparison ran:
 
 ```toon
 status: success
@@ -583,9 +585,23 @@ finding_emitted: true|false
 residual_files[N]: [paths]
 ```
 
+**Could not look** — the guard performed no comparison at all:
+
+```toon
+status: could_not_look
+reason: no_baseline_sha | guard_disabled
+detail: "<why nothing was measured>"
+threshold: T
+finding_emitted: false
+```
+
+⛔ **`residual_count` is ABSENT on the `could_not_look` shape, and that absence is the contract.** The count is the field consumers gate on, so a `0` published by a run that never compared anything is indistinguishable from "compared, and found no scope creep" — a `reason` field alone does not fix that, because it is advisory and trivially dropped. Read `status` FIRST: on `could_not_look` there is no measurement to act on, and a caller that branches on `residual_count` finds no key rather than a false zero. Never substitute `0` for the missing key.
+
+Both non-measuring paths return exit code `0` — an unmeasurable guard is not a failure of the run it guards.
+
 When `finding_emitted: true`, the helper has already persisted a `scope_creep_warning` finding to the Q-Gate findings store via `manage-findings qgate add --type scope_creep_warning`. The finding flows into the Step 11 triage loop alongside other verify findings (same resolution path: FIX / SUPPRESS / ACCEPT). No additional surface action required here — the standard triage loop handles it.
 
-**Threshold configuration**: default is `5`; override via `phase_5.scope_creep_threshold` in `marshal.json`'s plan-scoped config. Set to `0` to disable the guard entirely.
+**Threshold configuration**: default is `5`; override via `phase_5.scope_creep_threshold` in `marshal.json`'s plan-scoped config. Set to `0` to disable the guard entirely — which yields the `could_not_look` shape with `reason: guard_disabled`, never a clean zero.
 
 ### Step 7: Mark Step Complete
 

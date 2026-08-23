@@ -243,7 +243,13 @@ def test_plan_dir_resolved_via_plan_base_dir(plan_with_refs, monkeypatch, capsys
 
 
 def test_threshold_zero_disables_guard(plan_with_refs, monkeypatch, capsys):
-    """Threshold 0 is the explicit disable knob — short-circuit, no diff."""
+    """Threshold 0 is the explicit disable knob — short-circuit, no diff.
+
+    A switched-off guard examined nothing, so it reports the ``could_not_look``
+    shape and publishes NO ``residual_count``. It used to print
+    ``residual_count: 0``, which a consumer gating on that field reads as "no
+    scope creep" — the finding-5ebd40 defect on the disabled path.
+    """
     # Patch _git_diff_files to raise; if the script touched it, the test fails.
     def _raise(*_a, **_k):
         raise AssertionError('diff should not be invoked when threshold=0')
@@ -257,7 +263,9 @@ def test_threshold_zero_disables_guard(plan_with_refs, monkeypatch, capsys):
     out = capsys.readouterr().out
 
     assert rc == 0
-    assert 'disabled: true' in out
+    assert 'status: could_not_look' in out
+    assert 'reason: guard_disabled' in out
+    assert 'residual_count:' not in out
     assert 'finding_emitted: false' in out
     assert stub.calls == []
 
