@@ -2579,12 +2579,8 @@ def _default_permission_rules() -> tuple[tuple[str, str], ...]:
     than a Claude one, so it is spelled literally; the bundle-cache read
     permission is derived from the resolved cache root instead.
 
-    ``Edit(.plan/**)`` is the ONLY write-side rule rendered, and it is not an
-    oversight that no ``Write(...)`` twin sits beside it: Claude matches file
-    permission checks against ``Edit(...)`` rules, and an ``Edit`` rule covers
-    every file-editing tool — ``Write`` and ``NotebookEdit`` included. See
-    ``_RETIRED_DEFAULT_RULES`` for what that means for a settings file written
-    before this was true.
+    ``Edit(.plan/**)`` is the only write-side rule, and the absent ``Write(...)``
+    twin is deliberate — see ``_RETIRED_DEFAULT_RULES`` below.
     """
     cache_glob = f"{_tilde_form(_claude_plugin_cache_dir())}/**"
     return (
@@ -2595,18 +2591,22 @@ def _default_permission_rules() -> tuple[tuple[str, str], ...]:
     )
 
 
-#: Rules this renderer once emitted as defaults and now actively prunes.
+#: Rules this renderer once emitted as defaults and now actively prunes. This is
+#: the canonical home for WHY; the surfaces that prune point here.
 #:
 #: ``Write(.plan/**)`` is matched by nothing: Claude's file permission checks
-#: consult ``Edit(...)`` rules only, so the rule guards no tool call and the
-#: harness reports it as unmatched on every startup. Dropping it from
-#: ``_default_permission_rules`` stops it being written afresh but leaves it
-#: standing in every settings file an earlier version already touched, so
-#: ``ensure_default_permissions`` removes it as part of ensuring the defaults.
+#: consult ``Edit(...)`` rules only, and an ``Edit`` rule already covers every
+#: file-editing tool — ``Write`` and ``NotebookEdit`` included — so the rule
+#: guards no tool call and the harness reports it as unmatched on every startup.
+#: Dropping it from ``_default_permission_rules`` stops it being written afresh
+#: but leaves it standing in every settings file an earlier version touched, so
+#: it is removed as part of ensuring the defaults.
 #:
-#: Each entry carries the same ``(semantic_id, rendered_rule)`` shape as a live
-#: default, for the same reason: the id crosses back to the caller, the grammar
-#: does not.
+#: **Entry criterion — a retired rule MUST be inert.** Retirement deletes a rule
+#: from an operator's settings without asking, which is only defensible because
+#: this rule grants nothing by construction. A rule that still guards a real
+#: tool call does not belong here however obsolete it looks: deprecate it where
+#: the operator can see it, rather than silently revoking a live grant.
 _RETIRED_DEFAULT_RULES: tuple[tuple[str, str], ...] = (("plan-dir-write", "Write(.plan/**)"),)
 
 
@@ -2621,10 +2621,8 @@ def ensure_default_permissions(
     and — unless *dry_run* — performs the write itself. Nothing rendered crosses
     back.
 
-    Ensuring is therefore two-sided. A retired rule is removed rather than left
-    alone because it is not inert: an unmatched allow rule is reported by the
-    harness on every startup, so leaving it standing keeps a warning alive that
-    this function is the only thing positioned to clear.
+    Ensuring is therefore two-sided — see ``_RETIRED_DEFAULT_RULES`` for why a
+    retired rule is removed rather than left alone.
 
     Args:
         settings: A loaded settings mapping. Mutated in place when a default is

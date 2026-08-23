@@ -177,13 +177,9 @@ def cmd_apply_fixes(args: argparse.Namespace) -> dict:
     if defaults_added or defaults_removed:
         was_sorted = True
 
-    changes_made = (
-        total_duplicates > 0
-        or total_paths_fixed > 0
-        or len(defaults_added) > 0
-        or len(defaults_removed) > 0
-        or was_sorted
-    )
+    # No `defaults_added`/`defaults_removed` term: either one being non-empty
+    # already set `was_sorted` above, so naming them here would be dead.
+    changes_made = total_duplicates > 0 or total_paths_fixed > 0 or was_sorted
 
     result = {
         'duplicates_removed': total_duplicates,

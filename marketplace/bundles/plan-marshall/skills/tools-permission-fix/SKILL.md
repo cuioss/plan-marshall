@@ -32,7 +32,7 @@ The common permission mutations are platform-neutral: they flow through the `pla
 
 | Intent | Platform-routed command |
 |--------|-------------------------|
-| Normalize / dedupe / sort + add defaults | `platform_runtime permission fix --scope project --operation normalize [--dry-run]` |
+| Normalize / dedupe / sort + ensure defaults | `platform_runtime permission fix --scope project --operation normalize [--dry-run]` |
 | Add a permission | `platform_runtime permission fix --scope project --operation add --permissions "Bash(docker:*)" [--dry-run]` |
 | Remove a permission | `platform_runtime permission fix --scope project --operation remove --permissions "Bash(docker:*)" [--dry-run]` |
 | Ensure permissions exist | `platform_runtime permission fix --scope global --operation ensure --permissions "Bash(git:*)" "Bash(npm:*)" [--dry-run]` |
@@ -206,6 +206,8 @@ Ensuring is two-sided: the target also prunes rules it has **retired** as defaul
 | `plan-dir-write` | the separate `.plan/` write rule — file permission checks match `Edit(...)` rules, which already cover every file-editing tool, so it guarded nothing |
 
 `defaults_added_count` and `defaults_removed_count` carry the same lengths as scalars, matching how the neighbouring operations report (`permissions_added`, `rules_total`).
+
+The same two-sided ensure applies to `permission fix --operation normalize` in the platform-routed table above — it is the other surface that ensures this set, and it prunes the retired ids too. It reports the net effect as `changes_applied` rather than as semantic-id lists.
 
 ### add
 

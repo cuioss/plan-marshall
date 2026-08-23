@@ -318,8 +318,8 @@ class TestApplyFixes:
         assert result['defaults_added']
         assert settings_file.read_bytes() == before
 
-    def test_written_default_set_is_the_pinned_three_rules(self, tmp_path):
-        """The FILE apply-fixes leaves behind must carry the same three rules.
+    def test_written_default_set_is_the_pinned_two_rules(self, tmp_path):
+        """The FILE apply-fixes leaves behind must carry the same two rules.
 
         What an operator's settings end up containing is the observable
         contract, and it is pinned here against literals rather than against the
@@ -335,6 +335,64 @@ class TestApplyFixes:
         assert written['permissions']['allow'] == sorted(
             ['Edit(.plan/**)', 'Read(~/.claude/plugins/cache/**)']
         )
+
+    def test_prunes_a_retired_default_at_the_command_layer(self, tmp_path):
+        """The retirement must reach an operator through THIS command, not only the runtime.
+
+        The runtime-layer pin lives in
+        ``test_permission_rendering_defaults.py``; without this one, deleting
+        the ``defaults_removed`` plumbing from ``cmd_apply_fixes`` — the fields
+        in the result dict, or the ``was_sorted`` forcing that makes a
+        prune-only run count as a change — passes the whole suite while the
+        operator-visible half of the fix silently stops working.
+
+        The seed is otherwise default-complete and already sorted, so pruning
+        is the ONLY work in the run.
+        """
+        settings_file = tmp_path / 'settings.json'
+        settings_file.write_text(
+            json.dumps(
+                {
+                    'permissions': {
+                        'allow': sorted(
+                            [
+                                'Edit(.plan/**)',
+                                'Read(~/.claude/plugins/cache/**)',
+                                'Write(.plan/**)',
+                            ]
+                        ),
+                        'deny': [],
+                        'ask': [],
+                    }
+                }
+            )
+        )
+
+        result = cmd_apply_fixes(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(settings_file)))
+
+        assert result['defaults_added'] == []
+        assert result['defaults_removed'] == ['plan-dir-write']
+        assert result['defaults_removed_count'] == 1
+        assert result['changes_made'] is True
+        assert result['applied'] is True
+        written = json.loads(settings_file.read_text())
+        assert written['permissions']['allow'] == sorted(
+            ['Edit(.plan/**)', 'Read(~/.claude/plugins/cache/**)']
+        )
+
+    def test_dry_run_prunes_nothing_on_disk_at_the_command_layer(self, tmp_path):
+        """--dry-run must report the prune it WOULD do and leave the file alone."""
+        settings_file = tmp_path / 'settings.json'
+        settings_file.write_text(
+            json.dumps({'permissions': {'allow': ['Write(.plan/**)'], 'deny': [], 'ask': []}})
+        )
+        before = settings_file.read_bytes()
+
+        result = cmd_apply_fixes(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(settings_file), '--dry-run'))
+
+        assert result['defaults_removed'] == ['plan-dir-write']
+        assert result['applied'] is False
+        assert settings_file.read_bytes() == before
 
     def test_normalize_only_change_still_writes(self, tmp_path):
         """A run that adds no default must still persist the normalization.

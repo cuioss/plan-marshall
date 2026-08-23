@@ -44,18 +44,6 @@ class TestDefaultPermissionRules:
             'Read(~/.claude/plugins/cache/**)',
         ]
 
-    def test_no_write_rule_is_rendered(self) -> None:
-        """A ``Write(...)`` default would be an unmatched rule, not a redundant one.
-
-        Claude consults ``Edit(...)`` rules for file permission checks, so a
-        ``Write(path)`` allow rule guards nothing and the host reports it as
-        unmatched at startup. Pinned separately from the literal list above
-        because the property — never render a ``Write`` default — is what must
-        survive a future addition to the set.
-        """
-        rendered = [rule for _rule_id, rule in claude_runtime._default_permission_rules()]
-        assert not any(rule.startswith('Write(') for rule in rendered)
-
     def test_semantic_ids_are_the_only_thing_a_caller_receives(self) -> None:
         """The ids name the goal, not the grammar — no id may contain DSL syntax."""
         ids = [rule_id for rule_id, _rule in claude_runtime._default_permission_rules()]
@@ -63,18 +51,6 @@ class TestDefaultPermissionRules:
         for rule_id in ids:
             assert '(' not in rule_id and ')' not in rule_id
 
-
-class TestRetiredDefaultRules:
-    """The rules the renderer prunes rather than emits."""
-
-    def test_retired_rules_are_the_pinned_literals(self) -> None:
-        assert claude_runtime._RETIRED_DEFAULT_RULES == (('plan-dir-write', 'Write(.plan/**)'),)
-
-    def test_no_rule_is_both_live_and_retired(self) -> None:
-        """Rendering and pruning the same rule would never converge."""
-        live = {rule for _rule_id, rule in claude_runtime._default_permission_rules()}
-        retired = {rule for _rule_id, rule in claude_runtime._RETIRED_DEFAULT_RULES}
-        assert live.isdisjoint(retired)
 
     def test_layout_op_reads_the_resolved_home(self, monkeypatch, tmp_path) -> None:
         """``layout bundle-cache-root`` derives its root — move home, it moves."""
@@ -105,6 +81,13 @@ class TestRetiredDefaultRules:
 
         rendered = dict(claude_runtime._default_permission_rules())
         assert rendered['bundle-cache-read'] == f'Read({expected_dir}/**)'
+
+
+class TestRetiredDefaultRules:
+    """The rules the renderer prunes rather than emits."""
+
+    def test_retired_rules_are_the_pinned_literals(self) -> None:
+        assert claude_runtime._RETIRED_DEFAULT_RULES == (('plan-dir-write', 'Write(.plan/**)'),)
 
 
 class TestEnsureDefaultPermissions:

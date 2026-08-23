@@ -3459,6 +3459,57 @@ class TestPermissionFix:
         # Default entries added.
         assert "Edit(.plan/**)" in allow
 
+    def test_normalize_prunes_a_retired_default(self, rt, tmp_path, monkeypatch):
+        """normalize ensures the defaults, and ensuring is two-sided.
+
+        This op is the SECOND surface that ensures the default set — it reads
+        the same renderer as ``ensure_default_permissions``. Reading the
+        renderer but not the retired set is exactly how the two drifted apart
+        once: an operator whose flow is ``normalize`` kept an unmatched rule,
+        and the startup warning its retirement exists to clear, because no test
+        pinned this side.
+        """
+        import claude_runtime as _cr
+
+        settings_path = tmp_path / "settings.json"
+        _write_settings(settings_path, ["Write(.plan/**)", "Bash(git:*)"])
+        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+
+        result = _parsed(rt.permission_fix("project", "normalize", [], False))
+
+        assert result["status"] == "success"
+        saved = json.loads(settings_path.read_text())
+        assert "Write(.plan/**)" not in saved["permissions"]["allow"]
+        # The rule it supersedes is present, so the prune is a swap, not a loss.
+        assert "Edit(.plan/**)" in saved["permissions"]["allow"]
+
+    def test_normalize_counts_a_prune_as_a_change(self, rt, tmp_path, monkeypatch):
+        """A prune-only run must not report itself as having changed nothing.
+
+        Seeded already-sorted, dedupe-clean and default-complete, so the prune
+        is the only work; `changes_applied` would be 0 if removals were counted
+        only as additions.
+        """
+        import claude_runtime as _cr
+
+        settings_path = tmp_path / "settings.json"
+        _write_settings(
+            settings_path,
+            sorted(
+                [
+                    "Bash(python3 .plan/execute-script.py *)",
+                    "Edit(.plan/**)",
+                    "Read(~/.claude/plugins/cache/**)",
+                    "Write(.plan/**)",
+                ]
+            ),
+        )
+        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+
+        result = _parsed(rt.permission_fix("project", "normalize", [], False))
+
+        assert result["changes_applied"] == 1
+
     def test_dry_run_does_not_write_settings(self, rt, tmp_path, monkeypatch):
         """dry_run=True returns proposed_additions but does not mutate the file."""
         import claude_runtime as _cr
