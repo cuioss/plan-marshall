@@ -1016,7 +1016,7 @@ def verify_system_auth(provider: dict[str, Any]) -> dict[str, Any]:
             'skill': skill_name,
             'command': verify_command,
             'exit_code': result.returncode,
-            'output': captured.strip()[:500],
+            'output': captured[:500],
         }
     except FileNotFoundError:
         return {
