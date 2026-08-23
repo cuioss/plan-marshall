@@ -21,10 +21,18 @@ The guard is DERIVED OVER the D1 classification
   census — via an assertion-visible print, so a guard that examined an empty
   population is impossible to mistake for a passing one.
 
-The core assertion (write-path isolation): every knob-consumer symbol
-(``render_timestamp``, ``resolve_display_timezone``, ``read_display_timezone``,
-``display_timezone``) appears ONLY in a knob-owner file or a declared RENDER
-file — never in a STORE/COMPARE file.
+The core assertion (write-path isolation) has two arms, because a knob leak has
+two shapes:
+
+* **Across files** — every knob-consumer symbol (``render_timestamp``,
+  ``resolve_display_timezone``, ``read_display_timezone``, ``display_timezone``)
+  appears ONLY in a knob-owner file or a declared RENDER file, never in a
+  STORE/COMPARE file.
+* **Within a RENDER file** — each declared RENDER file spends exactly its
+  ``render_call_budget`` of ``render_timestamp(`` calls. A declared RENDER file
+  is not wholly a render surface, so a file-granular exemption hid every store
+  site inside one; the budget makes routing an additional site through the knob
+  a red build.
 """
 
 import json
@@ -128,16 +136,27 @@ def test_render_routing_is_live(capsys):
 
 
 def test_knob_symbols_never_reach_a_store_or_compare_site():
-    """Write-path isolation (D4): no STORE/COMPARE file consults the knob.
+    """Write-path isolation (D4), enforced per SITE rather than per FILE.
 
-    Every occurrence of a knob-consumer symbol across the bundles must live in a
-    knob-owner file or a declared RENDER file. A reference in any other file is a
-    STORE/COMPARE site consulting the display timezone — the exact leak this
-    guard exists to prevent.
+    Two assertions, because a knob leak has two shapes and the file-granular
+    form of this guard could only ever see the first:
+
+    1. **Across files** — a knob-consumer symbol in a file that is neither a
+       knob owner nor a declared RENDER file is a STORE/COMPARE site consulting
+       the display timezone.
+
+    2. **Within a RENDER file** — a declared RENDER file is not wholly a render
+       surface. ``manage-metrics.py`` renders ONCE and calls ``now_utc_iso()``
+       nine times, so exempting the file wholesale made every one of those store
+       sites invisible: routing one of them through ``render_timestamp(...)``
+       changed nothing this guard could observe. Each RENDER file is therefore
+       held to the ``render_call_budget`` re-derived in the classification, so
+       spending a render call on a store site is a red build.
     """
     classification = _load_classification()
     symbols = classification['knob_consumer_symbols']
-    allowed = set(classification['render_files']) | set(classification['knob_owner_files'])
+    render_files = set(classification['render_files'])
+    allowed = render_files | set(classification['knob_owner_files'])
 
     referencing = _files_referencing_symbols(symbols)
     leaks = {rel: syms for rel, syms in referencing.items() if rel not in allowed}
@@ -151,3 +170,22 @@ def test_knob_symbols_never_reach_a_store_or_compare_site():
     # The guard must have something to examine — the owner + render files DO
     # reference the knob, so an empty result means the scan silently found nothing.
     assert referencing, 'No file references any knob symbol — the isolation scan found nothing.'
+
+    # Site-granular arm: every RENDER file carries a budget, and spends it exactly.
+    budgets = {site['file']: site['render_call_budget'] for site in classification['render_sites']}
+    assert set(budgets) == render_files, (
+        'Every declared RENDER file must carry a render_call_budget and vice versa — '
+        f'render_files={sorted(render_files)} budgeted={sorted(budgets)}'
+    )
+
+    for rel, budget in sorted(budgets.items()):
+        actual = (REPO_ROOT / rel).read_text(encoding='utf-8').count('render_timestamp(')
+        assert actual == budget, (
+            f'RENDER file {rel!r} makes {actual} render_timestamp(...) call(s) but is '
+            f'budgeted for {budget}. A RENDER file is not wholly a render surface: an '
+            'extra call is a STORE/COMPARE site that has been routed through the '
+            'display-timezone knob. Route the site back through the UTC store '
+            'primitive, or — only if this really is a new human-facing render site — '
+            'raise render_call_budget in timestamp_render_classification.json and say '
+            'what it renders.'
+        )

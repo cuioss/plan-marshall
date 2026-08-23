@@ -16,18 +16,21 @@
     "marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/manage-metrics.py",
     "marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/compile-report.py"
   ],
+  "_render_call_budget_derivation": "render_call_budget is the number of 'render_timestamp(' occurrences the file is permitted to contain, re-derived from the tree with text.count('render_timestamp(') rather than hand-maintained. It exists because a RENDER file is NOT wholly a render surface: manage-metrics.py renders once and calls now_utc_iso() nine times, so exempting the file wholesale hid every one of those store sites from the write-path guard. Pinning the count makes routing any additional site through the knob a red build. Raising a budget is a deliberate act that must be justified by a new human-facing render site, never a way to quiet the guard.",
   "render_sites": [
     {
       "file": "marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/manage-metrics.py",
       "classification": "RENDER",
       "human_text": "Generated: <ts> UTC — the single absolute-timestamp line in the metrics.md report body; every other metrics.md line renders phase names, floors, warnings, and durations-in-ms, never a wall-clock time.",
-      "routed_through": "render_timestamp(datetime.now(UTC), '%Y-%m-%d %H:%M:%S', ' UTC')"
+      "routed_through": "render_timestamp(datetime.now(UTC), '%Y-%m-%d %H:%M:%S', ' UTC')",
+      "render_call_budget": 1
     },
     {
       "file": "marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/compile-report.py",
       "classification": "RENDER",
       "human_text": "- generated: <ts>Z — the generated-at line in the plan-retrospective report header list.",
-      "routed_through": "render_timestamp(datetime.now(UTC), '%Y-%m-%dT%H:%M:%S', 'Z')"
+      "routed_through": "render_timestamp(datetime.now(UTC), '%Y-%m-%dT%H:%M:%S', 'Z')",
+      "render_call_budget": 1
     }
   ],
   "store_compare_derivation": "STORE/COMPARE is every scanned file MINUS render_files MINUS knob_owner_files. It is derived (not listed here) so a newly-added timestamp site is classified STORE/COMPARE by default and trips the guard the moment it references a knob_consumer_symbol — the classification cannot silently go stale or empty. The guard publishes the derived STORE/COMPARE file census on every run.",
