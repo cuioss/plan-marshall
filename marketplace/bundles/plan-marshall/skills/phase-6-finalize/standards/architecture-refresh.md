@@ -340,7 +340,7 @@ Continue to Step 5.
 
 #### `prompt` (default) — AskUserQuestion gate
 
-Ask the user whether to re-enrich now or defer. Use the AskUserQuestion shape below verbatim — the option labels are part of the documented UX and are referenced by `marshall-steward/references/wizard-flow.md` (Deliverable 4) so the configuration prompt and the runtime prompt stay aligned:
+Ask the user whether to re-enrich now or defer. Use the AskUserQuestion shape below verbatim — the option labels are part of the documented UX, mirrored by the configuration prompt so the two stay aligned (the mirror site is named once, on the `Skip — note in PR` branch below):
 
 ```text
 Question: "Architecture re-enrichment recommended for: {affected_modules_csv}. Re-enrich now?"

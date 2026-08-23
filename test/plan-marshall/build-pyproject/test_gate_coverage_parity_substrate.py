@@ -25,10 +25,11 @@ that asymmetry is stated rather than papered over.
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
-from _gate_coverage import parity_population
+from _gate_coverage import parity_population, structural_limits
 
 #: Repository root, from this module's own position (``test/{bundle}/{skill}/``).
 _REPO_ROOT = Path(__file__).parents[3]
@@ -286,7 +287,24 @@ def test_the_mapping_names_only_cells_that_exist():
 # It is deliberately NOT a blanket ban on the word: `structural_limits` IS
 # computed from the dimensions a run actually recorded, and must stay describable
 # as derived. A guard that scrubbed every mention would break the one place the
-# word is earned, so the positive half below asserts that place survives.
+# word is earned, so the positive half below pins its assertion to THAT place —
+# `structural_limits`'s own docstring — and not to any surviving mention of the
+# word anywhere in the module.
+#
+# The pin is what makes the positive half discriminating. A whole-file scan for a
+# non-refuted mention admitted, among others, the sentence in `parity_population`'s
+# docstring that DENIES derivation ("Building real derivation machinery ... was
+# deliberately not taken"). That denial is one sentence spread over three source
+# lines, so no line-scoped classifier can see it as a denial at all — and it kept a
+# control green whose stated job was to prove the derivation claim survives, while
+# that claim could have been deleted freely.
+#
+# `_REFUTATION_RE` is deliberately NOT widened to catch it. That regex is the
+# negative half's exemption list, and every alternative added to it can only let
+# MORE stale parity claims through; widening it to fix a positive-half problem
+# would pay for the fix out of the negative half's strength. The classification
+# question is instead dissolved by not asking it: the earned claim has one known
+# home, so the control reads that home directly.
 
 _GATE_COVERAGE_SOURCE = (
     _REPO_ROOT
@@ -373,30 +391,110 @@ def test_no_surviving_text_calls_the_parity_population_derived():
     )
 
 
-def test_the_genuinely_derived_neighbour_is_still_described_as_derived():
-    """POSITIVE half: the one place the word IS earned survives.
+def _structural_limits_docstring(source: str) -> str | None:
+    """Return ``structural_limits``'s own docstring from ``source``, or None.
 
-    ``structural_limits`` is computed from the dimensions a run actually recorded,
-    so describing it as derived is accurate. Green before the relabel and green
-    after — only the parity banner changes verdict. Without this half, deleting
-    every occurrence of the word would satisfy the negative control while
-    destroying a true statement, and the pair would not be matched at all.
+    Parsed rather than pattern-matched. The claim under guard lives in one named
+    function's docstring, and an AST lookup cannot drift onto a neighbouring
+    function's prose — which is precisely how the whole-file line scan this
+    replaced came to accept `parity_population`'s refutation as the earned claim.
     """
-    text = _GATE_COVERAGE_SOURCE.read_text(encoding='utf-8')
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.FunctionDef) and node.name == 'structural_limits':
+            return ast.get_docstring(node)
+    return None
 
-    earned = [
-        line.strip()
-        for line in text.splitlines()
-        if _DERIVED_RE.search(line)
-        and not _PARITY_RE.search(line)
-        and not _REFUTATION_RE.search(line)
-    ]
 
-    assert earned, (
-        'No surviving line in _gate_coverage.py describes anything as derived. The '
-        'relabel was meant to correct ONE stale claim about the parity population, '
-        'not to remove the accurate description of structural_limits, which really '
-        'is computed from the dimensions a run recorded. An over-broad edit that '
-        'scrubbed the word everywhere would pass the negative control and land a '
-        'false statement in its place.'
+#: A module whose ONLY derivation prose is the sentence that DENIES derivation —
+#: the shape that satisfied the previous whole-file scan. Used as the matched
+#: negative control: the pinned reader must find no claim here.
+_REFUTING_SOURCE = '''
+def parity_population():
+    """Return the RECORDED set of parity dimensions.
+
+    Building real derivation machinery for an artifact with no production
+    consumer is a capability change and was deliberately not taken.
+    """
+    return ()
+
+
+def structural_limits(dimensions):
+    """Pair each checked dimension with its structural limit, in recorded order."""
+    return ()
+'''
+
+
+def test_structural_limits_is_still_described_as_derived_and_still_derives():
+    """POSITIVE half: the one place the word IS earned survives, and still earns it.
+
+    ``structural_limits`` computes its result from the dimensions a run actually
+    recorded, so its docstring's "Derived from ..." is accurate. Without this half,
+    deleting that true statement would satisfy the negative control and leave a
+    false picture behind, so the pair would not be matched at all.
+
+    The assertion is pinned to that docstring, not to the module's text: any other
+    mention of the word — including the sentence that denies derivation — is
+    inadmissible as a stand-in. The behavioural pair is asserted alongside it,
+    because a description is earned only while the code still matches it: a fixed
+    boilerplate block would satisfy the sentence and contradict it.
+    """
+    source = _GATE_COVERAGE_SOURCE.read_text(encoding='utf-8')
+    docstring = _structural_limits_docstring(source)
+
+    assert docstring, (
+        f'{_GATE_COVERAGE_SOURCE.name} defines no `structural_limits`, or it carries '
+        f'no docstring, so this control examined nothing. It is pinned to that '
+        f'function by name — if the function moved or was renamed, re-anchor this '
+        f'control rather than deleting it.'
+    )
+    assert _DERIVED_RE.search(docstring), (
+        "structural_limits's docstring no longer describes its result as derived. "
+        'The relabel was meant to correct ONE stale claim about the parity '
+        'population, not to remove the accurate description of structural_limits, '
+        'which really is computed from the dimensions a run recorded. An over-broad '
+        'edit that scrubbed the word everywhere would pass the negative control and '
+        f'land a false statement in its place.\n  docstring: {docstring!r}'
+    )
+
+    # The word is earned only while the result is a function of what was recorded.
+    assert structural_limits([]) == (), (
+        'structural_limits invented limits for a run that recorded no dimension, so '
+        'its output is not derived from the recorded dimensions after all'
+    )
+    assert structural_limits(['ruff [3 files]']) != structural_limits(
+        ['ruff [3 files]', 'module-tests [12 files]']
+    ), (
+        'structural_limits returned the same limits for two different recorded '
+        'dimension sets, so it is a fixed boilerplate block and its docstring\'s '
+        '"Derived from the dimensions the run ACTUALLY recorded" is false'
+    )
+
+
+def test_a_sentence_denying_derivation_cannot_stand_in_for_the_earned_claim():
+    """Matched control: prose that DENIES derivation does not satisfy the pin.
+
+    The whole-file scan this control replaced accepted any non-``parity`` line
+    mentioning derivation, so ``parity_population``'s "real derivation machinery
+    ... was deliberately not taken" — a refutation — kept the positive half green
+    on its own, and the true ``structural_limits`` claim could have been deleted
+    without turning it red. Narrowing to one function's docstring is only a fix if
+    that refutation is genuinely inadmissible, which is what this asserts.
+    """
+    refuting_docstring = _structural_limits_docstring(_REFUTING_SOURCE)
+
+    # Guard the fixture itself: it only demonstrates anything while it really does
+    # carry the refutation, and really does keep it out of structural_limits.
+    assert _DERIVED_RE.search(_REFUTING_SOURCE), (
+        'the control fixture no longer contains the refuting sentence, so it cannot '
+        'show what the whole-file scan would have been satisfied by'
+    )
+    assert refuting_docstring is not None, (
+        'the control fixture no longer defines structural_limits, so the pinned '
+        'reader is being exercised against nothing'
+    )
+
+    assert not _DERIVED_RE.search(refuting_docstring), (
+        'the pinned reader accepted a docstring that says nothing about derivation, '
+        'in a module whose only derivation prose REFUTES it. That is the exact '
+        'substitution this control exists to forbid.'
     )
