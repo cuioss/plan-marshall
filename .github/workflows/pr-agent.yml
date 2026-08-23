@@ -42,6 +42,41 @@ permissions:
 jobs:
   review:
     uses: cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml@4c508c662620fcc7c374e0a54d35ac84416b8140 # v0.19.0
+    with:
+      # PILOT, repository-scoped. `/review` is not the surface that finds defects here, and
+      # that is a measured result rather than a hypothesis. Across 223 findings stores and
+      # 224 pull requests, `/review` published 51 PR Reviewer Guides carrying 17 findings in
+      # total — 73% of them the bare "No major issues detected" table. Neither knob the
+      # central config reaches moved it: the model was swapped across 3.5-flash / 2.5-pro /
+      # 3.6-flash for byte-identical output, and the charter was rewritten twice
+      # (pr-agent-settings #5 and #13, the second explicitly to contest the empty-list
+      # permission and to raise num_max_findings to 12) for a silent rate of 76.5% → 73.3%.
+      #
+      # The cause is not reachable from configuration. `key_issues_to_review`'s own field
+      # description in the pinned image grants permission to return an empty list, and
+      # extra_instructions is appended as a separate block — it argues alongside that
+      # description instead of replacing it. Two rounds of stronger argument bought three
+      # points, which is the measurement that closes the charter lane.
+      #
+      # `/improve` is a DIFFERENT tool with a different prompt and no empty-list clause. It
+      # has been fully tuned in cuioss/pr-agent-settings since #14 — commitable_code_suggestions
+      # publishes it as inline review comments, which plan-marshall's automatic-review already
+      # declares as participation evidence for this bot — and it has never once run on a real
+      # pull request in this repository: zero inline records across the whole corpus. The
+      # ordinary opt-in is a per-PR `pr-agent-improve` label that nobody applies, so the
+      # capability has been configured and unused.
+      #
+      # ⚠ KNOWN GAP, accepted deliberately for the pilot and NOT to be mistaken for a guarded
+      # surface: the reusable workflow's fail-closed gate keys on the `review` output and is
+      # deliberately not extended to `/improve`, which writes the separate `improve` key. A
+      # run in which `/improve` produces nothing is therefore indistinguishable from one in
+      # which it was never reached — the same collapsed signal this repository's
+      # review-apparatus epic exists to fix (PLAN-PR-026). Closing it needs an oracle in the
+      # ORG workflow, which is out of scope for a caller-side pilot. Until that lands, read an
+      # absent suggestion set as UNKNOWN, never as clean.
+      #
+      # Reversible in one line. Remove this input to return to label-only opt-in.
+      auto-improve: true
     # Map only what the reviewer needs. `secrets: inherit` would hand it every secret this
     # repo can see (GPG keys, Sonatype credentials, SONAR_TOKEN, …) for no reason; these two
     # are the whole requirement, because Vertex AI is reached keylessly.
