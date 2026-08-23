@@ -10,9 +10,15 @@ parity:
   and a legitimately-timed run (or a small scope) is not. A check that flagged
   every fast gate would be disabled within a week, so the negative direction is
   as load-bearing as the positive one.
-* ``CoverageBoundary`` / ``render_coverage_summary`` — the honest partial-vs-full
-  verdict (D5). A degraded run must be distinguishable, in the gate's own words,
-  from one that genuinely passed.
+* ``CoverageBoundary`` / ``render_coverage_summary`` — the honest coverage verdict
+  (D5), in THREE forms. A degraded run must be distinguishable, in the gate's own
+  words, from one that genuinely passed; and a run that recorded nothing must be
+  distinguishable from both, since "nothing was degraded" is vacuously true of a
+  run that checked nothing.
+* ``coverage_gaps`` — the dimensions a run did NOT cover, split by WHY. An absence
+  named with one reason misdescribes the other two: a scope-limited absence, an
+  absence this command can never fill, and a check that was reached over an empty
+  scope each imply a different remedy.
 * ``parity_population`` — the RECORDED local-gate-vs-CI comparison set (D1),
   asserted NON-EMPTY (D6): a parity table over an empty population looks identical
   to perfect parity. Non-emptiness is all this module asserts about it, and over a
@@ -31,10 +37,18 @@ from _gate_coverage import (
     CoverageBoundary,
     analysis_limit,
     classify_check_duration,
+    coverage_gaps,
     dimension_stem,
     parity_population,
     render_coverage_summary,
     structural_limits,
+)
+
+#: Every analysis kind the limit registry characterises. Several tests need to
+#: declare a scope that covers all of them (so no clause fires) or all-but-one (so
+#: exactly one does); spelling the set out per test would let the two drift.
+ALL_DIMENSIONS = frozenset(
+    {'mypy(production)', 'mypy(test)', 'ruff', 'SPDX headers', 'plugin-doctor', 'module-tests'}
 )
 
 # ---------------------------------------------------------------------------
@@ -71,6 +85,33 @@ def test_small_scope_fast_is_not_flagged():
     from impossible-fast', not 'flag every fast gate'.
     """
     verdict = classify_check_duration(files_checked=SUSPECT_MIN_FILES - 1, elapsed_seconds=0.01)
+
+    assert verdict.plausible is True
+    assert verdict.reason is None
+
+
+def test_the_incident_band_throughput_is_flagged():
+    """The stale-cache incident this backstop exists to catch is NOT rated plausible.
+
+    The observed incident reported success over 660 files in 2-5 s — 132-330
+    files/s. A ceiling set above that band rates the incident itself plausible,
+    which is the same absence-read-as-success the backstop exists to refuse; the
+    3.0 s point (220 files/s) is the case the ceiling must therefore sit below.
+    """
+    verdict = classify_check_duration(files_checked=660, elapsed_seconds=3.0)
+
+    assert verdict.plausible is False
+    assert verdict.reason is not None
+
+
+def test_the_ceiling_leaves_headroom_over_this_tree_s_cold_throughput():
+    """A cold whole-tree run on this tree stays plausible — the negative control for the ceiling.
+
+    Lowering the ceiling to catch the incident band is only safe while a genuine
+    cold run still passes. Measured on this tree: 417 files in 5.84 s = 71 files/s.
+    A ceiling that flagged that would fire on every honest run and be disabled.
+    """
+    verdict = classify_check_duration(files_checked=417, elapsed_seconds=5.84)
 
     assert verdict.plausible is True
     assert verdict.reason is None
@@ -116,6 +157,26 @@ def test_complete_boundary_renders_a_complete_verdict():
     assert 'COMPLETE' in summary
     assert 'mypy(production)' in summary
     assert 'ruff' in summary
+
+
+def test_an_empty_boundary_certifies_nothing_and_says_so():
+    """A boundary that recorded nothing is UNKNOWN — never COMPLETE (ADR-009 explicit-unknown).
+
+    ``complete`` used to mean only *"nothing was degraded"*, which an empty
+    boundary satisfies vacuously: a run that checked nothing rendered the same
+    COMPLETE verdict as a run that checked everything, distinguished only by an
+    easily-overlooked ``(nothing)`` in the checked list. That is
+    absence-of-change laundered into success — the exact shape this module
+    exists to refuse — so COMPLETE now requires an affirmative signal and the
+    empty boundary gets its own third verdict.
+    """
+    boundary = CoverageBoundary()
+
+    assert boundary.complete is False
+    summary = render_coverage_summary(boundary)
+    assert 'COMPLETE' not in summary
+    assert '(nothing)' not in summary
+    assert 'UNKNOWN' in summary
 
 
 def test_degraded_boundary_renders_a_partial_verdict_that_names_the_gap():
@@ -337,53 +398,175 @@ def test_an_analysis_the_gate_never_ran_is_named_not_omitted():
     boundary = CoverageBoundary()
     boundary.record_checked('mypy(production) [401 files, cache disabled]')
     boundary.record_checked('ruff [marketplace/bundles]')
+    quality_gate = frozenset({'mypy(production)', 'ruff', 'SPDX headers', 'plugin-doctor'})
 
-    summary = render_coverage_summary(boundary)
+    summary = render_coverage_summary(boundary, quality_gate, quality_gate)
 
-    assert 'not run in this gate' in summary
+    assert 'not performed by this gate at all' in summary
     assert 'module-tests' in summary
     assert 'mypy(test)' in summary
 
 
-def test_a_run_covering_every_registered_analysis_names_no_unrun_ones():
-    """The un-run list is derived, so a full run states nothing false.
+def test_the_three_uncovered_clauses_are_distinct_and_imply_different_remedies():
+    """An absent dimension is named WITH ITS REASON, because the reasons differ in remedy.
+
+    A single "not run in this gate at all" list read a per-INVOCATION absence as a
+    statement about the COMMAND: a module-scoped quality-gate printed that the gate
+    never performs `plugin-doctor`, which is false — it performs it whole-tree.
+    Three separable clauses replace it, and a cold reader must be able to say which
+    remedy each implies: widen the scope, use a different command, or do nothing.
+    """
+    boundary = CoverageBoundary()
+    boundary.record_checked('ruff [marketplace/bundles/thin]')
+    boundary.record_checked('SPDX headers [marketplace/bundles/thin]')
+    boundary.record_empty_scope(
+        'mypy(production)', 'marketplace/bundles/thin — nothing survives the excludes'
+    )
+
+    summary = render_coverage_summary(
+        boundary,
+        frozenset({'mypy(production)', 'ruff', 'SPDX headers'}),
+        frozenset({'mypy(production)', 'ruff', 'SPDX headers', 'plugin-doctor'}),
+    )
+
+    # (a) The gate performs it, but not at this invocation's scope — widen the scope.
+    assert 'not performed at this scope: plugin-doctor' in summary
+    assert 'a run at a wider scope reaches them' in summary
+    # (b) No invocation of this gate performs it — only another command or CI can.
+    never = summary.split('not performed by this gate at all')[1]
+    assert 'module-tests' in never
+    assert 'mypy(test)' in never
+    assert 'widening the scope does not reach them either' in never
+    # (c) Reached, but its scope held nothing — nothing to do, nothing withheld.
+    assert 'attempted, nothing in scope — mypy(production)' in summary
+    assert 'nothing here to re-run' in summary
+
+
+def test_a_scoped_run_never_claims_the_gate_cannot_do_what_it_does_elsewhere():
+    """The false clause, pinned directly: neither an out-of-scope nor an empty-scope
+    dimension may appear under "not performed by this gate at all".
+
+    This is the exact wrong output the change replaces — a module-scoped
+    quality-gate over a bundle whose mypy scope is empty telling its reader that
+    the gate never performs `plugin-doctor` or `mypy(production)`.
+    """
+    boundary = CoverageBoundary()
+    boundary.record_checked('ruff [marketplace/bundles/thin]')
+    boundary.record_empty_scope('mypy(production)', 'marketplace/bundles/thin — nothing survives')
+
+    summary = render_coverage_summary(
+        boundary,
+        frozenset({'mypy(production)', 'ruff', 'SPDX headers'}),
+        frozenset({'mypy(production)', 'ruff', 'SPDX headers', 'plugin-doctor'}),
+    )
+
+    never = summary.split('not performed by this gate at all')[1]
+    assert 'plugin-doctor' not in never
+    assert 'mypy(production)' not in never
+
+
+def test_a_run_covering_every_registered_analysis_names_no_uncovered_ones():
+    """The uncovered clauses are derived, so a full run states nothing false.
 
     Without this direction the section could hard-code a list and claim tests were
     skipped on a `verify` run that did execute them.
     """
     boundary = CoverageBoundary()
-    for stem in ('mypy(production)', 'mypy(test)', 'ruff', 'SPDX headers', 'plugin-doctor', 'module-tests'):
+    for stem in sorted(ALL_DIMENSIONS):
         boundary.record_checked(stem)
 
-    summary = render_coverage_summary(boundary)
+    summary = render_coverage_summary(boundary, ALL_DIMENSIONS, ALL_DIMENSIONS)
 
-    assert 'not run in this gate' not in summary
+    assert 'not performed at this scope' not in summary
+    assert 'not performed by this gate at all' not in summary
+    assert 'attempted, nothing in scope' not in summary
 
 
-def test_a_degraded_dimension_does_not_count_as_never_run():
+def test_a_degraded_dimension_is_not_also_reported_as_uncovered():
     """Degraded means "attempted, not fully checked" — PARTIAL already reports it.
 
-    Listing it as un-run too would report the same gap twice under two different
+    Listing it as uncovered too would report the same gap twice under two different
     names, and would wrongly imply the gate does not perform that analysis at all.
     """
     boundary = CoverageBoundary()
     boundary.record_checked('ruff [marketplace/bundles]')
     boundary.record_degraded('mypy(production)', 'freshness suspect')
 
+    gaps = coverage_gaps(boundary, ALL_DIMENSIONS, ALL_DIMENSIONS)
+
+    assert 'mypy(production)' not in gaps.not_at_this_scope
+    assert 'mypy(production)' not in gaps.not_by_this_gate
+
+
+def test_an_undeclared_scope_renders_an_explicit_unknown_not_a_clean_list():
+    """A caller that did not state its scope gets UNKNOWN, never a confident empty list.
+
+    Both derived clauses need the caller's two scope declarations. Without them the
+    honest output is "this verdict cannot say"; silence would read as "nothing was
+    left out", which is the confident-but-unsubstantiated signal being closed.
+    """
+    boundary = CoverageBoundary()
+    boundary.record_checked('ruff [marketplace/bundles]')
+
     summary = render_coverage_summary(boundary)
 
-    unrun_section = summary.split('not run in this gate')[-1]
-    assert 'mypy(production)' not in unrun_section
+    assert 'uncovered dimensions: UNKNOWN' in summary
+    assert 'not performed at this scope' not in summary
+    assert 'not performed by this gate at all' not in summary
+
+
+def test_coverage_gaps_distinguishes_undeclared_scope_from_no_gaps():
+    """`scope_declared` is what separates "nothing was left out" from "nobody said".
+
+    Two empty gap sets are indistinguishable without it, and the undeclared case is
+    precisely the one that must not be read as full coverage.
+    """
+    boundary = CoverageBoundary()
+    boundary.record_checked('ruff')
+
+    undeclared = coverage_gaps(boundary)
+    declared = coverage_gaps(boundary, frozenset({'ruff'}), frozenset({'ruff', 'plugin-doctor'}))
+
+    assert undeclared.scope_declared is False
+    assert undeclared.not_at_this_scope == ()
+    assert undeclared.not_by_this_gate == ()
+
+    assert declared.scope_declared is True
+    assert declared.not_at_this_scope == ('plugin-doctor',)
+    assert 'module-tests' in declared.not_by_this_gate
+
+
+def test_an_empty_scope_record_is_not_an_affirmative_coverage_signal():
+    """Reaching a check whose scope held nothing does not make the run COMPLETE.
+
+    An empty-scope record certifies that there was nothing to check — never that
+    something checked out — so on its own it leaves the boundary UNKNOWN while
+    still naming the attempt, which is what distinguishes it from silence.
+    """
+    boundary = CoverageBoundary()
+    boundary.record_empty_scope('mypy(production)', 'thin-bundle — nothing survives the excludes')
+
+    assert boundary.complete is False
+    summary = render_coverage_summary(
+        boundary, frozenset({'mypy(production)'}), frozenset({'mypy(production)'})
+    )
+
+    assert 'UNKNOWN' in summary
+    assert 'COMPLETE' not in summary
+    assert 'attempted, nothing in scope — mypy(production)' in summary
 
 
 def test_empty_boundary_does_not_claim_a_limit_block_it_cannot_populate():
-    """A run that checked nothing states no per-analysis limits — and says so.
+    """A run that checked nothing states no per-analysis limits — and is UNKNOWN, not COMPLETE.
 
     Rendering a limit block over an empty checked set would attach a scope-limit
     statement to a run that performed no analysis, which reads as though something
-    was analysed.
+    was analysed. The verdict word carries the same weight: the previous form said
+    COMPLETE and relegated the emptiness to a parenthesised ``(nothing)`` in the
+    checked list, which is the same overstatement in smaller type.
     """
     summary = render_coverage_summary(CoverageBoundary())
 
-    assert '(nothing)' in summary
+    assert 'UNKNOWN' in summary
+    assert 'COMPLETE' not in summary
     assert 'does NOT evaluate' not in summary

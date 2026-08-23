@@ -189,9 +189,13 @@ def test_the_cell_still_claims_parity():
 # `cmd_verify` without a parity cell now fails here rather than silently
 # shrinking the table's reach.
 
-#: The dimension label each `boundary.record_checked(...)` call in build.py emits,
-#: reduced to its stable leading token. Derived from the source, never transcribed.
-_RECORD_CHECKED_RE = re.compile(r'record_checked\(\s*f?[\'"]([^\'"{\[]+)')
+#: The dimension label each `boundary.record_checked(...)` / `record_empty_scope(...)`
+#: call in build.py emits, reduced to its stable leading token. Derived from the
+#: source, never transcribed. BOTH recording verbs are matched: an empty-scope
+#: record is still a dimension the gate reports on, so leaving it out would let a
+#: dimension enter the verdict with no parity cell speaking to it — the exact hole
+#: the completeness check below exists to close.
+_RECORD_CHECKED_RE = re.compile(r'record_(?:checked|empty_scope)\(\s*f?[\'"]([^\'"{\[]+)')
 
 #: Maps a gate coverage dimension to the parity-cell names that speak to it.
 #: Several dimensions warrant more than one cell (ruff has both a rule-set and a
@@ -208,6 +212,9 @@ _DIMENSION_TO_CELLS = {
 
 def _recorded_dimensions() -> set[str]:
     """The coverage dimensions `cmd_verify`'s arms record, read from build.py.
+
+    Covers both recording verbs — a fully-checked dimension and one reached over
+    an empty scope are both reported in the verdict, so both need a parity cell.
 
     The f-string arm at the mypy helper records `{dimension}`, whose two concrete
     values are passed at its call sites; those are picked up separately so the

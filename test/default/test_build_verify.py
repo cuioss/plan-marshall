@@ -26,6 +26,7 @@ from pathlib import Path
 
 import build
 import pytest
+from _gate_coverage import MAX_ANALYSIS_THROUGHPUT, SUSPECT_MIN_FILES
 
 # build.py resolves every path relative to the repo root, so the real-tree tests
 # below pin cwd there instead of trusting whatever directory pytest was started
@@ -472,21 +473,52 @@ def test_compile_runs_mypy_cold_with_no_incremental(repo_root_cwd, monkeypatch):
     )
 
 
+#: Throughput, in files/s, the re-keyed freshness test models. It sits inside the
+#: observed incident band (660 files in 2-5 s = 132-330 files/s) rather than at the
+#: degenerate zero-elapsed pole, so the test exercises the CEILING rather than the
+#: divide-by-zero guard — any positive ceiling catches zero elapsed, which is why
+#: the old keying could not tell a calibrated ceiling from an inert one.
+_INCIDENT_BAND_THROUGHPUT = 250.0
+_INCIDENT_BAND_LOW = 132.0
+_INCIDENT_BAND_HIGH = 330.0
+
+
+def _whole_tree_compile_paths() -> list[str]:
+    """The path list ``cmd_compile(None)`` hands mypy, rebuilt from build.py's own rule."""
+    paths = [str(build.BUNDLES_DIR)]
+    if build._mypy_collects_any(str(build.CLAUDE_DIR), 'compile'):
+        paths.append(str(build.CLAUDE_DIR))
+    return paths
+
+
 def test_quality_gate_fails_closed_when_whole_tree_mypy_reports_implausibly_fast(
     repo_root_cwd, monkeypatch, capsys
 ):
-    """A whole-tree mypy 'success' in zero wall-time is not trusted — the gate fails closed (D4).
+    """A whole-tree mypy 'success' at incident-band speed is not trusted — the gate fails closed (D4).
 
-    Models the stale-cache no-op: mypy exits 0 having analysed nothing. Over the
-    substantial whole-tree file set that is impossibly fast, so the freshness
-    backstop converts the clean verdict into a non-clean one rather than reading
-    it as reassurance.
+    Models the stale-cache no-op as it was actually observed: mypy exits 0 having
+    analysed nothing, in a non-zero wall-time inside the incident band. The elapsed
+    is derived from the real whole-tree file count so the modelled throughput
+    tracks the tree rather than a pinned constant, and it is deliberately NOT the
+    zero-elapsed degenerate case — that pole is caught by any positive ceiling, so
+    keying on it would leave a wildly over-set ceiling looking calibrated.
     """
+    files = build._mypy_collect_count(_whole_tree_compile_paths())
+    assert files >= SUSPECT_MIN_FILES, (
+        f'the whole tree must be a substantial file set for the freshness verdict to '
+        f'apply at all; collected {files}'
+    )
+    assert _INCIDENT_BAND_LOW <= _INCIDENT_BAND_THROUGHPUT <= _INCIDENT_BAND_HIGH
+    assert _INCIDENT_BAND_THROUGHPUT > MAX_ANALYSIS_THROUGHPUT, (
+        f'the modelled throughput ({_INCIDENT_BAND_THROUGHPUT}) must exceed the ceiling '
+        f'({MAX_ANALYSIS_THROUGHPUT}) or this test asserts nothing about the ceiling'
+    )
+    elapsed = files / _INCIDENT_BAND_THROUGHPUT
+
     monkeypatch.setattr(build, 'run', _run_recorder([], rc=0))
     monkeypatch.setattr(build, 'check_spdx_headers', lambda paths: [])
     monkeypatch.setattr(build, 'ensure_executor_substrate', lambda: 0)
-    # start == end → zero elapsed → infinite throughput over the whole tree.
-    monkeypatch.setattr(build.time, 'monotonic', _ticks(100.0, 100.0))
+    monkeypatch.setattr(build.time, 'monotonic', _ticks(100.0, 100.0 + elapsed))
 
     rc = build.cmd_quality_gate(None)
 
@@ -514,6 +546,53 @@ def test_quality_gate_does_not_flag_a_plausibly_timed_whole_tree_run(repo_root_c
     out = capsys.readouterr().out
     assert 'FRESHNESS SUSPECT' not in out
     assert 'coverage: COMPLETE' in out
+
+
+def test_module_scoped_quality_gate_states_an_empty_mypy_scope_and_maligns_nothing(
+    repo_root_cwd, monkeypatch, capsys
+):
+    """Two different absences meet in one invocation, and the verdict tells them apart.
+
+    Over a bundle whose mypy scope is empty, ``mypy(production)`` was REACHED and
+    found nothing to check, while ``plugin-doctor`` is whole-tree-only and so
+    outside this invocation's scope. The previous form printed one "this gate never
+    performs them" list naming both — false of both, and the reader's only cue that
+    a dimension went unchecked at all.
+
+    The empty scope is induced by stubbing the exclude-aware predicate for this one
+    bundle path rather than hunting the tree for a bundle that happens to be both
+    fully excluded AND to own a ``test/`` directory: the subject here is the
+    recording-and-rendering wiring, and the predicate itself is pinned by its own
+    real-tree tests above.
+    """
+    module = 'plan-marshall'
+    bundle_path = f'marketplace/bundles/{module}'
+    assert (BUNDLES_ROOT / module).is_dir() and (TESTS_ROOT / module).is_dir(), (
+        f'{module} must have both a bundle and a test directory for the modelled '
+        f'invocation to match a real module-scoped quality-gate'
+    )
+    real_collects_any = build._mypy_collects_any
+
+    def _empty_bundle_scope(path: str, label: str = 'mypy') -> bool:
+        return False if path == bundle_path else real_collects_any(path, label)
+
+    monkeypatch.setattr(build, '_mypy_collects_any', _empty_bundle_scope)
+    monkeypatch.setattr(build, 'run', _run_recorder([], rc=0))
+    monkeypatch.setattr(build, 'check_spdx_headers', lambda paths: [])
+
+    rc = build.cmd_quality_gate(module)
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert f'attempted, nothing in scope — mypy(production): {bundle_path}' in out, (
+        f'the skipped mypy scope must be named with its zero scope; got {out!r}'
+    )
+    assert 'not performed at this scope: plugin-doctor' in out, (
+        f'plugin-doctor is whole-tree-only, not un-performed; got {out!r}'
+    )
+    never = out.split('not performed by this gate at all')[1]
+    assert 'plugin-doctor' not in never
+    assert 'mypy(production)' not in never
 
 
 def test_verify_prints_complete_coverage_summary_on_success(monkeypatch, capsys):
