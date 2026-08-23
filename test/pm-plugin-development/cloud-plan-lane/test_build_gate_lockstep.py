@@ -100,20 +100,32 @@ _DIFF_PATHSPEC = re.compile(r"git diff\b[^\n]*?--\s+(['\"])(?P<glob>[^'\"]+)\1")
 
 
 class Step5Surface(NamedTuple):
-    """What the Step 5 trigger table states, or ``None`` where nothing parsed."""
+    """What the Step 5 trigger table states, or ``None`` where nothing parsed.
+
+    ``quoted_count`` is the number of quoted tokens the skip row offered. It is
+    carried so ambiguity is distinguishable from absence: both leave
+    ``skip_phrase`` unset, but they are different failures and the population
+    assertion says which.
+    """
 
     section_found: bool
     trigger_glob: str | None
     skip_phrase: str | None
+    quoted_count: int
 
 
 class ReportSurface(NamedTuple):
-    """What the report template's ``## Build gate`` block states."""
+    """What the report template's ``## Build gate`` block states.
+
+    ``quoted_count`` carries the same ambiguity-vs-absence discriminator as
+    ``Step5Surface``.
+    """
 
     section_found: bool
     block_found: bool
     diff_pathspec: str | None
     skip_phrase: str | None
+    quoted_count: int
 
 
 class ReferringSite(NamedTuple):
@@ -196,6 +208,32 @@ def _subsection(lines: list[str], heading: str) -> list[str]:
     return out
 
 
+def _paragraph_containing(lines: list[str], pattern: re.Pattern[str]) -> str | None:
+    """The blank-line-delimited paragraph whose text matches ``pattern``.
+
+    Scoping to a paragraph is what makes the skip-phrase binding semantic rather
+    than positional. The ``## Build gate`` block states two different things in
+    two paragraphs — the build verdict and its skip alternative in one, the
+    stale-base re-verification in another — and each quotes a phrase. A
+    block-wide scan therefore sees two tokens and must either take the first
+    (positional, the defect) or refuse (a false ambiguity on a correct
+    document). The skip phrase is the alternative outcome of the SAME sentence
+    as the diff pathspec, so the paragraph carrying that pathspec is the scope
+    that identifies it by what it is.
+    """
+    paragraph: list[str] = []
+    for line in [*lines, '']:
+        if line.strip():
+            paragraph.append(line)
+            continue
+        if paragraph:
+            text = '\n'.join(paragraph)
+            if pattern.search(text):
+                return text
+            paragraph = []
+    return None
+
+
 def _table_rows(lines: list[str]) -> list[list[str]]:
     """Markdown table rows as stripped cell lists, skipping separator rows."""
     rows: list[list[str]] = []
@@ -221,14 +259,21 @@ def extract_step5_trigger_surface(document: str) -> Step5Surface:
 
     Rows are identified by what they *do*, not by their wording: the build row is
     the one whose outcome cell names the build wrapper, and the skip row is the
-    one whose outcome cell quotes a phrase to record.
+    one whose outcome cell quotes a phrase to record while NOT naming it.
+
+    The quoted token is taken only when the skip row offers exactly one. Taking
+    the first of several would be a positional binding wearing a semantic label:
+    a decoy quoted token would silently become the compared vocabulary. Ambiguity
+    is reported through ``quoted_count`` and refused, never guessed.
     """
     body = _section_body(document, lambda heading: heading.startswith(_STEP5_HEADING_PREFIX))
     if body is None:
-        return Step5Surface(section_found=False, trigger_glob=None, skip_phrase=None)
+        return Step5Surface(
+            section_found=False, trigger_glob=None, skip_phrase=None, quoted_count=0
+        )
 
     trigger_glob: str | None = None
-    skip_phrase: str | None = None
+    quoted: list[str] = []
     for cells in _table_rows(body):
         if len(cells) < 2:
             continue
@@ -245,12 +290,15 @@ def extract_step5_trigger_surface(document: str) -> Step5Surface:
         # silently bind skip_phrase to that row while every assertion stayed
         # green. The build row above is already identified by what it does; this
         # keeps the two rows symmetric, which is what the docstring claims.
-        if skip_phrase is None and not runs_the_build:
-            phrase_match = _QUOTED.search(outcome_cell)
-            if phrase_match:
-                skip_phrase = phrase_match.group(1)
+        if not runs_the_build:
+            quoted.extend(_QUOTED.findall(outcome_cell))
 
-    return Step5Surface(section_found=True, trigger_glob=trigger_glob, skip_phrase=skip_phrase)
+    return Step5Surface(
+        section_found=True,
+        trigger_glob=trigger_glob,
+        skip_phrase=quoted[0] if len(quoted) == 1 else None,
+        quoted_count=len(quoted),
+    )
 
 
 def extract_report_build_gate_surface(document: str) -> ReportSurface:
@@ -259,10 +307,24 @@ def extract_report_build_gate_surface(document: str) -> ReportSurface:
     The block is located *inside* the ``## Report`` section's fenced template, so
     the fenced block carrying a ``## Build gate`` line is selected explicitly
     rather than by a top-level heading scan.
+
+    The skip phrase is read from the paragraph carrying the diff pathspec — the
+    verdict sentence whose alternative outcome it is — and only when that
+    paragraph offers exactly one quoted token. This side was the last positional
+    binding in the module: taking the first quoted token in the whole block let a
+    decoy inserted ahead of the real phrase become the compared vocabulary with
+    every assertion still green. Scoping to the block was not enough, because the
+    block legitimately quotes a second phrase in its stale-base paragraph.
     """
     body = _section_body(document, lambda heading: heading.rstrip() == _REPORT_HEADING)
     if body is None:
-        return ReportSurface(section_found=False, block_found=False, diff_pathspec=None, skip_phrase=None)
+        return ReportSurface(
+            section_found=False,
+            block_found=False,
+            diff_pathspec=None,
+            skip_phrase=None,
+            quoted_count=0,
+        )
 
     block: list[str] | None = None
     for fenced in _fenced_blocks(body):
@@ -270,16 +332,24 @@ def extract_report_build_gate_surface(document: str) -> ReportSurface:
             block = _subsection(fenced, _BUILD_GATE_HEADING)
             break
     if block is None:
-        return ReportSurface(section_found=True, block_found=False, diff_pathspec=None, skip_phrase=None)
+        return ReportSurface(
+            section_found=True,
+            block_found=False,
+            diff_pathspec=None,
+            skip_phrase=None,
+            quoted_count=0,
+        )
 
     block_text = '\n'.join(block)
     pathspec_match = _DIFF_PATHSPEC.search(block_text)
-    phrase_match = _QUOTED.search(block_text)
+    verdict_paragraph = _paragraph_containing(block, _DIFF_PATHSPEC)
+    quoted = _QUOTED.findall(verdict_paragraph) if verdict_paragraph is not None else []
     return ReportSurface(
         section_found=True,
         block_found=True,
         diff_pathspec=pathspec_match.group('glob') if pathspec_match else None,
-        skip_phrase=phrase_match.group(1) if phrase_match else None,
+        skip_phrase=quoted[0] if len(quoted) == 1 else None,
+        quoted_count=len(quoted),
     )
 
 
@@ -325,9 +395,19 @@ def _assert_population(step5: Step5Surface, report: ReportSurface, source: str) 
         f'Surface 1 token NOT EXTRACTED in {source}: the Step 5 trigger table has no row whose '
         'outcome cell names "./pw" with a backticked glob in its trigger cell.'
     )
+    assert step5.quoted_count == 1, (
+        f'Surface 1 token AMBIGUOUS in {source}: the Step 5 skip row offers '
+        f'{step5.quoted_count} quoted tokens, not exactly one, so which one is the skip phrase '
+        'cannot be decided. Taking the first would be a positional binding wearing a semantic '
+        'label — a decoy quoted token would silently become the compared vocabulary. Refusing '
+        'to guess.'
+        if step5.quoted_count > 1
+        else f'Surface 1 token NOT EXTRACTED in {source}: the Step 5 trigger table has no row '
+        'that quotes a "…" skip phrase to record WITHOUT also naming the build wrapper.'
+    )
     assert step5.skip_phrase, (
-        f'Surface 1 token NOT EXTRACTED in {source}: the Step 5 trigger table has no row whose '
-        'outcome cell quotes a "…" skip phrase to record.'
+        f'Surface 1 token NOT EXTRACTED in {source}: the Step 5 skip phrase is unset despite a '
+        'unique quoted token — the extractor contract is broken, not the document.'
     )
     assert report.section_found, (
         f'Surface 2 NOT LOCATED in {source}: no top-level "{_REPORT_HEADING}" heading. '
@@ -341,9 +421,19 @@ def _assert_population(step5: Step5Surface, report: ReportSurface, source: str) 
         f'Surface 2 token NOT EXTRACTED in {source}: the "{_BUILD_GATE_HEADING}" block states no '
         "git-diff pathspec of the form -- '<glob>'."
     )
+    assert report.quoted_count == 1, (
+        f'Surface 2 token AMBIGUOUS in {source}: the verdict paragraph of the '
+        f'"{_BUILD_GATE_HEADING}" block offers {report.quoted_count} quoted tokens, not exactly '
+        'one, so which one is the skip phrase cannot be decided. A decoy inserted ahead of the '
+        'real phrase would otherwise become the compared vocabulary with every assertion still '
+        'green. Refusing to guess.'
+        if report.quoted_count > 1
+        else f'Surface 2 token NOT EXTRACTED in {source}: the "{_BUILD_GATE_HEADING}" block has '
+        'no paragraph that carries both the diff pathspec and a quoted "…" skip phrase.'
+    )
     assert report.skip_phrase, (
-        f'Surface 2 token NOT EXTRACTED in {source}: the "{_BUILD_GATE_HEADING}" block quotes no '
-        '"…" skip phrase.'
+        f'Surface 2 token NOT EXTRACTED in {source}: the report skip phrase is unset despite a '
+        'unique quoted token — the extractor contract is broken, not the document.'
     )
 
 
@@ -550,6 +640,52 @@ def test_skip_phrase_binds_to_the_skip_row_even_when_the_build_row_is_quoted() -
         'skip_phrase bound to the wrong row: it took a quoted token from a row that RUNS the '
         f'build rather than the row that records a skip. Got "{surface.skip_phrase}". The skip '
         'row must be identified by quoting a phrase AND not naming the build wrapper.'
+    )
+
+
+# Controls for the decoy-token path: an extra quoted token is inserted AHEAD of
+# the real skip phrase on each surface. A first-match binding would silently
+# return the decoy; the uniqueness rule returns None and reports the count.
+_DECOY_IN_SKIP_ROW_DOCUMENT = _DIVERGING_DOCUMENT.replace(
+    '| No `*.py` | Nothing locally — record "alpha phrase, build skipped" |',
+    '| No `*.py` | Nothing locally (see "the deferral note") — record "alpha phrase, build skipped" |',
+)
+
+_DECOY_IN_REPORT_BLOCK_DOCUMENT = _DIVERGING_DOCUMENT.replace(
+    '## Build gate\nThe',
+    '## Build gate\nSee "the deferral note" first. The',
+)
+
+
+def test_a_decoy_quoted_token_makes_the_skip_row_ambiguous_not_wrong() -> None:
+    """A second quoted token in the skip row is refused, not silently preferred."""
+    surface = extract_step5_trigger_surface(_DECOY_IN_SKIP_ROW_DOCUMENT)
+
+    assert surface.quoted_count == 2, (
+        'Control document drifted: the skip row must offer two quoted tokens to exercise the '
+        f'ambiguity path, but {surface.quoted_count} were found.'
+    )
+    assert surface.skip_phrase is None, (
+        'Ambiguity was resolved by guessing: skip_phrase bound to '
+        f'"{surface.skip_phrase}" while two quoted tokens were present. A first-match binding '
+        'would return the decoy here and every downstream comparison would run on it.'
+    )
+
+
+def test_a_decoy_quoted_token_makes_the_report_block_ambiguous_not_wrong() -> None:
+    """A second quoted token in the report block is refused, not silently preferred."""
+    surface = extract_report_build_gate_surface(_DECOY_IN_REPORT_BLOCK_DOCUMENT)
+
+    assert surface.block_found, 'Control document drifted: the Build gate block no longer parses.'
+    assert surface.quoted_count == 2, (
+        'Control document drifted: the report block must offer two quoted tokens to exercise the '
+        f'ambiguity path, but {surface.quoted_count} were found.'
+    )
+    assert surface.skip_phrase is None, (
+        'Ambiguity was resolved by guessing: skip_phrase bound to '
+        f'"{surface.skip_phrase}" while two quoted tokens were present. This surface was the last '
+        'positional binding in the module; a decoy ahead of the real phrase would become the '
+        'compared vocabulary with every assertion still green.'
     )
 
 
