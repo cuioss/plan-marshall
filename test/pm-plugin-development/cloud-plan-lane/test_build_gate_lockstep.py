@@ -86,6 +86,11 @@ _STEP5_REFERENCE_MARKER = 'predicate Step 5 uses'
 # becomes explicit instead of silent.
 _MIN_STEP5_REFERRING_SITES = 2
 
+# The token that marks a trigger-table row as the one that RUNS the build. Both
+# row identifications key off it — the build row by its presence, the skip row by
+# its absence — so the two are symmetric rather than one being positional.
+_BUILD_WRAPPER = './pw'
+
 _QUOTED = re.compile(r'"([^"]+)"')
 _BACKTICKED = re.compile(r'`([^`]+)`')
 # The pathspec the report's git-diff spelling filters on: the quoted token after
@@ -228,11 +233,19 @@ def extract_step5_trigger_surface(document: str) -> Step5Surface:
         if len(cells) < 2:
             continue
         trigger_cell, outcome_cell = cells[0], cells[1]
-        if trigger_glob is None and './pw' in outcome_cell:
+        runs_the_build = _BUILD_WRAPPER in outcome_cell
+        if trigger_glob is None and runs_the_build:
             glob_match = _BACKTICKED.search(trigger_cell)
             if glob_match:
                 trigger_glob = glob_match.group(1)
-        if skip_phrase is None:
+        # The skip row is identified by BOTH halves of what it does: it quotes a
+        # phrase to record AND it does not run the build. Without the second
+        # half the binding is positional in disguise — it would take the first
+        # row quoting anything, so a quoted token added to the build row would
+        # silently bind skip_phrase to that row while every assertion stayed
+        # green. The build row above is already identified by what it does; this
+        # keeps the two rows symmetric, which is what the docstring claims.
+        if skip_phrase is None and not runs_the_build:
             phrase_match = _QUOTED.search(outcome_cell)
             if phrase_match:
                 skip_phrase = phrase_match.group(1)
@@ -506,6 +519,37 @@ def test_negative_control_referring_site_divergence_is_detected() -> None:
         'Negative control did not fire: the referring-site comparison agreed on a document whose '
         'prose site deliberately states a different glob than its Step 5 table, so the live '
         'referring-site assertion cannot be trusted to fail on real drift.'
+    )
+
+
+# A control for the row-identification asymmetry: the BUILD row carries a quoted
+# token. A skip-phrase binding that took the first row quoting anything would
+# bind here — to the build row — and stay green, because both surfaces would then
+# agree on the wrong value.
+_QUOTED_BUILD_ROW_DOCUMENT = _DIVERGING_DOCUMENT.replace(
+    '| Any `*.py` | `./pw verify` (quality gate **and** tests) |',
+    '| Any `*.py` | `./pw verify` — records "build ran, not skipped" on success |',
+)
+
+
+def test_skip_phrase_binds_to_the_skip_row_even_when_the_build_row_is_quoted() -> None:
+    """The skip row is identified by what it does, not by being quoted first.
+
+    Both halves are load-bearing: quoting a phrase AND not running the build. A
+    binding that used only the first half would be positional in disguise, and
+    this control is the document that exposes it — the build row is quoted and
+    appears first, so a positional binding returns the build row's token.
+    """
+    surface = extract_step5_trigger_surface(_QUOTED_BUILD_ROW_DOCUMENT)
+
+    assert surface.section_found, 'Control document no longer parses; the replace() target drifted.'
+    assert surface.trigger_glob == '*.py', (
+        'Control document no longer yields the build row; the replace() target drifted.'
+    )
+    assert surface.skip_phrase == 'alpha phrase, build skipped', (
+        'skip_phrase bound to the wrong row: it took a quoted token from a row that RUNS the '
+        f'build rather than the row that records a skip. Got "{surface.skip_phrase}". The skip '
+        'row must be identified by quoting a phrase AND not naming the build wrapper.'
     )
 
 
