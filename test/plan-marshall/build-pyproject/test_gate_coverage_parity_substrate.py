@@ -406,18 +406,29 @@ def _structural_limits_docstring(source: str) -> str | None:
 
 
 def _describes_as_derived(docstring: str) -> bool:
-    """True when ``docstring`` CLAIMS derivation, not merely mentions it.
+    """True when ``docstring`` mentions derivation and matches no KNOWN denial idiom.
 
-    ``_DERIVED_RE`` is a mention regex: it matches a denial as readily as a claim,
-    because "not a derivation" carries the stem. Pinning the reader to one
-    function fixed WHERE the sentence is read from; it did nothing about WHAT the
-    sentence says, so a docstring rewritten to "a recorded literal, not a
-    derivation" still satisfied a guard named for the opposite claim. Subtracting
-    ``_REFUTATION_RE`` is what turns the mention test into a claim test.
+    Deliberately NOT a general claim-versus-denial discriminator, and the gap is
+    worth stating because the name would otherwise imply one. ``_DERIVED_RE`` is a
+    mention regex — it matches a denial as readily as a claim, since "not a
+    derivation" carries the stem — so pinning the reader to one function fixed
+    WHERE the sentence is read from and nothing about WHAT it says. Subtracting
+    ``_REFUTATION_RE`` narrows that to the idioms that list enumerates; it does
+    not close it. A denial phrased outside them — "nothing here derives anything",
+    "never derived" — still reads as a claim and keeps the positive half green.
 
-    That phrasing is not hypothetical: it is what the sibling ``parity_population``
-    docstring now says, so the one-function-too-far relabel is the realistic edit
-    this predicate has to survive.
+    That residue is ACCEPTED, not overlooked, because the obvious repair is worse
+    than the defect. ``_REFUTATION_RE`` is the NEGATIVE half's exemption list (see
+    the comment above its definition), so every alternative added to catch one
+    more denial here also admits one more stale parity claim there. The coupling
+    runs both ways, and paying for a positive-half gap out of the negative half's
+    strength is the trade this module already declines.
+
+    What it does catch is the idiom that matters most: "a recorded literal, not a
+    derivation" is what the sibling ``parity_population`` docstring now says, so
+    carrying that relabel one function too far is the realistic edit — and it is
+    caught. A novel denial phrasing is not, and the two controls below are named
+    for the idiom they exercise rather than for the general property.
     """
     return bool(_DERIVED_RE.search(docstring)) and not _REFUTATION_RE.search(docstring)
 
@@ -542,15 +553,20 @@ def test_a_neighbouring_refutation_cannot_stand_in_for_the_earned_claim():
     )
 
 
-def test_a_denial_inside_the_pinned_docstring_is_rejected():
+def test_the_relabel_idiom_inside_the_pinned_docstring_is_rejected():
     """Matched control, CLAIM half: the right docstring, saying the wrong thing.
 
-    Pinning to one function fixed WHERE the sentence is read from. It did nothing
-    about WHAT the sentence says — and ``_DERIVED_RE`` matches a denial as readily
-    as a claim, so "a recorded literal, not a derivation" satisfied a guard named
-    ``..._is_still_described_as_derived``. That is not a hypothetical phrasing: it
-    is what the real ``parity_population`` docstring says, one function away, so
-    carrying the relabel one function too far is the realistic edit.
+    Scoped to ONE denial idiom on purpose — "a recorded literal, not a
+    derivation", the first ``_REFUTATION_RE`` alternative. It is the phrasing the
+    real ``parity_population`` docstring uses one function away, so carrying that
+    relabel one function too far is the realistic edit, which is why this is the
+    idiom worth pinning.
+
+    It is NOT evidence that an arbitrary denial is rejected. ``_describes_as_derived``
+    catches the idioms ``_REFUTATION_RE`` enumerates and no others, so a novel
+    phrasing ("nothing here derives anything") still reads as a claim. That bound
+    is stated on the predicate, with the reason it is accepted rather than closed;
+    this control's name matches what it exercises so the two cannot drift apart.
 
     The fixture is asserted to be a genuine trap — the pinned reader really does
     find this docstring, and a bare mention test really would accept it — so a
