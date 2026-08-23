@@ -68,12 +68,18 @@ jobs:
       #
       # ⚠ KNOWN GAP, accepted deliberately for the pilot and NOT to be mistaken for a guarded
       # surface: the reusable workflow's fail-closed gate keys on the `review` output and is
-      # deliberately not extended to `/improve`, which writes the separate `improve` key. A
-      # run in which `/improve` produces nothing is therefore indistinguishable from one in
-      # which it was never reached — the same collapsed signal this repository's
-      # review-apparatus epic exists to fix (PLAN-PR-026). Closing it needs an oracle in the
-      # ORG workflow, which is out of scope for a caller-side pilot. Until that lands, read an
-      # absent suggestion set as UNKNOWN, never as clean.
+      # deliberately not extended to `/improve`, which writes the separate `improve` key. At the
+      # GATE, a run producing nothing and a run that never happened remain one signal — the
+      # collapsed state this repository's review-apparatus epic exists to fix (PLAN-PR-026).
+      # Closing it needs an oracle in the ORG workflow, out of scope for a caller-side pilot.
+      #
+      # At the PULL REQUEST surface the two ARE separable, confirmed on this pilot's own PR
+      # (#1334): an empty `/improve` publishes a distinct `issue_comment` headed
+      # `## PR Code Suggestions ✨` reading "No code suggestions found for the PR." It announces
+      # its silence rather than staying quiet. plan-marshall's automatic-review consumes that
+      # surface, so the pipeline can tell the two apart even while the gate cannot — and the
+      # pr-agent registry now carries an `ignore_patterns` entry so that announcement is not
+      # filed as a finding on every clean pull request.
       #
       # Reversible in one line. Remove this input to return to label-only opt-in.
       auto-improve: true
