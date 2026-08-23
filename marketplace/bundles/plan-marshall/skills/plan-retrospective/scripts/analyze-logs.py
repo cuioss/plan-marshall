@@ -157,10 +157,22 @@ def summarize_build_ledger(plan_key: str) -> dict[str, Any]:
     Reads the single append-only change-ledger
     (``<tracked-config>/work/change-ledger.jsonl``), keeps this plan's
     ``kind=build`` rows (matched on the bare ``plan_id``), and returns the plan's
-    total build seconds plus the pass/error/timeout/killed status ratio. Because
-    the ledger records ``command`` per build system and is written in every phase,
-    the total spans EVERY build system and EVERY phase — not just the pyproject
-    builds a plan happened to log.
+    total build seconds plus the pass/error/timeout/killed/status_unknown status
+    ratio. Because the ledger records ``command`` per build system and is written
+    in every phase, the total spans EVERY build system and EVERY phase — not just
+    the pyproject builds a plan happened to log.
+
+    The five status fields PARTITION the builds:
+    ``pass + error + timeout + killed + status_unknown == build_count``.
+    ``status_unknown`` is the count of rows whose ``status`` is absent or outside
+    the recognised vocabulary — a build whose outcome was never determined. It is
+    published rather than dropped so the identity holds: a four-term sum that
+    falls short of ``build_count`` leaves the remainder unnamed, which reads as
+    "these builds did not happen" when it means "these builds were not
+    classified". The field is spelled ``status_unknown`` (not ``unknown``) to
+    mirror the audit side's ``build_status_unknown`` /
+    ``corpus_build_status_unknown`` and to avoid colliding with the ``unknown``
+    key used inside the internal ``status_counts`` tally.
 
     SUSPECT-ZERO rule: a row whose ``duration_seconds`` is ``0`` / absent /
     non-numeric is counted in ``suspect_count`` and is NOT summed into
@@ -194,6 +206,7 @@ def summarize_build_ledger(plan_key: str) -> dict[str, Any]:
         'error': status_counts['error'],
         'timeout': status_counts['timeout'],
         'killed': status_counts['killed'],
+        'status_unknown': status_counts['unknown'],
     }
 
 
@@ -1652,9 +1665,11 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         )
 
     # Build time from the change-ledger (the build-time ORACLE): the total spans
-    # every build system and every phase, with the pass/error/timeout/killed ratio
-    # (killed SEPARATE) and the suspect-zero rule applied. The plan_efficiency
-    # aspect READS `total_build_seconds` from this block into its `totals`.
+    # every build system and every phase, with the
+    # pass/error/timeout/killed/status_unknown ratio (killed SEPARATE, and
+    # status_unknown published so the five terms sum to build_count) and the
+    # suspect-zero rule applied. The plan_efficiency aspect READS
+    # `total_build_seconds` from this block into its `totals`.
     plan_ledger_key = _LEDGER_DATE_PREFIX_RE.sub(
         '', args.plan_id or Path(args.archived_plan_path or '').name
     )

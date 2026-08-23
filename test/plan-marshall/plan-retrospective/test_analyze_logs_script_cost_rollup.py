@@ -152,6 +152,38 @@ class TestBuildTimeFromLedger:
         assert int(bt['error']) == 1     # killed is NOT folded into error
         assert int(bt['killed']) == 2
 
+    def test_status_unknown_published_so_five_terms_sum_to_build_count(
+        self, tmp_path, monkeypatch
+    ):
+        # THE DEFECT THIS OBSERVES: `summarize_build_ledger` tallied an
+        # unrecognised status into its internal `unknown` bucket and then OMITTED
+        # that bucket from the block it returned. A build whose outcome was never
+        # determined therefore vanished from the ratio — pass+error+timeout+killed
+        # summed to 3 against a `build_count` of 4, with nothing naming the
+        # remainder, so an undetermined build read as a build that never ran.
+        # Pre-fix this test fails at the `status_unknown` lookup: the key is
+        # absent from the block entirely.
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        _write_ledger(tmp_path / 'base', [
+            _build_row(plan_id, dur=10.0, status='success'),
+            _build_row(plan_id, dur=10.0, status='error'),
+            _build_row(plan_id, dur=10.0, status='killed'),
+            # Outside the recognised vocabulary — the outcome is UNDETERMINED.
+            _build_row(plan_id, dur=10.0, status='indeterminate'),
+        ])
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        bt = result.toon()['build_time']
+        assert int(bt['status_unknown']) == 1
+        five_terms = (
+            int(bt['pass'])
+            + int(bt['error'])
+            + int(bt['timeout'])
+            + int(bt['killed'])
+            + int(bt['status_unknown'])
+        )
+        assert five_terms == int(bt['build_count']) == 4
+
     def test_non_pyproject_build_counted(self, tmp_path, monkeypatch):
         # the single-tool blindness is closed: a Maven build is counted here too.
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)

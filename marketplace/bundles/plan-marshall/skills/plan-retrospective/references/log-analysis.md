@@ -19,6 +19,16 @@ build_time:
   # when suspect_count > 0). `killed` is SEPARATE from `error`. build_count: 0 =
   # no ledger rows = build time UNAVAILABLE (absent is not zero). The
   # `plan_efficiency` aspect READS total_build_seconds from here into its totals.
+  #
+  # The five status fields PARTITION the builds:
+  #   pass + error + timeout + killed + status_unknown == build_count
+  # `status_unknown` counts rows whose `status` is absent or outside the
+  # recognised vocabulary — a build whose outcome was never DETERMINED, which is
+  # not the same as a build that did not run. It is published rather than dropped
+  # so the identity holds; a four-term sum short of build_count leaves the
+  # remainder unnamed, and an unnamed remainder reads as "these builds did not
+  # happen". Spelled `status_unknown` to mirror the audit side's
+  # `build_status_unknown` / `corpus_build_status_unknown`.
   total_build_seconds: NUM
   build_count: N
   suspect_count: N
@@ -26,6 +36,7 @@ build_time:
   error: N
   timeout: N
   killed: N
+  status_unknown: N
 counts:
   work_entries: N
   decision_entries: N

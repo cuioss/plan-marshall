@@ -22,24 +22,31 @@ from _audit_fixtures import (
 _LEDGER_NOTATION_MAVEN = 'plan-marshall:build-maven:maven_build'
 
 
-def _share_cell(block: str, plan_id: str) -> str:
-    """The ``build_share`` cell of one plan's emitted row.
+def _row_cell(block: str, plan_id: str, column: str) -> str:
+    """One named cell of one plan's emitted row.
 
     The column INDEX is derived from the block's own ``rows[N]{...}`` header
-    rather than hard-coded, so a column inserted ahead of ``build_share`` moves
-    this reader with it instead of silently shifting it onto a neighbour.
+    rather than hard-coded, so a column inserted ahead of the requested one moves
+    this reader with it instead of silently shifting it onto a neighbour. A
+    column the header does not carry raises ``ValueError`` from ``.index`` —
+    an absent column is a failure, never a silently skipped assertion.
 
-    Reading the cell POSITIONALLY is the point: ``',n/a,' in block`` passes on
-    that token appearing anywhere in the block — for another column, or for
-    another plan's row — so it cannot tell a withheld share from an unrelated
-    ``n/a`` elsewhere in the same output.
+    Reading the cell POSITIONALLY is the point: a bare ``',n/a,' in block``
+    passes on that token appearing anywhere in the block — for another column, or
+    for another plan's row — so it cannot tell one column's value from an
+    unrelated occurrence elsewhere in the same output.
     """
     header = next(ln for ln in block.splitlines() if ln.startswith('rows['))
     columns = header.split('{', 1)[1].rsplit('}', 1)[0].split(',')
     row_line = next(
         ln.strip() for ln in block.splitlines() if ln.strip().startswith(f'{plan_id},')
     )
-    return row_line.split(',')[columns.index('build_share')]
+    return row_line.split(',')[columns.index(column)]
+
+
+def _share_cell(block: str, plan_id: str) -> str:
+    """The ``build_share`` cell of one plan's emitted row."""
+    return _row_cell(block, plan_id, 'build_share')
 
 
 class TestSequenceBuildMinimalityLedgerFacets:
@@ -118,6 +125,40 @@ class TestSequenceBuildMinimalityLedgerFacets:
             corpus['success'] + corpus['error'] + corpus['timeout']
             + corpus['killed'] + corpus['status_unknown']
         ) == corpus['builds']
+
+    def test_status_unknown_is_a_row_column_that_partitions_that_row_builds(
+        self, tmp_path: Path
+    ):
+        # THE ROW-SCOPE HALF of the same defect the corpus test above covers. The
+        # corpus totals named the undetermined build; the per-plan row did not —
+        # its emitted columns ran pass,error,timeout,killed straight into
+        # total_build_seconds, so one row's four status cells summed to LESS than
+        # that same row's own `builds` cell with nothing naming the difference,
+        # and the undetermined build read as a build that never ran. The corpus
+        # assertion cannot observe this: it sums the row DICTS, which carried
+        # `build_status_unknown` all along — only the emitted header and cell list
+        # dropped it. Pre-fix `_row_cell(..., 'status_unknown')` raises ValueError
+        # because the column is absent from the emitted rows[N]{...} header.
+        inputs = _write_sbm_plan(
+            tmp_path, 'row-status-unknown',
+            modified_files=['a.py'],
+            ledger_builds=[
+                {'dur': 10.0, 'status': 'success', 'ts': '2026-06-01T10:00:00Z'},
+                {'dur': 10.0, 'status': 'error', 'ts': '2026-06-01T11:00:00Z'},
+                # Outside the recognised vocabulary — the outcome is UNDETERMINED.
+                {'dur': 10.0, 'status': 'weird-unrecognized-status',
+                 'ts': '2026-06-01T12:00:00Z'},
+            ],
+        )
+        result = audit.cross_sequence_build_minimality([inputs], _sbm_index(tmp_path))
+        block = audit.emit_sequence_build_minimality_block(result)
+
+        assert _row_cell(block, 'row-status-unknown', 'status_unknown') == '1'
+        five_terms = sum(
+            int(_row_cell(block, 'row-status-unknown', column))
+            for column in ('pass', 'error', 'timeout', 'killed', 'status_unknown')
+        )
+        assert five_terms == int(_row_cell(block, 'row-status-unknown', 'builds')) == 3
 
     def test_build_time_exceeds_wallclock_is_flagged(self, tmp_path: Path):
         # D4(b). A 500s build against a 100s plan wall-clock is impossible — a

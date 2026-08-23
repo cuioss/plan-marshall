@@ -139,9 +139,13 @@ corpus totals (`corpus_build_pass` / `_error` / `_timeout` / `_killed`):
 | `killed` | an **infrastructure event** (a whole-tree or child kill). ⛔ **NOT folded into `error`** — collapsing a kill into "failed" would report a harness problem as a code problem. It is counted, and rendered, on its own axis so a reader can tell an infrastructure kill from a red build. |
 
 A build whose `status` is `unknown` (or unrecognized) is counted per plan in
-`build_status_unknown` and summed into the emitted `corpus_build_status_unknown`
-line, so `pass + error + timeout + killed + status_unknown == corpus_builds` — the
-ratio accounts for every build rather than leaving a silent gap. This is
+`build_status_unknown`, emitted as the per-plan row's `status_unknown` column, and
+summed into the emitted `corpus_build_status_unknown` line. The identity holds at
+BOTH scopes — `pass + error + timeout + killed + status_unknown == builds` on
+every row, and `... == corpus_builds` over the corpus — so the ratio accounts for
+every build rather than leaving a silent gap at either scope. An undetermined
+outcome is not an absent build: dropping it would make the row's own four-term sum
+fall short of its `builds` cell with nothing naming the difference. This is
 orthogonal to `build_unknown`, which is the suspect-DURATION band above (a build
 can be `status: success` yet duration-suspect, e.g. a cache hit).
 
@@ -234,7 +238,7 @@ corpus_docs_only_build_plans: <count>
 plans_without_ledger: <count>            # build time UNAVAILABLE (absent is not zero)
 plans_without_ledger_ids: <;-joined ids>
 genuine_signal_count: G
-rows[K]{plan_id,change_type,calls,span_seconds,has_ledger,builds,build_minimal,build_scoped,build_heavy,build_unknown,pass,error,timeout,killed,total_build_seconds,max_build_seconds,log_build_seconds,wall_clock_seconds,build_share,build_churn,arch_calls,ci_runs,consecutive_dup,phase_reentry,verbs,phase_graph,flags,severity}
+rows[K]{plan_id,change_type,calls,span_seconds,has_ledger,builds,build_minimal,build_scoped,build_heavy,build_unknown,pass,error,timeout,killed,status_unknown,total_build_seconds,max_build_seconds,log_build_seconds,wall_clock_seconds,build_share,build_churn,arch_calls,ci_runs,consecutive_dup,phase_reentry,verbs,phase_graph,flags,severity}
 ```
 
 The `build_share` cell is a percentage or `n/a` (withheld when wall-clock OR the
@@ -252,6 +256,7 @@ its `build_share` reads `n/a` for exactly that reason.
 | `build_minimal` / `build_scoped` / `build_heavy` | Duration-band counts. |
 | `build_unknown` | Suspect-duration builds (zero / absent) — the suspect-zero band. |
 | `pass` / `error` / `timeout` / `killed` | Build-status ratio; `killed` is SEPARATE from `error`. |
+| `status_unknown` | Builds whose `status` is absent or unrecognized — the outcome was never DETERMINED, which is not the same as a build that did not run. Present so the five status columns PARTITION the row: `pass + error + timeout + killed + status_unknown == builds`. Without it a four-term sum short of `builds` leaves the remainder unnamed, and an unnamed remainder reads as builds that never happened. Orthogonal to `build_unknown`, which is the suspect-DURATION band. |
 | `total_build_seconds` | Summed ledger build time over valid (`> 0`) durations. |
 | `max_build_seconds` | Worst single build's duration. |
 | `log_build_seconds` | OLD log-derived pyproject-only total — the delta baseline. |

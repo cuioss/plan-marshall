@@ -6534,7 +6534,13 @@ def emit_sequence_build_minimality_block(result: dict[str, Any]) -> str:
         f"plans_without_ledger: {result['plans_without_ledger']}",
         f"plans_without_ledger_ids: {_cell(';'.join(result['plans_without_ledger_ids']))}",
         f"genuine_signal_count: {genuine_signal_count}",
-        f"rows[{len(rows)}]{{plan_id,change_type,calls,span_seconds,has_ledger,builds,build_minimal,build_scoped,build_heavy,build_unknown,pass,error,timeout,killed,total_build_seconds,max_build_seconds,log_build_seconds,wall_clock_seconds,build_share,build_churn,arch_calls,ci_runs,consecutive_dup,phase_reentry,verbs,phase_graph,flags,severity}}:",
+        # The per-plan status columns PARTITION that plan's builds:
+        # pass + error + timeout + killed + status_unknown == builds. The row
+        # carries `status_unknown` for the same reason the corpus totals above do
+        # — a four-term sum short of `builds` leaves the remainder unnamed, and an
+        # unnamed remainder reads as builds that never ran rather than builds
+        # whose outcome was never determined.
+        f"rows[{len(rows)}]{{plan_id,change_type,calls,span_seconds,has_ledger,builds,build_minimal,build_scoped,build_heavy,build_unknown,pass,error,timeout,killed,status_unknown,total_build_seconds,max_build_seconds,log_build_seconds,wall_clock_seconds,build_share,build_churn,arch_calls,ci_runs,consecutive_dup,phase_reentry,verbs,phase_graph,flags,severity}}:",
     ]
     for r in rows:
         out.append(
@@ -6556,6 +6562,7 @@ def emit_sequence_build_minimality_block(result: dict[str, Any]) -> str:
                     r["build_error"],
                     r["build_timeout"],
                     r["build_killed"],
+                    r["build_status_unknown"],
                     r["total_build_seconds"],
                     r["max_build_seconds"],
                     r["log_build_seconds"],
