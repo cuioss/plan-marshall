@@ -46,7 +46,7 @@ Provider discovery uses a two-phase approach based on `marshal.json` declaration
 1. **Setup time** (`discover-and-persist`): Scans PYTHONPATH for `*_provider.py` files, calls `get_provider_declarations()` on each, and persists the combined declarations to `marshal.json` under the `providers` key. The marshall-steward wizard runs this during project setup.
 2. **Runtime** (`list-providers`): Reads provider declarations directly from `marshal.json`. No filesystem scanning occurs at runtime.
 
-Each provider module exports `get_provider_declarations()` returning a list of declaration dicts. Four fields are persisted to marshal.json — `skill_name`, `category`, `verify_command`, `description` — plus `url` when one resolves. All other fields (`display_name`, `default_url`, `header_name`, `header_value_template`, `verify_endpoint`, `verify_method`, `extra_fields`, `detection`) are wizard-time or runtime-only and are not stored. The `skill_name` field uses bundle-prefixed format (e.g., `plan-marshall:workflow-integration-sonar`).
+Each provider module exports `get_provider_declarations()` returning a list of declaration dicts. Which fields persist to marshal.json is lane-specific — [`ext-point-provider.md`](../extension-api/standards/ext-point-provider.md) § "Persisted vs Wizard-time Fields" carries the per-lane set. All other fields (`display_name`, `default_url`, `header_name`, `header_value_template`, `verify_endpoint`, `verify_method`, `extra_fields`, `detection`) are wizard-time or runtime-only and are not stored. The `skill_name` field uses bundle-prefixed format (e.g., `plan-marshall:workflow-integration-sonar`).
 
 `url` is derived rather than declared, and not every provider has one — [`ext-point-provider.md`](../extension-api/standards/ext-point-provider.md) § "Persisted vs Wizard-time Fields" carries the per-lane derivation. A CLI-lane provider resolves none, and `list-providers` omits the key rather than emitting an empty string, which would read as a provider configured with a blank URL.
 
@@ -63,7 +63,7 @@ Stale prefixed `credentials_config` keys written before this normalization are c
 | `discover-and-persist` | Scan PYTHONPATH for provider modules and persist declarations to marshal.json |
 | `list-providers` | List available credential providers from marshal.json |
 | `edit` | Update non-secret fields (URL, auth type) |
-| `verify` | Lane-dispatching connectivity test that writes the `verified_at` timestamp on success: a CLI-lane provider (selected by its declared `verify_command`) is verified by `verify_system_auth()` running that command, a REST-lane provider by an HTTP round-trip to its `verify_endpoint` |
+| `verify` | Lane-dispatching connectivity test: a CLI-lane provider (selected by its declared `verify_command`) is verified by `verify_system_auth()` running that command, a REST-lane provider by an HTTP round-trip to its `verify_endpoint` that writes the `verified_at` timestamp on success |
 | `list` | List configured skills by scanning `~/.plan-marshall/credentials/` (no secrets in output) |
 | `remove` | Remove credential file |
 | `ensure-denied` | Protect the credentials directory in the active target's settings (`no-op` on a target with no permission backend) |
@@ -113,6 +113,7 @@ For the Sonar provider on a Maven project, `configure` auto-derives `organizatio
 - `created` — New file created. If `needs_editing: true`, user must edit the file to add secrets. May carry `warnings` (list of human-readable mismatch strings — relay each to the user) and `mismatches` (structured `{field, supplied, pom_value}` entries) when a supplied `--extra` value disagrees with the project's `pom.xml` Sonar property.
 - `exists_complete` — File already exists with real secrets. LLM asks user whether to reuse.
 - `exists_incomplete` — File exists but has placeholder secrets. LLM tells user to finish editing.
+- `system_auth` — The provider is CLI-lane. Nothing was written: no credential file, no provider config. There is no secret to collect, so the LLM reports the tool's own login as the next step rather than prompting for an edit.
 
 ### Check Credential Completeness
 
