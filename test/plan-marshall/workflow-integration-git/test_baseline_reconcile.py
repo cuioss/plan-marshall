@@ -16,8 +16,10 @@ existing phase-2-refine iterate-to-confidence loop addresses the drift.
 from __future__ import annotations
 
 import argparse
+import ast
 import importlib.util
 import json
+import re
 import subprocess
 from argparse import Namespace
 from pathlib import Path
@@ -1257,3 +1259,234 @@ def test_reader_is_fail_soft_on_every_unavailability_path(monkeypatch):
     for body in ({}, {'base_branch': ''}, {'base_branch': '   '}, {'base_branch': 42}, []):
         monkeypatch.setattr(_references_core, 'read_references', lambda plan_id, b=body: b)
         assert _mod._read_references_base_branch('p') is None, f'body {body!r} must yield None'
+
+
+# =============================================================================
+# The documented reason / error vocabularies are BOUND to the emitting script (D4)
+# =============================================================================
+#
+# ``workflow-integration-git/SKILL.md`` tables every ``status: skipped`` reason and
+# every ``status: error`` token this subcommand can return. Nothing compared the
+# two: a token added, renamed, or removed in ``_cmd_baseline_reconcile.py`` left
+# the table quietly wrong, and a reader consulting the documented vocabulary would
+# act on a token the script no longer emits — or miss one it does.
+#
+# Both sides are DERIVED. The documented side is parsed out of the tables (a
+# transcription here would be a third copy that can drift from both); the emitted
+# side is read from the module's own AST (a second literal list would be exactly
+# the restatement this guard exists to forbid).
+
+_SKILL_DOC = (
+    PROJECT_ROOT
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'workflow-integration-git'
+    / 'SKILL.md'
+)
+
+_RECONCILE_SOURCE = _SCRIPTS_DIR / '_cmd_baseline_reconcile.py'
+
+#: The function whose ``return None, '<token>'`` tuples ARE the worktree-resolution
+#: skip reasons. Six of the eleven documented reasons reach the payload only
+#: through this helper, so an emitted-side derivation that looked solely at
+#: ``'reason': …`` dict literals would miss them and pass while the table drifted.
+_SKIP_REASON_FUNCTION = '_worktree_target'
+
+
+def _table_tokens(heading_cell: str) -> set[str]:
+    """Parse the backticked tokens from the first column of one SKILL.md table.
+
+    ``heading_cell`` is the table's first header cell (``reason`` / ``error``),
+    which is what distinguishes the two tables from every other table in the doc.
+
+    A first column may group several tokens in ONE slash-joined cell — the
+    worktree-resolution row does exactly that, listing four reasons together — so
+    every backticked run in the cell is collected rather than the cell being read
+    as a single token. A parser that took the cell verbatim would yield one
+    unmatchable string and make the comparison vacuous for those four.
+    """
+    lines = _SKILL_DOC.read_text(encoding='utf-8').splitlines()
+    tokens: set[str] = set()
+    index = 0
+    while index < len(lines):
+        line = lines[index].strip()
+        if line.startswith('|') and index + 1 < len(lines):
+            cells = [c.strip() for c in line.strip('|').split('|')]
+            delimiter = lines[index + 1].strip()
+            if (
+                cells
+                and cells[0].strip('`') == heading_cell
+                and delimiter.startswith('|')
+                and set(delimiter) <= set('|-: ')
+            ):
+                row = index + 2
+                while row < len(lines) and lines[row].strip().startswith('|'):
+                    first = lines[row].strip().strip('|').split('|')[0]
+                    tokens.update(re.findall(r'`([a-z0-9_]+)`', first))
+                    row += 1
+                index = row
+                continue
+        index += 1
+    return tokens
+
+
+def _emitted_tokens() -> tuple[set[str], set[str]]:
+    """The ``reason`` and ``error`` tokens the script actually emits, from its AST.
+
+    Three emission shapes are recognised, which together cover every site:
+
+    * a ``{'reason': '<token>'}`` / ``{'error': '<token>'}`` dict entry — including
+      the ``skip_reason or '<fallback>'`` form, whose constant operand is the
+      fallback reason;
+    * a ``payload['error'] = '<token>'`` subscript assignment;
+    * a ``return None, '<token>'`` tuple inside :data:`_SKIP_REASON_FUNCTION`, the
+      helper that owns the six worktree-resolution reasons.
+    """
+    tree = ast.parse(_RECONCILE_SOURCE.read_text(encoding='utf-8'))
+    reasons: set[str] = set()
+    errors: set[str] = set()
+
+    def _constants(node: ast.AST) -> list[str]:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return [node.value]
+        if isinstance(node, ast.BoolOp):
+            found: list[str] = []
+            for operand in node.values:
+                found.extend(_constants(operand))
+            return found
+        return []
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Dict):
+            for key, value in zip(node.keys, node.values):
+                if not (isinstance(key, ast.Constant) and isinstance(key.value, str)):
+                    continue
+                if key.value == 'reason':
+                    reasons.update(_constants(value))
+                elif key.value == 'error':
+                    errors.update(_constants(value))
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if (
+                    isinstance(target, ast.Subscript)
+                    and isinstance(target.slice, ast.Constant)
+                    and target.slice.value in ('reason', 'error')
+                ):
+                    bucket = reasons if target.slice.value == 'reason' else errors
+                    bucket.update(_constants(node.value))
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == _SKIP_REASON_FUNCTION:
+            for inner in ast.walk(node):
+                if isinstance(inner, ast.Return) and isinstance(inner.value, ast.Tuple):
+                    elements = inner.value.elts
+                    if len(elements) == 2:
+                        reasons.update(_constants(elements[1]))
+
+    return reasons, errors
+
+
+def test_documented_reason_and_error_vocabularies_match_the_script():
+    """The two documented tables equal the token sets the script emits.
+
+    Compared as SETS in both directions: a documented token the script never
+    emits sends a reader chasing a state that cannot occur, and an emitted token
+    the table omits leaves a real outcome undocumented.
+    """
+    documented_reasons = _table_tokens('reason')
+    documented_errors = _table_tokens('error')
+    emitted_reasons, emitted_errors = _emitted_tokens()
+
+    # Vacuity guard FIRST — an empty parse on either side would make every set
+    # comparison below trivially true (or trivially false) for the wrong reason.
+    assert documented_reasons, (
+        f'parsed no `reason` tokens out of {_SKILL_DOC}; the table moved, was '
+        f'renamed, or the parser broke — the comparison would be vacuous'
+    )
+    assert documented_errors, f'parsed no `error` tokens out of {_SKILL_DOC}'
+    assert emitted_reasons, (
+        f'derived no reason tokens from {_RECONCILE_SOURCE}; the emission shapes '
+        f'changed and the AST derivation no longer recognises them'
+    )
+    assert emitted_errors, f'derived no error tokens from {_RECONCILE_SOURCE}'
+
+    # Published on a clean run, so the run states how much it compared.
+    print(
+        f'baseline-reconcile vocabulary: documented_reasons={len(documented_reasons)} '
+        f'emitted_reasons={len(emitted_reasons)} '
+        f'documented_errors={len(documented_errors)} '
+        f'emitted_errors={len(emitted_errors)}'
+    )
+
+    assert documented_reasons == emitted_reasons, (
+        f'the documented skip-reason vocabulary and the one the script emits '
+        f'disagree (examined {len(documented_reasons)} documented, '
+        f'{len(emitted_reasons)} emitted). '
+        f'Documented but never emitted: {sorted(documented_reasons - emitted_reasons)}; '
+        f'emitted but undocumented: {sorted(emitted_reasons - documented_reasons)}'
+    )
+    assert documented_errors == emitted_errors, (
+        f'the documented error vocabulary and the one the script emits disagree '
+        f'(examined {len(documented_errors)} documented, {len(emitted_errors)} '
+        f'emitted). '
+        f'Documented but never emitted: {sorted(documented_errors - emitted_errors)}; '
+        f'emitted but undocumented: {sorted(emitted_errors - documented_errors)}'
+    )
+
+
+def test_the_slash_joined_reason_row_expands_to_every_token_it_groups():
+    """The grouped cell is expanded, not read as one unmatchable string.
+
+    One documented row lists four worktree-resolution reasons in a single
+    slash-joined cell. A parser that took the cell verbatim would produce one
+    token matching nothing, and the equality above would then fail for a parsing
+    reason while those four reasons went effectively unchecked. Pinning the
+    expansion keeps the row's four members inside the compared set.
+    """
+    documented = _table_tokens('reason')
+    grouped = {
+        'status_not_found',
+        'status_module_unavailable',
+        'worktree_path_missing',
+        'worktree_path_not_a_directory',
+    }
+
+    assert grouped <= documented, (
+        f'the slash-joined row did not expand; missing {sorted(grouped - documented)}. '
+        f'Parsed: {sorted(documented)}'
+    )
+    # The row really is joined — otherwise this asserts nothing about grouping.
+    text = _SKILL_DOC.read_text(encoding='utf-8')
+    assert '`status_not_found` / `status_module_unavailable`' in text, (
+        'the grouped row is no longer slash-joined, so this test no longer '
+        'demonstrates that the parser expands such a cell'
+    )
+
+
+def test_an_injected_token_on_either_side_is_flagged():
+    """Matched control pair: the set comparison fires in BOTH directions.
+
+    The comparison core is set equality, so it is driven directly here rather
+    than by mutating the real doc or the real script. An unmodified pair is not
+    flagged; a pair with one extra token on either side is.
+    """
+    documented_reasons = _table_tokens('reason')
+    emitted_reasons, _emitted_errors = _emitted_tokens()
+
+    # The matched (unmodified) case: no divergence in either direction.
+    assert documented_reasons - emitted_reasons == set()
+    assert emitted_reasons - documented_reasons == set()
+
+    # Injected on the DOCUMENTED side — a table row for a state that cannot occur.
+    phantom_documented = documented_reasons | {'phantom_reason'}
+    assert phantom_documented - emitted_reasons == {'phantom_reason'}, (
+        'a documented-but-never-emitted token was not detected'
+    )
+
+    # Injected on the EMITTED side — a real outcome the table does not mention.
+    phantom_emitted = emitted_reasons | {'undocumented_reason'}
+    assert phantom_emitted - documented_reasons == {'undocumented_reason'}, (
+        'an emitted-but-undocumented token was not detected'
+    )
