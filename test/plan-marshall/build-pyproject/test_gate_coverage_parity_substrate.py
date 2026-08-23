@@ -405,9 +405,29 @@ def _structural_limits_docstring(source: str) -> str | None:
     return None
 
 
-#: A module whose ONLY derivation prose is the sentence that DENIES derivation —
-#: the shape that satisfied the previous whole-file scan. Used as the matched
-#: negative control: the pinned reader must find no claim here.
+def _describes_as_derived(docstring: str) -> bool:
+    """True when ``docstring`` CLAIMS derivation, not merely mentions it.
+
+    ``_DERIVED_RE`` is a mention regex: it matches a denial as readily as a claim,
+    because "not a derivation" carries the stem. Pinning the reader to one
+    function fixed WHERE the sentence is read from; it did nothing about WHAT the
+    sentence says, so a docstring rewritten to "a recorded literal, not a
+    derivation" still satisfied a guard named for the opposite claim. Subtracting
+    ``_REFUTATION_RE`` is what turns the mention test into a claim test.
+
+    That phrasing is not hypothetical: it is what the sibling ``parity_population``
+    docstring now says, so the one-function-too-far relabel is the realistic edit
+    this predicate has to survive.
+    """
+    return bool(_DERIVED_RE.search(docstring)) and not _REFUTATION_RE.search(docstring)
+
+
+#: A module whose ONLY derivation prose is the sentence that DENIES derivation,
+#: and it sits in a NEIGHBOURING function — the shape that satisfied the previous
+#: whole-file scan. Negative control for LOCATION: the pinned reader must not
+#: reach across into it. It does NOT exercise denial-rejection, because the
+#: fixture's own structural_limits says nothing about derivation at all; that
+#: property is the separate control below, over `_DENYING_SOURCE`.
 _REFUTING_SOURCE = '''
 def parity_population():
     """Return the RECORDED set of parity dimensions.
@@ -420,6 +440,22 @@ def parity_population():
 
 def structural_limits(dimensions):
     """Pair each checked dimension with its structural limit, in recorded order."""
+    return ()
+'''
+
+#: A module whose structural_limits docstring mentions derivation only to DENY it.
+#: Negative control for the CLAIM half: the pinned reader finds the right
+#: docstring, and must still reject it. This is the relabel carried one function
+#: too far — the realistic edit, phrased exactly as the real parity_population
+#: docstring now phrases its own denial. A mention test passes this fixture; a
+#: claim test must not.
+_DENYING_SOURCE = '''
+def structural_limits(dimensions):
+    """Pair each checked dimension with its structural limit.
+
+    The pairs are a recorded literal, not a derivation — nothing recomputes them
+    from the dimensions a run observed.
+    """
     return ()
 '''
 
@@ -447,13 +483,16 @@ def test_structural_limits_is_still_described_as_derived_and_still_derives():
         f'function by name — if the function moved or was renamed, re-anchor this '
         f'control rather than deleting it.'
     )
-    assert _DERIVED_RE.search(docstring), (
-        "structural_limits's docstring no longer describes its result as derived. "
+    assert _describes_as_derived(docstring), (
+        "structural_limits's docstring no longer CLAIMS its result is derived. "
         'The relabel was meant to correct ONE stale claim about the parity '
         'population, not to remove the accurate description of structural_limits, '
-        'which really is computed from the dimensions a run recorded. An over-broad '
-        'edit that scrubbed the word everywhere would pass the negative control and '
-        f'land a false statement in its place.\n  docstring: {docstring!r}'
+        'which really is computed from the dimensions a run recorded. Note this '
+        'fails two ways, and both matter: the word is gone entirely (an over-broad '
+        'scrub), or the word is present inside a DENIAL — "a recorded literal, not '
+        'a derivation" — which is the relabel carried one function too far. A '
+        'mention test would pass the second; this is a claim test, so it does '
+        f'not.\n  docstring: {docstring!r}'
     )
 
     # The word is earned only while the result is a function of what was recorded.
@@ -470,15 +509,18 @@ def test_structural_limits_is_still_described_as_derived_and_still_derives():
     )
 
 
-def test_a_sentence_denying_derivation_cannot_stand_in_for_the_earned_claim():
-    """Matched control: prose that DENIES derivation does not satisfy the pin.
+def test_a_neighbouring_refutation_cannot_stand_in_for_the_earned_claim():
+    """Matched control, LOCATION half: the reader does not reach next door.
 
     The whole-file scan this control replaced accepted any non-``parity`` line
     mentioning derivation, so ``parity_population``'s "real derivation machinery
     ... was deliberately not taken" — a refutation — kept the positive half green
     on its own, and the true ``structural_limits`` claim could have been deleted
     without turning it red. Narrowing to one function's docstring is only a fix if
-    that refutation is genuinely inadmissible, which is what this asserts.
+    a neighbour's prose is genuinely out of reach, which is what this asserts.
+
+    This control says nothing about a denial written INSIDE the pinned docstring;
+    that is the sibling control below, and the two are not interchangeable.
     """
     refuting_docstring = _structural_limits_docstring(_REFUTING_SOURCE)
 
@@ -493,8 +535,42 @@ def test_a_sentence_denying_derivation_cannot_stand_in_for_the_earned_claim():
         'reader is being exercised against nothing'
     )
 
-    assert not _DERIVED_RE.search(refuting_docstring), (
+    assert not _describes_as_derived(refuting_docstring), (
         'the pinned reader accepted a docstring that says nothing about derivation, '
         'in a module whose only derivation prose REFUTES it. That is the exact '
         'substitution this control exists to forbid.'
+    )
+
+
+def test_a_denial_inside_the_pinned_docstring_is_rejected():
+    """Matched control, CLAIM half: the right docstring, saying the wrong thing.
+
+    Pinning to one function fixed WHERE the sentence is read from. It did nothing
+    about WHAT the sentence says — and ``_DERIVED_RE`` matches a denial as readily
+    as a claim, so "a recorded literal, not a derivation" satisfied a guard named
+    ``..._is_still_described_as_derived``. That is not a hypothetical phrasing: it
+    is what the real ``parity_population`` docstring says, one function away, so
+    carrying the relabel one function too far is the realistic edit.
+
+    The fixture is asserted to be a genuine trap — the pinned reader really does
+    find this docstring, and a bare mention test really would accept it — so a
+    green here cannot come from the fixture failing to pose the question.
+    """
+    denying_docstring = _structural_limits_docstring(_DENYING_SOURCE)
+
+    assert denying_docstring is not None, (
+        'the control fixture no longer defines structural_limits, so the pinned '
+        'reader is being exercised against nothing'
+    )
+    assert _DERIVED_RE.search(denying_docstring), (
+        'the control fixture no longer mentions derivation at all, so it has '
+        'collapsed into the location control above and no longer poses the '
+        'mention-versus-claim question this one exists to ask'
+    )
+
+    assert not _describes_as_derived(denying_docstring), (
+        'a docstring that mentions derivation only to DENY it satisfied the claim '
+        'test. The pin fixed which docstring is read; it is the refutation subtract '
+        'that decides whether the sentence found there asserts the property or its '
+        f'opposite.\n  docstring: {denying_docstring!r}'
     )
