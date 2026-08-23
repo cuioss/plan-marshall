@@ -59,6 +59,15 @@ module pins that declaration against every surface that can carry or state it:
     field) is NOT flagged. A guard that mis-classified the ``instructions``
     alternative as a step-specific field would break that step while passing
     (1)-(6); this control is what forbids that over-broad fix.
+(8) **The selector that makes (5) well-defined** is itself bound and controlled.
+    (5) quantifies over "the step's prompt-body-field input table", so it is only
+    as well-defined as the rule picking that table out of a doc carrying several.
+    That rule — the first header cell equals ``prompt-body field`` — is stated
+    normatively in the ext-point standard and BOUND to it here, so the selector
+    and the prose cannot drift. A matched control pair (two docs differing in
+    that one cell and nothing else) shows the selector firing in both directions,
+    and the matched-doc count is published on a clean run, so "no divergence
+    found" is distinguishable from "no table was ever selected".
 
 Every assertion is **population-derived**: the step set comes from
 ``find_implementors()`` and the obligation from each doc's own frontmatter, so a
@@ -78,6 +87,8 @@ from pathlib import Path
 
 import extension_discovery
 from extension_discovery import find_implementors
+
+from conftest import PROJECT_ROOT
 
 #: The canonical ext-point whose implementors carry the obligation.
 _EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
@@ -406,10 +417,22 @@ def test_no_undeclared_prompt_field():
 # do not have. This scope reads the surface the contract actually names, and is
 # the only one that reaches a generic-template-dispatched step.
 
-#: The repository-wide convention header for a prompt-body-field input table. The
-#: discriminator is the FIRST header cell, not the presence of a `Required` column:
-#: a CLI `| Parameter | Required | … |` table also carries one, and folding its
-#: rows in would flag every documented flag as an undeclared prompt-body field.
+#: The first-header-cell literal that identifies a prompt-body-field input table.
+#:
+#: This is NOT a convention this module invented. It is stated normatively in the
+#: ext-point standard resolved by :func:`_ext_point_doc`, under the heading
+#: "Identifying the input table — the header convention is normative": a markdown
+#: table is a step's prompt-body-field input table IFF its first header cell,
+#: stripped of markdown emphasis and lowercased, is this literal, and a step doc
+#: MUST title its input table's first column that way for the declaration to be
+#: enforced. ``test_input_table_header_literal_is_the_documented_one`` binds this
+#: constant to that prose, so the selector and the standard cannot drift apart —
+#: an unstated header string is exactly the defect that binding closes.
+#:
+#: The discriminator is the FIRST header cell, not the presence of a `Required`
+#: column: a CLI `| Parameter | Required | … |` table also carries one, and
+#: folding its rows in would flag every documented flag as an undeclared
+#: prompt-body field.
 _INPUT_TABLE_HEADER = 'prompt-body field'
 
 #: The `Required` cell values that mark a row as a required prompt-body field.
@@ -536,6 +559,194 @@ def test_input_table_required_column_is_located_by_header_not_position(tmp_path:
     assert _required_table_keys(doc) == {'candidates'}, (
         'The parser did not locate the `Required` column by header, or it folded '
         f'the CLI table in. Parsed: {sorted(_required_table_keys(doc))}'
+    )
+
+
+# ---------------------------------------------------------------------------
+# (8) the selector's header literal is BOUND to the documented rule
+# ---------------------------------------------------------------------------
+#
+# (5) picks a step's input table out of a doc that may carry several tables, so
+# (5) is only as well-defined as the rule that does the picking. Before this
+# binding, `_INPUT_TABLE_HEADER` was an UNSTATED literal: the standard named the
+# input table as the declaration site but nowhere required a header spelling, so
+# a conforming step doc titling its first column anything else was silently
+# skipped — dropped from the only direction that reaches a
+# generic-template-dispatched step, with no assertion anywhere going red.
+
+
+def _ext_point_doc() -> Path:
+    """Resolve the ext-point standard's own path from :data:`_EXT_POINT`.
+
+    Derived from the notation rather than written out a second time, so the doc
+    this module cites and the ext-point it discovers implementors of cannot drift
+    apart: ``{bundle}:{skill}/{tail}`` maps to
+    ``marketplace/bundles/{bundle}/skills/{skill}/{tail}.md``.
+    """
+    bundle, _, rest = _EXT_POINT.partition(':')
+    skill, _, tail = rest.partition('/')
+    path = (
+        Path(PROJECT_ROOT) / 'marketplace' / 'bundles' / bundle / 'skills' / skill / f'{tail}.md'
+    )
+    assert path.is_file(), (
+        f'{_EXT_POINT} resolved to {path}, which does not exist. The standard this '
+        f'module binds its selector to is unreadable, so the binding assertion '
+        f'below would have nothing to check.'
+    )
+    return path
+
+
+def test_input_table_header_literal_is_the_documented_one():
+    """(8) The selector's literal is the one the standard states normatively.
+
+    This is the BINDING that makes the header rule a contract rather than a
+    private convention of this module. A restatement nothing compares is exactly
+    the shape this plan's other deliverables close elsewhere: the standard could
+    be edited to name a different first-header-cell spelling, every step doc
+    updated to match, and this selector would go on matching the old literal —
+    silently selecting nothing, which (5) cannot distinguish from finding no
+    divergence.
+    """
+    text = _ext_point_doc().read_text(encoding='utf-8')
+
+    assert _INPUT_TABLE_HEADER in text.lower(), (
+        f'{_ext_point_doc()} does not contain the selector literal '
+        f'{_INPUT_TABLE_HEADER!r}. Either the standard renamed the header '
+        f'convention without updating this selector, or the selector was changed '
+        f'to a literal the standard never states — in both cases (5) selects by a '
+        f'rule no document backs.'
+    )
+
+    # The literal appearing SOMEWHERE is necessary but not sufficient: the
+    # standard must state it as the identification rule, not merely mention the
+    # phrase. Anchor on the normative sentence the rule is written as.
+    lowered = text.lower()
+    assert 'first header cell' in lowered, (
+        f'{_ext_point_doc()} contains {_INPUT_TABLE_HEADER!r} but never states the '
+        f'FIRST-HEADER-CELL identification rule, so the selector\'s discriminator '
+        f'is still undocumented. The standard must say which cell carries the '
+        f'discrimination, or a step author cannot know how to title the table.'
+    )
+
+
+#: A one-table step doc whose first header cell is the ``{header}`` parameter.
+#: The two controls below differ in that cell and in NOTHING else — same columns,
+#: same delimiter row, same single Required row — so a difference in outcome is
+#: attributable to the header alone and to nothing incidental.
+_SYNTH_TABLE_DOC = (
+    '| {header} | Type | Required | Description |\n'
+    '|---|---|:--------:|---|\n'
+    '| `candidates` | toon | Yes | the surfaced candidates |\n'
+)
+
+
+def test_input_table_selector_is_matched_by_the_documented_header_alone(tmp_path: Path):
+    """(8) Matched control pair: the header cell is what decides selection.
+
+    POSITIVE control — the documented header — is selected, and its Required row
+    reaches (5)'s comparison, so a step declaring ``candidates`` agrees with its
+    table and is NOT flagged.
+
+    NEGATIVE control — the SAME table with only the first header cell reworded
+    (``Field`` in place of ``Prompt-body field``) — is not selected. Its Required
+    row never reaches the comparison, so the step's declaration has nothing to
+    equal and (5) flags it RED.
+
+    The pair is what makes the selector's behaviour observable in both
+    directions. A selector that matched everything would leave the negative
+    control green; one that matched nothing would leave the positive control
+    flagged. Only a selector keyed on that one cell produces this split — and
+    without the pair, a selector that silently matches NOTHING is
+    indistinguishable from one that finds no divergence, because both report an
+    empty offender list.
+    """
+    positive = tmp_path / 'documented_header.md'
+    positive.write_text(
+        _SYNTH_TABLE_DOC.format(header='Prompt-body field'), encoding='utf-8'
+    )
+    negative = tmp_path / 'reworded_header.md'
+    negative.write_text(_SYNTH_TABLE_DOC.format(header='Field'), encoding='utf-8')
+
+    # The two fixtures really do differ in exactly one cell — otherwise the split
+    # below could be caused by something other than the header.
+    positive_lines = positive.read_text(encoding='utf-8').splitlines()
+    negative_lines = negative.read_text(encoding='utf-8').splitlines()
+    differing = [
+        index
+        for index, (left, right) in enumerate(zip(positive_lines, negative_lines))
+        if left != right
+    ]
+    assert differing == [0] and len(positive_lines) == len(negative_lines), (
+        f'The control pair differs on lines {differing} (header row is line 0). '
+        f'A pair differing anywhere but the first header cell does not isolate '
+        f'the selector as the cause of the split.'
+    )
+
+    # POSITIVE: selected, so the declaration has something to equal.
+    assert _table_step_specific_keys(positive) == {'candidates'}, (
+        f'The documented header was NOT selected; parsed '
+        f'{sorted(_table_step_specific_keys(positive))}. With the positive control '
+        f'unselected, (5) reads an empty table for every conformant step and '
+        f'passes over nothing.'
+    )
+    assert _undeclared({'candidates'}, _table_step_specific_keys(positive)) == [], (
+        'A step declaring exactly what its documented-header table marks Required '
+        'was flagged. The positive control must stay green.'
+    )
+
+    # NEGATIVE: not selected, so a step declaring `candidates` diverges -> RED.
+    assert _table_step_specific_keys(negative) == set(), (
+        f'The reworded header was still selected; parsed '
+        f'{sorted(_table_step_specific_keys(negative))}. If any first header cell '
+        f'selects, the discriminator is not the header and the CLI-parameter '
+        f'tables would fold in.'
+    )
+    assert _orphans({'candidates'}, _table_step_specific_keys(negative)) == ['candidates'], (
+        'A step whose table header is undocumented declares `candidates` that no '
+        'selected table marks Required, but the divergence core did not flag it. '
+        'The negative control must go RED, or the selector is unfalsifiable.'
+    )
+
+
+def test_input_table_selector_publishes_the_matched_population():
+    """(8) Publish how many discovered docs the selector actually matched.
+
+    (5) reports an empty offender list in two entirely different worlds: every
+    step's table agrees with its declaration, or the selector matched no table at
+    all. Those are the same green. This test separates them by publishing the
+    matched count, and fails when it is zero — a selector that matches nothing is
+    reported as the *could-not-look* zero it is, never as a clean bill of health.
+
+    The count is derived from the real discovered population, so it tracks the
+    corpus rather than a literal anyone must remember to update.
+    """
+    records = find_implementors(_EXT_POINT)
+    assert records, 'no finalize steps discovered — the selector has nothing to run over'
+
+    matched = [
+        record['name']
+        for record in records
+        if _required_table_keys(Path(record['path']))
+    ]
+    with_step_specific = [
+        record['name']
+        for record in records
+        if _table_step_specific_keys(Path(record['path']))
+    ]
+
+    # Published on a clean run, not only on failure.
+    print(
+        f'input-table selector population: discovered={len(records)} '
+        f'matched_a_prompt_body_table={len(matched)} '
+        f'matched_with_step_specific_keys={len(with_step_specific)}'
+    )
+
+    assert matched, (
+        f'The input-table selector matched a prompt-body-field table in NONE of '
+        f'the {len(records)} discovered step docs. Every (5) comparison is then '
+        f'over an empty extraction, so its green certifies nothing. Either the '
+        f'header literal {_INPUT_TABLE_HEADER!r} no longer matches how step docs '
+        f'title their input tables, or the table parser broke.'
     )
 
 

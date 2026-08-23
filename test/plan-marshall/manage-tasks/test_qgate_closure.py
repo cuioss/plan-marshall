@@ -225,6 +225,14 @@ def test_a_declared_glob_escaping_the_repo_is_unmeasured_not_empty():
     machine and red on every other. Deriving the depth makes the precondition
     hold wherever the checkout lives.
 
+    ⛔ **BOTH sides of the escape-target comparison are ``resolve()``d.** The
+    same platform-dependence re-enters through the comparison target when only
+    one side is normalised: ``/etc`` is a real directory on Linux but a symlink
+    to ``/private/etc`` on macOS, so a resolved left-hand side never equals a
+    bare ``Path('/etc')`` there. Comparing a resolved path against an
+    unresolved literal reproduces the green-here-red-everywhere-else archetype
+    that deriving the depth was introduced to close.
+
     Left unnormalised, ``Path.glob`` walks out of the repository and returns
     nothing, so a scope nothing examined reports a clean zero — the very defect
     this module reports on outlines, committed by the module itself.
@@ -233,7 +241,7 @@ def test_a_declared_glob_escaping_the_repo_is_unmeasured_not_empty():
     up = '/'.join(['..'] * (len(PROJECT_ROOT.resolve().parts) - 1))
     escape = f'{up}/etc/*.conf'
     outside = (PROJECT_ROOT / f'{up}/etc').resolve()
-    assert outside == Path('/etc'), 'precondition: the pattern must leave the repo'
+    assert outside == Path('/etc').resolve(), 'precondition: the pattern must leave the repo'
     assert list(outside.glob('*.conf')), 'precondition: the escape target must be populated'
 
     expansion = expand_declared_glob(escape, PROJECT_ROOT)
