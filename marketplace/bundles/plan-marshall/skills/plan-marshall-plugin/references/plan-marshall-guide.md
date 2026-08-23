@@ -242,8 +242,8 @@ Applies when doctoring a skill where `name` equals `plan-marshall-plugin` and co
 ### Validation Script
 
 ```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate extension \
-  --bundle {bundle_name}
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace validate-contracts \
+  --skill {bundle_name}:plan-marshall-plugin
 ```
 
 Extract bundle name from skill path: `marketplace/bundles/{bundle}/skills/plan-marshall-plugin`

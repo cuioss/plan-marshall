@@ -1337,13 +1337,21 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     # documented AFTER the verb. The sibling unknown-flag rule cannot see this —
     # it judges against the accept-set widened with the root's flags, so a root
     # flag is in every subcommand's set by construction.
+    #
+    # ``--config`` rather than ``--plan-id``: the placement rule fires on a flag
+    # present in the DERIVED ``root_flags``, and ``--plan-id`` is also a member of
+    # the acceptance-side ``argparse_surface.UNIVERSAL_FLAGS``. Building the
+    # positive control on a name that appears in both sets would make the fixture
+    # unable to distinguish the two surfaces, so a regression that started reading
+    # the acceptance set here would still look green. ``--config`` belongs to the
+    # derived root surface only.
     corpus['ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED'] = FixtureSpec(
         analyzer=lambda root: _aan.scan_router_flag_placement(
             root,
             {
                 'b:s:x': _ScriptEntry(
-                    subcommands={'list': {'plan-id', 'status'}},
-                    root_flags={'plan-id'},
+                    subcommands={'list': {'config', 'status'}},
+                    root_flags={'config'},
                     subcommand_own_flags={'list': {'status'}},
                 )
             },
@@ -1351,7 +1359,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
         files={
             'bundles/b/skills/s/SKILL.md': (
                 '# F\n\n```bash\n'
-                'python3 .plan/execute-script.py b:s:x list --plan-id p1\n'
+                'python3 .plan/execute-script.py b:s:x list --config c1\n'
                 '```\n'
             ),
         },

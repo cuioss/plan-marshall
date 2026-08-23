@@ -91,8 +91,8 @@ Manifest discovery is an internal library operation, not a user-facing CLI verb.
 Per-extension `extension.py` validity is checked with the plugin-doctor extension validator:
 
 ```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate extension \
-    --extension marketplace/bundles/{bundle}/skills/plan-marshall-plugin/extension.py
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace validate-contracts \
+    --skill {bundle}:plan-marshall-plugin
 ```
 
 ## Current Implementations

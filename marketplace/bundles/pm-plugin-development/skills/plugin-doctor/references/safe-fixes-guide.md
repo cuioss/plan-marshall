@@ -19,23 +19,19 @@ Safe fixes are mechanical transformations that:
 3. **Validate Result**: Ensure fix was applied correctly
 4. **Track Changes**: Record what was changed
 
-### Using fix.py apply subcommand
+### Using the doctor-marketplace fix subcommand
+
+`_fix.py` is an underscore-prefixed helper module, so it registers no executor
+notation of its own — the safe-fix pass is reached through `doctor-marketplace`,
+scoped by bundle / type / name, with `--dry-run` to preview:
 
 ```bash
-echo '{"type": "fix-type", "file": "path/to/file.md"}' | \
-  python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:fix apply --fix -
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace fix \
+  --bundles {bundle} --name {component_name} --dry-run
 ```
 
-Output:
-```json
-{
-  "success": true,
-  "fix_type": "fix-type",
-  "file": "path/to/file.md",
-  "changes": ["Description of change"],
-  "backup_created": "path/to/file.md.fix-backup"
-}
-```
+Drop `--dry-run` to apply. Each applied fix reports its type, the file it touched,
+and the changes it made.
 
 ## Batch Application
 

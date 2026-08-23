@@ -98,8 +98,8 @@ Skill directory names must not end with a noun suffix reserved for spawnable mar
 1. Extract bundle name from skill path: `marketplace/bundles/{bundle}/skills/plan-marshall-plugin`
 2. Run manifest validation:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:domain-extension-api:validate_manifest validate \
-     --bundle {bundle}
+   python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace validate-contracts \
+     --skill {bundle}:plan-marshall-plugin
    ```
 3. Parse validation output for issues
 4. Add findings to issue list with appropriate fix categories

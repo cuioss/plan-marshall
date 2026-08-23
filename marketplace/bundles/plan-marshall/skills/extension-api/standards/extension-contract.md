@@ -806,11 +806,11 @@ Adding a single hook to an existing bundle is smaller — override the relevant 
 
 ## Validation
 
-Extensions are validated by `plugin-doctor extension`:
+Extensions are validated by the plugin-doctor contract validator:
 
 ```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate extension \
-    --extension path/to/extension.py
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace validate-contracts \
+    --skill {bundle}:plan-marshall-plugin
 ```
 
 Validation checks:

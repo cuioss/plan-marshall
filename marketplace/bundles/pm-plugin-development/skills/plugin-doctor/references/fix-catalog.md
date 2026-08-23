@@ -320,7 +320,7 @@ Risky fixes require user confirmation because they involve judgment calls or may
 **Fix Strategy**:
 - Replace such paths with the executor pattern
 - Use notation: `python3 .plan/execute-script.py {bundle}:{skill}:{script} {subcommand} {args}`
-- Example: Replace a direct invocation of a bundle's `scripts` subdirectory script with the equivalent executor notation (e.g. `python3 .plan/execute-script.py pm-dev-java:java-core:java-core verify --input x`)
+- Example: Replace a direct invocation of a bundle's `scripts` subdirectory script with the equivalent executor notation (e.g. `python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles list --module x`)
 
 **Why Risky**:
 - Changes script resolution mechanism

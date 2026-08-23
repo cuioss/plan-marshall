@@ -18,9 +18,20 @@ is derived, in one pass, from the same walk the findings came from:
 * ``non_derivable_omitted`` — the remainder, dropped fail-closed so an
   unparseable ``--help`` can never manufacture a finding. This is a coverage
   figure, not a defect count: those notations were registered and NOT judged.
+* ``blind_spots`` — the enumerated invocations no verb/flag verdict could be
+  drawn about. It is published beside the finding count because the two move
+  independently and in OPPOSITE directions: a fix that widens the accept-set
+  lowers findings while leaving coverage alone, whereas one that skips an
+  unjudgeable shape lowers findings by RAISING this. A report carrying only the
+  first cannot tell those apart, and the second is the one that costs coverage.
 
 The clean assertion is reported as FIXED / REMAINING against the population, not
-as a bare "clean", so a number that moves has to say what it moved against.
+as a bare "clean", so a number that moves has to say what it moved against. The
+split is published per RULE as well as per FILE: a total that moved names how
+many findings changed but not which class did, and the classes have different
+owners — ``NOTATION_INVALID`` is prose drift a documentation edit fixes, while a
+``FLAG_UNKNOWN`` cluster against one flag across dozens of files is a detector
+question. Without the per-rule row those two read identically in the total.
 
 Substrate handling is the module's own thesis applied to itself. When the
 registry is unusable the corpus was not judged at all, so these tests SKIP with
@@ -55,12 +66,19 @@ _aan = load_script_module(
 MARKETPLACE: Path = MARKETPLACE_ROOT.parent
 
 #: The population keys every report line and every assertion message carries.
+#:
+#: ``blind_spots`` sits here rather than beside ``findings`` because it IS a
+#: population figure — the part of ``invocations`` the cluster enumerated and
+#: could not rule on. A run that lowers its finding count by raising this has not
+#: fixed anything; it has narrowed what it looks at, and the only way a reader
+#: can tell is if both numbers are published together.
 POPULATION_KEYS = (
     'markdown_targets',
     'invocations',
     'registered_notations',
     'derivable_surfaces',
     'non_derivable_omitted',
+    'blind_spots',
 )
 
 
@@ -80,9 +98,13 @@ def _corpus() -> dict:
     """
     executor_path = MARKETPLACE.parent / '.plan' / 'execute-script.py'
     registry = _aan.read_notation_registry(executor_path)
-    findings = _aan.analyze_argument_naming(MARKETPLACE)
+    # The population-returning entry point rather than the plain one: it is the
+    # SAME derivation the findings come from, so ``blind_spots`` cannot disagree
+    # with the finding list the way a second pass could.
+    findings, invocations, blind_spots = _aan.analyze_argument_naming_with_population(
+        MARKETPLACE
+    )
     targets = _aan._markdown_targets(MARKETPLACE)
-    invocations = sum(len(_aan._extract_invocations(path)) for path in targets)
     index = _aan.build_script_index(set(registry.notations), MARKETPLACE)
     registered = len(registry.notations)
     derivable = len(index)
@@ -94,6 +116,7 @@ def _corpus() -> dict:
         'registered_notations': registered,
         'derivable_surfaces': derivable,
         'non_derivable_omitted': registered - derivable,
+        'blind_spots': blind_spots,
         'findings': findings,
     }
 
@@ -103,10 +126,23 @@ def _findings_by_file(findings: list[dict]) -> Counter:
     return Counter(str(finding.get('file', '<unanchored>')) for finding in findings)
 
 
+def _findings_by_rule(findings: list[dict]) -> Counter:
+    """Count findings per rule_id — the split that says WHICH class moved.
+
+    The per-file enumeration answers "where do I go and edit?"; this one answers
+    "is this prose drift or a detector defect?". A total that dropped names
+    neither, and the two classes have different owners — which is how a census of
+    129 could read as one documentation sweep when 88 of it hinged on a detector
+    resolving flags against the wrong layer.
+    """
+    return Counter(str(finding.get('rule_id', '<unruled>')) for finding in findings)
+
+
 def corpus_report() -> str:
-    """Render the population, the substrate state, and the per-file finding split."""
+    """Render the population, the substrate state, and both finding splits."""
     corpus = _corpus()
     findings = corpus['findings']
+    per_rule = _findings_by_rule(findings)
     per_file = _findings_by_file(findings)
     lines = [
         f'substrate_status: {corpus["substrate_status"]}',
@@ -114,6 +150,8 @@ def corpus_report() -> str:
     ]
     lines.extend(f'{key}: {corpus[key]}' for key in POPULATION_KEYS)
     lines.append(f'findings: {len(findings)}')
+    lines.append(f'rules_with_findings: {len(per_rule)}')
+    lines.extend(f'  {rule}: {count}' for rule, count in sorted(per_rule.items()))
     lines.append(f'files_with_findings: {len(per_file)}')
     lines.extend(f'  {path}: {count}' for path, count in sorted(per_file.items()))
     return '\n'.join(lines)
@@ -167,9 +205,11 @@ def test_the_report_publishes_every_population_figure():
 
     The clean case is the one that matters: on a passing gate the finding list is
     empty, so unless the population is published alongside it, a run that
-    examined the whole tree reads exactly like one that examined nothing. The
-    coverage figure ``non_derivable_omitted`` is published too — those notations
-    were registered and deliberately NOT judged, which a bare pass hides.
+    examined the whole tree reads exactly like one that examined nothing. The two
+    coverage figures are published too — ``non_derivable_omitted`` (notations
+    registered and deliberately NOT judged) and ``blind_spots`` (invocations
+    enumerated and not ruled on) — because a bare pass hides both, and because a
+    finding count can be lowered by raising either one.
     """
     corpus = _require_judged_corpus()
     report = corpus_report()
@@ -180,6 +220,36 @@ def test_the_report_publishes_every_population_figure():
             f'{key} is absent from the published report.\n{report}'
         )
     assert f'findings: {len(corpus["findings"])}' in report, report
+
+
+def test_the_report_splits_the_findings_by_rule_not_only_by_file():
+    """A moving total must say WHICH class moved.
+
+    The per-file split answers "where do I edit?". It cannot answer "is this
+    prose drift or a detector defect?", and those have different owners: a
+    ``NOTATION_INVALID`` is a documentation edit, while one flag reported across
+    dozens of files is a question about the accept-set. Both render as a single
+    shrinking integer in the total.
+
+    On a GREEN corpus there is no finding to split, so the assertion is on the
+    report's SHAPE — the header is emitted with a zero — rather than on rows that
+    only a red run has. A header that appeared only when findings existed would
+    make the clean case unfalsifiable, which is this module's whole subject.
+    """
+    corpus = _require_judged_corpus()
+    report = corpus_report()
+    per_rule = _findings_by_rule(corpus['findings'])
+
+    assert f'rules_with_findings: {len(per_rule)}' in report, (
+        f'the per-rule census header is absent from the report.\n{report}'
+    )
+    for rule, count in per_rule.items():
+        assert f'  {rule}: {count}' in report, (
+            f'rule {rule} ({count}) is absent from the per-rule census.\n{report}'
+        )
+    assert sum(per_rule.values()) == len(corpus['findings']), (
+        f'the per-rule census does not reconcile to the finding total.\n{report}'
+    )
 
 
 def test_the_argument_naming_corpus_is_clean_against_its_published_population():
@@ -193,14 +263,18 @@ def test_the_argument_naming_corpus_is_clean_against_its_published_population():
     corpus = _require_judged_corpus()
     findings = corpus['findings']
     per_file = _findings_by_file(findings)
+    per_rule = _findings_by_rule(findings)
 
     assert not findings, (
         f'REMAINING {len(findings)} argument-naming finding(s) across '
-        f'{len(per_file)} file(s), derived from a population of '
+        f'{len(per_file)} file(s) and {len(per_rule)} rule(s) '
+        f'({", ".join(f"{rule}={count}" for rule, count in sorted(per_rule.items()))}), '
+        f'derived from a population of '
         f'{corpus["markdown_targets"]} markdown target(s) / '
         f'{corpus["invocations"]} invocation(s) / '
         f'{corpus["registered_notations"]} registered notation(s) '
         f'({corpus["derivable_surfaces"]} derivable, '
-        f'{corpus["non_derivable_omitted"]} omitted fail-closed).\n'
+        f'{corpus["non_derivable_omitted"]} omitted fail-closed, '
+        f'{corpus["blind_spots"]} invocation(s) enumerated but not ruled on).\n'
         f'{corpus_report()}'
     )

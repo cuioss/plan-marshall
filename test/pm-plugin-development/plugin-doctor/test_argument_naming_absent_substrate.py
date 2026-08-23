@@ -88,7 +88,10 @@ def _sole_substrate_finding(marketplace_root: Path) -> dict:
         f'An unusable registry must short-circuit the cluster into exactly one '
         f'finding, got {len(findings)}: {findings!r}'
     )
-    finding = findings[0]
+    # Annotated because ``_aan`` is spec-loaded at runtime, so mypy types every
+    # attribute of it as ``Any``; returning the element unannotated trips
+    # ``no-any-return`` against this function's declared ``dict``.
+    finding: dict = findings[0]
     assert finding['rule_id'] == _aan.RULE_SUBSTRATE_ABSENT, (
         f'Expected {_aan.RULE_SUBSTRATE_ABSENT}, got {finding!r}'
     )

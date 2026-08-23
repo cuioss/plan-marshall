@@ -198,10 +198,10 @@ plan_id: EXAMPLE-PLAN
 TOON output enables pipeline processing:
 
 ```bash
-# Extract → Categorize → Apply → Verify
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:fix extract --input file.md | \
-  python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:fix categorize | \
-  python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:fix apply
+# Analyze → apply the safe subset → re-check
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace analyze --bundles {bundle}
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace fix --bundles {bundle}
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate --paths {component_path}
 ```
 
 ## Output Quality Rules

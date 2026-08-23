@@ -363,7 +363,7 @@ metadata:
 
 ### plugin.json Registration Convention
 
-**Not all skills need plugin.json registration.** Registration controls whether the host platform loads the skill's SKILL.md as LLM context. Skills accessed only via the script executor (`python3 .plan/execute-script.py bundle:skill:script`) don't need their SKILL.md loaded — the executor resolves scripts by filesystem path.
+**Not all skills need plugin.json registration.** Registration controls whether the host platform loads the skill's SKILL.md as LLM context. Skills accessed only via the script executor (`python3 .plan/execute-script.py {bundle}:{skill}:{script}`) don't need their SKILL.md loaded — the executor resolves scripts by filesystem path.
 
 **Three categories of skills:**
 

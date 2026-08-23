@@ -79,10 +79,14 @@ Completeness Issues:
 
 ### Script Pre-Processing
 
-Run `analyze cross-file` first to get structured analysis:
+Get the structured cross-file analysis first. The analyzer is the internal
+`_analyze_crossfile.py` module — underscore-prefixed, so it registers no executor
+notation of its own; the operator-facing entry point is `doctor-marketplace report`,
+which runs it per bundle and writes the result to the output directory:
 
 ```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:analyze cross-file --skill-path {skill_path}
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace report \
+  --bundles {bundle} --output .plan/temp/content-quality
 ```
 
 **Script Output Categories**:
@@ -442,11 +446,10 @@ Extraction Candidate:
 
 ## Verification of LLM Findings
 
-After LLM analysis, run `validate cross-file` to validate claims:
-
-```bash
-echo '{llm_findings_json}' | python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate cross-file --analysis {script_analysis_json}
-```
+After LLM analysis, every claim is re-checked against the script's own analysis by
+`_cmd_cross_file.py::verify_findings`. That verifier is an internal library
+function, not a CLI verb — it has no executor notation, and it is the function the
+`report` pass calls with the LLM's claims before any finding is emitted.
 
 **Verification Output**:
 ```json
@@ -472,9 +475,10 @@ This guide is loaded in **Phase 3: Analyze Content Quality**.
 
 ### Step-by-Step Integration
 
-1. **Run cross-file analysis script**:
+1. **Run the cross-file analysis pass**:
    ```bash
-   python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:analyze cross-file --skill-path {skill_path} > analysis.json
+   python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace report \
+     --bundles {bundle} --output .plan/temp/content-quality
    ```
 
 2. **Report exact duplicates directly** (no LLM needed):
@@ -490,10 +494,10 @@ This guide is loaded in **Phase 3: Analyze Content Quality**.
    - Completeness (TODO markers, missing examples)
    - Contradictions (conflicting rules)
 
-5. **Verify LLM findings**:
-   ```bash
-   echo '{llm_output}' | python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate cross-file --analysis analysis.json
-   ```
+5. **Verify LLM findings**: the `report` pass feeds each claim through
+   `_cmd_cross_file.py::verify_findings`, which re-checks it against the script's
+   own analysis. There is no separate CLI step — an unverifiable claim never
+   reaches the report.
 
 6. **Generate quality report** with verified findings only.
 

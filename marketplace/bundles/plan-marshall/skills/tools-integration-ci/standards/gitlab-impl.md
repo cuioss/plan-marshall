@@ -421,10 +421,12 @@ glab auth status  # Uses GITLAB_TOKEN automatically
 
 ## Executor Mapping
 
-The script is invoked via the executor:
+The handler is reached through the provider-agnostic `ci` entry point — there is no
+`gitlab` notation of its own; `ci.py` resolves the configured provider and dispatches
+to this implementation:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:gitlab <command> [args]
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci <command> [args]
 ```
 
 **Commands**:

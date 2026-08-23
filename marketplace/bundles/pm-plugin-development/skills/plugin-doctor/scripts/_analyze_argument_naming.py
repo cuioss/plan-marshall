@@ -27,6 +27,39 @@ blind to any parser assembled in an imported module, which is exactly the
 accept-set, and a too-small accept-set is strictly more dangerous than no
 accept-set because it rejects valid calls.
 
+The argparse table is not the layer that accepts
+-------------------------------------------------
+The derivation answers "what does this script's argparse declare?", and for a
+long time this cluster treated that as the same question as "what does this
+invocation get away with?". It is not. Some flags are consumed by the
+**executor / router layer that runs BEFORE the target script's argparse ever
+sees argv**, so they appear in no node's ``--help`` and yet every documented
+call carrying them works. Judging those against the argparse table alone
+manufactures an ``ARGUMENT_NAMING_FLAG_UNKNOWN`` finding against a correct
+invocation — the over-rejection direction the asymmetric-error rule above
+forbids, and the same species as the router-consumed ``--project-dir`` blind
+spot on ``tools-integration-ci:ci``.
+
+The accept-set for that layer is NOT re-derived here. It is
+:data:`argparse_surface.UNIVERSAL_FLAGS` — the single definition the executor's
+own pre-spawn validator mirrors and the sibling ``manage-invocation-invalid``
+rule already imports — so all three guards agree about what a script accepts.
+It is unioned into the ACCEPTANCE surface only:
+
+- ``_ScriptEntry.subcommands`` values and :attr:`_ScriptEntry.root_accept_flags`
+  carry it, because those are what :func:`scan_flag` and
+  :func:`scan_canonical_forms` judge a flag's EXISTENCE against;
+- ``root_flags`` and ``subcommand_own_flags`` deliberately do NOT, because those
+  two are the placement authority :func:`scan_router_flag_placement` reads, and
+  the four universals do not share one placement behaviour. ``audit-plan-id`` is
+  genuinely position-independent (``architecture which-module --path P
+  --audit-plan-id X`` is accepted with the flag AFTER the verb), but ``plan-id``
+  and ``project-dir`` are on many scripts ordinary root ``add_argument``
+  declarations that argparse rejects after the verb. Widening the placement
+  surface with the acceptance set would silence exactly the recurrence signatures
+  the placement rule exists to catch — see that function's docstring for why the
+  per-script ``root_flags`` membership test is the right discriminator instead.
+
 Consequences of the promotion, both intended:
 
 - **Alias awareness.** The choice list argparse renders carries alias
@@ -50,6 +83,31 @@ Activation
 This rule cluster is unconditionally active across all marketplace markdown.
 Recurring stale-flag drift in skill workflows motivated default-on
 enforcement rather than a gated transitional period.
+
+A usage string is not a call
+---------------------------
+``_INVOCATION_RE`` resolves the verb slot with ``[a-z][A-Za-z0-9_\\-]*``, so a
+line whose positional region holds usage-template syntax names no verb and comes
+back with ``subcommand=None``. Every flag on the line was then judged against the
+ROOT scope — and a pure subcommand-dispatching script legitimately declares
+almost nothing there, so each flag read as invented. Three real shapes hit this:
+
+- ``manage-plan-documents {type} create --summary ... --went_well ...``
+- ``permission_doctor {command} {args}`` (addressed by ``--scope`` in the prose
+  around it — a different clause of the same sentence, not an argument of the
+  call)
+- ``profiles [--project-dir PROJECT_DIR | --plan-id PLAN_ID] list [--module M]``
+
+⛔ The cause is NOT an accept-set that came back empty for a script that declares
+flags. ``permission_doctor`` and ``profiles`` were probed live and genuinely
+declare no root long flags beyond the two-state ``--project-dir`` /
+``--plan-id`` pair, so the derived surface was correct and the extractor was
+wrong. :attr:`_Invocation.positional_region_is_templated` is therefore the guard,
+ported from ``_analyze_manage_invocation``, which has carried it all along.
+
+Such a site is COUNTED as a blind spot rather than dropped silently: it is an
+enumerated invocation the cluster looked at and drew no verdict about, and a skip
+that did not raise the figure would shrink the corpus quietly.
 
 Absent substrate is an outcome, not a no-op
 -------------------------------------------
@@ -134,9 +192,11 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from _analyze_manage_invocation import ROUTER_VERBS
 from _doctor_shared import Finding
 from _rule_registry import RuleDescriptor
 from argparse_surface import (
+    UNIVERSAL_FLAGS,
     ParserNode,
     ScriptSurface,
     build_surface_index,
@@ -248,6 +308,19 @@ _INVOCATION_RE = re.compile(
 # rejects placeholder shapes like ``--{plan-id}``.
 _FLAG_TOKEN_RE = re.compile(r'(?<![A-Za-z0-9])--(?P<flag>[A-Za-z][A-Za-z0-9_\-]*)\b')
 
+# First flag token on a line: whitespace immediately followed by ``-``. The
+# positional region is everything before it (or the whole slice when no flag).
+_FIRST_FLAG_RE = re.compile(r'\s-')
+
+# Usage-template / placeholder syntax that marks a line as a NON-concrete
+# invocation: ``{plan_id}`` / ``<subcommand>`` placeholders, usage brackets and
+# alternation (``[--project-dir | --plan-id]``), and the literal ``...``
+# ellipsis. Kept byte-identical to
+# ``_analyze_manage_invocation._TEMPLATE_SYNTAX_RE`` — the two rules scan the
+# same corpus for the same shapes, and a divergence would make one of them
+# report a usage string the other correctly skipped.
+_TEMPLATE_SYNTAX_RE = re.compile(r'[{}<>\[\]|]|\.\.\.')
+
 # A quoted run is a VALUE, whatever it looks like. Scanning raw text made
 # ``list --message "--plan-id p"`` report ``--plan-id`` as a misplaced router
 # flag — an error finding against a correct invocation, which is the
@@ -293,6 +366,31 @@ class _Invocation:
     subcommand: str | None
     rest: str  # portion of the line AFTER the verb
     leading: str = ''  # router flags written BEFORE the verb
+
+    @property
+    def positional_region_is_templated(self) -> bool:
+        """True when the verb slot holds usage-template syntax, not a real verb.
+
+        A templated positional region means this line is a usage STRING, not a
+        concrete call: ``{type} create``, ``permission_doctor {command} {args}``,
+        ``profiles [--project-dir | --plan-id] list [--module MODULE]``. None of
+        those resolves to a verb, so :attr:`subcommand` comes back ``None`` and
+        every flag on the line would be judged against the ROOT scope — where a
+        pure subcommand-dispatching script legitimately declares almost nothing,
+        so each flag reads as invented. The finding is against a line that was
+        never a call.
+
+        The region examined is everything before the first flag token, matching
+        ``_analyze_manage_invocation._positional_region_is_templated`` — template
+        syntax inside a flag VALUE (``--set k={worktree_path}``) is deliberately
+        NOT covered, so those invocations keep full validation.
+        """
+        region = self.leading + self.rest if self.subcommand is None else self.rest
+        flag_match = _FIRST_FLAG_RE.search(region)
+        head = region[: flag_match.start()] if flag_match else region
+        if self.subcommand is not None:
+            head = f'{self.subcommand} {head}'
+        return bool(_TEMPLATE_SYNTAX_RE.search(head))
 
     @property
     def all_flag_text(self) -> str:
@@ -341,12 +439,34 @@ class _ScriptEntry:
     makes a root-scoped flag written after the verb detectable at all. Judging
     placement against the widened union is why a misplaced router flag could
     never be reported: the union can only ever ADD flags.
+
+    The ACCEPTANCE / PLACEMENT split runs one level deeper than that widening.
+    ``subcommands`` and :attr:`root_accept_flags` additionally carry
+    :data:`UNIVERSAL_FLAGS` — the executor/router layer's accept-set, invisible
+    to every ``--help`` because it is consumed before the target script's
+    argparse runs. ``root_flags`` and ``subcommand_own_flags`` do NOT, and must
+    not: they are what :func:`scan_router_flag_placement` reads, and a
+    router-consumed flag has no placement to get wrong (it is stripped from argv
+    wherever it was written). Adding it there would trade one false finding for
+    another rather than removing it.
     """
 
     subcommands: dict[str, set[str] | None]
     root_flags: set[str] | None
     subcommands_confident: bool = True
     subcommand_own_flags: dict[str, set[str] | None] = field(default_factory=dict)
+
+    @property
+    def root_accept_flags(self) -> set[str] | None:
+        """The root scope's acceptance surface — derived flags plus the universals.
+
+        ``None`` propagates unchanged: an underived root surface stays underived,
+        because widening an unknown set with the universals would turn "no
+        accept-set" into a four-element one and start rejecting valid calls.
+        """
+        if self.root_flags is None:
+            return None
+        return self.root_flags | set(UNIVERSAL_FLAGS)
 
 
 # =============================================================================
@@ -527,6 +647,13 @@ def _entry_from_surface(surface: ScriptSurface) -> _ScriptEntry:
     dangerous one. WHERE such a flag belongs is a separate question, answered
     against ``subcommand_own_flags`` by the router-flag-placement rule.
 
+    :data:`UNIVERSAL_FLAGS` joins the same acceptance union for the same reason,
+    one layer out: those flags are consumed by the executor/router BEFORE the
+    target script's argparse runs, so they are declared by no node and would
+    otherwise be reported as invented on every call that carries them. They are
+    added ONLY here and in :attr:`_ScriptEntry.root_accept_flags` — never to
+    ``root_flags`` or ``subcommand_own_flags``, which the placement rule reads.
+
     A key is retained even when its flag surface is unknown, with ``None`` as
     the value. Dropping the key instead would make the subcommand rule report
     the name as undeclared — a false finding manufactured out of the very
@@ -544,7 +671,7 @@ def _entry_from_surface(surface: ScriptSurface) -> _ScriptEntry:
         if root_flags is None or child_flags is None:
             subcommands[name] = None
         else:
-            subcommands[name] = root_flags | child_flags
+            subcommands[name] = root_flags | child_flags | set(UNIVERSAL_FLAGS)
     return _ScriptEntry(
         subcommands=subcommands,
         root_flags=root_flags,
@@ -749,10 +876,20 @@ def scan_subcommand(
     marketplace_root: Path,
     script_index: dict[str, _ScriptEntry],
 ) -> list[dict]:
-    """Detect invented subcommand tokens following a registered notation."""
+    """Detect invented subcommand tokens following a registered notation.
+
+    Two shapes are accepted that the ``--help``-derived choice list cannot show:
+    a templated positional region (a usage string, not a call), and a ROUTER
+    verb intercepted in the script's ``main()`` ahead of subparser dispatch. The
+    latter is the verb-level counterpart of the router-CONSUMED flag — invisible
+    for the same structural reason, and reported for the same wrong reason.
+    """
     findings: list[Finding] = []
     for md in _markdown_targets(marketplace_root):
         for inv in _extract_invocations(md):
+            if inv.positional_region_is_templated:
+                # A usage string, not a call — the verb slot holds a placeholder.
+                continue
             if inv.subcommand is None:
                 continue
             entry = script_index.get(inv.notation)
@@ -769,6 +906,15 @@ def scan_subcommand(
                 # is not evidence of an invented verb. Skip.
                 continue
             if inv.subcommand in entry.subcommands:
+                continue
+            if inv.subcommand in ROUTER_VERBS.get(inv.notation, {}):
+                # A router-level verb, intercepted in the script's ``main()``
+                # BEFORE argparse subparser dispatch, so it appears in no choice
+                # list and the help-derived surface structurally cannot see it —
+                # the verb-level twin of the router-CONSUMED flag case above.
+                # ``ci barrier`` is the live instance. The model is imported from
+                # ``_analyze_manage_invocation`` rather than copied, so the two
+                # rules cannot disagree about which verbs exist.
                 continue
 
             findings.append(
@@ -806,16 +952,26 @@ def scan_flag(
     findings: list[Finding] = []
     for md in _markdown_targets(marketplace_root):
         for inv in _extract_invocations(md):
+            if inv.positional_region_is_templated:
+                # A usage string, not a call. Judging its flags against whatever
+                # scope the unresolved verb slot fell back to is how a correct
+                # ``{type} create --summary ...`` usage line got every one of its
+                # flags reported as invented.
+                continue
             entry = script_index.get(inv.notation)
             if entry is None:
                 continue
             allowed: set[str]
             if inv.subcommand is None:
                 # ``None`` root flags means the root's own flag surface was
-                # never derived — no flag can be judged against it.
-                if entry.root_flags is None:
+                # never derived — no flag can be judged against it. The
+                # ACCEPTANCE surface is read here (derived root flags plus the
+                # executor/router universals), never the bare ``root_flags``
+                # placement surface.
+                root_allowed = entry.root_accept_flags
+                if root_allowed is None:
                     continue
-                allowed = entry.root_flags
+                allowed = root_allowed
                 scope_label = '<root>'
             else:
                 # ``None`` covers both "subcommand not in the index" (the
@@ -881,10 +1037,39 @@ def scan_router_flag_placement(
     Only ``inv.rest`` — the text AFTER the verb — is scanned. The router flags
     the extractor found before the verb are on ``inv.leading``, and they are
     exactly the correctly-placed ones this rule must stay silent about.
+
+    ⛔ :data:`UNIVERSAL_FLAGS` is NOT exempted here, and must not be. That set is
+    the ACCEPTANCE surface — "does this flag exist?" — and it is deliberately
+    coarser than the placement question, because its four members do not share
+    one placement behaviour:
+
+    - ``audit-plan-id`` IS consumed by the executor before the target script's
+      argparse runs, so it is stripped wherever it was written and no position is
+      wrong (``architecture which-module --path P --audit-plan-id X`` is accepted
+      with the flag after the verb);
+    - ``plan-id`` / ``project-dir`` are, on many scripts, ORDINARY ``add_argument``
+      declarations on the ROOT parser — and argparse rejects a root flag written
+      after the verb (``architecture which-module --path P --plan-id X`` exits 2
+      with ``unrecognized arguments``, and the executor's own note tells the
+      author to move it ahead of the verb). Exempting them globally would silence
+      the verb-scoped and router-scoped ``--plan-id`` / ``--project-dir``
+      recurrence signatures this rule exists to catch.
+
+    The ``flag not in entry.root_flags`` test below is the discriminator, and it
+    is PER-SCRIPT rather than per-flag, which is what makes it right: a flag the
+    router consumes before argparse appears in no node's ``--help``, so it is
+    absent from ``root_flags`` and skipped automatically (the
+    ``tools-integration-ci:ci`` ``--project-dir`` shape, consumed by
+    ``extract_project_dir`` ahead of dispatch); a flag argparse really declares on
+    the root IS in ``root_flags``, and its placement is judged. One test separates
+    the two cases correctly on every script without a global list to maintain.
     """
     findings: list[Finding] = []
     for md in _markdown_targets(marketplace_root):
         for inv in _extract_invocations(md):
+            if inv.positional_region_is_templated:
+                # A usage string, not a call — its flag positions are illustrative.
+                continue
             entry = script_index.get(inv.notation)
             if entry is None or inv.subcommand is None or entry.root_flags is None:
                 continue
@@ -1142,13 +1327,31 @@ def _invocation_is_blind_spot(
     - A script that declares no subparsers at all has nothing to check at the
       verb level, and its root flag surface still judges every flag on the line.
 
-    What remains is the genuine residue: a registered notation whose ``--help``
-    surface was dropped fail-closed by :func:`build_script_index`, an unconfident
-    verb listing that makes absence no evidence, and an underived flag surface
-    (``None``) on the scope the invocation actually addresses.
+    What remains is the genuine residue: a templated positional region that names
+    no concrete verb, a registered notation whose ``--help`` surface was dropped
+    fail-closed by :func:`build_script_index`, an unconfident verb listing that
+    makes absence no evidence, and an underived flag surface (``None``) on the
+    scope the invocation actually addresses.
+
+    The templated case is checked AFTER the registry test, and the order is
+    load-bearing. :func:`scan_notation` is deliberately NOT template-guarded — a
+    notation is a notation whatever follows it — so a templated line whose
+    notation is unregistered still gets a decision and is reported as
+    :data:`RULE_NOTATION_INVALID`. Counting it here as well would file the
+    cluster's loudest verdict as a gap, the same error the registry branch above
+    exists to avoid. What the template guard withholds is only the VERB and FLAG
+    verdicts, so only a REGISTERED notation on a templated line is undecided.
+
+    Such a site is counted rather than dropped silently: a usage string IS an
+    enumerated invocation the cluster looked at and drew no verb/flag verdict
+    about, which is exactly what ``blind_spots`` reports. A skip that did not
+    raise the figure would shrink the corpus quietly — the defect class this
+    cluster exists to end.
     """
     if inv.notation not in registered_notations:
         return False
+    if inv.positional_region_is_templated:
+        return True
     entry = script_index.get(inv.notation)
     if entry is None:
         return True

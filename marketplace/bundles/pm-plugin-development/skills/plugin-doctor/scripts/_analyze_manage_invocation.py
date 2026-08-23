@@ -166,7 +166,7 @@ class _RouterVerb:
     required_flags: frozenset[str] = frozenset()
 
 
-_ROUTER_VERBS: dict[str, dict[str, _RouterVerb]] = {
+ROUTER_VERBS: dict[str, dict[str, _RouterVerb]] = {
     'plan-marshall:tools-integration-ci:ci': {
         'barrier': _RouterVerb(
             flags=frozenset({'settled-head', 'signal'}),
@@ -174,6 +174,15 @@ _ROUTER_VERBS: dict[str, dict[str, _RouterVerb]] = {
         ),
     },
 }
+
+#: Module-private alias retained for this module's own body. The name is PUBLIC
+#: because the ``ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN`` rule needs the same model:
+#: a router verb is invisible to the ``--help``-derived surface, so a cluster
+#: that judged verbs against that surface alone reported ``ci barrier`` as an
+#: invented subcommand — the identical false positive this table already removes
+#: here. Sharing the one table is what keeps the two rules from disagreeing about
+#: which verbs exist; a second copy would drift the moment a router verb is added.
+_ROUTER_VERBS = ROUTER_VERBS
 
 # =============================================================================
 # In-scope derivation
