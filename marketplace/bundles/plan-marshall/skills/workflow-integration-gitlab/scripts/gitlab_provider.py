@@ -19,7 +19,6 @@ def get_provider_declarations():
             'skill_name': 'plan-marshall:workflow-integration-gitlab',
             'category': 'ci',
             'display_name': 'GitLab CLI (glab)',
-            'default_url': 'https://gitlab.com',
             'description': 'GitLab CI provider via glab CLI — MRs, issues, CI status, reviews',
             'verify_command': 'glab auth status',
             'detection': {

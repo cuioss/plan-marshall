@@ -155,7 +155,7 @@ Read provider declarations from marshal.json (populated by Step 7). Provider `sk
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list-providers
 ```
 
-Parse the `providers` array. Filter entries where `skill_name` is `plan-marshall:workflow-integration-github` or `plan-marshall:workflow-integration-gitlab`. These are the CI provider declarations. Only activated providers (persisted in Step 7) appear in this list.
+Parse the `providers` mapping — each entry is keyed by the canonical (bundle-prefix stripped) skill name and carries the full `skill_name` as a field. Filter entries where `skill_name` is `plan-marshall:workflow-integration-github` or `plan-marshall:workflow-integration-gitlab`. These are the CI provider declarations. Only activated providers (persisted in Step 7) appear in this list.
 
 ### Step 13b: Detect CI provider from repository
 
@@ -199,7 +199,7 @@ Read activated providers from marshal.json (only providers selected by the user 
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list-providers
 ```
 
-Parse the `providers` array from output. If `count == 0`, skip to Step 15 (Summary).
+Parse the `providers` mapping from output. If `count == 0`, skip to Step 15 (Summary).
 
 ### Step 13f: Ask user
 

@@ -8,6 +8,7 @@ Covers path resolution, credential file I/O, RestClient, and provider discovery.
 
 import errno
 import json
+import subprocess
 from unittest.mock import patch
 
 import pytest
@@ -15,7 +16,9 @@ from _providers_core import (
     VALID_AUTH_TYPES,
     RestClient,
     _migrate_credentials_home_if_needed,
+    _system_auth_succeeded,
     apply_extra_passthrough,
+    combine_auth_output,
     get_authenticated_client,
     get_project_name,
     load_credential,
@@ -823,6 +826,284 @@ class TestVerifySystemAuth:
             'verify_command': 'python3 -c print("x"*1000)',
         }
         result = verify_system_auth(provider)
+        assert len(result['output']) <= 500
+
+
+# =============================================================================
+# Active-account system-auth detection
+# =============================================================================
+#
+# ``gh auth status`` exits non-zero when ANY configured account fails to
+# authenticate, so a developer holding one stale account alongside a healthy
+# active one was reported unauthenticated by the aggregate exit code. The
+# decision now reads the per-account report and answers for the account the CLI
+# marks active, falling back to the exit code when the output carries no
+# account block at all (a provider's ``verify_command`` is arbitrary — the
+# version-control provider runs ``git config user.name``).
+#
+# The report fixtures below are verbatim ``gh auth status`` shapes: here the
+# literal IS the contract, so they are pinned exactly rather than generated.
+
+# One stale account and one healthy ACTIVE account. gh exits 1 on this report.
+_MIXED_ACCOUNT_REPORT = """github.com
+  X Failed to log in to github.com account stale-bot (keyring)
+  - Active account: false
+  - The token in keyring is no longer valid.
+  ✓ Logged in to github.com account octocat (keyring)
+  - Active account: true
+  - Git operations protocol: https
+  - Token: gho_************************************
+"""
+
+# The active account itself is the failed one — no healthy active account.
+_ACTIVE_ACCOUNT_FAILED_REPORT = """github.com
+  X Failed to log in to github.com account stale-bot (keyring)
+  - Active account: true
+  - The token in keyring is no longer valid.
+"""
+
+# An account block in which no account is marked active.
+_NO_ACTIVE_ACCOUNT_REPORT = """github.com
+  X Failed to log in to github.com account stale-bot (keyring)
+  - Active account: false
+"""
+
+# The single-healthy-account happy path. gh exits 0 on this report.
+_HEALTHY_ACCOUNT_REPORT = """github.com
+  ✓ Logged in to github.com account octocat (keyring)
+  - Active account: true
+  - Git operations protocol: https
+"""
+
+# An unrelated line a CLI may print to stdout while writing its actual status
+# report to stderr. It carries no account marker, so a capture that keeps only
+# the first non-empty stream hands the decision marker-less text.
+_UPGRADE_NOTICE = 'A new release of gh is available: 2.45.0 -> 2.46.0\n'
+
+
+class TestCombineAuthOutput:
+    """Tests for combine_auth_output() — the shared capture shape.
+
+    The decision below reads account markers out of the captured text, so a
+    capture that drops a stream can hide the report entirely. These pin the
+    combination itself, independent of any one call site.
+    """
+
+    def test_both_streams_are_present_in_the_result(self):
+        """Neither stream is discarded when both carry text."""
+        combined = combine_auth_output('notice line', 'report line')
+
+        assert 'notice line' in combined
+        assert 'report line' in combined
+
+    def test_streams_are_newline_separated(self):
+        """The join must not run the last stdout line into the first stderr line.
+
+        The decision reads the report line by line, so a separator-less
+        concatenation would merge two lines into one unmatchable line.
+        """
+        assert combine_auth_output('a', 'b').splitlines() == ['a', 'b']
+
+    @pytest.mark.parametrize(
+        ('stdout', 'stderr'),
+        [
+            pytest.param('report', '', id='stderr-empty'),
+            pytest.param('', 'report', id='stdout-empty'),
+            pytest.param('report', None, id='stderr-none'),
+            pytest.param(None, 'report', id='stdout-none'),
+        ],
+    )
+    def test_absent_stream_contributes_no_surrounding_blank_line(self, stdout, stderr):
+        """A lone report comes back verbatim, unpadded by the empty stream.
+
+        Callers truncate the combined text for display, so a leading blank line
+        would spend the display budget on the stream that carried nothing.
+        """
+        assert combine_auth_output(stdout, stderr) == 'report'
+
+    def test_both_absent_yields_empty_string(self):
+        """Two empty streams combine to the empty string, not a bare newline."""
+        assert combine_auth_output(None, None) == ''
+
+
+class TestSystemAuthSucceeded:
+    """Tests for _system_auth_succeeded() — the shared active-account decision."""
+
+    def test_active_healthy_account_succeeds_despite_nonzero_exit(self):
+        """A healthy ACTIVE account wins over a stale sibling and a non-zero exit.
+
+        This is the field failure: the aggregate exit code reports the stale
+        account, but the account the CLI marks active is fully authenticated.
+        """
+        assert _system_auth_succeeded(1, _MIXED_ACCOUNT_REPORT) is True
+
+    def test_failed_active_account_fails_despite_zero_exit(self):
+        """The ACTIVE account being the failed one is a failure on a zero exit.
+
+        Negative control for the case above: a fix that merely ignored the exit
+        code whenever an account block was present would pass that test and this
+        one would still be reported authenticated.
+        """
+        assert _system_auth_succeeded(0, _ACTIVE_ACCOUNT_FAILED_REPORT) is False
+
+    def test_no_active_account_fails_despite_zero_exit(self):
+        """An account report with no active account is a failure, not a fallback.
+
+        The report positively states there is no account to act as, so the
+        exit code is not consulted.
+        """
+        assert _system_auth_succeeded(0, _NO_ACTIVE_ACCOUNT_REPORT) is False
+
+    def test_healthy_single_account_succeeds(self):
+        """Negative control: the ordinary single-healthy-account report succeeds."""
+        assert _system_auth_succeeded(0, _HEALTHY_ACCOUNT_REPORT) is True
+
+    @pytest.mark.parametrize(
+        ('returncode', 'expected'),
+        [pytest.param(0, True, id='zero-exit'), pytest.param(1, False, id='nonzero-exit')],
+    )
+    def test_output_without_account_block_falls_back_to_exit_code(self, returncode, expected):
+        """Output carrying no ``Active account:`` marker defers to the exit code.
+
+        ``verify_command`` is arbitrary per provider — the version-control
+        provider runs ``git config user.name``, whose output has no account
+        report to read.
+        """
+        assert _system_auth_succeeded(returncode, 'Alice Example\n') is expected
+
+    @pytest.mark.parametrize(
+        ('returncode', 'expected'),
+        [pytest.param(0, True, id='zero-exit'), pytest.param(1, False, id='nonzero-exit')],
+    )
+    def test_empty_output_falls_back_to_exit_code(self, returncode, expected):
+        """Empty output carries no account report and defers to the exit code."""
+        assert _system_auth_succeeded(returncode, '') is expected
+
+    @pytest.mark.parametrize(
+        ('returncode', 'expected'),
+        [pytest.param(0, True, id='zero-exit'), pytest.param(1, False, id='nonzero-exit')],
+    )
+    def test_unattributable_active_marker_falls_back_to_exit_code(self, returncode, expected):
+        """An active marker with no preceding account header is not attributable.
+
+        The report never stated whether that account authenticated, so the
+        decision degrades to the exit code rather than asserting a state the
+        output does not carry.
+        """
+        assert _system_auth_succeeded(returncode, '- Active account: true\n') is expected
+
+    def test_failure_verb_is_not_read_as_the_success_verb(self):
+        """``Failed to log in`` must not be matched as a ``Logged in`` header.
+
+        The two alternatives are disjoint substrings, and matching the failure
+        verb first is what keeps them so. A header pattern that tested for
+        "logged in" alone would read every failed account as authenticated.
+        """
+        report = 'X Failed to log in to github.com account bot\n- Active account: true\n'
+
+        assert _system_auth_succeeded(0, report) is False
+
+
+class TestVerifySystemAuthActiveAccount:
+    """Tests for verify_system_auth()'s active-account verdict.
+
+    The command itself is stubbed so the report shape — not the developer's
+    real ``gh`` state — drives the assertion.
+    """
+
+    @staticmethod
+    def _run_with(monkeypatch, returncode: int, stdout: str, stderr: str = ''):
+        """Run verify_system_auth against a stubbed ``gh auth status``."""
+        provider = {'skill_name': 'plan-marshall:workflow-integration-github', 'verify_command': 'gh auth status'}
+
+        def _fake_run(argv, **kwargs):
+            assert argv == ['gh', 'auth', 'status']
+            return subprocess.CompletedProcess(argv, returncode, stdout=stdout, stderr=stderr)
+
+        monkeypatch.setattr('_providers_core.subprocess.run', _fake_run)
+        return verify_system_auth(provider)
+
+    def test_active_healthy_account_reports_success_on_nonzero_exit(self, monkeypatch):
+        """success is True while exit_code still reports the raw non-zero value.
+
+        The exit code is reported verbatim rather than normalised — it remains
+        the diagnostic that a sibling account is stale.
+        """
+        result = self._run_with(monkeypatch, 1, _MIXED_ACCOUNT_REPORT)
+
+        assert result['success'] is True
+        assert result['exit_code'] == 1
+        assert result['skill'] == 'plan-marshall:workflow-integration-github'
+
+    def test_no_active_account_reports_failure(self, monkeypatch):
+        """An account report with no active account reports failure."""
+        result = self._run_with(monkeypatch, 1, _NO_ACTIVE_ACCOUNT_REPORT)
+
+        assert result['success'] is False
+
+    def test_output_without_account_block_keeps_exit_code_semantics(self, monkeypatch):
+        """No account block → the exit code decides, in both directions."""
+        assert self._run_with(monkeypatch, 0, 'Alice Example\n')['success'] is True
+        assert self._run_with(monkeypatch, 1, '')['success'] is False
+
+    def test_report_arriving_on_stderr_is_still_read(self, monkeypatch):
+        """The account report is read when the CLI writes it to stderr.
+
+        ``gh auth status`` has emitted its report on stderr across versions, and
+        the capture combines both streams. A decision that consulted stdout
+        alone would silently lose the report and regress to exit-code-only
+        semantics.
+        """
+        result = self._run_with(monkeypatch, 1, '', stderr=_MIXED_ACCOUNT_REPORT)
+
+        assert result['success'] is True
+
+    def test_stderr_report_is_read_when_stdout_carries_an_unrelated_notice(self, monkeypatch):
+        """A non-empty stdout must not displace the report the CLI put on stderr.
+
+        This is the shape an empty stdout cannot expose: a capture that selects
+        the first non-empty stream keeps the upgrade notice, which carries no
+        account marker, and the decision falls back to the non-zero exit code gh
+        sets whenever any sibling account is stale.
+        """
+        result = self._run_with(monkeypatch, 1, _UPGRADE_NOTICE, stderr=_MIXED_ACCOUNT_REPORT)
+
+        assert result['success'] is True
+
+    def test_stderr_report_behind_a_notice_still_fails_a_failed_active_account(self, monkeypatch):
+        """Matched negative control for the case above.
+
+        Without it, a capture that reported success for every two-stream shape
+        would satisfy the positive case.
+        """
+        result = self._run_with(monkeypatch, 1, _UPGRADE_NOTICE, stderr=_ACTIVE_ACCOUNT_FAILED_REPORT)
+
+        assert result['success'] is False
+
+    def test_reported_output_starts_at_the_report_not_a_stream_joiner(self, monkeypatch):
+        """``output`` begins with the report even when stdout contributed nothing.
+
+        The field is truncated to 500 characters for display, so a leading blank
+        line from the empty stream would spend that budget on nothing.
+        """
+        result = self._run_with(monkeypatch, 1, '', stderr=_MIXED_ACCOUNT_REPORT)
+
+        assert result['output'].startswith('github.com')
+
+    def test_full_untruncated_output_drives_the_decision(self, monkeypatch):
+        """The decision reads the untruncated output, not the 500-char field.
+
+        ``output`` is truncated for display; a report whose active-account
+        marker sits past that boundary must still be read in full, otherwise a
+        long multi-account report silently loses its verdict.
+        """
+        padding = ''.join(f'  - Token scopes line {n}\n' for n in range(60))
+        report = f'github.com\n  ✓ Logged in to github.com account octocat\n{padding}  - Active account: true\n'
+        assert len(report) > 500
+
+        result = self._run_with(monkeypatch, 1, report)
+
+        assert result['success'] is True
         assert len(result['output']) <= 500
 
 

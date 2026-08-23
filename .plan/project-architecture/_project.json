@@ -12,10 +12,10 @@
       "generation": {}
     },
     "documentation": {
-      "description": "",
+      "description": "The repository's prose documentation tree. Carries the architectural decision records (doc/adr), the concept narratives that explain how the system works (doc/concepts), the contributor-facing build and layout guides (doc/developer), the operator-facing usage guides (doc/user), and the standalone cloud-lane plan corpus (doc/plans).",
       "generation": {
         "by": "architecture",
-        "tree_sha": "2487cd8162417fbf5166318efd8a8b7c252621c2dd2d5527cea6edcd612f1dd7"
+        "tree_sha": "443d3db6e0f753d26e47462d6cae1d8ac0bf17a2201d1c7eac47a732d142dd97"
       }
     },
     "plan-marshall": {
@@ -23,10 +23,10 @@
       "generation": {}
     },
     "pm-code-intelligence": {
-      "description": "",
+      "description": "Marketplace bundle carrying the code-intelligence domain plugin. Its single plan-marshall-plugin skill declares the domain and its extension.py contributes the LSP derivation resolver that maps a code coordinate to its derivation, so plan-marshall can answer structural code queries through the extension surface rather than by grepping.",
       "generation": {
         "by": "architecture",
-        "tree_sha": "2487cd8162417fbf5166318efd8a8b7c252621c2dd2d5527cea6edcd612f1dd7"
+        "tree_sha": "8f6ad2d6c74d27aeda307b9dadc5e867f037b170ee4bc1e7cc1e88ad6d98f93b"
       }
     },
     "pm-dev-frontend": {

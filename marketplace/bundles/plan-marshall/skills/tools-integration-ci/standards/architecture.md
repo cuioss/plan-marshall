@@ -65,7 +65,6 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci {domain} {
     │  │    { "skill_name": "plan-marshall:w...-github",  │    │
     │  │      "category": "ci",                           │    │
     │  │      "verify_command": "gh auth status",         │    │
-    │  │      "url": "https://api.github.com",            │    │
     │  │      "description": "GitHub CI provider..." }    │    │
     │  │  ]                                               │    │
     │  └─────────────────────────────────────────────────────┘    │

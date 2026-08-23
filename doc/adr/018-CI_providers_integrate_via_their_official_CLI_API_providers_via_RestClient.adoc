@@ -1,0 +1,92 @@
+= ADR-018: CI providers integrate via their official CLI, API providers via RestClient
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
+// Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
+// relevance without reading the full file. List fields are comma-separated.
+// summary: CI and version-control providers integrate through their official CLI under system-level auth; API providers integrate through RestClient under token auth
+// tags: provider, transport, cli, rest, system-auth, credentials
+// affects: plan-marshall, manage-providers, tools-integration-ci, extension-api, workflow-integration-github, workflow-integration-gitlab, workflow-integration-git, workflow-integration-sonar
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Accepted
+
+== Context
+
+plan-marshall talks to external services of two structurally different kinds, and the difference is not a matter of taste.
+
+Some services ship an official, first-party command-line client that is already the way developers and CI runners authenticate to them — `gh` for GitHub, `glab` for GitLab, `git` itself for version control. That client owns a token store, resolves its own host (including a self-hosted enterprise host), refreshes credentials, and tracks the vendor's own API changes. On any machine where the tool is usable at all, the authentication problem is already solved before plan-marshall runs.
+
+Other services expose only an HTTP API. Reaching them requires plan-marshall to hold a token itself, attach it to each request as a header, and decide what a healthy connection looks like.
+
+Treating these two as one kind forces a false choice. A single token-shaped abstraction makes plan-marshall store a credential for a service whose own client already holds one — duplicating a secret at rest for no capability gained, and duplicating it in a store with weaker guarantees than the vendor's. It also makes plan-marshall carry a base URL for a tool that resolves its own host, so the declared value is either ignored or, worse, believed: an operator configuring an enterprise instance can set it, see it persisted, and reasonably conclude it took effect.
+
+The choice point is therefore whether the provider abstraction has one transport or two. Everything downstream follows from that answer: what a declaration may contain, whether a credential file exists, what "verify this provider" executes, and what the setup wizard is entitled to ask the operator for.
+
+== Decision
+
+**A provider integrates through its official CLI when it has one, and through `RestClient` when it does not. The two are distinct transport lanes, and a declaration belongs to exactly one.**
+
+* **System-auth (CLI) lane** — CI providers and version-control providers. The declaration carries `verify_command`, the command that proves the tool is authenticated. plan-marshall stores no credential for these providers; the CLI's own token store is the credential. Verification runs `verify_command` and reads its result.
+* **Token-auth (REST) lane** — API-only providers. The declaration carries the HTTP fields (`default_url`, `header_name`, `header_value_template`, `verify_endpoint`, `verify_method`). plan-marshall stores the token under the machine-global credential root and verifies with an HTTP round-trip through `RestClient`.
+
+The lane is selected by the declaration's own fields rather than by a separate flag, so a declaration cannot claim one lane and behave as the other. `verify_command` selects the CLI lane; `header_name` together with `verify_endpoint` selects the REST lane.
+
+Three properties motivate the split:
+
+* **Credential-at-rest avoidance.** The vendor CLI already holds a token for the service. A second copy under plan-marshall's control adds a secret at rest and a second thing to rotate, revoke, and protect, while granting no access the CLI did not already have.
+* **Enterprise-host handling.** The CLI resolves its own host from its own configuration. Because plan-marshall never re-derives that host, a self-hosted or enterprise instance works without plan-marshall knowing it exists — and no inert URL is offered to the operator as though it were load-bearing.
+* **Official-client maintenance.** Authentication flows, pagination, rate-limit handling, and API versioning stay with the vendor's client, which tracks its own service. Re-implementing them over raw HTTP would put plan-marshall on the hook for changes it does not control.
+
+The contract is enforced where declarations are written and where they are read: the provider extension point documents the two field sets, persistence writes only fields that resolve, and the setup wizard's credential flow excludes CLI-lane providers because there is no credential for it to collect.
+
+== Consequences
+
+=== Positive
+
+* A CLI-lane provider is fully described by what it actually needs: an identity, a category, a description, and the command that proves it is authenticated.
+* No credential file exists for CI or version-control providers, so there is nothing for plan-marshall to leak, rotate, or fail to protect for them.
+* Enterprise and self-hosted instances work without configuration in plan-marshall, because host resolution never leaves the CLI.
+* Health checking is uniform in shape across lanes — resolve the provider, verify it, report — while the mechanism differs appropriately.
+* The setup wizard asks the operator only for values that are read. A prompt for a base URL appears exactly where a base URL is used.
+
+=== Negative
+
+* Two lanes are more contract surface than one. An implementor must know which fields select which lane, and documentation must state both.
+* CLI-lane providers depend on a tool being installed and logged in outside plan-marshall's control. plan-marshall can report that state but cannot repair it.
+* Verification output is whatever the CLI prints. Interpreting it is a parsing problem, and the shape can change with the CLI's version.
+
+=== Risks
+
+* A declaration that carries fields from both lanes is ambiguous. The mitigation is that the persisted contract writes only fields that resolve, so an inert HTTP field on a CLI provider is dropped rather than believed — but the declaration itself remains the place to catch it.
+* A CLI's report format can change between versions in ways a verification parse does not anticipate. Verification therefore degrades to the command's exit status when the output carries no structure it recognises, rather than asserting a state the output never stated.
+* The absence of a `url` for CI providers is a real absence, not an empty value. A consumer that renders a missing URL as an empty string presents a provider as configured with a blank URL, which is a different and misleading claim.
+
+== Alternatives Considered
+
+**One token-auth abstraction for every provider.** Every provider would declare HTTP fields and plan-marshall would hold a token for each. This is the smallest contract — one lane, one verification mechanism, one storage path. Rejected because it obtains that simplicity by storing a secret for services whose own client already holds one, and by carrying a base URL for tools that resolve their own host. The uniformity is superficial: the fields exist for every provider, but for CLI-backed ones they are either unused or actively misleading, and the credential they imply is a duplicate at rest.
+
+**One CLI abstraction for every provider.** Every provider would declare a command and be verified by running it. Rejected because it does not generalise in the other direction: a service with no official client has no command to declare, so the lane would have to be faked with an ad-hoc HTTP invocation — re-implementing `RestClient` badly, one provider at a time, with no shared handling of headers, verification endpoints, or connection failures.
+
+**A declared transport flag, with both field sets always permitted.** A provider would name its lane explicitly while the schema kept every field available. Rejected because it separates the claim from the evidence: a declaration could name one lane and populate the other's fields, and nothing in the shape of the data would contradict it. Deriving the lane from the fields that are present keeps the two inseparable.
+
+The alternatives fail in one class: each preserves a single uniform surface by making some providers carry fields that do not describe them. The decision accepts a slightly larger contract in exchange for declarations that state only what is true of the provider they describe.
+
+== Generalisation
+
+When an integration target ships a first-party client that already owns authentication and host resolution, the integration boundary belongs at that client, not at the protocol beneath it. The diagnostic question is: *does using this service require us to hold a secret we would not otherwise hold?* If the answer is no because a client we can invoke already holds one, re-implementing the protocol buys nothing and costs a credential at rest, a configuration surface that does not take effect, and ongoing maintenance of someone else's API contract.
+
+The corollary governs the data model. When a system integrates through more than one transport, the transport should be derivable from what a declaration contains rather than asserted alongside it — a declaration that must be told what it is can disagree with itself.
+
+== References
+
+* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-provider.md[Extension point: Provider] — the declaration contract for both lanes
+* link:../../marketplace/bundles/plan-marshall/skills/manage-providers/SKILL.md[manage-providers] — registration, credential storage, and `verify_system_auth()`
+* link:../../marketplace/bundles/plan-marshall/skills/tools-integration-ci/standards/architecture.md[tools-integration-ci architecture] — the CI router and provider health checks
+* link:../../marketplace/bundles/plan-marshall/skills/marshall-steward/references/provider-setup.md[Provider setup] — why the credential flow excludes CLI-lane providers

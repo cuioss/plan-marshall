@@ -8,13 +8,14 @@ from _providers_fixtures import stage_marshal
 
 import conftest  # noqa: F401
 
+# Like the other CLI-lane providers, git declares no ``default_url`` — it
+# resolves its host from the repository's git remote instead.
 _GIT_PROVIDER_CONFIG = {
     'providers': [
         {
             'skill_name': 'workflow-integration-git',
             'display_name': 'Git CLI',
             'auth_type': 'system',
-            'default_url': None,
             'verify_command': 'git config user.name',
             'description': 'Git CLI integration',
         },
@@ -41,7 +42,7 @@ class TestGitProviderFromMarshalJson:
         git = next(p for p in providers if p['skill_name'] == 'workflow-integration-git')
 
         assert git['auth_type'] == 'system'
-        assert git['default_url'] is None
+        assert 'default_url' not in git
         assert git['verify_command'] == 'git config user.name'
         assert git['display_name'] == 'Git CLI'
         assert 'description' in git
@@ -57,6 +58,8 @@ class TestGitProviderFromMarshalJson:
         assert 'header_value_template' not in git
         assert 'verify_endpoint' not in git
         assert 'verify_method' not in git
+        assert 'default_url' not in git
+        assert 'url' not in git
 
     def test_git_provider_has_no_extra_fields(self, tmp_path, monkeypatch):
         """Git system-auth provider should not declare extra_fields."""

@@ -15,8 +15,7 @@ JSON structure and field definitions for project configuration.
       "skill_name": "plan-marshall:workflow-integration-github",
       "category": "ci",
       "verify_command": "gh auth status",
-      "description": "GitHub CI provider via gh CLI",
-      "url": "https://api.github.com"
+      "description": "GitHub CI provider via gh CLI"
     }
   ],
   "project": {
@@ -181,13 +180,26 @@ A top-level JSON array registering the external tool providers (CI, version-cont
 
 ### Fields (per array entry)
 
+Required-ness is **per transport lane**: an entry carries the common fields below plus the field set of exactly one lane, and a declaration's own fields select which. The declaration-side split this mirrors is tabled in [`ext-point-provider.md`](../../extension-api/standards/ext-point-provider.md) § "Return Structure".
+
+**Common to both lanes:**
+
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `skill_name` | string | Yes | Fully-qualified `bundle:skill` reference to the provider integration skill (e.g. `plan-marshall:workflow-integration-github`) |
 | `category` | string | Yes | Provider category — `ci`, `version-control`, … |
-| `verify_command` | string | Yes | Shell command run to verify the provider is authenticated/available (e.g. `gh auth status`) |
 | `description` | string | No | Human-readable description of the provider |
-| `url` | string | No | Provider endpoint or repo URL |
+| `url` | string | No | Provider endpoint or repo URL. Derived rather than declared, and not every provider resolves one — see [`ext-point-provider.md`](../../extension-api/standards/ext-point-provider.md) § "Persisted vs Wizard-time Fields" for the per-lane derivation. A CI CLI-lane provider resolves none, and the key is omitted rather than written empty |
+
+**System-auth (CLI) lane:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `verify_command` | string | Yes | Shell command run to verify the provider is authenticated/available (e.g. `gh auth status`). Its presence is what selects this lane |
+
+**Token-auth (REST) lane:**
+
+Carries no `verify_command` — a REST-lane provider is verified by an HTTP round-trip instead, so the key is absent from its persisted entry. The lane's remaining declaration fields are wizard-time only and are never persisted here.
 
 ## Section: project
 

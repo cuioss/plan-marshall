@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from _config_core import load_config, require_initialized, save_config
+from _providers_core import canonical_credentials_key
 from file_ops import output_toon
 from marketplace_bundles import collect_script_dirs
 from marketplace_paths import get_base_path
@@ -99,10 +100,10 @@ def _build_persisted_entry(p: dict[str, Any]) -> dict[str, Any]:
     """Build a minimal provider entry for marshal.json persistence.
 
     Persists only project activation config: skill_name, category,
-    verify_command, url, description. Implementation details
-    (detection, verify_endpoint, header_name, extra_fields) are NOT
-    persisted — consumers load those from *_provider.py at runtime
-    via find_full_provider().
+    verify_command, description, plus url when the provider resolves one.
+    Implementation details (detection, verify_endpoint, header_name,
+    extra_fields) are NOT persisted — consumers load those from
+    *_provider.py at runtime via find_full_provider().
 
     Maps default_url to url. For version-control providers without
     default_url, resolves url from git remote origin.
@@ -330,26 +331,57 @@ def run_find_by_category(args: argparse.Namespace) -> int:
     return 0
 
 
+def _format_listed_provider(provider: dict[str, Any]) -> dict[str, Any]:
+    """Format one persisted provider entry for ``list-providers`` output.
+
+    ``url`` and ``verify_command`` are both lane selectors, so each is present
+    for one lane and genuinely absent for the other: the CLI lane declares a
+    ``verify_command`` and no ``default_url`` (it resolves its own host), while
+    the REST lane declares a ``default_url`` and no ``verify_command``. Only the
+    ``version-control`` git-remote resolution supplies a ``url`` alongside a
+    ``verify_command``.
+
+    Each selector is therefore emitted only when the provider actually carries
+    it. Defaulting either to ``''`` would render the absent lane's selector as a
+    blank value — a provider configured with a blank URL, or a REST-lane
+    provider carrying an empty CLI verify command — which is precisely the lane
+    conflation the persisted schema removes.
+    """
+    formatted: dict[str, Any] = {
+        'skill_name': provider.get('skill_name', ''),
+        'category': provider.get('category', ''),
+    }
+    verify_command = provider.get('verify_command')
+    if verify_command:
+        formatted['verify_command'] = verify_command
+    url = provider.get('url')
+    if url:
+        formatted['url'] = url
+    formatted['description'] = provider.get('description', '')
+    return formatted
+
+
 def run_list_providers(args: argparse.Namespace) -> int:
     """Execute the list-providers subcommand.
 
-    Reads the 'providers' list from marshal.json. If not present,
-    outputs an empty list with a hint to run discover-and-persist.
+    Reads the 'providers' list from marshal.json, emitting an empty mapping
+    when the key is absent.
+
+    Providers are emitted as a mapping keyed by the canonical (bundle-prefix
+    stripped) skill name rather than as an array. A TOON uniform array renders
+    one shared header over every row, so a row lacking an optional key is padded
+    with an empty cell — silently turning an ABSENT lane selector into a blank
+    one. Keying each provider into its own object preserves the omission that
+    :func:`_format_listed_provider` performs, so an absent ``url`` or
+    ``verify_command`` never reaches the operator as ``''``.
     """
     require_initialized()
     config = load_config()
     providers: list[dict[str, Any]] = config.get('providers', [])
 
-    formatted = [
-        {
-            'skill_name': p.get('skill_name', ''),
-            'category': p.get('category', ''),
-            'verify_command': p.get('verify_command', ''),
-            'url': p.get('url', ''),
-            'description': p.get('description', ''),
-        }
-        for p in providers
-    ]
+    formatted = {
+        canonical_credentials_key(p.get('skill_name', '')): _format_listed_provider(p) for p in providers
+    }
 
     output_toon(
         {
