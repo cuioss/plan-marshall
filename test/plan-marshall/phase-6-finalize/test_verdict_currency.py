@@ -38,7 +38,11 @@ Covered:
   carrying no wildcard, so that it names ONE literal path rather than a family —
   names a path that exists and is git-tracked. A literal glob bound to no path
   matches nothing, so the classifier reads the surface as untouched and returns
-  ``preserved``: a skip bought by a typo.
+  ``preserved``: a skip bought by a typo. That existence check runs through a PURE
+  core returning ``(offenders, examined_count)``, so it is driven synthetically by
+  a matched control pair, its examined count is published on a clean run, and a
+  floor fails the "examined nothing" zero that its empty offender list would
+  otherwise report as a pass.
 * The refusal table's rows: each tabled step's own doc carries the refusal section
   as an ATX HEADING. The match is heading-anchored rather than a bare substring
   search, because both tabled docs carry the phrase twice — as their own heading
@@ -554,6 +558,75 @@ def test_wildcard_free_discriminator_separates_a_literal_from_a_family():
     assert not _is_wildcard_free('scripts/audit?.py')
 
 
+def _wildcard_free_offenders(
+    surfaces: dict[str, tuple[list[str], bool]],
+    tracked: frozenset[str],
+    repo_root: Path = _REPO_ROOT,
+) -> tuple[list[str], int]:
+    """Offenders, AND the number of wildcard-free globs actually examined.
+
+    Pure over its inputs — the declared surfaces and the tracked-path set — so the
+    guard can be driven synthetically by the control pair below, mirroring the
+    ``_orphans`` / ``_undeclared`` cores in
+    ``test_step_prompt_fields_contract.py``. A detector that can only run against
+    the live population is one nobody has ever seen fire.
+
+    Returning the examined count alongside the offenders is the point. An empty
+    offender list means one of two entirely different things — every literal glob
+    resolved, or NO literal glob was ever inspected — and the count is what
+    separates them. Without it a declaration set that turned wholly
+    wildcard-bearing would build an empty offender list and pass, having inspected
+    nothing.
+    """
+    offenders: list[str] = []
+    examined = 0
+    for step, (globs, _head_dependent) in sorted(surfaces.items()):
+        for glob in globs:
+            if not _is_wildcard_free(glob):
+                continue
+            examined += 1
+            if glob not in tracked:
+                reason = 'not git-tracked' if (repo_root / glob).exists() else 'does not exist'
+                offenders.append(f'{step} declares {glob!r} — {reason}')
+    return offenders, examined
+
+
+def test_the_wildcard_free_guard_examines_a_non_empty_population():
+    """Non-vacuity floor: the guard below must have inspected something.
+
+    The existence check reports an empty offender list both when every literal
+    glob resolves and when there was no literal glob to check. Only the first is a
+    clean bill of health. This floor fails the second as *"examined 0 of N"*,
+    naming the declaring-step count and the declared-glob count so the zero is
+    reported as the could-not-look zero it is.
+
+    With exactly one declaring step today, a single frontmatter edit making all of
+    its globs wildcard-bearing collapses the examined set to zero — and the
+    sibling non-vacuity assertion below guards only that ``git ls-files`` returned
+    something, which it would continue to do.
+    """
+    surfaces = _declared_surfaces()
+    tracked = _tracked_paths()
+    _offenders, examined = _wildcard_free_offenders(surfaces, tracked)
+
+    declared_globs = sum(len(globs) for globs, _head in surfaces.values())
+
+    # Published on a clean run, not only on failure.
+    print(
+        f'wildcard-free guard population: declaring_steps={len(surfaces)} '
+        f'declared_globs={declared_globs} wildcard_free_examined={examined} '
+        f'tracked_paths={len(tracked)}'
+    )
+
+    assert examined > 0, (
+        f'The wildcard-free existence guard examined 0 of {declared_globs} declared '
+        f'glob(s) across {len(surfaces)} declaring step(s), so its empty offender '
+        f'list certifies nothing — it is a "could not look" zero, not an '
+        f'"examined N, none offending" zero. Every declared glob now carries a '
+        f'wildcard, or the declaring population collapsed.'
+    )
+
+
 def test_every_wildcard_free_declared_glob_names_a_tracked_path():
     """A literal ``verdict_inputs`` glob must name a path that exists and is tracked.
 
@@ -568,23 +641,74 @@ def test_every_wildcard_free_declared_glob_names_a_tracked_path():
     Wildcard-bearing globs are exempt because they legitimately name a family that
     may be empty right now; only a declaration claiming ONE literal path is held to
     that path existing.
+
+    The examined count is published with the verdict, and its floor is asserted
+    separately above, so a green here always states how much it looked at.
     """
     tracked = _tracked_paths()
     assert tracked, 'git ls-files returned nothing, so this guard would be vacuous'
 
-    offenders = []
-    for step, (globs, _head_dependent) in _declared_surfaces().items():
-        for glob in globs:
-            if not _is_wildcard_free(glob):
-                continue
-            if glob not in tracked:
-                reason = 'not git-tracked' if (_REPO_ROOT / glob).exists() else 'does not exist'
-                offenders.append(f'{step} declares {glob!r} — {reason}')
+    offenders, examined = _wildcard_free_offenders(_declared_surfaces(), tracked)
 
     assert not offenders, (
-        'These steps declare a wildcard-free verdict_inputs glob that names no '
-        'git-tracked path, so the glob matches nothing and the classifier would '
-        f'return `preserved` on a surface that is not there: {offenders}'
+        f'These steps declare a wildcard-free verdict_inputs glob that names no '
+        f'git-tracked path, so the glob matches nothing and the classifier would '
+        f'return `preserved` on a surface that is not there (examined {examined} '
+        f'wildcard-free glob(s) against {len(tracked)} tracked paths): {offenders}'
+    )
+
+
+def test_wildcard_free_core_flags_an_untracked_literal_and_spares_a_tracked_one():
+    """Matched control pair, driven synthetically through the pure core.
+
+    The two declarations differ ONLY in which literal path they name — same step,
+    same shape, same tracked-path set — so the split is attributable to the
+    tracked-membership test and to nothing else. A detector never seen to fire is
+    indistinguishable from one that cannot.
+    """
+    present = 'test/plan-marshall/phase-6-finalize/test_verdict_currency.py'
+    absent = 'test/plan-marshall/phase-6-finalize/no_such_file.py'
+    tracked = frozenset({present})
+
+    flagged, examined_flagged = _wildcard_free_offenders(
+        {'synthetic-step': ([absent], True)}, tracked
+    )
+    spared, examined_spared = _wildcard_free_offenders(
+        {'synthetic-step': ([present], True)}, tracked
+    )
+
+    # Both halves inspected exactly one glob — otherwise the split below could be
+    # explained by one of them examining nothing rather than by the membership test.
+    assert examined_flagged == 1, f'the flagged half examined {examined_flagged}, not 1'
+    assert examined_spared == 1, f'the spared half examined {examined_spared}, not 1'
+
+    assert len(flagged) == 1 and absent in flagged[0], (
+        f'the core did not flag a literal glob naming an untracked path: {flagged}'
+    )
+    assert spared == [], (
+        f'the core flagged a literal glob that IS tracked: {spared}. A guard that '
+        f'fires on a correct declaration is a false positive.'
+    )
+
+
+def test_a_wholly_wildcard_bearing_declaration_examines_nothing():
+    """The vacuous green the floor exists to catch, exhibited directly.
+
+    Every glob carries a wildcard, so none is examined, so the offender list is
+    empty — and the existence assertion alone would report that as a pass. This
+    pins the exact input shape whose ``examined == 0`` the floor above converts
+    into a failure.
+    """
+    offenders, examined = _wildcard_free_offenders(
+        {'synthetic-step': (['marketplace/*', '*.py', 'scripts/audit?.py'], True)},
+        frozenset({'some/tracked/path.py'}),
+    )
+
+    assert offenders == [], 'a wildcard-bearing declaration must produce no offender'
+    assert examined == 0, (
+        f'examined {examined}; a declaration carrying only wildcard-bearing globs '
+        f'must examine none, which is precisely why the empty offender list above '
+        f'cannot be read as a clean result'
     )
 
 
