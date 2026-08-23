@@ -236,6 +236,11 @@ class TestFixDocsSubcommand:
         content = claude_md.read_text()
         assert '.plan/temp/' in content
         assert 'Edit(.plan/**)' in content
+        # The seeded text must name the rule that actually grants the write, and
+        # ONLY that one: `Write(.plan/**)` is retired, and a consumer project
+        # whose CLAUDE.md still recommends it would be told to add a rule its
+        # host never consults.
+        assert 'Write(.plan/**)' not in content
 
     def test_fixes_missing_file_ops(self, tmp_path):
         """Should append file_ops content to CLAUDE.md."""
