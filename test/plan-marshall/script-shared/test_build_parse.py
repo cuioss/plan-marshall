@@ -2,9 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for build_parse.py module."""
 
-import contextlib
 import json
-import os
 import tempfile
 from pathlib import Path
 
@@ -216,30 +214,31 @@ def test_executed_is_not_serialised_by_to_dict():
     assert set(summary.to_dict()) == {'passed', 'failed', 'skipped', 'total'}
 
 
-@contextlib.contextmanager
-def _plan_base_dir(tmpdir: str):
-    """Set PLAN_BASE_DIR for the duration of a test, restoring on exit."""
-    previous = os.environ.get('PLAN_BASE_DIR')
-    os.environ['PLAN_BASE_DIR'] = tmpdir
-    try:
-        yield
-    finally:
-        if previous is None:
-            os.environ.pop('PLAN_BASE_DIR', None)
-        else:
-            os.environ['PLAN_BASE_DIR'] = previous
+def _use_plan_base_dir(monkeypatch, tmpdir: str) -> None:
+    """Point ``PLAN_BASE_DIR`` at ``tmpdir`` for the rest of the test.
+
+    Through ``monkeypatch`` rather than a hand-rolled save/assign/restore around
+    ``os.environ``: the autouse ``_plan_base_dir_sandbox`` fixture already owns
+    this variable for every test, so a manual restore writes back whatever it
+    happened to read — the sandbox's own value — and the two mechanisms agree
+    only by ordering luck. One owner, one unwind.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', tmpdir)
 
 
-def test_load_acceptable_warnings_nonexistent():
+def test_load_acceptable_warnings_nonexistent(monkeypatch):
     """Returns empty list when config doesn't exist."""
-    with tempfile.TemporaryDirectory() as tmpdir, _plan_base_dir(tmpdir):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _use_plan_base_dir(monkeypatch, tmpdir)
+
         result = load_acceptable_warnings(tmpdir, 'maven')
         assert result == []
 
 
-def test_load_acceptable_warnings_missing_build_system():
+def test_load_acceptable_warnings_missing_build_system(monkeypatch):
     """Returns empty list when build system not in config."""
-    with tempfile.TemporaryDirectory() as tmpdir, _plan_base_dir(tmpdir):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _use_plan_base_dir(monkeypatch, tmpdir)
         config = {'npm': {'acceptable_warnings': ['pattern']}}
         (Path(tmpdir) / 'run-configuration.json').write_text(json.dumps(config))
 
@@ -247,9 +246,10 @@ def test_load_acceptable_warnings_missing_build_system():
         assert result == []
 
 
-def test_load_acceptable_warnings_missing_key():
+def test_load_acceptable_warnings_missing_key(monkeypatch):
     """Returns empty list when acceptable_warnings not in build system config."""
-    with tempfile.TemporaryDirectory() as tmpdir, _plan_base_dir(tmpdir):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _use_plan_base_dir(monkeypatch, tmpdir)
         config = {'maven': {'other_key': 'value'}}
         (Path(tmpdir) / 'run-configuration.json').write_text(json.dumps(config))
 
@@ -257,9 +257,10 @@ def test_load_acceptable_warnings_missing_key():
         assert result == []
 
 
-def test_load_acceptable_warnings_loads():
+def test_load_acceptable_warnings_loads(monkeypatch):
     """Loads patterns from config."""
-    with tempfile.TemporaryDirectory() as tmpdir, _plan_base_dir(tmpdir):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _use_plan_base_dir(monkeypatch, tmpdir)
         config = {'maven': {'acceptable_warnings': ['unchecked', 'deprecated', '^.*raw type.*$']}}
         (Path(tmpdir) / 'run-configuration.json').write_text(json.dumps(config))
 
@@ -269,9 +270,10 @@ def test_load_acceptable_warnings_loads():
         assert 'deprecated' in result
 
 
-def test_load_acceptable_warnings_invalid_json():
+def test_load_acceptable_warnings_invalid_json(monkeypatch):
     """Returns empty list for invalid JSON."""
-    with tempfile.TemporaryDirectory() as tmpdir, _plan_base_dir(tmpdir):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _use_plan_base_dir(monkeypatch, tmpdir)
         (Path(tmpdir) / 'run-configuration.json').write_text('not valid json')
 
         result = load_acceptable_warnings(tmpdir, 'maven')
