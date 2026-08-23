@@ -108,6 +108,11 @@ _GH_NO_ACTIVE_ACCOUNT_REPORT = """github.com
   - Active account: false
 """
 
+# An unrelated line gh may print to stdout while writing its status report to
+# stderr. It carries no account marker, so a capture that keeps only the first
+# non-empty stream hands the decision marker-less text.
+_GH_UPGRADE_NOTICE = 'A new release of gh is available: 2.45.0 -> 2.46.0\n'
+
 
 class TestVerifyToolAuthentication:
     """Tests for verify_tool()'s authenticated verdict.
@@ -167,14 +172,15 @@ class TestVerifyToolAuthentication:
         self._wire(monkeypatch, 1, '')
         assert verify_tool('gh')['authenticated'] is False
 
-    def test_captured_stdout_is_passed_to_the_auth_decision(self, monkeypatch):
-        """The captured stdout — not an empty string — drives the verdict.
+    def test_captured_output_is_passed_to_the_auth_decision(self, monkeypatch):
+        """The captured report — not an empty string — drives the verdict.
 
-        Pins the wiring the fix introduced: the pre-fix branch discarded both
-        captured streams (``_, _``) and read only the exit code. Passing an
-        empty output here would make ``_system_auth_succeeded`` fall back to the
-        non-zero exit code and report False, so a True verdict can only come
-        from the report actually reaching the decision.
+        Pins the wiring: an earlier branch discarded both captured streams
+        (``_, _``) and read only the exit code. Passing an empty output here
+        would make ``_system_auth_succeeded`` fall back to the non-zero exit
+        code and report False, so a True verdict can only come from the report
+        actually reaching the decision. The captured text is the two streams
+        combined and stripped, which is why it is compared as such.
         """
         seen: list[tuple[int, str]] = []
         real_decision = ci_health._system_auth_succeeded
@@ -187,7 +193,7 @@ class TestVerifyToolAuthentication:
         monkeypatch.setattr('ci_health._system_auth_succeeded', _spy)
 
         assert verify_tool('gh')['authenticated'] is True
-        assert seen == [(1, _GH_MIXED_ACCOUNT_REPORT)]
+        assert seen == [(1, _GH_MIXED_ACCOUNT_REPORT.strip())]
 
     def test_report_arriving_on_stderr_is_still_consulted(self, monkeypatch):
         """The report is read when the CLI writes it to stderr rather than stdout.
@@ -199,6 +205,28 @@ class TestVerifyToolAuthentication:
         self._wire(monkeypatch, 1, '', auth_stderr=_GH_MIXED_ACCOUNT_REPORT)
 
         assert verify_tool('gh')['authenticated'] is True
+
+    def test_stderr_report_is_consulted_when_stdout_carries_an_unrelated_notice(self, monkeypatch):
+        """A non-empty stdout must not displace the report the CLI put on stderr.
+
+        This is the shape an empty stdout cannot expose: a capture that selects
+        the first non-empty stream keeps the upgrade notice, which carries no
+        account marker, and the verdict falls back to the non-zero exit code gh
+        sets whenever any sibling account is stale.
+        """
+        self._wire(monkeypatch, 1, _GH_UPGRADE_NOTICE, auth_stderr=_GH_MIXED_ACCOUNT_REPORT)
+
+        assert verify_tool('gh')['authenticated'] is True
+
+    def test_stderr_report_behind_a_notice_still_rejects_no_active_account(self, monkeypatch):
+        """Matched negative control for the case above.
+
+        Without it, a capture that reported authenticated for every two-stream
+        shape would satisfy the positive case.
+        """
+        self._wire(monkeypatch, 1, _GH_UPGRADE_NOTICE, auth_stderr=_GH_NO_ACTIVE_ACCOUNT_REPORT)
+
+        assert verify_tool('gh')['authenticated'] is False
 
     def test_auth_status_argv_is_constructed_for_the_tool(self, monkeypatch):
         """The auth probe invokes ``{tool} auth status`` at the lowest primitive."""

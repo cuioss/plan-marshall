@@ -21,6 +21,12 @@ makes the pair a matched positive/negative control — an implementation that
 consults the exit code fails the positive case, and one that ignores the report
 whenever an account block is present fails the negative case.
 
+The pair runs over a second axis, the stream the CLI wrote the report to. A
+capture that selects one stream rather than combining them discards the report
+whenever the other stream is non-empty, leaving text with no account marker and
+sending the decision back to the exit code — reopening the hole from the far
+side. Holding the verdict constant across both placements is what closes it.
+
 The module lives at the top level of ``test/plan-marshall/`` because it spans
 two skills, alongside the other cross-cutting modules there.
 """
@@ -71,28 +77,56 @@ _ACCOUNT_REPORTS = [
     pytest.param(_ACTIVE_ACCOUNT_FAILED, False, id='active-account-failed'),
 ]
 
+# An unrelated line a CLI may print to stdout while writing its actual status
+# report to stderr. It carries no account marker, so a capture that keeps only
+# stdout hands the decision text-with-no-report and the verdict silently falls
+# back to the exit code held constant above.
+_UNRELATED_STDOUT_NOTICE = 'A new release of gh is available: 2.45.0 -> 2.46.0\n'
+
+# Where the CLI wrote its account report. Both placements must produce the same
+# verdict, so the pair is a second matched control crossing the report axis: an
+# implementation that selects one stream passes on-stdout and fails on-stderr.
+_REPORT_STREAMS = [
+    pytest.param('stdout', id='report-on-stdout'),
+    pytest.param('stderr', id='report-on-stderr-behind-a-stdout-notice'),
+]
+
 _REPO_URL = 'https://github.com/cuioss/plan-marshall.git'
 
 
-def _stub_providers_path(monkeypatch, report: str) -> None:
+def _split_streams(report: str, stream: str) -> tuple[str, str]:
+    """Return ``(stdout, stderr)`` placing ``report`` on the named stream.
+
+    On the ``stderr`` placement stdout is deliberately NON-empty, because an
+    empty stdout would let a stream-selecting capture fall through to stderr and
+    pass for the wrong reason.
+    """
+    if stream == 'stdout':
+        return report, ''
+    return _UNRELATED_STDOUT_NOTICE, report
+
+
+def _stub_providers_path(monkeypatch, report: str, stream: str = 'stdout') -> None:
     """Feed ``report`` to the manage-providers path's subprocess seam."""
+    stdout, stderr = _split_streams(report, stream)
 
     def _fake_run(argv, **kwargs):
         assert argv == ['gh', 'auth', 'status']
         return subprocess.CompletedProcess(
-            argv, _GH_EXIT_CODE_WITH_A_FAILED_ACCOUNT, stdout=report, stderr=''
+            argv, _GH_EXIT_CODE_WITH_A_FAILED_ACCOUNT, stdout=stdout, stderr=stderr
         )
 
     monkeypatch.setattr('_providers_core.subprocess.run', _fake_run)
 
 
-def _stub_ci_path(monkeypatch, report: str) -> None:
+def _stub_ci_path(monkeypatch, report: str, stream: str = 'stdout') -> None:
     """Feed ``report`` to the tools-integration-ci path's command seam.
 
     Also answers the remote-URL probe (so the provider resolves to github and
     ``gh`` is the required tool) and the ``--version`` probes. Any other command
     is a defect in the test rather than a silent pass.
     """
+    auth_stdout, auth_stderr = _split_streams(report, stream)
 
     def _fake_run_command(cmd, cwd=None):
         arguments = list(cmd[1:])
@@ -101,22 +135,29 @@ def _stub_ci_path(monkeypatch, report: str) -> None:
         if arguments == ['--version']:
             return 0, f'{cmd[0]} version 2.45.0\n', ''
         if arguments == ['auth', 'status']:
-            return _GH_EXIT_CODE_WITH_A_FAILED_ACCOUNT, report, ''
+            return _GH_EXIT_CODE_WITH_A_FAILED_ACCOUNT, auth_stdout, auth_stderr
         raise AssertionError(f'unexpected command: {cmd}')
 
     monkeypatch.setattr(ci_health, 'run_command', _fake_run_command)
 
 
+@pytest.mark.parametrize('stream', _REPORT_STREAMS)
 @pytest.mark.parametrize(('report', 'expected'), _ACCOUNT_REPORTS)
-def test_both_entry_points_agree_on_the_active_account(report, expected, monkeypatch):
+def test_both_entry_points_agree_on_the_active_account(report, expected, stream, monkeypatch):
     """The manage-providers and tools-integration-ci paths return one verdict.
 
     Asserting each side against ``expected`` pins the verdict itself; asserting
     them against each other pins the agreement, which is what a fix applied to
     only one of the two surfaces breaks.
+
+    Running the pair over both report streams pins the capture shape at both
+    sites: a capture that keeps stdout alone sees only the unrelated notice on
+    the ``stderr`` placement, finds no account marker, and falls back to the
+    non-zero exit code — failing the positive case while still passing the
+    negative one, which is why the pair must be matched.
     """
-    _stub_providers_path(monkeypatch, report)
-    _stub_ci_path(monkeypatch, report)
+    _stub_providers_path(monkeypatch, report, stream)
+    _stub_ci_path(monkeypatch, report, stream)
 
     providers_verdict = verify_system_auth(_GITHUB_PROVIDER)['success']
     ci_verdict = ci_health.verify_tool('gh')['authenticated']

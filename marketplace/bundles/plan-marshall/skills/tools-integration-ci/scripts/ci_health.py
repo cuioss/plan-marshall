@@ -23,7 +23,7 @@ import argparse
 import re
 from pathlib import Path
 
-from _providers_core import _system_auth_succeeded
+from _providers_core import _system_auth_succeeded, combine_auth_output
 from ci_base import run_cli, safe_main, serialize_toon
 
 # Tool definitions: {tool: requires_auth}
@@ -123,7 +123,10 @@ def verify_tool(tool: str) -> dict:
     The auth decision is delegated to ``_providers_core._system_auth_succeeded``
     — the single implementation shared with ``verify_system_auth()`` — so the
     active account decides the verdict instead of the aggregate exit code, which
-    ``gh auth status`` sets non-zero whenever ANY configured account fails.
+    ``gh auth status`` sets non-zero whenever ANY configured account fails. The
+    report is captured through ``combine_auth_output`` because a CLI may write it
+    to either stream; selecting one would discard the report and fall back to the
+    exit code this design exists to avoid.
 
     Returns: {"installed": bool, "authenticated": bool, "version": str | None}
     """
@@ -138,7 +141,7 @@ def verify_tool(tool: str) -> dict:
     requires_auth = TOOLS.get(tool, False)
     if requires_auth:
         auth_returncode, auth_stdout, auth_stderr = run_command([tool, 'auth', 'status'])
-        authenticated = _system_auth_succeeded(auth_returncode, auth_stdout or auth_stderr or '')
+        authenticated = _system_auth_succeeded(auth_returncode, combine_auth_output(auth_stdout, auth_stderr))
     else:
         authenticated = True  # No auth needed
 

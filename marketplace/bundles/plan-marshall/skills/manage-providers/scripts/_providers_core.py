@@ -899,6 +899,34 @@ _ACCOUNT_HEADER_PATTERN = re.compile(r'(?P<failed>Failed to log in)|(?:Logged in
 _ACTIVE_ACCOUNT_PATTERN = re.compile(r'Active account:\s*(?P<value>\S+)', re.IGNORECASE)
 
 
+def combine_auth_output(stdout: str | None, stderr: str | None) -> str:
+    """Combine a CLI's two output streams into one auth-status report.
+
+    :func:`_system_auth_succeeded` reads its verdict from the account markers in
+    the captured text, so which stream carried the report must not change the
+    answer. Selecting one stream with ``or`` discards the other whenever the
+    first is non-empty: a CLI that prints an upgrade notice to stdout while
+    writing its status report to stderr then yields marker-less text, and the
+    decision degrades to the aggregate exit code — the very signal the
+    active-account parse exists to avoid consulting.
+
+    This is the capture-shape peer of :func:`_system_auth_succeeded`, shared by
+    every call site that feeds it, so the two sites cannot drift apart.
+
+    The result is stripped, so a report arriving on one stream alone does not
+    carry the blank line contributed by the empty one into a caller that
+    truncates the text for display.
+
+    Args:
+        stdout: Captured standard output, or None.
+        stderr: Captured standard error, or None.
+
+    Returns:
+        Both streams joined by a newline, with surrounding whitespace removed.
+    """
+    return f'{stdout or ""}\n{stderr or ""}'.strip()
+
+
 def _system_auth_succeeded(returncode: int, output: str) -> bool:
     """Decide system-auth success from the ACTIVE account, not the exit code.
 
@@ -982,7 +1010,7 @@ def verify_system_auth(provider: dict[str, Any]) -> dict[str, Any]:
             text=True,
             timeout=30,
         )
-        captured = result.stdout or result.stderr or ''
+        captured = combine_auth_output(result.stdout, result.stderr)
         return {
             'success': _system_auth_succeeded(result.returncode, captured),
             'skill': skill_name,

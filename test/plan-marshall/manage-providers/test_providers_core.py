@@ -18,6 +18,7 @@ from _providers_core import (
     _migrate_credentials_home_if_needed,
     _system_auth_succeeded,
     apply_extra_passthrough,
+    combine_auth_output,
     get_authenticated_client,
     get_project_name,
     load_credential,
@@ -874,6 +875,56 @@ _HEALTHY_ACCOUNT_REPORT = """github.com
   - Git operations protocol: https
 """
 
+# An unrelated line a CLI may print to stdout while writing its actual status
+# report to stderr. It carries no account marker, so a capture that keeps only
+# the first non-empty stream hands the decision marker-less text.
+_UPGRADE_NOTICE = 'A new release of gh is available: 2.45.0 -> 2.46.0\n'
+
+
+class TestCombineAuthOutput:
+    """Tests for combine_auth_output() — the shared capture shape.
+
+    The decision below reads account markers out of the captured text, so a
+    capture that drops a stream can hide the report entirely. These pin the
+    combination itself, independent of any one call site.
+    """
+
+    def test_both_streams_are_present_in_the_result(self):
+        """Neither stream is discarded when both carry text."""
+        combined = combine_auth_output('notice line', 'report line')
+
+        assert 'notice line' in combined
+        assert 'report line' in combined
+
+    def test_streams_are_newline_separated(self):
+        """The join must not run the last stdout line into the first stderr line.
+
+        The decision reads the report line by line, so a separator-less
+        concatenation would merge two lines into one unmatchable line.
+        """
+        assert combine_auth_output('a', 'b').splitlines() == ['a', 'b']
+
+    @pytest.mark.parametrize(
+        ('stdout', 'stderr'),
+        [
+            pytest.param('report', '', id='stderr-empty'),
+            pytest.param('', 'report', id='stdout-empty'),
+            pytest.param('report', None, id='stderr-none'),
+            pytest.param(None, 'report', id='stdout-none'),
+        ],
+    )
+    def test_absent_stream_contributes_no_surrounding_blank_line(self, stdout, stderr):
+        """A lone report comes back verbatim, unpadded by the empty stream.
+
+        Callers truncate the combined text for display, so a leading blank line
+        would spend the display budget on the stream that carried nothing.
+        """
+        assert combine_auth_output(stdout, stderr) == 'report'
+
+    def test_both_absent_yields_empty_string(self):
+        """Two empty streams combine to the empty string, not a bare newline."""
+        assert combine_auth_output(None, None) == ''
+
 
 class TestSystemAuthSucceeded:
     """Tests for _system_auth_succeeded() — the shared active-account decision."""
@@ -999,13 +1050,45 @@ class TestVerifySystemAuthActiveAccount:
         """The account report is read when the CLI writes it to stderr.
 
         ``gh auth status`` has emitted its report on stderr across versions, and
-        the captured stream falls back to stderr when stdout is empty. A
-        decision that consulted stdout alone would silently lose the report and
-        regress to exit-code-only semantics.
+        the capture combines both streams. A decision that consulted stdout
+        alone would silently lose the report and regress to exit-code-only
+        semantics.
         """
         result = self._run_with(monkeypatch, 1, '', stderr=_MIXED_ACCOUNT_REPORT)
 
         assert result['success'] is True
+
+    def test_stderr_report_is_read_when_stdout_carries_an_unrelated_notice(self, monkeypatch):
+        """A non-empty stdout must not displace the report the CLI put on stderr.
+
+        This is the shape an empty stdout cannot expose: a capture that selects
+        the first non-empty stream keeps the upgrade notice, which carries no
+        account marker, and the decision falls back to the non-zero exit code gh
+        sets whenever any sibling account is stale.
+        """
+        result = self._run_with(monkeypatch, 1, _UPGRADE_NOTICE, stderr=_MIXED_ACCOUNT_REPORT)
+
+        assert result['success'] is True
+
+    def test_stderr_report_behind_a_notice_still_fails_a_failed_active_account(self, monkeypatch):
+        """Matched negative control for the case above.
+
+        Without it, a capture that reported success for every two-stream shape
+        would satisfy the positive case.
+        """
+        result = self._run_with(monkeypatch, 1, _UPGRADE_NOTICE, stderr=_ACTIVE_ACCOUNT_FAILED_REPORT)
+
+        assert result['success'] is False
+
+    def test_reported_output_starts_at_the_report_not_a_stream_joiner(self, monkeypatch):
+        """``output`` begins with the report even when stdout contributed nothing.
+
+        The field is truncated to 500 characters for display, so a leading blank
+        line from the empty stream would spend that budget on nothing.
+        """
+        result = self._run_with(monkeypatch, 1, '', stderr=_MIXED_ACCOUNT_REPORT)
+
+        assert result['output'].startswith('github.com')
 
     def test_full_untruncated_output_drives_the_decision(self, monkeypatch):
         """The decision reads the untruncated output, not the 500-char field.
