@@ -816,3 +816,61 @@ class TestCompactCli:
 
         assert 'status: error' in result.stdout
         assert 'refused_closed' in result.stdout
+
+
+# =============================================================================
+# _marker_indices returns two distinct not-fully-delimited shapes
+# =============================================================================
+
+
+class TestMarkerIndicesContract:
+    """Pin the two shapes ``_marker_indices`` actually returns.
+
+    The docstring previously claimed ``(-1, -1)`` covered BOTH an absent marker
+    and an end that precedes the begin. Neither half survived contact with the
+    code: a begin with no following end returns ``(begin_idx, -1)``, not
+    ``(-1, -1)``, and the "end precedes the begin" case does not exist at all,
+    because the end is only ever searched for AFTER the begin index. A caller
+    that trusted the old contract and tested ``== (-1, -1)`` for "not fully
+    delimited" would read a begin-without-end block as fully absent.
+    """
+
+    def test_an_absent_begin_marker_returns_the_minus_one_pair(self):
+        name = GENERATED_BLOCKS[0]
+        lines = ['# epic', '', 'no markers here', '']
+
+        assert _orch._marker_indices(lines, name) == (-1, -1)
+
+    def test_a_begin_with_no_following_end_returns_the_begin_index_and_minus_one(self):
+        name = GENERATED_BLOCKS[0]
+        lines = ['# epic', _orch._begin_marker(name), 'body', 'still body']
+
+        begin_idx, end_idx = _orch._marker_indices(lines, name)
+
+        # The begin IS located — this is the half the old docstring denied.
+        assert begin_idx == 1
+        assert end_idx == -1
+
+    def test_an_end_before_the_begin_is_never_a_candidate(self):
+        # The retired "end precedes the begin" clause described a case the
+        # implementation cannot produce: the end scan starts at begin_idx + 1,
+        # so an earlier end is simply never considered.
+        name = GENERATED_BLOCKS[0]
+        lines = [_orch._end_marker(name), _orch._begin_marker(name), 'body']
+
+        assert _orch._marker_indices(lines, name) == (1, -1)
+
+    def test_a_fully_delimited_block_returns_both_indices(self):
+        # Matched positive control: the not-fully-delimited shapes above are only
+        # meaningful against a case that DOES resolve both markers.
+        name = GENERATED_BLOCKS[0]
+        lines = ['# epic', _orch._begin_marker(name), 'body', _orch._end_marker(name), 'tail']
+
+        assert _orch._marker_indices(lines, name) == (1, 3)
+
+    def test_a_marker_quoted_mid_sentence_is_not_matched(self):
+        # The match is the WHOLE stripped line; a quoted mention must not count.
+        name = GENERATED_BLOCKS[0]
+        lines = ['# epic', f'see {_orch._begin_marker(name)} for details', 'body']
+
+        assert _orch._marker_indices(lines, name) == (-1, -1)
