@@ -784,7 +784,17 @@ def cmd_run_common(
             #               a zero is emitted only when a non-test gate genuinely
             #               executed none.
             analyses = examined_analyses(command_args)
+            # A DAEMON-ROUTED build carries the inner wrapper's own measured count
+            # on the result (`routed_tests_run`), and it WINS over this layer's
+            # re-parse. The log a routed run hands back is the daemon job log —
+            # the wrapper's emitted TOON, not the raw test-runner output — so
+            # re-parsing it yields no summary and the count would collapse to a
+            # false zero over a fully-examined population. An in-process build
+            # carries no such key and falls through to its own parse unchanged.
+            routed_total = result.get('routed_tests_run')
             parsed_total = test_summary.total if test_summary is not None else None
+            if routed_total is not None:
+                parsed_total = int(routed_total)
             tests_run = resolve_tests_run(analyses, parsed_total)
             refusal = refusal_reason(analyses, tests_run)
             retained = (

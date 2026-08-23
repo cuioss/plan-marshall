@@ -489,7 +489,17 @@ def _daemon_result_to_direct(waited: dict[str, Any], command_str: str) -> Direct
             return _result_for_log_verdict(
                 verdict, duration=duration, log_file=log_file, command_str=command_str
             )
-        return success_result(duration, log_file, command_str)  # type: ignore[return-value]
+        # CARRY the inner wrapper's own executed-test count. The renderer would
+        # otherwise re-parse THIS log — which holds the wrapper's emitted TOON,
+        # not the raw test-runner output — find no summary, and publish a zero
+        # over a run that executed thousands of tests. The count is attached
+        # under a distinct key so the renderer can tell "the routed build
+        # measured it" from "nothing measured it"; an absent verdict or an
+        # absent key leaves it off entirely, which reads as UNKNOWN downstream.
+        routed_extra: dict[str, Any] = {}
+        if verdict is not None and verdict.tests_run is not None:
+            routed_extra['routed_tests_run'] = verdict.tests_run
+        return success_result(duration, log_file, command_str, **routed_extra)  # type: ignore[return-value]
     if job_status == WIRE_STATUS_TIMEOUT:
         return timeout_result(duration, duration, log_file, command_str)  # type: ignore[return-value]
     if job_status == WIRE_STATUS_KILLED:
