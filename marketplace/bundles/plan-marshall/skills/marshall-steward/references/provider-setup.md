@@ -212,7 +212,14 @@ The credential-bearing set is therefore exactly the entries that carry **no** `v
 
 Do NOT filter on the hardcoded names `plan-marshall:workflow-integration-github` and `plan-marshall:workflow-integration-gitlab`: `plan-marshall:workflow-integration-git` is CLI-lane too, and a name-based filter lets it reach Step 13g's option list with nothing to collect. The presence of `url` is not a lane selector either — the `version-control` provider resolves one from the git remote while staying CLI-lane.
 
-If the filtered set is empty, skip to Step 15 (Summary). Otherwise carry the **filtered** set — not the full mapping — into Steps 13f-13i: it is the option list Step 13g offers and the `extra_fields` source Step 13h reads.
+If the filtered set is empty, skip to Step 15 (Summary). Otherwise carry the **filtered** set into Step 13f (the gate) and Step 13g (the provider option list).
+
+Do **not** discard the full mapping: Step 13h still needs it. Two fields the later steps use are not in the filtered set, and one is not in `list-providers` output at all:
+
+| Later step needs | Source | Why not the filtered set |
+|------------------|--------|--------------------------|
+| `repo_url` (Step 13h) | the **full** mapping's `category == "version-control"` entry | that provider is CLI-lane, so the filter removes it |
+| `extra_fields` (Steps 13h, 13i) | the provider's `*_provider.py` declaration | `list-providers` does not emit `extra_fields` at all — see Step 13h |
 
 ### Step 13f: Ask user
 
@@ -262,9 +269,10 @@ AskUserQuestion:
     - question: "Which credential provider?"
       header: "Provider"
       options:
-        # Dynamic from the Step 13e filtered (REST-lane) provider list
-        - label: "{provider_display_name}"
-          description: "{provider_description}"
+        # Dynamic from the Step 13e filtered (REST-lane) provider list.
+        # Use the fields list-providers actually emits: skill_name and description.
+        - label: "{skill_name}"
+          description: "{description}"
       multiSelect: false
 ```
 
@@ -273,10 +281,10 @@ AskUserQuestion:
 ```text
 AskUserQuestion:
   questions:
-    - question: "Base URL for {display_name}?"
+    - question: "Base URL for {skill_name}?"
       header: "URL"
       options:
-        - label: "{default_url} (Recommended)"
+        - label: "{url} (Recommended)"
           description: "Default URL for this provider"
       multiSelect: false
     - question: "Authentication type?"
@@ -291,7 +299,7 @@ AskUserQuestion:
 
 ### Step 13h: Auto-detect extra fields
 
-Check if the selected provider has `extra_fields` in the `list-providers` output. If yes, auto-detect values and confirm with user.
+Check whether the selected provider declares `extra_fields`. **`list-providers` does not emit this field** — it emits only `skill_name`, `category`, `verify_command`, `url`, and `description`. Read the `extra_fields` array from the provider's declaration in its `*_provider.py` module instead (for example `marketplace/bundles/plan-marshall/skills/workflow-integration-sonar/scripts/sonar_provider.py`). If the provider declares any, auto-detect values and confirm with the user.
 
 For `workflow-integration-sonar` (has `extra_fields: organization, project_key`):
 
@@ -299,7 +307,7 @@ For `workflow-integration-sonar` (has `extra_fields: organization, project_key`)
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list-providers
 ```
-Parse the output and locate the entry with `category == "version-control"`; its `url` field is the `repo_url`.
+Parse the output and locate the entry with `category == "version-control"`; its `url` field is the `repo_url`. This lookup runs against the **full** mapping, not the Step 13e filtered set — the version-control provider is CLI-lane and the filter removes it.
 
 2. Extract organization from `repo_url` (e.g., `https://github.com/cuioss/plan-marshall` -> org=`cuioss`, repo=`plan-marshall`)
 3. Derive project key as `{org}_{repo}` (e.g., `cuioss_plan-marshall`)
@@ -343,8 +351,8 @@ python3 .plan/execute-script.py plan-marshall:manage-providers:credentials confi
 
 **CRITICAL**:
 - Include `--scope` from Step 13g (global or project).
-- Omit `--extra` if the provider has no `extra_fields` in the `list-providers` output.
-- The keys used in `--extra` (e.g., `organization`, `project_key`) must match the `key` field from the provider's `extra_fields` array returned by `list-providers`.
+- Omit `--extra` if the provider declares no `extra_fields`.
+- The keys used in `--extra` (e.g., `organization`, `project_key`) must match the `key` field from the provider's `extra_fields` array in its `*_provider.py` declaration (Step 13h) — **not** from `list-providers`, which does not emit that field.
 
 ### Step 13i2: Handle editing
 
