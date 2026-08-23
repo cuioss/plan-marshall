@@ -51,7 +51,6 @@ class TestDefaultPermissionRules:
         for rule_id in ids:
             assert '(' not in rule_id and ')' not in rule_id
 
-
     def test_layout_op_reads_the_resolved_home(self, monkeypatch, tmp_path) -> None:
         """``layout bundle-cache-root`` derives its root — move home, it moves."""
         fake_home = tmp_path / 'elsewhere'
