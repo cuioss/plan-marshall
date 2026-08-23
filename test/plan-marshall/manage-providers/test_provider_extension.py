@@ -8,6 +8,7 @@ from typing import Any
 
 from _providers_core import load_declared_providers
 from _providers_fixtures import stage_marshal
+from toon_parser import parse_toon
 
 import conftest  # noqa: F401
 
@@ -301,21 +302,53 @@ class TestDiscoverAndPersistRoundTrip:
         for key in ('default_url', 'header_name', 'header_value_template', 'verify_endpoint', 'verify_method'):
             assert key not in sonar
 
-    def test_list_providers_omits_the_url_key_for_the_cli_lane(self, tmp_path, monkeypatch):
-        """The operator-visible rendering omits url rather than emitting ''.
+    @staticmethod
+    def _render(tmp_path, monkeypatch, capsys) -> dict[str, Any]:
+        """Run ``list-providers`` and read its providers back off stdout.
 
-        An entry persisted without a url must not reappear here as a blank
-        string, which reads as a provider configured with an empty URL.
+        Reads the SERIALIZED output rather than the dict handed to the
+        serializer. The distinction is load-bearing: a TOON uniform array
+        renders one shared header over every row, so a row lacking an optional
+        key is padded with an empty cell. A dict-level assertion is therefore
+        structurally incapable of observing a provider reaching the operator as
+        ``url: ''`` — the very state these assertions exist to rule out.
         """
+        import file_ops
+
         import _list_providers
 
-        self._persist(tmp_path, monkeypatch)
+        TestDiscoverAndPersistRoundTrip._persist(tmp_path, monkeypatch)
+        monkeypatch.setattr(_list_providers, 'output_toon', file_ops.output_toon)
+        capsys.readouterr()
 
-        captured: dict[str, Any] = {}
-        monkeypatch.setattr(_list_providers, 'output_toon', captured.update)
         assert _list_providers.run_list_providers(Namespace()) == 0
 
-        rendered: list[dict[str, Any]] = captured['providers']
-        listed = {p['skill_name']: p for p in rendered}
-        assert 'url' not in listed['plan-marshall:workflow-integration-github']
-        assert listed['plan-marshall:workflow-integration-sonar']['url'] == 'https://sonarcloud.io'
+        providers: dict[str, Any] = parse_toon(capsys.readouterr().out)['providers']
+        return providers
+
+    def test_list_providers_renders_no_url_field_for_the_cli_lane(self, tmp_path, monkeypatch, capsys):
+        """The rendered output carries no url field at all for the CLI lane.
+
+        The REST-lane assertion is the matched control: absence on one lane
+        means nothing unless the other lane still renders the field, which is
+        what distinguishes a correct omission from url having been dropped for
+        every provider.
+        """
+        rendered = self._render(tmp_path, monkeypatch, capsys)
+
+        assert 'url' not in rendered['workflow-integration-github']
+        assert rendered['workflow-integration-sonar']['url'] == 'https://sonarcloud.io'
+
+    def test_list_providers_renders_no_verify_command_field_for_the_rest_lane(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """The rendered output carries no verify_command field for the REST lane.
+
+        ``verify_command`` is the CLI lane's selector, so rendering an empty one
+        on a REST-lane provider materializes the lane conflation the persisted
+        schema removes. The CLI-lane assertion is the matched control.
+        """
+        rendered = self._render(tmp_path, monkeypatch, capsys)
+
+        assert 'verify_command' not in rendered['workflow-integration-sonar']
+        assert rendered['workflow-integration-github']['verify_command'] == 'gh auth status'

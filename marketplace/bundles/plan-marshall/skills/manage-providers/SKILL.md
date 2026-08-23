@@ -144,7 +144,7 @@ python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list-
 
 Reads the `providers` list from `marshal.json` (populated by `discover-and-persist`). Returns available credential providers (what CAN be configured), not what IS configured. Use this in wizard/menu workflows to discover providers.
 
-If no providers are found, the output includes a hint to run `discover-and-persist` first.
+Each provider is emitted as its own keyed block rather than as a row in a uniform table, so a lane selector the provider does not carry (`url` for the CLI lane, `verify_command` for the REST lane) is genuinely absent from the output instead of being padded to an empty value.
 
 ### List Configured Skills
 
