@@ -386,6 +386,24 @@ def cmd_phase(args, phase_section: str) -> dict:
                 f"Field '{field}' is a keyed step-map and cannot be set via "
                 "'set --field'. Use: set-steps, add-step, remove-step, or step set."
             )
+        # Guard: reject a field name the READ path already rejects. `get` returns
+        # "Unknown field '{field}' in {phase_section}" for a name absent from the
+        # defaults-merged `section` (above), while this branch used to assign any
+        # name at all — so a typo'd `set --field` persisted a key no reader could
+        # ever retrieve, silently, and the caller saw success.
+        #
+        # The test is against the SAME defaults-merged view the reader reads, not
+        # against the persisted config alone: a field that carries a default but
+        # has never been written is legitimately settable, and testing against the
+        # persisted keys would refuse exactly those first writes. So this closes
+        # the read/write asymmetry without narrowing the legitimate surface.
+        #
+        # Placed after the keyed-step-map guard (which owns a more specific message
+        # for a field that IS present) and before every per-field validation branch
+        # and any coercion below — an unknown name must not reach a validator or a
+        # coercer that would report a value problem for what is a name problem.
+        if field not in section:
+            return error_exit(f"Unknown field '{field}' in {phase_section}")
         # per_deliverable_build is a LIST of 'default:verify:{canonical}' step
         # IDs — parse the comma-separated --value into a list (empty string ->
         # empty list, which disables the per-deliverable build) and validate the

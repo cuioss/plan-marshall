@@ -1513,5 +1513,183 @@ def test_cli_remove_step_order_override_no_longer_registered(plan_context):
 
 
 # =============================================================================
+# Write-path field guard (D2) — the setter refuses exactly what the getter does
+# =============================================================================
+#
+# `cmd_phase` builds ONE defaults-merged `section` and both branches read it, but
+# only the get branch tested membership: `get --field nope` returned "Unknown
+# field 'nope' in {phase}", while `set --field nope --value x` assigned the name
+# unconditionally. A typo'd write therefore persisted a key no reader could ever
+# retrieve — and returned success, so the caller had no signal at all.
+#
+# The controls below are a MATCHED PAIR: the same call shape, the same phase, the
+# same value, differing ONLY in the field NAME. That isolation is what makes the
+# split attributable to the guard rather than to anything incidental about the
+# call. The accepted set is DERIVED from the reader itself rather than
+# transcribed, because a second hardcoded list beside the first is precisely the
+# two-lists-that-drift shape this guard closes.
+
+_GUARD_PHASE = 'phase-6-finalize'
+
+#: A field name the section does not carry. The getter has always rejected it.
+_UNREADABLE_FIELD = 'self_review'
+
+#: A real field of the SAME section, written through the SAME call shape with a
+#: value of its own type — the positive half of the pair. Green before the guard
+#: and green after; only the negative half changes verdict.
+_READABLE_FIELD = 'finalize_without_asking'
+
+
+def _accepted_fields(phase: str) -> set:
+    """The field names the READ path accepts, taken from the reader itself.
+
+    `get` with no `--field` returns the whole defaults-merged section — the same
+    view `cmd_phase` hands to both branches — so the reader's own answer is the
+    population, and it cannot drift from what the reader accepts.
+    """
+    result = cmd_plan(Namespace(sub_noun=phase, verb='get', field=None))
+    assert result['status'] == 'success', result
+    return set(result) - {'status', 'phase'}
+
+
+def test_write_path_rejects_the_unreadable_field_the_read_path_rejects(plan_context):
+    """NEGATIVE control: an unreadable field name is refused by BOTH paths.
+
+    RED before the write-path guard — the setter returned success and persisted
+    `self_review` into the section. Green after, with the getter's own message.
+    """
+    create_marshal_json(plan_context.fixture_dir)
+    accepted = _accepted_fields(_GUARD_PHASE)
+
+    # The precondition the control rests on: this name really is unreadable. If
+    # it ever became a real field, the test below would assert a refusal of a
+    # legitimate write and the control would be inverted rather than merely stale.
+    assert _UNREADABLE_FIELD not in accepted, (
+        f'{_UNREADABLE_FIELD!r} is now a real {_GUARD_PHASE} field '
+        f'({sorted(accepted)}), so it can no longer serve as the unreadable half '
+        f'of the pair. Pick a name the section does not carry.'
+    )
+
+    read = cmd_plan(Namespace(sub_noun=_GUARD_PHASE, verb='get', field=_UNREADABLE_FIELD))
+    assert read['status'] == 'error', (
+        f'the READ path accepted {_UNREADABLE_FIELD!r}; the pair assumes it rejects it'
+    )
+
+    written = cmd_plan(
+        Namespace(sub_noun=_GUARD_PHASE, verb='set', field=_UNREADABLE_FIELD, value='true')
+    )
+
+    assert written['status'] == 'error', (
+        f'the WRITE path accepted {_UNREADABLE_FIELD!r}, which the READ path '
+        f'rejects. A field that can be written but never read is a silent no-op: '
+        f'the caller sees success and no reader will ever see the value.'
+    )
+    # Same condition, reported the same way — not merely "some error".
+    assert _UNREADABLE_FIELD in str(written.get('error', '')), (
+        f'the write-path refusal does not name the offending field: {written}'
+    )
+    assert 'unknown field' in str(written.get('error', '')).lower(), (
+        f'the write-path refusal does not report the unknown-field condition the '
+        f'read path reports ({read.get("error")!r}); got {written.get("error")!r}'
+    )
+
+    # Nothing was persisted by the refused write.
+    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    assert _UNREADABLE_FIELD not in config['plan'].get(_GUARD_PHASE, {}), (
+        f'the refused write still persisted {_UNREADABLE_FIELD!r} to marshal.json'
+    )
+
+
+def test_write_path_still_accepts_a_readable_field(plan_context):
+    """POSITIVE control: the matched legitimate write is untouched.
+
+    Green before the guard and green after. Without this half, a guard that
+    refused EVERYTHING would satisfy the negative control while breaking every
+    real write.
+    """
+    create_marshal_json(plan_context.fixture_dir)
+    accepted = _accepted_fields(_GUARD_PHASE)
+
+    assert _READABLE_FIELD in accepted, (
+        f'{_READABLE_FIELD!r} is not a {_GUARD_PHASE} field ({sorted(accepted)}), '
+        f'so it cannot serve as the readable half of the pair.'
+    )
+
+    written = cmd_plan(
+        Namespace(sub_noun=_GUARD_PHASE, verb='set', field=_READABLE_FIELD, value='false')
+    )
+
+    assert written['status'] == 'success', (
+        f'the write-path guard refused the legitimate field {_READABLE_FIELD!r}: '
+        f'{written}. The guard must reject unreadable NAMES, not narrow the '
+        f'legitimate surface.'
+    )
+
+    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    assert config['plan'][_GUARD_PHASE][_READABLE_FIELD] is False
+
+
+def test_read_and_write_paths_agree_across_the_derived_field_population(plan_context):
+    """The two branches agree by construction, over the derived population.
+
+    Not two hardcoded name lists compared against each other: the population is
+    the reader's own defaults-merged section, and every scalar member is written
+    back through the setter. A guard tested only against one hand-picked field
+    would pass while disagreeing on the rest.
+
+    Dict-valued members are excluded and counted separately: the keyed step-map
+    (`steps`) has its OWN, more specific refusal that predates this guard, and
+    routing a structured map through the scalar coercer is what that guard exists
+    to prevent. Excluding them is a real narrowing of this assertion's reach, so
+    the count is published rather than left implicit.
+    """
+    create_marshal_json(plan_context.fixture_dir)
+    accepted = _accepted_fields(_GUARD_PHASE)
+
+    scalar = {
+        field
+        for field in accepted
+        if not isinstance(
+            cmd_plan(Namespace(sub_noun=_GUARD_PHASE, verb='get', field=field))['value'],
+            dict,
+        )
+    }
+    structured = accepted - scalar
+
+    # Publish the derived population on a clean run: an empty or collapsed
+    # derivation would otherwise make every assertion below vacuously true.
+    print(
+        f'write-path guard population: phase={_GUARD_PHASE} '
+        f'accepted={len(accepted)} scalar_exercised={len(scalar)} '
+        f'structured_excluded={len(structured)}'
+    )
+
+    assert len(accepted) >= 4, (
+        f'the derived {_GUARD_PHASE} field population collapsed to {len(accepted)} '
+        f'({sorted(accepted)}); the agreement below would be asserted over almost '
+        f'nothing'
+    )
+    assert scalar, (
+        f'every one of the {len(accepted)} accepted fields is dict-valued, so the '
+        f'write half of this agreement check exercises nothing'
+    )
+
+    refused = []
+    for field in sorted(scalar):
+        current = cmd_plan(Namespace(sub_noun=_GUARD_PHASE, verb='get', field=field))['value']
+        written = cmd_plan(
+            Namespace(sub_noun=_GUARD_PHASE, verb='set', field=field, value=str(current))
+        )
+        if written['status'] != 'success':
+            refused.append(f'{field}: {written.get("error")}')
+
+    assert not refused, (
+        f'{len(refused)} of the {len(scalar)} readable scalar fields were refused '
+        f'by the write path, so the two branches disagree in the OTHER direction '
+        f'— the guard is narrower than the reader: {refused}'
+    )
+
+
+# =============================================================================
 # Main
 # =============================================================================
