@@ -458,8 +458,7 @@ def structural_limits(dimensions):
 #: Negative control for the CLAIM half: the pinned reader finds the right
 #: docstring, and must still reject it. This is the relabel carried one function
 #: too far — the realistic edit, phrased exactly as the real parity_population
-#: docstring now phrases its own denial. A mention test passes this fixture; a
-#: claim test must not.
+#: docstring now phrases its own denial.
 _DENYING_SOURCE = '''
 def structural_limits(dimensions):
     """Pair each checked dimension with its structural limit.
