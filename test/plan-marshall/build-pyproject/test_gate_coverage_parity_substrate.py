@@ -495,15 +495,17 @@ def test_structural_limits_is_still_described_as_derived_and_still_derives():
         f'control rather than deleting it.'
     )
     assert _describes_as_derived(docstring), (
-        "structural_limits's docstring no longer CLAIMS its result is derived. "
+        "structural_limits's docstring no longer describes its result as derived. "
         'The relabel was meant to correct ONE stale claim about the parity '
         'population, not to remove the accurate description of structural_limits, '
         'which really is computed from the dimensions a run recorded. Note this '
         'fails two ways, and both matter: the word is gone entirely (an over-broad '
-        'scrub), or the word is present inside a DENIAL — "a recorded literal, not '
-        'a derivation" — which is the relabel carried one function too far. A '
-        'mention test would pass the second; this is a claim test, so it does '
-        f'not.\n  docstring: {docstring!r}'
+        'scrub), or the word survives inside one of the denial idioms '
+        '_REFUTATION_RE enumerates — "a recorded literal, not a derivation" — '
+        'which is the relabel carried one function too far. A bare mention test '
+        'would pass that second case; subtracting those idioms is what catches '
+        'it. A denial phrased outside them still passes here — see '
+        f'_describes_as_derived for that bound.\n  docstring: {docstring!r}'
     )
 
     # The word is earned only while the result is a function of what was recorded.
@@ -585,8 +587,9 @@ def test_the_relabel_idiom_inside_the_pinned_docstring_is_rejected():
     )
 
     assert not _describes_as_derived(denying_docstring), (
-        'a docstring that mentions derivation only to DENY it satisfied the claim '
-        'test. The pin fixed which docstring is read; it is the refutation subtract '
-        'that decides whether the sentence found there asserts the property or its '
-        f'opposite.\n  docstring: {denying_docstring!r}'
+        'a docstring denying derivation in the relabel idiom — "a recorded '
+        'literal, not a derivation" — was accepted. The pin fixed which docstring '
+        'is read; subtracting _REFUTATION_RE is what rejects this particular '
+        'phrasing. It does not reject an arbitrary denial, and this control does '
+        f'not claim it does.\n  docstring: {denying_docstring!r}'
     )
