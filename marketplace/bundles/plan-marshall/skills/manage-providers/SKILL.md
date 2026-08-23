@@ -63,7 +63,7 @@ Stale prefixed `credentials_config` keys written before this normalization are c
 | `discover-and-persist` | Scan PYTHONPATH for provider modules and persist declarations to marshal.json |
 | `list-providers` | List available credential providers from marshal.json |
 | `edit` | Update non-secret fields (URL, auth type) |
-| `verify` | Token-auth lane only: HTTP connectivity test, writes `verified_at` timestamp into the credential file. System-auth providers are verified by `verify_system_auth()` running their `verify_command`, not by this subcommand |
+| `verify` | Lane-dispatching connectivity test that writes the `verified_at` timestamp on success: a CLI-lane provider (selected by its declared `verify_command`) is verified by `verify_system_auth()` running that command, a REST-lane provider by an HTTP round-trip to its `verify_endpoint` |
 | `list` | List configured skills by scanning `~/.plan-marshall/credentials/` (no secrets in output) |
 | `remove` | Remove credential file |
 | `ensure-denied` | Protect the credentials directory in the active target's settings (`no-op` on a target with no permission backend) |
