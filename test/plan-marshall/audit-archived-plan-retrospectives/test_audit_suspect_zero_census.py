@@ -15,6 +15,72 @@ from _audit_suspect_zero_census_fixtures import (
 )
 
 
+def _gated_block(*, excluded: int, examined: int = 4, genuine: int = 0) -> str:
+    """A `preference-pattern-detector` block whose declared gate excluded rows.
+
+    `excluded` is the block's own `unattributed_excluded_count` — how many
+    qualifying recurrences its unattributed-bucket gate declined to surface. It
+    is a parameter rather than a fixed literal because the discriminating case is
+    the pair: a non-zero count is the gate speaking, and a zero one leaves the
+    verdict where it was.
+    """
+    return (
+        "check: preference-pattern-detector\nstatus: success\n"
+        f"plans_in_corpus: {examined}\n"
+        f"unattributed_excluded_count: {excluded}\n"
+        f"genuine_signal_count: {genuine}\nrows[0]{{a}}:\n"
+    )
+
+
+class TestGatedZero:
+    """A zero produced by the check's OWN declared gate, not by a clean corpus.
+
+    `disciplinary` asserts "a non-empty examined population and nothing genuine"
+    — evidence about the corpus. When the block's own exclusion count records
+    that a declared gate declined every qualifying row, the corpus was not clean:
+    the gate emptied the result, so the zero is evidence about the gate and the
+    remedy is to its calibration rather than to the inputs.
+    """
+
+    def test_a_gate_that_declined_every_row_is_gated_not_disciplinary(self):
+        assert (
+            audit._classify_zero(_gated_block(excluded=2), 0, corpus_size=4)
+            == audit._ZERO_GATED
+        )
+
+    def test_a_gate_that_declined_nothing_is_still_disciplinary(self):
+        """The discriminating half — without it the test above would pass on a
+        classifier that called every preference block `gated`."""
+        assert (
+            audit._classify_zero(_gated_block(excluded=0), 0, corpus_size=4)
+            == audit._ZERO_DISCIPLINARY
+        )
+
+    def test_a_block_that_fired_is_not_gated(self):
+        """A gate that declined some rows while others still surfaced is not a
+        suspect at all — `fired` outranks every zero class."""
+        assert (
+            audit._classify_zero(_gated_block(excluded=2, genuine=3), 3, corpus_size=4)
+            == audit._ZERO_NONE
+        )
+
+    def test_starved_outranks_gated(self):
+        """A check that examined NO plans is starved whatever its gate did.
+
+        There was no qualifying row for the gate to decline, so attributing the
+        zero to the gate would name the wrong cause — and the remedies differ.
+        """
+        assert (
+            audit._classify_zero(_gated_block(excluded=2, examined=0), 0, corpus_size=0)
+            == audit._ZERO_STARVED
+        )
+
+    def test_structural_outranks_gated(self):
+        """An `unmeasured` block's own declaration outranks its exclusion count."""
+        block = _UNMEASURED_BLOCK + "unattributed_excluded_count: 2\n"
+        assert audit._classify_zero(block, 0, corpus_size=5) == audit._ZERO_STRUCTURAL
+
+
 class TestZeroClassification:
     def test_unmeasured_status_is_a_structural_zero(self):
         assert (
@@ -302,6 +368,24 @@ class TestCensusBlock:
         assert "census_note:" in block
         assert "a zero is not a clean verdict" in block
         assert f"checks_registered: {len(audit.CHECK_NAMES)}" in block
+
+    def test_block_tallies_the_gated_class(self):
+        """A gated zero is counted on its own axis, not folded into disciplinary.
+
+        Classifying it correctly and then tallying it under `disciplinary_count`
+        would republish, one line up, the very reading the class exists to
+        withhold — so both counts are asserted as a pair.
+        """
+        rows = audit.suspect_zero_census(
+            [_gated_block(excluded=2), _MEASURED_ZERO_BLOCK],
+            {"preference-pattern-detector": 0, "dispatch-topology": 0},
+            {},
+            corpus_size=4,
+        )
+        block = audit.emit_suspect_zero_census_block(rows, corpus_size=4)
+
+        assert "gated_count: 1" in block
+        assert "disciplinary_count: 1" in block   # the sibling stayed where it was
 
     def test_full_sweep_emits_the_census(self, tmp_path: Path):
         inputs = minimal_corpus(tmp_path)

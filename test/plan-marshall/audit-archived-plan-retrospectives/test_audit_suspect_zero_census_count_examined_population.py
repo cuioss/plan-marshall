@@ -124,6 +124,52 @@ class TestNoCountAndExaminedPopulation:
         assert audit._examined_population(block, 5) == 0
 
 
+class TestGateExclusionKeyIsRead:
+    """The gate-exclusion scalar `_classify_zero` reads is the one the emitter writes.
+
+    `_UNATTRIBUTED_EXCLUDED_RE` hand-mirrors a scalar name that
+    `emit_preference_pattern_block` owns — the same hand-mirror shape
+    `_EXAMINED_POPULATION_KEYS` guards on the population axis, one key over. A
+    rename on the emitting side leaves the reader matching nothing, and a reader
+    that matches nothing does not fail loudly: it silently returns every gated
+    zero to `disciplinary`, republishing the "the corpus was clean" reading the
+    class exists to withhold. No other assertion in this suite would notice.
+
+    Both tests drive the REAL emitter rather than a hand-built block. A
+    synthesised fixture asserts only that the reader matches the string the test
+    itself wrote, which is true however far the emitter has drifted from it.
+    """
+
+    @staticmethod
+    def _emitted(excluded: int) -> str:
+        return audit.emit_preference_pattern_block(
+            {
+                'threshold': 3,
+                'candidate_count': 0,
+                'unattributed_excluded_count': excluded,
+                'plans_in_corpus': 4,
+                'rows': [],
+            }
+        )
+
+    def test_the_reader_matches_the_emitters_own_output(self):
+        assert audit._UNATTRIBUTED_EXCLUDED_RE.search(self._emitted(2)) is not None
+
+    def test_an_emitted_gated_zero_reaches_the_gated_class(self):
+        """End-to-end: emitter → reader → verdict, with the pair that discriminates.
+
+        A non-zero exclusion count is the gate speaking; a zero one is the gate
+        silent, and the verdict must stay `disciplinary` for it — otherwise the
+        first assertion would pass on a classifier that called every preference
+        block `gated` regardless of the count.
+        """
+        assert audit._classify_zero(self._emitted(2), 0, corpus_size=4) == audit._ZERO_GATED
+        assert (
+            audit._classify_zero(self._emitted(0), 0, corpus_size=4)
+            == audit._ZERO_DISCIPLINARY
+        )
+
+
 class TestPopulationKeyCoverage:
     """The key axis the whole-census guard does NOT quantify over.
 

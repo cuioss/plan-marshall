@@ -50,7 +50,9 @@ rather than a claim.
 counted in `plans_without_ledger` and named in `plans_without_ledger_ids`, and is
 EXCLUDED from the delta baseline (folding its log-derived seconds into the delta
 would compare the ledger's silence against the log's speech). Its ledger totals
-read 0 with `has_ledger: false` — read that as "unmeasurable", never "no builds".
+read 0 with `has_ledger: false` — read that as "unmeasurable", never "no builds"
+— and its `build_share` is WITHHELD (`n/a`) rather than rendered as a `0%`
+derived from that absence (see § "Build time vs plan wall-clock").
 
 **SUSPECT-ZERO rule.** A `kind=build` row whose `duration_seconds` is `0`, absent,
 or non-numeric is **SUSPECT**, never data: a zero is indistinguishable from a cache
@@ -147,9 +149,23 @@ can be `status: success` yet duration-suspect, e.g. a cache hit).
 
 `wall_clock_seconds` is the sum of per-phase `duration_seconds` from
 `work/metrics.toon`. `build_share` = `total_build_seconds / wall_clock_seconds` —
-the fraction of a plan's elapsed time spent inside builds. When wall-clock is
-absent or zero (the metrics **absent-file hole** the ratio inherits), the share is
-**WITHHELD** (`n/a`), never a fabricated ratio over a zero denominator.
+the fraction of a plan's elapsed time spent inside builds.
+
+**The share is WITHHELD (`n/a`) when EITHER side is unavailable** — never a
+fabricated ratio:
+
+- **Denominator unavailable.** Wall-clock is absent or zero (the metrics
+  **absent-file hole** the ratio inherits), so there is nothing to divide by.
+- **Numerator unavailable.** The plan carries no `kind=build` ledger rows
+  (`has_ledger: false`), so `total_build_seconds` is zero **by absence, not by
+  measurement**. Dividing it out yields a `0%` that reads as "this plan spent no
+  time building" while the `has_ledger` cell one column away says the build time
+  was never measured at all — the two cells of the same row contradicting each
+  other. `has_ledger` is the numerator's availability, and absent is not zero on
+  either side of a ratio.
+
+A `0%` share is therefore always a real measurement: builds were recorded, and
+they occupied a negligible fraction of the plan's elapsed time.
 
 The **invariant** (`build_exceeds_wallclock` flag): summed build time cannot exceed
 plan wall-clock. A violation is a **RECORDING defect** — a duration plumbed through
@@ -221,9 +237,10 @@ genuine_signal_count: G
 rows[K]{plan_id,change_type,calls,span_seconds,has_ledger,builds,build_minimal,build_scoped,build_heavy,build_unknown,pass,error,timeout,killed,total_build_seconds,max_build_seconds,log_build_seconds,wall_clock_seconds,build_share,build_churn,arch_calls,ci_runs,consecutive_dup,phase_reentry,verbs,phase_graph,flags,severity}
 ```
 
-The `build_share` cell is a percentage or `n/a` (withheld when wall-clock is
-absent). `has_ledger: false` marks a plan whose build time is unavailable — its
-build columns read 0 by absence, never as a measurement.
+The `build_share` cell is a percentage or `n/a` (withheld when wall-clock OR the
+ledger is absent). `has_ledger: false` marks a plan whose build time is
+unavailable — its build columns read 0 by absence, never as a measurement, and
+its `build_share` reads `n/a` for exactly that reason.
 
 | Column | Meaning |
 |--------|---------|
@@ -239,7 +256,7 @@ build columns read 0 by absence, never as a measurement.
 | `max_build_seconds` | Worst single build's duration. |
 | `log_build_seconds` | OLD log-derived pyproject-only total — the delta baseline. |
 | `wall_clock_seconds` | Plan wall-clock (sum of per-phase metrics durations). |
-| `build_share` | `total_build_seconds / wall_clock_seconds`, or `n/a` when withheld. |
+| `build_share` | `total_build_seconds / wall_clock_seconds`, or `n/a` when **either** side is unavailable — an absent wall-clock (no denominator) or an absent ledger (`has_ledger: false`, so the numerator is zero by absence rather than by measurement). |
 | `build_churn` | Clustered-rebuild count. |
 | `arch_calls` | architecture-call count (resolution overhead numerator). |
 | `ci_runs` | CI run-directory count. |
