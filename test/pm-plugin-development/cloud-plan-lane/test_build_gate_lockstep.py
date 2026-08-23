@@ -25,9 +25,16 @@ hard-codes no side and no site list — and asserts they agree:
 
 Assertion 3 is **population-derived, not site-enumerated**: the restatements are
 found by the marker phrase they use to point back at Step 5, so a restatement
-added later is covered the day it is written. A restatement that points back
-without using the marker is outside this guard's reach — that is a real boundary,
-and it is stated here rather than left for a reader to discover.
+added later is covered the day it is written. It carries a **cardinality floor**
+rather than a mere non-emptiness check, because a self-declared population lets
+the document control its own membership and can therefore shrink silently — a
+marker rephrased at one of two sites would leave a non-emptiness check green with
+that site unguarded, which is this module's own defect reproduced one level out.
+
+A restatement that points back **without** using the marker is outside this
+guard's reach. That boundary is real and is stated rather than left to be
+discovered: the glob is also mentioned in prose *about* the gate (its
+`*.py`-only rationale) at sites carrying no marker, and those are not pinned.
 
 Two properties keep the guard from being vacuous:
 
@@ -68,6 +75,16 @@ _BUILD_GATE_HEADING = '## Build gate'
 # these words. The marker is what makes assertion 3 population-derived: the sites
 # are discovered from the document, never enumerated here by line number.
 _STEP5_REFERENCE_MARKER = 'predicate Step 5 uses'
+
+# A floor on that population, not an enumeration of it. A self-declared marker
+# population lets the document control its own membership, so it can SHRINK
+# without notice: rephrase the marker at one of two sites and a non-emptiness
+# check still passes while the rephrased site goes unguarded — the same
+# n-1-of-n shape this module exists to catch, one level out. The floor is what
+# makes that shrink loud. Removing a site legitimately is expected to fail here
+# and be accompanied by lowering this number, which is the point: the decision
+# becomes explicit instead of silent.
+_MIN_STEP5_REFERRING_SITES = 2
 
 _QUOTED = re.compile(r'"([^"]+)"')
 _BACKTICKED = re.compile(r'`([^`]+)`')
@@ -439,11 +456,15 @@ def test_every_step5_referring_site_states_the_same_trigger_glob() -> None:
         f'Surface 1 NOT LOCATED in {_SKILL_PATH}: the Step 5 trigger glob could not be '
         'extracted, so the referring sites had nothing to be compared against.'
     )
-    assert sites, (
-        f'Population EMPTY in {_SKILL_PATH}: no line contains the marker '
-        f'"{_STEP5_REFERENCE_MARKER}", so this assertion compared nothing. Either every prose '
-        'restatement was removed, or the marker wording changed and this guard has gone blind '
-        'to the sites it is supposed to cover — the second is far likelier than the first.'
+    assert len(sites) >= _MIN_STEP5_REFERRING_SITES, (
+        f'Population SHRANK in {_SKILL_PATH}: {len(sites)} line(s) carry the marker '
+        f'"{_STEP5_REFERENCE_MARKER}", below the floor of {_MIN_STEP5_REFERRING_SITES}. '
+        'A non-emptiness check would have passed here and left the missing site unguarded, so '
+        'the floor is what makes this loud. Either the marker wording drifted at a site that '
+        'still restates the Step 5 predicate — the likely case, and the site is now unguarded — '
+        'or a restatement was deliberately removed, in which case lower the floor in the same '
+        'change so the decision is recorded rather than silent.\n'
+        + '\n'.join(f'  found line {site.line_number}: {site.text}' for site in sites)
     )
 
     unextracted = [site for site in sites if not site.glob]
@@ -485,6 +506,27 @@ def test_negative_control_referring_site_divergence_is_detected() -> None:
         'Negative control did not fire: the referring-site comparison agreed on a document whose '
         'prose site deliberately states a different glob than its Step 5 table, so the live '
         'referring-site assertion cannot be trusted to fail on real drift.'
+    )
+
+
+def test_negative_control_a_shrunk_marker_population_is_below_the_floor() -> None:
+    """Matched negative control for the cardinality floor.
+
+    A non-emptiness check passes on any population of one, so the floor is only
+    meaningful if a shrunk population demonstrably falls below it. The synthetic
+    document carries exactly one marker site — the state a marker rephrase at one
+    of two live sites would produce — and it is asserted to be under the floor.
+    """
+    sites = extract_step5_referring_globs(_DIVERGING_DOCUMENT)
+
+    assert len(sites) == 1, (
+        'Control document changed: it must carry exactly one marker site to stand in for a '
+        f'population that shrank, but {len(sites)} were found.'
+    )
+    assert len(sites) < _MIN_STEP5_REFERRING_SITES, (
+        'Cardinality floor is inert: a one-site population does not fall below the floor of '
+        f'{_MIN_STEP5_REFERRING_SITES}, so a marker rephrase that silently dropped a site would '
+        'pass the live assertion. The floor must exceed one to catch the shape it targets.'
     )
 
 
