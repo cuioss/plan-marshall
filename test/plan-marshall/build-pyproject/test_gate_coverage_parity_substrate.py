@@ -267,3 +267,136 @@ def test_the_mapping_names_only_cells_that_exist():
     assert not missing, (
         f'the dimension→cell map names cells absent from parity_population(): {sorted(missing)}'
     )
+
+
+# ---------------------------------------------------------------------------
+# The population's LABEL stays honest (D5)
+# ---------------------------------------------------------------------------
+#
+# `_gate_coverage.py` contradicted itself at the point a skimming reader looks
+# first. Its section banner called the parity population "the derived comparison
+# set", while the docstring immediately beneath said the cells are a recorded
+# literal, that nothing recomputes them, and that calling a hand-written table
+# derived invites a reader to trust stale cells. The banner is what a reader sees
+# on the way past; the refutation is four lines further in.
+#
+# The label is prose, so nothing was going to fail when it drifted — which is why
+# it drifted. This control is what stops it drifting back.
+#
+# It is deliberately NOT a blanket ban on the word: `structural_limits` IS
+# computed from the dimensions a run actually recorded, and must stay describable
+# as derived. A guard that scrubbed every mention would break the one place the
+# word is earned, so the positive half below asserts that place survives.
+
+_GATE_COVERAGE_SOURCE = (
+    _REPO_ROOT
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'script-shared'
+    / 'scripts'
+    / 'build'
+    / '_gate_coverage.py'
+)
+
+_DERIVED_RE = re.compile(r'deriv', re.IGNORECASE)
+_PARITY_RE = re.compile(r'parity', re.IGNORECASE)
+
+#: Forms that mention derivation in order to DENY it. The module refutes the
+#: derived reading on purpose and at length, so a guard without this exemption
+#: would flag the refutation itself and force the honest sentences out.
+_REFUTATION_RE = re.compile(
+    r'not\s+(?:a\s+)?deriv|rather\s+than\s+(?:a\s+)?deriv|"derived"',
+    re.IGNORECASE,
+)
+
+
+def _parity_derived_claims() -> tuple[list[str], int, int]:
+    """Lines claiming the parity population is derived, plus what was scanned.
+
+    Returns ``(offending_lines, parity_lines_scanned, derived_mentions_scanned)``.
+    The two scan counts are returned so a zero-offender result states WHICH zero
+    it is: a scan that examined the module and found no stale claim, or a scan
+    that matched nothing at all because the file moved or the pattern broke.
+    """
+    lines = _GATE_COVERAGE_SOURCE.read_text(encoding='utf-8').splitlines()
+    offenders: list[str] = []
+    parity_lines = 0
+    derived_mentions = 0
+    for number, line in enumerate(lines, start=1):
+        has_parity = bool(_PARITY_RE.search(line))
+        mentions = len(_DERIVED_RE.findall(line))
+        parity_lines += 1 if has_parity else 0
+        derived_mentions += mentions
+        if has_parity and mentions and not _REFUTATION_RE.search(line):
+            offenders.append(f'{_GATE_COVERAGE_SOURCE.name}:{number}: {line.strip()}')
+    return offenders, parity_lines, derived_mentions
+
+
+def test_no_surviving_text_calls_the_parity_population_derived():
+    """NEGATIVE half: no line asserts the parity population is a derivation.
+
+    RED before the relabel — the section banner read
+    ``# Parity population — the derived comparison set (D1 / D6)``, the single
+    line in the module that both names the population and calls it derived.
+
+    A sentence that mentions derivation in order to deny it ("recorded, not
+    derived") is exempt; the module makes that denial deliberately and this guard
+    must not push it out.
+    """
+    offenders, parity_lines, derived_mentions = _parity_derived_claims()
+
+    # Published on a clean run, so a green states the size of what it scanned.
+    print(
+        f'parity label scan: parity_lines={parity_lines} '
+        f'derived_mentions={derived_mentions} offending_lines={len(offenders)}'
+    )
+
+    # Anti-vacuity: a scan matching neither term examined nothing, and its empty
+    # offender list would be a "could not look" zero wearing a pass.
+    assert parity_lines > 0, (
+        f'scanned {_GATE_COVERAGE_SOURCE} and matched no line mentioning "parity"; '
+        f'the module moved or was restructured, so this guard examined nothing'
+    )
+    assert derived_mentions > 0, (
+        f'scanned {_GATE_COVERAGE_SOURCE} and matched no mention of derivation at '
+        f'all — including the ones that are legitimate — so the guard is not '
+        f'reading the file it thinks it is'
+    )
+
+    assert not offenders, (
+        'These lines name the parity population and call it derived, contradicting '
+        'the docstring beneath them, which states the cells are a recorded literal '
+        'that nothing recomputes. A hand-written table advertised as derived invites '
+        'a reader to trust cells that go stale silently:\n  ' + '\n  '.join(offenders)
+    )
+
+
+def test_the_genuinely_derived_neighbour_is_still_described_as_derived():
+    """POSITIVE half: the one place the word IS earned survives.
+
+    ``structural_limits`` is computed from the dimensions a run actually recorded,
+    so describing it as derived is accurate. Green before the relabel and green
+    after — only the parity banner changes verdict. Without this half, deleting
+    every occurrence of the word would satisfy the negative control while
+    destroying a true statement, and the pair would not be matched at all.
+    """
+    text = _GATE_COVERAGE_SOURCE.read_text(encoding='utf-8')
+
+    earned = [
+        line.strip()
+        for line in text.splitlines()
+        if _DERIVED_RE.search(line)
+        and not _PARITY_RE.search(line)
+        and not _REFUTATION_RE.search(line)
+    ]
+
+    assert earned, (
+        'No surviving line in _gate_coverage.py describes anything as derived. The '
+        'relabel was meant to correct ONE stale claim about the parity population, '
+        'not to remove the accurate description of structural_limits, which really '
+        'is computed from the dimensions a run recorded. An over-broad edit that '
+        'scrubbed the word everywhere would pass the negative control and land a '
+        'false statement in its place.'
+    )
