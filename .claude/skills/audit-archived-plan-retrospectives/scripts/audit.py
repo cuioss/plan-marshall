@@ -358,13 +358,12 @@ CROSS_PLAN_CHECKS = {
 # completion-aware polling alter), `#1260` (the `global-log-analysis` boundary —
 # the cumulative cost roll-up added beside the per-call ceiling, which adds a row
 # kind and ends the `genuine_signal_count == row count` identity), `plan-10` (the roadmap head this plan
-# re-confirms the general checks accurate against), and `PR-PENDING` (this plan's
-# own boundary, a placeholder resolved to the real PR at finalize by
-# project:finalize-step-era-stamp-fill AFTER create-pr — this plan reworks the
-# `metrics` check, whose per-phase token/duration recording accuracy this plan's
-# D1 dispatch-boundary reconciliation, D2 inline main-context attribution, and D3
-# loop-back monotonicity idle guard change). Every key MUST be a member of
-# `CHECK_NAMES`.
+# re-confirms the general checks accurate against), and `PR-PENDING` (the
+# in-flight plan's own boundary, a placeholder resolved to the real PR at finalize
+# by project:finalize-step-era-stamp-fill AFTER create-pr — currently held by
+# `sequence-and-build-minimality`, whose `build_share` numerator gate, `_ZERO_GATED`
+# class and `status_unknown` row column this plan changes). Every key MUST be a
+# member of `CHECK_NAMES`.
 CHECK_ERA: dict[str, str] = {
     # Roadmap-affected checks carry the specific boundary whose mechanics they
     # verify (kept in step with the plan-11 semantic updates).
@@ -398,17 +397,20 @@ CHECK_ERA: dict[str, str] = {
     "global-log-analysis": "#1260",
     # sequence-and-build-minimality — PR-PENDING (this plan's own boundary, a
     # placeholder resolved to the real PR at finalize by
-    # project:finalize-step-era-stamp-fill AFTER create-pr, bumped from #887): this
-    # plan RE-BASES the check's build-duration derivation off the plan-scoped log
-    # onto the structured change-ledger — durations now come from the ledger's
-    # `duration_seconds` for every build system and every phase (closing the
-    # single-tool and early-phase blindnesses), the pass/fail/timeout/killed status
-    # ratio and the build-vs-wall-clock share are new ledger-derived facets, and a
-    # suspect-zero rule plus a build-time-exceeds-wall-clock invariant guard the
-    # numbers. Those ARE the build-minimality mechanics this check's rows are read
-    # against, so pre-boundary log-derived rows read as era-expected and
-    # post-boundary ledger-derived rows as the current truth.
-    "sequence-and-build-minimality": "#1224",
+    # project:finalize-step-era-stamp-fill AFTER create-pr, bumped from #1224):
+    # this plan changes what the check's own numbers MEAN, in three ways that a
+    # reader of an archived row cannot recover from the row itself.
+    # `build_share` is now NUMERATOR-GATED — it is emitted only when the
+    # build-duration numerator was actually measured, where a missing numerator
+    # previously defaulted to zero and rendered as a real share of zero.
+    # `_ZERO_GATED` separates a MEASURED zero from an ABSENT measurement that the
+    # old classification could not tell apart. And rows carry a `status_unknown`
+    # column, so a build whose outcome could not be read is counted as its own
+    # state instead of silently joining the pass or the fail bucket. Each of the
+    # three turns a former confident zero into an explicit not-measured, so rows
+    # computed under the old semantics are NOT datable against #1224: pre-boundary
+    # rows read as era-expected and post-boundary rows as the current truth.
+    "sequence-and-build-minimality": "PR-PENDING",
     # token-economics — PR-PENDING (plan-8's boundary, a placeholder resolved to
     # the real PR at finalize by project:finalize-step-era-stamp-fill AFTER
     # create-pr): plan-8's finalize-wait consolidation changes the finalize_heavy
