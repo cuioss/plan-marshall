@@ -23,14 +23,24 @@ The HARD acceptance contract these tests pin:
    from the same derivation the findings came from, and on a CLEAN run — the
    only state a passing gate is ever in. A rule that derives none omits the key
    rather than reporting a zero.
+6. ``analyze_argument_naming`` additionally publishes ``blind_spots`` — the part
+   of its population it looked at and could not decide. A population figure
+   alone cannot separate a rule that resolved an authority for every site from
+   one that resolved it for two thirds, and this cluster's authority is
+   git-ignored, so the unresolved share is a state a checkout is routinely in.
 """
 
 from __future__ import annotations
 
 import sys
+from functools import lru_cache
 from pathlib import Path
 
-from _plugin_doctor_dispatching_executor import seed_notation_registry
+from _plugin_doctor_dispatching_executor import (
+    FIXTURE_NOTATION,
+    seed_notation_registry,
+    write_dispatching_executor,
+)
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, get_scripts_dir, load_script_module
 
 SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'plugin-doctor')
@@ -69,6 +79,7 @@ _atdw_runner = _load(
 _apmt = _load('_analyze_provides_method_table.py', '_apmt_runner_test')
 _alc = _load('_analyze_literal_count.py', '_alc_runner_test')
 _armc = _load('_analyze_resolver_matrix_coverage.py', '_armc_runner_test')
+_aan = _load('_analyze_argument_naming.py', '_aan_runner_test')
 
 
 # The canonical quality-gate emission order, captured verbatim. This is the
@@ -300,9 +311,13 @@ def test_ast_cache_parses_each_file_once():
 # =============================================================================
 
 # The rules that derive a population and can report its size on a CLEAN run.
-# All three take a ``*_with_population`` entry point on the runner, so the figure
+# Each takes a ``*_with_population`` entry point on the runner, so the figure
 # comes from the same derivation the findings did.
 POPULATION_PUBLISHING_LABELS = [
+    # Its accept-set is the git-ignored generated executor, so "enumerated the
+    # corpus and could judge none of it" is a state a checkout is routinely in
+    # and a bare finding count cannot express.
+    'analyze_argument_naming',
     'analyze_thinking_directive_in_workflow_docs',
     'analyze_shim_marker',
     # A clean tree is the only state a passing gate is ever in, so a rule whose
@@ -312,8 +327,26 @@ POPULATION_PUBLISHING_LABELS = [
     'canonical-enum-choices-drift',
 ]
 
+#: The rules that additionally publish ``blind_spots``.
+#:
+#: A strict subset of the list above, and deliberately its own list rather than
+#: a reuse: a rule may know how big its population is without being able to say
+#: which part of it went undecided, so the two capabilities are independent and
+#: the omission test below has to be able to tell them apart.
+BLIND_SPOT_PUBLISHING_LABELS = [
+    'analyze_argument_naming',
+]
 
+
+@lru_cache(maxsize=1)
 def _real_tree_summaries():
+    """Run the whole gate over the real tree ONCE per worker and share the result.
+
+    The tree does not change during a session and the gate is the most expensive
+    thing in this module, so re-running it per test bought nothing. Sharing it
+    also removes a way for two assertions about "the real tree" to be made
+    against two different runs of it.
+    """
     runner = RuleRunner(CorpusContext.build(MARKETPLACE_ROOT))
     _issues, summaries = runner.run_quality_gate(
         scope_dirs=[],
@@ -397,6 +430,151 @@ def test_with_population_entry_points_agree_with_the_plain_ones():
         _atdw_runner.analyze_thinking_directive_in_workflow_docs(MARKETPLACE_ROOT)
         == td_findings
     )
+
+
+# =============================================================================
+# Blind-spot publication — the undecided part of the examined population
+# =============================================================================
+
+
+def test_blind_spots_is_omitted_for_rules_that_derive_none():
+    """A rule that cannot say what it failed to decide omits the key.
+
+    The mirror of the ``population_size`` omission rule, and it needs its own
+    assertion: knowing a population's SIZE and knowing which part of it went
+    undecided are separate capabilities, so the rules that publish the first are
+    a superset of those that publish the second. Zeroing the key for the
+    difference would report "nothing went undecided" on rules that never asked.
+    """
+    summaries = _real_tree_summaries()
+
+    non_publishing = set(summaries) - set(BLIND_SPOT_PUBLISHING_LABELS)
+
+    assert non_publishing, 'expected the gate to run rules that publish no blind-spot figure'
+    assert all('blind_spots' not in summaries[label] for label in non_publishing)
+
+
+def test_argument_naming_blind_spots_are_a_share_of_its_own_population():
+    """The two figures are one unit, so the undecided part cannot exceed the whole.
+
+    A ``blind_spots`` counted over a different corpus than ``population_size``
+    would be unreadable beside it — a fraction whose denominator is somewhere
+    else. Bounding it against the published population is what fixes the unit.
+    """
+    summary = _real_tree_summaries()['analyze_argument_naming']
+
+    assert summary['population_size'] > 0, (
+        'the real tree carries executor invocations, so an empty population means '
+        'the corpus walk found nothing rather than that the corpus is empty'
+    )
+    assert 0 <= summary['blind_spots'] <= summary['population_size']
+
+
+def _corpus_with_one_decidable_and_one_undecidable_site(root: Path) -> Path:
+    """Build a marketplace carrying exactly one site of each judgeability class.
+
+    Returns the MARKETPLACE root — the parent of ``bundles/``, which is the
+    argument the cluster itself takes.
+
+    Both invocations name a REGISTERED notation, so neither is a notation-drift
+    finding and the tree stays clean; what separates them is whether the
+    accept-set could be derived. ``qg-probe:probe-skill:probe`` resolves to a
+    real argparse script the dispatching executor can probe, so its verb and
+    flag are judged and found correct. ``FIXTURE_NOTATION`` deliberately
+    resolves to no script, so ``build_script_index`` drops it fail-closed and
+    the site is examined without a verdict — a blind spot.
+
+    The pair is matched on purpose: with only the second site, a ``blind_spots``
+    implementation that simply returned the population size would pass.
+    """
+    marketplace_root = root / 'marketplace'
+    probe_notation = 'qg-probe:probe-skill:probe'
+    write_dispatching_executor(root / '.plan', [probe_notation, FIXTURE_NOTATION])
+
+    skill_dir = marketplace_root / 'bundles' / 'qg-probe' / 'skills' / 'probe-skill'
+    scripts_dir = skill_dir / 'scripts'
+    scripts_dir.mkdir(parents=True)
+    (scripts_dir / 'probe.py').write_text(
+        '#!/usr/bin/env python3\n'
+        '"""Synthetic argparse surface for the blind-spot control."""\n'
+        'import argparse\n'
+        '\n'
+        'parser = argparse.ArgumentParser()\n'
+        'subparsers = parser.add_subparsers(dest="command")\n'
+        'p_run = subparsers.add_parser("run")\n'
+        'p_run.add_argument("--thing")\n'
+        '\n'
+        'if __name__ == "__main__":\n'
+        '    parser.parse_args()\n',
+        encoding='utf-8',
+    )
+    (skill_dir / 'SKILL.md').write_text(
+        '# Probe\n'
+        '\n'
+        '```bash\n'
+        f'python3 .plan/execute-script.py {probe_notation} run --thing X\n'
+        '```\n'
+        '\n'
+        '```bash\n'
+        f'python3 .plan/execute-script.py {FIXTURE_NOTATION} list\n'
+        '```\n',
+        encoding='utf-8',
+    )
+    return marketplace_root
+
+
+def test_blind_spots_counts_only_the_sites_that_went_undecided(tmp_path):
+    """A clean tree still separates what was judged from what was merely seen.
+
+    This is the state the whole deliverable is about: zero findings, and two
+    numbers that nonetheless say the sweep enumerated two sites and ruled on
+    one. Without the split, the run is reported as a clean gate over a corpus
+    the reader is told nothing about.
+    """
+    marketplace_root = _corpus_with_one_decidable_and_one_undecidable_site(tmp_path)
+
+    findings, population_size, blind_spots = _aan.analyze_argument_naming_with_population(
+        marketplace_root
+    )
+
+    assert findings == [], f'the control tree is meant to be clean, got {findings!r}'
+    assert population_size == 2, 'both invocations belong to the enumerated population'
+    assert blind_spots == 1, (
+        'only the site whose accept-set could not be derived went undecided; the '
+        'probe site was judged and found correct'
+    )
+
+
+def test_argument_naming_plain_entry_point_returns_the_with_population_findings(tmp_path):
+    """The projection did not fork into a second implementation.
+
+    ``analyze_argument_naming`` is defined as ``_with_population`` with the two
+    figures dropped, so a divergence here means someone re-implemented the walk
+    and the published numbers no longer describe the findings beside them.
+
+    The tree is deliberately given a DRIFTING site first. Run against the clean
+    control the comparison is ``[] == []``, which two independently broken
+    implementations would also satisfy — the equality has to carry a finding to
+    be evidence of anything.
+    """
+    marketplace_root = _corpus_with_one_decidable_and_one_undecidable_site(tmp_path)
+    skill_md = (
+        marketplace_root / 'bundles' / 'qg-probe' / 'skills' / 'probe-skill' / 'SKILL.md'
+    )
+    skill_md.write_text(
+        skill_md.read_text(encoding='utf-8')
+        + '\n```bash\n'
+        'python3 .plan/execute-script.py qg-probe:probe-skill:probe run --invented\n'
+        '```\n',
+        encoding='utf-8',
+    )
+
+    findings, _population_size, _blind_spots = _aan.analyze_argument_naming_with_population(
+        marketplace_root
+    )
+
+    assert findings, 'the equality below is vacuous unless the tree yields a finding'
+    assert _aan.analyze_argument_naming(marketplace_root) == findings
 
 
 # =============================================================================

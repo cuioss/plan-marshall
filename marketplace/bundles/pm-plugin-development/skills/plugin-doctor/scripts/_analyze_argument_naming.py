@@ -67,10 +67,36 @@ anchored at the BUNDLES root so ``cmd_quality_gate``'s ``_finding_is_tree_wide``
 bypass keeps it under a ``--paths``-scoped run, exactly as the other
 anti-vacuity guards are kept.
 
+Coverage is published on every run, clean or not
+------------------------------------------------
+A finding count answers "how many invocations were wrong". It cannot answer
+"how many were JUDGED", and on a clean tree — the only state a passing gate is
+ever in — there is no finding left to carry the figure. The runner therefore
+publishes two numbers on this rule's summary, derived by
+``analyze_argument_naming_with_population`` in the SAME pass the findings come
+from:
+
+- ``population_size`` — every executor invocation the markdown corpus carries.
+  This is what the cluster enumerated, and it needs no registry: enumeration is
+  a read of the corpus, the registry is only the AUTHORITY the enumerated sites
+  are judged against.
+- ``blind_spots`` — the enumerated sites the cluster could not DECIDE. A
+  notation that is absent from the registry is decided (it is reported as
+  ``ARGUMENT_NAMING_NOTATION_INVALID``); a notation that IS registered but whose
+  ``--help`` surface was dropped fail-closed, or whose verb listing or flag set
+  came back unconfident, is not. Those sites were looked at and no verdict was
+  drawn, which a bare zero hides.
+
+The two figures share one unit — invocations — in every state the cluster can
+be in, including the ``could_not_look`` state below, where they are EQUAL
+because every enumerated site went undecided.
+
 Public API
 ----------
 - ``analyze_argument_naming(marketplace_root)``: entry point — returns
   findings for every rule ID in the cluster, combined.
+- ``analyze_argument_naming_with_population(marketplace_root)``: the same
+  single derivation, returning ``(findings, population_size, blind_spots)``.
 - ``read_notation_registry(executor_path)``: reads the executor's notation
   registry AND why it is empty when it is (``NotationRegistry.status``).
 - ``scan_notation(marketplace_root, registered_notations)``: detects
@@ -400,6 +426,7 @@ def _substrate_absent_finding(
     bundles_root: Path,
     registry: NotationRegistry,
     markdown_targets: int,
+    population_size: int,
 ) -> dict:
     """The ``could_not_look`` finding emitted when the registry is not evidence.
 
@@ -408,9 +435,16 @@ def _substrate_absent_finding(
     file-anchored guard would be dropped by the scope filter, which is how the
     other anti-vacuity guards in this tree learned to anchor here.
 
-    ``markdown_targets`` is published because it is the figure that makes the
-    outcome legible: it is the corpus the cluster WOULD have judged, and none of
-    it was. A bare zero-findings result says nothing about that number.
+    ``markdown_targets`` and ``population_size`` are published because they are
+    the figures that make the outcome legible: the corpus the cluster WOULD have
+    judged, counted in files and in invocation sites, none of which it did. A
+    bare zero-findings result says nothing about either number.
+
+    ``blind_spots`` equals ``population_size`` here, and the equality is the
+    point: enumerating the corpus needs no registry, deciding it does, so on this
+    path every site the cluster found is a site it could not rule on. The key
+    carries the SAME unit — invocations — that it carries on a usable run, so a
+    reader comparing two runs is comparing one quantity.
     """
     return Finding(
         type=RULE_SUBSTRATE_ABSENT,
@@ -421,15 +455,17 @@ def _substrate_absent_finding(
         rule_id=RULE_SUBSTRATE_ABSENT,
         description=(
             f'{OUTCOME_COULD_NOT_LOOK}: {registry.unusable_because} '
-            f'({registry.executor_path}). {markdown_targets} markdown file(s) were '
-            'in scope and NONE were judged — this run is not a clean result. '
+            f'({registry.executor_path}). {markdown_targets} markdown file(s) '
+            f'carrying {population_size} executor invocation(s) were in scope and '
+            'NONE were judged — this run is not a clean result. '
             + REMEDY_SUBSTRATE
         ),
         details={
             'outcome': OUTCOME_COULD_NOT_LOOK,
             'reason': registry.status,
             'substrate': str(registry.executor_path),
-            'population_size': 0,
+            'population_size': population_size,
+            'blind_spots': population_size,
             'markdown_targets': markdown_targets,
             'remedy': REMEDY_SUBSTRATE,
         },
@@ -1072,6 +1108,58 @@ def scan_canonical_forms(
 
 
 # =============================================================================
+# Coverage — what the sweep enumerated, and what it could not decide
+# =============================================================================
+
+
+def _corpus_invocations(marketplace_root: Path) -> list[_Invocation]:
+    """Every executor invocation the markdown corpus carries — the population.
+
+    Enumeration deliberately does NOT consult the registry. The corpus is what
+    the cluster looks at; the registry is the authority it judges what it saw
+    against. Keeping the two apart is what lets an unusable-registry run still
+    state how much it was looking at when it could not rule.
+    """
+    return [
+        inv for md in _markdown_targets(marketplace_root) for inv in _extract_invocations(md)
+    ]
+
+
+def _invocation_is_blind_spot(
+    inv: _Invocation,
+    registered_notations: set[str],
+    script_index: dict[str, _ScriptEntry],
+) -> bool:
+    """Return ``True`` when no verdict could be drawn about ``inv``.
+
+    The branches mirror, one for one, the ``continue`` guards the five ``scan_*``
+    rules take, because a blind spot IS a site those rules declined to rule on.
+    Two of the declinations are NOT blind spots and are excluded here:
+
+    - A notation absent from ``registered_notations`` is DECIDED — it is reported
+      as :data:`RULE_NOTATION_INVALID`. Counting it would file the cluster's
+      loudest verdict as a gap.
+    - A script that declares no subparsers at all has nothing to check at the
+      verb level, and its root flag surface still judges every flag on the line.
+
+    What remains is the genuine residue: a registered notation whose ``--help``
+    surface was dropped fail-closed by :func:`build_script_index`, an unconfident
+    verb listing that makes absence no evidence, and an underived flag surface
+    (``None``) on the scope the invocation actually addresses.
+    """
+    if inv.notation not in registered_notations:
+        return False
+    entry = script_index.get(inv.notation)
+    if entry is None:
+        return True
+    if inv.subcommand is None:
+        return entry.root_flags is None
+    if inv.subcommand not in entry.subcommands:
+        return not entry.subcommands_confident
+    return entry.subcommands[inv.subcommand] is None
+
+
+# =============================================================================
 # Public entry point
 # =============================================================================
 
@@ -1083,29 +1171,62 @@ def analyze_argument_naming(marketplace_root: Path) -> list[dict]:
     transitional period, because stale-flag drift recurred in skill workflows.
 
     Returns a flat list of finding dicts (one per detected drift). Use
-    ``rule_id`` to differentiate rule clusters.
+    ``rule_id`` to differentiate rule clusters. The signature is held fixed so no
+    consumer migrates; a caller that also wants the coverage figures calls
+    :func:`analyze_argument_naming_with_population`, which is the SAME derivation
+    rather than a second one that could disagree with it.
+    """
+    findings, _population_size, _blind_spots = analyze_argument_naming_with_population(
+        marketplace_root
+    )
+    return findings
+
+
+def analyze_argument_naming_with_population(
+    marketplace_root: Path,
+) -> tuple[list[dict], int, int]:
+    """Return ``(findings, population_size, blind_spots)`` from ONE derivation.
+
+    The single implementation of the cluster; :func:`analyze_argument_naming` is
+    the projection that drops the two figures. Re-deriving the corpus to get the
+    numbers would be a second chance to disagree with the run the findings came
+    from — the failure mode ``analyze_canonical_enum_drift_with_population``
+    names, and this cluster's subject matter besides.
 
     ``marketplace_root`` is the MARKETPLACE dir (the parent of ``bundles/``):
     the markdown corpus is derived as ``marketplace_root/'bundles'`` and the
     executor as ``marketplace_root.parent/'.plan'``. Passing the bundles dir
     instead resolves the executor to a path that does not exist, which is
-    exactly the substrate absence the guard below now reports.
+    exactly the substrate absence the guard below reports.
+
+    Both figures are WHOLE-TREE and are never narrowed by the runner's
+    ``--paths`` scope: the cluster runs over the whole corpus and only its
+    FINDINGS are scope-filtered, so a scope-narrowed population would describe a
+    derivation that never happened.
     """
     executor_path = marketplace_root.parent / '.plan' / 'execute-script.py'
     registry = read_notation_registry(executor_path)
+    population = _corpus_invocations(marketplace_root)
     if not registry.usable:
         # ⛔ NOT a no-op. Answering an unread registry with ``[]`` gives the
         # caller the same answer as a corpus read in full and found clean, so a
         # gate cannot tell the two apart — and the executor is git-ignored, so
         # the unread case is the DEFAULT in any fresh clone. The absence is
-        # reported as its own outcome instead.
-        return [
-            _substrate_absent_finding(
-                marketplace_root / 'bundles',
-                registry,
-                len(_markdown_targets(marketplace_root)),
-            )
-        ]
+        # reported as its own outcome instead, over a population that IS
+        # enumerated: every site is a blind spot, and saying how many there are
+        # is the difference between "could not look" and "nothing to see".
+        return (
+            [
+                _substrate_absent_finding(
+                    marketplace_root / 'bundles',
+                    registry,
+                    len(_markdown_targets(marketplace_root)),
+                    len(population),
+                )
+            ],
+            len(population),
+            len(population),
+        )
 
     registered = set(registry.notations)
     script_index = build_script_index(registered, marketplace_root)
@@ -1116,4 +1237,7 @@ def analyze_argument_naming(marketplace_root: Path) -> list[dict]:
     findings.extend(scan_flag(marketplace_root, script_index))
     findings.extend(scan_router_flag_placement(marketplace_root, script_index))
     findings.extend(scan_canonical_forms(marketplace_root, script_index))
-    return findings
+    blind_spots = sum(
+        1 for inv in population if _invocation_is_blind_spot(inv, registered, script_index)
+    )
+    return findings, len(population), blind_spots
