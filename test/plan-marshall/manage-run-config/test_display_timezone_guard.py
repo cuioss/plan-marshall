@@ -12,7 +12,17 @@ The guard is DERIVED OVER the D1 classification
 
 * It re-scans the live ``marketplace/bundles/**/*.py`` tree for every
   timestamp call site (the population), so the classification cannot silently go
-  stale or empty.
+  stale or empty. The scan pattern has two arms, published separately in the
+  classification and asserted here to compose into ``scan_regex``: a raw-call arm
+  for modules that construct or parse a time themselves, and a helper arm
+  (``now_utc_iso`` / ``format_timestamp``) for modules that obtain one from the
+  shared primitives. The raw-call arm alone cannot see the second group at all,
+  so before the helper arm existed their store sites were absent from a census
+  that nonetheless looked large and passed.
+* The helper-only difference (helper arm MINUS raw-call arm) is re-derived from
+  the tree and matched against the classification's explicit
+  ``helper_only_sites`` verdicts in both directions, so neither an unclassified
+  surface nor a stale entry can pass.
 * It treats STORE/COMPARE as the derived remainder (every scanned file that is
   neither a declared RENDER file nor a knob-owner file), so a newly-added
   timestamp site is STORE/COMPARE by default and trips this guard the instant it
@@ -68,6 +78,21 @@ def _scan_time_files(scan_regex: str) -> set[str]:
     return hits
 
 
+def _derive_helper_only_population(classification: dict) -> tuple[set[str], set[str], set[str]]:
+    """Re-derive the helper-only population from the tree.
+
+    Returns ``(raw_arm_hits, helper_arm_hits, helper_only)`` where ``helper_only``
+    is the set difference — the bundle modules that reach a timestamp ONLY through
+    a shared helper, and which the raw-call arm therefore cannot see. The
+    population is derived here from the live tree, never read from the
+    classification's own entry list: a detector that took its population from the
+    thing it is checking could not fail.
+    """
+    raw_arm = _scan_time_files(classification['scan_regex_raw_call_arm'])
+    helper_arm = _scan_time_files(classification['scan_regex_helper_arm'])
+    return raw_arm, helper_arm, helper_arm - raw_arm
+
+
 def _files_referencing_symbols(symbols: list[str]) -> dict[str, list[str]]:
     """Map each bundle .py that references any knob symbol to the symbols it hits."""
     found: dict[str, list[str]] = {}
@@ -117,6 +142,189 @@ def test_classification_covers_the_live_population_and_is_non_empty(capsys):
             f'Classified file {declared!r} is not a live timestamp site — '
             'the classification has drifted from the tree.'
         )
+
+
+def test_scan_regex_reaches_the_shared_timestamp_helpers():
+    """The census must see modules that get their time from a shared helper (D8).
+
+    The raw-call arm of ``scan_regex`` matches only modules that construct or
+    parse a time themselves. A module whose timestamp comes from
+    ``now_utc_iso()`` / ``format_timestamp()`` matches none of those shapes, so
+    it fell out of the scanned population entirely — and because STORE/COMPARE is
+    the DERIVED remainder of that population, its store sites were absent from
+    the census the guard publishes. The omission was invisible: the guard still
+    reported a large, non-empty census and passed.
+    """
+    classification = _load_classification()
+    scan_regex = classification['scan_regex']
+
+    for helper in ('now_utc_iso', 'format_timestamp'):
+        assert helper in scan_regex, (
+            f'scan_regex does not reach {helper!r}. Every bundle module whose only '
+            'timestamp comes through that helper is outside the scanned population, '
+            'so it is missing from the derived STORE/COMPARE census — and a census '
+            'that silently omits sites still looks non-empty and still passes. Add '
+            'the helper to scan_regex_helper_arm (and to the composed scan_regex).'
+        )
+
+
+def test_scan_regex_is_the_composition_of_its_published_arms():
+    """``scan_regex`` must equal the alternation of the two published arms.
+
+    The arms are published separately so the guard can compute the helper-only
+    difference. If an arm were widened without the composed pattern following,
+    the difference would be derived over one population while the census was
+    derived over another — and the two would disagree silently.
+    """
+    classification = _load_classification()
+    raw = classification['scan_regex_raw_call_arm']
+    helper = classification['scan_regex_helper_arm']
+
+    assert classification['scan_regex'] == f'{raw}|{helper}', (
+        'scan_regex is not the alternation of scan_regex_raw_call_arm and '
+        'scan_regex_helper_arm — the arms have drifted from the composed pattern.'
+    )
+
+
+def test_helper_only_population_has_an_explicit_classification_entry(capsys):
+    """Every helper-only module carries an explicit, recorded verdict (D8).
+
+    The population is re-derived HERE from the live tree as the set difference
+    between the helper arm and the raw-call arm — it is never taken from the
+    classification's own ``helper_only_sites`` list, which is the thing under
+    test. The assertion runs in both directions: an undeclared member is a
+    surface that was never classified, and a declared entry that is no longer in
+    the difference is a stale claim about a tree that has moved.
+    """
+    classification = _load_classification()
+    raw_arm, helper_arm, helper_only = _derive_helper_only_population(classification)
+    declared = {entry['file'] for entry in classification['helper_only_sites']}
+
+    census = {
+        'raw_call_arm_files': len(raw_arm),
+        'helper_arm_files': len(helper_arm),
+        'helper_only_files': len(helper_only),
+        'declared_entries': len(declared),
+    }
+    with capsys.disabled():
+        print('\n[display-timezone guard] helper-only census:', json.dumps(census, indent=2))
+        print('[display-timezone guard] helper-only files:', json.dumps(sorted(helper_only), indent=2))
+
+    # A difference of zero would make the two directional assertions below
+    # vacuously true, so the population size is asserted, not merely printed.
+    assert helper_only, (
+        'The helper-only population is empty. Either every helper caller also '
+        'makes a raw datetime call (in which case the helper arm is buying '
+        'nothing), or the arms are no longer matching what they claim to match.'
+    )
+
+    undeclared = helper_only - declared
+    assert not undeclared, (
+        'Bundle module(s) reach a timestamp ONLY through a shared helper but carry '
+        'no entry in helper_only_sites, so no verdict was ever recorded for them:\n'
+        + json.dumps(sorted(undeclared), indent=2)
+    )
+
+    stale = declared - helper_only
+    assert not stale, (
+        'helper_only_sites declares module(s) that are no longer in the live '
+        'helper-only difference — the classification has drifted from the tree:\n'
+        + json.dumps(sorted(stale), indent=2)
+    )
+
+
+def test_published_census_covers_every_helper_reaching_module(capsys):
+    """The published census leaves no helper-reaching module outside it (D8).
+
+    The census the guard prints is the ``scanned`` population, and STORE/COMPARE
+    is its derived remainder — so a module absent from ``scanned`` is absent from
+    the census, silently. This asserts the difference the widening was made to
+    close is now EMPTY: every bundle module reaching ``now_utc_iso`` /
+    ``format_timestamp`` is inside the scanned population.
+
+    Pre-widening this failed with the whole helper-only set listed, which is the
+    defect stated as a set: the guard's census and the set of modules that
+    actually obtain a timestamp were not the same population.
+    """
+    classification = _load_classification()
+    scanned = _scan_time_files(classification['scan_regex'])
+    _raw_arm, helper_arm, _helper_only = _derive_helper_only_population(classification)
+
+    uncovered = helper_arm - scanned
+    with capsys.disabled():
+        print(
+            '\n[display-timezone guard] helper-arm coverage:',
+            json.dumps(
+                {'helper_arm_files': len(helper_arm), 'scanned_files': len(scanned),
+                 'uncovered': sorted(uncovered)},
+                indent=2,
+            ),
+        )
+
+    assert helper_arm, 'The helper arm matched nothing — the coverage claim below would be vacuous.'
+    assert not uncovered, (
+        'Module(s) reach a timestamp helper but are absent from the scanned population, '
+        'so they are absent from the census this guard publishes and from the derived '
+        'STORE/COMPARE remainder:\n' + json.dumps(sorted(uncovered), indent=2)
+    )
+
+
+def test_helper_only_entries_are_well_formed(capsys):
+    """Each helper-only verdict carries the shape its classification requires (D8).
+
+    A STORE entry must NOT carry a ``render_call_budget`` — a budget on a store
+    site would assert that the display knob legitimately reaches it. A RENDER
+    entry must carry a re-derived budget AND appear in ``render_files``, so the
+    two arms of the write-path guard see it.
+    """
+    classification = _load_classification()
+    entries = classification['helper_only_sites']
+    render_files = set(classification['render_files'])
+    budgeted = {site['file'] for site in classification['render_sites']}
+
+    verdicts = {'STORE': 0, 'RENDER': 0}
+    for entry in entries:
+        rel = entry['file']
+        verdict = entry['classification']
+        assert verdict in verdicts, (
+            f'helper_only_sites entry {rel!r} carries an unknown classification '
+            f'{verdict!r} — expected STORE or RENDER.'
+        )
+        verdicts[verdict] += 1
+
+        assert entry.get('reason'), (
+            f'helper_only_sites entry {rel!r} records no reason. An entry without a '
+            'reason is a bare assertion that the site is safe, which is exactly what '
+            'this classification exists to replace.'
+        )
+
+        if verdict == 'STORE':
+            assert 'render_call_budget' not in entry, (
+                f'STORE entry {rel!r} carries a render_call_budget. A budget grants a '
+                'file render calls; a STORE site is one the display-timezone knob must '
+                'never reach, so it has no budget to spend.'
+            )
+            assert rel not in render_files, (
+                f'{rel!r} is classified STORE but is also listed in render_files — the '
+                'file would be exempted from the cross-file leak arm it is meant to be '
+                'held to.'
+            )
+        else:
+            assert rel in render_files, (
+                f'RENDER entry {rel!r} is not listed in render_files, so the write-path '
+                'guard treats it as STORE/COMPARE and its render call reads as a leak.'
+            )
+            assert rel in budgeted, (
+                f'RENDER entry {rel!r} carries no render_call_budget in render_sites — '
+                'an unbudgeted RENDER file can absorb further store sites unnoticed.'
+            )
+
+    # Publish the verdict split so a run in which one branch above examined
+    # nothing is visible rather than silently vacuous.
+    with capsys.disabled():
+        print('\n[display-timezone guard] helper-only verdicts:', json.dumps(verdicts, indent=2))
+
+    assert sum(verdicts.values()) == len(entries)
 
 
 def test_render_routing_is_live(capsys):

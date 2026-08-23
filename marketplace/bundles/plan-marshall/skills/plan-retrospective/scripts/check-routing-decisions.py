@@ -167,20 +167,37 @@ _DROPPED_RECORD_RE = dropped_record_pattern()
 
 _REMOVAL_CAUSE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
-        # LEGACY — the RETIRED aggregate `lane_resolution` shape, kept for
-        # ARCHIVED decision logs only. The composer stopped emitting this when it
-        # moved to one line per dropped step, and the live shape is handled by the
-        # shared subtraction-record pattern above.
-        #
-        # It is retained because this script reads archived plans
+        # Retained because this script reads archived plans
         # (`resolve_plan_dir(mode='archived', ...)`) and an archived log is
         # immutable history: dropping the pattern would leave every pre-change
         # archive resolving NO cause for its posture-cutoff drops, falling through
         # to predicate re-evaluation and producing exactly the false `mis_prune`
-        # this deliverable exists to end — a regression introduced by the fix, on
-        # the corpus the fix was meant to make readable. It is also the only
-        # pattern that renders a Python list repr, so it is what keeps
+        # this mechanism exists to end — a regression introduced by the fix, on the
+        # corpus the fix was meant to make readable. It is also the only pattern
+        # that renders a Python list repr, so it is what keeps
         # `_parse_step_tokens`'s list branch reachable.
+        #
+        # SHIM(B): the RETIRED aggregate `lane_resolution` decision-log line —
+        # `execution_profile=…` BEFORE the verb, the dropped steps rendered as a
+        # Python list repr, and a trailing `(tier above posture cutoff)` clause.
+        # The live emitter writes one line per dropped step with the posture in a
+        # trailing parenthetical and the gate's reason after the colon, so no
+        # current run can produce this shape; only archived logs still carry it.
+        # shim-owner: plan-retrospective
+        # shim-floor: the `manage-execution-manifest` composer change that replaced
+        #   the single aggregate `lane_resolution` line with one
+        #   `_log_dropped_records` line per dropped step, moving `execution_profile`
+        #   into a trailing parenthetical and the gate's own reason after the colon.
+        # shim-remove-when: no archived plan this reader can open still retains a
+        #   decision.log carrying a line this pattern matches. Establish that by
+        #   scanning the retained archive corpus for lines the EMITTER actually
+        #   produced — never by reading
+        #   `manage-execution-manifest/standards/decision-rules.md`. Substituting
+        #   that document for the emitter is precisely what left this pattern's
+        #   predecessor dead in production while its test stayed green, because doc
+        #   → regex and doc → test-literal is a closed loop the emitter never enters
+        #   (lesson 2026-08-08-20-001, Instance 1). The honest expectation is that
+        #   this trigger does not fire while pre-change archives are retained.
         'posture_cutoff_legacy_aggregate',
         re.compile(
             r'lane_resolution\s+—\s+execution_profile=[^,]+,\s+dropped\s+(?P<steps>.+?)'
