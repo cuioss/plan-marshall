@@ -673,7 +673,7 @@ def test_input_table_selector_is_matched_by_the_documented_header_alone(tmp_path
     negative_lines = negative.read_text(encoding='utf-8').splitlines()
     differing = [
         index
-        for index, (left, right) in enumerate(zip(positive_lines, negative_lines))
+        for index, (left, right) in enumerate(zip(positive_lines, negative_lines, strict=True))
         if left != right
     ]
     assert differing == [0] and len(positive_lines) == len(negative_lines), (

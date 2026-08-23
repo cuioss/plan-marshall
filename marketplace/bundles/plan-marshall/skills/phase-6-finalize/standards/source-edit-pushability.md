@@ -148,8 +148,25 @@ When authoring a finalize step that edits source:
 - Declare `mutates_source: true` in the step's frontmatter.
 - Order it before `default:branch-cleanup` (merge), and before `default:ci-verify`
   when the edit must be CI-covered.
-- Commit and push the edit onto the feature branch within the step (do not defer the
-  push to a later step or to the operator).
+- Commit the edit onto the feature branch within the step. **Whether the step also
+  pushes depends on where it sits relative to the `default:push` barrier (order 11),
+  and only one of the two is correct for any given step:**
+  - **Ordered BEFORE `default:push`** — commit only, and let the barrier ship it.
+    `default:push` is a *pure push barrier*: it carries no commit logic, asserts a
+    clean tree, and pushes the converged branch. A step at a lower order that pushed
+    on its own would push the same branch a second time, outside the single-push
+    contract the barrier exists to hold. `default:architecture-refresh` (order 10) is
+    the reference case — it commits its refreshed descriptor and stops.
+  - **Ordered AFTER `default:push`** — commit **and** push within the step, because no
+    later barrier will ship it. `project:finalize-step-era-stamp-fill` (order 21) is
+    the reference case: it self-commits and self-pushes, which is what makes its edit
+    ride the PR.
+
+  What the checklist item forbids in both cases is the same thing: do not leave the
+  edit uncommitted, and do not defer the *responsibility* for shipping it to the
+  operator. Deferring the push to the barrier is not deferral — the barrier is a
+  declared step that always runs, so the edit's path to the remote is guaranteed by
+  the step order rather than by hope.
 - If the step can only determine the edit after merge, emit an explicit follow-up
   artifact naming the owed edit — never silently revert.
 - If the step needs **post-merge evidence AND** a source edit, do NOT declare both

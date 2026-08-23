@@ -44,6 +44,7 @@ from typing import Any
 
 import pytest
 from _dispatch_roster import parse_roster
+from _push_prescription_scan import scan_push_prescriptions
 from conftest import MARKETPLACE_ROOT
 
 # ---------------------------------------------------------------------------
@@ -105,10 +106,10 @@ def _decide_architecture_refresh(
 
       * ``branch``: the ``A``-``F`` branch identifier from "Step 5: Mark Step
         Complete" (no baseline / tier-0+tier-1 skipped / no diff / refresh only /
-        refresh + enrich / refresh + PR note).
+        refresh + enrich / refresh + deferred re-enrichment).
       * ``tier_0_committed``: True if the Tier-0 ``chore(architecture):
         refresh`` commit fires.
-      * ``tier_1_action``: ``enrich`` / ``pr_note`` / ``skipped``.
+      * ``tier_1_action``: ``enrich`` / ``deferred`` / ``skipped``.
       * ``affected_modules``: sorted union ``added union removed``, or
         ``_AFFECTED_UNKNOWN`` when Tier 0 is disabled.
       * ``display_detail``: the ``--display-detail`` payload that the
@@ -199,9 +200,9 @@ def _decide_architecture_refresh(
         return {
             'branch': 'F',
             'tier_0_committed': True,
-            'tier_1_action': 'pr_note',
+            'tier_1_action': 'deferred',
             'affected_modules': affected,
-            'display_detail': ('refreshed; re-enrichment deferred to PR note'),
+            'display_detail': ('refreshed; re-enrichment deferred'),
         }
     if tier_1 == 'auto':
         return {
@@ -226,9 +227,9 @@ def _decide_architecture_refresh(
             return {
                 'branch': 'F',
                 'tier_0_committed': True,
-                'tier_1_action': 'pr_note',
+                'tier_1_action': 'deferred',
                 'affected_modules': affected,
-                'display_detail': ('refreshed; re-enrichment deferred to PR note'),
+                'display_detail': ('refreshed; re-enrichment deferred'),
             }
         raise ValueError(f'unknown user_response: {user_response!r}')
 
@@ -413,7 +414,7 @@ class TestTier0DisabledMatrix:
 class TestTier1KnobDispatch:
     """Step 4d — tier-1 knob dispatch with non-empty diff."""
 
-    def test_tier_1_disabled_yields_branch_f_pr_note(self):
+    def test_tier_1_disabled_yields_branch_f_deferred(self):
         result = _decide_architecture_refresh(
             baseline_present=True,
             tier_0='enabled',
@@ -422,8 +423,8 @@ class TestTier1KnobDispatch:
             diff_added=('mod-a',),
         )
         assert result['branch'] == 'F'
-        assert result['tier_1_action'] == 'pr_note'
-        assert result['display_detail'] == 'refreshed; re-enrichment deferred to PR note'
+        assert result['tier_1_action'] == 'deferred'
+        assert result['display_detail'] == 'refreshed; re-enrichment deferred'
 
     def test_tier_1_auto_yields_branch_e_enrich(self):
         result = _decide_architecture_refresh(
@@ -463,7 +464,7 @@ class TestTier1KnobDispatch:
             user_response='Skip — note in PR',
         )
         assert result['branch'] == 'F'
-        assert result['tier_1_action'] == 'pr_note'
+        assert result['tier_1_action'] == 'deferred'
 
     def test_tier_1_prompt_aborted_treated_as_decline(self):
         """`AskUserQuestion aborted` is informationally equivalent to Skip."""
@@ -476,7 +477,7 @@ class TestTier1KnobDispatch:
             user_response='aborted',
         )
         assert result['branch'] == 'F'
-        assert result['tier_1_action'] == 'pr_note'
+        assert result['tier_1_action'] == 'deferred'
 
     def test_tier_1_prompt_requires_user_response_with_drift(self):
         """The standard documents `prompt` as default — caller must supply UX answer."""
@@ -655,10 +656,51 @@ class TestNarrativeContract:
     ):
         assert 'chore(architecture): refresh derived data after' in standard_text
 
-    def test_documents_post_commit_push(self, standard_text: str):
-        # Tier-0 commit + push, Tier-1 enrich + push — `git push` is documented
-        # in both sections.
-        assert standard_text.count('git -C {worktree_path} push') >= 2
+    def test_documents_no_push_invocation(self, standard_text: str):
+        """A step at order 10 must NOT push — the order-11 barrier ships its commit.
+
+        This is the inverse of the assertion that stood here before, and it is
+        the matched positive control for the D6 fix. The old form asserted
+        ``count('git -C {worktree_path} push') >= 2`` — it REQUIRED the very
+        push this standard has no authority to perform. ``default:push``
+        (order 11) is a pure push barrier: it carries no commit logic, asserts a
+        clean tree, and ships the converged branch. A push from order 10 is a
+        second push of the same branch, outside the single-push contract the
+        barrier exists to hold.
+
+        The check is population-derived rather than literal-keyed: it scans the
+        standard's fenced command lines for a git push invocation instead of
+        pinning one spelling, so re-introducing the push in any form (a bare
+        ``git push``, a ``-C {main_checkout}`` variant, a ``--force-with-lease``
+        flavour) fails the guard. The examined-line count is published so a scan
+        that resolves nothing fails loudly rather than passing vacuously.
+        """
+        offenders, examined = scan_push_prescriptions(standard_text)
+
+        assert examined > 0, (
+            'Push scan examined 0 fenced command lines of architecture-refresh.md '
+            '— the scan resolved nothing, so a clean result would be vacuous.'
+        )
+        assert offenders == [], (
+            f'architecture-refresh.md (order 10) prescribes {len(offenders)} git '
+            f'push invocation(s) across {examined} examined command lines, but it '
+            f'sits BELOW the order-11 default:push barrier that ships its commit. '
+            f'Offending lines: {offenders}'
+        )
+
+    def test_documents_the_barrier_that_ships_its_commit(self, standard_text: str):
+        """Not pushing is only correct because a later barrier does push.
+
+        The negative half of the control above: asserting the absence of a push
+        would also pass for a standard that commits and lets the work strand.
+        The standard must therefore name ``default:push`` as the step that
+        ships the commit it produces.
+        """
+        assert 'default:push' in standard_text, (
+            'architecture-refresh.md must name default:push as the barrier that '
+            'ships its commit — otherwise "this step does not push" reads as '
+            'the edit being stranded rather than handed to the barrier.'
+        )
 
     # ----- Step 4: Tier 1 ---------------------------------------------------
 
@@ -672,12 +714,55 @@ class TestNarrativeContract:
         assert '`auto`' in standard_text
         assert '`prompt`' in standard_text
 
-    def test_documents_pr_note_branch(self, standard_text: str):
+    def test_documents_deferred_enrichment_branch(self, standard_text: str):
+        """The Tier-1 deferral records the module list somewhere readable at order 10.
+
+        The previous form asserted the branch documented `prepare-body --for
+        edit`, i.e. the `ci pr view` -> `prepare-body` -> `pr edit` pattern.
+        That pattern cannot run here: `default:architecture-refresh` is order
+        10 and `default:create-pr` is order 20, so no PR exists to view or
+        edit. The assertion now pins what the branch CAN do — record the
+        affected-module list in the decision log — and the standard's own
+        record of the owed re-homing.
+        """
+        # The user-facing prompt still names the affected modules.
         assert 'Architecture re-enrichment recommended for' in standard_text
-        # There is no atomic `append-body` verb on the ci surface; the PR-note
-        # branch documents the `prepare-body --for edit` + `pr edit` pattern
-        # (write the combined body to the scratch path, then replace via edit).
-        assert 'prepare-body --for edit' in standard_text
+        # The deferral is recorded where it is readable without a PR.
+        assert 're-enrichment deferred for' in standard_text, (
+            'The Tier-1 deferral branch must record the affected-module list in '
+            'the decision log — that is the only surface available at order 10.'
+        )
+        # The owed re-homing is recorded rather than left as a dead prescription.
+        assert 'No PR exists when this step runs' in standard_text, (
+            'The standard must state WHY the PR-body note is not written here, '
+            'so the gap reads as owed follow-up rather than an omission.'
+        )
+
+    def test_does_not_prescribe_a_pr_body_write_at_order_10(self, standard_text: str):
+        """No `pr edit` / `prepare-body` CALL may be prescribed before create-pr.
+
+        The literals still appear in the standard, but only inside the
+        owed-follow-up note that names them as what this branch USED to
+        prescribe. A substring check therefore cannot distinguish a live
+        prescription from its own retraction — so this guard scans command
+        lines (fenced `python3 .plan/execute-script.py ... ci ...` invocations)
+        rather than prose, and publishes how many it examined.
+        """
+        command_lines = [
+            line for line in standard_text.splitlines() if 'execute-script.py' in line or line.strip().startswith('ci ')
+        ]
+        assert command_lines, (
+            'Command-line scan resolved 0 invocations in architecture-refresh.md — '
+            'a clean result would be vacuous.'
+        )
+        offenders = [
+            line for line in command_lines if 'pr edit' in line or 'prepare-body' in line or 'pr view' in line
+        ]
+        assert offenders == [], (
+            f'architecture-refresh.md (order 10) prescribes {len(offenders)} PR '
+            f'operation(s) across {len(command_lines)} examined command lines, but '
+            f'default:create-pr is order 20 — no PR exists yet. Offenders: {offenders}'
+        )
 
     def test_documents_enrich_call_in_auto_branch(self, standard_text: str):
         """The `auto` branch enriches per-module, not via a batch invocation.
@@ -729,7 +814,7 @@ class TestNarrativeContract:
             'no module structure changed',
             'refreshed derived data ({affected_module_count} modules)',
             'refreshed + re-enriched ({affected_module_count} modules)',
-            'refreshed; re-enrichment deferred to PR note',
+            'refreshed; re-enrichment deferred',
         ],
     )
     def test_documents_display_detail_template(
@@ -754,11 +839,16 @@ class TestNarrativeContract:
     # ----- Error handling --------------------------------------------------
 
     def test_documents_error_handling_table(self, standard_text: str):
-        # Documented failure modes (see Error Handling table).
+        # Documented failure modes (see Error Handling table). The `git push`
+        # marker is deliberately absent: a step that performs no push has no
+        # push-failure row to document, and keeping the marker would have
+        # required the standard to keep describing a failure mode it can no
+        # longer reach. Shipping this commit — and any failure of that push —
+        # belongs to the order-11 default:push barrier.
         for marker in (
             'discover --force',
             'snapshot_not_found',
-            'git push',
+            'descriptor-regression-check',
             'enrich',
         ):
             assert marker in standard_text, f'Error handling table must cover {marker!r}'
@@ -780,6 +870,69 @@ class TestNarrativeContract:
         assert 'tier_0' in standard_text
         assert 'tier_1' in standard_text
         assert 'affected' in standard_text
+
+
+# ===========================================================================
+# Matched controls for the push scanner.
+#
+# `test_documents_no_push_invocation` above asserts an ABSENCE, and an absence
+# assertion is only worth its green if the detector can still see the thing
+# when it is present. These two fixtures are the real text of the Tier-0 commit
+# block on either side of the D6 fix, so the control pair demonstrates the
+# discrimination the guard depends on rather than asserting it.
+# ===========================================================================
+
+
+#: The Tier-0 block as it stood BEFORE the fix — it prescribed the push.
+_TIER_0_BLOCK_WITH_PUSH = """\
+After the commit, push immediately so the refresh lands on the same PR as the
+plan's substantive commits:
+
+```bash
+git -C {worktree_path} push
+```
+"""
+
+#: The Tier-0 block AFTER the fix. It talks about pushing more than the version
+#: above did — naming the barrier, the single-push contract, and its own
+#: refusal — which is exactly why a substring search for `push` cannot be the
+#: detector.
+_TIER_0_BLOCK_WITHOUT_PUSH = """\
+**This step does NOT push.** It commits and stops. `default:push` (order 11) is
+a **pure push barrier** that runs immediately after this step (order 10) and
+ships the converged branch — including this commit. Pushing here would be a
+second push of the same branch from a step the single-push contract does not
+authorise.
+
+```text
+        git -C {worktree_path} commit -m "chore(architecture): refresh"
+        # no push — the order-11 default:push barrier ships this commit
+```
+"""
+
+
+class TestPushScannerControls:
+    """The scanner distinguishes a prescribed push from a described one."""
+
+    def test_positive_control_detects_the_pre_fix_push(self):
+        """The pre-fix Tier-0 block IS reported — the guard would have gone red."""
+        offenders, examined = scan_push_prescriptions(_TIER_0_BLOCK_WITH_PUSH)
+        assert examined > 0, 'Control fixture resolved no command lines.'
+        assert offenders == ['git -C {worktree_path} push'], (
+            'The scanner failed to detect the push the pre-fix Tier-0 block '
+            f'prescribed, so its clean verdict on the live standard proves nothing: {offenders}'
+        )
+
+    def test_negative_control_ignores_a_described_push(self):
+        """Prose about pushing, and a comment recording its absence, are NOT prescriptions."""
+        offenders, examined = scan_push_prescriptions(_TIER_0_BLOCK_WITHOUT_PUSH)
+        assert examined > 0, (
+            'Control fixture resolved no command lines, so the clean result is vacuous.'
+        )
+        assert offenders == [], (
+            'The scanner reported a push prescription in a block that only DESCRIBES '
+            f'not pushing — it would fail every correctly-fixed step doc: {offenders}'
+        )
 
 
 # ===========================================================================
@@ -945,9 +1098,9 @@ _MATRIX_CASES = [
     # tier-0 enabled, drift, tier-1 prompt accepted — Branch E.
     (True, 'enabled', 'prompt', 'feature', True, 'E', 'refreshed + re-enriched', 'Re-enrich now'),
     # tier-0 enabled, drift, tier-1 disabled — Branch F.
-    (True, 'enabled', 'disabled', 'feature', True, 'F', 'deferred to PR note', None),
+    (True, 'enabled', 'disabled', 'feature', True, 'F', 're-enrichment deferred', None),
     # tier-0 enabled, drift, tier-1 prompt declined — Branch F.
-    (True, 'enabled', 'prompt', 'feature', True, 'F', 'deferred to PR note', 'Skip — note in PR'),
+    (True, 'enabled', 'prompt', 'feature', True, 'F', 're-enrichment deferred', 'Skip — note in PR'),
 ]
 
 

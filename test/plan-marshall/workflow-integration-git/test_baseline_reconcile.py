@@ -1360,7 +1360,7 @@ def _emitted_tokens() -> tuple[set[str], set[str]]:
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Dict):
-            for key, value in zip(node.keys, node.values):
+            for key, value in zip(node.keys, node.values, strict=True):
                 if not (isinstance(key, ast.Constant) and isinstance(key.value, str)):
                     continue
                 if key.value == 'reason':
