@@ -233,7 +233,7 @@ def test_a_declared_glob_escaping_the_repo_is_unmeasured_not_empty():
     up = '/'.join(['..'] * (len(PROJECT_ROOT.resolve().parts) - 1))
     escape = f'{up}/etc/*.conf'
     outside = (PROJECT_ROOT / f'{up}/etc').resolve()
-    assert outside == Path('/etc'), 'precondition: the pattern must leave the repo'
+    assert outside == Path('/etc').resolve(), 'precondition: the pattern must leave the repo'
     assert list(outside.glob('*.conf')), 'precondition: the escape target must be populated'
 
     expansion = expand_declared_glob(escape, PROJECT_ROOT)

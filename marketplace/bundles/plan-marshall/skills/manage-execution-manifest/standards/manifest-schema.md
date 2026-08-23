@@ -164,3 +164,29 @@ table and [`../../phase-6-finalize/standards/required-steps.md`](../../phase-6-f
 named in `phase_6.steps` resolves to a readable standards file under
 `phase-6-finalize/standards/{step}.md`. For `ci-verify`, the
 standards file is [`../../phase-6-finalize/standards/ci-verify.md`](../../phase-6-finalize/standards/ci-verify.md).
+
+### An activation predicate read from a persisted artifact freezes the capability set
+
+An activation predicate that reads a **persisted list** freezes the capability
+set at the moment that list was written. Absence from the frozen list is
+therefore **indistinguishable from a deliberate opt-out**: a step the decision
+matrix never saw and a step the operator explicitly declined both render as "not
+in `phase_6.steps`", and no amount of re-reading that list separates them. A
+reader that must tell the two apart consults the **resolved lane decision** —
+`_manifest_lanes._lane_keep_decision`, which returns the keep verdict together
+with the warning that records a neutralized override — never the frozen list
+alone, and never the raw `lane` value or `default_on`, which are inputs to that
+decision rather than the decision itself. This is why `reconcile` narrows
+backfill to candidates absent from `phase_6.candidate_steps`: the snapshot is
+what makes "never considered" distinguishable from "considered and dropped", and
+a manifest predating the field reports `backfill_determinable: false` rather
+than guessing.
+
+**Corollary — a step relocation is not complete when the new step is added to
+the dispatch table.** Moving an obligation from step A to a NEW step B leaves
+every ALREADY-COMPOSED manifest still naming A and not B. Those manifests are
+frozen artifacts: registering B in the dispatch table changes what a FUTURE
+compose produces and nothing about the ones already on disk, which continue to
+schedule A and will never schedule B. A relocation is complete only when the
+already-composed population is reconciled too — which is the same frozen-list
+blindness above, seen from the write side.
