@@ -117,6 +117,16 @@ Read `complete` and `missing_keys` from the TOON. A `landing` message carries a 
 
 `complete: false` is a VERDICT, never a fault: the verb stays `status: success` and never aborts the drain. This check is what turns "the queue is empty" into "every required fact drained" — the two are the same only when every drained landing was complete. It does not reach the optional keys, so it never establishes that nothing whatsoever is outstanding.
 
+**Parse the `steps` fact before reading any per-step outcome from it — split each element on its LAST colon.** The `landing-facts` block supplies `steps` as a comma-joined list of `{step}:{outcome}` elements, and a step id may itself be namespaced, so the pair is recovered by a last-colon split (`rsplit(':', 1)`) and NEVER by a first-colon one. This step is where the rule [`../standards/landing-payload-spec.md`](../standards/landing-payload-spec.md) § "Required machine-readable fact keys" states is APPLIED — there is no earlier parse, so a drain that reads the raw element list has silently skipped it:
+
+| Element | LAST-colon split (correct) | first-colon split (wrong) |
+|---|---|---|
+| `push:done` | `push` / `done` | `push` / `done` |
+| `project:finalize-step-plugin-doctor:done` | `project:finalize-step-plugin-doctor` / `done` | `project` / `finalize-step-plugin-doctor:done` |
+| `plan-marshall:plan-retrospective:loop_back` | `plan-marshall:plan-retrospective` / `loop_back` | `plan-marshall` / `plan-retrospective:loop_back` |
+
+⛔ A bare `push:done` element splits identically under BOTH directions, so getting it right is no evidence the rule was followed — the namespaced rows are the ones that discriminate, and `project:` and `plan-marshall:` step ids are ordinary entries in a composed finalize order. Apply the split to every element before item 1 authors the landing report and before item 3 stamps the queue; a first-colon split reports the bare namespace as the step name, which reconciles a real step's outcome onto a step that does not exist.
+
 1. Write the landing report to `landings/PLAN-NN.md`, instantiated from [`templates/landing-analysis.md`](../templates/landing-analysis.md) via the Write tool: deliverable fidelity vs spec, metrics/anomalies, routing/merge behavior, reconciliation actions.
 2. Mark the plan shipped in the machine authority:
 
