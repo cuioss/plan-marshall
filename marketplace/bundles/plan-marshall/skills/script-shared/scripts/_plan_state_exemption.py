@@ -37,10 +37,12 @@ than the narrower "is this file staged right now?".
 The union is only as good as BOTH halves, so an unusable HEAD half fails closed too.
 Falling back to the index answer whenever the HEAD observation fails would silently
 restore the index-only oracle on exactly the staged-deletion case above. The one
-legitimate exception is a repository with no commits, which has no HEAD to read and
-where the index answer really is complete; :func:`tracked_plan_paths` tells that
-state apart from a failed observation with an explicit HEAD-existence probe rather
-than inferring it from the failure.
+legitimate exception is a repository holding NO COMMIT AT ALL, where nothing can be
+committed and the index answer really is complete; :func:`tracked_plan_paths` tells
+that state apart with :func:`_repository_is_unborn` rather than inferring it from the
+failure. The discriminator asks about commits rather than about HEAD because whether
+HEAD resolves is three-valued, and the two states it cannot separate — an unborn
+repository and an orphan branch — need OPPOSITE answers.
 
 This module does I/O (two NUL-delimited git observations per partition) and is
 stdlib-only. It lives at the ``script-shared/scripts/`` top level so every consuming
@@ -113,21 +115,63 @@ def _observe_z(tree: str | Path, git_args: list[str]) -> set[str] | None:
     return {entry for entry in completed.stdout.split('\0') if entry}
 
 
-def _head_exists(tree: str | Path) -> bool:
-    """Whether ``tree`` has a resolvable ``HEAD`` commit.
+def _observe_lines(tree: str | Path, git_args: list[str]) -> set[str]:
+    """Run one NEWLINE-delimited git observation against ``tree``.
+
+    Separate from :func:`_observe_z` rather than a flag on it, because the two
+    answer different questions and :func:`_observe_z` documents the ``-z`` form as
+    what makes its output directly comparable to a porcelain path. This helper is
+    for observations whose output is a sha or ref rather than a path — nothing
+    here is compared against a porcelain path, so there is no quoting hazard to
+    defend against and no reason to claim the ``-z`` guarantee.
+
+    Returns the empty set on any unusable observation, which is the fail-closed
+    direction for its only caller: :func:`_repository_is_unborn` treats a
+    non-empty result as "commits exist", so an unusable probe must not be able to
+    manufacture the unborn verdict.
+    """
+    try:
+        completed = subprocess.run(
+            ['git', '-C', str(tree), *git_args],
+            capture_output=True,
+            encoding='utf-8',
+            errors='surrogateescape',
+            timeout=_GIT_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {'<unusable-observation>'}
+    if completed.returncode != 0:
+        return {'<unusable-observation>'}
+    return {entry for entry in completed.stdout.splitlines() if entry.strip()}
+
+
+def _repository_is_unborn(tree: str | Path) -> bool:
+    """Whether ``tree`` holds NO commit at all — the one legitimate no-HEAD state.
 
     The discriminator between the two situations a failing HEAD observation can
-    mean. ``git rev-parse --verify --quiet HEAD`` exits non-zero in an unborn
-    repository (``git init`` with nothing committed) and zero once any commit
-    exists, so a ``False`` here says "there is no HEAD to read" while a ``True``
-    says "there IS one and the other observation failed anyway".
+    mean, and it asks about COMMITS rather than about HEAD on purpose. Whether
+    HEAD resolves is a three-valued observable — it resolves, it is absent
+    because nothing was ever committed, or it is readable but points nowhere —
+    and ``git rev-parse --verify --quiet HEAD`` collapses the last two into one
+    non-zero exit. ``git checkout --orphan`` produces exactly that third state on
+    an everyday branch: the repository HAS commits, so an index-only answer is
+    NOT complete, yet a HEAD-resolution probe reports the same non-zero as a
+    fresh ``git init``. Reading that binary as "unborn" resolves an orphan branch
+    fail-OPEN and exempts the staged deletion this module exists to retain.
 
-    A probe that cannot run at all reads as ``False``, but that case never
-    reaches a decision: :func:`tracked_plan_paths` only probes after ``ls-files``
-    has already succeeded against the same tree, so git is present and the tree
-    is a repository by the time this is called.
+    ``git rev-list -n 1 --all`` answers the question actually needed: it prints a
+    sha when any ref reaches any commit and prints nothing in a genuinely unborn
+    repository, so an empty result is the only state in which the index answer is
+    the complete one.
+
+    A probe that cannot run at all reads as NOT unborn — the fail-closed
+    direction. That case never reaches a decision anyway:
+    :func:`tracked_plan_paths` only probes after ``ls-files`` has already
+    succeeded against the same tree, so git is present and the tree is a
+    repository by the time this is called.
     """
-    return _observe_z(tree, ['rev-parse', '--verify', '--quiet', 'HEAD']) is not None
+    return not _observe_lines(tree, ['rev-list', '-n', '1', '--all'])
 
 
 def tracked_plan_paths(tree: str | Path) -> set[str] | None:
@@ -150,20 +194,21 @@ def tracked_plan_paths(tree: str | Path) -> set[str] | None:
     returned on an unusable observation of EITHER half:
 
     - ``ls-files`` fails (not a git repository, git unavailable, non-zero exit); or
-    - ``ls-tree`` fails in a repository that HAS a resolvable HEAD.
+    - ``ls-tree`` fails in a repository that HOLDS ANY COMMIT.
 
-    The second condition is why the HEAD half needs the :func:`_head_exists` probe.
-    ``_observe_z`` returns ``None`` for two different situations — "there is no
-    HEAD" and "the HEAD observation did not work" — and the branch cannot tell them
-    apart from that value alone. A repository with no commits legitimately has no
-    HEAD to resolve, and there the index answer is complete; an ``ls-tree`` that
-    fails against a HEAD which DOES resolve is an unusable observation, and
-    substituting the index answer for it resolves the failure in the fail-OPEN
-    direction. Concretely: a *staged deletion* of a committed ``.plan/`` file is
-    absent from the index, so an index-only answer classifies it untracked and
+    The second condition is why the HEAD half needs the
+    :func:`_repository_is_unborn` probe. ``_observe_z`` returns ``None`` for more
+    than one situation, and the branch cannot tell them apart from that value
+    alone. Only ONE of them makes the index answer complete — a repository with no
+    commit anywhere — and every other, including an orphan branch whose HEAD points
+    at nothing while commits exist, leaves the index answer narrower than the truth.
+    Substituting it there resolves the failure in the fail-OPEN direction:
+    concretely, a *staged deletion* of a committed ``.plan/`` file is absent from
+    the index, so an index-only answer classifies it untracked and
     :func:`partition_plan_state_exemption` exempts it — hiding exactly the edit the
     guards exist to surface, which is the failure this module was written to end.
-    The probe splits the two cases so the carve-out covers only the legitimate one.
+    Probing for commits rather than for HEAD is what makes the carve-out cover the
+    legitimate case ONLY.
 
     Args:
         tree: Working-tree / repository root to observe.
@@ -178,13 +223,14 @@ def tracked_plan_paths(tree: str | Path) -> set[str] | None:
         tree, ['ls-tree', '-r', '-z', '--name-only', 'HEAD', '--', _PLAN_STATE_PREFIX]
     )
     if head is None:
-        if _head_exists(tree):
-            # HEAD resolves, yet the HEAD observation failed: the answer is
-            # unusable, not absent. Fail closed rather than silently narrowing
-            # trackedness to the index.
+        if not _repository_is_unborn(tree):
+            # The repository HOLDS commits, so the index answer is not complete —
+            # whether HEAD failed to resolve (an orphan branch) or the read itself
+            # failed. Either way the answer is unusable, not absent. Fail closed
+            # rather than silently narrowing trackedness to the index.
             return None
-        # No HEAD at all (a repository with no commits): nothing is committed, so
-        # the index answer is the complete one and remains usable.
+        # No commit anywhere (a genuinely unborn repository): nothing is committed,
+        # so the index answer is the complete one and remains usable.
         return index
     return index | head
 

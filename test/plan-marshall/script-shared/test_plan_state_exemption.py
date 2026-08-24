@@ -406,6 +406,67 @@ def test_tracked_plan_paths_falls_back_to_index_when_head_unresolvable(
     assert pse.tracked_plan_paths(repo) == {'.plan/marshal.json'}
 
 
+def test_tracked_plan_paths_fails_closed_on_an_orphan_branch(tmp_path: Path) -> None:
+    """An orphan branch has commits but no resolvable HEAD — that is NOT the unborn case.
+
+    ``git checkout --orphan`` is an everyday state, not a corrupt one: the
+    repository HAS commits, HEAD IS readable, and it simply does not resolve to
+    one yet. ``rev-parse --verify --quiet HEAD`` exits non-zero there exactly as
+    it does in a fresh ``git init``, so a discriminator built on it reads a
+    THREE-valued observable as a binary and lands this case on the unborn branch.
+
+    The consequence is the fail-OPEN this module exists to end: the staged
+    deletion of a committed ``.plan/`` file is absent from the index, an
+    index-only answer classifies it untracked, and
+    :func:`partition_plan_state_exemption` exempts the very edit the guards exist
+    to surface. The honest discriminator is whether the repository holds ANY
+    commit, not whether HEAD happens to resolve to one.
+    """
+    repo = tmp_path / 'orphan'
+    repo.mkdir()
+    _git(repo, 'init', '--initial-branch=main')
+    tracked = repo / '.plan' / 'marshal.json'
+    tracked.parent.mkdir(parents=True, exist_ok=True)
+    tracked.write_text('{"schema": 1}\n', encoding='utf-8')
+    _git(repo, 'add', '-f', '.plan/marshal.json')
+    _git(repo, '-c', 'user.email=t@e', '-c', 'user.name=t', 'commit', '-m', 'seed')
+    _git(repo, 'checkout', '--orphan', 'fresh')
+    _git(repo, 'rm', '--cached', '-q', '.plan/marshal.json')
+
+    # Precondition: commits exist, yet HEAD does not resolve — the three-valued case.
+    # `rev-parse` is probed with check=False on purpose: its non-zero exit IS the
+    # condition under test, so a raising helper would hide it.
+    assert _git(repo, 'rev-list', '-n', '1', '--all').stdout.strip() != ''
+    head_probe = subprocess.run(
+        ['git', '-C', str(repo), 'rev-parse', '--verify', '--quiet', 'HEAD'],
+        capture_output=True,
+        encoding='utf-8',
+        check=False,
+    )
+    assert head_probe.returncode != 0
+
+    assert pse.tracked_plan_paths(repo) is None
+
+
+def test_partition_retains_a_staged_deletion_on_an_orphan_branch(tmp_path: Path) -> None:
+    """The end-to-end consequence of the case above: the edit must NOT be exempted."""
+    repo = tmp_path / 'orphan-partition'
+    repo.mkdir()
+    _git(repo, 'init', '--initial-branch=main')
+    tracked = repo / '.plan' / 'marshal.json'
+    tracked.parent.mkdir(parents=True, exist_ok=True)
+    tracked.write_text('{"schema": 1}\n', encoding='utf-8')
+    _git(repo, 'add', '-f', '.plan/marshal.json')
+    _git(repo, '-c', 'user.email=t@e', '-c', 'user.name=t', 'commit', '-m', 'seed')
+    _git(repo, 'checkout', '--orphan', 'fresh')
+    _git(repo, 'rm', '--cached', '-q', '.plan/marshal.json')
+
+    retained, exempted = pse.partition_plan_state_exemption(['.plan/marshal.json'], repo)
+
+    assert retained == ['.plan/marshal.json']
+    assert exempted == []
+
+
 def test_tracked_plan_paths_none_when_head_resolves_but_the_head_read_fails(
     tmp_path: Path,
 ) -> None:
