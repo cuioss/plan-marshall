@@ -402,10 +402,33 @@ _CODE_SPAN = re.compile(r'`([^`]+)`')
 
 #: A fact KEY as written in either enumeration: lowercase words and underscores,
 #: optionally followed by ``=`` and a sample value (the spec writes the schema
-#: marker as ``schema=landing-facts/1``). Anything else a code span may hold — a
-#: fence info-string (``landing-facts``), a placeholder (``{step}:{outcome}``), a
-#: sentinel (``n/a``) — fails to match and is excluded by construction.
+#: marker as ``schema=landing-facts/1``). A fence info-string
+#: (``landing-facts``) and a placeholder (``{step}:{outcome}``) carry characters
+#: outside the class and are excluded by construction; a degraded-value token is
+#: NOT, and is excluded by :data:`_SENTINEL_TOKENS` below.
 _FACT_KEY = re.compile(r'^([a-z][a-z0-9_]*)(?:=.*)?$')
+
+#: The degraded-value tokens the producer prose writes in code spans. A sentinel
+#: is a VALUE, never a fact key, but ``unknown`` is spelled exactly like one —
+#: lowercase letters and nothing else — so ``_FACT_KEY`` cannot tell the two
+#: apart and would harvest it as a ninth required key, failing the equality below
+#: against prose that is entirely correct. The sibling sentinel ``n/a`` is kept
+#: out by ``_FACT_KEY`` alone, but only by the accident of its slash: resting a
+#: key set on a token's punctuation is what let this through, so both
+#: vocabularies are excluded explicitly.
+#:
+#: Derived from the module's own vocabularies rather than transcribed, so a token
+#: added to either is excluded here without a second edit. The derivation cannot
+#: mask a divergence: excluding a token that IS a required key would drop it from
+#: the extracted set and turn the equality RED, never green.
+#:
+#: Only a BARE sentinel is dropped. A key-qualified span (``merge_state=unknown``)
+#: still yields ``merge_state``, because such a span names a key whatever its
+#: sample value is.
+_SENTINEL_TOKENS = frozenset(
+    token.casefold()
+    for token in (_inbox.LANDING_ANSWERED_SENTINELS | _inbox.LANDING_COULD_NOT_READ_SENTINELS)
+)
 
 
 def _keys_from_code_spans(text: str) -> set[str]:
@@ -413,7 +436,7 @@ def _keys_from_code_spans(text: str) -> set[str]:
     keys = set()
     for span in _CODE_SPAN.findall(text):
         match = _FACT_KEY.match(span.strip())
-        if match:
+        if match and match.group(1).casefold() not in _SENTINEL_TOKENS:
             keys.add(match.group(1))
     return keys
 
@@ -470,6 +493,28 @@ class TestDocumentedEnumerationsMatchTheConstant:
         assert _emit_landing_enumeration_keys(), (
             'the emit-landing Step 2 enumeration parser extracted no keys'
         )
+
+    def test_a_bare_sentinel_is_not_harvested_as_a_fact_key(self):
+        """A degraded VALUE in a code span is not a fact key.
+
+        ``unknown`` is spelled exactly like a key — lowercase letters, nothing
+        else — so without an explicit exclusion the producer prose that NAMES the
+        token to state the could-not-read rule contributes a ninth "required key"
+        and the equality below fails against text that is entirely correct.
+
+        The key-qualified spelling is pinned in the same breath: dropping a BARE
+        sentinel must not also drop the key a ``key=value`` span names, or a
+        future enumeration written ``merge_state=unknown`` would lose a real key
+        and the equality would fail in the other direction.
+        """
+        assert _SENTINEL_TOKENS, (
+            'the sentinel vocabularies are empty, so the loop below asserts nothing'
+        )
+        for token in sorted(_SENTINEL_TOKENS):
+            assert _keys_from_code_spans(f'written `{token}`') == set(), token
+            assert _keys_from_code_spans(f'written `merge_state={token}`') == {'merge_state'}, (
+                token
+            )
 
     def test_payload_spec_table_names_exactly_the_required_keys(self):
         assert _spec_table_keys() == set(LANDING_REQUIRED_KEYS), (
