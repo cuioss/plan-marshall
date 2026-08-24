@@ -88,14 +88,21 @@ def find_extension_path(bundle_dir: Path) -> Path | None:
 
 Manifest discovery is an internal library operation, not a user-facing CLI verb. `discover_all_extensions()` in `extension_discovery.py` resolves every bundle's manifest through `find_extension_path()` (the frontmatter scanner) and loads each `extension.py`. Workflow components consume the discovery result through the library function; there is no standalone `extension_discovery` CLI subcommand for whole-marketplace discovery.
 
-⛔ **No CLI verb checks `extension.py` validity either, and none may be documented
-here.** `validate-contracts` covers extension-POINT implementors — `ext-*` /
-`recipe-*` skills carrying an `implements:` field — so
-`validate-contracts --skill {bundle}:plan-marshall-plugin` returns
-`total_checked: 0` with `status: success`: a well-formed invocation over an empty
-population, which reads as a pass while checking nothing.
+⛔ **A structural check for `extension.py` exists but is unreachable, and no CLI
+verb may be documented as invoking it.** `_cmd_extension.py`'s
+`validate_extension` / `scan_extensions` validate the manifest's shape, but they
+sit behind the unregistered, underscore-prefixed `_validate.py` and are called
+from nowhere outside their own module and tests. See
+[extension-contract.md § Validation](extension-contract.md#validation) for what
+they cover and why no invocation is written down.
 
-⛔ **And nothing else establishes it either.** `load_extension_module()` catches
+⛔ **The verb that IS wired covers a different population.** `validate-contracts`
+checks extension-POINT implementors — `ext-*` / `recipe-*` skills carrying an
+`implements:` field — so `validate-contracts --skill {bundle}:plan-marshall-plugin`
+returns `total_checked: 0` with `status: success`: a well-formed invocation over an
+empty population, which reads as a pass while checking nothing.
+
+⛔ **And runtime does not establish it either.** `load_extension_module()` catches
 every import failure, logs a WARNING, and returns `None`; `discover_all_extensions()`
 then omits the bundle. An invalid `extension.py` is not rejected — it silently
 stops existing, which is the same false-green shape as the empty-population call

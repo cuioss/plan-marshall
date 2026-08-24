@@ -94,20 +94,28 @@ Skill directory names must not end with a noun suffix reserved for spawnable mar
 
 **Conditional**: Only execute if skill name is `plan-marshall-plugin`.
 
-⛔ **No CLI verb validates the domain-bundle manifest, and none may be documented
-here.** `validate-contracts` covers extension-POINT implementors — `ext-*` /
-`recipe-*` skills carrying an `implements:` field, rules EC-01…EC-50
-(`_cmd_extension.py::validate_extension_contracts`). A `plan-marshall-plugin`
-manifest is not one, so `validate-contracts --skill {bundle}:plan-marshall-plugin`
-returns `total_checked: 0` with `status: success` — a well-formed invocation over
-an empty population, which is a false green rather than a check. Measured: `0` for
-that filter, `1` for the control `--skill pm-dev-java:ext-triage-java`, `28`
-unfiltered.
+⛔ **A manifest validator exists but nothing reaches it, and no CLI verb may be
+documented as invoking it.** `_cmd_extension.py`'s `validate_extension` /
+`scan_extensions` check the manifest's structure, but they sit behind the
+unregistered, underscore-prefixed `_validate.py` and have no automatic caller. See
+[extension-contract.md § Validation](../../../../plan-marshall/skills/extension-api/standards/extension-contract.md#validation)
+for the coverage and the reason no invocation is written down.
 
-The manifest is exercised at **runtime** by `discover_all_extensions()` in
-`extension_discovery.py`, not by a validator. Review it by reading it against the
-domain-bundle contract, and categorise findings as: schema/structure → safe fix;
-missing extension skills → risky fix; invalid skill references → risky fix.
+⛔ **The wired verb measures a different population.** `validate-contracts` covers
+extension-POINT implementors — `ext-*` / `recipe-*` skills carrying an
+`implements:` field, rules EC-01…EC-50
+(`_cmd_extension.py::validate_extension_contracts` — a distinct function from the
+two above, despite the name). A `plan-marshall-plugin` manifest is not one, so
+`validate-contracts --skill {bundle}:plan-marshall-plugin` returns
+`total_checked: 0` with `status: success` — a well-formed invocation over an empty
+population, which is a false green rather than a check. Measured: `0` for that
+filter, `1` for the control `--skill pm-dev-java:ext-triage-java`, `28` unfiltered.
+
+At **runtime** the manifest is only exercised by `discover_all_extensions()` in
+`extension_discovery.py`, which blanket-catches a bad import and omits the bundle
+rather than failing. So review the manifest by reading it against the domain-bundle
+contract, and categorise findings as: schema/structure → safe fix; missing
+extension skills → risky fix; invalid skill references → risky fix.
 
 ### Validate Sub-Document Quality
 

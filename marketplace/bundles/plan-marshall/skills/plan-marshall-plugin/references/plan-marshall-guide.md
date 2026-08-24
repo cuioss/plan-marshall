@@ -239,18 +239,24 @@ API references in documentation sections (not workflow steps) may be acceptable 
 
 Applies when doctoring a skill where `name` equals `plan-marshall-plugin` and contains an `extension.py` implementing the Extension API.
 
-### No validation script
+### No reachable validation script
 
-⛔ **There is no CLI verb for this, and none may be documented here.**
-`validate-contracts` covers extension-POINT implementors — `ext-*` / `recipe-*`
-skills carrying an `implements:` field — so
-`validate-contracts --skill {bundle}:plan-marshall-plugin` returns
-`total_checked: 0` with `status: success`: well-formed, and measuring nothing.
+⛔ **A validator exists but has no sanctioned invocation, so none may be
+documented here.** `_cmd_extension.py`'s `validate_extension` / `scan_extensions`
+check the module's structure against most of this contract, but they sit behind
+the unregistered, underscore-prefixed `_validate.py` and no pass calls them. See
+[extension-contract.md § Validation](../../extension-api/standards/extension-contract.md#validation).
 
-The functions are checked by **reading the module against the two tables below**,
-and by nothing else. `discover_all_extensions()` imports the module and
-instantiates `Extension()`; it calls none of the tabled functions, and
-`provides_triage()` / `provides_outline_skill()` run under a bare
+⛔ **The wired verb has an empty population here.** `validate-contracts` covers
+extension-POINT implementors — `ext-*` / `recipe-*` skills carrying an
+`implements:` field — so `validate-contracts --skill {bundle}:plan-marshall-plugin`
+returns `total_checked: 0` with `status: success`: well-formed, and measuring
+nothing.
+
+In practice, then, the functions are checked by **reading the module against the
+two tables below**. Runtime adds nothing: `discover_all_extensions()` imports the
+module and instantiates `Extension()`, calls none of the tabled functions, and runs
+`provides_triage()` / `provides_outline_skill()` under a bare
 `except Exception: pass` with no log at all.
 
 ### Required Functions

@@ -806,19 +806,36 @@ Adding a single hook to an existing bundle is smaller — override the relevant 
 
 ## Validation
 
-⛔ **No validator enforces this contract, and no CLI verb may be documented as
-doing so.** `validate-contracts` covers extension-POINT implementors — `ext-*` /
-`recipe-*` skills carrying an `implements:` field, rules EC-01…EC-50
-(`_cmd_extension.py::validate_extension_contracts`). A domain-bundle
-`plan-marshall-plugin` manifest is not one, so
-`validate-contracts --skill {bundle}:plan-marshall-plugin` returns
-`total_checked: 0` with `status: success` — well-formed, and measuring nothing.
+⛔ **A validator for these properties exists, nothing runs it, and no CLI verb
+may be documented as invoking it.** `_cmd_extension.py`'s `validate_extension` /
+`scan_extensions` check most of the requirements below — the `Extension` class,
+`get_skill_domains`, syntax, the returned structure, profile `defaults` /
+`optionals`, and skill-reference existence — and are unit-tested in
+`test_plugin_doctor_extension.py`. Three things make that coverage unreachable
+in practice:
 
-The properties below are therefore **requirements on the author**, not checks a
-tool performs. Nothing enforces them, and nothing reports their violation:
-`load_extension_module()` wraps the import in a blanket `except Exception`,
-logs a WARNING, and returns `None`, and `discover_all_extensions()` then omits
-the bundle. An invalid `extension.py` does not fail — it becomes **invisible**.
+- **No sanctioned invocation.** The verb sits behind the underscore-prefixed
+  `_validate.py`, which is not a registered script. It still resolves through the
+  executor's filename fallback, but a fallback resolution is not a sanctioned
+  form — documenting one here is itself a lint violation, so this section names
+  the functions and stops short of an invocation.
+- **No automatic caller.** Outside its own module and its tests, nothing calls
+  it. The quality-gate's extension entry is the similarly-named but distinct
+  `validate_extension_contracts`, which covers extension-POINT implementors —
+  `ext-*` / `recipe-*` skills carrying an `implements:` field, rules EC-01…EC-50.
+  A domain-bundle `plan-marshall-plugin` manifest is not one, so
+  `validate-contracts --skill {bundle}:plan-marshall-plugin` returns
+  `total_checked: 0` with `status: success` — well-formed, and measuring nothing.
+- **No runtime backstop.** `load_extension_module()` wraps the import in a
+  blanket `except Exception`, logs a WARNING, and returns `None`, and
+  `discover_all_extensions()` then omits the bundle. An invalid `extension.py`
+  does not fail — it becomes **invisible**.
+
+So the properties below bind the author, and the check that could confirm them
+runs only when a human runs it by hand. That is a worse false-green than having
+no checker at all: a green `validate-contracts` over an empty population reads as
+this contract having passed, while the code that would actually test it never
+executes.
 
 Contract requirements:
 - Extension class exists and inherits from ExtensionBase
