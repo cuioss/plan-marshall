@@ -345,6 +345,11 @@ gaps in any one bot's record:
   `unrecognised_refusal`** — not filed as review feedback, and not credited as participation. It
   resolves to the `refused_unknown` member, because an arm that could not read the notice supports no
   claim about it; asserting a reset window nobody observed would be worse than admitting ignorance.
+  This arm is **fail-safe and inert until a threshold is measured**: it fires only under a derived
+  `UNRECOGNISED_REFUSAL_MAX_CHARS`, and at the shipped value of `None` it never fires at all, so the
+  behaviour described here is what the arm does once armed rather than what the stack does today.
+  Read that as the arm's shipped state, not as a caveat on the rule: with no threshold the recognition
+  stack behaves exactly as it did before this arm existed.
 
 **The rule applies at BOTH recognition sites**, and stating it for one only is how the second came to
 carry the gap unnoticed: the filing pre-filter (`github_pr fetch_findings`) and the re-review matcher
@@ -372,15 +377,25 @@ both are consulted before it:
 
 | Observation | Member | Meaning |
 |-------------|--------|---------|
-| **override —** the refusal reached no arm of the recognition stack (any `rate_limit_class`) | `refused_unknown` | Nothing was READ, so nothing is known — least of all whether the window reopens. Deferring to the declared class here would assert a reset time nobody observed. |
-| **override —** `cause: size` (any `rate_limit_class`) | `refused_structural` | A ceiling on the diff itself. The same request never succeeds at this size, so **no wait is productive** — the remedies are split / accept / disable-for-this-PR. |
+| **override (first) —** `cause: size` (any `rate_limit_class`) | `refused_structural` | A ceiling on the diff itself. The same request never succeeds at this size, so **no wait is productive** — the remedies are split / accept / disable-for-this-PR. |
+| **override (second) —** no arm of the recognition stack could READ the refusal (any `rate_limit_class`) | `refused_unknown` | Nothing was READ, so nothing is known — least of all whether the window reopens. Deferring to the declared class here would assert a reset time nobody observed. |
 | *default —* `awaitable_window` | `refused_awaitable` | The limit reopens on its own; awaiting the reset is productive. |
 | *default —* `hard_quota` | `refused_hard` | A budget that does not reopen on a useful timescale; awaiting it only burns budget. |
 | *default —* `unknown` | `refused_unknown` | The registry declares ignorance — the refusal shape has never been observed, so whether waiting helps is not known. |
 
-The two overrides cannot both hold on real input: a `size` cause is READ from the notice's own text,
-so observing one means an arm DID recognise the body — which is what the unrecognised override denies.
-Where both are supplied, the unrecognised override wins, because it claims strictly less.
+**The two overrides CAN both hold, and the `size` cause is consulted first.** They would be
+contradictory only if they described the SAME refusal — a `size` cause is READ from the notice's own
+text, which is what the unrecognised override denies. But both are per-**bot** aggregates over that
+bot's refusals: the producer emits one `unrecognised_refusal[]` record per COMMENT, and the consumer
+receives a bot-kind list. A bot that published one refusal an arm read as a size ceiling and another no
+arm could read therefore satisfies both, from two different notices, with neither observation wrong.
+
+The positively-read cause wins, because an absence must not erase a ceiling the run actually
+extracted — taking the unrecognised override first would discard that figure and leave the operator
+deciding without the one remedy already in hand (split the PR under the stated cap). The ordering is
+safe in the awaitability direction, which is what makes it the conservative choice and not merely the
+more informative one: both members it can yield are non-awaitable, so neither order can offer a wait on
+a bot carrying an unreadable notice. The orders differ only in whether the operator is told WHY.
 
 **Why both overrides outrank the class.** `rate_limit_class` is declared once per **bot**, while each
 override is observed per **refusal**. One bot can refuse for both causes at a single class — Sourcery's
@@ -704,25 +719,6 @@ accumulate, the verb ships as a measurement with **no parity claim attached**.
 | `finalize-step-review-retrospective` (`review_retrospective`) | The enabled roster (`author_login` values) via `--enabled-reviewers`, to emit a row per ENABLED reviewer rather than per responding one, each carrying `participation: measured` / `unmeasurable` (§ "The counting rule" — the row-domain population); and the reviewed-at-all set (`participated` / `participated_but_empty` `author_login` values) via `--reviewed-reviewers`, to grade whether the review-quality comparison could be performed at all (`comparison: measured` / `clean` / `vacuous` / `indeterminate`) rather than reporting a benign no-op on a run where no reviewer produced content. |
 | `github_ops pr wait-for-comments` | Each bot's `participation_requires_update`, to select the `updated_at`-movement arm of its completion predicate over the count-growth arm; `participation_evidence` plus `bot_kinds()`, to decide whether the await is answerable at all (`detector_answerable`). |
 | `marshall-steward` | Both lists, to ask the wizard question and record the provenance. |
-
-### Per-bot registry records: read, and left to their own files
-
-The three per-bot registry docs each carry closure claims about what recognises that bot's refusal.
-They were **read first-party** when the recognition stack was widened, and each is recorded here with
-its verdict — so each outcome, whether corrected in its own file or left closed, reads as a decision
-rather than as a file nobody opened. A registry doc declares **per-bot data**, not the stack's
-semantics, which is why the rule above lives here and the corrections below landed in those files
-rather than in this one:
-
-| Registry doc | Claim read | Verdict |
-|---|---|---|
-| `standards/sourcery.md` | The registry marker "is the ONLY thing that recognises this refusal, because the structural last-resort recogniser is blind to the phrasing". | **Still true, and left closed.** The claim is about which arm can READ the notice. The enumerative arm reads nothing — it fires only where every arm ahead of it declines, and this body they do not decline — so it neither recognises this refusal nor contradicts the claim. |
-| `standards/coderabbit.md` | "detection is the bot-agnostic recogniser in `_github_pr._is_rate_limit_notice` paired with the `refusal_patterns` data layer above". | **Was stale — corrected in its own file.** It presented detection as a closed pair. Its § "Rate-limit class" now scopes that sentence to the `_github_pr._is_refusal_notice` **seam** and cross-references `_github_pr.REFUSAL_LAYERS` as the one place the stack's arms are named, so the pair reads as that seam's membership rather than as the whole of recognition. |
-| `standards/pr-agent.md` | Its empty `refusal_patterns` means non-participation "resolves to one of the non-refusal members … **never refused**". | **Was stale, and the sharpest instance of the rule above — corrected in its own file.** A bot with an empty list is precisely the bot whose reworded refusal the enumerative arm now recognises, so "never refused" is exactly what stopped being true. Its `refusal_patterns` note now retracts that inference: the empty list silences the registry arm and nothing else, carrying no conclusion about whether the bot refuses, and it cross-references this document's § "Refusal recognition is ENUMERATIVE, and a rewording nobody enumerated is its own state" rather than restating it. |
-
-The two stale claims were per-bot restatements of the rule this section states once. Correcting them in
-their own files removed the restatement rather than re-synchronising it — the same reason this rule
-names no reviewer count.
 
 ### Recorded exclusions
 

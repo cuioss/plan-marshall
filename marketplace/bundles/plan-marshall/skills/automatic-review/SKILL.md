@@ -378,7 +378,8 @@ Read `review_rate_window_await` and `review_rate_window_timeout_seconds` off the
 Evaluated FIRST, whatever `rate_limit_class` declares. The refusal names a ceiling on the **diff
 itself** — the bot classifies `refused_structural` (see
 [`standards/bot-participation-contract.md`](standards/bot-participation-contract.md) § "A refusal
-resolves by CAUSE first") — so the same request never succeeds while the diff is this size. Do NOT
+resolves by `rate_limit_class` BY DEFAULT, displaced by two overrides") — so the same request never
+succeeds while the diff is this size. Do NOT
 claim a window, do NOT await, and do NOT generate an event.
 
 Decision-log, then return `status: escalate_ask` with `reason: refusal_structural` (see "Output"
@@ -657,7 +658,7 @@ Then thread the four bot-keyed observation sets the predicate classifies from, p
 
    **`{refusal_size_caps}`** — the CAP overlay: the `refused_size_caps[]` records from the same return, rendered as comma-separated `{bot_kind}:{cap}` pairs and forwarded to `--refusal-size-caps`. `cap` is the ceiling the bot's own refusal notice stated, reported back in `refusal_causes[]` so a recorded coverage gap can be reconciled against the diff that was actually refused rather than being asserted. Sparse by design — a quota refusal names no ceiling, and a size notice may state none — and an absent entry is reported as `unknown`, never defaulted.
 
-   **`{unrecognised_refusal_bots}`** (item 3c) — the DECLARED-IGNORANCE overlay: the `bot_kind` values from the `unrecognised_refusal[]` records on the same `github_pr fetch_findings` return, rendered as a comma-separated bare-kind list and forwarded to `--unrecognised-refusal-bots`. Each names a bot whose refusal reached NO arm of the recognition stack. ⛔ **This is the SECOND override of the class mapping, and it is state-determining exactly as a `size` cause is**: the bot resolves to `refused_unknown` whatever its `rate_limit_class` declares, because an unparsed notice supports no claim about its own awaitability. CodeRabbit is the motivating case — it declares `awaitable_window`, so without the override its unrecognised refusal would render `refused_awaitable` and steer the operator to wait out a reset window that nobody observed and that the notice may never have named. Forward the bot kinds ONLY; the `layer`, `excerpt`, `registry_file`, `registry_field` and `remedy` on each record are the operator's remedy — the phrasing to file and the registry file to file it in — not inputs to the member.
+   **`{unrecognised_refusal_bots}`** (item 3c) — the DECLARED-IGNORANCE overlay: the `bot_kind` values from the `unrecognised_refusal[]` records on the same `github_pr fetch_findings` return, rendered as a comma-separated bare-kind list and forwarded to `--unrecognised-refusal-bots`. Each names a bot whose refusal NO arm of the recognition stack could READ. ⛔ **This is the second of the two overrides of the class mapping, and it is state-determining exactly as a `size` cause is**: the bot resolves to `refused_unknown` whatever its `rate_limit_class` declares, because an unparsed notice supports no claim about its own awaitability. The two are consulted `size`-cause first: both can hold for a bot that refused more than once (the producer emits one record per COMMENT), and a positively-read ceiling must not be erased by an absence observed on a different notice — an ordering that never costs awaitability, since both members it can yield are non-awaitable. CodeRabbit is the motivating case — it declares `awaitable_window`, so without the override its unrecognised refusal would render `refused_awaitable` and steer the operator to wait out a reset window that nobody observed and that the notice may never have named. Forward the bot kinds ONLY; the `layer`, `excerpt`, `registry_file`, `registry_field` and `remedy` on each record are the operator's remedy — the phrasing to file and the registry file to file it in — not inputs to the member.
 
    **`{measured_diff_size}`** — the other half of that reconciliation: the `measured_diff_size` scalar from the same return, forwarded to `--measured-diff-size`. A cap without the size that hit it is a claim the reader must take on trust, so the producer measures the diff once — and **only** when a size refusal was actually seen, so the extra provider round-trip is never paid on the common path. It is a single value rather than a per-bot list because it is a property of the PR, identical for every reviewer that refused it. Its unit rides inside the value and is deliberately **not** the reviewer's unit (counting the reviewer's own unit exactly means downloading the whole patch, which is most expensive precisely on the oversized PRs where this fires), so the pair is an order-of-magnitude comparison, never an equality check. Empty when unmeasured — reported as unknown, never as `0`, which would read as an empty diff refused for being too big.
 4. **`{stale_participation_bots}`** — the `stale_participation_bots[]` records from the `github_pr fetch_findings` return of the "Producer: FIND" step, rendered as comma-separated `{bot_kind}:{evidence_kind}` pairs. This is the SAME evidence-typed form as `{participated_bots}` (item 1) and the exact shape the producer emits, so the producer's output forwards to `--stale-participation-bots` verbatim — the consumer flag is pair-form, and the classifier reads only the `bot_kind`. Each names a bot whose observed comment matched a declared `participation_evidence` publish shape but failed the `participation_requires_update` currency test. These resolve to `participated_stale` — blocking, because the review they prove predates this HEAD, but with a **re-review trigger** as the remedy rather than the escalation `absent` calls for. The producer has already subtracted the proven set, so a bot with one stale and one fresh comment never appears here. Today only `pr-agent` can reach this set — it is the sole bot declaring `participation_requires_update`.
@@ -684,14 +685,14 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
   --measured-diff-size "{measured_diff_size}"
 ```
 
-Append the bare `--not-triggered` flag to that call when and only when the item-5 read reported `has_pull_request_run: false`. It is a `store_true` bool with no value of its own, so it is never interpolated and never quoted — the quoting discipline below governs the eight list flags only. An item-5 read that was unreadable never reaches this call at all — it routes to the UNKNOWN verdict below before the predicate is invoked, so there is no third polarity to encode on the flag.
+Append the bare `--not-triggered` flag to that call when and only when the item-5 read reported `has_pull_request_run: false`. It is a `store_true` bool with no value of its own, so it is never interpolated and never quoted — the quoting discipline below governs the list flags only. An item-5 read that was unreadable never reaches this call at all — it routes to the UNKNOWN verdict below before the predicate is invoked, so there is no third polarity to encode on the flag.
 
-All nine list sets are legitimately empty in normal operation — a plan with no optional bots, no in-progress
+Every list set interpolated above is legitimately empty in normal operation — a plan with no optional bots, no in-progress
 bots, no refusals, no unrecognised refusals, no stale publishes, no refusal causes, and no stated caps is the common case. **The load-bearing defence is the parser, not the quoting.**
 The generated executor strips every empty-string argument before argparse sees it (`script_args = [a
 for a in script_args if a]` in `.plan/execute-script.py`), so through the executor `--refused-bots ""`
 arrives as a bare `--refused-bots` exactly as an unquoted empty placeholder would — the quotes do NOT
-survive to the parser. What makes the empty case safe is that all eight list flags declare `nargs='?'` with
+survive to the parser. What makes the empty case safe is that every list flag declares `nargs='?'` with
 `const=''` (see § Canonical invocations → `review_completeness — check`), so a bare flag reads as the
 empty list instead of swallowing the next token or tripping an argparse rejection at end of line.
 
@@ -981,7 +982,7 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
 it measures the PR rather than a bot. Omit it when unmeasured — the classifier then reports no
 `measured_diff_size` line at all, which reads as unknown rather than as a zero-sized diff.
 
-All ten list flags take an OPTIONAL value: each may be supplied bare (the flag with no value at
+Every list flag above takes an OPTIONAL value: each may be supplied bare (the flag with no value at
 all), which reads as the empty list — identical to omitting it. Callers interpolating a possibly-empty
 variable MUST still double-quote the placeholder; the bare form is the parser-side backstop, not a
 licence to leave the interpolation unquoted. An empty `--required-bots` is the vacuously-satisfied
@@ -1001,9 +1002,17 @@ stack, so no bot takes the declared-ignorance override and each refusal keeps th
 `unrecognised_refusal[]` — refusals no arm of the recognition stack could READ. Supply the bot kinds
 only: the `layer`, `excerpt`, `registry_file`, `registry_field` and `remedy` on those records are the
 OPERATOR's remedy, not an input to the member. A bot here resolves to `refused_unknown` regardless of
-its declared `rate_limit_class` — this is the SECOND override of the class mapping, the first being a
+its declared `rate_limit_class` — one of the two overrides of the class mapping, the other being a
 `size` cause resolving `refused_structural`. Like that one it is shared by `check` and `deficit`, so
 the two commands can never name different members for one refusal.
+
+⚠ **Both can hold for one bot, and the `size` cause is consulted FIRST.** The two are per-BOT
+aggregates over a bot's refusals, not readings of a single notice: the producer emits one
+`unrecognised_refusal[]` record per COMMENT, so a bot that published one refusal an arm READ as a size
+ceiling and another no arm could read satisfies both, from two different notices. The positively-read
+cause wins, because an absence must not erase a ceiling the run actually extracted. The ordering never
+costs awaitability — both members it can yield are non-awaitable — so it decides only whether the
+operator is told WHY. See `review_completeness._refusal_state`.
 
 `--not-triggered` is **not** a list flag and takes no value at all: it is a `store_true` bool, passed
 bare when `ci checks pull-request-runs` reports `has_pull_request_run: false` and omitted otherwise.

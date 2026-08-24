@@ -1063,22 +1063,49 @@ class TestUnrecognisedRefusalOverride:
                 f'(over {len(_DECLARED_RATE_LIMIT_CLASSES)} declared class values)'
             )
 
-    def test_the_override_outranks_a_contradictory_size_cause(self):
-        """Contradictory input takes the arm that claims LESS.
+    def test_a_read_size_cause_outranks_the_unrecognised_override(self):
+        """Both overrides CAN hold, and the positively-read one wins.
 
-        A ``size`` cause is READ from the notice's own text, so it cannot co-occur with
-        "no arm could read this" on real input. If both arrive, one observation is
-        wrong — and asserting a diff-size ceiling would hand the operator a
-        split-the-PR remedy derived from a figure nobody extracted.
+        They would be contradictory only if they described the SAME refusal. Both are
+        per-BOT aggregates over that bot's refusals: the producer emits one
+        ``unrecognised_refusal[]`` record per COMMENT and the consumer receives a
+        bot-kind list, so a bot that published one refusal an arm READ as a size
+        ceiling and another no arm could read satisfies both, from two different
+        notices, with neither observation wrong.
+
+        The size cause is taken first because it rests on text that WAS read; an
+        absence observed on some other notice must not erase a ceiling the run
+        actually extracted, leaving the operator without the one remedy already in
+        hand.
         """
         assert (
-            rc._refusal_state('hard_quota', rc.CAUSE_SIZE, True) == rc.STATE_REFUSED_UNKNOWN
+            rc._refusal_state('hard_quota', rc.CAUSE_SIZE, True)
+            == rc.STATE_REFUSED_STRUCTURAL
         )
-        # ...and without the override the same cause still resolves structural.
+        # The override still decides when NO cause was read — it is displaced, not retired.
+        assert rc._refusal_state('hard_quota', None, True) == rc.STATE_REFUSED_UNKNOWN
+        # ...and the cause still resolves structural without the override present.
         assert (
             rc._refusal_state('hard_quota', rc.CAUSE_SIZE, False)
             == rc.STATE_REFUSED_STRUCTURAL
         )
+
+    def test_the_ordering_never_costs_awaitability(self):
+        """The safety property that makes the ordering conservative, not merely richer.
+
+        Whichever override wins, the member is non-awaitable — so no order of the two
+        can ever offer a wait on a bot carrying an unreadable notice. This is what
+        licenses preferring the more informative arm: the choice decides whether the
+        operator is told WHY, never whether they are told to wait. Asserted on the
+        awaitable-declaring class, the only one where a wrong answer would differ.
+        """
+        for cause in (rc.CAUSE_SIZE, None):
+            state = rc._refusal_state('awaitable_window', cause, True)
+
+            assert state != rc.STATE_REFUSED_AWAITABLE, (
+                f'cause={cause!r} with the unrecognised override resolved {state} — '
+                f'an awaitable member for a notice no arm could read'
+            )
 
     def test_the_default_is_unchanged_when_no_bot_is_unrecognised(self, plan_context):
         """An empty override set moves no verdict — the parameter is opt-in.
@@ -1097,19 +1124,59 @@ class TestUnrecognisedRefusalOverride:
         assert with_empty['bot_states'] == without['bot_states']
         assert _state_of(with_empty, 'coderabbit') == rc.STATE_REFUSED_AWAITABLE
 
-    def test_the_override_only_applies_to_a_bot_that_actually_refused(self, plan_context):
-        """The override qualifies a REFUSAL; it never manufactures one.
+    @pytest.mark.parametrize('bot_kind', _REGISTERED_BOTS)
+    def test_the_override_is_reachable_on_the_producers_real_output_shape(
+        self, bot_kind, plan_context
+    ):
+        """⭐ The override's OWN motivating case, staged as the producer really emits it.
 
-        A bot named in the override set but not observed refusing keeps whatever state
-        its own evidence gives it. Without this the flag would be a second, silent way
-        to mark a bot refused.
+        The producer reports the two sets DISJOINTLY: ``unrecognised_refusal[]`` names a
+        bot and ``refused_bots`` does NOT ("an unrecognised one names no bot in
+        refused_bots"). Every other case in this class supplies BOTH, which is a shape
+        the producer never emits — so they exercised the override through a door only a
+        test opens, and the branch that gates it was never reached by the input it exists
+        for.
+
+        Staged the real way, the bot must still resolve ``refused_unknown``. Resolving
+        ``absent`` here is the failure the contract names in as many words: "the exact
+        conflation that let a PR with two refusing required bots report a complete
+        review".
         """
-        plan_id = 'rc-unrecognised-not-refused'
+        plan_id = f'rc-unrecognised-only-{bot_kind}'
         plan_context.plan_dir_for(plan_id)
 
         result = rc.check_completeness(
-            plan_id, ['coderabbit'], unrecognised_refusal_bots=['coderabbit']
+            plan_id,
+            [bot_kind],
+            # refused_bots deliberately NOT supplied — this is the producer's shape.
+            unrecognised_refusal_bots=[bot_kind],
         )
+
+        assert _state_of(result, bot_kind) == rc.STATE_REFUSED_UNKNOWN, (
+            'a bot whose only refusal no arm could read must resolve refused_unknown; '
+            'absent would report a bot that DECLINED as one that stayed silent'
+        )
+        assert _state_of(result, bot_kind) != rc.STATE_ABSENT
+        assert result['participation_complete'] is False
+        assert bot_kind in result['unproven_bots']
+
+    def test_a_bot_in_neither_refusal_set_keeps_its_own_state(self, plan_context):
+        """The override never manufactures a refusal for a bot that was SILENT.
+
+        The guard is real, but its subject is a bot the producer reported in NEITHER
+        refusal set. Membership in ``unrecognised_refusal`` is itself the refusal
+        OBSERVATION — the producer emits that record only on a detected refusal and
+        counts it in ``count_skipped_refusal`` — so it is not a qualifier waiting for a
+        separate one to arrive in ``refused_bots``. Reading it that way is what made the
+        override unreachable on the producer's real, disjoint output shape (see
+        ``test_the_override_is_reachable_on_the_producers_real_output_shape``).
+
+        Staged with neither set, the bot must still resolve ``absent``.
+        """
+        plan_id = 'rc-neither-refusal-set'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(plan_id, ['coderabbit'])
 
         assert _state_of(result, 'coderabbit') == rc.STATE_ABSENT
 
@@ -1895,7 +1962,7 @@ class TestLoadFailure:
 # Zero participation — every list flag may be supplied BARE
 # =============================================================================
 #
-# The defect this pins: the callers interpolate all five list flags into the
+# The defect this pins: the callers interpolate every list flag into the
 # command line, and every one of them is legitimately empty in normal operation
 # (no optional bots, no in-progress bots, no refusals). An unquoted
 # ``--refused-bots {refused_bots}`` with an empty value collapses to a BARE
@@ -1903,7 +1970,7 @@ class TestLoadFailure:
 # and a crashed gate that a caller reads as a pass is a participation verdict
 # nobody produced.
 #
-# Every case below is red against the pre-fix parser by construction: the five
+# Every case below is red against the pre-fix parser by construction: those
 # flags declared ``default=''`` with no ``nargs``, so argparse required a value
 # and answered a bare flag with ``expected one argument`` / exit 2. Nothing here
 # can pass without the ``nargs='?'`` + ``const=''`` relaxation.

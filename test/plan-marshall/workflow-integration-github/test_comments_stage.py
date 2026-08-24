@@ -1390,8 +1390,6 @@ class TestRefusalLayerVocabulary:
         import _github_pr
 
         assert isinstance(_github_pr.REFUSAL_LAYERS, tuple)
-        # Defined in this module, not re-exported from somewhere else.
-        assert _github_pr.REFUSAL_LAYERS.__class__ is tuple
         assert _github_pr.REFUSAL_LAYER_ENUMERATIVE in _github_pr.REFUSAL_LAYERS
 
     def test_preexisting_layer_values_keep_their_exact_spellings(self):

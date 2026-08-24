@@ -1009,7 +1009,7 @@ def test_fetch_findings_splits_a_refusing_bot_from_a_participating_one(plan_cont
     though it is published in one of the bot's declared shapes), while
     ``refused_bots`` carries the refusal so the quorum layer can classify it into a
     refusal member — mapping the bot's declared ``rate_limit_class`` by DEFAULT, with
-    the cause-axis overrides ``review_completeness`` applies on top. The human author
+    the per-refusal overrides ``review_completeness`` applies on top. The human author
     (``bot_kind`` None) appears in neither.
     """
     plan_id = 'gh-pr-refusal-vs-participation'

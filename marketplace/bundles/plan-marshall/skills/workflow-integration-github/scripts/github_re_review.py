@@ -61,7 +61,10 @@ bot that reviewed fine as having declined.
 append every refusal they skip to a per-poll accumulator, and the envelope
 surfaces it: ``refusal_detected`` (bool), ``refusal_class`` (the awaited bot's
 registry ``rate_limit_class`` — ``awaitable_window`` / ``hard_quota`` /
-``unknown``), ``refusal_eta`` (the reset time the notice itself stated, parsed
+``unknown`` — displaced to ``unknown`` when ANY detected refusal had to be caught by
+the enumerative arm, because an unread notice supports no claim about its own
+awaitability and the completeness site applies the same per-bot override; see
+:func:`_resolve_refusal_class`), ``refusal_eta`` (the reset time the notice itself stated, parsed
 through the bot's registry ``rate_limit_eta_patterns``), and ``refusals`` (one
 record per detected refusal carrying its source, detecting layer, awaited
 ``bot_kind``, ETA, and a truncated body excerpt). The refusal still does NOT
@@ -155,6 +158,43 @@ def _parse_iso(value: str) -> datetime | None:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
     return dt
+
+
+def _resolve_refusal_class(bot_kind: str | None, refusals: list[dict]) -> str:
+    """Return the recovery class a detected refusal arms.
+
+    The bot's registry ``rate_limit_class`` is the DEFAULT (fail-closed to
+    ``unknown`` for an unregistered bot), displaced by one per-refusal override: a
+    refusal the enumerative arm had to catch resolves to ``unknown`` whatever the bot
+    declares.
+
+    The override exists because the two facts answer different questions. A
+    ``rate_limit_class`` is declared per BOT and says how that bot's refusals
+    normally behave; the enumerative layer is observed per REFUSAL and says only that
+    nothing about this one was readable. Publishing ``awaitable_window`` beside
+    ``layer: enumerative_unrecognised`` would assert a window nobody observed, and
+    the caller would arm a wait on it — the failure
+    ``automatic-review/standards/bot-participation-contract.md`` § "Refusal
+    recognition is ENUMERATIVE" requires both recognition sites to avoid.
+
+    **The quantifier is ANY, and it is ANY because the sibling site's is.**
+    ``review_completeness`` receives this observation as a per-BOT membership test
+    (``bot in unrecognised_refusal``, over a list the producer fills one record per
+    COMMENT), so a bot with one readable refusal and one unreadable one is inside its
+    override. An ``all``-quantifier here would leave that same bot reporting its
+    declared class on this side while the completeness side reported
+    ``refused_unknown`` — the two sites naming different states for one bot, which is
+    exactly the divergence the contract forbids and this function exists to close.
+    Matching the sibling is therefore not a weaker choice than ``all``; it is the one
+    that makes the parity claim true.
+
+    Returns ``''`` when no refusal was detected — there is nothing to arm.
+    """
+    if not refusals:
+        return ''
+    if any(record.get('layer') == REFUSAL_LAYER_ENUMERATIVE for record in refusals):
+        return 'unknown'
+    return bot_registry.rate_limit_class(bot_kind) if bot_kind else 'unknown'
 
 
 def _body_excerpt(body: str) -> str:
@@ -283,7 +323,20 @@ class _ReReviewStrategy:
             # The recovery strategy the refusal arms, from the bot's registry
             # `rate_limit_class` (fail-closed to `unknown`). Empty when no refusal
             # was detected — there is nothing to arm.
-            'refusal_class': (bot_registry.rate_limit_class(bot_kind) if bot_kind else 'unknown') if refusals else '',
+            #
+            # OVERRIDDEN to `unknown` when ANY detected refusal had to be caught by
+            # the enumerative arm. A notice no arm could READ supports no claim about
+            # its own awaitability, so publishing the bot's declared
+            # `awaitable_window` beside `layer: enumerative_unrecognised` would arm a
+            # wait on a window nobody observed — the same contradiction
+            # `--unrecognised-refusal-bots` displaces on the completeness side. Both
+            # recognition sites must name the same state for one refusal.
+            #
+            # The quantifier MATCHES the sibling's: `review_completeness` takes this
+            # as a per-BOT membership test over a list the producer fills per COMMENT,
+            # so `any` is what keeps the two sites in agreement on a bot that refused
+            # more than once. See `_resolve_refusal_class`.
+            'refusal_class': _resolve_refusal_class(bot_kind, refusals),
             'refusal_eta': refusal_eta,
             'refusals': refusals,
             # The declared population of ``layer`` values, published so a consumer or
@@ -355,7 +408,7 @@ class _ReReviewStrategy:
           own declared phrasing matched, so the notice was READ as data;
           ``structural_fallback`` means it was recognized by notice SHAPE alone;
           ``enumerative_unrecognised`` means no arm could read it at all — the
-          weakest of the three, recording only that the body was not review
+          weakest, recording only that the body was not review
           feedback. A reader must not treat them as interchangeable: the last one
           supports no claim about WHY the bot declined;
         - ``eta`` — the reset time the notice itself stated, parsed through the

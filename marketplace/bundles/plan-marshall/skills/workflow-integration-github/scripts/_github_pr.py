@@ -221,8 +221,8 @@ def _is_refusal_notice(body: str, bot_kind: str | None = None) -> bool:
     MUST branch on it — surfacing the refusing bot so the completeness / quorum
     layer sees a refusal member — rather than drop it. That member is derived by
     ``automatic-review/scripts/review_completeness.py``, which maps the bot's
-    declared ``rate_limit_class`` by DEFAULT and applies cause-axis overrides on top
-    of it (a diff-size ceiling, and a refusal no recognition arm matched); the
+    declared ``rate_limit_class`` by DEFAULT and applies two per-refusal overrides on
+    top of it (a diff-size ceiling, and a refusal no recognition arm matched); the
     mapping is that module's to state, and is deliberately not restated as a fixed
     correspondence here. Dropping the refusal is precisely what let a PR whose every
     required reviewer refused report a clean, complete review with substantively

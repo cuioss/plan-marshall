@@ -332,10 +332,12 @@ class MalformedBotFlag(ValueError):
     The flag set is split by form. The pair-form flags (``--participated-bots`` and
     ``--stale-participation-bots``, both fed the producer's
     ``bot_kind:evidence_kind`` records) require every token to be a pair; a bare
-    ``bot_kind`` is malformed. The bare-form flags (``--required-bots`` /
-    ``--optional-bots`` / ``--in-progress-bots`` / ``--refused-bots`` /
-    ``--declined-bots``) require every token to be a bare ``bot_kind``; a
-    ``bot_kind:evidence_kind`` pair is malformed.
+    ``bot_kind`` is malformed. The bare-form flags — every flag
+    :func:`_parse_bot_observations` routes through :func:`_split_bots`, which is where
+    the form routing actually lives — require every token to be a bare ``bot_kind``; a
+    ``bot_kind:evidence_kind`` pair is malformed. The membership is not enumerated here:
+    a copy of it goes stale the moment a flag is added, which is exactly how
+    ``--unrecognised-refusal-bots`` came to be missing from it.
 
     A malformed token is REJECTED loudly rather than silently reinterpreted. Both
     misparses are polarity-selecting: a bare kind dropped from the pair-form parse
@@ -447,6 +449,9 @@ def _refusal_state(
     displace it. Both are per-refusal observations outranking a per-bot declaration,
     and they are consulted before the class:
 
+    - ``cause == 'size'`` -> ``refused_structural``, whatever the class says. The diff
+      is over a per-PR ceiling, so the same request never succeeds while the diff is
+      this size and no temporal member describes it.
     - ``unrecognised`` -> ``refused_unknown``, whatever the class says. No arm of the
       recognition stack could READ this notice, so nothing about it is known — least
       of all whether its window reopens. Deferring to the declared class here is the
@@ -454,25 +459,35 @@ def _refusal_state(
       render ``refused_awaitable``, asserting a reset window nobody observed and
       steering the operator to wait on a notice no layer could even parse. The
       declared-ignorance member is the only honest one.
-    - ``cause == 'size'`` -> ``refused_structural``, whatever the class says. The diff
-      is over a per-PR ceiling, so the same request never succeeds while the diff is
-      this size and no temporal member describes it.
-
-    **The two overrides cannot both hold on real input**, and the order encodes what to
-    do if they somehow do. A ``size`` cause is READ from the notice's own text, so
-    observing one means an arm DID recognise the body — which is precisely what
-    ``unrecognised`` denies. Contradictory input therefore means one of the two
-    observations is wrong, and ``unrecognised`` is taken first because it claims
-    strictly less: asserting a diff-size ceiling on a notice nobody could read would
-    hand the operator a split-the-PR remedy derived from a figure that was never
-    extracted.
-
     - otherwise the awaitability split, total and injective over the three declared
       classes so no value is collapsed into another:
       ``awaitable_window`` -> ``refused_awaitable`` (the window reopens on its own),
       ``hard_quota`` -> ``refused_hard`` (a budget that does not usefully reopen),
       ``unknown`` / anything else -> ``refused_unknown`` (the registry declares
       ignorance, so whether waiting helps is genuinely not known).
+
+    **The two overrides CAN both hold, and the order is what decides that case.** They
+    would be contradictory only if they described the SAME refusal — a ``size`` cause is
+    read from a notice's own text, which is what ``unrecognised`` denies. But both
+    parameters are per-BOT aggregates over a bot's refusals, not per-refusal readings:
+    the producer emits one ``unrecognised_refusal[]`` record per COMMENT, and the caller
+    passes ``bot in unrecognised_refusal``. A bot that published two refusals — one whose
+    text an arm read as a size ceiling, one no arm could read — therefore satisfies both,
+    from two different notices, with neither observation wrong.
+
+    ``cause == 'size'`` is consulted FIRST because it is the only one of the two that
+    rests on something positively READ. ``unrecognised`` reports an absence — that some
+    OTHER notice could not be parsed — and an absence must not erase a ceiling the run
+    actually extracted. Taking ``unrecognised`` first would discard that figure and hand
+    the operator a wait-or-escalate decision derived from the weaker observation, while
+    the real remedy (split the PR under the stated cap) was already in hand.
+
+    The ordering is safe in the awaitability direction, which is what makes it the
+    conservative choice rather than merely the more informative one: both members it can
+    produce here — ``refused_structural`` and ``refused_unknown`` — are non-awaitable, so
+    neither order can ever offer a wait on a bot carrying an unreadable notice. The
+    orders differ only in whether the operator is told WHY, and the size cause is the one
+    that says.
 
     **Why the cause outranks the class.** ``rate_limit_class`` is declared once per
     BOT, while a cause is observed per REFUSAL, and one bot can refuse for both causes
@@ -494,10 +509,10 @@ def _refusal_state(
     resolves fail-closed to ``refused_unknown`` rather than being asserted as a hard
     quota the registry never declared.
     """
-    if unrecognised:
-        return STATE_REFUSED_UNKNOWN
     if cause == CAUSE_SIZE:
         return STATE_REFUSED_STRUCTURAL
+    if unrecognised:
+        return STATE_REFUSED_UNKNOWN
     if rate_limit_class == 'awaitable_window':
         return STATE_REFUSED_AWAITABLE
     if rate_limit_class == 'hard_quota':
@@ -604,7 +619,16 @@ def classify_bot(
     """
     if bot in proven_participants:
         return STATE_PARTICIPATED if has_findings else STATE_PARTICIPATED_BUT_EMPTY
-    if bot in refused:
+    # An unrecognised refusal is a refusal OBSERVATION in its own right, so it enters
+    # this branch on equal footing with ``refused``. It cannot be gated behind
+    # ``bot in refused``: the producer reports the two sets DISJOINTLY — "an
+    # unrecognised one names no bot in refused_bots" (``github_pr.cmd_fetch_findings``)
+    # — precisely so a refusal nobody could read stays distinguishable from one that
+    # was read. Gating on ``refused`` alone therefore made the override unreachable in
+    # the ONLY case it exists for: a bot whose sole refusal no arm could read fell
+    # through to ``absent``, which this contract names as "the exact conflation that
+    # let a PR with two refusing required bots report a complete review".
+    if bot in refused or bot in (unrecognised_refusal or set()):
         return _refusal_state(
             bot_registry.rate_limit_class(bot),
             (refused_causes or {}).get(bot),
@@ -803,8 +827,10 @@ def check_completeness(
                            READ, from ``github_pr fetch_findings``'s
                            ``unrecognised_refusal[]``. They resolve to
                            ``refused_unknown`` regardless of declared
-                           ``rate_limit_class`` — the SECOND override of the class
-                           mapping. Load-bearing rather than cosmetic: without it a
+                           ``rate_limit_class`` — one of the two overrides of the
+                           class mapping, and the one consulted SECOND, since a
+                           positively-read ``size`` cause outranks it. Load-bearing
+                           rather than cosmetic: without it a
                            CodeRabbit unrecognised refusal renders
                            ``refused_awaitable``, asserting a reset window nobody
                            observed and steering the operator to wait on a notice no
@@ -1374,7 +1400,7 @@ def cmd_deficit(args: argparse.Namespace) -> int:
 def _add_bot_observation_flags(sub: argparse.ArgumentParser) -> None:
     """Add the observation flags shared by the ``check`` and ``deficit`` subcommands.
 
-    ``--plan-id`` plus the nine list flags and the PR-wide ``--not-triggered`` bool —
+    ``--plan-id`` plus the list flags added below and the PR-wide ``--not-triggered`` bool —
     the classifier's whole input surface. Factored so the two subcommands cannot
     drift in flag name, ``nargs``, or ``const`` (a drift would silently change how an
     empty list parses on one command but not the other).

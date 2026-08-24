@@ -774,11 +774,23 @@ not a richer call. The two flags belong at § "Predicate 2" below, which is the 
 
 **The rule is a POSITIVE validation of the required shape, not an enumeration of known-bad shapes.**
 The barrier proceeds to Predicate 2 when, and only when, this `fetch_findings` call exited **zero** AND
-its return carries **ALL THREE** participation inputs — `participated_bots`, `stale_participation_bots`,
-and `refused_bots`. **Every other shape is an UNKNOWN**, including a zero exit whose return omits any
-one of the three. Keying the trigger on a single sentinel field would not do: a truncated or malformed
-return that keeps `participated_bots` while dropping `refused_bots` satisfies a single-field test and
-proceeds, yet it leaves exactly the same absent input as a crash. Stating the requirement positively is
+its return carries **EVERY** participation input it enumerates — `participated_bots`,
+`stale_participation_bots`, `refused_bots`, and `unrecognised_refusal`. **Every other shape is an
+UNKNOWN**, including a zero exit whose return omits any one of them. The enumeration is the
+requirement; it deliberately states no cardinal, because a restated count is a second place the set
+size lives and the one that goes stale silently when the set is widened. Keying the trigger on a single
+sentinel field would not do: a
+truncated or malformed return that keeps `participated_bots` while dropping `refused_bots` satisfies a
+single-field test and proceeds, yet it leaves exactly the same absent input as a crash.
+
+`unrecognised_refusal` is a required input rather than an empty-defaulting overlay because the producer
+emits it **unconditionally** — a run with no unreadable notice reports an empty list, so the field is
+present on every well-formed return and its ABSENCE is evidence of truncation rather than of a clean
+run. The distinction is load-bearing here: silently defaulting an absent `unrecognised_refusal` to the
+empty list would restore the very resolution this override exists to displace, sending a refusal no arm
+could read back to the bot's declared `rate_limit_class` at the one site that renders an operator
+prompt. An overlay whose absence is indistinguishable from its empty value may default; this one may
+not. Stating the requirement positively is
 what makes the trigger cover the shapes nobody enumerated. The barrier **MUST NOT proceed to
 Predicate 2** with any participation input absent: feeding an empty `--participated-bots` to a
 predicate that fails closed would render every required bot `absent`, and feeding nothing at all would
@@ -824,7 +836,11 @@ Also retain `{declined_bots}` — the bots the trigger-A re-review found had **d
 
 Also retain `{refused_causes}` — the size/quota CAUSE overlay from the same `fetch_findings` return (`refused_causes[]`), rendered as comma-separated `{bot_kind}:{cause}` pairs (`cause` in `size` / `quota`) — the companion `{refusal_size_caps}` (`refused_size_caps[]` rendered as `{bot_kind}:{cap}` pairs), and the scalar `{measured_diff_size}` (the `measured_diff_size` field, how big the refused diff actually was). The two lists default to the empty list and the scalar to the empty string when the producer emitted none, or the field was absent or malformed — the empty fallback, never a hard failure. Retaining them is what lets the barrier below NAME a blocked reviewer's remedy when it renders a refusal, and QUANTIFY the gap it is asking the operator to accept: a cap without the size that hit it is a claim the operator must take on trust. The two figures carry different units by design, so they are an order-of-magnitude comparison rather than an equality check.
 
-⚠ **A `size` cause is state-determining, not advisory — this is a behaviour change at this call site.** It resolves the refusing bot to `refused_structural` rather than to an awaitability member, because `rate_limit_class` is declared per BOT while a cause is observed per REFUSAL and one bot can refuse for both causes at one class. Every other cause remains advisory and changes no verdict. The distinction matters here precisely because this is the site that renders an operator prompt: a structural refusal's remedies are split / accept / disable-for-this-PR, and **never** wait. See [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md) § "A refusal resolves by CAUSE first".
+Also retain `{unrecognised_refusal_bots}` — the `bot_kind` values from the same `fetch_findings` return's `unrecognised_refusal[]` records, rendered as a comma-separated list. Supply the bot kinds only: the `layer` and `excerpt` those records carry are the operator's remedy, not an input to the member. This is the SECOND state-determining override of the class mapping, and it is retained here for the same reason the first one is — the barrier re-derives participation rather than trusting the FIND step's record, so an override wired only at the FIND site does not reach this call.
+
+⚠ **An unrecognised refusal is state-determining, not advisory — and it is the override this call site most needs.** A bot whose refusal no recognition arm could read resolves to `refused_unknown` REGARDLESS of its declared `rate_limit_class`: an unparsed notice supports no claim about its own awaitability. Without it, a bot declaring `awaitable_window` renders `refused_awaitable` here and the `ask`-mode prompt below offers the operator a wait on a window nobody observed — the exact remedy-misnaming the prompt's own construction (see § "Predicate 2 fails — the ask" below) exists to prevent. See [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md) § "Refusal recognition is ENUMERATIVE", which requires both recognition sites to report the same state for one refusal.
+
+⚠ **A `size` cause is state-determining, not advisory — this is a behaviour change at this call site.** It resolves the refusing bot to `refused_structural` rather than to an awaitability member, because `rate_limit_class` is declared per BOT while a cause is observed per REFUSAL and one bot can refuse for both causes at one class. Every other cause remains advisory and changes no verdict. The distinction matters here precisely because this is the site that renders an operator prompt: a structural refusal's remedies are split / accept / disable-for-this-PR, and **never** wait. See [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md) § "A refusal resolves by `rate_limit_class` BY DEFAULT, displaced by two overrides".
 
 One input is NOT available from the re-fetch, because no earlier call observes it — the PR-wide question of whether any `pull_request`-event workflow run exists for this PR at all. Read it here:
 
@@ -843,18 +859,22 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
   --participated-bots "{participated_bots}" --refused-bots "{refused_bots}" \
   --stale-participation-bots "{stale_participation_bots}" --declined-bots "{declined_bots}" \
   --refused-causes "{refused_causes}" --refusal-size-caps "{refusal_size_caps}" \
+  --unrecognised-refusal-bots "{unrecognised_refusal_bots}" \
   --measured-diff-size "{measured_diff_size}"
 ```
 
 Append the bare `--not-triggered` flag to that call when and only when the read above reported `has_pull_request_run: false`. It is a `store_true` bool carrying no value of its own, so it is never interpolated and never quoted — the quoting discipline below governs the list flags only.
 
 This site never passes `--in-progress-bots` — the barrier has no completion-poll observation of its
-own. It **does** pass `--refused-causes` and `--refusal-size-caps` (the CAUSE and CAP overlays from the
-retained `refused_causes[]` / `refused_size_caps[]`), which together are the surface where naming a
-refusal's remedy — split for a structural ceiling, backoff for a quota — and quantifying the gap most
-help the operator deciding whether to override a merge blocked by refusing required bots. So the eight
-list flags above are the set here. Each is legitimately empty in normal operation (no optional bots, no
-refusals, no stale publishes, no declines, no causes, no stated caps). **The load-bearing defence is the parser, not the quoting.** The generated
+own. It **does** pass `--refused-causes`, `--refusal-size-caps`, and `--unrecognised-refusal-bots` (the
+CAUSE and CAP overlays from the retained `refused_causes[]` / `refused_size_caps[]`, plus the
+unreadable-notice observation from `unrecognised_refusal[]`), which together are the surface where
+naming a refusal's remedy — split for a structural ceiling, backoff for a quota, and no wait at all for
+a notice nobody could read — and quantifying the gap most help the operator deciding whether to
+override a merge blocked by refusing required bots. So the list flags interpolated above are the set
+here — enumerated rather than counted, so widening the set does not leave a stale number behind. Each
+is legitimately empty in normal operation (no optional bots, no refusals, no stale publishes, no
+declines, no causes, no stated caps, no unreadable notices). **The load-bearing defence is the parser, not the quoting.** The generated
 executor strips every empty-string argument before argparse sees it (`script_args = [a for a in
 script_args if a]` in `.plan/execute-script.py`), so through the executor `--refused-bots ""` arrives
 as a bare `--refused-bots` exactly as an unquoted empty placeholder would — the quotes do NOT survive

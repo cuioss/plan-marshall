@@ -157,7 +157,7 @@ a property of the account — and `rate_limit_class` is declared once per bot, s
 be right for both. The size refusal is now classified from its **cause**: it resolves to
 `refused_structural` whatever this field says, which is what stops a bot whose window genuinely does
 reopen from being offered an await for a diff that is simply too big. See
-[`bot-participation-contract.md`](bot-participation-contract.md) § "A refusal resolves by CAUSE first".
+[`bot-participation-contract.md`](bot-participation-contract.md) § "A refusal resolves by `rate_limit_class` BY DEFAULT, displaced by two overrides".
 
 The productive responses to the size ceiling are to split the PR, to accept the bot's
 non-participation, or to disable this reviewer for the PR — never to wait — and the

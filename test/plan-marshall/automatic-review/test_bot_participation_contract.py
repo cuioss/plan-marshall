@@ -811,9 +811,11 @@ _FAMILY_B = 'github_pr fetch_findings'
 #: canonical block but not interpolated at the FIND-step site, while
 #: ``--unrecognised-refusal-bots`` IS — the producer emits its observation on the same
 #: ``fetch_findings`` return the guard already threads forward), the pre-merge
-#: barrier's Predicate 2 passes six (it never observes an in-progress bot of its own,
-#: but it forwards the trigger-A ``--declined-bots`` observation), and both producer
-#: sites pass the two classification flags.
+#: barrier's Predicate 2 passes seven (it never observes an in-progress bot of its own,
+#: but it forwards the trigger-A ``--declined-bots`` observation AND the producer's
+#: ``--unrecognised-refusal-bots`` observation — state-determining at the one site that
+#: renders an operator prompt, so a refusal no arm could read must not resolve there by
+#: the bot's declared class), and both producer sites pass the two classification flags.
 #:
 #: ``--not-triggered`` deliberately moves NEITHER count. It is a ``store_true``
 #: bool rather than a ``--*-bots`` list flag, so it carries no interpolated
@@ -832,7 +834,7 @@ _CONFIRMED_SITES = (
         _FAMILY_A,
         'phase-6-finalize/standards/branch-cleanup.md',
         'Predicate 2',
-        6,
+        7,
         id='family-a-premerge-barrier-predicate-2',
     ),
     pytest.param(
@@ -853,7 +855,7 @@ _CONFIRMED_SITES = (
 
 #: Matches a list flag and the token that follows it inside a fenced command. The
 #: alternation is built from the SAME parser-derived tuple as ``_ALL_LIST_FLAGS``
-#: rather than restated as a second literal — a sixth flag reaches the quoting
+#: rather than restated as a second literal — a newly added flag reaches the quoting
 #: scan automatically. Longest-first ordering keeps a flag that is a prefix of
 #: another from shadowing it.
 _FLAG_VALUE = re.compile(
@@ -985,8 +987,12 @@ class TestCallSitePopulation:
         Never one aggregate "all sites pass" assertion: an aggregate cannot say
         WHICH site regressed, and a site that stopped being discovered at all
         would silently shrink the aggregate rather than fail. The expected flag
-        count is per-site, because the sites genuinely differ — the pre-merge
-        barrier passes five flags, not the participation guard's six.
+        count is per-site because the sites genuinely differ in WHICH flags they
+        interpolate — the pre-merge barrier observes no in-progress bot of its own,
+        while the FIND-step guard interpolates no ``--declined-bots`` — so a single
+        shared count would hide a site that dropped one flag and gained another.
+        The counts themselves live in ``_CONFIRMED_SITES`` and are deliberately not
+        restated here, where they would be a second place to go stale.
         """
         _family, doc, section, command = _find_confirmed(family, doc_suffix, section_substring)
 

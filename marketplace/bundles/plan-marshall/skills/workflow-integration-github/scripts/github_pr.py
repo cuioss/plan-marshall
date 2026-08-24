@@ -1087,7 +1087,7 @@ def cmd_fetch_findings(args):
         # operator triage), but the refusing bot is SURFACED in ``refused_bots`` so
         # the completeness / quorum layer classifies it into a refusal member —
         # by the bot's declared rate_limit_class by DEFAULT, displaced by the
-        # cause-axis overrides review_completeness applies — rather than inferring
+        # per-refusal overrides review_completeness applies — rather than inferring
         # absence from silence. Checked BEFORE
         # the noise filter so a refusal can never be swallowed by a shared ignore
         # regex on its way past. An unregistered login's refusal is still
@@ -1257,6 +1257,20 @@ def cmd_fetch_findings(args):
     # quantifier ranges over exactly the comments that could have granted the credit
     # in the first place. A bot with no such comment is not swept up: the empty set
     # would make ``all()`` vacuously true, so a non-empty evidence set is required.
+    #
+    # NOISE IS EXCLUDED FIRST, and that is a position precondition rather than a
+    # refinement. ``_is_unrecognised_refusal`` is the enumerative arm, whose contract
+    # places it AFTER the noise filter — its own defence-in-depth branch reproduces
+    # only ``bot_registry.ignore_patterns``, one of the four arms ``_is_obvious_noise``
+    # applies. Sweeping ``raw_comments`` unfiltered therefore ran the arm at a position
+    # it does not hold at: a short, anchor-less noise comment from a registered bot
+    # reads as an unrecognised refusal, and a bot whose every publish-shape comment was
+    # such noise would lose its participation credit. That contradicts
+    # ``automatic-review/SKILL.md`` item 1 — a bot that posted only noise is still
+    # credited, because the evidence is computed before noise filtering. Excluding
+    # noise here restores the arm to its documented position: the evidence set becomes
+    # empty for a noise-only bot, the non-empty guard above declines to sweep it, and
+    # the credit stands.
     unrecognised_only_bots: set[str] = set()
     for _credited_bot in participated:
         _shapes = bot_registry.participation_evidence(_credited_bot)
@@ -1265,6 +1279,7 @@ def cmd_fetch_findings(args):
             for _c in raw_comments
             if bot_kind_for_author(_c.get('author') or 'unknown') == _credited_bot
             and (_c.get('kind') or 'inline') in _shapes
+            and not _is_obvious_noise(str(_c.get('body') or ''), _credited_bot)
         ]
         if _evidence_comments and all(
             _is_unrecognised_refusal(str(_c.get('body') or ''), _credited_bot)

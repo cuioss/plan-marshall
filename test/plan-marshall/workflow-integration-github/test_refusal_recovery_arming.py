@@ -326,14 +326,16 @@ class TestTheEnumerativeArmOnTheReReviewPath:
         assert record['bot_kind'] == bot_kind
 
     @pytest.mark.parametrize('bot_kind', _registered_bots())
-    def test_an_unrecognised_refusal_arms_the_declared_ignorance_recovery(
+    def test_an_unrecognised_refusal_is_still_a_refusal_and_states_no_eta(
         self, bot_kind, monkeypatch
     ):
-        """It arms recovery by the bot's DECLARED class, never by a claim about the notice.
+        """It arms A recovery rather than vanishing into a timeout — and claims no ETA.
 
-        The enumerative arm read nothing, so it supports no claim about why the bot
-        declined — the recovery therefore follows the same registry class every other
-        refusal does, rather than inventing an awaitability the notice never stated.
+        What the enumerative arm supports is deliberately narrow: the body was not
+        review feedback. It read nothing further, so the record states no ETA —
+        nothing can be claimed about when the window reopens. Which recovery the
+        envelope then arms is a separate question, settled by
+        ``_resolve_refusal_class`` and pinned below rather than here.
         """
         _arm_enumerative(monkeypatch)
         record = github_re_review._ReReviewStrategy._refusal_record(
@@ -388,3 +390,80 @@ class TestTheEnumerativeArmOnTheReReviewPath:
         ]
 
         assert _detect_rate_limited_bots(human) == []
+
+
+class TestUnreadRefusalNeverReportsAnAwaitableClass:
+    """``refusal_class`` on the envelope, when an arm could not read the notice.
+
+    The envelope publishes ``layer`` and ``refusal_class`` side by side, so the pair
+    must not contradict itself: ``enumerative_unrecognised`` beside
+    ``awaitable_window`` asserts a window nobody observed, and the caller arms a wait
+    on it. This is the re-review half of the override ``review_completeness`` applies
+    through ``--unrecognised-refusal-bots``; the contract requires both recognition
+    sites to name the same state for one refusal, which is why the quantifier here is
+    pinned to the sibling's rather than chosen independently.
+    """
+
+    @staticmethod
+    def _enumerative(bot_kind: str) -> dict:
+        return {'bot_kind': bot_kind, 'layer': _github_pr.REFUSAL_LAYER_ENUMERATIVE, 'eta': ''}
+
+    @staticmethod
+    def _registry(bot_kind: str) -> dict:
+        return {'bot_kind': bot_kind, 'layer': _github_pr.REFUSAL_LAYER_REGISTRY, 'eta': ''}
+
+    def test_no_refusal_resolves_to_the_empty_string(self):
+        """Nothing was detected, so there is no recovery to arm."""
+        assert github_re_review._resolve_refusal_class('coderabbit', []) == ''
+
+    @pytest.mark.parametrize('bot_kind', _registered_bots())
+    def test_an_unread_refusal_resolves_unknown(self, bot_kind):
+        """Swept over the WHOLE population — no bot is exempt from the override."""
+        resolved = github_re_review._resolve_refusal_class(bot_kind, [self._enumerative(bot_kind)])
+
+        assert resolved == 'unknown'
+
+    def test_the_awaitable_window_bot_is_the_load_bearing_case(self):
+        """The case the override exists for, with its matched negative control.
+
+        A ``hard_quota`` bot resolves ``unknown`` either way, so sweeping the
+        population alone cannot show the override does anything: the value would be
+        right for the wrong reason. The discriminator is a bot whose DECLARED class
+        differs from ``unknown`` — only there does reading the declared class produce
+        a different, wrong answer. The control is the SAME bot with a refusal an
+        earlier arm DID read, which must still report the declared class.
+        """
+        awaitable = [
+            b for b in _registered_bots() if bot_registry.rate_limit_class(b) == 'awaitable_window'
+        ]
+        assert awaitable, 'registry must declare an awaitable_window bot for this to discriminate'
+
+        for bot in awaitable:
+            # Unread notice: the declared awaitability is NOT asserted.
+            assert github_re_review._resolve_refusal_class(bot, [self._enumerative(bot)]) == 'unknown'
+            # Matched negative control — same bot, a notice the registry arm READ.
+            assert (
+                github_re_review._resolve_refusal_class(bot, [self._registry(bot)])
+                == 'awaitable_window'
+            )
+
+    def test_a_mixed_set_matches_the_completeness_sites_quantifier(self):
+        """The parity case: one readable refusal alongside an unreadable one.
+
+        ``review_completeness`` receives this observation as a per-BOT membership test
+        over a list the producer fills one record per COMMENT, so such a bot IS inside
+        its override and classifies ``refused_unknown``. An ``all``-quantifier here
+        would report the declared class instead, leaving the two recognition sites
+        naming different states for one bot — the divergence the contract forbids.
+
+        This case is therefore a PARITY assertion, not a preference: it fails if this
+        side is quantified independently of the sibling, in either direction.
+        """
+        for bot in _registered_bots():
+            mixed = [self._registry(bot), self._enumerative(bot)]
+
+            assert github_re_review._resolve_refusal_class(bot, mixed) == 'unknown'
+
+    def test_an_unattributable_refusal_fails_closed_to_unknown(self):
+        """No bot_kind means no declared class to read — never an awaitable guess."""
+        assert github_re_review._resolve_refusal_class(None, [self._registry('')]) == 'unknown'
