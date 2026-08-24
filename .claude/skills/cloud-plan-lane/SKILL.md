@@ -319,7 +319,7 @@ is call a scratch path durable.
 ## Step 3 — Establish the plan directory
 
 A plan arrives as a single file, e.g. `doc/plans/truthful-signals/010-my-plan.md`, authored from the
-template at [`doc/plans/_template/plan.md`](../../../doc/plans/_template/plan.md). If the plan you
+template the authoring pass applies. If the plan you
 were handed is not in that shape, do not silently proceed on a thinner brief — say so in the report,
 and flag any missing section that changes what you would build (deliverables, out-of-scope,
 claim labels).
@@ -1915,8 +1915,12 @@ including a run that ended **blocked or partial**, and why. (The merge commit is
 merge event and reported to the operator, not embedded here — see the merge-commit note above.) An
 overstated outcome gets collected as done; an understated one gets picked up again.
 
-The full rule, including how a row is created and later collected, is
-[`doc/plans/cloud-bridge.md`](../../../doc/plans/cloud-bridge.md).
+The full rule, including how a row is created and later collected, is the cloud-bridge rule.
+
+⚠ **That rule's document is not currently in the tree.** `doc/plans/` is exported only while an epic
+has plans handed off, and both standalone epics have been ingested into the orchestrator ledger, so the
+tree — its README, `cloud-bridge.md` and the plan template — was retired with them. Recover any of the
+three from git history (`git show <sha>:doc/plans/cloud-bridge.md`) before relying on this step.
 
 ## Step 9 — Final step: verify this contract was followed
 

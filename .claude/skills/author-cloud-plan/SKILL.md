@@ -24,8 +24,8 @@ plans run so far; this skill is where it lives so the next author does not redis
 
 ## When to load
 
-Load this while **authoring** a cloud plan — the [`cloud-bridge.md`](../../../doc/plans/cloud-bridge.md)
-§ Path 1 create step, done locally. It is not loaded by the run: the run loads `cloud-plan-lane`, and
+Load this while **authoring** a cloud plan — the cloud-bridge rule's Path 1 create step, done
+locally. It is not loaded by the run: the run loads `cloud-plan-lane`, and
 loading authoring guidance into every cloud run would spend context on guidance the run can never use.
 
 ## Boundary — what this skill owns, and what it does not

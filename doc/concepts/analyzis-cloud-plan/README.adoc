@@ -32,6 +32,14 @@ adjudicates it against three candidate explanations:
 | 13
 | xref:review-apparatus.adoc[Cloud-run quality analysis: review-apparatus]
 
+| `multiplattform`
+| 3
+| xref:multiplattform.adoc[Cloud-run quality analysis: multiplattform]
+
+| `test-quality`
+| 10
+| xref:test-quality.adoc[Cloud-run quality analysis: test-quality]
+
 |===
 
 [IMPORTANT]
@@ -42,6 +50,27 @@ where `truthful-signals` used a *repository-wide checklist sweep* and **four boo
 count and its deliverable-fidelity rate therefore do not sit beside the others; each report states
 which of its figures travel and which do not. The **local** comparison set is the same archive in
 every report and is directly comparable.
+
+⛔ **`multiplattform` is the exception to even that.** It has **no `verification.md` and no
+`gaps.md`** — the third billed bucket never ran — so it publishes **no gap count at all**, and its
+deliverable fidelity is measured by the *ingestion ground-truth pass* rather than by a verification
+call. It also has **no local comparison set**. Its figures travel nowhere; it is included because its
+two claim-independent measurements (the reviewer record and the diff sizes) are derived from the PR
+record rather than from anything the lane authored about itself.
+====
+
+[CAUTION]
+====
+**Correction to Step 5, inherited by all three earlier reports.** The `multiplattform` analysis found
+that a comment thread's `resolved` flag read **post-merge** is not the same measurement as
+resolution-*before*-merge. On the two PRs where an independent finalize-time figure exists
+(`finalize-step-review-retrospective`), both moved upward afterwards — `0/3 → 3/3` and `3/6 → 6/6`.
+
+⇒ **The resolution rate that `truthful-signals` and `review-apparatus` rest their verdicts on is
+resolution-eventually, not resolution-at-the-gate.** The earlier figures are not withdrawn — they are
+correct for what the flag measures — but they are an **upper bound** on merge-gate behaviour, and a
+report that needs the gate claim must capture the figure at finalize time. Recorded here rather than
+silently fixed, per the conventions below.
 ====
 
 == How to produce one of these reports
