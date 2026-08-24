@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001
 """Git subprocess helpers for phase_handshake invariants.
 
 Uses plain subprocess matching the codebase convention (workflow-integration-git).
@@ -96,4 +95,4 @@ def git_dirty_files(cwd: str | Path) -> list[str] | None:
         )
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         return None
-    return sorted({path for path in parse_porcelain_z(result.stdout) if path})
+    return sorted(set(parse_porcelain_z(result.stdout)))

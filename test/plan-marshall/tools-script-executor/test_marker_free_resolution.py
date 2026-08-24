@@ -383,11 +383,11 @@ def _writes_in_tree(tree: ast.AST, label: str) -> list[str]:
         elif node.func.attr == 'open' and _is_write_mode(_open_mode(node, 0)):
             hits.append(f'{prefix}.open() in write mode on a .orphaned_at path at line {node.lineno}')
 
-    hits.extend(_template_writes(tree, constant_names, label))
+    hits.extend(_template_writes(tree, label))
     return sorted(hits)
 
 
-def _template_writes(tree: ast.AST, constant_names: set[str], label: str) -> list[str]:
+def _template_writes(tree: ast.AST, label: str) -> list[str]:
     """Descend into string constants that are themselves emitted Python.
 
     A generator holds the code it emits as a string constant
@@ -399,9 +399,10 @@ def _template_writes(tree: ast.AST, constant_names: set[str], label: str) -> lis
     file that does not contain the call.
 
     A constant that is not valid Python (ordinary prose, a docstring) simply does
-    not parse and is skipped, so nothing but real embedded code is examined.
+    not parse and is skipped, so nothing but real embedded code is examined. The
+    outer tree's marker constants are deliberately NOT passed in: the embedded
+    tree resolves its own, through the same :func:`_writes_in_tree` entry point.
     """
-    del constant_names  # the embedded tree resolves its own constants
     hits: list[str] = []
     for node in ast.walk(tree):
         target = _assign_target_name(node)
