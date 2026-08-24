@@ -85,13 +85,17 @@ the `cross-file` subcommand of `_analyze.py`.
 ⛔ **`doctor-marketplace report` does not run it.** A `report` run emits exactly
 `summary`, `issues_by_type`, `issues_by_bundle`, `safe_fixes`, `risky_fixes`,
 `unfixable_issues`, `components_for_tool_analysis` and `llm_review_items`; no
-cross-file or duplication data appears in it at any scope. Run the analysis
-through its own notation instead:
+cross-file or duplication data appears in it at any scope.
 
-```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:_analyze \
-  cross-file --skill-path {skill_dir} [--similarity-threshold F]
-```
+⛔ **Neither module is registered in the generated executor**, so this analysis
+has no sanctioned `.plan/execute-script.py` form and none may be documented —
+`ARGUMENT_NAMING_NOTATION_INVALID` fires on a prescribed unregistered notation.
+Registration is the operative fact, not the underscore prefix: an unregistered
+third part can still resolve through the executor's filename fallback, so a
+`--help` that answers is not evidence of a sanctioned form. The reviewer invokes
+the analyzer directly or performs the equivalent comparison by hand — the same
+standing as `_cmd_cross_file.py::verify_findings` under
+[Verification of LLM Findings](#verification-of-llm-findings) below.
 
 **Analyzer Output Categories** — what `_analyze_crossfile.py` itself produces,
 NOT the contents of a `report` run:
@@ -481,12 +485,11 @@ This guide is loaded in **Phase 3: Analyze Content Quality**.
 
 ### Step-by-Step Integration
 
-1. **Run the cross-file analysis pass** over the skill directory under review:
-
-   ```bash
-   python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:_analyze \
-     cross-file --skill-path {skill_dir}
-   ```
+1. **Run the cross-file analysis pass** — the `cross-file` subcommand of
+   `_analyze.py`, over the skill directory under review. It takes `--skill-path`
+   and an optional `--similarity-threshold`. Invoke it directly: the module is
+   unregistered, so no executor form may be documented here (see
+   [Script Pre-Processing](#script-pre-processing)).
 
    ⛔ NOT `doctor-marketplace report`. That verb emits no cross-file or
    duplication data at any scope, so a pass built on it would carry every
