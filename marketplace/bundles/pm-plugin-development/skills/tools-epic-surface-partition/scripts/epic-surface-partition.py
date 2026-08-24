@@ -25,9 +25,16 @@ Subcommands:
   owning plan land in the three explicit ownerless buckets rather than being
   folded into a plan's total.
 
+- ``report --epic {slug}`` — render all seven sections: the partition, the
+  attribution, every unclaimed and multiply-claimed entry per instance, every
+  spec whose spans the parser could not resolve, the injected-failure
+  demonstrations, the collected test count before and after, and provenance.
+  Each section carries the command that produced it.
+
 The derivation is a report, never a build gate: the specs live under a
 git-ignored path and are absent from a fresh clone, so no CI check can read
-them.
+them. ``report`` therefore exits 0 on disagreement — a rendered disagreement is
+the product, not a failure.
 """
 
 import argparse
@@ -37,7 +44,10 @@ from typing import Any
 
 from _epic_partition import (
     DEFAULT_LINE_BUDGET,
+    VERDICT_MULTIPLY_CLAIMED,
+    VERDICT_NOT_DERIVABLE,
     VERDICT_ORDER,
+    VERDICT_UNCLAIMED,
     derive_attribution,
     derive_budget_findings,
     derive_partition,
@@ -219,6 +229,194 @@ def cmd_attribution(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+#: The executor notation every rendered section cites as its producing command.
+_NOTATION = 'pm-plugin-development:tools-epic-surface-partition:epic-surface-partition'
+
+#: The module-tests command that produces the injected-failure demonstrations
+#: and the collected test count.
+_TESTS_COMMAND = (
+    'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
+    'run --command-args "module-tests pm-plugin-development"'
+)
+
+#: The placement the script-architecture standard gave, with its citation. The
+#: provenance section renders these so the decision survives as output rather
+#: than only as outline prose.
+_PLACEMENT_CLAIMS = (
+    (
+        'test_mirror_location',
+        'test/{bundle}/{skill}/',
+        'plugin-script-architecture/standards/testing-standards.md',
+    ),
+    (
+        'script_directory_location',
+        'marketplace/bundles/{bundle}/skills/{skill}/scripts/',
+        'plugin-script-architecture/standards/cross-skill-integration.md; python-implementation.md',
+    ),
+)
+
+#: The prefix whose claimed entries make the bundle-tree overlap LIVE.
+_OVERLAP_PREFIX = 'marketplace/bundles/'
+
+#: The injected-failure demonstrations shipped with the partition, each naming
+#: the control that demonstrates it. A checker never observed failing is not a
+#: checker, so these are rendered as a first-class report section.
+_INJECTED_CONTROLS = (
+    (
+        'injected_unclaimed_directory',
+        'a fixture directory no spec claims is reported by name as unclaimed',
+        'test_epic_partition_injected_failures.py::'
+        'test_injected_unclaimed_directory_is_reported_by_name',
+    ),
+    (
+        'injected_double_claim',
+        'a path added to two specs is reported by name as multiply_claimed',
+        'test_epic_partition_injected_failures.py::test_injected_double_claim_is_reported_by_name',
+    ),
+    (
+        'clean_corpus_control',
+        'the clean fixture corpus reports neither unclaimed nor multiply_claimed',
+        'test_epic_partition_injected_failures.py::test_clean_corpus_reports_nothing_unclaimed',
+    ),
+)
+
+#: The seven sections the report is required to render, in order.
+_SECTION_ORDER = (
+    'partition',
+    'attribution',
+    'disagreements',
+    'not_derivable',
+    'injected_controls',
+    'test_count',
+    'provenance',
+)
+
+
+def _verb_command(verb: str, epic: str) -> str:
+    return f'python3 .plan/execute-script.py {_NOTATION} {verb} --epic {epic}'
+
+
+def _static_test_count(modules: tuple[str, ...], repo_root: Path) -> int:
+    """Count declared test functions across the enumerated modules."""
+    total = 0
+    for module in modules:
+        text = (repo_root / module).read_text(encoding='utf-8')
+        total += sum(1 for line in text.splitlines() if line.lstrip().startswith('def test_'))
+    return total
+
+
+def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
+    """Handle ``report --epic EPIC`` — render all seven sections.
+
+    Report-only by contract: a disagreement is rendered, never raised, and the
+    subcommand exits 0 regardless. The specs are git-ignored and absent from a
+    fresh clone, so no CI check could read them and this must never gate a build.
+    """
+    try:
+        claims, plans_dir, repo_root = _load_corpus(args.epic)
+    except _CorpusError as error:
+        return error.payload
+
+    test_root = repo_root / 'test'
+    modules = iter_test_modules(test_root, repo_root)
+    partition = derive_partition(claims, modules)
+    findings = derive_budget_findings(modules, repo_root, args.budget)
+    attribution = derive_attribution(partition, findings, args.budget)
+    tally = partition.tally()
+
+    disagreements = [
+        module
+        for module in partition.modules
+        if module.verdict in (VERDICT_UNCLAIMED, VERDICT_MULTIPLY_CLAIMED)
+    ]
+    not_derivable = [
+        module for module in partition.modules if module.verdict == VERDICT_NOT_DERIVABLE
+    ]
+    unresolvable_specs = [claim for claim in claims if claim.unresolved]
+    overlaps = [
+        {'plan_id': claim.plan_id, 'path': entry.path}
+        for claim in claims
+        for entry in claim.claimed
+        if entry.path.startswith(_OVERLAP_PREFIX)
+    ]
+
+    summaries = {
+        'partition': f'{len(modules)} modules across 4 verdicts',
+        'attribution': f'{attribution.total_findings()} findings over budget {attribution.budget}',
+        'disagreements': f'{len(disagreements)} entries listed per instance',
+        'not_derivable': f'{len(not_derivable)} modules, {len(unresolvable_specs)} specs',
+        'injected_controls': f'{len(_INJECTED_CONTROLS)} demonstrations',
+        'test_count': 'static declared-test count over the enumerated modules',
+        'provenance': f'2 placement claims, {len(overlaps)} overlapping entries',
+    }
+    commands = {
+        'partition': _verb_command('partition', args.epic),
+        'attribution': _verb_command('attribution', args.epic),
+        'disagreements': _verb_command('partition', args.epic),
+        'not_derivable': _verb_command('classify', args.epic),
+        'injected_controls': _TESTS_COMMAND,
+        'test_count': _TESTS_COMMAND,
+        'provenance': _verb_command('report', args.epic),
+    }
+
+    return {
+        'status': 'success',
+        'epic': args.epic,
+        'plans_dir': str(plans_dir),
+        'test_root': str(test_root),
+        'report_only': True,
+        'gates_build': False,
+        'sections': [
+            {'section': name, 'command': commands[name], 'summary': summaries[name]}
+            for name in _SECTION_ORDER
+        ],
+        'partition_tally': [
+            {'verdict': verdict, 'count': tally[verdict]} for verdict in VERDICT_ORDER
+        ],
+        'attribution_buckets': [
+            {'owner': bucket.owner, 'count': len(bucket.findings)}
+            for bucket in attribution.buckets
+        ],
+        'disagreements': [
+            {'path': module.path, 'verdict': module.verdict, 'plans': ','.join(module.plans)}
+            for module in disagreements
+        ],
+        'not_derivable_modules': [
+            {'path': module.path, 'plans': ','.join(module.plans)} for module in not_derivable
+        ],
+        'not_derivable_specs': [
+            {
+                'plan_id': claim.plan_id,
+                'spec': claim.spec,
+                'spec_class': claim.spec_class,
+                'unresolved_count': len(claim.unresolved),
+            }
+            for claim in unresolvable_specs
+        ],
+        'injected_controls': [
+            {'control': name, 'expectation': expectation, 'demonstrated_by': demonstrated}
+            for name, expectation, demonstrated in _INJECTED_CONTROLS
+        ],
+        'test_count': {
+            'before': args.tests_before if args.tests_before is not None else 'not_supplied',
+            'after': _static_test_count(modules, repo_root),
+            'method': 'static "def test_" count over the enumerated test modules',
+        },
+        'provenance': {
+            'overlap_live': bool(overlaps),
+            'overlap_count': len(overlaps),
+        },
+        'provenance_placement': [
+            {'claim': name, 'value': value, 'citation': citation}
+            for name, value, citation in _PLACEMENT_CLAIMS
+        ],
+        'provenance_overlaps': overlaps,
+        'root_claims': [
+            {'plan_id': root.plan_id, 'path': root.path} for root in partition.root_claims
+        ],
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser (the seam ``parse_ns`` resolves against)."""
     parser = argparse.ArgumentParser(
@@ -260,6 +458,28 @@ def build_parser() -> argparse.ArgumentParser:
         help=f'Test-module line budget (default: {DEFAULT_LINE_BUDGET})',
     )
     attribution.set_defaults(handler=cmd_attribution)
+
+    report = subparsers.add_parser(
+        'report',
+        help='Render the seven-section derivation report',
+        allow_abbrev=False,
+    )
+    report.add_argument(
+        '--epic', required=True, help='Epic slug naming the orchestrator store entry'
+    )
+    report.add_argument(
+        '--budget',
+        type=int,
+        default=DEFAULT_LINE_BUDGET,
+        help=f'Test-module line budget (default: {DEFAULT_LINE_BUDGET})',
+    )
+    report.add_argument(
+        '--tests-before',
+        type=int,
+        default=None,
+        help='Collected test count before the campaign, for the before/after section',
+    )
+    report.set_defaults(handler=cmd_report)
 
     return parser
 

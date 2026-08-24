@@ -103,6 +103,19 @@ with no single owning plan land in the explicit `<unclaimed>`,
 `<multiply-claimed>` and `<not-derivable>` buckets rather than being folded into
 any plan's total, so every file is attributed exactly once.
 
+### Step 1c: Render the seven-section report
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:tools-epic-surface-partition:epic-surface-partition \
+  report --epic test-quality
+```
+
+The report renders the partition, the attribution, every unclaimed and
+multiply-claimed entry **per instance**, the not-derivable set, the
+injected-failure demonstrations, the test count before and after, and
+provenance — each carrying the command that produced it. It exits 0 even when it
+renders disagreements: a rendered disagreement is the product, not a failure.
+
 ### Step 2: Route on the TOON status
 
 | `status` | `error` | Action |
@@ -156,6 +169,12 @@ measured rather than as absent.
 `OBSERVED:` / `HYPOTHESIS:` label prefixes, `⛔` / `⚠️` markers, `**bold**` spans
 and trailing em-dash commentary are tolerated and stripped.
 
+## Standards
+
+| Standard | Contents |
+|----------|----------|
+| [standards/epic-surface-derivation.md](standards/epic-surface-derivation.md) | The three-class model and its evidence rules, the entry shapes resolved, the four partition verdicts and why `unclaimed` and `not_derivable` stay separate, the report's seven sections and what `provenance` must assert, and the never-a-gate contract |
+
 ## Related
 
 - `plan-marshall:plan-orchestrator` — owns the epic ledger and the `corpus cross-check` collision matrix this skill deliberately does not re-derive
@@ -190,4 +209,11 @@ python3 .plan/execute-script.py pm-plugin-development:tools-epic-surface-partiti
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:tools-epic-surface-partition:epic-surface-partition \
   attribution --epic EPIC [--budget BUDGET]
+```
+
+### report
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:tools-epic-surface-partition:epic-surface-partition \
+  report --epic EPIC [--budget BUDGET] [--tests-before TESTS_BEFORE]
 ```
