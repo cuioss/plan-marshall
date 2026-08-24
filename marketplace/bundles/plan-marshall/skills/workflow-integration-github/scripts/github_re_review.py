@@ -36,16 +36,26 @@ two completion signals, checked in that order of strength:
    responded, NOT that it reviewed the new HEAD.
 
 BOTH discriminators additionally reject a **refusal notice** — a comment or a
-review body a bot posts to say it could NOT review — using the same TWO-LAYER
-rule the producer pre-filter applies: the awaited bot's registry
-``refusal_patterns`` (case-sensitive substring containment) first, then the
-structural ``_is_rate_limit_notice`` fallback for an unknown/unregistered bot or
-a phrasing not yet captured as data. A refusal is the bot talking about itself,
-never evidence that the new HEAD was reviewed.
+review body a bot posts to say it could NOT review — running the same
+refusal-recognition STACK the producer applies, arm for arm: the awaited bot's
+registry ``refusal_patterns`` (case-sensitive substring containment), the
+structural ``_is_rate_limit_notice`` for an unknown/unregistered bot or a
+notice-shaped phrasing not yet captured as data, and the enumerative
+``_is_unrecognised_refusal`` for a body no earlier arm could read.
+``_github_pr.REFUSAL_LAYERS`` is the single place those arms are named, and the
+list is open — a further arm is added there rather than by correcting a count
+here. A refusal is the bot talking about itself, never evidence that the new HEAD
+was reviewed, and that holds however weakly it was recognized.
 
-The data layer reads ``refusal_patterns``, never ``ignore_patterns`` — the latter
-names sections of a *successful* review, so reading it here would report a bot
-that reviewed fine as having declined.
+The enumerative arm is what closes the path's worst failure: a reworded refusal
+used to reach ``_match_review``, which admits any body that is "not a refusal
+notice" — so the envelope reported ``head_sha_verified: true`` for a HEAD the bot
+had declined to review. It is also fail-safe by construction: with no derived
+threshold the arm never fires and this module behaves exactly as it did before.
+
+The registry arm reads ``refusal_patterns``, never ``ignore_patterns`` — the
+latter names sections of a *successful* review, so reading it here would report a
+bot that reviewed fine as having declined.
 
 **A rejected refusal is RECORDED, never silently dropped.** Both discriminators
 append every refusal they skip to a per-poll accumulator, and the envelope
@@ -92,7 +102,15 @@ from datetime import UTC, datetime
 import bot_registry
 import github_ops as _github
 from _findings_core import BOT_KINDS
-from _github_pr import _extract_rate_limit_eta, _is_rate_limit_notice
+from _github_pr import (
+    REFUSAL_LAYER_ENUMERATIVE,
+    REFUSAL_LAYER_REGISTRY,
+    REFUSAL_LAYER_STRUCTURAL,
+    REFUSAL_LAYERS,
+    _extract_rate_limit_eta,
+    _is_rate_limit_notice,
+    _is_unrecognised_refusal,
+)
 from ci_base import (
     DEFAULT_CI_INTERVAL,
     DEFAULT_CI_TIMEOUT,
@@ -268,6 +286,13 @@ class _ReReviewStrategy:
             'refusal_class': (bot_registry.rate_limit_class(bot_kind) if bot_kind else 'unknown') if refusals else '',
             'refusal_eta': refusal_eta,
             'refusals': refusals,
+            # The declared population of ``layer`` values, published so a consumer or
+            # test asserts against the vocabulary the producer actually emits rather
+            # than a hand-copied list that could drift from it. Same precedent as
+            # ``landing_states`` on ``pr landing-state``. Emitted unconditionally, so
+            # a reader can tell an arm that did not fire from one that no longer
+            # exists.
+            'refusal_layers': list(REFUSAL_LAYERS),
             'timed_out': poll_result.get('timed_out', False),
             'polls': poll_result.get('polls', 0),
             'duration_sec': poll_result.get('duration_sec', 0),
@@ -277,15 +302,34 @@ class _ReReviewStrategy:
     def _refusal_record(body: str, bot_kind: str | None, source: str) -> dict | None:
         """Return a refusal RECORD when ``body`` is a refusal notice, else ``None``.
 
-        The same TWO-LAYER rule the producer applies through
-        ``_github_pr._is_refusal_notice``: the awaited bot's registry
-        ``refusal_patterns`` (case-sensitive substring containment) first, then the
-        structural :func:`_is_rate_limit_notice` fallback for an unknown/unregistered
-        bot or a phrasing not yet captured as data. When ``bot_kind`` is ``None`` the
-        data layer cannot fire and only the structural test applies. This path keeps
-        the layers open rather than calling that boolean seam, because it must REPORT
-        which layer fired (the ``layer`` field below); the recognition rule is
-        identical.
+        The same recognition stack the producer applies, arm for arm: the awaited
+        bot's registry ``refusal_patterns`` (case-sensitive substring containment)
+        first, then the structural :func:`_is_rate_limit_notice` for an
+        unknown/unregistered bot or a notice-shaped phrasing not yet captured as
+        data, then the enumerative :func:`_is_unrecognised_refusal` for a body no
+        earlier arm could read. When ``bot_kind`` is ``None`` neither the registry
+        arm nor the enumerative arm can fire — both require a registered bot — so
+        only the structural test applies. This path keeps the arms open rather than
+        calling the ``_github_pr._is_refusal_notice`` boolean seam, because it must
+        REPORT which arm fired (the ``layer`` field below) and because that seam
+        covers only the arms answerable before the producer's noise filter; the
+        recognition rule is otherwise identical, and both callers reach the arms
+        through the same shared definitions.
+
+        **The surviving ``None`` now means what it says.** Before the enumerative
+        arm existed, ``None`` covered two different situations: no refusal, and a
+        refusal nobody could recognize. The second silently reached
+        :meth:`_match_review`, which admits a body that "is not a refusal notice" as
+        a genuine review — so an unrecognised refusal was reported with
+        ``head_sha_verified: true``, asserting that the new HEAD had been reviewed
+        by a bot that had in fact declined. ``None`` now means no arm of the stack
+        recognized this body, and nothing else.
+
+        **Fail-safe direction.** :func:`_is_unrecognised_refusal` returns ``False``
+        when no threshold has been derived, so with none available this function
+        behaves byte-identically to how it behaved before the arm was added. The
+        enumerative arm can therefore never make this path stricter than the
+        evidence supports.
 
         The data layer reads ``refusal_patterns``, NEVER ``ignore_patterns``. The
         two lists answer different questions: ``ignore_patterns`` names routine
@@ -303,10 +347,17 @@ class _ReReviewStrategy:
 
         - ``source`` — which discriminator saw it (``review`` / ``issue_comment``);
         - ``bot_kind`` — the awaited bot (``''`` when none was supplied);
-        - ``layer`` — which layer fired, ``registry_refusal_patterns`` (the bot's
-          own declared refusal phrasing) or ``structural_fallback`` (the
-          bot-agnostic notice shape). The distinction tells a reader whether the
-          refusal was recognized as DATA or merely inferred from shape;
+        - ``layer`` — which arm of the stack fired, named from the shared
+          vocabulary :data:`_github_pr.REFUSAL_LAYERS` (that tuple is the single
+          place the arms are named, so an arm added there is reportable here with
+          no edit to this list). The value tells a reader how much is actually
+          KNOWN about the refusal: ``registry_refusal_patterns`` means the bot's
+          own declared phrasing matched, so the notice was READ as data;
+          ``structural_fallback`` means it was recognized by notice SHAPE alone;
+          ``enumerative_unrecognised`` means no arm could read it at all — the
+          weakest of the three, recording only that the body was not review
+          feedback. A reader must not treat them as interchangeable: the last one
+          supports no claim about WHY the bot declined;
         - ``eta`` — the reset time the notice itself stated, parsed through the
           bot's registry ``rate_limit_eta_patterns``, or ``''`` when the bot
           declares no patterns or the notice states no ETA;
@@ -323,9 +374,11 @@ class _ReReviewStrategy:
         heading every successful review emits.
         """
         if bot_kind and any(marker in body for marker in bot_registry.refusal_patterns(bot_kind)):
-            layer = 'registry_refusal_patterns'
+            layer = REFUSAL_LAYER_REGISTRY
         elif _is_rate_limit_notice(body):
-            layer = 'structural_fallback'
+            layer = REFUSAL_LAYER_STRUCTURAL
+        elif _is_unrecognised_refusal(body, bot_kind):
+            layer = REFUSAL_LAYER_ENUMERATIVE
         else:
             return None
         return {

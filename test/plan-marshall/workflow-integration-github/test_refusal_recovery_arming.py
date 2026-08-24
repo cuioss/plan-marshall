@@ -42,7 +42,8 @@ for _dir in (_GH_SCRIPTS, _AR_SCRIPTS):
 import bot_registry  # noqa: E402
 import github_ops  # noqa: E402, F401 — import first; _github_pr closes a cycle with it
 import github_re_review  # noqa: E402
-from _github_pr import _detect_rate_limited_bots  # noqa: E402
+import _github_pr  # noqa: E402
+from _github_pr import REFUSAL_LAYERS, _detect_rate_limited_bots  # noqa: E402
 
 # The recovery each rate-limit class arms. This is the mapping under test; it is
 # expressed once here and applied to whatever population the registry declares.
@@ -90,6 +91,24 @@ def _registered_bots() -> list[str]:
 
 def _comment(bot_kind: str, body: str, created_at: str = '2026-01-09T00:00:00Z') -> dict:
     return {'author': f'{_login(bot_kind)}[bot]', 'body': body, 'created_at': created_at}
+
+
+def _arm_enumerative(monkeypatch, max_chars: int = 200) -> None:
+    """Give the enumerative arm a threshold, patched where the predicate READS it.
+
+    ``github_re_review`` binds the predicate with ``from _github_pr import
+    _is_unrecognised_refusal``, so the threshold name is resolved in the DEFINING
+    module's namespace at call time. Patching the function's own ``__globals__``
+    targets exactly that namespace, which holds whichever ``_github_pr`` object the
+    SUT actually imported — patching a module object this test resolved separately
+    would be a silent no-op that leaves the arm inert and fails every case below for
+    a reason unrelated to the arm.
+    """
+    monkeypatch.setitem(
+        github_re_review._is_unrecognised_refusal.__globals__,
+        'UNRECOGNISED_REFUSAL_MAX_CHARS',
+        max_chars,
+    )
 
 
 class TestNonCodeRabbitRefusalIsDetected:
@@ -228,16 +247,23 @@ class TestRefusalIsNeverABareTimeout:
 
         assert record is not None, f'{bot_kind} refusal must be recorded'
         assert record['bot_kind'] == bot_kind
-        assert record['layer'] in ('registry_refusal_patterns', 'structural_fallback')
+        # The admissible population is DERIVED from the shared vocabulary, never
+        # restated as a literal pair: a hand-written tuple here would keep passing
+        # while the producer emitted an arm the tuple had never heard of, which is
+        # the drift this vocabulary exists to prevent.
+        assert REFUSAL_LAYERS, 'the layer vocabulary is empty — this check is vacuous'
+        assert record['layer'] in REFUSAL_LAYERS
 
     @pytest.mark.parametrize('bot_kind', _registered_bots())
     def test_a_bots_declared_refusal_is_recognized_as_DATA(self, bot_kind):
         """A bot with declared refusal phrasing is matched by the registry layer.
 
-        The distinction matters: recognition as DATA means the bot's own observed
-        text is on file, whereas the structural fallback merely inferred it from
-        shape. Sourcery's real refusal is the motivating case — the structural
-        recognizer is blind to it, so only the data layer can see it.
+        The distinction matters, and the arms are ordered by how much they KNOW:
+        recognition as DATA means the bot's own observed text is on file, the
+        structural arm merely inferred a notice from its shape, and the enumerative
+        arm knows only that the body was not review feedback. Sourcery's real
+        refusal is the motivating case — the structural recognizer is blind to it,
+        so only the registry arm can see it.
         """
         if not bot_registry.refusal_patterns(bot_kind):
             pytest.skip(f'{bot_kind} declares no observed refusal phrasing')
@@ -246,7 +272,99 @@ class TestRefusalIsNeverABareTimeout:
             _refusal_body(bot_kind), bot_kind, 'issue_comment'
         )
 
-        assert record['layer'] == 'registry_refusal_patterns'
+        assert record['layer'] == _github_pr.REFUSAL_LAYER_REGISTRY
+
+
+class TestTheEnumerativeArmOnTheReReviewPath:
+    """An unrecognised refusal is RECORDED here too — never admitted as a review.
+
+    This is the worse half of the blind spot. On the producer path an unrecognised
+    refusal became a finding a human could at least read; here it reached
+    ``_match_review``, which admits any body that is "not a refusal notice" — so the
+    envelope asserted ``head_sha_verified: true`` for a HEAD the bot had declined.
+    """
+
+    def test_with_no_threshold_the_record_producer_is_unchanged(self):
+        """The fail-safe: at the SHIPPED value the enumerative arm never fires.
+
+        D1 derived no threshold, so ``_refusal_record`` behaves byte-identically to
+        how it behaved before this arm existed — an unrecognised body still returns
+        ``None``. Asserted at the shipped value rather than a patched one, so this
+        pins what actually ships.
+        """
+        assert (
+            github_re_review._is_unrecognised_refusal.__globals__['UNRECOGNISED_REFUSAL_MAX_CHARS']
+            is None
+        )
+        for bot in _registered_bots():
+            assert (
+                github_re_review._ReReviewStrategy._refusal_record(
+                    'Skipping this one.', bot, 'issue_comment'
+                )
+                is None
+            )
+
+    @pytest.mark.parametrize('bot_kind', _registered_bots())
+    def test_an_unrecognised_refusal_is_recorded_under_the_enumerative_arm(
+        self, bot_kind, monkeypatch
+    ):
+        """With a threshold available the reworded refusal is recorded, not returned None.
+
+        The body reaches no earlier arm — asserted — so the record can only come from
+        the enumerative one, and its ``layer`` is read from the shared vocabulary.
+        """
+        _arm_enumerative(monkeypatch)
+        body = 'Skipping this one.'
+
+        # Neither earlier arm sees it — that is what makes the record enumerative.
+        assert _github_pr._is_refusal_notice(body, bot_kind) is False
+
+        record = github_re_review._ReReviewStrategy._refusal_record(body, bot_kind, 'issue_comment')
+
+        assert record is not None
+        assert record['layer'] == _github_pr.REFUSAL_LAYER_ENUMERATIVE
+        assert record['bot_kind'] == bot_kind
+
+    @pytest.mark.parametrize('bot_kind', _registered_bots())
+    def test_an_unrecognised_refusal_arms_the_declared_ignorance_recovery(
+        self, bot_kind, monkeypatch
+    ):
+        """It arms recovery by the bot's DECLARED class, never by a claim about the notice.
+
+        The enumerative arm read nothing, so it supports no claim about why the bot
+        declined — the recovery therefore follows the same registry class every other
+        refusal does, rather than inventing an awaitability the notice never stated.
+        """
+        _arm_enumerative(monkeypatch)
+        record = github_re_review._ReReviewStrategy._refusal_record(
+            'Skipping this one.', bot_kind, 'issue_comment'
+        )
+
+        assert record is not None
+        # It is a refusal, so it arms a recovery rather than vanishing into a timeout.
+        assert _arms(bot_kind) in ('claim_and_await', 'escalate_immediately')
+        # And it states no ETA — nothing was read, so nothing can be claimed about
+        # when the window reopens.
+        assert record['eta'] == ''
+
+    @pytest.mark.parametrize('bot_kind', _registered_bots())
+    def test_a_genuine_short_review_with_an_anchor_is_still_not_a_refusal(
+        self, bot_kind, monkeypatch
+    ):
+        """Matched negative control: the arm does not swallow a real short review.
+
+        Same bot, same length class, same armed threshold — the only difference is a
+        code anchor, which is what a genuine review carries and a status notice does
+        not. Without this control the positive case above would also pass on an arm
+        that classified every short comment as a refusal.
+        """
+        _arm_enumerative(monkeypatch)
+
+        record = github_re_review._ReReviewStrategy._refusal_record(
+            'Guard the bound at `src/idx.py:12`.', bot_kind, 'review'
+        )
+
+        assert record is None
 
     def test_a_genuine_review_is_not_recorded_as_a_refusal(self):
         """Precision guard on the recording path, across the whole population."""
