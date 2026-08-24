@@ -287,12 +287,14 @@ At `6-finalize`:
 
 ## Canonical invocations
 
-The canonical argparse surface for `manage-findings.py`. ⛔ **Neither
-`missing-canonical-block` nor `manage-invocation-invalid` sees this file** —
-`manage-findings` is in `_EXCLUDED_SKILLS`, so deleting this whole section emits
-nothing. The rule that governs this skill is `manage-findings-invocation-invalid`
-(`_analyze_manage_findings_invocation.py`), which matches against a
-hand-maintained verb table rather than a `--help` walk. Consuming skills xref this section by
+The canonical argparse surface for `manage-findings.py`. ⛔ **No build-gating rule
+checks this section.** `manage-findings` is in `_EXCLUDED_SKILLS`, so
+`missing-canonical-block` never sees the file at all — deleting this whole section
+emits nothing. `manage-invocation-invalid` does scan the file, but skips every
+`manage-findings` notation in it, so the forms below are not validated against the
+live argparse surface. The rule that targets this skill,
+`manage-findings-invocation-invalid`, is not in the `quality-gate` roster and runs
+only on the per-component `analyze` path. Consuming skills xref this section by
 name (e.g., "see `manage-findings` Canonical invocations → `qgate add`") instead of
 restating the command inline.
 
