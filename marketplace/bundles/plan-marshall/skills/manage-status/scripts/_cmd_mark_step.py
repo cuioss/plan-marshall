@@ -216,8 +216,13 @@ def _emit_completion_marker(
     counting completions could not tell a ``done`` from a ``failed`` or a
     ``loop_back`` without re-reading ``status.metadata.phase_steps``. The shape
     comes from the shared :data:`COMPLETION_MARKER_TEMPLATE` rather than a local
-    f-string, so the help string and the retrospective's read pattern cannot
-    drift from what is emitted here.
+    f-string, so the ``--no-completion-log`` help string — which interpolates
+    that same constant — cannot describe a line this function does not emit.
+    The retrospective's read pattern is a SEPARATE literal
+    (:data:`COMPLETION_MARKER_RE`) and is not equal to the template by design;
+    what keeps it reading what this emits is the round-trip test in
+    ``test/plan-marshall/manage-status/test_step_completion_marker.py``, which
+    fails if a widening here leaves the consumer matching a retired shape.
     """
     if suppress or phase != _COMPLETION_MARKER_PHASE:
         return

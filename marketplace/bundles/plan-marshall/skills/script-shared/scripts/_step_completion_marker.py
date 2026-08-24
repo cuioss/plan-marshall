@@ -18,6 +18,16 @@ producer-without-consumer shape where nothing fails when the copies disagree.
 This module is the single source those three bind to, following the same
 cross-skill sharing pattern as ``_step_key_canonical``.
 
+Co-location alone would not couple them: :data:`COMPLETION_MARKER_TEMPLATE` and
+:data:`COMPLETION_MARKER_RE` are two separately-authored literals, and by design
+they are NOT equal (see the optional-suffix note below). What binds them is
+``test/plan-marshall/manage-status/test_step_completion_marker.py``, which
+round-trips the pair — formatting a line with the template and requiring the
+pattern to recover the same ``step`` and ``outcome`` from it, over every valid
+outcome. An edit that moves the emitted shape out from under the consumer fails
+that test; an edit that merely appends to the line leaves the read intact and
+stays green, which is the intended tolerance rather than a gap in the guard.
+
 **The consumer pattern deliberately treats ``(outcome=…)`` as OPTIONAL.** A
 retrospective reads work logs written by earlier runs, and every line recorded
 before the outcome was carried has no such suffix. A pattern that required it
@@ -30,11 +40,6 @@ under-count this marker's own audit exists to detect.
 from __future__ import annotations
 
 import re
-
-#: The literal that identifies a completion line, independent of what follows the
-#: step name. Kept separate so a doc or help string can quote the stable part
-#: without embedding the whole template.
-COMPLETION_MARKER_PHRASE = 'Completed step:'
 
 #: The emitted shape. ``phase`` is the phase key (``6-finalize``), ``step`` the
 #: canonical step key, ``outcome`` the terminal outcome already validated by the

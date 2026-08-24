@@ -75,39 +75,48 @@ import _invariants as inv  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
-# PR-operation prescription scan (order-10 contract).
+# Retired PR-body-write prescription scan (order-10 contract).
 # ---------------------------------------------------------------------------
 #
 # ``default:architecture-refresh`` is order 10 and ``default:create-pr`` is
-# order 20, so NO PR exists while this step runs and no PR operation may be
-# prescribed here. The standard still NAMES the three calls it used to
-# prescribe, inside an owed-follow-up note, so a substring search over the
-# whole document cannot tell a live prescription from its own retraction.
+# order 20, so NO PR exists while this step runs, and the PR-body-write
+# sequence this branch used to prescribe (``ci pr view`` -> ``ci pr
+# prepare-body`` -> ``ci pr edit``) cannot be prescribed here. The standard
+# still NAMES those three calls, inside an owed-follow-up note, so a substring
+# search over the whole document cannot tell a live prescription from its own
+# retraction.
 #
-# The scan therefore reuses ``fenced_command_lines`` — the same fence-tracking
-# primitive the push scan uses — rather than filtering prose. Reuse, not a
-# second implementation: a private copy is how two guards come to disagree
-# about what counts as a command.
+# SCOPE: this scan covers those three retired shapes and nothing else. Other
+# ``ci pr`` verbs are deliberately NOT matched — each would need its own
+# matched control to be guarded honestly, and this guard's control set
+# (``_RETIRED_PR_CALL_SHAPES``) is exactly the three. A green run here therefore
+# means "the retired PR-body-write sequence is not prescribed", NOT "no PR
+# operation of any kind appears".
+#
+# The scan reuses ``fenced_command_lines`` — the same fence-tracking primitive
+# the push scan uses — rather than filtering prose. Reuse, not a second
+# implementation: a private copy is how two guards come to disagree about what
+# counts as a command.
 
-#: The PR operations that cannot run at order 10. Matched as command WORDS with
+#: The three retired PR-body-write calls. Matched as command WORDS with
 #: flexible inner whitespace, so the pseudo-code assignment forms
 #: (``existing := ci pr view --head …``), the multi-line executor form (whose
 #: ``pr view`` sits on a continuation line carrying neither the script name nor
 #: a leading ``ci``), and a bare ``ci pr edit …`` are all one pattern. Keying on
 #: the leading ``ci`` token or on ``execute-script.py`` is what let two of the
 #: three retired shapes through.
-_PR_OPERATION = re.compile(r'\bpr\s+(?:view|edit)\b|\bprepare-body\b')
+_RETIRED_PR_BODY_WRITE = re.compile(r'\bpr\s+(?:view|edit)\b|\bprepare-body\b')
 
 
 def _scan_pr_operation_prescriptions(text: str) -> tuple[list[str], int]:
-    """Return ``(PR-operation-prescribing lines, fenced command lines examined)``.
+    """Return ``(retired PR-body-write lines, fenced command lines examined)``.
 
     The second element is the published population: a document whose fences
     resolve no command lines yields ``(…, 0)``, which the caller MUST treat as
     an unresolved scan rather than a clean one.
     """
     commands = fenced_command_lines(text)
-    offenders = [line.strip() for line in commands if _PR_OPERATION.search(line)]
+    offenders = [line.strip() for line in commands if _RETIRED_PR_BODY_WRITE.search(line)]
     return offenders, len(commands)
 
 
@@ -804,11 +813,15 @@ class TestNarrativeContract:
             'Fenced-command scan resolved 0 command lines in '
             'architecture-refresh.md — a clean result would be vacuous.'
         )
-        print(f'architecture-refresh PR-operation scan: examined={examined} command lines')
+        print(
+            f'architecture-refresh retired-PR-body-write scan: examined={examined} '
+            f'command lines (scope: pr view / prepare-body / pr edit)'
+        )
         assert offenders == [], (
-            f'architecture-refresh.md (order 10) prescribes {len(offenders)} PR '
-            f'operation(s) across {examined} examined command lines, but '
-            f'default:create-pr is order 20 — no PR exists yet. Offenders: {offenders}'
+            f'architecture-refresh.md (order 10) prescribes {len(offenders)} retired '
+            f'PR-body-write call(s) (pr view / prepare-body / pr edit) across '
+            f'{examined} examined command lines, but default:create-pr is order 20 '
+            f'— no PR exists yet. Offenders: {offenders}'
         )
 
     @pytest.mark.parametrize(

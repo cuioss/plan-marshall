@@ -340,7 +340,7 @@ Continue to Step 5.
 
 #### `prompt` (default) — AskUserQuestion gate
 
-Ask the user whether to re-enrich now or defer. Use the AskUserQuestion shape below verbatim — the option labels are part of the documented UX, mirrored by the configuration prompt so the two stay aligned (the mirror site is named once, on the `Skip — note in PR` branch below):
+Ask the user whether to re-enrich now or defer. Use the AskUserQuestion shape below verbatim — the option labels are part of the documented UX:
 
 ```text
 Question: "Architecture re-enrichment recommended for: {affected_modules_csv}. Re-enrich now?"
@@ -359,7 +359,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 On `Skip — note in PR`: follow the `disabled` branch above (record the deferral in the decision log; no PR-body write is possible at this order — see the owed follow-up there) verbatim, then log:
 
-The option label still says "note in PR" because it is a cross-referenced UX string — `marshall-steward/references/architecture-setup.md` mirrors it so the configuration prompt and this runtime prompt stay aligned. Renaming it belongs with the re-homing that makes the note landable again, not before it; until then the label names the intent and the owed follow-up above names the gap.
+The option label still says "note in PR" even though no PR-body note can be written at this order. Renaming it belongs with the re-homing that makes the note landable again, not before it; until then the label names the intent and the owed follow-up above names the gap.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

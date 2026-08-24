@@ -230,9 +230,9 @@ AskUserQuestion:
     - label: "Prompt me each time (recommended)"
       description: "AskUserQuestion fires when modules need re-enrichment so you can decide per-plan"
     - label: "Re-enrich automatically"
-      description: "Run enrich Steps 5–8 per affected module, commit chore(architecture), push"
+      description: "Run enrich Steps 5–8 per affected module and commit chore(architecture); the finalize push step ships it"
     - label: "Skip — only commit deterministic refresh"
-      description: "Always skip Tier 1 and append a 'Skip — note in PR' line for affected modules"
+      description: "Always skip Tier 1 and record the deferred modules in the decision log"
   multiSelect: false
 ```
 
