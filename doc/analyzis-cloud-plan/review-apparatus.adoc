@@ -604,7 +604,7 @@ Ordered by the measured consequence each addresses.
 
 == Reproducing this analysis
 
-See xref:README.adoc[the README] for the instruction set. Every figure was derived by script from the
+See xref:analyzis_rules.adoc[the analysis rules] for the instruction set. Every figure was derived by script from the
 ingested corpus at `.plan/local/orchestrator/review-apparatus/cloud-runs/` and from
 `.plan/local/archived-plans/`; none was transcribed by hand. Three independent validations of the
 extraction are recorded in <<_validation>>, and one measurement defect found and corrected during the

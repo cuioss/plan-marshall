@@ -870,7 +870,7 @@ Ordered by the measured consequence each addresses.
 
 == Reproducing this analysis
 
-See xref:README.adoc[the README] for the instruction set. Every figure was derived by script from the
+See xref:analyzis_rules.adoc[the analysis rules] for the instruction set. Every figure was derived by script from the
 ingested corpus at `.plan/local/orchestrator/test-quality/` — the landing records for fidelity, the
 archived `README.md` for the residue-index comparison, `git log` anchored to the end of the subject
 line for the PR mapping, and the plugin-doctor `test-conventions` sweep for the rule counts.

@@ -1,0 +1,287 @@
+= What a cloud-lane run actually costs
+:toc: left
+:toclevels: 3
+
+Every report in this set records the same defect: **the cloud lane cannot measure its own
+consumption.** No cloud run publishes a token figure, so all four reports fall back on an operator
+observation of *2–4% of a weekly limit per plan* and correctly label it unattributed.
+
+This document replaces that observation with a derived figure.
+
+[IMPORTANT]
+====
+**Headline: one cloud-lane run costs ≈ 3.9% of a weekly subscription limit, all-in.**
+
+Derived from a **fully-consumed budget window** rather than from any artifact the lane authored: two
+subscription plans were exhausted between **15.08 11:00** and **22.08 11:00** (Central European
+Time), and **51 cloud-lane runs** landed inside that window.
+
+⇒ `200% ÷ 51 = 3.92%` per run.
+
+⚠ The campaign spanned **two** weeks; only this one is measurable, because the other mixed cloud-plan
+work with unrelated work. See the note below.
+
+**The operator's 2–4% estimate is confirmed by an independent instrument, and lands at the top of its
+range.** The estimate was the only cost number these reports had and it was explicitly unattributed;
+it is now corroborated and tightened.
+====
+
+[NOTE]
+====
+**The cloud-plan campaign ran for two weeks; this is the one week that is measurable.**
+
+The other week mixed cloud-plan work with unrelated work, so its budget cannot be attributed without
+apportioning between two lanes by guesswork — which is precisely the confound the measured week is free
+of (61 of 63 qualifying PRs are cloud-lane). It is excluded deliberately, and stated here rather than
+left to be inferred from the window's length.
+
+⇒ Two consequences, both worth being explicit about:
+
+* **The figure is a one-of-two-week sample of the campaign**, not a census of it. If the two weeks
+  differed in character — and the mixed one plainly did — the sampled week may not represent both.
+* **The campaign's total cost is not derivable from this document.** Up to ~400% of a weekly limit was
+  available across the two weeks; only the 200% measured here is attributable to cloud-lane work.
+  ⛔ Do not multiply the headline by two.
+====
+
+== Why this method exists
+
+The lane publishes no token figure, so the direct measurement is unavailable and will stay unavailable
+until the contract changes. What *is* available is an accounting identity:
+
+[quote]
+____
+If a budget window was fully consumed, and the work that landed inside it can be enumerated, then the
+budget divided by the work is the cost of the work — whatever the lane does or does not report about
+itself.
+____
+
+This trades precision for availability. It cannot attribute cost to a single plan, cannot separate the
+three billing buckets, and cannot distinguish an expensive run from a cheap one. It gives a **mean
+all-in cost per landed run**, which is the figure the reports needed and did not have.
+
+== The window
+
+[cols="2,3",options="header"]
+|===
+| Parameter | Value
+
+| Window start | 2026-08-15 11:00 CEST
+| Window end | 2026-08-22 11:00 CEST
+| Budget consumed | **2 weekly limits (200%)** — two subscription plans, both exhausted
+| Repository | `plan-marshall`
+| Instrument | `git log --since --until` over `main`, one commit per merged PR
+|===
+
+⚠ **Merge time is approximated by the squash-commit date on `main`.** The repository merges by squash,
+so each PR appears as exactly one commit whose date is its merge time. A PR opened inside the window
+and merged outside it is not counted, which is correct: the window measures what was *delivered*, and
+delivery is what the budget bought.
+
+== The population, and the three exclusions
+
+90 PRs merged inside the window. Three classes are removed before any arithmetic:
+
+[cols="3,1,5",options="header"]
+|===
+| Class | n | Why excluded
+
+| Dependabot dependency bumps
+| 5
+| Machine-authored. They consume no subscription budget, so counting them would credit the budget with
+  work it did not buy.
+
+| Lane-contract fixes
+| 22
+| The Step 0 exclusion, widened. See below.
+
+| **Qualifying work**
+| **63**
+| Everything else — 2,020 files, +249,654 / −70,067 lines.
+|===
+
+=== The lane-fix exclusion, widened and stated
+
+xref:analyzis_rules.adoc#_step_0_exclude_the_lane_fix_prs_before_anything_else[Step 0] excludes a PR
+whose *only* production file is `.claude/skills/cloud-plan-lane/SKILL.md`. That criterion catches 17
+of these 22. Five more are the same kind of change reaching a second contract surface:
+
+* **#1310** — `cloud-plan-lane/SKILL.md` + `author-cloud-plan/SKILL.md`, both lane skills.
+* **#1285** — `cloud-plan-lane/SKILL.md` + `CLAUDE.md`, the lane's carve-out table.
+* **#1282** — `doc/plans/cloud-bridge.md` only, lane documentation.
+* **#1267** — `CLAUDE.md` only, the lane's plugin-cache carve-out.
+
+⇒ **The widened criterion is: every production file the PR touches is a lane-contract surface**
+(`.claude/skills/cloud-plan-lane/`, `.claude/skills/author-cloud-plan/`, `doc/plans/cloud-bridge.md`,
+or `CLAUDE.md`). ⚠ Recorded as a **widening of Step 0**, not as an application of it — the original
+`only`-one-file rule would have left these five in, and the difference matters at 22 versus 17.
+
+All 22 are small: **38 files and +4,142 lines across the lot**, against +249,654 for the qualifying
+set. They are the *"minimal adjustments"* the exclusion exists to remove, and their exclusion moves the
+headline figure by nothing, since none of them is a run.
+
+== What the window contained
+
+[cols="3,1,1,1,1",options="header"]
+|===
+| Class | n | Files | Insertions | Deletions
+
+| Cloud-lane **runs** — carry a `report-NN.md`
+| **51**
+| 1,826
+| 203,533
+| 67,845
+
+| Cloud-lane **support** — authoring, audit, ingest
+| 10
+| 183
+| 46,038
+| 2,174
+
+| Purely local plan-marshall PRs
+| **2**
+| 11
+| 83
+| 48
+
+| *Qualifying total*
+| *63*
+| *2,020*
+| *249,654*
+| *70,067*
+|===
+
+[IMPORTANT]
+====
+**61 of 63 qualifying PRs were cloud-lane work.** The two exceptions are a CI workflow fix (#1246) and
+one marketplace change (#1250).
+
+This is what makes the division defensible: the window is not a mixture whose budget would have to be
+apportioned between two lanes by guesswork. It is a cloud-lane week with two PRs of noise in it, so
+assigning essentially the whole 200% to the cloud lane costs almost nothing in accuracy.
+====
+
+=== Per epic
+
+[cols="3,1,1,1,1,1",options="header"]
+|===
+| Epic | Runs | Support | Files | Insertions | Deletions
+
+| `code-intelligence-substrate` | 19 | 0 | 573 | 86,700 | 2,091
+| `test-quality` | 17 | 5 | 929 | 83,029 | 63,209
+| `truthful-signals` | 10 | 2 | 291 | 41,693 | 1,375
+| `multiplattform` | 3 | 2 | 134 | 12,235 | 3,025
+| `review-apparatus` | 2 | 1 | 82 | 25,914 | 319
+|===
+
+⚠ **A run is not a plan.** `test-quality` re-entered plans — 17 runs over 10 plans — so its row counts
+runs, which is the unit the budget actually paid for. A per-*plan* figure would be higher for that
+epic and is not derived here.
+
+== The arithmetic, and its sensitivity
+
+[cols="4,2,2",options="header"]
+|===
+| Denominator | n | Cost per unit
+
+| **Cloud-lane runs** — the headline
+| 51
+| **3.92%** of a weekly limit
+
+| Cloud PRs, runs and support together
+| 61
+| 3.28%
+
+| All qualifying PRs
+| 63
+| 3.17%
+|===
+
+All three sit inside the operator's 2–4% band, so **the estimate survives every reasonable choice of
+denominator** — the conclusion does not depend on picking one. The headline uses runs because a *run*
+is what the sibling reports mean by "a cloud plan".
+
+=== What this figure is, precisely
+
+⭐ **It is all-in, and that resolves something the reports could not.** Every report states that a cloud
+plan is billed three times — authoring, running, verifying — and that the split is unmeasured. A budget
+window does not care about the split: whatever those 51 runs consumed in *any* bucket was consumed
+inside the window and is inside the 200%. So the 3.92% covers all three buckets, including the
+authoring and verification passes for the runs in question.
+
+⛔ **It does NOT resolve the three-bucket problem — it sidesteps it.** The split is still unknown. A
+question of the form *"what does verification cost separately?"* is no more answerable than before.
+Any report needing the split must still say it is unmeasured.
+
+⚠ **It is a mean, not a distribution.** The 51 runs range from a 2-file correction to a 309-file
+campaign run. Nothing here says a typical run costs 3.92%; it says 51 runs cost 200% between them.
+
+== Assumptions, stated because the figure rests on them
+
+. ⛔ **The two weekly limits were fully consumed, and consumed by this work.** This is the load-bearing
+  assumption and it is an **operator statement, not an artifact** — the same evidential class as the
+  2–4% estimate it replaces. What the derivation adds is a *stated denominator*: the estimate had none.
+  If the window was only 80% consumed, every figure above falls by a fifth and the conclusion still
+  holds, since 3.14% remains inside the band.
+. **Budget spent in the window produced PRs that merged in the window.** Work in flight at either edge
+  is assumed to roughly cancel. Over a seven-day window against runs that land in hours, the error is
+  small, but it is unquantified.
+. **No material budget went to work that produced no PR** — abandoned runs, exploratory sessions,
+  conversation. ⚠ This one cuts in a known direction: any such spend means the true per-run cost is
+  **lower** than 3.92%, so the headline is an **upper bound**.
+. **The measured week represents the campaign.** It is one of the two weeks the campaign ran, chosen
+  because it is the attributable one, not because it is typical. ⚠ This is a **selection on
+  measurability**, and nothing establishes that the excluded week had the same cost per run.
+. **Both subscription plans drew on the same work.** If one seat was doing something else entirely,
+  the cloud lane's share is smaller and, again, the headline is an upper bound.
+
+⇒ Assumptions 3 and 4 both push the same way, so **3.92% is best read as a ceiling on the mean all-in
+cost of a cloud-lane run**, not as a point estimate.
+
+== What it says against the local lane
+
+[cols="3,2,2",options="header"]
+|===
+| | Cloud-lane run | Local plan-marshall plan
+
+| Cost (share of a weekly limit) | **≈3.9%**, derived, all-in | 1–2%, operator observation
+| Token figure | none published | `metrics.md`, per phase
+| Measured example | — | `PLAN-TRUTH-074`: 5,432,972 tokens
+| Buckets covered by the figure | all three, unsplit | all three, split by phase
+|===
+
+⛔ **This is not yet a like-for-like comparison, and must not be presented as one.** The local 1–2% is
+still an operator observation of the same evidential class the cloud figure just left behind. Deriving
+the local side by the same window method is the obvious next step and has not been done: it needs a
+window whose consumption was predominantly local, and the window measured here is the opposite.
+
+⚠ **Neither side is effort-controlled.** The cloud runs used Opus at max effort throughout; local runs
+use per-phase resolved effort. See
+xref:analyzis_rules.adoc#_step_8_record_the_model_and_effort_setting_of_both_lanes[Step 8] — on cost
+this weakens the comparison, because part of any gap is the model tier.
+
+== What the week bought
+
+Set against the quality findings in xref:README.adoc[the README], the window is the throughput half of
+the picture and it is genuinely impressive: **51 runs across five epics in seven days**, 2,020 files
+and a quarter of a million inserted lines, sustained without an orchestrator session held open.
+
+⚠ It is also the same seven days in which `test-quality` ran seventeen times without once commissioning
+a verification pass, and in which two PRs of 112 and 309 files forfeited automated review outright on
+file-count ceilings. **Throughput and self-knowledge were bought in very different quantities**, which
+is the finding the whole document set converges on.
+
+== Reproducing this
+
+Every figure above is derived by script over `git log` — commit dates, `--numstat` totals, and file
+lists for the classification. Nothing is transcribed by hand.
+
+The classification predicates, in full:
+
+* **run** — the PR touches a file matching `doc/plans/.+/report-\d+\.md`.
+* **support** — the PR touches `doc/plans/{epic}/` but carries no run report.
+* **lane-fix** — every production file the PR touches is a lane-contract surface (see above).
+* **dependabot** — the commit author is `dependabot`, or the subject begins `chore(deps`.
+* **local** — everything else.
+
+Measured at HEAD `3c174648`.
