@@ -20,19 +20,24 @@
     "marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/compile-report.py"
   ],
   "_render_call_budget_derivation": "render_call_budget is the number of 'render_timestamp(' occurrences the file is permitted to contain, re-derived from the tree with text.count('render_timestamp(') rather than hand-maintained. It exists because a RENDER file is NOT wholly a render surface: manage-metrics.py renders once and calls now_utc_iso() nine times, so exempting the file wholesale hid every one of those store sites from the write-path guard. Pinning the count makes routing any additional site through the knob a red build. Raising a budget is a deliberate act that must be justified by a new human-facing render site, never a way to quiet the guard.",
+  "_render_site_binding_derivation": "A budget is a COUNT, and a count cannot see a SUBSTITUTION: moving the one budgeted render_timestamp( call off the human-facing line and onto a store site leaves actual == budget and passes. renders_anchor and render_binding bind each budgeted call to the specific human-facing SITE it is budgeted for, so the call has to keep feeding the subject the classification names. renders_anchor is the literal that appears on the source line emitting the human-facing text, and it must occur on EXACTLY ONE line of the file — two lines carrying it would make 'the subject line' ambiguous and the binding unverifiable. render_binding is the identifier that carries the rendered value into that line, or null when the call is written inline inside the anchor line's f-string. Both are re-derived by reading the call site, never inferred from the file name. Raising a budget therefore also means naming the new site's anchor: the guard's error text already asks the author to say what a budgeted call renders, and these two fields are where that answer is recorded in a machine-checkable form.",
   "render_sites": [
     {
       "file": "marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/manage-metrics.py",
       "classification": "RENDER",
       "human_text": "Generated: <ts> UTC — the single absolute-timestamp line in the metrics.md report body; every other metrics.md line renders phase names, floors, warnings, and durations-in-ms, never a wall-clock time.",
-      "routed_through": "render_timestamp(datetime.now(UTC), '%Y-%m-%d %H:%M:%S', ' UTC')",
+      "routed_through": "f'Generated: {render_timestamp(datetime.now(UTC), \"%Y-%m-%d %H:%M:%S\", \" UTC\")}'",
+      "renders_anchor": "Generated: ",
+      "render_binding": null,
       "render_call_budget": 1
     },
     {
       "file": "marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/compile-report.py",
       "classification": "RENDER",
       "human_text": "- generated: <ts>Z — the generated-at line in the plan-retrospective report header list.",
-      "routed_through": "render_timestamp(datetime.now(UTC), '%Y-%m-%dT%H:%M:%S', 'Z')",
+      "routed_through": "generated = render_timestamp(datetime.now(UTC), '%Y-%m-%dT%H:%M:%S', 'Z'), consumed by the f'- generated: {generated}' header line",
+      "renders_anchor": "- generated: ",
+      "render_binding": "generated",
       "render_call_budget": 1
     }
   ],

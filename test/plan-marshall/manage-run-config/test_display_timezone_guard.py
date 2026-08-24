@@ -343,23 +343,122 @@ def test_render_routing_is_live(capsys):
         )
 
 
+def test_each_budgeted_render_call_feeds_its_declared_subject(capsys):
+    """Each budgeted render call still feeds the human-facing site it is budgeted for.
+
+    The ``render_call_budget`` arm is a COUNT, and a count cannot see a
+    SUBSTITUTION. Moving the one budgeted ``render_timestamp(...)`` call off the
+    human-facing line and onto a store site inside the same file leaves
+    ``actual == budget``, so the budget arm passes while the display-timezone
+    knob has been re-pointed at a stored value and the operator-facing line no
+    longer renders through it. Both halves of that swap are silent to every arm
+    that only counts.
+
+    This binds the call to its SITE instead: the classification names the
+    subject each budgeted call renders (``renders_anchor``) and the identifier
+    that carries the rendered value into it (``render_binding``, or ``None``
+    when the call is written inline in the anchor line). A substitution has to
+    restate a subject that no longer matches — either the anchor line stops
+    consuming the render, or the assignment feeding it stops being a render —
+    and both are red here.
+
+    Deliberately NOT line numbers: nothing below records where a site lives, so
+    ordinary edits above it cost nothing. The anchor is required to be unique in
+    the file, because two candidate subject lines make "the" subject line
+    ambiguous and the binding unverifiable.
+    """
+    classification = _load_classification()
+    sites = classification['render_sites']
+
+    checked = {'inline': 0, 'bound': 0}
+    for site in sites:
+        rel = site['file']
+        anchor = site['renders_anchor']
+        binding = site['render_binding']
+        lines = (REPO_ROOT / rel).read_text(encoding='utf-8').splitlines()
+
+        anchor_lines = [ln for ln in lines if anchor in ln]
+        assert len(anchor_lines) == 1, (
+            f'RENDER file {rel!r} carries {len(anchor_lines)} line(s) containing the '
+            f'declared renders_anchor {anchor!r}; exactly one is required. Zero means '
+            'the human-facing subject this render is budgeted for no longer exists (or '
+            'the anchor has drifted from the source); more than one makes "the subject '
+            'line" ambiguous, so no binding could be verified.'
+        )
+        subject_line = anchor_lines[0]
+
+        if binding is None:
+            assert 'render_timestamp(' in subject_line, (
+                f'RENDER file {rel!r} declares render_binding: null, meaning its budgeted '
+                f'call is written inline in the {anchor!r} line — but that line makes no '
+                'render_timestamp(...) call. The budgeted render has been moved off the '
+                'subject it is budgeted for, which the render_call_budget count cannot '
+                f'see.\n  subject line: {subject_line.strip()!r}'
+            )
+            checked['inline'] += 1
+            continue
+
+        assert '{' + binding + '}' in subject_line, (
+            f'RENDER file {rel!r} declares render_binding {binding!r}, but its {anchor!r} '
+            f'line does not interpolate {{{binding}}} — so whatever that line now renders, '
+            'it is not the value the budgeted render_timestamp(...) call produced.\n'
+            f'  subject line: {subject_line.strip()!r}'
+        )
+        assignment = re.compile(rf'^\s*{re.escape(binding)}\s*=\s*render_timestamp\(')
+        assignments = [ln for ln in lines if assignment.match(ln)]
+        assert len(assignments) == 1, (
+            f'RENDER file {rel!r} has {len(assignments)} assignment(s) of the form '
+            f'"{binding} = render_timestamp(...)"; exactly one is required. The '
+            f'{anchor!r} line still interpolates {{{binding}}}, so a missing assignment '
+            'means that subject is now fed from something OTHER than the display-timezone '
+            'render — the knob has quietly stopped reaching the one line it exists to '
+            'render, while the budget count stayed exactly as it was.'
+        )
+        checked['bound'] += 1
+
+    with capsys.disabled():
+        print('\n[display-timezone guard] render-site binding:', json.dumps(checked, indent=2))
+
+    # A zero-length render_sites list would make the loop vacuous; the sum also
+    # proves every site took one of the two branches rather than being skipped.
+    assert sites, 'render_sites is empty — this guard bound nothing.'
+    assert checked['inline'] + checked['bound'] == len(sites)
+
+
 def test_knob_symbols_never_reach_a_store_or_compare_site():
     """Write-path isolation (D4), enforced per SITE rather than per FILE.
 
-    Two assertions, because a knob leak has two shapes and the file-granular
-    form of this guard could only ever see the first:
+    Three assertions, because a knob leak has three shapes and each earlier arm
+    is blind to the next:
 
     1. **Across files** — a knob-consumer symbol in a file that is neither a
        knob owner nor a declared RENDER file is a STORE/COMPARE site consulting
        the display timezone.
 
-    2. **Within a RENDER file** — a declared RENDER file is not wholly a render
-       surface. ``manage-metrics.py`` renders ONCE and calls ``now_utc_iso()``
-       nine times, so exempting the file wholesale made every one of those store
-       sites invisible: routing one of them through ``render_timestamp(...)``
-       changed nothing this guard could observe. Each RENDER file is therefore
-       held to the ``render_call_budget`` re-derived in the classification, so
-       spending a render call on a store site is a red build.
+    2. **Within a RENDER file, by COUNT** — a declared RENDER file is not wholly
+       a render surface. ``manage-metrics.py`` renders ONCE and calls
+       ``now_utc_iso()`` nine times, so exempting the file wholesale made every
+       one of those store sites invisible: routing one of them through
+       ``render_timestamp(...)`` changed nothing this guard could observe. Each
+       RENDER file is therefore held to the ``render_call_budget`` re-derived in
+       the classification, so spending a render call on a store site is a red
+       build.
+
+    3. **Within a RENDER file, by SYMBOL** — the budget is an allowance measured
+       in ``render_timestamp(`` calls, so it can only see leaks that spend one.
+       A STORE path inside a RENDER file that calls ``read_display_timezone()``
+       or ``resolve_display_timezone()`` DIRECTLY spends no budget at all, and
+       arm 1 already waved the file through because it is file-granular. The
+       leak was therefore invisible to both arms — the same defect class as arm
+       2's, one level down. This arm forbids every knob-consumer symbol other
+       than ``render_timestamp`` inside a declared RENDER file that is not also
+       a knob owner.
+
+    The residual arm 2 cannot close — a same-COUNT substitution that moves the
+    budgeted call from the human-facing site to a store site — is closed by
+    :func:`test_each_budgeted_render_call_feeds_its_declared_subject`, which
+    binds each budgeted call to the SITE it is budgeted for rather than to a
+    number.
     """
     classification = _load_classification()
     symbols = classification['knob_consumer_symbols']
@@ -397,3 +496,46 @@ def test_knob_symbols_never_reach_a_store_or_compare_site():
             'raise render_call_budget in timestamp_render_classification.json and say '
             'what it renders.'
         )
+
+    # Arm 3 (within a RENDER file, per SYMBOL): render_timestamp(...) is the ONLY
+    # knob touch a declared RENDER file may make. Arms 1 and 2 together still let a
+    # STORE path inside a RENDER file consult the knob DIRECTLY: arm 1 is
+    # file-granular, so `allowed` waves through any knob symbol anywhere in the
+    # file, and arm 2 counts only `render_timestamp(`, which a direct
+    # `read_display_timezone()` / `resolve_display_timezone()` call does not
+    # increment. The leak is therefore invisible to both. Reaching the knob through
+    # the labelling helper is what makes a render site auditable — a raw read is a
+    # store site helping itself to the display zone with no label and no budget.
+    knob_owner_files = set(classification['knob_owner_files'])
+    render_only = sorted(render_files - knob_owner_files)
+    direct_symbols = [sym for sym in symbols if sym != 'render_timestamp']
+
+    # Both populations are asserted, not merely iterated: an empty render_only or
+    # an empty direct_symbols would make the loop below examine nothing and pass.
+    assert render_only, (
+        'Every declared RENDER file is also a knob-owner file, so this arm examined '
+        'nothing. A knob owner is exempt by construction, which makes the arm '
+        'vacuous rather than clean.'
+    )
+    assert direct_symbols, (
+        'knob_consumer_symbols carries no symbol other than render_timestamp, so '
+        'this arm has nothing to forbid and would pass on an empty check.'
+    )
+
+    direct_touches = {}
+    for rel in render_only:
+        text = (REPO_ROOT / rel).read_text(encoding='utf-8')
+        hits = [sym for sym in direct_symbols if sym in text]
+        if hits:
+            direct_touches[rel] = hits
+
+    assert not direct_touches, (
+        'Declared RENDER file(s) touch the display-timezone knob DIRECTLY rather '
+        'than through render_timestamp(...). A RENDER file is exempt from the '
+        'cross-file arm and its budget counts only render_timestamp( calls, so a '
+        'raw knob read inside one is a STORE/COMPARE site consulting the display '
+        'zone that neither of the other arms can see. Route the site through '
+        'render_timestamp(...) — which labels the converted instant and spends '
+        'budget — or move it back to the UTC store primitive:\n'
+        + json.dumps(direct_touches, indent=2)
+    )
