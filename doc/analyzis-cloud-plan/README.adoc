@@ -2,9 +2,9 @@
 :toc: left
 :toclevels: 3
 
-Five epics were exported to `doc/plans/{epic}/` and executed as standalone cloud runs outside the
-plan-marshall lifecycle. Each was then measured against the local lane. **The analysis is complete**;
-this document is the summary of what the five reports found.
+Five epics were exported to `doc/plans/{epic}/` and executed as standalone cloud runs — a traditional
+Claude Code instrumentation, outside the plan-marshall lifecycle — and each was then measured against
+the local lane. **The experiment is complete**; this document is the summary of what it established.
 
 * The per-epic reports are linked below.
 * The method that produced them is xref:analyzis_rules.adoc[Analysis rules].
@@ -12,15 +12,113 @@ this document is the summary of what the five reports found.
 
 [IMPORTANT]
 ====
-**The one-sentence finding: the cloud lane is not broken, it is *thin*.**
+**The experiment's question was whether plan-marshall earns its overhead. It does.**
+
+Against a traditional instrumentation running the same repository at a *higher* model setting,
+plan-marshall is **fully audited where the cloud lane is not** — fourteen artifacts per plan against
+two to four, reaching all the way to per-phase token usage — resolves **100%** of reviewer findings
+where the cloud lane managed 57–96%, and reaches its verification without an operator having to
+remember to ask for it.
+
+**The one-sentence finding about the instrument: the cloud lane is not broken, it is *thin*.**
 
 It executes well — it lands what it starts, it refutes its own briefs honestly, it does not pad, and
 it acts on external review. What it gives up is the local lane's in-run verification machinery, and it
 then buys that verification back as a **separate, separately-billed, and entirely optional third
 call**. Every corpus-level defect in these five reports traces to that one structural choice.
 
-⇒ **The deficit is not in execution. It is in self-knowledge.**
+⇒ **The deficit is not in execution. It is in self-knowledge** — and self-knowledge is what
+plan-marshall's overhead buys.
 ====
+
+== Why the cloud lane exists, and what these reports are for
+
+⛔ **Read this before the findings.** The cloud lane was not introduced as an alternative way to ship
+work. It was introduced as a **control**: a way to run the same repository through a *traditional
+Claude Code instrumentation* — an authored brief, a capable model, a branch and a PR, and none of the
+plan-marshall lifecycle — so that plan-marshall's concept and results could be checked against
+something rather than asserted.
+
+⇒ **The subject of this document set is plan-marshall. The cloud lane is the instrument.**
+
+That framing changes how every finding below should be read. A defect found in the cloud lane is not a
+complaint about the lane; it is a measurement of what the local lane's machinery is buying. The
+question these five reports answer is not *"is the cloud lane good?"* but *"does plan-marshall earn
+its overhead?"* — and the answer is the section that follows.
+
+== What the comparison established about plan-marshall
+
+Three results. The evidence class of each is stated, because these reports refuse an unlabelled claim.
+
+=== 1. plan-marshall is fully audited; the cloud lane is not — *derived*
+
+This is the sharpest structural difference in the set, and it is observable rather than argued. An
+archived local plan carries **fourteen** top-level audit artifacts:
+
+[cols="2,4",options="header"]
+|===
+| Artifact | What it records
+
+| `metrics.md` | per-phase token and billing figures — **the audit reaches all the way to token usage**
+| `quality-verification-report.md` | the in-lifecycle verification result
+| `review-retrospective.md` | per-reviewer findings and their disposition
+| `artifacts/findings/*.jsonl` | every finding, typed by domain — `qgate`, `pr-comment`, `build-error`, `test-failure`
+| `execution.toon`, `handshakes.toon`, `build-results/`, `logs/`, `tasks/` | the run's own execution record
+| `solution_outline.md`, `references.json`, `request.md`, `status.json` | the plan's declared scope and state
+|===
+
+A cloud run carries **`plan.md` and `report-01.md`** — and, when the third call is commissioned at all,
+`verification.md` + `gaps.md`. That is two to four documents against fourteen, and the run report among
+them is self-assessed.
+
+⇒ **Every corpus-level defect in these reports is downstream of that asymmetry.** The lane cannot
+report its own cost, cannot show its own findings pipeline, and cannot evidence its own verification —
+not because those things went badly, but because nothing records them. It is the difference between a
+wrong number with a declared population and no number at all.
+
+=== 2. plan-marshall delivers materially higher quality — *operator result, direction corroborated*
+
+⚠ **Evidence class: operator judgement**, the same class as the 2–4% cost estimate before it was
+derived. It is recorded as the operator's result, not presented as a figure from these reports.
+
+Two mechanisms the operator names, both structural:
+
+* **Every review is handled.** Not sampled, not triaged-by-availability — handled. The reports measure
+  the consequence from the other side: cloud resolution rates of **57.1%**, **95.7%** and *at most*
+  **76.2%** against the local lane's **100%**, on the corpora where both were measurable.
+* ⭐ **Sonar findings are handled too, through the same findings pipeline** —
+  `workflow-integration-sonar` feeding `manage-findings` and the triage path. The cloud lane has **no
+  equivalent surface at all**: a Sonar finding has nowhere to land in a `report-01.md`.
+
+[IMPORTANT]
+====
+**The Sonar capability is invisible to every measurement in this document set, and that biases the
+comparison against plan-marshall.**
+
+This repository does not run Sonar — there is no `sonar-project.properties` and no Sonar step in any
+workflow — so **no corpus here exercised it**. A whole class of the local lane's work therefore
+contributed **nothing** to any figure in these five reports.
+
+⇒ The measured comparison is a **lower bound** on the local lane's advantage. Where these reports find
+plan-marshall ahead, the real margin is wider by however much the unexercised capability is worth —
+which this document set cannot say, because it never saw it.
+====
+
+=== 3. plan-marshall needs less manual work — *operator result, structurally substantiated*
+
+⚠ **Evidence class: operator judgement** — but unlike result 2, the mechanism is directly visible in
+the artifact lists above.
+
+The cloud lane's verification is a **separate, operator-issued call**: someone must decide to
+commission it, and if nobody does, nothing notices. Three of the five corpora reached an
+apparently-complete state with that call never made — `test-quality` sixteen times over.
+
+The local lane's equivalents — `quality-verification-report.md` and `review-retrospective.md` — are
+produced **inside the lifecycle**, by the run itself. No operator decision gates them, so there is no
+state in which they are silently absent.
+
+⇒ **The manual step the cloud lane requires is precisely the step that was skipped**, which is why
+result 3 and the most-replicated finding in this document set are the same fact seen from two sides.
 
 == The five reports
 
@@ -165,6 +263,10 @@ xref:cost-measurement.adoc[Cost measurement].
 | Operator estimate (all five reports) | 2–4% of a weekly limit per plan, explicitly unattributed
 | **Derived figure** | **≈3.9% per cloud-lane run**, all-in, from a fully-consumed budget window
 |===
+
+⭐ **Note which side had to be derived.** The cloud figure needed a budget-window reconstruction
+because the lane publishes nothing; the local lane's equivalent is simply **read out of `metrics.md`**,
+per phase, per plan. That asymmetry is result 1 above showing up in the one place it can be priced.
 
 **The estimate is confirmed by an independent instrument and lands at the top of its range.** The
 three-bucket split — authoring / running / verifying — remains unmeasured; the window method sidesteps

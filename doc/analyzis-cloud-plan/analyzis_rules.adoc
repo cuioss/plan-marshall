@@ -12,6 +12,12 @@ per-epic reports; nothing here restates them.
 
 == What each report adjudicates
 
+⛔ **The subject under test is plan-marshall; the cloud lane is the instrument.** The lane was
+introduced as a **control** — the same repository run through a traditional Claude Code
+instrumentation, so that plan-marshall's concept and results could be checked against something rather
+than asserted. A report that reads as an evaluation *of the lane* has mistaken the instrument for the
+subject. See xref:README.adoc#_why_the_cloud_lane_exists_and_what_these_reports_are_for[the README].
+
 Each report answers one question — *why did the cloud runs produce the gap count they did?* — against
 three candidate explanations:
 

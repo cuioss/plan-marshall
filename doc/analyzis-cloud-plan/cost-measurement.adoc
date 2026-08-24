@@ -250,6 +250,13 @@ cost of a cloud-lane run**, not as a point estimate.
 | Buckets covered by the figure | all three, unsplit | all three, split by phase
 |===
 
+⭐ **The asymmetry in that table is the finding, not the numbers in it.** The cloud figure required a
+budget-window reconstruction, four stated assumptions and a sensitivity table to produce one mean. The
+local figure is **read out of a file the run wrote about itself**, per phase, per plan, exactly. That
+is the xref:README.adoc#_1_plan_marshall_is_fully_audited_the_cloud_lane_is_not_derived[audit
+asymmetry] appearing in the one dimension this document can price: fourteen audit artifacts per local
+plan against two to four per cloud run, and `metrics.md` is one of the twelve the cloud lane lacks.
+
 ⛔ **This is not yet a like-for-like comparison, and must not be presented as one.** The local 1–2% is
 still an operator observation of the same evidential class the cloud figure just left behind. Deriving
 the local side by the same window method is the obvious next step and has not been done: it needs a
