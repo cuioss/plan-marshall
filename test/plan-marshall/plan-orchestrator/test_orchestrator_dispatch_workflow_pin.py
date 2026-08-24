@@ -9,23 +9,34 @@ still dispatches, still resolves the right tier, and leaves NO trail — the
 failure is invisible at the point it happens and only shows up later as a
 dispatch nobody can account for.
 
-The guard is deliberately **population-derived**: it enumerates the orchestrator
-dispatch resolve invocations out of the documents themselves and asserts the flag
-over whatever it found, rather than checking a hard-coded list of three known
-sites. A hard-coded list cannot notice a FOURTH site added later without the
-flag — which is precisely the drift this pin exists to catch.
+The guard is **population-derived on both axes**, and the distinction matters
+because getting only one of them is what this module previously shipped:
+
+- the **invocation count** per document is enumerated out of the document text,
+  never asserted from a constant; and
+- the **document set** is enumerated out of the plan-marshall skills tree — every
+  markdown file under it is opened, and the ones carrying an orchestrator
+  dispatch resolve invocation ARE the search surface.
+
+A hard-coded document list gets the first axis and misses the second: it cannot
+notice a FOURTH DOCUMENT added later without the flag, because it never opens it.
+That is the drift this pin exists to catch, and deriving the surface is what
+actually catches it. ``_KNOWN_DISPATCH_DOCS`` survives only as a **floor** — the
+sites the pin is known to have covered, asserted to still be covered — never as
+the surface.
 
 Because a population-derived guard can pass by finding nothing, every assertion
-here publishes the evidence it was computed over (the population size and the
-matched sites), and ``test_the_enumerator_is_not_vacuous`` pins the population as
-non-empty — mirroring ``test_landing_completeness.py``'s
-``test_the_extractors_are_not_vacuous``. A guard that can return 0 from an empty
-population MUST publish that population size, or a green proves only that the
-enumerator ran.
+here publishes the evidence it was computed over (the tree size, the derived
+document set, the invocation population, and the matched sites), and
+``test_the_enumerator_is_not_vacuous`` pins the population as non-empty —
+mirroring ``test_landing_completeness.py``'s ``test_the_extractors_are_not_vacuous``.
+A guard that can return 0 from an empty population MUST publish that population
+size, or a green proves only that the enumerator ran.
 """
 
 from __future__ import annotations
 
+import functools
 import re
 from pathlib import Path
 
@@ -33,32 +44,43 @@ from conftest import MARKETPLACE_ROOT
 
 _PLAN_MARSHALL = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
 
-#: Every document that carries an orchestrator dispatch resolve invocation. This
-#: is the SEARCH SURFACE, not the expected answer: how many invocations each file
-#: holds is derived below, never asserted from a constant here.
-_DISPATCH_DOCS: tuple[Path, ...] = (
+#: The documents this pin was originally written against. This is a FLOOR, NOT
+#: the search surface: the surface is derived from the tree below, and this tuple
+#: only asserts that the derivation still REACHES every site the pin is known to
+#: have covered. A rename, a move, or a doc that silently stops carrying its
+#: invocation would otherwise shrink the derived set with no assertion firing.
+_KNOWN_DISPATCH_DOCS: tuple[Path, ...] = (
     _PLAN_MARSHALL / 'plan-orchestrator' / 'workflow' / 'analyze.md',
     _PLAN_MARSHALL / 'plan-orchestrator' / 'workflow' / 'decompose.md',
     _PLAN_MARSHALL / 'persona-plan-orchestrator' / 'standards' / 'orchestration-model.md',
 )
 
-#: One orchestrator dispatch resolve invocation. The two workflow docs carry the
-#: call inline in prose and the standards doc carries it in a fenced block with
-#: backslash continuations, so the scan runs over whitespace-normalized text and
-#: stops at the end of the invocation rather than assuming a single line.
+#: One orchestrator dispatch resolve invocation. The workflow docs carry the
+#: call inline in prose, the standards doc carries it in a fenced block with
+#: backslash continuations, and the marshal.json reference carries it in a table
+#: cell, so the scan runs over whitespace-normalized text and stops at the end of
+#: the invocation rather than assuming a single line.
 #:
 #: The surface segment admits BOTH spellings the docs use: a concrete surface
-#: (``orchestrator.analyze``) at the two call sites, and the ``{surface}``
-#: placeholder in the standards doc's canonical form. Matching only the concrete
-#: spelling silently drops the canonical form — the one site a reader copies
-#: from — and the pin then passes while speaking for two of the three documents.
+#: (``orchestrator.analyze``) at the call sites, and the ``{surface}``
+#: placeholder in the canonical forms. Matching only the concrete spelling
+#: silently drops the canonical form — the one site a reader copies from — and
+#: the pin then speaks for a fraction of the documents it claims to cover.
+#:
+#: The invariant this pattern enforces is therefore about WRITTEN FORM, not about
+#: intent: any document that spells a WHOLE ``effort resolve-target --role
+#: orchestrator.…`` invocation must carry the flag, because a full-looking command
+#: line is a copy source whatever the surrounding prose says it is. A doc that
+#: wants to illustrate the bare role lookup writes the FRAGMENT
+#: (``--role orchestrator.analyze``) instead of a whole invocation — which is what
+#: ``effort-roles.md`` does, and why it is correctly outside the derived surface.
 _INVOCATION_RE = re.compile(
     r'effort resolve-target --role orchestrator\.(?:[a-z-]+|\{[a-z_]+\})[^`\n]*'
 )
 
-#: A resolve invocation ends at the first backtick (prose form) or at the end of
-#: the fenced command (standards form). Both are covered by normalizing the
-#: continuation backslashes away before the scan.
+#: A resolve invocation ends at the first backtick (prose and table-cell forms)
+#: or at the end of the fenced command (standards form). Both are covered by
+#: normalizing the continuation backslashes away before the scan.
 _CONTINUATION_RE = re.compile(r'\\\s*\n\s*')
 
 
@@ -68,47 +90,87 @@ def _invocations(path: Path) -> list[str]:
     return [match.group(0) for match in _INVOCATION_RE.finditer(text)]
 
 
-def _population() -> list[tuple[Path, str]]:
-    """The (document, invocation) population the assertions below run over."""
+@functools.cache
+def _scanned_docs_under(root: Path) -> tuple[Path, ...]:
+    """Every markdown document under ``root`` — the derivation's INPUT."""
+    return tuple(sorted(root.rglob('*.md')))
+
+
+@functools.cache
+def _dispatch_docs_under(root: Path) -> tuple[Path, ...]:
+    """The DERIVED search surface: the scanned docs carrying an invocation.
+
+    Parameterized on ``root`` so the derivation itself can be exercised against
+    a fixture tree — a hard-wired root would leave the "a document nobody listed
+    is still scanned" claim untestable, which is how the previous hard-coded
+    surface went unchallenged.
+    """
+    return tuple(doc for doc in _scanned_docs_under(root) if _invocations(doc))
+
+
+def _population_under(root: Path) -> list[tuple[Path, str]]:
+    """The (document, invocation) population derived from ``root``."""
     found: list[tuple[Path, str]] = []
-    for doc in _DISPATCH_DOCS:
+    for doc in _dispatch_docs_under(root):
         found.extend((doc, invocation) for invocation in _invocations(doc))
     return found
 
 
-class TestDispatchResolveSitesCarryWorkflow:
-    def test_every_dispatch_doc_exists(self):
-        # The enumerator reads these files; a renamed doc would otherwise shrink
-        # the population silently and the pin would pass over the remainder.
-        missing = [doc for doc in _DISPATCH_DOCS if not doc.is_file()]
+def _population() -> list[tuple[Path, str]]:
+    """The (document, invocation) population the assertions below run over."""
+    return _population_under(_PLAN_MARSHALL)
 
-        assert not missing, (
-            f'{len(missing)} of {len(_DISPATCH_DOCS)} dispatch document(s) are missing, so '
-            'the enumeration below runs over a shrunken surface: '
-            f'{[str(doc) for doc in missing]}'
+
+class TestDispatchResolveSitesCarryWorkflow:
+    def test_the_scanned_tree_is_a_real_population(self):
+        """The derivation's INPUT is published, not assumed.
+
+        Everything below is derived from this scan, so a glob that resolved
+        against the wrong root would make every later population a shrunken one
+        while every assertion stayed green.
+        """
+        assert _PLAN_MARSHALL.is_dir(), (
+            f'the plan-marshall skills tree root does not exist: {_PLAN_MARSHALL}'
+        )
+        scanned = _scanned_docs_under(_PLAN_MARSHALL)
+
+        assert len(scanned) > 50, (
+            f'the markdown scan over {_PLAN_MARSHALL} opened {len(scanned)} document(s). '
+            'The plan-marshall skills tree carries far more, so the scan is reading the '
+            'wrong root and the derived dispatch-doc surface below is not the real one.'
         )
 
     def test_the_enumerator_is_not_vacuous(self):
         """The enumerator must find something, or the pin below proves nothing."""
+        scanned = _scanned_docs_under(_PLAN_MARSHALL)
+        derived = _dispatch_docs_under(_PLAN_MARSHALL)
         population = _population()
 
         assert population, (
-            'The orchestrator dispatch resolve enumerator matched NO invocation across '
-            f'{len(_DISPATCH_DOCS)} document(s): '
-            f'{[doc.name for doc in _DISPATCH_DOCS]}. Every assertion in this module would '
-            'pass vacuously, so the pin is reported as broken rather than green.'
+            'The orchestrator dispatch resolve enumerator matched NO invocation. It opened '
+            f'{len(scanned)} markdown document(s) under {_PLAN_MARSHALL} and derived '
+            f'{len(derived)} dispatch document(s) from them. Every assertion in this module '
+            'would pass vacuously, so the pin is reported as broken rather than green.'
         )
 
-    def test_the_enumerator_finds_an_invocation_in_every_dispatch_doc(self):
-        # Per-document floor: the whole-population count above can stay non-zero
-        # while one document contributes nothing, which would let that document
-        # drop its flag unnoticed.
-        empty = [doc.name for doc in _DISPATCH_DOCS if not _invocations(doc)]
+    def test_the_derived_surface_covers_every_known_dispatch_doc(self):
+        """The floor: the derivation must still reach the known sites.
 
-        assert not empty, (
-            f'{len(empty)} dispatch document(s) contributed no invocation to the '
-            f'population: {empty}. The pin cannot speak for a document it matched '
-            'nothing in.'
+        This replaces the old ``test_every_dispatch_doc_exists``. Asserting that
+        a hard-coded path EXISTS is tautological once the surface is derived from
+        the tree — the derivation would simply not include a deleted file. What
+        is NOT tautological is that the derivation still reaches those sites: a
+        rename, a move, or a doc that quietly stopped carrying its invocation
+        shrinks the derived set, and nothing else here would notice.
+        """
+        derived = set(_dispatch_docs_under(_PLAN_MARSHALL))
+        uncovered = [str(doc) for doc in _KNOWN_DISPATCH_DOCS if doc not in derived]
+
+        assert not uncovered, (
+            f'{len(uncovered)} of {len(_KNOWN_DISPATCH_DOCS)} known dispatch document(s) are '
+            f'absent from the {len(derived)}-document derived surface: {uncovered}. Either '
+            'the document was renamed or moved (update the floor), or it stopped carrying '
+            'an orchestrator dispatch resolve invocation the pin used to cover.'
         )
 
     def test_every_enumerated_invocation_carries_the_workflow_argument(self):
@@ -123,15 +185,49 @@ class TestDispatchResolveSitesCarryWorkflow:
         )
 
     def test_the_population_is_reported_with_its_matched_sites(self):
-        # The evidence assertion: the count is only meaningful beside the sites it
-        # was computed from, so both are asserted together.
+        """The evidence assertion: counts are only meaningful beside their sites."""
+        scanned = _scanned_docs_under(_PLAN_MARSHALL)
+        derived = _dispatch_docs_under(_PLAN_MARSHALL)
         population = _population()
         sites = sorted({doc.name for doc, _ in population})
 
-        assert len(population) >= len(_DISPATCH_DOCS), (
+        assert len(population) >= len(_KNOWN_DISPATCH_DOCS), (
             f'{len(population)} invocation(s) enumerated across {len(sites)} document(s) '
-            f'{sites}, which is fewer than the {len(_DISPATCH_DOCS)} documents searched — '
-            'at least one document contributed nothing.'
+            f'{sites}, derived from {len(derived)} dispatch document(s) out of '
+            f'{len(scanned)} markdown document(s) scanned. That is fewer invocations than '
+            f'the {len(_KNOWN_DISPATCH_DOCS)} sites this pin is known to cover, so the '
+            'derivation lost ground rather than gaining it.'
+        )
+
+    def test_a_document_nobody_listed_is_still_scanned(self, tmp_path):
+        """The crux of the derivation, proved by execution.
+
+        The previous surface was a hard-coded three-path tuple, so a FOURTH
+        document carrying a bare-``--role`` invocation was never opened and this
+        pin stayed green over it. (The real tree held exactly such a document.)
+        Here the derivation is pointed at a fixture tree whose only dispatch doc
+        is named in no constant anywhere: it must be found, and its flagless
+        invocation must be the thing the flag assertion would report.
+        """
+        nested = tmp_path / 'some-skill' / 'standards'
+        nested.mkdir(parents=True)
+        newcomer = nested / 'brand-new-surface.md'
+        newcomer.write_text(
+            'The level is resolved via `effort resolve-target --role orchestrator.newsurface '
+            '--plan-id none --caller plan-marshall:persona-plan-orchestrator` at this site.\n',
+            encoding='utf-8',
+        )
+        (tmp_path / 'unrelated.md').write_text('# Nothing to see\n', encoding='utf-8')
+
+        derived = _dispatch_docs_under(tmp_path)
+        population = _population_under(tmp_path)
+
+        assert derived == (newcomer,), (
+            f'the derivation returned {[str(doc) for doc in derived]} from a tree of '
+            f'{len(_scanned_docs_under(tmp_path))} document(s), expected only the newcomer'
+        )
+        assert [text for _, text in population if '--workflow' not in text], (
+            'the newcomer\'s flagless invocation was not reported as missing the flag'
         )
 
     def test_a_document_set_with_no_dispatch_invocation_yields_an_empty_population(
@@ -150,6 +246,7 @@ class TestDispatchResolveSitesCarryWorkflow:
         )
 
         assert _invocations(decoy) == []
+        assert _dispatch_docs_under(tmp_path) == ()
 
     def test_an_invocation_without_the_flag_is_detected(self, tmp_path):
         # Matched positive control for the DETECTOR itself: the assertion above
