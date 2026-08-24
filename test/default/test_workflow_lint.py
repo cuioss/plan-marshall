@@ -121,8 +121,15 @@ def _run_block_context_violations(text: str) -> list[str]:
 
 # --- permissions ----------------------------------------------------------------
 
-#: A ``scope: value`` line inside a permissions block.
-_SCOPE_LINE = re.compile(r'^\s+(?P<scope>[A-Za-z][A-Za-z-]*):\s*(?P<value>\S+)\s*$')
+#: A ``scope: value`` line inside a permissions block, with an optional trailing
+#: YAML comment. The comment tail is NOT optional decoration: anchoring the value
+#: as the last token on the line drops any commented scope line entirely, and a
+#: dropped line reads as no grant rather than as an unexamined one — so both
+#: allowlist guards would report clean over a write nobody reviewed. A whole-line
+#: comment is still excluded, by the ``#``-prefix skip in :func:`_permission_scopes`.
+_SCOPE_LINE = re.compile(
+    r'^\s+(?P<scope>[A-Za-z][A-Za-z-]*):\s*(?P<value>\S+?)\s*(?:#.*)?$'
+)
 #: The permission values that grant nothing. Anything else is a write grant.
 _READ_ONLY_VALUES = frozenset({'read', 'none'})
 #: The key an inline shorthand is recorded under — it stands for EVERY scope, so
@@ -751,6 +758,35 @@ def test_a_later_job_declaring_read_all_never_erases_an_earlier_write_all() -> N
     )
 
     assert _write_scopes(_job_level_permissions(workflow)) == {'*'}
+
+
+def test_a_scope_line_with_a_trailing_comment_is_still_read() -> None:
+    """A trailing YAML comment must not make a write grant invisible to both readers.
+
+    Anchoring the value as the LAST token on the line drops any scope line
+    carrying an inline comment — and a dropped line is not a read-only line, it
+    is an unexamined one. Both allowlist guards then report clean over a grant
+    nobody reviewed, which is the same silent-drop shape as the erasure above.
+    """
+    workflow = (
+        'permissions:\n  contents: write  # needed to push the release tag\n'
+        'jobs:\n  j:\n    permissions:\n      issues: write   # opens the tracking issue\n'
+    )
+
+    assert _write_scopes(_top_level_permissions(workflow) or {}) == {'contents'}
+    assert _write_scopes(_job_level_permissions(workflow)) == {'issues'}
+
+
+def test_a_whole_line_comment_still_contributes_no_scope() -> None:
+    """Matched negative control: tolerating trailing comments must not parse them AS scopes.
+
+    Without this, a reader that simply stopped anchoring the line end could start
+    treating a commented-out ``# contents: write`` as a live grant — trading a
+    false green for a false red.
+    """
+    workflow = 'permissions:\n  # contents: write\n  contents: read\n'
+
+    assert _top_level_permissions(workflow) == {'contents': 'read'}
 
 
 def test_jobs_declaring_only_read_still_report_no_write_scope() -> None:
