@@ -79,6 +79,20 @@ def _repo_with_tracked_plan_file(tmp_path: Path) -> Path:
     return repo
 
 
+def _repo_on_an_orphan_branch(tmp_path: Path) -> Path:
+    """A repo that HOLDS commits while HEAD resolves to none, with ``.plan/`` unstaged.
+
+    ``git checkout --orphan`` leaves the seeded ``main`` commit reachable from a
+    ref while the new branch has no commit of its own, and ``rm --cached`` takes
+    ``.plan/marshal.json`` back out of the index. That is the three-valued state
+    a HEAD-resolution probe cannot tell apart from a fresh ``git init``.
+    """
+    repo = _repo_with_tracked_plan_file(tmp_path)
+    _git(repo, 'checkout', '--orphan', 'fresh')
+    _git(repo, 'rm', '--cached', '-q', '.plan/marshal.json')
+    return repo
+
+
 def _index_paths(repo: Path) -> set[str]:
     """The ``.plan/`` paths the INDEX holds — the ``git ls-files -z`` half alone.
 
@@ -422,16 +436,7 @@ def test_tracked_plan_paths_fails_closed_on_an_orphan_branch(tmp_path: Path) -> 
     to surface. The honest discriminator is whether the repository holds ANY
     commit, not whether HEAD happens to resolve to one.
     """
-    repo = tmp_path / 'orphan'
-    repo.mkdir()
-    _git(repo, 'init', '--initial-branch=main')
-    tracked = repo / '.plan' / 'marshal.json'
-    tracked.parent.mkdir(parents=True, exist_ok=True)
-    tracked.write_text('{"schema": 1}\n', encoding='utf-8')
-    _git(repo, 'add', '-f', '.plan/marshal.json')
-    _git(repo, '-c', 'user.email=t@e', '-c', 'user.name=t', 'commit', '-m', 'seed')
-    _git(repo, 'checkout', '--orphan', 'fresh')
-    _git(repo, 'rm', '--cached', '-q', '.plan/marshal.json')
+    repo = _repo_on_an_orphan_branch(tmp_path)
 
     # Precondition: commits exist, yet HEAD does not resolve — the three-valued case.
     # `rev-parse` is probed with check=False on purpose: its non-zero exit IS the
@@ -450,16 +455,7 @@ def test_tracked_plan_paths_fails_closed_on_an_orphan_branch(tmp_path: Path) -> 
 
 def test_partition_retains_a_staged_deletion_on_an_orphan_branch(tmp_path: Path) -> None:
     """The end-to-end consequence of the case above: the edit must NOT be exempted."""
-    repo = tmp_path / 'orphan-partition'
-    repo.mkdir()
-    _git(repo, 'init', '--initial-branch=main')
-    tracked = repo / '.plan' / 'marshal.json'
-    tracked.parent.mkdir(parents=True, exist_ok=True)
-    tracked.write_text('{"schema": 1}\n', encoding='utf-8')
-    _git(repo, 'add', '-f', '.plan/marshal.json')
-    _git(repo, '-c', 'user.email=t@e', '-c', 'user.name=t', 'commit', '-m', 'seed')
-    _git(repo, 'checkout', '--orphan', 'fresh')
-    _git(repo, 'rm', '--cached', '-q', '.plan/marshal.json')
+    repo = _repo_on_an_orphan_branch(tmp_path)
 
     retained, exempted = pse.partition_plan_state_exemption(['.plan/marshal.json'], repo)
 

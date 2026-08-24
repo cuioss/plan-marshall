@@ -125,10 +125,10 @@ def _observe_lines(tree: str | Path, git_args: list[str]) -> set[str]:
     here is compared against a porcelain path, so there is no quoting hazard to
     defend against and no reason to claim the ``-z`` guarantee.
 
-    Returns the empty set on any unusable observation, which is the fail-closed
-    direction for its only caller: :func:`_repository_is_unborn` treats a
-    non-empty result as "commits exist", so an unusable probe must not be able to
-    manufacture the unborn verdict.
+    An unusable observation returns a NON-empty sentinel set, which is the
+    fail-closed direction for its only caller: :func:`_repository_is_unborn`
+    treats a non-empty result as "commits exist", so an unusable probe must not
+    be able to manufacture the unborn verdict.
     """
     try:
         completed = subprocess.run(
