@@ -3,12 +3,11 @@
 # ruff: noqa: I001, E402
 """Tests for the epic-spec parser — entry-shape resolution and the three-class verdict.
 
-Drives the underscore-prefixed helper directly by inserting the scripts dir on
-``sys.path`` (the canonical scaffolding pattern).
-
-Every corpus used here is built under ``tmp_path``: the fixtures mirror the
-shapes the real staged specs are written in, and the real orchestrator store is
-neither read nor written.
+Markdown-notation tolerance — code-block masking, label prefixes, heading
+spelling — is the sibling cluster, in ``test_epic_spec_parser_notation.py``.
+Both drive the underscore-prefixed helper directly by inserting the scripts dir
+on ``sys.path`` (the canonical scaffolding pattern), and build every corpus
+under ``tmp_path``: the real orchestrator store is neither read nor written.
 """
 
 from __future__ import annotations
@@ -105,8 +104,15 @@ def test_non_test_root_entry_resolves(shapes_claim) -> None:
     assert 'marketplace/bundles/demo/SKILL.md' in paths(shapes_claim.claimed)
 
 
-def test_relative_entry_resolves_against_the_bullets_rooted_base(repo: Path, plans: Path) -> None:
-    body = '# PLAN-101\n\n## Expected Surface\n\n- Adds `test/delta/**` and its `test_*.py` modules\n'
+@pytest.mark.parametrize(
+    'sibling',
+    ['`test_*.py`', '`.../test_*.py`'],
+    ids=['bare_sibling', 'ellipsis_slash'],
+)
+def test_relative_entry_resolves_against_the_bullets_rooted_base(
+    repo: Path, plans: Path, sibling: str
+) -> None:
+    body = f'# PLAN-101\n\n## Expected Surface\n\n- Adds `test/delta/**` and its {sibling} modules\n'
 
     claim = claim_for(plans, repo, 'PLAN-101.md', body)
 
@@ -187,61 +193,6 @@ def test_out_of_scope_section_entries_are_excluded(repo: Path, plans: Path) -> N
 
     assert paths(claim.claimed) == {'test/alpha/test_one.py'}
     assert paths(claim.excluded) == {'test/zeta/**'}
-
-
-# --- corpus notation tolerances ----------------------------------------------
-
-
-@pytest.mark.parametrize(
-    'bullet',
-    [
-        '- OBSERVED: adds `test/eta/test_x.py`',
-        '- HYPOTHESIS: adds `test/eta/test_x.py`',
-        '- OBSERVED — **re-derive; narrow scope**: adds `test/eta/test_x.py`',
-    ],
-    ids=['observed', 'hypothesis', 'observed_qualified'],
-)
-def test_label_prefix_is_stripped_before_resolution(repo: Path, plans: Path, bullet: str) -> None:
-    body = f'# PLAN-120\n\n## Expected Surface\n\n{bullet}\n'
-
-    claim = claim_for(plans, repo, 'PLAN-120.md', body)
-
-    assert paths(claim.claimed) == {'test/eta/test_x.py'}
-
-
-def test_fenced_block_entries_are_ignored(repo: Path, plans: Path) -> None:
-    body = (
-        '# PLAN-121\n\n## Expected Surface\n\n'
-        '- Adds `test/theta/test_a.py`\n\n'
-        '```text\n'
-        '- Adds `test/never/test_b.py`\n'
-        '```\n'
-    )
-
-    claim = claim_for(plans, repo, 'PLAN-121.md', body)
-
-    assert paths(claim.claimed) == {'test/theta/test_a.py'}
-
-
-def test_expected_surface_heading_is_matched_case_insensitively(repo: Path, plans: Path) -> None:
-    body = '# PLAN-122\n\n## expected surface\n\n- Adds `test/iota/test_a.py`\n'
-
-    claim = claim_for(plans, repo, 'PLAN-122.md', body)
-
-    assert paths(claim.claimed) == {'test/iota/test_a.py'}
-
-
-def test_section_body_stops_at_the_next_heading(repo: Path, plans: Path) -> None:
-    body = (
-        '# PLAN-123\n\n## Expected Surface\n\n'
-        '- Adds `test/kappa/test_a.py`\n\n'
-        '## Notes\n\n'
-        '- Mentions `test/outside/test_b.py`\n'
-    )
-
-    claim = claim_for(plans, repo, 'PLAN-123.md', body)
-
-    assert paths(claim.claimed) == {'test/kappa/test_a.py'}
 
 
 # --- the three-class verdict -------------------------------------------------

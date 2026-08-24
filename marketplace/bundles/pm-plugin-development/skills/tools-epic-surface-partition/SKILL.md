@@ -39,42 +39,29 @@ Activate when you need to:
 - Find `test/` entries that no plan claims, or that two plans claim
 - Size a campaign run from the budget findings grouped by owning plan
 
-## The Three-Class Model
+## The Model
 
-`classify` assigns every spec exactly one class and records the evidence:
+Three tables define the derivation: the **three-class model** `classify`
+assigns, the **four partition verdicts** `partition` assigns, and the **entry
+shapes** the parser resolves. Each is stated exactly once, in
+[standards/epic-surface-derivation.md](standards/epic-surface-derivation.md) —
+deliberately not restated here, because a second copy of a table is what lets
+the two statements drift apart.
 
-| Class | Meaning |
-|-------|---------|
-| `declarative` | The Expected Surface resolves to at least one path entry |
-| `derived` | The section declares its surface a function of other plans' surfaces |
-| `prose` | A section is present, but resolves to no path entry |
-
-The first two are usable by the partition; the third is **reported**, because a
-`test/` entry claimed only by a `prose`-class spec is coverage the derivation
-cannot see rather than a partition defect.
+Three invariants govern how a caller reads the result:
 
 ⛔ A spec whose class cannot be determined — unreadable, or carrying no
 `## Expected Surface` section — **halts the run with the spec named** rather than
 defaulting to a class.
 
-## The Four Partition Verdicts
-
-`partition` assigns every test module under `test/` exactly one verdict:
-
-| Verdict | Meaning |
-|---------|---------|
-| `claimed` | Exactly one plan's resolved entries cover the module |
-| `multiply_claimed` | More than one plan covers it |
-| `not_derivable` | No plan's *resolved* entries cover it, but a spec names it in a span the parser could not anchor |
-| `unclaimed` | No plan covers it and no spec names it |
-
 ⛔ `unclaimed` and `not_derivable` are **never merged**. Merging them would report
-a parser limitation as a partition defect, manufacturing a disagreement the
+a limit of the derivation as a partition defect, manufacturing a disagreement the
 corpus does not contain.
 
-A plan's own exclusions subtract from its own set only: a plan claiming a
-recursive glob while excluding a sub-directory does not claim the modules under
-it, and another plan's claim over them is unaffected.
+⛔ A **root span** — bare `test/`, or `test/**` — names every module and so
+discriminates nothing. Root spans are excluded from claim matching and reported
+in `root_claims[]`, so a dropped root span is **stated rather than silently
+dropped**. A plan whose only claim is a root span therefore receives no module.
 
 ## Workflow
 
@@ -120,12 +107,20 @@ renders disagreements: a rendered disagreement is the product, not a failure.
 
 | `status` | `error` | Action |
 |----------|---------|--------|
-| `success` | — | Consume `specs[]`, `claimed[]`, `excluded[]` and `unresolved[]` |
+| `success` | — | Consume the payload of the subcommand that was invoked — the four shapes differ, see [Output Contract](#output-contract) |
 | `error` | `unclassifiable_spec` | The run halted; the offending spec is in `spec`, the cause in `reason` |
 | `error` | `epic_corpus_not_found` | No `plans/` directory under the named epic |
 | `error` | `invalid_epic_slug` | The slug carries a path separator or traversal component |
 
+All four subcommands share those three error shapes; only the `success` payload
+is subcommand-specific.
+
 ## Output Contract
+
+Every subcommand emits `status`, `epic` and `plans_dir`. The remaining keys are
+per subcommand.
+
+### `classify`
 
 ```toon
 status: success
@@ -154,20 +149,85 @@ anchor — a first-class result, not a silent drop.
 Every class carries a `class_tally` row even at zero, so an empty class reads as
 measured rather than as absent.
 
-## Entry Shapes Resolved
+### `partition`
 
-| Shape | Example |
-|-------|---------|
-| Directory | `test/plan-marshall/manage-config/` |
-| Recursive glob | `test/pm-plugin-development/**` |
-| Filename glob | `plugin-doctor/test_test_conventions_rule*.py` |
-| Named file | `test/test_runner_falsifiability.py` |
-| Non-`test/` path | `pyproject.toml` |
-| Relative continuation | `.../workflow-integration-github/`, or a bare sibling written after a rooted path in the same bullet |
-| Exclusion | an entry after `excluding`, a bullet opening with `no`, or any entry under `## Out of Scope` |
+```toon
+status: success
+epic: test-quality
+plans_dir: /abs/path/to/orchestrator/test-quality/plans
+test_root: /abs/path/to/checkout/test
+modules_total: 214
+verdict_tally[4]{verdict,count}:
+  ...
+root_claims[N]{plan_id,path}:
+  ...
+modules[214]{path,verdict,plans}:
+  ...
+```
 
-`OBSERVED:` / `HYPOTHESIS:` label prefixes, `⛔` / `⚠️` markers, `**bold**` spans
-and trailing em-dash commentary are tolerated and stripped.
+`plans` is a comma-joined plan-id list — empty for `unclaimed`, one id for
+`claimed`, several for `multiply_claimed`. `root_claims[]` carries every span
+excluded from claim matching by the root-span rule above; it is emitted even
+when empty, so an absent root claim reads as measured.
+
+### `attribution`
+
+```toon
+status: success
+epic: test-quality
+plans_dir: /abs/path/to/orchestrator/test-quality/plans
+test_root: /abs/path/to/checkout/test
+budget: 400
+modules_total: 214
+findings_total: 12
+buckets[N]{owner,count}:
+  ...
+findings[12]{owner,path,line_count}:
+  ...
+```
+
+`owner` is a plan id, or one of the three ownerless buckets `<unclaimed>`,
+`<multiply-claimed>` and `<not-derivable>`, so every over-budget module is
+attributed exactly once and none is folded into a plan's total.
+
+### `report`
+
+```toon
+status: success
+epic: test-quality
+plans_dir: /abs/path/to/orchestrator/test-quality/plans
+test_root: /abs/path/to/checkout/test
+report_only: true
+gates_build: false
+sections[7]{section,command,summary}:
+  ...
+partition_tally[4]{verdict,count}:
+  ...
+attribution_buckets[N]{owner,count}:
+  ...
+disagreements[N]{path,verdict,plans}:
+  ...
+not_derivable_modules[N]{path,plans}:
+  ...
+not_derivable_specs[N]{plan_id,spec,spec_class,unresolved_count}:
+  ...
+injected_controls[N]{control,expectation,demonstrated_by}:
+  ...
+test_count{before,after,method}:
+  ...
+provenance{overlap_live,overlap_count}:
+  ...
+provenance_placement[N]{claim,value,citation}:
+  ...
+provenance_overlaps[N]{plan_id,path}:
+  ...
+root_claims[N]{plan_id,path}:
+  ...
+```
+
+`gates_build: false` is asserted in the payload rather than only in prose: this
+subcommand renders disagreements and still exits 0. `sections[]` carries the
+seven required sections in order, each with the command that reproduces it.
 
 ## Standards
 

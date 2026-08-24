@@ -49,10 +49,20 @@ KIND_FILE = 'file'
 
 # --- markdown line scanners -------------------------------------------------
 #
-# CommonMark bounds block-level leading indentation to 0-3 SPACES; a fourth
-# column starts an indented code block instead. The bound is therefore written
-# over the literal space character and never over ``\s``, which would readmit
-# both the fourth space and a tab.
+# CommonMark bounds a TOP-LEVEL block construct's leading indentation to 0-3
+# SPACES; a fourth column starts an indented code block instead. Every scanner
+# for such a construct — the two addressed headings, the generic heading that
+# terminates a section, and the code fence — therefore writes the bound over the
+# literal space character and never over ``\s``, which would readmit both the
+# fourth space and a tab.
+#
+# ``_BULLET_RE`` is the deliberate carve-out and is bounded by horizontal
+# whitespace of ANY width, because a nested list item legitimately indents past
+# the third column: inside an open list item, an indented line is that item's
+# continuation content, not an indented code block. The fourth column only
+# starts code where no list is open, and that is the state
+# ``_indented_code_mask`` tracks — so the construct the 0-3 bound exists to
+# protect against is caught by the mask rather than by the bullet pattern.
 
 #: The two sections this module addresses, and the generic ATX heading that
 #: TERMINATES a section body. Both addressed headings are matched
@@ -62,7 +72,13 @@ EXPECTED_SURFACE_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+Expected Surface(?:[ \
 OUT_OF_SCOPE_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+Out of Scope(?:[ \t]+#+)?[ \t]*$', re.IGNORECASE)
 _HEADING_RE = re.compile(r'^ {0,3}#{1,6}(?:[ \t]|$)')
 _FENCE_RE = re.compile(r'^ {0,3}(`{3,}|~{3,})')
-_BULLET_RE = re.compile(r'^\s*[-*][ \t]+')
+_BULLET_RE = re.compile(r'^[ \t]*[-*][ \t]+')
+
+#: The column at which an unlisted line becomes an indented code block.
+_CODE_INDENT_COLUMNS = 4
+
+#: A tab advances to the next multiple of this width, per CommonMark.
+_TAB_STOP = 4
 
 # --- within-line scanners ----------------------------------------------------
 
@@ -154,26 +170,68 @@ def _fenced_mask(lines: list[str]) -> list[bool]:
     return mask
 
 
-def _section_span(lines: list[str], heading_re: re.Pattern[str], fenced: list[bool]) -> tuple[int, int]:
+def _leading_columns(line: str) -> int:
+    """The column the line's first non-whitespace character sits at."""
+    column = 0
+    for char in line:
+        if char == ' ':
+            column += 1
+        elif char == '\t':
+            column += _TAB_STOP - (column % _TAB_STOP)
+        else:
+            break
+    return column
+
+
+def _indented_code_mask(lines: list[str], fenced: list[bool]) -> list[bool]:
+    """Mark every line that sits inside an INDENTED code block.
+
+    A fourth column only opens a code block where no list item is open; inside
+    an open item the same indentation is that item's continuation content. The
+    scan therefore tracks list state: a bullet opens it, a non-blank line back
+    at columns 0-3 that is not a bullet closes it, and a blank line leaves it
+    unchanged (a blank line does not end a list).
+    """
+    mask = [False] * len(lines)
+    list_open = False
+    for index, line in enumerate(lines):
+        if fenced[index] or not line.strip():
+            continue
+        indented = _leading_columns(line) >= _CODE_INDENT_COLUMNS
+        if indented and not list_open:
+            mask[index] = True
+        elif _BULLET_RE.match(line):
+            list_open = True
+        elif not indented:
+            list_open = False
+    return mask
+
+
+def _mask_union(first: list[bool], second: list[bool]) -> list[bool]:
+    """The lines masked by either scan."""
+    return [left or right for left, right in zip(first, second, strict=True)]
+
+
+def _section_span(lines: list[str], heading_re: re.Pattern[str], masked: list[bool]) -> tuple[int, int]:
     """Return the ``[start, end)`` body span of one section, or ``(-1, -1)``.
 
     The body ends at the next heading of any level, so a subsection never leaks
-    into the parent. Both heading scans skip fenced lines.
+    into the parent. Both heading scans skip masked (code-block) lines.
     """
     start = -1
     for index, line in enumerate(lines):
-        if not fenced[index] and heading_re.match(line):
+        if not masked[index] and heading_re.match(line):
             start = index + 1
             break
     if start < 0:
         return (-1, -1)
     for index in range(start, len(lines)):
-        if not fenced[index] and _HEADING_RE.match(lines[index]):
+        if not masked[index] and _HEADING_RE.match(lines[index]):
             return (start, index)
     return (start, len(lines))
 
 
-def _iter_bullets(lines: list[str], fenced: list[bool], start: int, end: int) -> list[str]:
+def _iter_bullets(lines: list[str], masked: list[bool], start: int, end: int) -> list[str]:
     """Return each ``- `` bullet in a section span as one joined logical line.
 
     A bullet runs until the next bullet, a blank line, or the section end, so a
@@ -183,7 +241,7 @@ def _iter_bullets(lines: list[str], fenced: list[bool], start: int, end: int) ->
     bullets: list[str] = []
     current: list[str] = []
     for index in range(start, end):
-        if fenced[index]:
+        if masked[index]:
             continue
         line = lines[index]
         if _BULLET_RE.match(line):
@@ -355,7 +413,8 @@ def classify_spec(spec_path: Path, repo_root: Path) -> SpecClaim:
 
     lines = text.splitlines()
     fenced = _fenced_mask(lines)
-    start, end = _section_span(lines, EXPECTED_SURFACE_HEADING_RE, fenced)
+    masked = _mask_union(fenced, _indented_code_mask(lines, fenced))
+    start, end = _section_span(lines, EXPECTED_SURFACE_HEADING_RE, masked)
     if start < 0:
         raise UnclassifiableSpecError(spec_path.name, 'no "## Expected Surface" section')
 
@@ -363,15 +422,19 @@ def classify_spec(spec_path: Path, repo_root: Path) -> SpecClaim:
     excluded: list[PathEntry] = []
     unresolved: list[str] = []
 
-    for bullet in _iter_bullets(lines, fenced, start, end):
+    for bullet in _iter_bullets(lines, masked, start, end):
         _collect_bullet(bullet, repo_root, False, claimed, excluded, unresolved)
 
-    scope_start, scope_end = _section_span(lines, OUT_OF_SCOPE_HEADING_RE, fenced)
+    scope_start, scope_end = _section_span(lines, OUT_OF_SCOPE_HEADING_RE, masked)
     if scope_start >= 0:
-        for bullet in _iter_bullets(lines, fenced, scope_start, scope_end):
+        for bullet in _iter_bullets(lines, masked, scope_start, scope_end):
             _collect_bullet(bullet, repo_root, True, claimed, excluded, unresolved)
 
-    body = '\n'.join(lines[start:end])
+    # The marker is searched over the SAME masked lines the two scans above
+    # honour: a code sample carrying the token is a sample, not a declaration.
+    # Masked lines are blanked rather than dropped so the recorded evidence
+    # still resolves to the real source line.
+    body = '\n'.join('' if masked[index] else lines[index] for index in range(start, end))
     derived = _DERIVED_RE.search(body)
     if derived is not None:
         spec_class = CLASS_DERIVED

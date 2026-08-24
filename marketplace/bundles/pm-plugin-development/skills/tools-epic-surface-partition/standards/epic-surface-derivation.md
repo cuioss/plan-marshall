@@ -49,7 +49,14 @@ derivation exists to close.
 | Filename glob | `plugin-doctor/test_test_conventions_rule*.py` | `filename_glob` |
 | Named file | `test/test_runner_falsifiability.py` | `file` |
 | Non-`test/` path | `pyproject.toml` | `file` |
-| Relative continuation | a bare sibling written after a rooted path in the same bullet | derived from the resolved path |
+| Relative continuation | `.../workflow-integration-github/`, or a bare sibling written after a rooted path in the same bullet | derived from the resolved path |
+
+A relative continuation resolves against the base the bullet's first **rooted**
+entry establishes — the directory a recursive glob names, or the parent of any
+other shape. Both notations are supported: the explicit `.../` prefix, whose
+leading token is stripped before the base is applied, and the bare sibling. A
+continuation in a bullet that established no base is recorded in `unresolved[]`
+rather than guessed at.
 
 An entry is an **exclusion** when it follows the `excluding` keyword, when its
 bullet opens with a negative claim (`No changes to ...`), or when it sits under

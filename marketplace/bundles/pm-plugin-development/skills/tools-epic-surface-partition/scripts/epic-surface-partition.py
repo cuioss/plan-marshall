@@ -341,13 +341,15 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
     ]
 
     summaries = {
-        'partition': f'{len(modules)} modules across 4 verdicts',
+        'partition': f'{len(modules)} modules across {len(VERDICT_ORDER)} verdicts',
         'attribution': f'{attribution.total_findings()} findings over budget {attribution.budget}',
         'disagreements': f'{len(disagreements)} entries listed per instance',
         'not_derivable': f'{len(not_derivable)} modules, {len(unresolvable_specs)} specs',
         'injected_controls': f'{len(_INJECTED_CONTROLS)} demonstrations',
         'test_count': 'static declared-test count over the enumerated modules',
-        'provenance': f'2 placement claims, {len(overlaps)} overlapping entries',
+        'provenance': (
+            f'{len(_PLACEMENT_CLAIMS)} placement claims, {len(overlaps)} overlapping entries'
+        ),
     }
     commands = {
         'partition': _verb_command('partition', args.epic),
