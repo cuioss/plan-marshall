@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -56,11 +57,14 @@ def build_world(root: Path, specs: dict[str, str], modules: tuple[str, ...]) -> 
     return epic_dir, repo
 
 
-def render(monkeypatch, epic_dir: Path, repo: Path, tests_before: int | None = None) -> dict:
+def render(
+    monkeypatch, epic_dir: Path, repo: Path, tests_before: int | None = None
+) -> dict[str, Any]:
     monkeypatch.setattr(entry, 'get_store_dir', lambda *a, **k: epic_dir)
     monkeypatch.setattr(entry, 'cwd_checkout_root', lambda: str(repo))
     args = argparse.Namespace(epic='fixture-epic', budget=400, tests_before=tests_before)
-    return entry.cmd_report(args)
+    report: dict[str, Any] = entry.cmd_report(args)
+    return report
 
 
 #: A corpus that disagrees with itself: two plans claim the same subtree, one
@@ -78,19 +82,20 @@ CLEAN_MODULES = ('test/alpha/test_one.py',)
 
 
 @pytest.fixture
-def disagreeing(tmp_path: Path, monkeypatch) -> dict:
+def disagreeing(tmp_path: Path, monkeypatch) -> dict[str, Any]:
     epic_dir, repo = build_world(tmp_path, dict(DISAGREEING_SPECS), DISAGREEING_MODULES)
     return render(monkeypatch, epic_dir, repo)
 
 
 @pytest.fixture
-def clean(tmp_path: Path, monkeypatch) -> dict:
+def clean(tmp_path: Path, monkeypatch) -> dict[str, Any]:
     epic_dir, repo = build_world(tmp_path, dict(CLEAN_SPECS), CLEAN_MODULES)
     return render(monkeypatch, epic_dir, repo)
 
 
-def section(report: dict, name: str) -> dict:
-    return next(row for row in report['sections'] if row['section'] == name)
+def section(report: dict[str, Any], name: str) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = report['sections']
+    return next(row for row in rows if row['section'] == name)
 
 
 # --- the seven sections ------------------------------------------------------
