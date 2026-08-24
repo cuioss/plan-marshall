@@ -29,8 +29,8 @@ carries an **evidence class**, and the classes are not interchangeable:
   dressed up as a near-miss.
 |===
 
-⛔ **Two of the six gaps below are `unexercised`.** They are the honest weak half of this document and
-they are labelled, not buried. A section on what the cloud lane does *better*, and a section on where
+⛔ **Three of the seven gaps below are `unexercised`.** They are the honest weak half of this document
+and they are labelled, not buried. A section on what the cloud lane does *better*, and a section on where
 plan-marshall's own machinery is measurably broken, follow the gap list — both are load-bearing, not
 balance for its own sake.
 ====
@@ -39,7 +39,8 @@ balance for its own sake.
 
 Each of the 22 pages under `doc/concepts/` was read for the capability it claims, then checked against
 `.claude/skills/cloud-plan-lane/SKILL.md` (2,213 lines) and `author-cloud-plan/SKILL.md` (228), which
-together are the lane's complete contract. Where an equivalent was absent, the five reports and the PR
+together are the lane's complete contract — both project-local under `.claude/skills/`, which § 6 shows
+is not incidental. Where an equivalent was absent, the five reports and the PR
 record were searched for data.
 
 ⚠ **The lane's waivers are explicit, not accidental.** `CLAUDE.md` § Standalone Plan Lane names them in
@@ -77,10 +78,19 @@ condition as a defect.
 | observed
 | Concurrent agents in one tree **corrupted each other's mutation-test snapshots** during an audit run.
 
+| **Deterministic skill injection** (`skill-handling.adoc`, `personas.adoc`)
+| unexercised ^m^
+| Selection is a 7-row conditional table applied by the agent's own judgement; Tier-1 is **absent from
+  the lane's Always list**; a persona reached by `Read` never resolves its composition.
+
 | **Permission narrowing** (`security.adoc` Layers 1–2)
 | unexercised
 | The lane runs in a cloud VM with ordinary shell and MCP access. No corpus measures the blast radius.
 |===
+
+^m^ **`unexercised` classifies the *consequence*, not the mechanism.** For this row the mechanism is
+directly verified in both contracts — unlike permission narrowing, where nothing is recorded at all.
+What is missing is any corpus datum showing what the difference cost.
 
 Two further capabilities — the **audit trail** (`audit-trail.adoc`) and **orchestration**
 (`orchestration.adoc`) — are already results 1 and 3 in xref:README.adoc[the findings summary] and are
@@ -237,7 +247,98 @@ that does not follow instructions.
 ⇒ Recorded as `observed` rather than `measured`: one named incident, self-reported, with no count of how
 often it recurred.
 
-== 6. Permission narrowing — *unexercised*
+== 6. Deterministic skill injection — *unexercised consequence, verified mechanism*
+
+`skill-handling.adoc` opens by describing, almost exactly, the condition the cloud lane runs in:
+
+[quote]
+____
+In an unconstrained Claude Code session, "which skill applies here" is a runtime guess the model makes
+from whatever the prompt happened to surface. Two tasks with similar wording can pull in different skill
+sets and produce divergent outputs. The skill load isn't even logged in a way that lets you check after
+the fact.
+____
+
+plan-marshall's answer is a data flow with no inference in it: `skills_by_profile` is recorded at
+architecture-enrichment time, materialised into `task.skills` at plan time, and issued as one `Skill:`
+load per entry by the dispatcher — *"the LLM running the subagent has **zero discretion** about its own
+context — it loads what it is told."* Each load lands in `work.log` under a `[SKILL]` tag, and the
+concept states the audit rule plainly: **if a skill is missing from the log, it never loaded, regardless
+of what the workflow body claims to have applied.**
+
+The lane's § Step 1 is the other design. Four differences, each read directly out of the two contracts:
+
+=== (a) Selection is the agent's judgement
+
+The lane instructs: *"Load the work identity, then **only the domain skills the plan's surface actually
+needs**."* The mechanism is a **seven-row conditional table** — Python production code, Python tests,
+`SKILL.md` structure, `.adoc` docs, security-relevant change, and so on — applied by the agent reading
+its own plan. That is the runtime guess `skill-handling.adoc` declines to make, reintroduced as a
+documented procedure. Two plans touching similar surfaces can load different sets, and nothing
+reconciles them.
+
+=== (b) ⭐⭐ Tier 1 is absent
+
+`persona-plan-marshall-agent` is *the* Tier-1 skill — loaded unconditionally by the dispatcher on every
+plan-marshall dispatch, carrying the hard rules that are Layer 1 of **both** `security.adoc` and
+`process-enforcement.adoc`.
+
+The lane's **Always** list has two entries, and it is not among them: `ref-code-quality` and
+`plugin-script-architecture`. Nor is it in the conditional table.
+
+⇒ This is direct confirmation of something the rest of this document inferred from `CLAUDE.md`'s waiver
+table. **Layer 1 is not weakened in the cloud lane; it is never loaded.** The hard rules the concept
+pages describe as *"in the LLM's context window every time it dispatches"* are, here, in no context at
+all.
+
+=== (c) `Read` is not a skill load, and personas are the case where it matters
+
+The lane's primary route is `Read: marketplace/bundles/{bundle}/skills/{skill}/SKILL.md`. For a
+standards document that is close to equivalent — the text lands in context either way.
+
+For a **persona** it is not, and the gap is structural. A persona is a shell that *declares* a
+composition DAG which `manage-personas resolve` flattens into a deduped `skills[]`. `persona-implementer`
+resolves to its base `persona-plan-marshall-agent`, plus `ref-code-quality`, plus the profile × domain
+skills for `implementation` and `quality`. The file itself says it *"carries no executable workflow of
+its own."*
+
+⇒ A lane run that `Read`s `persona-implementer/SKILL.md` obtains **a pointer document describing a
+composition it cannot perform**. The base never arrives, and neither does the profile × domain merge —
+because the resolver is a script, and the lane has no executor. The lane hand-approximates exactly one
+edge of that DAG by listing `ref-code-quality` in its Always table; the base and the domain merge have no
+substitute.
+
+=== (d) What loaded is self-reported
+
+`skill-handling.adoc` makes the work log authoritative over any claim. The lane's § Step 9 compliance
+table records the artifact proving Step 1 as: **"Named in the report."**
+
+⇒ The account of what context the run had is written by the run, from memory, with nothing to check it
+against — the self-assessment defect of § 3 applied to the run's own context. A skill named in the report
+and never loaded is indistinguishable from one that was.
+
+[CAUTION]
+====
+**The lane escapes the worst of this by a coincidence of subject matter, and its own contract says so.**
+
+Step 1's `Read`-the-bundle-path route works because *"this repository **is** the marketplace, so every
+skill named below is a file in the tree."* The contract also records the environmental fact behind that
+workaround: *"the `plan-marshall` plugin is frequently **not** installed in a Claude Code cloud session —
+this has been observed, with the plugin cache verified absent."*
+
+⇒ **In any other project, a cloud-lane run would have `.claude/skills/` and nothing else.** No bundle
+tree to read, no plugin cache to load from — so the seven-row table, the two Always entries and the
+persona shells would all be unreachable, and the lane would run on project-local skills alone. The
+capability measured in these five reports is therefore the **best case** for the lane, available only
+because the subject under test happened to be the marketplace itself.
+====
+
+⚠ **No corpus datum measures what any of this cost.** Nothing in the five reports attributes a defect to
+a skill that did not load — which is unsurprising, since the only record of what loaded is the run's own
+sentence about it. Classified `unexercised` on consequence for that reason, while the mechanism above is
+verified line by line in both contracts.
+
+== 7. Permission narrowing — *unexercised*
 
 `security.adoc` Layers 1–2 argue that one broad allow rule over the executor proxy replaces either a
 prompt per operation or a long, error-prone allowlist — and that prompts which *do* fire are a signal
@@ -297,8 +398,8 @@ reports that found it did so against plan-marshall, not against the lane.
 . **No gap here is quantified as a cost.** The five reports measure outcomes; this document traces
   outcomes to absent mechanisms. **A trace is an argument, not a measurement** — nothing establishes
   that adding a handshake would have moved the 16.6% report-correction rate to zero.
-. **Two of six gaps have no data at all** (`unexercised`), and one of those is the security gap that
-  motivated this analysis. That is the finding: **the corpus cannot speak to it**, in either direction.
+. **Three of seven gaps have no consequence data** (`unexercised`), and one of those is the security gap
+  that motivated this analysis. That is the finding: **the corpus cannot speak to it**, in either direction.
 . **The lane was built to lack these things.** It is the control condition. A control that lacks the
   treatment is working correctly.
 . **No causal claim survives the effort confound.** Cloud runs used Opus at max effort; local runs use
