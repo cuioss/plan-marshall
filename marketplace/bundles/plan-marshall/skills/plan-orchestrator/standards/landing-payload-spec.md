@@ -89,7 +89,7 @@ the drain consumes. These keys are **required** — a landing missing any of the
 |-----|-------|--------|
 | `schema` | `landing-facts/1` — the payload-version marker, fail-closed like `envelope_version` | constant |
 | `plan_id` | The plan's id (the message `sender_id`) | run |
-| `pr` | PR reference (`#NNN`) or `n/a` | `create-pr`'s `pr_number` fact |
+| `pr` | PR reference (`#NNN`), `n/a`, or `unknown` — `n/a` is a PR that was never created, a real end state; `unknown` is a `pr_number` that could not be read, and asserts only that nothing was observed. Neither collapses into the other | `create-pr`'s `pr_number` fact |
 | `merge_state` | The merge/landing state the step recorded (`merged` / `open` / `closed` / `unknown` / `n/a`) — the STEP'S claim, never a corroboration. `closed` is a PR the merge queue dequeued without merging; `unknown` is a PR whose state could not be read, and asserts only that nothing was observed. Neither collapses into `open` | `branch-cleanup`'s `merge_state` fact |
 | `deliverables_total` | Total deliverable count from the solution outline | run |
 | `deliverables_done` | Completed deliverable count | run |

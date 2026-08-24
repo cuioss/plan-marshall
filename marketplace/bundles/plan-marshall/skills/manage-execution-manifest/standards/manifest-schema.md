@@ -181,16 +181,12 @@ is the KEPT set, `phase_6.steps`: it records the survivors and nothing about
 what was weighed to produce them.
 
 `reconcile` recovers the same distinction from the other side, and
-`phase_6.candidate_steps` IS its mechanism — it narrows backfill to candidates
-absent from that field. The field is a persisted list too, and it escapes the
-objection above because of WHAT it records: the CANDIDATE SET the decision
-matrix considered, not the kept set it produced. Absence from it therefore means
-"never considered", while presence in it plus absence from `phase_6.steps` means
-"considered and dropped" — the separation the kept list alone cannot express. So
-`reconcile` re-resolves no lane and calls `_lane_keep_decision` nowhere; that
-helper is compose-side, where the decision is MADE, and the snapshot is how
-reconcile reads a decision it was not present for. A manifest predating the
-field reports `backfill_determinable: false` rather than guessing.
+`phase_6.candidate_steps` IS its mechanism. That field is a persisted list too,
+yet it escapes the objection because of WHAT it records — stated once under
+[§ Schema (TOON)](#schema-toon) and deliberately not repeated here. What follows
+from it for THIS section is that `reconcile` re-resolves no lane and calls
+`_lane_keep_decision` nowhere: that helper is compose-side, where the decision is
+MADE, and the snapshot is how reconcile reads a decision it was not present for.
 
 **Corollary — a step relocation is not complete when the new step is added to
 the dispatch table.** Moving an obligation from step A to a NEW step B leaves

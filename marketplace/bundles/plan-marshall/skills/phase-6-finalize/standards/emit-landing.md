@@ -114,7 +114,8 @@ different number, and the landing reports it as settled. The rule has two distin
   directory immediately after, so whatever this step emits is what the epic sees.
 
 Where a figure genuinely cannot be settled by the time this step runs, it is recorded as a gap through
-the degraded-value vocabulary above — never as a provisional number presented as final.
+the degraded-value vocabulary of [§ Which degraded token a field gets](#which-degraded-token-a-field-gets)
+— never as a provisional number presented as final.
 
 ## Workflow
 

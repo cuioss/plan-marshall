@@ -462,6 +462,32 @@ def _spec_table_keys() -> set[str]:
     return keys
 
 
+def _spec_table_value_cells() -> dict[str, str]:
+    """The required-fact-keys table as ``Key`` -> its ``Value`` cell.
+
+    A SIBLING of :func:`_spec_table_keys`, deliberately not a reshaping of it:
+    every equality below rests on that extractor's Key-only reading, so the value
+    column is picked up alongside it rather than by widening its return type. The
+    section is bounded the same way, and the value cell is read as the run of
+    non-pipe characters after the key cell — no documented value cell contains a
+    pipe.
+    """
+    text = _PAYLOAD_SPEC.read_text(encoding='utf-8')
+    section = re.search(
+        r'^## Required machine-readable fact keys$(.*?)(?=^## |\Z)',
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert section, (
+        f'{_PAYLOAD_SPEC.name} carries no "## Required machine-readable fact keys" '
+        'section, so this guard would read an empty table.'
+    )
+    cells: dict[str, str] = {}
+    for row in re.finditer(r'^\|\s*`([^`]+)`\s*\|([^|]*)\|', section.group(1), re.MULTILINE):
+        cells[row.group(1).strip()] = row.group(2)
+    return cells
+
+
 def _emit_landing_enumeration_keys() -> set[str]:
     """The required keys enumerated in emit-landing.md's Step 2 body part 2.
 
@@ -529,6 +555,48 @@ class TestDocumentedEnumerationsMatchTheConstant:
             f'following the spec emits a landing the drain rejects. Table: '
             f'{sorted(_spec_table_keys())}; constant: {sorted(LANDING_REQUIRED_KEYS)}.'
         )
+
+    def test_the_sentinel_exempt_rows_name_both_degraded_tokens(self):
+        """The VALUE column of an exempt key must name `unknown`, not only `n/a`.
+
+        The equality above compares Key cells only, so a row documenting the
+        wrong value vocabulary is invisible to it. That blind spot matters most
+        at exactly these keys: `pr` and `merge_state` are the two required keys
+        OUTSIDE ``LANDING_SENTINEL_REJECTING_KEYS``, so `n/a` is a legal answer
+        there while `unknown` is still a gap — and a producer author reads the
+        Value cell to learn which tokens are legal. A cell naming only `n/a`
+        teaches them to write it for a failed read, reproducing the
+        false-completeness defect the two-class split closes at the one key the
+        Key-column equality cannot see.
+
+        The exempt set is DERIVED from the two module constants rather than
+        transcribed, so a key entering or leaving the rejecting set is checked
+        here without a second edit.
+        """
+        exempt = sorted(
+            set(LANDING_REQUIRED_KEYS) - set(_inbox.LANDING_SENTINEL_REJECTING_KEYS) - {'schema'}
+        )
+        assert exempt, (
+            'no required key is sentinel-exempt, so the loop below would assert nothing'
+        )
+        assert _SENTINEL_TOKENS, 'the sentinel vocabularies are empty, so the loop asserts nothing'
+
+        cells = _spec_table_value_cells()
+        for key in exempt:
+            assert key in cells, (
+                f'`{key}` is sentinel-exempt but has no row in the payload spec\'s '
+                f'required-fact-keys table. Rows found: {sorted(cells)}.'
+            )
+            cell = cells[key].casefold()
+            for token in sorted(_SENTINEL_TOKENS):
+                assert f'`{token}`' in cell, (
+                    f'the `{key}` row\'s Value column does not name `{token}` as a legal value. '
+                    f'`{key}` is outside `LANDING_SENTINEL_REJECTING_KEYS`, so BOTH degraded '
+                    'tokens can reach it and they mean different things: `n/a` is an answer the '
+                    'drain accepts, `unknown` is a gap it rejects. A row naming only one leaves '
+                    'a producer author to route a failed read to the token that drains as a '
+                    f'settled fact. Cell: {cells[key].strip()!r}'
+                )
 
     def test_emit_landing_enumeration_names_exactly_the_required_keys(self):
         assert _emit_landing_enumeration_keys() == set(LANDING_REQUIRED_KEYS), (
