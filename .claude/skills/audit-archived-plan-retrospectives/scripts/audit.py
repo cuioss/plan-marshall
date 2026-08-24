@@ -5631,7 +5631,7 @@ def _classify_zero(block: str, genuine_count: int | None, corpus_size: int) -> s
     # declared gate's non-zero exclusion count the better explanation of the zero
     # than "the corpus was clean".
     gate_excluded = _UNATTRIBUTED_EXCLUDED_RE.search(block)
-    if genuine_count == 0 and gate_excluded is not None and int(gate_excluded.group(1)) > 0:
+    if gate_excluded is not None and int(gate_excluded.group(1)) > 0:
         return _ZERO_GATED
     return _ZERO_DISCIPLINARY
 
