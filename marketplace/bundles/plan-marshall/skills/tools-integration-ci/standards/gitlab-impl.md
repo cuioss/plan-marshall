@@ -434,8 +434,8 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci <command> 
 |---------|-------------|
 | `pr create` | Create merge request |
 | `pr reviews` | Get MR approvals |
-| `ci status` | Check pipeline status |
-| `ci wait` | Wait for pipeline completion |
+| `checks status` | Check pipeline status |
+| `checks wait` | Wait for pipeline completion |
 | `issue create` | Create issue |
 | `issue view` | View issue details |
 

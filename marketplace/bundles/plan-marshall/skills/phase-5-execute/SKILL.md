@@ -573,7 +573,7 @@ python3 .plan/execute-script.py plan-marshall:phase-5-execute:scope_creep_check 
   check --plan-id {plan_id}
 ```
 
-The helper reads `plan_creation_sha` from `references.json`, computes `git diff --name-only {plan_creation_sha}..HEAD` against the worktree, subtracts the union of `affected_files` from every deliverable, and returns ONE of two shapes.
+The helper reads `plan_creation_sha` from `references.json`, computes `git diff --name-only {plan_creation_sha}..HEAD` against the worktree, subtracts the union of `affected_files` from every deliverable, and returns ONE of three shapes.
 
 **Measured** — the comparison ran:
 
@@ -594,6 +594,15 @@ detail: "<why nothing was measured>"
 threshold: T
 finding_emitted: false
 ```
+
+**Error** — the guard could not complete, and says so rather than reporting a clean comparison:
+
+```toon
+status: error
+error: git_diff_failed | finding_persist_failed
+```
+
+`git_diff_failed` means the diff itself could not be computed; `finding_persist_failed` means a residual set OVER the threshold was measured but its finding could not be written, so the run reports the rejected finding's content inline (`message`, `finding_title`, `finding_detail`, `residual_count`) rather than absorbing the loss. Both return exit code `1` — unlike the two non-measuring paths below, an error IS a failure of the guard.
 
 ⛔ **`residual_count` is ABSENT on the `could_not_look` shape, and that absence is the contract.** The count is the field consumers gate on, so a `0` published by a run that never compared anything is indistinguishable from "compared, and found no scope creep" — a `reason` field alone does not fix that, because it is advisory and trivially dropped. Read `status` FIRST: on `could_not_look` there is no measurement to act on, and a caller that branches on `residual_count` finds no key rather than a false zero. Never substitute `0` for the missing key.
 

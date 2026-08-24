@@ -193,9 +193,9 @@ error: Task not found: TASK-999
 plan_id: EXAMPLE-PLAN
 ```
 
-## Script Chaining
+## Sequenced Invocations
 
-TOON output enables pipeline processing:
+A multi-step workflow runs as independent invocations, each read on its own. Nothing pipes one command's TOON into the next:
 
 ```bash
 # Analyze → apply the safe subset → re-check

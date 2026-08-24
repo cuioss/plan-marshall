@@ -414,7 +414,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci <command> 
 |---------|-------------|
 | `pr create` | Create pull request |
 | `pr reviews` | Get PR reviews |
-| `ci status` | Check CI status |
-| `ci wait` | Wait for CI completion |
+| `checks status` | Check CI status |
+| `checks wait` | Wait for CI completion |
 | `issue create` | Create issue |
 | `issue view` | View issue details |

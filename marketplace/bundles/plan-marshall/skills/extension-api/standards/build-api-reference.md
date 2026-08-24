@@ -96,8 +96,7 @@ does not say that what was examined could reach the finding being cleared.
 
 - `analyses_examined` — the analysis kinds this invocation performs, derived from
   its canonical command: `compile`, `lint`, `test`, or the literal `unknown` when
-  the invocation is not one the canonical vocabulary describes. `none` marks a
-  command that measurably examines nothing.
+  the invocation is not one the canonical vocabulary describes.
 - `tests_population` — `measured` or `unmeasured`, the discriminator for the field
   below.
 - `tests_run` — the executed-test count. **Present only when

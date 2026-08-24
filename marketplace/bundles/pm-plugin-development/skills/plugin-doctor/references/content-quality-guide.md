@@ -446,10 +446,11 @@ Extraction Candidate:
 
 ## Verification of LLM Findings
 
-After LLM analysis, every claim is re-checked against the script's own analysis by
-`_cmd_cross_file.py::verify_findings`. That verifier is an internal library
-function, not a CLI verb — it has no executor notation, and it is the function the
-`report` pass calls with the LLM's claims before any finding is emitted.
+`_cmd_cross_file.py::verify_findings` re-checks a set of LLM claims against the
+script's own analysis. It is an internal library function, not a CLI verb — it has
+no executor notation, and **no pass invokes it**: the reviewer applies it, or
+performs the equivalent check by hand. Nothing in the pipeline gates finding
+emission on it.
 
 **Verification Output**:
 ```json
@@ -494,10 +495,11 @@ This guide is loaded in **Phase 3: Analyze Content Quality**.
    - Completeness (TODO markers, missing examples)
    - Contradictions (conflicting rules)
 
-5. **Verify LLM findings**: the `report` pass feeds each claim through
-   `_cmd_cross_file.py::verify_findings`, which re-checks it against the script's
-   own analysis. There is no separate CLI step — an unverifiable claim never
-   reaches the report.
+5. **Verify LLM findings**: re-check each claim against the step-1 analysis output
+   before carrying it forward. `_cmd_cross_file.py::verify_findings` implements that
+   comparison, but nothing calls it for you — `report` already ran at step 1, before
+   these claims existed, so there is no automatic gate. An unverified claim reaches
+   the report unless this step removes it.
 
 6. **Generate quality report** with verified findings only.
 
