@@ -541,5 +541,5 @@ and **filed 25 new ones**, two `high`. The lane does not self-correct.
 
 == Reproducing this analysis
 
-See xref:README.adoc[the README] for the instruction set. Every figure was derived by script from the
+See xref:analyzis_rules.adoc[the analysis rules] for the instruction set. Every figure was derived by script from the
 ingested corpus; none was transcribed by hand.

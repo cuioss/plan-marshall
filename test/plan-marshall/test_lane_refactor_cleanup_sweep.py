@@ -88,12 +88,17 @@ _SKIP_DIR_PARTS = {'__pycache__', '.git', '.plan', 'node_modules', 'target'}
 # because it is a dated record of one execution rather than documentation of the
 # current state … No other file in doc/plans/ takes this exemption."
 #
-# So the carve-out is report files ONLY, not the ``doc/plans/`` tree. That tree
-# also holds live documentation the sweep must keep policing: ``doc/plans/
-# README.md`` (cross-referenced from CLAUDE.md), a README per epic,
-# ``doc/plans/_template/plan.md`` (a template that propagates into every new
-# plan), and each plan.md itself — all of which CLAUDE.md says "follow the
-# standards unchanged". A retired token in any of them is a live orphan.
+# So the carve-out is report files ONLY, not the ``doc/plans/`` tree. When that
+# tree is exported it also holds live documentation the sweep must keep policing:
+# a README per epic, the plan template that propagates into every new plan, and
+# each plan.md itself — all of which CLAUDE.md says "follow the standards
+# unchanged". A retired token in any of them is a live orphan.
+#
+# The tree is ABSENT at present: it is exported only while an epic has plans
+# handed off, and both standalone epics have been ingested into the orchestrator
+# ledger. The predicate is unchanged by that — it encodes the boundary, not the
+# tree's contents — and the control below is written against constructed paths
+# for exactly this reason.
 #
 # Matched on the filename under a ``doc/plans/`` ancestor, deliberately, rather
 # than by adding ``plans`` to ``_SKIP_DIR_PARTS``: a name-based skip would
@@ -180,33 +185,69 @@ def test_the_run_report_exclusion_is_honoured_by_the_walk():
     )
 
 
-def test_the_rest_of_doc_plans_is_still_swept():
-    """The carve-out is run reports ONLY — every other file under ``doc/plans/`` is swept.
+def test_the_exclusion_matches_report_files_only_not_the_tree():
+    """The carve-out is run reports ONLY — it never reaches the tree around them.
 
-    This is the control that keeps the exclusion at the boundary ``CLAUDE.md``
-    draws. ``doc/plans/`` also holds live documentation — its own README, an
-    epic README each, the plan template that propagates into new plans, and each
-    plan.md — which CLAUDE.md says "follow the standards unchanged". Widening the
-    carve-out from report files to the tree would stop policing all of them while
-    every assertion in this module still reported green.
+    The control that keeps the exclusion at the boundary ``CLAUDE.md`` draws: a
+    carve-out widened from report files to the whole tree would stop policing the
+    lane's live documentation while every assertion in this module still reported
+    green.
+
+    Asserted against the predicate over CONSTRUCTED paths rather than against files
+    on disk. ``doc/plans/`` is exported only while an epic has plans handed off and
+    is absent otherwise, so a control resting on the tree being populated reports
+    its emptiness as a broken exclusion — which is what it did once both standalone
+    epics were ingested into the orchestrator ledger and the tree was retired. The
+    boundary the predicate encodes is the invariant, and it holds whether or not a
+    plan is currently exported.
+
+    That the predicate is actually CONSULTED by the walk is pinned separately, by
+    :func:`test_the_run_report_exclusion_is_honoured_by_the_walk`.
     """
-    walked = {p.relative_to(PROJECT_ROOT) for p in _iter_text_files((PROJECT_ROOT / 'doc',))}
-
-    required = [
-        Path('doc/plans/README.md'),
-        Path('doc/plans/_template/plan.md'),
+    excluded = [
+        _PLANS_ROOT / 'epic' / 'plan-name' / 'report-01.md',
+        _PLANS_ROOT / 'epic' / 'plan-name' / 'report-12.md',
     ]
-    missing = [str(p) for p in required if (PROJECT_ROOT / p).is_file() and p not in walked]
-    assert not missing, (
-        f'live documentation under doc/plans/ is no longer swept, so a retired '
-        f'token in it would go uncaught: {missing}'
+    swept = [
+        _PLANS_ROOT / 'README.md',
+        _PLANS_ROOT / 'cloud-bridge.md',
+        _PLANS_ROOT / '_template' / 'plan.md',
+        _PLANS_ROOT / 'epic' / 'README.md',
+        _PLANS_ROOT / 'epic' / 'plan-name' / 'plan.md',
+        _PLANS_ROOT / 'epic' / 'plan-name' / 'report-01.md.bak',
+        PROJECT_ROOT / 'marketplace' / 'plans' / 'report-01.md',
+    ]
+
+    missed = [str(p) for p in excluded if not _is_lane_run_report(p)]
+    assert not missed, f'run report(s) the exclusion failed to match: {missed}'
+
+    leaked = [str(p) for p in swept if _is_lane_run_report(p)]
+    assert not leaked, (
+        f'the exclusion reaches beyond report files, so a retired token in these '
+        f'would go uncaught: {leaked}'
     )
 
-    # At least one epic README and one plan.md, located rather than hardcoded, so
-    # the control does not decay into two named files.
-    assert any(p.name == 'README.md' and p.parent != Path('doc/plans') and 'plans' in p.parts
-               for p in walked), 'no per-epic README under doc/plans/ reached the sweep'
-    assert any(p.name == 'plan.md' for p in walked), 'no plan.md reached the sweep'
+
+def test_the_exclusion_is_inert_on_the_tree_the_walk_actually_returns():
+    """The run-report carve-out matches nothing the live walk yields.
+
+    The sibling predicate test above constructs synthetic paths, so it cannot
+    tell a correct exclusion from a walk that returned nothing at all. This
+    one closes that gap from the other side: it takes the files
+    ``_iter_text_files`` really yields and asserts the carve-out drops none of
+    them. ``doc/plans/`` was retired, so today the correct answer is that the
+    exclusion is inert — and a future run report reintroduced under a path the
+    carve-out over-matches would fail here rather than silently leave the file
+    unswept.
+    """
+    walked = list(_iter_text_files((PROJECT_ROOT / 'doc',)))
+    assert walked, 'the walk returned no file at all, so the exclusion is untested'
+
+    dropped = [str(p) for p in walked if _is_lane_run_report(p)]
+    assert not dropped, (
+        f'the run-report exclusion removed {len(dropped)} live file(s) from the '
+        f'sweep: {dropped}'
+    )
 
 
 def test_the_rest_of_doc_is_still_swept():

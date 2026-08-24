@@ -27,9 +27,9 @@ applies no transform and the emitted body is byte-identical to source.
 The canonical Claude target is verbatim by construction (it has no
 `mapping.json`), which keeps its output independently
 equality-validatable. A **new target supplies only this data** — no
-transform code. See
-[the multi-target principles](../../../doc/plans/multiplattform/reference/principles.md)
-§ 4 (single source of truth) and § 6 (open to further targets).
+transform code. See the multi-target principles
+§ 4 (single source of truth) and § 6 (open to further targets). ⚠ That reference document left the tree
+with the `multiplattform` epic's ingestion; recover it from git history if needed.
 
 ## Transform 1 — `Skill:` directive rewrite
 

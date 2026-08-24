@@ -73,7 +73,7 @@ Plans under `doc/plans/` execute **outside the plan-marshall command lifecycle**
 Skill: cloud-plan-lane
 ```
 
-It owns the plan directory lifecycle, the conditional Python build gate, the pre-PR verification sub-agent, the branch/PR/review-comment cycle, the merge gate, the persisted run report, and the closing self-check. See `doc/plans/README.md` for the tree layout.
+It owns the plan directory lifecycle, the conditional Python build gate, the pre-PR verification sub-agent, the branch/PR/review-comment cycle, the merge gate, the persisted run report, and the closing self-check — including the `doc/plans/{epic}/{plan-name}/` tree layout a run creates. **The tree itself is not present in the repository**: every epic that ran in this lane has been ingested into the orchestrator ledger, so a lane run creates its own directory from the contract rather than joining an existing tree.
 
 Within this lane only, these hard rules are superseded — the tooling they mandate depends on the generated executor, which does not exist in a fresh clone:
 

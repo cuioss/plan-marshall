@@ -319,7 +319,7 @@ is call a scratch path durable.
 ## Step 3 — Establish the plan directory
 
 A plan arrives as a single file, e.g. `doc/plans/truthful-signals/010-my-plan.md`, authored from the
-template at [`doc/plans/_template/plan.md`](../../../doc/plans/_template/plan.md). If the plan you
+template the authoring pass applies. If the plan you
 were handed is not in that shape, do not silently proceed on a thinner brief — say so in the report,
 and flag any missing section that changes what you would build (deliverables, out-of-scope,
 claim labels).
@@ -1915,8 +1915,11 @@ including a run that ended **blocked or partial**, and why. (The merge commit is
 merge event and reported to the operator, not embedded here — see the merge-commit note above.) An
 overstated outcome gets collected as done; an understated one gets picked up again.
 
-The full rule, including how a row is created and later collected, is
-[`doc/plans/cloud-bridge.md`](../../../doc/plans/cloud-bridge.md).
+⚠ **There is no bridge document, and this step does not need one.** The repository carries no
+`doc/plans/` tree: a run creates its own plan directory (§ Step 3), and the orchestrator collects the
+outcome from the PR and the run report. Report the plan's outcome per § Report and let the orchestrator
+record it — **do not** write a status row, a ledger entry, or any file outside this plan's own
+directory (§ Step 8, Bridge).
 
 ## Step 9 — Final step: verify this contract was followed
 
@@ -1980,7 +1983,7 @@ If there is something worth changing:
 1. **Present it to the operator** with the evidence from this run and the concrete proposed edit.
    Never self-approve a change to the contract that governs you.
 2. On approval, ship it as a **separate PR** — its own `chore/` branch, touching only the skill (and
-   `CLAUDE.md` or `doc/plans/README.md` if the change reaches them):
+   `CLAUDE.md` if the change reaches it):
 
    ```bash
    gh pr create --title "chore(cloud-plan-lane): {what changed}" --body-file {file} \
