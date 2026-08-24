@@ -142,6 +142,13 @@ _ALL_SCOPES_KEY = '*'
 #: ``write-all`` — which has no indented body for the block reader to find —
 #: reads as no grant at all, though it is the broadest one the syntax allows.
 _INLINE_SHORTHANDS = {'read-all': 'read', 'write-all': 'write'}
+#: The value of an inline ``permissions: <value>`` header, with its optional
+#: trailing YAML comment removed. Same tail the :data:`_SCOPE_LINE` pattern
+#: strips, and load-bearing for the same reason one level down: the value is
+#: matched against :data:`_INLINE_SHORTHANDS` and :data:`_READ_ONLY_VALUES` by
+#: EQUALITY, so ``read-all  # least privilege`` matches neither and a
+#: least-privilege declaration is reported as an unreviewed write grant.
+_INLINE_VALUE = re.compile(r'^(?P<value>[^#]*?)\s*(?:#.*)?$')
 
 
 def _inline_permissions(value: str) -> dict[str, str] | None:
@@ -154,9 +161,21 @@ def _inline_permissions(value: str) -> dict[str, str] | None:
     spelling this table does not know stays visible to the write-scope reader
     instead of vanishing.
 
+    A trailing YAML comment is stripped first, exactly as :data:`_SCOPE_LINE`
+    does for a ``scope: value`` line. Routing both readers through one helper
+    stopped the top-level and job-level verdicts disagreeing with EACH OTHER;
+    it did not by itself stop them disagreeing with the block reader, which had
+    handled the comment tail all along. A header whose comment survived matched
+    no shorthand and no read-only value, so ``permissions: read-all  # least
+    privilege`` was recorded verbatim and reported as an unreviewed WRITE grant
+    — a false red, and the same wrong verdict from both readers rather than
+    from one.
+
     Shared by BOTH readers so the top-level and job-level verdicts cannot
     disagree about what an inline header means.
     """
+    found = _INLINE_VALUE.match(value)
+    value = found.group('value') if found else value
     if not value:
         return None
     return {_ALL_SCOPES_KEY: _INLINE_SHORTHANDS.get(value, value)}
@@ -708,6 +727,58 @@ def test_the_scope_reader_normalizes_the_inline_read_all_shorthand() -> None:
 
     assert _write_scopes(_top_level_permissions(workflow) or {}) == set()
     assert _write_scopes(_job_level_permissions(workflow)) == set()
+
+
+def test_an_inline_header_carrying_a_trailing_comment_is_still_normalized() -> None:
+    """The comment tail must be stripped by the INLINE reader too, not only the block one.
+
+    ``_SCOPE_LINE`` strips it for a ``scope: value`` line; the inline header
+    reader did not. The value is matched against the shorthand table and the
+    read-only set by EQUALITY, so ``read-all  # least privilege`` matched
+    neither: it was recorded verbatim under ``*`` and reported as an unreviewed
+    WRITE grant, and the guard then demanded an allowlist entry for a
+    declaration that grants nothing. Routing both readers through one helper
+    made them agree with each other while both disagreed with ``_SCOPE_LINE``.
+    """
+    workflow = (
+        'permissions: read-all  # least privilege\n'
+        'jobs:\n  j:\n    permissions: read-all   # least privilege\n'
+    )
+
+    assert _top_level_permissions(workflow) == {'*': 'read'}
+    assert _job_level_permissions(workflow) == {'*': 'read'}
+    assert _write_scopes(_top_level_permissions(workflow) or {}) == set()
+    assert _write_scopes(_job_level_permissions(workflow)) == set()
+
+
+def test_a_commented_write_all_header_is_still_seen_as_a_write() -> None:
+    """Matched control: stripping the comment must not soften the verdict.
+
+    A strip that swallowed the value along with its comment — or one applied
+    only where it produces a read-only answer — would satisfy the case above by
+    making every commented header report nothing. ``write-all`` with a comment
+    is the broadest grant the syntax allows and must stay visible as one.
+    """
+    workflow = (
+        'permissions: write-all  # needs everything\n'
+        'jobs:\n  j:\n    permissions: write-all  # needs everything\n'
+    )
+
+    assert _write_scopes(_top_level_permissions(workflow) or {}) == {'*'}
+    assert _write_scopes(_job_level_permissions(workflow)) == {'*'}
+
+
+def test_a_header_carrying_only_a_comment_still_opens_a_block() -> None:
+    """Matched control: a comment-only header has no inline value at all.
+
+    ``permissions:  # scopes below`` opens a block whose scopes are on the
+    following indented lines. Stripping the comment must leave an EMPTY value,
+    so the inline reader declines and the block reader owns the header — not a
+    phantom ``*`` grant spelled after the comment text.
+    """
+    workflow = 'permissions:  # least privilege, scopes below\n  contents: read\n'
+
+    assert _top_level_permissions(workflow) == {'contents': 'read'}
 
 
 def test_the_scope_reader_sees_the_inline_write_all_shorthand() -> None:

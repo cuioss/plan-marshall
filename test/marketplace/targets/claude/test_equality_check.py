@@ -386,6 +386,67 @@ def test_a_non_list_array_field_returns_the_diagnostic(
     assert result.unusable_target_bundles == ['demo']
 
 
+@pytest.mark.parametrize('field_name', ['agents', 'commands', 'skills'])
+@pytest.mark.parametrize(
+    'element',
+    [{'path': './agents/demo-agent.md'}, 3],
+    ids=['unhashable-object', 'hashable-non-string'],
+)
+def test_a_list_holding_a_non_string_element_returns_the_diagnostic(
+    clean_marketplace: tuple[Path, Path], field_name: str, element: object
+):
+    """Validating the CONTAINER is not validating the contract.
+
+    The guard above proves the value is a ``list``; the caller's contract is a
+    list OF STRINGS. ``check_bundle`` builds a ``set`` from each array, so an
+    unhashable element (an object) raises ``TypeError`` several frames away and
+    escapes the caller's ``except`` — terminating the whole equality check
+    instead of reporting this one bundle as needing a re-emit, which is exactly
+    the outcome this guard exists to prevent. A hashable non-string (an int)
+    does not even crash: it compares unequal to every generated entry and is
+    reported as ordinary manifest drift, so the artifact's corruption is
+    misdiagnosed as a re-emittable difference. Both are refused HERE.
+    """
+    marketplace, target = clean_marketplace
+    doc: dict = {
+        'name': 'demo',
+        'version': '0.0.1',
+        'description': 'Demo bundle',
+        'agents': ['./agents/demo-agent.md'],
+        'commands': [],
+        'skills': [],
+    }
+    doc[field_name] = [element]
+    _emitted(target, 'demo', doc)
+
+    bundles = list(iter_bundle_dirs(marketplace, None))
+    result = run_equality_check(target, bundles)
+
+    assert result.passed is False
+    assert result.unusable_target_bundles == ['demo']
+
+
+def test_a_list_of_strings_is_still_accepted(clean_marketplace: tuple[Path, Path]):
+    """Matched control: element validation must not refuse the ordinary artifact.
+
+    A guard that rejected every populated array would satisfy the case above
+    while failing every real bundle, so the well-formed shape — a populated
+    ``agents`` list of strings alongside two empty lists — is pinned as
+    accepted, with the equality verdict clean.
+    """
+    marketplace, target = clean_marketplace
+
+    bundles = list(iter_bundle_dirs(marketplace, None))
+    result = run_equality_check(target, bundles)
+
+    emitted = json.loads(
+        (target / 'demo' / '.claude-plugin' / 'plugin.json').read_text(encoding='utf-8')
+    )
+    assert emitted['agents'] == ['./agents/demo-agent.md'], 'fixture precondition'
+    assert result.passed is True
+    assert result.unusable_target_bundles == []
+
+
 def test_the_unusable_list_is_named_for_the_outcome_not_one_of_its_causes(
     clean_marketplace: tuple[Path, Path]
 ):

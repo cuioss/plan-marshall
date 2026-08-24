@@ -36,7 +36,7 @@ from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 
 from marketplace.targets.component_targets import emits_to
-from marketplace.targets.fs_safety import is_within, safe_rmtree
+from marketplace.targets.fs_safety import refuse_tree_overlap, safe_rmtree
 from marketplace.targets.opencode.frontmatter import (
     OPENCODE_MODEL_PREFIX,
     UnmappedFrontmatterError,
@@ -485,23 +485,23 @@ def emit_bundles(
             target-absent sentinel and does not raise.
         TargetScopeError: A component declares an invalid ``targets:``
             scope.
-        ValueError: ``output_dir`` resolves inside ``marketplace_dir``.
+        ValueError: ``output_dir`` and ``marketplace_dir`` overlap — either
+            resolves inside the other.
     """
     # Refuse a destination that overlaps the source tree BEFORE anything is
     # written, unlinked or wiped. This emitter is destructive in two places —
     # ``_copy_verbatim``'s safe_rmtree and ``_prune_stale_outputs``'s unlink
-    # sweep — and neither can tell an emitted artifact from real source once
-    # the output root IS the source root. safe_rmtree's containment check does
-    # not cover this: a path inside the source tree is still inside output_dir
-    # when output_dir is the source tree, so the guard passes and the delete
-    # proceeds. The sibling Claude emitter refuses the same overlap for the
-    # same reason; that this one did not was an asymmetry, not a design.
-    if is_within(output_dir, marketplace_dir):
-        raise ValueError(
-            f'Refusing to emit into {output_dir.resolve()}: it lies inside the source tree '
-            f'{marketplace_dir.resolve()} — the output directory must be a distinct build '
-            'location, not the marketplace source'
-        )
+    # sweep — and neither can tell an emitted artifact from real source once the
+    # two trees overlap. safe_rmtree's containment check does not cover this: a
+    # path inside the source tree is still inside output_dir when the source
+    # tree lies inside output_dir, so the guard passes and the delete proceeds —
+    # which is why the refusal here is SYMMETRIC rather than keyed on one
+    # direction. The sibling Claude emitter refuses the same overlap for the
+    # same reason, through this same shared helper: the two carried identical
+    # private copies of the one-direction test and so drifted together instead
+    # of apart, which is what putting the check in fs_safety was supposed to
+    # prevent.
+    refuse_tree_overlap(output_dir, marketplace_dir)
 
     mapping = load_mapping(config_dir)
     rules = load_rules(config_dir)

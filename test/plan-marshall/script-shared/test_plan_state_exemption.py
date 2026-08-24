@@ -33,6 +33,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 import _plan_state_exemption as pse
 
 
@@ -86,6 +88,49 @@ def _index_paths(repo: Path) -> set[str]:
     """
     out = _git(repo, 'ls-files', '-z', '--', '.plan/').stdout
     return {entry for entry in out.split('\0') if entry}
+
+
+def _break_the_head_tree(repo: Path) -> None:
+    """Make ``ls-tree HEAD`` fail while HEAD itself still resolves.
+
+    Deletes the loose object holding the HEAD commit's TREE. ``git rev-parse
+    --verify HEAD`` reads the COMMIT object and still succeeds; ``git ls-tree -r
+    HEAD`` has to read the tree the commit points at and cannot. That is the
+    real shape of "the repository HAS a HEAD and the HEAD observation failed
+    anyway" — the case an unborn-repository carve-out must not be allowed to
+    cover.
+
+    Skips when the object is already packed (nothing loose to unlink), so the
+    test never passes on an unexercised path.
+    """
+    tree_sha = _git(repo, 'rev-parse', 'HEAD^{tree}').stdout.strip()
+    loose = repo / '.git' / 'objects' / tree_sha[:2] / tree_sha[2:]
+    if not loose.is_file():
+        pytest.skip(f'HEAD tree object {tree_sha} is not loose; nothing to unlink')
+    loose.unlink()
+
+    probe = subprocess.run(
+        ['git', '-C', str(repo), 'ls-tree', '-r', '--name-only', 'HEAD'],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert probe.returncode != 0, (
+        'precondition: ls-tree must fail after the tree object is removed, or '
+        f'this fixture exercises nothing (stdout={probe.stdout!r})'
+    )
+    head = subprocess.run(
+        ['git', '-C', str(repo), 'rev-parse', '--verify', '--quiet', 'HEAD'],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert head.returncode == 0, (
+        'precondition: HEAD must still resolve, or this is indistinguishable '
+        'from the unborn-repository case the carve-out legitimately covers'
+    )
 
 
 #: Probe filename for the quoted-path cases. A NON-ASCII name is the first
@@ -342,8 +387,13 @@ def test_tracked_plan_paths_falls_back_to_index_when_head_unresolvable(
 
     ``ls-tree HEAD`` exits non-zero in a fresh repository, which is a legitimate
     state rather than an unusable observation. The oracle keeps the index answer
-    instead of failing closed to ``None``, so the fail-closed contract stays
-    keyed on the ``ls-files`` observation alone.
+    instead of failing closed to ``None``.
+
+    This is the MATCHED CONTROL for the two fail-closed cases below: they tighten
+    the branch so a failing ``ls-tree`` in a repository that HAS a HEAD returns
+    ``None``, and a tightening that swept up the unborn repository too would
+    satisfy them while retaining every ``.plan/`` path in a fresh checkout. The
+    discriminator must be HEAD's existence, not the ``ls-tree`` failure itself.
     """
     repo = tmp_path / 'no-commits'
     repo.mkdir()
@@ -354,6 +404,51 @@ def test_tracked_plan_paths_falls_back_to_index_when_head_unresolvable(
     _git(repo, 'add', '-f', '.plan/marshal.json')
 
     assert pse.tracked_plan_paths(repo) == {'.plan/marshal.json'}
+
+
+def test_tracked_plan_paths_none_when_head_resolves_but_the_head_read_fails(
+    tmp_path: Path,
+) -> None:
+    """An unusable HEAD observation fails CLOSED — it is not the unborn-repo case.
+
+    ``_observe_z`` answers ``None`` both when there is no HEAD and when the HEAD
+    read did not work, and the two mean opposite things. Treating every failing
+    ``ls-tree`` as the legitimate no-commits state resolves an unusable answer in
+    the fail-OPEN direction, silently narrowing trackedness back to the index —
+    the index-only oracle this module exists to replace. Here the repository HAS
+    commits and HEAD resolves, so the failure is unusable and ``None`` is the
+    only honest answer.
+    """
+    repo = _repo_with_tracked_plan_file(tmp_path)
+    _break_the_head_tree(repo)
+
+    assert pse.tracked_plan_paths(repo) is None
+
+
+def test_partition_retains_a_staged_deletion_when_the_head_read_fails(
+    tmp_path: Path,
+) -> None:
+    """The consequence at the caller: the hidden edit is the staged deletion.
+
+    ``git rm`` leaves the path out of the index while HEAD still carries it. With
+    the HEAD half unusable and the branch falling back to the index, the path is
+    classified untracked and EXEMPTED — the guard reports clean over the deletion
+    of tracked plan state, which is the precise failure the module docstring
+    names. Failing closed retains it instead.
+    """
+    repo = _repo_with_tracked_plan_file(tmp_path)
+    _git(repo, 'rm', '.plan/marshal.json')
+    assert '.plan/marshal.json' not in _index_paths(repo), (
+        'precondition: the staged deletion must have left the index'
+    )
+    _break_the_head_tree(repo)
+
+    retained, exempted = pse.partition_plan_state_exemption(
+        ['.plan/marshal.json', '.plan/local/status.json'], repo
+    )
+
+    assert retained == ['.plan/local/status.json', '.plan/marshal.json']
+    assert exempted == []
 
 
 def test_tracked_plan_paths_none_when_not_a_repo(outside_repo_dir: Path) -> None:

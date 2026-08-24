@@ -34,6 +34,14 @@ edit the guards exist to surface. Unioning the two observations makes the oracle
 answer the question the guards ask — "is this file part of the repository?" — rather
 than the narrower "is this file staged right now?".
 
+The union is only as good as BOTH halves, so an unusable HEAD half fails closed too.
+Falling back to the index answer whenever the HEAD observation fails would silently
+restore the index-only oracle on exactly the staged-deletion case above. The one
+legitimate exception is a repository with no commits, which has no HEAD to read and
+where the index answer really is complete; :func:`tracked_plan_paths` tells that
+state apart from a failed observation with an explicit HEAD-existence probe rather
+than inferring it from the failure.
+
 This module does I/O (two NUL-delimited git observations per partition) and is
 stdlib-only. It lives at the ``script-shared/scripts/`` top level so every consuming
 bundle imports it by bare name
@@ -105,6 +113,23 @@ def _observe_z(tree: str | Path, git_args: list[str]) -> set[str] | None:
     return {entry for entry in completed.stdout.split('\0') if entry}
 
 
+def _head_exists(tree: str | Path) -> bool:
+    """Whether ``tree`` has a resolvable ``HEAD`` commit.
+
+    The discriminator between the two situations a failing HEAD observation can
+    mean. ``git rev-parse --verify --quiet HEAD`` exits non-zero in an unborn
+    repository (``git init`` with nothing committed) and zero once any commit
+    exists, so a ``False`` here says "there is no HEAD to read" while a ``True``
+    says "there IS one and the other observation failed anyway".
+
+    A probe that cannot run at all reads as ``False``, but that case never
+    reaches a decision: :func:`tracked_plan_paths` only probes after ``ls-files``
+    has already succeeded against the same tree, so git is present and the tree
+    is a repository by the time this is called.
+    """
+    return _observe_z(tree, ['rev-parse', '--verify', '--quiet', 'HEAD']) is not None
+
+
 def tracked_plan_paths(tree: str | Path) -> set[str] | None:
     """Return the set of git-tracked paths under ``.plan/`` in ``tree``.
 
@@ -121,20 +146,30 @@ def tracked_plan_paths(tree: str | Path) -> set[str] | None:
     exempt it — silently hiding the very edit the guards exist to surface. Reading
     HEAD as well makes the oracle answer "is this file part of the repository?".
 
-    The fail-closed contract is unchanged and keyed on the INDEX observation alone:
-    ``None`` is returned only when ``ls-files`` itself fails (not a git repository,
-    git unavailable, non-zero exit), and the caller treats ``None`` as "trackedness
-    unknown" and fails closed by retaining. A failing ``ls-tree`` is NOT an unusable
-    observation — a repository with no commits has no HEAD to resolve, which is a
-    legitimate state — so that branch falls back to the index answer rather than
-    discarding a usable one.
+    ``None`` — "trackedness unknown", which the caller resolves by retaining — is
+    returned on an unusable observation of EITHER half:
+
+    - ``ls-files`` fails (not a git repository, git unavailable, non-zero exit); or
+    - ``ls-tree`` fails in a repository that HAS a resolvable HEAD.
+
+    The second condition is why the HEAD half needs the :func:`_head_exists` probe.
+    ``_observe_z`` returns ``None`` for two different situations — "there is no
+    HEAD" and "the HEAD observation did not work" — and the branch cannot tell them
+    apart from that value alone. A repository with no commits legitimately has no
+    HEAD to resolve, and there the index answer is complete; an ``ls-tree`` that
+    fails against a HEAD which DOES resolve is an unusable observation, and
+    substituting the index answer for it resolves the failure in the fail-OPEN
+    direction. Concretely: a *staged deletion* of a committed ``.plan/`` file is
+    absent from the index, so an index-only answer classifies it untracked and
+    :func:`partition_plan_state_exemption` exempts it — hiding exactly the edit the
+    guards exist to surface, which is the failure this module was written to end.
+    The probe splits the two cases so the carve-out covers only the legitimate one.
 
     Args:
         tree: Working-tree / repository root to observe.
 
     Returns:
-        The tracked ``.plan/`` path set, or ``None`` on an unusable INDEX
-        observation.
+        The tracked ``.plan/`` path set, or ``None`` on an unusable observation.
     """
     index = _observe_z(tree, ['ls-files', '-z', '--', _PLAN_STATE_PREFIX])
     if index is None:
@@ -143,8 +178,13 @@ def tracked_plan_paths(tree: str | Path) -> set[str] | None:
         tree, ['ls-tree', '-r', '-z', '--name-only', 'HEAD', '--', _PLAN_STATE_PREFIX]
     )
     if head is None:
-        # No resolvable HEAD (a repository with no commits, a detached broken ref):
-        # the index answer is still usable, so keep it rather than failing closed.
+        if _head_exists(tree):
+            # HEAD resolves, yet the HEAD observation failed: the answer is
+            # unusable, not absent. Fail closed rather than silently narrowing
+            # trackedness to the index.
+            return None
+        # No HEAD at all (a repository with no commits): nothing is committed, so
+        # the index answer is the complete one and remains usable.
         return index
     return index | head
 

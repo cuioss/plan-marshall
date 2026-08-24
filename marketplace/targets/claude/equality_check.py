@@ -159,10 +159,9 @@ def _read_emitted_plugin_json(bundle_dir: Path, target_dir: Path) -> dict:
     ``.claude-plugin/plugin.json`` is canonical-only and not consulted
     here.
 
-    Every way the artifact can be unusable is refused HERE, because the caller's
-    contract is that this returns a mapping whose array fields are lists. Four
-    shapes reach that contract, and each is converted into
-    :class:`CorruptEmittedPluginJsonError`:
+    The caller's contract is that this returns a mapping whose array fields are
+    lists OF STRINGS. Five shapes fail that contract, and each is refused HERE,
+    converted into :class:`CorruptEmittedPluginJsonError`:
 
     1. the file cannot be READ — it is a directory, permissions deny it
        (``OSError``), or its bytes are not valid UTF-8 (``UnicodeDecodeError``,
@@ -171,9 +170,19 @@ def _read_emitted_plugin_json(bundle_dir: Path, target_dir: Path) -> dict:
     3. it decodes to something other than an object (``[]``, ``"x"``, ``null``,
        ``3``);
     4. it decodes to an object whose ``agents`` / ``commands`` / ``skills`` value
-       is not a list (``{"agents": 3}``).
+       is not a list (``{"agents": 3}``);
+    5. it decodes to an object whose ``agents`` / ``commands`` / ``skills`` value
+       IS a list but holds a non-string ELEMENT
+       (``{"agents": [{"path": "x"}]}``).
 
-    Shapes 1, 3 and 4 are the ones a decode-error-only guard misses, and they
+    Shape 5 is the one a container-only check misses: the value is a list, so the
+    ``isinstance`` test passes, and the element reaches
+    :func:`check_bundle`'s ``set(...)`` — where an unhashable element raises
+    ``TypeError``. Enumerating the shapes is not the same as covering them, and
+    "every way the artifact can be unusable" was previously claimed over a
+    strict subset; the list above is the enforced set, not an aspiration.
+
+    Shapes 1, 3, 4 and 5 are the ones a decode-error-only guard misses, and they
     surface identically: several frames away in :func:`check_bundle`, as an
     ``OSError`` / ``AttributeError`` / ``TypeError``.
     :func:`run_equality_check` catches only
@@ -201,11 +210,22 @@ def _read_emitted_plugin_json(bundle_dir: Path, target_dir: Path) -> dict:
         )
     for field_name in _ARRAY_FIELDS:
         value = parsed.get(field_name)
-        if value is not None and not isinstance(value, list):
+        if value is None:
+            continue
+        if not isinstance(value, list):
             raise CorruptEmittedPluginJsonError(
                 bundle_dir.name,
                 plugin_json,
                 f'declares {field_name!r} as {type(value).__name__}, not a list',
+            )
+        for index, element in enumerate(value):
+            if isinstance(element, str):
+                continue
+            raise CorruptEmittedPluginJsonError(
+                bundle_dir.name,
+                plugin_json,
+                f'declares {field_name!r}[{index}] as {type(element).__name__}, '
+                'not a string',
             )
     return parsed
 

@@ -56,7 +56,7 @@ from marketplace.targets.claude.source_fingerprint import (
     hash_objects,
 )
 from marketplace.targets.component_targets import validate_component_scopes
-from marketplace.targets.fs_safety import is_within, safe_rmtree
+from marketplace.targets.fs_safety import refuse_tree_overlap, safe_rmtree
 
 # Sentinel file written at the end of every successful emit. The
 # project-local ``sync-plugin-cache`` skill reads it to decide whether
@@ -134,9 +134,18 @@ def prune_removed_bundles(output_dir: Path, source_bundle_names: set[str]) -> li
     it as the guard is the mistake worth naming: every path passed to it is an
     immediate child of ``output_dir``, so the containment check it performs is
     satisfied by construction and can never refuse. What protects the tree is
-    the source-tree overlap refusal at the top of :meth:`ClaudeTarget.generate`
-    — the only check that fires when ``bundle_dirs`` is empty and this sweep is
-    therefore called with an empty ``source_bundle_names``.
+    :func:`marketplace.targets.fs_safety.refuse_tree_overlap` at the top of
+    :meth:`ClaudeTarget.generate` — the only check that fires when
+    ``bundle_dirs`` is empty and this sweep is therefore called with an empty
+    ``source_bundle_names``.
+
+    That refusal has to be SYMMETRIC to cover this sweep, and stating it as
+    "the only check that fires" is not the same as stating what it covers.
+    This sweep deletes an unnamed child of ``output_dir`` whichever tree the
+    source happens to be: when ``output_dir`` CONTAINS the source tree, the
+    source is one such child. A refusal keyed only on "output inside source"
+    is true of a case this sweep can reach and silent about the one it
+    destroys, so the check above tests both directions.
 
     Returns the directories pruned, in the order they were removed.
     """
@@ -203,22 +212,25 @@ class ClaudeTarget(TargetBase):
         # Emit mode: verbatim mirror + plugin.json regeneration.
         #
         # Refuse a destination overlapping the source tree BEFORE anything is
-        # created or deleted. ``emit_bundle_verbatim`` carries the same refusal,
-        # but it is reachable only from the per-bundle loop below, so an EMPTY
-        # ``bundle_dirs`` — what a ``marketplace_dir`` naming the wrong level
-        # produces, since no child of it then carries
+        # created or deleted. ``emit_bundle_verbatim`` carries a per-bundle
+        # refusal, but it is reachable only from the per-bundle loop below, so an
+        # EMPTY ``bundle_dirs`` — what a ``marketplace_dir`` naming the wrong
+        # level produces, since no child of it then carries
         # ``.claude-plugin/plugin.json`` — never runs it. ``prune_removed_bundles``
         # would then delete every child directory of ``output_dir`` except
         # ``.claude-plugin``, and ``safe_rmtree`` cannot object: each child is
         # inside ``output_dir`` by construction, so its containment check passes
-        # trivially. The sibling OpenCode emitter refuses the same overlap at the
-        # same point, for the same reason.
-        if is_within(output_dir, marketplace_dir):
-            raise ValueError(
-                f'Refusing to emit into {output_dir.resolve()}: it lies inside the source tree '
-                f'{marketplace_dir.resolve()} — the output directory must be a distinct build '
-                'location, not the marketplace source'
-            )
+        # trivially.
+        #
+        # The refusal is SYMMETRIC (:func:`refuse_tree_overlap`) because that
+        # prune sweep is destructive in whichever direction the two trees
+        # overlap. An ``output_dir`` that CONTAINS ``marketplace_dir`` reaches it
+        # on the same empty-``bundle_dirs`` path — and there the source tree is
+        # simply one more child of ``output_dir`` for the sweep to remove. A
+        # one-direction check passes that case cleanly. The sibling OpenCode
+        # emitter refuses the same overlap at the same point, through this same
+        # shared helper, so the two cannot drift apart again.
+        refuse_tree_overlap(output_dir, marketplace_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         for bundle_dir in bundle_dirs:

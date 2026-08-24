@@ -384,8 +384,11 @@ def test_a_scoped_emit_prunes_nothing(tmp_path: Path):
 # not save it: each child is inside ``output_dir`` by construction, so its
 # containment check passes trivially. The refusal therefore has to live at the
 # ``generate`` boundary, before the destination is created, which is where the
-# sibling OpenCode emitter puts it. Both halves are pinned — the overlap is
-# refused, and an empty source emitted somewhere else still runs.
+# sibling OpenCode emitter puts it. The refusal is UNDIRECTED: the sweep is just
+# as destructive when ``output_dir`` is the source's PARENT, because the source
+# tree is then one of the children it removes. Both directions are pinned, each
+# with the positive control that keeps a refuse-everything guard from passing
+# for the wrong reason.
 
 
 def test_generate_refuses_an_output_dir_inside_the_source_tree(tmp_path: Path):
@@ -424,6 +427,53 @@ def test_generate_allows_an_empty_source_when_the_output_is_distinct(tmp_path: P
 
     assert not orphan.exists(), 'a distinct output_dir must still be pruned'
     assert (output_dir / '.claude-plugin' / 'marketplace.json').is_file()
+
+
+def test_generate_refuses_an_output_dir_that_contains_the_source_tree(tmp_path: Path):
+    """The OTHER direction: an ``output_dir`` that is a PARENT of the source.
+
+    The refusal above keys on "output inside source". This case inverts it and
+    reaches the same empty-``bundle_dirs`` path: ``marketplace_dir`` names the
+    marketplace ROOT, whose children (``bundles/``, ``.claude-plugin/``) carry no
+    ``.claude-plugin/plugin.json``, so no bundle is discovered and the per-bundle
+    guard is never reached. ``prune_removed_bundles`` then walks every child of
+    ``output_dir`` with an empty keep-set — and the source tree is one of those
+    children. ``safe_rmtree`` cannot refuse it: it IS inside ``output_dir``,
+    which is the whole of the containment question it asks. A one-direction
+    guard passes this cleanly and the repository is deleted.
+    """
+    repo = tmp_path / 'repo'
+    marketplace_root = repo / 'marketplace'
+    _synthetic_marketplace(marketplace_root, ['alpha'])
+    source_plugin_json = marketplace_root / 'bundles' / 'alpha' / '.claude-plugin' / 'plugin.json'
+    assert source_plugin_json.is_file(), 'fixture precondition'
+
+    with pytest.raises(ValueError, match='source tree'):
+        ClaudeTarget().generate(marketplace_root, repo)
+
+    assert source_plugin_json.is_file(), 'the prune sweep destroyed the source tree'
+    assert (marketplace_root / 'bundles' / 'alpha' / 'agents' / 'alpha-agent.md').is_file()
+
+
+def test_generate_emits_into_a_disjoint_output_under_the_same_repo(tmp_path: Path):
+    """Matched positive control for the symmetric refusal — the REAL build layout.
+
+    ``target/claude/`` lives inside the same repository as
+    ``marketplace/bundles/``; the two are siblings, neither containing the other.
+    A guard widened until it refused any pair sharing an ancestor would satisfy
+    both negative halves above while breaking every actual emit, so the control
+    asserts a full emit still lands and the source is still there afterwards.
+    """
+    repo = tmp_path / 'repo'
+    marketplace = _synthetic_marketplace(repo / 'marketplace', ['alpha'])
+    output_dir = repo / 'target' / 'claude'
+
+    emitted = ClaudeTarget().generate(marketplace, output_dir)
+
+    assert emitted, 'a legitimate disjoint output must still emit'
+    assert (output_dir / 'alpha' / '.claude-plugin' / 'plugin.json').is_file()
+    assert (output_dir / 'alpha' / 'agents' / 'alpha-agent.md').is_file()
+    assert (marketplace / 'alpha' / '.claude-plugin' / 'plugin.json').is_file()
 
 
 def test_emit_marker_fingerprint_non_empty_for_real_worktree(tmp_path: Path):
