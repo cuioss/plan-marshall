@@ -1857,6 +1857,169 @@ class TestAtxHeadingShape:
         assert EXPECTED_SURFACE_HEADING_RE.match('## Expected Surface##') is None
 
 
+#: The heading-case variants a spec may legitimately use. Markdown does not make
+#: a heading's case significant, so each of these names the SAME section as the
+#: template casing — they are spellings, not different sections.
+_SURFACE_HEADING_CASES = ('## Expected Surface', '## expected surface', '## EXPECTED SURFACE')
+_CLAIM_HEADING_CASES = ('## Claim Labels', '## claim labels', '## CLAIM LABELS')
+
+
+def _spec_with_headings(
+    claim_heading: str,
+    surface_heading: str,
+    claim_lines: list,
+    surface_lines: list,
+) -> str:
+    """Render a spec whose two addressed headings are written verbatim.
+
+    ``_spec_text`` hard-codes the template casing, which is exactly the variable
+    under test here, so the two headings are caller-supplied instead.
+    """
+    lines = [
+        '# PLAN-NN: Fixture',
+        '',
+        '## Objective',
+        '',
+        'Fixture objective.',
+        '',
+        claim_heading,
+        '',
+        *claim_lines,
+        '',
+        surface_heading,
+        '',
+        *surface_lines,
+    ]
+    return '\n'.join(lines) + '\n'
+
+
+class TestHeadingCaseIsNotSectionIdentity:
+    """A case-variant heading names the SAME section as its template-cased twin.
+
+    The scanners matched the two addressed headings case-SENSITIVELY, so a spec
+    written ``## expected surface`` resolved to an empty surface and an empty
+    claim list. That is the confident-absence shape: nothing errors, the spec is
+    still counted in ``specs_scanned``, and a zero overlap reads as "no
+    collision" when the truth is "never looked". Each control below asserts the
+    OBSERVED EVIDENCE — the resolved path set, the parsed claim list, and the
+    population size — because a bare pass/fail cannot tell those two apart.
+    """
+
+    # --- Expected Surface: positive control ---------------------------------
+
+    @pytest.mark.parametrize('surface_heading', _SURFACE_HEADING_CASES)
+    def test_a_case_variant_surface_heading_yields_the_same_declared_paths(
+        self, surface_heading
+    ):
+        declared = (SHARED_PATH, OTHER_PATH)
+        template = _spec_with_headings(
+            '## Claim Labels', '## Expected Surface', [_DEFAULT_CLAIM], _surface(*declared)
+        )
+        variant = _spec_with_headings(
+            '## Claim Labels', surface_heading, [_DEFAULT_CLAIM], _surface(*declared)
+        )
+
+        template_paths = expected_surface_paths(template)
+        variant_paths = expected_surface_paths(variant)
+
+        # The population the assertion was computed over, stated beside it: a
+        # two-path surface, so an empty result is a measured miss, not an
+        # uninteresting "there was nothing to find".
+        assert len(template_paths) == len(declared), (
+            f'{len(declared)} path(s) declared, {len(template_paths)} extracted '
+            'from the TEMPLATE-cased spec — the comparand itself is broken'
+        )
+        assert variant_paths == set(declared), (
+            f'{len(declared)} path(s) declared under {surface_heading!r}, '
+            f'{len(variant_paths)} extracted'
+        )
+        assert variant_paths == template_paths
+
+    # --- Expected Surface: negative control ----------------------------------
+
+    def test_a_spec_that_declares_no_surface_section_still_resolves_to_empty(self):
+        # Matched negative control. Case-blindness must not manufacture a
+        # section: a spec with genuinely no Expected Surface heading resolves to
+        # the empty set, and that zero is the CORRECT answer here.
+        lines = [
+            '# PLAN-NN: Fixture',
+            '',
+            '## Objective',
+            '',
+            f'Background reading: {OUTSIDE_PATH} explains the seam.',
+            '',
+            '## Claim Labels',
+            '',
+            _DEFAULT_CLAIM,
+        ]
+        text = '\n'.join(lines) + '\n'
+
+        paths = expected_surface_paths(text)
+
+        assert paths == set()
+        # The path IS present in the document — so the empty result is the
+        # section boundary holding, not the extractor failing to see anything.
+        assert OUTSIDE_PATH in text
+
+    def test_a_near_miss_heading_that_is_not_a_case_variant_is_still_rejected(self):
+        # Case-blindness is not word-blindness: a DIFFERENT heading text must
+        # still fail to open the section, or the widening went too far.
+        text = _spec_with_headings(
+            '## Claim Labels',
+            '## Expected Surfaces',
+            [_DEFAULT_CLAIM],
+            _surface(SHARED_PATH, OTHER_PATH),
+        )
+
+        assert expected_surface_paths(text) == set()
+
+    # --- Claim Labels: the symmetric peer pair -------------------------------
+
+    @pytest.mark.parametrize('claim_heading', _CLAIM_HEADING_CASES)
+    def test_a_case_variant_claim_heading_yields_the_same_parsed_claims(self, claim_heading):
+        claim_lines = [
+            '- OBSERVED: first claim — read at `a.py` § `f`',
+            '- OBSERVED: second claim — read at `b.py` § `g`',
+        ]
+        variant = _spec_with_headings(
+            claim_heading, '## Expected Surface', claim_lines, list(_DEFAULT_SURFACE)
+        )
+
+        claims = parse_claims(variant.splitlines())
+
+        assert len(claims) == len(claim_lines), (
+            f'{len(claim_lines)} claim(s) declared under {claim_heading!r}, '
+            f'{len(claims)} parsed'
+        )
+        assert [claim['text'] for claim in claims] == [
+            'OBSERVED: first claim — read at `a.py` § `f`',
+            'OBSERVED: second claim — read at `b.py` § `g`',
+        ]
+
+    def test_a_spec_that_declares_no_claim_section_still_parses_no_claims(self):
+        # Matched negative control for the claim peer.
+        lines = [
+            '# PLAN-NN: Fixture',
+            '',
+            '## Objective',
+            '',
+            'Fixture objective.',
+            '',
+            '## Expected Surface',
+            '',
+            *_DEFAULT_SURFACE,
+        ]
+
+        assert parse_claims(lines) == []
+
+    def test_the_section_span_locates_a_case_variant_heading(self):
+        # The shared primitive both consumers ride, pinned directly: the span is
+        # resolved rather than the (-1, -1) "absent" pair.
+        lines = ['## expected surface', '', SHARED_PATH, '', '## Objective']
+
+        assert section_span(lines, EXPECTED_SURFACE_HEADING_RE) != (-1, -1)
+
+
 class TestIndentedDelimiterExpectedSurface:
     """Consumer-level proof: the declared path set survives the indented line."""
 

@@ -380,14 +380,19 @@ _SURFACE_JOIN = '; '
 #: Honoured: the 0-3 space indent bound; the 1-6 character ``#`` run; the rule
 #: that the run must be followed by a space, a tab, or the end of the line — so
 #: ``#hashtag`` is not a heading, a seven-``#`` run is not one, and a bare
-#: ``##`` line IS one; and the optional trailing closing ``#`` sequence on the
-#: two addressed headings.
+#: ``##`` line IS one; the optional trailing closing ``#`` sequence on the
+#: two addressed headings; and the CASE of the two addressed heading titles —
+#: both are matched case-insensitively, so ``## expected surface`` and
+#: ``## EXPECTED SURFACE`` are recognized exactly as ``## Expected Surface``
+#: is. A case variant is a spelling of the same heading, not a different
+#: section, and treating it as absent would report a confident empty section
+#: for a document that declared one.
 #: NOT honoured: setext headings, per the block note above. A setext underline
 #: therefore fails to terminate a section, which OVER-extends the body rather
 #: than truncating it — the direction that admits extra paths and extra claims
 #: rather than silently dropping declared ones.
-CLAIM_LABELS_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+Claim Labels(?:[ \t]+#+)?[ \t]*$')
-EXPECTED_SURFACE_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+Expected Surface(?:[ \t]+#+)?[ \t]*$')
+CLAIM_LABELS_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+Claim Labels(?:[ \t]+#+)?[ \t]*$', re.IGNORECASE)
+EXPECTED_SURFACE_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+Expected Surface(?:[ \t]+#+)?[ \t]*$', re.IGNORECASE)
 _HEADING_RE = re.compile(r'^ {0,3}#{1,6}(?:[ \t]|$)')
 
 #: A ``- `` list bullet, with its leading whitespace captured as ``indent``.
@@ -2072,9 +2077,13 @@ def _build_ordered_queue(status_doc: dict[str, Any], root: Path) -> str:
 def _marker_indices(lines: list[str], name: str) -> tuple[int, int]:
     """Return the ``(begin, end)`` line indices of one GENERATED block's markers.
 
-    ``(-1, -1)`` when either marker is absent, or the end precedes the begin. The
-    match is the WHOLE stripped line equalling the marker, so a marker quoted
-    mid-sentence is never mistaken for the real one.
+    Two shapes are returned when the block is not fully delimited: ``(-1, -1)``
+    when the begin marker is absent, and ``(begin_idx, -1)`` when a begin marker
+    is present but no matching end marker follows it. The end is only ever
+    searched for AFTER the begin, so an end marker that precedes the begin is not
+    a distinct case — it is simply not seen. The match is the WHOLE stripped line
+    equalling the marker, so a marker quoted mid-sentence is never mistaken for
+    the real one.
     """
     begin = _begin_marker(name)
     end = _end_marker(name)
