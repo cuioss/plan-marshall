@@ -545,8 +545,16 @@ _FAILED_READ_CONDITION = re.compile(
 #: within one unbroken run of a unit ahead of the literal ``n/a`` code span, so
 #: prose that merely NAMES the token ("the exemption `n/a` gets at those two")
 #: is not read as an instruction to write it.
+#:
+#: The leading negative lookbehinds carry the NEGATION half: an instruction and a
+#: PROHIBITION are otherwise indistinguishable to this pattern, so "Never write
+#: `n/a` for a value that could not be read" — a CORRECT sentence that the
+#: producer docs state verbatim — would be reported as the very defect it
+#: forbids. Relying on such a sentence also naming ``unknown`` to earn the
+#: contrast exemption is an accident, not negation handling: consolidating that
+#: trailing clause away would turn the build red against correct prose.
 _WRITE_THE_ANSWERED_TOKEN = re.compile(
-    r'(?:writ|degrad|sanction)\w*[^.`]{0,60}`n/a`',
+    r'(?<!never )(?<!not )(?:writ|degrad|sanction)\w*[^.`]{0,60}`n/a`',
     re.IGNORECASE,
 )
 
@@ -565,6 +573,11 @@ def _prose_units(text: str) -> list[str]:
     Error Handling table states its CONDITION and its ACTION in two cells of the
     same row, so splitting a row on its pipes would separate exactly the pair
     this guard exists to catch.
+
+    For the same reason the sentence split refuses to cut at ``e.g.``, ``i.e.``
+    and ``cf.``: an abbreviation's period is not a sentence end, and cutting
+    there can strand a failed-read CONDITION in one unit and its write-``n/a``
+    ACTION in the next, letting a genuine offender through unseen.
     """
     units: list[str] = []
     for block in re.split(r'\n\s*\n', text):
@@ -575,7 +588,8 @@ def _prose_units(text: str) -> list[str]:
             units.extend(lines)
             continue
         joined = re.sub(r'\s+', ' ', ' '.join(lines))
-        units.extend(part for part in re.split(r'(?<=[.!?]) ', joined) if part.strip())
+        split_at = r'(?<=[.!?])(?<!e\.g\.)(?<!i\.e\.)(?<!cf\.) '
+        units.extend(part for part in re.split(split_at, joined) if part.strip())
     return units
 
 
@@ -745,6 +759,51 @@ class TestProducerRoutesConditionsToTokens:
                 and not _COULD_NOT_READ_TOKEN.search(unit)
             )
             assert not flagged, f'the scan wrongly flags a sanctioned unit: {unit}'
+
+    def test_a_prohibition_is_not_read_as_an_instruction(self):
+        """A PROHIBITION of the defect must not be flagged AS the defect.
+
+        The producer docs state this rule verbatim. It carries a failed-read
+        condition and the literal ``n/a``, so only the write-verb's negation
+        separates it from a real offender. The control deliberately OMITS the
+        trailing clause naming ``unknown``: with that clause present the sentence
+        earns the contrast exemption and survives for a reason unrelated to
+        negation, which would let this control pass over an unfixed predicate.
+        """
+        prohibition = 'Never write `n/a` for a value that could not be read.'
+
+        flagged = bool(
+            _FAILED_READ_CONDITION.search(prohibition)
+            and _WRITE_THE_ANSWERED_TOKEN.search(prohibition)
+            and not _COULD_NOT_READ_TOKEN.search(prohibition)
+        )
+        assert not flagged, (
+            'the scan reads a PROHIBITION of the defect as an INSTRUCTION to commit it: '
+            f'{prohibition}'
+        )
+
+    def test_an_abbreviation_does_not_split_a_condition_from_its_action(self):
+        """An offender must not escape by carrying an abbreviation mid-sentence.
+
+        Condition-and-action co-location inside ONE unit is this guard's entire
+        mechanism, so any split that separates the pair is an escape hatch. An
+        abbreviation's period is not a sentence end; cutting there would leave
+        the failed-read condition in one unit and the write-``n/a`` action in the
+        next, and the offender predicate would match neither half.
+        """
+        offender = 'A read that fails, i.e. the source errored, is written as `n/a`.'
+
+        units = _prose_units(offender)
+        flagged = any(
+            _FAILED_READ_CONDITION.search(unit)
+            and _WRITE_THE_ANSWERED_TOKEN.search(unit)
+            and not _COULD_NOT_READ_TOKEN.search(unit)
+            for unit in units
+        )
+        assert flagged, (
+            'the sentence splitter cut at an abbreviation and separated the failed-read '
+            f'CONDITION from its write-`n/a` ACTION, so the offender escaped. Units: {units}'
+        )
 
 
 # =============================================================================
