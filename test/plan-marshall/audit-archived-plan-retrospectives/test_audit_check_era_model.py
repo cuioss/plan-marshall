@@ -128,27 +128,50 @@ def test_pending_sentinel_is_in_the_form_the_finalize_step_resolves():
     This asserts the fill WOULD fire, against the executor's own matcher rather
     than a second copy of the token, so a change to what "unresolved" means breaks
     here instead of silently at finalize.
+
+    ⛔ **The pair has TWO legitimate states and this test spans both**, because
+    ``project:finalize-step-era-stamp-fill`` runs at ``order: 21`` of this repo's
+    own finalize — so from that point onward, including in every landed commit on
+    ``main``, the sentinel is RESOLVED. A test that asserted only the unresolved
+    state would pin a state its own finalize destroys, and would be red on the very
+    branch that authored it. Each arm below carries its own falsifiable assertion;
+    neither is a bare early return, and the mixed state (a resolved boundary beside
+    a surviving sentinel, or the reverse) fails in both.
     """
     era_fill = _load_era_fill()
+    token = era_fill.PENDING_TOKEN.strip('"')
+    boundary = audit.CHECK_ERA['sequence-and-build-minimality']
+    sources = {path.name: path.read_text(encoding='utf-8') for path in (_AUDIT_SOURCE, _MIRROR_SOURCE)}
+    carriers = {name: era_fill.PENDING_TOKEN in text for name, text in sources.items()}
 
-    # The map value IS the matcher's token, unquoted. Derived from PENDING_TOKEN
-    # rather than restated: a second spelling of the sentinel in this file would
-    # both duplicate the contract and change the lock-step count asserted below.
-    assert audit.CHECK_ERA['sequence-and-build-minimality'] == era_fill.PENDING_TOKEN.strip('"')
+    if boundary == token:
+        # UNRESOLVED — the fill has not run against this tree yet. Assert it WOULD
+        # fire, which is the property that cannot be recovered once it has.
+        for name, text in sources.items():
+            assert carriers[name], (
+                f'{name} carries no map-value sentinel while the boundary is still {token}, so '
+                'project:finalize-step-era-stamp-fill will report skipped:true and record done '
+                'without resolving anything. A prose-only mention is not a sentinel.'
+            )
+            filled, count = era_fill.fill_pending_token(text, '#1234')
+            assert count >= 1, f'{name}: the matcher found no sentinel to fill.'
+            assert era_fill.PENDING_TOKEN not in filled, (
+                f'{name}: a sentinel survived the fill, so the resolution is not total.'
+            )
+            assert '"#1234"' in filled, f'{name}: the fill did not write the resolved PR value.'
+        return
 
-    for path in (_AUDIT_SOURCE, _MIRROR_SOURCE):
-        text = path.read_text(encoding='utf-8')
-        assert era_fill.PENDING_TOKEN in text, (
-            f'{path.name} carries no {era_fill.PENDING_TOKEN} map-value sentinel, so '
-            'project:finalize-step-era-stamp-fill will report skipped:true and record done '
-            'without resolving anything. A prose-only mention is not a sentinel.'
-        )
-        filled, count = era_fill.fill_pending_token(text, '#1234')
-        assert count >= 1, f'{path.name}: the matcher found no sentinel to fill.'
-        assert era_fill.PENDING_TOKEN not in filled, (
-            f'{path.name}: a sentinel survived the fill, so the resolution is not total.'
-        )
-        assert '"#1234"' in filled, f'{path.name}: the fill did not write the resolved PR value.'
+    # RESOLVED — the finalize step already ran. "Would it fire" is no longer
+    # falsifiable here, so assert what still is: the resolution was TOTAL, and it
+    # produced a real PR token rather than some third value.
+    assert re.fullmatch(r'#\d+', boundary), (
+        f'boundary {boundary!r} is neither the {token} sentinel nor a resolved #NNN token — '
+        'the era stamp is in a state no writer produces.'
+    )
+    assert not any(carriers.values()), (
+        f'the boundary resolved to {boundary} but a sentinel survives in {carriers} — the fill '
+        'was partial, so the pair no longer moves in lock-step.'
+    )
 
 
 def test_pending_sentinel_count_is_lock_step_across_the_pair():
@@ -157,17 +180,31 @@ def test_pending_sentinel_count_is_lock_step_across_the_pair():
     The two files are rewritten together in one pass. If one carries a sentinel the
     other does not, the fill resolves them unevenly and the mirror stops mirroring
     — the drift this pair exists to prevent, arriving through the fix itself.
+
+    Lock-step is the invariant in BOTH states: equal counts before the fill (one
+    each) and equal counts after it (zero each). A zero pair is therefore NOT an
+    error — but it is only legitimate when the fill is what emptied it, so the zero
+    arm is corroborated against the resolved boundary rather than accepted on its
+    own. Without that corroboration a pair that simply lost its sentinel — never
+    written, or deleted by hand — would read as a clean lock-step pass.
     """
     era_fill = _load_era_fill()
     counts = {
         path.name: path.read_text(encoding='utf-8').count(era_fill.PENDING_TOKEN)
         for path in (_AUDIT_SOURCE, _MIRROR_SOURCE)
     }
-    assert all(c > 0 for c in counts.values()), f'a file carries no sentinel: {counts}'
     assert len(set(counts.values())) == 1, (
         f'audit.py and its mirror carry different sentinel counts: {counts}. The pair must '
         'move in lock-step.'
     )
+
+    if not any(counts.values()):
+        boundary = audit.CHECK_ERA['sequence-and-build-minimality']
+        assert re.fullmatch(r'#\d+', boundary), (
+            f'both files carry zero sentinels while the boundary is {boundary!r} — the sentinel '
+            'left the pair without project:finalize-step-era-stamp-fill resolving it, so the '
+            'equal-count pass says nothing about lock-step.'
+        )
 
 
 def test_plan8_reworked_checks_carry_pr_pending_boundary():
