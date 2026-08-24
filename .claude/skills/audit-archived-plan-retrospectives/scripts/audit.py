@@ -410,7 +410,7 @@ CHECK_ERA: dict[str, str] = {
     # three turns a former confident zero into an explicit not-measured, so rows
     # computed under the old semantics are NOT datable against #1224: pre-boundary
     # rows read as era-expected and post-boundary rows as the current truth.
-    "sequence-and-build-minimality": "PR-PENDING",
+    "sequence-and-build-minimality": "#1342",
     # token-economics — PR-PENDING (plan-8's boundary, a placeholder resolved to
     # the real PR at finalize by project:finalize-step-era-stamp-fill AFTER
     # create-pr): plan-8's finalize-wait consolidation changes the finalize_heavy

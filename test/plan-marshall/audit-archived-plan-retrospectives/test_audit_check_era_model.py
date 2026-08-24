@@ -108,7 +108,7 @@ def test_sequence_build_minimality_carries_this_plan_pr_boundary():
     # This is the co-changing mirror of the audit.py CHECK_ERA constant — the pair
     # changes together and is the designated acceptance for era-fill firing from a
     # composed manifest.
-    assert audit.CHECK_ERA["sequence-and-build-minimality"] == "PR-PENDING"
+    assert audit.CHECK_ERA["sequence-and-build-minimality"] == "#1342"
 
 
 def test_pending_sentinel_is_in_the_form_the_finalize_step_resolves():
