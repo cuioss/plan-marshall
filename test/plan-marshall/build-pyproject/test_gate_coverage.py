@@ -487,15 +487,27 @@ def test_a_degraded_dimension_is_not_also_reported_as_uncovered():
 
     Listing it as uncovered too would report the same gap twice under two different
     names, and would wrongly imply the gate does not perform that analysis at all.
+
+    The scope arguments are deliberately UNEQUAL, and the dimension withheld from
+    ``could_run`` is deliberately the SAME one that is degraded. Passing
+    ``ALL_DIMENSIONS`` for both makes every set difference empty before the
+    boundary is consulted, so the assertions below would hold no matter what
+    ``coverage_gaps`` did — deleting the ``record_degraded`` call this test is
+    NAMED for would leave it green. Withholding some OTHER dimension is not enough
+    either: the assertions are about ``mypy(production)``, which would be absent
+    from a difference it was never in. Only withholding ``mypy(production)``
+    itself puts it in ``not_at_this_scope`` *unless* ``attempted`` subtracts it —
+    which is precisely the behaviour under test.
     """
+    degraded = 'mypy(production)'
     boundary = CoverageBoundary()
     boundary.record_checked('ruff [marketplace/bundles]')
-    boundary.record_degraded('mypy(production)', 'freshness suspect')
+    boundary.record_degraded(degraded, 'freshness suspect')
 
-    gaps = coverage_gaps(boundary, ALL_DIMENSIONS, ALL_DIMENSIONS)
+    gaps = coverage_gaps(boundary, ALL_DIMENSIONS - {degraded}, ALL_DIMENSIONS)
 
-    assert 'mypy(production)' not in gaps.not_at_this_scope
-    assert 'mypy(production)' not in gaps.not_by_this_gate
+    assert degraded not in gaps.not_at_this_scope
+    assert degraded not in gaps.not_by_this_gate
 
 
 def test_an_undeclared_scope_renders_an_explicit_unknown_not_a_clean_list():

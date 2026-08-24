@@ -19,7 +19,7 @@ marketplace/targets/
 ├── generate.py                   # CLI entry point
 ├── body_transform_engine.py      # Target-shared data-driven body rewrites
 ├── component_targets.py          # `targets:` frontmatter scope filter
-├── fs_safety.py                  # is_within / safe_rmtree containment primitives
+├── fs_safety.py                  # Containment primitives for destructive emits
 ├── claude/                       # Verbatim mirror + plugin.json + marketplace.json
 │   ├── __init__.py               # Registers ClaudeTarget
 │   ├── target.py                 # ClaudeTarget(TargetBase) + removed-bundle prune
