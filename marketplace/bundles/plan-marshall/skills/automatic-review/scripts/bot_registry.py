@@ -299,12 +299,21 @@ class BotRegistry:
         ``automatic-review/standards/bot-participation-contract.md`` § "Detecting a
         refusal".
 
-        An empty list is the FAIL-CLOSED default: a bot with no declared refusal
-        shape is never *claimed* to have refused. Its non-participation resolves to
-        ``absent`` / ``in_progress`` instead, because a refusal verdict is only ever
-        asserted on positive evidence. The structural last-resort recognizer
-        (``_github_pr._is_rate_limit_notice``) still covers an unregistered bot or a
-        phrasing not yet filed here; neither layer is a superset of the other.
+        An empty list is the FAIL-CLOSED default for THIS arm: a bot with no declared
+        refusal shape is never *claimed* to have refused on the strength of a pattern
+        it never declared, because a refusal verdict is only ever asserted on
+        positive evidence.
+
+        It is not, however, the whole of that bot's recognition. Refusal recognition
+        is a STACK of independent arms, none a superset of another, and this field
+        feeds only the first of them — the other arms still cover what this one
+        cannot: a notice-shaped body from an unregistered or renamed bot, and a
+        rewording filed nowhere yet. See ``_github_pr.REFUSAL_LAYERS`` for the arms
+        currently defined; that tuple is the single place they are named, so a bot
+        declaring an empty list here inherits every arm added there with no edit to
+        this record. A body no arm recognises at all is reported as an unrecognised
+        refusal rather than silently filed as review feedback, so a bot resting
+        wholly on the later arms is still never credited with a review it declined.
         """
         value = self._by_kind.get(bot_kind, {}).get('refusal_patterns', [])
         return list(value) if isinstance(value, list) else []

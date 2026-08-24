@@ -11,8 +11,9 @@ The provider surface is exactly two pure verbs (plus the raw ``fetch-comments``)
 
 These tests cover the producer-side pre-filter helper, the fetch_findings flow
 (with the body quarantined in raw_input and structured metadata in detail), the
-two-layer classification of reviewer-bot REFUSAL notices (registry data layer
-plus the structural last-resort recognizer), the fail-loud unconfigured signal,
+classification of reviewer-bot REFUSAL notices across the arms of the
+recognition stack (``_github_pr.REFUSAL_LAYERS`` names them), the fail-loud
+unconfigured signal,
 the hash_id-keyed post_responses respond loop, the ``--project-dir`` plumbing,
 and the CLI surface contract (the retired ``triage`` / ``triage-batch`` /
 ``comments-stage`` subcommands MUST be gone).
@@ -1054,21 +1055,28 @@ class TestPerBotIgnoreFilter:
 # Treating a refusal as noise is what let a PR whose every required reviewer refused
 # report a clean, complete review with zero review coverage.
 #
-# Recognition goes through ``_github_pr._is_refusal_notice``, where two layers
-# cooperate — the split is the whole point of this section:
+# Recognition runs through a STACK of independent arms — that they are separate
+# is the whole point of this section. ``_github_pr.REFUSAL_LAYERS`` is the single
+# place the arms are named; the ones exercised here are:
 #
-#   - DATA LAYER (primary) — a REGISTERED bot's OBSERVED refusal text is a
+#   - DATA ARM (primary) — a REGISTERED bot's OBSERVED refusal text is a
 #     literal marker in that bot's ``automatic-review/standards/{bot_kind}.md``
 #     ``refusal_patterns``, applied bot-scoped via the resolved ``bot_kind``.
 #     Deliberately NOT ``ignore_patterns``, which lists the routine sections of a
 #     *successful* review.
-#   - STRUCTURAL LAYER (last resort) — ``_is_rate_limit_notice`` recognizes an
+#   - STRUCTURAL ARM — ``_is_rate_limit_notice`` recognizes an
 #     unknown/unregistered bot's notice, or a phrasing not yet captured as data,
 #     by its shape (a limit-exceeded statement paired with a notice shape).
+#   - ENUMERATIVE ARM — ``_is_unrecognised_refusal`` recognizes that a body no
+#     earlier arm matched is nonetheless not review feedback. It runs at a
+#     DIFFERENT pipeline position: after the per-bot ``ignore_patterns`` noise
+#     filter, never inside ``_is_refusal_notice``.
 #
-# Neither layer is a superset of the other. The #1014 Sourcery refusal below is
-# the proof: it is invisible to the structural recognizer (asserted), so ONLY the
-# registry marker recognizes it.
+# No arm is a superset of another, and the list is open — a further arm is added
+# to ``REFUSAL_LAYERS`` and named here, never by correcting a count. The #1014
+# Sourcery refusal below is the proof that the arms are genuinely independent: it
+# is invisible to the structural recognizer (asserted), so ONLY the registry
+# marker recognizes it.
 #
 # Every fixture body uses the FLATTENED single-line shape — ``fetch_pr_comments_data``
 # collapses each body's newlines to spaces before any detector runs (the same
@@ -1126,7 +1134,11 @@ _GENUINE_REVIEW_MENTIONING_A_LIMIT = (
 
 
 class TestRefusalNoticeProducerFilter:
-    """Every reviewer bot's refusal is RECOGNIZED as a refusal — by data or by shape.
+    """Every reviewer bot's refusal is RECOGNIZED as a refusal by some arm of the stack.
+
+    The arms consulted at THIS position are the registry-data and structural ones;
+    the enumerative arm runs later in the pipeline and is exercised separately in
+    ``TestUnrecognisedRefusalPredicate``.
 
     The recognizer under test is ``_is_refusal_notice``, never ``_is_obvious_noise``.
     That separation is the contract: ``_is_obvious_noise`` must NOT recognize a
@@ -1207,9 +1219,11 @@ class TestRefusalNoticeProducerFilter:
     def test_genuine_review_mentioning_a_limit_is_neither_refusal_nor_noise(self):
         """A substantive review that merely mentions a limit survives both predicates.
 
-        Precision guard for both layers: no registry marker matches, and the
+        Precision guard for every arm of the stack: no registry marker matches, the
         structural recognizer sees a review-voiced "exceeds" with no notice shape,
-        so the comment survives the pre-filter and becomes a finding.
+        and the enumerative arm declines it too (asserted in
+        ``TestUnrecognisedRefusalPredicate``), so the comment survives the
+        pre-filter and becomes a finding.
         """
         from _github_pr import _is_rate_limit_notice, _is_refusal_notice
 
@@ -1335,6 +1349,242 @@ class TestRefusalNoticeProducerFilter:
         ]
 
         assert _detect_rate_limited_bots(comments) == []
+
+
+# =============================================================================
+# The shared layer vocabulary + the enumerative arm (_is_unrecognised_refusal)
+# =============================================================================
+#
+# The vocabulary that NAMES the arms has exactly one definition site
+# (``_github_pr.REFUSAL_LAYERS``); ``github_re_review`` and the ``fetch_findings``
+# producer both read it from there. These tests derive every population they
+# iterate FROM that constant and publish the size they iterated, so a vocabulary
+# that lost a member fails here instead of silently shrinking the loop.
+#
+# The enumerative arm ships INERT: no threshold was derivable from the finding
+# corpus (0 pr-comment findings over 1 plan), so
+# ``UNRECOGNISED_REFUSAL_MAX_CHARS`` is ``None`` and the arm never fires. Tests
+# that exercise the firing path set a threshold explicitly; the inert path is
+# asserted at the SHIPPED value.
+
+# A reworded refusal: notice-voiced, but matching no registry marker and lacking
+# the "exceeded/reached/hit" + notice-shape conjunction the structural arm needs.
+_REWORDED_REFUSAL = 'Skipping this one for now.'
+
+# The same length class, but carrying a code anchor — a genuine short review.
+_SHORT_REVIEW_WITH_ANCHOR = 'Guard the bound at `src/Idx.java:12`.'
+
+
+class TestRefusalLayerVocabulary:
+    """The layer vocabulary is ONE shared object, and its members are stable."""
+
+    def test_definition_site_is_the_shared_refusal_module(self):
+        """``_github_pr`` is where the vocabulary is DEFINED, beside the recognisers.
+
+        Both refusal consumers import it from here rather than declaring their own
+        copy. That each consumer actually reads THIS object (identity, not equality
+        — a parallel vocabulary would compare equal while drifting on the next edit)
+        is asserted in each consumer's own suite: the re-review path in
+        ``test_re_review_strategy.py``, the producer path in ``test_github_pr.py``.
+        """
+        import _github_pr
+
+        assert isinstance(_github_pr.REFUSAL_LAYERS, tuple)
+        # Defined in this module, not re-exported from somewhere else.
+        assert _github_pr.REFUSAL_LAYERS.__class__ is tuple
+        assert _github_pr.REFUSAL_LAYER_ENUMERATIVE in _github_pr.REFUSAL_LAYERS
+
+    def test_preexisting_layer_values_keep_their_exact_spellings(self):
+        """The two pre-existing values are byte-identical to their former inline literals.
+
+        Read from the constants rather than restated, so this asserts the shipped
+        value rather than re-declaring it.
+        """
+        import _github_pr
+
+        assert _github_pr.REFUSAL_LAYER_REGISTRY == 'registry_refusal_patterns'
+        assert _github_pr.REFUSAL_LAYER_STRUCTURAL == 'structural_fallback'
+
+    def test_every_declared_layer_is_a_distinct_non_empty_string(self):
+        """The vocabulary's population is derived from the constant and published.
+
+        A population read from the constant cannot pass vacuously over an empty or
+        shrunken vocabulary: the size is asserted against the distinct-member count
+        AND against a floor naming the arms this suite knows must exist.
+        """
+        import _github_pr
+
+        layers = _github_pr.REFUSAL_LAYERS
+        population_size = len(layers)
+        # Published so a shrunken vocabulary is visible in the failure message.
+        assert population_size >= 3, f'layer vocabulary shrank to {population_size}: {layers}'
+        assert all(isinstance(layer, str) and layer for layer in layers), layers
+        assert len(set(layers)) == population_size, f'duplicate layer members in {layers}'
+        # Each named constant is a MEMBER of the iterated population, so a constant
+        # that drifted out of the tuple fails rather than being silently unused.
+        for member in (
+            _github_pr.REFUSAL_LAYER_REGISTRY,
+            _github_pr.REFUSAL_LAYER_STRUCTURAL,
+            _github_pr.REFUSAL_LAYER_ENUMERATIVE,
+        ):
+            assert member in layers, (member, layers)
+
+    def test_enumerative_member_is_distinct_from_the_two_pre_existing_ones(self):
+        """The third member is genuinely new — it does not alias either existing value."""
+        import _github_pr
+
+        assert _github_pr.REFUSAL_LAYER_ENUMERATIVE not in (
+            _github_pr.REFUSAL_LAYER_REGISTRY,
+            _github_pr.REFUSAL_LAYER_STRUCTURAL,
+        )
+
+
+class TestUnrecognisedRefusalPredicate:
+    """``_is_unrecognised_refusal`` recognises a refusal no earlier arm matched.
+
+    Every positive case below has a matched negative control, so no assertion can
+    pass vacuously.
+    """
+
+    def test_ships_inert_because_no_threshold_was_derived(self):
+        """At the SHIPPED value the arm never fires — for any input.
+
+        This is the fail-safe the whole design rests on: D1's corpus yielded no
+        genuine review comment, so no character bound is derivable, and an arm that
+        errs in the merge-BLOCKING direction must not fire on a bound nobody
+        measured.
+        """
+        import _github_pr
+
+        assert _github_pr.UNRECOGNISED_REFUSAL_MAX_CHARS is None
+        for body in (
+            _REWORDED_REFUSAL,
+            _SHORT_REVIEW_WITH_ANCHOR,
+            _GENUINE_REVIEW_MENTIONING_A_LIMIT,
+            _SOURCERY_1014_REFUSAL,
+        ):
+            for bot_kind in ('coderabbit', 'sourcery', 'pr-agent', None):
+                assert not _github_pr._is_unrecognised_refusal(body, bot_kind), (bot_kind, body[:40])
+
+    def test_fires_on_a_short_anchorless_body_from_a_registered_bot(self, monkeypatch):
+        """The positive case — with a threshold available, the arm recognises the rewording."""
+        import _github_pr
+
+        monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 200)
+
+        # Neither earlier arm sees it — that is what makes it "unrecognised".
+        assert not _github_pr._is_refusal_notice(_REWORDED_REFUSAL, 'pr-agent')
+        assert _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'pr-agent')
+
+    def test_declines_a_body_carrying_a_code_anchor_however_short(self, monkeypatch):
+        """Matched negative control for the positive case above: an anchor vetoes the arm.
+
+        The control body is SHORTER than the threshold and authored by the same
+        registered bot, so length and authorship are held constant and the code
+        anchor is the only difference.
+        """
+        import _github_pr
+
+        monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 200)
+
+        assert len(_SHORT_REVIEW_WITH_ANCHOR) < 200
+        assert not _github_pr._is_unrecognised_refusal(_SHORT_REVIEW_WITH_ANCHOR, 'pr-agent')
+
+    def test_declines_a_human_authored_body(self, monkeypatch):
+        """An unresolvable / unregistered author is never an unrecognised refusal.
+
+        Matched against the positive case: the SAME body that fires for a registered
+        bot must not fire for a human.
+        """
+        import _github_pr
+
+        monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 200)
+
+        assert _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'pr-agent')
+        assert not _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, None)
+        assert not _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'not-a-registered-bot')
+
+    def test_declines_a_bots_own_declared_clean_review_text(self, monkeypatch):
+        """The false-positive control the ordering decision exists to protect.
+
+        The bodies are READ FROM the bot's own registry ``ignore_patterns`` rather
+        than hand-copied, so the assertion tracks the registry rather than a literal
+        that could drift out of step with it. Each such marker is short, anchor-less
+        and authored by a registered bot — every other condition of the arm holds —
+        so this is the case that would misclassify a clean review as a refusal.
+        """
+        import _github_pr
+        import bot_registry
+
+        monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 500)
+
+        markers = bot_registry.ignore_patterns('coderabbit')
+        # Population published: an empty registry list would make every assertion
+        # below vacuous, so the loop must be proven non-empty first.
+        assert markers, 'coderabbit declares no ignore_patterns — the control is vacuous'
+        for marker in markers:
+            assert not _github_pr._is_unrecognised_refusal(marker, 'coderabbit'), marker
+
+    def test_declines_a_body_an_earlier_arm_already_recognised(self, monkeypatch):
+        """This arm never overrides an arm that DID read the notice."""
+        import _github_pr
+
+        monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 500)
+
+        # Registry arm recognised it...
+        assert _github_pr._is_refusal_notice(_SOURCERY_1014_REFUSAL, 'sourcery')
+        assert not _github_pr._is_unrecognised_refusal(_SOURCERY_1014_REFUSAL, 'sourcery')
+        # ...and likewise for a structurally-recognised one.
+        assert _github_pr._is_refusal_notice(_UNKNOWN_BOT_REFUSAL, 'coderabbit')
+        assert not _github_pr._is_unrecognised_refusal(_UNKNOWN_BOT_REFUSAL, 'coderabbit')
+
+    def test_declines_an_empty_body(self, monkeypatch):
+        """An empty / unreadable body has its own non-firing branch."""
+        import _github_pr
+
+        monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 200)
+
+        assert not _github_pr._is_unrecognised_refusal('', 'pr-agent')
+
+    def test_declines_a_body_at_or_over_the_threshold(self, monkeypatch):
+        """The bound is exclusive, and a long anchor-less body is a genuine review."""
+        import _github_pr
+
+        monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', len(_REWORDED_REFUSAL))
+
+        # At exactly the threshold the arm does NOT fire...
+        assert not _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'pr-agent')
+        # ...and one character of headroom is what makes it fire — the matched
+        # control proving the boundary is the only thing being tested here.
+        monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', len(_REWORDED_REFUSAL) + 1)
+        assert _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'pr-agent')
+
+    @pytest.mark.parametrize(
+        'body',
+        [
+            pytest.param(_REWORDED_REFUSAL, id='reworded-refusal'),
+            pytest.param(_SHORT_REVIEW_WITH_ANCHOR, id='short-review-with-anchor'),
+            pytest.param(_GENUINE_REVIEW_MENTIONING_A_LIMIT, id='genuine-review'),
+            pytest.param(_SOURCERY_1014_REFUSAL, id='registry-recognised-refusal'),
+            pytest.param(_UNKNOWN_BOT_REFUSAL, id='structurally-recognised-refusal'),
+            pytest.param('', id='empty'),
+        ],
+    )
+    def test_is_refusal_notice_return_is_unchanged_by_the_new_arm(self, body, monkeypatch):
+        """``_is_refusal_notice``'s boolean contract is untouched.
+
+        Asserted with a threshold SET, so the new arm is live while this runs: the
+        point is that making the enumerative arm fireable changes nothing about the
+        seam its four existing consumers read.
+        """
+        import _github_pr
+
+        for bot_kind in ('coderabbit', 'sourcery', 'pr-agent', None):
+            monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', None)
+            inert = _github_pr._is_refusal_notice(body, bot_kind)
+            monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 500)
+            live = _github_pr._is_refusal_notice(body, bot_kind)
+            assert inert == live, (bot_kind, body[:40])
 
 
 # =============================================================================

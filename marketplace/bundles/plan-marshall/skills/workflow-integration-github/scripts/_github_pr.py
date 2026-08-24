@@ -14,6 +14,36 @@ access on the imported ``github_ops`` module at call time. That indirection is
 what lets a test's ``monkeypatch.setattr(github_ops, '<name>', ...)`` reach
 these handlers unchanged — never ``from github_ops import <name>``, which would
 copy the binding and defeat the patch.
+
+**Refusal recognition lives here, and it is a STACK of independent arms rather
+than a fixed pair.** This module is the shared home every refusal consumer reads
+from, so the arms and the vocabulary that NAMES them
+(:data:`REFUSAL_LAYERS`) are defined once here:
+
+- the registry arm — the acting bot's own declared ``refusal_patterns``;
+- the structural arm — :func:`_is_rate_limit_notice`, matching a notice by shape
+  alone, which is what covers an unregistered or renamed bot;
+- the enumerative arm — :func:`_is_unrecognised_refusal`, which recognises that a
+  body neither of the others matched is nonetheless not review feedback.
+
+No arm is a superset of another and the list is open: a further arm is added by
+extending :data:`REFUSAL_LAYERS` and this paragraph, never by renumbering a count
+stated somewhere else.
+
+**The enumerative arm sits at a DIFFERENT pipeline position from the other two,
+and that is why it is not folded into the shared** :func:`_is_refusal_notice`
+**boolean.** The registry and structural arms are consulted BEFORE the per-bot
+``ignore_patterns`` noise filter; the enumerative arm must run AFTER it, because
+a bot's own declared clean-review text is short and anchor-less and would
+otherwise be read as a refusal. Folding it into the shared boolean would move it
+in front of that filter at every one of the boolean's call sites.
+
+**Error direction on a missing input.** The enumerative arm TIGHTENS a predicate,
+so the failure it can introduce — withholding a genuine short review — blocks a
+merge, while the failure it removes is silent. Every fallible input therefore has
+its own named NON-firing branch, and the absent-threshold branch in particular is
+non-firing by construction: with no measured threshold the arm never fires and
+every consumer behaves exactly as it did before the arm existed.
 """
 
 import argparse
@@ -120,11 +150,12 @@ def _is_rate_limit_notice(body: str) -> bool:
     (:data:`_RATE_LIMIT_NOTICE_SHAPE_MARKERS`), so a notice is recognized by its
     structural signature with no author-specific literal.
 
-    **This is the LAST-RESORT layer of the refusal-recognition stack, not its
-    primary surface.** It covers an unknown / unregistered bot, or a phrasing not
-    yet captured in the data layer. A *registered* bot's OBSERVED refusal text
-    belongs in that bot's ``automatic-review/standards/{bot_kind}.md``
-    ``refusal_patterns`` — a data record, not a regex.
+    **This is the STRUCTURAL arm of the refusal-recognition stack, not its primary
+    surface.** It covers an unknown / unregistered bot, and a phrasing not yet
+    captured in the data layer whose PRESENTATION is still notice-shaped. A
+    *registered* bot's OBSERVED refusal text belongs in that bot's
+    ``automatic-review/standards/{bot_kind}.md`` ``refusal_patterns`` — a data
+    record, not a regex.
 
     ``refusal_patterns`` is deliberately a DEDICATED field, never a reuse of
     ``ignore_patterns``: ``ignore_patterns`` lists the routine sections a bot emits
@@ -136,10 +167,14 @@ def _is_rate_limit_notice(body: str) -> bool:
     Every refusal-recognition site (``_is_refusal_notice``, which
     ``github_pr.cmd_fetch_findings`` and :func:`_detect_rate_limited_bots` both read,
     plus ``github_re_review._match_bot_comment`` and
-    ``github_re_review._match_review``) is expected to pair this structural fallback
-    with that registry data layer; neither alone is a superset of the other, and a
-    refusal recognized here but absent from the registry is a signal that the bot's
-    ``refusal_patterns`` need the observed phrasing added.
+    ``github_re_review._match_review``) is expected to consult this structural arm
+    ALONGSIDE the registry data arm and the other arms of the stack — see
+    :data:`REFUSAL_LAYERS` for the arms currently defined. No arm is a superset of
+    another, and a refusal recognized here but absent from the registry is a signal
+    that the bot's ``refusal_patterns`` need the observed phrasing added. A refusal
+    that reaches NONE of the arms consulted before the noise filter is picked up
+    later by the enumerative arm (:func:`_is_unrecognised_refusal`), which runs at a
+    different pipeline position — see this module's docstring.
 
     Precision is load-bearing: a genuine review comment that merely mentions a
     rate limit in prose (no limit-exceeded statement, no notice shape) is not
@@ -155,8 +190,10 @@ def _is_rate_limit_notice(body: str) -> bool:
 def _is_refusal_notice(body: str, bot_kind: str | None = None) -> bool:
     """Return True when ``body`` is a REFUSAL to review — by registry data or by shape.
 
-    The single recognition seam every refusal consumer reads, pairing the two
-    layers because neither is a superset of the other:
+    The recognition seam every refusal consumer reads BEFORE the per-bot
+    ``ignore_patterns`` noise filter. It consults the arms of the stack that are
+    answerable at that position — no arm being a superset of another is why more
+    than one is consulted at all:
 
     - **Registry data layer** — the bot's own ``refusal_patterns`` from
       ``automatic-review/standards/{bot_kind}.md``. Load-bearing rather than
@@ -166,7 +203,15 @@ def _is_refusal_notice(body: str, bot_kind: str | None = None) -> bool:
       statement.
     - **Structural last-resort layer** — :func:`_is_rate_limit_notice`, recognizing
       a notice by shape alone, which is what covers an unregistered or renamed bot
-      and a phrasing not yet filed in the registry.
+      and a notice-shaped phrasing not yet filed in the registry.
+
+    **This boolean's contract is exactly "did an arm answerable BEFORE the noise
+    filter recognise this body?" — not "is this body a refusal?".** A refusal no arm
+    here matched is recognised later by the enumerative arm
+    (:func:`_is_unrecognised_refusal`), which cannot run at this position; see this
+    module's docstring for why. A caller that needs the whole stack must consult
+    both seams, and a ``False`` from this function is therefore never on its own
+    evidence that the bot reviewed.
 
     ``refusal_patterns`` is deliberately NOT ``ignore_patterns``: the latter lists
     the routine sections of a *successful* review, so reading it here would report
@@ -174,17 +219,189 @@ def _is_refusal_notice(body: str, bot_kind: str | None = None) -> bool:
 
     **A refusal is positive evidence of NON-participation, never noise.** Callers
     MUST branch on it — surfacing the refusing bot so the completeness / quorum
-    layer sees a refusal member (``refused_structural`` when the cause is a diff-size
-    ceiling, otherwise ``refused_awaitable`` / ``refused_hard`` / ``refused_unknown``
-    by the bot's ``rate_limit_class``) — rather than drop it.
-    Dropping it is precisely what let a PR whose every required reviewer refused
-    report a clean, complete review with substantively zero review coverage.
+    layer sees a refusal member — rather than drop it. That member is derived by
+    ``automatic-review/scripts/review_completeness.py``, which maps the bot's
+    declared ``rate_limit_class`` by DEFAULT and applies cause-axis overrides on top
+    of it (a diff-size ceiling, and a refusal no recognition arm matched); the
+    mapping is that module's to state, and is deliberately not restated as a fixed
+    correspondence here. Dropping the refusal is precisely what let a PR whose every
+    required reviewer refused report a clean, complete review with substantively
+    zero review coverage.
     """
     if not body:
         return False
     if bot_kind and any(marker in body for marker in bot_registry.refusal_patterns(bot_kind)):
         return True
     return _is_rate_limit_notice(body)
+
+
+# ---------------------------------------------------------------------------
+# The refusal-recognition layer vocabulary — ONE definition, read by every
+# consumer that reports WHICH arm recognised a refusal
+# ---------------------------------------------------------------------------
+#
+# ``github_re_review._refusal_record`` reports the arm that fired so a reader can
+# tell a registry-declared refusal from one recognised by shape alone, and
+# ``github_pr.cmd_fetch_findings`` reports the same vocabulary on the record it
+# emits for a refusal no earlier arm matched. Both read these names from here, so
+# the two records are directly comparable and there is exactly one place a new arm
+# is named.
+#
+# The two pre-existing spellings are preserved BYTE-IDENTICALLY from when they were
+# inline literals in ``github_re_review``: every stored envelope and every existing
+# assertion comparing against them keeps its meaning.
+
+#: The acting bot's own declared ``refusal_patterns`` matched the body.
+REFUSAL_LAYER_REGISTRY = 'registry_refusal_patterns'
+
+#: :func:`_is_rate_limit_notice` matched the body by its notice SHAPE alone.
+REFUSAL_LAYER_STRUCTURAL = 'structural_fallback'
+
+#: :func:`_is_unrecognised_refusal` matched — no earlier arm recognised the body,
+#: but it is not review feedback either. Carries strictly LESS information than the
+#: other two: it says the stack failed to read the notice, not what the notice said.
+REFUSAL_LAYER_ENUMERATIVE = 'enumerative_unrecognised'
+
+#: The arms currently defined, in the order they are consulted. Consumers that
+#: iterate or validate layer values MUST derive their population from this tuple
+#: rather than restating the members, so adding an arm cannot leave a consumer
+#: silently iterating a stale, shorter set.
+REFUSAL_LAYERS = (
+    REFUSAL_LAYER_REGISTRY,
+    REFUSAL_LAYER_STRUCTURAL,
+    REFUSAL_LAYER_ENUMERATIVE,
+)
+
+
+# ---------------------------------------------------------------------------
+# The enumerative arm — recognising a refusal no earlier arm matched
+# ---------------------------------------------------------------------------
+
+#: Upper bound (in characters, exclusive) on the flattened body length below which
+#: an anchor-less comment from a registered bot is read as an unrecognised refusal.
+#:
+#: ``None`` means NO THRESHOLD WAS DERIVED, and it is the shipped value. The bound
+#: is defined to be the shortest GENUINE review comment actually observed in the
+#: finding corpus; the measurement that would derive it enumerated a corpus of 1
+#: plan holding 0 ``pr-comment`` findings, so no genuine review comment was
+#: observed and no bound is derivable from evidence.
+#:
+#: A guessed value is deliberately NOT substituted. This arm errs in the blocking
+#: direction — a genuine short review it mistakes for a refusal withholds real
+#: feedback and blocks a merge — so an unmeasured bound would trade a silent
+#: failure for a loud one on no evidence. With ``None`` the arm never fires and
+#: every consumer behaves exactly as it did before the arm existed, which is the
+#: non-firing branch by construction rather than by falling through an ``else``.
+#:
+#: Populate it from a real measurement over a non-empty corpus, never by estimate.
+UNRECOGNISED_REFUSAL_MAX_CHARS: int | None = None
+
+#: Markers whose presence proves a body carries a CODE REFERENCE, and therefore
+#: that it is review feedback rather than a status notice. Any one of them vetoes
+#: the enumerative arm.
+_CODE_ANCHOR_MARKERS: tuple[re.Pattern[str], ...] = (
+    # Fenced code block (``` or ~~~), the carrier of a suggested patch.
+    re.compile(r'```|~~~'),
+    # Inline code span — a single backtick pair around at least one character.
+    re.compile(r'`[^`]+`'),
+    # Diff hunk header, e.g. ``@@ -12,7 +12,9 @@``.
+    re.compile(r'@@[^@]*@@'),
+    # ``path/to/file.ext:123`` — a file:line anchor pointing into the diff.
+    re.compile(r'\b[\w./-]+\.[A-Za-z0-9]{1,10}:\d+\b'),
+    # A ``<details>`` disclosure block — the structural carrier of a finding.
+    re.compile(r'<details', re.IGNORECASE),
+)
+
+
+def _has_code_anchor(body: str) -> bool:
+    """Return True when ``body`` carries any code-reference anchor.
+
+    A body pointing at code is review feedback, whatever its length. This is the
+    veto that keeps a short-but-genuine review out of the enumerative arm.
+    """
+    return any(marker.search(body) for marker in _CODE_ANCHOR_MARKERS)
+
+
+def _is_unrecognised_refusal(body: str, bot_kind: str | None = None) -> bool:
+    """Return True when ``body`` is a refusal NO earlier recognition arm matched.
+
+    The enumerative arm of the refusal-recognition stack, and the one that closes
+    the gap where a reworded refusal is filed as ordinary review feedback while its
+    author is credited as a participant. It is called by BOTH refusal consumers —
+    ``github_pr.cmd_fetch_findings``'s pre-filter chain and
+    ``github_re_review._ReReviewStrategy._refusal_record`` — from this one
+    definition; there is no second implementation.
+
+    It fires only when EVERY one of the following holds:
+
+    - ``bot_kind`` resolves to a REGISTERED bot. A human's short comment is never
+      an unrecognised refusal.
+    - :func:`_is_refusal_notice` already declined, i.e. neither the registry arm nor
+      the structural arm recognised the body. This arm never overrides an arm that
+      DID read the notice.
+    - the body carries no marker from that bot's own ``ignore_patterns`` — its
+      declared clean-review text is never a refusal.
+    - the body carries no code-reference anchor at all (:func:`_has_code_anchor`).
+    - the flattened body is shorter than
+      :data:`UNRECOGNISED_REFUSAL_MAX_CHARS`.
+
+    **Position in the pipeline is load-bearing.** This arm MUST be consulted AFTER
+    the acting bot's ``ignore_patterns`` noise filter has run. A bot's own declared
+    clean-review text (CodeRabbit's ``No actionable comments were generated``) is
+    short, anchor-less, and authored by a registered bot — it satisfies every
+    condition above, and only the noise filter having already removed it keeps this
+    arm from reading it as a refusal.
+
+    **Every fallible input has its own named NON-firing branch**, rather than one
+    ``else`` covering all of them. A predicate assembled from fallible reads has
+    more outcomes than it has truth values, and folding the missing-input outcome
+    into the ``False`` branch would assert "this is not a refusal" on evidence
+    nobody gathered. The absent-threshold branch is the one that matters most: with
+    no measured bound the arm returns ``False`` for every input, so it is inert and
+    both consumers behave exactly as they did before it existed.
+    """
+    # Non-firing branch 1 — no derived threshold. Deliberately FIRST: with no
+    # measured bound there is no admissible way to fire, whatever the other inputs
+    # say, and this is the branch that keeps the tightening off an unmeasured
+    # corpus.
+    threshold = UNRECOGNISED_REFUSAL_MAX_CHARS
+    if threshold is None:
+        return False
+
+    # Non-firing branch 2 — no body to classify.
+    if not body:
+        return False
+
+    # Non-firing branch 3 — unresolvable or unregistered author. Normalised on both
+    # sides, matching how every other registry-sourced membership test compares.
+    if not bot_kind:
+        return False
+    normalized = bot_kind.strip().lower()
+    if normalized not in {kind.strip().lower() for kind in bot_registry.bot_kinds()}:
+        return False
+
+    # Non-firing branch 4 — an earlier arm already recognised this body. This arm
+    # reports only what the others could not read.
+    if _is_refusal_notice(body, bot_kind):
+        return False
+
+    # Non-firing branch 5 — the acting bot's OWN declared clean-review text. The
+    # call-site ordering (this arm runs after the noise filter) already keeps such
+    # a body away from here, but asserting it locally makes the guarantee a
+    # property of the PREDICATE rather than of every caller's stage order — so a
+    # future consumer that calls this arm too early still cannot read a bot's
+    # clean review as a refusal. Defence in depth, not a replacement for the
+    # ordering: see this module's docstring for why the ordering is what the
+    # design rests on.
+    if any(marker in body for marker in bot_registry.ignore_patterns(bot_kind)):
+        return False
+
+    # Non-firing branch 6 — the body points at code, so it is review feedback.
+    if _has_code_anchor(body):
+        return False
+
+    # Non-firing branch 7 — the body is long enough to be a genuine review.
+    return len(body.strip()) < threshold
 
 
 # The orthogonal CAUSE axis for a detected refusal — distinct from ``rate_limit_class``
@@ -356,15 +573,17 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
     authored (resolving each comment's author through
     :func:`github_re_review.bot_kind_for_author`, which owns the ``[bot]``-suffix
     stripping and case-insensitive matching), pick that bot's newest comment by
-    ``created_at``, and classify its body through BOTH refusal-recognition layers.
-    No bot-name literal appears in this path — the bot set, each bot's login, its
-    refusal markers, its rate-limit class, and its ETA phrasings are all registry
-    data.
+    ``created_at``, and classify its body through the refusal-recognition arms that
+    are answerable at this position. No bot-name literal appears in this path — the
+    bot set, each bot's login, its refusal markers, its rate-limit class, and its ETA
+    phrasings are all registry data.
 
     Classification goes through the shared :func:`_is_refusal_notice` seam, so this
-    detector and the ``fetch_findings`` producer recognize a refusal identically —
-    both layers, in one place. See that function for why neither layer alone
-    suffices.
+    detector and the ``fetch_findings`` producer's pre-noise-filter stage recognize a
+    refusal identically, from one place. See that function for why no single arm
+    suffices on its own, and this module's docstring for the arms the stack
+    currently defines — including the enumerative arm, which sits after the noise
+    filter and so is deliberately outside this seam.
 
     Each detected bot yields ``{bot_kind, rate_limit_class, eta}``:
 
