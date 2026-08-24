@@ -6492,8 +6492,6 @@ def emit_sequence_build_minimality_block(result: dict[str, Any]) -> str:
     rows = result["rows"]
     for r in rows:
         r["flags_str"] = ";".join(r["flags"])
-        # build_share is WITHHELD (`n/a`) when wall-clock is absent — never a
-        # fabricated ratio over a zero / missing denominator.
         share = r["build_share"]
         r["build_share_str"] = "n/a" if share is None else f"{share:.0%}"
     rows, genuine_signal_count = _severity_summary(rows, _sbm_genuine)
