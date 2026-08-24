@@ -48,8 +48,7 @@ doc/plans/
 │   └── 020-{plan-name}/             # a run has started on it
 │       ├── plan.md                  # the plan
 │       └── report-NN.md             # one run report per run
-├── code-intelligence-substrate/
-└── test-quality/                    # standalone epic — no orchestrator ledger counterpart
+└── code-intelligence-substrate/
 ```
 
 A new plan starts as a copy of [`_template/plan.md`](_template/plan.md) at
@@ -85,12 +84,19 @@ An epic's directory therefore exists only while it has plans handed off. Once a 
 into its ledger the directory is removed, and it reappears on the next hand-off — an absent directory
 means nothing is currently exported for that epic, never that the epic is closed.
 
-`test-quality` is a **standalone epic**: it has no orchestrator-ledger counterpart, because it was
-opened directly from a whole-corpus test review rather than derived from a staged orchestrator plan.
-Its own [`test-quality/README.md`](test-quality/README.md) carries the scoping brief its plans are
-written against — the corpus census, the house style, and the dependency graph that says which of its
-plans may run at the same time. An epic that carries its brief in git this way needs no ledger to be
-executable; the pattern generalises to any future epic authored the same way.
+A **standalone epic** has no orchestrator-ledger counterpart, because it was opened directly from its
+own source material rather than derived from a staged orchestrator plan. Such an epic carries its
+scoping brief in git alongside its plans — the census the plans were scoped from, the house style they
+converge on, and the dependency graph saying which of them may run at the same time — so it needs no
+ledger to be executable.
+
+A standalone epic that outgrows the lane is **ingested**: its plans, reports and brief are absorbed
+into `.plan/local/orchestrator/{slug}/` and removed from this tree, and it becomes ledger-backed from
+that point on. The ingested tree is the audit record; nothing is lost, and the epic gains the queue,
+the surface-disjointness check and the landing analysis the standalone lane does not have. An epic
+reaches that point when its plan count and collision graph stop fitting in prose — which is what a
+hand-maintained partition and collision matrix drifting across successive verification rounds looks
+like from the outside.
 
 For a ledger-backed epic the two halves cannot see each other — the orchestrator tree is git-ignored,
 and a cloud session's working state dies with its VM — so **git is the only shared medium**.
