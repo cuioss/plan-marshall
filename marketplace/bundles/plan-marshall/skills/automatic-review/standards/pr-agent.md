@@ -152,11 +152,19 @@ actionable_content_markers:
                                   # real content and is filed unchanged. Absent from #1078's clean
                                   # body, which is what makes that body droppable.
 refusal_patterns:                 # EMPTY — no refusal of any kind observed on #103 or #1078.
-                                  # Fail-closed: a refusal is never claimed without positive evidence,
-                                  # so this bot's non-participation resolves to one of the non-refusal
-                                  # members — participated_stale (the common steady state, given
-                                  # participation_requires_update above), in_progress, not_triggered,
-                                  # or absent — never refused.
+                                  # Fail-closed FOR THIS ARM: no refusal is claimed on the strength of
+                                  # a pattern this bot never declared.
+                                  # The empty list carries NO conclusion about whether this bot refuses,
+                                  # and it does NOT resolve this bot's non-participation to a non-refusal
+                                  # outcome. It silences the registry arm and nothing else; the arms that
+                                  # do not read this record are unaffected by what this record declares.
+                                  # The governing rule for a record in exactly this position is stated
+                                  # ONCE, for every bot, in bot-participation-contract.md § "Refusal
+                                  # recognition is ENUMERATIVE, and a rewording nobody enumerated is its
+                                  # own state". Read it there — including why an empty list is the case
+                                  # that rule is sharpest about. It is deliberately NOT restated here:
+                                  # a cross-bot rule copied into a per-bot data record is invisible to
+                                  # the next bot registered.
 rate_limit_class: unknown         # UNVERIFIED — no refusal of any kind observed on #103 or #1078.
                                   # Fail-closed per ADR-009: never assume a refusal is awaitable
                                   # without evidence.
@@ -278,8 +286,9 @@ that does not reopen burns the full budget and still times out, and re-triggerin
 answer spends a capped recovery attempt for nothing. The recovery sequence therefore escalates
 immediately for this class (`escalate_ask{reason: rate_window_not_awaitable}`); see `../SKILL.md`
 § "Rate-limit refusal recovery (opt-in)". Should a refusal ever be observed, record its OBSERVED text in
-`ignore_patterns` and reclassify this field against that evidence — do not promote it to
-`awaitable_window` on the assumption that it behaves like CodeRabbit's window.
+`refusal_patterns` — **never** in `ignore_patterns`, which is the noise-drop list and would suppress the
+refusal instead of branching on it — and reclassify this field against that evidence; do not promote it
+to `awaitable_window` on the assumption that it behaves like CodeRabbit's window.
 
 The `ignore_patterns` entry `**[Persistent review]` is NOT a refusal: it is a contentless
 "updated to latest commit" notice, which is a different class of non-finding.
