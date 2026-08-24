@@ -11,8 +11,8 @@ lines of a spec are surface, and which are only page furniture:
   fenced block and the top-level indented block, together with the
   nested-list-item control that distinguishes an indented continuation from
   indented code.
-- **Corpus notation tolerances** — label prefixes, heading spelling, and where
-  a section body ends.
+- **Corpus notation tolerances** — bullet markers, label prefixes, heading
+  spelling, and where a section body ends.
 
 Entry-shape resolution and the three-class verdict are the sibling cluster, in
 ``test_epic_spec_parser.py``. Drives the underscore-prefixed helper directly by
@@ -146,6 +146,19 @@ def test_nested_list_item_past_the_third_column_is_a_bullet_not_code(
 
 
 # --- corpus notation tolerances ----------------------------------------------
+
+
+@pytest.mark.parametrize('marker', ['-', '*', '+'], ids=['dash', 'asterisk', 'plus'])
+def test_every_commonmark_bullet_marker_contributes_its_entry(
+    repo: Path, plans: Path, marker: str
+) -> None:
+    """A marker the scanner does not admit silently under-classes the spec as prose."""
+    body = f'# PLAN-124\n\n## Expected Surface\n\n{marker} Adds `test/lambda/test_a.py`\n'
+
+    claim = claim_for(plans, repo, 'PLAN-124.md', body)
+
+    assert paths(claim.claimed) == {'test/lambda/test_a.py'}
+    assert claim.spec_class == spec_parser.CLASS_DECLARATIVE
 
 
 @pytest.mark.parametrize(

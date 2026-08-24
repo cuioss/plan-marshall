@@ -72,7 +72,11 @@ EXPECTED_SURFACE_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+Expected Surface(?:[ \
 OUT_OF_SCOPE_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+Out of Scope(?:[ \t]+#+)?[ \t]*$', re.IGNORECASE)
 _HEADING_RE = re.compile(r'^ {0,3}#{1,6}(?:[ \t]|$)')
 _FENCE_RE = re.compile(r'^ {0,3}(`{3,}|~{3,})')
-_BULLET_RE = re.compile(r'^[ \t]*[-*][ \t]+')
+#: All three CommonMark bullet-list markers. ``+`` is admitted alongside ``-``
+#: and ``*`` because a spec written with it is an ordinary list whose entries
+#: would otherwise contribute nothing, silently under-classing the spec as
+#: ``prose``.
+_BULLET_RE = re.compile(r'^[ \t]*[-+*][ \t]+')
 
 #: The column at which an unlisted line becomes an indented code block.
 _CODE_INDENT_COLUMNS = 4
@@ -232,7 +236,7 @@ def _section_span(lines: list[str], heading_re: re.Pattern[str], masked: list[bo
 
 
 def _iter_bullets(lines: list[str], masked: list[bool], start: int, end: int) -> list[str]:
-    """Return each ``- `` bullet in a section span as one joined logical line.
+    """Return each bullet in a section span as one joined logical line.
 
     A bullet runs until the next bullet, a blank line, or the section end, so a
     surface entry wrapped across source lines is parsed whole. Non-bullet

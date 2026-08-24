@@ -195,15 +195,54 @@ def _claims_module(claim: SpecClaim, module: str, root_prefix: str) -> bool:
     return not any(entry_matches(entry.path, entry.kind, module) for entry in claim.excluded)
 
 
+def _is_container_span(cleaned: str) -> bool:
+    """Whether an unresolved span names a DIRECTORY rather than a file."""
+    return cleaned.endswith('/') or cleaned.endswith('**')
+
+
 def _raw_mentions_module(raw: str, module: str) -> bool:
-    """Whether an UNRESOLVED span names ``module`` by its trailing segments."""
+    """Whether an UNRESOLVED span names ``module``.
+
+    A file-shaped span names the module by its TRAILING segments, the filename
+    included: ``test_x.py`` and ``a/test_x.py`` both name ``test/a/test_x.py``.
+
+    A CONTAINER-shaped span — written with a trailing ``/`` or a trailing
+    ``**`` — names a directory, so it names every module beneath that
+    directory at any depth. Its segments are therefore matched against the
+    module's ancestor directories rather than against the filename: the
+    filename can never equal a directory name, so anchoring a container span on
+    the trailing segment would make it name NOTHING.
+
+    ⛔ A container span naming nothing is not a harmless miss. Every module it
+    covers would fall through to ``unclaimed`` instead of ``not_derivable`` —
+    the one merge :mod:`_epic_partition` exists to prevent, manufacturing
+    partition defects out of the parser's own limits.
+
+    The container match is deliberately unanchored at the front: an unresolved
+    span is by definition one the parser could not anchor to the repo root, so
+    the only honest reading is "some directory with these segments". Erring
+    towards ``not_derivable`` reports coverage the derivation cannot see, which
+    is the safe direction; erring the other way invents a defect.
+    """
     cleaned = raw[2:] if raw.startswith('./') else raw
     cleaned = cleaned[4:] if cleaned.startswith('.../') else cleaned
+    container = _is_container_span(cleaned)
     pattern = _segments(cleaned)
+    if container and pattern and pattern[-1] == '**':
+        pattern = pattern[:-1]
     target = _segments(module)
-    if not pattern or len(pattern) > len(target):
+    if not pattern:
         return False
-    return _match_segments(pattern, target[-len(pattern) :])
+    if not container:
+        if len(pattern) > len(target):
+            return False
+        return _match_segments(pattern, target[-len(pattern) :])
+    parents = target[:-1]
+    width = len(pattern)
+    return any(
+        _match_segments(pattern, parents[start : start + width])
+        for start in range(len(parents) - width + 1)
+    )
 
 
 def _mentions_module(claim: SpecClaim, module: str) -> bool:

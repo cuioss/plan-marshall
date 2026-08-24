@@ -185,3 +185,73 @@ def test_injected_root_span_does_not_hide_an_unclaimed_module(clean) -> None:
         'test/orphan/test_nobody_claims_me.py'
     }
     assert ('PLAN-230', 'test/**') in {(r.plan_id, r.path) for r in result.root_claims}
+
+
+# --- negative control 4: a container-shaped unresolved span is NOT unclaimed --
+#
+# A DIRECTORY-shaped span the parser cannot anchor names no filename, so a
+# trailing-segment match against it finds nothing and every module beneath it
+# falls through to ``unclaimed``. That is the one merge the derivation exists to
+# prevent: coverage the parser cannot see, reported as a partition defect. Both
+# container shapes are covered, and the pairing module — one nothing names at
+# all — is the positive control that keeps ``unclaimed`` from simply emptying.
+
+#: The module a directory-shaped span names, and the module nothing names.
+MENTIONED_MODULE = 'test/orphanage/test_named_only_by_a_directory_span.py'
+UNMENTIONED_MODULE = 'test/orphan/test_nobody_claims_me.py'
+
+
+@pytest.fixture(params=['.../orphanage/', '.../orphanage/**'], ids=['directory', 'recursive_glob'])
+def container_span(request, clean):
+    """The clean corpus plus a prose spec whose only span is an unanchored directory."""
+    repo, plans = clean
+    write_module(repo, MENTIONED_MODULE)
+    write_module(repo, UNMENTIONED_MODULE)
+    (plans / 'PLAN-240.md').write_text(
+        f'# PLAN-240\n\n## Expected Surface\n\n- Touches the modules under `{request.param}`\n',
+        encoding='utf-8',
+    )
+    return repo, plans
+
+
+def test_container_span_spec_resolves_to_no_path_entry(container_span) -> None:
+    repo, plans = container_span
+
+    claim = next(c for c in classify_corpus(plans, repo) if c.plan_id == 'PLAN-240')
+
+    assert claim.claimed == ()
+    assert claim.spec_class == 'prose'
+    assert len(claim.unresolved) == 1
+
+
+def test_container_span_marks_the_module_beneath_it_not_derivable(container_span) -> None:
+    repo, plans = container_span
+
+    result = partition_of(repo, plans)
+
+    assert named(result, partition_mod.VERDICT_NOT_DERIVABLE) == {MENTIONED_MODULE}
+
+
+def test_container_span_names_the_plan_the_verdict_rests_on(container_span) -> None:
+    repo, plans = container_span
+
+    result = partition_of(repo, plans)
+
+    owners = next(module.plans for module in result.modules if module.path == MENTIONED_MODULE)
+    assert owners == ('PLAN-240',)
+
+
+def test_genuinely_unclaimed_module_stays_unclaimed_beside_it(container_span) -> None:
+    repo, plans = container_span
+
+    result = partition_of(repo, plans)
+
+    assert named(result, partition_mod.VERDICT_UNCLAIMED) == {UNMENTIONED_MODULE}
+
+
+def test_container_span_does_not_disturb_the_claimed_set(container_span) -> None:
+    repo, plans = container_span
+
+    result = partition_of(repo, plans)
+
+    assert named(result, partition_mod.VERDICT_CLAIMED) == set(CLEAN_MODULES)

@@ -91,6 +91,15 @@ Exclusions subtract from the claiming plan's **own** set only. A plan that claim
 a recursive glob while excluding a sub-directory does not claim the modules under
 it; another plan's claim over those same modules is unaffected.
 
+An unresolved span *names* a module by shape. A file-shaped span names it by its
+trailing segments, filename included. A **container**-shaped span — one written
+with a trailing `/` or `**`, which is the notation the relative-continuation row
+above uses — names a directory, so it names every module beneath that directory:
+its segments are matched against the module's ancestor directories, never against
+the filename. Matching a container span on the filename would make it name
+nothing, and every module it covers would fall through to `unclaimed` — the merge
+the next section forbids.
+
 ### Why `unclaimed` and `not_derivable` must stay separate
 
 ⛔ These two are **never merged**. They answer different questions:
