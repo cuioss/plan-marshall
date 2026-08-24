@@ -815,10 +815,10 @@ doing so.** `validate-contracts` covers extension-POINT implementors — `ext-*`
 `total_checked: 0` with `status: success` — well-formed, and measuring nothing.
 
 The properties below are therefore **requirements on the author**, not checks a
-tool performs. Each is established at load time, when
-`discover_all_extensions()` imports the module and calls its methods: a missing
-class, a syntax error, or a structurally invalid return surfaces as a runtime
-failure at the point of use, not as a validation finding.
+tool performs. Nothing enforces them, and nothing reports their violation:
+`load_extension_module()` wraps the import in a blanket `except Exception`,
+logs a WARNING, and returns `None`, and `discover_all_extensions()` then omits
+the bundle. An invalid `extension.py` does not fail — it becomes **invisible**.
 
 Contract requirements:
 - Extension class exists and inherits from ExtensionBase

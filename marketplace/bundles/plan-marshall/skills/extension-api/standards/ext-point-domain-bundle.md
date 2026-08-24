@@ -93,8 +93,13 @@ here.** `validate-contracts` covers extension-POINT implementors — `ext-*` /
 `recipe-*` skills carrying an `implements:` field — so
 `validate-contracts --skill {bundle}:plan-marshall-plugin` returns
 `total_checked: 0` with `status: success`: a well-formed invocation over an empty
-population, which reads as a pass while checking nothing. Like discovery above,
-validity is established at load time, not by a validator.
+population, which reads as a pass while checking nothing.
+
+⛔ **And nothing else establishes it either.** `load_extension_module()` catches
+every import failure, logs a WARNING, and returns `None`; `discover_all_extensions()`
+then omits the bundle. An invalid `extension.py` is not rejected — it silently
+stops existing, which is the same false-green shape as the empty-population call
+above.
 
 ## Current Implementations
 
