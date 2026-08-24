@@ -104,10 +104,14 @@ _PROVENANCE_STATES = ('never_asked', 'migrated', 'answered')
 # the independent observations: like a refusal, it says the bot engaged and would
 # not review this commit, so it is not a refinement of ``absent``. Of the FOUR refusal
 # members, three (``refused_awaitable`` / ``refused_hard`` / ``refused_unknown``) are the
-# one-to-one split of the bot's three-valued ``rate_limit_class`` and are likewise
-# independent observations; ``refused_structural`` refines that branch on the orthogonal
-# CAUSE axis, and is checked FIRST because a per-bot class cannot separate two causes one
-# bot refuses under. This tuple's LENGTH is load-bearing — the closure-count
+# DEFAULT mapping of the bot's three-valued ``rate_limit_class`` — a default, not a
+# bijection, because TWO per-refusal observations displace it. ``refused_structural``
+# is one: a refusal whose observed CAUSE is a diff-size ceiling. The other reaches
+# ``refused_unknown``: a refusal NO arm of the recognition stack could READ, which
+# resolves there whatever the bot's declared class says, because nothing about an
+# unparsed notice is known. Both overrides are checked BEFORE the class, because a
+# class declared per BOT cannot separate observations made per REFUSAL. This tuple's
+# LENGTH is load-bearing — the closure-count
 # check below reads the contract's own prose count back as an integer and compares it
 # against ``len`` here, which is what stops a member reaching the classifier and the
 # table while the prose still claims fewer.
@@ -803,8 +807,10 @@ _FAMILY_B = 'github_pr fetch_findings'
 
 #: ``(family, doc-suffix, section-substring, expected list-flag count)`` for the
 #: four CONFIRMED call sites. The counts differ per site and are asserted per
-#: site: the participation guard passes six (``--declined-bots`` is documented in the
-#: canonical block but not interpolated at the FIND-step site), the pre-merge
+#: site: the participation guard passes seven (``--declined-bots`` is documented in the
+#: canonical block but not interpolated at the FIND-step site, while
+#: ``--unrecognised-refusal-bots`` IS — the producer emits its observation on the same
+#: ``fetch_findings`` return the guard already threads forward), the pre-merge
 #: barrier's Predicate 2 passes six (it never observes an in-progress bot of its own,
 #: but it forwards the trigger-A ``--declined-bots`` observation), and both producer
 #: sites pass the two classification flags.
@@ -819,7 +825,7 @@ _CONFIRMED_SITES = (
         _FAMILY_A,
         'automatic-review/SKILL.md',
         'Step-done participation guard',
-        6,
+        7,
         id='family-a-step-done-participation-guard',
     ),
     pytest.param(

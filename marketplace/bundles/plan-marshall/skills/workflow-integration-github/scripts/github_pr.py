@@ -837,11 +837,12 @@ def cmd_fetch_findings(args):
     field. This is the producer-side refusal channel the completeness / quorum layer
     consumes as ``--refused-bots``, so it can classify the bot into a refusal member
     instead of inferring absence from silence. That classification maps the bot's
-    declared ``rate_limit_class`` BY DEFAULT, and the default is displaced by
-    overrides on the orthogonal CAUSE axis — a diff-size ceiling resolves
-    ``refused_structural``, and a refusal no recognition arm could read resolves
-    ``refused_unknown`` whatever the bot's declared class says, because nothing about
-    an unreadable notice is known. The mapping and its overrides are
+    declared ``rate_limit_class`` BY DEFAULT, and TWO per-refusal observations
+    displace that default — a diff-size ceiling resolves ``refused_structural``, and a
+    refusal no recognition arm could read resolves ``refused_unknown`` whatever the
+    bot's declared class says, because nothing about an unreadable notice is known.
+    Both outrank the class because the class is declared per BOT while each of them is
+    observed per REFUSAL. The mapping and its overrides are
     ``review_completeness``'s to state; it is deliberately not restated as a fixed
     correspondence here, so an override added there needs no edit in this docstring.
     A refusing comment
