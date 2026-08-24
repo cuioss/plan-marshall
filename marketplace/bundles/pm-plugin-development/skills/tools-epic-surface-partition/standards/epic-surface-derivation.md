@@ -148,7 +148,7 @@ it, so every figure can be independently reproduced.
 | 3 | `disagreements` | Every unclaimed and multiply-claimed entry **per instance**, not merely counted |
 | 4 | `not_derivable` | The modules and the specs the derivation cannot resolve — emitted even when empty |
 | 5 | `injected_controls` | The injected-failure demonstrations, each naming the control that demonstrates it |
-| 6 | `test_count` | The collected test count before and after |
+| 6 | `test_count` | The declared-test count before and after, both by the one static method the section names |
 | 7 | `provenance` | The placement claims and the overlap verdict below |
 
 ### What `provenance` must assert

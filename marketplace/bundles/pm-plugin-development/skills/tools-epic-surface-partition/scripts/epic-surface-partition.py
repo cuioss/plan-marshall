@@ -28,7 +28,7 @@ Subcommands:
 - ``report --epic {slug}`` — render all seven sections: the partition, the
   attribution, every unclaimed and multiply-claimed entry per instance, every
   spec whose spans the parser could not resolve, the injected-failure
-  demonstrations, the collected test count before and after, and provenance.
+  demonstrations, the declared-test count before and after, and provenance.
   Each section carries the command that produced it.
 
 The derivation is a report, never a build gate: the specs live under a
@@ -232,8 +232,10 @@ def cmd_attribution(args: argparse.Namespace) -> dict[str, Any]:
 #: The executor notation every rendered section cites as its producing command.
 _NOTATION = 'pm-plugin-development:tools-epic-surface-partition:epic-surface-partition'
 
-#: The module-tests command that produces the injected-failure demonstrations
-#: and the collected test count.
+#: The module-tests command that produces the injected-failure demonstrations.
+#: It does NOT produce the test count: pytest collection counts parametrized
+#: instances over one bundle, while the count section is a static declaration
+#: count over the whole enumerated tree.
 _TESTS_COMMAND = (
     'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
     'run --command-args "module-tests pm-plugin-development"'
@@ -280,6 +282,15 @@ _INJECTED_CONTROLS = (
     ),
 )
 
+#: The line prefix that makes a declaration a test. Named once so the counter,
+#: the rendered ``method`` field, and the ``--tests-before`` help cannot drift
+#: into describing a measurement the counter does not perform.
+_TEST_DEF_PREFIX = 'def test_'
+
+#: The one method BOTH test-count figures are measured by. ``--tests-before`` is
+#: this same count taken before the campaign, so before and after are comparable.
+_TEST_COUNT_METHOD = f'static "{_TEST_DEF_PREFIX}" count over the enumerated test modules'
+
 #: The seven sections the report is required to render, in order.
 _SECTION_ORDER = (
     'partition',
@@ -301,7 +312,7 @@ def _static_test_count(modules: tuple[str, ...], repo_root: Path) -> int:
     total = 0
     for module in modules:
         text = (repo_root / module).read_text(encoding='utf-8')
-        total += sum(1 for line in text.splitlines() if line.lstrip().startswith('def test_'))
+        total += sum(1 for line in text.splitlines() if line.lstrip().startswith(_TEST_DEF_PREFIX))
     return total
 
 
@@ -346,7 +357,7 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
         'disagreements': f'{len(disagreements)} entries listed per instance',
         'not_derivable': f'{len(not_derivable)} modules, {len(unresolvable_specs)} specs',
         'injected_controls': f'{len(_INJECTED_CONTROLS)} demonstrations',
-        'test_count': 'static declared-test count over the enumerated modules',
+        'test_count': f'before and after, both as a {_TEST_COUNT_METHOD}',
         'provenance': (
             f'{len(_PLACEMENT_CLAIMS)} placement claims, {len(overlaps)} overlapping entries'
         ),
@@ -355,9 +366,16 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
         'partition': _verb_command('partition', args.epic),
         'attribution': _verb_command('attribution', args.epic),
         'disagreements': _verb_command('partition', args.epic),
-        'not_derivable': _verb_command('classify', args.epic),
+        # Both halves, or neither: the modules half comes from ``derive_partition``
+        # and the specs half from ``classify_corpus``, and ``report`` is the only
+        # verb whose payload carries both. ``classify`` emits no module verdict at
+        # all, so it cannot reproduce the "N modules" figure this section renders.
+        'not_derivable': _verb_command('report', args.epic),
         'injected_controls': _TESTS_COMMAND,
-        'test_count': _TESTS_COMMAND,
+        # ``report`` is the producer of the static count: no other verb computes
+        # ``_static_test_count``, and the module-tests command counts by a
+        # different method over a different population.
+        'test_count': _verb_command('report', args.epic),
         'provenance': _verb_command('report', args.epic),
     }
 
@@ -402,7 +420,7 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
         'test_count': {
             'before': args.tests_before if args.tests_before is not None else 'not_supplied',
             'after': _static_test_count(modules, repo_root),
-            'method': 'static "def test_" count over the enumerated test modules',
+            'method': _TEST_COUNT_METHOD,
         },
         'provenance': {
             'overlap_live': bool(overlaps),
@@ -479,7 +497,11 @@ def build_parser() -> argparse.ArgumentParser:
         '--tests-before',
         type=int,
         default=None,
-        help='Collected test count before the campaign, for the before/after section',
+        help=(
+            'Declared-test count before the campaign, for the before/after section. '
+            'Measured by the same method as the emitted after figure — the static '
+            f'"{_TEST_DEF_PREFIX}" count this report renders — so the two are comparable'
+        ),
     )
     report.set_defaults(handler=cmd_report)
 
