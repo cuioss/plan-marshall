@@ -132,11 +132,7 @@ def test_the_lookup_still_registers_a_skill_whose_frontmatter_has_a_dash_leading
 
 #: A tree entry line: the indent, its box-drawing connector, and the name that
 #: follows it, e.g. ``fs_safety.py`` or ``claude/``.
-#: ``MULTILINE`` because the same pattern is used two ways — ``finditer`` over
-#: the whole tree block, and ``match`` against one line at a time — and the
-#: line-start anchor is what makes the indent group measure the entry's own
-#: nesting rather than whatever whitespace precedes the connector.
-_TREE_ENTRY_RE = re.compile(r'^(?P<indent>[\s│]*)[├└]── (?P<name>[^\s#]+)', re.MULTILINE)
+_TREE_ENTRY_RE = re.compile(r'^(?P<indent>[\s│]*)[├└]── (?P<name>[^\s#]+)')
 #: Columns one nesting level occupies in the tree (``"│   "`` or four spaces).
 _TREE_INDENT_WIDTH = 4
 
