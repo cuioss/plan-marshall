@@ -125,6 +125,34 @@ def _run_block_context_violations(text: str) -> list[str]:
 _SCOPE_LINE = re.compile(r'^\s+(?P<scope>[A-Za-z][A-Za-z-]*):\s*(?P<value>\S+)\s*$')
 #: The permission values that grant nothing. Anything else is a write grant.
 _READ_ONLY_VALUES = frozenset({'read', 'none'})
+#: The key an inline shorthand is recorded under — it stands for EVERY scope, so
+#: no single scope name would be honest.
+_ALL_SCOPES_KEY = '*'
+#: GitHub's two inline shorthands, mapped to the ordinary per-scope value they
+#: are equivalent to. Both spellings end in ``-all`` and neither is in
+#: :data:`_READ_ONLY_VALUES`, so an un-normalised reader gets them BOTH wrong and
+#: in opposite directions: ``read-all`` reads as a write grant it is not, and
+#: ``write-all`` — which has no indented body for the block reader to find —
+#: reads as no grant at all, though it is the broadest one the syntax allows.
+_INLINE_SHORTHANDS = {'read-all': 'read', 'write-all': 'write'}
+
+
+def _inline_permissions(value: str) -> dict[str, str] | None:
+    """The scope mapping an inline ``permissions: <value>`` header stands for.
+
+    ``None`` means the header carried no inline value, i.e. it opens a block
+    whose scopes are on the following indented lines and the block reader owns
+    it. A recognised shorthand is normalised to the per-scope value it means; an
+    unrecognised one is passed through verbatim rather than guessed at, so a
+    spelling this table does not know stays visible to the write-scope reader
+    instead of vanishing.
+
+    Shared by BOTH readers so the top-level and job-level verdicts cannot
+    disagree about what an inline header means.
+    """
+    if not value:
+        return None
+    return {_ALL_SCOPES_KEY: _INLINE_SHORTHANDS.get(value, value)}
 
 
 def _permission_scopes(lines: list[str], header: int, header_indent: int) -> dict[str, str]:
@@ -144,25 +172,35 @@ def _permission_scopes(lines: list[str], header: int, header_indent: int) -> dic
 def _top_level_permissions(text: str) -> dict[str, str] | None:
     """The top-level (column-0) permissions mapping, or None when the block is absent.
 
-    An inline form (``permissions: read-all``) is returned under the ``*`` key so
-    it is neither silently dropped nor mistaken for an empty block.
+    An inline form (``permissions: read-all``) is normalised by
+    :func:`_inline_permissions` and returned under the ``*`` key so it is neither
+    silently dropped nor mistaken for an empty block.
     """
     lines = text.splitlines()
     for i, line in enumerate(lines):
         if line.startswith('permissions:'):
-            inline = line[len('permissions:'):].strip()
-            return {'*': inline} if inline else _permission_scopes(lines, i, 0)
+            inline = _inline_permissions(line[len('permissions:'):].strip())
+            return inline if inline is not None else _permission_scopes(lines, i, 0)
     return None
 
 
 def _job_level_permissions(text: str) -> dict[str, str]:
-    """The union of every indented (job-level) permissions mapping in the workflow."""
+    """The union of every indented (job-level) permissions mapping in the workflow.
+
+    The inline form is normalised through the same :func:`_inline_permissions`
+    helper the top-level reader uses. Handing an inline header to
+    :func:`_permission_scopes` instead would contribute NOTHING — that reader
+    only collects indented continuation lines, and an inline header has none —
+    so a job declaring ``permissions: write-all`` would be invisible here.
+    """
     scopes: dict[str, str] = {}
     lines = text.splitlines()
     for i, line in enumerate(lines):
         indent = len(line) - len(line.lstrip())
-        if indent > 0 and line.lstrip().startswith('permissions:'):
-            scopes.update(_permission_scopes(lines, i, indent))
+        stripped = line.lstrip()
+        if indent > 0 and stripped.startswith('permissions:'):
+            inline = _inline_permissions(stripped[len('permissions:'):].strip())
+            scopes.update(inline if inline is not None else _permission_scopes(lines, i, indent))
     return scopes
 
 
@@ -626,3 +664,31 @@ def test_the_scope_reader_separates_top_level_from_job_level_grants() -> None:
 
     assert _top_level_permissions(workflow) == {'contents': 'read'}
     assert _job_level_permissions(workflow) == {'contents': 'write'}
+
+
+def test_the_scope_reader_normalizes_the_inline_read_all_shorthand() -> None:
+    """``permissions: read-all`` withholds every write — reporting one is a false red.
+
+    The value is GitHub's shorthand for every scope at READ level. Left
+    un-normalised it is merely "not read and not none", which is exactly how the
+    write-scope reader classifies a grant, so the guard would demand an allowlist
+    entry for a declaration that grants nothing.
+    """
+    workflow = 'permissions: read-all\njobs:\n  j:\n    permissions: read-all\n'
+
+    assert _write_scopes(_top_level_permissions(workflow) or {}) == set()
+    assert _write_scopes(_job_level_permissions(workflow)) == set()
+
+
+def test_the_scope_reader_sees_the_inline_write_all_shorthand() -> None:
+    """``permissions: write-all`` is the broadest grant the syntax allows.
+
+    A header carrying it inline has no indented continuation lines, so the block
+    reader finds no ``scope: value`` pair under it and contributes nothing. The
+    job-level guard then returns a clean verdict over the single most permissive
+    declaration it exists to catch — a false green on the worst case.
+    """
+    workflow = 'permissions: write-all\njobs:\n  j:\n    permissions: write-all\n'
+
+    assert _write_scopes(_top_level_permissions(workflow) or {}) == {'*'}
+    assert _write_scopes(_job_level_permissions(workflow)) == {'*'}

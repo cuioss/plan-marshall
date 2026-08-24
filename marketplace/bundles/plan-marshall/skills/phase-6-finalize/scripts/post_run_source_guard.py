@@ -151,7 +151,16 @@ def _observe_dirty_source(
                 '--untracked-files=no',
             ],
             capture_output=True,
-            text=True,
+            # ``surrogateescape``, matching the trackedness observation these
+            # paths are compared against (``_plan_state_exemption._observe_z``).
+            # A strict decode raises ``UnicodeDecodeError`` on a path carrying a
+            # byte that is not valid UTF-8 — a ``ValueError``, so outside the
+            # ``(OSError, SubprocessError)`` tuple below — and it would escape
+            # uncaught rather than degrading to the documented git-failure
+            # return. ``-z`` made the two sides agree on QUOTING; this is what
+            # makes them agree on BYTES.
+            encoding='utf-8',
+            errors='surrogateescape',
             timeout=_GIT_TIMEOUT_SECONDS,
             check=False,
         )

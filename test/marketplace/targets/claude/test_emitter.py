@@ -370,6 +370,62 @@ def test_a_scoped_emit_prunes_nothing(tmp_path: Path):
     assert (output_dir / 'alpha' / 'agents' / 'alpha-agent.md').is_file()
 
 
+# =============================================================================
+# Source-tree overlap refusal at the generate() boundary
+# =============================================================================
+#
+# ``emit_bundle_verbatim`` refuses an output that overlaps the source tree, but
+# that refusal is reachable ONLY from ``generate``'s ``for bundle_dir in
+# bundle_dirs`` loop. When no child of ``marketplace_dir`` carries
+# ``.claude-plugin/plugin.json`` — what a ``marketplace_dir`` naming the wrong
+# level produces — ``bundle_dirs`` is empty, that loop body never runs, and
+# ``prune_removed_bundles(output_dir, set())`` then deletes every child
+# directory of ``output_dir`` except ``.claude-plugin``. ``safe_rmtree`` does
+# not save it: each child is inside ``output_dir`` by construction, so its
+# containment check passes trivially. The refusal therefore has to live at the
+# ``generate`` boundary, before the destination is created, which is where the
+# sibling OpenCode emitter puts it. Both halves are pinned — the overlap is
+# refused, and an empty source emitted somewhere else still runs.
+
+
+def test_generate_refuses_an_output_dir_inside_the_source_tree(tmp_path: Path):
+    """Negative half: the source survives an emit aimed at itself with no bundles.
+
+    ``marketplace_dir`` names the marketplace ROOT rather than its ``bundles/``
+    child, so no bundle is discovered and the per-bundle wipe guard is never
+    reached. Without a boundary refusal the prune sweep deletes ``bundles/``
+    outright.
+    """
+    root = tmp_path / 'marketplace'
+    _synthetic_marketplace(root, ['alpha'])
+    source_plugin_json = root / 'bundles' / 'alpha' / '.claude-plugin' / 'plugin.json'
+    assert source_plugin_json.is_file(), 'fixture precondition'
+
+    with pytest.raises(ValueError, match='source tree'):
+        ClaudeTarget().generate(root, root)
+
+    assert source_plugin_json.is_file(), 'the prune sweep destroyed the source tree'
+    assert (root / 'bundles' / 'alpha' / 'agents' / 'alpha-agent.md').is_file()
+
+
+def test_generate_allows_an_empty_source_when_the_output_is_distinct(tmp_path: Path):
+    """Positive half: the guard keys on OVERLAP, not on an emptied source.
+
+    A source whose bundles have all been removed is a legitimate
+    prune-everything run when the destination is a real build location, so the
+    refusal must not swallow it.
+    """
+    root = tmp_path / 'src'
+    _synthetic_marketplace(root, [])
+    output_dir = tmp_path / 'out'
+    orphan = _plant_orphan(output_dir)
+
+    ClaudeTarget().generate(root / 'bundles', output_dir)
+
+    assert not orphan.exists(), 'a distinct output_dir must still be pruned'
+    assert (output_dir / '.claude-plugin' / 'marketplace.json').is_file()
+
+
 def test_emit_marker_fingerprint_non_empty_for_real_worktree(tmp_path: Path):
     """Regression test for the sentinel writer's repo_root resolution.
 

@@ -12,7 +12,7 @@ unimportant. A tree that silently lists a subset reads as a map of the
 package while being a map of whatever its last editor happened to touch, and
 the modules it omitted were the shared ones a newcomer most needs to find.
 
-```
+```text
 marketplace/targets/
 ├── __init__.py                   # TARGET_REGISTRY + register_target()
 ├── base.py                       # TargetBase ABC

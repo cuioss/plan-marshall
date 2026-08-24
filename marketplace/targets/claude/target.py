@@ -56,7 +56,7 @@ from marketplace.targets.claude.source_fingerprint import (
     hash_objects,
 )
 from marketplace.targets.component_targets import validate_component_scopes
-from marketplace.targets.fs_safety import safe_rmtree
+from marketplace.targets.fs_safety import is_within, safe_rmtree
 
 # Sentinel file written at the end of every successful emit. The
 # project-local ``sync-plugin-cache`` skill reads it to decide whether
@@ -128,10 +128,15 @@ def prune_removed_bundles(output_dir: Path, source_bundle_names: set[str]) -> li
     ``dist-manifest.json`` — are not bundles and are left untouched, as are
     symlinks, which an emit never creates.
 
-    The removal goes through :func:`safe_rmtree` so this second destructive
-    path carries the same containment invariant as the per-bundle wipe; a
-    direct ``shutil.rmtree`` here would be exactly the unguarded delete
-    ``fs_safety`` exists to prevent.
+    The removal goes through :func:`safe_rmtree` rather than a direct
+    ``shutil.rmtree`` so every destructive path in this module routes through
+    one primitive. That call is NOT what makes this safe, though, and reading
+    it as the guard is the mistake worth naming: every path passed to it is an
+    immediate child of ``output_dir``, so the containment check it performs is
+    satisfied by construction and can never refuse. What protects the tree is
+    the source-tree overlap refusal at the top of :meth:`ClaudeTarget.generate`
+    — the only check that fires when ``bundle_dirs`` is empty and this sweep is
+    therefore called with an empty ``source_bundle_names``.
 
     Returns the directories pruned, in the order they were removed.
     """
@@ -196,6 +201,24 @@ class ClaudeTarget(TargetBase):
             return emitted
 
         # Emit mode: verbatim mirror + plugin.json regeneration.
+        #
+        # Refuse a destination overlapping the source tree BEFORE anything is
+        # created or deleted. ``emit_bundle_verbatim`` carries the same refusal,
+        # but it is reachable only from the per-bundle loop below, so an EMPTY
+        # ``bundle_dirs`` — what a ``marketplace_dir`` naming the wrong level
+        # produces, since no child of it then carries
+        # ``.claude-plugin/plugin.json`` — never runs it. ``prune_removed_bundles``
+        # would then delete every child directory of ``output_dir`` except
+        # ``.claude-plugin``, and ``safe_rmtree`` cannot object: each child is
+        # inside ``output_dir`` by construction, so its containment check passes
+        # trivially. The sibling OpenCode emitter refuses the same overlap at the
+        # same point, for the same reason.
+        if is_within(output_dir, marketplace_dir):
+            raise ValueError(
+                f'Refusing to emit into {output_dir.resolve()}: it lies inside the source tree '
+                f'{marketplace_dir.resolve()} — the output directory must be a distinct build '
+                'location, not the marketplace source'
+            )
         output_dir.mkdir(parents=True, exist_ok=True)
 
         for bundle_dir in bundle_dirs:

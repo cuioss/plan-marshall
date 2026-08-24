@@ -651,6 +651,85 @@ def test_the_sweep_glob_reaches_every_nested_script():
     )
 
 
+def _sweep_marker_writes(
+    sources: list[tuple[str, str]],
+) -> tuple[dict[str, list[str]], list[str]]:
+    """Partition ``(label, source)`` pairs into marker writes and unparseable files.
+
+    Returns ``(offenders, unparseable)``. Sources that do not mention the marker
+    at all are skipped: they cannot carry a write of it, so they are neither an
+    offender nor a coverage gap.
+
+    A marker-mentioning source that does NOT parse is accumulated separately
+    rather than dropped. ``_writes_marker`` answers ``[]`` for it — the same
+    answer a genuinely clean file gives — so folding it into the offender-free
+    result would let a module the detector never read contribute to a verdict
+    about modules it did read. The tolerance inside ``_writes_marker`` stays as
+    it is (the sweep must not die on one bad file); what changes is that the
+    tolerance is now REPORTED instead of silent.
+    """
+    offenders: dict[str, list[str]] = {}
+    unparseable: list[str] = []
+    for label, text in sources:
+        if _MARKER_NAME not in text:
+            continue
+        try:
+            ast.parse(text)
+        except (SyntaxError, ValueError):
+            unparseable.append(label)
+            continue
+        writes = _writes_marker(text, label=label)
+        if writes:
+            offenders[label] = writes
+    return offenders, unparseable
+
+
+def _marker_sweep_sources() -> list[tuple[str, str]]:
+    """``(repo-relative path, text)`` for every source the marker sweep visits."""
+    return [
+        (str(path.relative_to(_REPO_ROOT)), path.read_text(encoding='utf-8'))
+        for path in _swept_sources()
+    ]
+
+
+def test_the_sweep_reports_a_marker_mentioning_source_it_could_not_parse():
+    """An unparseable file is a COVERAGE GAP, not a clean file.
+
+    ``_writes_marker`` answers ``[]`` for a source it failed to parse — the exact
+    same answer it gives for a source with no write — so a marker-mentioning
+    module that stops parsing is silently dropped from the sweep and contributes
+    a clean verdict it was never examined for. The population bindings above do
+    not close this: they count FILES, not PARSED files, so the module is still
+    present in every one of them.
+    """
+    sources = [('broken.py', "_MARKER = '.orphaned_at'\ndef broken(:\n")]
+
+    offenders, unparseable = _sweep_marker_writes(sources)
+
+    assert offenders == {}
+    assert unparseable == ['broken.py'], (
+        'a marker-mentioning source that does not parse was dropped from the '
+        'sweep instead of being reported as unexamined'
+    )
+
+
+def test_the_sweep_does_not_report_a_parseable_source_as_unexamined():
+    """CONTROL: a file that parses is examined, whatever the verdict.
+
+    Without this the assertion above could be satisfied by a sweep that called
+    every file unparseable, which would be just as untrue in the other direction.
+    """
+    sources = [
+        ('reader.py', "from pathlib import Path\n(Path('d') / '.orphaned_at').exists()\n"),
+        ('writer.py', "from pathlib import Path\n(Path('d') / '.orphaned_at').touch()\n"),
+    ]
+
+    offenders, unparseable = _sweep_marker_writes(sources)
+
+    assert unparseable == []
+    assert set(offenders) == {'writer.py'}
+
+
 def test_no_production_source_writes_the_shared_marker():
     """D6(d). No production script under ``marketplace/bundles/**/scripts`` writes
     the shared ``.orphaned_at`` field. The field has a foreign co-producer
@@ -658,20 +737,20 @@ def test_no_production_source_writes_the_shared_marker():
     write reappearing anywhere under our tree is a regression.
 
     The population this verdict covers is published in the assertion message: a
-    clean result means nothing without the size of the set it was clean over.
+    clean result means nothing without the size of the set it was clean over —
+    and the PARSED share of it is asserted separately, because a file the
+    detector could not read contributes the same ``[]`` as a file with no write.
     """
-    swept = _swept_sources()
-    offenders: dict[str, list[str]] = {}
-    for path in swept:
-        text = path.read_text(encoding='utf-8')
-        if _MARKER_NAME not in text:
-            continue
-        writes = _writes_marker(text, label=path.name)
-        if writes:
-            offenders[str(path.relative_to(_REPO_ROOT))] = writes
+    sources = _marker_sweep_sources()
+    offenders, unparseable = _sweep_marker_writes(sources)
 
+    assert not unparseable, (
+        f'{len(unparseable)} marker-mentioning source(s) could not be parsed, so '
+        'the detector returned [] for each and they joined the clean verdict '
+        f'without being examined: {unparseable}'
+    )
     assert not offenders, (
         'The shared .orphaned_at marker must not be written by any production source '
-        f'under our tree (it has a foreign co-producer). Swept {len(swept)} source '
+        f'under our tree (it has a foreign co-producer). Swept {len(sources)} source '
         f'file(s); offending write(s): {offenders}'
     )

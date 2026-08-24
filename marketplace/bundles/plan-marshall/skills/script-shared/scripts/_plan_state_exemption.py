@@ -78,12 +78,23 @@ def _observe_z(tree: str | Path, git_args: list[str]) -> set[str] | None:
     Returns:
         The set of non-empty NUL-separated entries, or ``None`` when the
         observation could not run or exited non-zero.
+
+    The decode is ``surrogateescape``, matching the porcelain observation these
+    paths are compared against (``_git_helpers.git_dirty_files``,
+    ``post_run_source_guard._observe_dirty_source``). It is load-bearing on both
+    counts: a strict decode raises ``UnicodeDecodeError`` on a path carrying a
+    byte that is not valid UTF-8 — a ``ValueError``, so outside the
+    ``(OSError, SubprocessError)`` tuple below, escaping uncaught instead of
+    yielding the ``None`` this function documents — and a decode that differed
+    from the other side's would make the ``path in tracked`` comparison miss for
+    exactly those paths, which is the failure ``-z`` was adopted to end.
     """
     try:
         completed = subprocess.run(
             ['git', '-C', str(tree), *git_args],
             capture_output=True,
-            text=True,
+            encoding='utf-8',
+            errors='surrogateescape',
             timeout=_GIT_TIMEOUT_SECONDS,
             check=False,
         )

@@ -10,6 +10,7 @@ Split from test_phase_handshake.py: covers low-level git helpers
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -60,6 +61,69 @@ def test_git_head_outside_repo(outside_repo_dir: Path) -> None:
     # Must be OUTSIDE the repo: pytest's tmp_path now roots under the repo-local
     # --basetemp, where git_head would resolve HEAD instead of returning None.
     assert git_helpers.git_head(outside_repo_dir) is None
+
+
+# =============================================================================
+# Undecodable path bytes
+# =============================================================================
+#
+# A Git path is a byte string, and POSIX admits every byte but NUL and ``/``. The
+# two PATH-bearing helpers decode their subprocess output, and a STRICT decode
+# raises ``UnicodeDecodeError`` — a ``ValueError``, therefore outside the
+# ``(CalledProcessError, FileNotFoundError, TimeoutExpired)`` tuple both helpers
+# catch, so it escapes the caller uncaught rather than degrading to the ``None``
+# the helpers document. ``-z`` made the two sides of the downstream comparison
+# agree on QUOTING; it says nothing about the BYTES.
+
+#: A byte no UTF-8 decoder accepts.
+_UNDECODABLE_BYTE = b'\xff'
+#: The path the stand-in git reports, as raw bytes.
+_UNDECODABLE_PATH = b'bad' + _UNDECODABLE_BYTE + b'.txt'
+
+
+@pytest.fixture
+def git_emitting_an_undecodable_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Put a stand-in ``git`` on PATH that writes an undecodable path byte.
+
+    The bytes have to arrive through a real subprocess pipe, because the decode
+    under test is the one ``subprocess.run`` performs. The filesystem is not a
+    usable source of them: APFS rejects a filename that is not valid UTF-8, so a
+    fixture creating one would error on macOS before reaching the subject and
+    would exercise the helper on Linux only.
+
+    The stand-in answers both spellings the helpers use — it NUL-terminates the
+    record when ``-z`` is present and newline-terminates it otherwise.
+    """
+    bin_dir = tmp_path / 'fakebin'
+    bin_dir.mkdir()
+    script = bin_dir / 'git'
+    script.write_text(
+        '#!/usr/bin/env python3\n'
+        'import sys\n'
+        f'sys.stdout.buffer.write(b"?? " + {_UNDECODABLE_PATH!r})\n'
+        'sys.stdout.buffer.write(b"\\x00" if "-z" in sys.argv else b"\\n")\n',
+        encoding='utf-8',
+    )
+    script.chmod(0o755)
+    monkeypatch.setenv('PATH', str(bin_dir), prepend=os.pathsep)
+    return bin_dir
+
+
+def test_git_dirty_files_reports_a_path_carrying_an_undecodable_byte(
+    git_emitting_an_undecodable_path: Path, tmp_path: Path
+) -> None:
+    """The path is returned round-trippably instead of raising out of the helper."""
+    paths = git_helpers.git_dirty_files(tmp_path)
+
+    assert paths is not None
+    assert [p.encode('utf-8', 'surrogateescape') for p in paths] == [_UNDECODABLE_PATH]
+
+
+def test_git_dirty_count_counts_a_path_carrying_an_undecodable_byte(
+    git_emitting_an_undecodable_path: Path, tmp_path: Path
+) -> None:
+    """The sibling counter performs the same decode and needs the same tolerance."""
+    assert git_helpers.git_dirty_count(tmp_path) == 1
 
 
 # =============================================================================

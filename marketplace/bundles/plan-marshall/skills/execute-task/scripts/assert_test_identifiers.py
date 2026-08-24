@@ -169,16 +169,26 @@ def assert_identifiers_in_log(
     missing: list[str] = []
     for identifier in identifiers:
         escaped = re.escape(identifier)
-        # Anchor to a whitespace boundary or end-of-line so that e.g.
-        # ``test_login`` does not false-match a line carrying only
-        # ``test_login_failure``. pytest writes nodeid<whitespace>STATUS so the
-        # anchor is always satisfied when the test was actually collected.
-        exact = re.compile(rf'{escaped}(?:\s|$)')
+        # Anchor BOTH sides to a whitespace boundary. The right anchor
+        # (``(?:\s|$)``) is what stops ``test_login`` false-matching a line
+        # carrying only ``test_login_failure``; pytest writes
+        # nodeid<whitespace>STATUS, so it is always satisfied when the test was
+        # actually collected. The left anchor (``(?<!\S)``) is the mirror of it
+        # and is equally load-bearing: without it a log line for
+        # ``other/test/foo/test_thing.py::test_login`` — a DIFFERENT file whose
+        # nodeid merely ends with the requested one — answers for
+        # ``test/foo/test_thing.py::test_login``, and a test that never ran is
+        # reported found. ``(?<!\S)`` rather than ``(?:^|\s)`` because pytest
+        # indents nodeids in several report sections, so the boundary must
+        # accept leading whitespace as well as start-of-line, and a
+        # zero-width look-behind keeps the match span the nodeid itself.
+        exact = re.compile(rf'(?<!\S){escaped}(?:\s|$)')
         # A parametrized function never appears bare — only as
-        # ``identifier[case]`` — so the bracket is the boundary that proves the
-        # test ran. It cannot reintroduce a prefix collision: a colliding
-        # sibling continues with an identifier character, not ``[``.
-        parametrized = re.compile(rf'{escaped}\[')
+        # ``identifier[case]`` — so the bracket is the right-hand boundary that
+        # proves the test ran. It cannot reintroduce a prefix collision: a
+        # colliding sibling continues with an identifier character, not ``[``.
+        # The left anchor is the same one, for the same reason.
+        parametrized = re.compile(rf'(?<!\S){escaped}\[')
         if any(exact.search(line) for line in lines):
             found.append(identifier)
             found_forms.append('exact')

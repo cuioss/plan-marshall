@@ -312,6 +312,80 @@ def test_valid_json_that_is_not_an_object_returns_the_diagnostic(
     assert 'generate.py --target claude' in result.summary
 
 
+def test_an_unreadable_emitted_plugin_json_returns_the_diagnostic(
+    clean_marketplace: tuple[Path, Path]
+):
+    """A path that exists but cannot be READ is unusable in the same way.
+
+    ``read_text`` raises ``OSError`` when the path is a directory or permissions
+    deny it. ``OSError`` is not ``JSONDecodeError``, so it was never converted
+    into ``CorruptEmittedPluginJsonError`` and escaped the caller's ``except``,
+    terminating the whole equality check instead of producing the documented
+    re-emit diagnostic for one bundle.
+    """
+    marketplace, target = clean_marketplace
+    plugin_path = target / 'demo' / '.claude-plugin' / 'plugin.json'
+    plugin_path.unlink()
+    plugin_path.mkdir()
+
+    bundles = list(iter_bundle_dirs(marketplace, None))
+    result = run_equality_check(target, bundles)
+
+    assert result.passed is False
+    assert result.unusable_target_bundles == ['demo']
+    assert 'generate.py --target claude' in result.summary
+
+
+def test_undecodable_bytes_in_an_emitted_plugin_json_return_the_diagnostic(
+    clean_marketplace: tuple[Path, Path]
+):
+    """Bytes that are not valid UTF-8 raise ``UnicodeDecodeError``, not a decode error.
+
+    ``UnicodeDecodeError`` derives from ``ValueError`` and is raised by
+    ``read_text`` BEFORE ``json.loads`` is ever reached, so the
+    ``JSONDecodeError`` guard cannot see it.
+    """
+    marketplace, target = clean_marketplace
+    plugin_path = target / 'demo' / '.claude-plugin' / 'plugin.json'
+    plugin_path.write_bytes(b'{"name": "\xff"}')
+
+    bundles = list(iter_bundle_dirs(marketplace, None))
+    result = run_equality_check(target, bundles)
+
+    assert result.passed is False
+    assert result.unusable_target_bundles == ['demo']
+
+
+@pytest.mark.parametrize('field_name', ['agents', 'commands', 'skills'])
+def test_a_non_list_array_field_returns_the_diagnostic(
+    clean_marketplace: tuple[Path, Path], field_name: str
+):
+    """``isinstance(parsed, dict)`` is not the whole of "usable".
+
+    The diff calls ``list()`` on every array field and ``set()`` on two of them,
+    so an object declaring one as a scalar passes the object check and then
+    raises ``TypeError`` from inside ``check_bundle`` — again escaping the
+    caller's ``except``, which catches only ``CorruptEmittedPluginJsonError``.
+    """
+    marketplace, target = clean_marketplace
+    doc: dict = {
+        'name': 'demo',
+        'version': '0.0.1',
+        'description': 'Demo bundle',
+        'agents': ['./agents/demo-agent.md'],
+        'commands': [],
+        'skills': [],
+    }
+    doc[field_name] = 3
+    _emitted(target, 'demo', doc)
+
+    bundles = list(iter_bundle_dirs(marketplace, None))
+    result = run_equality_check(target, bundles)
+
+    assert result.passed is False
+    assert result.unusable_target_bundles == ['demo']
+
+
 def test_the_unusable_list_is_named_for_the_outcome_not_one_of_its_causes(
     clean_marketplace: tuple[Path, Path]
 ):

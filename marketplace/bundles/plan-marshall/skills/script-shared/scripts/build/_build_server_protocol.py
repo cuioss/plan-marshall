@@ -822,10 +822,15 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     the raw test-runner output the inner build parsed. Re-parsing therefore yields
     no test summary, and reporting that as a zero is a false could-not-look over a
     fully-examined population. The inner wrapper already measured the count; the
-    reader's job is to carry it, not to recompute it. A log with a ``status:`` but
-    no ``tests_run:`` therefore yields a verdict whose ``tests_run`` is ``None`` —
-    the honest "the log stated no count", which a caller must not collapse into
-    ``0``.
+    reader's job is to carry it, not to recompute it.
+
+    A log with a ``status:`` but no ``tests_run:`` therefore yields a verdict whose
+    ``tests_run`` is ``None`` — the honest "the log stated no count", which a
+    caller must not collapse into ``0``. A ``tests_run:`` that is unparseable OR
+    NEGATIVE yields that same ``None``: an executed-test count below zero is not a
+    count, and reporting it as one would launder a nonsense value into a
+    measurement. ``tests_run: 0`` is kept, because "executed no tests" is a real
+    fact and a different one from "stated no count".
 
     Args:
         log_file: Path to the job log the supervisor streamed the child into.
@@ -849,11 +854,21 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
                         exit_code = None
                 elif line.startswith('tests_run:'):
                     try:
-                        tests_run = int(_toon_scalar(line))
+                        parsed_count = int(_toon_scalar(line))
                     except ValueError:
                         # An unparseable count is UNKNOWN, not zero — the whole
                         # point of carrying the field is that the two differ.
                         tests_run = None
+                    else:
+                        # ``int`` accepts ``-1`` happily, so the ValueError guard
+                        # alone lets a negative through as a real non-``None``
+                        # count. A negative executed-test count is meaningless;
+                        # publishing it launders nonsense into a measurement.
+                        # ``None`` is the honest "the log stated no usable count".
+                        # The bound is ``>= 0``, not ``> 0``: zero is a genuine
+                        # "this run executed no tests", a different fact from
+                        # "the log stated no count".
+                        tests_run = parsed_count if parsed_count >= 0 else None
     except OSError:
         return None
     if status is None:

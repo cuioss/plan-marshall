@@ -540,6 +540,37 @@ class TestReadLogVerdict:
         assert verdict.status == 'error'
         assert verdict.exit_code is None
 
+    def test_a_negative_tests_run_degrades_to_none(self, tmp_path):
+        """``int('-1')`` succeeds, so the ValueError guard alone lets it through.
+
+        A negative executed-test count is meaningless, and a caller reading
+        ``tests_run`` as non-``None`` treats it as a real published count — the
+        laundering of a nonsense value into a measurement this reader exists to
+        prevent. ``None`` is the honest verdict, the same one an absent or
+        unparseable line yields.
+        """
+        log = tmp_path / 'job.log'
+        log.write_text('status: success\nexit_code: 0\ntests_run: -1\n')
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.tests_run is None
+
+    def test_a_zero_tests_run_is_kept(self, tmp_path):
+        """Positive control: zero is a real count, not a rejected one.
+
+        A guard written as ``> 0`` would collapse a genuine "the run executed no
+        tests" into "the log stated no count", which are different facts.
+        """
+        log = tmp_path / 'job.log'
+        log.write_text('status: success\nexit_code: 0\ntests_run: 0\n')
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.tests_run == 0
+
     def test_log_without_status_line_returns_none(self, tmp_path):
         log = tmp_path / 'job.log'
         log.write_text('just some build chatter\n')

@@ -10,11 +10,13 @@ execute-task can block silently-skipped tests.
 
 Design notes:
 
-* Substring matching is intentional — pytest node identifiers contain ``::``
-  separators, so realistic nodeids like ``test/foo.py::test_bar`` cannot
-  ambiguously collide with a longer identifier like ``test_barbaz`` (the
-  separator anchors the left side). Fixtures use realistic pytest output so
-  tests reflect actual execute-task usage rather than a synthetic edge case.
+* Matching is anchored on BOTH sides, not merely a substring test. The ``::``
+  separator inside a nodeid anchors nothing on its own: it sits in the middle of
+  the identifier, so a log line whose own nodeid merely ENDS WITH the requested
+  one — a different file under a longer path prefix — would satisfy an unanchored
+  match and report a test as run that never was. Fixtures use realistic pytest
+  output so tests reflect actual execute-task usage rather than a synthetic edge
+  case.
 * Match is case-sensitive — so ``Test_Foo`` will not match ``test_foo``.
 * Log fixtures are written via ``tmp_path`` so each test has an isolated
   filesystem and the helper's IO paths are exercised end-to-end.
@@ -629,3 +631,66 @@ class TestParametrizedIdentifierIsFound:
         # Assert
         assert result.passed is False
         assert result.missing == ('test/foo/test_thing.py::test_absent',)
+
+
+# =============================================================================
+# Left-boundary anchoring
+# =============================================================================
+
+
+class TestTheLeftBoundaryIsAnchoredToo:
+    """A nodeid counts as found only when it BEGINS at a whitespace boundary.
+
+    Both patterns anchored the right side alone, so a log line whose own nodeid
+    merely ends with the requested one — a same-named test in a different file
+    under a longer path prefix — satisfied the match. The helper then reports a
+    test as having run while the log records a different test entirely, which is
+    the single verdict the diff assertion exists to refuse.
+    """
+
+    def test_a_longer_path_prefix_does_not_false_match(self, tmp_path: Path) -> None:
+        """``other/test/foo/...`` must not answer for ``test/foo/...``."""
+        # Arrange — a DIFFERENT file, whose nodeid ends with the requested one.
+        log_path = tmp_path / 'module-tests.log'
+        log_path.write_text('other/test/foo/test_thing.py::test_login PASSED\n', encoding='utf-8')
+
+        # Act
+        result = assert_identifiers_in_log(['test/foo/test_thing.py::test_login'], log_path)
+
+        # Assert
+        assert result.passed is False
+        assert result.missing == ('test/foo/test_thing.py::test_login',)
+
+    def test_a_longer_path_prefix_does_not_false_match_a_parametrized_stem(
+        self, tmp_path: Path
+    ) -> None:
+        """The bracket alternative needs the same left anchor as the exact form."""
+        # Arrange
+        log_path = tmp_path / 'module-tests.log'
+        log_path.write_text(
+            'other/test/foo/test_thing.py::test_shapes[alias] PASSED\n', encoding='utf-8'
+        )
+
+        # Act
+        result = assert_identifiers_in_log(['test/foo/test_thing.py::test_shapes'], log_path)
+
+        # Assert
+        assert result.passed is False
+        assert result.missing == ('test/foo/test_thing.py::test_shapes',)
+
+    def test_an_indented_nodeid_still_matches(self, tmp_path: Path) -> None:
+        """Positive control: the anchor is whitespace, not start-of-line.
+
+        pytest indents nodeids in several report sections, so an anchor keyed on
+        column zero would refuse lines the log really does carry.
+        """
+        # Arrange
+        log_path = tmp_path / 'module-tests.log'
+        log_path.write_text('    test/foo/test_thing.py::test_login PASSED\n', encoding='utf-8')
+
+        # Act
+        result = assert_identifiers_in_log(['test/foo/test_thing.py::test_login'], log_path)
+
+        # Assert
+        assert result.passed is True
+        assert result.found_forms == ('exact',)

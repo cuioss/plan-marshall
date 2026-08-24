@@ -292,9 +292,9 @@ This skill runs as a leaf inside the `execution-context` envelope — it issues 
 
    **Sub-step: Diff written test identifiers against the module-test log**
 
-   After a green `module-tests` run that produced new test files during step 3 (Implement Tests):
+   After a green `module-tests` run, for every test function written OR MODIFIED during step 3 (Implement Tests):
 
-   1. Collect pytest nodeids for every newly-written test file: `{rel_path}::{test_function}` for each test function. Write them to a temp file under `.plan/temp/` (one identifier per line).
+   1. Collect pytest nodeids for every test function written or modified during step 3 — `{rel_path}::{test_function}` for each — whether it lives in a newly-created test file or in an existing one that step 3 edited. Write them to a temp file under `.plan/temp/` (one identifier per line). Step 3 explicitly permits modifying existing test files, so collecting from new files only leaves a modified test with no identifier at all, and the assertion below cannot detect its omission from the run — the silent-skip this sub-step exists to catch.
    2. Run the diff assertion helper:
 
    ```bash
