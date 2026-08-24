@@ -82,15 +82,16 @@ Completeness Issues:
 The structured cross-file analysis comes from `_analyze_crossfile.py`, wired to
 the `cross-file` subcommand of `_analyze.py`.
 
-⛔ Both modules are underscore-prefixed, so NEITHER registers an executor
-notation — there is no `.plan/execute-script.py` form for this analysis, and
-**`doctor-marketplace report` does not run it**. A `report` run emits exactly
+⛔ **`doctor-marketplace report` does not run it.** A `report` run emits exactly
 `summary`, `issues_by_type`, `issues_by_bundle`, `safe_fixes`, `risky_fixes`,
 `unfixable_issues`, `components_for_tool_analysis` and `llm_review_items`; no
-cross-file or duplication data appears in it at any scope. The reviewer invokes
-the analyzer directly or performs the equivalent comparison by hand — the same
-standing as `_cmd_cross_file.py::verify_findings` under
-[Verification of LLM Findings](#verification-of-llm-findings) below.
+cross-file or duplication data appears in it at any scope. Run the analysis
+through its own notation instead:
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:_analyze \
+  cross-file --skill-path {skill_dir} [--similarity-threshold F]
+```
 
 **Analyzer Output Categories** — what `_analyze_crossfile.py` itself produces,
 NOT the contents of a `report` run:
@@ -480,8 +481,12 @@ This guide is loaded in **Phase 3: Analyze Content Quality**.
 
 ### Step-by-Step Integration
 
-1. **Run the cross-file analysis pass** — the `cross-file` subcommand of
-   `_analyze.py`, over the skill directory under review.
+1. **Run the cross-file analysis pass** over the skill directory under review:
+
+   ```bash
+   python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:_analyze \
+     cross-file --skill-path {skill_dir}
+   ```
 
    ⛔ NOT `doctor-marketplace report`. That verb emits no cross-file or
    duplication data at any scope, so a pass built on it would carry every
