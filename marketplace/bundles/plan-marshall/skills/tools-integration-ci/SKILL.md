@@ -127,7 +127,7 @@ Load the relevant standard when performing specific operations:
 Every `ci` leaf subcommand accepts an optional top-level routing flag
 placed **before** the command/subcommand pair. When supplied, every
 underlying `gh`/`glab` subprocess runs with `cwd=<resolved_path>`, so
-branch-aware operations (`pr view`, `ci status`, `pr create`, `pr merge`,
+branch-aware operations (`pr view`, `checks status`, `pr create`, `pr merge`,
 …) resolve HEAD against the specified checkout instead of the Python
 process cwd.
 
