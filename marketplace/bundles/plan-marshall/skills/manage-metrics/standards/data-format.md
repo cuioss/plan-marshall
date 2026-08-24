@@ -897,7 +897,7 @@ The three data rows above are the three distinguishable cases, in order: a dispa
 
 ### Per-Dispatch Context-Load Attribution
 
-This section is the **single source of truth** for the dispatch-boundary row's column order, count, and unmeasured representation. Every consumer cites it as authority — and each one nonetheless RESTATES part of the schema in its own file, because they run in separate processes (and one lives outside this repository's crawled inventory) and cannot import a shared constant. Those restating surfaces are enumerated, with the obligation they carry, in **Restating surfaces (lock-step obligation)** at the end of this section; that list is the thing to keep in sync, and it is not empty.
+This section is the **single source of truth** for the dispatch-boundary row's column order, count, and unmeasured representation. Every consumer cites it as authority — and each one nonetheless RESTATES part of the schema in its own file, because they run in separate processes and cannot import a shared constant. Those restating surfaces are enumerated, with the obligation they carry, in **Restating surfaces (lock-step obligation)** at the end of this section; that list is the thing to keep in sync, and it is not empty.
 
 Each row carries **nine columns**: the **legacy five** followed by the **four context-load columns appended at the END** for positional backward compatibility. The four context-load columns are the per-DISPATCH counterpart to the per-PHASE four-field `message.usage` view that `enrich` writes (see Per-Phase Fields above); they capture the dispatched agent's context-load totals at dispatch termination so per-dispatch context cost (dispatch count, collapsed triage contexts, per-dispatch context size) becomes measurable.
 

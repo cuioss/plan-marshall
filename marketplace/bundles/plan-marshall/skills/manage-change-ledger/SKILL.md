@@ -319,10 +319,7 @@ it must cover are stated in
 [`../extension-api/standards/build-systems-common.md`](../extension-api/standards/build-systems-common.md)
 § "Re-derive the ledger-reading rows". That derivation intersects a
 `read_entries` sweep with a build-kind filter, so it is a floor for those two
-rows and never a replacement for this table: the `kind=job` re-attach row above
-carries no build-kind filter and is outside the derivation entirely, so a
-maintainer who runs it should expect fewer files back than this table has
-`consumes` rows.
+rows and never a replacement for this table.
 
 ## Related
 
