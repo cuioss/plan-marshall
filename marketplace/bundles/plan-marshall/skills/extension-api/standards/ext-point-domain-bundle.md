@@ -88,12 +88,13 @@ def find_extension_path(bundle_dir: Path) -> Path | None:
 
 Manifest discovery is an internal library operation, not a user-facing CLI verb. `discover_all_extensions()` in `extension_discovery.py` resolves every bundle's manifest through `find_extension_path()` (the frontmatter scanner) and loads each `extension.py`. Workflow components consume the discovery result through the library function; there is no standalone `extension_discovery` CLI subcommand for whole-marketplace discovery.
 
-Per-extension `extension.py` validity is checked with the plugin-doctor extension validator:
-
-```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace validate-contracts \
-    --skill {bundle}:plan-marshall-plugin
-```
+⛔ **No CLI verb checks `extension.py` validity either, and none may be documented
+here.** `validate-contracts` covers extension-POINT implementors — `ext-*` /
+`recipe-*` skills carrying an `implements:` field — so
+`validate-contracts --skill {bundle}:plan-marshall-plugin` returns
+`total_checked: 0` with `status: success`: a well-formed invocation over an empty
+population, which reads as a pass while checking nothing. Like discovery above,
+validity is established at load time, not by a validator.
 
 ## Current Implementations
 

@@ -806,14 +806,21 @@ Adding a single hook to an existing bundle is smaller — override the relevant 
 
 ## Validation
 
-Extensions are validated by the plugin-doctor contract validator:
+⛔ **No validator enforces this contract, and no CLI verb may be documented as
+doing so.** `validate-contracts` covers extension-POINT implementors — `ext-*` /
+`recipe-*` skills carrying an `implements:` field, rules EC-01…EC-50
+(`_cmd_extension.py::validate_extension_contracts`). A domain-bundle
+`plan-marshall-plugin` manifest is not one, so
+`validate-contracts --skill {bundle}:plan-marshall-plugin` returns
+`total_checked: 0` with `status: success` — well-formed, and measuring nothing.
 
-```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace validate-contracts \
-    --skill {bundle}:plan-marshall-plugin
-```
+The properties below are therefore **requirements on the author**, not checks a
+tool performs. Each is established at load time, when
+`discover_all_extensions()` imports the module and calls its methods: a missing
+class, a syntax error, or a structurally invalid return surfaces as a runtime
+failure at the point of use, not as a validation finding.
 
-Validation checks:
+Contract requirements:
 - Extension class exists and inherits from ExtensionBase
 - Required methods implemented (get_skill_domains)
 - No syntax errors

@@ -94,20 +94,20 @@ Skill directory names must not end with a noun suffix reserved for spawnable mar
 
 **Conditional**: Only execute if skill name is `plan-marshall-plugin`.
 
-**Validation**:
-1. Extract bundle name from skill path: `marketplace/bundles/{bundle}/skills/plan-marshall-plugin`
-2. Run manifest validation:
-   ```bash
-   python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace validate-contracts \
-     --skill {bundle}:plan-marshall-plugin
-   ```
-3. Parse validation output for issues
-4. Add findings to issue list with appropriate fix categories
+⛔ **No CLI verb validates the domain-bundle manifest, and none may be documented
+here.** `validate-contracts` covers extension-POINT implementors — `ext-*` /
+`recipe-*` skills carrying an `implements:` field, rules EC-01…EC-50
+(`_cmd_extension.py::validate_extension_contracts`). A `plan-marshall-plugin`
+manifest is not one, so `validate-contracts --skill {bundle}:plan-marshall-plugin`
+returns `total_checked: 0` with `status: success` — a well-formed invocation over
+an empty population, which is a false green rather than a check. Measured: `0` for
+that filter, `1` for the control `--skill pm-dev-java:ext-triage-java`, `28`
+unfiltered.
 
-**Issue categorization**:
-- Schema/structure issues → Safe fix
-- Missing extension skills → Risky fix
-- Invalid skill references → Risky fix
+The manifest is exercised at **runtime** by `discover_all_extensions()` in
+`extension_discovery.py`, not by a validator. Review it by reading it against the
+domain-bundle contract, and categorise findings as: schema/structure → safe fix;
+missing extension skills → risky fix; invalid skill references → risky fix.
 
 ### Validate Sub-Document Quality
 

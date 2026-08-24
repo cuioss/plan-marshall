@@ -239,14 +239,17 @@ API references in documentation sections (not workflow steps) may be acceptable 
 
 Applies when doctoring a skill where `name` equals `plan-marshall-plugin` and contains an `extension.py` implementing the Extension API.
 
-### Validation Script
+### No validation script
 
-```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace validate-contracts \
-  --skill {bundle_name}:plan-marshall-plugin
-```
+⛔ **There is no CLI verb for this, and none may be documented here.**
+`validate-contracts` covers extension-POINT implementors — `ext-*` / `recipe-*`
+skills carrying an `implements:` field — so
+`validate-contracts --skill {bundle}:plan-marshall-plugin` returns
+`total_checked: 0` with `status: success`: well-formed, and measuring nothing.
 
-Extract bundle name from skill path: `marketplace/bundles/{bundle}/skills/plan-marshall-plugin`
+The functions below are checked by **reading the module against this table**.
+They are additionally exercised at load time by `discover_all_extensions()`,
+where a missing or malformed function surfaces as a runtime failure.
 
 ### Required Functions
 
