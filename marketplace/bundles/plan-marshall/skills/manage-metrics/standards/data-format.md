@@ -919,6 +919,8 @@ The four context-load columns are OPTIONAL — a caller with no `message.usage` 
 
 The legacy five columns keep their `0` default deliberately: no consumer distinguishes an absent from a zero on those, so introducing a second unmeasured surface there would add a distinction nothing reads.
 
+**Columns are resolved BY NAME, from the row block's own `rows[N]{…}:` header.** The nine-column order above is the order a writer emits; a reader stands it in only until a header declares names, and once one does every column — the legacy five included — is resolved by its declared name rather than by position. The header is also what gives a cell its meaning at all: a reader gates on having SEEN one, so a file carrying no header line yields NO rows rather than a positional guess. A column the header does not declare is therefore in exactly the position of one the row is too short to carry, and reads the same way — the fourth row of the table below covers both.
+
 Every reader of columns 6–9 MUST implement the same cell read, and MUST NOT collapse it to two:
 
 | Cell | Reading | Required behaviour |
@@ -926,7 +928,7 @@ Every reader of columns 6–9 MUST implement the same cell read, and MUST NOT co
 | a nonzero integer | **measured** | Carry the int — a real value under any writer |
 | a literal `0` | **measured** when the row is datable to the current writer, else **indeterminate** | Carry `0` only when a post-token fingerprint dates the row; otherwise omit the key and name the column indeterminate — see *Provenance of a measured zero* below |
 | the literal `unmeasured` | **recognised, and deliberately not measured** | Carry the column as ABSENT. Never substitute `0` |
-| a column the row is too short to have | **unmeasured** | Carry the column as ABSENT, exactly as an explicit `unmeasured` token. A legacy five-column row recorded no context-load measurement at all, so absence is the honest reading — not a parse failure. Never substitute `0` |
+| a column the row does not carry — the header does not declare it, or the row is too short to have it | **unmeasured** | Carry the column as ABSENT, exactly as an explicit `unmeasured` token. A legacy five-column row recorded no context-load measurement at all, so absence is the honest reading — not a parse failure. Never substitute `0` |
 | anything else (a non-int, non-token cell value) | **unrecognised** | Report as unrecognised — distinct from unmeasured. Never default it, and never fold it into either neighbour |
 
 The distinction between *unmeasured* and *unrecognised* is load-bearing: the first is a statement the writer made on purpose, the second is a shape the reader failed to understand. Collapsing them would let a genuinely corrupt row read as a deliberate abstention.

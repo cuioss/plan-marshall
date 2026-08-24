@@ -186,7 +186,8 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture s
 ⛔ **The second pattern must cover all three spellings of the build-kind filter** — `== 'build'`,
 `!= 'build'` paired with a `continue`, and the `KIND_BUILD` constant. A pattern written for the `==`
 form alone under-reports: run against this tree it returns a single file that is not even an importer,
-so two of the three ledger-reading members go missing behind a clean-looking `count`. That is the
+so the intersection is EMPTY and all three ledger-reading members go missing behind a clean-looking
+`count` — the `==` spelling is used by no ledger-reading member at all. That is the
 defect class this whole section names — a sweep that returns a number is not thereby a measurement.
 
 Read the sweep's `truncated`, `unreadable[]` and `elided[]` fields before believing either result.

@@ -313,10 +313,16 @@ from _ledger_core import (
 | `manage-tasks:pre-commit-verify-freshness` gate | consumes | imports `read_entries` + `compute_worktree_sha`; scans `kind=build` by `status == success` + `worktree_sha`, then cross-checks each matching row's `notation` against the project's architecture-resolved build notations |
 | `plan-retrospective:analyze-logs` `summarize_build_ledger` | consumes | imports `read_entries`; keeps `kind=build` rows for one `plan_id` and partitions their `status` into `pass`/`error`/`timeout`/`killed`/`status_unknown` alongside the `duration_seconds` sum |
 
-The consuming rows are a derived set, not a maintained one — the derivation
-command and the three spellings it must cover are stated in
+The two `kind=build` consuming rows have a completeness FLOOR that can be
+re-derived rather than trusted — the derivation command and the three spellings
+it must cover are stated in
 [`../extension-api/standards/build-systems-common.md`](../extension-api/standards/build-systems-common.md)
-§ "Re-derive the ledger-reading rows".
+§ "Re-derive the ledger-reading rows". That derivation intersects a
+`read_entries` sweep with a build-kind filter, so it is a floor for those two
+rows and never a replacement for this table: the `kind=job` re-attach row above
+carries no build-kind filter and is outside the derivation entirely, so a
+maintainer who runs it should expect fewer files back than this table has
+`consumes` rows.
 
 ## Related
 
