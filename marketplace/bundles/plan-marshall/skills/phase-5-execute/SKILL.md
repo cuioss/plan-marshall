@@ -599,14 +599,13 @@ finding_emitted: false
 
 ```toon
 status: error
-error: git_diff_failed | finding_persist_failed
 ```
 
-`git_diff_failed` means the diff itself could not be computed; `finding_persist_failed` means a residual set OVER the threshold was measured but its finding could not be written, so the run reports the rejected finding's content inline (`message`, `finding_title`, `finding_detail`, `residual_count`) rather than absorbing the loss. Both return exit code `1` — unlike the two non-measuring paths below, an error IS a failure of the guard.
+Two causes reach this shape. `git_diff_failed` means the diff itself could not be computed — the `error` line carries the token followed by the underlying exception, not the token alone. `finding_persist_failed` means a residual set OVER the threshold was measured but its finding could not be written, so the run reports the rejected finding's content inline (`message`, `finding_title`, `finding_detail`, `residual_count`) rather than absorbing the loss. Both return exit code `1` — unlike the `could_not_look` shape above, an error IS a failure of the guard.
 
 ⛔ **`residual_count` is ABSENT on the `could_not_look` shape, and that absence is the contract.** The count is the field consumers gate on, so a `0` published by a run that never compared anything is indistinguishable from "compared, and found no scope creep" — a `reason` field alone does not fix that, because it is advisory and trivially dropped. Read `status` FIRST: on `could_not_look` there is no measurement to act on, and a caller that branches on `residual_count` finds no key rather than a false zero. Never substitute `0` for the missing key.
 
-Both non-measuring paths return exit code `0` — an unmeasurable guard is not a failure of the run it guards.
+Both `could_not_look` reasons return exit code `0` — an unmeasurable guard is not a failure of the run it guards.
 
 When `finding_emitted: true`, the helper has already persisted a `scope_creep_warning` finding to the Q-Gate findings store via `manage-findings qgate add --type scope_creep_warning`. The finding flows into the Step 11 triage loop alongside other verify findings (same resolution path: FIX / SUPPRESS / ACCEPT). No additional surface action required here — the standard triage loop handles it.
 
