@@ -709,18 +709,19 @@ accumulate, the verb ships as a measurement with **no parity claim attached**.
 
 The three per-bot registry docs each carry closure claims about what recognises that bot's refusal.
 They were **read first-party** when the recognition stack was widened, and each is recorded here with
-its verdict — so "left unedited" reads as a decision rather than as a file nobody opened. A registry
-doc declares **per-bot data**, not the stack's semantics, which is why the rule above lives here and
-the corrections below belong in those files rather than in this one:
+its verdict — so each outcome, whether corrected in its own file or left closed, reads as a decision
+rather than as a file nobody opened. A registry doc declares **per-bot data**, not the stack's
+semantics, which is why the rule above lives here and the corrections below landed in those files
+rather than in this one:
 
 | Registry doc | Claim read | Verdict |
 |---|---|---|
 | `standards/sourcery.md` | The registry marker "is the ONLY thing that recognises this refusal, because the structural last-resort recogniser is blind to the phrasing". | **Still true, and left closed.** The claim is about which arm can READ the notice. The enumerative arm reads nothing — it fires only where every arm ahead of it declines, and this body they do not decline — so it neither recognises this refusal nor contradicts the claim. |
-| `standards/coderabbit.md` | "detection is the bot-agnostic recogniser in `_github_pr._is_rate_limit_notice` paired with the `refusal_patterns` data layer above". | **Stale.** It presents detection as a closed pair. Outside this document's write set, so it is filed as a follow-up finding rather than edited here. |
-| `standards/pr-agent.md` | Its empty `refusal_patterns` means non-participation "resolves to one of the non-refusal members … **never refused**". | **Stale, and the sharpest instance of the rule above.** A bot with an empty list is precisely the bot whose reworded refusal the enumerative arm now recognises, so "never refused" is exactly what stopped being true. Outside this document's write set; filed as a follow-up finding. |
+| `standards/coderabbit.md` | "detection is the bot-agnostic recogniser in `_github_pr._is_rate_limit_notice` paired with the `refusal_patterns` data layer above". | **Was stale — corrected in its own file.** It presented detection as a closed pair. Its § "Rate-limit class" now scopes that sentence to the `_github_pr._is_refusal_notice` **seam** and cross-references `_github_pr.REFUSAL_LAYERS` as the one place the stack's arms are named, so the pair reads as that seam's membership rather than as the whole of recognition. |
+| `standards/pr-agent.md` | Its empty `refusal_patterns` means non-participation "resolves to one of the non-refusal members … **never refused**". | **Was stale, and the sharpest instance of the rule above — corrected in its own file.** A bot with an empty list is precisely the bot whose reworded refusal the enumerative arm now recognises, so "never refused" is exactly what stopped being true. Its `refusal_patterns` note now retracts that inference: the empty list silences the registry arm and nothing else, carrying no conclusion about whether the bot refuses, and it cross-references this document's § "Refusal recognition is ENUMERATIVE, and a rewording nobody enumerated is its own state" rather than restating it. |
 
-The two stale claims are per-bot restatements of the rule this section states once. Correcting them in
-their own files removes the restatement rather than re-synchronising it — the same reason this rule
+The two stale claims were per-bot restatements of the rule this section states once. Correcting them in
+their own files removed the restatement rather than re-synchronising it — the same reason this rule
 names no reviewer count.
 
 ### Recorded exclusions
