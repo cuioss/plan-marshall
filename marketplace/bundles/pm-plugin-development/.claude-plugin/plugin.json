@@ -35,6 +35,7 @@
     "./skills/plugin-task-plan",
     "./skills/recipe-fix-argparse-rejection",
     "./skills/tools-corpus-language-server",
+    "./skills/tools-epic-surface-partition",
     "./skills/tools-marketplace-inventory",
     "./skills/verification-mode"
   ]

@@ -27,7 +27,7 @@ This bundle defines no canonical agents of its own. Plugin-development workflows
 | `plugin-doctor` | Diagnose and fix quality issues with automated safe fixes and prompted risky fixes |
 | `plugin-maintain` | Update components, manage knowledge, maintain READMEs, restructure, and apply orchestration compliance |
 
-### Skills - Context-Loaded (12)
+### Skills - Context-Loaded (13)
 
 These skills are not directly invocable. They are loaded automatically by other components via `Skill:` directives.
 
@@ -43,6 +43,7 @@ These skills are not directly invocable. They are loaded automatically by other 
 | `plugin-task-plan` | Create implementation tasks from deliverables using skill delegation |
 | `recipe-fix-argparse-rejection` | Remediation recipe for the argparse-rejection defect class — invented or paraphrased `manage-*` subcommands and flags absent from the script's argparse choices |
 | `tools-corpus-language-server` | Strictly opt-in language server over the marketplace skill corpus — definition, references and hover on skill and script notations, from the existing dependency index |
+| `tools-epic-surface-partition` | Derives an epic's test-tree surface partition and per-plan budget attribution from its staged spec corpus, read-only and never a build gate |
 | `tools-marketplace-inventory` | Scan and report complete marketplace inventory (bundles, agents, commands, skills, scripts) |
 | `verification-mode` | Verification mode that stops and analyzes on failures, workarounds, or resolution issues |
 
