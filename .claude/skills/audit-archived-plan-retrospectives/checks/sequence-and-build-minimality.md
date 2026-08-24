@@ -50,7 +50,9 @@ rather than a claim.
 counted in `plans_without_ledger` and named in `plans_without_ledger_ids`, and is
 EXCLUDED from the delta baseline (folding its log-derived seconds into the delta
 would compare the ledger's silence against the log's speech). Its ledger totals
-read 0 with `has_ledger: false` — read that as "unmeasurable", never "no builds".
+read 0 with `has_ledger: false` — read that as "unmeasurable", never "no builds"
+— and its `build_share` is WITHHELD (`n/a`) rather than rendered as a `0%`
+derived from that absence (see § "Build time vs plan wall-clock").
 
 **SUSPECT-ZERO rule.** A `kind=build` row whose `duration_seconds` is `0`, absent,
 or non-numeric is **SUSPECT**, never data: a zero is indistinguishable from a cache
@@ -137,9 +139,13 @@ corpus totals (`corpus_build_pass` / `_error` / `_timeout` / `_killed`):
 | `killed` | an **infrastructure event** (a whole-tree or child kill). ⛔ **NOT folded into `error`** — collapsing a kill into "failed" would report a harness problem as a code problem. It is counted, and rendered, on its own axis so a reader can tell an infrastructure kill from a red build. |
 
 A build whose `status` is `unknown` (or unrecognized) is counted per plan in
-`build_status_unknown` and summed into the emitted `corpus_build_status_unknown`
-line, so `pass + error + timeout + killed + status_unknown == corpus_builds` — the
-ratio accounts for every build rather than leaving a silent gap. This is
+`build_status_unknown`, emitted as the per-plan row's `status_unknown` column, and
+summed into the emitted `corpus_build_status_unknown` line. The identity holds at
+BOTH scopes — `pass + error + timeout + killed + status_unknown == builds` on
+every row, and `... == corpus_builds` over the corpus — so the ratio accounts for
+every build rather than leaving a silent gap at either scope. An undetermined
+outcome is not an absent build: dropping it would make the row's own four-term sum
+fall short of its `builds` cell with nothing naming the difference. This is
 orthogonal to `build_unknown`, which is the suspect-DURATION band above (a build
 can be `status: success` yet duration-suspect, e.g. a cache hit).
 
@@ -147,9 +153,23 @@ can be `status: success` yet duration-suspect, e.g. a cache hit).
 
 `wall_clock_seconds` is the sum of per-phase `duration_seconds` from
 `work/metrics.toon`. `build_share` = `total_build_seconds / wall_clock_seconds` —
-the fraction of a plan's elapsed time spent inside builds. When wall-clock is
-absent or zero (the metrics **absent-file hole** the ratio inherits), the share is
-**WITHHELD** (`n/a`), never a fabricated ratio over a zero denominator.
+the fraction of a plan's elapsed time spent inside builds.
+
+**The share is WITHHELD (`n/a`) when EITHER side is unavailable** — never a
+fabricated ratio:
+
+- **Denominator unavailable.** Wall-clock is absent or zero (the metrics
+  **absent-file hole** the ratio inherits), so there is nothing to divide by.
+- **Numerator unavailable.** The plan carries no `kind=build` ledger rows
+  (`has_ledger: false`), so `total_build_seconds` is zero **by absence, not by
+  measurement**. Dividing it out yields a `0%` that reads as "this plan spent no
+  time building" while the `has_ledger` cell one column away says the build time
+  was never measured at all — the two cells of the same row contradicting each
+  other. `has_ledger` is the numerator's availability, and absent is not zero on
+  either side of a ratio.
+
+A `0%` share is therefore always a real measurement: builds were recorded, and
+they occupied a negligible fraction of the plan's elapsed time.
 
 The **invariant** (`build_exceeds_wallclock` flag): summed build time cannot exceed
 plan wall-clock. A violation is a **RECORDING defect** — a duration plumbed through
@@ -218,12 +238,13 @@ corpus_docs_only_build_plans: <count>
 plans_without_ledger: <count>            # build time UNAVAILABLE (absent is not zero)
 plans_without_ledger_ids: <;-joined ids>
 genuine_signal_count: G
-rows[K]{plan_id,change_type,calls,span_seconds,has_ledger,builds,build_minimal,build_scoped,build_heavy,build_unknown,pass,error,timeout,killed,total_build_seconds,max_build_seconds,log_build_seconds,wall_clock_seconds,build_share,build_churn,arch_calls,ci_runs,consecutive_dup,phase_reentry,verbs,phase_graph,flags,severity}
+rows[K]{plan_id,change_type,calls,span_seconds,has_ledger,builds,build_minimal,build_scoped,build_heavy,build_unknown,pass,error,timeout,killed,status_unknown,total_build_seconds,max_build_seconds,log_build_seconds,wall_clock_seconds,build_share,build_churn,arch_calls,ci_runs,consecutive_dup,phase_reentry,verbs,phase_graph,flags,severity}
 ```
 
-The `build_share` cell is a percentage or `n/a` (withheld when wall-clock is
-absent). `has_ledger: false` marks a plan whose build time is unavailable — its
-build columns read 0 by absence, never as a measurement.
+The `build_share` cell is a percentage or `n/a` (withheld when wall-clock OR the
+ledger is absent). `has_ledger: false` marks a plan whose build time is
+unavailable — its build columns read 0 by absence, never as a measurement, and
+its `build_share` reads `n/a` for exactly that reason.
 
 | Column | Meaning |
 |--------|---------|
@@ -235,11 +256,12 @@ build columns read 0 by absence, never as a measurement.
 | `build_minimal` / `build_scoped` / `build_heavy` | Duration-band counts. |
 | `build_unknown` | Suspect-duration builds (zero / absent) — the suspect-zero band. |
 | `pass` / `error` / `timeout` / `killed` | Build-status ratio; `killed` is SEPARATE from `error`. |
+| `status_unknown` | Builds whose `status` is absent or unrecognized — the outcome was never DETERMINED, which is not the same as a build that did not run. Present so the five status columns PARTITION the row: `pass + error + timeout + killed + status_unknown == builds`. Without it a four-term sum short of `builds` leaves the remainder unnamed, and an unnamed remainder reads as builds that never happened. Orthogonal to `build_unknown`, which is the suspect-DURATION band. |
 | `total_build_seconds` | Summed ledger build time over valid (`> 0`) durations. |
 | `max_build_seconds` | Worst single build's duration. |
 | `log_build_seconds` | OLD log-derived pyproject-only total — the delta baseline. |
 | `wall_clock_seconds` | Plan wall-clock (sum of per-phase metrics durations). |
-| `build_share` | `total_build_seconds / wall_clock_seconds`, or `n/a` when withheld. |
+| `build_share` | `total_build_seconds / wall_clock_seconds`, or `n/a` when **either** side is unavailable — an absent wall-clock (no denominator) or an absent ledger (`has_ledger: false`, so the numerator is zero by absence rather than by measurement). |
 | `build_churn` | Clustered-rebuild count. |
 | `arch_calls` | architecture-call count (resolution overhead numerator). |
 | `ci_runs` | CI run-directory count. |

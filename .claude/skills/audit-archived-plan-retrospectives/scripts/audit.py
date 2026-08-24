@@ -58,16 +58,20 @@ suite of deterministic checks:
   structural review could have caught it first.
 - `sequence-and-build-minimality` (cross-plan) — reconstructs each plan's
   call sequence from `logs/script-execution.log`, buckets the calls into phases
-  by the `logs/work.log` `[DISPATCH] role=phase-N` timeline, classifies every
-  `pyproject_build run` by duration (minimal `< build_minimal_seconds` / scoped /
-  heavy `> build_heavy_seconds`), mines `work.log` for the actual build verb and
-  scope (verify / module-tests scoped-vs-all / quality-gate / coverage /
-  compile), and flags the redundancy / non-minimality anti-patterns
-  (`build_churn`, `non_minimal_build`, `docs_only_build`, `ci_rerun`,
-  `phase_reentry`, `arch_over_resolution`, `consecutive_dup`) catalogued in the
-  build-minimality lessons. Carries three structural caveats (finalize-fold
-  conflation, the verify-count-vs-heavy-duration upper-bound/floor pairing, and
-  consecutive-dup over-counting) documented in the check sub-document.
+  by the `logs/work.log` `[DISPATCH] role=phase-N` timeline, derives every
+  build's count, duration, status and duration band from the structured
+  change-ledger's `kind=build` rows (minimal `< build_minimal_seconds` / scoped /
+  heavy `> build_heavy_seconds`) — covering every build system and every phase,
+  with an absent ledger read as UNAVAILABLE rather than zero — mines `work.log`
+  for the actual build verb and scope (verify / module-tests scoped-vs-all /
+  quality-gate / coverage / compile), and flags the redundancy / non-minimality
+  anti-patterns (`build_churn`, `non_minimal_build`, `docs_only_build`,
+  `ci_rerun`, `phase_reentry`, `arch_over_resolution`, `consecutive_dup`)
+  catalogued in the build-minimality lessons plus the ledger-derived
+  data-quality flags (`suspect_build_duration`, `build_exceeds_wallclock`).
+  Carries three structural caveats (finalize-fold conflation, the
+  verify-count-vs-heavy-duration upper-bound/floor pairing, and consecutive-dup
+  over-counting) documented in the check sub-document.
 - `input-integrity` (per-plan, corpus data_confidence summary) — the
   no-false-healthy FOUNDATION. Reports each plan's input presence/health
   (execution.toon / metrics.toon / references.json / tasks/ / artifacts/findings/
@@ -354,13 +358,12 @@ CROSS_PLAN_CHECKS = {
 # completion-aware polling alter), `#1260` (the `global-log-analysis` boundary —
 # the cumulative cost roll-up added beside the per-call ceiling, which adds a row
 # kind and ends the `genuine_signal_count == row count` identity), `plan-10` (the roadmap head this plan
-# re-confirms the general checks accurate against), and `PR-PENDING` (this plan's
-# own boundary, a placeholder resolved to the real PR at finalize by
-# project:finalize-step-era-stamp-fill AFTER create-pr — this plan reworks the
-# `metrics` check, whose per-phase token/duration recording accuracy this plan's
-# D1 dispatch-boundary reconciliation, D2 inline main-context attribution, and D3
-# loop-back monotonicity idle guard change). Every key MUST be a member of
-# `CHECK_NAMES`.
+# re-confirms the general checks accurate against), and `PR-PENDING` (the
+# in-flight plan's own boundary, a placeholder resolved to the real PR at finalize
+# by project:finalize-step-era-stamp-fill AFTER create-pr — currently held by
+# `sequence-and-build-minimality`, whose `build_share` numerator gate, `_ZERO_GATED`
+# class and `status_unknown` row column this plan changes). Every key MUST be a
+# member of `CHECK_NAMES`.
 CHECK_ERA: dict[str, str] = {
     # Roadmap-affected checks carry the specific boundary whose mechanics they
     # verify (kept in step with the plan-11 semantic updates).
@@ -394,17 +397,20 @@ CHECK_ERA: dict[str, str] = {
     "global-log-analysis": "#1260",
     # sequence-and-build-minimality — PR-PENDING (this plan's own boundary, a
     # placeholder resolved to the real PR at finalize by
-    # project:finalize-step-era-stamp-fill AFTER create-pr, bumped from #887): this
-    # plan RE-BASES the check's build-duration derivation off the plan-scoped log
-    # onto the structured change-ledger — durations now come from the ledger's
-    # `duration_seconds` for every build system and every phase (closing the
-    # single-tool and early-phase blindnesses), the pass/fail/timeout/killed status
-    # ratio and the build-vs-wall-clock share are new ledger-derived facets, and a
-    # suspect-zero rule plus a build-time-exceeds-wall-clock invariant guard the
-    # numbers. Those ARE the build-minimality mechanics this check's rows are read
-    # against, so pre-boundary log-derived rows read as era-expected and
-    # post-boundary ledger-derived rows as the current truth.
-    "sequence-and-build-minimality": "#1224",
+    # project:finalize-step-era-stamp-fill AFTER create-pr, bumped from #1224):
+    # this plan changes what the check's own numbers MEAN, in three ways that a
+    # reader of an archived row cannot recover from the row itself.
+    # `build_share` is now NUMERATOR-GATED — it is emitted only when the
+    # build-duration numerator was actually measured, where a missing numerator
+    # previously defaulted to zero and rendered as a real share of zero.
+    # `_ZERO_GATED` separates a MEASURED zero from an ABSENT measurement that the
+    # old classification could not tell apart. And rows carry a `status_unknown`
+    # column, so a build whose outcome could not be read is counted as its own
+    # state instead of silently joining the pass or the fail bucket. Each of the
+    # three turns a former confident zero into an explicit not-measured, so rows
+    # computed under the old semantics are NOT datable against #1224: pre-boundary
+    # rows read as era-expected and post-boundary rows as the current truth.
+    "sequence-and-build-minimality": "#1342",
     # token-economics — PR-PENDING (plan-8's boundary, a placeholder resolved to
     # the real PR at finalize by project:finalize-step-era-stamp-fill AFTER
     # create-pr): plan-8's finalize-wait consolidation changes the finalize_heavy
@@ -3800,9 +3806,9 @@ def cross_quality_chain(all_inputs: list[PlanInputs]) -> dict[str, Any]:
 # phase by the `logs/work.log` `[DISPATCH] role=phase-N` timeline, and studies
 # BUILD MINIMALITY: the user's thesis that a build after a deliverable should be
 # FOCUSED (compile + test-compile + test-run for the CHANGED module only) and
-# should only run on buildable stuff. Operationalizes the prototype deep-dives
-# `.plan/temp/sequence_analysis.py` + `.plan/temp/build_minimality.py` as a
-# single repeatable cross-plan check on the same readers the other checks use.
+# should only run on buildable stuff. Build COUNT, DURATION and STATUS come from
+# the structured change-ledger — see "The build-time ORACLE" block below — while
+# the log supplies only the ordered call timeline and the delta baseline.
 #
 # DURATION CLASSIFICATION (thresholds from the centralized THRESHOLDS table — no
 # magic number re-declared here):
@@ -3851,6 +3857,17 @@ def cross_quality_chain(all_inputs: list[PlanInputs]) -> dict[str, Any]:
 #   consecutive_dup      — back-to-back identical (notation, subcommand) calls — a
 #                          mechanical double-call. NOTE: over-counts same-verb /
 #                          different-args calls (see caveat 3 in the sub-doc).
+#
+# LEDGER-DERIVED DATA-QUALITY FLAGS (per plan) — these say the NUMBERS are
+# untrustworthy, not that the plan built wastefully:
+#   suspect_build_duration  — >=1 ledger build whose duration is zero / absent /
+#                          non-numeric, so the plan's build-time total is a FLOOR
+#                          (a killed run reporting 0, a cache hit and a no-op are
+#                          indistinguishable). Surfaced, never averaged in.
+#   build_exceeds_wallclock — summed build time exceeds plan wall-clock (+1s): a
+#                          RECORDING defect (a duration plumbed through wrongly),
+#                          not a code problem — the same impossible-values family
+#                          the `metrics` check models (worked > wall).
 
 # Phase-dispatch role marker in work.log: `[DISPATCH] ... role=phase-N...`.
 _SBM_DISPATCH_RE = re.compile(r"\[DISPATCH\].*?role=(?P<role>phase-[0-9][a-z-]*)")
@@ -4144,8 +4161,16 @@ def _sequence_build_minimality_plan(
         p.duration_seconds
         for p in parse_metrics_toon(plan_dir / "work" / "metrics.toon")
     )
+    # The share is withheld when EITHER side is unavailable. Gating on the
+    # denominator alone stamped a fabricated 0% on a plan with no ledger rows at
+    # all: its `total_build_seconds` is zero BY ABSENCE, not by measurement, so a
+    # 0% share contradicts the `has_ledger: false` cell of its own row one column
+    # away. `has_ledger` is the numerator's availability — the same value this
+    # function already derives — and absent is not zero on either side of a ratio.
     build_share = (
-        total_build_seconds / wall_clock_seconds if wall_clock_seconds > 0 else None
+        total_build_seconds / wall_clock_seconds
+        if has_ledger and wall_clock_seconds > 0
+        else None
     )
 
     # (5) Redundancy primitives.
@@ -5473,16 +5498,29 @@ def _retire_on_quiet_proposals(
 # only the retirement reading is what lets a broken detector be retired as
 # redundant — the strictly worse outcome, because it closes the case.
 
-#: The zero classes. `structural` and `starved` both mean "this zero is not
-#: evidence about the corpus"; they differ in WHY, and the remedies differ with
-#: them, so they are never merged.
+#: The zero classes. `structural`, `starved` and `gated` all mean "this zero is
+#: not evidence about the corpus"; they differ in WHY, and the remedies differ
+#: with them, so they are never merged.
 _ZERO_STRUCTURAL = "structural"
 _ZERO_STARVED = "starved"
+#: The third "not evidence about the corpus" class, distinct from the two above:
+#: the check DID examine a non-empty population and it DID measure, but a gate it
+#: declares on itself declined every qualifying row. The plans were there and the
+#: predicate matched — the gate is what emptied the result — so the zero is
+#: evidence about the GATE, and reading it as `disciplinary` ("the corpus was
+#: clean") attributes to the corpus a silence the check imposed.
+_ZERO_GATED = "gated"
 _ZERO_DISCIPLINARY = "disciplinary"
 _ZERO_NO_COUNT = "no_count"
 _ZERO_NONE = "fired"
 
 _UNMEASURED_STATUS_RE = re.compile(r"^status:\s*unmeasured\s*$", re.MULTILINE)
+#: The declared-gate exclusion count `preference-pattern-detector` publishes: how
+#: many qualifying recurrences its unattributed-bucket gate declined to surface.
+#: A non-zero value is the block stating, in its own output, that its gate spoke.
+_UNATTRIBUTED_EXCLUDED_RE = re.compile(
+    r"^unattributed_excluded_count:\s*(\d+)\s*$", re.MULTILINE
+)
 _EXCLUDED_NON_SHIPPING_RE = re.compile(
     r"^plans_excluded_non_shipping:\s*(\d+)\s*$", re.MULTILINE
 )
@@ -5549,6 +5587,12 @@ def _classify_zero(block: str, genuine_count: int | None, corpus_size: int) -> s
     * `starved` — the check examined no plans, so it could not have fired. The
       zero is a property of this run's inputs, not of the check. This is the class
       whose zero is one un-stubbed sibling away from being non-zero.
+    * `gated` — the check examined a NON-EMPTY population and a gate it declares
+      on itself declined every qualifying row. Unlike `starved` the plans were
+      there, and unlike `structural` the check measured fine; what emptied the
+      result is the gate. Reporting this as `disciplinary` attributes to the
+      corpus a silence the check imposed, so the remedy is to the gate's
+      calibration, not to the inputs.
     * `no_count` — the block published no genuine count in EITHER spelling (bare
       or per-tier), so this census never READ one for it. Defensive: no registered
       check is in this state today, and a test asserts none reaches it on a real
@@ -5580,6 +5624,15 @@ def _classify_zero(block: str, genuine_count: int | None, corpus_size: int) -> s
         return _ZERO_NO_COUNT
     if _examined_population(block, corpus_size) == 0:
         return _ZERO_STARVED
+    # Ordered AFTER `starved`, and the order is load-bearing in both directions.
+    # A check that examined nothing is starved whatever its gate did — there was
+    # no row for the gate to decline — so `starved` must win. Below this line the
+    # population is known non-empty, which is exactly the state that makes a
+    # declared gate's non-zero exclusion count the better explanation of the zero
+    # than "the corpus was clean".
+    gate_excluded = _UNATTRIBUTED_EXCLUDED_RE.search(block)
+    if gate_excluded is not None and int(gate_excluded.group(1)) > 0:
+        return _ZERO_GATED
     return _ZERO_DISCIPLINARY
 
 
@@ -5644,6 +5697,9 @@ _ZERO_READINGS = {
     "NOT evidence the corpus is clean; fix the inputs or the producer",
     _ZERO_STARVED: "the check examined no plans — it could not have fired, so "
     "this zero is a property of the run's inputs, not of the check",
+    _ZERO_GATED: "the check examined a non-empty population and a declared gate "
+    "declined every qualifying row — this zero is evidence about the gate, not "
+    "about the corpus",
     _ZERO_NO_COUNT: "the block published no genuine count in either spelling "
     "(bare or per-tier), so this census read none for it — the blank shown is "
     "absence of a reading, NOT a measured zero",
@@ -5671,11 +5727,13 @@ def emit_suspect_zero_census_block(rows: list[dict[str, Any]], corpus_size: int)
         f"suspect_count: {len(suspects)}",
         f"structural_count: {class_counts[_ZERO_STRUCTURAL]}",
         f"starved_count: {class_counts[_ZERO_STARVED]}",
+        f"gated_count: {class_counts[_ZERO_GATED]}",
         f"disciplinary_count: {class_counts[_ZERO_DISCIPLINARY]}",
         f"no_count_count: {class_counts[_ZERO_NO_COUNT]}",
         f"no_block_count: {class_counts['no_block']}",
-        "census_note: a zero is not a clean verdict. A structural or starved zero "
-        "is not evidence about the corpus at all; a disciplinary zero is evidence "
+        "census_note: a zero is not a clean verdict. A structural, starved or "
+        "gated zero is not evidence about the corpus at all — the last of those "
+        "is evidence about the check's own gate; a disciplinary zero is evidence "
         "the corpus was clean, never proof the check is able to fire.",
         f"rows[{len(rows)}]{{check,genuine_signal_count,zero_class,quiet_run_count,suspect,reading}}:",
     ]
@@ -6434,8 +6492,6 @@ def emit_sequence_build_minimality_block(result: dict[str, Any]) -> str:
     rows = result["rows"]
     for r in rows:
         r["flags_str"] = ";".join(r["flags"])
-        # build_share is WITHHELD (`n/a`) when wall-clock is absent — never a
-        # fabricated ratio over a zero / missing denominator.
         share = r["build_share"]
         r["build_share_str"] = "n/a" if share is None else f"{share:.0%}"
     rows, genuine_signal_count = _severity_summary(rows, _sbm_genuine)
@@ -6478,7 +6534,13 @@ def emit_sequence_build_minimality_block(result: dict[str, Any]) -> str:
         f"plans_without_ledger: {result['plans_without_ledger']}",
         f"plans_without_ledger_ids: {_cell(';'.join(result['plans_without_ledger_ids']))}",
         f"genuine_signal_count: {genuine_signal_count}",
-        f"rows[{len(rows)}]{{plan_id,change_type,calls,span_seconds,has_ledger,builds,build_minimal,build_scoped,build_heavy,build_unknown,pass,error,timeout,killed,total_build_seconds,max_build_seconds,log_build_seconds,wall_clock_seconds,build_share,build_churn,arch_calls,ci_runs,consecutive_dup,phase_reentry,verbs,phase_graph,flags,severity}}:",
+        # The per-plan status columns PARTITION that plan's builds:
+        # pass + error + timeout + killed + status_unknown == builds. The row
+        # carries `status_unknown` for the same reason the corpus totals above do
+        # — a four-term sum short of `builds` leaves the remainder unnamed, and an
+        # unnamed remainder reads as builds that never ran rather than builds
+        # whose outcome was never determined.
+        f"rows[{len(rows)}]{{plan_id,change_type,calls,span_seconds,has_ledger,builds,build_minimal,build_scoped,build_heavy,build_unknown,pass,error,timeout,killed,status_unknown,total_build_seconds,max_build_seconds,log_build_seconds,wall_clock_seconds,build_share,build_churn,arch_calls,ci_runs,consecutive_dup,phase_reentry,verbs,phase_graph,flags,severity}}:",
     ]
     for r in rows:
         out.append(
@@ -6500,6 +6562,7 @@ def emit_sequence_build_minimality_block(result: dict[str, Any]) -> str:
                     r["build_error"],
                     r["build_timeout"],
                     r["build_killed"],
+                    r["build_status_unknown"],
                     r["total_build_seconds"],
                     r["max_build_seconds"],
                     r["log_build_seconds"],

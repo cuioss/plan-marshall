@@ -365,7 +365,7 @@ def test_real_marketplace_tree_produces_zero_findings():
 # the tree's marker population changes; they are a measurement, not a target.
 # The pair is published in references/rule-catalog.md beside the
 # false-positive-boundary paragraph.
-EXPECTED_MARKER_ANCHORS = 25
+EXPECTED_MARKER_ANCHORS = 26
 EXPECTED_DETECTED_WHEN_STRIPPED = 4
 
 

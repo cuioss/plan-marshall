@@ -52,7 +52,7 @@ def test_unmeasured_dispatch_columns_are_absent_rather_than_zero(plan_context):
 # Fixtures: one file carrying both representations, and the legacy floor
 # =============================================================================
 
-def test_unmeasured_fixture_reads_three_ways_in_the_retrospective_reader():
+def test_unmeasured_fixture_separates_measured_zeros_from_unmeasured_in_the_retrospective_reader():
     """One file, both representations, read per column by the retrospective reader."""
     parsed = analyze_logs._parse_dispatch_boundary_file(_UNMEASURED_FIXTURE)
 
@@ -136,12 +136,15 @@ def test_measured_zero_dispatch_column_is_present_as_zero(plan_context):
     rows = _data_rows(scenario['boundary_path'].read_text(encoding='utf-8'))
     assert rows[2].endswith(',clean_exit_queue_empty,45000,16,150000,0,unmeasured,0,unmeasured')
     # The fully measured first dispatch keeps all four values and declares nothing
-    # unmeasured — the third point of the three-way distinction.
+    # unmeasured. With the rows above it, this file therefore carries a measured
+    # value, a measured zero and a declared abstention side by side — and the
+    # invariant under test is that no two of them share a representation, so none
+    # can be recovered by guessing from another's bytes.
     assert rows[0].endswith(',budget_yield,60000,25,300000,38000,4000,210000,12000')
     assert scenario['dispatch_results'][0]['unmeasured_context_load_columns'] == ''
 
 
-def test_composed_boundary_file_reads_three_ways_in_the_retrospective_reader(plan_context):
+def test_composed_boundary_file_separates_measured_zeros_from_unmeasured_in_the_retrospective_reader(plan_context):
     """The file the writer just produced round-trips through the real reader.
 
     Producer and consumer are pinned against each other on ONE artifact, so a
@@ -154,6 +157,17 @@ def test_composed_boundary_file_reads_three_ways_in_the_retrospective_reader(pla
     assert parsed['present'] is True
     rows = parsed['rows']
     assert len(rows) == 3
+
+    # Every row the writer just produced carries a post-token fingerprint — an
+    # `unmeasured` token or a real measurement — so every literal `0` below is
+    # DATABLE, and that is what makes the zeros measured rather than merely
+    # unrecoverable. Asserting the empty indeterminate set is what makes this test
+    # assert the state its name claims: without it, a row whose zeros could not be
+    # dated would still satisfy every assertion below, because an indeterminate
+    # column is absent from the row dict for exactly the same reason an unmeasured
+    # one is.
+    for row in rows:
+        assert row['indeterminate_columns'] == [], row
 
     measured, unmeasured, mixed = rows
     assert measured['input_tokens'] == 38000

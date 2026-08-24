@@ -157,10 +157,22 @@ def summarize_build_ledger(plan_key: str) -> dict[str, Any]:
     Reads the single append-only change-ledger
     (``<tracked-config>/work/change-ledger.jsonl``), keeps this plan's
     ``kind=build`` rows (matched on the bare ``plan_id``), and returns the plan's
-    total build seconds plus the pass/error/timeout/killed status ratio. Because
-    the ledger records ``command`` per build system and is written in every phase,
-    the total spans EVERY build system and EVERY phase — not just the pyproject
-    builds a plan happened to log.
+    total build seconds plus the pass/error/timeout/killed/status_unknown status
+    ratio. Because the ledger records ``command`` per build system and is written
+    in every phase, the total spans EVERY build system and EVERY phase — not just
+    the pyproject builds a plan happened to log.
+
+    The five status fields PARTITION the builds:
+    ``pass + error + timeout + killed + status_unknown == build_count``.
+    ``status_unknown`` is the count of rows whose ``status`` is absent or outside
+    the recognised vocabulary — a build whose outcome was never determined. It is
+    published rather than dropped so the identity holds: a four-term sum that
+    falls short of ``build_count`` leaves the remainder unnamed, which reads as
+    "these builds did not happen" when it means "these builds were not
+    classified". The field is spelled ``status_unknown`` (not ``unknown``) to
+    mirror the audit side's ``build_status_unknown`` /
+    ``corpus_build_status_unknown`` and to avoid colliding with the ``unknown``
+    key used inside the internal ``status_counts`` tally.
 
     SUSPECT-ZERO rule: a row whose ``duration_seconds`` is ``0`` / absent /
     non-numeric is counted in ``suspect_count`` and is NOT summed into
@@ -194,6 +206,7 @@ def summarize_build_ledger(plan_key: str) -> dict[str, Any]:
         'error': status_counts['error'],
         'timeout': status_counts['timeout'],
         'killed': status_counts['killed'],
+        'status_unknown': status_counts['unknown'],
     }
 
 
@@ -979,21 +992,27 @@ def artifact_emission_population(
 #
 # SOURCE OF TRUTH is `manage-metrics` `standards/data-format.md` § Per-Dispatch
 # Context-Load Attribution — the legacy five columns, then these four appended
-# at the END, and the literal an omitted context-load flag writes. This module
-# runs in a different process from the writer and cannot import its constants,
-# so these three are a hand-mirror of that section and MUST move with it.
+# at the END, the literal an omitted context-load flag writes, and the declared
+# `rows[...]{...}:` header the writer emits ahead of the rows. This module runs
+# in a different process from the writer and cannot import its constants, so
+# these five are a hand-mirror of that section and MUST move with it.
 #
 # LOCK-STEP OBLIGATION. That section's "Restating surfaces (lock-step
-# obligation)" paragraph names FOUR surfaces that restate this schema and must
-# move together; this reader is one of them. The other three are the writer in
+# obligation)" paragraph names FIVE surfaces that restate this schema and must
+# move together; this reader is one of them. The other four are the writer in
 # `manage-metrics.py` (`cmd_record_dispatch_boundary` +
 # `_DISPATCH_CONTEXT_LOAD_COLUMNS`), the `record-dispatch-boundary` operation
-# block in `manage-metrics/SKILL.md`, and the hand-copied `_BC_LEDGER_COLUMNS` /
-# `_BC_LEDGER_UNMEASURED_TOKEN` pair in
-# `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`. That last
-# one lives in a tree the architecture inventory does not crawl, so a content
-# sweep will NOT find it — changing the schema here means editing all four by
-# reading the list, never by searching.
+# block in `manage-metrics/SKILL.md`, the hand-copied `_BC_LEDGER_COLUMNS` /
+# `_BC_LEDGER_UNMEASURED_TOKEN` pair — together with the
+# `_parse_dispatch_boundary_totals` cell read and the row-level provenance gate
+# that consume them — in
+# `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`, and the
+# `billing-composition` check's restatement of the column set, the four-way cell
+# read and that same provenance gate in
+# `.claude/skills/audit-archived-plan-retrospectives/checks/billing-composition.md`.
+# The last TWO live in a tree the architecture inventory does not crawl, so a
+# content sweep will NOT find them — changing the schema here means editing all
+# five by reading the list, never by searching.
 _LEGACY_COLUMN_COUNT = 5
 _CONTEXT_LOAD_COLUMNS = (
     'input_tokens',
@@ -1002,6 +1021,28 @@ _CONTEXT_LOAD_COLUMNS = (
     'cache_creation_input_tokens',
 )
 _UNMEASURED_COLUMN_TOKEN = 'unmeasured'
+
+# The canonical nine-column row order. Used ONLY as the positional fallback for a
+# ledger whose `rows[...]{...}:` header declares no column names — the declared
+# header is the primary resolution source (see `_parse_dispatch_boundary_file`).
+_CANONICAL_COLUMNS = (
+    'timestamp',
+    'termination_cause',
+    'total_tokens',
+    'tool_uses',
+    'duration_ms',
+    *_CONTEXT_LOAD_COLUMNS,
+)
+
+# The declared-column header line the writer emits ahead of the rows. Hand-mirror
+# of the audit reader's `_BC_LEDGER_HEADER_RE`: the two readers parse the same
+# on-disk ledger from separate trees, so a header shape one accepts and the other
+# rejects is a divergence in what each reader believes the file measured.
+_DISPATCH_BOUNDARY_HEADER_RE = re.compile(r'^rows\[\d*\]\{(?P<columns>[^}]*)\}:')
+
+# The legacy columns carrying a numeric default. Derived from the canonical order
+# rather than restated, so it cannot drift from it.
+_LEGACY_NUMERIC_COLUMNS = _CANONICAL_COLUMNS[2:_LEGACY_COLUMN_COUNT]
 
 # A ratio that cannot be formed from a COMPLETE record — a per-tool-use rate over
 # zero tool uses, or a multiple whose denominator is 0.0. Deliberately distinct
@@ -1027,17 +1068,85 @@ _RETRYABLE_CAUSES = ('blocked_session_restart', 'harness_cancellation')
 _RETURNED_WITH_FINDINGS_CAUSE = 'returned_with_findings'
 
 
+def _legacy_cell_to_int(cell: str) -> int:
+    """Read a LEGACY numeric cell, degrading an unparseable one to ``0``.
+
+    Hand-mirror of the audit reader's ``_to_int``. The legacy five columns carry a
+    numeric default and predate the ``unmeasured`` token, so there is no way for a
+    row to abstain from one of them — an unparseable cell is a corrupt value, not
+    an absent measurement, and both readers degrade it to ``0`` rather than
+    dropping the row it sits on.
+
+    ⛔ This degrade is deliberately NOT extended to the four appended context-load
+    columns, which CAN abstain and are therefore read four ways (measured /
+    unmeasured / unrecognised / indeterminate) instead. Defaulting one of those to
+    ``0`` is the absent-read-as-a-measurement defect; defaulting a legacy cell is
+    the historical behaviour of both readers and keeps the row — and its
+    context-load cells — readable.
+    """
+    try:
+        return int(float(cell))
+    except ValueError:
+        return 0
+
+
+def _cell_by_name(columns: tuple[str, ...], parts: list[str], column: str) -> str | None:
+    """Return the cell ``column`` names in ``parts``, or ``None`` when absent.
+
+    ``None`` covers BOTH ways a row can fail to carry a column, because the two
+    are indistinguishable to a consumer and both mean the same thing — this row
+    states nothing about ``column``:
+
+    * the ledger's ``rows[...]{...}:`` header does not declare the column at all
+      (a header narrower than its rows), and
+    * the header declares it but this row is too short to reach the index.
+
+    Resolution is BY NAME against the declared header, which is what makes a
+    reordered header read correctly; the canonical order is consulted only when
+    the header declared nothing (see ``_CANONICAL_COLUMNS``).
+    """
+    try:
+        index = columns.index(column)
+    except ValueError:
+        return None
+    if index >= len(parts):
+        return None
+    return parts[index]
+
+
 def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
     """Parse a single ``metrics-dispatch-boundaries-{phase}.toon`` artifact.
 
     Accepts BOTH the legacy five-column rows AND the widened nine-column rows
     that ``manage-metrics record-dispatch-boundary`` writes once the four
     per-dispatch context-load columns are appended. The length guard is a floor
-    (``len(parts) < 5``) rather than a strict equality so a widened row is no
-    longer silently dropped. The canonical column order / count / unmeasured
-    representation are owned by ``manage-metrics``
+    (``len(parts) < _LEGACY_COLUMN_COUNT``) rather than a strict equality so a
+    widened row is no longer silently dropped. The canonical column order / count
+    / unmeasured representation are owned by ``manage-metrics``
     ``standards/data-format.md`` (Per-Dispatch Context-Load Attribution
     section); this reader consumes that contract.
+
+    **Columns resolve BY NAME from the declared header, positionally only as a
+    fallback.** The ledger's ``rows[...]{...}:`` header declares its own column
+    names; each column is looked up by name in that declaration, and the
+    canonical ``_CANONICAL_COLUMNS`` order is consulted ONLY when the header
+    declares no names at all. Three consequences, each a case where a positional
+    reader disagrees with the bytes:
+
+    * a header that REORDERS two columns reads correctly, rather than swapping
+      the two values;
+    * a header NARROWER than its rows leaves the undeclared columns unmeasured,
+      rather than inventing measurements from trailing cells the header never
+      claimed;
+    * rows before the header — or in a file carrying NO header line — are not
+      read at all, because nothing declares what their cells mean.
+
+    This is the same strategy the audit reader
+    (``.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py``
+    ``_parse_dispatch_boundary_totals``) applies. The two readers parse the same
+    on-disk ledger in separate processes, so the same bytes MUST yield the same
+    measured set and the same datability verdict in both; resolving columns two
+    different ways is exactly how they came to disagree.
 
     **The four context-load columns read FOUR ways, never two.** The writer
     distinguishes a measured value from a deliberately-unmeasured column, so
@@ -1049,10 +1158,12 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
     * the literal ``unmeasured`` — recognised, and deliberately not measured.
       The key is OMITTED from the row dict; the column name is listed in the
       row's ``unmeasured_columns``.
-    * anything else, and a column a short row does not have — UNRECOGNISED. The
+    * anything else — UNRECOGNISED. The
       key is omitted too, but the column name is listed in the row's
       ``unrecognised_columns``, which is a different fact: the writer made a
       statement this reader failed to parse, rather than declining to measure.
+      A column a short row does not have is NOT this state — see the legacy-row
+      sentence below, which owns that case and reads it as unmeasured.
     * a literal ``0`` the reader cannot date — INDETERMINATE. The pre-token
       writer defaulted every omitted context-load column to a literal ``0``, so
       "measured zero" and "wrote 0 because it had nothing" are byte-identical.
@@ -1066,8 +1177,17 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
 
     A LEGACY five-column row (written before the columns existed) reports all
     four as **unmeasured** — it recorded no context-load measurement at all — and
-    still parses, preserving the ``len(parts) < 5`` floor. A malformed appended
-    cell reports as **unrecognised** and does not drop the whole row.
+    still parses, preserving the ``len(parts) < _LEGACY_COLUMN_COUNT`` floor. A
+    malformed appended cell reports as **unrecognised** and does not drop the
+    whole row.
+
+    A malformed LEGACY cell does not drop the row either: it degrades to ``0``
+    via :func:`_legacy_cell_to_int` (see that function for why the degrade is
+    confined to those columns). Only the length floor drops a row. Dropping it
+    would discard the row's context-load cells along with the corrupt legacy one
+    — the same all-or-nothing loss the per-column context read already removed,
+    and a divergence from the audit reader, which keeps such a row and measures
+    its context-load cells.
 
     Returned dict shape:
       - present: bool
@@ -1121,31 +1241,53 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
         }
 
     rows: list[dict[str, Any]] = []
+    # The declared header is the primary column-resolution source; the canonical
+    # order stands in only until (and unless) a header declares names. `in_rows`
+    # gates on having SEEN a header at all: a cell before any declaration — or in
+    # a file that carries none — has no stated meaning, so it is not read. This
+    # mirrors the audit reader's own gate; a reader that guessed here would
+    # measure a file the other reader reports nothing about.
+    columns: tuple[str, ...] = _CANONICAL_COLUMNS
+    in_rows = False
     for line in content.splitlines():
         stripped = line.strip()
-        if not stripped or stripped.startswith(('plan_id:', 'phase:', 'rows[]')):
+        if not stripped:
             continue
-        parts = stripped.split(',')
+        header = _DISPATCH_BOUNDARY_HEADER_RE.match(stripped)
+        if header is not None:
+            declared = tuple(
+                name.strip() for name in header.group('columns').split(',') if name.strip()
+            )
+            if declared:
+                columns = declared
+            in_rows = True
+            continue
+        if not in_rows:
+            continue
+        parts = [cell.strip() for cell in stripped.split(',')]
         # Floor, not equality: a row with at least the five legacy columns parses.
         # Widened nine-column rows (legacy five + four appended context-load
         # columns) parse too rather than being silently dropped by the old
-        # strict ``!= 5`` guard.
+        # strict ``!= 5`` guard. This length floor is the ONLY thing that drops a
+        # row — a corrupt cell never does.
         # SHIM(B): legacy five-column dispatch-boundary rows, written before the four context-load columns were appended.
         # shim-owner: plan-retrospective
         # shim-floor: the record-dispatch-boundary column widening that appended the four per-dispatch context-load columns (input/output/cache_read/cache_creation) after the original five columns; the widening predates this shallow clone's root (dcd3c00 / #1105), and #1129 later refined those columns to distinguish unmeasured from a measured zero.
         # shim-remove-when: no dispatch-boundary log with five-column rows remains.
-        if len(parts) < 5:
+        if len(parts) < _LEGACY_COLUMN_COUNT:
             continue
-        try:
-            row = {
-                'timestamp': parts[0],
-                'termination_cause': parts[1],
-                'total_tokens': int(parts[2]),
-                'tool_uses': int(parts[3]),
-                'duration_ms': int(parts[4]),
-            }
-        except (ValueError, IndexError):
-            continue
+        # The legacy five, resolved BY NAME like every other column. They carry a
+        # numeric default rather than the four-way read: they predate the
+        # `unmeasured` token, so a row cannot abstain from one of them.
+        timestamp_cell = _cell_by_name(columns, parts, 'timestamp')
+        cause_cell = _cell_by_name(columns, parts, 'termination_cause')
+        row: dict[str, Any] = {
+            'timestamp': timestamp_cell if timestamp_cell is not None else '',
+            'termination_cause': cause_cell if cause_cell is not None else '',
+        }
+        for legacy_column in _LEGACY_NUMERIC_COLUMNS:
+            legacy_cell = _cell_by_name(columns, parts, legacy_column)
+            row[legacy_column] = 0 if legacy_cell is None else _legacy_cell_to_int(legacy_cell)
         # Read the four appended context-load columns — measured / unmeasured /
         # unrecognised / INDETERMINATE — per column, independently. Per-column
         # rather than per-row: a row whose third appended cell is corrupt still
@@ -1179,14 +1321,14 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
         indeterminate_columns: list[str] = []
         zero_columns: list[str] = []
         provably_post_change = False
-        for offset, column in enumerate(_CONTEXT_LOAD_COLUMNS):
-            index = _LEGACY_COLUMN_COUNT + offset
-            if index >= len(parts):
-                # A legacy five-column row carries no context-load measurement
-                # at all. That is UNMEASURED, not a measured zero.
+        for column in _CONTEXT_LOAD_COLUMNS:
+            cell = _cell_by_name(columns, parts, column)
+            if cell is None:
+                # The row states nothing about this column — either the header
+                # never declared it, or the row is too short to reach it. Both
+                # are UNMEASURED, never a measured zero.
                 unmeasured_columns.append(column)
                 continue
-            cell = parts[index].strip()
             if cell == _UNMEASURED_COLUMN_TOKEN:
                 # The token is a writer-guaranteed post-token fingerprint.
                 provably_post_change = True
@@ -1652,9 +1794,11 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         )
 
     # Build time from the change-ledger (the build-time ORACLE): the total spans
-    # every build system and every phase, with the pass/error/timeout/killed ratio
-    # (killed SEPARATE) and the suspect-zero rule applied. The plan_efficiency
-    # aspect READS `total_build_seconds` from this block into its `totals`.
+    # every build system and every phase, with the
+    # pass/error/timeout/killed/status_unknown ratio (killed SEPARATE, and
+    # status_unknown published so the five terms sum to build_count) and the
+    # suspect-zero rule applied. The plan_efficiency aspect READS
+    # `total_build_seconds` from this block into its `totals`.
     plan_ledger_key = _LEDGER_DATE_PREFIX_RE.sub(
         '', args.plan_id or Path(args.archived_plan_path or '').name
     )

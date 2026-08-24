@@ -689,7 +689,11 @@ The `## Phase Breakdown` Total uses the **canonical-six baseline** (`len(PHASE_N
 The `generate` command produces a markdown report with per-phase rows:
 
 ```markdown
-# Plan Metrics: my-feature
+# Metrics: my-feature
+
+Generated: 2026-03-14 09:41:07 UTC
+
+## Phase Breakdown
 
 | Phase | Worked | Reported (wall) | Idle | Tokens (dispatched unless marked) | Tool Uses | Billing (cost) |
 |-------|--------|-----------------|------|-----------------------------------|-----------|----------------|
@@ -710,6 +714,8 @@ The `generate` command produces a markdown report with per-phase rows:
   - **Cache creation input tokens**: 12,000
 - **Billing-weighted total**: 78,000 (derived-cost population — input + output + 0.1 × cache_read + 1.25 × cache_creation. What this phase cost to buy, over the main-context window; a different question from the dispatched work the Tokens column measures, so the two are never summed)
 ```
+
+The `Generated:` line is the report's single absolute wall-clock timestamp and the only figure in `metrics.md` that renders through the **display-only** timezone — UTC-suffixed by default, and carrying an unambiguous `ABBREV (UTC±HH:MM)` label instead whenever the operator has configured a zone the instant is actually converted into; every other value in the report is a duration, a count, or a name, and storage and comparison stay UTC unconditionally because the knob never reaches a write or compare path. See [`manage-run-config` run-config-standard.md](../../manage-run-config/standards/run-config-standard.md) § Display-Timezone Section.
 
 The four-field usage view and the billing-weighted total are rendered per phase (each phase that carries them gets its own bullet list), not as a single plan-level "Session Enrichment" block. Each four-field bullet renders only when its underlying value is present and non-zero.
 
@@ -887,11 +893,11 @@ rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,input_toke
 
 The first three lines are the TOON-tabular header (`plan_id:`, `phase:`, `rows[]{…}:`); each subsequent line is one CSV-style data row in the declared column order.
 
-The three data rows above are the three distinguishable cases, in order: a dispatch whose context load was measured; one whose caller forwarded no `message.usage` figures at all (four `unmeasured` cells); and one measured to be zero on three of the four columns (three genuine `0` cells). Before the `unmeasured` token existed, rows 2 and 3 were byte-identical on columns 6–9.
+The three data rows above are the three distinguishable cases, in order: a dispatch whose context load was measured; one whose caller forwarded no `message.usage` figures at all (four `unmeasured` cells); and one measured to be zero on three of the four columns (three genuine `0` cells). Before the `unmeasured` token existed, row 2 would have carried four literal `0`s — and **that** all-zero pre-token row is byte-identical to a genuine all-measured-zero row, since neither carries anything on columns 6–9 but zeros. Row 3 is not half of that pair: its nonzero `input_tokens` cell dates the row, so its three `0`s are readable as genuine measured zeros. See *Provenance of a measured zero* below for the fingerprint rule that separates the two members of the identical pair — and for why, absent a fingerprint, it cannot.
 
 ### Per-Dispatch Context-Load Attribution
 
-This section is the **single source of truth** for the dispatch-boundary row's column order, count, and unmeasured representation. Every consumer cites it as authority — and each one nonetheless RESTATES part of the schema in its own file, because they run in separate processes (and one lives outside this repository's crawled inventory) and cannot import a shared constant. Those restating surfaces are enumerated, with the obligation they carry, in **Restating surfaces (lock-step obligation)** at the end of this section; that list is the thing to keep in sync, and it is not empty.
+This section is the **single source of truth** for the dispatch-boundary row's column order, count, and unmeasured representation. Every consumer cites it as authority — and each one nonetheless RESTATES part of the schema in its own file, because they run in separate processes and cannot import a shared constant. Those restating surfaces are enumerated, with the obligation they carry, in **Restating surfaces (lock-step obligation)** at the end of this section; that list is the thing to keep in sync, and it is not empty.
 
 Each row carries **nine columns**: the **legacy five** followed by the **four context-load columns appended at the END** for positional backward compatibility. The four context-load columns are the per-DISPATCH counterpart to the per-PHASE four-field `message.usage` view that `enrich` writes (see Per-Phase Fields above); they capture the dispatched agent's context-load totals at dispatch termination so per-dispatch context cost (dispatch count, collapsed triage contexts, per-dispatch context size) becomes measurable.
 
@@ -913,6 +919,8 @@ The four context-load columns are OPTIONAL — a caller with no `message.usage` 
 
 The legacy five columns keep their `0` default deliberately: no consumer distinguishes an absent from a zero on those, so introducing a second unmeasured surface there would add a distinction nothing reads.
 
+**Columns are resolved BY NAME, from the row block's own `rows[N]{…}:` header.** The nine-column order above is the order a writer emits; a reader stands it in only until a header declares names, and once one does every column — the legacy five included — is resolved by its declared name rather than by position. The header is also what gives a cell its meaning at all: a reader gates on having SEEN one, so a file carrying no header line yields NO rows rather than a positional guess. A column the header does not declare is therefore in exactly the position of one the row is too short to carry, and reads the same way — the fourth row of the table below covers both.
+
 Every reader of columns 6–9 MUST implement the same cell read, and MUST NOT collapse it to two:
 
 | Cell | Reading | Required behaviour |
@@ -920,7 +928,8 @@ Every reader of columns 6–9 MUST implement the same cell read, and MUST NOT co
 | a nonzero integer | **measured** | Carry the int — a real value under any writer |
 | a literal `0` | **measured** when the row is datable to the current writer, else **indeterminate** | Carry `0` only when a post-token fingerprint dates the row; otherwise omit the key and name the column indeterminate — see *Provenance of a measured zero* below |
 | the literal `unmeasured` | **recognised, and deliberately not measured** | Carry the column as ABSENT. Never substitute `0` |
-| anything else (non-int, non-token, or a column the row does not have) | **unrecognised** | Report as unrecognised — distinct from unmeasured. Never default it, and never fold it into either neighbour |
+| a column the row does not carry — the header does not declare it, or the row is too short to have it | **unmeasured** | Carry the column as ABSENT, exactly as an explicit `unmeasured` token. A legacy five-column row recorded no context-load measurement at all, so absence is the honest reading — not a parse failure. Never substitute `0` |
+| anything else (a non-int, non-token cell value) | **unrecognised** | Report as unrecognised — distinct from unmeasured. Never default it, and never fold it into either neighbour |
 
 The distinction between *unmeasured* and *unrecognised* is load-bearing: the first is a statement the writer made on purpose, the second is a shape the reader failed to understand. Collapsing them would let a genuinely corrupt row read as a deliberate abstention.
 
@@ -941,7 +950,7 @@ The `plan-retrospective` reader (`_parse_dispatch_boundary_file`) implements thi
 
 The harder case is a **widened nine-column row written before the `unmeasured` token existed**: its four columns are PRESENT and carry a literal `0`, so a reader that trusts every integer records four measured zeros — the same over-claim positional compatibility exists to prevent, one floor lower than the five-column case. Such a row's zeros are of **indeterminate** provenance (see *Provenance of a measured zero* above) and read as the fourth state, never as measured `0`, unless the row carries a post-token fingerprint that dates it. A row written before the token existed recorded no *datable* context-load measurement, whether it omitted the columns (five-column) or defaulted them to `0` (nine-column).
 
-**Restating surfaces (lock-step obligation).** This section is the single source of truth; four surfaces restate it and MUST move together — the writer in `manage-metrics.py` (`cmd_record_dispatch_boundary` + `_DISPATCH_CONTEXT_LOAD_COLUMNS`), the `record-dispatch-boundary` operation block in `manage-metrics/SKILL.md`, the reader in `plan-retrospective/scripts/analyze-logs.py` (`_parse_dispatch_boundary_file`), and the hand-copied `_BC_LEDGER_COLUMNS` / `_BC_LEDGER_UNMEASURED_TOKEN` constants — together with the `_parse_dispatch_boundary_totals` cell read and the row-level provenance gate that consumes them — in `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py` (that reader recovers provenance too, so a change to *Provenance of a measured zero* above moves it as well as the `plan-retrospective` reader). The last of those lives in a tree the architecture inventory does not crawl, so a drift there is invisible to a content sweep — it is named here so it is found by reading rather than by searching.
+**Restating surfaces (lock-step obligation).** This section is the single source of truth; **five** surfaces restate it and MUST move together — the writer in `manage-metrics.py` (`cmd_record_dispatch_boundary` + `_DISPATCH_CONTEXT_LOAD_COLUMNS`), the `record-dispatch-boundary` operation block in `manage-metrics/SKILL.md`, the reader in `plan-retrospective/scripts/analyze-logs.py` (`_parse_dispatch_boundary_file`), the hand-copied `_BC_LEDGER_COLUMNS` / `_BC_LEDGER_UNMEASURED_TOKEN` constants — together with the `_parse_dispatch_boundary_totals` cell read and the row-level provenance gate that consumes them — in `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py` (that reader recovers provenance too, so a change to *Provenance of a measured zero* above moves it as well as the `plan-retrospective` reader), and the `billing-composition` check's own restatement of the column set, the four-way cell read and that same provenance gate in `.claude/skills/audit-archived-plan-retrospectives/checks/billing-composition.md`. The last **two** live in a tree the architecture inventory does not crawl, so a drift in either is invisible to a content sweep — they are named here so they are found by reading rather than by searching.
 
 **`termination_cause` enum**: `voluntary_checkpoint`, `task_complete_returned_verbatim`, `budget_yield`, `harness_cancellation`, `error`, `clean_exit_queue_empty`, `step_complete`, `blocked_user_review`, `blocked_session_restart`, `task_batch_complete`, `agent_returned`, `returned_with_findings`. Missing or unrecognised causes are script errors (no implicit fallback). `returned_with_findings` marks a productive non-completion — a dispatch that returned findings and signalled a loop-back — and is the dispatch-ledger counterpart of the step-completion `loop_back` outcome (see § Per-Field Write Semantics for that outcome); it exists so a findings-bearing loop-back is not mis-stamped as `error`.
 

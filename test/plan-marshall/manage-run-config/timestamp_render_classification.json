@@ -1,7 +1,10 @@
 {
-  "_description": "D1 classification of every timestamp call site in marketplace/bundles/**/*.py, separating the RENDER sites (a stored or current timestamp formatted into human-facing text an operator reads) from the STORE/COMPARE sites (created, persisted, parsed for arithmetic, or compared — never shown to a human as a formatted wall-clock string). The display_timezone knob may reach RENDER sites ONLY; it must NEVER reach a STORE or COMPARE site. This file is the classification the display-timezone write-path guard (test_display_timezone_guard.py) is derived over.",
-  "_population_source": "grep -nE 'datetime\\.now|utcnow|strftime|fromisoformat|astimezone|ZoneInfo|zoneinfo|\\.timestamp\\(\\)|fromtimestamp' over marketplace/bundles/**/*.py — re-derived at guard time by scanning the live tree, never a hand-maintained site list. The lead figure was 'about 32 sites, zero naive calls'; the re-derivation found 55 real call sites (plus 2 docstring/comment mentions that are not call sites), across which exactly two RENDER an absolute timestamp for a human. Every datetime.now() call in the tree uses datetime.now(UTC) — the tree is fully converged onto UTC, which is what makes a display-only knob safe.",
-  "scan_regex": "datetime\\.now|utcnow|strftime|fromisoformat|astimezone|ZoneInfo|zoneinfo|\\.timestamp\\(\\)|fromtimestamp",
+  "_description": "D1 classification of the timestamp call sites in marketplace/bundles/**/*.py that scan_regex reaches, separating the RENDER sites (a stored or current timestamp formatted into human-facing text an operator reads) from the STORE/COMPARE sites (created, persisted, parsed for arithmetic, or compared — never shown to a human as a formatted wall-clock string). The population is what scan_regex matches, not every conceivable way a module can obtain a time: scan_regex covers the raw datetime/zoneinfo call shapes AND the two shared helpers (now_utc_iso, format_timestamp). A module that obtains a timestamp by some further indirection this regex does not name is outside the derived census, and the fix is to widen scan_regex rather than to assume the census is total. The display_timezone knob may reach RENDER sites ONLY; it must NEVER reach a STORE or COMPARE site. This file is the classification the display-timezone write-path guard (test_display_timezone_guard.py) is derived over.",
+  "_population_source": "The population is re-derived at guard time by matching scan_regex against the live marketplace/bundles/**/*.py tree — never a hand-maintained site list. scan_regex has two arms and they cover different things. The raw-call arm (datetime.now|utcnow|strftime|fromisoformat|astimezone|ZoneInfo|zoneinfo|.timestamp()|fromtimestamp) reaches modules that construct or parse a time themselves. The helper arm (now_utc_iso|format_timestamp) reaches modules that obtain their timestamp from the shared tools-file-ops / manage-logging primitives instead, which the raw-call arm cannot see at all: before the helper arm was added, a module whose only timestamp came through now_utc_iso() was invisible to this guard, and its store sites were silently absent from the derived STORE/COMPARE census. Both arms are needed, and neither alone is the population. Every datetime.now() call in the tree passes UTC — the tree is converged onto UTC, which is what makes a display-only knob safe. Counts are deliberately not recorded here: the census this guard publishes on each run is the live figure, and a number frozen into this file would be a claim about a tree that has since moved.",
+  "_scan_regex_arms": "scan_regex is the alternation of the two arms below, and the guard asserts that composition rather than trusting it. The arms are published separately because the guard needs them separately: the helper-only population — the modules the raw-call arm cannot see — is the set difference between what the helper arm matches and what the raw-call arm matches, and a guard that only had the composed pattern could not compute it. Widening the census means adding to an arm, and the composition assertion is what stops an arm from being edited without the composed pattern following.",
+  "scan_regex_raw_call_arm": "datetime\\.now|utcnow|strftime|fromisoformat|astimezone|ZoneInfo|zoneinfo|\\.timestamp\\(\\)|fromtimestamp",
+  "scan_regex_helper_arm": "now_utc_iso|format_timestamp",
+  "scan_regex": "datetime\\.now|utcnow|strftime|fromisoformat|astimezone|ZoneInfo|zoneinfo|\\.timestamp\\(\\)|fromtimestamp|now_utc_iso|format_timestamp",
   "knob_consumer_symbols": [
     "render_timestamp",
     "resolve_display_timezone",
@@ -16,23 +19,119 @@
     "marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/manage-metrics.py",
     "marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/compile-report.py"
   ],
+  "_render_call_budget_derivation": "render_call_budget is the number of 'render_timestamp(' occurrences the file is permitted to contain, re-derived from the tree with text.count('render_timestamp(') rather than hand-maintained. It exists because a RENDER file is NOT wholly a render surface: manage-metrics.py renders once and calls now_utc_iso() nine times, so exempting the file wholesale hid every one of those store sites from the write-path guard. Pinning the count makes routing any additional site through the knob a red build. Raising a budget is a deliberate act that must be justified by a new human-facing render site, never a way to quiet the guard.",
+  "_render_site_binding_derivation": "A budget is a COUNT, and a count cannot see a SUBSTITUTION: moving the one budgeted render_timestamp( call off the human-facing line and onto a store site leaves actual == budget and passes. renders_anchor and render_binding bind each budgeted call to the specific human-facing SITE it is budgeted for, so the call has to keep feeding the subject the classification names. renders_anchor is the literal that appears on the source line emitting the human-facing text, and it must occur on EXACTLY ONE line of the file — two lines carrying it would make 'the subject line' ambiguous and the binding unverifiable. render_binding is the identifier that carries the rendered value into that line, or null when the call is written inline inside the anchor line's f-string. Both are re-derived by reading the call site, never inferred from the file name. Raising a budget therefore also means naming the new site's anchor: the guard's error text already asks the author to say what a budgeted call renders, and these two fields are where that answer is recorded in a machine-checkable form.",
   "render_sites": [
     {
       "file": "marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/manage-metrics.py",
       "classification": "RENDER",
       "human_text": "Generated: <ts> UTC — the single absolute-timestamp line in the metrics.md report body; every other metrics.md line renders phase names, floors, warnings, and durations-in-ms, never a wall-clock time.",
-      "routed_through": "render_timestamp(datetime.now(UTC), '%Y-%m-%d %H:%M:%S', ' UTC')"
+      "routed_through": "f'Generated: {render_timestamp(datetime.now(UTC), \"%Y-%m-%d %H:%M:%S\", \" UTC\")}'",
+      "renders_anchor": "Generated: ",
+      "render_binding": null,
+      "render_call_budget": 1
     },
     {
       "file": "marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/compile-report.py",
       "classification": "RENDER",
       "human_text": "- generated: <ts>Z — the generated-at line in the plan-retrospective report header list.",
-      "routed_through": "render_timestamp(datetime.now(UTC), '%Y-%m-%dT%H:%M:%S', 'Z')"
+      "routed_through": "generated = render_timestamp(datetime.now(UTC), '%Y-%m-%dT%H:%M:%S', 'Z'), consumed by the f'- generated: {generated}' header line",
+      "renders_anchor": "- generated: ",
+      "render_binding": "generated",
+      "render_call_budget": 1
     }
   ],
-  "store_compare_derivation": "STORE/COMPARE is every scanned file MINUS render_files MINUS knob_owner_files. It is derived (not listed here) so a newly-added timestamp site is classified STORE/COMPARE by default and trips the guard the moment it references a knob_consumer_symbol — the classification cannot silently go stale or empty. The guard publishes the derived STORE/COMPARE file census on every run.",
+  "_helper_only_sites_derivation": "helper_only_sites are the modules the raw-call arm of scan_regex CANNOT see — they reach a timestamp only through now_utc_iso / format_timestamp. The set was derived as a set difference, both arms run against the live tree at the commit this entry was written: (A) the modules reaching the helpers, `architecture search --content --pattern \"now_utc_iso|format_timestamp\"` restricted to its category:script rows; MINUS (B) the modules the raw-call arm already matched, `architecture search --content --pattern 'datetime\\.now|utcnow|strftime|fromisoformat|astimezone|ZoneInfo|zoneinfo|\\.timestamp\\(\\)|fromtimestamp' --category script`. Both searches reported truncated:false with empty unreadable[] and elided[], so the coverage behind the difference is clean. Every member of A \\ B is listed below with its own verdict and the record field that verdict rests on — read at the call site, not inferred from the module name. These entries do not exempt anything: widening scan_regex is what puts these modules INTO the derived STORE/COMPARE census, and each entry records why that is the correct bucket for it. A member whose verdict were RENDER would additionally carry a re-derived render_call_budget and be listed in render_files; none of the current members does, because none formats a timestamp into human-facing text.",
+  "helper_only_sites": [
+    {
+      "file": "marketplace/bundles/plan-marshall/skills/manage-build-server/scripts/_marshalld_journal.py",
+      "classification": "STORE",
+      "reached_via": "now_utc_iso",
+      "stored_as": "created_at",
+      "reason": "Stamps the created_at field of a journal record written through atomic_write_file. The value is persisted and read back as a record field; it is never formatted for display."
+    },
+    {
+      "file": "marketplace/bundles/plan-marshall/skills/manage-build-server/scripts/manage_build_server.py",
+      "classification": "STORE",
+      "reached_via": "now_utc_iso",
+      "stored_as": "timestamp",
+      "reason": "Stamps the timestamp field of an interaction-audit record. Converting it would make two audit rows written under different zones incomparable with no error."
+    },
+    {
+      "file": "marketplace/bundles/plan-marshall/skills/manage-change-ledger/scripts/_ledger_core.py",
+      "classification": "STORE",
+      "reached_via": "now_utc_iso",
+      "stored_as": "timestamp_iso",
+      "reason": "Supplies the default timestamp_iso on each of the three ledger-append paths when the caller passes none. Ledger timestamps are compared across entries to decide build freshness — a display zone reaching here would corrupt that comparison."
+    },
+    {
+      "file": "marketplace/bundles/plan-marshall/skills/manage-logging/scripts/plan_logging.py",
+      "classification": "STORE",
+      "reached_via": "format_timestamp",
+      "stored_as": "timestamp",
+      "reason": "format_timestamp() is a thin alias of now_utc_iso(); it stamps the timestamp field of assembled log entries. Those entries are parsed back by the module's own HEADER_PATTERN / FIELD_PATTERN and by the retrospective log analyzers, so the value is a machine-read record field rather than display text. A log line is read by an operator, but the timestamp in it is not rendered for that operator — it is the parse key."
+    },
+    {
+      "file": "marketplace/bundles/plan-marshall/skills/manage-plan-documents/scripts/_documents_core.py",
+      "classification": "STORE",
+      "reached_via": "now_utc_iso",
+      "stored_as": "created (document metadata) and the {timestamp} template slot",
+      "reason": "Writes the created: metadata line of a generated plan document and substitutes the {timestamp} template placeholder. Both are document metadata parsed back by the metadata reader, not prose an operator is shown as a wall-clock time."
+    },
+    {
+      "file": "marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py",
+      "classification": "STORE",
+      "reached_via": "now_utc_iso",
+      "stored_as": "phase-transition stamp, and a YYYY-MM-DD identifier prefix",
+      "reason": "Stamps a lifecycle transition, and separately slices the first ten characters into a date prefix used as an identifier component. The prefix is the same trap the lessons-identifier entry names: it doubles as a sort key, so converting it would silently reorder records."
+    },
+    {
+      "file": "marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_merge_authorization.py",
+      "classification": "STORE",
+      "reached_via": "now_utc_iso",
+      "stored_as": "granted_at",
+      "reason": "Stamps granted_at on the merge-authorization record. The value is compared against the HEAD it authorizes to decide whether the authorization is still live; it is a comparison input, not display text."
+    },
+    {
+      "file": "marketplace/bundles/plan-marshall/skills/manage-status/scripts/_status_query.py",
+      "classification": "STORE",
+      "reached_via": "now_utc_iso",
+      "stored_as": "at, set_at, updated",
+      "reason": "Stamps the at field of a recorded event, set_at on an owner/state record, and the updated field on three status-write paths. All are persisted record fields read back by status consumers."
+    },
+    {
+      "file": "marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_tasks_core.py",
+      "classification": "STORE",
+      "reached_via": "now_utc_iso (import only)",
+      "stored_as": null,
+      "reason": "Imports the helper but contains NO call site — the module's only reach is the import statement itself. Recorded explicitly so the entry cannot be mistaken for a surface that was never examined: there is no timestamp value here to render, so STORE is the correct default bucket and no render budget applies."
+    },
+    {
+      "file": "marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py",
+      "classification": "STORE",
+      "reached_via": "now_utc_iso",
+      "stored_as": "created, and the amended-at header field",
+      "reason": "Stamps the created field of an inbox message and the amended-at field of a message header on amendment. Both are persisted message metadata that later reads order and dedupe on."
+    },
+    {
+      "file": "marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py",
+      "classification": "STORE",
+      "reached_via": "now_utc_iso",
+      "stored_as": "updated, sampled_at",
+      "reason": "Stamps updated on the persisted orchestrator state and sampled_at on a sample record. sampled_at in particular is compared against later samples to establish ordering, which a display zone would break."
+    },
+    {
+      "file": "marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_build_server_registry.py",
+      "classification": "STORE",
+      "reached_via": "now_utc_iso",
+      "stored_as": "registry enrolment stamp, unregister audit timestamp, audit-detail timestamp default",
+      "reason": "Stamps registry enrolment, the unregister audit entry, and the default timestamp on an audit detail when the caller supplies none. All three are audit-trail record fields whose value is comparison and provenance, never display."
+    }
+  ],
+  "store_compare_derivation": "STORE/COMPARE is every scanned file MINUS render_files MINUS knob_owner_files. It is derived (not listed here) so a newly-added timestamp site is classified STORE/COMPARE by default and trips the guard the moment it references a knob_consumer_symbol — the classification cannot silently go stale or empty. Because scan_regex now carries the helper arm, the helper_only_sites above fall inside this derived remainder rather than outside the census entirely. The guard publishes the derived STORE/COMPARE file census on every run.",
   "known_store_traps": [
     "A lesson identifier prefix (manage-lessons.py) is derived from datetime.now(UTC) date/hour AND doubles as a sort key — converting it would silently reorder the corpus. STORE, out of scope.",
-    "Retention/quiet-window cutoffs, CI/build durations, and title-token staleness all COMPARE timestamps written at different times; two records rendered under different zones would be incomparable with no error. COMPARE, out of scope."
+    "Retention/quiet-window cutoffs, CI/build durations, and title-token staleness all COMPARE timestamps written at different times; two records rendered under different zones would be incomparable with no error. COMPARE, out of scope.",
+    "A module that obtains its timestamp through a shared helper rather than a raw datetime call is invisible to the raw-call arm of scan_regex alone. The helper arm closes this for now_utc_iso and format_timestamp; a future third helper would re-open it, and the remedy is to widen scan_regex, never to treat the census as total by assumption."
   ]
 }

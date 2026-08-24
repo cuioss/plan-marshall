@@ -114,50 +114,70 @@ class TestParseDispatchBoundaryFile:
         result = _al._parse_dispatch_boundary_file(target)
         assert result['present'] is False
 
-    def test_malformed_rows_skipped(self, tmp_path):
-        """A LEGACY five-column fixture: short/non-int rows drop, the valid one stays.
+    def test_only_the_length_floor_drops_a_row(self, tmp_path):
+        """A LEGACY five-column fixture: the short row drops, the corrupt one does NOT.
 
-        This is the file's coverage of BOTH the ``len(parts) < 5`` legacy floor
-        and the appended-cell branch, so it also pins what the surviving legacy
-        row says about its four appended columns: they are UNMEASURED (absent),
-        not a measured ``0``. Asserting only ``len(rows) == 1`` would stay green
-        across that representation change while proving nothing about it.
+        Two malformations, two DIFFERENT outcomes, and the difference is the
+        point. A row too short to carry the legacy five gives the reader no way
+        to position its cells, so the ``len(parts) < _LEGACY_COLUMN_COUNT`` floor
+        drops it. A row of the right WIDTH whose ``total_tokens`` cell is corrupt
+        is KEPT: that one cell degrades to ``0`` and every other cell on the row
+        — including its context-load cells — stays readable. Dropping the row
+        would discard measurements the reader parsed perfectly well, and would
+        disagree with the audit reader, which keeps such a row and measures its
+        context-load cells.
+
+        This is also the file's coverage of what a surviving legacy row says
+        about its four appended columns: they are UNMEASURED (absent), not a
+        measured ``0``. Asserting only a row count would stay green across that
+        representation change while proving nothing about it.
         """
         artifact = tmp_path / 'b.toon'
         artifact.write_text(
             'plan_id: demo\n'
             'phase: 5-execute\n'
             'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms}:\n'
-            'too,few,fields\n'  # wrong field count → skipped
-            'ts,unknown,not-an-int,2,1000\n'  # non-int LEGACY column → row skipped
+            'too,few,fields\n'  # under the five-column floor → dropped
+            'ts,unknown,not-an-int,2,1000\n'  # corrupt LEGACY cell → kept, degraded
             'ts2,clean_exit_queue_empty,100,2,1000\n',  # valid
             encoding='utf-8',
         )
         result = _al._parse_dispatch_boundary_file(artifact)
         assert result['present'] is True
-        assert len(result['rows']) == 1
-        assert result['clean_exit_queue_empty_count'] == 1
 
-        # The legacy floor survives AND the surviving row's context-load columns
+        # Exactly one row was dropped, and it was the short one.
+        assert len(result['rows']) == 2
+        assert result['clean_exit_queue_empty_count'] == 1
+        assert result['unknown_count'] == 1
+
+        degraded, valid = result['rows']
+        # The corrupt cell degrades to 0 rather than taking its row with it...
+        assert degraded['termination_cause'] == 'unknown'
+        assert degraded['total_tokens'] == 0
+        # ...and its intact neighbours on the same row survive the degrade.
+        assert degraded['tool_uses'] == 2
+        assert degraded['duration_ms'] == 1000
+        assert valid['total_tokens'] == 100
+
+        # The legacy floor survives AND each surviving row's context-load columns
         # read as unmeasured rather than as measured zeros.
-        row = result['rows'][0]
-        assert row['total_tokens'] == 100
-        for column in (
-            'input_tokens',
-            'output_tokens',
-            'cache_read_input_tokens',
-            'cache_creation_input_tokens',
-        ):
-            assert column not in row, column
-        assert row['unmeasured_columns'] == [
-            'input_tokens',
-            'output_tokens',
-            'cache_read_input_tokens',
-            'cache_creation_input_tokens',
-        ]
-        # Nothing was UNRECOGNISED: a legacy row is a recognised shape whose
-        # appended columns simply do not exist.
-        assert row['unrecognised_columns'] == []
+        for row in (degraded, valid):
+            for column in (
+                'input_tokens',
+                'output_tokens',
+                'cache_read_input_tokens',
+                'cache_creation_input_tokens',
+            ):
+                assert column not in row, column
+            assert row['unmeasured_columns'] == [
+                'input_tokens',
+                'output_tokens',
+                'cache_read_input_tokens',
+                'cache_creation_input_tokens',
+            ]
+            # Nothing was UNRECOGNISED: a legacy row is a recognised shape whose
+            # appended columns simply do not exist.
+            assert row['unrecognised_columns'] == []
 
     def test_malformed_appended_cell_is_unrecognised_not_unmeasured(self, tmp_path):
         """A corrupt appended cell reads as unrecognised, keeping the row.

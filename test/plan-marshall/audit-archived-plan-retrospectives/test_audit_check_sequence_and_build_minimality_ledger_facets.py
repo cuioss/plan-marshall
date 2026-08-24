@@ -22,6 +22,33 @@ from _audit_fixtures import (
 _LEDGER_NOTATION_MAVEN = 'plan-marshall:build-maven:maven_build'
 
 
+def _row_cell(block: str, plan_id: str, column: str) -> str:
+    """One named cell of one plan's emitted row.
+
+    The column INDEX is derived from the block's own ``rows[N]{...}`` header
+    rather than hard-coded, so a column inserted ahead of the requested one moves
+    this reader with it instead of silently shifting it onto a neighbour. A
+    column the header does not carry raises ``ValueError`` from ``.index`` —
+    an absent column is a failure, never a silently skipped assertion.
+
+    Reading the cell POSITIONALLY is the point: a bare ``',n/a,' in block``
+    passes on that token appearing anywhere in the block — for another column, or
+    for another plan's row — so it cannot tell one column's value from an
+    unrelated occurrence elsewhere in the same output.
+    """
+    header = next(ln for ln in block.splitlines() if ln.startswith('rows['))
+    columns = header.split('{', 1)[1].rsplit('}', 1)[0].split(',')
+    row_line = next(
+        ln.strip() for ln in block.splitlines() if ln.strip().startswith(f'{plan_id},')
+    )
+    return row_line.split(',')[columns.index(column)]
+
+
+def _share_cell(block: str, plan_id: str) -> str:
+    """The ``build_share`` cell of one plan's emitted row."""
+    return _row_cell(block, plan_id, 'build_share')
+
+
 class TestSequenceBuildMinimalityLedgerFacets:
     """The re-base onto the change-ledger (D1/D2): build time comes from the
     ledger's structured `duration_seconds` for every build system and every phase,
@@ -98,6 +125,40 @@ class TestSequenceBuildMinimalityLedgerFacets:
             corpus['success'] + corpus['error'] + corpus['timeout']
             + corpus['killed'] + corpus['status_unknown']
         ) == corpus['builds']
+
+    def test_status_unknown_is_a_row_column_that_partitions_that_row_builds(
+        self, tmp_path: Path
+    ):
+        # THE ROW-SCOPE HALF of the same defect the corpus test above covers. The
+        # corpus totals named the undetermined build; the per-plan row did not —
+        # its emitted columns ran pass,error,timeout,killed straight into
+        # total_build_seconds, so one row's four status cells summed to LESS than
+        # that same row's own `builds` cell with nothing naming the difference,
+        # and the undetermined build read as a build that never ran. The corpus
+        # assertion cannot observe this: it sums the row DICTS, which carried
+        # `build_status_unknown` all along — only the emitted header and cell list
+        # dropped it. Pre-fix `_row_cell(..., 'status_unknown')` raises ValueError
+        # because the column is absent from the emitted rows[N]{...} header.
+        inputs = _write_sbm_plan(
+            tmp_path, 'row-status-unknown',
+            modified_files=['a.py'],
+            ledger_builds=[
+                {'dur': 10.0, 'status': 'success', 'ts': '2026-06-01T10:00:00Z'},
+                {'dur': 10.0, 'status': 'error', 'ts': '2026-06-01T11:00:00Z'},
+                # Outside the recognised vocabulary — the outcome is UNDETERMINED.
+                {'dur': 10.0, 'status': 'weird-unrecognized-status',
+                 'ts': '2026-06-01T12:00:00Z'},
+            ],
+        )
+        result = audit.cross_sequence_build_minimality([inputs], _sbm_index(tmp_path))
+        block = audit.emit_sequence_build_minimality_block(result)
+
+        assert _row_cell(block, 'row-status-unknown', 'status_unknown') == '1'
+        five_terms = sum(
+            int(_row_cell(block, 'row-status-unknown', column))
+            for column in ('pass', 'error', 'timeout', 'killed', 'status_unknown')
+        )
+        assert five_terms == int(_row_cell(block, 'row-status-unknown', 'builds')) == 3
 
     def test_build_time_exceeds_wallclock_is_flagged(self, tmp_path: Path):
         # D4(b). A 500s build against a 100s plan wall-clock is impossible — a
@@ -211,7 +272,31 @@ class TestSequenceBuildMinimalityLedgerFacets:
 
         assert row['wall_clock_seconds'] == 0
         assert row['build_share'] is None
-        assert ',n/a,' in block                        # rendered as n/a, not 0%
+        assert _share_cell(block, 'no-metrics') == 'n/a'   # rendered as n/a, not 0%
+
+    def test_build_share_withheld_when_the_ledger_is_absent(self, tmp_path: Path):
+        # The NUMERATOR's absent-ledger hole — the mirror of the denominator case
+        # above. Metrics ARE present, so wall-clock is a real positive number and
+        # the denominator gate passes; what is missing is the numerator, because
+        # the plan carries no kind=build rows at all and `total_build_seconds` is
+        # therefore zero BY ABSENCE rather than by measurement. Gating on the
+        # denominator alone rendered 0/500 as a fabricated `0%` — a cell reading
+        # "this plan spent no time building" one column away from the
+        # `has_ledger: false` cell saying the build time was never measured.
+        inputs = _write_sbm_plan(
+            tmp_path, 'no-ledger',
+            modified_files=['a.py'],
+            metrics_phases={'5-execute': 500.0},
+        )
+
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
+        result = audit.cross_sequence_build_minimality([inputs], _sbm_index(tmp_path))
+        block = audit.emit_sequence_build_minimality_block(result)
+
+        assert row['has_ledger'] is False              # the numerator is UNAVAILABLE
+        assert row['wall_clock_seconds'] == 500        # while the denominator is not
+        assert row['build_share'] is None              # so the share is withheld
+        assert _share_cell(block, 'no-ledger') == 'n/a'
 
     def test_ledger_delta_over_ledger_bearing_population(self, tmp_path: Path):
         # D1's delta: the ledger total vs the OLD log-derived total, measured over
@@ -258,3 +343,66 @@ class TestSequenceBuildMinimalityLedgerFacets:
         assert row['has_ledger'] is True
         assert row['builds'] == 1
         assert row['total_build_seconds'] == 99
+
+
+class TestCheckProseMatchesTheLedgerRebase:
+    """The check's own prose describes the ledger re-base, not the log derivation.
+
+    The re-base moved build count / duration / status onto the change-ledger, but
+    the module docstring and the check's section comment still described the OLD
+    log-derived behaviour and still named two machine-local prototype scripts as
+    the check's basis. Stale prose beside correct code is the documentation half
+    of the same defect: a reader who trusts the description reads every build
+    number as pyproject-only.
+
+    Asserted over the source TEXT because that is the only form these claims have
+    — they are comments, so no runtime behaviour can carry them, and nothing else
+    in the suite fails when they drift.
+    """
+
+    @staticmethod
+    def _source() -> str:
+        return Path(audit.__file__).read_text(encoding='utf-8')
+
+    def test_the_old_log_matcher_is_named_only_at_its_own_definition(self):
+        """`pyproject_build run` survives only as `_sbm_is_build`'s delta baseline.
+
+        Anywhere else it is a claim that the check classifies builds by parsing
+        pyproject calls out of a log — which is what the re-base replaced.
+        """
+        hits = [
+            ln.strip()
+            for ln in self._source().splitlines()
+            if 'pyproject_build run' in ln
+        ]
+
+        assert hits == [
+            '# A pyproject_build run call in the plan-scoped log — the OLD build derivation,'
+        ]
+
+    def test_the_machine_local_prototype_paths_are_gone(self):
+        """Both named `.plan/temp/` prototypes are absent from this clone.
+
+        A comment pointing a reader at a path that does not exist sends them
+        looking for the check's basis in a file they cannot open; the basis is
+        the build-time ORACLE block in this same source.
+        """
+        source = self._source()
+
+        assert '.plan/temp/build_minimality' not in source
+        assert '.plan/temp/sequence_analysis' not in source
+        assert 'build-time ORACLE' in source          # the pointer that replaced them
+
+    def test_the_two_ledger_derived_flags_are_catalogued(self):
+        """The MODULE DOCSTRING's flag list names both ledger-derived flags.
+
+        The docstring is what a reader consults to know which signals the check
+        can raise, so a flag the code emits but the docstring omits is invisible
+        until it fires. Asserted against `audit.__doc__` specifically rather than
+        against the whole source, where the emit site's own f-string would
+        satisfy the search and the catalogue could stay silent.
+        """
+        docstring = audit.__doc__ or ''
+
+        for flag in ('suspect_build_duration', 'build_exceeds_wallclock'):
+            assert flag in docstring, flag
