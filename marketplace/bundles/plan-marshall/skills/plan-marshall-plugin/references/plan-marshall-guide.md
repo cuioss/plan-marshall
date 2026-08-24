@@ -258,10 +258,12 @@ something the validator checks, not how it picks what to check.
 
 In practice, then, the functions are checked by **reading the module against the
 two tables below**. Runtime does exercise them, but that is not a substitute for
-the reading, because the failure handling is not uniform. A hook may be reached
-from one place or from several, and the handling differs from site to site, so
-the same failure surfaces differently — or not at all — depending on which verb
-ran. Examples, not an enumeration:
+the reading, because the failure handling is not uniform across the set. All of
+these shapes occur somewhere in it: a WARNING through `log_entry`, a bare
+`except Exception: pass`, a silent `continue`, a stderr print, and collection
+into a `results['errors']` list that does surface. Which shape a given failure
+gets depends on the hook and on which verb reached it — some hooks have one call
+site, some several. Examples, not an enumeration:
 
 - `extension_discovery.py`'s `get_skill_domains_from_extensions()` and
   `discover_applicable_extensions()` log a WARNING through `log_entry`.
@@ -306,7 +308,9 @@ it is why the reading below is the actual check.
 `get_skill_domains()` must return objects with:
 - `domain.key` — Domain identifier (kebab-case)
 - `domain.name` — Human-readable name
-- `profiles.core` — Core profile (required)
+- `profiles.core` — Core profile (required by contract; **not enforced** —
+  `validate_skill_domains_structure` iterates only the profiles present and never
+  tests for `core`'s absence, so a manifest omitting it validates clean)
 - Each profile has `defaults` and `optionals` arrays
 
 Valid profile names, as recognised by `_cmd_extension.py`'s

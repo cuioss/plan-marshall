@@ -24,7 +24,7 @@ Comprehensive diagnostic and fix skill for marketplace components. Combines diag
 - Load prerequisite skills and the component reference guide before analyzing
 - Every workflow step that performs a script operation must have an explicit bash code block with the full `python3 .plan/execute-script.py` command (workflow-explicit-script-calls)
 - Agents must record lessons via manage-lessons skill, not self-invoke commands (agent-lessons-via-skill)
-- Only `doctor-marketplace.py` is registered in the executor. The other scripts (`_analyze.py`, `_validate.py`, `_fix.py`) are internal modules; `doctor-marketplace` imports functions from them, but their own CLI verbs are NOT reachable as subcommands — see § External Resources
+- Only `doctor-marketplace.py` is registered in the executor. `_analyze.py`, `_validate.py`, and `_fix.py` are verb-bearing dispatchers whose verbs are NOT reachable as `doctor-marketplace` subcommands, and which no production module imports — the test suite loads them directly by path. See § External Resources
 - Prose instructions adjacent to script calls must reference parameter values consistent with the script API (workflow-prose-parameter-consistency)
 
 ## Purpose
@@ -242,15 +242,24 @@ Test-tree conventions enforced across the `test/` directory, at two severities. 
 
 Only `doctor-marketplace.py` is registered in the executor.
 
-⛔ **Three sibling dispatchers are reachable by nothing.** `_analyze.py`,
+⛔ **Three sibling dispatchers have no production caller.** `_analyze.py`,
 `_validate.py`, and `_fix.py` are each a verb-bearing CLI entry point with an
-`if __name__ == '__main__'` block, and each is orphaned twice over: none of their
-verbs is a `doctor-marketplace` subcommand, and **no module imports them** — a
-whole-tree search for an import of any of the three returns zero hits across 5210
-files. `doctor-marketplace` does import many other underscore modules
-(`_doctor_analysis`, `_runner`, `_cmd_extension`, the `_analyze_*` rule modules);
-these three are not among them, and the dependency actually runs the other way —
-`_analyze.py` imports the `_analyze_*` helpers listed below.
+`if __name__ == '__main__'` block, and none of their verbs is a
+`doctor-marketplace` subcommand. `doctor-marketplace` imports many other
+underscore modules (`_doctor_analysis`, `_runner`, `_cmd_extension`, the
+`_analyze_*` rule modules) but none of these three, and the dependency runs the
+other way — `_analyze.py` imports the `_analyze_*` helpers listed below.
+
+What DOES load them is the test tree: `conftest.py`'s script loader executes each
+module through `spec_from_file_location` + `exec_module`, so all three are
+imported and run on every `module-tests` pass. They are therefore kept green by
+tests while no sanctioned surface can invoke them — which is a coverage report
+that measures reachability nobody has.
+
+⚠ Note for anyone re-checking this: a text search for `from X import` / `import X`
+CANNOT see that loader, and returns zero. This section previously asserted "no
+module imports them" on exactly that evidence, which the test tree refutes. The
+absence of a static import spelling is not the absence of an importer.
 
 Concretely: `doctor-marketplace` offers seven subcommands (`list-components`,
 `analyze`, `fix`, `report`, `quality-gate`, `test-conventions`,
@@ -280,18 +289,20 @@ consequence for `extension` specifically is worked through in
 
 **Notation**: `pm-plugin-development:plugin-doctor:doctor-marketplace {subcommand}`
 
-**Internal Modules** (unregistered — no sanctioned executor form; `doctor-marketplace`
-imports functions from some of them, which is NOT the same as exposing their verbs):
+**Internal Modules** (unregistered — no sanctioned executor form. `doctor-marketplace`
+reaches the four `_analyze_*` rule modules transitively, via `_doctor_analysis.py`
+and `_rule_registry`'s importlib descriptor load; it does not reach the three
+dispatchers at all):
 
 | Module | Purpose |
 |--------|---------|
-| `_analyze.py` | Dispatcher declaring `markdown`, `structure`, `coverage`, `cross-file` — imports the four `_analyze_*` modules below; no verb reachable as a `doctor-marketplace` subcommand, and nothing imports it |
+| `_analyze.py` | Dispatcher declaring `markdown`, `structure`, `coverage`, `cross-file` — imports the four `_analyze_*` modules below; no verb reachable as a `doctor-marketplace` subcommand |
 | `_analyze_markdown.py` | Markdown structure analysis |
 | `_analyze_coverage.py` | Tool coverage extraction |
 | `_analyze_structure.py` | Skill directory structure validation |
 | `_analyze_crossfile.py` | Cross-file duplication analysis |
-| `_validate.py` | Dispatcher declaring `references`, `cross-file`, `inventory`, `extension` — no verb reachable as a `doctor-marketplace` subcommand, and nothing imports it |
-| `_fix.py` | Dispatcher declaring `extract`, `categorize`, `apply`, `verify` — no verb reachable as a `doctor-marketplace` subcommand, and nothing imports it |
+| `_validate.py` | Dispatcher declaring `references`, `cross-file`, `inventory`, `extension` — no verb reachable as a `doctor-marketplace` subcommand |
+| `_fix.py` | Dispatcher declaring `extract`, `categorize`, `apply`, `verify` — no verb reachable as a `doctor-marketplace` subcommand |
 
 #### Hybrid Batch Processing
 
