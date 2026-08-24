@@ -20,6 +20,11 @@ two to four, reaching all the way to per-phase token usage — resolves **100%**
 where the cloud lane managed 57–96%, and reaches its verification without an operator having to
 remember to ask for it.
 
+⛔ **And it orchestrates.** The cloud lane has no orchestration machinery at all: every dispatch,
+every sequencing decision and every concurrency judgement across all five epics was a manual operator
+call, with a hand-written `README.md` as the only epic-level state. That file drifted on **6 of 12**
+checkable claims in the one corpus that checked it.
+
 **The one-sentence finding about the instrument: the cloud lane is not broken, it is *thin*.**
 
 It executes well — it lands what it starts, it refutes its own briefs honestly, it does not pad, and
@@ -48,7 +53,8 @@ its overhead?"* — and the answer is the section that follows.
 
 == What the comparison established about plan-marshall
 
-Three results. The evidence class of each is stated, because these reports refuse an unlabelled claim.
+Four results. The evidence class of each is stated, because these reports refuse an unlabelled claim —
+two are derived from the record, two are the operator's own and are labelled as such.
 
 === 1. plan-marshall is fully audited; the cloud lane is not — *derived*
 
@@ -104,7 +110,48 @@ plan-marshall ahead, the real margin is wider by however much the unexercised ca
 which this document set cannot say, because it never saw it.
 ====
 
-=== 3. plan-marshall needs less manual work — *operator result, structurally substantiated*
+=== 3. There is no orchestration machinery in the cloud lane — *derived*
+
+⛔ **Every orchestration act in all five epics was a manual operator call**, and the PR record shows
+it: 51 runs across five epics in the measured week, each one separately dispatched, sequenced and
+concurrency-managed by hand. The reference report records the operator correcting one run's own claim
+of a single dispatch tree — the work *"actually spanned multiple sessions at a maximum of 3 parallel
+runs"*, a limit the operator held, not a limit anything enforced.
+
+The two lanes' epic-level state is the whole argument:
+
+[cols="3,3",options="header"]
+|===
+| Cloud epic tree | Orchestrator ledger
+
+| `{NNN}-{slug}/plan.md` + `report-NN.md` per plan
+| `plans/` — the staged spec corpus, reconciled both ways against the queue
+
+| `README.md` — **hand-written prose**, the only epic-level state there is
+| `status.json` — the machine authority, plus `epic.md` whose queue and resume blocks are `GENERATED`
+  from it and cannot be hand-edited
+
+| *(nothing)*
+| `landings/` — a verified record per landed plan
+
+| *(nothing)*
+| `workstreams/`, `inbox/`, `logs/`, `archive/`
+
+| *(nothing)*
+| `corpus enumerate` / `cross-check` / `verdicts`, `compact`, `restart-check` — the reconciliation verbs
+|===
+
+⭐ **The consequence was measured, not inferred.** `test-quality` hand-maintained its `README.md` as the
+substitute for a queue and an ownership table. It **drifted on 6 of 12 checkable claims** and carried
+one statement that was simply false about a fixed historical fact — one that cannot drift, only be
+wrong. That is what happens to derivable state when a human maintains it by hand across sixteen runs.
+
+⇒ **The supersession finding in the adjudication table below is this result restated.** Two of the
+three cross-file sets `test-quality` authored a whole plan to derive are provided *structurally* by the
+ledger — the collision matrix by `corpus cross-check`, the queue by a `GENERATED` block that cannot be
+hand-edited. The plan was not made easier by the orchestrator. **It was made unnecessary.**
+
+=== 4. plan-marshall needs less manual work — *operator result, structurally substantiated*
 
 ⚠ **Evidence class: operator judgement** — but unlike result 2, the mechanism is directly visible in
 the artifact lists above.
@@ -118,7 +165,13 @@ produced **inside the lifecycle**, by the run itself. No operator decision gates
 state in which they are silently absent.
 
 ⇒ **The manual step the cloud lane requires is precisely the step that was skipped**, which is why
-result 3 and the most-replicated finding in this document set are the same fact seen from two sides.
+result 4 and the most-replicated finding in this document set are the same fact seen from two sides.
+
+⚠ **And verification is only the visible half.** Result 3 is the rest of it: the dispatching, the
+sequencing, the concurrency ceiling, the queue, the ownership table and the landing record were all
+operator work in the cloud lane, and are all machinery in the local one. The five reports measured the
+*quality* consequence of that difference throughout; they never priced the operator time, and neither
+does this document.
 
 == The five reports
 
@@ -354,7 +407,10 @@ from "verified" without being verified.
 
 ^†^ by *supersession* rather than by comparison: two of the three cross-file sets `test-quality`
 authored a plan to derive are provided **structurally** by the orchestrator ledger. Ingestion did not
-*catch* those defects — it made them unable to occur.
+*catch* those defects — it made them unable to occur. This is
+xref:README.adoc#_3_there_is_no_orchestration_machinery_in_the_cloud_lane_derived[result 3] arriving
+from the other direction: the defect existed because the lane had no orchestration machinery, and it
+stopped existing when a lane that has some took the epic over.
 
 ⇒ **Explanation 2 is the only one supported by every corpus, including the two demoted ones.** It is
 also the only one supported with *named mechanisms* in all five.
