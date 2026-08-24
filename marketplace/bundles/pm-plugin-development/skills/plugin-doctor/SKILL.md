@@ -240,21 +240,30 @@ Test-tree conventions enforced across the `test/` directory, at two severities. 
 
 ### Scripts (scripts/)
 
-Only `doctor-marketplace.py` is registered in the executor. The other scripts
-(`_analyze.py`, `_validate.py`, `_fix.py`) are internal modules with an
-underscore prefix. `doctor-marketplace` imports functions from them, but that is
-not the same as exposing their verbs.
+Only `doctor-marketplace.py` is registered in the executor.
 
-⛔ **Several of their verbs have no reachable subcommand.** `doctor-marketplace`
-offers exactly seven — `list-components`, `analyze`, `fix`, `report`,
-`quality-gate`, `test-conventions`, `validate-contracts`. `_validate.py` declares
-four of its own — `references`, `cross-file`, `inventory`, `extension` — and none
-of them appears in that set; `doctor-marketplace.py` imports only
-`validate_extension_contracts` from `_cmd_extension`, never `cmd_extension`. Such
-a verb still runs when addressed directly, because the executor falls back to
-resolving an unregistered third part by filename, but a fallback resolution is
-NOT a sanctioned form and must not be documented as an invocation. The consequence
-for `extension` specifically is worked through in
+⛔ **Three sibling dispatchers are reachable by nothing.** `_analyze.py`,
+`_validate.py`, and `_fix.py` are each a verb-bearing CLI entry point with an
+`if __name__ == '__main__'` block, and each is orphaned twice over: none of their
+verbs is a `doctor-marketplace` subcommand, and **no module imports them** — a
+whole-tree search for an import of any of the three returns zero hits across 5210
+files. `doctor-marketplace` does import many other underscore modules
+(`_doctor_analysis`, `_runner`, `_cmd_extension`, the `_analyze_*` rule modules);
+these three are not among them, and the dependency actually runs the other way —
+`_analyze.py` imports the `_analyze_*` helpers listed below.
+
+Concretely: `doctor-marketplace` offers seven subcommands (`list-components`,
+`analyze`, `fix`, `report`, `quality-gate`, `test-conventions`,
+`validate-contracts`); `_validate.py` declares `references`, `cross-file`,
+`inventory`, `extension`; `_analyze.py` declares `markdown`, `structure`,
+`coverage`, `cross-file`; `_fix.py` declares `extract`, `categorize`, `apply`,
+`verify`. The sets are disjoint, and `doctor-marketplace.py` imports only
+`validate_extension_contracts` from `_cmd_extension`, never `cmd_extension`.
+
+Such a verb still runs when addressed directly, because the executor falls back
+to resolving an unregistered third part by filename — but a fallback resolution
+is NOT a sanctioned form and must not be documented as an invocation. The
+consequence for `extension` specifically is worked through in
 [`plan-marshall:extension-api` extension-contract.md § Validation](../../../plan-marshall/skills/extension-api/standards/extension-contract.md#validation).
 
 **Registered Script** (callable via executor):
@@ -276,13 +285,13 @@ imports functions from some of them, which is NOT the same as exposing their ver
 
 | Module | Purpose |
 |--------|---------|
-| `_analyze.py` | Structural analysis, bloat, agent-task-tool-prohibited/maven-restricted/lessons-via-skill |
+| `_analyze.py` | Dispatcher declaring `markdown`, `structure`, `coverage`, `cross-file` — imports the four `_analyze_*` modules below; no verb reachable as a `doctor-marketplace` subcommand, and nothing imports it |
 | `_analyze_markdown.py` | Markdown structure analysis |
 | `_analyze_coverage.py` | Tool coverage extraction |
 | `_analyze_structure.py` | Skill directory structure validation |
 | `_analyze_crossfile.py` | Cross-file duplication analysis |
-| `_validate.py` | Declares `references`, `cross-file`, `inventory`, `extension` — none reachable as a `doctor-marketplace` subcommand |
-| `_fix.py` | Fix application and verification |
+| `_validate.py` | Dispatcher declaring `references`, `cross-file`, `inventory`, `extension` — no verb reachable as a `doctor-marketplace` subcommand, and nothing imports it |
+| `_fix.py` | Dispatcher declaring `extract`, `categorize`, `apply`, `verify` — no verb reachable as a `doctor-marketplace` subcommand, and nothing imports it |
 
 #### Hybrid Batch Processing
 

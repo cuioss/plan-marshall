@@ -258,10 +258,10 @@ something the validator checks, not how it picks what to check.
 
 In practice, then, the functions are checked by **reading the module against the
 two tables below**. Runtime does exercise them, but that is not a substitute for
-the reading, because the failure handling is not uniform: each function has
-SEVERAL call sites, and the same broken method surfaces differently — or not at
-all — depending on which verb happens to run. Examples rather than an
-enumeration:
+the reading, because the failure handling is not uniform. A hook may be reached
+from one place or from several, and the handling differs from site to site, so
+the same failure surfaces differently — or not at all — depending on which verb
+ran. Examples, not an enumeration:
 
 - `extension_discovery.py`'s `get_skill_domains_from_extensions()` and
   `discover_applicable_extensions()` log a WARNING through `log_entry`.
@@ -277,8 +277,9 @@ enumeration:
   helpers in that same file swallow the identical failure with
   `except Exception: continue`.
 
-`discover_all_extensions()` itself calls none of them — it resolves the path and
-imports the module, nothing more.
+`discover_all_extensions()` itself calls none of them — it resolves the path,
+imports the module, and instantiates `Extension()` (which runs whatever the
+class's `__init__` does).
 
 ⛔ **So the absence of a diagnostic is not evidence that a hook works.** It may
 mean the hook is fine, or that the one path which would have complained never
@@ -308,7 +309,15 @@ it is why the reading below is the actual check.
 - `profiles.core` — Core profile (required)
 - Each profile has `defaults` and `optionals` arrays
 
-Valid profile names: `core` (required), `implementation`, `testing`, `quality`.
+Valid profile names, as recognised by `_cmd_extension.py`'s
+`VALID_PROFILE_CATEGORIES`: `core`, `implementation`, `module_testing`,
+`integration_testing`, `quality`, `documentation`.
+
+⛔ **A name outside that set is not an error — it is a skipped check.** The
+validator reports `unknown_category` at severity `warning` (which does not fail)
+and then skips the profile, so the `defaults` / `optionals` structure check
+silently does not run for it. `testing` is the name most likely to be written by
+mistake; the contract name is `module_testing`.
 
 ### Integration with doctor-skills
 

@@ -113,11 +113,12 @@ that filter, `1` for the control `--skill pm-dev-java:ext-triage-java`, `28`
 unfiltered. The manifest's `implements:` field does not bring it into scope — the
 validator checks that field, it does not select on it.
 
-At **runtime** each hook has several call sites whose failure handling is not
-uniform — a WARNING through `log_entry` on one path, a bare
-`except Exception: pass` on another, a silent `continue` on a third, a stderr
-print on a fourth — so the same broken method may or may not announce itself
-depending on which verb ran. `discover_all_extensions()` itself calls none of
+At **runtime** the hooks are reached from a varying number of places, and the
+failure handling is not uniform across them. All of these shapes occur somewhere
+in the set: a WARNING through `log_entry`, a bare `except Exception: pass`, a
+silent `continue`, a stderr print, and collection into a `results['errors']` list
+that does surface. Which one a given failure gets depends on the hook and on
+which verb reached it, so a broken method may or may not announce itself. `discover_all_extensions()` itself calls none of
 them, and blanket-catches a bad import to omit the bundle rather than fail. The
 absence of a diagnostic is therefore not evidence the manifest is sound; see
 [plan-marshall-guide.md § plan-marshall-plugin Extension Validation](../../../../plan-marshall/skills/plan-marshall-plugin/references/plan-marshall-guide.md#plan-marshall-plugin-extension-validation)

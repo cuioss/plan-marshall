@@ -817,6 +817,12 @@ structure incl. `domain.key` / `domain.name` / `profiles`; each profile's
 `defaults` + `optionals` lists; skill-reference existence; and the
 `provides_triage` / `provides_outline_skill` references (two separate bullets).
 
+One caveat on the profile check: it runs per profile whose category is in
+`VALID_PROFILE_CATEGORIES`. A profile under an unrecognised name yields an
+`unknown_category` warning — which does not fail — and is then SKIPPED, so its
+`defaults` / `optionals` structure goes unchecked. A misspelt category therefore
+downgrades a structural check to a non-failing warning rather than raising one.
+
 Not checked at all:
 
 - *Required profiles exist (core, implementation, module_testing, quality)* —
