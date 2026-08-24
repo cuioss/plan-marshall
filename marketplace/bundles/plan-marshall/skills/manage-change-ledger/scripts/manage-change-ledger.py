@@ -229,11 +229,12 @@ def run_classify_outcome(args: Namespace) -> dict[str, Any]:
     (b) ``timeout`` — a matching row carries ``status: timeout``.
     (c) ``error`` — a matching row carries ``status: error``: the build RAN TO
         COMPLETION and reported failures. This is a verdict, not a non-finish,
-        which is why it does not share an arm with (d): the caller's remedy is
+        which is why it does not share an arm with (e): the caller's remedy is
         to read the reported failures, never to re-dispatch. The message names
         the notation, exit code and log file so the failures themselves are one
         hop away.
-    (d) ``undecidable`` — anything else, INCLUDING a matching row carrying the
+    (d) ``success`` — a matching row carries ``status: success``.
+    (e) ``undecidable`` — anything else, INCLUDING a matching row carrying the
         derived-only ``status: unknown``. That row records an outcome the
         dispatch boundary could not determine, so it supports no verdict of its
         own and must not be read as either a kill or a success. ``undecidable``
