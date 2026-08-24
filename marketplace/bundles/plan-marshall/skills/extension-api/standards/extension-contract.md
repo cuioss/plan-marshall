@@ -808,11 +808,28 @@ Adding a single hook to an existing bundle is smaller — override the relevant 
 
 ⛔ **A validator for these properties exists, nothing runs it, and no CLI verb
 may be documented as invoking it.** `_cmd_extension.py`'s `validate_extension` /
-`scan_extensions` check most of the requirements below — the `Extension` class,
-`get_skill_domains`, syntax, the returned structure, profile `defaults` /
-`optionals`, and skill-reference existence — and are unit-tested in
-`test_plugin_doctor_extension.py`. Three things make that coverage unreachable
-in practice:
+`scan_extensions` check seven of the ten requirements below — the `Extension`
+class exists, `get_skill_domains` is implemented, no syntax errors, the returned
+structure incl. `domain.key` / `domain.name` / `profiles`, each profile's
+`defaults` + `optionals` lists, skill-reference existence, and the
+`provides_triage` / `provides_outline_skill` references — and are unit-tested in
+`test_plugin_doctor_extension.py`.
+
+**Three of the ten are not checked by anything**, and are listed here so the
+residue is not read as covered:
+
+- *Required profiles exist (core, implementation, module_testing, quality)* —
+  `validate_skill_domains_structure` iterates only the profiles PRESENT and warns
+  on an unknown category; it never tests for a required category's absence.
+- *Build bundles: `discover_modules()` returns a contract-compliant structure
+  with commands* — the function that would check it, `validate_command_mappings`,
+  has zero callers: a whole-tree search for the name returns only its own `def`.
+  `discover_modules()` is never executed by `validate_extension`.
+- *Inherits from `ExtensionBase`* — `parse_extension_file` matches on
+  `node.name == 'Extension'` and never inspects `node.bases`. The string
+  `ExtensionBase` appears in the module only inside an error message.
+
+Three further things make even the covered seven unreachable in practice:
 
 - **No sanctioned invocation.** The verb sits behind the underscore-prefixed
   `_validate.py`, which is not a registered script. It still resolves through the
@@ -821,15 +838,26 @@ in practice:
   the functions and stops short of an invocation.
 - **No automatic caller.** Outside its own module and its tests, nothing calls
   it. The quality-gate's extension entry is the similarly-named but distinct
-  `validate_extension_contracts`, which covers extension-POINT implementors —
-  `ext-*` / `recipe-*` skills carrying an `implements:` field, rules EC-01…EC-50.
-  A domain-bundle `plan-marshall-plugin` manifest is not one, so
+  `validate_extension_contracts` (rules EC-01…EC-50), and it selects its
+  population by **directory-name prefix**, not by any frontmatter field:
+  `ext-triage-`, `ext-outline-`, `recipe-`, and `build-` (excluding
+  `build-server`), plus every `skills/*/scripts/*_provider.py`. A
+  `plan-marshall-plugin` directory matches none of those prefixes, so
   `validate-contracts --skill {bundle}:plan-marshall-plugin` returns
   `total_checked: 0` with `status: success` — well-formed, and measuring nothing.
-- **No runtime backstop.** `load_extension_module()` wraps the import in a
-  blanket `except Exception`, logs a WARNING, and returns `None`, and
-  `discover_all_extensions()` then omits the bundle. An invalid `extension.py`
-  does not fail — it becomes **invisible**.
+  Note that the manifest **does** carry
+  `implements: plan-marshall:extension-api/standards/ext-point-domain-bundle`;
+  the `implements:` field is a rule this validator CHECKS (EC-01), never the
+  criterion by which it chooses what to check. Reading it as the selector
+  predicts that these manifests are covered, which is how this section previously
+  came to describe an empty population as though it were a pass.
+- **No runtime backstop for the import itself.** `extension_discovery.py`'s
+  `load_extension_module()` wraps the import in a blanket `except Exception`,
+  logs a WARNING, and returns `None`, and `discover_all_extensions()` then omits
+  the bundle. An invalid `extension.py` does not fail — it becomes **invisible**.
+  (`_cmd_extension.py` defines a second function of the same name whose except
+  branch logs nothing; the description here is of the `extension_discovery.py`
+  one.)
 
 So the properties below bind the author, and the check that could confirm them
 runs only when a human runs it by hand. That is a worse false-green than having

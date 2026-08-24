@@ -101,19 +101,24 @@ unregistered, underscore-prefixed `_validate.py` and have no automatic caller. S
 [extension-contract.md § Validation](../../../../plan-marshall/skills/extension-api/standards/extension-contract.md#validation)
 for the coverage and the reason no invocation is written down.
 
-⛔ **The wired verb measures a different population.** `validate-contracts` covers
-extension-POINT implementors — `ext-*` / `recipe-*` skills carrying an
-`implements:` field, rules EC-01…EC-50
+⛔ **The wired verb measures a different population.** `validate-contracts`
 (`_cmd_extension.py::validate_extension_contracts` — a distinct function from the
-two above, despite the name). A `plan-marshall-plugin` manifest is not one, so
-`validate-contracts --skill {bundle}:plan-marshall-plugin` returns
-`total_checked: 0` with `status: success` — a well-formed invocation over an empty
-population, which is a false green rather than a check. Measured: `0` for that
-filter, `1` for the control `--skill pm-dev-java:ext-triage-java`, `28` unfiltered.
+two above, despite the name) selects implementors by **directory-name prefix**:
+`ext-triage-`, `ext-outline-`, `recipe-`, `build-` (excluding `build-server`),
+plus `*_provider.py` provider scripts. A `plan-marshall-plugin` directory matches
+none of them, so `validate-contracts --skill {bundle}:plan-marshall-plugin`
+returns `total_checked: 0` with `status: success` — a well-formed invocation over
+an empty population, which is a false green rather than a check. Measured: `0` for
+that filter, `1` for the control `--skill pm-dev-java:ext-triage-java`, `28`
+unfiltered. The manifest's `implements:` field does not bring it into scope — the
+validator checks that field, it does not select on it.
 
-At **runtime** the manifest is only exercised by `discover_all_extensions()` in
-`extension_discovery.py`, which blanket-catches a bad import and omits the bundle
-rather than failing. So review the manifest by reading it against the domain-bundle
+At **runtime** the manifest is exercised unevenly: `get_skill_domains()` and
+`discover_modules()` are called and log a WARNING on failure, while
+`provides_triage()` and `provides_outline_skill()` run under a bare
+`except Exception: pass` and fail silently. `discover_all_extensions()` itself
+calls none of them, and blanket-catches a bad import to omit the bundle rather
+than fail. So review the manifest by reading it against the domain-bundle
 contract, and categorise findings as: schema/structure → safe fix; missing
 extension skills → risky fix; invalid skill references → risky fix.
 

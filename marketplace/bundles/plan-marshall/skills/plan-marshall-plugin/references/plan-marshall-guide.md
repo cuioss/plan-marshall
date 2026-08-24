@@ -247,17 +247,29 @@ check the module's structure against most of this contract, but they sit behind
 the unregistered, underscore-prefixed `_validate.py` and no pass calls them. See
 [extension-contract.md § Validation](../../extension-api/standards/extension-contract.md#validation).
 
-⛔ **The wired verb has an empty population here.** `validate-contracts` covers
-extension-POINT implementors — `ext-*` / `recipe-*` skills carrying an
-`implements:` field — so `validate-contracts --skill {bundle}:plan-marshall-plugin`
-returns `total_checked: 0` with `status: success`: well-formed, and measuring
-nothing.
+⛔ **The wired verb has an empty population here.** `validate-contracts` selects
+implementors by directory-name prefix — `ext-triage-`, `ext-outline-`, `recipe-`,
+`build-` (not `build-server`), plus `*_provider.py` scripts — so a
+`plan-marshall-plugin` directory is never in its population and
+`validate-contracts --skill {bundle}:plan-marshall-plugin` returns
+`total_checked: 0` with `status: success`: well-formed, and measuring nothing.
+The manifest's `implements:` declaration does not put it in scope; that field is
+something the validator checks, not how it picks what to check.
 
 In practice, then, the functions are checked by **reading the module against the
-two tables below**. Runtime adds nothing: `discover_all_extensions()` imports the
-module and instantiates `Extension()`, calls none of the tabled functions, and runs
-`provides_triage()` / `provides_outline_skill()` under a bare
-`except Exception: pass` with no log at all.
+two tables below**. Runtime exercises them unevenly, and it is worth knowing
+which half is silent:
+
+| Function | Called by | On failure |
+|----------|-----------|------------|
+| `get_skill_domains()` | `get_skill_domains_from_extensions()` | WARNING logged |
+| `discover_modules()` | `discover_applicable_extensions()` | WARNING logged |
+| `provides_triage()` | `get_workflow_extensions_from_extensions()` | bare `except: pass`, silent |
+| `provides_outline_skill()` | `get_workflow_extensions_from_extensions()` | bare `except: pass`, silent |
+
+`discover_all_extensions()` itself calls none of these — it resolves the path and
+imports the module, and nothing more. So a broken `provides_triage()` produces no
+diagnostic anywhere: the extension simply contributes no triage skill.
 
 ### Required Functions
 
@@ -288,6 +300,12 @@ Valid profile names: `core` (required), `implementation`, `testing`, `quality`.
 
 When `skill-name` matches `plan-marshall-plugin`:
 
-1. **Standard analysis**: Run `analyze.py structure` + `analyze.py markdown` + `validate.py references`
-2. **Extension validation**: Run extension validation script (see above)
-3. **Report**: Include extension validation status, categorize as safe/risky, auto-apply safe fixes
+1. **Standard analysis**: the structure, markdown, and reference checks that
+   `doctor-marketplace analyze` runs for any skill. The underlying modules
+   (`_analyze.py`, `_validate.py`) are not registered scripts and have no
+   sanctioned executor form, so they are not invoked by name here.
+2. **Extension validation**: read the module against the two tables above. There
+   is no invocation to run — see [§ No reachable validation script](#no-reachable-validation-script)
+   for the validator that exists and why nothing reaches it.
+3. **Report**: record what the reading established, categorise as safe/risky, and
+   auto-apply safe fixes.

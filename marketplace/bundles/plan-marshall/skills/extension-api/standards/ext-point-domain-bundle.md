@@ -97,10 +97,14 @@ from nowhere outside their own module and tests. See
 they cover and why no invocation is written down.
 
 ⛔ **The verb that IS wired covers a different population.** `validate-contracts`
-checks extension-POINT implementors — `ext-*` / `recipe-*` skills carrying an
-`implements:` field — so `validate-contracts --skill {bundle}:plan-marshall-plugin`
-returns `total_checked: 0` with `status: success`: a well-formed invocation over an
-empty population, which reads as a pass while checking nothing.
+selects implementors by directory-name prefix — `ext-triage-`, `ext-outline-`,
+`recipe-`, `build-` (not `build-server`), plus `*_provider.py` scripts — so a
+`plan-marshall-plugin` directory is never in scope and
+`validate-contracts --skill {bundle}:plan-marshall-plugin` returns
+`total_checked: 0` with `status: success`: a well-formed invocation over an empty
+population, which reads as a pass while checking nothing. The `implements:`
+declaration this document requires does **not** bring the manifest into that
+population — the validator checks the field, it does not select on it.
 
 ⛔ **And runtime does not establish it either.** `load_extension_module()` catches
 every import failure, logs a WARNING, and returns `None`; `discover_all_extensions()`

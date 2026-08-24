@@ -24,7 +24,7 @@ Comprehensive diagnostic and fix skill for marketplace components. Combines diag
 - Load prerequisite skills and the component reference guide before analyzing
 - Every workflow step that performs a script operation must have an explicit bash code block with the full `python3 .plan/execute-script.py` command (workflow-explicit-script-calls)
 - Agents must record lessons via manage-lessons skill, not self-invoke commands (agent-lessons-via-skill)
-- Only `doctor-marketplace.py` is registered in the executor; other scripts (`_analyze.py`, `_validate.py`, `_fix.py`) are internal modules accessed via `doctor-marketplace` subcommands
+- Only `doctor-marketplace.py` is registered in the executor. The other scripts (`_analyze.py`, `_validate.py`, `_fix.py`) are internal modules; `doctor-marketplace` imports functions from them, but their own CLI verbs are NOT reachable as subcommands — see § External Resources
 - Prose instructions adjacent to script calls must reference parameter values consistent with the script API (workflow-prose-parameter-consistency)
 
 ## Purpose
@@ -240,7 +240,22 @@ Test-tree conventions enforced across the `test/` directory, at two severities. 
 
 ### Scripts (scripts/)
 
-Only `doctor-marketplace.py` is registered in the executor. The other scripts (`_analyze.py`, `_validate.py`, `_fix.py`) are internal modules with underscore prefix and are accessed via `doctor-marketplace` subcommands.
+Only `doctor-marketplace.py` is registered in the executor. The other scripts
+(`_analyze.py`, `_validate.py`, `_fix.py`) are internal modules with an
+underscore prefix. `doctor-marketplace` imports functions from them, but that is
+not the same as exposing their verbs.
+
+⛔ **Several of their verbs have no reachable subcommand.** `doctor-marketplace`
+offers exactly seven — `list-components`, `analyze`, `fix`, `report`,
+`quality-gate`, `test-conventions`, `validate-contracts`. `_validate.py` declares
+four of its own — `references`, `cross-file`, `inventory`, `extension` — and none
+of them appears in that set; `doctor-marketplace.py` imports only
+`validate_extension_contracts` from `_cmd_extension`, never `cmd_extension`. Such
+a verb still runs when addressed directly, because the executor falls back to
+resolving an unregistered third part by filename, but a fallback resolution is
+NOT a sanctioned form and must not be documented as an invocation. The consequence
+for `extension` specifically is worked through in
+[`plan-marshall:extension-api` extension-contract.md § Validation](../../../plan-marshall/skills/extension-api/standards/extension-contract.md#validation).
 
 **Registered Script** (callable via executor):
 
