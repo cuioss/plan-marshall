@@ -1,0 +1,312 @@
+= Capability gaps: the concepts against the cloud lane
+:toc: left
+:toclevels: 3
+
+The five reports measured what the cloud runs *produced*. This document works the other way: it takes
+each capability plan-marshall documents in `doc/concepts/` and asks whether the cloud lane has an
+equivalent, then looks for data on whether the absence mattered.
+
+[IMPORTANT]
+====
+**This is not a marketing sheet, and it is deliberately structured to make that checkable.**
+
+A capability plan-marshall has and the lane lacks is **not automatically a finding**. Every row below
+carries an **evidence class**, and the classes are not interchangeable:
+
+[cols="1,4",options="header"]
+|===
+| Class | Meaning
+
+| **measured**
+| The absence has a consequence quantified in one or more of the five reports.
+
+| **observed**
+| The absence produced at least one named incident, but nothing counts how often.
+
+| **unexercised**
+| The capability is absent and *nothing in the corpus tests whether that matters*. An unexercised gap
+  is a statement about coverage, not about risk realised — and it is recorded as such rather than
+  dressed up as a near-miss.
+|===
+
+⛔ **Two of the six gaps below are `unexercised`.** They are the honest weak half of this document and
+they are labelled, not buried. A section on what the cloud lane does *better*, and a section on where
+plan-marshall's own machinery is measurably broken, follow the gap list — both are load-bearing, not
+balance for its own sake.
+====
+
+== Method
+
+Each of the 22 pages under `doc/concepts/` was read for the capability it claims, then checked against
+`.claude/skills/cloud-plan-lane/SKILL.md` (2,213 lines) and `author-cloud-plan/SKILL.md` (228), which
+together are the lane's complete contract. Where an equivalent was absent, the five reports and the PR
+record were searched for data.
+
+⚠ **The lane's waivers are explicit, not accidental.** `CLAUDE.md` § Standalone Plan Lane names them in
+a table: build commands bypass the architecture resolver, CI operations bypass the abstraction, `.plan/`
+is untouched, and the Bash discipline does not bind. Every gap below follows from that table or from
+the absence of `.plan/` in a fresh clone. **The lane was designed this way**, because its whole point
+was to run without plan-marshall's machinery. Reading these as oversights would be reading the control
+condition as a defect.
+
+== The gap list
+
+[cols="3,1,3",options="header"]
+|===
+| Capability (concept page) | Class | Data
+
+| **Untrusted-content ingestion** (`security.adoc` Layer 3)
+| unexercised
+| The word *untrusted* appears **0 times** in the lane contract. One adjacent measured defect.
+
+| **Deterministic behaviour through scripts** (`security.adoc` Layer 2, `tools-and-scripts.adoc`)
+| measured
+| F11 *"every count must carry the command that produced it"* — **nearly universal**; four false
+  figures shipped in one plan; three unreproducible reviewer counts in another.
+
+| **Mechanical state gates** (`process-enforcement.adoc` Layer 4)
+| measured
+| The **16.6% / 16.3% / 18.1%** report-correction rate. The lane's contract concedes the point in
+  its own words.
+
+| **Findings store with a blocking gate** (`process-enforcement.adoc` Layer 3, `automatic-reviews.adoc`)
+| measured
+| Findings merged with threads unclosed: **5 of 21**, **5 of 42**; resolution as low as **57.1%**.
+
+| **Worktree isolation and locking** (`parallelism-and-locking.adoc`, `branches-and-worktrees.adoc`)
+| observed
+| Concurrent agents in one tree **corrupted each other's mutation-test snapshots** during an audit run.
+
+| **Permission narrowing** (`security.adoc` Layers 1–2)
+| unexercised
+| The lane runs in a cloud VM with ordinary shell and MCP access. No corpus measures the blast radius.
+|===
+
+Two further capabilities — the **audit trail** (`audit-trail.adoc`) and **orchestration**
+(`orchestration.adoc`) — are already results 1 and 3 in xref:README.adoc[the findings summary] and are
+not restated here.
+
+== 1. Untrusted-content ingestion — *unexercised*
+
+`security.adoc` Layer 3 names the threat precisely, and names this surface among its examples: *"web
+pages fetched during research, GitHub issue/PR/comment bodies fetched during CI/review, Sonar issue
+messages fetched during triage. Any of these can carry a prompt-injection payload crafted to read as
+instructions and hijack a write-capable LLM context."*
+
+plan-marshall's containment is a three-role split — a read-only reader (`WebSearch, WebFetch, Read,
+Grep`, no `Write`/`Edit`/`Bash`/`Skill`), a deterministic validator script
+(`untrusted-ingestion:validate_struct`) that clamps the schema and checks the domain allowlist, and a
+write-capable consumer that sees **only** the validated struct. ADR-003 records that the containment is
+*the script*, not the read-only surface.
+
+The cloud lane's § Step 7 instructs, of PR comment bodies from all three GitHub surfaces:
+
+[quote]
+____
+Read the actual comment bodies … Handle **every** comment: fix it, or reply on the thread explaining
+why it is not actionable.
+____
+
+That is third-party text — bot- and human-authored — read directly into a context holding `Write`,
+`Edit` and `Bash`, with a contractual instruction to act on it. There is no reader isolation, no
+validator, no schema clamp and no allowlist. **`untrusted`, `injection`, `sanitize` and `validate_struct`
+appear zero times in the lane's 2,213 lines**; the only security-adjacent line is a table row mapping
+*"security-relevant change"* to a persona skill.
+
+[CAUTION]
+====
+**No incident was observed, and that is not evidence of safety.**
+
+Nothing in the corpus indicates a comment body ever carried a payload, and this document does not
+suggest one did. But the lane records nothing that *would* surface it: there is no findings store, no
+provenance on ingested text, and the run report is written by the same context that read the comments.
+An injection that succeeded would be indistinguishable, in the artifacts that exist, from the run
+deciding to do something.
+
+⇒ The honest statement is **coverage, not risk**: a surface plan-marshall isolates with a deterministic
+gate is consumed raw here, and the corpus cannot say what that cost, because it never looked.
+====
+
+⭐ **One adjacent defect *was* measured, and it is the same root without the adversary.** All three
+`multiplattform` run reports published reviewer counts that do not reproduce — 11 vs 10, "9 actionable"
+vs 12, and "23 comments over 10 threads" vs 20 threads. The likely cause is that the reports
+**transcribed CodeRabbit's own `Actionable comments posted: N` summary line** and republished it as a
+derived figure. That is untrusted external text entering the record unvalidated — benign in intent,
+wrong in fact, and **neither report names which instrument it used**.
+
+== 2. Deterministic behaviour through scripts — *measured*
+
+`security.adoc` Layer 2 and `tools-and-scripts.adoc` describe one funnel: `python3
+.plan/execute-script.py {bundle}:{skill}:{script}`, a Python proxy with an embedded notation map that
+never `exec`s a shell string, resolves only registered scripts, and logs every call to
+`script-execution.log`. Its effect on *behaviour* is that a figure is produced by a program rather than
+by a model, and the program can be re-run.
+
+The lane cannot use it: the executor is generated and git-ignored, so a fresh clone has none. Every
+figure a cloud run publishes is produced by the model reading the tree, and `CLAUDE.md` explicitly
+restores ordinary shell use in the lane, including loops and `$()`.
+
+The consequence is measured three ways:
+
+* **F11 — *"require every count in a report to carry the command that produced it"* — is recorded as
+  `nearly universal`** across `code-intelligence-substrate`'s 37 plans. Not an occasional lapse: the
+  default.
+* **`test-quality`'s plan `100` shipped four false figures**, each wrong in the *comparison* rather
+  than in either number — precisely the class a re-run catches and a re-read does not.
+* **The three unreproducible reviewer counts above.**
+
+⭐ **The reference report's strongest single finding is the positive control for this.** In plan `500`,
+*every* mechanically-derived census figure re-derived exactly while **five** hand-written narrative
+sections had gone stale. Same run, same agent, same day — **derivation held; assertion did not.** That
+is as close to a controlled comparison as this corpus offers, and it is internal to the cloud lane,
+so it is not confounded by any lane difference at all.
+
+== 3. Mechanical state gates — *measured*
+
+`process-enforcement.adoc` Layer 4 is the phase handshake: 14 invariants fingerprinted at each phase
+boundary and re-evaluated at the next phase's entry, refusing to advance on drift. Its stated purpose is
+exactly the distinction at issue — *"the difference between **the LLM said it edited 5 files** and **the
+worktree shows 5 modified files at the expected SHA**."*
+
+The lane has no equivalent, and **its own contract concedes it**. § Step 9 requires the run to re-verify
+its report's filesystem claims by hand, and explains why:
+
+[quote]
+____
+No gate can catch this, because the claim is about the filesystem rather than the code: the suite stays
+green while the sentence goes false.
+____
+
+The contract then records **two observed failures of that manual remedy**: a report that described
+`.plan/` accurately when written and falsely by the time the build gate had run, and a run that rebased
+nine commits and left two documents citing SHAs *"that existed on no branch under review"*.
+
+⇒ **The most-replicated finding in the whole document set is this gap's measured cost.** Gaps that
+correct the run's own report: **16.6%**, **16.3%**, **18.1%** — three corpora, three briefs, 1.8 points
+apart.
+
+⚠ **The lane's remedy is a diligence instruction on the party being checked.** § Step 9's compliance
+audit is performed by the agent whose compliance is in question, which is the self-assessment defect one
+level up. That it catches anything at all is a point in its favour; that it is the only mechanism is the
+gap.
+
+== 4. Findings store with a blocking gate — *measured*
+
+plan-marshall's findings are append-only JSONL, hash-id deduplicated, typed by domain
+(`pr-comment`, `sonar-issue`, `build-error`, `qgate-*`), carrying resolution fields — and **the next
+phase's entry protocol refuses to start until every pending finding has a resolution**
+(`process-enforcement.adoc` Layer 3).
+
+The lane's equivalent is a `## Findings` section in a markdown report. In fairness it is a *carefully
+designed* section — it requires a source, a description and a disposition from a closed four-value set
+(`fixed` / `rejected-with-reason` / `deferred` / `survivor`), plus a stop record naming which exit ended
+the verification loop. As a contract it is better specified than most machine formats.
+
+⛔ **But nothing reads it.** It is prose, written by the agent being audited, queried by no gate. The
+measured consequence is a merge state that is structurally unreachable in the local lane:
+
+* `test-quality` — **5 of 21** reviewer findings merged with the thread unclosed.
+* `multiplattform` — **5 of 42**.
+* `truthful-signals` — **57.1%** resolution against the local lane's **100%**.
+
+**Four of the five reports independently recommend "give the lane a blocking findings gate."** They
+converged on it without naming the mechanism that already exists one lane over.
+
+== 5. Worktree isolation and locking — *observed*
+
+`parallelism-and-locking.adoc` describes per-plan worktrees plus two file-based locks: a merge mutex
+using an `O_EXCL` atomic create with plan-liveness reclamation, and a machine-global build-queue limiter
+with a self-healing stale reaper folded into the same atomic read-modify-write.
+
+The cloud lane dispatches sub-agents — a verification sub-agent, mutation sweeps — into **one** working
+tree, with nothing serializing them. `truthful-signals` § Adjudication records the incident:
+
+[quote]
+____
+Nothing governs many agents in one working tree. The audit run hit this itself — agents mutation-testing
+concurrently corrupted each other's snapshots. Fixed in-flight; the contract still carries no rule.
+____
+
+⚠ **This has since been partly closed, and the shape of the fix is the point.** The lane contract now
+requires per-agent scratch paths (`$TMPDIR/{agent}-mutsweep/…`, *"never a shared generic one"*) and a
+`git status` re-check after each sweep. That is a **naming convention plus a diligence check**, where
+plan-marshall's answer to the same hazard is an atomic filesystem primitive with crash reclamation. Both
+address the incident; they are not in the same robustness class, and only one of them survives an agent
+that does not follow instructions.
+
+⇒ Recorded as `observed` rather than `measured`: one named incident, self-reported, with no count of how
+often it recurred.
+
+== 6. Permission narrowing — *unexercised*
+
+`security.adoc` Layers 1–2 argue that one broad allow rule over the executor proxy replaces either a
+prompt per operation or a long, error-prone allowlist — and that prompts which *do* fire are a signal
+that a hard rule leaked.
+
+A cloud session has no executor, and the lane restores ordinary shell use by contract. What permission
+posture the cloud VM actually ran under is **not recorded in any corpus**, and no report measures blast
+radius, prompt frequency, or a single denied action.
+
+⇒ **This row exists to mark an absence of measurement, not to imply a problem.** It is the one gap
+where this document has neither a mechanism trace nor an incident — only the observation that a control
+condition ran for two weeks and nothing captured its permission behaviour.
+
+== What the cloud lane does better
+
+Excluding these would make the document dishonest, and one of them is a mechanism plan-marshall does not
+have in the same form.
+
+* ⭐⭐ **The bounded adversarial verification loop.** § Step 6 runs a *separate* verification sub-agent
+  for up to five rounds, requires the stopping round to name **evidence stronger than a read** — a
+  differential run, a fuzz sweep, a mutation campaign, a branch enumeration — and requires the run to
+  report the verifier's own last answer rather than its own verdict. The reports call the adversarial
+  pass *"the single highest-yield step in the whole method"*: it moved verdicts in both directions,
+  caught defects in the *fixes being proposed*, and on one plan turned a clean first-pass result into
+  two high-severity findings. **This is a cloud-lane invention, and it is good.**
+* **The `non-converging` signal.** The lane requires the report header to distinguish a loop that
+  stopped because a verifier cleared it from one that ran out of rounds — and to flag when each round is
+  still finding defects at an undecaying rate. An observed run reached round four finding *more*
+  shipped-surface defects than round three. That is a quality signal plan-marshall does not emit.
+* **Throughput.** 51 runs across five epics in the measured week, without an orchestrator session held
+  open.
+* **The stop record and the survivor rows.** Requiring every survivor to be individually listed, proved
+  equivalent or explicitly bounded, and *re-put to the verifier in the stopping round*, is stricter than
+  anything in the local lane's finalize path.
+
+== Where plan-marshall's own machinery is measurably broken
+
+The concept pages are the *claim*. Three of them are contradicted by data in this repository, and the
+reports that found it did so against plan-marshall, not against the lane.
+
+* **The audit trail has holes.** `PLAN-TRUTH-074`'s retrospective found the change-ledger held **0 build
+  rows while 144 `pyproject_build` calls ran**, and all 25 dispatch-boundary rows carried unpopulated
+  context-load columns — so the billing column was empty for every phase. `audit-trail.adoc` calls the
+  trail *"exhaustive"*. On that plan it was not.
+* **Every enforcement layer is explicitly not enforcement.** Both `security.adoc` and
+  `process-enforcement.adoc` carry a `CAUTION` saying so: Layer 1 is skill-loaded text the LLM can
+  ignore, Layer 3 depends on the LLM invoking the query, and Layer 4 depends on the orchestrator running
+  the verify at the right moment. **The documents are honest about this**; a comparison that quotes the
+  capability without the caveat would not be.
+* **The gap is instrument depth as well as lane quality.** The cloud pass checks every deliverable on
+  four axes and sweeps adjacent surfaces; the local check examines the claims the plan actually made.
+  Part of every difference in this document set is the instrument, not the lane — stated in the method
+  and restated here because it applies to this document too.
+
+== What this document does not establish
+
+. **No gap here is quantified as a cost.** The five reports measure outcomes; this document traces
+  outcomes to absent mechanisms. **A trace is an argument, not a measurement** — nothing establishes
+  that adding a handshake would have moved the 16.6% report-correction rate to zero.
+. **Two of six gaps have no data at all** (`unexercised`), and one of those is the security gap that
+  motivated this analysis. That is the finding: **the corpus cannot speak to it**, in either direction.
+. **The lane was built to lack these things.** It is the control condition. A control that lacks the
+  treatment is working correctly.
+. **No causal claim survives the effort confound.** Cloud runs used Opus at max effort; local runs use
+  per-phase resolved effort. ⭐ On quality this cuts *toward* the conclusion — the more expensive setting
+  still produced these figures — but it is a confound either way.
+
+== Related
+
+* xref:README.adoc[Findings summary] — what the five reports measured, and results 1–4.
+* xref:analyzis_rules.adoc[Analysis rules] — the method those reports followed.
+* xref:cost-measurement.adoc[Cost measurement] — the one gap the set closed.
