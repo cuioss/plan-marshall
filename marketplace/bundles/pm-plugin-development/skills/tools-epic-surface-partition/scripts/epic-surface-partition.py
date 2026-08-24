@@ -14,6 +14,17 @@ Subcommands:
   evidence for that verdict. A spec whose class cannot be determined halts the
   run with the spec named, rather than defaulting to a class.
 
+- ``partition --epic {slug}`` — join that claim model against the real ``test/``
+  tree and assign every test module exactly one of ``claimed`` / ``unclaimed`` /
+  ``multiply_claimed`` / ``not_derivable``. The last two populations are
+  reported per instance, and ``unclaimed`` is never merged with
+  ``not_derivable``.
+
+- ``attribution --epic {slug}`` — group the test-module line-budget findings,
+  re-derived from the current tree, by owning plan. Modules with no single
+  owning plan land in the three explicit ownerless buckets rather than being
+  folded into a plan's total.
+
 The derivation is a report, never a build gate: the specs live under a
 git-ignored path and are absent from a fresh clone, so no CI check can read
 them.
@@ -24,6 +35,14 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from _epic_partition import (
+    DEFAULT_LINE_BUDGET,
+    VERDICT_ORDER,
+    derive_attribution,
+    derive_budget_findings,
+    derive_partition,
+    iter_test_modules,
+)
 from _epic_spec_parser import (
     CLASS_DECLARATIVE,
     CLASS_DERIVED,
@@ -39,38 +58,62 @@ from file_ops import cwd_checkout_root, get_store_dir, output_toon, safe_main
 _TALLY_ORDER = (CLASS_DECLARATIVE, CLASS_DERIVED, CLASS_PROSE)
 
 
-def cmd_classify(args: argparse.Namespace) -> dict[str, Any]:
-    """Handle ``classify --epic EPIC``."""
+class _CorpusError(Exception):
+    """A corpus the derivation cannot load; carries the caller's error payload."""
+
+    def __init__(self, payload: dict[str, Any]) -> None:
+        super().__init__(payload.get('error', 'corpus_error'))
+        self.payload = payload
+
+
+def _load_corpus(epic: str) -> tuple[list[Any], Path, Path]:
+    """Resolve the epic's spec corpus and classify it.
+
+    Raises:
+        _CorpusError: when the slug is invalid, the corpus is absent, or a spec
+            cannot be classified — each carrying the caller's error payload.
+    """
     try:
-        epic_dir = get_store_dir('orchestrator', args.epic, allow_archived=True)
+        epic_dir = get_store_dir('orchestrator', epic, allow_archived=True)
     except ValueError as error:
-        return {
-            'status': 'error',
-            'error': 'invalid_epic_slug',
-            'epic': args.epic,
-            'reason': str(error),
-        }
+        raise _CorpusError(
+            {'status': 'error', 'error': 'invalid_epic_slug', 'epic': epic, 'reason': str(error)}
+        ) from error
 
     plans_dir = epic_dir / 'plans'
     if not plans_dir.is_dir():
-        return {
-            'status': 'error',
-            'error': 'epic_corpus_not_found',
-            'epic': args.epic,
-            'plans_dir': str(plans_dir),
-        }
+        raise _CorpusError(
+            {
+                'status': 'error',
+                'error': 'epic_corpus_not_found',
+                'epic': epic,
+                'plans_dir': str(plans_dir),
+            }
+        )
 
     repo_root = Path(cwd_checkout_root())
     try:
         claims = classify_corpus(plans_dir, repo_root)
     except UnclassifiableSpecError as error:
-        return {
-            'status': 'error',
-            'error': 'unclassifiable_spec',
-            'epic': args.epic,
-            'spec': error.spec,
-            'reason': error.reason,
-        }
+        raise _CorpusError(
+            {
+                'status': 'error',
+                'error': 'unclassifiable_spec',
+                'epic': epic,
+                'spec': error.spec,
+                'reason': error.reason,
+            }
+        ) from error
+
+    return claims, plans_dir, repo_root
+
+
+def cmd_classify(args: argparse.Namespace) -> dict[str, Any]:
+    """Handle ``classify --epic EPIC``."""
+    try:
+        claims, plans_dir, repo_root = _load_corpus(args.epic)
+    except _CorpusError as error:
+        return error.payload
 
     tally = Counter(claim.spec_class for claim in claims)
     return {
@@ -108,6 +151,74 @@ def cmd_classify(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def cmd_partition(args: argparse.Namespace) -> dict[str, Any]:
+    """Handle ``partition --epic EPIC``."""
+    try:
+        claims, plans_dir, repo_root = _load_corpus(args.epic)
+    except _CorpusError as error:
+        return error.payload
+
+    test_root = repo_root / 'test'
+    modules = iter_test_modules(test_root, repo_root)
+    partition = derive_partition(claims, modules)
+    tally = partition.tally()
+
+    return {
+        'status': 'success',
+        'epic': args.epic,
+        'plans_dir': str(plans_dir),
+        'test_root': str(test_root),
+        'modules_total': len(modules),
+        'verdict_tally': [
+            {'verdict': verdict, 'count': tally[verdict]} for verdict in VERDICT_ORDER
+        ],
+        'root_claims': [
+            {'plan_id': root.plan_id, 'path': root.path} for root in partition.root_claims
+        ],
+        'modules': [
+            {
+                'path': module.path,
+                'verdict': module.verdict,
+                'plans': ','.join(module.plans),
+            }
+            for module in partition.modules
+        ],
+    }
+
+
+def cmd_attribution(args: argparse.Namespace) -> dict[str, Any]:
+    """Handle ``attribution --epic EPIC``."""
+    try:
+        claims, plans_dir, repo_root = _load_corpus(args.epic)
+    except _CorpusError as error:
+        return error.payload
+
+    test_root = repo_root / 'test'
+    modules = iter_test_modules(test_root, repo_root)
+    partition = derive_partition(claims, modules)
+    findings = derive_budget_findings(modules, repo_root, args.budget)
+    attribution = derive_attribution(partition, findings, args.budget)
+
+    return {
+        'status': 'success',
+        'epic': args.epic,
+        'plans_dir': str(plans_dir),
+        'test_root': str(test_root),
+        'budget': attribution.budget,
+        'modules_total': len(modules),
+        'findings_total': attribution.total_findings(),
+        'buckets': [
+            {'owner': bucket.owner, 'count': len(bucket.findings)}
+            for bucket in attribution.buckets
+        ],
+        'findings': [
+            {'owner': bucket.owner, 'path': finding.path, 'line_count': finding.line_count}
+            for bucket in attribution.buckets
+            for finding in bucket.findings
+        ],
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser (the seam ``parse_ns`` resolves against)."""
     parser = argparse.ArgumentParser(
@@ -123,6 +234,32 @@ def build_parser() -> argparse.ArgumentParser:
     )
     classify.add_argument('--epic', required=True, help='Epic slug naming the orchestrator store entry')
     classify.set_defaults(handler=cmd_classify)
+
+    partition = subparsers.add_parser(
+        'partition',
+        help='Map every test module to the plan(s) claiming it',
+        allow_abbrev=False,
+    )
+    partition.add_argument(
+        '--epic', required=True, help='Epic slug naming the orchestrator store entry'
+    )
+    partition.set_defaults(handler=cmd_partition)
+
+    attribution = subparsers.add_parser(
+        'attribution',
+        help='Group test-module line-budget findings by owning plan',
+        allow_abbrev=False,
+    )
+    attribution.add_argument(
+        '--epic', required=True, help='Epic slug naming the orchestrator store entry'
+    )
+    attribution.add_argument(
+        '--budget',
+        type=int,
+        default=DEFAULT_LINE_BUDGET,
+        help=f'Test-module line budget (default: {DEFAULT_LINE_BUDGET})',
+    )
+    attribution.set_defaults(handler=cmd_attribution)
 
     return parser
 

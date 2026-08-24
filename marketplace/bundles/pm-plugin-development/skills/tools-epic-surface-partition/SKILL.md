@@ -57,6 +57,25 @@ cannot see rather than a partition defect.
 `## Expected Surface` section — **halts the run with the spec named** rather than
 defaulting to a class.
 
+## The Four Partition Verdicts
+
+`partition` assigns every test module under `test/` exactly one verdict:
+
+| Verdict | Meaning |
+|---------|---------|
+| `claimed` | Exactly one plan's resolved entries cover the module |
+| `multiply_claimed` | More than one plan covers it |
+| `not_derivable` | No plan's *resolved* entries cover it, but a spec names it in a span the parser could not anchor |
+| `unclaimed` | No plan covers it and no spec names it |
+
+⛔ `unclaimed` and `not_derivable` are **never merged**. Merging them would report
+a parser limitation as a partition defect, manufacturing a disagreement the
+corpus does not contain.
+
+A plan's own exclusions subtract from its own set only: a plan claiming a
+recursive glob while excluding a sub-directory does not claim the modules under
+it, and another plan's claim over them is unaffected.
+
 ## Workflow
 
 ### Step 1: Classify the corpus
@@ -65,6 +84,24 @@ defaulting to a class.
 python3 .plan/execute-script.py pm-plugin-development:tools-epic-surface-partition:epic-surface-partition \
   classify --epic test-quality
 ```
+
+### Step 1b: Derive the partition and the attribution
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:tools-epic-surface-partition:epic-surface-partition \
+  partition --epic test-quality
+```
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:tools-epic-surface-partition:epic-surface-partition \
+  attribution --epic test-quality
+```
+
+`attribution` re-derives the over-budget modules from the **current** tree; a
+published baseline is only ever a post-hoc comparison, never an input. Modules
+with no single owning plan land in the explicit `<unclaimed>`,
+`<multiply-claimed>` and `<not-derivable>` buckets rather than being folded into
+any plan's total, so every file is attributed exactly once.
 
 ### Step 2: Route on the TOON status
 
@@ -139,4 +176,18 @@ xref this section by name instead of restating the command inline. See
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:tools-epic-surface-partition:epic-surface-partition \
   classify --epic EPIC
+```
+
+### partition
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:tools-epic-surface-partition:epic-surface-partition \
+  partition --epic EPIC
+```
+
+### attribution
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:tools-epic-surface-partition:epic-surface-partition \
+  attribution --epic EPIC [--budget BUDGET]
 ```
