@@ -84,6 +84,11 @@ otherwise its deliverable fidelity is unmeasurable and it silently drops out of 
 An epic's cloud PRs come in **two kinds**, and only one belongs in a quality analysis:
 
 * **Plan work** — a run of an authored `plan.md` under the `cloud-plan-lane` rule-set. **Analyse these.**
+* **Epic-level support** — authoring a whole epic, re-scoping it, or auditing it. These carry plan
+  DOCUMENTS but no run of their own: an authoring PR writes `plan.md` files that have not executed, and
+  a re-scoping PR rewrites several at once. ⛔ **Count them apart from plan work.** Scoring them as runs
+  inflates every plan-denominated ratio; scoring them as lane fixes drops them from the population
+  entirely. **Both were observed in the cost measurement's first draft and were caught at review.**
 * **Fixes to the `cloud-plan-lane` skill itself** — ad-hoc edits made *outside* the rule-set, with no
   plan directory and no gates. **Exclude these completely.** They were never governed by the contract
   the report evaluates, so their defects measure the wrong thing.
@@ -293,7 +298,7 @@ exactly the untruthful signal these reports exist to find.
 
 == Conventions for these reports
 
-* One file per epic: `{epic}.adoc`, linked from the table above.
+* One file per epic: `{epic}.adoc`, linked from the report table in xref:README.adoc[the findings summary].
 * Every count rides with its population. A bare `0` must state *which* zero it is — *examined N, none
   found* is a result; *could not look* is not.
 * Refuted findings are retained with the evidence that refuted them, never deleted.

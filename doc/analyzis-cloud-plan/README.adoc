@@ -3,8 +3,9 @@
 :toclevels: 3
 
 Five epics were exported to `doc/plans/{epic}/` and executed as standalone cloud runs — a traditional
-Claude Code instrumentation, outside the plan-marshall lifecycle — and each was then measured against
-the local lane. **The experiment is complete**; this document is the summary of what it established.
+Claude Code instrumentation, outside the plan-marshall lifecycle. ⚠ **Three of the five were measured
+against the local lane; two have no local comparison set at all** and are demoted accordingly below —
+so "measured against the local lane" describes the method, not every corpus in it. **The experiment is complete**; this document is the summary of what it established.
 
 * The per-epic reports are linked below.
 * The method that produced them is xref:analyzis_rules.adoc[Analysis rules].
@@ -316,7 +317,7 @@ xref:cost-measurement.adoc[Cost measurement].
 | | Result
 
 | Operator estimate (all five reports) | 2–4% of a weekly limit per plan, explicitly unattributed
-| **Derived figure** | **≈3.9% per cloud-lane run**, all-in, from a fully-consumed budget window
+| **Derived figure** | **≈4% per cloud-lane run**, all-in, from a fully-consumed budget window
 |===
 
 ⭐ **Note which side had to be derived.** The cloud figure needed a budget-window reconstruction

@@ -522,7 +522,7 @@ Ordered by the measured consequence each addresses.
 
 See xref:analyzis_rules.adoc[the analysis rules] for the instruction set. Every figure was derived by command or
 script from the ingested corpus at `.plan/local/orchestrator/multiplattform/archive/`, the landing
-records at `../landings/`, and the PR record via
+records at `.plan/local/orchestrator/multiplattform/landings/`, and the PR record via
 `plan-marshall:tools-integration-ci:ci pr comments --pr-number N`; none was transcribed by hand.
 
 Four of the method's eleven steps were **not performed**, each for a stated reason: Step 3 (gap

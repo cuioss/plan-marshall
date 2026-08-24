@@ -24,8 +24,11 @@ plans run so far; this skill is where it lives so the next author does not redis
 
 ## When to load
 
-Load this while **authoring** a cloud plan — the cloud-bridge rule's Path 1 create step, done
-locally. It is not loaded by the run: the run loads `cloud-plan-lane`, and
+Load this while **authoring** a cloud plan — the create step, done locally.
+⚠ **This skill is the source of record for the rules below.** They were previously attributed to
+`doc/plans/cloud-bridge.md` and `doc/plans/_template/plan.md`; those files were retired with the
+`doc/plans/` tree, so the rules are stated here and cited nowhere else. A fresh clone needs nothing
+beyond this file to author a plan. It is not loaded by the run: the run loads `cloud-plan-lane`, and
 loading authoring guidance into every cloud run would spend context on guidance the run can never use.
 
 ## Boundary — what this skill owns, and what it does not
@@ -42,34 +45,36 @@ judgement touches one, it points here and adds only the cloud-specific increment
 
 - **Naming a cloud plan** `{NNN}-{orchestrator-slug}.md`, and the `{NNN}-` priority-prefix rules
   (numbered per epic from `010`, sparse in tens, fixed once handed to a session, prefix kept through
-  the lifecycle; pre-scheme plans keep no prefix) — `doc/plans/cloud-bridge.md` § Path 1.
+  the lifecycle; pre-scheme plans keep no prefix).
 - **The derive-from-spec order** (pick a staged plan → read the orchestrator spec → author from the
-  template → commit and push) — `doc/plans/cloud-bridge.md` § Path 1.
+  template → commit and push).
 - **The carry-across set** from the orchestrator spec (problem and mechanism, deliverables,
   out-of-scope, expected surface, every claim label; a `HYPOTHESIS` stays a `HYPOTHESIS` with its
-  artifact) — `doc/plans/cloud-bridge.md` § Path 1 step 3.
-- **Do not delete the orchestrator spec**; it stays as the source record — `doc/plans/cloud-bridge.md`
-  § Path 1 step 4.
-- **The plan must reach `origin/main`** before a cloud session can see it —
-  `doc/plans/cloud-bridge.md` § Path 1.
+  artifact).
+- **Do not delete the orchestrator spec**; it stays as the source record.
+- **The plan must reach `origin/main`** before a cloud session can see it.
 - **The plan's shape** — the sections a plan has (Problem, Goal, Deliverables with a *done when*,
   Out of scope, Expected surface, Claim labels, Verification, Notes) and the six-deliverables-is-a-
-  split heuristic — `doc/plans/_template/plan.md`.
-- **The mandatory first-instruction block** that loads `cloud-plan-lane` before anything else —
-  `doc/plans/_template/plan.md` (and `doc/plans/README.md`).
+  split heuristic.
+- **The mandatory first-instruction block** that loads `cloud-plan-lane` before anything else. Every
+  authored plan opens with it, in this exact form:
+
+  ```text
+  Skill: cloud-plan-lane
+  ```
 - **The claim-label mechanics** — `OBSERVED`/`HYPOTHESIS` on every premise, a named confirm/refute
   artifact per claim (required for a `HYPOTHESIS`), and "an asserted absence is verified exactly as an
-  asserted presence, and is the higher-risk half" — `doc/plans/_template/plan.md` § Claim labels.
+  asserted presence, and is the higher-risk half".
 - **The out-of-scope section and its generic reason** ("an explicit boundary here is what stops scope
-  drift mid-run") — `doc/plans/_template/plan.md` § Out of scope.
+  drift mid-run").
 - **The whole execution contract** — skill loading, the plan-directory lifecycle, the build gate, the
   pre-PR verification sub-agent's dispatch, the branch/PR/review cycle, the merge gate and its
   shortfall disclosure, the report, and the closing self-check — `.claude/skills/cloud-plan-lane/SKILL.md`.
 - **The run-side re-derivation rule** ("a count derived by looking is a sample… re-derive it at the
   moment of the claim") and the **run-side self-approval prohibition** ("never self-approve a change
   to the contract that governs you") — `.claude/skills/cloud-plan-lane/SKILL.md`.
-- **The tree layout** and the status-is-the-filesystem model — `doc/plans/README.md` and
-  `doc/plans/cloud-bridge.md` § Status vocabulary.
+- **The tree layout** and the status-is-the-filesystem model — `.claude/skills/cloud-plan-lane/SKILL.md`
+  § Step 3, which owns the plan-directory lifecycle a run creates.
 
 ### REMAINDER — what this skill owns
 

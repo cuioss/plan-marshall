@@ -439,11 +439,6 @@ The lane's other genuine strengths stand unchanged:
 * **The stop record and the survivor rows.** Requiring every survivor to be individually listed, proved
   equivalent or explicitly bounded, and *re-put to the verifier in the stopping round*, is stricter than
   anything in the local lane's finalize path.
-* **Throughput.** 51 runs across five epics in the measured week, without an orchestrator session held
-  open.
-* **The stop record and the survivor rows.** Requiring every survivor to be individually listed, proved
-  equivalent or explicitly bounded, and *re-put to the verifier in the stopping round*, is stricter than
-  anything in the local lane's finalize path.
 
 == Where plan-marshall's own machinery is measurably broken
 

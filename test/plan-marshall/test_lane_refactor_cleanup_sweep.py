@@ -228,6 +228,28 @@ def test_the_exclusion_matches_report_files_only_not_the_tree():
     )
 
 
+def test_the_exclusion_is_inert_on_the_tree_the_walk_actually_returns():
+    """The run-report carve-out matches nothing the live walk yields.
+
+    The sibling predicate test above constructs synthetic paths, so it cannot
+    tell a correct exclusion from a walk that returned nothing at all. This
+    one closes that gap from the other side: it takes the files
+    ``_iter_text_files`` really yields and asserts the carve-out drops none of
+    them. ``doc/plans/`` was retired, so today the correct answer is that the
+    exclusion is inert — and a future run report reintroduced under a path the
+    carve-out over-matches would fail here rather than silently leave the file
+    unswept.
+    """
+    walked = list(_iter_text_files((PROJECT_ROOT / 'doc',)))
+    assert walked, 'the walk returned no file at all, so the exclusion is untested'
+
+    dropped = [str(p) for p in walked if _is_lane_run_report(p)]
+    assert not dropped, (
+        f'the run-report exclusion removed {len(dropped)} live file(s) from the '
+        f'sweep: {dropped}'
+    )
+
+
 def test_the_rest_of_doc_is_still_swept():
     """``doc/user`` and ``doc/developer`` stay on the walk."""
     walked = list(_iter_text_files((PROJECT_ROOT / 'doc',)))

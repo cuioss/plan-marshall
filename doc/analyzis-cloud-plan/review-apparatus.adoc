@@ -65,7 +65,7 @@ them, and none of the 13 touches that file at all.* The exclusion step removed n
 corpus — not because it was skipped, but because it was run and found nothing to remove.
 
 ⚠ This is a **structural fact about the epic, not luck**, and it is the seed of
-<<_the_deadlock,§ 6.2(a)>>: no `review-apparatus` plan touched the lane contract because **no
+xref:#_the_deadlock[§ 6.2(a)]: no `review-apparatus` plan touched the lane contract because **no
 lane-governed run is permitted to**.
 ====
 
@@ -224,7 +224,7 @@ it having asked a sharper question, not with the lane having behaved differently
 
 **31 gaps (18.1%) are corrections to the runs' OWN reports** — the plans' paperwork about themselves.
 The reference corpus measured 16.1%. Two independent corpora, two different briefs, the same
-~1-in-6 rate. ⇒ <<_the_self_assessed_report,§ 6.2(b)>>.
+~1-in-6 rate. ⇒ xref:#_the_self_assessed_report[§ 6.2(b)].
 
 [NOTE]
 ====

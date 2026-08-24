@@ -6,7 +6,7 @@
 Analysis of the `test-quality` plans executed as standalone cloud runs. Unlike the three reference
 reports, this one carries **no cross-lane comparison**: the epic contributed no local plan-marshall
 runs, and the local archive has since been garbage-collected to a size that cannot carry one
-(<<_the_local_comparison_is_unavailable,§ 8>>).
+(xref:#_the_local_comparison_is_unavailable[§ 8]).
 
 [IMPORTANT]
 ====
@@ -37,7 +37,7 @@ the same measurement** and the rates must not be placed beside them.
 
 ⇒ **There is no gap count in this corpus**, because there is no `gaps.md`. Where the reference reports
 report a gap taxonomy, this one reports what the epic used *instead* of a verification pass — a
-hand-maintained residue index — and measures how well that worked (<<_the_residue_index,§ 6>>).
+hand-maintained residue index — and measures how well that worked (xref:#_the_residue_index[§ 6]).
 
 ⭐ **Convergent finding, arrived at independently.**
 xref:multiplattform.adoc[The `multiplattform` report] — written from a separate corpus by a separate
@@ -79,7 +79,7 @@ them, and none of the 16 touches that file at all.* The exclusion step ran and f
 
 ⚠ This reproduces `review-apparatus`' structural finding exactly, on an independent corpus: **no
 lane-governed run touched the lane contract, because none is permitted to.** Two corpora, 29 plan PRs
-between them, zero contact with the file that governs them. See <<_the_deadlock,§ 10.2(f)>>.
+between them, zero contact with the file that governs them. See xref:#_the_deadlock[§ 10.2(f)].
 ====
 
 **Analysed population: 10 executed plans, 16 runs, 58 declared deliverables scored as 61 rows, 16 PRs.** Three further plans
@@ -172,7 +172,7 @@ guarantee, and nothing in the lane requires a re-entering run to consume the pri
 
 ⭐ **On quality it strengthens the conclusion** — the cloud lane had the most expensive setting
 available, explicitly as compensation for absent guardrails, and still produced the fidelity rate in
-<<_deliverable_fidelity,§ 5>>.
+xref:#_deliverable_fidelity[§ 5].
 
 ⚠ **This report makes no cross-lane cost or quality comparison at all** (§ 8), so the confound bites
 only on the *within-corpus* reading: raising effort did not substitute for a verification pass,
@@ -271,7 +271,7 @@ Three were invalidated by *later work inside this epic* (a rule widening, a hois
 One was invalidated by *an entirely different epic's PR*.
 
 ⇒ This is the **conformance-drift class**, and it is the strongest candidate in this corpus for
-outcome 3 — a general repository issue affecting both lanes identically (<<_general_issue,§ 10.3>>).
+outcome 3 — a general repository issue affecting both lanes identically (xref:#_general_issue[§ 10.3]).
 No plan-marshall gate would have caught any of the four either, because all four post-date the merge
 that would have run the gate.
 
