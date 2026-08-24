@@ -20,8 +20,10 @@ returning a fixed ``verdict``:
 * ``error`` — a matching row carries ``status: error``: the build RAN TO
   COMPLETION and reported failures. It is a READ verdict, held apart from
   ``undecidable`` so a build whose failures were reported is never presented
-  as one whose outcome nobody read; the remedy is to read the named log, never
-  to re-dispatch.
+  as one whose outcome nobody read; the remedy is to read the reported
+  failures, never to re-dispatch. ``--log-file`` is optional on
+  ``append --kind build``, so the row may carry no log at all — the verdict
+  names a log only when one was recorded.
 * ``success`` — a matching row carries ``status: success``.
 * ``undecidable`` — anything else, INCLUDING a matching row carrying the
   derived-only ``status: unknown``, which supports no verdict of its own.
@@ -325,6 +327,54 @@ def test_error_display_detail_is_the_bounded_summary(env) -> None:
 
     assert data['display_detail'] == 'build reported failure — read the named log'
     assert data['display_detail'] != data['message']
+
+
+def test_error_row_without_log_file_does_not_claim_a_log(env) -> None:
+    """An ``error`` row with no recorded log must not send the caller to one.
+
+    ``--log-file`` carries no ``required`` on ``append --kind build``, so a
+    ``status: error`` row with ``log_file`` absent is a legitimate row rather
+    than a corrupt one. The pre-fix renderer folded that absence into
+    ``log_file=-`` and still appended "the reported failures are in that log",
+    naming a log that was never written — the exact over-claim this plan exists
+    to close. Against the pre-fix chain both assertions below fail: the message
+    carries the placeholder and the unconditional claim.
+
+    The notation and exit code MUST survive into the no-log form — they still
+    identify which build failed, which is what makes the remaining remedy
+    (re-run that notation) actionable.
+    """
+    env.append_build(
+        status='error',
+        notation='plan-marshall:build-pyproject:pyproject_build',
+        exit_code=2,
+        log_file=None,
+    )
+
+    data = env.classify(job_status='completed', output_bytes=42, worktree_sha=_SHA_A)
+
+    assert data['verdict'] == 'error', data
+    assert 'the reported failures are in that log' not in data['message']
+    assert 'log_file=-' not in data['message']
+    assert 'no log_file was recorded' in data['message']
+    assert 'plan-marshall:build-pyproject:pyproject_build' in data['message']
+    assert 'exit_code=2' in data['message']
+
+
+def test_error_display_detail_without_log_file_does_not_name_a_log(env) -> None:
+    """The bounded summary tracks the message about whether a log exists.
+
+    ``display_detail`` is a second rendering of the same verdict, so it can
+    over-claim independently: the pre-fix code returned the fixed "read the
+    named log" string for EVERY error row, including one carrying no log. The
+    two renderings are now produced together, so this pins that they agree.
+    """
+    env.append_build(status='error', exit_code=1, log_file=None)
+
+    data = env.classify(job_status='completed', output_bytes=42, worktree_sha=_SHA_A)
+
+    assert data['display_detail'] == 'build reported failure — no log path was recorded'
+    assert 'read the named log' not in data['display_detail']
 
 
 def test_killed_job_report_wins_over_error_row(env) -> None:

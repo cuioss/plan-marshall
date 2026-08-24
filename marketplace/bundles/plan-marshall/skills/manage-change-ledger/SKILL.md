@@ -269,9 +269,14 @@ job as `success`. Every call site already holds the sha at call time (the
   completion and reported failures**. It is a verdict, not a non-finish, and it
   is deliberately kept apart from `undecidable`: the remedy is to read the
   reported failures, never to re-dispatch. The `message` names the row's
-  `notation`, `exit_code` and `log_file`, so the failures themselves are one hop
-  from the verdict; `display_detail` carries the bounded one-line summary
-  because a log path outruns it.
+  `notation` and `exit_code` always, and its `log_file` **only when the row
+  recorded one** — `--log-file` is optional on `append --kind build`, so a
+  `status: error` row carrying no log is legitimate, and a message asserting
+  "the reported failures are in that log" on such a row would name a log that
+  was never written. The no-log form says no `log_file` was recorded and directs
+  the caller to re-run the named notation instead. `display_detail` carries the
+  bounded one-line summary and is chosen alongside the message, so the two
+  cannot disagree about whether a log exists.
 - `success` — a matching row carries `status: success`.
 - `undecidable` — anything else, which includes a matching row carrying
   `status: unknown`. That row records an outcome the dispatch boundary could

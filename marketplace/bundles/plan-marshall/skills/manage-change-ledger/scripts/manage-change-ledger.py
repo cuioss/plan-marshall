@@ -181,26 +181,50 @@ def run_append(args: Namespace) -> dict[str, Any]:
 
 _NO_BLIND_RETRY_MESSAGE = 'externally killed — not flaky, do not blind-retry'
 _ERROR_DISPLAY_DETAIL = 'build reported failure — read the named log'
+_ERROR_DISPLAY_DETAIL_NO_LOG = 'build reported failure — no log path was recorded'
 
 
-def _error_message(row: dict[str, Any]) -> str:
-    """Name what reported the failure behind a ``status: error`` ledger row.
+def _error_verdict_text(row: dict[str, Any]) -> tuple[str, str]:
+    """Render the ``(message, display_detail)`` pair behind a ``status: error`` row.
 
-    The row is the only witness this verb has, so the message carries the three
-    fields that identify the failing build — the notation that was dispatched,
-    the exit code it returned, and the log file holding the reported failures
-    themselves. A verdict rendering only the word "error" sends the caller
-    looking for the build; naming the log sends them to the failures.
+    The row is the only witness this verb has, so both renderings carry the
+    fields that identify the failing build — the notation that was dispatched
+    and the exit code it returned. A verdict rendering only the word "error"
+    sends the caller looking for the build; naming the notation and exit code
+    sends them to the right one.
+
+    The log path is the one field that may be genuinely ABSENT. ``--log-file``
+    carries no ``required`` on ``append --kind build``, so a ``status: error``
+    row with no recorded log is a legitimate row rather than a corrupt one.
+    Telling such a caller "the reported failures are in that log" would name a
+    log that was never recorded — the verdict would over-claim what it actually
+    read. The no-log form therefore says no log was recorded and points at the
+    only remedy that survives: re-running the named notation to reproduce the
+    failures.
+
+    Both renderings are produced together here so they cannot disagree about
+    whether a log exists.
     """
     exit_code = row.get('exit_code')
-    return (
+    preamble = (
         'build ran to completion and reported failure — ledger row carries '
-        'status: error (notation={notation}, exit_code={exit_code}, '
-        'log_file={log_file}); the reported failures are in that log'
+        'status: error (notation={notation}, exit_code={exit_code}'
     ).format(
         notation=row.get('notation') or '-',
         exit_code='-' if exit_code is None else exit_code,
-        log_file=row.get('log_file') or '-',
+    )
+    log_file = row.get('log_file')
+    if log_file:
+        return (
+            f'{preamble}, log_file={log_file}); '
+            'the reported failures are in that log',
+            _ERROR_DISPLAY_DETAIL,
+        )
+    return (
+        f'{preamble}); no log_file was recorded on the row, so the reported '
+        'failures are not retrievable from the ledger — re-run the named '
+        'notation to reproduce them',
+        _ERROR_DISPLAY_DETAIL_NO_LOG,
     )
 
 
@@ -231,8 +255,10 @@ def run_classify_outcome(args: Namespace) -> dict[str, Any]:
         COMPLETION and reported failures. This is a verdict, not a non-finish,
         which is why it does not share an arm with (e): the caller's remedy is
         to read the reported failures, never to re-dispatch. The message names
-        the notation, exit code and log file so the failures themselves are one
-        hop away.
+        the notation and exit code, plus the log file WHEN the row recorded one
+        — so the failures are one hop away where a log exists, and the caller is
+        told none was recorded where it does not, rather than being sent to a
+        log that never existed.
     (d) ``success`` — a matching row carries ``status: success``.
     (e) ``undecidable`` — anything else, INCLUDING a matching row carrying the
         derived-only ``status: unknown``. That row records an outcome the
@@ -248,6 +274,7 @@ def run_classify_outcome(args: Namespace) -> dict[str, Any]:
         if e.get('kind') == KIND_BUILD and e.get('worktree_sha') == args.worktree_sha
     ]
     matching_row = entries[-1] if entries else None
+    error_display_detail = ''
 
     if args.job_status == 'killed' or (matching_row is None and args.output_bytes == 0):
         verdict = 'externally_killed'
@@ -260,7 +287,7 @@ def run_classify_outcome(args: Namespace) -> dict[str, Any]:
         message = 'build timed out — ledger row carries status: timeout'
     elif matching_row is not None and matching_row.get('status') == 'error':
         verdict = 'error'
-        message = _error_message(matching_row)
+        message, error_display_detail = _error_verdict_text(matching_row)
     elif matching_row is not None and matching_row.get('status') == 'success':
         verdict = 'success'
         message = 'build succeeded — ledger row carries status: success'
@@ -268,10 +295,13 @@ def run_classify_outcome(args: Namespace) -> dict[str, Any]:
         verdict = 'undecidable'
         message = 'no decisive signal — job completed but no conclusive ledger row'
 
-    # ``message`` names the reported failures, so the error arm's text carries a
-    # log path and outruns the bounded one-line summary; every other arm's text
-    # is already short enough to be its own summary.
-    display_detail = _ERROR_DISPLAY_DETAIL if verdict == 'error' else message
+    # ``message`` names the reported failures, so the error arm's text can carry
+    # a log path and outrun the bounded one-line summary; every other arm's text
+    # is already short enough to be its own summary. The error arm's summary is
+    # chosen by ``_error_verdict_text`` alongside its message, so the two agree
+    # on whether a log was recorded rather than one of them asserting a log the
+    # row does not carry.
+    display_detail = error_display_detail if verdict == 'error' else message
 
     return {
         'status': 'success',
