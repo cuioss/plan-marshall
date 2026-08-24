@@ -784,10 +784,13 @@ def test_reviewer_comment_after_a_stuck_run_reopens_the_cycle(plan_context, monk
 # Bot-agnostic rate-limit / service-notice recognizer (github_pr._is_refusal_notice)
 # =============================================================================
 #
-# Exercised with NO bot_kind, which is exactly the structural last-resort layer of
-# the refusal seam (an unregistered / renamed bot, or a phrasing not yet filed in
-# the registry): with no bot_kind there is no registry data layer to consult, so a
-# match here is a match by structural signature alone.
+# Exercised with NO bot_kind, which isolates the STRUCTURAL arm of the refusal seam
+# (an unregistered / renamed bot, or a notice-shaped phrasing not yet filed in the
+# registry): with no bot_kind the registry arm has nothing to consult, so a match
+# here is a match by structural signature alone. The other arms of the stack are
+# covered elsewhere — the registry arm throughout this file, and the enumerative arm
+# under "The ENUMERATIVE arm on the producer path" below; isolating one arm here is a
+# scoping choice, not a statement that the stack has only these.
 #
 # Both directions are covered per bot shape. The false-negative direction — a
 # genuine reviewer comment that merely MENTIONS a rate limit must NOT be
@@ -1005,8 +1008,8 @@ def test_fetch_findings_splits_a_refusing_bot_from_a_participating_one(plan_cont
     excludes a refusal (a refusal is positive evidence the bot did NOT review, even
     though it is published in one of the bot's declared shapes), while
     ``refused_bots`` carries the refusal so the quorum layer can classify it into a
-    refusal member — ``refused_structural`` for a diff-size ceiling, else
-    ``refused_awaitable`` / ``refused_hard`` / ``refused_unknown``. The human author
+    refusal member — mapping the bot's declared ``rate_limit_class`` by DEFAULT, with
+    the cause-axis overrides ``review_completeness`` applies on top. The human author
     (``bot_kind`` None) appears in neither.
     """
     plan_id = 'gh-pr-refusal-vs-participation'
@@ -1051,6 +1054,265 @@ def test_fetch_findings_splits_a_refusing_bot_from_a_participating_one(plan_cont
     # The refusing bot is SURFACED, not silently absent.
     assert result['refused_bots'] == ['coderabbit']
     # ...and is NOT laundered into the participation set by its publish shape.
+    assert result['participated_bots'] == [{'bot_kind': 'sourcery', 'evidence_kind': 'review_body'}]
+
+
+# =============================================================================
+# The ENUMERATIVE arm on the producer path — unrecognised_refusal
+# =============================================================================
+#
+# A refusal REWORDED past every arm consulted before the noise filter used to be
+# filed as ordinary review feedback while its author was credited as a participant,
+# so a bot that declined reported as one that reviewed and found nothing. The
+# enumerative arm withholds the finding, denies the credit, and reports the state.
+#
+# The fixture body is MUTATED FROM a declared registry pattern rather than
+# hand-written. That is the anti-vacuity property: a hand-written body could pass
+# these cases by accidentally tripping the STRUCTURAL arm, which would prove nothing
+# about the enumerative one. Deriving it from the registry literal and asserting that
+# BOTH earlier arms decline it is what makes the positive case load-bearing.
+#
+# The arm ships INERT (no threshold was derivable at D1), so every case that
+# exercises the firing path sets a threshold explicitly; the shipped-inert behaviour
+# is asserted separately below.
+
+_SOURCERY_DECLARED_REFUSAL_MARKER = bot_registry.refusal_patterns('sourcery')[0]
+
+#: The declared marker with its comparison verb swapped — the same notice, reworded
+#: past the registry arm. Derived by TRANSFORMING the registry literal, so it tracks
+#: the registry instead of drifting from it.
+_REWORDED_SOURCERY_REFUSAL = (
+    f'Sorry, {_SOURCERY_DECLARED_REFUSAL_MARKER.replace("larger than", "over")} our current plan.'
+)
+
+#: The SAME sentence built from the UNMUTATED literal — the matched negative control.
+_RECOGNISED_SOURCERY_REFUSAL = f'Sorry, {_SOURCERY_DECLARED_REFUSAL_MARKER} our current plan.'
+
+
+def _sourcery_comment(comment_id, body):
+    """A sourcery comment in its declared publish shape (``review_body``)."""
+    return {
+        'id': comment_id,
+        'author': 'sourcery-ai',
+        'thread_id': '',
+        'kind': bot_registry.participation_evidence('sourcery')[0],
+        'body': body,
+        'resolved': False,
+    }
+
+
+def _arm_the_enumerative_arm(monkeypatch, max_chars=400):
+    """Give the enumerative arm a threshold so it can fire.
+
+    Patches the globals of the FUNCTION OBJECT ``github_pr`` actually calls, not a
+    ``_github_pr`` module this test imported for itself. ``github_pr`` binds the
+    predicate with ``from _github_pr import _is_unrecognised_refusal``, so the name
+    ``UNRECOGNISED_REFUSAL_MAX_CHARS`` is resolved in the defining module's namespace
+    at call time — and ``load_script_module`` can leave this test holding a DIFFERENT
+    ``_github_pr`` object than the one the SUT imported. Patching that other object is
+    a silent no-op: the predicate keeps reading the unpatched ``None`` and never fires,
+    so every case below would fail for a reason that has nothing to do with the arm.
+    (The same module-identity hazard ``_live_findings_core`` above exists for.)
+
+    Required at all because the SHIPPED value is ``None`` — D1 derived no bound from
+    an empty corpus — which keeps the arm inert by construction.
+    """
+    monkeypatch.setitem(
+        github_pr._is_unrecognised_refusal.__globals__,
+        'UNRECOGNISED_REFUSAL_MAX_CHARS',
+        max_chars,
+    )
+
+
+def test_the_mutated_fixture_reaches_neither_earlier_arm():
+    """Anti-vacuity guard, asserted BEFORE any behavioural case depends on it.
+
+    If the reworded body still matched the registry arm (an incomplete mutation) or
+    the structural arm (a body that happens to be notice-shaped), every case below
+    would pass for the wrong reason. The unmutated control must still be recognised,
+    which is what proves the mutation is the only difference.
+    """
+    import _github_pr
+
+    # The mutation really removed the declared marker...
+    assert _SOURCERY_DECLARED_REFUSAL_MARKER not in _REWORDED_SOURCERY_REFUSAL
+    assert _SOURCERY_DECLARED_REFUSAL_MARKER in _RECOGNISED_SOURCERY_REFUSAL
+    # ...so no arm consulted before the noise filter sees the reworded body...
+    assert _github_pr._is_refusal_notice(_REWORDED_SOURCERY_REFUSAL, 'sourcery') is False
+    assert _github_pr._is_rate_limit_notice(_REWORDED_SOURCERY_REFUSAL) is False
+    # ...while the unmutated control is still recognised by the registry arm.
+    assert _github_pr._is_refusal_notice(_RECOGNISED_SOURCERY_REFUSAL, 'sourcery') is True
+
+
+def test_an_unrecognised_refusal_files_no_finding_and_denies_credit(plan_context, monkeypatch):
+    """The defect this plan closes: the reworded refusal is neither filed nor credited.
+
+    Pre-fix the body below became an ordinary ``pr-comment`` finding AND credited
+    sourcery as a proven participant — a bot that declined reporting as one that
+    reviewed. Now it files nothing, credits nothing, and is reported as its own state.
+    """
+    plan_id = 'gh-pr-unrecognised-refusal'
+    _arm_the_enumerative_arm(monkeypatch)
+    _patch_provider(monkeypatch, [_sourcery_comment('sr-reworded', _REWORDED_SOURCERY_REFUSAL)])
+
+    result = _run_fetch(180, plan_id)
+
+    assert result['status'] == 'success'
+    # No finding filed — a refusal is a signal about the review, not feedback.
+    assert result['count_stored'] == 0
+    assert query_findings(plan_id, finding_type='pr-comment')['findings'] == []
+    # No participation credit — every publish-shape comment was an unrecognised refusal.
+    assert result['participated_bots'] == []
+    # Counted as a refusal, so expected_stored balances and no mismatch Q-Gate fires.
+    assert result['count_skipped_refusal'] == 1
+    assert result['count_skipped_noise'] == 0
+    assert result['producer_mismatch_hash_id'] is None
+    # Reported as the THIRD state — alongside refused_bots, never folded into it.
+    assert result['refused_bots'] == []
+    assert len(result['unrecognised_refusal']) == 1
+    record = result['unrecognised_refusal'][0]
+    assert record['bot_kind'] == 'sourcery'
+    # The layer value is READ from the shared vocabulary, never restated as a literal.
+    assert record['layer'] == github_pr.REFUSAL_LAYER_ENUMERATIVE
+
+
+def test_the_unmutated_literal_still_classifies_as_a_recognised_refusal(plan_context, monkeypatch):
+    """Matched negative control: the case cannot be passing via the structural arm.
+
+    Same bot, same sentence, same length class — the ONLY difference is that the
+    declared marker is intact. It must take the ordinary recognised-refusal path, so
+    ``refused_bots`` names the bot and the enumerative list stays empty.
+    """
+    plan_id = 'gh-pr-recognised-refusal-control'
+    _arm_the_enumerative_arm(monkeypatch)
+    _patch_provider(monkeypatch, [_sourcery_comment('sr-declared', _RECOGNISED_SOURCERY_REFUSAL)])
+
+    result = _run_fetch(181, plan_id)
+
+    assert result['status'] == 'success'
+    assert result['count_stored'] == 0
+    assert result['count_skipped_refusal'] == 1
+    # Recognised: the bot is named, and the enumerative list is empty.
+    assert result['refused_bots'] == ['sourcery']
+    assert result['unrecognised_refusal'] == []
+    assert result['producer_mismatch_hash_id'] is None
+
+
+def test_the_record_carries_a_reachable_remedy_not_a_description(plan_context, monkeypatch):
+    """Splitting out a state owes a REACHABLE remedy — the record carries the mechanism.
+
+    The excerpt is the phrasing to file, and the record names the exact file and field
+    to file it in. A remedy that existed only in prose somewhere else would not be
+    shipped with the finding that needs it.
+    """
+    plan_id = 'gh-pr-unrecognised-remedy'
+    _arm_the_enumerative_arm(monkeypatch)
+    _patch_provider(monkeypatch, [_sourcery_comment('sr-remedy', _REWORDED_SOURCERY_REFUSAL)])
+
+    record = _run_fetch(182, plan_id)['unrecognised_refusal'][0]
+
+    # The withheld text travels, so the decision is auditable and the phrasing filable.
+    assert record['excerpt']
+    assert record['excerpt'] in _REWORDED_SOURCERY_REFUSAL
+    # The concrete file and field that close the gap.
+    assert record['registry_file'] == 'automatic-review/standards/sourcery.md'
+    assert record['registry_field'] == 'refusal_patterns'
+    assert 'refusal_patterns' in record['remedy']
+    assert 'sourcery.md' in record['remedy']
+
+
+def test_a_bot_with_any_genuine_review_keeps_its_credit(plan_context, monkeypatch):
+    """Matched negative control for the subtraction: credit is denied only when EVERY
+    publish-shape comment was an unrecognised refusal.
+
+    The same reworded refusal, this time accompanied by a real review in the bot's
+    declared publish shape. The bot genuinely reviewed the diff, so it stays a proven
+    participant and the unrecognised refusal remains a diagnostic — without the
+    all-quantifier this case would strip the credit from a bot that did review.
+
+    ⛔ The genuine review carries a CODE ANCHOR, and that is load-bearing rather than
+    decorative. Under this test's deliberately generous threshold the review is short
+    enough to satisfy every other condition of the arm, so without the anchor the arm
+    would withhold it too and this case would fail — which is exactly the
+    false-positive direction the design bounds. It is also why D1 must derive the
+    threshold from the shortest GENUINE comment observed rather than pick one: a
+    guessed bound this loose would withhold real review feedback in production, and
+    the shipped ``None`` is what keeps that from happening.
+    """
+    plan_id = 'gh-pr-unrecognised-partial'
+    _arm_the_enumerative_arm(monkeypatch)
+    _patch_provider(
+        monkeypatch,
+        [
+            _sourcery_comment('sr-reworded', _REWORDED_SOURCERY_REFUSAL),
+            _sourcery_comment(
+                'sr-genuine',
+                'Extract this duplicated branch into a helper; `src/retry.py:41` repeats it.',
+            ),
+        ],
+    )
+
+    result = _run_fetch(183, plan_id)
+
+    assert result['status'] == 'success'
+    # The genuine review is filed and the credit stands.
+    assert result['count_stored'] == 1
+    assert result['participated_bots'] == [{'bot_kind': 'sourcery', 'evidence_kind': 'review_body'}]
+    # The unrecognised refusal is still REPORTED — it is a diagnostic, not a silent drop.
+    assert len(result['unrecognised_refusal']) == 1
+    assert result['producer_mismatch_hash_id'] is None
+
+
+def test_a_human_authored_short_comment_is_never_an_unrecognised_refusal(plan_context, monkeypatch):
+    """A human's short comment is review feedback and must still be filed.
+
+    The arm requires a REGISTERED bot; without that condition every terse human
+    comment would be withheld as a refusal, which is the strictly worse failure.
+    """
+    plan_id = 'gh-pr-unrecognised-human'
+    _arm_the_enumerative_arm(monkeypatch)
+    _patch_provider(
+        monkeypatch,
+        [
+            {
+                'id': 'human-short',
+                'author': 'alice',
+                'thread_id': '',
+                'kind': 'issue_comment',
+                'body': _REWORDED_SOURCERY_REFUSAL,
+                'resolved': False,
+            }
+        ],
+    )
+
+    result = _run_fetch(184, plan_id)
+
+    assert result['status'] == 'success'
+    assert result['count_stored'] == 1
+    assert result['unrecognised_refusal'] == []
+    assert result['count_skipped_refusal'] == 0
+
+
+def test_with_no_threshold_the_producer_behaves_exactly_as_before(plan_context, monkeypatch):
+    """At the SHIPPED value the arm never fires, so the producer is unchanged.
+
+    This is the fail-safe the tightening rests on: D1 derived no threshold, so the
+    reworded refusal is filed and credited exactly as it was before this arm existed.
+    The case documents the shipped behaviour honestly rather than asserting a fix
+    that is not yet armed.
+    """
+    plan_id = 'gh-pr-unrecognised-inert'
+    # Read from the globals the SUT's own predicate resolves, so this asserts the
+    # SHIPPED value rather than some other _github_pr instance's copy of it.
+    assert github_pr._is_unrecognised_refusal.__globals__['UNRECOGNISED_REFUSAL_MAX_CHARS'] is None
+    _patch_provider(monkeypatch, [_sourcery_comment('sr-reworded', _REWORDED_SOURCERY_REFUSAL)])
+
+    result = _run_fetch(185, plan_id)
+
+    assert result['status'] == 'success'
+    # Inert: the comment is filed and the bot credited, as before the arm existed.
+    assert result['count_stored'] == 1
+    assert result['unrecognised_refusal'] == []
     assert result['participated_bots'] == [{'bot_kind': 'sourcery', 'evidence_kind': 'review_body'}]
 
 

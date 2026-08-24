@@ -1100,9 +1100,9 @@ _CODERABBIT_REVIEW_LIMIT_REFUSAL = (
 
 # Sourcery's size-limit refusal in a NOTICE-SHAPED phrasing. The OBSERVED #1014
 # wording above is deliberately invisible to the structural recognizer (asserted
-# in test_sourcery_1014_refusal_dropped_via_registry_data_layer), and the per-bot
+# in test_sourcery_1014_refusal_recognized_via_registry_data_layer), and the per-bot
 # rate-limit detector on the wait-return classifies on shape alone — so a body
-# the structural layer can actually see is what exercises that detector.
+# the structural arm can actually see is what exercises that detector.
 _SOURCERY_SHAPED_REFUSAL = (
     '> [!WARNING] Sourcery has reached your review limit for this pull request. '
     'Reviews will resume once the limit resets.'

@@ -1259,6 +1259,75 @@ class TestCapExtraction:
         ) == '4242 diff characters'
 
 
+class TestUnrecognisedRefusalIsADistinctState:
+    """The ENUMERATIVE arm's state sits ALONGSIDE a recognised refusal, never inside it.
+
+    A recognised refusal names what the bot said; an unrecognised one records only that
+    the stack could not read it. Collapsing the two would lose exactly the distinction
+    that makes the second worth reporting — and would let a refusal nobody could parse
+    borrow the remedy set of one that was parsed.
+    """
+
+    @staticmethod
+    def _seam():
+        gh_scripts = get_script_path(
+            'plan-marshall', 'workflow-integration-github', 'github_pr.py'
+        ).parent
+        if str(gh_scripts) not in sys.path:
+            sys.path.insert(0, str(gh_scripts))
+        import github_ops  # noqa: F401 — import first; _github_pr closes a cycle with it
+        import _github_pr
+
+        return _github_pr
+
+    def test_a_structurally_recognised_refusal_is_declined_by_the_enumerative_arm(self, monkeypatch):
+        """The arms are disjoint on a body the structural arm DID read.
+
+        This is what keeps ``unrecognised_refusal`` empty for a refusal that was
+        recognised: the enumerative arm never overrides an arm that read the notice, so
+        a structurally-recognised refusal can never also be reported as unrecognised.
+        Asserted with a threshold available, so the arm is live while it declines.
+        """
+        seam = self._seam()
+        body = (
+            '> [!WARNING]\n'
+            '> ## Rate limit exceeded\n'
+            '>\n'
+            '> This reviewer has reached its limit and will try again later.'
+        )
+        # The structural arm reads it...
+        assert seam._is_rate_limit_notice(body) is True
+        assert seam._is_refusal_notice(body, 'sourcery') is True
+        # ...so the enumerative arm declines it, whatever the threshold says.
+        for threshold in (None, 4000):
+            monkeypatch.setattr(seam, 'UNRECOGNISED_REFUSAL_MAX_CHARS', threshold)
+            assert seam._is_unrecognised_refusal(body, 'sourcery') is False
+
+    def test_a_size_refusal_is_likewise_never_unrecognised(self, monkeypatch):
+        """The size-ceiling notice this suite is about stays a RECOGNISED refusal.
+
+        It is read by the registry arm, so it keeps ``refused_structural`` and its own
+        remedy set — split / accept / disable — rather than degrading into the
+        declared-ignorance state whose only remedy is to teach the registry a phrasing.
+        """
+        seam = self._seam()
+        body = 'your pull request is larger than the review limit of 150000 diff characters.'
+        assert seam._is_refusal_notice(body, 'sourcery') is True
+        monkeypatch.setattr(seam, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 4000)
+        assert seam._is_unrecognised_refusal(body, 'sourcery') is False
+
+    def test_the_shipped_threshold_is_absent_so_the_arm_is_inert(self):
+        """Recorded honestly: no threshold was derivable, so the arm never fires.
+
+        D1 enumerated a corpus of one plan holding zero ``pr-comment`` findings, so no
+        shortest-genuine-comment bound exists to derive. The arm errs in the
+        merge-BLOCKING direction, so it stays off rather than running on a guessed
+        bound — and this pins that the shipped value is the absent one.
+        """
+        seam = self._seam()
+        assert seam.UNRECOGNISED_REFUSAL_MAX_CHARS is None
+
+
 class TestDiffMeasurement:
     """``_github_pr.measure_diff_size`` — the other half, and its UNKNOWN discipline."""
 

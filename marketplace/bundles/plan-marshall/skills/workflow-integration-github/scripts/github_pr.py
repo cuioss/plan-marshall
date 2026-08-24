@@ -92,9 +92,11 @@ import bot_registry
 import github_ops as _github
 from _github_pr import (
     REFUSAL_CAUSE_SIZE,
+    REFUSAL_LAYER_ENUMERATIVE,
     RESOLVE_THREAD_MUTATION,
     THREAD_REPLY_MUTATION,
     _is_refusal_notice,
+    _is_unrecognised_refusal,
     measure_diff_size,
     refusal_cause,
     refusal_size_cap,
@@ -303,17 +305,25 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
       workflow itself posted, not reviewer feedback. Checked for every comment
       (bot- or human-authored), since the pipeline may post under either account.
 
-    **A REFUSAL IS NOT NOISE AND IS DELIBERATELY ABSENT FROM THIS PREDICATE.**
-    Neither ``bot_registry.refusal_patterns`` nor the structural
-    ``_github_pr._is_rate_limit_notice`` recognizer is consulted here. A refusal is
-    positive evidence that a bot DECLINED to review, so it is classified one layer
-    up by ``cmd_fetch_findings`` through ``_github_pr._is_refusal_notice`` and
-    surfaced in ``refused_bots[]`` — the completeness / quorum layer must SEE the
-    refusal, not infer absence from silence. Folding ``refusal_patterns`` into this
-    drop set collapsed exactly the distinction the two-field split was created for,
-    and let a PR whose every required reviewer refused report a clean, complete
-    review. ``ignore_patterns`` and the contentless-marker pair belong here;
-    ``refusal_patterns`` does not.
+    **A REFUSAL IS NOT NOISE AND NO ARM OF THE REFUSAL-RECOGNITION STACK IS
+    CONSULTED HERE.** None of the arms named in ``_github_pr.REFUSAL_LAYERS`` runs
+    inside this predicate — not the registry ``refusal_patterns`` arm, not the
+    structural ``_github_pr._is_rate_limit_notice`` arm, and not the enumerative
+    ``_github_pr._is_unrecognised_refusal`` arm. A refusal is positive evidence that
+    a bot DECLINED to review, so it is classified by ``cmd_fetch_findings`` — the
+    arms answerable before this filter run ahead of it via
+    ``_github_pr._is_refusal_notice``, and the enumerative arm runs immediately
+    AFTER it — and surfaced in ``refused_bots[]`` / ``unrecognised_refusal[]``. The
+    completeness / quorum layer must SEE the refusal, not infer absence from
+    silence. Folding ``refusal_patterns`` into this drop set collapsed exactly the
+    distinction the two-field split was created for, and let a PR whose every
+    required reviewer refused report a clean, complete review. ``ignore_patterns``
+    and the contentless-marker pair belong here; no refusal-recognition arm does.
+
+    The enumerative arm's position is the reason it is not folded in above rather
+    than an accident of ordering: it must see a body this predicate has ALREADY
+    declined, because a bot's own declared clean-review text would otherwise satisfy
+    it.
 
     Used by ``fetch_findings`` to drop obvious automated/acknowledgment noise
     before each surviving comment is persisted as a ``pr-comment`` finding. This
@@ -526,6 +536,14 @@ _PR_NUMBER_DETAIL = re.compile(r'\Apr_number:[ \t]*(?P<id>[0-9]+)[ \t]*(?:\n|\Z)
 # therefore takes the thread-bearing path and surfaces as untransmitted.
 _THREADLESS_KINDS = frozenset({'review_body', 'issue_comment'})
 
+# How much of an unrecognised refusal's body travels on its record. The excerpt is
+# not decoration — it is the REMEDY: the phrasing an operator copies into the bot's
+# ``refusal_patterns`` so the next fetch reclassifies the same body through the
+# registry arm. It is bounded because the record rides a TOON envelope, and a
+# refusal notice states its point early, so the opening characters carry the
+# phrasing worth filing.
+_UNRECOGNISED_REFUSAL_EXCERPT_CHARS = 400
+
 
 def _detail_field(detail: str | None, pattern: re.Pattern) -> str:
     """Extract a labelled value (``comment_id`` / ``thread_id``) from a pr-comment finding's detail block."""
@@ -726,7 +744,15 @@ def cmd_fetch_findings(args):
        the non-terminating barrier loop this stage exists to close.
     4. Obvious text noise — matched via ``_is_obvious_noise`` (lgtm, bot sigs, etc.),
        counted in ``count_skipped_noise``.
-    5. Cross-iteration duplicate — a ``(bot_kind, comment_id)`` key already present
+    5. UNRECOGNISED REFUSAL — a comment the enumerative arm
+       (``_github_pr._is_unrecognised_refusal``) reads as a refusal no earlier arm
+       matched. Counted in ``count_skipped_refusal`` alongside stage 2 (so
+       ``expected_stored`` stays balanced and the ``(producer-mismatch)`` Q-Gate
+       cannot fire on this branch), reported in ``unrecognised_refusal``, and files
+       no finding. It runs HERE — after the noise filter, not beside stage 2 —
+       because a bot's own declared clean-review text must already have been dropped
+       before a short anchor-less body can be read as a refusal.
+    6. Cross-iteration duplicate — a ``(bot_kind, comment_id)`` key already present
        in the store, counted in ``count_skipped_duplicate``.
 
     ``self_response_loop_detected``: true when a single fetch observed
@@ -803,20 +829,43 @@ def cmd_fetch_findings(args):
 
     ``refused_bots``: the sorted list of bot_kinds observed publishing a REFUSAL —
     a rate-limit / quota / size-ceiling notice posted in place of a review,
-    recognized through ``_github_pr._is_refusal_notice`` (the bot's registry
-    ``refusal_patterns`` OR the structural last-resort recognizer). This is the
-    producer-side refusal channel the completeness / quorum layer consumes as
-    ``--refused-bots``, so it can classify the bot into a refusal member —
-    ``refused_structural`` when the observed cause is a diff-size ceiling, otherwise
-    the one-to-one split of the bot's three-valued ``rate_limit_class`` into
-    ``refused_awaitable`` / ``refused_hard`` / ``refused_unknown`` — instead of
-    inferring absence from silence.
+    recognized through ``_github_pr._is_refusal_notice``, which consults the arms of
+    the refusal-recognition stack answerable before the noise filter (see
+    ``_github_pr.REFUSAL_LAYERS`` for the arms currently defined). A refusal no arm
+    at that position matched is picked up by the enumerative arm immediately after
+    the noise filter and reported in ``unrecognised_refusal`` instead — see that
+    field. This is the producer-side refusal channel the completeness / quorum layer
+    consumes as ``--refused-bots``, so it can classify the bot into a refusal member
+    instead of inferring absence from silence. That classification maps the bot's
+    declared ``rate_limit_class`` BY DEFAULT, and the default is displaced by
+    overrides on the orthogonal CAUSE axis — a diff-size ceiling resolves
+    ``refused_structural``, and a refusal no recognition arm could read resolves
+    ``refused_unknown`` whatever the bot's declared class says, because nothing about
+    an unreadable notice is known. The mapping and its overrides are
+    ``review_completeness``'s to state; it is deliberately not restated as a fixed
+    correspondence here, so an override added there needs no edit in this docstring.
     A refusing comment
     is excluded from ``participated_bots`` — a refusal is positive evidence the bot
     did NOT review — and files no finding, so it never reaches operator triage. A
     refusal from an unregistered login is still dropped from the store but cannot
     be attributed, so it contributes to ``count_skipped_refusal`` without naming a
     bot here.
+
+    ``unrecognised_refusal``: one record per comment the ENUMERATIVE arm recognised
+    — a refusal that reached no arm consulted ahead of it. Distinct
+    from ``refused_bots`` and never folded into it: those name a refusal the stack
+    could READ, this one names a refusal it could only detect. Each record carries
+    ``{bot_kind, layer, excerpt}`` plus the mechanism that closes the gap —
+    ``registry_file``, ``registry_field`` and ``remedy``. ``layer`` is the third
+    member of the shared vocabulary (``_github_pr.REFUSAL_LAYER_ENUMERATIVE``), so a
+    reader of this record and a reader of a re-review refusal record are reading one
+    vocabulary. The record is a REACHABLE remedy rather than a description of one:
+    the excerpt is the phrasing to add, ``registry_file`` is the file to add it to,
+    ``registry_field`` is the field, and the outcome is recorded because the next
+    fetch reclassifies that same body through the registry arm instead. The bot is
+    also denied participation credit when EVERY one of its publish-shape comments was
+    an unrecognised refusal (see ``participated_bots``); a bot with any genuine review
+    keeps its credit and the record stays a diagnostic.
 
     ``refused_causes``: one ``{bot_kind, cause}`` record per refusing bot, ``cause``
     in ``{size, quota}`` — the orthogonal CAUSE axis (``_github_pr.refusal_cause``),
@@ -1005,6 +1054,11 @@ def cmd_fetch_findings(args):
     # when the notice states no figure, so an unknown cap stays unknown rather than
     # defaulting to one nobody observed.
     refused_size_caps: dict[str, str] = {}
+    # One record per comment the ENUMERATIVE arm recognised — a refusal no earlier
+    # arm could read. Kept as its own list rather than folded into ``refused_set``:
+    # those two answer different questions, and collapsing them would lose exactly
+    # the distinction between a refusal the stack READ and one it could only detect.
+    unrecognised_refusal: list[dict[str, str]] = []
     unclassified_set: set[str] = set()
     store_failures: list[str] = []
 
@@ -1031,12 +1085,14 @@ def cmd_fetch_findings(args):
         # about the review, not feedback about the code, so it must never reach
         # operator triage), but the refusing bot is SURFACED in ``refused_bots`` so
         # the completeness / quorum layer classifies it into a refusal member —
-        # refused_structural for a diff-size ceiling, else refused_awaitable /
-        # refused_hard / refused_unknown — rather than inferring absence from silence.
-        # Checked BEFORE
+        # by the bot's declared rate_limit_class by DEFAULT, displaced by the
+        # cause-axis overrides review_completeness applies — rather than inferring
+        # absence from silence. Checked BEFORE
         # the noise filter so a refusal can never be swallowed by a shared ignore
         # regex on its way past. An unregistered login's refusal is still
         # recognized structurally and skipped, but cannot be attributed to a bot.
+        # This stage consults only the arms answerable at this position; the
+        # enumerative arm runs after the noise filter (pre-filter 5).
         if _is_refusal_notice(body, bot_kind):
             skipped_refusal += 1
             if bot_kind:
@@ -1077,6 +1133,41 @@ def cmd_fetch_findings(args):
             skipped_noise += 1
             continue
 
+        # Pre-filter 5: UNRECOGNISED REFUSAL — the enumerative arm. A refusal that
+        # reached NEITHER arm consulted at pre-filter 2 still files no finding and
+        # still denies participation credit; what it cannot do is name what the bot
+        # said, because no arm could read it. Placed HERE, immediately after the
+        # noise filter, and that position is the whole design: a bot's own declared
+        # clean-review text is short and anchor-less, so running this arm before the
+        # noise filter would read every clean review as a refusal.
+        #
+        # Counted into ``skipped_refusal`` — the same counter pre-filter 2 uses — so
+        # ``expected_stored`` stays balanced and this branch cannot trip the
+        # ``(producer-mismatch)`` Q-Gate. The record is emitted unconditionally: the
+        # predicate itself requires a REGISTERED bot (an unresolvable bot_kind takes
+        # its own non-firing branch), so ``bot_kind`` is necessarily truthy here and
+        # a guard on it would be one that can never be false.
+        if _is_unrecognised_refusal(body, bot_kind):
+            skipped_refusal += 1
+            unrecognised_refusal.append(
+                {
+                    'bot_kind': bot_kind,
+                    'layer': REFUSAL_LAYER_ENUMERATIVE,
+                    # The withheld text, so the decision is auditable rather than a
+                    # bare count — and so the phrasing to file is in the record.
+                    'excerpt': body.strip()[:_UNRECOGNISED_REFUSAL_EXCERPT_CHARS],
+                    # The mechanism that closes the gap, carried rather than described.
+                    'registry_file': f'automatic-review/standards/{bot_kind}.md',
+                    'registry_field': 'refusal_patterns',
+                    'remedy': (
+                        f'Add the excerpt phrasing to refusal_patterns in '
+                        f'automatic-review/standards/{bot_kind}.md; the next fetch then '
+                        f'recognises this body through the registry arm instead of here.'
+                    ),
+                }
+            )
+            continue
+
         kind = comment.get('kind') or 'inline'
         thread_id = comment.get('thread_id') or ''
         path = comment.get('path') or None
@@ -1092,7 +1183,7 @@ def cmd_fetch_findings(args):
         if bot_kind and bot_kind not in classified_bots:
             unclassified_set.add(bot_kind)
 
-        # Pre-filter 5: cross-iteration dedup keyed on (bot_kind, comment_id)
+        # Pre-filter 6: cross-iteration dedup keyed on (bot_kind, comment_id)
         # for ALL bot kinds, thread-bearing and thread_id-less alike. A comment
         # already staged in a prior iteration MUST NOT re-surface as a new
         # pending finding when HEAD advances. Dropping the earlier
@@ -1148,6 +1239,37 @@ def cmd_fetch_findings(args):
             stored_hashes.append(add_result.get('hash_id', ''))
         else:
             store_failures.append(comment_id)
+
+    # Deny participation credit to a bot whose EVERY publish-shape comment was an
+    # unrecognised refusal. Computed HERE, at assembly, from ``raw_comments`` — the
+    # participation loop above is deliberately left unmodified.
+    #
+    # The all-quantifier is the whole point, and it mirrors the proven-set
+    # subtraction already applied to ``stale_participation_bots`` below: a bot that
+    # ALSO published a genuine review really did review this diff, so it keeps its
+    # credit and the unrecognised refusal stays a diagnostic. Only a bot whose every
+    # piece of admissible evidence was a refusal nobody could read loses the credit
+    # — which is the defect being fixed, where such a bot reported as one that
+    # reviewed and found nothing.
+    #
+    # The comment set is restricted to the bot's DECLARED publish shapes, so the
+    # quantifier ranges over exactly the comments that could have granted the credit
+    # in the first place. A bot with no such comment is not swept up: the empty set
+    # would make ``all()`` vacuously true, so a non-empty evidence set is required.
+    unrecognised_only_bots: set[str] = set()
+    for _credited_bot in participated:
+        _shapes = bot_registry.participation_evidence(_credited_bot)
+        _evidence_comments = [
+            _c
+            for _c in raw_comments
+            if bot_kind_for_author(_c.get('author') or 'unknown') == _credited_bot
+            and (_c.get('kind') or 'inline') in _shapes
+        ]
+        if _evidence_comments and all(
+            _is_unrecognised_refusal(str(_c.get('body') or ''), _credited_bot)
+            for _c in _evidence_comments
+        ):
+            unrecognised_only_bots.add(_credited_bot)
 
     count_stored = len(stored_hashes)
     # Duplicates skipped by the cross-iteration guard, refusals surfaced through
@@ -1257,8 +1379,13 @@ def cmd_fetch_findings(args):
         'self_response_loop_detected': self_response_loop_detected,
         'self_response_loop_hash_id': loop_hash,
         'count_stored': count_stored,
+        # Bots whose every publish-shape comment was an unrecognised refusal are
+        # subtracted here — the same shape as the stale-participation subtraction
+        # below. A bot with any genuine review keeps its credit.
         'participated_bots': [
-            {'bot_kind': bot, 'evidence_kind': participated[bot]} for bot in sorted(participated)
+            {'bot_kind': bot, 'evidence_kind': participated[bot]}
+            for bot in sorted(participated)
+            if bot not in unrecognised_only_bots
         ],
         # The proven set is SUBTRACTED before emitting: a bot with one stale comment
         # and one fresh one is a participant, not a stale publisher. Without the
@@ -1270,6 +1397,13 @@ def cmd_fetch_findings(args):
             if bot not in participated
         ],
         'refused_bots': sorted(refused_set),
+        # The ENUMERATIVE arm's records — reported ALONGSIDE refused_bots, never
+        # folded into it. A recognised refusal produces an empty list here, and an
+        # unrecognised one names no bot in refused_bots; the two states are what the
+        # split exists to keep apart. Each record carries the mechanism that closes
+        # the gap (registry_file / registry_field / remedy), so the remedy ships
+        # with the finding rather than as prose elsewhere.
+        'unrecognised_refusal': unrecognised_refusal,
         # The orthogonal CAUSE axis for each refusing bot — {bot_kind, cause} with
         # cause in {size, quota}. Distinct from rate_limit_class's awaitability: it
         # names the remedy (a smaller diff vs backoff). Forwarded to
