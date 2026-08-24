@@ -164,9 +164,9 @@ second writer and has no wrapper payload to report.
 ## Canonical invocations
 
 The canonical argparse surface for the entry-point script this skill registers:
-`manage-change-ledger.py`. The plugin-doctor analyzer
-(`_analyze_manage_invocation.py`) reads this section as source-of-truth for the
-`manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs
+`manage-change-ledger.py`. The plugin-doctor `missing-canonical-block` rule checks that this section is PRESENT,
+matching its heading only — the body is never read; `manage-invocation-invalid` derives
+its accept-set from a live `--help` walk rather than from this section. Consuming docs
 xref this section by name instead of restating the command inline. See
 [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 
