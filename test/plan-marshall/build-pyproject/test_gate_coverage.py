@@ -90,8 +90,8 @@ def test_small_scope_fast_is_not_flagged():
     assert verdict.reason is None
 
 
-def test_the_incident_band_throughput_is_flagged():
-    """The stale-cache incident this backstop exists to catch is NOT rated plausible.
+def test_the_incident_band_fast_end_is_flagged():
+    """The FAST END of the stale-cache incident band is NOT rated plausible.
 
     The observed incident reported success over 660 files in 2-5 s — 132-330
     files/s. A ceiling set above that band rates the incident itself plausible,

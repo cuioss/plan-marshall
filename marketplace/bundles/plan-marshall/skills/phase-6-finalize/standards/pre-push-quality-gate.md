@@ -128,9 +128,9 @@ performs it whole-tree — and, over a bundle whose mypy scope was empty, that i
 
 `_gate_coverage.coverage_gaps` therefore splits the absence into the three rows tabulated above, and
 the caller states the two facts the boundary cannot supply: which dimensions **this invocation** could
-run at its scope, and which the **gate** performs at any scope. A caller that declares neither gets an
-explicit `uncovered dimensions: UNKNOWN` line — an undeclared scope must not render as a confident
-empty list. Degraded dimensions are excluded from every clause: those were attempted, and PARTIAL
+run at its scope, and which the **gate** performs at any scope. A caller that leaves EITHER of the two
+undeclared gets an explicit `uncovered dimensions: UNKNOWN` line, with both derived sets empty — an
+undeclared scope must not render as a confident empty list. Degraded dimensions are excluded from every clause: those were attempted, and PARTIAL
 already reports them; listing them again would report one gap twice under two names and wrongly imply
 the gate cannot perform that analysis.
 
