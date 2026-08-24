@@ -691,6 +691,21 @@ _SYNTH_TABLE_DOC = (
 )
 
 
+def _differing_lines(left: Path, right: Path) -> list[int]:
+    """Indices of the lines on which two same-length fixtures differ."""
+    left_lines = left.read_text(encoding='utf-8').splitlines()
+    right_lines = right.read_text(encoding='utf-8').splitlines()
+    assert len(left_lines) == len(right_lines), (
+        f'{left.name} and {right.name} differ in line COUNT, so a difference in '
+        f'outcome cannot be attributed to the header cell alone.'
+    )
+    return [
+        index
+        for index, (one, other) in enumerate(zip(left_lines, right_lines, strict=True))
+        if one != other
+    ]
+
+
 def test_input_table_selector_is_matched_by_the_documented_header_alone(tmp_path: Path):
     """(8) Matched control pair: the header cell is what decides selection.
 
@@ -719,15 +734,10 @@ def test_input_table_selector_is_matched_by_the_documented_header_alone(tmp_path
     negative.write_text(_SYNTH_TABLE_DOC.format(header='Field'), encoding='utf-8')
 
     # The two fixtures really do differ in exactly one cell — otherwise the split
-    # below could be caused by something other than the header.
-    positive_lines = positive.read_text(encoding='utf-8').splitlines()
-    negative_lines = negative.read_text(encoding='utf-8').splitlines()
-    differing = [
-        index
-        for index, (left, right) in enumerate(zip(positive_lines, negative_lines, strict=True))
-        if left != right
-    ]
-    assert differing == [0] and len(positive_lines) == len(negative_lines), (
+    # below could be caused by something other than the header. The line-COUNT
+    # half of that claim is asserted inside `_differing_lines`.
+    differing = _differing_lines(positive, negative)
+    assert differing == [0], (
         f'The control pair differs on lines {differing} (header row is line 0). '
         f'A pair differing anywhere but the first header cell does not isolate '
         f'the selector as the cause of the split.'
@@ -757,21 +767,6 @@ def test_input_table_selector_is_matched_by_the_documented_header_alone(tmp_path
         'selected table marks Required, but the divergence core did not flag it. '
         'The negative control must go RED, or the selector is unfalsifiable.'
     )
-
-
-def _differing_lines(left: Path, right: Path) -> list[int]:
-    """Indices of the lines on which two same-length fixtures differ."""
-    left_lines = left.read_text(encoding='utf-8').splitlines()
-    right_lines = right.read_text(encoding='utf-8').splitlines()
-    assert len(left_lines) == len(right_lines), (
-        f'{left.name} and {right.name} differ in line COUNT, so a difference in '
-        f'outcome cannot be attributed to the header cell alone.'
-    )
-    return [
-        index
-        for index, (one, other) in enumerate(zip(left_lines, right_lines, strict=True))
-        if one != other
-    ]
 
 
 @pytest.mark.parametrize('spelling', _EMPHASIS_SPELLINGS, ids=list(_EMPHASIS_SPELLINGS))

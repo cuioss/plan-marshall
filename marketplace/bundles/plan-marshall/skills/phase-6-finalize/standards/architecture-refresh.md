@@ -357,9 +357,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "(plan-marshall:phase-6-finalize:architecture-refresh) Tier 1 prompt — user accepted, re-enriched {affected_module_count} modules"
 ```
 
-On `Skip — note in PR`: follow the `disabled` branch above (record the deferral in the decision log; no PR-body write is possible at this order — see the owed follow-up there) verbatim, then log:
-
 The option label still says "note in PR" even though no PR-body note can be written at this order. Renaming it belongs with the re-homing that makes the note landable again, not before it; until then the label names the intent and the owed follow-up above names the gap.
+
+On `Skip — note in PR`: follow the `disabled` branch above (record the deferral in the decision log; no PR-body write is possible at this order — see the owed follow-up there) verbatim, then log:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

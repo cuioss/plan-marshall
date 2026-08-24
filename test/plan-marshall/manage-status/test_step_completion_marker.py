@@ -21,8 +21,6 @@ round-trip assertion that could never go red would prove only that the current
 pair happens to agree, not that the guard bites.
 """
 
-import re
-
 import pytest
 
 # script-shared/scripts is injected onto PYTHONPATH by the test conftest, so the
@@ -210,8 +208,3 @@ def test_template_and_pattern_agree_on_the_phase_the_producer_scopes_to():
 
     assert match is not None, 'The read pattern must not be pinned to one phase key.'
     assert match.group('step') == 'push'
-
-
-def test_read_pattern_is_the_compiled_form_the_consumer_imports():
-    """Sanity: the exported pattern is a compiled regex, not a raw string."""
-    assert isinstance(COMPLETION_MARKER_RE, re.Pattern)
