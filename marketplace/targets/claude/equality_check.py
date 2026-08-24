@@ -77,9 +77,6 @@ class CorruptEmittedPluginJsonError(RuntimeError):
     Distinct from a corrupt *source* ``plugin.json``, which stays a hard
     error: ``run_equality_check`` turns this one into the documented "re-run
     emit" diagnostic rather than letting a traceback escape.
-
-    ``reason`` names which of the two it was, so the caller's message can
-    stay specific rather than collapsing both into "not valid JSON".
     """
 
     def __init__(self, bundle_name: str, path: Path, reason: str) -> None:

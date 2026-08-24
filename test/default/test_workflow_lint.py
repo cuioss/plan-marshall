@@ -184,6 +184,23 @@ def _top_level_permissions(text: str) -> dict[str, str] | None:
     return None
 
 
+def _merge_write_preserving(into: dict[str, str], new: dict[str, str]) -> None:
+    """Merge ``new`` into ``into`` so a write grant is never erased by a later read.
+
+    ``dict.update`` is last-writer-wins, which is the wrong resolution for a union
+    ACROSS JOBS: the question the allowlist is checked against is "did ANY job ask
+    for this scope at write level", so a later job declaring ``contents: read``
+    must not overwrite an earlier job's ``contents: write``. It bites hardest on
+    the inline shorthands, which all key on :data:`_ALL_SCOPES_KEY`, so one
+    ``read-all`` job would erase every ``write-all`` job in the file.
+    """
+    for scope, value in new.items():
+        already_write = scope in into and into[scope] not in _READ_ONLY_VALUES
+        if already_write and value in _READ_ONLY_VALUES:
+            continue
+        into[scope] = value
+
+
 def _job_level_permissions(text: str) -> dict[str, str]:
     """The union of every indented (job-level) permissions mapping in the workflow.
 
@@ -192,6 +209,10 @@ def _job_level_permissions(text: str) -> dict[str, str]:
     :func:`_permission_scopes` instead would contribute NOTHING — that reader
     only collects indented continuation lines, and an inline header has none —
     so a job declaring ``permissions: write-all`` would be invisible here.
+
+    The merge is write-preserving (:func:`_merge_write_preserving`) rather than
+    last-writer-wins, so the union reports a scope at its most permissive level
+    across jobs rather than at whichever job happens to appear last.
     """
     scopes: dict[str, str] = {}
     lines = text.splitlines()
@@ -200,7 +221,9 @@ def _job_level_permissions(text: str) -> dict[str, str]:
         stripped = line.lstrip()
         if indent > 0 and stripped.startswith('permissions:'):
             inline = _inline_permissions(stripped[len('permissions:'):].strip())
-            scopes.update(inline if inline is not None else _permission_scopes(lines, i, indent))
+            _merge_write_preserving(
+                scopes, inline if inline is not None else _permission_scopes(lines, i, indent)
+            )
     return scopes
 
 
@@ -692,3 +715,55 @@ def test_the_scope_reader_sees_the_inline_write_all_shorthand() -> None:
 
     assert _write_scopes(_top_level_permissions(workflow) or {}) == {'*'}
     assert _write_scopes(_job_level_permissions(workflow)) == {'*'}
+
+
+def test_a_later_job_declaring_read_never_erases_an_earlier_job_s_write() -> None:
+    """The job-level union is over JOBS, so a write survives a later read of the same scope.
+
+    ``dict.update`` is last-writer-wins. Under it the second job's ``contents:
+    read`` overwrites the first job's ``contents: write`` and the allowlist check
+    returns clean over an unreviewed write grant — a false green produced by the
+    reader, not by the workflow. The union must answer "did ANY job ask for this
+    scope at write level", which is the question the allowlist is checked against.
+    """
+    workflow = (
+        'jobs:\n'
+        '  a:\n    permissions:\n      contents: write\n'
+        '  b:\n    permissions:\n      contents: read\n'
+    )
+
+    assert _write_scopes(_job_level_permissions(workflow)) == {'contents'}
+
+
+def test_a_later_job_declaring_read_all_never_erases_an_earlier_write_all() -> None:
+    """The same erasure via the inline shorthands, which both key on ``*``.
+
+    Every inline header is stored under the single ``*`` key, so under
+    last-writer-wins a job declaring ``write-all`` is erased by any later job
+    declaring ``read-all`` — defeating the purpose of
+    :func:`test_the_scope_reader_sees_the_inline_write_all_shorthand` above,
+    which only ever exercises one job.
+    """
+    workflow = (
+        'jobs:\n'
+        '  a:\n    permissions: write-all\n'
+        '  b:\n    permissions: read-all\n'
+    )
+
+    assert _write_scopes(_job_level_permissions(workflow)) == {'*'}
+
+
+def test_jobs_declaring_only_read_still_report_no_write_scope() -> None:
+    """Matched negative control: the merge must not report a write for read-only jobs.
+
+    Without this, a merge that simply never overwrote anything would pass the two
+    tests above by reporting every scope as a write — satisfying them for the
+    wrong reason.
+    """
+    workflow = (
+        'jobs:\n'
+        '  a:\n    permissions:\n      contents: read\n'
+        '  b:\n    permissions:\n      contents: read\n      issues: none\n'
+    )
+
+    assert _write_scopes(_job_level_permissions(workflow)) == set()
