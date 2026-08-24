@@ -63,13 +63,12 @@ from marketplace.targets.claude.plugin_json_gen import build_plugin_json
 class CorruptEmittedPluginJsonError(RuntimeError):
     """Raised when an emitted ``plugin.json`` exists but is unusable.
 
-    Four ways an artifact is unusable, all resolved the same way — by re-running
-    the emit step: the file cannot be read at all; it is not valid JSON; it
-    parses as valid JSON that is not an object (``[]``, ``"x"``, ``null``,
-    ``3``); or it is an object whose array fields are not lists
-    (``{"agents": 3}``). :func:`_read_emitted_plugin_json` is where each is
-    detected and named — see its docstring for the per-shape breakdown. All but
-    the second are the ones a decode-error-only guard misses, and each surfaces
+    Every unusable shape is resolved the same way — by re-running the emit step.
+    :func:`_read_emitted_plugin_json` is where each is detected and named, and
+    its docstring carries the enumeration. It is deliberately NOT restated here:
+    a second copy is exactly what drifts when a shape is added, and this
+    docstring did drift that way once already. All but the invalid-JSON shape
+    are ones a decode-error-only guard misses, and each would otherwise surface
     as a DIFFERENT exception several frames away inside the diff
     (``OSError`` / ``AttributeError`` / ``TypeError``) instead of the documented
     diagnostic.
@@ -343,9 +342,10 @@ def run_equality_check(
 
     The CORRUPT case is handled the same way and is named here because it is
     the one a reader would not predict from "missing or drifts": an emitted
-    plugin.json that is present but unusable — unreadable, not valid JSON, not
-    an object, or an object whose array fields are not lists (see
-    :class:`CorruptEmittedPluginJsonError`) — is also reported as a failing
+    plugin.json that is present but unusable in any of the shapes
+    :func:`_read_emitted_plugin_json` refuses (see
+    :class:`CorruptEmittedPluginJsonError` and that function's docstring, which
+    is the sole enumeration) — is also reported as a failing
     result directing the caller to re-emit, never as a raised exception. Every
     such shape is converted in :func:`_read_emitted_plugin_json`, which is what
     lets the single ``except CorruptEmittedPluginJsonError`` below be complete
@@ -391,8 +391,12 @@ def run_equality_check(
         if missing:
             reasons.append(f"missing for: {', '.join(sorted(missing))}")
         if corrupt:
-            reasons.append(f"unusable (unreadable, not valid JSON, not an object, "
-                           f"or an object whose array fields are not lists) "
+            # Deliberately does NOT enumerate the unusable shapes. Every shape
+            # has the same remedy — re-emit, which the summary already states —
+            # so the list was never actionable, and it silently went stale the
+            # moment a fifth shape was enforced: an operator whose agents[0]
+            # was an object read four causes, none of them theirs.
+            reasons.append(f"present but unusable "
                            f"for: {', '.join(sorted(corrupt))}")
         summary = (
             f"target/claude/{{bundle}}/.claude-plugin/plugin.json {'; '.join(reasons)} — "
