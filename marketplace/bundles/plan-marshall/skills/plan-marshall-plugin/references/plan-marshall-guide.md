@@ -257,19 +257,33 @@ The manifest's `implements:` declaration does not put it in scope; that field is
 something the validator checks, not how it picks what to check.
 
 In practice, then, the functions are checked by **reading the module against the
-two tables below**. Runtime exercises them unevenly, and it is worth knowing
-which half is silent:
+two tables below**. Runtime does exercise them, but that is not a substitute for
+the reading, because the failure handling is not uniform: each function has
+SEVERAL call sites, and the same broken method surfaces differently — or not at
+all — depending on which verb happens to run. Examples rather than an
+enumeration:
 
-| Function | Called by | On failure |
-|----------|-----------|------------|
-| `get_skill_domains()` | `get_skill_domains_from_extensions()` | WARNING logged |
-| `discover_modules()` | `discover_applicable_extensions()` | WARNING logged |
-| `provides_triage()` | `get_workflow_extensions_from_extensions()` | bare `except: pass`, silent |
-| `provides_outline_skill()` | `get_workflow_extensions_from_extensions()` | bare `except: pass`, silent |
+- `extension_discovery.py`'s `get_skill_domains_from_extensions()` and
+  `discover_applicable_extensions()` log a WARNING through `log_entry`.
+- On the `apply-config-defaults` path, a failing `discover_modules()` is swallowed
+  whole (`except Exception: extensions_skipped += 1; continue`, no log), while a
+  failing `config_defaults()` a few lines later IS collected into
+  `results['errors']` and surfaces as `status: error`.
+- `get_workflow_extensions_from_extensions()` runs `provides_triage()` and
+  `provides_outline_skill()` under a bare `except Exception: pass`.
+- `manage-config`'s `_cmd_skill_domains.py` calls `get_skill_domains()`,
+  `provides_triage()`, `provides_outline_skill()`, and `provides_recipes()` under
+  a single `try` whose handler PRINTS to stderr rather than logging — and other
+  helpers in that same file swallow the identical failure with
+  `except Exception: continue`.
 
-`discover_all_extensions()` itself calls none of these — it resolves the path and
-imports the module, and nothing more. So a broken `provides_triage()` produces no
-diagnostic anywhere: the extension simply contributes no triage skill.
+`discover_all_extensions()` itself calls none of them — it resolves the path and
+imports the module, nothing more.
+
+⛔ **So the absence of a diagnostic is not evidence that a hook works.** It may
+mean the hook is fine, or that the one path which would have complained never
+ran. That is the same false-green shape as the empty-population call above, and
+it is why the reading below is the actual check.
 
 ### Required Functions
 

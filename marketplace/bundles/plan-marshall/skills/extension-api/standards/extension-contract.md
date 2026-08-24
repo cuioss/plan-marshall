@@ -808,15 +808,16 @@ Adding a single hook to an existing bundle is smaller — override the relevant 
 
 ⛔ **A validator for these properties exists, nothing runs it, and no CLI verb
 may be documented as invoking it.** `_cmd_extension.py`'s `validate_extension` /
-`scan_extensions` check seven of the ten requirements below — the `Extension`
-class exists, `get_skill_domains` is implemented, no syntax errors, the returned
-structure incl. `domain.key` / `domain.name` / `profiles`, each profile's
-`defaults` + `optionals` lists, skill-reference existence, and the
-`provides_triage` / `provides_outline_skill` references — and are unit-tested in
-`test_plugin_doctor_extension.py`.
+`scan_extensions` are unit-tested in `test_plugin_doctor_extension.py` and cover
+the requirements below unevenly. Against the ten-bullet list: **seven are fully
+checked, two are checked by nothing, and one is checked in half.**
 
-**Three of the ten are not checked by anything**, and are listed here so the
-residue is not read as covered:
+Fully checked: `get_skill_domains` implemented; no syntax errors; the returned
+structure incl. `domain.key` / `domain.name` / `profiles`; each profile's
+`defaults` + `optionals` lists; skill-reference existence; and the
+`provides_triage` / `provides_outline_skill` references (two separate bullets).
+
+Not checked at all:
 
 - *Required profiles exist (core, implementation, module_testing, quality)* —
   `validate_skill_domains_structure` iterates only the profiles PRESENT and warns
@@ -825,11 +826,14 @@ residue is not read as covered:
   with commands* — the function that would check it, `validate_command_mappings`,
   has zero callers: a whole-tree search for the name returns only its own `def`.
   `discover_modules()` is never executed by `validate_extension`.
-- *Inherits from `ExtensionBase`* — `parse_extension_file` matches on
-  `node.name == 'Extension'` and never inspects `node.bases`. The string
-  `ExtensionBase` appears in the module only inside an error message.
 
-Three further things make even the covered seven unreachable in practice:
+Checked in half — the first bullet, *"Extension class exists and inherits from
+ExtensionBase"*, is two requirements in one line. `parse_extension_file` confirms
+the class EXISTS by matching `node.name == 'Extension'`, and never inspects
+`node.bases`, so the inheritance half goes unverified. A class named `Extension`
+that subclasses nothing passes.
+
+Three further things make even the fully-checked seven unreachable in practice:
 
 - **No sanctioned invocation.** The verb sits behind the underscore-prefixed
   `_validate.py`, which is not a registered script. It still resolves through the

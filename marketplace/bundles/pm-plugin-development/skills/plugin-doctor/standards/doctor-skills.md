@@ -113,14 +113,17 @@ that filter, `1` for the control `--skill pm-dev-java:ext-triage-java`, `28`
 unfiltered. The manifest's `implements:` field does not bring it into scope — the
 validator checks that field, it does not select on it.
 
-At **runtime** the manifest is exercised unevenly: `get_skill_domains()` and
-`discover_modules()` are called and log a WARNING on failure, while
-`provides_triage()` and `provides_outline_skill()` run under a bare
-`except Exception: pass` and fail silently. `discover_all_extensions()` itself
-calls none of them, and blanket-catches a bad import to omit the bundle rather
-than fail. So review the manifest by reading it against the domain-bundle
-contract, and categorise findings as: schema/structure → safe fix; missing
-extension skills → risky fix; invalid skill references → risky fix.
+At **runtime** each hook has several call sites whose failure handling is not
+uniform — a WARNING through `log_entry` on one path, a bare
+`except Exception: pass` on another, a silent `continue` on a third, a stderr
+print on a fourth — so the same broken method may or may not announce itself
+depending on which verb ran. `discover_all_extensions()` itself calls none of
+them, and blanket-catches a bad import to omit the bundle rather than fail. The
+absence of a diagnostic is therefore not evidence the manifest is sound; see
+[plan-marshall-guide.md § plan-marshall-plugin Extension Validation](../../../../plan-marshall/skills/plan-marshall-plugin/references/plan-marshall-guide.md#plan-marshall-plugin-extension-validation)
+for the worked call-site detail. So review the manifest by reading it against the
+domain-bundle contract, and categorise findings as: schema/structure → safe fix;
+missing extension skills → risky fix; invalid skill references → risky fix.
 
 ### Validate Sub-Document Quality
 

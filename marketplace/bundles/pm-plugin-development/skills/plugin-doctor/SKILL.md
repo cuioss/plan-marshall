@@ -266,10 +266,13 @@ for `extension` specifically is worked through in
 | `doctor-marketplace.py` | `fix` | **EXECUTE** | Auto-apply safe fixes across marketplace (`--bundles`, `--type`, `--name`, `--dry-run`) |
 | `doctor-marketplace.py` | `report` | **EXECUTE** | Generate comprehensive report for LLM review |
 | `doctor-marketplace.py` | `quality-gate` | **EXECUTE** | Run invariant rules as a build gate; optional `--paths` scoping (exit 1 on findings) |
+| `doctor-marketplace.py` | `test-conventions` | **EXECUTE** | Run test-tree convention rules (exit 1 on error-severity findings; warnings reported only) |
+| `doctor-marketplace.py` | `validate-contracts` | **EXECUTE** | Validate extension-POINT contract compliance (EC-01…EC-50); population selected by directory-name prefix |
 
 **Notation**: `pm-plugin-development:plugin-doctor:doctor-marketplace {subcommand}`
 
-**Internal Modules** (NOT directly callable - used internally by doctor-marketplace):
+**Internal Modules** (unregistered — no sanctioned executor form; `doctor-marketplace`
+imports functions from some of them, which is NOT the same as exposing their verbs):
 
 | Module | Purpose |
 |--------|---------|
@@ -278,7 +281,7 @@ for `extension` specifically is worked through in
 | `_analyze_coverage.py` | Tool coverage extraction |
 | `_analyze_structure.py` | Skill directory structure validation |
 | `_analyze_crossfile.py` | Cross-file duplication analysis |
-| `_validate.py` | Reference extraction and validation |
+| `_validate.py` | Declares `references`, `cross-file`, `inventory`, `extension` — none reachable as a `doctor-marketplace` subcommand |
 | `_fix.py` | Fix application and verification |
 
 #### Hybrid Batch Processing
