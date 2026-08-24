@@ -357,17 +357,88 @@ condition ran for two weeks and nothing captured its permission behaviour.
 Excluding these would make the document dishonest, and one of them is a mechanism plan-marshall does not
 have in the same form.
 
-* ⭐⭐ **The bounded adversarial verification loop.** § Step 6 runs a *separate* verification sub-agent
-  for up to five rounds, requires the stopping round to name **evidence stronger than a read** — a
-  differential run, a fuzz sweep, a mutation campaign, a branch enumeration — and requires the run to
-  report the verifier's own last answer rather than its own verdict. The reports call the adversarial
-  pass *"the single highest-yield step in the whole method"*: it moved verdicts in both directions,
-  caught defects in the *fixes being proposed*, and on one plan turned a clean first-pass result into
-  two high-severity findings. **This is a cloud-lane invention, and it is good.**
-* **The `non-converging` signal.** The lane requires the report header to distinguish a loop that
-  stopped because a verifier cleared it from one that ran out of rounds — and to flag when each round is
-  still finding defects at an undecaying rate. An observed run reached round four finding *more*
-  shipped-surface defects than round three. That is a quality signal plan-marshall does not emit.
+[CAUTION]
+====
+**Correction — this section originally claimed two mechanisms as cloud-lane inventions. Both are
+present in plan-marshall, and one of them is better specified there.**
+
+The original text read *"the bounded adversarial verification loop … is a cloud-lane invention
+plan-marshall does not have in the same form"* and *"the `non-converging` signal … is a quality signal
+plan-marshall does not emit."* Both were refuted against
+`phase-6-finalize/workflow/pre-submission-self-review.md`.
+
+⛔ **The error is this document's own archetype, and the cause is stated in § Method.** That section
+declares the analysis was drawn against `doc/concepts/` and the lane contract. The self-review loop
+appears in `doc/concepts/` only in passing — one clause in `automatic-reviews.adoc`, one table cell in
+`planning-workflow.adoc`, and `verification.adoc` does not mention it at all — so the absence was real
+*within the scope searched*, and the claim was then phrased about plan-marshall, which is wider.
+
+That is precisely what `pre-submission-self-review.md` § "Absence claims state the scope they were drawn
+against" forbids: *"a round asserted a literal appeared in 'zero test and source files' while three
+survivors sat in merged `main`, because the sweep was scoped to one directory tree while the CLAIM said
+'test and source' — the claim was wider than the scope searched."* Recorded here rather than silently
+fixed, per the conventions.
+====
+
+What the lane genuinely has that plan-marshall does not is **narrower than two mechanisms — it is two
+properties of one**:
+
+* ⭐⭐ **Verifier independence, unconditionally.** The lane dispatches a sub-agent that *"has not seen
+  this plan or the diff."* plan-marshall dispatches its cognitive phase to a fresh
+  `execution-context` leaf with `skills: []` and nothing but the candidate envelope — genuinely
+  independent — **but only above a candidate-count gate**. Below the threshold the identical review runs
+  *inline in the dispatcher's context*, and the contract calls that gate *"a pure dispatch-cost
+  optimization — semantics are preserved bit-for-bit."* ⚠ **The return-TOON semantics are preserved;
+  the independence is not.** That is the sharper finding, and neither this document's original claim nor
+  the refutation of it had it: the cheap branch trades away the reviewer's independence under a heading
+  that says nothing is being traded.
+* ⭐⭐ **The stop question is put TO the verifier.** The lane asks it directly — *"does anything you
+  found remain that condition A or B forbids leaving open?"* — with A and B quoted, every prior-round
+  survivor listed, and the contract stating it *"is asked of the verifier here rather than decided by
+  the author afterwards."* plan-marshall closes on a predicate over the review's return instead: a
+  full-surface clean pass, mechanically evaluated. That is the review's own verdict rather than the
+  author's assertion, so the gap is narrower than *"self-assessed versus adversarially assessed"* — but
+  no question is put, and no survivor list is re-put to anyone.
+* **The `non-converging` reporting position.** The lane puts the exit in the **report header**, where a
+  collector reads it. plan-marshall's equivalent is a `manage-logging decision --level WARNING`. Both
+  distinguish the two closes; the lane makes the distinction harder to miss.
+
+**What is NOT a gap**, having been checked:
+
+[cols="3,4",options="header"]
+|===
+| Mechanism | Where it stands
+
+| Bounded multi-round loop
+| **Present and richer.** `head_dependent: true` re-fires every loop-back, `--since-ref` anchors each
+  round's delta, and only a full-surface clean pass may record `done`.
+
+| The converged-vs-out-of-budget distinction
+| **Present and named**, at § "Round-loop termination": *"These are two DIFFERENT closes and a later
+  reader MUST NOT collapse them."* The original claim here was simply wrong.
+
+| The self-seeding class
+| **Present, and absent from the lane.** plan-marshall names why the doc-claim half does not converge
+  under correction — *"correction breeds the next instance of the class; only DELETION converges"* — and
+  requires resolution by deletion.
+
+| The n−1-of-n remedy
+| **Present, and the lane only diagnoses it.** The lane observes that *"a fix applied at n−1 of n sites
+  is why a corrected claim keeps reappearing."* plan-marshall encodes the cure: a check firing with
+  `defect_class` D must re-scan every other surfaced candidate for D and file every member in the same
+  round, with `cohort_size` on each finding so *"a cohort of one is distinguishable from a cohort whose
+  remaining members were never looked for."*
+|===
+
+The lane's other genuine strengths stand unchanged:
+
+* **Evidence stronger than a read.** The stopping round must name a differential run, a fuzz sweep, a
+  mutation campaign or a branch enumeration — not a re-reading.
+* **Throughput.** 51 runs across five epics in the measured week, without an orchestrator session held
+  open.
+* **The stop record and the survivor rows.** Requiring every survivor to be individually listed, proved
+  equivalent or explicitly bounded, and *re-put to the verifier in the stopping round*, is stricter than
+  anything in the local lane's finalize path.
 * **Throughput.** 51 runs across five epics in the measured week, without an orchestrator session held
   open.
 * **The stop record and the survivor rows.** Requiring every survivor to be individually listed, proved
@@ -388,6 +459,15 @@ reports that found it did so against plan-marshall, not against the lane.
   ignore, Layer 3 depends on the LLM invoking the query, and Layer 4 depends on the orchestrator running
   the verify at the right moment. **The documents are honest about this**; a comparison that quotes the
   capability without the caveat would not be.
+* ⭐ **The self-review loop is essentially undocumented at concept level, and that produced a false
+  finding in this very document.** `pre-submission-self-review.md` is 432 lines carrying the bounded
+  round loop, the delta anchor, the converged-vs-out-of-budget termination criterion, the self-seeding
+  class and the cohort sweep. In `doc/concepts/` — the entry point a reader or an agent starts from —
+  it survives as **one clause** in `automatic-reviews.adoc`, **one table cell** in
+  `planning-workflow.adoc`, and nothing in `verification.adoc`, the page whose title promises it.
+  ⇒ An analysis scoped to `doc/concepts/` cannot see the mechanism, and this document's first draft
+  duly concluded it did not exist. **The documentation gap is not cosmetic: it manufactured a false
+  negative about plan-marshall in an audit of plan-marshall.**
 * **The gap is instrument depth as well as lane quality.** The cloud pass checks every deliverable on
   four axes and sweeps adjacent surfaces; the local check examines the claims the plan actually made.
   Part of every difference in this document set is the instrument, not the lane — stated in the method
