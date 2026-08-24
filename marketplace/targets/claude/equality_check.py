@@ -209,9 +209,9 @@ def _read_emitted_plugin_json(bundle_dir: Path, target_dir: Path) -> dict:
             f'is valid JSON but not an object (found {type(parsed).__name__})',
         )
     for field_name in _ARRAY_FIELDS:
-        value = parsed.get(field_name)
-        if value is None:
+        if field_name not in parsed:
             continue
+        value = parsed[field_name]
         if not isinstance(value, list):
             raise CorruptEmittedPluginJsonError(
                 bundle_dir.name,

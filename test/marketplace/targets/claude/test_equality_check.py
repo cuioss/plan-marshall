@@ -387,6 +387,46 @@ def test_a_non_list_array_field_returns_the_diagnostic(
 
 
 @pytest.mark.parametrize('field_name', ['agents', 'commands', 'skills'])
+def test_an_explicit_null_array_field_returns_the_diagnostic(
+    clean_marketplace: tuple[Path, Path], field_name: str
+):
+    """An explicit ``null`` is a value that is not a list, and is refused as one.
+
+    ``parsed.get(field_name)`` collapses "field absent" and "field present and
+    explicitly null" into the same ``None``, so an early ``continue`` on that
+    ``None`` carries BOTH past the ``isinstance`` guard — leaving
+    ``{"agents": null}`` accepted even though shape 4 of the contract names
+    exactly "a value that is not a list". Membership is therefore tested before
+    the value is read: an absent field still skips validation, while a present
+    one is always validated.
+
+    The assertion is ``unusable_target_bundles``, NOT ``passed``. Against the
+    unguarded form a null ``agents`` degrades to ``[]`` opposite a populated
+    generated list, so it already produces ordinary drift — ``passed is False``
+    for the wrong reason — while a null ``skills`` degrades to ``[]`` opposite
+    an empty one and produces no diff at all. Only the unusable-bundle verdict
+    separates a refused corrupt artifact from both of those.
+    """
+    marketplace, target = clean_marketplace
+    doc: dict = {
+        'name': 'demo',
+        'version': '0.0.1',
+        'description': 'Demo bundle',
+        'agents': ['./agents/demo-agent.md'],
+        'commands': [],
+        'skills': [],
+    }
+    doc[field_name] = None
+    _emitted(target, 'demo', doc)
+
+    bundles = list(iter_bundle_dirs(marketplace, None))
+    result = run_equality_check(target, bundles)
+
+    assert result.unusable_target_bundles == ['demo']
+    assert 'generate.py --target claude' in result.summary
+
+
+@pytest.mark.parametrize('field_name', ['agents', 'commands', 'skills'])
 @pytest.mark.parametrize(
     'element',
     [{'path': './agents/demo-agent.md'}, 3],
