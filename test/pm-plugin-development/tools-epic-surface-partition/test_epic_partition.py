@@ -87,21 +87,21 @@ def plans(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def partition(repo: Path, plans: Path):
+def partition(repo: Path, plans: Path) -> partition_mod.Partition:
     claims = classify_corpus(plans, repo)
     modules = partition_mod.iter_test_modules(repo / 'test', repo)
     return partition_mod.derive_partition(claims, modules)
 
 
-def verdict_of(result, path: str) -> str:
+def verdict_of(result: partition_mod.Partition, path: str) -> str:
     return next(module.verdict for module in result.modules if module.path == path)
 
 
-def plans_of(result, path: str) -> tuple[str, ...]:
+def plans_of(result: partition_mod.Partition, path: str) -> tuple[str, ...]:
     return next(module.plans for module in result.modules if module.path == path)
 
 
-def paths_with(result, verdict: str) -> set[str]:
+def paths_with(result: partition_mod.Partition, verdict: str) -> set[str]:
     return {module.path for module in result.with_verdict(verdict)}
 
 
