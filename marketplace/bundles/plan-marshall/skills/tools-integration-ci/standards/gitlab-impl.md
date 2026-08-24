@@ -431,9 +431,8 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci <command> 
 
 **Commands** — a PARTIAL illustration, not the registry. `ci.py` dispatches many
 more verbs than the six below. The authoritative surface for the `ci` notation is
-[`tools-integration-ci/SKILL.md`](../SKILL.md) § "Canonical invocations", which the
-plugin-doctor `manage-invocation-invalid` analyzer reads as source-of-truth for
-`ci.py`; `ci {group} --help` prints the live set.
+[`tools-integration-ci/SKILL.md`](../SKILL.md) § "Canonical invocations";
+`ci {group} --help` prints the live set.
 
 | Command | Description |
 |---------|-------------|

@@ -196,7 +196,8 @@ Similarity Candidate:
 
 ### Script Pre-Processing
 
-The `analyze-cross-file-content.py` script extracts terminology and detects variants:
+`_analyze_crossfile.py`, wired to the `cross-file` subcommand of `_analyze.py`,
+extracts terminology and detects variants:
 
 **Script Output**:
 ```json
@@ -376,7 +377,8 @@ Quality Score = (Completeness + (100 - Duplication) + Consistency + (100 - Contr
 
 ### Script Pre-Processing
 
-The `analyze-cross-file-content.py` script detects extraction candidates:
+`_analyze_crossfile.py`, wired to the `cross-file` subcommand of `_analyze.py`,
+detects extraction candidates:
 
 **Script Output**:
 ```json
