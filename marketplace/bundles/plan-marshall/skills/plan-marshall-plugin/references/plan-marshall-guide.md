@@ -247,7 +247,7 @@ skills carrying an `implements:` field — so
 `validate-contracts --skill {bundle}:plan-marshall-plugin` returns
 `total_checked: 0` with `status: success`: well-formed, and measuring nothing.
 
-The functions below are checked by **reading the module against this table**.
+The functions are checked by **reading the module against the two tables below**.
 They are additionally exercised at load time by `discover_all_extensions()`,
 where a missing or malformed function surfaces as a runtime failure.
 
