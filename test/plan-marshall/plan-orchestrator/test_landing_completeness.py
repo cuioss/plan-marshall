@@ -404,8 +404,7 @@ _CODE_SPAN = re.compile(r'`([^`]+)`')
 #: optionally followed by ``=`` and a sample value (the spec writes the schema
 #: marker as ``schema=landing-facts/1``). A fence info-string
 #: (``landing-facts``) and a placeholder (``{step}:{outcome}``) carry characters
-#: outside the class and are excluded by construction; a degraded-value token is
-#: NOT, and is excluded by :data:`_SENTINEL_TOKENS` below.
+#: outside the class and are excluded by construction.
 _FACT_KEY = re.compile(r'^([a-z][a-z0-9_]*)(?:=.*)?$')
 
 #: The degraded-value tokens the producer prose writes in code spans. A sentinel
@@ -510,6 +509,11 @@ class TestDocumentedEnumerationsMatchTheConstant:
         assert _SENTINEL_TOKENS, (
             'the sentinel vocabularies are empty, so the loop below asserts nothing'
         )
+        assert any(_FACT_KEY.match(token) for token in _SENTINEL_TOKENS), (
+            'no sentinel is spelled like a fact key any more, so `_FACT_KEY` already rejects '
+            'every token and the membership test in `_keys_from_code_spans` is never reached: '
+            'this test would stay green with `_SENTINEL_TOKENS` doing nothing.'
+        )
         for token in sorted(_SENTINEL_TOKENS):
             assert _keys_from_code_spans(f'written `{token}`') == set(), token
             assert _keys_from_code_spans(f'written `merge_state={token}`') == {'merge_state'}, (
@@ -591,15 +595,29 @@ _FAILED_READ_CONDITION = re.compile(
 #: prose that merely NAMES the token ("the exemption `n/a` gets at those two")
 #: is not read as an instruction to write it.
 #:
-#: The leading negative lookbehinds carry the NEGATION half: an instruction and a
+#: The leading negation guard carries the NEGATION half: an instruction and a
 #: PROHIBITION are otherwise indistinguishable to this pattern, so "Never write
 #: `n/a` for a value that could not be read" — a CORRECT sentence that the
 #: producer docs state verbatim — would be reported as the very defect it
 #: forbids. Relying on such a sentence also naming ``unknown`` to earn the
 #: contrast exemption is an accident, not negation handling: consolidating that
 #: trailing clause away would turn the build red against correct prose.
+#:
+#: The negator is recognised wherever it GOVERNS the write verb, not only where
+#: it abuts it. The match is anchored at the unit start and refuses to advance
+#: over a negator that reaches the verb, so "must not be written as `n/a`" and
+#: "Do not ever write `n/a`" are read as prohibitions too — an adjacency-only
+#: guard would be the same accident of phrasing this comment rejects above.
+#: Only AUXILIARIES may sit in the gap, which is what keeps the widening from
+#: swallowing the offenders: the failed-read condition itself contains "could
+#: not be read", and there the gap holds an ordinary verb, so that negator does
+#: not reach the write verb and "…could not be read is written as `n/a`" stays
+#: flagged. Every guard is a lookAHEAD, so no width restriction applies.
 _WRITE_THE_ANSWERED_TOKEN = re.compile(
-    r'(?<!never )(?<!not )(?:writ|degrad|sanction)\w*[^.`]{0,60}`n/a`',
+    r'^(?:(?!\b(?:not|never|cannot)\b'
+    r'(?:\s+(?:be|been|being|ever|to|then|also|again|yet))*'
+    r'\s+(?:writ|degrad|sanction))[\s\S])*?'
+    r'(?:writ|degrad|sanction)\w*[^.`]{0,60}`n/a`',
     re.IGNORECASE,
 )
 
