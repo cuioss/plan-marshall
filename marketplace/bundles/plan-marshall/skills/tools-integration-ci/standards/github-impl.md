@@ -209,7 +209,7 @@ actionable remedy.
 
 ## CI Operations
 
-### ci status
+### checks status
 
 Check CI status for a pull request.
 
@@ -243,7 +243,7 @@ gh pr checks 123 --json name,state,conclusion
 | skipped | Check was skipped |
 | timed_out | Check timed out |
 
-### ci wait
+### checks wait
 
 Wait for CI checks to complete.
 
@@ -409,7 +409,12 @@ to this implementation:
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci <command> [args]
 ```
 
-**Commands**:
+**Commands** — a PARTIAL illustration, not the registry. `ci.py` dispatches many
+more verbs than the six below. The authoritative surface is
+[`workflow-integration-github/SKILL.md`](../../workflow-integration-github/SKILL.md)
+§ "Canonical invocations", which the plugin-doctor `manage-invocation-invalid`
+analyzer already reads as source-of-truth; `ci {group} --help` prints the live set.
+
 | Command | Description |
 |---------|-------------|
 | `pr create` | Create pull request |

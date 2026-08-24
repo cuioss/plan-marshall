@@ -13,9 +13,16 @@ disagree with it. The finding-type map is additionally asserted TOTAL over its o
 population, so a newly-added finding type cannot acquire an implicit empty
 analysis set — which would read as "no analysis is required" and clear on every
 build, silently reinstating the defect.
+
+The COMMAND vocabulary is held to the same standard against the authoritative
+``ALL_CANONICAL_COMMANDS``: every canonical command is either mapped to the
+analyses it performs or named in ``NON_ANALYSIS_COMMANDS`` with the reason none
+can describe it. A command in neither is a silent absence — which is how five of
+the six unmapped commands got there, with only ``clean`` ever explained.
 """
 
 import _build_examined as examined
+from _extension_constants import ALL_CANONICAL_COMMANDS
 
 
 class TestUnknownIsNotEmpty:
@@ -48,10 +55,11 @@ class TestUnknownIsNotEmpty:
         )
 
     def test_clean_is_absent_rather_than_mapped_to_empty(self):
-        # `clean verify` is a real chain whose later goals do work, so recording
-        # `clean` as a measured "examined nothing" would publish a false
-        # measurement. Absent means unknown, which is the honest verdict.
+        # Absent means unknown, which is the honest verdict. The reason lives on
+        # `NON_ANALYSIS_COMMANDS['clean']`; asserting membership here is what
+        # ties this absence to a stated one rather than a silent one.
         assert 'clean' not in examined.CANONICAL_ANALYSES
+        assert 'clean' in examined.NON_ANALYSIS_COMMANDS
         assert examined.examined_analyses('clean verify') is None
 
 
@@ -170,6 +178,57 @@ class TestMapsArePopulationDerived:
             reachable |= analyses
         for finding_type, required in examined.FINDING_TYPE_ANALYSES.items():
             assert required & reachable, finding_type
+
+    # -- the authoritative-command axis ------------------------------------
+    #
+    # ⛔ This class named the rule ("derived from that set, not written beside
+    # it") and then checked three axes, none of which was the one its own
+    # subject matter turns on: whether the command vocabulary is derived from
+    # the AUTHORITATIVE command set. It was not — six of the fourteen members of
+    # ALL_CANONICAL_COMMANDS were absent from CANONICAL_ANALYSES with only one
+    # of those absences documented.
+
+    def test_the_vocabulary_accounts_for_every_authoritative_command(self):
+        """Every canonical command is mapped, or named as unmappable with a reason.
+
+        Set EQUALITY is deliberately not the assertion: the map is partial by
+        design, and asserting equality would force a false analysis set onto
+        commands this vocabulary genuinely cannot describe. What must hold is
+        that no command falls through both sides unremarked.
+        """
+        assert ALL_CANONICAL_COMMANDS, 'the authoritative population is empty'
+        accounted = set(examined.CANONICAL_ANALYSES) | set(examined.NON_ANALYSIS_COMMANDS)
+        unaccounted = sorted(set(ALL_CANONICAL_COMMANDS) - accounted)
+        assert not unaccounted, (
+            f'canonical command(s) neither mapped nor explained: {unaccounted}'
+        )
+
+    def test_no_command_is_both_mapped_and_declared_unmappable(self):
+        """The two sides are a partition, not two overlapping opinions."""
+        both = sorted(
+            set(examined.CANONICAL_ANALYSES) & set(examined.NON_ANALYSIS_COMMANDS)
+        )
+        assert not both, f'command(s) both mapped and declared unmappable: {both}'
+
+    def test_every_explained_absence_is_still_an_authoritative_command(self):
+        """⛔ The other direction — a stale entry would pad the coverage claim.
+
+        Without this, a command dropped from ALL_CANONICAL_COMMANDS could linger
+        in NON_ANALYSIS_COMMANDS and keep the totality assertion above green
+        while accounting for a command that no longer exists.
+        """
+        stale = sorted(set(examined.NON_ANALYSIS_COMMANDS) - set(ALL_CANONICAL_COMMANDS))
+        assert not stale, f'explained command(s) that are not canonical: {stale}'
+
+    def test_every_explained_absence_carries_a_reason(self):
+        """A bare set would let a member be added with no reason at all.
+
+        The population assertion is what stops this passing vacuously if the map
+        is ever emptied.
+        """
+        assert examined.NON_ANALYSIS_COMMANDS
+        for command, reason in examined.NON_ANALYSIS_COMMANDS.items():
+            assert reason.strip(), command
 
 
 class TestRefusalReasonNamesItsCause:

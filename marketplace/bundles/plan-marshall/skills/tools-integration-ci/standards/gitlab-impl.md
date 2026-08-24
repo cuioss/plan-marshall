@@ -191,7 +191,7 @@ returns the actionable scope/permission remedy.
 
 ## CI Operations
 
-### ci status
+### checks status
 
 Check pipeline status for a merge request.
 
@@ -247,7 +247,7 @@ glab ci view 789 --json jobs
 | canceled | completed | cancelled |
 | skipped | completed | skipped |
 
-### ci wait
+### checks wait
 
 Wait for pipeline to complete.
 
@@ -429,7 +429,12 @@ to this implementation:
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci <command> [args]
 ```
 
-**Commands**:
+**Commands** — a PARTIAL illustration, not the registry. `ci.py` dispatches many
+more verbs than the six below. The authoritative surface is
+[`workflow-integration-gitlab/SKILL.md`](../../workflow-integration-gitlab/SKILL.md)
+§ "Canonical invocations", which the plugin-doctor `manage-invocation-invalid`
+analyzer already reads as source-of-truth; `ci {group} --help` prints the live set.
+
 | Command | Description |
 |---------|-------------|
 | `pr create` | Create merge request |

@@ -192,7 +192,11 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from _analyze_manage_invocation import ROUTER_VERBS
+from _analyze_manage_invocation import (
+    FIRST_FLAG_RE,
+    ROUTER_VERBS,
+    TEMPLATE_SYNTAX_RE,
+)
 from _doctor_shared import Finding
 from _rule_registry import RuleDescriptor
 from argparse_surface import (
@@ -308,18 +312,13 @@ _INVOCATION_RE = re.compile(
 # rejects placeholder shapes like ``--{plan-id}``.
 _FLAG_TOKEN_RE = re.compile(r'(?<![A-Za-z0-9])--(?P<flag>[A-Za-z][A-Za-z0-9_\-]*)\b')
 
-# First flag token on a line: whitespace immediately followed by ``-``. The
-# positional region is everything before it (or the whole slice when no flag).
-_FIRST_FLAG_RE = re.compile(r'\s-')
-
-# Usage-template / placeholder syntax that marks a line as a NON-concrete
-# invocation: ``{plan_id}`` / ``<subcommand>`` placeholders, usage brackets and
-# alternation (``[--project-dir | --plan-id]``), and the literal ``...``
-# ellipsis. Kept byte-identical to
-# ``_analyze_manage_invocation._TEMPLATE_SYNTAX_RE`` — the two rules scan the
-# same corpus for the same shapes, and a divergence would make one of them
-# report a usage string the other correctly skipped.
-_TEMPLATE_SYNTAX_RE = re.compile(r'[{}<>\[\]|]|\.\.\.')
+# ``FIRST_FLAG_RE`` (where the positional region ends) and ``TEMPLATE_SYNTAX_RE``
+# (which lines are usage strings rather than calls) are imported from
+# ``_analyze_manage_invocation`` above, alongside ``ROUTER_VERBS`` and for the
+# same reason: the two rules scan the same corpus for the same shapes, so a
+# divergence would make one of them report a usage string the other correctly
+# skipped. Sharing the objects is what rules that out — a copy could only assert
+# it.
 
 # A quoted run is a VALUE, whatever it looks like. Scanning raw text made
 # ``list --message "--plan-id p"`` report ``--plan-id`` as a misplaced router
@@ -386,11 +385,11 @@ class _Invocation:
         NOT covered, so those invocations keep full validation.
         """
         region = self.leading + self.rest if self.subcommand is None else self.rest
-        flag_match = _FIRST_FLAG_RE.search(region)
+        flag_match = FIRST_FLAG_RE.search(region)
         head = region[: flag_match.start()] if flag_match else region
         if self.subcommand is not None:
             head = f'{self.subcommand} {head}'
-        return bool(_TEMPLATE_SYNTAX_RE.search(head))
+        return bool(TEMPLATE_SYNTAX_RE.search(head))
 
     @property
     def all_flag_text(self) -> str:
@@ -1330,8 +1329,18 @@ def _invocation_is_blind_spot(
     What remains is the genuine residue: a templated positional region that names
     no concrete verb, a registered notation whose ``--help`` surface was dropped
     fail-closed by :func:`build_script_index`, an unconfident verb listing that
-    makes absence no evidence, and an underived flag surface (``None``) on the
-    scope the invocation actually addresses.
+    makes absence no evidence, an underived flag surface (``None``) on the scope
+    the invocation actually addresses, and a ROUTER verb.
+
+    The router-verb shape is the one a *partial* decision hides. The verb itself
+    IS decided — :func:`scan_subcommand` accepts it against :data:`ROUTER_VERBS`
+    and moves on — but a router verb is by construction absent from
+    ``entry.subcommands``, so :func:`scan_flag` and
+    :func:`scan_router_flag_placement` each look the verb up, each get ``None``,
+    and neither draws a flag verdict. The fall-through below returns
+    ``not subcommands_confident``, which is ``False`` on the confident index a
+    router verb reaches, so the withheld FLAG verdict was filed as a decision.
+    ``ci barrier`` in ``tools-integration-ci/SKILL.md`` is the live instance.
 
     The templated case is checked AFTER the registry test, and the order is
     load-bearing. :func:`scan_notation` is deliberately NOT template-guarded — a
@@ -1358,6 +1367,11 @@ def _invocation_is_blind_spot(
     if inv.subcommand is None:
         return entry.root_flags is None
     if inv.subcommand not in entry.subcommands:
+        if inv.subcommand in ROUTER_VERBS.get(inv.notation, {}):
+            # Verb decided, flag verdict withheld — see the docstring. Checked
+            # BEFORE the confidence fall-through, which would answer ``False``
+            # here and report the gap as a ruling.
+            return True
         return not entry.subcommands_confident
     return entry.subcommands[inv.subcommand] is None
 

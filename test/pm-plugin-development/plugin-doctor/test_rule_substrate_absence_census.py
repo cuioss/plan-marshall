@@ -18,12 +18,29 @@ Derivation, in three steps:
   attributed back to its declaring module through the registry's own
   per-module collector. No rule name is hand-listed, so a rule added to the
   registry enters the census with no edit here.
-* **Substrate** — each analyzer's source is parsed and every ``Path`` join whose
-  base escapes upward out of ``marketplace_root`` (a ``.parent`` hop) is
-  collected as a repo-relative substrate path.
+* **Substrate** — each analyzer's source is parsed and the ``Path`` joins that
+  escape upward out of ``marketplace_root`` are collected as repo-relative
+  substrate paths. Detection is deliberately narrow: a join qualifies only when
+  it is a SINGLE expression whose base is exactly ``<name>.parent`` — one hop off
+  a bare name — and every segment after it is a string literal.
 * **Absence** — a substrate is absent from a fresh clone exactly when git does
   not track it. That is asked of git rather than assumed from a path shape, so
   the verdict holds for whatever the ignore rules happen to say.
+
+⛔ ``rules_with_absent_substrate`` is a LOWER BOUND, not an exhaustive count.
+Three shapes are invisible to the substrate step, by construction rather than by
+oversight:
+
+* a MULTI-HOP base — ``root.parent.parent / 'x'``, whose base ``.value`` is an
+  ``ast.Attribute`` rather than an ``ast.Name``;
+* a path assembled ACROSS statements — only the join expression itself is read,
+  so a base bound on an earlier line is never followed;
+* a join carrying a NON-LITERAL segment, which disqualifies the whole join.
+
+A rule that reaches a git-ignored substrate by any of those routes is absent from
+the figure. Read a published member as confirmed exposure and a published count
+as "at least this many" — never as "these are all of them". Widening the detected
+shape raises the bound; it does not turn the bound into a total.
 
 The population is asserted non-empty before anything ranges over it: a census
 reporting zero members out of zero rules examined is the very defect this file
@@ -102,7 +119,12 @@ def _join_segments(node: ast.expr) -> tuple[ast.expr, list[str | None]]:
 
 
 def _escaping_substrates(source: str) -> tuple[str, ...]:
-    """Return the repo-relative paths ``source`` resolves outside ``marketplace_root``."""
+    """Return repo-relative paths ``source`` resolves outside ``marketplace_root``.
+
+    A LOWER BOUND over the detected shape, not an enumeration: the join must be a
+    single expression rooted at ``<name>.parent`` with literal segments. See the
+    module docstring for the three shapes this deliberately does not reach.
+    """
     tree = ast.parse(source)
     joins = [
         node
@@ -178,6 +200,9 @@ def census_report() -> str:
     lines = [
         f'rules_examined: {len(rows)}',
         f'rules_with_absent_substrate: {len(members)}',
+        '  (a LOWER BOUND: detects single-expression joins rooted at <name>.parent '
+        'with literal segments; multi-hop bases and cross-statement assembly are '
+        'not reached)',
     ]
     lines.extend(f'  {rule_id} ({module}): {", ".join(absent)}' for rule_id, module, absent in members)
     return '\n'.join(lines)

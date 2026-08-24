@@ -79,17 +79,21 @@ Completeness Issues:
 
 ### Script Pre-Processing
 
-Get the structured cross-file analysis first. The analyzer is the internal
-`_analyze_crossfile.py` module — underscore-prefixed, so it registers no executor
-notation of its own; the operator-facing entry point is `doctor-marketplace report`,
-which runs it per bundle and writes the result to the output directory:
+The structured cross-file analysis comes from `_analyze_crossfile.py`, wired to
+the `cross-file` subcommand of `_analyze.py`.
 
-```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace report \
-  --bundles {bundle} --output .plan/temp/content-quality
-```
+⛔ Both modules are underscore-prefixed, so NEITHER registers an executor
+notation — there is no `.plan/execute-script.py` form for this analysis, and
+**`doctor-marketplace report` does not run it**. A `report` run emits exactly
+`summary`, `issues_by_type`, `issues_by_bundle`, `safe_fixes`, `risky_fixes`,
+`unfixable_issues`, `components_for_tool_analysis` and `llm_review_items`; no
+cross-file or duplication data appears in it at any scope. The reviewer invokes
+the analyzer directly or performs the equivalent comparison by hand — the same
+standing as `_cmd_cross_file.py::verify_findings` under
+[Verification of LLM Findings](#verification-of-llm-findings) below.
 
-**Script Output Categories**:
+**Analyzer Output Categories** — what `_analyze_crossfile.py` itself produces,
+NOT the contents of a `report` run:
 
 | Category | Script Responsibility | LLM Responsibility |
 |----------|----------------------|-------------------|
@@ -476,14 +480,17 @@ This guide is loaded in **Phase 3: Analyze Content Quality**.
 
 ### Step-by-Step Integration
 
-1. **Run the cross-file analysis pass**:
-   ```bash
-   python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace report \
-     --bundles {bundle} --output .plan/temp/content-quality
-   ```
+1. **Run the cross-file analysis pass** — the `cross-file` subcommand of
+   `_analyze.py`, over the skill directory under review.
+
+   ⛔ NOT `doctor-marketplace report`. That verb emits no cross-file or
+   duplication data at any scope, so a pass built on it would carry every
+   category below into the report empty and read that as "no duplication found".
+   See [Script Pre-Processing](#script-pre-processing) for the report's actual
+   key set.
 
 2. **Report exact duplicates directly** (no LLM needed):
-   - Parse `exact_duplicates` from JSON
+   - Parse `exact_duplicates` from the step-1 output
    - Generate consolidation recommendations
 
 3. **LLM analyzes candidates**:
@@ -497,9 +504,9 @@ This guide is loaded in **Phase 3: Analyze Content Quality**.
 
 5. **Verify LLM findings**: re-check each claim against the step-1 analysis output
    before carrying it forward. `_cmd_cross_file.py::verify_findings` implements that
-   comparison, but nothing calls it for you — `report` already ran at step 1, before
-   these claims existed, so there is no automatic gate. An unverified claim reaches
-   the report unless this step removes it.
+   comparison, but nothing calls it for you — the step-1 pass ran before these
+   claims existed, so there is no automatic gate. An unverified claim reaches the
+   report unless this step removes it.
 
 6. **Generate quality report** with verified findings only.
 

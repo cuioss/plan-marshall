@@ -106,11 +106,55 @@ CANONICAL_ANALYSES: dict[str, frozenset[str]] = {
 }
 """The canonical build-command vocabulary mapped to the analyses each performs.
 
-``clean`` is deliberately ABSENT rather than mapped to the empty set. A build
-whose args begin with ``clean`` is very often a chain (``clean verify``) whose
-later goals do real work, so recording it as a measured "examined nothing" would
-publish a false measurement. Absent means unknown, which is the honest verdict
-for a command this vocabulary does not describe.
+PARTIAL over the authoritative command set by design, not by omission. A command
+this vocabulary cannot describe is ABSENT rather than mapped to the empty set:
+absent means undetermined (:func:`examined_analyses` returns ``None`` and
+:func:`clearable_finding_types` then clears nothing), whereas an empty set would
+publish a measured "examined nothing" that is false.
+
+Which commands those are is stated rather than left to inference —
+:data:`NON_ANALYSIS_COMMANDS` names each one with its reason, and
+``TestMapsArePopulationDerived`` asserts the two together cover every member of
+``ALL_CANONICAL_COMMANDS``. A newly-added canonical command therefore cannot
+join the vocabulary silently: it must be mapped here or explained there.
+"""
+
+NON_ANALYSIS_COMMANDS: dict[str, str] = {
+    'clean': (
+        'removes build output and analyses nothing itself; it is also very often '
+        'the head of a chain (``clean verify``) whose later goals do the real '
+        'work, so its leading token does not determine what the run examined'
+    ),
+    'benchmark': (
+        'produces runtime timings, which are not a verdict in any of the three '
+        'analysis kinds this vocabulary distinguishes'
+    ),
+    'arch-gate': (
+        'reports architectural-constraint violations, which are none of '
+        ':data:`BUILD_FINDING_TYPES`, so no analysis kind here describes what a '
+        'green one is entitled to clear'
+    ),
+    'install': (
+        'the analyses it performs are build-tool-dependent — Maven runs the whole '
+        'lifecycle including tests, npm resolves dependencies and runs none — so '
+        'the token alone does not determine them'
+    ),
+    'clean-install': (
+        'the ``clean`` + ``install`` chain, undetermined for both reasons above'
+    ),
+    'package': (
+        'assembles an archive from already-built output; like ``install`` it is '
+        'build-tool-dependent whether any analysis ran under it, and any that did '
+        'belongs to the goals that preceded it'
+    ),
+}
+"""Authoritative canonical commands this vocabulary deliberately does NOT map.
+
+The residue of :data:`CANONICAL_ANALYSES` over ``ALL_CANONICAL_COMMANDS``, each
+member carrying why no analysis set can honestly describe it. Declared as a map
+rather than a bare set so the reason is attached to the member instead of to a
+comment beside it, and so the guard can assert every member HAS one — an
+unexplained entry here would be the silent absence this pairing exists to end.
 """
 
 

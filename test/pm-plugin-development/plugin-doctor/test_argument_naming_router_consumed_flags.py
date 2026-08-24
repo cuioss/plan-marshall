@@ -33,7 +33,7 @@ scan-marketplace-inventory            yes      yes          no
 acceptance is real and it is NOT a blanket "anything goes" — which is exactly the
 pair this module pins.
 
-Two matched pairs, because the fix has two halves that can each fail alone:
+Three matched pairs, because the fix has three halves that can each fail alone:
 
 1. **Acceptance** — a router-consumed flag must NOT be flagged, while a
    genuinely-unknown flag on the SAME invocation MUST be. Without the second
@@ -50,6 +50,16 @@ Two matched pairs, because the fix has two halves that can each fail alone:
    exits 2 with ``unrecognized arguments``. A blanket exemption of
    ``UNIVERSAL_FLAGS`` from the placement rule would have traded one false
    finding for a silenced true one.
+3. **Coverage** — a router VERB (not just a router-consumed flag) is decided at
+   the verb level and undecided at the flag level, and ``blind_spots`` must say
+   so. ``scan_subcommand`` accepts ``ci barrier`` against ``ROUTER_VERBS`` and
+   moves on, but the verb is by construction absent from the help-derived
+   ``subcommands`` map, so ``scan_flag`` and ``scan_router_flag_placement`` each
+   look it up, each get ``None``, and neither rules on the line's flags. That
+   partial decision is what hid the gap: the blind-spot fall-through answered
+   ``not subcommands_confident`` — ``False`` on the confident index a router verb
+   reaches — filing a withheld flag verdict as a ruling. The matched negative is
+   an ordinary declared verb, which must NOT be counted.
 """
 
 from __future__ import annotations
@@ -66,8 +76,14 @@ _aan = load_script_module(
     '_analyze_argument_naming_router_consumed',
 )
 analyze_argument_naming = _aan.analyze_argument_naming
+analyze_argument_naming_with_population = _aan.analyze_argument_naming_with_population
 scan_router_flag_placement = _aan.scan_router_flag_placement
 _ScriptEntry = _aan._ScriptEntry
+
+#: The shared router-verb model, read through the module under test rather than
+#: re-declared, so a fixture verb that stops being a router verb fails loudly
+#: here instead of quietly making Pair 3 assert nothing.
+ROUTER_VERBS = _aan.ROUTER_VERBS
 
 #: The router-consumed flag the corpus census attributed 68 of 129 findings to.
 ROUTER_CONSUMED_FLAG = 'audit-plan-id'
@@ -239,3 +255,115 @@ def test_root_declared_flag_after_the_verb_is_still_a_placement_finding(tmp_path
     assert len(findings) == 1, findings
     assert findings[0]['details']['flag'] == 'plan-id'
     assert findings[0]['details']['subcommand'] == 'resolve'
+
+
+# ---------------------------------------------------------------------------
+# Pair 3 — a router VERB is a decided verb and an undecided flag surface
+# ---------------------------------------------------------------------------
+
+#: The live router-verb instance: ``ci barrier`` is intercepted in ``ci.py``'s
+#: ``main()`` ahead of provider dispatch, so it appears in no ``--help`` choice
+#: list and the derived surface structurally cannot see it.
+ROUTER_NOTATION = 'plan-marshall:tools-integration-ci:ci'
+ROUTER_VERB = 'barrier'
+
+#: An ordinary verb the fixture script really declares — the matched negative.
+CI_DECLARED_VERB = 'pr'
+CI_DECLARED_FLAG = 'plan-id'
+
+
+def _router_fixture(tmp_path: Path, invocation: str) -> Path:
+    """Materialize a marketplace whose sole SKILL.md carries ``invocation``.
+
+    The fixture script declares ``CI_DECLARED_VERB`` and nothing else, which is
+    what makes ``ROUTER_VERB`` absent from the derived ``subcommands`` map — the
+    same shape the real ``ci.py`` produces, for the same reason.
+    """
+    marketplace_root = tmp_path / 'marketplace'
+    write_dispatching_executor(tmp_path / '.plan', [ROUTER_NOTATION])
+    _write_script(marketplace_root, ROUTER_NOTATION, CI_DECLARED_VERB, [CI_DECLARED_FLAG])
+
+    bundle, skill, _script = ROUTER_NOTATION.split(':', 2)
+    skill_dir = marketplace_root / 'bundles' / bundle / 'skills' / skill
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / 'SKILL.md').write_text(
+        f'# CI\n\n```bash\npython3 .plan/execute-script.py {invocation}\n```\n',
+        encoding='utf-8',
+    )
+    return marketplace_root
+
+
+def _run(marketplace_root: Path) -> tuple[list[dict], int, int]:
+    """``(findings, population_size, blind_spots)`` from the single derivation.
+
+    Unpacked into annotated locals because ``_aan`` is spec-loaded at runtime, so
+    mypy types every attribute of it as ``Any`` and returning the call's result
+    directly trips ``no-any-return`` against this signature.
+    """
+    findings: list[dict]
+    population: int
+    blind_spots: int
+    findings, population, blind_spots = analyze_argument_naming_with_population(
+        marketplace_root
+    )
+    return findings, population, blind_spots
+
+
+def test_the_fixture_verb_is_really_in_the_shared_router_model():
+    """⛔ Substrate check: without it, Pair 3 could assert over an empty premise.
+
+    ``barrier`` being a router verb is the entire premise of the two tests below.
+    If the shared model ever stops carrying it, they would still pass — the verb
+    would simply be an unknown subcommand, which is decided and not a blind spot —
+    so the premise is pinned rather than assumed.
+    """
+    assert ROUTER_VERB in ROUTER_VERBS.get(ROUTER_NOTATION, {}), (
+        f'{ROUTER_NOTATION} no longer models `{ROUTER_VERB}` as a router verb; '
+        'the two tests below no longer exercise the router-verb path'
+    )
+
+
+def test_a_router_verb_is_counted_as_a_blind_spot(tmp_path):
+    """The coverage half: a withheld FLAG verdict must raise ``blind_spots``.
+
+    The verb IS decided — the assertion on ``SUBCOMMAND_UNKNOWN`` below pins that
+    the fix did not turn verb-level acceptance into a rejection — but no flag
+    verdict was ever drawn, because ``barrier`` is absent from the derived
+    ``subcommands`` map that both flag rules look it up in. Counting the site is
+    what keeps the coverage figure from overstating what the cluster ruled on.
+    """
+    marketplace_root = _router_fixture(
+        tmp_path, f'{ROUTER_NOTATION} {ROUTER_VERB} --settled-head abc123 --signal ci'
+    )
+
+    findings, population, blind = _run(marketplace_root)
+
+    assert population == 1, population
+    assert blind == 1, (
+        f'a router verb whose flag verdict was withheld was filed as decided: {blind}'
+    )
+    subcommand_findings = [
+        f for f in findings if f.get('rule_id') == 'ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN'
+    ]
+    assert subcommand_findings == [], (
+        f'the router verb was reported as an invented subcommand: {subcommand_findings!r}'
+    )
+
+
+def test_a_declared_verb_with_a_derived_flag_set_is_not_a_blind_spot(tmp_path):
+    """⛔ The matched negative — without it, "counted" and "counts everything" look alike.
+
+    Same script, same corpus shape, same population of 1. The only difference is
+    that this verb IS in the derived ``subcommands`` map with a real flag set, so
+    both flag rules rule on the line and there is no gap to report. A fix that
+    returned ``True`` unconditionally at the same branch passes the test above and
+    fails here.
+    """
+    marketplace_root = _router_fixture(
+        tmp_path, f'{ROUTER_NOTATION} {CI_DECLARED_VERB} --{CI_DECLARED_FLAG} X'
+    )
+
+    _findings, population, blind = _run(marketplace_root)
+
+    assert population == 1, population
+    assert blind == 0, f'a fully judged concrete call was counted as a blind spot: {blind}'
