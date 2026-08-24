@@ -496,6 +496,258 @@ class TestDocumentedEnumerationsMatchTheConstant:
 
 
 # =============================================================================
+# The PRODUCER routes each CONDITION to the token the consumer expects
+# =============================================================================
+#
+# ``_is_unsupplied`` splits the degraded vocabulary by TOKEN. The two producer
+# documents are what decide which CONDITION reaches which token, and the split
+# is worth nothing unless the two halves agree:
+#
+#   observed absence ("there is no such thing" — no PR was ever created, the
+#                     step legitimately did not run)   -> ``n/a``
+#   failed read      ("this could not be read")        -> ``unknown``
+#
+# Routing a FAILED READ to ``n/a`` is invisible to every consumer-side test in
+# this file. ``merge_state`` sits OUTSIDE ``LANDING_SENTINEL_REJECTING_KEYS`` by
+# design — ``test_degraded_pr_and_merge_state_stay_complete`` pins that, and it
+# MUST stay green — so a producer that degrades an UNREADABLE merge state to
+# ``n/a`` drains as ``complete: true``: a settled "no PR exists" for a fact
+# nobody read. The consumer is correct there; only the producer instructions
+# were wrong, which is why widening the rejecting set is the wrong remedy and
+# only a doc-contract guard can see this half of the defect.
+#
+# The scan is UNIT-based, never whole-document: both documents legitimately
+# CONTRAST the two tokens in one breath ("it never inherits the exemption
+# ``n/a`` gets at those two"), so the rejected shape is narrower than
+# co-occurrence — a failed-read CONDITION in the same unit as an instruction to
+# WRITE ``n/a``, with no mention of ``unknown`` carrying the contrast.
+
+_PRODUCER_DOCS: dict[str, Path] = {
+    'emit-landing.md': _EMIT_LANDING_DOC,
+    'landing-payload-spec.md': _PAYLOAD_SPEC,
+}
+
+#: Phrasings that name the FAILED-READ condition — a value the producer tried to
+#: obtain and could not. Deliberately does NOT cover "its step did not run",
+#: which is an OBSERVED ABSENCE and whose ``n/a`` routing is correct.
+_FAILED_READ_CONDITION = re.compile(
+    '|'.join((
+        r'could not (?:be )?read',
+        r'a read that fail\w*',
+        r'a read genuinely fail\w*',
+        r'a failed read',
+        r'returns an error',
+    )),
+    re.IGNORECASE,
+)
+
+#: An instruction to WRITE the ANSWERED token. Requires a write/degrade verb
+#: within one unbroken run of a unit ahead of the literal ``n/a`` code span, so
+#: prose that merely NAMES the token ("the exemption `n/a` gets at those two")
+#: is not read as an instruction to write it.
+_WRITE_THE_ANSWERED_TOKEN = re.compile(
+    r'(?:writ|degrad|sanction)\w*[^.`]{0,60}`n/a`',
+    re.IGNORECASE,
+)
+
+#: The COULD-NOT-READ token, in any spelling a document may use for it — bare,
+#: or qualified as ``merge_state=unknown``. Its presence in a unit is what marks
+#: that unit as CONTRASTING the two tokens rather than mis-routing a condition.
+_COULD_NOT_READ_TOKEN = re.compile(r'unknown', re.IGNORECASE)
+
+
+def _prose_units(text: str) -> list[str]:
+    """Split a producer document into the units the routing rule is judged over.
+
+    A unit is one sentence of prose or one table row. Blocks are separated by
+    blank lines first so a sentence can never run across a section boundary, and
+    a block whose every line is a table row contributes one unit per row — the
+    Error Handling table states its CONDITION and its ACTION in two cells of the
+    same row, so splitting a row on its pipes would separate exactly the pair
+    this guard exists to catch.
+    """
+    units: list[str] = []
+    for block in re.split(r'\n\s*\n', text):
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        if not lines:
+            continue
+        if all(line.startswith('|') for line in lines):
+            units.extend(lines)
+            continue
+        joined = re.sub(r'\s+', ' ', ' '.join(lines))
+        units.extend(part for part in re.split(r'(?<=[.!?]) ', joined) if part.strip())
+    return units
+
+
+def _answered_class_definition() -> str:
+    """The payload spec's paragraph DEFINING the answered-degraded class.
+
+    Located by its opening sentence and bounded by the next blank line, so the
+    could-not-read paragraph that follows it is not folded in — the two
+    paragraphs define the two classes and the guard is about the first one only.
+    """
+    text = _PAYLOAD_SPEC.read_text(encoding='utf-8')
+    match = re.search(
+        r'^The \*\*answered-degraded\*\* class is `n/a`\..*?(?=\n\s*\n|\Z)',
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert match, (
+        f'{_PAYLOAD_SPEC.name} carries no paragraph opening "The **answered-degraded** class '
+        'is `n/a`.", so this guard would read nothing. Keep that opening sentence verbatim: '
+        'it is the anchor for the definition the guard checks.'
+    )
+    return match.group(0)
+
+
+class TestProducerRoutesConditionsToTokens:
+    def test_the_scan_population_is_non_empty(self):
+        """Both parsers must find units, or every assertion below is vacuous."""
+        for name, path in _PRODUCER_DOCS.items():
+            units = _prose_units(path.read_text(encoding='utf-8'))
+            assert len(units) > 20, f'{name}: the unit splitter extracted {len(units)} units'
+        assert _answered_class_definition().strip(), (
+            'the answered-class definition extractor returned an empty paragraph'
+        )
+
+    def test_no_producer_unit_writes_the_answered_token_for_a_failed_read(self):
+        """A failed read is NEVER written as ``n/a`` — the headline defect.
+
+        ``n/a`` says "there is no such thing"; a read that failed observed
+        nothing at all and has no business claiming an end state. At ``pr`` and
+        ``merge_state`` — the two keys the answered class is exempt at — that
+        mis-routing is what turns an unread merge state into a settled landing.
+        """
+        offenders: list[str] = []
+        for name, path in _PRODUCER_DOCS.items():
+            for unit in _prose_units(path.read_text(encoding='utf-8')):
+                if not _FAILED_READ_CONDITION.search(unit):
+                    continue
+                if not _WRITE_THE_ANSWERED_TOKEN.search(unit):
+                    continue
+                if _COULD_NOT_READ_TOKEN.search(unit):
+                    # The unit contrasts the two tokens rather than routing to one.
+                    continue
+                offenders.append(f'{name}: {unit}')
+
+        assert not offenders, (
+            'A producer document instructs the emitter to write `n/a` for a value it could '
+            'not READ. `n/a` is the ANSWERED token ("there is no such thing") and is exempt '
+            'at `pr` and `merge_state`, so a failed read routed there drains as a settled '
+            'fact — the false-completeness class this check exists to close. Route the '
+            'failed-read condition to `unknown` instead, which is a gap at every key. '
+            f'Offending units: {offenders}'
+        )
+
+    def test_the_answered_class_definition_is_not_a_failed_read(self):
+        """The spec must not DEFINE the answered class by a could-not-read condition.
+
+        The other half of the same defect, and the half that made a one-sided
+        repair of ``emit-landing.md`` inconsistent with its own contract: a
+        definition reading "`emit-landing.md` sanctions writing it for a field
+        the producer could not read" hands the failed-read condition to the
+        answered token in the document that WINS when the three sites disagree.
+        """
+        definition = _answered_class_definition()
+        found = _FAILED_READ_CONDITION.findall(definition)
+
+        assert not found, (
+            f'{_PAYLOAD_SPEC.name} defines the answered-degraded class (`n/a`) in terms of a '
+            'read that FAILED. That condition belongs to the could-not-read class '
+            '(`unknown`); `n/a` is for an absence the run observed. Because this document '
+            'wins when producer, validator and drain disagree, the definition here is what a '
+            f'one-sided fix of emit-landing.md would contradict. Matched: {found}'
+        )
+
+    def test_both_producer_docs_route_a_failed_read_to_the_could_not_read_token(self):
+        """Positive control: each document STATES the failed-read routing.
+
+        The rejection test above would also pass on a document that simply never
+        mentions a failed read. This one requires the routing to be present, so
+        the pair cannot be satisfied by deleting the subject.
+        """
+        for name, path in _PRODUCER_DOCS.items():
+            conditions = [
+                unit
+                for unit in _prose_units(path.read_text(encoding='utf-8'))
+                if _FAILED_READ_CONDITION.search(unit)
+            ]
+            assert conditions, (
+                f'{name} names no failed-read condition anywhere, so the rejection guard '
+                'above passes vacuously over it.'
+            )
+            routed = [unit for unit in conditions if _COULD_NOT_READ_TOKEN.search(unit)]
+            assert routed, (
+                f'{name} names a failed-read condition in {len(conditions)} unit(s) and '
+                'routes it to `unknown` in none of them. The producer instructions must say '
+                'which token a failed read is written as, or the emitter is left to guess.'
+            )
+
+    # -- The mutation pin ----------------------------------------------------
+
+    def test_mutation_pin_the_scan_flags_every_pre_fix_sentence(self):
+        """The guards above pass BECAUSE the documents were changed.
+
+        A doc-contract guard that would pass over the defective text proves
+        nothing, and observing it fail once before the edit leaves no executable
+        record. So the four PRE-FIX units are carried here verbatim and fed to
+        the same predicate: each MUST be flagged. Paired with the sanctioned
+        units below — which MUST NOT be — this pins both directions in one run,
+        permanently, instead of relying on a red observation nobody can repeat.
+        """
+        pre_fix_units = (
+            # emit-landing.md § Step 1 — the read-failure routing sentence.
+            'A read that fails degrades its field to `n/a` (Error Handling), never the '
+            'whole message.',
+            # emit-landing.md § Step 2 — the fenced-block enumeration.
+            'A value that could not be read is written as `n/a` (its key still present).',
+            # emit-landing.md § Step 2 — the follow-up that sanctioned it.
+            'Writing `n/a` there is still the correct thing to do when a read genuinely '
+            'failed (it never blocks the emission), but it is recorded as a gap rather '
+            'than absorbed as a value.',
+            # emit-landing.md § Error Handling — condition and action, one row.
+            '| A fact read (`manage-status`) returns an error | Write that field as `n/a` '
+            'in the fenced block (key still present) and continue |',
+        )
+
+        for unit in pre_fix_units:
+            flagged = bool(
+                _FAILED_READ_CONDITION.search(unit)
+                and _WRITE_THE_ANSWERED_TOKEN.search(unit)
+                and not _COULD_NOT_READ_TOKEN.search(unit)
+            )
+            assert flagged, f'the scan does not flag the pre-fix unit: {unit}'
+
+    def test_mutation_pin_the_scan_leaves_the_sanctioned_units_alone(self):
+        """The matched negative control: correct prose must survive the scan.
+
+        Both shapes below are legitimate and both are within a hair of the
+        rejected one — an OBSERVED-ABSENCE routing to `n/a`, and a sentence that
+        names both tokens to CONTRAST them. A predicate that swept these up
+        would force the documents to stop saying true things, so they are pinned
+        as explicitly as the violations are.
+        """
+        sanctioned_units = (
+            # Observed absence — the step did not run — correctly routed to `n/a`.
+            'A fact absent because its step did not run (the manifest excluded it, or it '
+            'has no record) is written as `n/a`, its key still present, per the Error '
+            'Handling table.',
+            # A contrast between the two tokens, not a routing of either.
+            'A value asserting only that a state could not be READ — written '
+            '`merge_state=unknown` — is a gap at EVERY required key, so it never inherits '
+            'the exemption `n/a` gets at those two.',
+        )
+
+        for unit in sanctioned_units:
+            flagged = bool(
+                _FAILED_READ_CONDITION.search(unit)
+                and _WRITE_THE_ANSWERED_TOKEN.search(unit)
+                and not _COULD_NOT_READ_TOKEN.search(unit)
+            )
+            assert not flagged, f'the scan wrongly flags a sanctioned unit: {unit}'
+
+
+# =============================================================================
 # The CLI verb transports the verdict end-to-end
 # =============================================================================
 
