@@ -1287,7 +1287,14 @@ FOR each step_id in manifest.phase_6.steps:
      There is no hand-written `[STEP] … Completed step:` emit in this loop. **The completion line is
      FUSED to the handshake: `manage-status mark-step-done` emits it as a side effect of every
      terminal write for a `6-finalize` step** (`_cmd_mark_step.py::_emit_completion_marker`), so
-     recording a step's terminal outcome and emitting its completion line are ONE action. The
+     recording a step's terminal outcome and emitting its completion line are ONE action. The line
+     it emits is `[STEP] (plan-marshall:phase-6-finalize) Completed step: {step}
+     (outcome={done|skipped|loop_back|failed})` — it carries the outcome because the write already
+     holds it, so the log says not just that a step finished but how. That shape is owned by the
+     shared `_step_completion_marker` module the producer formats from and the `plan-retrospective`
+     dispatch audit reads with; the elided `[STEP] … Completed step:` form used elsewhere in this
+     document is a reference to the same line by its stable prefix, not a second statement of its
+     shape. The
      step-completion invariant (the handshake) and the operational-log line cannot diverge: a single
      write produces both, so a step cannot satisfy the invariant while leaving no trace in the
      operational log.

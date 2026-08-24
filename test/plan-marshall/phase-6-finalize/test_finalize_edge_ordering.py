@@ -27,14 +27,22 @@ there is **no** producer-side marker, so read-BEFORE-produce is not derivable �
 ``reads: [metrics]`` is paired against ``record-metrics`` only by a human reading the
 prose.
 
-A THIRD, non-gate-relative edge family is derived at the end of this module: a
-**named-step adjacency** that no marker expresses, because its producer→consumer relation
-is a data dependency between three specific steps rather than a property either of them
-declares. ``project:finalize-step-era-stamp-fill`` resolves the ``PR-PENDING`` era-stamp
-sentinel to the real PR number, so it can only run once ``default:create-pr`` has produced
-that number, and it must run before ``default:ci-verify`` validates the tree that carries
-the correction. That is an ordering obligation stated in prose in the step's own doc and,
+A THIRD, non-gate-relative edge family is derived in this module: a **named-step
+adjacency** that no marker expresses, because its producer→consumer relation is a data
+dependency between three specific steps rather than a property either of them declares.
+``project:finalize-step-era-stamp-fill`` resolves the ``PR-PENDING`` era-stamp sentinel to
+the real PR number, so it can only run once ``default:create-pr`` has produced that
+number, and it must run before ``default:ci-verify`` validates the tree that carries the
+correction. That is an ordering obligation stated in prose in the step's own doc and,
 until this module derived it, asserted nowhere.
+
+A FOURTH family closes this module: the **push barrier**. ``default:push`` produces no
+commit — it asserts a clean tree and ships the converged branch — so every step ordered
+below it has its commits shipped BY it, and must not push on its own. That relation is
+derived from the two orders alone (no marker declares it), and the obligation it carries
+is asserted against the step DOCUMENT BODIES rather than their frontmatter: a step below
+the barrier must prescribe no git push. This is the population-level generalisation of a
+defect found in exactly one step, so the fix cannot regress into a sibling.
 
 The population is DERIVED from discovery, never hardcoded — a step added later is
 covered automatically — and this module deliberately asserts **no cardinality literal**:
@@ -53,6 +61,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import extension_discovery
+from _push_prescription_scan import scan_push_prescriptions
 from extension_discovery import find_implementors
 
 #: The canonical ext-point whose implementors are the finalize steps.
@@ -424,4 +433,129 @@ def test_era_stamp_fill_runs_between_pr_creation_and_ci_verification():
         f'{_PR_PRODUCER} (order {pr_order}) — the PR number it resolves the PR-PENDING '
         f'sentinel to does not exist before then — and strictly before {_CI_CONSUMER} '
         f'(order {ci_order}), so the rewritten era stamp is on the branch CI reads.'
+    )
+
+
+# ---------------------------------------------------------------------------
+# The push-barrier edge family — who may ship a commit, derived from the order
+# ---------------------------------------------------------------------------
+
+#: The single push barrier. Its order is the second ordering threshold in the
+#: pipeline, read off discovery exactly as the merge gate's is — never a literal.
+_PUSH_BARRIER = 'default:push'
+
+
+def _push_barrier_order() -> int | None:
+    for record in _finalize_records():
+        if record.get('name') == _PUSH_BARRIER:
+            order = record.get('order')
+            return order if isinstance(order, int) else None
+    return None
+
+
+def derive_push_barrier_edges() -> list[dict]:
+    """Derive the ``step → barrier`` edges the push contract implies.
+
+    ``default:push`` is a *pure push barrier*: it produces no commit, asserts a
+    clean tree, and ships the converged branch. Every step ordered BELOW it
+    therefore has its commits shipped BY it, which is the producer→consumer
+    relation this family expresses — and the obligation that falls out of it is
+    that such a step must not push on its own. A second push of the same branch
+    from a lower order is outside the single-push contract the barrier exists to
+    hold.
+
+    The edge is derived, not declared: no frontmatter marker says "I am below
+    the push barrier". The relation follows from the two orders alone, so the
+    population is every discovered step whose ``order`` is an int strictly less
+    than the barrier's. Each edge carries the step's document path so the
+    body-level assertion below reads the same population the derivation
+    produced.
+    """
+    barrier_order = _push_barrier_order()
+    if barrier_order is None:
+        return []
+    edges: list[dict] = []
+    for record in _finalize_records():
+        name, order = record.get('name'), record.get('order')
+        if name == _PUSH_BARRIER or not isinstance(order, int):
+            continue
+        if order < barrier_order:
+            edges.append({
+                'producer': name,
+                'producer_order': order,
+                'consumer': _PUSH_BARRIER,
+                'consumer_order': barrier_order,
+                'path': record['path'],
+            })
+    return edges
+
+
+def test_push_barrier_is_discoverable():
+    """The push threshold is READ from discovery, so the family below is non-vacuous."""
+    assert _push_barrier_order() is not None, (
+        f'{_PUSH_BARRIER} was not found among the discovered {_EXT_POINT} implementors, '
+        'so no push-barrier order could be resolved and every edge derived from it '
+        'would be vacuous.'
+    )
+
+
+def test_push_barrier_edge_set_is_derived_and_non_empty():
+    """The derivation resolves a non-empty below-the-barrier population."""
+    edges = derive_push_barrier_edges()
+    assert edges, (
+        f'The push-barrier edge derivation returned an EMPTY set: no discovered '
+        f'{_EXT_POINT} implementor carries an int order strictly below '
+        f'{_PUSH_BARRIER}. Either discovery resolved nothing or the barrier sorts '
+        'first, and the body-level assertion below would pass without examining a '
+        'single step.'
+    )
+
+
+def test_no_step_below_the_push_barrier_prescribes_a_push():
+    """GATE: a step whose commit the barrier ships must not push it itself.
+
+    This is the population-level negative control for the D6 fix. The fix
+    removed the push from one step — ``default:architecture-refresh`` at order
+    10, which the barrier at order 11 immediately follows — and a fix pinned to
+    that one document would leave the same defect free to reappear in any of its
+    siblings. This assertion generalises the obligation from that instance to
+    the whole below-the-barrier population, derived from the orders rather than
+    listed.
+
+    Both populations the verdict rests on are published in the failure message
+    and asserted non-zero: the number of step documents examined, and the number
+    of fenced command lines read across them. A derivation that resolved no
+    steps, or a scan that resolved no commands, is an unresolved measurement —
+    it fails here rather than reporting a clean result it never made.
+
+    Steps ordered ABOVE the barrier are deliberately out of scope: no later
+    barrier ships their edits, so they must self-push.
+    ``project:finalize-step-era-stamp-fill`` (order 21) is the reference case.
+    """
+    edges = derive_push_barrier_edges()
+    offenders: list[str] = []
+    commands_examined = 0
+
+    for edge in edges:
+        text = Path(edge['path']).read_text(encoding='utf-8')
+        pushes, examined = scan_push_prescriptions(text)
+        commands_examined += examined
+        for line in pushes:
+            offenders.append(
+                f"{edge['producer']} (order {edge['producer_order']}): {line!r}"
+            )
+
+    assert edges, 'No step documents were examined — the verdict would be vacuous.'
+    assert commands_examined > 0, (
+        f'The push scan read {len(edges)} step document(s) below {_PUSH_BARRIER} but '
+        'resolved 0 fenced command lines across all of them, so no document was '
+        'actually searched and a clean result would be vacuous.'
+    )
+    assert not offenders, (
+        f'{len(offenders)} push prescription(s) found in step documents ordered below '
+        f'{_PUSH_BARRIER} (examined {len(edges)} step document(s), '
+        f'{commands_examined} fenced command line(s)). {_PUSH_BARRIER} is a pure push '
+        f'barrier that ships the converged branch, so a step below it that pushes on '
+        f'its own pushes the same branch a second time, outside the single-push '
+        f'contract. Offenders: {offenders}'
     )

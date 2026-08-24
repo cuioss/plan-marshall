@@ -39,10 +39,17 @@ def _dispatch_line(role: str, caller: str = 'plan-marshall:phase-6-finalize') ->
     )
 
 
-def _step_completed_line(step: str) -> str:
+def _step_completed_line(step: str, outcome: str | None = 'done') -> str:
+    """One completion line, in the WIDENED form the producer emits today.
+
+    ``outcome=None`` renders the pre-widening form instead. That form is not
+    legacy trivia for this consumer: a retrospective reads work logs written by
+    earlier runs, so both shapes appear in the real corpus and both must count.
+    """
+    suffix = f' (outcome={outcome})' if outcome is not None else ''
     return (
         f'[{_TS}] [INFO] [bbbbbb] [STEP] (plan-marshall:phase-6-finalize) '
-        f'Completed step: {step}'
+        f'Completed step: {step}{suffix}'
     )
 
 
@@ -291,6 +298,49 @@ def test_sparse_channel_lowers_confidence_to_none(tmp_path, monkeypatch):
     assert int(channel['dispatch_line_count']) == 0
     assert int(channel['completion_count']) == 2
     assert int(channel['dispatched_step_count']) == 1
+
+
+def test_completion_count_is_unchanged_by_the_outcome_widening(tmp_path, monkeypatch):
+    """The widened marker counts exactly as the pre-widening one did.
+
+    ``completion_count`` is the D3 denominator: the dispatch/completion ratio and
+    the confidence grade both divide by it. A read pattern that stopped matching
+    one of the two shapes would not fail loudly — it would silently under-count,
+    inflate the ratio, and grade a sparse channel as healthy (or, against a wholly
+    historical corpus, divide by zero completions and report ``None``).
+
+    Both shapes are therefore counted here over otherwise-identical logs, and the
+    two counts are asserted EQUAL rather than each against a literal — the claim
+    is parity, so parity is what is checked.
+    """
+    steps = ['default:finalize-step-simplify', 'default:push', 'default:create-pr']
+
+    def _count(plan_id: str, work_lines: list[str]) -> int:
+        # A distinct plan_id per call: the two logs are otherwise identical, and
+        # reusing one id would collide on the plan directory.
+        written = _write_plan(
+            tmp_path,
+            monkeypatch,
+            plan_id=plan_id,
+            work_lines=work_lines,
+            execution_log=[],
+            phase_steps={},
+        )
+        return int(_run(written)['channel_completeness']['completion_count'])
+
+    widened = _count('widened-marker', [_step_completed_line(s) for s in steps])
+    narrow = _count('narrow-marker', [_step_completed_line(s, outcome=None) for s in steps])
+
+    assert widened == len(steps), (
+        f'the widened completion line is not being counted: expected {len(steps)}, '
+        f'got {widened}. The audit would under-report every current run.'
+    )
+    assert narrow == widened, (
+        f'the pre-widening line counts differently ({narrow}) from the widened one '
+        f'({widened}). A retrospective reads older work logs, so a pattern that '
+        f'matches only one shape silently under-counts a whole corpus and grades '
+        f'the dispatch/completion ratio against the wrong denominator.'
+    )
 
 
 def test_full_channel_is_nominal_confidence(tmp_path, monkeypatch):

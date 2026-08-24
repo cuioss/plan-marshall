@@ -79,6 +79,7 @@ from _status_query import (
     cmd_title_token,
     cmd_update_phase,
 )
+from _step_completion_marker import COMPLETION_MARKER_TEMPLATE
 from file_ops import output_toon, safe_main
 from input_validation import (
     add_field_arg,
@@ -437,8 +438,10 @@ def main() -> int:
         '--no-completion-log',
         action='store_true',
         help=(
-            'Suppress the fused [STEP] Completed step: work-log line this call would '
-            'otherwise emit for a phase-6-finalize step (see _cmd_mark_step.py). Pass it '
+            f'Suppress the fused "{COMPLETION_MARKER_TEMPLATE}" work-log line this call '
+            'would otherwise emit for a phase-6-finalize step (see _cmd_mark_step.py). '
+            'The shape is quoted from the shared marker constant the producer formats '
+            'from, so this text cannot describe a line that is no longer emitted. Pass it '
             'ONLY on a call that RE-STAMPS an already-emitted step outcome — the '
             'phase-6-finalize item-5f head_at_completion re-stamp — so the completion line '
             'is emitted exactly once per step rather than once per mark-step-done call. A '

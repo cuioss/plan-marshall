@@ -141,6 +141,18 @@ The declaration (a field the step's input table marks Required) and the carriage
 
 `test/plan-marshall/phase-6-finalize/test_step_prompt_fields_contract.py` asserts all three scopes, deriving the step population from `find_implementors()` and each obligation from the step's own frontmatter — so a step that declares `requires_prompt_fields` later is covered with no edit to the test. It also **asserts how far each scope reaches**, because the first two quantify over a small minority of the implementor set and a bare "∀ over every step" would otherwise read as whole-population coverage.
 
+##### Identifying the input table — the header convention is normative
+
+The Input-table-agreement direction quantifies over "the step's prompt-body-field input table", so the direction is only as well-defined as the rule that picks that one table out of a step doc that may carry several. That rule is a **literal first-header-cell match**, and it is stated here as a requirement rather than left to the guard to imply:
+
+> A markdown table in a step doc is that step's **prompt-body-field input table** if and only if its **first header cell**, stripped of markdown emphasis and lowercased, is `prompt-body field`.
+
+**What "stripped of markdown emphasis" means, exactly.** Emphasis is a **matched pair of delimiters wrapping the whole cell**, and markdown spells that pair with either character: `*Prompt-body field*`, `_Prompt-body field_`, `**Prompt-body field**`, and `__Prompt-body field__` are all the same header cell and all match. Both characters count — a rule that honoured only one would let a table whose header is emphasised the other way satisfy this prose while going unselected, which is the silence described below wearing a conformant header. Only a matched pair is stripped: an unpaired delimiter is part of the cell text, so a header cell reading `_prompt-body field` (one leading underscore, no closing one) is a different string and does **not** match.
+
+A step doc **MUST** title its input table's first column `Prompt-body field` for its declaration to be enforced. The consequence of not doing so is silence, not failure: a step whose input table is headed anything else is not matched by the Input-table-agreement direction at all, its `Required` rows bind nothing, and the step passes the conformance guard while declaring whatever it likes. Because that direction is the only one reaching a generic-template-dispatched step — and most implementors are dispatched that way — an unmatched header removes the step from the only scope that actually holds it.
+
+**Why the discriminator is the header and not the `Required` column.** The obvious-looking alternative — "any table with a `Required` column is the input table" — is wrong, and wrong in the expensive direction. A step doc's **CLI parameter table** carries a `Required` column too, for exactly the same honest reason: some flags are required and some are not. Folding those tables into the scope would make the guard read every documented command-line flag as an undeclared prompt-body field and demand it appear in `requires_prompt_fields`, flagging conformant steps en masse. The `Required` column is a property shared by several kinds of table in these docs; the first header cell is what names which kind a table is. That is why the header carries the discrimination.
+
 **The exempt set — the field names a step never has to declare.** It has three parts, and it is ONE set with ONE definition (`_EXEMPT_FIELDS` in the guard module); a second, competing list is what let this contract and the workflow contract disagree about `caller_phase`:
 
 | Part | Names | Why exempt |

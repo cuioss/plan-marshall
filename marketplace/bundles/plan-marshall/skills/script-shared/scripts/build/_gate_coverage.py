@@ -414,7 +414,7 @@ def render_coverage_summary(boundary: CoverageBoundary) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Parity population — the derived comparison set (D1 / D6)
+# Parity population — the recorded comparison set
 # ---------------------------------------------------------------------------
 
 

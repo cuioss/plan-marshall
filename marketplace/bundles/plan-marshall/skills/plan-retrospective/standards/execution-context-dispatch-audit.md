@@ -44,7 +44,7 @@ The audit also reads `logs/work.log` for raw `Task: general-purpose` text patter
 Two additional surfaces support the coverage check (`dispatch_coverage`):
 
 - **Surface C — `status.metadata.phase_steps["6-finalize"]` outcome records**: the per-step terminal-outcome map written by `manage-status mark-step-done`. Each step carries an `outcome` (`done` / `skipped` / `failed` / `loop_back`). A step present here reached a terminal outcome and is a member of the coverage population.
-- **Surface E — `execution.toon` `execution_log[]` per-step token records**: `record-step` writes one row per finalize step — dispatched OR inline — carrying `step_id`, `phase`, and `total_tokens`. A **non-zero** `total_tokens` is written only when the step ran as a dispatched Task agent; an inline step records a measured `0`. This is the **second, independent evidence source** the coverage check consults before ever concluding a step ran inline — the completion line (`[STEP] … Completed step:`) fires for inline steps too and so is a completion witness, never a dispatch discriminator. The dispatched/inline *classification roster* (`phase-6-finalize/SKILL.md` § "Dispatched workflows vs inline steps") is therefore **not** consulted by the detector: the token record is the population-derived qualifier, which avoids a hand-maintained mirror of a derived set (the archetype the programme forbids). A conditionally-dispatching step that legitimately ran inline shows a measured-zero record and lands in `ran_inline` by construction, closing the false-positive direction.
+- **Surface E — `execution.toon` `execution_log[]` per-step token records**: `record-step` writes one row per finalize step — dispatched OR inline — carrying `step_id`, `phase`, and `total_tokens`. A **non-zero** `total_tokens` is written only when the step ran as a dispatched Task agent; an inline step records a measured `0`. This is the **second, independent evidence source** the coverage check consults before ever concluding a step ran inline — the completion line (`[STEP] … Completed step: {step} (outcome={outcome})`) fires for inline steps too and so is a completion witness, never a dispatch discriminator. That line's shape is owned by the shared `_step_completion_marker` module, which this audit's read pattern is bound to rather than re-typing; the pattern leaves the `(outcome=…)` suffix OPTIONAL so completion lines in work logs written before the outcome was carried still count, since a retrospective necessarily reads older corpora and a suffix-requiring pattern would report those runs as having zero completions. The dispatched/inline *classification roster* (`phase-6-finalize/SKILL.md` § "Dispatched workflows vs inline steps") is therefore **not** consulted by the detector: the token record is the population-derived qualifier, which avoids a hand-maintained mirror of a derived set (the archetype the programme forbids). A conditionally-dispatching step that legitimately ran inline shows a measured-zero record and lands in `ran_inline` by construction, closing the false-positive direction.
 
 ## Detection Logic
 
@@ -96,7 +96,7 @@ dispatch_coverage:
   missing_dispatch_emission: N
 channel_completeness:
   dispatch_line_count: N
-  completion_count: N            # [STEP] … Completed step: lines
+  completion_count: N            # [STEP] … Completed step: {step} (outcome={outcome}) lines
   dispatched_step_count: N
   ratio: N|null                  # dispatch_line_count / completion_count
   confidence: {none|low|nominal}

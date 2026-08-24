@@ -169,3 +169,58 @@ def test_unchanged_recall_does_not_re_emit(plan_context):
 
     lines = _completion_lines(plan_id)
     assert len(lines) == 1, f'an unchanged re-call must not re-emit, got {lines}'
+
+
+# ---------------------------------------------------------------------------
+# The line says HOW a step finished, not merely THAT it did
+# ---------------------------------------------------------------------------
+
+
+def test_a_failed_firing_and_a_done_firing_are_distinguishable(plan_context):
+    """Matched control: the outcome is what tells the two firings apart.
+
+    RED before the widening. The marker named only the step, so a ``failed``
+    settlement and a ``done`` settlement of the same step emitted BYTE-IDENTICAL
+    lines: a reader counting completions in the work log could see that a step had
+    settled but not whether it had succeeded, and had to re-open
+    ``status.metadata.phase_steps`` to find out. The writer held the outcome the
+    whole time.
+
+    The two firings use the SAME step key in two plans, so the step name is held
+    constant and the outcome is the ONLY thing that can distinguish the lines —
+    two different step names would have differed before the widening too, and the
+    control would have proved nothing.
+    """
+    _make_plan('fuse-outcome-done')
+    _make_plan('fuse-outcome-failed')
+
+    assert _mark('fuse-outcome-done', '6-finalize', 'step-z', 'done')['status'] == 'success'
+    assert _mark('fuse-outcome-failed', '6-finalize', 'step-z', 'failed')['status'] == 'success'
+
+    done_lines = _completion_lines('fuse-outcome-done')
+    failed_lines = _completion_lines('fuse-outcome-failed')
+
+    # Count parity: the widening changed the line's CONTENT, never how many are
+    # emitted. The dispatch audit's completion_count is derived from this count.
+    assert len(done_lines) == 1, f'expected one done line, got {done_lines}'
+    assert len(failed_lines) == 1, f'expected one failed line, got {failed_lines}'
+
+    done_line, failed_line = done_lines[0], failed_lines[0]
+
+    assert done_line != failed_line, (
+        f'a done firing and a failed firing of the same step emitted identical '
+        f'lines ({done_line!r}), so the work log records THAT the step settled but '
+        f'not HOW — the defect this widening closes.'
+    )
+    assert 'outcome=done' in done_line, done_line
+    assert 'outcome=failed' in failed_line, failed_line
+
+    # ...and the outcome is the ONLY difference. Were anything else to vary, the
+    # inequality above could hold for a reason that has nothing to do with the
+    # outcome, and this control would be passing by accident.
+    assert done_line.replace('outcome=done', '<O>') == failed_line.replace(
+        'outcome=failed', '<O>'
+    ), (
+        f'the two lines differ somewhere other than the outcome:\n'
+        f'  done:   {done_line}\n  failed: {failed_line}'
+    )

@@ -179,9 +179,9 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
 
 Parse `status`, `regressive` (bool), and `violations[]` from the TOON output. `{baseline_dir}` is the same extracted-baseline directory Step 3b passed to `diff-modules`.
 
-- **`status: error`** → the regression check itself failed (e.g., the baseline directory cannot be read, the project-architecture descriptor is malformed, or a required field is absent). Treat this the same as `regressive: true`: do NOT commit, do NOT push. Log an ERROR carrying the TOON `error` and `detail` fields, mark the step `outcome failed`, and return — the delta is left uncommitted in the worktree.
+- **`status: error`** → the regression check itself failed (e.g., the baseline directory cannot be read, the project-architecture descriptor is malformed, or a required field is absent). Treat this the same as `regressive: true`: do NOT commit. Log an ERROR carrying the TOON `error` and `detail` fields, mark the step `outcome failed`, and return — the delta is left uncommitted in the worktree.
 - **`regressive: false`** → the delta is benign (the module index shifted, project identity intact). Proceed to 3d and commit.
-- **`regressive: true`** → do NOT commit, do NOT push. The regenerated descriptor lost curated project identity. Log an ERROR naming the violated fields, leave the regressive descriptor uncommitted in the worktree, mark the step `outcome failed`, and return — do NOT abort the finalize pipeline (the next plan retries from a clean state once the source path is repaired):
+- **`regressive: true`** → do NOT commit. The regenerated descriptor lost curated project identity. Log an ERROR naming the violated fields, leave the regressive descriptor uncommitted in the worktree, mark the step `outcome failed`, and return — do NOT abort the finalize pipeline (the next plan retries from a clean state once the source path is repaired):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -214,11 +214,7 @@ git -C {worktree_path} commit -m "chore(architecture): refresh derived data afte
 
 The commit message intentionally does NOT name the affected modules — the modules list is derivable from the commit's diff and from the diff-modules log line above. Naming them inline would duplicate the audit trail and inflate the subject when many modules change.
 
-After the commit, push immediately so the refresh lands on the same PR as the plan's substantive commits:
-
-```bash
-git -C {worktree_path} push
-```
+**This step does NOT push.** It commits and stops. `default:push` (order 11) is a **pure push barrier** that runs immediately after this step (order 10) and ships the converged branch — including this commit — so the refresh lands on the same PR as the plan's substantive commits without this step pushing anything. Pushing here would be a second push of the same branch from a step the single-push contract does not authorise; see `push.md`, which states that the barrier "asserts the tree is clean and pushes the converged branch to remote" and "produces NO commit". The division is exact: this step produces the commit, the barrier ships it.
 
 Log the artifact:
 
@@ -272,48 +268,24 @@ This branch is intentional: enabling Tier 1 without Tier 0 produces a re-enrichm
 
 With `affected_modules` non-empty and `change_type` not in the shortcut list, dispatch by the run-config tier-1 value:
 
-#### `disabled` — note in PR and exit
+#### `disabled` — record the deferral and exit
 
-The user has chosen to never re-enrich automatically. Record a note in the PR body so a future contributor (or `/marshall-steward` Step 13) knows enrichment is pending. There is no atomic append verb on the `ci` surface — `pr edit` REPLACES the body from a prepared scratch file. The pattern is therefore: allocate a scratch body path with `prepare-body --for edit`, write the combined body (existing body + the re-enrichment note) into that path, then `pr edit` to push it.
+The user has chosen to never re-enrich automatically, so the affected-module list must be recorded somewhere a future contributor (or `/marshall-steward` Step 13) will find it.
 
-`{pr_number}` is the PR number resolved earlier in finalize by the `create-pr` step's outcome record.
+> **⚠ Owed follow-up — the PR-body note cannot be written from this step, and is not prescribed here.**
+> This branch previously prescribed `ci pr view` → `ci pr prepare-body --for edit` → `ci pr edit --pr-number {pr_number}`. **No PR exists when this step runs.** `default:architecture-refresh` is order **10**; `default:create-pr` is order **20**. There is therefore no `{pr_number}` to resolve at order 10 — the "resolved earlier in finalize by the `create-pr` step's outcome record" the old text relied on refers to a step that has not run yet — and every one of those three calls would fail against a PR that does not exist.
+>
+> The fix is a **re-homing**, not a rewrite of this branch: the deferred-enrichment note belongs in a surface that runs after `default:create-pr` (order 20) — either appended by a post-`create-pr` step, or carried as a fact this step records and a later step consumes when it edits the PR body. Re-homing it is deliberately **out of scope here** and is recorded as owed rather than left standing as a prescription that cannot succeed. Until it lands, the deferral is recorded in the decision log and the step's `display_detail` (below), both of which are readable without a PR.
 
-First read the current PR body so the note is appended rather than overwriting it. `pr view` accepts **at most one** of `--pr-number` / `--head`; `{pr_number}` is already resolved above, so key on it (the branch name is not needed, and would stop resolving if the platform had deleted the head branch):
-
-```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
-  pr view --pr-number {pr_number}
-```
-
-Allocate the scratch body path (the call returns the `body_path` to write into):
-
-```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
-  pr prepare-body --plan-id {plan_id} --for edit
-```
-
-Write the combined content — the existing body followed by the re-enrichment note — into the returned `body_path` via the Write tool:
-
-```text
-Write(file_path="{body_path}", content="{existing_body}\n\nArchitecture re-enrichment recommended for: {affected_modules_csv}. Run /marshall-steward Step 13 to refresh.")
-```
-
-Push the edited body:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
-  pr edit --pr-number {pr_number} --plan-id {plan_id}
-```
-
-`{affected_modules_csv}` is the sorted, comma-separated module-name list (e.g., `oauth-sheriff-core, oauth-sheriff-quarkus`). Log the decision:
+Record the deferral in the decision log. `{affected_modules_csv}` is the sorted, comma-separated module-name list (e.g., `oauth-sheriff-core, oauth-sheriff-quarkus`):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-6-finalize:architecture-refresh) Tier 1 disabled — appended re-enrichment note to PR body"
+  --message "(plan-marshall:phase-6-finalize:architecture-refresh) Tier 1 disabled — re-enrichment deferred for: {affected_modules_csv}. Run /marshall-steward Step 13 to refresh."
 ```
 
-Continue to Step 5.
+Continue to Step 5 (Branch F).
 
 #### `auto` — run re-enrichment without prompting
 
@@ -354,9 +326,7 @@ git -C {worktree_path} add .plan/project-architecture
 git -C {worktree_path} commit -m "chore(architecture): re-enrich affected modules after {plan-title}"
 ```
 
-```bash
-git -C {worktree_path} push
-```
+As in Tier 0, this step does not push — the order-11 `default:push` barrier ships this commit with the rest of the converged branch.
 
 Log the artifact:
 
@@ -370,7 +340,7 @@ Continue to Step 5.
 
 #### `prompt` (default) — AskUserQuestion gate
 
-Ask the user whether to re-enrich now or defer. Use the AskUserQuestion shape below verbatim — the option labels are part of the documented UX and are referenced by `marshall-steward/references/wizard-flow.md` (Deliverable 4) so the configuration prompt and the runtime prompt stay aligned:
+Ask the user whether to re-enrich now or defer. Use the AskUserQuestion shape below verbatim — the option labels are part of the documented UX:
 
 ```text
 Question: "Architecture re-enrichment recommended for: {affected_modules_csv}. Re-enrich now?"
@@ -379,7 +349,7 @@ Options:
   - "Skip — note in PR"
 ```
 
-On `Re-enrich now`: follow the `auto` branch above (enrich + commit + push) verbatim, then log:
+On `Re-enrich now`: follow the `auto` branch above (enrich + commit; no push — the order-11 barrier ships it) verbatim, then log:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -387,12 +357,14 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "(plan-marshall:phase-6-finalize:architecture-refresh) Tier 1 prompt — user accepted, re-enriched {affected_module_count} modules"
 ```
 
-On `Skip — note in PR`: follow the `disabled` branch above (PR body append) verbatim, then log:
+The option label still says "note in PR" even though no PR-body note can be written at this order. Renaming it belongs with the re-homing that makes the note landable again, not before it; until then the label names the intent and the owed follow-up above names the gap.
+
+On `Skip — note in PR`: follow the `disabled` branch above (record the deferral in the decision log; no PR-body write is possible at this order — see the owed follow-up there) verbatim, then log:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-6-finalize:architecture-refresh) Tier 1 prompt — user declined, appended note to PR body"
+  --message "(plan-marshall:phase-6-finalize:architecture-refresh) Tier 1 prompt — user declined, re-enrichment deferred"
 ```
 
 Continue to Step 5.
@@ -448,13 +420,13 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   --display-detail "refreshed + re-enriched ({affected_module_count} modules)"
 ```
 
-**Branch F — Tier 0 commit, Tier 1 deferred to PR note (disabled or prompt-declined)**:
+**Branch F — Tier 0 commit, Tier 1 deferred (disabled or prompt-declined)**:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   mark-step-done --plan-id {plan_id} --phase 6-finalize \
   --step architecture-refresh --outcome done \
-  --display-detail "refreshed; re-enrichment deferred to PR note"
+  --display-detail "refreshed; re-enrichment deferred"
 ```
 
 The `--display-detail` strings are subject to the output-template contract (≤80 chars, single line, no trailing period, plain ASCII) — see `phase-6-finalize/SKILL.md` "Required termination" and `standards/output-template.md` for the full convention.
@@ -466,9 +438,8 @@ The `--display-detail` strings are subject to the output-template contract (≤8
 | `git archive origin/main .plan/project-architecture` exits non-zero | `origin/main` carries no committed architecture baseline (the pathspec matched nothing). This is NOT a failure — treat as Branch A: mark the step done with `--display-detail "skipped — no committed origin/main architecture baseline"`, return without running discover / diff / commit. |
 | `discover --force` returns `status: error` | Log ERROR, mark the step `outcome failed` with `--display-detail "discover failed — see work.log"`, return — do NOT abort the finalize pipeline. The next plan will retry from a clean state. |
 | `diff-modules --pre` returns `error: snapshot_not_found` | The extracted baseline lacked `_project.json` — equivalent to no committed baseline. Treat as Branch A (NOT a failure): mark the step done with `--display-detail "skipped — no committed origin/main architecture baseline"`. |
-| `descriptor-regression-check` returns `regressive: true` | The regenerated descriptor lost curated project identity (name overwritten with the worktree/plan-id basename, or description/description_reasoning blanked). Do NOT commit or push. Log ERROR, mark the step `outcome failed` with `--display-detail "regressive descriptor delta refused — {fields}"`, leave `.plan/project-architecture` uncommitted, and return — do NOT abort the finalize pipeline. The next plan retries from a clean state once the source path is repaired. |
-| `git push` fails | Log ERROR, mark the step `outcome failed` with `--display-detail "push failed — see work.log"`. The `automated-review` step will not see the architecture commit; the user can push manually before merging. |
-| `architecture enrich` fails | Log ERROR, fall back to Branch F (PR note) — do NOT mark the whole step failed. The deterministic refresh has already shipped; the user can re-enrich manually via `/marshall-steward` Step 13. Mark the step done with `--display-detail "refreshed; enrich failed — see work.log"`. |
+| `descriptor-regression-check` returns `regressive: true` | The regenerated descriptor lost curated project identity (name overwritten with the worktree/plan-id basename, or description/description_reasoning blanked). Do NOT commit. Log ERROR, mark the step `outcome failed` with `--display-detail "regressive descriptor delta refused — {fields}"`, leave `.plan/project-architecture` uncommitted, and return — do NOT abort the finalize pipeline. The next plan retries from a clean state once the source path is repaired. |
+| `architecture enrich` fails | Log ERROR, fall back to Branch F (deferral recorded in the decision log) — do NOT mark the whole step failed. The deterministic refresh has already shipped; the user can re-enrich manually via `/marshall-steward` Step 13. Mark the step done with `--display-detail "refreshed; enrich failed — see work.log"`. |
 | `AskUserQuestion` aborted | Treat the same as `Skip — note in PR` (Branch F). The user actively backing out is informationally equivalent to declining the prompt. |
 
 All failures log via the standard work-log error template:
@@ -523,7 +494,7 @@ else:
             return    # leave .plan/project-architecture uncommitted
         git -C {worktree_path} add .plan/project-architecture
         git -C {worktree_path} commit -m "chore(architecture): refresh derived data after {plan-title}"
-        git -C {worktree_path} push
+        # no push — the order-11 default:push barrier ships this commit
         log artifact
 
 # --- Tier 1 ---
@@ -544,11 +515,11 @@ if len(affected) == 0:            # tier_0 enabled but no added/removed
 
 switch tier_1:
     case "disabled":
-        existing := ci pr view --head {worktree_branch}
-        body_path := ci pr prepare-body --plan-id {plan_id} --for edit
-        write "{existing}\n\nArchitecture re-enrichment recommended for: {csv}. Run /marshall-steward Step 13 to refresh." to body_path
-        ci pr edit --pr-number {pr_number} --plan-id {plan_id}
-        mark-step-done detail="refreshed; re-enrichment deferred to PR note"
+        # No PR exists at order 10 (default:create-pr is order 20), so no PR-body
+        # write is prescribed here. Re-homing the note to a post-create-pr surface
+        # is recorded as an owed follow-up in the `disabled` branch above.
+        log decision: "Tier 1 disabled — re-enrichment deferred for: {csv}"
+        mark-step-done detail="refreshed; re-enrichment deferred"
 
     case "auto":
         for each module M in affected:
@@ -559,7 +530,7 @@ switch tier_1:
             architecture --project-dir {worktree_path} enrich skills-by-profile --module M --reasoning ...
         git -C {worktree_path} add .plan/project-architecture
         git -C {worktree_path} commit -m "chore(architecture): re-enrich affected modules after {plan-title}"
-        git -C {worktree_path} push
+        # no push — the order-11 default:push barrier ships this commit
         mark-step-done detail="refreshed + re-enriched ({n} modules)"
 
     case "prompt":              # default
