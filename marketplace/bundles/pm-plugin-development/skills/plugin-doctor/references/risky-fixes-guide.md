@@ -59,8 +59,7 @@ Apply this fix?
 ## Handling User Responses
 
 The snippets below show control flow only. `apply_single_fix` is a real entry
-point (`_cmd_apply.py`); the recording and reporting steps are shown as comments
-because plugin-doctor's scripts define no logging or reporting helper to call.
+point (`_cmd_apply.py`); the recording and reporting steps are shown as comments.
 
 ### Yes - Apply Fix
 
