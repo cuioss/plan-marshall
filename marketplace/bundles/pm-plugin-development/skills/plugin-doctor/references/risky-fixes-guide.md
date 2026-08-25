@@ -144,6 +144,6 @@ If risky fix causes problems:
 
 ## See Also
 
-- `fix-catalog.md` - All fix types reference with detection and fix strategies
+- `fix-catalog.md` - Fix types reference with detection and fix strategies
 - `safe-fixes-guide.md` - Auto-applicable fix process
 - `verification-guide.md` - Verify fixes worked

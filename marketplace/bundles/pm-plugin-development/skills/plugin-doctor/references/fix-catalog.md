@@ -1,12 +1,16 @@
 # Fix Catalog Reference
 
-Comprehensive catalog of all fixable issue types, their categorization, and fix strategies.
+Catalog of fixable issue types, their categorization, and fix strategies.
 
 > **Provenance**: Every fix below is keyed on a rule emitted by an analyzer module. The source / classification / lesson citation for each rule lives in [rule-provenance.md](rule-provenance.md). New fixes must have a matching provenance entry.
 
 ## Fixable Issue Types Overview
 
-This catalog documents all issues that can be fixed by the plugin-doctor skill, organized by category.
+This catalog documents fixable issue types by category. It is **not** an
+enumeration of the fix-type population: the authoritative sets are
+`SAFE_FIX_TYPES` and `RISKY_FIX_TYPES` in `_doctor_shared.py`, with the
+auto-applicable subset registered in `_cmd_apply.py`'s `FIX_HANDLERS`. Several
+types in those sets have no section here.
 
 ## Safe Fix Types
 

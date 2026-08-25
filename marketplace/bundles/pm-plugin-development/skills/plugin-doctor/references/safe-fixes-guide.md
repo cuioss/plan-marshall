@@ -119,5 +119,5 @@ The other four `SIMPLICITY_*` rules (`SIMPLICITY_UNUSED_PARAMETER`, `SIMPLICITY_
 
 ## See Also
 
-- `fix-catalog.md` - Complete fix type reference with detection and fix strategies
+- `fix-catalog.md` - Fix type reference with detection and fix strategies
 - `verification-guide.md` - Verify fixes worked
