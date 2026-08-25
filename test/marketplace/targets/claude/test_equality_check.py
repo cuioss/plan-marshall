@@ -13,7 +13,11 @@ from pathlib import Path
 import pytest
 
 from marketplace.targets.claude.emitter import iter_bundle_dirs
-from marketplace.targets.claude.equality_check import check_bundle, run_equality_check
+from marketplace.targets.claude.equality_check import (
+    _ARRAY_FIELDS,
+    check_bundle,
+    run_equality_check,
+)
 
 
 def _write(path: Path, content: str) -> None:
@@ -356,7 +360,7 @@ def test_undecodable_bytes_in_an_emitted_plugin_json_return_the_diagnostic(
     assert result.unusable_target_bundles == ['demo']
 
 
-@pytest.mark.parametrize('field_name', ['agents', 'commands', 'skills'])
+@pytest.mark.parametrize('field_name', _ARRAY_FIELDS)
 def test_a_non_list_array_field_returns_the_diagnostic(
     clean_marketplace: tuple[Path, Path], field_name: str
 ):
@@ -386,7 +390,7 @@ def test_a_non_list_array_field_returns_the_diagnostic(
     assert result.unusable_target_bundles == ['demo']
 
 
-@pytest.mark.parametrize('field_name', ['agents', 'commands', 'skills'])
+@pytest.mark.parametrize('field_name', _ARRAY_FIELDS)
 def test_an_explicit_null_array_field_returns_the_diagnostic(
     clean_marketplace: tuple[Path, Path], field_name: str
 ):
@@ -426,7 +430,7 @@ def test_an_explicit_null_array_field_returns_the_diagnostic(
     assert 'generate.py --target claude' in result.summary
 
 
-@pytest.mark.parametrize('field_name', ['agents', 'commands', 'skills'])
+@pytest.mark.parametrize('field_name', _ARRAY_FIELDS)
 @pytest.mark.parametrize(
     'element',
     [{'path': './agents/demo-agent.md'}, 3],
