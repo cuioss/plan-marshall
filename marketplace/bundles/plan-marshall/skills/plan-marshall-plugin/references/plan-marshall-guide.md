@@ -327,10 +327,8 @@ mistake; the contract name is `module_testing`.
 
 When `skill-name` matches `plan-marshall-plugin`:
 
-1. **Standard analysis**: the structure, markdown, and reference checks that
-   `doctor-marketplace analyze` runs for any skill. The underlying modules
-   (`_analyze.py`, `_validate.py`) are not registered scripts and have no
-   sanctioned executor form, so they are not invoked by name here.
+1. **Standard analysis**: the structure, markdown, and link checks that
+   `doctor-marketplace analyze` runs for any skill.
 2. **Extension validation**: read the module against the two tables above. There
    is no invocation to run — see [§ No reachable validation script](#no-reachable-validation-script)
    for the validator that exists and why nothing reaches it.

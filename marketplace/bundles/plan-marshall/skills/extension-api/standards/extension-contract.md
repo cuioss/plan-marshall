@@ -201,7 +201,7 @@ The `bundle` field is a **reverse mapping** added automatically by `skill-domain
 
 - `get_skill_domains()` returns valid structure with `domain.key`, `domain.name`, `profiles`
 - Required profiles exist (`core`, `implementation`, `module_testing`, `quality`) —
-  a contract requirement that **nothing checks**; see [§ Validation](#validation)
+  a contract requirement that **nothing checks**
 - Each profile has `defaults` and `optionals` lists — checked only for profiles
   whose category is recognised; an unrecognised name is warned about and skipped
 - Skill references (`bundle:skill`) point to existing registered skills

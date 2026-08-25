@@ -277,10 +277,7 @@ worked through in
 
 **Notation**: `pm-plugin-development:plugin-doctor:doctor-marketplace {subcommand}`
 
-**Internal Modules** (unregistered — no sanctioned executor form. `doctor-marketplace`
-reaches the four `_analyze_*` rule modules transitively, via `_doctor_analysis.py`
-and `_rule_registry`'s importlib descriptor load; it does not reach the three
-dispatchers at all):
+**Internal Modules** (unregistered — no sanctioned executor form):
 
 | Module | Purpose |
 |--------|---------|

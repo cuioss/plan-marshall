@@ -107,7 +107,7 @@ declaration this document requires does **not** bring the manifest into that
 population — the validator checks the field, it does not select on it.
 
 ⛔ **And runtime does not establish it either.** `load_extension_module()` catches
-every import failure, logs a WARNING, and returns `None`; `discover_all_extensions()`
+every failure, logs a WARNING, and returns `None`; `discover_all_extensions()`
 then omits the bundle. An invalid `extension.py` is not rejected — it silently
 stops existing, which is the same false-green shape as the empty-population call
 above.

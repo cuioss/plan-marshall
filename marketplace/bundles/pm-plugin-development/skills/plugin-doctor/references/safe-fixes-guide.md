@@ -43,7 +43,7 @@ When applying multiple safe fixes to same file:
 fixes = sorted(fixes, key=lambda f: FIX_PRIORITY.get(f['type'], 99))
 
 for fix in fixes:
-    result = apply_fix(fix, bundle_dir)
+    result = apply_single_fix(fix, bundle_dir, templates)
     if not result['success']:
         # Log error, continue with next fix
         continue
@@ -68,7 +68,8 @@ If fix fails mid-application:
 cp file.md.fix-backup file.md
 ```
 
-`fix apply` does this automatically on error.
+`apply_single_fix` does this automatically on error, so the `cp` above is a
+manual fallback rather than the normal procedure.
 
 ### Validation After Fix
 
