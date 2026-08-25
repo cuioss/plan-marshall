@@ -315,7 +315,7 @@ def test_maven_routed_arm_publishes_the_routed_jobs_count(capsys):
     def _job_log_parser(log_file, *args):
         return ([], None, 'SUCCESS')
 
-    emitted = _emit_maven_success(capsys, _job_log_parser, tests_run=4892)
+    emitted = _emit_maven_success(capsys, _job_log_parser, routed_tests_run=4892)
 
     assert emitted['tests_run'] == 4892
 

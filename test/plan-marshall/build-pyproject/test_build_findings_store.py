@@ -780,11 +780,12 @@ class TestPublishedCountIsTheExecutedCount:
     def test_a_propagated_count_wins_over_the_local_reparse(self, plan_context):
         """A count the PRODUCER measured beats one this renderer could re-derive.
 
-        The daemon-routed arm stamps the routed job's ``tests_run`` onto the
-        result, because on that arm the log this renderer would parse is the
-        daemon's JOB log — the inner wrapper's result TOON with none of the test
-        runner's output. Re-deriving from it publishes 0 for a run that executed
-        the whole suite, which is the boundary defect this pins closed.
+        The daemon-routed arm stamps the routed job's count onto the result as
+        ``routed_tests_run``, because on that arm the log this renderer would
+        parse is the daemon's JOB log — the inner wrapper's result TOON with none
+        of the test runner's output. Re-deriving from it publishes 0 for a run
+        that executed the whole suite, which is the boundary defect this pins
+        closed.
         """
         from _build_shared import cmd_run_common
 
@@ -795,7 +796,7 @@ class TestPublishedCountIsTheExecutedCount:
         with redirect_stdout(buf):
             rc = cmd_run_common(
                 # The routed job measured 1082; a parse of this log finds none.
-                result=self._make_success_result(log_file, tests_run=1082),
+                result=self._make_success_result(log_file, routed_tests_run=1082),
                 parser_fn=self._parser_for(None),
                 tool_name='python',
                 plan_id=plan_context.plan_id,

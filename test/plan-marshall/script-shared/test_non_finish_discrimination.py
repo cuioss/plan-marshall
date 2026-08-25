@@ -509,7 +509,7 @@ class TestCrossCheckPreservesTheLogVerdict:
         result = self._map_with_log_verdict('success', exit_code=0, tests_run=1082)
 
         assert result['status'] == 'success'
-        assert result['tests_run'] == 1082
+        assert result['routed_tests_run'] == 1082
 
     def test_a_routed_zero_is_propagated_as_a_measured_zero(self):
         """A propagated ``0`` is a MEASURED "executed nothing", not an absence.
@@ -521,7 +521,7 @@ class TestCrossCheckPreservesTheLogVerdict:
         """
         result = self._map_with_log_verdict('success', exit_code=0, tests_run=0)
 
-        assert result['tests_run'] == 0
+        assert result['routed_tests_run'] == 0
 
     def test_control_absent_count_stamps_no_field_at_all(self):
         """CONTROL: ``None`` is not forwarded as ``0``.
@@ -535,7 +535,7 @@ class TestCrossCheckPreservesTheLogVerdict:
         result = self._map_with_log_verdict('success', exit_code=0, tests_run=None)
 
         assert result['status'] == 'success'
-        assert 'tests_run' not in result
+        assert 'routed_tests_run' not in result
 
 
 class TestVocabularyTranslationIsTotal:

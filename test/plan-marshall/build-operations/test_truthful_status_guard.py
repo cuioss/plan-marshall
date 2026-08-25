@@ -233,11 +233,11 @@ def test_timeout_degrades_to_bare_result_when_parser_raises(capsys):
 def _emit_success(capsys, parser, **result_extra) -> dict:
     """Run cmd_run_common over a green result and return the emitted JSON.
 
-    The result is built as a plain dict and cast, because ``tests_run`` — which
-    the routed arm stamps onto the result at the boundary — is not a declared key
-    of ``DirectCommandResult``. Declaring it there is the correct modelling and
-    is outside this deliverable's write set, so the gap is named here rather than
-    papered over silently.
+    The result is built as a plain dict and cast, because ``routed_tests_run`` —
+    which the routed arm stamps onto the result at the boundary — is not a
+    declared key of ``DirectCommandResult``. Declaring it there is the correct
+    modelling and is outside this deliverable's write set, so the gap is named
+    here rather than papered over silently.
     """
     result: dict[str, Any] = {
         'status': 'success',
@@ -312,6 +312,6 @@ def test_a_routed_count_is_published_instead_of_a_local_reparse(capsys):
     def _no_summary(log_file, *args):
         return ([], None, 'SUCCESS')
 
-    emitted = _emit_success(capsys, _no_summary, tests_run=1082)
+    emitted = _emit_success(capsys, _no_summary, routed_tests_run=1082)
 
     assert emitted['tests_run'] == 1082

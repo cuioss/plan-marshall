@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
