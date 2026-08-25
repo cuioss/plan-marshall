@@ -252,7 +252,7 @@ predicate.
 A bot declaring `participation_requires_update: false` **re-reviews by posting a new comment**, so its
 credit is granted the moment a comment of its in a declared publish shape is observed. No commit is
 compared, and the currency ledger holds no row for it. **The consequence, stated plainly: a comment
-such a bot posted against an EARLIER commit still credits it at the merge candidate.** After a
+such a bot posted against a commit that is no longer the merge candidate still credits it.** After a
 loop-back, rebase, or force-push, an append-per-review bot can therefore be counted toward the quorum
 on a review of a tree that is no longer the one being merged — the same false positive the currency
 rule closes for in-place re-reviewers, still open on this path. Two states are unreachable for such a
@@ -300,7 +300,7 @@ evidence requires the comment to prove a review of the **merge candidate**:
   fact. A fetched comment carries no reviewed SHA, so nothing in it says which commit the bot actually
   read, and the ledger's silence says only that this plan has not seen the comment before — which is
   not the same as the bot not having published it earlier. The assumption errs toward **crediting**: a
-  comment that in truth reviewed an earlier commit is credited at the merge candidate. Two guards
+  comment that in truth reviewed an **earlier** commit is credited at the merge candidate. Two guards
   bound it — the credit is withheld when the merge-candidate SHA is unreadable, and, when the
   merge-candidate commit's own timestamp can be read, when the comment's timestamps predate that
   commit. Neither guard turns the assumption into a verification: a comment posted after the commit is
