@@ -263,6 +263,12 @@ _OVERLAP_PREFIX = 'marketplace/bundles/'
 #: The injected-failure demonstrations shipped with the partition, each naming
 #: the control that demonstrates it. A checker never observed failing is not a
 #: checker, so these are rendered as a first-class report section.
+#:
+#: The set is COMPLETE — every control group shipped in the demonstrations module
+#: appears here. Both directions are pinned in
+#: ``test_epic_report_reproducibility.py``: one guard walks this tuple to the
+#: tests, the other walks the shipped groups back to this tuple, so neither a
+#: removal here nor an addition there can drift the claim unnoticed.
 _INJECTED_CONTROLS = (
     (
         'injected_unclaimed_directory',
@@ -279,6 +285,18 @@ _INJECTED_CONTROLS = (
         'clean_corpus_control',
         'the clean fixture corpus reports neither unclaimed nor multiply_claimed',
         'test_epic_partition_injected_failures.py::test_clean_corpus_reports_nothing_unclaimed',
+    ),
+    (
+        'injected_root_span',
+        'a root span does not mask a module no plan claims',
+        'test_epic_partition_injected_failures.py::'
+        'test_injected_root_span_does_not_hide_an_unclaimed_module',
+    ),
+    (
+        'injected_container_span',
+        'a directory-shaped unresolved span reports not_derivable, never unclaimed',
+        'test_epic_partition_injected_failures.py::'
+        'test_container_span_marks_the_module_beneath_it_not_derivable',
     ),
 )
 

@@ -46,6 +46,14 @@ NOTATION = 'pm-plugin-development:tools-epic-surface-partition:epic-surface-part
 #: where the demonstrations live rather than restated here.
 TEST_TREE = Path(__file__).resolve().parent
 
+#: The module shipping the control demonstrations the ``injected_controls``
+#: section names. Its ``# --- ...`` banners delimit the control groups: a group's
+#: several assertions demonstrate ONE injected failure, so the GROUP — not the
+#: individual test — is the unit the section is pinned against.
+CONTROLS_MODULE = 'test_epic_partition_injected_failures.py'
+_GROUP_BANNER = '# --- '
+_TEST_DEF = 'def test_'
+
 #: The verdicts the ``disagreements`` section selects out of a partition.
 DISAGREEING_VERDICTS = ('unclaimed', 'multiply_claimed')
 
@@ -118,6 +126,33 @@ def cited_verb(command: str) -> str:
     return parts[3]
 
 
+def declared_tests(source: str) -> set[str]:
+    """Every test function declared at module level in ``source``."""
+    return {
+        line[len('def ') :].split('(', 1)[0]
+        for line in source.splitlines()
+        if line.startswith(_TEST_DEF)
+    }
+
+
+def control_groups(source: str) -> dict[str, list[str]]:
+    """Map each ``# --- ...`` banner in the controls module to the tests under it."""
+    groups: dict[str, list[str]] = {}
+    banner: str | None = None
+    for line in source.splitlines():
+        if line.startswith(_GROUP_BANNER):
+            banner = line[len(_GROUP_BANNER) :].strip('- ').strip()
+            groups.setdefault(banner, [])
+        elif line.startswith(_TEST_DEF) and banner is not None:
+            groups[banner].append(line[len('def ') :].split('(', 1)[0])
+    return groups
+
+
+@pytest.fixture
+def controls_source() -> str:
+    return (TEST_TREE / CONTROLS_MODULE).read_text(encoding='utf-8')
+
+
 #: Section name -> ``(the figures the section renders, the same figures read out
 #: of the cited command's own payload)``. Every entry is a section citing an
 #: entry-point verb; ``injected_controls`` cites the module-tests command and is
@@ -187,6 +222,42 @@ def test_every_injected_control_names_a_test_the_cited_command_runs(run_verb) ->
         source = (TEST_TREE / module_name).read_text(encoding='utf-8')
 
         assert f'def {function}(' in source, row['control']
+
+
+def test_the_control_group_scan_sees_every_test_the_module_declares(controls_source) -> None:
+    """The reverse guard below is only as trustworthy as the scan feeding it.
+
+    A banner-format change that made the scan return nothing would let the guard
+    pass vacuously over an empty set, so the scan is pinned to account for every
+    declared test rather than being trusted to have found them.
+    """
+    scanned = {name for names in control_groups(controls_source).values() for name in names}
+
+    declared = declared_tests(controls_source)
+
+    assert declared
+    assert scanned == declared
+
+
+def test_every_shipped_control_group_is_named_in_the_injected_controls_section(
+    run_verb, controls_source
+) -> None:
+    """The section names every shipped demonstration, not a subset of them.
+
+    The forward guard above walks section -> test, so it catches a RENAME or a
+    REMOVAL of a named control and never an ADDITION of a shipped one the
+    section does not name. This is the other direction: a control group shipped
+    and unnamed makes the section present a partial set as the complete one.
+    """
+    named = {
+        row['demonstrated_by'].partition('::')[2]
+        for row in run_verb('report')['injected_controls']
+    }
+
+    groups = control_groups(controls_source)
+
+    unnamed = {banner for banner, tests in groups.items() if tests and not named & set(tests)}
+    assert unnamed == set()
 
 
 # --- the test count is measured the way it says ------------------------------

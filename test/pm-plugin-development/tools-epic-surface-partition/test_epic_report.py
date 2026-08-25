@@ -242,6 +242,8 @@ def test_injected_controls_are_reported_with_their_demonstrating_control(disagre
         'injected_unclaimed_directory',
         'injected_double_claim',
         'clean_corpus_control',
+        'injected_root_span',
+        'injected_container_span',
     }
     assert all(row['demonstrated_by'].strip() for row in controls)
 

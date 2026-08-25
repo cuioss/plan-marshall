@@ -117,8 +117,19 @@ is subcommand-specific.
 
 ## Output Contract
 
-Every subcommand emits `status`, `epic` and `plans_dir`. The remaining keys are
-per subcommand.
+Every payload — success and error alike — carries `status` and `epic`. Those two
+are the only keys common to all four emitted shapes.
+
+A **success** payload additionally carries `plans_dir` and the keys of the
+subcommand that produced it, documented per subcommand below. An **error**
+payload instead carries `error` plus the keys that error names: `reason` for
+`invalid_epic_slug` and `unclassifiable_spec` (the latter also naming the
+offending `spec`), and `plans_dir` for `epic_corpus_not_found`.
+
+⛔ Do not read `plans_dir` off an error payload unconditionally. Only
+`epic_corpus_not_found` carries it, because only that error resolved a directory
+before failing; an `invalid_epic_slug` never resolved one, so it emits no
+`plans_dir` and a caller assuming otherwise raises `KeyError`.
 
 ### `classify`
 
