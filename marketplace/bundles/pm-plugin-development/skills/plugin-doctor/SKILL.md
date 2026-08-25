@@ -25,7 +25,7 @@ Comprehensive diagnostic and fix skill for marketplace components. Combines diag
 - Every workflow step that performs a script operation must have an explicit bash code block with the full `python3 .plan/execute-script.py` command (workflow-explicit-script-calls)
 - Agents must record lessons via manage-lessons skill, not self-invoke commands (agent-lessons-via-skill)
 - Only `doctor-marketplace.py` is registered in the executor. `_analyze.py`, `_validate.py`, and `_fix.py` are separate verb-bearing entry points whose verbs are NOT `doctor-marketplace` subcommands; a workflow needing one invokes the script directly, and no executor form may be documented for them. See § External Resources
-- Prose instructions adjacent to script calls must reference parameter values consistent with the script API (workflow-prose-parameter-consistency)
+- Prose instructions adjacent to script calls must reference parameter values consistent with the script API (workflow-prose-parameter-inconsistency)
 
 ## Purpose
 
@@ -385,7 +385,7 @@ See [references/rule-catalog.md](references/rule-catalog.md) for the catalog of 
 Representative rule ids by category:
 
 - **Agent**: `agent-task-tool-prohibited`, `agent-maven-restricted`, `agent-lessons-via-skill`, `agent-skill-tool-visibility`
-- **Workflow**: `workflow-explicit-script-calls`, `workflow-hardcoded-script-path`, `workflow-prose-parameter-consistency`, `prose-verb-chain-consistency`
+- **Workflow**: `workflow-explicit-script-calls`, `workflow-hardcoded-script-path`, `workflow-prose-parameter-inconsistency`, `prose-verb-chain-consistency`
 - **Command**: `command-self-contained-notation`, `command-thin-wrapper`, `command-progressive-disclosure`, `command-completion-checks`, `command-no-embedded-standards`
 - **Skill**: `skill-enforcement-block-required`, `skill-naming-noun-suffix`
 - **Script**: `argparse_safety`, `notation-staleness`, `script-call-drift`
