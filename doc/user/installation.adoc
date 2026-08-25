@@ -101,8 +101,6 @@ After the core `plan-marshall` plugin is installed, add the language- or domain-
 
 The bundle table at the top of the project `README.md` links each bundle name to its `README.md`.
 
-The `lsp` derivation resolver — language-server-derived symbol intelligence for the module graph — ships with the core `plan-marshall` plugin, so it needs no separate install; a `derivation_resolvers.lsp` binding in the machine-local run-configuration store keeps working unchanged.
-
 == Next step
 
 Run xref:getting-started.adoc[`/marshall-steward`] to wire the planning system into your project.
