@@ -1323,8 +1323,8 @@ def _invocation_is_blind_spot(
     - A notation absent from ``registered_notations`` is DECIDED — it is reported
       as :data:`RULE_NOTATION_INVALID`. Counting it would file the cluster's
       loudest verdict as a gap.
-    - A script that declares no subparsers at all has nothing to check at the
-      verb level, and its root flag surface still judges every flag on the line.
+    - A notation addressed at the ROOT (no positional token on the line) whose
+      root accept-set was derived is fully judged by :func:`scan_flag`.
 
     What remains is the genuine residue: a templated positional region that names
     no concrete verb, a registered notation whose ``--help`` surface was dropped
@@ -1371,6 +1371,17 @@ def _invocation_is_blind_spot(
             # Verb decided, flag verdict withheld — see the docstring. Checked
             # BEFORE the confidence fall-through, which would answer ``False``
             # here and report the gap as a ruling.
+            return True
+        if not entry.subcommands:
+            # The script declares NO subparsers, so the line's leading token is
+            # not a verb it could ever accept. But ``scan_flag`` still takes its
+            # subcommand branch, looks that token up in an EMPTY map, gets
+            # ``None``, and withholds every flag verdict — the root accept-set
+            # is never consulted, because the root branch requires
+            # ``inv.subcommand is None``. Same withheld-verdict shape as the
+            # router case above, and the confidence fall-through below would
+            # likewise file it as a decision: ``subcommands_confident`` is True
+            # for a script that genuinely declares none.
             return True
         return not entry.subcommands_confident
     return entry.subcommands[inv.subcommand] is None

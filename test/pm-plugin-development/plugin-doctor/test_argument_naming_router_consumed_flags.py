@@ -367,3 +367,97 @@ def test_a_declared_verb_with_a_derived_flag_set_is_not_a_blind_spot(tmp_path):
 
     assert population == 1, population
     assert blind == 0, f'a fully judged concrete call was counted as a blind spot: {blind}'
+
+
+# ---------------------------------------------------------------------------
+# Pair 4 — a SUBPARSER-LESS script addressed with a positional is undecided
+# ---------------------------------------------------------------------------
+
+#: A script declaring no ``add_subparsers`` at all. Its derived ``subcommands``
+#: map is EMPTY and ``subcommands_confident`` is True — the combination that made
+#: the blind-spot fall-through answer ``False`` for a verdict it never drew.
+FLAT_NOTATION = 'pm-plugin-development:tools-marketplace-inventory:scan-planning-inventory'
+FLAT_ROOT_FLAG = 'format'
+
+
+def _write_flat_script(marketplace_root: Path, notation: str, flags: list[str]) -> None:
+    """Write a synthetic argparse script with NO subparsers — root flags only."""
+    bundle, skill, script_name = notation.split(':', 2)
+    scripts_dir = marketplace_root / 'bundles' / bundle / 'skills' / skill / 'scripts'
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    parts = [
+        '#!/usr/bin/env python3',
+        '"""Synthetic subparser-less fixture script."""',
+        'import argparse',
+        '',
+        'parser = argparse.ArgumentParser()',
+    ]
+    parts.extend(f'parser.add_argument("--{flag}")' for flag in flags)
+    parts.extend(['', 'if __name__ == "__main__":', '    parser.parse_args()'])
+    (scripts_dir / f'{script_name}.py').write_text('\n'.join(parts) + '\n', encoding='utf-8')
+
+
+def _flat_fixture(tmp_path: Path, invocation: str) -> Path:
+    """Materialize a marketplace whose sole SKILL.md carries ``invocation``."""
+    marketplace_root = tmp_path / 'marketplace'
+    write_dispatching_executor(tmp_path / '.plan', [FLAT_NOTATION])
+    _write_flat_script(marketplace_root, FLAT_NOTATION, [FLAT_ROOT_FLAG])
+
+    bundle, skill, _script = FLAT_NOTATION.split(':', 2)
+    skill_dir = marketplace_root / 'bundles' / bundle / 'skills' / skill
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / 'SKILL.md').write_text(
+        f'# Inventory\n\n```bash\npython3 .plan/execute-script.py {invocation}\n```\n',
+        encoding='utf-8',
+    )
+    return marketplace_root
+
+
+def test_a_positional_on_a_subparser_less_script_is_counted_as_a_blind_spot(tmp_path):
+    """A withheld flag verdict must raise ``blind_spots`` here too.
+
+    ``scan_flag`` branches on ``inv.subcommand is None``. A line carrying a
+    leading positional token sets it, so the SUBCOMMAND branch runs, looks that
+    token up in an EMPTY ``subcommands`` map, gets ``None`` and returns without
+    ruling on a single flag — the root accept-set is never consulted. The
+    fall-through then answered ``not subcommands_confident``, and a script that
+    genuinely declares no subparsers IS confident, so the withheld verdict was
+    filed as a decision.
+
+    Structurally identical to the router-verb case in Pair 3, one branch over.
+    It was introduced alongside that fix and survived the commit that closed four
+    sibling over-claims, which is why it is pinned rather than trusted.
+    """
+    marketplace_root = _flat_fixture(
+        tmp_path, f'{FLAT_NOTATION} scan --{FLAT_ROOT_FLAG} summary'
+    )
+
+    _findings, population, blind = _run(marketplace_root)
+
+    assert population == 1, population
+    assert blind == 1, (
+        f'a subparser-less script addressed with a positional drew no flag verdict '
+        f'and was filed as decided: {blind}'
+    )
+
+
+def test_the_same_script_addressed_at_root_is_not_a_blind_spot(tmp_path):
+    """⛔ The matched negative: with no positional, the root surface DOES judge.
+
+    Same script, same flag, same population of 1 — only the leading ``scan``
+    token is gone. Now ``inv.subcommand`` is ``None``, ``scan_flag`` takes the
+    ROOT branch, and ``root_accept_flags`` really does rule on ``--format``. A fix
+    that returned ``True`` for every subparser-less script, rather than only when
+    a positional forced the empty-map lookup, passes the test above and fails
+    here.
+    """
+    marketplace_root = _flat_fixture(tmp_path, f'{FLAT_NOTATION} --{FLAT_ROOT_FLAG} summary')
+
+    findings, population, blind = _run(marketplace_root)
+
+    assert population == 1, population
+    assert blind == 0, f'a root-addressed call the root surface judged was counted: {blind}'
+    flag_findings = [f for f in findings if f.get('rule_id') == 'ARGUMENT_NAMING_FLAG_UNKNOWN']
+    assert flag_findings == [], (
+        f'a declared root flag was reported as invented: {flag_findings!r}'
+    )
