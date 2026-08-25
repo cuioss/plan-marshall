@@ -270,6 +270,45 @@ def test_upgrade_drains_then_starts(home, monkeypatch):
     assert result['running'] is True
     # Drain (signal) happened before the start (spawn).
     assert calls.index('signal') < calls.index('spawn')
+    # The positive control for the failure guard below: a genuine upgrade reports
+    # both fields in their success shape, so a `status: error` there is a real
+    # signal rather than a value the verb always emits.
+    assert result['drain_exited'] is True
+    assert result['already_running'] is False
+    assert result['status'] == 'success'
+    assert 'reason' not in result
+
+
+def test_upgrade_reports_a_failed_drain_instead_of_claiming_success(home, monkeypatch):
+    # The daemon never exits its drain window, so the start half finds it still
+    # up. `upgrade` must report BOTH facts and must NOT call that a success: it
+    # once hard-coded `status: success` regardless of outcome, and its reconcile
+    # caller cleared a reconcile-owed marker on that word alone.
+    monkeypatch.setattr(mbs, '_running_pid', lambda: 888)
+    monkeypatch.setattr(mbs, '_signal', lambda pid, sig: None)
+    monkeypatch.setattr(mbs, '_wait_for_exit', lambda pid, grace: False)
+    monkeypatch.setattr(mbs, '_spawn_detached', lambda command, env: None)
+
+    result = mbs.run_upgrade(Namespace())
+
+    assert result['drain_exited'] is False
+    assert result['already_running'] is True
+    assert result['status'] != 'success'
+    assert result['reason'] == 'drain_did_not_exit'
+
+
+def test_upgrade_with_nothing_to_drain_stays_a_success(home, monkeypatch):
+    # Nothing to drain is NOT a failed drain — there was no process that failed
+    # to exit — so the upgrade reduces to a plain start and stays a success. This
+    # is what stops the guard above from firing on every daemon-down upgrade.
+    monkeypatch.setattr(mbs, '_running_pid', lambda: None)
+    monkeypatch.setattr(mbs, '_spawn_detached', lambda command, env: None)
+
+    result = mbs.run_upgrade(Namespace())
+
+    assert result['drain_exited'] is True
+    assert result['already_running'] is False
+    assert result['status'] == 'success'
 
 
 # =============================================================================
@@ -327,6 +366,44 @@ def test_status_reports_in_flight_and_queued_counts(home, monkeypatch):
 
     assert result['in_flight'] == 2
     assert result['queued'] == 3
+
+
+def _fake_ping_without_counts(pid: int = 4242):
+    """A ping from a daemon predating the counts extension — no count keys at all."""
+    return lambda timeout=mbs._PING_TIMEOUT_SECONDS: {
+        'status': 'ok',
+        'pid': pid,
+        'version': mbs.marshalld.VERSION,
+    }
+
+
+def test_status_reports_unknown_counts_when_the_daemon_sent_none(home, monkeypatch):
+    # A daemon pinned to a copy predating the counts extension omits both keys.
+    # Reporting that absence as 0 makes it indistinguishable from a genuinely
+    # idle daemon — which is exactly how a reconcile came to drain a live build.
+    monkeypatch.setattr(mbs, '_ping', _fake_ping_without_counts())
+    monkeypatch.setattr(mbs, '_read_process_argv', lambda pid: _argv_for(_resolved_binary()))
+
+    result = mbs.run_status(Namespace())
+
+    assert result['in_flight'] == mbs._UNKNOWN_COUNT
+    assert result['queued'] == mbs._UNKNOWN_COUNT
+    # The point of the sentinel: it is NOT the value that reads as idle.
+    assert result['in_flight'] != 0
+    assert result['queued'] != 0
+
+
+def test_status_reports_a_genuine_zero_count_as_zero(home, monkeypatch):
+    # The matched negative control for the sentinel above: a daemon that DID
+    # report idleness still reports 0, so `unknown` marks "not told" rather than
+    # replacing every count.
+    monkeypatch.setattr(mbs, '_ping', _fake_ping(in_flight=0, queued=0))
+    monkeypatch.setattr(mbs, '_read_process_argv', lambda pid: _argv_for(_resolved_binary()))
+
+    result = mbs.run_status(Namespace())
+
+    assert result['in_flight'] == 0
+    assert result['queued'] == 0
 
 
 def test_status_stale_daemon_shows_divergence(home, monkeypatch):

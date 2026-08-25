@@ -145,7 +145,10 @@ to the journal's bounded-retention model.
   recorded in the journal and replayed as `killed` on the next start — never
   silently lost, never blind-resumed. Prefer `drain` for planned restarts.
 - **status** — ping the daemon over its socket and report the running version, the
-  daemon's in-flight / queued job counts, and the binary the **running process** is
+  daemon's in-flight / queued job counts — reported as `unknown` when the daemon
+  did not send them (a daemon pinned to a copy predating the counts extension
+  omits both keys), **never** coerced to `0`, which would render it as idle —
+  and the binary the **running process** is
   actually executing (`running_binary_path`, read from the live process) alongside
   the resolve-now path a fresh start would launch (`resolved_binary_path`).
   `binary_diverges` flags a stale daemon — one still executing an older pinned copy
@@ -155,6 +158,13 @@ to the journal's bounded-retention model.
   registered.
 - **install** — idempotent version-pinned start (a no-op when already running).
 - **upgrade** — drain the running daemon, then start the verified version (S7).
+  Reports the two fields that can carry a **failed** upgrade: `drain_exited`
+  (whether the old daemon actually exited within the drain grace window — an
+  upgrade with nothing to drain reports `true`) and `already_running` (whether
+  the start half found a daemon still up, which for an upgrade is a failure, not
+  an idempotent no-op, because the drain was supposed to have removed it).
+  Either signal yields `status: error` with a named `reason`, so a caller gates
+  on a field that can report failure rather than on the word `success`.
 
 **Crash recovery.** A crashed daemon leaves a stale socket and pidfile; the next
 `start` liveness-probes the recorded pid and, finding it dead, cleans the stale
@@ -174,9 +184,9 @@ survive, and any job that was in flight when the daemon died is marked `killed`
 | `start` | Start the daemon detached, version-pinned |
 | `stop` | Force-stop the daemon (`SIGTERM` then `SIGKILL`) |
 | `drain` | Gracefully stop the daemon (no `SIGKILL`) |
-| `status` | Report running version, in-flight/queued counts, running vs resolved binary provenance (divergence flagged; `unknown` never the resolved path) |
+| `status` | Report running version, in-flight/queued counts (`unknown` when the daemon did not send them — never `0`), running vs resolved binary provenance (divergence flagged; `unknown` never the resolved path) |
 | `install` | Idempotent version-pinned start |
-| `upgrade` | Drain then start the verified version |
+| `upgrade` | Drain then start the verified version. Reports `drain_exited` (did the old daemon actually exit?) and `already_running` (did the start find one still up?), and returns `status: error` with a `reason` when either says the daemon was never replaced |
 | `logs` | Read-only, project-scoped view of the daemon's interaction-audit log |
 
 **Script**: `plan-marshall:manage-build-server:marshalld` — the daemon binary,

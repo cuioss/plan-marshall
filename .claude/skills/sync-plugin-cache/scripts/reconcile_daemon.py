@@ -24,11 +24,22 @@ status`` (through the executor) and applies the D1 idle-conditional contract:
   exists to prevent);
 * **provenance unknown** (the running binary cannot be determined) → **defer**,
   fail-closed: never drain on a guessed-idle signal;
+* **counts unknown** (the daemon reported no in-flight / queued counts — a daemon
+  pinned to a copy predating the counts extension omits them) → **defer**, the
+  same fail-closed shape: an absent count is not a zero one, and reading it as
+  idleness is what drains a live build;
 * **already current** (running the fresh pin) → no-op;
 * **down but enrolled** (``socket_absent`` / ``unreachable``) → ``start``: the
   daemon is already dead, so a plain start of the verified version, no drain;
 * **not enrolled / status unavailable** → silent no-op, so a repository not using
   marshalld (or a session without the executor) is unaffected.
+
+A reconcile verb that RAN is not a verb that WORKED. The result of ``upgrade`` /
+``start`` is gated on the fields that can carry a failure — ``drain_exited`` and
+``already_running`` — rather than on the verb's own ``status`` word, and only a
+confirmed success clears the owed marker. A failed or unverifiable reconcile
+writes the marker at ``reason='reconcile_failed'``, so a daemon that was never
+actually replaced stays visible instead of being recorded as discharged.
 
 The reconcile action verbs live in the shared ``manage-build-server`` control
 skill; this script only READS ``status`` and CALLS ``upgrade`` / ``start`` — it
@@ -74,12 +85,51 @@ class ReconcileDecision:
     reason: str
 
 
+def _count_or_none(value) -> int | None:
+    """Return a reported job count as an ``int``, or ``None`` when unknown.
+
+    ``status`` reaches this script as TOON, so a count legitimately arrives as
+    either an ``int`` or its decimal string. Anything else — the key absent
+    (``None``), the ``'unknown'`` sentinel a daemon-without-counts produces, or
+    an unparseable value — is NOT a count, and is reported as such rather than
+    coerced to ``0``. ``bool`` is rejected explicitly: it is an ``int`` subclass
+    and would otherwise slip through as ``0`` / ``1``.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
+def _as_bool(value) -> bool | None:
+    """Return a reported boolean, or ``None`` when it was not reported.
+
+    The mirror of :func:`_count_or_none` for the fields the reconcile gate reads
+    off a verb result: a real ``bool`` passes through, a TOON ``'true'`` /
+    ``'false'`` string is decoded, and anything else — most importantly an absent
+    key — is ``None``, meaning *the verb did not tell us*. That is deliberately
+    distinct from ``False``: one is a verb reporting success it can substantiate,
+    the other is a verb that cannot.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().lower() in ('true', 'false'):
+        return value.strip().lower() == 'true'
+    return None
+
+
 def decide(status: dict) -> ReconcileDecision:
     """Return the reconcile action for a ``manage-build-server status`` result.
 
     The pure D1 idle-conditional contract — no I/O. Fails closed toward NOT
     draining a busy or indeterminate daemon: a busy daemon, an unknown running
-    provenance, or an unreadable status all resolve to leave-it-running.
+    provenance, unreported in-flight / queued counts, or an unreadable status all
+    resolve to leave-it-running. Idleness must be *reported*, never inferred from
+    an absent count — a daemon that never sent one is indistinguishable from an
+    idle one, and only one of those is safe to drain.
 
     Args:
         status: The parsed ``manage-build-server status`` dict.
@@ -105,8 +155,14 @@ def decide(status: dict) -> ReconcileDecision:
     if not bool(status.get('binary_diverges')):
         return ReconcileDecision(ACTION_NOOP, 'already_current')
 
-    in_flight = int(status.get('in_flight', 0) or 0)
-    queued = int(status.get('queued', 0) or 0)
+    in_flight = _count_or_none(status.get('in_flight'))
+    queued = _count_or_none(status.get('queued'))
+    if in_flight is None or queued is None:
+        # Fail-closed, the same shape as `provenance_unknown` above: a daemon
+        # pinned to a copy predating the counts extension omits these keys, and
+        # an absent count is NOT a zero one. Reading it as idle is what drains a
+        # live build, so a count we were never told defers.
+        return ReconcileDecision(ACTION_DEFER, 'counts_unknown')
     if in_flight > 0 or queued > 0:
         # BUSY-and-stale: leave the daemon running; the in-flight job MUST survive.
         return ReconcileDecision(ACTION_DEFER, 'busy')
@@ -185,6 +241,14 @@ def reconcile(*, status_reader, action_runner, marker: Path, now: str) -> dict:
     reconcile-owed marker when the daemon is proven current or reconciled, and
     LEAVING it untouched when the status could not be read (indeterminate).
 
+    A verb that ran is not a verb that worked: its result is put through
+    :func:`_reconcile_failure`, which reads the fields that can carry a failure
+    (``drain_exited`` / ``already_running``) rather than the verb's ``status``
+    word. Only a confirmed success clears the marker; a failed or unverifiable
+    reconcile reports ``reconcile_result: failed`` and WRITES the marker at
+    ``reason='reconcile_failed'``, so the still-stale daemon stays visible
+    instead of being marked discharged.
+
     Args:
         status_reader: Zero-arg callable returning the parsed status dict (``{}``
             on any failure).
@@ -209,10 +273,38 @@ def reconcile(*, status_reader, action_runner, marker: Path, now: str) -> dict:
 
     if decision.action in (ACTION_UPGRADE, ACTION_START):
         result = action_runner(decision.action) or {}
-        summary['reconcile_result'] = str(result.get('status', 'unknown'))
-        # The owed reconcile (if any) is discharged.
-        clear_marker(marker)
-        summary['owed_cleared'] = bool(prior)
+        failure_reason = _reconcile_failure(decision.action, result)
+        if failure_reason is None:
+            summary['reconcile_result'] = str(result.get('status', 'unknown'))
+            # The owed reconcile is discharged — and only now, against fields
+            # that could have reported the failure.
+            clear_marker(marker)
+            summary['owed_cleared'] = bool(prior)
+        else:
+            # The verb did not verifiably reconcile the daemon. Record the debt
+            # rather than clearing it: this marker is the only durable trace
+            # that the daemon is still stale.
+            defer_count = (int(prior.get('defer_count', 0) or 0) if prior else 0) + 1
+            summary['reconcile_result'] = 'failed'
+            summary['failure_reason'] = failure_reason
+            summary['owed'] = True
+            summary['defer_count'] = defer_count
+            write_marker(
+                marker,
+                {
+                    'owed': True,
+                    'reason': 'reconcile_failed',
+                    'since': (prior.get('since') if prior else now) or now,
+                    'last_deferred': now,
+                    'defer_count': defer_count,
+                    'failed_action': decision.action,
+                    'failure_reason': failure_reason,
+                    'running_binary_path': status.get('running_binary_path'),
+                    'resolved_binary_path': status.get('resolved_binary_path'),
+                    'in_flight': status.get('in_flight'),
+                    'queued': status.get('queued'),
+                },
+            )
     elif decision.action == ACTION_DEFER:
         defer_count = (int(prior.get('defer_count', 0) or 0) if prior else 0) + 1
         write_marker(
@@ -244,10 +336,62 @@ def reconcile(*, status_reader, action_runner, marker: Path, now: str) -> dict:
     return summary
 
 
+def _reconcile_failure(action: str, result: dict) -> str | None:
+    """Return why the reconcile verb failed, or ``None`` when it verifiably succeeded.
+
+    Gates on the fields that can actually CARRY a failure rather than on the
+    verb's own ``status`` word, which ``upgrade`` once hard-coded to ``success``
+    regardless of outcome:
+
+    * ``already_running`` (both verbs) — the start half found a daemon still up.
+      Neither verb may treat that as an idempotent no-op here: ``upgrade`` had
+      just drained the daemon it found, and ``start`` was chosen only because the
+      status said the daemon was **down**. Either way the world disagrees with
+      the decision that was made, so the reconcile is not confirmed.
+    * ``drain_exited`` (``upgrade`` only) — the old daemon never exited, so the
+      process the upgrade meant to replace is still running.
+
+    A verb reporting NEITHER field cannot substantiate its own success, and is
+    treated as a failure: an unverifiable success is exactly the report this gate
+    exists to stop. That also covers the fail-open ``{}`` an unreachable executor
+    produces.
+
+    Args:
+        action: The reconcile action that was run (``upgrade`` or ``start``).
+        result: The verb's parsed result dict (``{}`` when the call failed).
+
+    Returns:
+        A short failure reason, or ``None`` when the reconcile is confirmed.
+    """
+    status_word = str(result.get('status', '') or '')
+    if status_word != 'success':
+        return f'verb_reported_{status_word or "nothing"}'
+
+    already_running = _as_bool(result.get('already_running'))
+    if already_running is None:
+        return 'already_running_absent'
+    if already_running:
+        return 'daemon_already_running'
+
+    if action == ACTION_UPGRADE:
+        drain_exited = _as_bool(result.get('drain_exited'))
+        if drain_exited is None:
+            return 'drain_exited_absent'
+        if not drain_exited:
+            return 'drain_did_not_exit'
+    return None
+
+
 def _display_detail(summary: dict) -> str:
     """Render a one-line operator detail from a reconcile summary."""
     action = summary['action']
     reason = summary['reason']
+    if summary.get('reconcile_result') == 'failed':
+        count = summary.get('defer_count', 1)
+        return (
+            f'reconcile FAILED ({summary.get("failure_reason", "unknown")}) running '
+            f'{action} — daemon NOT confirmed reconciled; owed marker written (x{count})'
+        )
     if action == ACTION_UPGRADE:
         return 'daemon idle-and-stale — reconciled via upgrade (drain-then-start-verified)'
     if action == ACTION_START:
