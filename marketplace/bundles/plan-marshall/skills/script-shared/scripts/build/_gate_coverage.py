@@ -526,9 +526,9 @@ def render_coverage_summary(
 
     **Both forms carry the structural scope limit** (:func:`structural_limits`),
     because the two properties answer different questions and the COMPLETE form
-    needs the second one most. COMPLETE means every dimension was checked over its
-    full scope — which a reader reasonably, and wrongly, reads as assurance that the
-    change is sound. The appended block states per analysis what that green does not
+    needs the second one most. A COMPLETE verdict is the one a reader most readily,
+    and most wrongly, reads as assurance that the change is sound. The appended
+    block states per analysis what that green does not
     evaluate at all, so the reader can answer *"what could still be wrong despite
     this passing?"*. PARTIAL carries it too: without it, naming the un-run dimension
     still implies the dimensions that DID run cover their subject completely.

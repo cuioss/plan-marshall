@@ -85,11 +85,7 @@ must be published, never left implicit; listing it here keeps the TOON and JSON
 success outputs in agreement. The ``parse`` verb derives the same quantity from
 the same property under ``metrics.tests_run``. It is emitted ONLY when the count
 was measured: an unmeasured run omits the key rather than publishing a zero that a
-consumer would read as "tested nothing" — which is also where the two verbs part
-company, so they must not be described as interchangeable. Over a log with no
-parseable summary ``parse`` still publishes ``metrics.tests_run: 0`` while ``run``
-omits the key, because only ``run`` distinguishes an unmeasured population from a
-measured zero.
+consumer would read as "tested nothing".
 
 ``tests_population`` is that omission's discriminator (``measured`` /
 ``unmeasured``). It is always present on a success result, so an absent
