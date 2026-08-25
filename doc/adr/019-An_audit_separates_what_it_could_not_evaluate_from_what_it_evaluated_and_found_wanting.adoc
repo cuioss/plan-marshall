@@ -1,0 +1,216 @@
+= ADR-019: An audit separates what it could not evaluate from what it evaluated and found wanting
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
+// Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
+// relevance without reading the full file. List fields are comma-separated.
+// summary: A surface that measures, audits, or searches reports coverage alongside its result, so a consumer can distinguish "evaluated, nothing found" from "could not evaluate"; a clean verdict is reserved for the former, and a surface that cannot establish its own coverage reports a distinct third state rather than the clean one.
+// tags: measurement, coverage, anti-vacuity, fail-closed, unmeasured, audit, false-negative, third-state
+// affects: plan-marshall, plugin-doctor, manage-architecture, manage-logging, plan-retrospective, plan-orchestrator, tools-epic-surface-partition, automatic-review, persona-auditor
+// supersedes:
+// end-adr-metadata
+
+// Authoring discipline (see manage-adr SKILL.md → "Authoring Discipline"):
+// ADRs are durable architectural statements, not incident write-ups. No PR numbers,
+// commit SHAs, dates, or lesson IDs anywhere in the body. CLAUDE.md's "current state
+// only" rule applies — describe the architecture, not the chronology.
+
+== Status
+
+Proposed
+
+== Context
+
+A large part of this system exists to answer questions of the form _"is there
+anything wrong here?"_ — rule analyzers, quality gates, content searches, log
+readers, residual checks, derivation tools, retrospective aspects. Each returns a
+count, a verdict, or a set. Almost all of them can answer that question in two
+structurally different ways that share a single representation:
+
+* **Evaluated, and nothing was wanting.** The surface examined its whole subject
+  and found no defect. The zero is a measurement.
+* **Could not evaluate.** The subject was out of reach — not configured, not
+  resolvable, not parseable, outside the scope actually swept, or subject to a
+  predicate that **could not be applied** because the data or grammar it needs was
+  unavailable. The zero is the absence of a measurement.
+
+⛔ **The discriminator is whether the predicate could be APPLIED, never whether it
+matched.** A predicate applied successfully across the whole subject and matching
+nothing is a completed evaluation returning a true zero, and it belongs in the first
+category. Reading such a scan as "could not evaluate" is the mirror image of the defect
+this ADR exists to prevent, and it is just as damaging: it manufactures doubt about a
+sound result, which trains readers to discount the coverage signal entirely.
+
+Rendered identically, these two states are indistinguishable to every consumer,
+and they are indistinguishable in the direction that does harm: the second reads
+as the first. An unevaluated subject presents as a clean one. The failure is
+**silent, fail-open, and self-reinforcing** — a gate that cannot look reports
+that it looked and saw nothing, and the reader downstream banks the reassurance.
+
+The shape is not confined to one subsystem. It recurs independently across
+surfaces that share no code, which is what makes it architectural rather than a
+family of bugs:
+
+* A **scoped rule analyzer** reports clean when its cross-cutting rules anchor
+  their findings outside the paths it was given — the rules never ran, and
+  "0 findings" covers only the rules that could.
+* An **integration gate** reports a verdict for a provider that is not
+  configured, so a step that performed no scan renders beside steps that did.
+* A **residual check** reports zero residue when it had no baseline to diff
+  against — the count is the arithmetic of an empty comparison.
+* A **content search** whose pattern is a regular expression returns zero for a
+  literal-looking query carrying a metacharacter, and returns it in the same
+  shape as a genuine absence.
+* A **filtered log read** whose filter names a discriminator the log does not
+  carry returns a well-formed empty result set for a population with many
+  entries.
+* A **metrics roll-up** reports a zero count for an activity the same run
+  recorded many times, because the two sides key on different identities.
+* A **derivation over declarative sources** collapses "claimed by a source I
+  cannot parse" into "claimed by nobody", manufacturing a defect out of the
+  parser's own limits.
+* A **filesystem probe** treats one negative lookup at one expected location as
+  proof of absence, when the subject was merely somewhere else.
+
+Three existing decisions already settle this question inside their own domains —
+ADR-009 for version-staleness reporting, ADR-014 for aggregation over
+independent producers, ADR-017 for validators resolving a contract they cannot
+read. Each is correct and each is scoped. What is missing is the general rule
+those three are instances of, so that the next surface with the same choice point
+is not left to rediscover it. The structural choice is therefore: does a
+measurement surface owe its consumer an account of its own coverage, or may it
+report a bare result and let the consumer assume the coverage was total?
+
+== Decision
+
+**A surface that measures, audits, or searches reports its coverage alongside its
+result. A clean verdict asserts that the subject was evaluated and found sound;
+it is never the representation of an evaluation that did not happen.**
+
+Three obligations follow, and they bind together:
+
+**1. Carry a coverage discriminator.** Every such surface emits, beside its
+result, the facts a consumer needs to tell a measurement from its absence — what
+population was actually examined, what was skipped, what could not be read, what
+was truncated or elided. The result alone is never the whole answer.
+
+**2. Reserve the clean verdict.** A negative is trustworthy only when every
+coverage condition is clean together. When any of them is not, the disposition is
+**coverage gap**, not "absent" — reported as such, naming what could not be
+reached. The canonical formulation of this test already exists as the
+complete-coverage rule governing inventory-scoped content search; this ADR
+generalises it rather than restating it per surface.
+
+**3. Give "could not evaluate" its own state.** A two-valued result has no room
+to express absence of evidence, so it degenerates into the reassuring value. The
+enum carries a distinct third member — `unmeasured`, `not_available`,
+`not_derivable`, `unknown`, `inconclusive`, as the domain's vocabulary requires —
+and that member is never silently promoted to the clean one. Where a surface
+reports a tally per rule, per producer, or per aspect, the third state is carried
+**per element**, because a run that is clean on nine rules and blind on the tenth
+is not a clean run.
+
+The rule binds the **producer**, not the consumer. A consumer that must
+reconstruct coverage from a bare zero has already lost the information; the
+producer is the only party that knows what it could not reach, and the obligation
+sits where the knowledge is.
+
+Two boundaries keep the rule decidable. It governs surfaces whose output invites
+the inference _"nothing is wrong"_ — it does not turn every function returning a
+collection into a coverage-reporting instrument. And it is satisfied by
+**reporting**, not by refusing: a surface that cannot evaluate its subject still
+returns successfully, still reports everything it did evaluate, and marks the
+remainder. Escalating a coverage gap to a hard failure is a separate decision the
+consumer owns, and one this ADR does not make for it.
+
+== Consequences
+
+=== Positive
+
+* A zero from a conforming surface **whose coverage is complete** is **evidence**,
+  and can be acted on as such. The value of a clean report rises precisely because it
+  can no longer be produced by a surface that did not look. A zero reported *alongside
+  a coverage gap* is evidence only about the subset actually evaluated, and carries no
+  claim about the remainder — which is why obligation 1 makes the gap visible rather
+  than leaving the consumer to assume totality.
+* Coverage gaps become **findable work**. An unmeasured subject that announces
+  itself is a task; one that renders as clean is invisible, and stays invisible
+  for exactly as long as nobody independently rediscovers it.
+* The three domain-specific decisions gain a common parent, so a new surface
+  facing the same choice point inherits a settled answer instead of re-deriving
+  one.
+* Audit surfaces compose honestly. An aggregate over conforming producers can
+  distinguish a genuinely clean subject from one nobody examined, which a
+  roll-up over bare counts cannot do at any level.
+
+=== Negative
+
+* Every conforming surface carries a wider output contract, and its consumers
+  carry the branch that reads it. This is real cost paid at many sites.
+* Reports get louder and less flattering. A conforming system surfaces its own
+  blind spots continuously, and the honest verdict is frequently "less was
+  checked than it appeared".
+* Retrofitting is not mechanical. Deciding what a given surface's coverage
+  conditions actually are is domain work, and cannot be applied by a sweep.
+
+=== Risks
+
+* **The discriminator becomes ceremony.** A surface can emit a coverage field
+  that is always clean because nothing ever computes it, reproducing the original
+  defect one level up with more structure. Mitigation: the coverage fields must
+  be derived from the same pass that produces the result, never asserted beside
+  it.
+* **Third states get promoted at the boundary.** A consumer that maps
+  `unmeasured` onto the clean value for convenience — a dashboard, a summary
+  line, a roll-up count — reintroduces the conflation the producer avoided. The
+  rule's value survives only as far as the last hop that preserves it.
+* **Alarm fatigue.** A system honest about its blind spots reports many, and a
+  reader who cannot rank them may learn to skip the coverage section wholesale.
+  This is a real cost of the decision, accepted on the grounds that an
+  unrankable gap is still strictly more information than a false clean.
+
+== Alternatives Considered
+
+**Let the consumer establish coverage.** Each caller checks the preconditions it
+cares about before trusting a result. Rejected: the producer holds knowledge the
+consumer structurally cannot recover — which rules were out of scope, which paths
+were unreadable, which predicate matched nothing — so the check is being asked of
+the one party unable to perform it. It also multiplies by the number of callers a
+duty that is discharged once at the source.
+
+**Fail hard when coverage is incomplete.** A surface that cannot evaluate its
+subject raises rather than reports. Rejected: it collapses two legitimately
+different situations — an optional integration that is simply not configured, and
+a gate that was supposed to run and could not — into one blocking outcome, and it
+converts every partial answer into no answer. Partial coverage honestly labelled
+is more useful than an exception, and whether a given gap should block is the
+consumer's decision, not the producer's.
+
+**Document the caveat instead.** State in each surface's contract which
+conditions make its zero untrustworthy. Rejected: prose does not travel with the
+value. The reader who most needs the caveat is reading a result, not a standard,
+and the caveat is discoverable only by someone who already suspects the problem.
+
+**Keep solving it per domain.** Continue adding domain-scoped decisions as each
+surface encounters the choice point. Rejected on evidence: the shape has recurred
+independently across surfaces sharing no code and no authors, which is the
+signature of a missing general rule rather than a run of similar bugs. The
+per-domain decisions remain correct; what they lack is a parent that makes the
+next one unnecessary.
+
+The rejected options share one property, and it is why they fall together: each
+leaves the distinction between _"nothing is wrong"_ and _"nothing was checked"_
+recoverable only by a party that does not hold the facts needed to recover it.
+
+== References
+
+* xref:009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc[ADR-009: Status reporting fails closed with an explicit unknown state] — this rule applied to version-staleness reporting; the `unknown` verdict is its third state.
+* xref:014-An_aggregation_over_N_independent_producers_carries_producer_identity_and_no_producer_suppresses_an_element_silently.adoc[ADR-014: An aggregation over N independent producers carries producer identity] — this rule applied to aggregation; distinguishing a working-but-empty substrate from an inert one is the same distinction at the roll-up boundary.
+* xref:017-A_validator_derives_its_contract_from_the_targets_own_declaration_and_fails_closed_when_it_cannot.adoc[ADR-017: A validator derives its contract from the target's own declaration, and fails closed when it cannot] — this rule applied to contract resolution; emitting when the declaration cannot be resolved is its third state.
+* `marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md` § search — the complete-coverage rule, the canonical formulation of obligation 2 for inventory-scoped content search.
+* `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/` — rule analyzers whose scoped runs must report the rules their scope placed out of reach.
+* `marketplace/bundles/pm-plugin-development/skills/tools-epic-surface-partition/standards/epic-surface-derivation.md` — the `not_derivable` verdict, kept structurally distinct from `unclaimed`.
+* `marketplace/bundles/plan-marshall/skills/persona-auditor/` — the audit persona, whose reports are the most direct consumer of this rule.
