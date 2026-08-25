@@ -15,12 +15,6 @@
       "strict": false
     },
     {
-      "name": "pm-code-intelligence",
-      "description": "Language-server-derived symbol intelligence for the module graph",
-      "source": "./bundles/pm-code-intelligence",
-      "strict": false
-    },
-    {
       "name": "pm-dev-frontend",
       "description": "JavaScript, CSS, and web component standards for applications",
       "source": "./bundles/pm-dev-frontend",

@@ -21,10 +21,11 @@ mode: manifest
 - Module discovery is read-only — no file system mutations
 - Results are consumed by manage-architecture and marshall-steward
 - All discovery invocations flow through the extension-api entry point
+- `derive_edges()` must stay a pure function of its arguments — no filesystem access, no subprocess, and no language server booted inside it. The harvest is a discovery-time engine; this resolver is a pure join over its output
 
 ---
 
-Consolidates module discovery for all build systems (Maven, Gradle, npm, Python) into a single extension point. Also provides the `general-dev` domain with cross-cutting development skills. Build execution scripts live in sibling skill directories (`build-maven`, `build-gradle`, `build-npm`, `build-pyproject`).
+Consolidates module discovery for all build systems (Maven, Gradle, npm, Python) into a single extension point. Also provides the `general-dev` domain with cross-cutting development skills, the Axis-D path attribution for the `.plan` tree, and the Axis-C `lsp` derivation resolver. Build execution scripts live in sibling skill directories (`build-maven`, `build-gradle`, `build-npm`, `build-pyproject`).
 
 See [extension-contract.md](../extension-api/standards/extension-contract.md) for the complete ExtensionBase contract.
 
@@ -32,10 +33,15 @@ See [extension-contract.md](../extension-api/standards/extension-contract.md) fo
 
 | Function | Purpose |
 |----------|---------|
-| `get_skill_domains()` | Returns `build` domain (empty profiles) + `general-dev` domain (cross-cutting dev skills) |
+| `get_skill_domains()` | Returns the `general-dev` domain (cross-cutting dev skills) |
 | `discover_modules(project_root)` | Discover modules across Maven, Gradle, npm, and Python |
-| `provides_recipes()` | Returns the `code-review`, `refactor-to-profile-standards`, `security-audit`, and `agentfile-hygiene` recipes |
+| `provides_recipes()` | Returns the `code-review`, `refactor-to-profile-standards`, `security-audit`, `agentfile-hygiene`, and `surgical-fix` recipes |
 | `applies_to_module(module_data)` | Applies general-dev skills to modules with code build systems |
+| `path_attributor_id()` | Returns the Axis-D provenance id `plan-marshall`, stamped onto every path this attributor claims |
+| `claim_paths()` | Declares the repo-relative trees the `plan-marshall` module owns — the bare `.plan` root segment |
+| `derivation_resolver_id()` | Returns the Axis-C provenance id `lsp`, stamped onto every edge this resolver produces |
+| `derivation_file_patterns()` | Declares the file patterns the harvest reads (`['**/*.py']`). Descriptive metadata for the resolver-configuration menu, never a filter |
+| `derive_edges()` | Pure join over the `component_refs` field discovery materializes, selecting only `lsp` entries. Reads the `lsp_harvest` status record and reports it, so a harvest that did not run is stated rather than collapsing into a zero-edge success. Unresolved targets, unknown endpoints, and self-edges are suppressed and reported as aggregated `notes[]` entries |
 
 ## Discovery Flow
 

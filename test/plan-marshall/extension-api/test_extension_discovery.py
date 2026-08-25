@@ -27,7 +27,7 @@ Three flavours of coverage:
    skill's ``scripts/extension.py`` and returns the ``BuildExtension`` instances,
    each declaring its served domain key.
 3. Real-tree regression — the bridge over the live worktree (discovering the real
-   build extensions), asserting the 26 previously-missed production ``.py`` files
+   build extensions), asserting the previously-missed production ``.py`` files
    (every ``*/skills/plan-marshall-plugin/extension.py`` and every
    ``marketplace/targets/**/*.py``) are now covered by a declared python
    production route. This is the regression the build_map redesign exists to fix.
@@ -339,15 +339,17 @@ def test_discover_build_extensions_serves_expected_domain_keys():
 
 
 # =============================================================================
-# Real-tree regression: the 26 previously-missed production .py files
+# Real-tree regression: the previously-missed production .py files
 # =============================================================================
 #
 # The build_map redesign's central regression: the python build system's old
 # scripts/-anchored static globs missed every production .py file living
-# outside a scripts/ directory. There are exactly 26 such files in the
-# marketplace tree:
-#   - 10 × marketplace/bundles/<bundle>/skills/plan-marshall-plugin/extension.py
-#   - 16 × marketplace/targets/**/*.py
+# outside a scripts/ directory. Two families make up that corpus:
+#   - one marketplace/bundles/<bundle>/skills/plan-marshall-plugin/extension.py
+#     per production bundle — 10 of them
+#   - every marketplace/targets/**/*.py
+# The corpus is enumerated from the live tree rather than frozen as a literal,
+# so the assertions below are lower bounds that track it as it grows.
 # The explicit python production routes (marketplace/bundles/*.py and
 # marketplace/targets/*.py — a single * spans /) now cover all of them.
 
@@ -390,10 +392,10 @@ def test_real_tree_corpus_has_the_expected_out_of_scripts_files():
     corpus = _real_production_py_outside_scripts()
     extension_files = [p for p in corpus if p.endswith('/plan-marshall-plugin/extension.py')]
     targets_files = [p for p in corpus if p.startswith('marketplace/targets/')]
-    # 11 production bundles each ship one extension.py; targets/ ships its package.
-    assert len(extension_files) >= 11
+    # 10 production bundles each ship one extension.py; targets/ ships its package.
+    assert len(extension_files) >= 10
     assert len(targets_files) >= 10
-    assert len(corpus) >= 26
+    assert len(corpus) >= 25
 
 
 def test_real_tree_routes_cover_every_out_of_scripts_production_py():
@@ -506,11 +508,10 @@ def test_plan_marshall_plugin_get_skill_domains_omits_build_domain():
 
 _DOMAIN_BUNDLE_ARCHETYPE = 'plan-marshall:extension-api/standards/ext-point-domain-bundle'
 
-# The 11 production bundles that each ship a domain-bundle manifest. The bundle
+# The 10 production bundles that each ship a domain-bundle manifest. The bundle
 # dir name is the manifest's bundle directory under marketplace/bundles/.
 _PRODUCTION_BUNDLES = (
     'plan-marshall',
-    'pm-code-intelligence',
     'pm-dev-java',
     'pm-dev-java-cui',
     'pm-dev-frontend',
@@ -689,7 +690,7 @@ def test_find_extension_path_skips_hidden_version_dirs(tmp_path):
     assert resolved == valid_skill / 'extension.py'
 
 
-# --- find_extension_path real-tree coverage: all 11 production manifests ------
+# --- find_extension_path real-tree coverage: all 10 production manifests ------
 
 
 def test_find_extension_path_resolves_all_production_manifests():
