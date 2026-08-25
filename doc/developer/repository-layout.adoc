@@ -16,7 +16,7 @@ This page is for contributors working **on** Plan Marshall. If you are using Pla
 plan-marshall/
 ├── marketplace/
 │   ├── .claude-plugin/marketplace.json   # master marketplace configuration
-│   ├── bundles/                          # 11 production bundles (source of truth)
+│   ├── bundles/                          # 10 production bundles (source of truth)
 │   └── targets/                          # per-target emitters + per-target subdirs (claude, opencode, …)
 ├── target/                               # build output, per target (gitignored)
 │   └── claude/                           # populated by marketplace/targets/generate.py
@@ -44,7 +44,7 @@ The marketplace is the source of truth — everything else is built from here.
 | Path | Role
 
 | `marketplace/.claude-plugin/marketplace.json` | The master marketplace manifest listing every bundle.
-| `marketplace/bundles/` | The eleven production bundles. Each bundle is a self-contained Claude Code plugin (`.claude-plugin/plugin.json` manifest + `skills/` + optional `agents/` and `commands/`).
+| `marketplace/bundles/` | The ten production bundles. Each bundle is a self-contained Claude Code plugin (`.claude-plugin/plugin.json` manifest + `skills/` + optional `agents/` and `commands/`).
 | `marketplace/targets/` | Per-target emitters and per-target subdirectories. Hosts `generate.py` (the multi-target dispatcher) plus `claude/` and `opencode/` subdirectories with the per-target emission logic and adapters. See xref:marketplace-build.adoc[Marketplace Build] for the variant-emission pipeline.
 |===
 
