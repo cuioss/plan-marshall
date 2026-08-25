@@ -528,25 +528,38 @@ SAFE_ARTIFACT_PATTERNS: list[str] = _ARTIFACT_CONFIG.get('safe_patterns', [])
 UNCERTAIN_ARTIFACT_PATTERNS: list[str] = _ARTIFACT_CONFIG.get('uncertain_patterns', [])
 
 
-def get_gitignored_files(root: Path) -> set[str]:
-    """Return set of relative paths that are gitignored under root.
+def get_gitignored_files(root: Path) -> set[str] | None:
+    """Return the relative paths gitignored under ``root``, or ``None``.
 
-    Uses `git check-ignore` to respect .gitignore rules. Returns empty set
-    if not inside a git repo or git is unavailable.
+    ``None`` means the ignore set could NOT be determined — ``root`` is not
+    inside a git repo, git is unavailable, or the query failed or timed out. It
+    is deliberately distinct from an empty set: empty asserts "nothing here is
+    ignored", whereas ``None`` asserts nothing at all. Collapsing the two lets
+    an unreadable ignore set be reported as a tree with no ignored files, which
+    is how a running plan's own live ``.plan/local`` state reached the
+    auto-deletable bucket.
+
+    ``--directory`` is load-bearing twice over. It collapses a fully-ignored
+    directory to a single trailing-slash entry, which is the form
+    :func:`_split_ignored` partitions on and :func:`_is_ignored` prefix-matches
+    — without it that arm receives no input and can never fire for any path. It
+    also keeps the query small enough to finish: measured on this repository the
+    flagged query returns 207 entries against 213256 unflagged, and the
+    unflagged form routinely exceeded the timeout below.
     """
     try:
         result = subprocess.run(
-            ['git', 'ls-files', '--others', '--ignored', '--exclude-standard'],
+            ['git', 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory'],
             capture_output=True,
             text=True,
             timeout=30,
             cwd=str(root),
         )
         if result.returncode != 0:
-            return set()
+            return None
         return {line.strip() for line in result.stdout.splitlines() if line.strip()}
     except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError, OSError):
-        return set()
+        return None
 
 
 def get_tracked_files(root: Path) -> set[str]:
@@ -678,10 +691,30 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
     (e.g., a committed ``*.log`` used by a test). Matching tracked files
     are routed to ``uncertain`` so the caller can confirm before any
     deletion.
+
+    When the ignore set cannot be READ at all (:func:`get_gitignored_files`
+    returns ``None``), the scan does not fall back to "nothing is ignored" —
+    that reading is what let a running plan's own live ``.plan/local`` state be
+    offered for deletion. Instead ``safe`` is left empty, every match is routed
+    to ``uncertain``, and ``gitignore_resolved: False`` is published so the
+    caller can tell a scan that found nothing to clean from one that could not
+    determine what was safe to clean.
     """
-    ignored_files, ignored_dirs = _split_ignored(
-        get_gitignored_files(root) if respect_gitignore else set()
-    )
+    gitignore_resolved = True
+    if respect_gitignore:
+        reported = get_gitignored_files(root)
+        if reported is None:
+            # The ignore set is UNKNOWN, not empty. Proceeding as though nothing
+            # were ignored would offer the entire ignored tree — a running
+            # plan's own live state included — in the auto-deletable bucket, so
+            # the scan degrades to reporting every match as 'uncertain' and
+            # publishes the degradation rather than hiding it behind a
+            # confident-looking empty exclusion set.
+            gitignore_resolved = False
+            reported = set()
+    else:
+        reported = set()
+    ignored_files, ignored_dirs = _split_ignored(reported)
     tracked = get_tracked_files(root)
 
     safe: list[str] = []
@@ -706,7 +739,7 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
             # Check safe patterns first, but demote tracked files to
             # 'uncertain' so committed fixtures are never auto-deleted.
             if any(rx.match(rel) for rx in _SAFE_REGEXES):
-                if rel in tracked:
+                if rel in tracked or not gitignore_resolved:
                     uncertain.append(rel)
                 else:
                     safe.append(rel)
@@ -717,6 +750,11 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
         'safe': sorted(safe),
         'uncertain': sorted(uncertain),
         'total': len(safe) + len(uncertain),
+        # Whether the exclusion set this scan applied is trustworthy. False
+        # means the ignore query could not be read, so 'safe' is empty by
+        # construction and every match was routed to 'uncertain' — the caller
+        # must not read that empty 'safe' as "nothing to clean".
+        'gitignore_resolved': gitignore_resolved,
     }
 
 

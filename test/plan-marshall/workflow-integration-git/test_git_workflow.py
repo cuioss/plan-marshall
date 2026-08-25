@@ -1079,6 +1079,100 @@ class TestIgnoreExclusionHelpers:
             '.plan/local/worktrees/EXAMPLE-PLAN/logs/work.log', set(), ignored_dirs
         )
 
+
+class TestIgnoreQueryHonesty:
+    """An ignore set that could not be READ must not be reported as an empty one.
+
+    ``git ls-files --others --ignored --exclude-standard`` enumerates every
+    ignored FILE individually. Measured in this repository that is 213256
+    entries, against 207 for the same query with ``--directory`` — so without
+    the flag the query routinely exceeds its own 30s timeout on a tree carrying
+    a mypy cache and a virtualenv.
+
+    Pre-fix, every failure path returned ``set()``, which ``scan_artifacts``
+    could not distinguish from "nothing is ignored". An unresolvable ignore set
+    was therefore reported as a tree with no ignored files, and the entire
+    ignored subtree — including a running plan's live ``.plan/local`` state and
+    its in-flight logs — was offered in the auto-deletable ``safe`` bucket. That
+    is absence read as measurement, and it is the one failure mode a
+    delete-these-files surface must never have.
+
+    The helper tests above cannot catch it: they hand ``_is_ignored`` an
+    ``ignored_dirs`` tuple directly, so they stay green while the real query
+    never produces a non-empty one.
+    """
+
+    def test_unresolvable_ignore_set_offers_nothing_as_safe(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """An unreadable ignore set yields no ``safe`` entry at all."""
+        _create_file(tmp_path, 'scratch.temp')
+        monkeypatch.setattr(git_workflow, 'get_gitignored_files', lambda root: None)
+
+        result = scan_artifacts(tmp_path, respect_gitignore=True)
+
+        assert result['gitignore_resolved'] is False
+        assert result['safe'] == [], (
+            f'unresolvable ignore set still offered safe deletions: {result["safe"]}'
+        )
+        # The artifact was still SEEN — reported, just never as auto-deletable.
+        # Without this, a scan that matched nothing would satisfy the assertion
+        # above vacuously and the test would pass for the wrong reason.
+        assert 'scratch.temp' in result['uncertain']
+
+    def test_resolved_ignore_set_still_offers_safe(self, tmp_path: Path):
+        """Matched negative control: the degradation must not suppress the normal path.
+
+        A fix that simply stopped populating ``safe`` would satisfy the test
+        above while breaking every real scan, so the ordinary resolved case is
+        pinned alongside it.
+        """
+        _git_init_with_identity(tmp_path)
+        _create_file(tmp_path, 'scratch.temp')
+
+        result = scan_artifacts(tmp_path, respect_gitignore=True)
+
+        assert result['gitignore_resolved'] is True
+        assert 'scratch.temp' in result['safe']
+
+    def test_ignore_query_requests_collapsed_directory_entries(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """The query passes ``--directory`` so ignored directories collapse.
+
+        Asserted against the constructed argv at the subprocess boundary rather
+        than against the returned set, because the flag's absence is precisely
+        what keeps ``_split_ignored``'s dirs tuple permanently empty — making
+        the prefix arm of ``_is_ignored`` unable to fire for any real input.
+        """
+        seen: list[list[str]] = []
+
+        class _CompletedStub:
+            returncode = 0
+            stdout = ''
+
+        def _fake_run(argv, **kwargs):
+            seen.append(argv)
+            return _CompletedStub()
+
+        monkeypatch.setattr(git_workflow.subprocess, 'run', _fake_run)
+        git_workflow.get_gitignored_files(tmp_path)
+
+        assert seen, 'ignore query issued no subprocess call'
+        assert '--directory' in seen[0], f'ignore query omits --directory: {seen[0]}'
+
+    def test_query_failure_returns_none_not_empty_set(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """A failed query returns ``None`` — the unknown sentinel — never ``set()``."""
+
+        def _raise_timeout(argv, **kwargs):
+            raise subprocess.TimeoutExpired(cmd=argv, timeout=30)
+
+        monkeypatch.setattr(git_workflow.subprocess, 'run', _raise_timeout)
+
+        assert git_workflow.get_gitignored_files(tmp_path) is None
+
     def test_is_ignored_no_false_prefix_match(self):
         # A sibling path that merely shares a name prefix must NOT be excluded.
         ignored_dirs = ('build/',)
