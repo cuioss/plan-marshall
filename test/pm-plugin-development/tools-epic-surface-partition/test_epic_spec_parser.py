@@ -119,6 +119,26 @@ def test_relative_entry_resolves_against_the_bullets_rooted_base(
     assert paths(claim.claimed) == {'test/delta/**', 'test/delta/test_*.py'}
 
 
+def test_dot_slash_first_entry_leaves_its_siblings_repo_relative(
+    repo: Path, plans: Path
+) -> None:
+    """A ``./`` prefix on the bullet's FIRST entry does not poison the base.
+
+    The prefix normalises away before the base is taken, so later relative
+    siblings resolve against the real parent. A retained ``./`` would make the
+    base ``./test/delta/`` and resolve every sibling to a path no test module
+    carries — an entry that silently claims nothing instead of the sibling.
+    """
+    body = (
+        '# PLAN-103\n\n## Expected Surface\n\n'
+        '- Adds `./test/delta/**` and its `test_*.py` modules\n'
+    )
+
+    claim = claim_for(plans, repo, 'PLAN-103.md', body)
+
+    assert paths(claim.claimed) == {'test/delta/**', 'test/delta/test_*.py'}
+
+
 def test_relative_entry_without_a_base_is_recorded_unresolved(repo: Path, plans: Path) -> None:
     body = (
         '# PLAN-102\n\n## Expected Surface\n\n'

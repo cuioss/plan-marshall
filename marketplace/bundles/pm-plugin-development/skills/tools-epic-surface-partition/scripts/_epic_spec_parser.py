@@ -359,7 +359,17 @@ def _collect_bullet(
     for segment in _bullet_segments(body):
         spans.extend(_spans_with_exclusion(segment))
 
-    candidates = [(span, after) for span, after in spans if _is_path_candidate(span, repo_root)]
+    # The ``./`` prefix is normalised away HERE, before the base loop, because
+    # ``_is_rooted`` reads the first segment and ``(repo_root / '.').exists()``
+    # is always true: a ``./``-prefixed span would otherwise read as rooted and
+    # poison ``base`` for the bullet's LATER relative entries, which would then
+    # resolve to a path no test module ever carries. The candidate FILTER still
+    # sees the raw span, so ``./x`` is still admitted by its slash.
+    candidates = [
+        (span[2:] if span.startswith('./') else span, after)
+        for span, after in spans
+        if _is_path_candidate(span, repo_root)
+    ]
     base = ''
     for span, _ in candidates:
         if _is_rooted(span, repo_root):
@@ -367,11 +377,10 @@ def _collect_bullet(
             break
 
     for span, after_excluding in candidates:
-        raw = span[2:] if span.startswith('./') else span
-        if _is_rooted(raw, repo_root):
-            path = raw
+        if _is_rooted(span, repo_root):
+            path = span
         else:
-            relative = raw[4:] if raw.startswith('.../') else raw
+            relative = span[4:] if span.startswith('.../') else span
             if not base:
                 unresolved.append(span)
                 continue
