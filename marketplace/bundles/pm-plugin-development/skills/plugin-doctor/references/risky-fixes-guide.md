@@ -58,27 +58,31 @@ Apply this fix?
 
 ## Handling User Responses
 
+The snippets below show control flow only. `apply_single_fix` is a real entry
+point (`_cmd_apply.py`); the recording and reporting steps are shown as comments
+because there is no shared helper for them to call.
+
 ### Yes - Apply Fix
 
 ```python
 result = apply_single_fix(fix, bundle_dir, templates)
 if result['success']:
-    log_applied(fix, result)
+    ...  # record the applied fix
 else:
-    report_error(fix, result['error'])
+    ...  # surface result['error'] to the user
 ```
 
 ### No - Skip Fix
 
 ```python
-log_skipped(fix, reason="user declined")
+...  # record the skip, with reason "user declined"
 continue  # Move to next fix
 ```
 
 ### Skip All - Exit Loop
 
 ```python
-log_skipped_all(remaining_fixes)
+...  # record the remaining fixes as skipped
 break  # Exit fix loop
 ```
 
