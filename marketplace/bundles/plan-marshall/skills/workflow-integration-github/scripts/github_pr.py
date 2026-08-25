@@ -615,7 +615,36 @@ def _dropped_comment_keys_path(plan_id: str) -> Path:
     return get_artifact_path(plan_id, _DROPPED_COMMENT_KEYS_ARTIFACT)
 
 
-def _recorded_currency_records(plan_id: str) -> dict[tuple[str, str], tuple[str, str]]:
+class _InvalidLegacyRecord:
+    """A currency-ledger row present in the file but carrying no usable reviewed SHA."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:  # pragma: no cover — diagnostic only
+        return '<invalid legacy currency record>'
+
+
+#: The STATED sentinel for a ledger row that exists but cannot anchor a credit — a row
+#: written before the artifact carried a ``reviewed_commit_sha``, or one whose SHA is
+#: empty. It is a THIRD state, distinct from both *no record* (``None``) and *a usable
+#: record* (a ``(sha, updated_at)`` pair), and it is what makes the distinction legible.
+#:
+#: ⛔ Dropping such a row instead is the NON-FIX: an absent key takes the
+#: first-observation arm, so a dropped row credits the bot at any resolvable advanced
+#: HEAD — precisely the false credit the currency test exists to deny. The row must
+#: survive the read and be REFUSED by the predicate, not vanish from it.
+INVALID_LEGACY_RECORD = _InvalidLegacyRecord()
+
+#: A ledger value: a usable ``(reviewed_commit_sha, updated_at)`` pair, or the sentinel.
+#:
+#: Consumers ask ``isinstance(record, _InvalidLegacyRecord)`` — a MEANING guard over the
+#: stated identity above (ADR-015), never a truthiness test on the tuple's first element,
+#: which is exactly the inline check that let a ``('', '')`` row fall through to the edit
+#: arm and credit essentially any real comment.
+CurrencyRecord = tuple[str, str] | _InvalidLegacyRecord
+
+
+def _recorded_currency_records(plan_id: str) -> dict[tuple[str, str], CurrencyRecord]:
     """Return ``(bot_kind, comment_id) -> (reviewed_commit_sha, updated_at)`` for earlier credits.
 
     The currency ledger the currency test reads. Each entry is the ``(sha,
@@ -629,16 +658,23 @@ def _recorded_currency_records(plan_id: str) -> dict[tuple[str, str], tuple[str,
     Last row wins per key, so a re-credit at a new HEAD supersedes the old record.
 
     A missing ledger reads as the empty map (no fetch has run for this plan yet).
+
+    A row whose ``reviewed_commit_sha`` is missing or empty maps to
+    :data:`INVALID_LEGACY_RECORD` — the third state — rather than to a
+    ``('', updated_at)`` pair that would fall through to the edit arm (true for
+    essentially any real comment), and rather than being dropped, which would hand the
+    comment to the first-observation arm and credit it at any resolvable advanced HEAD.
     """
     from jsonl_store import read_jsonl
 
-    records: dict[tuple[str, str], tuple[str, str]] = {}
+    records: dict[tuple[str, str], CurrencyRecord] = {}
     for record in read_jsonl(_dropped_comment_keys_path(plan_id)):
         key = (str(record.get('bot_kind') or ''), str(record.get('comment_id') or ''))
-        records[key] = (
-            str(record.get('reviewed_commit_sha') or ''),
-            str(record.get('updated_at') or ''),
-        )
+        sha = str(record.get('reviewed_commit_sha') or '')
+        if not sha:
+            records[key] = INVALID_LEGACY_RECORD
+            continue
+        records[key] = (sha, str(record.get('updated_at') or ''))
     return records
 
 
@@ -667,11 +703,37 @@ def _record_currency_records(
         )
 
 
+def _comment_predates_commit(comment: dict, merge_candidate_committed_at: str) -> bool:
+    """True when ``comment`` demonstrably existed BEFORE the merge-candidate commit.
+
+    The comment's own latest timestamp is the LATER of ``updated_at`` / ``created_at``
+    — the moment it last said anything. When that moment precedes the commit's own
+    timestamp, the comment cannot be an observation of that commit, however empty the
+    currency ledger is.
+
+    Returns False whenever the question cannot be decided: an unreadable commit
+    timestamp, an absent comment timestamp, or timestamps that do not compare. An
+    unknown ordering is NOT a claim that the comment predates the commit, and the
+    caller must not read it as one — the withholding here rests on positive evidence
+    of the ordering, never on its absence.
+    """
+    if not merge_candidate_committed_at:
+        return False
+    latest = max(
+        str(comment.get('updated_at') or ''),
+        str(comment.get('created_at') or ''),
+    )
+    if not latest:
+        return False
+    return latest < merge_candidate_committed_at
+
+
 def _reviewed_at_merge_candidate(
     comment: dict,
-    currency_records: dict[tuple[str, str], tuple[str, str]],
+    currency_records: dict[tuple[str, str], CurrencyRecord],
     bot_kind: str,
     merge_candidate_sha: str,
+    merge_candidate_committed_at: str = '',
 ) -> bool:
     """Return True when ``comment`` proves a review of the MERGE CANDIDATE commit.
 
@@ -702,6 +764,13 @@ def _reviewed_at_merge_candidate(
       observation it could not tie to a commit. Failing closed here is also what
       keeps the verdict idempotent when the head-SHA read fails — a later fetch that
       likewise cannot read the SHA reaches the same (blocking) answer, not a flip.
+      It is guarded a second way when ``merge_candidate_committed_at`` is readable:
+      a comment whose own timestamps PREDATE the merge-candidate commit cannot be an
+      observation of it, whatever the ledger does or does not remember — the comment
+      demonstrably existed before the code did. When the commit timestamp cannot be
+      read the arm keeps its SHA-only behaviour, because an unreadable timestamp is
+      not an ordering claim; that unresolved read is disclosed by the caller rather
+      than turned into a new blocking state here.
     - **Fresh edit** — the bot edited the comment in place SINCE it was last credited
       (``updated_at`` differs from the recorded ``updated_at``), publishing a fresh
       review at the current tree. Comparing against the recorded ``updated_at`` — not
@@ -709,19 +778,37 @@ def _reviewed_at_merge_candidate(
       ever edited" flag: an edit at commit N credits N, but not N+1, N+2 unless a
       FURTHER edit lands. An absent ``updated_at`` degrades to "no movement" — the
       fail-closed direction, since crediting an unverified review is the expensive
-      error.
+      error. This arm is ALSO guarded on a resolvable ``merge_candidate_sha``, so an
+      unreadable head fails closed on EVERY arm rather than on some of them: an edit
+      proves a fresh review of *something*, and without a readable head there is no
+      commit to say it was a review OF.
+    - **Invalid legacy record** — a row that exists but carries no usable reviewed
+      SHA (:data:`INVALID_LEGACY_RECORD`) yields False outright. It is neither a
+      first observation nor a usable anchor, and reading it as either is how a
+      pre-upgrade row credited a bot at any advanced HEAD. The third state is
+      recognised by identity, not by testing the anchor for truthiness.
 
     A comment last credited against an EARLIER commit, with no fresh edit, yields
     False: stale evidence, which is neither absence nor participation.
     """
     comment_id = str(comment.get('id') or 'unknown')
     record = currency_records.get((bot_kind, comment_id))
+    if isinstance(record, _InvalidLegacyRecord):
+        # The third state: a row that EXISTS but anchors nothing. Refused outright —
+        # falling through to the first-observation arm is what credited a pre-upgrade
+        # row at any resolvable advanced HEAD.
+        return False
     if record is None:
-        # First observation — credit only when the merge candidate is resolvable.
-        return bool(merge_candidate_sha)
+        # First observation — credit only when the merge candidate is resolvable AND
+        # the comment does not predate the commit it would be credited against.
+        if not merge_candidate_sha:
+            return False
+        return not _comment_predates_commit(comment, merge_candidate_committed_at)
     recorded_sha, recorded_updated_at = record
     if merge_candidate_sha and recorded_sha == merge_candidate_sha:
         return True
+    if not merge_candidate_sha:
+        return False
     updated_at = str(comment.get('updated_at') or '')
     return bool(updated_at) and updated_at != recorded_updated_at
 
@@ -959,6 +1046,13 @@ def cmd_fetch_findings(args):
     # edit-movement arms rather than crediting on a SHA that could not be read.
     reviewed_commit_sha = _github.fetch_pr_head_sha(pr_number)
 
+    # The merge candidate's OWN timestamp, read alongside its SHA. It guards the
+    # first-observation arm: a comment whose timestamps predate the commit cannot be an
+    # observation OF it. Empty string on any failure path, which the arm reads as
+    # "ordering unknown" and therefore as no reason to withhold — an unreadable
+    # timestamp introduces no new blocking.
+    merge_candidate_committed_at = _github.fetch_pr_head_committed_at(pr_number)
+
     # The currency test (``_reviewed_at_merge_candidate``) reads the currency ledger
     # recorded by earlier fetches (see ``_DROPPED_COMMENT_KEYS_ARTIFACT``): per
     # ``participation_requires_update`` comment the plan has credited, the
@@ -1020,7 +1114,11 @@ def cmd_fetch_findings(args):
         if _kind not in bot_registry.participation_evidence(_bot_kind):
             continue
         if _requires_update and not _reviewed_at_merge_candidate(
-            _comment, currency_records, _bot_kind, reviewed_commit_sha
+            _comment,
+            currency_records,
+            _bot_kind,
+            reviewed_commit_sha,
+            merge_candidate_committed_at,
         ):
             # The comment's kind ALREADY matched a declared publish shape — only the
             # currency test failed. Discarding it here is what collapsed a stale
@@ -1041,7 +1139,14 @@ def cmd_fetch_findings(args):
         # currency record so the next fetch anchors on this credit's SHA and updated_at.
         # One row per PASSING (bot_kind, comment_id) — every evidence comment that passed,
         # not merely the one that happened to credit the bot first.
-        if _requires_update:
+        #
+        # ``reviewed_commit_sha`` is required non-empty to stage: a row whose SHA is the
+        # empty string can never again equal a merge candidate, so writing one POISONS
+        # the key — the comment is thereafter neither first-observed nor SHA-current and
+        # only an edit could ever revive it. Under the fail-closed arms above an
+        # unreadable head credits nothing anyway, so this guard is what keeps the ledger
+        # free of rows that could not have been written by a real credit.
+        if _requires_update and reviewed_commit_sha:
             currency_updates[(_bot_kind, str(_comment.get('id') or 'unknown'))] = (
                 reviewed_commit_sha,
                 str(_comment.get('updated_at') or ''),
@@ -1061,6 +1166,11 @@ def cmd_fetch_findings(args):
     # the recorded updated_at is what a fresh edit must move past. The PR HEAD SHA
     # (``reviewed_commit_sha``) was fetched up front, before the participation loop, so
     # it also serves as the ingestion stamp on every finding below.
+    #
+    # This is the SECOND read path of ``_recorded_currency_records`` and it is migrated
+    # to the third state alongside the predicate: an :data:`INVALID_LEGACY_RECORD` value
+    # is never equal to a staged ``(sha, updated_at)`` pair, so a pre-upgrade row is
+    # SUPERSEDED by the first real credit rather than suppressing the append.
     _record_currency_records(
         plan_id,
         {k: v for k, v in currency_updates.items() if currency_records.get(k) != v},

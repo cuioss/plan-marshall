@@ -250,8 +250,15 @@ evidence requires the comment to prove a review of the **merge candidate**:
   SHA the noise sidecar recorded when the comment was first observed; **or**
 - it was **edited in place** (`updated_at` differs from `created_at`) since it was posted — a fresh
   review at the current tree; **or**
-- this fetch is the **first observation** of the comment, which is by definition an observation at the
-  merge candidate.
+- this fetch is the **first observation** of the comment — a **bounded assumption**, never a verified
+  fact. A fetched comment carries no reviewed SHA, so nothing in it says which commit the bot actually
+  read, and the ledger's silence says only that this plan has not seen the comment before — which is
+  not the same as the bot not having published it earlier. The assumption errs toward **crediting**: a
+  comment that in truth reviewed an earlier commit is credited at the merge candidate. Two guards
+  bound it — the credit is withheld when the merge-candidate SHA is unreadable, and, when the
+  merge-candidate commit's own timestamp can be read, when the comment's timestamps predate that
+  commit. Neither guard turns the assumption into a verification: a comment posted after the commit is
+  still credited without proof that it read it.
 
 A comment recorded against an **earlier** commit, unedited, fails the test. Because the test is an SHA
 comparison rather than a first-seen tally, re-running the fetch at the same HEAD returns the same

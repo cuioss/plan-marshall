@@ -81,14 +81,23 @@ _COMMENTS = [
 ]
 
 
-def _patch_provider(monkeypatch, comments, head_sha='deadbeef'):
+def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_at=''):
     """Monkeypatch the GitHub provider surface ``github_pr`` reaches through ``_github``.
 
     ``head_sha`` is the PR HEAD the producer stamps as ``reviewed_commit_sha`` and
     compares each comment's recorded SHA against. A test simulates a loop-back /
     force-push by re-patching with a DIFFERENT value between fetches.
+
+    ``head_committed_at`` is the merge-candidate commit's OWN timestamp — the second
+    input to the first-observation arm, which withholds the credit from a comment whose
+    timestamps predate the commit. It defaults to the empty string, the UNREADABLE case
+    under which the arm keeps its SHA-only behaviour, so every case that is not about
+    commit ordering is unaffected by the guard.
     """
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(
+        github_pr._github, 'fetch_pr_head_committed_at', lambda pr_number: head_committed_at
+    )
     monkeypatch.setattr(
         github_pr._github,
         'fetch_pr_comments_data',
@@ -2634,7 +2643,12 @@ def test_currency_anchor_is_recorded_in_the_ledger_on_credit(plan_context, monke
     assert result['participated_bots'] == [{'bot_kind': bot, 'evidence_kind': comment['kind']}]
 
     ledger = github_pr._recorded_currency_records(plan_id)
-    assert ledger.get((bot, 'c-ledger')) == (_HEAD_A, comment['updated_at'])
+    # The reader returns THREE states — absent, invalid-legacy, and a usable anchor.
+    # A credit must produce the third: both that it is not the sentinel, and that the
+    # anchor it carries is the merge candidate the credit was granted against.
+    record = ledger.get((bot, 'c-ledger'))
+    assert record == (_HEAD_A, comment['updated_at'])
+    assert not isinstance(record, github_pr._InvalidLegacyRecord)
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
@@ -2955,6 +2969,123 @@ def test_a_rejecting_fetch_stages_no_ledger_row_so_the_verdict_holds(
     ledger = github_pr._recorded_currency_records(plan_id)
     assert ledger[(bot_kind, 'guide-a')][0] == _HEAD_A
     assert ledger[(bot_kind, 'guide-b')][0] == _HEAD_A
+
+
+# --- D2: every arm of the currency predicate fails closed on degenerate input.
+#
+# Each arm previously failed OPEN in its own way: the first-observation arm credited any
+# comment absent from the ledger whatever commit it had really read; the fresh-edit arm
+# was unguarded on a resolvable head; and a pre-upgrade row with no reviewed SHA read as
+# ``('', '')`` and fell through to the edit arm, which is true for essentially any real
+# comment. Withholding a credit is the cheap error; crediting an unverified review is the
+# expensive one, so every arm now errs toward withholding.
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_comment_predating_the_merge_candidate_is_stale_on_first_observation(
+    bot_kind, plan_context, monkeypatch
+):
+    """A comment older than the commit cannot be an observation of it — even unseen.
+
+    The first-observation arm's ledger-silence means only that THIS PLAN has not seen
+    the comment before; it never proved the comment reviewed the merge candidate. When
+    the commit's own timestamp is readable, a comment whose timestamps precede it is
+    positively disqualified: the comment demonstrably existed before the code did.
+    """
+    plan_id = f'gh-pr-predates-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-old', created_at=_at(1))
+
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_A, head_committed_at=_at(30))
+    result = _run_fetch(170, plan_id)
+
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
+    ]
+    # A withheld credit stages no anchor either — otherwise the next fetch would read
+    # the comment as SHA-current and credit what this fetch refused.
+    assert github_pr._recorded_currency_records(plan_id) == {}
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_fresh_edit_at_an_unreadable_head_blocks_on_both_fetches(
+    bot_kind, plan_context, monkeypatch
+):
+    """An unreadable head fails closed on the EDIT arm too, and writes no poisoned row.
+
+    An edit proves a fresh review of *something*; without a readable head there is no
+    commit to say it was a review OF. The answer must also be the SAME on a second
+    consecutive fetch — a verdict that flips between two identical fetches is the
+    observer effect this predicate exists to close. And no row may be written carrying
+    an empty ``reviewed_commit_sha``: such a row can never again equal a merge
+    candidate, so it would poison the key permanently.
+    """
+    plan_id = f'gh-pr-unreadable-head-{bot_kind}'
+    base = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+    _patch_provider(monkeypatch, [base], head_sha=_HEAD_A)
+    _run_fetch(171, plan_id)
+    ledger_after_credit = github_pr._recorded_currency_records(plan_id)
+    assert ledger_after_credit[(bot_kind, 'guide-1')] == (_HEAD_A, base['updated_at'])
+
+    edited = _publish_comment(bot_kind, 'guide-1', created_at=_at(1), updated_at=_at(9))
+    _patch_provider(monkeypatch, [edited], head_sha='')
+    first = _run_fetch(171, plan_id)
+    second = _run_fetch(171, plan_id)
+
+    assert first['participated_bots'] == []
+    assert first['stale_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': edited['kind']}
+    ]
+    assert second['participated_bots'] == first['participated_bots']
+    assert second['stale_participation_bots'] == first['stale_participation_bots']
+
+    ledger = github_pr._recorded_currency_records(plan_id)
+    assert ledger == ledger_after_credit
+    assert not any(isinstance(v, github_pr._InvalidLegacyRecord) for v in ledger.values())
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_pre_upgrade_key_only_ledger_row_resolves_stale_not_participated(
+    bot_kind, plan_context, monkeypatch
+):
+    """A row carrying no reviewed SHA is REFUSED, never read as a first observation.
+
+    Dropping such a row is the non-fix: an absent key takes the first-observation arm,
+    so the bot would be credited at any resolvable advanced HEAD — the very credit the
+    row's unreadability should deny. The row survives the read as a stated third state
+    and the predicate refuses it, so the bot resolves ``participated_stale``.
+
+    The assertion is on the RESOLVED STATE, not on an equivalence with some other
+    input: proving this ledger behaves 'the same as' an empty one would certify the
+    drop-the-row non-fix rather than refute it.
+    """
+    from jsonl_store import append_jsonl
+
+    plan_id = f'gh-pr-legacy-row-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+    # A pre-upgrade row: the key, and no ``reviewed_commit_sha`` field at all.
+    append_jsonl(
+        github_pr._dropped_comment_keys_path(plan_id),
+        {'bot_kind': bot_kind, 'comment_id': 'guide-1'},
+    )
+
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_B)
+    result = _run_fetch(172, plan_id)
+
+    # The resolved state first: this is the claim, and it must be what fails when the
+    # predicate regresses — not a downstream assertion about the reader's vocabulary.
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
+    ]
+    # ...and the mechanism that produced it: the row survived the read as the stated
+    # third state rather than being dropped or coerced into a usable-looking anchor.
+    assert (
+        github_pr._recorded_currency_records(plan_id)[(bot_kind, 'guide-1')]
+        is github_pr.INVALID_LEGACY_RECORD
+    )
 
 
 # =============================================================================

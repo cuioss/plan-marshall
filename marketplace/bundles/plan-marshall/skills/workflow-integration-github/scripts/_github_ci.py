@@ -64,6 +64,44 @@ def fetch_pr_head_sha(pr_number: int | str) -> str:
     return _fetch_pr_head_sha(pr_number)
 
 
+def fetch_pr_head_committed_at(pr_number: int | str) -> str:
+    """Resolve the merge-candidate commit's own timestamp, or ``''`` when unreadable.
+
+    The companion read to :func:`fetch_pr_head_sha`: the participation currency test
+    needs to know not only WHICH commit is the merge candidate but WHEN it came into
+    existence, so a comment that predates the commit cannot be credited as an
+    observation OF it.
+
+    Returns the ISO-8601 ``committedDate`` of the PR's head commit, matched by SHA
+    against the PR's commit list and falling back to the last listed commit when no
+    entry carries the head SHA. Every failure path — a non-zero ``gh`` exit,
+    unparseable JSON, a missing or malformed commit list — returns the empty string,
+    which callers read as *unknown* and never as *the epoch*: an unreadable timestamp
+    must not become an ordering claim.
+    """
+
+    returncode, stdout, _stderr = github_ops.run_gh(
+        ['pr', 'view', str(pr_number), '--json', 'commits,headRefOid']
+    )
+    if returncode != 0:
+        return ''
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        return ''
+    if not isinstance(data, dict):
+        return ''
+    commits = data.get('commits')
+    if not isinstance(commits, list) or not commits:
+        return ''
+    head_oid = str(data.get('headRefOid') or '')
+    for commit in commits:
+        if isinstance(commit, dict) and head_oid and str(commit.get('oid') or '') == head_oid:
+            return str(commit.get('committedDate') or '')
+    last = commits[-1]
+    return str(last.get('committedDate') or '') if isinstance(last, dict) else ''
+
+
 def _enrich_failing_checks(
     entries: list[dict],
     *,
