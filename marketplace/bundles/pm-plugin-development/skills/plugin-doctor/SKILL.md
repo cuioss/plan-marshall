@@ -24,7 +24,7 @@ Comprehensive diagnostic and fix skill for marketplace components. Combines diag
 - Load prerequisite skills and the component reference guide before analyzing
 - Every workflow step that performs a script operation must have an explicit bash code block with the full `python3 .plan/execute-script.py` command (workflow-explicit-script-calls)
 - Agents must record lessons via manage-lessons skill, not self-invoke commands (agent-lessons-via-skill)
-- Only `doctor-marketplace.py` is registered in the executor. `_analyze.py`, `_validate.py`, and `_fix.py` are verb-bearing dispatchers whose verbs are NOT reachable as `doctor-marketplace` subcommands, and which no production module imports — the test suite loads them directly by path. See § External Resources
+- Only `doctor-marketplace.py` is registered in the executor. `_analyze.py`, `_validate.py`, and `_fix.py` are separate verb-bearing entry points whose verbs are NOT `doctor-marketplace` subcommands; a workflow needing one invokes the script directly, and no executor form may be documented for them. See § External Resources
 - Prose instructions adjacent to script calls must reference parameter values consistent with the script API (workflow-prose-parameter-consistency)
 
 ## Purpose
@@ -242,37 +242,25 @@ Test-tree conventions enforced across the `test/` directory, at two severities. 
 
 Only `doctor-marketplace.py` is registered in the executor.
 
-⛔ **Three sibling dispatchers have no production caller.** `_analyze.py`,
-`_validate.py`, and `_fix.py` are each a verb-bearing CLI entry point with an
-`if __name__ == '__main__'` block, and none of their verbs is a
-`doctor-marketplace` subcommand. `doctor-marketplace` imports many other
-underscore modules (`_doctor_analysis`, `_runner`, `_cmd_extension`, the
-`_analyze_*` rule modules) but none of these three, and the dependency runs the
-other way — `_analyze.py` imports the `_analyze_*` helpers listed below.
+`_analyze.py`, `_validate.py`, and `_fix.py` are separate verb-bearing entry
+points, each with its own argparse surface and `if __name__ == '__main__'` block.
+Their verbs are NOT `doctor-marketplace` subcommands: `doctor-marketplace`
+declares `list-components`, `analyze`, `fix`, `report`, `quality-gate`,
+`test-conventions`, `validate-contracts`, while `_analyze.py` declares `markdown`,
+`structure`, `coverage`, `cross-file`; `_validate.py` declares `references`,
+`cross-file`, `inventory`, `extension`; and `_fix.py` declares `extract`,
+`categorize`, `apply`, `verify`. No `doctor-marketplace` verb name appears among
+them, and `doctor-marketplace.py` imports none of the three.
 
-What DOES load them is the test tree: `conftest.py`'s script loader executes each
-module through `spec_from_file_location` + `exec_module`, so all three are
-imported and run on every `module-tests` pass. They are therefore kept green by
-tests while no sanctioned surface can invoke them — which is a coverage report
-that measures reachability nobody has.
-
-⚠ Note for anyone re-checking this: a text search for `from X import` / `import X`
-CANNOT see that loader, and returns zero. This section previously asserted "no
-module imports them" on exactly that evidence, which the test tree refutes. The
-absence of a static import spelling is not the absence of an importer.
-
-Concretely: `doctor-marketplace` offers seven subcommands (`list-components`,
-`analyze`, `fix`, `report`, `quality-gate`, `test-conventions`,
-`validate-contracts`); `_validate.py` declares `references`, `cross-file`,
-`inventory`, `extension`; `_analyze.py` declares `markdown`, `structure`,
-`coverage`, `cross-file`; `_fix.py` declares `extract`, `categorize`, `apply`,
-`verify`. The sets are disjoint, and `doctor-marketplace.py` imports only
-`validate_extension_contracts` from `_cmd_extension`, never `cmd_extension`.
-
-Such a verb still runs when addressed directly, because the executor falls back
-to resolving an unregistered third part by filename — but a fallback resolution
-is NOT a sanctioned form and must not be documented as an invocation. The
-consequence for `extension` specifically is worked through in
+⛔ **Unregistered, so no executor form may be written for them** — not in this
+file and not in any consuming doc. A workflow that needs one of these verbs
+invokes the script directly and says so; the `doctor-skill-content` workflow does
+exactly that for `_analyze.py cross-file` (see
+[content-quality-guide.md § Integration](references/content-quality-guide.md#integration-with-doctor-skill-content-workflow)).
+An unregistered third part does still resolve through the executor's filename
+fallback, but that resolution is not a sanctioned form and documenting it as an
+invocation is a lint violation. The consequence for `extension` specifically is
+worked through in
 [`plan-marshall:extension-api` extension-contract.md § Validation](../../../plan-marshall/skills/extension-api/standards/extension-contract.md#validation).
 
 **Registered Script** (callable via executor):

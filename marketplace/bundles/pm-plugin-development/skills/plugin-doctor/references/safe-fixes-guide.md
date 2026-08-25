@@ -21,9 +21,10 @@ Safe fixes are mechanical transformations that:
 
 ### Using the doctor-marketplace fix subcommand
 
-`_fix.py` is an underscore-prefixed helper module, so it registers no executor
-notation of its own — the safe-fix pass is reached through `doctor-marketplace`,
-scoped by bundle / type / name, with `--dry-run` to preview:
+`_fix.py` is unregistered and registers no executor notation of its own. The
+safe-fix pass documented here does not run it: `doctor-marketplace fix` reaches
+`_cmd_apply.py` directly. Scope by bundle / type / name, with `--dry-run` to
+preview:
 
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace fix \

@@ -123,8 +123,8 @@ which verb reached it, so a broken method may or may not announce itself.
 `load_extension_module()`, whose single `try` spans the spec load, the module
 exec, AND the `Extension()` instantiation — so a manifest whose `__init__` raises
 is swallowed on the same path as an unparseable one, and the bundle is omitted
-rather than failed. The absence of a diagnostic is therefore not evidence the
-manifest is sound; see
+rather than failed. The absence of a diagnostic is therefore not evidence that
+the manifest is sound; see
 [plan-marshall-guide.md § plan-marshall-plugin Extension Validation](../../../../plan-marshall/skills/plan-marshall-plugin/references/plan-marshall-guide.md#plan-marshall-plugin-extension-validation)
 for the worked call-site detail. So review the manifest by reading it against the
 domain-bundle contract, and categorise findings as: schema/structure → safe fix;

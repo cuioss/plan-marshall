@@ -200,8 +200,10 @@ The `bundle` field is a **reverse mapping** added automatically by `skill-domain
 #### Validation
 
 - `get_skill_domains()` returns valid structure with `domain.key`, `domain.name`, `profiles`
-- Required profiles exist (`core`, `implementation`, `module_testing`, `quality`)
-- Each profile has `defaults` and `optionals` lists
+- Required profiles exist (`core`, `implementation`, `module_testing`, `quality`) —
+  a contract requirement that **nothing checks**; see [§ Validation](#validation)
+- Each profile has `defaults` and `optionals` lists — checked only for profiles
+  whose category is recognised; an unrecognised name is warned about and skipped
 - Skill references (`bundle:skill`) point to existing registered skills
 
 ---
@@ -861,10 +863,12 @@ Three further things make even the fully-checked seven unreachable in practice:
   criterion by which it chooses what to check. Reading it as the selector
   predicts that these manifests are covered, which is how this section previously
   came to describe an empty population as though it were a pass.
-- **No runtime backstop for the import itself.** `extension_discovery.py`'s
-  `load_extension_module()` wraps the import in a blanket `except Exception`,
-  logs a WARNING, and returns `None`, and `discover_all_extensions()` then omits
-  the bundle. An invalid `extension.py` does not fail — it becomes **invisible**.
+- **No runtime backstop.** `extension_discovery.py`'s `load_extension_module()`
+  opens ONE `try` spanning the spec load, the module exec, AND the `Extension()`
+  instantiation; its blanket `except Exception` logs a WARNING and returns
+  `None`, and `discover_all_extensions()` then omits the bundle. So a manifest
+  whose `__init__` raises is swallowed on the same path as an unparseable one. An
+  invalid `extension.py` does not fail — it becomes **invisible**.
   (`_cmd_extension.py` defines a second function of the same name whose except
   branch logs nothing; the description here is of the `extension_discovery.py`
   one.)
