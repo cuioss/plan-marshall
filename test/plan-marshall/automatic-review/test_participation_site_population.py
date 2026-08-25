@@ -264,15 +264,16 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
 
 #: AST candidates that are NOT seed symbols, each with the reason it is not one.
 #: An exclusion says "not a seed", never "not participation-adjacent".
+#:
+#: The currency ledger's own storage symbols are absent from this dict because they are
+#: absent from the CANDIDATE SET: named for what they hold
+#: (``_CURRENCY_LEDGER_ARTIFACT`` / ``_currency_ledger_path`` and their pre-rename
+#: read-only twins), they carry no :data:`VOCABULARY_STEMS` stem and so are never
+#: collected. That is not a shrunken population — it is the storage layer resolving
+#: uniformly, the way its sibling readers ``_recorded_currency_records`` /
+#: ``_record_currency_records`` always have. Their exclusion REASON was always
+#: "storage naming, not a crediting decision", and the names now say so themselves.
 CANDIDATE_EXCLUSIONS: dict[str, str] = {
-    '_DROPPED_COMMENT_KEYS_ARTIFACT': (
-        'The on-disk filename of the currency ledger the seeded _reviewed_at_merge_candidate '
-        'reads. Storage naming, not a distinct crediting decision.'
-    ),
-    '_dropped_comment_keys_path': (
-        'The path helper for that same artifact — resolves where the ledger lives, decides '
-        'nothing about a credit.'
-    ),
     '_existing_pr_comment_keys': (
         'The FILING dedup’s key reconstruction: it decides whether a comment is new '
         'INFORMATION to file, never whether a bot participated. Its site is already in the '

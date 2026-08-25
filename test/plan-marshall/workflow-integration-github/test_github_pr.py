@@ -21,6 +21,8 @@ import bot_registry
 import pytest
 from _bot_flag_derivation import derive_bot_flags
 from _github_pr_fixtures import (
+    CURRENCY_BLIND_BOT_COUNT,
+    CURRENCY_BLIND_BOTS,
     CURRENCY_SUBJECT_BOT_COUNT,
     CURRENCY_SUBJECT_BOTS,
     VacuousPopulationError,
@@ -28,7 +30,7 @@ from _github_pr_fixtures import (
 )
 from _pr_agent_guide_bodies import GUIDE_WITH_FINDING, OBSERVED_CLEAN_GUIDE
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import get_script_path, get_skill_dir, load_script_module, run_script
 
 github_pr = load_script_module('plan-marshall', 'workflow-integration-github', 'github_pr.py', 'github_pr')
 _findings_core = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core')
@@ -3078,7 +3080,7 @@ def test_a_pre_upgrade_key_only_ledger_row_resolves_stale_not_participated(
     comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
     # A pre-upgrade row: the key, and no ``reviewed_commit_sha`` field at all.
     append_jsonl(
-        github_pr._dropped_comment_keys_path(plan_id),
+        github_pr._currency_ledger_path(plan_id),
         {'bot_kind': bot_kind, 'comment_id': 'guide-1'},
     )
 
@@ -3264,6 +3266,300 @@ def test_a_pre_upgrade_finding_without_an_edit_term_does_not_refile_history(
     # the two-term fallback is what deduped it, rather than the row having been
     # rewritten or replaced by a three-term one.
     assert github_pr._detail_field(stored[0].get('detail'), github_pr._EDIT_TERM_DETAIL) == ''
+
+
+# --- D5: the currency ledger is named for what it holds, and the rename loses no anchor.
+#
+# The ledger's on-disk name changed from one describing a NOISE-DROP side effect to one
+# naming the currency anchor it actually holds. Every row already written under the old
+# name is a real credit, so the reader opens BOTH filenames and the writer only ever
+# appends to the current one. The read is DATA MIGRATION, not a deprecation shim: dropping
+# it hands every comment recorded under the old name back to the first-observation arm,
+# which credits it at any resolvable HEAD — the exact false credit the ledger prevents.
+
+_LEGACY_LEDGER_FILENAME = 'pr-noise-dropped-comments.jsonl'
+
+
+def _write_ledger_row(path, bot_kind, comment_id, sha, updated_at):
+    """Append one currency-ledger row to ``path`` in the producer's own row shape."""
+    from jsonl_store import append_jsonl
+
+    append_jsonl(
+        path,
+        {
+            'bot_kind': bot_kind,
+            'comment_id': comment_id,
+            'reviewed_commit_sha': sha,
+            'updated_at': updated_at,
+        },
+    )
+
+
+def test_the_pre_rename_ledger_filename_is_the_literal_real_plans_carry():
+    """The migration target is an exact on-disk name, so it is pinned as a literal.
+
+    Every other name in this area is derived, but this one cannot be: it is the string
+    already written into existing plan directories. A constant that drifted from it would
+    make the reader open a file nothing ever wrote, and every case below would still pass
+    — reading an absent legacy file and an absent current file are indistinguishable.
+    """
+    assert github_pr._LEGACY_CURRENCY_LEDGER_ARTIFACT == _LEGACY_LEDGER_FILENAME
+    # ...and the current name says what the file holds, rather than a drop side effect.
+    assert 'currency' in github_pr._CURRENCY_LEDGER_ARTIFACT
+    assert 'dropped' not in github_pr._CURRENCY_LEDGER_ARTIFACT
+    assert github_pr._CURRENCY_LEDGER_ARTIFACT != github_pr._LEGACY_CURRENCY_LEDGER_ARTIFACT
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_ledger_written_under_the_pre_rename_filename_is_still_read(
+    bot_kind, plan_context, monkeypatch
+):
+    """An anchor recorded under the OLD filename still denies a credit at an advanced HEAD.
+
+    The migration's whole point, asserted through its CONSEQUENCE rather than through the
+    reader's return alone: a plan whose ledger predates the rename holds real credits, and
+    a reader that stopped opening that file would find no row for the comment, take the
+    first-observation arm, and credit it at whatever HEAD is resolvable.
+    """
+    plan_id = f'gh-pr-legacy-filename-read-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+    _write_ledger_row(
+        github_pr._legacy_currency_ledger_path(plan_id),
+        bot_kind,
+        'guide-1',
+        _HEAD_A,
+        comment['updated_at'],
+    )
+
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_B)
+    result = _run_fetch(200, plan_id)
+
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
+    ]
+    # ...and the mechanism: the row reached the reader as a usable anchor, not as the
+    # invalid-legacy sentinel and not as an absent key.
+    assert github_pr._recorded_currency_records(plan_id)[(bot_kind, 'guide-1')] == (
+        _HEAD_A,
+        comment['updated_at'],
+    )
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_the_same_fetch_with_no_ledger_at_all_credits_the_comment(
+    bot_kind, plan_context, monkeypatch
+):
+    """Matched negative control: without the legacy row, that very fetch CREDITS the bot.
+
+    Identical comment, identical advanced HEAD — the only difference is whether a row was
+    written under the pre-rename filename. Without this control the case above would be
+    consistent with the fetch resolving stale for some unrelated reason, and would keep
+    passing against a reader that never opened the legacy file.
+    """
+    plan_id = f'gh-pr-legacy-filename-control-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_B)
+    result = _run_fetch(201, plan_id)
+
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
+    ]
+    assert result['stale_participation_bots'] == []
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_populated_current_ledger_does_not_hide_the_pre_rename_rows(
+    bot_kind, plan_context, monkeypatch
+):
+    """⛔ The per-FILE fallback shape is refuted here: both files are read, always.
+
+    Reading the old file only while the new one is ABSENT looks equivalent and is not.
+    The writer appends only CHANGED records, so the first post-rename credit creates a
+    current file holding that ONE key — and from then on a per-file fallback would ignore
+    the legacy file entirely, handing every key that lives only there back to the
+    first-observation arm.
+
+    The fixture reproduces exactly that state: ``guide-a``'s anchor lives only in the
+    legacy file, ``guide-b``'s only in the current file (staged by a real credit). At the
+    advanced HEAD BOTH must be stale. Under a per-file fallback ``guide-a`` would be
+    first-observed and the bot would be credited.
+    """
+    plan_id = f'gh-pr-legacy-coexist-{bot_kind}'
+    comments = _two_evidence_comments(bot_kind)
+    guide_a, guide_b = comments
+
+    # ``guide-a``'s anchor exists ONLY under the pre-rename filename.
+    _write_ledger_row(
+        github_pr._legacy_currency_ledger_path(plan_id),
+        bot_kind,
+        'guide-a',
+        _HEAD_A,
+        guide_a['updated_at'],
+    )
+
+    # A real fetch at HEAD_A credits ``guide-b`` for the first time and stages it — which
+    # is what CREATES the current file, the precondition the fallback shape trips over.
+    _patch_provider(monkeypatch, comments, head_sha=_HEAD_A)
+    at_a = _run_fetch(202, plan_id)
+    assert at_a['participated_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': guide_a['kind']}
+    ]
+    assert github_pr._currency_ledger_path(plan_id).exists()
+
+    # HEAD advances. Neither comment moved, and both anchors point at HEAD_A.
+    _patch_provider(monkeypatch, comments, head_sha=_HEAD_B)
+    at_b = _run_fetch(202, plan_id)
+
+    assert at_b['status'] == 'success'
+    assert at_b['participated_bots'] == []
+    assert at_b['stale_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': guide_a['kind']}
+    ]
+    # Both anchors resolved, each from the file that holds it.
+    ledger = github_pr._recorded_currency_records(plan_id)
+    assert ledger[(bot_kind, 'guide-a')] == (_HEAD_A, guide_a['updated_at'])
+    assert ledger[(bot_kind, 'guide-b')] == (_HEAD_A, guide_b['updated_at'])
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_credit_is_written_only_under_the_current_filename(
+    bot_kind, plan_context, monkeypatch
+):
+    """The pre-rename file is READ and never written — the migration is one-directional.
+
+    Appending to it as well would keep minting rows under a name that no longer says what
+    the file holds, which is the state the rename exists to end.
+    """
+    plan_id = f'gh-pr-write-current-only-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_A)
+
+    result = _run_fetch(203, plan_id)
+
+    assert result['participated_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
+    ]
+    assert github_pr._currency_ledger_path(plan_id).exists()
+    assert not github_pr._legacy_currency_ledger_path(plan_id).exists()
+
+
+# --- D6: the currency-blind path for append-per-review bots, as an ACCEPTED bounded gap.
+#
+# A bot declaring ``participation_requires_update: false`` posts a new comment per review,
+# so the producer credits it on the presence of a declared publish shape and compares no
+# commit. A comment posted against an EARLIER commit therefore still credits it at the
+# merge candidate. That is a real gap and it is ACCEPTED — so the contract must SAY so,
+# and the code must do what the contract says. Both halves are asserted together, because
+# a documented gap nobody re-derives from the code is how the reach drifted in the first
+# place.
+
+_CONTRACT_DOC = (
+    get_skill_dir('plan-marshall', 'automatic-review') / 'standards' / 'bot-participation-contract.md'
+)
+_CONTRACT_TEXT = _CONTRACT_DOC.read_text(encoding='utf-8')
+
+
+def test_the_currency_blind_population_is_derived_and_guarded():
+    """The complement is non-empty and disjoint from the currency-subject population.
+
+    Both halves matter. Non-empty, because every case below is parametrized over it and a
+    parametrize over an empty tuple SKIPS rather than fails. Disjoint and total, because
+    the two populations come from one registry read: a bot that fell out of both, or into
+    both, would make one of the two sweeps quietly wrong about which rule governs it.
+    """
+    assert CURRENCY_BLIND_BOT_COUNT == len(CURRENCY_BLIND_BOTS)
+    assert CURRENCY_BLIND_BOT_COUNT > 0
+    assert guard_non_empty(CURRENCY_BLIND_BOTS, 'CURRENCY_BLIND_BOTS', 'the registry')
+    with pytest.raises(VacuousPopulationError, match='reporting clean while covering nothing'):
+        guard_non_empty((), 'CURRENCY_BLIND_BOTS', 'a registry declaring no such bot')
+
+    assert not set(CURRENCY_BLIND_BOTS) & set(CURRENCY_SUBJECT_BOTS)
+    assert set(CURRENCY_BLIND_BOTS) | set(CURRENCY_SUBJECT_BOTS) == set(bot_registry.bot_kinds())
+
+
+def test_the_contract_records_the_currency_blind_gap_rather_than_leaving_it_inferable():
+    """The bounded gap is WRITTEN DOWN — reason, bound, and revisit condition.
+
+    A gap a reader can only infer from the rule's silence is one every reader infers
+    differently. The contract must name the reach, name the consequence, and say when the
+    decision is revisited; asserting only the runtime behaviour would leave the document
+    free to keep claiming the rule governs every crediting site.
+    """
+    assert '### The currency rule — an in-place re-reviewer' in _CONTRACT_TEXT
+    assert '#### The currency-blind path for append-per-review bots' in _CONTRACT_TEXT
+    # The reach is stated as the registry flag, not as a list of bot names.
+    assert '`participation_requires_update: true`' in _CONTRACT_TEXT
+    assert '`participation_requires_update: false`' in _CONTRACT_TEXT
+    # The retired universal claim is gone — this is the sentence whose reach was wrong.
+    assert 'This one rule governs' not in _CONTRACT_TEXT
+    # A bounded gap owes all three: why it is accepted, what bounds it, when it reopens.
+    assert 'Why the gap is accepted' in _CONTRACT_TEXT
+    assert 'What bounds it' in _CONTRACT_TEXT
+    assert 'When it is revisited' in _CONTRACT_TEXT
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_BLIND_BOTS)
+def test_an_append_per_review_bot_stays_credited_after_a_head_advance(
+    bot_kind, plan_context, monkeypatch
+):
+    """The documented behaviour, asserted as a REACH DIFFERENCE on one identical fixture.
+
+    ⚠ This case is deliberately GREEN against the pre-change code, and that is the correct
+    outcome rather than a weakness to hide: deliverable 6's disposition is to DOCUMENT this
+    gap, explicitly not to change the behaviour, so a case that went red here would be
+    evidence the reach had moved. The discrimination for the documentation itself lives in
+    ``test_the_contract_records_the_currency_blind_gap_rather_than_leaving_it_inferable``.
+
+    What keeps it from being a bare restatement is the MATCHED CONTROL run inside it: the
+    same comment shape, the same two commits, the same fetch sequence, differing only in
+    which population the bot comes from. Asserting only the credit would pass just as
+    happily against a producer that had stopped currency-testing anybody; asserting the
+    pair pins the reach DIFFERENCE, so a change in either direction — currency-testing
+    these bots, or silently exempting the others — turns it red.
+    """
+    plan_id = f'gh-pr-currency-blind-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_A)
+    at_a = _run_fetch(204, plan_id)
+    expected = [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
+    assert at_a['participated_bots'] == expected
+
+    # HEAD advances past the commit the comment could have reviewed; the comment does not
+    # move. This is the exact sequence that resolves ``participated_stale`` for a
+    # currency-subject bot — the control below re-runs it to prove that is still so.
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_B)
+    at_b = _run_fetch(204, plan_id)
+
+    assert at_b['status'] == 'success'
+    # Still credited — the accepted, bounded gap, exercised rather than merely described.
+    assert at_b['participated_bots'] == expected
+    # And the two states that are structurally unreachable for such a bot stay empty.
+    assert at_b['stale_participation_bots'] == []
+    assert at_b['undecidable_participation_bots'] == []
+    # No ledger row is written for it, in either file — the ledger's reach matches the
+    # rule's, so a reader cannot mistake a currency-blind credit for an anchored one.
+    assert github_pr._recorded_currency_records(plan_id) == {}
+
+    # MATCHED CONTROL — identical fixture, identical two-fetch sequence, a bot from the
+    # OTHER side of the registry partition. It must go stale where this one stayed
+    # credited; without it, a producer that currency-tested nobody would pass the above.
+    subject_bot = CURRENCY_SUBJECT_BOTS[0]
+    subject_plan_id = f'gh-pr-currency-blind-control-{bot_kind}'
+    subject_comment = _publish_comment(subject_bot, 'guide-1', created_at=_at(1))
+    _patch_provider(monkeypatch, [subject_comment], head_sha=_HEAD_A)
+    _run_fetch(205, subject_plan_id)
+    _patch_provider(monkeypatch, [subject_comment], head_sha=_HEAD_B)
+    subject_at_b = _run_fetch(205, subject_plan_id)
+
+    assert subject_at_b['participated_bots'] == []
+    assert subject_at_b['stale_participation_bots'] == [
+        {'bot_kind': subject_bot, 'evidence_kind': subject_comment['kind']}
+    ]
 
 
 # =============================================================================

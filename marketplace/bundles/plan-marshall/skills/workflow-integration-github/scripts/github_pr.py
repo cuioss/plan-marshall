@@ -649,14 +649,32 @@ def _existing_pr_comment_keys(
 # state — would put routine clean-review boilerplate back in front of operator
 # triage, into the pending-findings gate, and into the review-retrospective
 # aggregation, which is the whole class of defect the contentless drop removes.
-_DROPPED_COMMENT_KEYS_ARTIFACT = 'pr-noise-dropped-comments.jsonl'
+_CURRENCY_LEDGER_ARTIFACT = 'pr-participation-currency-ledger.jsonl'
+
+#: The filename the ledger was written under before it was named for what it holds. It is
+#: READ and never written, and that read is DATA MIGRATION rather than a deprecation
+#: shim: the rows under this name are real credits, so a reader that stopped opening the
+#: file would hand every comment recorded there back to the first-observation arm and
+#: credit — at any resolvable HEAD — precisely the reviews the ledger was keeping honest.
+#: It therefore does not expire with the rename.
+_LEGACY_CURRENCY_LEDGER_ARTIFACT = 'pr-noise-dropped-comments.jsonl'
 
 
-def _dropped_comment_keys_path(plan_id: str) -> Path:
-    """Resolve the plan-scoped path of the currency ledger."""
+def _currency_ledger_path(plan_id: str) -> Path:
+    """Resolve the plan-scoped path the currency ledger is WRITTEN to."""
     from jsonl_store import get_artifact_path
 
-    return get_artifact_path(plan_id, _DROPPED_COMMENT_KEYS_ARTIFACT)
+    return get_artifact_path(plan_id, _CURRENCY_LEDGER_ARTIFACT)
+
+
+def _legacy_currency_ledger_path(plan_id: str) -> Path:
+    """Resolve the plan-scoped path the currency ledger was written to before the rename.
+
+    Read-only. See :data:`_LEGACY_CURRENCY_LEDGER_ARTIFACT` for why the read survives.
+    """
+    from jsonl_store import get_artifact_path
+
+    return get_artifact_path(plan_id, _LEGACY_CURRENCY_LEDGER_ARTIFACT)
 
 
 class _InvalidLegacyRecord:
@@ -703,6 +721,17 @@ def _recorded_currency_records(plan_id: str) -> dict[tuple[str, str], CurrencyRe
 
     A missing ledger reads as the empty map (no fetch has run for this plan yet).
 
+    BOTH filenames are read — the pre-rename one first, then the current one — because a
+    plan whose ledger was written before the rename holds its credits under the old name
+    and nothing ever rewrites them. The current file is read SECOND so that, key by key,
+    it supersedes the older anchor under the same last-row-wins rule that governs repeat
+    credits within one file; a key the current file does not carry still resolves from the
+    older one. ⛔ Reading the old file only when the new one is ABSENT is the shape to
+    avoid, and it is not equivalent: the writer appends only CHANGED records, so the first
+    post-rename credit creates a current file holding that one key, and a per-file
+    fallback would from then on drop every unchanged key back to the first-observation arm
+    — crediting at any resolvable HEAD exactly the reviews the ledger was anchoring.
+
     A row whose ``reviewed_commit_sha`` is missing or empty maps to
     :data:`INVALID_LEGACY_RECORD` — the third state — rather than to a
     ``('', updated_at)`` pair that would fall through to the edit arm (true for
@@ -712,13 +741,14 @@ def _recorded_currency_records(plan_id: str) -> dict[tuple[str, str], CurrencyRe
     from jsonl_store import read_jsonl
 
     records: dict[tuple[str, str], CurrencyRecord] = {}
-    for record in read_jsonl(_dropped_comment_keys_path(plan_id)):
-        key = (str(record.get('bot_kind') or ''), str(record.get('comment_id') or ''))
-        sha = str(record.get('reviewed_commit_sha') or '')
-        if not sha:
-            records[key] = INVALID_LEGACY_RECORD
-            continue
-        records[key] = (sha, str(record.get('updated_at') or ''))
+    for path in (_legacy_currency_ledger_path(plan_id), _currency_ledger_path(plan_id)):
+        for record in read_jsonl(path):
+            key = (str(record.get('bot_kind') or ''), str(record.get('comment_id') or ''))
+            sha = str(record.get('reviewed_commit_sha') or '')
+            if not sha:
+                records[key] = INVALID_LEGACY_RECORD
+                continue
+            records[key] = (sha, str(record.get('updated_at') or ''))
     return records
 
 
@@ -731,10 +761,14 @@ def _record_currency_records(
     or a re-credit at a new SHA / after a fresh edit), so the file accretes one row
     per distinct credit rather than one row per fetch. Sorted so the file order is
     deterministic.
+
+    Only the CURRENT filename is ever written. The pre-rename file is read by
+    :func:`_recorded_currency_records` and left untouched, so a plan's older credits keep
+    resolving without this writer having to rewrite a file it did not create.
     """
     from jsonl_store import append_jsonl
 
-    path = _dropped_comment_keys_path(plan_id)
+    path = _currency_ledger_path(plan_id)
     for (bot_kind, comment_id), (sha, updated_at) in sorted(records.items()):
         append_jsonl(
             path,
@@ -1133,7 +1167,7 @@ def cmd_fetch_findings(args):
     merge_candidate_committed_at = _github.fetch_pr_head_committed_at(pr_number)
 
     # The currency test (``_reviewed_at_merge_candidate``) reads the currency ledger
-    # recorded by earlier fetches (see ``_DROPPED_COMMENT_KEYS_ARTIFACT``): per
+    # recorded by earlier fetches (see ``_CURRENCY_LEDGER_ARTIFACT``): per
     # ``participation_requires_update`` comment the plan has credited, the
     # ``(reviewed_commit_sha, updated_at)`` at that last credit. It is the SOLE currency
     # source, so a comment stored as a finding and a comment dropped as noise are

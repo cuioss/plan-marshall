@@ -204,12 +204,22 @@ signal, and consuming it as one is sanctioned: the completion-aware poll documen
 `review_bot_buffer_seconds` fallback, or stop — none of which is participation input. Only the
 budget-exhausted branch reaches `--in-progress-bots`.
 
-### The currency rule — a credit is evaluated against the commit being merged
+### The currency rule — an in-place re-reviewer's credit is evaluated against the commit being merged
 
-**A participation credit is valid only against the merge candidate: a review counts iff the commit it
-reviewed is the merge candidate's HEAD, and that verdict is a pure comparison that consumes no
-observation state, so it is identical however many times it is evaluated.** This one rule governs
-every site that credits participation.
+**A currency-tested participation credit is valid only against the merge candidate: such a review
+counts iff the commit it reviewed is the merge candidate's HEAD, and that verdict is a pure comparison
+that consumes no observation state, so it is identical however many times it is evaluated.**
+
+**The rule's reach is exactly the bots whose registry record declares
+`participation_requires_update: true`** — the in-place re-reviewers. That is the set the producer
+gates the currency test on, and it is narrower than *every* site that credits participation. A bot
+declaring `participation_requires_update: false` is credited on the presence of a comment in one of
+its declared `participation_evidence` publish shapes, and **no commit is compared** — see § "The
+currency-blind path for append-per-review bots" below, which records that reach difference as an
+accepted, bounded gap rather than leaving it to be inferred from the rule's silence. The reach is a
+registry-derived property, never a fixed list of bot names: a bot that newly declares
+`participation_requires_update: true` is currency-tested from that declaration onward, with no change
+here.
 
 The rule exists because the artifact that merges is **one commit**, while the barrier was asking a
 per-PR question — *"did the bot participate on this PR?"* — that a loop-back, rebase, or force-push
@@ -236,6 +246,42 @@ granted only by the currency test the producer applies afterwards. A movement ma
 re-review **arrived**; whether that review is current is decided against the commit, by this rule.
 That is a recorded classification rather than a gap, and no follow-up is filed against the wait
 predicate.
+
+#### The currency-blind path for append-per-review bots — an accepted, bounded gap
+
+A bot declaring `participation_requires_update: false` **re-reviews by posting a new comment**, so its
+credit is granted the moment a comment of its in a declared publish shape is observed. No commit is
+compared, and the currency ledger holds no row for it. **The consequence, stated plainly: a comment
+such a bot posted against an EARLIER commit still credits it at the merge candidate.** After a
+loop-back, rebase, or force-push, an append-per-review bot can therefore be counted toward the quorum
+on a review of a tree that is no longer the one being merged — the same false positive the currency
+rule closes for in-place re-reviewers, still open on this path. Two states are unreachable for such a
+bot in consequence: it never resolves `participated_stale`, and it never appears in
+`undecidable_participation_bots[]`.
+
+**Why the gap is accepted rather than closed here.** Closing it means anchoring every bot's credit,
+which is a different mechanism from the one the currency test implements: the ledger records
+`(reviewed_commit_sha, updated_at)` per credited comment precisely because an in-place re-reviewer's
+comment identity does not change between reviews, and the ledger is what supplies the missing "which
+commit did this one comment read?". An append-per-review bot's comments do not need that ledger to be
+told apart — but neither do they carry a reviewed SHA, so anchoring them requires deciding what a new
+comment's presence proves about the commit it was posted against, which is a **new** contract
+question rather than a wider application of this one. Widening the reach without settling it would
+replace an over-credit with an equally unfounded verdict in the other direction.
+
+**What bounds it.** The gap is bounded to bots declaring `participation_requires_update: false`, and
+this contract's other gates are unaffected by it: the `not_triggered` PR-wide observable, the refusal
+members, the pre-merge comment barrier, and the `declined` detection via `head_sha_verified` all still
+apply to such a bot. It is also self-limiting in the common case — an append-per-review bot that is
+re-triggered on the advanced HEAD posts a NEW comment, so the next fetch credits it on evidence that
+does post-date the merge candidate.
+
+**When it is revisited.** Either of two observations reopens it: a required bot declaring
+`participation_requires_update: false` observed satisfying the quorum on a merge candidate it
+demonstrably did not review, or a decision to anchor every bot declaring `participation_evidence` —
+which is the alternative disposition, deliberately **not** taken here. That alternative changes the
+barrier verdict for every consumer project whose `required_bots` includes an append-per-review bot, so
+it is a contract change with its own blast radius, not an implementation detail of this rule.
 
 ### Evidence for a bot that edits one comment in place
 

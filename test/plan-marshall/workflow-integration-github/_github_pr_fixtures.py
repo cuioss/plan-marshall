@@ -12,10 +12,14 @@ is the hand-maintained-roster defect this module exists to close: a bot that
 newly opts into ``participation_requires_update`` must inherit every case
 parametrized over the population rather than silently escaping it.
 
-The population is guarded NON-EMPTY at import (:func:`guard_non_empty`) and its
-size is published as :data:`CURRENCY_SUBJECT_BOT_COUNT`. A parametrize over an
-empty tuple produces a skip rather than a failure, so an unguarded empty
-population would let a whole sweep report clean while covering nothing.
+Its COMPLEMENT — :data:`CURRENCY_BLIND_BOTS`, the append-per-review bots — is derived
+here too, from the same registry read, so the partition cannot drift apart or overlap.
+
+Both populations are guarded NON-EMPTY at import (:func:`guard_non_empty`) and their
+sizes are published as :data:`CURRENCY_SUBJECT_BOT_COUNT` and
+:data:`CURRENCY_BLIND_BOT_COUNT`. A parametrize over an empty tuple produces a skip
+rather than a failure, so an unguarded empty population would let a whole sweep report
+clean while covering nothing.
 """
 
 from __future__ import annotations
@@ -59,3 +63,27 @@ CURRENCY_SUBJECT_BOTS: tuple[str, ...] = guard_non_empty(
 
 #: The published size of the currency-subject bot population.
 CURRENCY_SUBJECT_BOT_COUNT: int = len(CURRENCY_SUBJECT_BOTS)
+
+#: Bots whose participation credit is NOT currency-tested — the complement, derived from
+#: the same registry read so the two populations cannot drift apart or overlap. These are
+#: the append-per-review bots: they publish a NEW comment per review, so the producer
+#: credits them on the presence of a declared ``participation_evidence`` publish shape and
+#: compares no commit.
+#:
+#: The complement lives here rather than in a consuming module for the same reason the
+#: subject population does: derived in two places is hand-maintained in two places. It is
+#: guarded non-empty because the behaviour it parametrizes — the accepted, bounded
+#: currency-blind gap recorded in ``automatic-review/standards/bot-participation-contract.md``
+#: — would otherwise be asserted over nothing.
+CURRENCY_BLIND_BOTS: tuple[str, ...] = guard_non_empty(
+    tuple(
+        bot
+        for bot in bot_registry.bot_kinds()
+        if not bot_registry.participation_requires_update(bot)
+    ),
+    'CURRENCY_BLIND_BOTS',
+    'bot_registry.bot_kinds() filtered by NOT bot_registry.participation_requires_update',
+)
+
+#: The published size of the currency-blind bot population.
+CURRENCY_BLIND_BOT_COUNT: int = len(CURRENCY_BLIND_BOTS)
