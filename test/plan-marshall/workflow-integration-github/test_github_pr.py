@@ -20,9 +20,17 @@ import sys
 import bot_registry
 import pytest
 from _bot_flag_derivation import derive_bot_flags
+from _github_pr_fixtures import (
+    CURRENCY_BLIND_BOT_COUNT,
+    CURRENCY_BLIND_BOTS,
+    CURRENCY_SUBJECT_BOT_COUNT,
+    CURRENCY_SUBJECT_BOTS,
+    VacuousPopulationError,
+    guard_non_empty,
+)
 from _pr_agent_guide_bodies import GUIDE_WITH_FINDING, OBSERVED_CLEAN_GUIDE
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import get_script_path, get_skill_dir, load_script_module, run_script
 
 github_pr = load_script_module('plan-marshall', 'workflow-integration-github', 'github_pr.py', 'github_pr')
 _findings_core = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core')
@@ -75,14 +83,23 @@ _COMMENTS = [
 ]
 
 
-def _patch_provider(monkeypatch, comments, head_sha='deadbeef'):
+def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_at=''):
     """Monkeypatch the GitHub provider surface ``github_pr`` reaches through ``_github``.
 
     ``head_sha`` is the PR HEAD the producer stamps as ``reviewed_commit_sha`` and
     compares each comment's recorded SHA against. A test simulates a loop-back /
     force-push by re-patching with a DIFFERENT value between fetches.
+
+    ``head_committed_at`` is the merge-candidate commit's OWN timestamp — the second
+    input to the first-observation arm, which withholds the credit from a comment whose
+    timestamps predate the commit. It defaults to the empty string, the UNREADABLE case
+    under which the arm keeps its SHA-only behaviour, so every case that is not about
+    commit ordering is unaffected by the guard.
     """
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(
+        github_pr._github, 'fetch_pr_head_committed_at', lambda pr_number: head_committed_at
+    )
     monkeypatch.setattr(
         github_pr._github,
         'fetch_pr_comments_data',
@@ -191,8 +208,20 @@ def test_a_deduped_comment_is_still_credited_as_participating(plan_context, monk
     # Every bot with a comment in a declared publish shape is credited: coderabbit and
     # sourcery by presence of a declared evidence kind, pr-agent by the first-observation
     # currency arm at the resolvable head. (The human comment resolves to no bot_kind.)
+    # The expected participant list is DERIVED from the registry intersected with the
+    # bots the _COMMENTS fixture represents — never a hand-listed set of bot names, which
+    # would not notice a bot whose declared publish shapes changed.
+    expected_participants = sorted(
+        {
+            kind
+            for comment in _COMMENTS
+            if (kind := bot_registry.bot_kind_for_login(comment['author']))
+            and comment['kind'] in bot_registry.participation_evidence(kind)
+        }
+    )
+    assert expected_participants, 'the _COMMENTS fixture represents no participating bot'
     first_bots = [e['bot_kind'] for e in first['participated_bots']]
-    assert first_bots == ['coderabbit', 'pr-agent', 'sourcery']
+    assert first_bots == expected_participants
 
     # Re-fetch the IDENTICAL comments at the SAME head. Every comment is already stored,
     # so the storage dedup drops all of them...
@@ -2570,28 +2599,29 @@ def test_layer_three_is_consulted_only_after_layers_one_and_two_miss(monkeypatch
 #
 # The bot population is DERIVED from the registry rather than named, so a bot that
 # newly opts into ``participation_requires_update`` inherits every case below
-# instead of silently escaping it. The population is guarded against vacuity.
-
-_UPDATE_REQUIRING_BOTS = tuple(
-    bot for bot in bot_registry.bot_kinds() if bot_registry.participation_requires_update(bot)
-)
+# instead of silently escaping it. It is imported by bare name from this subtree's
+# ``_github_pr_fixtures`` helper, which is its single home in the test tree and
+# guards it non-empty at import — re-deriving or hand-listing it here would be the
+# duplicate definition that guard exists to forbid.
 
 #: ``bot_kind`` -> ``author_login``, inverted from the registry's forward map so a
 #: comment fixture can be authored for a derived bot without naming its login.
 _BOT_KIND_TO_LOGIN = {kind: login for login, kind in bot_registry.login_to_bot_kind().items()}
 
 
-def test_at_least_one_registered_bot_requires_update_movement():
-    """The derived population must be non-empty or every case below is vacuous.
+def test_the_currency_subject_population_guard_is_exercised():
+    """The population's import-time vacuity guard admits the real set and rejects an empty one.
 
-    A parametrize over an empty tuple produces a skip, not a failure, so the
-    stale-participation sweep could report clean while covering nothing. This
-    asserts the population exists before anything parametrizes over it.
+    A parametrize over an empty tuple produces a skip, not a failure, so an unguarded
+    empty population would let every case below report clean while covering nothing.
+    Both controls are asserted: a guard only ever observed on its PASSING input proves
+    nothing about what it rejects.
     """
-    assert _UPDATE_REQUIRING_BOTS, (
-        'no registered bot declares participation_requires_update — the '
-        'participated_stale cases below would parametrize over an empty set'
-    )
+    assert CURRENCY_SUBJECT_BOT_COUNT == len(CURRENCY_SUBJECT_BOTS)
+    assert CURRENCY_SUBJECT_BOT_COUNT > 0
+    assert guard_non_empty(CURRENCY_SUBJECT_BOTS, 'CURRENCY_SUBJECT_BOTS', 'the registry')
+    with pytest.raises(VacuousPopulationError, match='reporting clean while covering nothing'):
+        guard_non_empty((), 'CURRENCY_SUBJECT_BOTS', 'a registry declaring no such bot')
 
 
 def test_currency_anchor_is_recorded_in_the_ledger_on_credit(plan_context, monkeypatch):
@@ -2600,14 +2630,14 @@ def test_currency_anchor_is_recorded_in_the_ledger_on_credit(plan_context, monke
     D0 named the currency ledger as the single source the currency test compares
     against. A hand-maintained list of currency sites is the same defect class this
     plan closes, so the population of currency-subject bots is registry-derived and
-    guarded non-empty (``_UPDATE_REQUIRING_BOTS``, in the ``_dispatch_roster`` "guard
-    against vacuity" spirit), and the anchor is the ledger the producer itself writes
-    on credit. This drives a real fetch and reads the ledger back through the SUT's own
-    reader: a credited comment records its ``(merge_candidate_sha, updated_at)``, so the
-    derivation is re-run against production code rather than a copy.
+    guarded non-empty at import in ``_github_pr_fixtures`` (``CURRENCY_SUBJECT_BOTS``, in
+    the ``_dispatch_roster`` "guard against vacuity" spirit), and the anchor is the ledger
+    the producer itself writes on credit. This drives a real fetch and reads the ledger
+    back through the SUT's own reader: a credited comment records its
+    ``(merge_candidate_sha, updated_at)``, so the derivation is re-run against production
+    code rather than a copy.
     """
-    assert _UPDATE_REQUIRING_BOTS, 'currency-subject bot population is vacuous'
-    bot = _UPDATE_REQUIRING_BOTS[0]
+    bot = CURRENCY_SUBJECT_BOTS[0]
     plan_id = f'gh-pr-ledger-{bot}'
     comment = _publish_comment(bot, 'c-ledger', created_at=_at(1))
     _patch_provider(monkeypatch, [comment], head_sha=_HEAD_A)
@@ -2615,10 +2645,15 @@ def test_currency_anchor_is_recorded_in_the_ledger_on_credit(plan_context, monke
     assert result['participated_bots'] == [{'bot_kind': bot, 'evidence_kind': comment['kind']}]
 
     ledger = github_pr._recorded_currency_records(plan_id)
-    assert ledger.get((bot, 'c-ledger')) == (_HEAD_A, comment['updated_at'])
+    # The reader returns THREE states — absent, invalid-legacy, and a usable anchor.
+    # A credit must produce the third: both that it is not the sentinel, and that the
+    # anchor it carries is the merge candidate the credit was granted against.
+    record = ledger.get((bot, 'c-ledger'))
+    assert record == (_HEAD_A, comment['updated_at'])
+    assert not isinstance(record, github_pr._InvalidLegacyRecord)
 
 
-@pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_edit_at_one_commit_does_not_credit_a_later_commit(
     bot_kind, plan_context, monkeypatch
 ):
@@ -2689,7 +2724,7 @@ _HEAD_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 _HEAD_C = 'cccccccccccccccccccccccccccccccccccccccc'
 
 
-@pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_second_fetch_at_the_same_head_stays_participated(
     bot_kind, plan_context, monkeypatch
 ):
@@ -2720,7 +2755,7 @@ def test_second_fetch_at_the_same_head_stays_participated(
     assert second['stale_participation_bots'] == first['stale_participation_bots']
 
 
-@pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_unresolvable_head_sha_fails_closed_and_stays_idempotent(
     bot_kind, plan_context, monkeypatch
 ):
@@ -2735,6 +2770,11 @@ def test_unresolvable_head_sha_fails_closed_and_stays_idempotent(
     first-observation arm the first fetch would credit and the second — reading the
     recorded empty SHA — would go stale, re-introducing an observer effect on the one
     path where the SHA is absent.
+
+    The withheld credit is reported as UNDECIDABLE, not as stale. A stale verdict
+    prescribes re-triggering the review, which cannot fix a failed head read, so the
+    placement is re-derived here rather than left asserting the retired stale-set
+    position.
     """
     plan_id = f'gh-pr-empty-sha-{bot_kind}'
     comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
@@ -2746,15 +2786,18 @@ def test_unresolvable_head_sha_fails_closed_and_stays_idempotent(
     assert first['status'] == 'success' and second['status'] == 'success'
     # Fail-closed: an un-anchorable comment is not credited as a proven participant.
     assert first['participated_bots'] == []
-    assert first['stale_participation_bots'] == [
+    assert first['stale_participation_bots'] == []
+    assert first['merge_candidate_sha_resolved'] is False
+    assert first['undecidable_participation_bots'] == [
         {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
     ]
     # Idempotent: the second evaluation matches the first exactly.
     assert second['participated_bots'] == first['participated_bots']
     assert second['stale_participation_bots'] == first['stale_participation_bots']
+    assert second['undecidable_participation_bots'] == first['undecidable_participation_bots']
 
 
-@pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_review_predating_the_merge_candidate_is_stale(
     bot_kind, plan_context, monkeypatch
 ):
@@ -2784,7 +2827,7 @@ def test_review_predating_the_merge_candidate_is_stale(
     ]
 
 
-@pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_in_place_edit_credits_participation_after_a_head_advance(
     bot_kind, plan_context, monkeypatch
 ):
@@ -2811,7 +2854,7 @@ def test_in_place_edit_credits_participation_after_a_head_advance(
     assert second['stale_participation_bots'] == []
 
 
-@pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_a_fresh_comment_outranks_a_stale_one_through_the_subtraction(
     bot_kind, plan_context, monkeypatch
 ):
@@ -2842,6 +2885,681 @@ def test_a_fresh_comment_outranks_a_stale_one_through_the_subtraction(
     assert second['status'] == 'success'
     assert second['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': fresh['kind']}]
     assert second['stale_participation_bots'] == []
+
+
+# --- D1: the currency test is evaluated for EVERY evidence comment, not just the first.
+#
+# A currency-subject bot declares several publish shapes and can have several evidence
+# comments live at once. While the participation loop short-circuited at the bot's first
+# credit, only that one comment was evaluated and recorded in the currency ledger; every
+# LATER comment stayed unrecorded, so on the next fetch it had no ledger row, took the
+# first-observation arm, and credited the bot at whatever HEAD was resolvable — bypassing
+# the currency test the first comment had just failed.
+
+
+def _two_evidence_comments(bot_kind):
+    """Two unchanged evidence comments of one bot, both in a declared publish shape."""
+    return [
+        _publish_comment(bot_kind, 'guide-a', created_at=_at(1)),
+        _publish_comment(
+            bot_kind,
+            'guide-b',
+            created_at=_at(2),
+            body='A second observation: the retry budget is read before the config is loaded.',
+        ),
+    ]
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_two_unchanged_evidence_comments_are_stale_at_an_advanced_head(
+    bot_kind, plan_context, monkeypatch
+):
+    """Neither of a bot's two unchanged comments credits it once HEAD advances.
+
+    Both are credited and recorded at HEAD_A. At HEAD_B neither has been edited and
+    both are recorded against HEAD_A, so BOTH fail the currency test and the bot
+    resolves to ``stale_participation_bots[]`` — never ``participated_bots[]``.
+
+    While the loop short-circuited at the first credit, only ``guide-a`` was ever
+    evaluated and recorded, so at HEAD_B ``guide-b`` had no ledger row, took the
+    first-observation arm, and credited the bot at the very HEAD the first comment
+    had just been found stale against.
+    """
+    plan_id = f'gh-pr-every-comment-{bot_kind}'
+    comments = _two_evidence_comments(bot_kind)
+
+    _patch_provider(monkeypatch, comments, head_sha=_HEAD_A)
+    at_a = _run_fetch(160, plan_id)
+    assert at_a['participated_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comments[0]['kind']}
+    ]
+
+    _patch_provider(monkeypatch, comments, head_sha=_HEAD_B)
+    at_b = _run_fetch(160, plan_id)
+    assert at_b['status'] == 'success'
+    assert at_b['participated_bots'] == []
+    assert at_b['stale_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comments[0]['kind']}
+    ]
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_rejecting_fetch_stages_no_ledger_row_so_the_verdict_holds(
+    bot_kind, plan_context, monkeypatch
+):
+    """A third fetch at the UNCHANGED advanced HEAD returns the identical verdict.
+
+    The pass-only staging rule, pinned by its consequence. A ledger row is written
+    only for a comment that PASSED the currency test on that fetch; a failing comment
+    leaves its row exactly as it stood. Were the rejecting fetch at HEAD_B to stage
+    HEAD_B onto both stale comments, the very next fetch would read
+    ``recorded_sha == merge_candidate_sha`` and credit the comments it had just
+    rejected — a stale review laundered into a credit by the act of rejecting it.
+    """
+    plan_id = f'gh-pr-pass-only-staging-{bot_kind}'
+    comments = _two_evidence_comments(bot_kind)
+
+    _patch_provider(monkeypatch, comments, head_sha=_HEAD_A)
+    _run_fetch(161, plan_id)
+
+    _patch_provider(monkeypatch, comments, head_sha=_HEAD_B)
+    at_b = _run_fetch(161, plan_id)
+
+    # Third fetch: nothing changed — not the comments, not HEAD.
+    third = _run_fetch(161, plan_id)
+    assert third['status'] == 'success'
+    assert third['participated_bots'] == at_b['participated_bots'] == []
+    assert third['stale_participation_bots'] == at_b['stale_participation_bots']
+    assert third['stale_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comments[0]['kind']}
+    ]
+
+    # And the ledger still anchors both comments on HEAD_A — the rejecting fetch wrote
+    # nothing, which is what makes the verdict above hold rather than flip.
+    ledger = github_pr._recorded_currency_records(plan_id)
+    assert ledger[(bot_kind, 'guide-a')][0] == _HEAD_A
+    assert ledger[(bot_kind, 'guide-b')][0] == _HEAD_A
+
+
+# --- D2: every arm of the currency predicate fails closed on degenerate input.
+#
+# Each arm previously failed OPEN in its own way: the first-observation arm credited any
+# comment absent from the ledger whatever commit it had really read; the fresh-edit arm
+# was unguarded on a resolvable head; and a pre-upgrade row with no reviewed SHA read as
+# ``('', '')`` and fell through to the edit arm, which is true for essentially any real
+# comment. Withholding a credit is the cheap error; crediting an unverified review is the
+# expensive one, so every arm now errs toward withholding.
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_comment_predating_the_merge_candidate_is_stale_on_first_observation(
+    bot_kind, plan_context, monkeypatch
+):
+    """A comment older than the commit cannot be an observation of it — even unseen.
+
+    The first-observation arm's ledger-silence means only that THIS PLAN has not seen
+    the comment before; it never proved the comment reviewed the merge candidate. When
+    the commit's own timestamp is readable, a comment whose timestamps precede it is
+    positively disqualified: the comment demonstrably existed before the code did.
+    """
+    plan_id = f'gh-pr-predates-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-old', created_at=_at(1))
+
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_A, head_committed_at=_at(30))
+    result = _run_fetch(170, plan_id)
+
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
+    ]
+    # A withheld credit stages no anchor either — otherwise the next fetch would read
+    # the comment as SHA-current and credit what this fetch refused.
+    assert github_pr._recorded_currency_records(plan_id) == {}
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_fresh_edit_at_an_unreadable_head_blocks_on_both_fetches(
+    bot_kind, plan_context, monkeypatch
+):
+    """An unreadable head fails closed on the EDIT arm too, and writes no poisoned row.
+
+    An edit proves a fresh review of *something*; without a readable head there is no
+    commit to say it was a review OF. The answer must also be the SAME on a second
+    consecutive fetch — a verdict that flips between two identical fetches is the
+    observer effect this predicate exists to close. And no row may be written carrying
+    an empty ``reviewed_commit_sha``: such a row can never again equal a merge
+    candidate, so it would poison the key permanently.
+    """
+    plan_id = f'gh-pr-unreadable-head-{bot_kind}'
+    base = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+    _patch_provider(monkeypatch, [base], head_sha=_HEAD_A)
+    _run_fetch(171, plan_id)
+    ledger_after_credit = github_pr._recorded_currency_records(plan_id)
+    assert ledger_after_credit[(bot_kind, 'guide-1')] == (_HEAD_A, base['updated_at'])
+
+    edited = _publish_comment(bot_kind, 'guide-1', created_at=_at(1), updated_at=_at(9))
+    _patch_provider(monkeypatch, [edited], head_sha='')
+    first = _run_fetch(171, plan_id)
+    second = _run_fetch(171, plan_id)
+
+    assert first['participated_bots'] == []
+    # The credit is withheld on the EDIT arm — and disclosed as undecidable rather than
+    # stale, because the head read is what failed (deliverable 4's routing).
+    assert first['stale_participation_bots'] == []
+    assert first['undecidable_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': edited['kind']}
+    ]
+    assert second['participated_bots'] == first['participated_bots']
+    assert second['stale_participation_bots'] == first['stale_participation_bots']
+    assert second['undecidable_participation_bots'] == first['undecidable_participation_bots']
+
+    ledger = github_pr._recorded_currency_records(plan_id)
+    assert ledger == ledger_after_credit
+    assert not any(isinstance(v, github_pr._InvalidLegacyRecord) for v in ledger.values())
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_pre_upgrade_key_only_ledger_row_resolves_stale_not_participated(
+    bot_kind, plan_context, monkeypatch
+):
+    """A row carrying no reviewed SHA is REFUSED, never read as a first observation.
+
+    Dropping such a row is the non-fix: an absent key takes the first-observation arm,
+    so the bot would be credited at any resolvable advanced HEAD — the very credit the
+    row's unreadability should deny. The row survives the read as a stated third state
+    and the predicate refuses it, so the bot resolves ``participated_stale``.
+
+    The assertion is on the RESOLVED STATE, not on an equivalence with some other
+    input: proving this ledger behaves 'the same as' an empty one would certify the
+    drop-the-row non-fix rather than refute it.
+    """
+    from jsonl_store import append_jsonl
+
+    plan_id = f'gh-pr-legacy-row-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+    # A pre-upgrade row: the key, and no ``reviewed_commit_sha`` field at all.
+    append_jsonl(
+        github_pr._currency_ledger_path(plan_id),
+        {'bot_kind': bot_kind, 'comment_id': 'guide-1'},
+    )
+
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_B)
+    result = _run_fetch(172, plan_id)
+
+    # The resolved state first: this is the claim, and it must be what fails when the
+    # predicate regresses — not a downstream assertion about the reader's vocabulary.
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
+    ]
+    # ...and the mechanism that produced it: the row survived the read as the stated
+    # third state rather than being dropped or coerced into a usable-looking anchor.
+    assert (
+        github_pr._recorded_currency_records(plan_id)[(bot_kind, 'guide-1')]
+        is github_pr.INVALID_LEGACY_RECORD
+    )
+
+
+# --- D3: an unresolvable merge candidate is UNDECIDABLE, never blocking-stale.
+#
+# ``fetch_pr_head_sha`` returns '' on any failure path. Reporting the affected bot as
+# stale prescribes "re-trigger the review", a remedy that cannot fix a failed read; and
+# reporting nothing at all leaves the caller unable to tell an unread head from a read
+# one. The producer therefore discloses the read itself and carries the affected bots in
+# their own disjoint set.
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_credited_bot_becomes_undecidable_when_the_head_read_fails(
+    bot_kind, plan_context, monkeypatch
+):
+    """A resolved-then-unresolved sequence moves the bot to undecidable, not to stale.
+
+    Fetch 1 reads a real head and credits the bot. Fetch 2 cannot read the head at all.
+    The bot is then in NEITHER existing set — not credited (nothing anchors it) and not
+    stale (its remedy would be a re-review, which cannot fix a read failure) — and the
+    return says so in as many words via ``merge_candidate_sha_resolved: false``.
+
+    The assertions are on the PRODUCER's emitted sets only. No downstream classification
+    is asserted, because ``review_completeness``'s taxonomy has no member for this state
+    yet: a test written against it would pin the consumer gap rather than the behaviour.
+    """
+    plan_id = f'gh-pr-undecidable-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_A)
+    credited = _run_fetch(180, plan_id)
+    assert credited['merge_candidate_sha_resolved'] is True
+    assert credited['participated_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
+    ]
+    assert credited['undecidable_participation_bots'] == []
+
+    _patch_provider(monkeypatch, [comment], head_sha='')
+    unread = _run_fetch(180, plan_id)
+
+    assert unread['status'] == 'success'
+    assert unread['merge_candidate_sha_resolved'] is False
+    assert unread['participated_bots'] == []
+    assert unread['stale_participation_bots'] == []
+    assert unread['undecidable_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
+    ]
+
+
+# --- D4: the cross-iteration filing dedup identity carries an EDIT TERM.
+#
+# The identity is (bot_kind, comment_id, edit_term). Under the old two-term key a bot
+# that edits its one persistent comment in place kept the same comment_id forever, so an
+# edit that replaced a clean summary with a real finding was dropped as a duplicate while
+# the currency test credited the bot as participating: the reviewer read present and
+# clean, and its feedback never became a finding.
+
+_GUIDE_CLEAN_BODY = 'Nothing further to report on this pass; the change reads consistently.'
+_GUIDE_FINDING_BODY = 'The retry helper drops the final attempt when max_attempts is 1.'
+
+
+def _edit_term_comment(bot_kind, *, body, updated_at=None):
+    """One persistent comment of ``bot_kind``, re-published with a new body/timestamp."""
+    comment = _publish_comment(bot_kind, 'guide-persistent', created_at=_at(1), body=body)
+    comment['updated_at'] = updated_at if updated_at is not None else _at(1)
+    return comment
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_an_edited_comment_is_filed_as_new_information(bot_kind, plan_context, monkeypatch):
+    """A moved ``updated_at`` with a changed body files a NEW finding, never a duplicate.
+
+    This is the defect in full: the same ``comment_id``, so the two-term key matched and
+    the edited review — carrying a real finding — was dropped as already-seen.
+    """
+    plan_id = f'gh-pr-edit-term-files-{bot_kind}'
+    clean = _edit_term_comment(bot_kind, body=_GUIDE_CLEAN_BODY)
+    _patch_provider(monkeypatch, [clean], head_sha=_HEAD_A)
+    first = _run_fetch(190, plan_id)
+    assert first['count_stored'] == 1
+    assert first['count_skipped_duplicate'] == 0
+
+    edited = _edit_term_comment(bot_kind, body=_GUIDE_FINDING_BODY, updated_at=_at(9))
+    _patch_provider(monkeypatch, [edited], head_sha=_HEAD_A)
+    second = _run_fetch(190, plan_id)
+
+    assert second['status'] == 'success'
+    assert second['count_stored'] == 1
+    assert second['count_skipped_duplicate'] == 0
+    assert len(query_findings(plan_id, finding_type='pr-comment')['findings']) == 2
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_an_unchanged_comment_still_dedupes_under_the_widened_key(
+    bot_kind, plan_context, monkeypatch
+):
+    """The widening must not turn every re-fetch into a re-file.
+
+    The matched control for the case above: an unchanged comment carries an unchanged
+    edit term, so the three-term key still matches and the comment still dedupes.
+    """
+    plan_id = f'gh-pr-edit-term-dedupes-{bot_kind}'
+    clean = _edit_term_comment(bot_kind, body=_GUIDE_CLEAN_BODY)
+    _patch_provider(monkeypatch, [clean], head_sha=_HEAD_A)
+    first = _run_fetch(191, plan_id)
+    assert first['count_stored'] == 1
+
+    second = _run_fetch(191, plan_id)
+
+    assert second['status'] == 'success'
+    assert second['count_stored'] == 0
+    assert second['count_skipped_duplicate'] == 1
+    stored = query_findings(plan_id, finding_type='pr-comment')['findings']
+    assert len(stored) == 1
+    # The third term SURVIVED into the store. Without this the widened key would be
+    # write-only — every stored finding would read back as a pre-upgrade row and the
+    # dedup would silently fall back to two terms, which is indistinguishable from the
+    # defect while every count above still looks right.
+    assert github_pr._detail_field(stored[0].get('detail'), github_pr._EDIT_TERM_DETAIL) == (
+        clean['updated_at']
+    )
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_pre_upgrade_finding_without_an_edit_term_does_not_refile_history(
+    bot_kind, plan_context, monkeypatch
+):
+    """A finding stored before the edit term existed still dedupes, against ANY term.
+
+    A pre-upgrade row carries no ``edit_term`` line, so it can match no three-term key.
+    Were it not deduped on the two-term key, the first fetch after this widening landed
+    would re-file a PR's entire comment history at once — a worse outcome than the
+    defect being fixed.
+    """
+    plan_id = f'gh-pr-preupgrade-dedup-{bot_kind}'
+    comment = _edit_term_comment(bot_kind, body=_GUIDE_CLEAN_BODY)
+
+    # A pre-upgrade finding: the detail block the producer wrote before the third term
+    # existed — every line it carried then, and no ``edit_term``.
+    added = _live_findings_core().add_finding(
+        plan_id=plan_id,
+        finding_type='pr-comment',
+        title=f"PR #192 {comment['kind']} comment by {comment['author']} (guide-persistent)",
+        detail=(
+            'pr_number: 192\n'
+            f"kind: {comment['kind']}\n"
+            f"author: {comment['author']}\n"
+            'thread_id: \n'
+            'comment_id: guide-persistent'
+        ),
+        bot_kind=bot_kind,
+    )
+    assert added['status'] == 'success'
+
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_A)
+    result = _run_fetch(192, plan_id)
+
+    assert result['status'] == 'success'
+    assert result['count_stored'] == 0
+    assert result['count_skipped_duplicate'] == 1
+    stored = query_findings(plan_id, finding_type='pr-comment')['findings']
+    assert len(stored) == 1
+    # The surviving row is the PRE-UPGRADE one, still carrying no edit term — proving
+    # the two-term fallback is what deduped it, rather than the row having been
+    # rewritten or replaced by a three-term one.
+    assert github_pr._detail_field(stored[0].get('detail'), github_pr._EDIT_TERM_DETAIL) == ''
+
+
+# --- D5: the currency ledger is named for what it holds, and the rename loses no anchor.
+#
+# The ledger's on-disk name changed from one describing a NOISE-DROP side effect to one
+# naming the currency anchor it actually holds. Every row already written under the old
+# name is a real credit, so the reader opens BOTH filenames and the writer only ever
+# appends to the current one. The read is DATA MIGRATION, not a deprecation shim: dropping
+# it hands every comment recorded under the old name back to the first-observation arm,
+# which credits it at any resolvable HEAD — the exact false credit the ledger prevents.
+
+_LEGACY_LEDGER_FILENAME = 'pr-noise-dropped-comments.jsonl'
+
+
+def _write_ledger_row(path, bot_kind, comment_id, sha, updated_at):
+    """Append one currency-ledger row to ``path`` in the producer's own row shape."""
+    from jsonl_store import append_jsonl
+
+    append_jsonl(
+        path,
+        {
+            'bot_kind': bot_kind,
+            'comment_id': comment_id,
+            'reviewed_commit_sha': sha,
+            'updated_at': updated_at,
+        },
+    )
+
+
+def test_the_pre_rename_ledger_filename_is_the_literal_real_plans_carry():
+    """The migration target is an exact on-disk name, so it is pinned as a literal.
+
+    Every other name in this area is derived, but this one cannot be: it is the string
+    already written into existing plan directories. A constant that drifted from it would
+    make the reader open a file nothing ever wrote, and every case below would still pass
+    — reading an absent legacy file and an absent current file are indistinguishable.
+    """
+    assert github_pr._LEGACY_CURRENCY_LEDGER_ARTIFACT == _LEGACY_LEDGER_FILENAME
+    # ...and the current name says what the file holds, rather than a drop side effect.
+    assert 'currency' in github_pr._CURRENCY_LEDGER_ARTIFACT
+    assert 'dropped' not in github_pr._CURRENCY_LEDGER_ARTIFACT
+    assert github_pr._CURRENCY_LEDGER_ARTIFACT != github_pr._LEGACY_CURRENCY_LEDGER_ARTIFACT
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_ledger_written_under_the_pre_rename_filename_is_still_read(
+    bot_kind, plan_context, monkeypatch
+):
+    """An anchor recorded under the OLD filename still denies a credit at an advanced HEAD.
+
+    The migration's whole point, asserted through its CONSEQUENCE rather than through the
+    reader's return alone: a plan whose ledger predates the rename holds real credits, and
+    a reader that stopped opening that file would find no row for the comment, take the
+    first-observation arm, and credit it at whatever HEAD is resolvable.
+    """
+    plan_id = f'gh-pr-legacy-filename-read-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+    _write_ledger_row(
+        github_pr._legacy_currency_ledger_path(plan_id),
+        bot_kind,
+        'guide-1',
+        _HEAD_A,
+        comment['updated_at'],
+    )
+
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_B)
+    result = _run_fetch(200, plan_id)
+
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
+    ]
+    # ...and the mechanism: the row reached the reader as a usable anchor, not as the
+    # invalid-legacy sentinel and not as an absent key.
+    assert github_pr._recorded_currency_records(plan_id)[(bot_kind, 'guide-1')] == (
+        _HEAD_A,
+        comment['updated_at'],
+    )
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_the_same_fetch_with_no_ledger_at_all_credits_the_comment(
+    bot_kind, plan_context, monkeypatch
+):
+    """Matched negative control: without the legacy row, that very fetch CREDITS the bot.
+
+    Identical comment, identical advanced HEAD — the only difference is whether a row was
+    written under the pre-rename filename. Without this control the case above would be
+    consistent with the fetch resolving stale for some unrelated reason, and would keep
+    passing against a reader that never opened the legacy file.
+    """
+    plan_id = f'gh-pr-legacy-filename-control-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_B)
+    result = _run_fetch(201, plan_id)
+
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
+    ]
+    assert result['stale_participation_bots'] == []
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_populated_current_ledger_does_not_hide_the_pre_rename_rows(
+    bot_kind, plan_context, monkeypatch
+):
+    """⛔ The per-FILE fallback shape is refuted here: both files are read, always.
+
+    Reading the old file only while the new one is ABSENT looks equivalent and is not.
+    The writer appends only CHANGED records, so the first post-rename credit creates a
+    current file holding that ONE key — and from then on a per-file fallback would ignore
+    the legacy file entirely, handing every key that lives only there back to the
+    first-observation arm.
+
+    The fixture reproduces exactly that state: ``guide-a``'s anchor lives only in the
+    legacy file, ``guide-b``'s only in the current file (staged by a real credit). At the
+    advanced HEAD BOTH must be stale. Under a per-file fallback ``guide-a`` would be
+    first-observed and the bot would be credited.
+    """
+    plan_id = f'gh-pr-legacy-coexist-{bot_kind}'
+    comments = _two_evidence_comments(bot_kind)
+    guide_a, guide_b = comments
+
+    # ``guide-a``'s anchor exists ONLY under the pre-rename filename.
+    _write_ledger_row(
+        github_pr._legacy_currency_ledger_path(plan_id),
+        bot_kind,
+        'guide-a',
+        _HEAD_A,
+        guide_a['updated_at'],
+    )
+
+    # A real fetch at HEAD_A credits ``guide-b`` for the first time and stages it — which
+    # is what CREATES the current file, the precondition the fallback shape trips over.
+    _patch_provider(monkeypatch, comments, head_sha=_HEAD_A)
+    at_a = _run_fetch(202, plan_id)
+    assert at_a['participated_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': guide_a['kind']}
+    ]
+    assert github_pr._currency_ledger_path(plan_id).exists()
+
+    # HEAD advances. Neither comment moved, and both anchors point at HEAD_A.
+    _patch_provider(monkeypatch, comments, head_sha=_HEAD_B)
+    at_b = _run_fetch(202, plan_id)
+
+    assert at_b['status'] == 'success'
+    assert at_b['participated_bots'] == []
+    assert at_b['stale_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': guide_a['kind']}
+    ]
+    # Both anchors resolved, each from the file that holds it.
+    ledger = github_pr._recorded_currency_records(plan_id)
+    assert ledger[(bot_kind, 'guide-a')] == (_HEAD_A, guide_a['updated_at'])
+    assert ledger[(bot_kind, 'guide-b')] == (_HEAD_A, guide_b['updated_at'])
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_credit_is_written_only_under_the_current_filename(
+    bot_kind, plan_context, monkeypatch
+):
+    """The pre-rename file is READ and never written — the migration is one-directional.
+
+    Appending to it as well would keep minting rows under a name that no longer says what
+    the file holds, which is the state the rename exists to end.
+    """
+    plan_id = f'gh-pr-write-current-only-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_A)
+
+    result = _run_fetch(203, plan_id)
+
+    assert result['participated_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
+    ]
+    assert github_pr._currency_ledger_path(plan_id).exists()
+    assert not github_pr._legacy_currency_ledger_path(plan_id).exists()
+
+
+# --- D6: the currency-blind path for append-per-review bots, as an ACCEPTED bounded gap.
+#
+# A bot declaring ``participation_requires_update: false`` posts a new comment per review,
+# so the producer credits it on the presence of a declared publish shape and compares no
+# commit. A comment posted against an EARLIER commit therefore still credits it at the
+# merge candidate. That is a real gap and it is ACCEPTED — so the contract must SAY so,
+# and the code must do what the contract says. Both halves are asserted together, because
+# a documented gap nobody re-derives from the code is how the reach drifted in the first
+# place.
+
+_CONTRACT_DOC = (
+    get_skill_dir('plan-marshall', 'automatic-review') / 'standards' / 'bot-participation-contract.md'
+)
+_CONTRACT_TEXT = _CONTRACT_DOC.read_text(encoding='utf-8')
+
+
+def test_the_currency_blind_population_is_derived_and_guarded():
+    """The complement is non-empty and disjoint from the currency-subject population.
+
+    Both halves matter. Non-empty, because every case below is parametrized over it and a
+    parametrize over an empty tuple SKIPS rather than fails. Disjoint and total, because
+    the two populations come from one registry read: a bot that fell out of both, or into
+    both, would make one of the two sweeps quietly wrong about which rule governs it.
+    """
+    assert CURRENCY_BLIND_BOT_COUNT == len(CURRENCY_BLIND_BOTS)
+    assert CURRENCY_BLIND_BOT_COUNT > 0
+    assert guard_non_empty(CURRENCY_BLIND_BOTS, 'CURRENCY_BLIND_BOTS', 'the registry')
+    with pytest.raises(VacuousPopulationError, match='reporting clean while covering nothing'):
+        guard_non_empty((), 'CURRENCY_BLIND_BOTS', 'a registry declaring no such bot')
+
+    assert not set(CURRENCY_BLIND_BOTS) & set(CURRENCY_SUBJECT_BOTS)
+    assert set(CURRENCY_BLIND_BOTS) | set(CURRENCY_SUBJECT_BOTS) == set(bot_registry.bot_kinds())
+
+
+def test_the_contract_records_the_currency_blind_gap_rather_than_leaving_it_inferable():
+    """The bounded gap is WRITTEN DOWN — reason, bound, and revisit condition.
+
+    A gap a reader can only infer from the rule's silence is one every reader infers
+    differently. The contract must name the reach, name the consequence, and say when the
+    decision is revisited; asserting only the runtime behaviour would leave the document
+    free to keep claiming the rule governs every crediting site.
+    """
+    assert '### The currency rule — an in-place re-reviewer' in _CONTRACT_TEXT
+    assert '#### The currency-blind path for append-per-review bots' in _CONTRACT_TEXT
+    # The reach is stated as the registry flag, not as a list of bot names.
+    assert '`participation_requires_update: true`' in _CONTRACT_TEXT
+    assert '`participation_requires_update: false`' in _CONTRACT_TEXT
+    # The retired universal claim is gone — this is the sentence whose reach was wrong.
+    assert 'This one rule governs' not in _CONTRACT_TEXT
+    # A bounded gap owes all three: why it is accepted, what bounds it, when it reopens.
+    assert 'Why the gap is accepted' in _CONTRACT_TEXT
+    assert 'What bounds it' in _CONTRACT_TEXT
+    assert 'When it is revisited' in _CONTRACT_TEXT
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_BLIND_BOTS)
+def test_an_append_per_review_bot_stays_credited_after_a_head_advance(
+    bot_kind, plan_context, monkeypatch
+):
+    """The documented behaviour, asserted as a REACH DIFFERENCE on one identical fixture.
+
+    ⚠ This case is deliberately GREEN against the pre-change code, and that is the correct
+    outcome rather than a weakness to hide: deliverable 6's disposition is to DOCUMENT this
+    gap, explicitly not to change the behaviour, so a case that went red here would be
+    evidence the reach had moved. The discrimination for the documentation itself lives in
+    ``test_the_contract_records_the_currency_blind_gap_rather_than_leaving_it_inferable``.
+
+    What keeps it from being a bare restatement is the MATCHED CONTROL run inside it: the
+    same comment shape, the same two commits, the same fetch sequence, differing only in
+    which population the bot comes from. Asserting only the credit would pass just as
+    happily against a producer that had stopped currency-testing anybody; asserting the
+    pair pins the reach DIFFERENCE, so a change in either direction — currency-testing
+    these bots, or silently exempting the others — turns it red.
+    """
+    plan_id = f'gh-pr-currency-blind-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_A)
+    at_a = _run_fetch(204, plan_id)
+    expected = [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
+    assert at_a['participated_bots'] == expected
+
+    # HEAD advances past the commit the comment could have reviewed; the comment does not
+    # move. This is the exact sequence that resolves ``participated_stale`` for a
+    # currency-subject bot — the control below re-runs it to prove that is still so.
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_B)
+    at_b = _run_fetch(204, plan_id)
+
+    assert at_b['status'] == 'success'
+    # Still credited — the accepted, bounded gap, exercised rather than merely described.
+    assert at_b['participated_bots'] == expected
+    # And the two states that are structurally unreachable for such a bot stay empty.
+    assert at_b['stale_participation_bots'] == []
+    assert at_b['undecidable_participation_bots'] == []
+    # No ledger row is written for it, in either file — the ledger's reach matches the
+    # rule's, so a reader cannot mistake a currency-blind credit for an anchored one.
+    assert github_pr._recorded_currency_records(plan_id) == {}
+
+    # MATCHED CONTROL — identical fixture, identical two-fetch sequence, a bot from the
+    # OTHER side of the registry partition. It must go stale where this one stayed
+    # credited; without it, a producer that currency-tested nobody would pass the above.
+    subject_bot = CURRENCY_SUBJECT_BOTS[0]
+    subject_plan_id = f'gh-pr-currency-blind-control-{bot_kind}'
+    subject_comment = _publish_comment(subject_bot, 'guide-1', created_at=_at(1))
+    _patch_provider(monkeypatch, [subject_comment], head_sha=_HEAD_A)
+    _run_fetch(205, subject_plan_id)
+    _patch_provider(monkeypatch, [subject_comment], head_sha=_HEAD_B)
+    subject_at_b = _run_fetch(205, subject_plan_id)
+
+    assert subject_at_b['participated_bots'] == []
+    assert subject_at_b['stale_participation_bots'] == [
+        {'bot_kind': subject_bot, 'evidence_kind': subject_comment['kind']}
+    ]
 
 
 # =============================================================================
@@ -3106,3 +3824,90 @@ def test_fetch_findings_reports_an_unmeasurable_diff_as_unknown_never_zero(
     assert result['refused_size_caps'] == [
         {'bot_kind': 'sourcery', 'cap': '150000 diff characters'}
     ]
+
+
+# ============================================================================
+# _comment_predates_commit — the comparability guard
+# ============================================================================
+#
+# The predicate promises that THREE undecidable inputs resolve to False: an unreadable
+# commit timestamp, an absent comment timestamp, and TIMESTAMPS THAT DO NOT COMPARE.
+# The third had no guard — the ordering was a bare lexicographic string compare — so a
+# format mismatch did not fail to decide, it decided WRONGLY and confidently: a comment
+# stamped ``…T11:30:00-05:00`` names an instant AFTER a commit stamped ``…T12:00:00Z``,
+# yet sorts before it, and the withheld-credit guard would fire on a comment that
+# post-dates the code. Every case below is a shape whose lexicographic order disagrees
+# with (or says nothing about) the real instant order.
+#
+# The two controls at the end are matched positives: they prove the guard withholds on
+# uncomparable input WITHOUT neutering the predicate on the only shape it is valid over.
+
+_ISO_COMMIT_AT = '2026-08-25T12:00:00Z'
+
+
+@pytest.mark.parametrize(
+    ('updated_at', 'created_at', 'why'),
+    [
+        # Negative UTC offset: the real instant is 16:30Z, four and a half hours AFTER
+        # the commit, but '11:30' sorts before '12:00'. The pre-guard compare called
+        # this a comment that predates the commit.
+        ('2026-08-25T11:30:00-05:00', '', 'negative offset sorts before, happens after'),
+        # Fractional seconds: '.' (0x2E) sorts before 'Z' (0x5A), so a comment half a
+        # second AFTER the commit sorted before it.
+        ('2026-08-25T12:00:00.500000Z', '', 'fractional seconds sort before the Z'),
+        # Bare date — names a day, not a moment; nothing about it is comparable to a
+        # second-resolution instant.
+        ('2026-08-25', '', 'a bare date names no moment'),
+        # Epoch seconds: every digit string starting '1' sorts before every ISO string
+        # starting '2', so the shape reads as "predates" for the next ~250 years.
+        ('1787654400', '', 'epoch seconds sort before every ISO-8601 year'),
+        # The comment's OWN two stamps disagree in shape, so ``max`` over them does not
+        # select the later moment — guarded before the ordering, not after.
+        ('2026-08-25T11:30:00-05:00', '2026-08-25T10:00:00Z', 'max over mixed shapes'),
+    ],
+)
+def test_comment_predates_commit_withholds_when_the_timestamps_do_not_compare(
+    updated_at, created_at, why
+):
+    """An uncomparable timestamp yields the promised False, not a lexicographic guess.
+
+    ⛔ This is the docstring's third undecidable case, which had no guard. Withholding
+    here is the fail-closed direction the whole deliverable is about: an unknown
+    ordering is not a claim that the comment predates the commit.
+    """
+    comment = {'updated_at': updated_at, 'created_at': created_at}
+
+    assert github_pr._comment_predates_commit(comment, _ISO_COMMIT_AT) is False, why
+
+
+def test_comment_predates_commit_withholds_on_an_uncomparable_commit_timestamp():
+    """The guard is symmetric: a non-``Z`` COMMIT stamp is equally undecidable.
+
+    Guarding only the comment side would leave the same wrong-ordering claim reachable
+    from the other operand.
+    """
+    comment = {'updated_at': '2026-08-25T09:00:00Z', 'created_at': '2026-08-25T09:00:00Z'}
+
+    assert github_pr._comment_predates_commit(comment, '2026-08-25T12:00:00+02:00') is False
+
+
+def test_comment_predates_commit_still_decides_two_comparable_timestamps():
+    """Matched positive control — a comment that really does predate still reports True.
+
+    Without this, a guard that returned False unconditionally would pass the cases
+    above while silently deleting the predicate.
+    """
+    comment = {'updated_at': '2026-08-25T09:00:00Z', 'created_at': '2026-08-25T08:00:00Z'}
+
+    assert github_pr._comment_predates_commit(comment, _ISO_COMMIT_AT) is True
+
+
+def test_comment_predates_commit_reports_false_for_a_comment_after_the_commit():
+    """Matched negative control — the comparable, NOT-predating case stays False.
+
+    The later of the two stamps is what decides, so a comment created before the commit
+    but edited after it does not count as predating it.
+    """
+    comment = {'updated_at': '2026-08-25T14:00:00Z', 'created_at': '2026-08-25T08:00:00Z'}
+
+    assert github_pr._comment_predates_commit(comment, _ISO_COMMIT_AT) is False

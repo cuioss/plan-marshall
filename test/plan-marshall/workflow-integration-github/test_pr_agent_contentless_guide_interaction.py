@@ -146,15 +146,24 @@ def _guide_comment(body, comment_id='guide-1', *, created_at=None, updated_at=No
     return comment
 
 
-def _patch_provider(monkeypatch, comments, head_sha='deadbeef'):
+def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_at=''):
     """Monkeypatch only the GitHub provider surface — the findings store stays real.
 
     ``head_sha`` is the PR HEAD the producer stamps and, since the currency fix,
     compares each comment's recorded SHA against. It defaults to ``deadbeef``; a test
     simulates a loop-back / force-push by re-patching with a DIFFERENT value between
     fetches.
+
+    ``head_committed_at`` is the merge-candidate commit's OWN timestamp, the second
+    input to the first-observation arm. It defaults to the empty string — the
+    unreadable case, under which the arm keeps its SHA-only behaviour — so the cases
+    below stay about the SHA anchor. Patching it is not optional: unpatched, the
+    producer's read would shell out to a real ``gh``.
     """
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(
+        github_pr._github, 'fetch_pr_head_committed_at', lambda pr_number: head_committed_at
+    )
     monkeypatch.setattr(
         github_pr._github,
         'fetch_pr_comments_data',

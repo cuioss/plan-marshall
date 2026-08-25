@@ -1757,6 +1757,7 @@ from _github_ci import (  # noqa: E402 — bottom import: primitives must be def
     cmd_ci_status,
     cmd_ci_wait,
     cmd_ci_wait_for_status_flip,
+    fetch_pr_head_committed_at,
     fetch_pr_head_sha,
 )
 from _github_issue import (  # noqa: E402 — bottom import: primitives must be defined first
@@ -1797,10 +1798,16 @@ from _github_pr import (  # noqa: E402 — bottom import: primitives must be def
     post_pr_comment,
 )
 
-# fetch_pr_head_sha / fetch_pr_reviews_with_commits / post_pr_comment are
-# re-exported for the sibling ``github_pr`` / ``github_re_review`` scripts,
-# which import this module and call them as ``github_ops.<name>``.
-_ = (fetch_pr_head_sha, fetch_pr_reviews_with_commits, post_pr_comment)
+# fetch_pr_head_sha / fetch_pr_head_committed_at / fetch_pr_reviews_with_commits /
+# post_pr_comment are re-exported for the sibling ``github_pr`` /
+# ``github_re_review`` scripts, which import this module and call them as
+# ``github_ops.<name>``.
+_ = (
+    fetch_pr_head_sha,
+    fetch_pr_head_committed_at,
+    fetch_pr_reviews_with_commits,
+    post_pr_comment,
+)
 
 
 # ---------------------------------------------------------------------------

@@ -204,12 +204,30 @@ signal, and consuming it as one is sanctioned: the completion-aware poll documen
 `review_bot_buffer_seconds` fallback, or stop — none of which is participation input. Only the
 budget-exhausted branch reaches `--in-progress-bots`.
 
-### The currency rule — a credit is evaluated against the commit being merged
+### The currency rule — an in-place re-reviewer's credit is evaluated against the commit being merged
 
-**A participation credit is valid only against the merge candidate: a review counts iff the commit it
-reviewed is the merge candidate's HEAD, and that verdict is a pure comparison that consumes no
-observation state, so it is identical however many times it is evaluated.** This one rule governs
-every site that credits participation.
+**A currency-tested participation credit is valid only against the merge candidate: such a review
+counts iff the commit it reviewed is the merge candidate's HEAD, and that verdict is a pure comparison
+that consumes no observation state, so it is identical however many times it is evaluated while the
+merge candidate remains resolvable.**
+
+That qualification is the honest reach of the claim, not a hedge. The merge-candidate SHA is read per
+fetch from a fallible provider call, so a resolved-then-unresolved sequence moves the verdict from a
+credit to the undecidable outcome without any observation state having been consumed. Idempotence
+holds over repeated evaluation, never over a changed ability to read the head — and stating the reach
+that narrowly is what keeps this contract from asserting of the verdict what its own producer does
+not.
+
+**The rule's reach is exactly the bots whose registry record declares
+`participation_requires_update: true`** — the in-place re-reviewers. That is the set the producer
+gates the currency test on, and it is narrower than *every* site that credits participation. A bot
+declaring `participation_requires_update: false` is credited on the presence of a comment in one of
+its declared `participation_evidence` publish shapes, and **no commit is compared** — see § "The
+currency-blind path for append-per-review bots" below, which records that reach difference as an
+accepted, bounded gap rather than leaving it to be inferred from the rule's silence. The reach is a
+registry-derived property, never a fixed list of bot names: a bot that newly declares
+`participation_requires_update: true` is currency-tested from that declaration onward, with no change
+here.
 
 The rule exists because the artifact that merges is **one commit**, while the barrier was asking a
 per-PR question — *"did the bot participate on this PR?"* — that a loop-back, rebase, or force-push
@@ -218,6 +236,60 @@ SHA closes that false positive; making the credit a pure SHA comparison rather t
 observation closes a second defect, the **observer effect** — a credit derived by *looking* changed
 its answer on the second look, so the same unedited comment at the same HEAD flipped from
 `participated` to `participated_stale` between one fetch and the next.
+
+#### A wait's completion arm is timestamp-anchored, and that is correct
+
+`github_ops pr wait-for-comments` ends its poll on a movement arm that fires when a bot declaring
+`participation_requires_update` has edited its persistent comment since the wait started — a
+**timestamp** anchor, where this rule anchors a credit on a **commit SHA**. The recorded answer is
+that the timestamp anchor is **correct for that arm**, and the divergence from this rule is not a
+defect: a wait asks *"did anything move since I started?"*, which is a different question from *"did
+this review the merge candidate?"*. A poll is a scheduling decision — when to stop waiting and fetch
+— and movement since the wait began is the observable that answers it. Anchoring the poll on the
+merge-candidate SHA instead would end the wait on a comment that never moved, and would run an
+in-place re-reviewer to the full timeout, because such a bot's comment count never grows.
+
+The arm therefore grants no participation credit: it decides when to stop polling, and the credit is
+granted only by the currency test the producer applies afterwards. A movement match proves a
+re-review **arrived**; whether that review is current is decided against the commit, by this rule.
+That is a recorded classification rather than a gap, and no follow-up is filed against the wait
+predicate.
+
+#### The currency-blind path for append-per-review bots — an accepted, bounded gap
+
+A bot declaring `participation_requires_update: false` **re-reviews by posting a new comment**, so its
+credit is granted the moment a comment of its in a declared publish shape is observed. No commit is
+compared, and the currency ledger holds no row for it. **The consequence, stated plainly: a comment
+such a bot posted against a commit that is no longer the merge candidate still credits it.** After a
+loop-back, rebase, or force-push, an append-per-review bot can therefore be counted toward the quorum
+on a review of a tree that is no longer the one being merged — the same false positive the currency
+rule closes for in-place re-reviewers, still open on this path. Two states are unreachable for such a
+bot in consequence: it never resolves `participated_stale`, and it never appears in
+`undecidable_participation_bots[]`.
+
+**Why the gap is accepted rather than closed here.** Closing it means anchoring every bot's credit,
+which is a different mechanism from the one the currency test implements: the ledger records
+`(reviewed_commit_sha, updated_at)` per credited comment precisely because an in-place re-reviewer's
+comment identity does not change between reviews, and the ledger is what supplies the missing "which
+commit did this one comment read?". An append-per-review bot's comments do not need that ledger to be
+told apart — but neither do they carry a reviewed SHA, so anchoring them requires deciding what a new
+comment's presence proves about the commit it was posted against, which is a **new** contract
+question rather than a wider application of this one. Widening the reach without settling it would
+replace an over-credit with an equally unfounded verdict in the other direction.
+
+**What bounds it.** The gap is bounded to bots declaring `participation_requires_update: false`, and
+this contract's other gates are unaffected by it: the `not_triggered` PR-wide observable, the refusal
+members, the pre-merge comment barrier, and the `declined` detection via `head_sha_verified` all still
+apply to such a bot. It is also self-limiting in the common case — an append-per-review bot that is
+re-triggered on the advanced HEAD posts a NEW comment, so the next fetch credits it on evidence that
+does post-date the merge candidate.
+
+**When it is revisited.** Either of two observations reopens it: a required bot declaring
+`participation_requires_update: false` observed satisfying the quorum on a merge candidate it
+demonstrably did not review, or a decision to anchor every bot declaring `participation_evidence` —
+which is the alternative disposition, deliberately **not** taken here. That alternative changes the
+barrier verdict for every consumer project whose `required_bots` includes an append-per-review bot, so
+it is a contract change with its own blast radius, not an implementation detail of this rule.
 
 ### Evidence for a bot that edits one comment in place
 
@@ -230,15 +302,36 @@ evidence requires the comment to prove a review of the **merge candidate**:
 - the comment is recorded against the merge-candidate SHA — the `reviewed_commit_sha` stamped on the
   stored finding, or (for a comment the pre-filter drops, so it files no finding) the merge-candidate
   SHA the noise sidecar recorded when the comment was first observed; **or**
-- it was **edited in place** (`updated_at` differs from `created_at`) since it was posted — a fresh
-  review at the current tree; **or**
-- this fetch is the **first observation** of the comment, which is by definition an observation at the
-  merge candidate.
+- it was **edited in place since it was last credited** — `updated_at` differs from the **recorded**
+  `updated_at` the currency ledger holds for that credit, never from `created_at` — a fresh review at
+  the current tree. Comparing against the recorded value is what stops the arm from becoming a
+  permanent "was ever edited" flag: an edit at commit N credits N, and not N+1 unless a further edit
+  lands. An absent `updated_at` reads as no movement, which is the fail-closed direction; **or**
+- this fetch is the **first observation** of the comment — a **bounded assumption**, never a verified
+  fact. A fetched comment carries no reviewed SHA, so nothing in it says which commit the bot actually
+  read, and the ledger's silence says only that this plan has not seen the comment before — which is
+  not the same as the bot not having published it earlier. The assumption errs toward **crediting**: a
+  comment that in truth reviewed an **earlier** commit is credited at the merge candidate. One guard
+  bounds it on this arm specifically: when the merge-candidate commit's own timestamp can be read, a
+  comment whose timestamps predate that commit is refused, because it demonstrably existed before the
+  code did. The guard does not turn the assumption into a verification — a comment posted after the
+  commit is still credited without proof that it read it.
+
+**An unreadable merge candidate withholds the credit on EVERY arm, not on one of them.** With no
+readable head SHA there is no commit for any arm to anchor against: a recorded SHA has nothing to
+equal, an edit proves a fresh review of *something* without saying of what, and a first observation
+cannot be tied to the tree being merged. All of them therefore fail closed, and the bot is reported as
+`undecidable_participation` rather than as stale, since a re-review trigger cannot fix a failed read.
+The uniformity is itself load-bearing: failing closed on every arm is what keeps the verdict stable
+across a failed read, because a later fetch that likewise cannot resolve the head reaches the same
+blocking answer instead of flipping.
 
 A comment recorded against an **earlier** commit, unedited, fails the test. Because the test is an SHA
-comparison rather than a first-seen tally, re-running the fetch at the same HEAD returns the same
-answer — the credit no longer depends on how many times the plan has looked. No participation path
-reads the observation ledger (`observed_keys`) as a currency signal.
+comparison rather than a first-seen tally, re-running the fetch at the same HEAD — for as long as that
+HEAD stays resolvable — returns the same answer, so the credit no longer depends on how many times the
+plan has looked. Losing the ability to read the head is the one thing that moves the answer, and it
+moves it to the undecidable outcome rather than to a credit. No participation path reads the
+observation ledger (`observed_keys`) as a currency signal.
 
 A failed currency test is **not the same as no evidence at all**, and the taxonomy keeps the two
 apart: the bot published in a declared shape, so the producer reports it in
@@ -711,6 +804,8 @@ accumulate, the verb ships as a measurement with **no parity claim attached**.
 |----------|---------------|
 | `automatic-review/SKILL.md` | Both lists, to drive the completion-aware poll, the re-review trigger set, and the step-done guard. |
 | `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]` **and the `stale_participation_bots[]` set that carries `participated_stale`**; each bot's `refusal_patterns`, to branch a refusal into `refused_bots[]` rather than drop it, and its `refusal_size_patterns`, to attribute each refusal's CAUSE into `refused_causes[]` (size vs quota), and its `refusal_size_cap_patterns`, to read the stated ceiling into `refused_size_caps[]`; the enumerative arm, to report a refusal no earlier arm could read into `unrecognised_refusal[]` — withholding the finding, denying the participation credit, and carrying the registry file and field that close the gap; each bot's `contentless_review_markers` / `actionable_content_markers`, to drop a fully clean review comment as noise. |
+| `github_pr fetch_findings` → `merge_candidate_sha_resolved` | Nothing from this contract — it is the producer's report of whether the merge-candidate SHA could be READ at all. `fetch_pr_head_sha` returns `''` on any failure path, so a `false` is *"the head is unresolvable"*, never a verdict about a bot that an operator can act on. **Producer-side disclosure: no taxonomy member routes on it.** |
+| `github_pr fetch_findings` → `undecidable_participation_bots[]` | Each bot's `participation_evidence` / `participation_requires_update`, to name the bots whose comment matched a declared publish shape on a fetch where the merge candidate was unreadable. Reported in **neither** `participated_bots[]` (nothing anchors the credit) **nor** `stale_participation_bots[]` (stale's remedy is a re-review trigger, which cannot fix a failed read). ⚠ **Producer-side disclosure with no classifier member yet** — the failure taxonomy above has no member for this state, so no consumer reaches it. Widening the taxonomy is a separate plan, and this field is the prerequisite it needs; the gap is stated here rather than left to surface as an unreachable branch. |
 | `github_pr pull_request_runs` / `ci checks pull-request-runs` | Nothing from this contract — it is the **observation channel for `not_triggered`**, answering the PR-wide question of whether any `pull_request`-event workflow run exists for the PR at all. Its verdict reaches the predicate as the single `--not-triggered` bool. |
 | `review_completeness check` | `required_bots` for the quorum; `optional_bots` for reporting only; `participation_evidence` to admit each evidence pair; `rate_limit_class` for the DEFAULT refusal member (`refused_awaitable` / `refused_hard` / `refused_unknown`), displaced by two per-refusal overlays: `--refused-causes` (from `refused_causes[]`) resolves a `size` cause to `refused_structural`, and `--unrecognised-refusal-bots` (from `unrecognised_refusal[]`) resolves a refusal no arm could read to `refused_unknown`. Consumes `stale_participation_bots[]` via `--stale-participation-bots` to assign `participated_stale`, the bots that answered a re-review without reviewing the merge candidate via `--declined-bots` to assign `declined`, the PR-wide `--not-triggered` bool to refine what would otherwise be `absent`, and `--refusal-size-caps` (from `refused_size_caps[]`) to carry each structural refusal's stated ceiling. Reports `refusal_causes[]` as `{bot_kind, cause, cap}`. Emits `review_state_summary` (the reviewer-state distribution) so `display_detail` can tell reviewed-clean from nobody-reviewed. |
 | `review_completeness size-caps` | Each bot's `refusal_size_patterns` and `refusal_size_cap_patterns`, to disclose IN ADVANCE which reviewers carry a structural diff-size ceiling and whether its value is recoverable. Reads no PR — the answer is registry data, so a plan can consult it before requesting a review. |

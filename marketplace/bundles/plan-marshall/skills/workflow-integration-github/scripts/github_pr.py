@@ -82,6 +82,7 @@ Examples:
     github_pr.py post_responses --pr-number 123 --plan-id EXAMPLE-PLAN
 """
 
+import hashlib
 import json
 import re
 import sys
@@ -505,6 +506,11 @@ def _unconfigured_result(operation: str, detail: str) -> dict[str, Any]:
 _COMMENT_ID_DETAIL = re.compile(r'^comment_id:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
 _THREAD_ID_DETAIL = re.compile(r'^thread_id:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
 _KIND_DETAIL = re.compile(r'^kind:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
+# The EDIT TERM — the third term of the cross-iteration filing dedup identity, stamped
+# into every finding this producer stores so the key can be reconstructed from the store.
+# A finding written before this term existed carries no such line and extracts ``''``,
+# which is what makes a pre-upgrade row recognisable rather than merely different.
+_EDIT_TERM_DETAIL = re.compile(r'^edit_term:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
 # The originating PR, stamped by ``cmd_fetch_findings`` as the first ``detail``
 # line. ``post_responses`` filters on it so a plan whose findings store spans
 # several PRs transmits each disposition only to the PR it came from.
@@ -551,37 +557,75 @@ def _detail_field(detail: str | None, pattern: re.Pattern) -> str:
     return match.group('id') if match else ''
 
 
-def _existing_pr_comment_keys(query_findings, plan_id: str) -> set[tuple[str, str]]:
-    """Return the set of ``(bot_kind, comment_id)`` keys already stored as pr-comment findings.
+def _comment_edit_term(comment: dict) -> str:
+    """Return the EDIT TERM of ``comment`` — the third term of the dedup identity.
+
+    ``updated_at`` when the provider supplied one: a bot that edits its one persistent
+    comment in place moves that value, so an edited comment presents as new information
+    while an unchanged re-fetch still dedupes.
+
+    A body digest when it did not. The fallback is required rather than cosmetic: with
+    no third term at all an edited comment carrying no ``updated_at`` would collapse
+    back onto the two-term key and be dropped as a duplicate — the exact defect the
+    widening closes. The digest moves when the body moves, which is the same question
+    ``updated_at`` answers, read from the content instead of from the metadata.
+    """
+    updated_at = str(comment.get('updated_at') or '')
+    if updated_at:
+        return updated_at
+    digest = hashlib.sha256(str(comment.get('body') or '').encode('utf-8')).hexdigest()
+    return f'sha256:{digest}'
+
+
+def _existing_pr_comment_keys(
+    query_findings, plan_id: str
+) -> tuple[set[tuple[str, str, str]], set[tuple[str, str]]]:
+    """Return the dedup keys already stored as pr-comment findings, in BOTH shapes.
 
     Each pr-comment finding embeds its source ``comment_id`` on a
-    ``comment_id: <value>`` line inside its ``detail`` block and carries the
-    resolved ``bot_kind`` as a top-level field. Reconstructing the set of
-    ``(bot_kind, comment_id)`` pairs from the persisted findings (across all
-    resolution states) lets the producer skip any comment — thread-bearing or
-    thread_id-less, from any bot kind — that was already staged in a prior
-    finalize iteration, closing the cross-iteration phantom loop for all bots.
+    ``comment_id: <value>`` line inside its ``detail`` block, its ``edit_term`` on an
+    ``edit_term: <value>`` line, and carries the resolved ``bot_kind`` as a top-level
+    field. Reconstructing those keys from the persisted findings (across all resolution
+    states) lets the producer skip any comment — thread-bearing or thread_id-less, from
+    any bot kind — that was already staged in a prior finalize iteration, closing the
+    cross-iteration phantom loop for all bots.
 
-    Keying on ``(bot_kind, comment_id)`` rather than ``comment_id`` alone avoids
-    a collision between two distinct bots that happen to reuse the same numeric
-    comment id. A human-authored finding (``bot_kind`` unset) contributes
-    ``('', comment_id)``.
+    The identity is ``(bot_kind, comment_id, edit_term)``. Keying on ``bot_kind``
+    alongside the id avoids a collision between two distinct bots that happen to reuse
+    the same numeric comment id; a human-authored finding (``bot_kind`` unset)
+    contributes ``('', comment_id, edit_term)``. The EDIT TERM is what lets an
+    in-place-edited review present as new information: without it, a bot that edits its
+    one persistent comment to carry a real finding was credited as participating while
+    the dedup dropped the comment, so the reviewer read present-and-clean and its actual
+    feedback never became a finding.
 
     Args:
         query_findings: The ``_findings_core.query_findings`` callable.
         plan_id: Plan identifier whose findings store is queried.
 
     Returns:
-        Set of ``(bot_kind, comment_id)`` tuples already present in the
-        pr-comment store.
+        ``(keys, legacy_keys)`` — the three-term identities, and the two-term
+        ``(bot_kind, comment_id)`` identities of findings stored BEFORE the edit term
+        existed. A pre-upgrade row carries no ``edit_term`` line, so it can match no
+        three-term key; it is deduped on the two-term key against ANY edit term
+        instead. Without that, the upgrade would re-file a PR's entire comment history
+        once, on the first fetch after it landed.
     """
     result = query_findings(plan_id, finding_type='pr-comment')
-    keys: set[tuple[str, str]] = set()
+    keys: set[tuple[str, str, str]] = set()
+    legacy_keys: set[tuple[str, str]] = set()
     for finding in result.get('findings') or []:
-        comment_id = _detail_field(finding.get('detail'), _COMMENT_ID_DETAIL)
-        if comment_id:
-            keys.add((finding.get('bot_kind') or '', comment_id))
-    return keys
+        detail = finding.get('detail')
+        comment_id = _detail_field(detail, _COMMENT_ID_DETAIL)
+        if not comment_id:
+            continue
+        bot_kind = finding.get('bot_kind') or ''
+        edit_term = _detail_field(detail, _EDIT_TERM_DETAIL)
+        if edit_term:
+            keys.add((bot_kind, comment_id, edit_term))
+        else:
+            legacy_keys.add((bot_kind, comment_id))
+    return keys, legacy_keys
 
 
 # The plan-scoped CURRENCY LEDGER: per ``participation_requires_update`` comment the
@@ -605,17 +649,64 @@ def _existing_pr_comment_keys(query_findings, plan_id: str) -> set[tuple[str, st
 # state — would put routine clean-review boilerplate back in front of operator
 # triage, into the pending-findings gate, and into the review-retrospective
 # aggregation, which is the whole class of defect the contentless drop removes.
-_DROPPED_COMMENT_KEYS_ARTIFACT = 'pr-noise-dropped-comments.jsonl'
+_CURRENCY_LEDGER_ARTIFACT = 'pr-participation-currency-ledger.jsonl'
+
+#: The filename the ledger was written under before it was named for what it holds. It is
+#: READ and never written, and that read is DATA MIGRATION rather than a deprecation
+#: shim: the rows under this name are real credits, so a reader that stopped opening the
+#: file would hand every comment recorded there back to the first-observation arm and
+#: credit — at any resolvable HEAD — precisely the reviews the ledger was keeping honest.
+#: It therefore does not expire with the rename.
+_LEGACY_CURRENCY_LEDGER_ARTIFACT = 'pr-noise-dropped-comments.jsonl'
 
 
-def _dropped_comment_keys_path(plan_id: str) -> Path:
-    """Resolve the plan-scoped path of the currency ledger."""
+def _currency_ledger_path(plan_id: str) -> Path:
+    """Resolve the plan-scoped path the currency ledger is WRITTEN to."""
     from jsonl_store import get_artifact_path
 
-    return get_artifact_path(plan_id, _DROPPED_COMMENT_KEYS_ARTIFACT)
+    return get_artifact_path(plan_id, _CURRENCY_LEDGER_ARTIFACT)
 
 
-def _recorded_currency_records(plan_id: str) -> dict[tuple[str, str], tuple[str, str]]:
+def _legacy_currency_ledger_path(plan_id: str) -> Path:
+    """Resolve the plan-scoped path the currency ledger was written to before the rename.
+
+    Read-only. See :data:`_LEGACY_CURRENCY_LEDGER_ARTIFACT` for why the read survives.
+    """
+    from jsonl_store import get_artifact_path
+
+    return get_artifact_path(plan_id, _LEGACY_CURRENCY_LEDGER_ARTIFACT)
+
+
+class _InvalidLegacyRecord:
+    """A currency-ledger row present in the file but carrying no usable reviewed SHA."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:  # pragma: no cover — diagnostic only
+        return '<invalid legacy currency record>'
+
+
+#: The STATED sentinel for a ledger row that exists but cannot anchor a credit — a row
+#: written before the artifact carried a ``reviewed_commit_sha``, or one whose SHA is
+#: empty. It is a THIRD state, distinct from both *no record* (``None``) and *a usable
+#: record* (a ``(sha, updated_at)`` pair), and it is what makes the distinction legible.
+#:
+#: ⛔ Dropping such a row instead is the NON-FIX: an absent key takes the
+#: first-observation arm, so a dropped row credits the bot at any resolvable advanced
+#: HEAD — precisely the false credit the currency test exists to deny. The row must
+#: survive the read and be REFUSED by the predicate, not vanish from it.
+INVALID_LEGACY_RECORD = _InvalidLegacyRecord()
+
+#: A ledger value: a usable ``(reviewed_commit_sha, updated_at)`` pair, or the sentinel.
+#:
+#: Consumers ask ``isinstance(record, _InvalidLegacyRecord)`` — a MEANING guard over the
+#: stated identity above (ADR-015), never a truthiness test on the tuple's first element,
+#: which is exactly the inline check that let a ``('', '')`` row fall through to the edit
+#: arm and credit essentially any real comment.
+CurrencyRecord = tuple[str, str] | _InvalidLegacyRecord
+
+
+def _recorded_currency_records(plan_id: str) -> dict[tuple[str, str], CurrencyRecord]:
     """Return ``(bot_kind, comment_id) -> (reviewed_commit_sha, updated_at)`` for earlier credits.
 
     The currency ledger the currency test reads. Each entry is the ``(sha,
@@ -629,16 +720,35 @@ def _recorded_currency_records(plan_id: str) -> dict[tuple[str, str], tuple[str,
     Last row wins per key, so a re-credit at a new HEAD supersedes the old record.
 
     A missing ledger reads as the empty map (no fetch has run for this plan yet).
+
+    BOTH filenames are read — the pre-rename one first, then the current one — because a
+    plan whose ledger was written before the rename holds its credits under the old name
+    and nothing ever rewrites them. The current file is read SECOND so that, key by key,
+    it supersedes the older anchor under the same last-row-wins rule that governs repeat
+    credits within one file; a key the current file does not carry still resolves from the
+    older one. ⛔ Reading the old file only when the new one is ABSENT is the shape to
+    avoid, and it is not equivalent: the writer appends only CHANGED records, so the first
+    post-rename credit creates a current file holding that one key, and a per-file
+    fallback would from then on drop every unchanged key back to the first-observation arm
+    — crediting at any resolvable HEAD exactly the reviews the ledger was anchoring.
+
+    A row whose ``reviewed_commit_sha`` is missing or empty maps to
+    :data:`INVALID_LEGACY_RECORD` — the third state — rather than to a
+    ``('', updated_at)`` pair that would fall through to the edit arm (true for
+    essentially any real comment), and rather than being dropped, which would hand the
+    comment to the first-observation arm and credit it at any resolvable advanced HEAD.
     """
     from jsonl_store import read_jsonl
 
-    records: dict[tuple[str, str], tuple[str, str]] = {}
-    for record in read_jsonl(_dropped_comment_keys_path(plan_id)):
-        key = (str(record.get('bot_kind') or ''), str(record.get('comment_id') or ''))
-        records[key] = (
-            str(record.get('reviewed_commit_sha') or ''),
-            str(record.get('updated_at') or ''),
-        )
+    records: dict[tuple[str, str], CurrencyRecord] = {}
+    for path in (_legacy_currency_ledger_path(plan_id), _currency_ledger_path(plan_id)):
+        for record in read_jsonl(path):
+            key = (str(record.get('bot_kind') or ''), str(record.get('comment_id') or ''))
+            sha = str(record.get('reviewed_commit_sha') or '')
+            if not sha:
+                records[key] = INVALID_LEGACY_RECORD
+                continue
+            records[key] = (sha, str(record.get('updated_at') or ''))
     return records
 
 
@@ -651,10 +761,14 @@ def _record_currency_records(
     or a re-credit at a new SHA / after a fresh edit), so the file accretes one row
     per distinct credit rather than one row per fetch. Sorted so the file order is
     deterministic.
+
+    Only the CURRENT filename is ever written. The pre-rename file is read by
+    :func:`_recorded_currency_records` and left untouched, so a plan's older credits keep
+    resolving without this writer having to rewrite a file it did not create.
     """
     from jsonl_store import append_jsonl
 
-    path = _dropped_comment_keys_path(plan_id)
+    path = _currency_ledger_path(plan_id)
     for (bot_kind, comment_id), (sha, updated_at) in sorted(records.items()):
         append_jsonl(
             path,
@@ -667,11 +781,65 @@ def _record_currency_records(
         )
 
 
+#: The ONE timestamp shape the ordering below is valid over: fixed-width ISO-8601 UTC
+#: with a literal trailing ``Z``, as the GitHub API emits for both comment timestamps
+#: and commit timestamps. Two strings of this shape sort lexicographically in the same
+#: order as the instants they name, which is what makes a bare ``<`` a correct ordering
+#: test. A string in ANY other shape — a numeric UTC offset (``+02:00``), a
+#: fractional-second form, a bare date, an epoch integer — does NOT sort against this
+#: one, so mixing shapes turns ``<`` into a silently wrong ordering CLAIM rather than
+#: into a comparison error something would notice. The regex is therefore the
+#: comparability guard, not a validation nicety.
+_ISO_UTC_TIMESTAMP = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')
+
+
+def _comment_predates_commit(comment: dict, merge_candidate_committed_at: str) -> bool:
+    """True when ``comment`` demonstrably existed BEFORE the merge-candidate commit.
+
+    The comment's own latest timestamp is the LATER of ``updated_at`` / ``created_at``
+    — the moment it last said anything. When that moment precedes the commit's own
+    timestamp, the comment cannot be an observation of that commit, however empty the
+    currency ledger is.
+
+    Returns False whenever the question cannot be decided: an unreadable commit
+    timestamp, an absent comment timestamp, or timestamps that do not compare. An
+    unknown ordering is NOT a claim that the comment predates the commit, and the
+    caller must not read it as one — the withholding here rests on positive evidence
+    of the ordering, never on its absence.
+
+    "Do not compare" is a GUARDED condition, not an assumed one: every timestamp that
+    reaches the ``<`` must match :data:`_ISO_UTC_TIMESTAMP`, and any that does not
+    sends the whole question to False. Without that guard the ordering is a bare
+    lexicographic string compare, and a format mismatch — one side offset-stamped, one
+    side ``Z``-stamped — yields a confident but silently wrong ordering claim instead
+    of the undecided answer promised above. The comment's OWN two timestamps are
+    guarded for the same reason before ``max`` picks between them: a lexicographic max
+    over two differently-shaped strings does not select the later moment.
+    """
+    commit_at = str(merge_candidate_committed_at or '')
+    if not _ISO_UTC_TIMESTAMP.match(commit_at):
+        return False
+    stamps = [
+        stamp
+        for stamp in (
+            str(comment.get('updated_at') or ''),
+            str(comment.get('created_at') or ''),
+        )
+        if stamp
+    ]
+    if not stamps:
+        return False
+    if not all(_ISO_UTC_TIMESTAMP.match(stamp) for stamp in stamps):
+        return False
+    return max(stamps) < commit_at
+
+
 def _reviewed_at_merge_candidate(
     comment: dict,
-    currency_records: dict[tuple[str, str], tuple[str, str]],
+    currency_records: dict[tuple[str, str], CurrencyRecord],
     bot_kind: str,
     merge_candidate_sha: str,
+    merge_candidate_committed_at: str = '',
 ) -> bool:
     """Return True when ``comment`` proves a review of the MERGE CANDIDATE commit.
 
@@ -682,7 +850,12 @@ def _reviewed_at_merge_candidate(
     of the tree being merged after a loop-back or a force-push. The credit is
     therefore anchored to the merge candidate's SHA, and the verdict is a PURE
     COMPARISON that consumes no observation state — so it is identical however many
-    times it is evaluated. That fixes both original defects at once: the dead-anchor
+    times it is evaluated **while the merge candidate remains resolvable**. That
+    qualification is the honest reach of the claim, not a hedge: the SHA is read per
+    fetch from a fallible provider call, so a resolved-then-unresolved sequence moves
+    the verdict from a credit to the undecidable outcome without any observation state
+    having been consumed. Idempotence holds over repeated evaluation, never over a
+    changed ability to read the head. That fixes both original defects at once: the dead-anchor
     false positive AND the observer effect (the old first-presence arm was *consumed*
     on the first fetch, flipping the same unedited comment to stale on the second
     look at the same HEAD).
@@ -702,6 +875,13 @@ def _reviewed_at_merge_candidate(
       observation it could not tie to a commit. Failing closed here is also what
       keeps the verdict idempotent when the head-SHA read fails — a later fetch that
       likewise cannot read the SHA reaches the same (blocking) answer, not a flip.
+      It is guarded a second way when ``merge_candidate_committed_at`` is readable:
+      a comment whose own timestamps PREDATE the merge-candidate commit cannot be an
+      observation of it, whatever the ledger does or does not remember — the comment
+      demonstrably existed before the code did. When the commit timestamp cannot be
+      read the arm keeps its SHA-only behaviour, because an unreadable timestamp is
+      not an ordering claim; that unresolved read is disclosed by the caller rather
+      than turned into a new blocking state here.
     - **Fresh edit** — the bot edited the comment in place SINCE it was last credited
       (``updated_at`` differs from the recorded ``updated_at``), publishing a fresh
       review at the current tree. Comparing against the recorded ``updated_at`` — not
@@ -709,19 +889,37 @@ def _reviewed_at_merge_candidate(
       ever edited" flag: an edit at commit N credits N, but not N+1, N+2 unless a
       FURTHER edit lands. An absent ``updated_at`` degrades to "no movement" — the
       fail-closed direction, since crediting an unverified review is the expensive
-      error.
+      error. This arm is ALSO guarded on a resolvable ``merge_candidate_sha``, so an
+      unreadable head fails closed on EVERY arm rather than on some of them: an edit
+      proves a fresh review of *something*, and without a readable head there is no
+      commit to say it was a review OF.
+    - **Invalid legacy record** — a row that exists but carries no usable reviewed
+      SHA (:data:`INVALID_LEGACY_RECORD`) yields False outright. It is neither a
+      first observation nor a usable anchor, and reading it as either is how a
+      pre-upgrade row credited a bot at any advanced HEAD. The third state is
+      recognised by identity, not by testing the anchor for truthiness.
 
     A comment last credited against an EARLIER commit, with no fresh edit, yields
     False: stale evidence, which is neither absence nor participation.
     """
     comment_id = str(comment.get('id') or 'unknown')
     record = currency_records.get((bot_kind, comment_id))
+    if isinstance(record, _InvalidLegacyRecord):
+        # The third state: a row that EXISTS but anchors nothing. Refused outright —
+        # falling through to the first-observation arm is what credited a pre-upgrade
+        # row at any resolvable advanced HEAD.
+        return False
     if record is None:
-        # First observation — credit only when the merge candidate is resolvable.
-        return bool(merge_candidate_sha)
+        # First observation — credit only when the merge candidate is resolvable AND
+        # the comment does not predate the commit it would be credited against.
+        if not merge_candidate_sha:
+            return False
+        return not _comment_predates_commit(comment, merge_candidate_committed_at)
     recorded_sha, recorded_updated_at = record
     if merge_candidate_sha and recorded_sha == merge_candidate_sha:
         return True
+    if not merge_candidate_sha:
+        return False
     updated_at = str(comment.get('updated_at') or '')
     return bool(updated_at) and updated_at != recorded_updated_at
 
@@ -752,8 +950,12 @@ def cmd_fetch_findings(args):
        no finding. It runs HERE — after the noise filter, not beside stage 2 —
        because a bot's own declared clean-review text must already have been dropped
        before a short anchor-less body can be read as a refusal.
-    6. Cross-iteration duplicate — a ``(bot_kind, comment_id)`` key already present
-       in the store, counted in ``count_skipped_duplicate``.
+    6. Cross-iteration duplicate — a ``(bot_kind, comment_id, edit_term)`` key already
+       present in the store, counted in ``count_skipped_duplicate``. The EDIT TERM is
+       the comment's ``updated_at``, or a body digest when the provider supplied none,
+       so an in-place-edited review presents as NEW INFORMATION and is filed while an
+       unchanged re-fetch still dedupes. A finding stored before the term existed
+       carries none, and dedupes on the two-term key against any edit term.
 
     ``self_response_loop_detected``: true when a single fetch observed
     ``count_self_response_current_cycle >= _SELF_RESPONSE_LOOP_BOUND``. Every turn
@@ -804,10 +1006,20 @@ def cmd_fetch_findings(args):
     commit cannot credit it with reviewing the tree being merged. The credit is an
     SHA comparison against the current PR HEAD, read from the plan-scoped currency
     ledger — the ``(reviewed_commit_sha, updated_at)`` at which each such comment was
-    last credited, recorded uniformly whether the comment was stored as a finding or
-    dropped as noise. Because it is a pure comparison that consumes no observation
-    state, the verdict is idempotent: re-running the fetch at the same HEAD returns
-    the same answer, closing the observer effect the old first-presence arm had. And
+    last credited. The ledger is blind to the STORAGE axis: a comment stored as a
+    finding and one dropped as noise record alike. It is NOT blind to the currency
+    verdict — a row is written or refreshed only for a comment that PASSED the currency
+    test on this fetch, and a comment that FAILED leaves its row exactly as it stood
+    (unchanged if it had one, absent if it had none). Staging a failing comment would
+    stamp the current HEAD onto stale evidence, so the next fetch would read
+    ``recorded_sha == merge_candidate_sha`` and credit the comment this fetch had just
+    rejected. Because it is a pure comparison that consumes no observation
+    state, the verdict is idempotent **while the merge candidate remains resolvable**:
+    re-running the fetch at the same HEAD returns the same answer, closing the observer
+    effect the old first-presence arm had. The qualification names the one sequence that
+    refutes the unconditional claim — a fetch at the SAME HEAD whose head-SHA read fails
+    yields the undecidable outcome instead of the credit, so the answer changed without
+    any observation state being consumed. And
     because a fresh edit is measured against the recorded ``updated_at`` rather than
     against ``created_at``, an edit at one commit credits that commit only, not every
     later HEAD.
@@ -822,6 +1034,24 @@ def cmd_fetch_findings(args):
     ``--stale-participation-bots`` and classifies the bot ``participated_stale``
     rather than ``absent`` — two states whose remedies are opposite, since a stale
     publish is re-triggered while a true absence is escalated.
+
+    ``merge_candidate_sha_resolved`` / ``undecidable_participation_bots``: the THIRD
+    outcome, for when the merge candidate itself could not be read.
+    ``fetch_pr_head_sha`` returns '' on ANY failure path, so the flag reports only
+    whether the read produced a SHA — never a verdict an operator can act on. A
+    currency-subject bot whose comment matched a declared publish shape on such a fetch
+    is reported in ``undecidable_participation_bots`` (same ``{bot_kind, evidence_kind}``
+    shape, proven set subtracted) and in NEITHER other set: not credited, because
+    nothing anchors the credit; and not stale, because stale prescribes re-triggering a
+    review, which cannot fix a failed head read. Disjointness from
+    ``stale_participation_bots`` is structural — the head read is per-fetch, so a fetch
+    either resolved the candidate or did not.
+
+    ⚠ ``undecidable_participation_bots`` is PRODUCER-SIDE DISCLOSURE with no consumer
+    yet: ``review_completeness``'s taxonomy has no member for this state, so nothing
+    routes on it today. Widening the classifier is a separate plan, for which this field
+    is the prerequisite. The gap is stated rather than left to surface as an unreachable
+    branch.
 
     A bot declaring no evidence shape resolves FAIL-CLOSED — it can never be proven
     a participant. This proves PARTICIPATION only, never review QUALITY: the
@@ -941,25 +1171,39 @@ def cmd_fetch_findings(args):
     # bot comments can re-surface when HEAD advances). Without a dedup the
     # resolved comment re-enters as a fresh pending finding every time HEAD
     # advances, producing an endless finalize loop. Build the set of
-    # ``(bot_kind, comment_id)`` keys already recorded as ``pr-comment``
+    # ``(bot_kind, comment_id, edit_term)`` keys already recorded as ``pr-comment``
     # findings (regardless of resolution state) and skip any comment — from any
-    # bot kind, thread-bearing or not — whose key is already present.
-    existing_comment_keys = _existing_pr_comment_keys(query_findings, plan_id)
+    # bot kind, thread-bearing or not — whose key is already present. The
+    # ``legacy_comment_keys`` companion carries the two-term identities of findings
+    # stored before the edit term existed; see ``_existing_pr_comment_keys``.
+    existing_comment_keys, legacy_comment_keys = _existing_pr_comment_keys(
+        query_findings, plan_id
+    )
 
     # The MERGE CANDIDATE SHA — the current PR HEAD — is fetched up front (before the
     # participation loop, not only for the ingestion stamp below) because the currency
     # test now compares each comment's reviewed SHA against it. Empty string on any
-    # failure path; the currency test then falls through to its first-observation /
-    # edit-movement arms rather than crediting on a SHA that could not be read.
+    # failure path, and the currency test then FAILS CLOSED on every arm — SHA currency,
+    # first observation, and edit movement alike — rather than crediting a review it
+    # cannot tie to a commit. The affected bots are disclosed as
+    # ``undecidable_participation_bots`` and the read itself as
+    # ``merge_candidate_sha_resolved``.
     reviewed_commit_sha = _github.fetch_pr_head_sha(pr_number)
 
+    # The merge candidate's OWN timestamp, read alongside its SHA. It guards the
+    # first-observation arm: a comment whose timestamps predate the commit cannot be an
+    # observation OF it. Empty string on any failure path, which the arm reads as
+    # "ordering unknown" and therefore as no reason to withhold — an unreadable
+    # timestamp introduces no new blocking.
+    merge_candidate_committed_at = _github.fetch_pr_head_committed_at(pr_number)
+
     # The currency test (``_reviewed_at_merge_candidate``) reads the currency ledger
-    # recorded by earlier fetches (see ``_DROPPED_COMMENT_KEYS_ARTIFACT``): per
+    # recorded by earlier fetches (see ``_CURRENCY_LEDGER_ARTIFACT``): per
     # ``participation_requires_update`` comment the plan has credited, the
     # ``(reviewed_commit_sha, updated_at)`` at that last credit. It is the SOLE currency
     # source, so a comment stored as a finding and a comment dropped as noise are
     # treated identically. ``existing_comment_keys`` (read above) stays the input to the
-    # cross-iteration dedup (pre-filter 5), which asks a different question — dedup asks
+    # cross-iteration dedup (pre-filter 6), which asks a different question — dedup asks
     # "was this already STAGED as a finding?", currency asks "which commit did this
     # comment review, and has it been re-edited since?".
     currency_records = _recorded_currency_records(plan_id)
@@ -984,13 +1228,29 @@ def cmd_fetch_findings(args):
     # shapes and the update requirement are registry data.
     participated: dict[str, str] = {}
     stale_participation: dict[str, str] = {}
+    # The THIRD outcome: a currency-subject bot whose comment matched a declared publish
+    # shape while the merge candidate itself could not be read. It is neither credited
+    # (nothing anchors the credit) nor stale (stale's remedy is "re-trigger the review",
+    # which cannot fix a failed head read), so it is carried in its own disjoint set.
+    undecidable_participation: dict[str, str] = {}
     # Currency records staged for the ``participation_requires_update`` comments credited
     # this fetch — written to the ledger after the loop so the NEXT fetch measures a fresh
     # edit against THIS credit rather than against ``created_at``.
     currency_updates: dict[tuple[str, str], tuple[str, str]] = {}
     for _comment in raw_comments:
         _bot_kind = bot_kind_for_author(_comment.get('author') or 'unknown')
-        if not _bot_kind or _bot_kind in participated:
+        if not _bot_kind:
+            continue
+        _requires_update = bot_registry.participation_requires_update(_bot_kind)
+        # An already-credited bot is skipped only when its credit needed no currency
+        # test. For a CURRENCY-SUBJECT bot every declared-publish-shape comment is
+        # evaluated, credited or not: such a bot declares several publish shapes, and
+        # short-circuiting at its first credit left every LATER comment unevaluated and
+        # so unrecorded in the currency ledger. On the next fetch that unrecorded
+        # comment had no ledger row, took the first-observation arm, and credited the
+        # bot at whatever HEAD was resolvable — bypassing the very currency test the
+        # first comment had just failed. Evaluating every one of them is what closes it.
+        if _bot_kind in participated and not _requires_update:
             continue
         # A refusal is positive evidence the bot did NOT review, so it can never
         # be its own participation evidence — even though a refusal is published in
@@ -1002,9 +1262,12 @@ def cmd_fetch_findings(args):
         _kind = _comment.get('kind') or 'inline'
         if _kind not in bot_registry.participation_evidence(_bot_kind):
             continue
-        _requires_update = bot_registry.participation_requires_update(_bot_kind)
         if _requires_update and not _reviewed_at_merge_candidate(
-            _comment, currency_records, _bot_kind, reviewed_commit_sha
+            _comment,
+            currency_records,
+            _bot_kind,
+            reviewed_commit_sha,
+            merge_candidate_committed_at,
         ):
             # The comment's kind ALREADY matched a declared publish shape — only the
             # currency test failed. Discarding it here is what collapsed a stale
@@ -1013,16 +1276,43 @@ def cmd_fetch_findings(args):
             # stale publish means it engaged against an EARLIER commit (re-trigger a
             # re-review). Record the observation so the classifier can tell them
             # apart instead of inferring absence from a failed currency test.
-            stale_participation[_bot_kind] = _kind
+            #
+            # NOTHING is staged on this branch. A failing comment leaves its ledger row
+            # exactly as it stood — unchanged if it had one, absent if it had none.
+            # Staging here would stamp the current HEAD onto stale evidence, and the very
+            # next fetch would read ``recorded_sha == merge_candidate_sha`` and credit the
+            # comment this fetch just rejected.
+            #
+            # WHY the credit was withheld decides WHERE the observation goes. An
+            # unreadable merge candidate is not evidence about the review at all — the
+            # bot may well have reviewed this very commit — so reporting it as stale
+            # would prescribe a re-review trigger for a failure a re-review cannot fix.
+            # It is disclosed as UNDECIDABLE instead, in its own disjoint set.
+            if not reviewed_commit_sha:
+                undecidable_participation.setdefault(_bot_kind, _kind)
+                continue
+            stale_participation.setdefault(_bot_kind, _kind)
             continue
-        # Credited. For a ``participation_requires_update`` bot, stage its currency
-        # record so the next fetch anchors on THIS credit's SHA and updated_at.
-        if _requires_update:
+        # Credited. For a ``participation_requires_update`` bot, stage THIS comment's
+        # currency record so the next fetch anchors on this credit's SHA and updated_at.
+        # One row per PASSING (bot_kind, comment_id) — every evidence comment that passed,
+        # not merely the one that happened to credit the bot first.
+        #
+        # ``reviewed_commit_sha`` is required non-empty to stage: a row whose SHA is the
+        # empty string can never again equal a merge candidate, so writing one POISONS
+        # the key — the comment is thereafter neither first-observed nor SHA-current and
+        # only an edit could ever revive it. Under the fail-closed arms above an
+        # unreadable head credits nothing anyway, so this guard is what keeps the ledger
+        # free of rows that could not have been written by a real credit.
+        if _requires_update and reviewed_commit_sha:
             currency_updates[(_bot_kind, str(_comment.get('id') or 'unknown'))] = (
                 reviewed_commit_sha,
                 str(_comment.get('updated_at') or ''),
             )
-        participated[_bot_kind] = _kind
+        # The FIRST passing comment's kind is the credited record's ``evidence_kind`` and
+        # is never overwritten by a later pass, so the emitted record stays deterministic
+        # however many of the bot's comments pass.
+        participated.setdefault(_bot_kind, _kind)
 
     # Persist the currency ledger for the NEXT fetch: for each
     # ``participation_requires_update`` comment credited above, record (merge-candidate
@@ -1034,6 +1324,11 @@ def cmd_fetch_findings(args):
     # the recorded updated_at is what a fresh edit must move past. The PR HEAD SHA
     # (``reviewed_commit_sha``) was fetched up front, before the participation loop, so
     # it also serves as the ingestion stamp on every finding below.
+    #
+    # This is the SECOND read path of ``_recorded_currency_records`` and it is migrated
+    # to the third state alongside the predicate: an :data:`INVALID_LEGACY_RECORD` value
+    # is never equal to a staged ``(sha, updated_at)`` pair, so a pre-upgrade row is
+    # SUPERSEDED by the first real credit rather than suppressing the append.
     _record_currency_records(
         plan_id,
         {k: v for k, v in currency_updates.items() if currency_records.get(k) != v},
@@ -1184,14 +1479,33 @@ def cmd_fetch_findings(args):
         if bot_kind and bot_kind not in classified_bots:
             unclassified_set.add(bot_kind)
 
-        # Pre-filter 6: cross-iteration dedup keyed on (bot_kind, comment_id)
-        # for ALL bot kinds, thread-bearing and thread_id-less alike. A comment
-        # already staged in a prior iteration MUST NOT re-surface as a new
-        # pending finding when HEAD advances. Dropping the earlier
+        # Pre-filter 6: cross-iteration dedup keyed on
+        # (bot_kind, comment_id, edit_term) for ALL bot kinds, thread-bearing and
+        # thread_id-less alike. A comment already staged in a prior iteration MUST NOT
+        # re-surface as a new pending finding when HEAD advances. Dropping the earlier
         # ``not thread_id`` restriction closes the same phantom loop for
         # thread-bearing bot comments, and pairing the id with bot_kind avoids a
         # collision between two distinct bots reusing a numeric comment id.
-        if (bot_kind or '', comment_id) in existing_comment_keys:
+        #
+        # THE EDIT TERM is the third term, and it is what makes the identity answer
+        # "is this the same INFORMATION?" rather than merely "is this the same COMMENT?".
+        # A bot that re-reviews by editing its one persistent comment in place keeps the
+        # same ``comment_id`` forever: under the two-term key, an edit that replaced a
+        # clean Guide with a real finding was dropped as a duplicate while the currency
+        # test credited the bot as participating — so the reviewer read present and
+        # clean, and its actual feedback never became a finding. Widening the key by the
+        # edit term files the edited review and still dedupes an unchanged re-fetch,
+        # because an unchanged comment carries an unchanged term.
+        #
+        # A PRE-UPGRADE row carries no edit term at all, so it can match no three-term
+        # key. It dedupes on the two-term key against ANY edit term instead — otherwise
+        # the first fetch after this widening landed would re-file a PR's entire comment
+        # history once, which is a worse outcome than the defect being fixed.
+        edit_term = _comment_edit_term(comment)
+        if (bot_kind or '', comment_id) in legacy_comment_keys:
+            skipped_duplicate += 1
+            continue
+        if (bot_kind or '', comment_id, edit_term) in existing_comment_keys:
             skipped_duplicate += 1
             continue
 
@@ -1209,6 +1523,11 @@ def cmd_fetch_findings(args):
             f'author: {author}',
             f'thread_id: {thread_id}',
             f'comment_id: {comment_id}',
+            # The third dedup term, stamped so ``_existing_pr_comment_keys`` can
+            # reconstruct the full identity from the store. Without it the widened key
+            # would be write-only: every stored finding would read back as a
+            # pre-upgrade row and the dedup would silently fall back to two terms.
+            f'edit_term: {edit_term}',
         ]
         if path:
             detail_lines.append(f'path: {path}')
@@ -1410,6 +1729,29 @@ def cmd_fetch_findings(args):
         'stale_participation_bots': [
             {'bot_kind': bot, 'evidence_kind': stale_participation[bot]}
             for bot in sorted(stale_participation)
+            if bot not in participated
+        ],
+        # Whether the merge candidate could be READ at all. It reports the read, and
+        # nothing else: ``fetch_pr_head_sha`` returns '' on every failure path, so a
+        # false here is "the head is unresolvable", never a verdict about any bot that
+        # an operator could act on. The bots it affects travel in their own set below
+        # rather than being folded into either existing one — which is what keeps the
+        # unreadable case legible instead of actionable-looking.
+        'merge_candidate_sha_resolved': bool(reviewed_commit_sha),
+        # The THIRD, DISJOINT outcome — same record shape as the two sets above, and
+        # subtracted against the proven set for the same reason. Disjointness from
+        # ``stale_participation_bots`` is structural rather than enforced here: the head
+        # read is per-FETCH, so a fetch either resolved the merge candidate (nothing can
+        # be undecidable) or did not (nothing can be stale).
+        #
+        # ⚠ PRODUCER-SIDE DISCLOSURE ONLY: ``review_completeness``'s taxonomy has no
+        # member for this state yet, so no consumer routes on it. Widening the
+        # classifier is a plan of its own; this field is the prerequisite it needs, and
+        # the gap is REPORTED here rather than left to be discovered as an unreachable
+        # branch.
+        'undecidable_participation_bots': [
+            {'bot_kind': bot, 'evidence_kind': undecidable_participation[bot]}
+            for bot in sorted(undecidable_participation)
             if bot not in participated
         ],
         'refused_bots': sorted(refused_set),
