@@ -22,6 +22,7 @@ while holding a non-zero ``exit_code``. These tests lock two things:
 
 import json
 import types
+from typing import Any, cast
 
 # _build_shared / _build_result live under script-shared/scripts/build/ and are
 # importable directly via the conftest cross-skill PYTHONPATH.
@@ -215,3 +216,102 @@ def test_timeout_degrades_to_bare_result_when_parser_raises(capsys):
     assert 'tests' not in emitted
     assert 'tool_duration_seconds' not in emitted
     assert '[WARNING] Timeout evidence parse failed' in captured.err
+
+
+# =============================================================================
+# The same truthfulness obligation on the published EXECUTED-test count
+# =============================================================================
+#
+# ``tests_run`` is a published name whose value must be what the name says. The
+# guard above catches a success advertised over a non-zero exit code; this is the
+# same class of untruth one field over — a count of "tests executed" that
+# includes tests the runner declined to execute. It matters because that count is
+# what authorises clearing a recorded test failure, so an inflated one destroys a
+# true signal on the strength of a run that tested nothing.
+
+
+def _emit_success(capsys, parser, **result_extra) -> dict:
+    """Run cmd_run_common over a green result and return the emitted JSON.
+
+    The result is built as a plain dict and cast, because ``routed_tests_run`` —
+    which the routed arm stamps onto the result at the boundary — is not a
+    declared key of ``DirectCommandResult``. Declaring it there is the correct
+    modelling and is outside this deliverable's write set, so the gap is named
+    here rather than papered over silently.
+    """
+    result: dict[str, Any] = {
+        'status': 'success',
+        'exit_code': 0,
+        'duration_seconds': 3,
+        'log_file': '/tmp/does-not-matter.log',
+        'command': './pw module-tests',
+        **result_extra,
+    }
+    exit_code = _build_shared.cmd_run_common(
+        cast('DirectCommandResult', result), parser, 'python', output_format='json'
+    )
+    assert exit_code == 0
+    emitted: dict = json.loads(capsys.readouterr().out)
+    return emitted
+
+
+def test_a_skips_only_green_run_publishes_zero_executed(capsys):
+    """Nine collected, nine skipped, zero executed — and the published count is 0.
+
+    The summary's ``total`` is 9. Publishing that under ``tests_run`` is the
+    untruth: the run executed nothing, and the field is read by the
+    reconciliation as evidence that it did.
+    """
+
+    def _all_skipped(log_file, *args):
+        return ([], UnitTestSummary(passed=0, failed=0, skipped=9, total=9), 'SUCCESS')
+
+    emitted = _emit_success(capsys, _all_skipped)
+
+    assert emitted['status'] == 'success'
+    assert emitted['tests_run'] == 0
+
+
+def test_a_partially_skipped_green_run_publishes_only_what_ran(capsys):
+    """``2 passed, 9 skipped`` publishes 2 — the executed half, not the collected 11."""
+
+    def _partial(log_file, *args):
+        return ([], UnitTestSummary(passed=2, failed=0, skipped=9, total=11), 'SUCCESS')
+
+    emitted = _emit_success(capsys, _partial)
+
+    assert emitted['tests_run'] == 2
+
+
+def test_control_a_fully_executed_run_publishes_every_test(capsys):
+    """CONTROL: with no skips the published count is the whole suite.
+
+    Without this the two cases above would be satisfied by a change that
+    published ``passed`` alone, or zero, for every run — which would suppress the
+    reconciliation on every healthy build instead of only on the skips-only one.
+    """
+
+    def _all_run(log_file, *args):
+        return ([], UnitTestSummary(passed=40, failed=0, skipped=0, total=40), 'SUCCESS')
+
+    emitted = _emit_success(capsys, _all_run)
+
+    assert emitted['tests_run'] == 40
+
+
+def test_a_routed_count_is_published_instead_of_a_local_reparse(capsys):
+    """A count the routed job measured is published, not one re-derived here.
+
+    On the daemon-routed arm the log this renderer holds is the daemon's JOB log,
+    which carries the inner wrapper's result TOON and none of the test runner's
+    output — so the local parse finds nothing and would publish ``0`` for a run
+    that executed the whole suite. The parser stub here returns no summary for
+    exactly that reason.
+    """
+
+    def _no_summary(log_file, *args):
+        return ([], None, 'SUCCESS')
+
+    emitted = _emit_success(capsys, _no_summary, routed_tests_run=1082)
+
+    assert emitted['tests_run'] == 1082

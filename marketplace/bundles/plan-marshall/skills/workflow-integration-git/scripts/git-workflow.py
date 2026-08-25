@@ -75,6 +75,14 @@ from _cmd_force_push import cmd_force_push
 from _cmd_prune_ref import cmd_prune_ref
 from _cmd_switch_and_pull import cmd_switch_and_pull
 from _executor_slot import executor_landed, worktree_executor_path
+
+# The shared NUL-delimited git observation. Imported rather than re-derived so
+# the repository keeps ONE trackedness/ignore path predicate instead of a fourth
+# private copy with a fourth path spelling — the same "one predicate, not two
+# copies" rule that unified the .plan/ exemption guard sites. Its own docstring
+# names the `path in tracked` comparison as the failure `-z` was adopted to end,
+# which is precisely the comparison scan_artifacts performs below.
+from _plan_state_exemption import _observe_z
 from file_ops import (
     WorktreeResolutionError,
     get_executor_path,
@@ -528,51 +536,60 @@ SAFE_ARTIFACT_PATTERNS: list[str] = _ARTIFACT_CONFIG.get('safe_patterns', [])
 UNCERTAIN_ARTIFACT_PATTERNS: list[str] = _ARTIFACT_CONFIG.get('uncertain_patterns', [])
 
 
-def get_gitignored_files(root: Path) -> set[str]:
-    """Return set of relative paths that are gitignored under root.
+def get_gitignored_files(root: Path) -> set[str] | None:
+    """Return the relative paths gitignored under ``root``, or ``None``.
 
-    Uses `git check-ignore` to respect .gitignore rules. Returns empty set
-    if not inside a git repo or git is unavailable.
+    ``None`` means the ignore set could NOT be determined — ``root`` is not
+    inside a git repo, git is unavailable, or the query failed or timed out. It
+    is deliberately distinct from an empty set: empty asserts "nothing here is
+    ignored", whereas ``None`` asserts nothing at all. Collapsing the two lets
+    an unreadable ignore set be reported as a tree with no ignored files, which
+    is how a running plan's own live ``.plan/local`` state reached the
+    auto-deletable bucket.
+
+    ``--directory`` is load-bearing twice over. It collapses a fully-ignored
+    directory to a single trailing-slash entry, which is the form
+    :func:`_split_ignored` partitions on and :func:`_is_ignored` prefix-matches
+    — without it that arm receives no input and can never fire for any path. It
+    also keeps the query small enough to finish: measured on this repository the
+    flagged query returns 207 entries against 213256 unflagged, and the
+    unflagged form routinely exceeded the observation's timeout.
+
+    ``-z`` is load-bearing for the same reason it is in
+    :func:`get_tracked_files`: with ``core.quotePath`` at its default, git
+    QUOTES any pathname carrying non-ASCII bytes or a newline, and the quoted
+    spelling never equals the ``rel`` :func:`scan_artifacts` computes — so the
+    exclusion silently misses exactly those paths.
     """
-    try:
-        result = subprocess.run(
-            ['git', 'ls-files', '--others', '--ignored', '--exclude-standard'],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=str(root),
-        )
-        if result.returncode != 0:
-            return set()
-        return {line.strip() for line in result.stdout.splitlines() if line.strip()}
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError, OSError):
-        return set()
+    return _observe_z(
+        root, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z']
+    )
 
 
-def get_tracked_files(root: Path) -> set[str]:
-    """Return set of paths (relative to ``root``) that are tracked by git.
+def get_tracked_files(root: Path) -> set[str] | None:
+    """Return the paths tracked by git relative to ``root``, or ``None``.
 
-    Uses ``git ls-files --cached`` with ``cwd=root`` so results are
-    relative to ``root`` — matching the ``rel`` computation in
-    ``scan_artifacts`` even when ``root`` is a subdirectory of a repo.
-    Returns empty set if not inside a git repo or git is unavailable.
-    Tracked files must never be classified as ``safe`` artifacts — even
-    if a filename matches a safe glob, a tracked entry may be a committed
-    fixture that the developer intends to keep.
+    ``git ls-files --cached -z`` runs against ``root`` so results are relative
+    to it — matching the ``rel`` computation in :func:`scan_artifacts` even when
+    ``root`` is a subdirectory of a repo. Tracked files must never be classified
+    as ``safe`` artifacts: a filename matching a safe glob may be a committed
+    fixture the developer intends to keep.
+
+    ``None`` means trackedness could NOT be determined, and is deliberately
+    distinct from an empty set. Empty asserts "nothing here is tracked", which
+    would let every match be promoted to ``safe``; ``None`` asserts nothing, and
+    :func:`scan_artifacts` fails closed on it. Returning ``set()`` for an
+    unreadable oracle is the fail-OPEN direction on a delete-these-files
+    surface.
+
+    ``-z`` is what makes the returned spelling comparable to ``rel`` at all.
+    Under the newline form, ``core.quotePath`` (default true) quotes any
+    pathname with non-ASCII bytes or a newline, and a per-line ``.strip()``
+    additionally destroys leading and trailing spaces — so the ``rel in
+    tracked`` demotion missed for precisely those names and offered a tracked,
+    committed fixture for deletion.
     """
-    try:
-        result = subprocess.run(
-            ['git', 'ls-files', '--cached'],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=str(root),
-        )
-        if result.returncode != 0:
-            return set()
-        return {line.strip() for line in result.stdout.splitlines() if line.strip()}
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError, OSError):
-        return set()
+    return _observe_z(root, ['ls-files', '--cached', '-z'])
 
 
 def _compile_patterns(patterns: list[str]) -> list[re.Pattern]:
@@ -678,11 +695,39 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
     (e.g., a committed ``*.log`` used by a test). Matching tracked files
     are routed to ``uncertain`` so the caller can confirm before any
     deletion.
+
+    When the ignore set cannot be READ at all (:func:`get_gitignored_files`
+    returns ``None``), the scan does not fall back to "nothing is ignored" —
+    that reading is what let a running plan's own live ``.plan/local`` state be
+    offered for deletion. Instead ``safe`` is left empty, every match is routed
+    to ``uncertain``, and ``gitignore_resolved: False`` is published so the
+    caller can tell a scan that found nothing to clean from one that could not
+    determine what was safe to clean.
     """
-    ignored_files, ignored_dirs = _split_ignored(
-        get_gitignored_files(root) if respect_gitignore else set()
-    )
+    gitignore_resolved = True
+    if respect_gitignore:
+        reported = get_gitignored_files(root)
+        if reported is None:
+            # The ignore set is UNKNOWN, not empty. Proceeding as though nothing
+            # were ignored would offer the entire ignored tree — a running
+            # plan's own live state included — in the auto-deletable bucket, so
+            # the scan degrades to reporting every match as 'uncertain' and
+            # publishes the degradation rather than hiding it behind a
+            # confident-looking empty exclusion set.
+            gitignore_resolved = False
+            reported = set()
+    else:
+        reported = set()
+    ignored_files, ignored_dirs = _split_ignored(reported)
+
+    # The tracked oracle fails closed on the same terms as the ignore oracle
+    # above: both feed the one promotion decision below, so an unknown answer
+    # from either must not promote anything to 'safe'. An empty tracked set
+    # would assert every match untracked and auto-deletable.
     tracked = get_tracked_files(root)
+    tracked_resolved = tracked is not None
+    if tracked is None:
+        tracked = set()
 
     safe: list[str] = []
     uncertain: list[str] = []
@@ -699,14 +744,23 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
         ]
 
         for filename in filenames:
-            rel = os.path.relpath(os.path.join(dirpath_str, filename), root_str)
-            if _is_ignored(rel.replace(os.sep, '/'), ignored_files, ignored_dirs):
+            # Normalised ONCE, here, so every consumer below sees the same
+            # spelling. os.path.relpath returns OS-native separators while the
+            # oracles return the '/'-spelled paths git emits; normalising per
+            # consumer instead let the ignore check speak '/' while the pattern
+            # match and the `rel in tracked` demotion still spoke '\', so on a
+            # '\'-separator platform a nested tracked artifact missed the
+            # demotion and reached the auto-deletable bucket.
+            rel = os.path.relpath(os.path.join(dirpath_str, filename), root_str).replace(
+                os.sep, '/'
+            )
+            if _is_ignored(rel, ignored_files, ignored_dirs):
                 continue
 
             # Check safe patterns first, but demote tracked files to
             # 'uncertain' so committed fixtures are never auto-deleted.
             if any(rx.match(rel) for rx in _SAFE_REGEXES):
-                if rel in tracked:
+                if rel in tracked or not gitignore_resolved or not tracked_resolved:
                     uncertain.append(rel)
                 else:
                     safe.append(rel)
@@ -717,6 +771,13 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
         'safe': sorted(safe),
         'uncertain': sorted(uncertain),
         'total': len(safe) + len(uncertain),
+        # Whether each oracle this scan applied is trustworthy. Either being
+        # False means 'safe' is empty by construction and every match was
+        # routed to 'uncertain' — the caller must not read that empty 'safe'
+        # as "nothing to clean". They are published separately because they
+        # fail for different reasons and a caller may want to say which.
+        'gitignore_resolved': gitignore_resolved,
+        'tracked_resolved': tracked_resolved,
     }
 
 

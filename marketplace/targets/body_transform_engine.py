@@ -351,13 +351,28 @@ def _frontmatter_field(content: str, field_name: str) -> str:
     leading ``---`` frontmatter block, or ``''`` when absent. Deliberately
     minimal so the engine stays target-neutral (no dependency on any target's
     frontmatter parser) — the user-invocable scan only needs one scalar field.
+
+    Both fences are **newline-delimited**, matching the sibling readers
+    (``opencode.frontmatter.parse_frontmatter`` and
+    ``claude.variant_emitter.parse_frontmatter``). A raw ``---`` substring
+    anchor is looser in both directions: it opens on a ``----`` rule or a
+    ``---word`` first line that is not a fence at all, and it closes at the
+    first three-hyphen run *inside a value* — a ``description`` containing
+    ``---`` would truncate the block and silently drop every later field,
+    including the ``user-invocable`` one this reader exists to find. A dropped
+    field reads as ``''``, i.e. "not user-invocable", so the loose anchor fails
+    by silently un-registering a skill rather than by erroring.
     """
-    if not content.startswith('---'):
+    if not content.startswith('---\n'):
         return ''
-    end = content.find('\n---', 3)
+    end = content.find('\n---\n', 4)
     if end == -1:
-        return ''
-    block = content[3:end]
+        if not content.endswith('\n---'):
+            return ''
+        # Tolerate a closing fence at end-of-file with no trailing newline —
+        # the same tolerance the sibling readers carry.
+        end = len(content) - len('\n---')
+    block = content[4:end]
     prefix = f'{field_name}:'
     for line in block.splitlines():
         stripped = line.strip()

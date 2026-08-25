@@ -65,6 +65,39 @@ _CODING_RE = re.compile(r'^[ \t\f]*#.*?coding[:=][ \t]*([-\w.]+)')
 # deferred per the originating request constraint.
 COVERAGE_THRESHOLD = 80
 
+# The coverage dimensions each gate command performs at ANY scope, and (below) the
+# subset a given invocation can reach at ITS scope. `_gate_coverage.coverage_gaps`
+# needs BOTH to tell "absent because this invocation's scope did not include it"
+# from "absent because this command never performs it at all" — two absences with
+# different remedies. Deriving one from the other, or guessing either from the
+# recorded boundary, is exactly how a module-scoped quality-gate came to print
+# that the gate never performs plugin-doctor, which is false: it performs it
+# whole-tree.
+_QUALITY_GATE_DIMENSIONS = frozenset({'mypy(production)', 'ruff', 'SPDX headers', 'plugin-doctor'})
+_VERIFY_DIMENSIONS = _QUALITY_GATE_DIMENSIONS | frozenset({'mypy(test)', 'module-tests'})
+
+
+def _quality_gate_could_run(module: str | None) -> frozenset[str]:
+    """Return the dimensions a ``quality-gate`` invocation reaches at ``module``'s scope.
+
+    The marketplace-wide plugin-doctor pass is whole-tree only, so a module-scoped
+    run cannot reach it. That is a statement about the SCOPE, not about the
+    command, and keeping the two apart is the whole point of this declaration.
+    """
+    if module:
+        return frozenset({'mypy(production)', 'ruff', 'SPDX headers'})
+    return _QUALITY_GATE_DIMENSIONS
+
+
+def _verify_could_run(module: str | None) -> frozenset[str]:
+    """Return the dimensions a ``verify`` invocation reaches at ``module``'s scope.
+
+    ``verify`` is ``quality-gate`` plus the test-tree type-check and the test run,
+    neither of which is scope-restricted beyond the module filter itself.
+    """
+    return _quality_gate_could_run(module) | frozenset({'mypy(test)', 'module-tests'})
+
+
 # Distinct non-zero exit code for a freshness-suspect type-check: mypy reported
 # success but implausibly fast for the file set it claims to have checked, so the
 # verdict rests on a cache, not on the current tree. Kept distinct from mypy's own
@@ -342,6 +375,15 @@ def cmd_compile(module: str | None, boundary: CoverageBoundary | None = None) ->
     mypy_env = {**os.environ, 'MYPYPATH': _compute_mypypath()}
     if module:
         if _skip_empty_mypy_scope('compile', path):
+            # Record the empty scope rather than returning silently. An unrecorded
+            # skip leaves the dimension indistinguishable from one this gate never
+            # performs, so the verdict would report a skipped type-check as an
+            # absence rather than as "reached it, nothing there to check".
+            if boundary is not None:
+                boundary.record_empty_scope(
+                    'mypy(production)',
+                    f'{path} — no file survives the [tool.mypy] exclude patterns in {PYPROJECT_PATH}',
+                )
             return 0
         return _run_mypy([path], f'compile: mypy {path}', mypy_env,
                          dimension='mypy(production)', boundary=boundary)
@@ -362,6 +404,13 @@ def cmd_test_compile(module: str | None, boundary: CoverageBoundary | None = Non
     path = get_test_path(module)
     mypy_env = {**os.environ, 'MYPYPATH': _compute_mypypath()}
     if _skip_empty_mypy_scope('test-compile', path):
+        # Same contract as cmd_compile's module arm: an unrecorded skip is
+        # indistinguishable from a dimension the gate never performs.
+        if boundary is not None:
+            boundary.record_empty_scope(
+                'mypy(test)',
+                f'{path} — no file survives the [tool.mypy] exclude patterns in {PYPROJECT_PATH}',
+            )
         return 0
     return _run_mypy([path], f'test-compile: mypy {path}', mypy_env,
                      dimension='mypy(test)', boundary=boundary)
@@ -500,7 +549,8 @@ def cmd_quality_gate(module: str | None, boundary: CoverageBoundary | None = Non
     # certify the tree, then stop.
     if exit_code == _FRESHNESS_SUSPECT_RC:
         if owns_summary:
-            print(render_coverage_summary(boundary))
+            print(render_coverage_summary(
+                boundary, _quality_gate_could_run(module), _QUALITY_GATE_DIMENSIONS))
         return exit_code
     if exit_code != 0:
         return exit_code
@@ -557,7 +607,8 @@ def cmd_quality_gate(module: str | None, boundary: CoverageBoundary | None = Non
         boundary.record_checked('plugin-doctor [marketplace-wide]')
 
     if owns_summary:
-        print(render_coverage_summary(boundary))
+        print(render_coverage_summary(
+            boundary, _quality_gate_could_run(module), _QUALITY_GATE_DIMENSIONS))
     return exit_code
 
 
@@ -606,19 +657,20 @@ def cmd_verify(module: str | None) -> int:
     """
     print(f'=== verify: {"all" if not module else module} ===')
     boundary = CoverageBoundary()
+    could_run = _verify_could_run(module)
 
     exit_code = cmd_quality_gate(module, boundary=boundary)
     if exit_code != 0:
         print('verify: quality-gate failed', file=sys.stderr)
         if exit_code == _FRESHNESS_SUSPECT_RC:
-            print(render_coverage_summary(boundary))
+            print(render_coverage_summary(boundary, could_run, _VERIFY_DIMENSIONS))
         return exit_code
 
     exit_code = cmd_test_compile(module, boundary=boundary)
     if exit_code != 0:
         print('verify: test-compile failed', file=sys.stderr)
         if exit_code == _FRESHNESS_SUSPECT_RC:
-            print(render_coverage_summary(boundary))
+            print(render_coverage_summary(boundary, could_run, _VERIFY_DIMENSIONS))
         return exit_code
 
     exit_code = cmd_module_tests(module, parallel=True)
@@ -627,7 +679,7 @@ def cmd_verify(module: str | None) -> int:
         return exit_code
     boundary.record_checked('module-tests [whole-tree pytest]' if module is None else f'module-tests [{module}]')
 
-    print(render_coverage_summary(boundary))
+    print(render_coverage_summary(boundary, could_run, _VERIFY_DIMENSIONS))
     print('=== verify: SUCCESS ===')
     return 0
 

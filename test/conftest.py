@@ -17,6 +17,7 @@ import argparse
 import copy
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -185,9 +186,12 @@ def _setup_marketplace_pythonpath() -> list[str]:
 # Set up PYTHONPATH immediately on import
 _MARKETPLACE_SCRIPT_DIRS = _setup_marketplace_pythonpath()
 
-# Pre-import cross-skill modules so that test files using
-# sys.modules.setdefault('plan_logging', MagicMock(...)) at import time
-# cannot shadow the real module for later tests.
+# Import the cross-skill modules the suite shares HERE, at root-conftest import
+# time, which is before any test module is imported. That ordering is the whole
+# point: whichever import runs first is the one that binds the name in
+# ``sys.modules``, and every later importer gets that object. Binding them from
+# the root conftest makes the real modules the ones every test sees, rather than
+# leaving the binding to whichever test module happened to be collected first.
 import plan_logging as _plan_logging  # noqa: F401, E402
 import run_config as _run_config  # noqa: F401, E402
 
@@ -844,6 +848,62 @@ def create_temp_dir() -> Path:
 
 import pytest  # noqa: E402
 
+#: Context managers that OWN ``PLAN_BASE_DIR`` for the block they wrap. A module
+#: naming one of them drives real plan state even when it never requests the
+#: ``plan_context`` fixture, which is the gap a fixture-name-only predicate left:
+#: those modules are precisely the ones whose redirect the guard exists to verify,
+#: and they were the ones it skipped. ``EmptyPlanContext`` is listed in full rather
+#: than left to the ``PlanContext`` substring, so the set reads as the enumeration
+#: it is.
+_REAL_STATE_SYMBOLS = ('PlanContext', 'EmptyPlanContext', 'BuildContext')
+
+#: Shapes that SET the ``PLAN_BASE_DIR`` binding, as opposed to reading it. Setting
+#: it is choosing where plan state lands — the decision whose outcome the guard
+#: checks. Reading it is being a passenger of the autouse sandbox, which needs no
+#: check. Both the env-var and the ``_config_core`` module-attribute routes count,
+#: because both redirect the same resolver.
+_PLAN_BASE_DIR_SET_RE = re.compile(
+    r"""setenv\(\s*['"]PLAN_BASE_DIR['"]
+      | setattr\([^)]*['"]PLAN_BASE_DIR['"]
+      | os\.environ\[\s*['"]PLAN_BASE_DIR['"]\s*\]\s*=
+      | ^\s*PLAN_BASE_DIR\s*=
+    """,
+    re.VERBOSE | re.MULTILINE,
+)
+
+#: Per-module-path memo for :func:`_module_drives_real_state`. Collection asks the
+#: question once per ITEM; without the memo a 400-test module would be read 400
+#: times, turning an O(modules) scan into an O(tests) one.
+_REAL_STATE_MODULE_CACHE: dict[str, bool] = {}
+
+
+def _module_drives_real_state(module_path) -> bool:
+    """Whether a test module's SOURCE shows it driving real plan state.
+
+    Source text rather than imported module attributes, because the reference that
+    matters is usually inside a function body — ``with PlanContext(...)`` or a
+    ``monkeypatch.setenv('PLAN_BASE_DIR', ...)`` call — where no module-level
+    attribute records it, and an attribute scan would report the module clean.
+
+    An unreadable path answers ``False``: the predicate only ever ADDS a marker, so
+    a read failure costs a skipped backstop snapshot rather than a spurious one,
+    and it must not break collection for a file pytest could nonetheless import.
+    """
+    key = str(module_path)
+    cached = _REAL_STATE_MODULE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    try:
+        source = Path(key).read_text(encoding='utf-8')
+    except OSError:
+        _REAL_STATE_MODULE_CACHE[key] = False
+        return False
+    drives = any(symbol in source for symbol in _REAL_STATE_SYMBOLS) or bool(
+        _PLAN_BASE_DIR_SET_RE.search(source)
+    )
+    _REAL_STATE_MODULE_CACHE[key] = drives
+    return drives
+
 
 def pytest_collection_modifyitems(items):
     """Lock the ``allow_pollution`` escape hatch shut, and scope the pollution
@@ -857,17 +917,25 @@ def pytest_collection_modifyitems(items):
     the offending nodeids, instead of silently disarming the isolation guards for
     that test.
 
-    **Guard scoping (D5).** ``_pollution_guard`` takes a real-path snapshot before
-    AND after every test it runs on, reading the developer's real
+    **Guard scoping.** ``_pollution_guard`` takes a real-path snapshot before AND
+    after every test it runs on, reading the developer's real
     ``~/.plan-marshall/credentials/`` listing and the tracked ``.plan/local/``
     tree. Because the autouse sandboxes already make a real-tree write
     structurally impossible, that snapshot is a BACKSTOP that only needs to verify
     the redirect held for the tests that actually drive credential/plan state.
-    Auto-apply the ``touches_real_state`` marker to every test that requests the
-    ``plan_context`` fixture (the canonical plan-state fixture); the guard reads
-    that marker and runs its snapshot only for marked tests. A credential/plan
-    test that reaches real state without ``plan_context`` opts in by carrying the
-    marker explicitly. Every other (pure-logic) test skips the snapshot.
+
+    ``touches_real_state`` is therefore applied by DERIVATION, on two signals:
+
+    1. the test requests the ``plan_context`` fixture — the canonical plan-state
+       fixture; or
+    2. the test's module names one of :data:`_REAL_STATE_SYMBOLS` or sets
+       ``PLAN_BASE_DIR`` (:data:`_PLAN_BASE_DIR_SET_RE`) — i.e. it redirects the
+       resolver itself rather than inheriting the autouse sandbox.
+
+    Signal 1 alone left the state-driving modules that never touch the fixture
+    unmarked, so the backstop skipped exactly the tests it exists for. Every other
+    (pure-logic) test still skips the snapshot, which is the cost this scoping was
+    introduced to remove.
     """
     opted_out = [item.nodeid for item in items if item.get_closest_marker('allow_pollution')]
     if opted_out:
@@ -882,11 +950,29 @@ def pytest_collection_modifyitems(items):
     for item in items:
         if 'plan_context' in getattr(item, 'fixturenames', ()):
             item.add_marker('touches_real_state')
+            continue
+        module_path = getattr(item, 'path', None)
+        if module_path is not None and _module_drives_real_state(module_path):
+            item.add_marker('touches_real_state')
 
 
-#: Opt-in flag for the reference-platform ``skipped == 0`` gate. The gate is
-#: off by default so a developer's ``-k``-filtered or otherwise partial run is
-#: never failed by it; CI on the reference platform sets it to ``1``.
+#: Opt-in flag for the reference-platform ``skipped == 0`` gate. The gate is off
+#: by default so a developer's ``-k``-filtered or otherwise partial run is never
+#: failed by it.
+#:
+#: ⛔ **No producer in this repository sets it.** A sweep over the inventoried tree
+#: and over all seven files in ``.github/workflows/`` (which the inventory does not
+#: reach, so they were read individually) finds this name on exactly three lines,
+#: all of them below in this file. :func:`pytest_sessionfinish` therefore returns at
+#: its first line on every run this project performs, and the gate has never once
+#: rendered a verdict. The one thing this repository cannot see is the body of the
+#: reusable org workflow ``python-verify.yml`` delegates to, which lives in another
+#: repository; the claim is scoped accordingly, and is an absence of a producer
+#: HERE rather than a proof that nothing anywhere sets it.
+#:
+#: Arming it (have CI export ``1``) and deleting it (drop an unreachable gate) are
+#: both defensible and both change what the suite guarantees, so neither is made
+#: here — the choice with its costs is recorded for the operator.
 _STRICT_NO_SKIP_ENV = 'PLAN_MARSHALL_STRICT_NO_SKIP'
 
 
@@ -1092,14 +1178,14 @@ def _pollution_guard(request):
     ``@pytest.mark.allow_pollution`` marker (the same marker the autouse
     ``_plan_base_dir_sandbox`` honours — no second marker is introduced).
 
-    **Scoped (D5).** The snapshot runs only for tests that drive real
-    credential/plan state — those carrying ``touches_real_state`` (auto-applied to
-    every ``plan_context`` user by :func:`pytest_collection_modifyitems`, or set
-    explicitly). The autouse sandboxes make a real-tree write structurally
-    impossible for every test, so this guard is a backstop that only needs to
-    verify the redirect held for the state-driving subset; a pure-logic test
-    never touches the watched paths, so its before/after snapshot — which reads
-    the developer's real credentials-directory listing — is pure cost and is
+    **Scoped.** The snapshot runs only for tests carrying ``touches_real_state``,
+    which :func:`pytest_collection_modifyitems` DERIVES from two signals — the test
+    requests ``plan_context``, or its module names a plan-state context manager /
+    sets ``PLAN_BASE_DIR``. The autouse sandboxes make a real-tree write
+    structurally impossible for every test, so this guard is a backstop that only
+    needs to verify the redirect held for the state-driving subset; a pure-logic
+    test never touches the watched paths, so its before/after snapshot — which
+    reads the developer's real credentials-directory listing — is pure cost and is
     skipped.
     """
     if request.node.get_closest_marker('allow_pollution'):
@@ -1302,9 +1388,11 @@ def _routing_namespaces(test_module) -> list[dict]:
         # A module contributes its own globals; a function (e.g. a bound
         # ``cmd_run`` handler) contributes the globals it closes over.
         candidate = vars(obj) if isinstance(obj, ModuleType) else getattr(obj, '__globals__', None)
-        # The isinstance check also excludes the ``MagicMock`` module stand-ins
-        # several test modules install via ``sys.modules.setdefault``, whose
-        # auto-generated attributes would otherwise match anything.
+        # ``isinstance(candidate, dict)`` is load-bearing beyond a None-guard: the
+        # membership test below must run against a real namespace mapping. Anything
+        # else that answers ``__globals__`` — or any object whose attribute access
+        # is synthetic, as a mock's is — would report the seam name as present and
+        # be handed to ``monkeypatch.setitem``, patching a binding no closure reads.
         if isinstance(candidate, dict) and _ROUTING_SEAM_NAME in candidate:
             namespaces[id(candidate)] = candidate
 

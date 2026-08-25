@@ -99,10 +99,19 @@ does not say that what was examined could reach the finding being cleared.
   the invocation is not one the canonical vocabulary describes.
 - `tests_population` — `measured` or `unmeasured`, the discriminator for the field
   below.
-- `tests_run` — the executed-test count. **Present only when
+- `tests_run` — the executed-test count: `passed + failed`, deliberately
+  EXCLUDING skipped tests, so it is not the collected total. A run reporting
+  `2 passed, 9 skipped` publishes `tests_run: 2`, and a run that skipped every
+  test it collected publishes `0`. **Present only when
   `tests_population: measured`.** A run that was supposed to execute tests but
   produced no parseable summary omits the key entirely rather than publishing a
   `0`, so a consumer can never read an unmeasured run as one that tested nothing.
+
+The skip exclusion is load-bearing rather than pedantic: publishing the collected
+total would let a skips-only run clear a stale `test-failure` finding on the
+strength of a run that executed nothing. On the daemon-routed arm the value
+published is the ROUTED JOB's count, propagated from the routed result rather than
+re-derived by the outer wrapper from its own log.
 
 **Reconciliation contract.** A green build clears a pending finding of type `T`
 only when the analyses it performed intersect the analyses that can EXERCISE `T`

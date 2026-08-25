@@ -139,7 +139,7 @@ rationale — read it there before reaching for one.
 |---|---|---|
 | `_plan_base_dir_sandbox` | Redirects `PLAN_BASE_DIR` and the `_config_core` paths at a per-test temp tree, so no test reaches the tracked `.plan/`. | `@pytest.mark.allow_pollution` |
 | `_credentials_dir_sandbox` | Redirects `CREDENTIALS_DIR` away from the real `~/.plan-marshall/credentials/`. | `@pytest.mark.allow_pollution` |
-| `_pollution_guard` | Backstop: snapshots the real credential and plan paths before and after, and fails a test that mutated them. Runs its snapshot only for tests marked `touches_real_state` (auto-applied to every `plan_context` user). | `@pytest.mark.allow_pollution` |
+| `_pollution_guard` | Backstop: snapshots the real credential and plan paths before and after, and fails a test that mutated them. Runs its snapshot only for tests marked `touches_real_state`, which collection derives from the `plan_context` fixture request or from the test module naming `PlanContext`/`EmptyPlanContext`/`BuildContext` or setting `PLAN_BASE_DIR`. | `@pytest.mark.allow_pollution` |
 | `_neutralize_daemon_routing` | Patches the `_route_to_daemon` seam to its non-routing outcome, so no test's behaviour depends on whether a `marshalld` daemon is running. Modules under `test/plan-marshall/build-server/` are carved out by location and need no marker. | `@pytest.mark.allow_daemon_routing` |
 | `_root_fs_pollution_guard` | Clears the `/nonexistent` absence-sentinel before each test and fails any test that materializes it — a leak only a root host can produce. | `@pytest.mark.allow_root_filesystem_pollution` |
 

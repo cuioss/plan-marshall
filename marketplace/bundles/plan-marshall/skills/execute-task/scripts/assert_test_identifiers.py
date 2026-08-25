@@ -14,12 +14,28 @@ The helper returns a :class:`DiffResult` describing which identifiers were
 located on some line of the log (``found``) and which were not (``missing``).
 ``passed`` is true iff every written identifier appears at least once.
 
-The matching is a case-sensitive regex anchored to a whitespace boundary or
-end-of-line: ``{re.escape(identifier)}(?:\\s|$)``. Anchoring prevents prefix
-collisions (e.g., ``test_login`` would otherwise false-match
-``test_login_failure``), which is a real concern when test-function names
-share a common prefix — the helper's job is to surface absent identifiers, so
-a prefix collision that hides a missing identifier defeats the guardrail.
+The matching is a case-sensitive regex anchored to a whitespace boundary, an
+end-of-line, or a parametrize bracket: ``{re.escape(identifier)}(?:\\s|$|\\[)``.
+Anchoring prevents prefix collisions (e.g., ``test_login`` would otherwise
+false-match ``test_login_failure``), which is a real concern when
+test-function names share a common prefix — the helper's job is to surface
+absent identifiers, so a prefix collision that hides a missing identifier
+defeats the guardrail.
+
+The ``\\[`` alternative is what makes a parametrized test findable. A
+``@pytest.mark.parametrize`` function is written in source once but appears in
+the log **only** as its per-case nodeids (``name[case1]``, ``name[case2]``) —
+it never appears bare. Without that alternative the bare stem an author
+naturally supplies is reported missing for a test that provably ran, which is
+the mirror of the vacuous-guard shape: a guard reporting an absence it did not
+measure. Adding ``\\[`` does not weaken the prefix-collision guard, because a
+colliding sibling continues with an identifier character (``test_login`` vs
+``test_login_failure`` → ``_``), which is neither whitespace, end-of-line, nor
+a bracket.
+
+Because the two matches mean different things, the result records **which**
+form matched per identifier (``exact`` or ``parametrized``), so a caller can
+still distinguish a genuine absence from a parametrize-stem supply.
 
 Why regex rather than equality: the log line also carries a status token
 (``PASSED``, ``FAILED``, ``SKIPPED``), a separator, timing, and sometimes a
@@ -52,8 +68,10 @@ CLI
 
 ``--identifiers-file`` is a newline-delimited list of identifiers; blank lines
 are stripped. TOON output carries ``status``, ``passed``, ``found_count``,
-``missing_count``, and the ``missing[]`` table so callers can surface the gap
-without re-parsing the log.
+``missing_count``, ``parametrized_match_count``, the
+``found_forms[]{identifier,matched_form}`` table, and the ``missing[]`` table,
+so callers can surface the gap — and tell an exact match from a
+per-case-nodeid match — without re-parsing the log.
 
 Exit codes follow the task's explicit pass/fail contract (not the generic
 output-contract exit semantics), because execute-task shells the exit status
@@ -85,11 +103,17 @@ class DiffResult:
             input order.
         missing: Identifiers that did not appear on any log line, preserving
             the input order.
+        found_forms: Parallel to ``found`` — how each identifier matched,
+            either ``'exact'`` (the log carries the nodeid as written) or
+            ``'parametrized'`` (the log carries only per-case nodeids
+            ``identifier[case]``). Recording the form keeps a genuine absence
+            distinguishable from a parametrize-stem supply.
     """
 
     passed: bool
     found: tuple[str, ...]
     missing: tuple[str, ...]
+    found_forms: tuple[str, ...] = ()
 
 
 def assert_identifiers_in_log(
@@ -141,15 +165,36 @@ def assert_identifiers_in_log(
         lines = handle.readlines()
 
     found: list[str] = []
+    found_forms: list[str] = []
     missing: list[str] = []
     for identifier in identifiers:
-        # Anchor to a whitespace boundary or end-of-line so that e.g.
-        # ``test_login`` does not false-match a line carrying only
-        # ``test_login_failure``. pytest writes nodeid<whitespace>STATUS so the
-        # anchor is always satisfied when the test was actually collected.
-        pattern = re.compile(rf'{re.escape(identifier)}(?:\s|$)')
-        if any(pattern.search(line) for line in lines):
+        escaped = re.escape(identifier)
+        # Anchor BOTH sides to a whitespace boundary. The right anchor
+        # (``(?:\s|$)``) is what stops ``test_login`` false-matching a line
+        # carrying only ``test_login_failure``; pytest writes
+        # nodeid<whitespace>STATUS, so it is always satisfied when the test was
+        # actually collected. The left anchor (``(?<!\S)``) is the mirror of it
+        # and is equally load-bearing: without it a log line for
+        # ``other/test/foo/test_thing.py::test_login`` — a DIFFERENT file whose
+        # nodeid merely ends with the requested one — answers for
+        # ``test/foo/test_thing.py::test_login``, and a test that never ran is
+        # reported found. ``(?<!\S)`` rather than ``(?:^|\s)`` because pytest
+        # indents nodeids in several report sections, so the boundary must
+        # accept leading whitespace as well as start-of-line, and a
+        # zero-width look-behind keeps the match span the nodeid itself.
+        exact = re.compile(rf'(?<!\S){escaped}(?:\s|$)')
+        # A parametrized function never appears bare — only as
+        # ``identifier[case]`` — so the bracket is the right-hand boundary that
+        # proves the test ran. It cannot reintroduce a prefix collision: a
+        # colliding sibling continues with an identifier character, not ``[``.
+        # The left anchor is the same one, for the same reason.
+        parametrized = re.compile(rf'(?<!\S){escaped}\[')
+        if any(exact.search(line) for line in lines):
             found.append(identifier)
+            found_forms.append('exact')
+        elif any(parametrized.search(line) for line in lines):
+            found.append(identifier)
+            found_forms.append('parametrized')
         else:
             missing.append(identifier)
 
@@ -157,6 +202,7 @@ def assert_identifiers_in_log(
         passed=not missing,
         found=tuple(found),
         missing=tuple(missing),
+        found_forms=tuple(found_forms),
     )
 
 
@@ -193,6 +239,17 @@ def _emit_toon(result: DiffResult) -> None:
     print(f'passed: {"true" if result.passed else "false"}')
     print(f'found_count: {len(result.found)}')
     print(f'missing_count: {len(result.missing)}')
+    # Report how many of the found identifiers matched only via a per-case
+    # nodeid. A caller that supplied a parametrize stem needs to know the match
+    # was not exact, so an absence stays distinguishable from a stem supply.
+    parametrized_count = sum(1 for form in result.found_forms if form == 'parametrized')
+    print(f'parametrized_match_count: {parametrized_count}')
+    if result.found_forms:
+        print(f'found_forms[{len(result.found_forms)}]{{identifier,matched_form}}:')
+        for identifier, form in zip(result.found, result.found_forms, strict=True):
+            print(f'  {identifier},{form}')
+    else:
+        print('found_forms[0]:')
     if result.missing:
         print(f'missing[{len(result.missing)}]:')
         for identifier in result.missing:

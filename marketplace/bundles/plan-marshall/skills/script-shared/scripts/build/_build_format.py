@@ -74,9 +74,13 @@ how long the suite actually took before the kill. Like ``truncated`` it must be
 listed here or ``format_toon`` drops it silently.
 
 ``tests_run`` is the MEASURED executed-test count a green run reports on its
-success result (see ``_build_shared.cmd_run_common``). It is part of the
-population the green-build finding reconciliation was decided on — a
-``test-failure`` finding is cleared only when a measured ``tests_run > 0`` — so it
+success result (see ``_build_shared.cmd_run_common``) — ``passed + failed``
+(:attr:`_build_parse.UnitTestSummary.executed`), NOT the collected ``total``,
+which also counts SKIPPED tests. The distinction is load-bearing rather than
+pedantic: it is part of the population the green-build finding reconciliation was
+decided on — a ``test-failure`` finding is cleared only when a measured
+``tests_run > 0`` — so a skips-only run publishing its collected count would clear
+a true test-failure finding on the strength of a run that executed nothing. It
 must be published, never left implicit; listing it here keeps the TOON and JSON
 success outputs in agreement. It is emitted ONLY when the count was measured: an
 unmeasured run omits the key rather than publishing a zero that a consumer would

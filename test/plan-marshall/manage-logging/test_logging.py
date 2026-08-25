@@ -166,61 +166,53 @@ def _init_plan_dir(plan_base: Path, plan_id: str) -> Path:
     return plan_dir
 
 
-def test_get_log_path_plan_scoped_script():
+def test_get_log_path_plan_scoped_script(monkeypatch):
     """Script log path for an initialized plan (status.json present)."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
         plan_dir = _init_plan_dir(plan_base, 'my-plan')
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             path = module.get_log_path('my-plan', 'script')
             assert path == plan_dir / 'logs' / 'script-execution.log'
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
-def test_get_log_path_plan_scoped_work():
+def test_get_log_path_plan_scoped_work(monkeypatch):
     """Work log path for an initialized plan (status.json present)."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
         plan_dir = _init_plan_dir(plan_base, 'my-plan')
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             path = module.get_log_path('my-plan', 'work')
             assert path == plan_dir / 'logs' / 'work.log'
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
-def test_get_log_path_plan_scoped_decision():
+def test_get_log_path_plan_scoped_decision(monkeypatch):
     """Decision log path for an initialized plan (status.json present)."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
         plan_dir = _init_plan_dir(plan_base, 'my-plan')
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             path = module.get_log_path('my-plan', 'decision')
             assert path == plan_dir / 'logs' / 'decision.log'
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
-def test_get_log_path_global_fallback(frozen_log_date):
+def test_get_log_path_global_fallback(frozen_log_date, monkeypatch):
     """Script log falls back to global when no plan."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             path = module.get_log_path(None, 'script')
             assert path.parent == plan_base / 'logs'
             assert path.name.startswith('script-execution-')
             assert str(frozen_log_date) in path.name
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
 # =============================================================================
@@ -228,7 +220,7 @@ def test_get_log_path_global_fallback(frozen_log_date):
 # =============================================================================
 
 
-def test_get_log_path_orphan_dir_without_sentinel_falls_back_to_global():
+def test_get_log_path_orphan_dir_without_sentinel_falls_back_to_global(monkeypatch):
     """A plan dir that exists but lacks status.json resolves to the global log.
 
     Regression guard for the orphan-slot fix: a status.json-less plan dir (the
@@ -241,8 +233,8 @@ def test_get_log_path_orphan_dir_without_sentinel_falls_back_to_global():
         orphan_dir = plan_base / 'plans' / 'orphan-plan'
         orphan_dir.mkdir(parents=True)  # exists, but NO status.json sentinel
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             for log_type, prefix in (
                 ('script', 'script-execution-'),
                 ('work', 'work-'),
@@ -257,23 +249,19 @@ def test_get_log_path_orphan_dir_without_sentinel_falls_back_to_global():
                 assert not (orphan_dir / 'logs').exists(), (
                     f'{log_type}: orphan plan-scoped logs/ should not be resolved'
                 )
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
-def test_get_log_path_sentinel_present_resolves_plan_scoped():
+def test_get_log_path_sentinel_present_resolves_plan_scoped(monkeypatch):
     """A plan dir carrying status.json resolves plan-scoped for every log type."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
         plan_dir = _init_plan_dir(plan_base, 'init-plan')
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             assert module.get_log_path('init-plan', 'script') == plan_dir / 'logs' / 'script-execution.log'
             assert module.get_log_path('init-plan', 'work') == plan_dir / 'logs' / 'work.log'
             assert module.get_log_path('init-plan', 'decision') == plan_dir / 'logs' / 'decision.log'
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
 # =============================================================================
@@ -307,14 +295,14 @@ def test_extract_plan_id_missing():
 # =============================================================================
 
 
-def test_log_script_execution_success():
+def test_log_script_execution_success(monkeypatch):
     """Success entry is written to log file."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
         plan_dir = _init_plan_dir(plan_base, 'test-plan')
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             module.log_script_execution(
                 notation='test:skill:script',
                 subcommand='add',
@@ -330,18 +318,16 @@ def test_log_script_execution_success():
             assert '[INFO]' in content
             assert 'test:skill:script add' in content
             assert '0.15s' in content
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
-def test_log_script_execution_error_with_details():
+def test_log_script_execution_error_with_details(monkeypatch):
     """Error entry includes exit_code, args, stderr."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
         plan_dir = _init_plan_dir(plan_base, 'test-plan')
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             module.log_script_execution(
                 notation='test:skill:script',
                 subcommand='add',
@@ -358,8 +344,6 @@ def test_log_script_execution_error_with_details():
             assert 'args:' in content
             assert 'stderr:' in content
             assert 'FileNotFoundError' in content
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
 # =============================================================================
@@ -384,7 +368,7 @@ def test_log_script_execution_error_with_details():
 _PYPROJECT_NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
 
 
-def test_log_script_execution_plan_id_routes_plan_scoped(frozen_log_date):
+def test_log_script_execution_plan_id_routes_plan_scoped(frozen_log_date, monkeypatch):
     """FIXED orchestrator-context build shape (--plan-id present) -> plan-scoped tier.
 
     Mirrors the post-fix call: pyproject_build run with the quality-gate command-args
@@ -396,8 +380,8 @@ def test_log_script_execution_plan_id_routes_plan_scoped(frozen_log_date):
         plan_base = Path(tmp)
         plan_dir = _init_plan_dir(plan_base, 'fixed-plan')
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             module.log_script_execution(
                 notation=_PYPROJECT_NOTATION,
                 subcommand='run',
@@ -419,11 +403,9 @@ def test_log_script_execution_plan_id_routes_plan_scoped(frozen_log_date):
                 assert _PYPROJECT_NOTATION not in global_log.read_text(encoding='utf-8'), (
                     'Build line must NOT leak into the global tier when --plan-id is present'
                 )
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
-def test_log_script_execution_no_plan_id_routes_global(frozen_log_date):
+def test_log_script_execution_no_plan_id_routes_global(frozen_log_date, monkeypatch):
     """Legacy --project-dir-only build shape (NO --plan-id) -> global tier (the bug).
 
     Companion proving the bug the fix closes: the same pyproject_build run call WITHOUT
@@ -435,8 +417,8 @@ def test_log_script_execution_no_plan_id_routes_global(frozen_log_date):
         plan_base = Path(tmp)
         plan_dir = _init_plan_dir(plan_base, 'legacy-plan')
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             module.log_script_execution(
                 notation=_PYPROJECT_NOTATION,
                 subcommand='run',
@@ -455,8 +437,6 @@ def test_log_script_execution_no_plan_id_routes_global(frozen_log_date):
             assert not plan_log.exists(), (
                 'Plan-scoped freshness-gate log must be left WITHOUT the build line — this is the bug'
             )
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
 # =============================================================================
@@ -464,7 +444,7 @@ def test_log_script_execution_no_plan_id_routes_global(frozen_log_date):
 # =============================================================================
 
 
-def test_cleanup_deletes_old_logs():
+def test_cleanup_deletes_old_logs(monkeypatch):
     """Cleanup deletes logs older than max_age_days."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
@@ -476,16 +456,14 @@ def test_cleanup_deletes_old_logs():
         old_time = time.time() - (30 * 86400)
         os.utime(old_log, (old_time, old_time))
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             deleted = module.cleanup_old_script_logs(max_age_days=7)
             assert deleted == 1, f'Expected 1 deleted, got {deleted}'
             assert not old_log.exists(), 'Old log should be deleted'
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
-def test_cleanup_preserves_recent_logs(frozen_log_date):
+def test_cleanup_preserves_recent_logs(frozen_log_date, monkeypatch):
     """Cleanup preserves logs newer than max_age_days."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
@@ -495,13 +473,11 @@ def test_cleanup_preserves_recent_logs(frozen_log_date):
         recent_log = log_dir / f'script-execution-{frozen_log_date}.log'
         recent_log.write_text('recent log')
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             deleted = module.cleanup_old_script_logs(max_age_days=7)
             assert deleted == 0, f'Expected 0 deleted, got {deleted}'
             assert recent_log.exists(), 'Recent log should be preserved'
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
 # =============================================================================
@@ -509,14 +485,14 @@ def test_cleanup_preserves_recent_logs(frozen_log_date):
 # =============================================================================
 
 
-def test_log_work_default_category():
+def test_log_work_default_category(monkeypatch):
     """Log work with default PROGRESS category."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
         plan_dir = _init_plan_dir(plan_base, 'test-plan')
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             result = module.log_work(
                 plan_id='test-plan', category='PROGRESS', message='Starting init phase', phase='init'
             )
@@ -531,11 +507,9 @@ def test_log_work_default_category():
             assert '[PROGRESS]' in content
             assert 'Starting init phase' in content
             assert 'phase: init' in content
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
-def test_log_work_all_categories():
+def test_log_work_all_categories(monkeypatch):
     """Log work with each valid category."""
     # DECISION now goes to decision.log, not work.log
     categories = ['ARTIFACT', 'PROGRESS', 'ERROR', 'OUTCOME', 'FINDING']
@@ -544,8 +518,8 @@ def test_log_work_all_categories():
         plan_base = Path(tmp)
         plan_dir = _init_plan_dir(plan_base, 'test-plan')
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             for cat in categories:
                 result = module.log_work(plan_id='test-plan', category=cat, message=f'Test {cat}', phase='init')
                 assert result['status'] == 'success', f'Failed for {cat}'
@@ -555,8 +529,6 @@ def test_log_work_all_categories():
             content = log_file.read_text()
             for cat in categories:
                 assert f'[{cat}]' in content, f'Missing {cat}'
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
 def test_log_work_invalid_plan_id():
@@ -566,20 +538,18 @@ def test_log_work_invalid_plan_id():
     assert result['error'] == 'invalid_plan_id'
 
 
-def test_log_work_invalid_category():
+def test_log_work_invalid_category(monkeypatch):
     """Log work fails for invalid category."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
         plan_dir = plan_base / 'plans' / 'test-plan'
         plan_dir.mkdir(parents=True)
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             result = module.log_work(plan_id='test-plan', category='INVALID', message='Test', phase='init')
             assert result['status'] == 'error'
             assert result['error'] == 'invalid_category'
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
 # =============================================================================
@@ -587,14 +557,14 @@ def test_log_work_invalid_category():
 # =============================================================================
 
 
-def test_read_work_log_all_entries():
+def test_read_work_log_all_entries(monkeypatch):
     """Read all work log entries."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
         _init_plan_dir(plan_base, 'test-plan')
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             # Add some entries (DECISION is now separate log)
             module.log_work('test-plan', 'PROGRESS', 'Entry 1', 'init')
             module.log_work('test-plan', 'OUTCOME', 'Entry 2', 'refine')
@@ -608,18 +578,16 @@ def test_read_work_log_all_entries():
             for entry in result['entries']:
                 assert 'hash_id' in entry, f'Missing hash_id in entry: {entry}'
                 assert len(entry['hash_id']) == 6, f'Invalid hash_id: {entry["hash_id"]}'
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
-def test_read_work_log_filtered_by_phase():
+def test_read_work_log_filtered_by_phase(monkeypatch):
     """Read work log entries filtered by phase."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
         _init_plan_dir(plan_base, 'test-plan')
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             module.log_work('test-plan', 'PROGRESS', 'Init entry', 'init')
             module.log_work('test-plan', 'OUTCOME', 'Refine entry', 'refine')
             module.log_work('test-plan', 'PROGRESS', 'Another init', 'init')
@@ -629,8 +597,6 @@ def test_read_work_log_filtered_by_phase():
             assert result['total_entries'] == 2
             for entry in result['entries']:
                 assert entry['phase'] == 'init'
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
 # =============================================================================
@@ -638,14 +604,14 @@ def test_read_work_log_filtered_by_phase():
 # =============================================================================
 
 
-def test_list_recent_work_with_limit():
+def test_list_recent_work_with_limit(monkeypatch):
     """List recent entries respects limit."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
         _init_plan_dir(plan_base, 'test-plan')
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             for i in range(5):
                 module.log_work('test-plan', 'PROGRESS', f'Entry {i}', 'init')
 
@@ -656,8 +622,6 @@ def test_list_recent_work_with_limit():
             assert len(result['entries']) == 3
             # Should be most recent
             assert 'Entry 4' in result['entries'][-1]['message']
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
 # =============================================================================
@@ -665,7 +629,7 @@ def test_list_recent_work_with_limit():
 # =============================================================================
 
 
-def test_log_work_orphan_dir_writes_global_not_plan_scoped(frozen_log_date):
+def test_log_work_orphan_dir_writes_global_not_plan_scoped(frozen_log_date, monkeypatch):
     """log_work against a status.json-less orphan dir writes to the global log.
 
     The orphan plan dir (logs/work materialized while the authoritative dir is
@@ -677,8 +641,8 @@ def test_log_work_orphan_dir_writes_global_not_plan_scoped(frozen_log_date):
         orphan_dir = plan_base / 'plans' / 'orphan-plan'
         orphan_dir.mkdir(parents=True)  # exists, no status.json sentinel
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             result = module.log_work('orphan-plan', 'PROGRESS', 'orphan entry', 'execute')
             assert result['status'] == 'success'
 
@@ -687,19 +651,17 @@ def test_log_work_orphan_dir_writes_global_not_plan_scoped(frozen_log_date):
             assert 'orphan entry' in global_work_log.read_text(encoding='utf-8')
 
             assert not (orphan_dir / 'logs').exists(), 'No plan-scoped logs/ under the orphan dir'
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
-def test_log_decision_orphan_dir_writes_global_not_plan_scoped(frozen_log_date):
+def test_log_decision_orphan_dir_writes_global_not_plan_scoped(frozen_log_date, monkeypatch):
     """log_decision against a status.json-less orphan dir writes to the global log."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
         orphan_dir = plan_base / 'plans' / 'orphan-plan'
         orphan_dir.mkdir(parents=True)  # exists, no status.json sentinel
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             result = module.log_decision('orphan-plan', 'orphan decision', 'execute')
             assert result['status'] == 'success'
 
@@ -708,19 +670,17 @@ def test_log_decision_orphan_dir_writes_global_not_plan_scoped(frozen_log_date):
             assert 'orphan decision' in global_decision_log.read_text(encoding='utf-8')
 
             assert not (orphan_dir / 'logs').exists(), 'No plan-scoped logs/ under the orphan dir'
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
-def test_log_entry_orphan_dir_writes_global_not_plan_scoped(frozen_log_date):
+def test_log_entry_orphan_dir_writes_global_not_plan_scoped(frozen_log_date, monkeypatch):
     """log_entry against a status.json-less orphan dir writes to the global log."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
         orphan_dir = plan_base / 'plans' / 'orphan-plan'
         orphan_dir.mkdir(parents=True)  # exists, no status.json sentinel
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             module.log_entry('work', 'orphan-plan', 'INFO', 'orphan log_entry message')
 
             global_work_log = plan_base / 'logs' / f'work-{frozen_log_date}.log'
@@ -728,18 +688,16 @@ def test_log_entry_orphan_dir_writes_global_not_plan_scoped(frozen_log_date):
             assert 'orphan log_entry message' in global_work_log.read_text(encoding='utf-8')
 
             assert not (orphan_dir / 'logs').exists(), 'No plan-scoped logs/ under the orphan dir'
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
-def test_log_work_sentinel_present_writes_plan_scoped(frozen_log_date):
+def test_log_work_sentinel_present_writes_plan_scoped(frozen_log_date, monkeypatch):
     """log_work against an initialized (status.json) plan dir writes plan-scoped."""
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
         plan_dir = _init_plan_dir(plan_base, 'init-plan')
 
-        os.environ['PLAN_BASE_DIR'] = str(plan_base)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv('PLAN_BASE_DIR', str(plan_base))
             result = module.log_work('init-plan', 'PROGRESS', 'init entry', 'execute')
             assert result['status'] == 'success'
 
@@ -749,8 +707,6 @@ def test_log_work_sentinel_present_writes_plan_scoped(frozen_log_date):
 
             global_work_log = plan_base / 'logs' / f'work-{frozen_log_date}.log'
             assert not global_work_log.exists(), 'Initialized plan must not fall back to global'
-        finally:
-            del os.environ['PLAN_BASE_DIR']
 
 
 # =============================================================================

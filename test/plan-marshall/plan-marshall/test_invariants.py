@@ -1075,6 +1075,51 @@ def _repo_with_committed_plan_file(tmp_path: Path) -> Path:
     return repo
 
 
+#: Probe filename for the quoted-path case. A NON-ASCII name is used because
+#: ``core.quotePath`` (on by default) makes git render it both quoted AND
+#: ``\NNN``-escaped in the default porcelain line form while ``-z`` emits it
+#: verbatim — the exact divergence the shared decoder closes. A space-containing
+#: name is NOT a substitute: git quotes it but does not escape it, so naive
+#: quote-stripping recovers the byte-identical spelling and proves nothing.
+_QUOTED_PROBE_RELPATH = '.plan/ünï.json'
+
+
+def _repo_with_quoted_committed_plan_file(root: Path) -> tuple[Path, str]:
+    """A repo whose one tracked ``.plan/`` file is committed, dirtied, and quoted by git.
+
+    Returns ``(repo, spelling)`` where ``spelling`` is how ``git ls-files -z``
+    reports the path — read back from git rather than reused from the source
+    literal, because a filesystem that normalises the filename (macOS stores
+    NFD) would otherwise make the literal disagree with the on-disk name for a
+    reason unrelated to the encoding contract under test.
+
+    The helper asserts its own anti-vacuity precondition: git must render the
+    probe path differently in the default porcelain line form than in ``-z``.
+    """
+    repo = root / 'quoted-main-checkout'
+    repo.mkdir(parents=True)
+    _git(repo, 'init', '--initial-branch=main')
+    target = repo / _QUOTED_PROBE_RELPATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text('{"schema": 1}\n', encoding='utf-8')
+    _git(repo, 'add', '-f', _QUOTED_PROBE_RELPATH)
+    _git(repo, 'commit', '-m', 'chore: seed a quoted plan path')
+    target.write_text('{"schema": 1, "dirty": true}\n', encoding='utf-8')
+
+    listed = _git(repo, 'ls-files', '-z', '--', '.plan/').stdout
+    tracked = sorted(entry for entry in listed.split('\0') if entry)
+    assert len(tracked) == 1, f'probe repo must hold exactly one tracked .plan/ path, got {tracked}'
+    spelling = tracked[0]
+
+    line_form = _git(repo, 'status', '--porcelain').stdout.strip()
+    assert line_form != f'M {spelling}', (
+        'precondition: git must render this probe path differently in the '
+        'default porcelain line form than in -z, or the probe is vacuous. Got '
+        f'{line_form!r} against the -z spelling {spelling!r}'
+    )
+    return repo, spelling
+
+
 def test_capture_main_dirty_files_reports_tracked_plan_state(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -1120,6 +1165,35 @@ def test_capture_main_dirty_files_exempts_untracked_plan_state(
     assert '.plan/local/status.json' not in result, (
         'An UNTRACKED .plan/ bookkeeping write was retained as drift; only '
         f'tracked .plan/ files should be. Captured: {result}'
+    )
+
+
+def test_capture_main_dirty_files_spells_a_quoted_tracked_plan_path_as_git_does(
+    monkeypatch: pytest.MonkeyPatch, outside_repo_dir: Path
+) -> None:
+    """A dirty TRACKED ``.plan/`` path git QUOTES is captured, spelled as git spells it.
+
+    The two sides of the trackedness comparison must speak ONE path encoding.
+    ``tracked_plan_paths`` reads NUL-delimited git output; the dirty observation
+    must too. Under the default porcelain LINE form git quotes AND
+    ``\\NNN``-escapes such a path, and stripping the surrounding quotes without
+    unescaping yields a spelling that string-matches nothing in the tracked set
+    — so a tracked ``.plan/`` file git chose to quote was exempted as untracked
+    and the layer-D drift check could never see it.
+
+    The throwaway repository is created under ``outside_repo_dir`` — outside this
+    repository's own tree — so a probe filename git has to quote never lands
+    inside the checkout.
+    """
+    repo, spelling = _repo_with_quoted_committed_plan_file(outside_repo_dir)
+    monkeypatch.setattr(inv, '_main_repo_root', lambda: repo)
+
+    result = inv._capture_main_dirty_files('any-plan', {}, '5-execute')
+
+    assert result == [spelling], (
+        'A dirty TRACKED .plan/ path whose name git quotes must be captured, '
+        'spelled exactly as git ls-files -z spells it — no surrounding quotes '
+        f'and no \\NNN escapes. Expected [{spelling!r}], captured {result!r}'
     )
 
 

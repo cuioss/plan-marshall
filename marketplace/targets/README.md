@@ -6,23 +6,41 @@ platform-specific artifacts.
 
 ## Architecture
 
-```
+The tree below is **exhaustive over the Python modules** in this package — a
+module absent from it is a defect in the tree, not a module judged
+unimportant. A tree that silently lists a subset reads as a map of the
+package while being a map of whatever its last editor happened to touch, and
+the modules it omitted were the shared ones a newcomer most needs to find.
+
+```text
 marketplace/targets/
 ├── __init__.py                   # TARGET_REGISTRY + register_target()
 ├── base.py                       # TargetBase ABC
 ├── generate.py                   # CLI entry point
+├── body_transform_engine.py      # Target-shared data-driven body rewrites
+├── component_targets.py          # `targets:` frontmatter scope filter
+├── fs_safety.py                  # Containment primitives for destructive emits
 ├── claude/                       # Verbatim mirror + plugin.json + marketplace.json
-│   ├── target.py                 # ClaudeTarget(TargetBase)
+│   ├── __init__.py               # Registers ClaudeTarget
+│   ├── target.py                 # ClaudeTarget(TargetBase) + removed-bundle prune
 │   ├── emitter.py                # Verbatim bundle copy
 │   ├── plugin_json_gen.py        # Per-bundle plugin.json regen
 │   ├── marketplace_json_gen.py   # Top-level marketplace.json regen
 │   ├── variant_emitter.py        # Per-level agent variant emission
-│   └── equality_check.py         # Source ↔ target drift detection
+│   ├── equality_check.py         # Source ↔ target drift detection
+│   ├── source_fingerprint.py     # Worktree fingerprint for the staleness guard
+│   ├── content_drift.py          # Live content-drift check engine
+│   └── content_drift_cli.py      # CLI wrapper for the content-drift check
 ├── opencode/                     # OpenCode singular-layout emitter
+│   ├── __init__.py               # Registers OpenCodeTarget
 │   ├── target.py                 # OpenCodeTarget(TargetBase)
+│   ├── emitter.py                # Singular-layout emit + stale-output prune
+│   ├── frontmatter.py            # Frontmatter transform + fail-closed validation
+│   ├── variant_emitter.py        # Per-level agent variant emission
 │   ├── mapping.json              # Tool/model maps
 │   └── frontmatter-rules.json
 └── pr_agent/                     # PR-Agent per-domain instruction packs
+    ├── __init__.py               # Registers PrAgentTarget
     └── target.py                 # PrAgentTarget(TargetBase) + composition rules
 ```
 

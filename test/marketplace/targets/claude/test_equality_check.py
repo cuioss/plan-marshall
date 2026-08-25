@@ -13,7 +13,11 @@ from pathlib import Path
 import pytest
 
 from marketplace.targets.claude.emitter import iter_bundle_dirs
-from marketplace.targets.claude.equality_check import check_bundle, run_equality_check
+from marketplace.targets.claude.equality_check import (
+    _ARRAY_FIELDS,
+    check_bundle,
+    run_equality_check,
+)
 
 
 def _write(path: Path, content: str) -> None:
@@ -247,7 +251,7 @@ def test_missing_target_dir_returns_diagnostic(clean_marketplace: tuple[Path, Pa
     assert result.passed is False
     assert 'not generated' in result.summary
     assert 'generate.py --target claude' in result.summary
-    assert result.missing_target_bundles == ['demo']
+    assert result.unusable_target_bundles == ['demo']
 
 
 def test_missing_per_bundle_target_returns_diagnostic(clean_marketplace: tuple[Path, Path]):
@@ -260,7 +264,7 @@ def test_missing_per_bundle_target_returns_diagnostic(clean_marketplace: tuple[P
     assert result.passed is False
     assert 'demo' in result.summary
     assert 'missing' in result.summary
-    assert result.missing_target_bundles == ['demo']
+    assert result.unusable_target_bundles == ['demo']
 
 
 def test_corrupt_emitted_plugin_json_returns_diagnostic(clean_marketplace: tuple[Path, Path]):
@@ -278,4 +282,259 @@ def test_corrupt_emitted_plugin_json_returns_diagnostic(clean_marketplace: tuple
     assert result.passed is False
     assert 'demo' in result.summary
     assert 'generate.py --target claude' in result.summary
-    assert 'demo' in result.missing_target_bundles
+    assert 'demo' in result.unusable_target_bundles
+
+
+#: Valid JSON documents that are NOT objects. Each parses without a
+#: ``JSONDecodeError``, so a decode-only guard passes them straight through to
+#: readers that call ``.get(...)`` on them.
+_VALID_JSON_NON_OBJECTS = ['[]', '"x"', 'null', '3']
+
+
+@pytest.mark.parametrize('payload', _VALID_JSON_NON_OBJECTS, ids=['array', 'string', 'null', 'number'])
+def test_valid_json_that_is_not_an_object_returns_the_diagnostic(
+    clean_marketplace: tuple[Path, Path], payload: str
+):
+    """A parseable non-object is unusable too, and must not escape as a traceback.
+
+    A guard keyed on ``JSONDecodeError`` alone covers only half of "unusable":
+    each payload here decodes cleanly, then fails several frames away when the
+    diff calls ``.get('agents')`` on a list, a string, ``None`` or an int. The
+    documented contract is a structured re-run-emit result for every emitted
+    artifact the engine cannot compare — not for the subset that happens to be
+    syntactically broken.
+    """
+    marketplace, target = clean_marketplace
+    plugin_path = target / 'demo' / '.claude-plugin' / 'plugin.json'
+    plugin_path.write_text(payload, encoding='utf-8')
+
+    bundles = list(iter_bundle_dirs(marketplace, None))
+    result = run_equality_check(target, bundles)
+
+    assert result.passed is False
+    assert 'demo' in result.unusable_target_bundles
+    assert 'generate.py --target claude' in result.summary
+
+
+def test_an_unreadable_emitted_plugin_json_returns_the_diagnostic(
+    clean_marketplace: tuple[Path, Path]
+):
+    """A path that exists but cannot be READ is unusable in the same way.
+
+    ``read_text`` raises ``OSError`` when the path is a directory or permissions
+    deny it. ``OSError`` is not ``JSONDecodeError``, so it was never converted
+    into ``CorruptEmittedPluginJsonError`` and escaped the caller's ``except``,
+    terminating the whole equality check instead of producing the documented
+    re-emit diagnostic for one bundle.
+    """
+    marketplace, target = clean_marketplace
+    plugin_path = target / 'demo' / '.claude-plugin' / 'plugin.json'
+    plugin_path.unlink()
+    plugin_path.mkdir()
+
+    bundles = list(iter_bundle_dirs(marketplace, None))
+    result = run_equality_check(target, bundles)
+
+    assert result.passed is False
+    assert result.unusable_target_bundles == ['demo']
+    assert 'generate.py --target claude' in result.summary
+
+
+def test_undecodable_bytes_in_an_emitted_plugin_json_return_the_diagnostic(
+    clean_marketplace: tuple[Path, Path]
+):
+    """Bytes that are not valid UTF-8 raise ``UnicodeDecodeError``, not a decode error.
+
+    ``UnicodeDecodeError`` derives from ``ValueError`` and is raised by
+    ``read_text`` BEFORE ``json.loads`` is ever reached, so the
+    ``JSONDecodeError`` guard cannot see it.
+    """
+    marketplace, target = clean_marketplace
+    plugin_path = target / 'demo' / '.claude-plugin' / 'plugin.json'
+    plugin_path.write_bytes(b'{"name": "\xff"}')
+
+    bundles = list(iter_bundle_dirs(marketplace, None))
+    result = run_equality_check(target, bundles)
+
+    assert result.passed is False
+    assert result.unusable_target_bundles == ['demo']
+
+
+@pytest.mark.parametrize('field_name', _ARRAY_FIELDS)
+def test_a_non_list_array_field_returns_the_diagnostic(
+    clean_marketplace: tuple[Path, Path], field_name: str
+):
+    """``isinstance(parsed, dict)`` is not the whole of "usable".
+
+    The diff calls ``list()`` on every array field and ``set()`` on two of them,
+    so an object declaring one as a scalar passes the object check and then
+    raises ``TypeError`` from inside ``check_bundle`` — again escaping the
+    caller's ``except``, which catches only ``CorruptEmittedPluginJsonError``.
+    """
+    marketplace, target = clean_marketplace
+    doc: dict = {
+        'name': 'demo',
+        'version': '0.0.1',
+        'description': 'Demo bundle',
+        'agents': ['./agents/demo-agent.md'],
+        'commands': [],
+        'skills': [],
+    }
+    doc[field_name] = 3
+    _emitted(target, 'demo', doc)
+
+    bundles = list(iter_bundle_dirs(marketplace, None))
+    result = run_equality_check(target, bundles)
+
+    assert result.passed is False
+    assert result.unusable_target_bundles == ['demo']
+
+
+@pytest.mark.parametrize('field_name', _ARRAY_FIELDS)
+def test_an_explicit_null_array_field_returns_the_diagnostic(
+    clean_marketplace: tuple[Path, Path], field_name: str
+):
+    """An explicit ``null`` is a value that is not a list, and is refused as one.
+
+    ``parsed.get(field_name)`` collapses "field absent" and "field present and
+    explicitly null" into the same ``None``, so an early ``continue`` on that
+    ``None`` carries BOTH past the ``isinstance`` guard — leaving
+    ``{"agents": null}`` accepted even though shape 4 of the contract names
+    exactly "a value that is not a list". Membership is therefore tested before
+    the value is read: an absent field still skips validation, while a present
+    one is always validated.
+
+    The assertion is ``unusable_target_bundles``, NOT ``passed``. Against the
+    unguarded form a null ``agents`` degrades to ``[]`` opposite a populated
+    generated list, so it already produces ordinary drift — ``passed is False``
+    for the wrong reason — while a null ``skills`` degrades to ``[]`` opposite
+    an empty one and produces no diff at all. Only the unusable-bundle verdict
+    separates a refused corrupt artifact from both of those.
+    """
+    marketplace, target = clean_marketplace
+    doc: dict = {
+        'name': 'demo',
+        'version': '0.0.1',
+        'description': 'Demo bundle',
+        'agents': ['./agents/demo-agent.md'],
+        'commands': [],
+        'skills': [],
+    }
+    doc[field_name] = None
+    _emitted(target, 'demo', doc)
+
+    bundles = list(iter_bundle_dirs(marketplace, None))
+    result = run_equality_check(target, bundles)
+
+    assert result.unusable_target_bundles == ['demo']
+    assert 'generate.py --target claude' in result.summary
+
+
+@pytest.mark.parametrize('field_name', _ARRAY_FIELDS)
+@pytest.mark.parametrize(
+    'element',
+    [{'path': './agents/demo-agent.md'}, 3],
+    ids=['unhashable-object', 'hashable-non-string'],
+)
+def test_a_list_holding_a_non_string_element_returns_the_diagnostic(
+    clean_marketplace: tuple[Path, Path], field_name: str, element: object
+):
+    """Validating the CONTAINER is not validating the contract.
+
+    The guard above proves the value is a ``list``; the caller's contract is a
+    list OF STRINGS. ``check_bundle`` builds a ``set`` from each array, so an
+    unhashable element (an object) raises ``TypeError`` several frames away and
+    escapes the caller's ``except`` — terminating the whole equality check
+    instead of reporting this one bundle as needing a re-emit, which is exactly
+    the outcome this guard exists to prevent. A hashable non-string (an int)
+    does not even crash: it compares unequal to every generated entry and is
+    reported as ordinary manifest drift, so the artifact's corruption is
+    misdiagnosed as a re-emittable difference. Both are refused HERE.
+    """
+    marketplace, target = clean_marketplace
+    doc: dict = {
+        'name': 'demo',
+        'version': '0.0.1',
+        'description': 'Demo bundle',
+        'agents': ['./agents/demo-agent.md'],
+        'commands': [],
+        'skills': [],
+    }
+    doc[field_name] = [element]
+    _emitted(target, 'demo', doc)
+
+    bundles = list(iter_bundle_dirs(marketplace, None))
+    result = run_equality_check(target, bundles)
+
+    assert result.passed is False
+    assert result.unusable_target_bundles == ['demo']
+
+
+def test_a_list_of_strings_is_still_accepted(clean_marketplace: tuple[Path, Path]):
+    """Matched control: element validation must not refuse the ordinary artifact.
+
+    A guard that rejected every populated array would satisfy the case above
+    while failing every real bundle, so the well-formed shape — a populated
+    ``agents`` list of strings alongside two empty lists — is pinned as
+    accepted, with the equality verdict clean.
+    """
+    marketplace, target = clean_marketplace
+
+    bundles = list(iter_bundle_dirs(marketplace, None))
+    result = run_equality_check(target, bundles)
+
+    emitted = json.loads(
+        (target / 'demo' / '.claude-plugin' / 'plugin.json').read_text(encoding='utf-8')
+    )
+    assert emitted['agents'] == ['./agents/demo-agent.md'], 'fixture precondition'
+    assert result.passed is True
+    assert result.unusable_target_bundles == []
+
+
+def test_the_unusable_list_is_named_for_the_outcome_not_one_of_its_causes(
+    clean_marketplace: tuple[Path, Path]
+):
+    """A present-but-corrupt bundle is reported as unusable, never as missing.
+
+    The field carries both causes, so naming it ``missing`` told its reader the
+    artifact was absent when in fact it was present and unreadable — a
+    different repair. The rename is a clean break: the old name must be gone,
+    not aliased, or a caller reading it would keep getting the wrong story.
+    """
+    marketplace, target = clean_marketplace
+    (target / 'demo' / '.claude-plugin' / 'plugin.json').write_text('[]', encoding='utf-8')
+
+    bundles = list(iter_bundle_dirs(marketplace, None))
+    result = run_equality_check(target, bundles)
+
+    assert result.unusable_target_bundles == ['demo']
+    assert not hasattr(result, 'missing_target_bundles'), (
+        'the old field name must not survive as an alias — compatibility for '
+        'this plan is "breaking", and an alias would let a caller keep reading '
+        'a corrupt bundle as a missing one'
+    )
+
+
+def test_the_unusable_list_is_sorted_across_both_causes(clean_marketplace: tuple[Path, Path]):
+    """One sort over the union, not two sorted halves concatenated.
+
+    Sorting each cause separately and joining them yields a list that is
+    ordered only within each half. The names here are chosen so the two forms
+    disagree: the missing bundle sorts AFTER the corrupt one, so a concatenated
+    ``sorted(missing) + sorted(corrupt)`` returns them in the wrong order while
+    still looking sorted at a glance.
+    """
+    marketplace, target = clean_marketplace
+    # A second source bundle whose emitted artifact is present but unusable.
+    _write(
+        marketplace / 'aaa' / '.claude-plugin' / 'plugin.json',
+        json.dumps({'name': 'aaa', 'version': '0.0.1', 'description': 'a'}, indent=2) + '\n',
+    )
+    _write(target / 'aaa' / '.claude-plugin' / 'plugin.json', '[]')
+    # ...and the first bundle's artifact is absent.
+    (target / 'demo' / '.claude-plugin' / 'plugin.json').unlink()
+
+    bundles = list(iter_bundle_dirs(marketplace, None))
+    result = run_equality_check(target, bundles)
+
+    assert result.unusable_target_bundles == ['aaa', 'demo']

@@ -176,8 +176,15 @@ def test_all_legs_agree_newest_marked(tmp_path):
 
 
 def test_all_legs_agree_all_marked(tmp_path):
-    """Saturation: every candidate is marked, so no marker carries a currency
-    signal and all three legs fall back to the retention-pinned NEWEST dir.
+    """Saturation: every candidate is marked, and all three legs still agree on
+    NEWEST — because the marker is never consulted at all.
+
+    Nothing in the code pins a version dir against the marker; no such mechanism
+    exists. Selection is eligibility plus version ordering, and the marker is
+    never read, so "every candidate is marked" is not a degraded state the legs
+    fall back from — it is indistinguishable from no candidate being marked. The
+    saturated fixture is kept because it is the state observed on real machines,
+    not because it exercises a fallback.
 
     The assertion pins WHICH dir they agree on, not merely that they agree — a
     bare cross-leg comparison also passes when all three regress together to
@@ -219,13 +226,17 @@ def test_provenance_violation_preserves_the_prior_executor_byte_for_byte(tmp_pat
 
 
 # ============================================================================
-# Case 4: a marker on the retention-pinned dir does not suppress it
+# Case 4: a marker on the newest dir does not suppress it
 # ============================================================================
 
 
-def test_marker_on_the_retention_pinned_dir_does_not_suppress_it(tmp_path):
-    """The newest-on-disk dir is the retention pin: a stale marker on it is
-    ignored, so the fixture still resolves to that dir."""
+def test_marker_on_the_newest_dir_does_not_suppress_it(tmp_path):
+    """A marker on the newest eligible dir does not suppress it.
+
+    Not because that dir is pinned — no mechanism pins one — but because the
+    marker is never consulted. Selection is eligibility plus version ordering
+    alone, so a marked dir and an unmarked one are the same input to it.
+    """
     cache_root = _build_cache(tmp_path, newest_marked=True)
 
     assert _leg_versions(cache_root) == (NEWEST, NEWEST, NEWEST)

@@ -411,7 +411,19 @@ class TestCrossCheckPreservesTheLogVerdict:
     """
 
     @staticmethod
-    def _map_with_log_verdict(verdict_status, exit_code=-9):
+    def _map_with_log_verdict(verdict_status, exit_code=-9, tests_run=None):
+        """Drive the routed mapping with a stand-in log verdict.
+
+        The stand-in is a REAL :class:`LogVerdict`, not a ``SimpleNamespace``
+        shaped by hand. A hand-shaped double carries only the attributes its
+        author remembered, so a field added to the dataclass — ``tests_run`` was
+        exactly that — leaves the double missing it and the production read
+        raises ``AttributeError`` from inside a test that was meant to be
+        exercising something else. Constructing the real dataclass makes the
+        double structurally incapable of drifting from the type it stands in
+        for; a future REQUIRED field then fails loudly here at construction
+        rather than obscurely at the call site.
+        """
         factory = load_script_module(
             'plan-marshall',
             'script-shared',
@@ -428,7 +440,9 @@ class TestCrossCheckPreservesTheLogVerdict:
             # an AttributeError raised deep inside the production read. Same
             # convention as the sibling ``test_daemon_routed_test_count``, which
             # drives a real on-disk job log for the same reason.
-            verdict = LogVerdict(status=verdict_status, exit_code=exit_code)
+            verdict = LogVerdict(
+                status=verdict_status, exit_code=exit_code, tests_run=tests_run
+            )
         with patch.object(factory, 'read_log_verdict', return_value=verdict):
             return factory._daemon_result_to_direct(
                 {
@@ -481,9 +495,51 @@ class TestCrossCheckPreservesTheLogVerdict:
 
         assert result['status'] == 'success'
 
+    # --- routed-arm executed-test count crosses the boundary ----------------
+
+    def test_agreeing_verdict_propagates_the_routed_jobs_executed_count(self):
+        """The routed job's own ``tests_run`` crosses the boundary onto the result.
+
+        On this arm the outer ``log_file`` is the daemon's JOB log — the inner
+        wrapper's result TOON with none of the test runner's output — so the
+        outer renderer's own parse of it finds no test summary and publishes
+        ``0`` for a run that executed the whole suite. The count the routed job
+        measured must therefore be carried across rather than re-derived.
+        """
+        result = self._map_with_log_verdict('success', exit_code=0, tests_run=1082)
+
+        assert result['status'] == 'success'
+        assert result['routed_tests_run'] == 1082
+
+    def test_a_routed_zero_is_propagated_as_a_measured_zero(self):
+        """A propagated ``0`` is a MEASURED "executed nothing", not an absence.
+
+        The distinction is the whole point of the field: a run that genuinely
+        executed no tests must publish ``0`` and keep a stale ``test-failure``
+        finding, and it must do so because the routed job SAID zero — not
+        because the outer wrapper failed to find a count.
+        """
+        result = self._map_with_log_verdict('success', exit_code=0, tests_run=0)
+
+        assert result['routed_tests_run'] == 0
+
+    def test_control_absent_count_stamps_no_field_at_all(self):
+        """CONTROL: ``None`` is not forwarded as ``0``.
+
+        A wrapper that published no count (a non-test command, or one predating
+        the field) must leave the key absent so the outer renderer falls back to
+        its own parse exactly as it does for an in-process build. Forwarding
+        ``None`` as ``0`` would silently convert "no count stated" into a
+        measured zero and suppress the fallback.
+        """
+        result = self._map_with_log_verdict('success', exit_code=0, tests_run=None)
+
+        assert result['status'] == 'success'
+        assert 'routed_tests_run' not in result
+
 
 class TestVocabularyTranslationIsTotal:
-    """Every ``_build_result`` status has an explicit wire row.
+    """Every ``_build_result`` status has an explicit, TERMINAL wire row.
 
     The daemon-side narrowing (``_marshalld_supervisor.run_job``) translates a
     disagreeing log verdict through :func:`wire_status_from_result`, so a status
@@ -494,6 +550,14 @@ class TestVocabularyTranslationIsTotal:
     ``test/plan-marshall/build-server/test_marshalld_supervisor.py``
     (``TestRunJobNarrowingPreservesTheNonFinish``). This class covers only the
     table's totality, which that seam depends on.
+
+    **The population is derived, not listed.** Totality can only be checked
+    against the set it is supposed to be total over, and a set restated here as
+    a literal is a copy that stops matching its source at the exact moment the
+    source grows — so the check would go blind on the only change it exists to
+    catch. It had: ``indeterminate`` was in ``_build_result`` the whole time the
+    wire table lacked a row for it, and the old four-value parametrisation never
+    said a word.
     """
 
     @staticmethod
@@ -505,11 +569,117 @@ class TestVocabularyTranslationIsTotal:
             '_build_server_protocol_for_non_finish',
         )
 
+    @staticmethod
+    def _result_status_population() -> set[str]:
+        """The ``_build_result`` STATUS_* values, READ FROM THE MODULE at test time.
+
+        Derived, never copied. A literal tuple here would be a second copy of the
+        vocabulary that goes stale exactly when a status is added — the one event
+        this class exists to catch — so the guard would fail precisely when it
+        was needed. That is not hypothetical: the parametrised four-tuple this
+        replaces was blind to the single omission that actually existed.
+        ``indeterminate`` had been in ``_build_result`` for as long as the wire
+        table had lacked a row for it, and the test passed the whole time,
+        because the test and the table were wrong in the same way.
+        """
+        import _build_result
+
+        return {
+            value
+            for name, value in vars(_build_result).items()
+            if name.startswith('STATUS_') and isinstance(value, str)
+        }
+
+    def test_the_derived_population_is_non_empty(self):
+        """A population that came back empty would make every check below vacuous.
+
+        Each totality assertion is "no member of the population violates P". Over
+        an empty population every one of them passes while checking nothing, so
+        the size is asserted first and the number is published in the failure
+        message rather than left implicit.
+        """
+        population = self._result_status_population()
+
+        assert len(population) >= 5, (
+            'the _build_result STATUS_* scan returned '
+            f'{len(population)} value(s) ({sorted(population)}) — the totality '
+            'assertions below would pass vacuously over a population this small'
+        )
+
+    def test_every_result_status_has_an_explicit_row(self):
+        """The wire table is TOTAL over the derived population.
+
+        A status with no row falls to ``wire_status_from_result``'s pass-through
+        and is right only by accident of spelling — or, as with
+        ``indeterminate``, wrong: the literal result status went out onto the
+        wire, where it is not a terminal value, and a waiting client re-polled
+        forever.
+        """
+        protocol = self._protocol()
+        population = self._result_status_population()
+
+        missing = sorted(s for s in population if s not in protocol._RESULT_STATUS_TO_WIRE)
+
+        assert missing == [], (
+            f'_RESULT_STATUS_TO_WIRE must be total over the {len(population)} '
+            f'_build_result STATUS_* values {sorted(population)}; no row for: {missing}'
+        )
+
+    def test_every_translation_lands_on_a_terminal_wire_status(self):
+        """Totality is necessary but not sufficient — the target must be terminal.
+
+        A row that existed but mapped onto ``running`` or ``queued`` would
+        satisfy the row check above and still hang the waiting client, because
+        what the client waits for is a member of ``TERMINAL_STATUSES``. The two
+        assertions are separate so a failure names which property broke.
+        """
+        protocol = self._protocol()
+        population = self._result_status_population()
+
+        non_terminal = sorted(
+            status
+            for status in population
+            if protocol.wire_status_from_result(status) not in protocol.TERMINAL_STATUSES
+        )
+
+        assert non_terminal == [], (
+            'every _build_result status must translate to a member of '
+            f'TERMINAL_STATUSES {sorted(protocol.TERMINAL_STATUSES)}; these do not: '
+            + ', '.join(
+                f'{s} -> {protocol.wire_status_from_result(s)}' for s in non_terminal
+            )
+        )
+
+    def test_the_modules_own_population_matches_the_independently_derived_one(self):
+        """``_RESULT_STATUSES`` is the same set this test derives for itself.
+
+        The production guard derives its own population; this test derives one
+        independently from the same source. Pinning them equal means the guard
+        cannot be checking a narrower set than the vocabulary actually has —
+        which would let a missing row slip past the guard and past the check
+        above, since both would then be blind to the same member.
+        """
+        protocol = self._protocol()
+
+        assert protocol._RESULT_STATUSES == self._result_status_population()
+
     @pytest.mark.parametrize(
         ('result_status', 'wire_status'),
-        [('success', 'success'), ('error', 'failure'), ('timeout', 'timeout'), ('killed', 'killed')],
+        [
+            ('success', 'success'),
+            ('error', 'failure'),
+            ('timeout', 'timeout'),
+            ('killed', 'killed'),
+            ('indeterminate', 'failure'),
+        ],
     )
-    def test_every_status_translates_explicitly(self, result_status, wire_status):
+    def test_the_expected_mapping_is_exact(self, result_status, wire_status):
+        """The explicit expected mapping, kept alongside the derived totality check.
+
+        Totality says every status has SOME terminal row; this says each has the
+        RIGHT one. Without it a table that mapped every status onto ``failure``
+        would satisfy both checks above.
+        """
         protocol = self._protocol()
 
         assert protocol.wire_status_from_result(result_status) == wire_status
@@ -523,6 +693,65 @@ class TestVocabularyTranslationIsTotal:
         for result_status in ('success', 'error', 'timeout', 'killed'):
             wire = protocol.wire_status_from_result(result_status)
             assert protocol.result_status_from_wire(wire) == result_status
+
+    def test_failure_still_inverts_to_error_not_indeterminate(self):
+        """The second row onto ``failure`` must not rebind the inverse.
+
+        ``error`` and ``indeterminate`` both map to ``failure``, so an inverse
+        built by comprehending over the forward table would bind ``failure`` to
+        whichever row came last — silently making ``result_status_from_wire``
+        answer ``indeterminate``. Nothing in the forward direction would notice,
+        which is why this is asserted from the wire side.
+        """
+        protocol = self._protocol()
+
+        assert protocol.result_status_from_wire('failure') == 'error'
+
+    def test_indeterminate_deliberately_does_not_round_trip(self):
+        """The forward map is non-injective, and that is the recorded trade.
+
+        The wire vocabulary is four-valued; ``indeterminate`` is translated onto
+        ``failure`` so that every published status is terminal. What is given up
+        is the distinction on the way back, and pinning the loss here stops a
+        later reader from "fixing" the inverse into something that breaks
+        ``failure -> error``.
+        """
+        protocol = self._protocol()
+
+        wire = protocol.wire_status_from_result('indeterminate')
+
+        assert wire in protocol.TERMINAL_STATUSES
+        assert protocol.result_status_from_wire(wire) != 'indeterminate'
+
+    def test_a_result_status_without_a_row_raises_rather_than_passing_through(self):
+        """The totality guard FIRES — proven by removing a row, not by inventing a status.
+
+        Simulating the real drift (a ``_build_result`` status the table does not
+        cover) is the only way to exercise this branch honestly. Passing in a
+        made-up string would not reach it at all: a value outside both
+        vocabularies legitimately passes through, which is the documented
+        behaviour for an already-wire status and for the empty-string default.
+        """
+        protocol = self._protocol()
+        table = dict(protocol._RESULT_STATUS_TO_WIRE)
+        table.pop('indeterminate')
+
+        with patch.object(protocol, '_RESULT_STATUS_TO_WIRE', table):
+            with pytest.raises(ValueError, match='indeterminate'):
+                protocol.wire_status_from_result('indeterminate')
+
+    def test_control_a_value_outside_both_vocabularies_still_passes_through(self):
+        """CONTROL: the raise is scoped, so an unknown value is not an error.
+
+        Without this the guard above could be satisfied by a function that raised
+        on everything it did not recognise — which would turn a truncated job log
+        into a daemon crash instead of an ``indeterminate`` outcome.
+        """
+        protocol = self._protocol()
+
+        assert protocol.wire_status_from_result('speculative') == 'speculative'
+        assert protocol.wire_status_from_result('') == ''
+        assert protocol.wire_status_from_result('failure') == 'failure'
 
 
 # ===========================================================================

@@ -120,13 +120,23 @@ python_functions = ["test_*"]
 norecursedirs = ["fixtures", "__pycache__", ".git"]
 addopts = ["-v", "--tb=short", "--strict-markers", "--strict-config", "--durations=25"]
 # Every warning is an error. Armed on a measured census, not on optimism: a full
-# whole-tree run of all 14794 tests under the flags above emits ZERO warnings —
-# no warnings-summary section at all, in any category, from third-party or
+# whole-tree run under the flags above emitted ZERO warnings — no
+# warnings-summary section at all, in any category, from third-party or
 # project-owned code. With an empty census the gate costs nothing today and
 # turns the *next* warning introduced into an attributable failure at the commit
-# that introduces it, rather than letting it accumulate silently. No per-item
-# ignore entry is warranted, because there is no warning to ignore; if one
-# becomes necessary later it belongs here in the narrowly-scoped
+# that introduces it, rather than letting it accumulate silently.
+#
+# The census is stated WITHOUT a test-count population, deliberately. The figure
+# that used to stand here was a snapshot of the collected count at the moment the
+# gate was armed, and every commit since moved it — so it went stale immediately
+# and then read as a current measurement. The property worth stating is the EMPTY
+# census, and that one is re-established by every full run rather than by a
+# number in a comment: with ``error`` armed, a warning appearing anywhere fails
+# the run that meets it. A population figure beside it proves nothing the run
+# does not already prove, and adds one more claim that can silently go wrong.
+#
+# No per-item ignore entry is warranted, because there is no warning to ignore;
+# if one becomes necessary later it belongs here in the narrowly-scoped
 # ``ignore:{message-prefix}:{Category}:{module}`` form, never as a bare
 # ``ignore::SomeWarning``.
 filterwarnings = ["error"]
@@ -205,17 +215,20 @@ markers = [
     # order-of-magnitude margin the suite no longer has. Marked tests carry their
     # own declared wall-clock budget; that budget and ``timeout`` move together.
     "slow_live: test drives a real derivation over the live tree under its own declared wall-clock budget, so it is the one test whose runtime approaches the pytest-timeout hang detector (deselect a slow local loop with -m 'not slow_live').",
-    # ``touches_real_state`` scopes the autouse ``_pollution_guard`` (D5). Every
-    # test is already sandboxed by ``_plan_base_dir_sandbox`` /
+    # ``touches_real_state`` scopes the autouse ``_pollution_guard``. Every test
+    # is already sandboxed by ``_plan_base_dir_sandbox`` /
     # ``_credentials_dir_sandbox`` (a real-tree write is structurally
     # impossible), so the guard's before/after real-path snapshot — which reads
     # the developer's real ``~/.plan-marshall/credentials/`` listing on every
     # test — is a BACKSTOP that only needs to verify the redirect held for the
-    # tests that drive that state. ``pytest_collection_modifyitems`` auto-applies
-    # this marker to every ``plan_context`` user (the canonical plan-state
-    # fixture); a credential/plan test that reaches real state without that
-    # fixture carries it explicitly. Pure-logic tests skip the snapshot.
-    "touches_real_state: test drives real credential/plan state, so the autouse _pollution_guard runs its before/after real-path snapshot for it (auto-applied to plan_context users by pytest_collection_modifyitems; add explicitly for a credential/plan test that reaches real-state code without that fixture).",
+    # tests that drive that state. The marker is applied by DERIVATION in
+    # ``pytest_collection_modifyitems``, on two signals: the test requests the
+    # ``plan_context`` fixture, OR its module names a plan-state context manager
+    # (``PlanContext`` / ``EmptyPlanContext`` / ``BuildContext``) or sets
+    # ``PLAN_BASE_DIR``. The fixture signal alone left the state-driving modules
+    # that never touch that fixture unmarked, so the backstop skipped exactly the
+    # tests it exists for. Pure-logic tests still skip the snapshot.
+    "touches_real_state: test drives real credential/plan state, so the autouse _pollution_guard runs its before/after real-path snapshot for it (derived at collection time by pytest_collection_modifyitems from the plan_context fixture request, or from the test module naming PlanContext/EmptyPlanContext/BuildContext or setting PLAN_BASE_DIR).",
 ]
 
 [tool.coverage.run]

@@ -61,18 +61,28 @@ from marketplace.targets.claude.plugin_json_gen import build_plugin_json
 
 
 class CorruptEmittedPluginJsonError(RuntimeError):
-    """Raised when an emitted ``plugin.json`` exists but is not valid JSON.
+    """Raised when an emitted ``plugin.json`` exists but is unusable.
 
-    Distinct from a corrupt *source* ``plugin.json`` (which stays a hard
-    error): an unreadable emitted artifact is resolved by re-running the
-    emit step, so ``run_equality_check`` turns this into the documented
-    "re-run emit" diagnostic rather than letting a traceback escape.
+    Every unusable shape is resolved the same way — by re-running the emit step.
+    :func:`_read_emitted_plugin_json` is where each is detected and named, and
+    its docstring carries the enumeration. It is deliberately NOT restated here:
+    a second copy is exactly what drifts when a shape is added, and this
+    docstring did drift that way once already. All but the invalid-JSON shape
+    are ones a decode-error-only guard misses, and each would otherwise surface
+    as a DIFFERENT exception several frames away inside the diff
+    (``OSError`` / ``AttributeError`` / ``TypeError``) instead of the documented
+    diagnostic.
+
+    Distinct from a corrupt *source* ``plugin.json``, which stays a hard
+    error: ``run_equality_check`` turns this one into the documented "re-run
+    emit" diagnostic rather than letting a traceback escape.
     """
 
-    def __init__(self, bundle_name: str, path: Path, exc: json.JSONDecodeError) -> None:
+    def __init__(self, bundle_name: str, path: Path, reason: str) -> None:
         self.bundle_name = bundle_name
         self.path = path
-        super().__init__(f'{path} is not valid JSON: {exc}')
+        self.reason = reason
+        super().__init__(f'{path} {reason}')
 
 
 @dataclass
@@ -94,8 +104,20 @@ class EqualityResult:
     passed: bool
     diffs: list[BundleDiff]
     summary: str
-    missing_target_bundles: list[str] = _dc_field(default_factory=list)
+    #: Bundles whose emitted plugin.json could not be compared — absent, or
+    #: present but unusable. Named for the outcome rather than for one of its
+    #: two causes: a field called ``missing`` that also carries the corrupt
+    #: bundles tells its reader the artifact is not there, when in fact it is
+    #: there and unreadable, which is a different repair.
+    unusable_target_bundles: list[str] = _dc_field(default_factory=list)
     marketplace_json_drift: bool = False
+
+
+#: The ``plugin.json`` fields the diff treats as arrays. Single-sourced here
+#: because :func:`_read_emitted_plugin_json` validates exactly the fields
+#: :func:`check_bundle` then calls ``list()`` on — two hand-kept copies would let
+#: a fourth array field be diffed without ever being validated.
+_ARRAY_FIELDS = ('agents', 'commands', 'skills')
 
 
 def _emitted_plugin_json_path(target_dir: Path, bundle_name: str) -> Path:
@@ -135,12 +157,75 @@ def _read_emitted_plugin_json(bundle_dir: Path, target_dir: Path) -> dict:
     the equality-gate source of truth; the bundle's committed
     ``.claude-plugin/plugin.json`` is canonical-only and not consulted
     here.
+
+    The caller's contract is that this returns a mapping whose array fields are
+    lists OF STRINGS. Five shapes fail that contract, and each is refused HERE,
+    converted into :class:`CorruptEmittedPluginJsonError`:
+
+    1. the file cannot be READ — it is a directory, permissions deny it
+       (``OSError``), or its bytes are not valid UTF-8 (``UnicodeDecodeError``,
+       raised by ``read_text`` before ``json.loads`` is ever reached);
+    2. its content is not valid JSON (``JSONDecodeError``);
+    3. it decodes to something other than an object (``[]``, ``"x"``, ``null``,
+       ``3``);
+    4. it decodes to an object whose ``agents`` / ``commands`` / ``skills`` value
+       is not a list (``{"agents": 3}``);
+    5. it decodes to an object whose ``agents`` / ``commands`` / ``skills`` value
+       IS a list but holds a non-string ELEMENT
+       (``{"agents": [{"path": "x"}]}``).
+
+    Shape 5 is the one a container-only check misses: the value is a list, so the
+    ``isinstance`` test passes, and the element reaches
+    :func:`check_bundle`'s ``set(...)`` — where an unhashable element raises
+    ``TypeError``. Enumerating the shapes is not the same as covering them, and
+    "every way the artifact can be unusable" was previously claimed over a
+    strict subset; the list above is the enforced set, not an aspiration.
+
+    Shapes 1, 3, 4 and 5 are the ones a decode-error-only guard misses, and they
+    surface identically: several frames away in :func:`check_bundle`, as an
+    ``OSError`` / ``AttributeError`` / ``TypeError``.
+    :func:`run_equality_check` catches only
+    :class:`CorruptEmittedPluginJsonError`, so anything else terminates the whole
+    equality check rather than reporting one bundle as needing a re-emit.
     """
     plugin_json = _emitted_plugin_json_path(target_dir, bundle_dir.name)
     try:
-        parsed: dict = json.loads(plugin_json.read_text(encoding='utf-8'))
+        raw = plugin_json.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError) as exc:
+        raise CorruptEmittedPluginJsonError(
+            bundle_dir.name, plugin_json, f'could not be read: {exc}'
+        ) from exc
+    try:
+        parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise CorruptEmittedPluginJsonError(bundle_dir.name, plugin_json, exc) from exc
+        raise CorruptEmittedPluginJsonError(
+            bundle_dir.name, plugin_json, f'is not valid JSON: {exc}'
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise CorruptEmittedPluginJsonError(
+            bundle_dir.name,
+            plugin_json,
+            f'is valid JSON but not an object (found {type(parsed).__name__})',
+        )
+    for field_name in _ARRAY_FIELDS:
+        if field_name not in parsed:
+            continue
+        value = parsed[field_name]
+        if not isinstance(value, list):
+            raise CorruptEmittedPluginJsonError(
+                bundle_dir.name,
+                plugin_json,
+                f'declares {field_name!r} as {type(value).__name__}, not a list',
+            )
+        for index, element in enumerate(value):
+            if isinstance(element, str):
+                continue
+            raise CorruptEmittedPluginJsonError(
+                bundle_dir.name,
+                plugin_json,
+                f'declares {field_name!r}[{index}] as {type(element).__name__}, '
+                'not a string',
+            )
     return parsed
 
 
@@ -207,7 +292,7 @@ def check_bundle(
     generated = build_plugin_json(bundle_dir, target_name=target_name)
     target_bundle_dir = target_dir / bundle_dir.name
     diffs: list[BundleDiff] = []
-    for field_name in ('agents', 'commands', 'skills'):
+    for field_name in _ARRAY_FIELDS:
         committed_arr = list(committed.get(field_name, []) or [])
         generated_arr = list(generated.get(field_name, []) or [])
         diff = _diff_array(bundle_dir.name, field_name, committed_arr, generated_arr)
@@ -254,6 +339,19 @@ def run_equality_check(
     drifts, the engine returns a failing ``EqualityResult`` whose
     ``summary`` directs the caller to re-run the emit step rather than
     crashing.
+
+    The CORRUPT case is handled the same way and is named here because it is
+    the one a reader would not predict from "missing or drifts": an emitted
+    plugin.json that is present but unusable in any of the shapes
+    :func:`_read_emitted_plugin_json` refuses (see
+    :class:`CorruptEmittedPluginJsonError` and that function's docstring, which
+    is the sole enumeration) — is also reported as a failing
+    result directing the caller to re-emit, never as a raised exception. Every
+    such shape is converted in :func:`_read_emitted_plugin_json`, which is what
+    lets the single ``except CorruptEmittedPluginJsonError`` below be complete
+    rather than merely look it. Those bundles are
+    listed in ``unusable_target_bundles`` alongside the absent ones, because
+    both are "could not be compared" and both are repaired by re-emitting.
     """
     bundles_list = list(bundle_dirs)
     bundle_count = len(bundles_list)
@@ -267,7 +365,7 @@ def run_equality_check(
             passed=False,
             diffs=[],
             summary=summary,
-            missing_target_bundles=[b.name for b in bundles_list],
+            unusable_target_bundles=[b.name for b in bundles_list],
         )
 
     all_diffs: list[BundleDiff] = []
@@ -281,9 +379,11 @@ def run_equality_check(
         try:
             all_diffs.extend(check_bundle(bundle_dir, target_dir, target_name=target_name))
         except CorruptEmittedPluginJsonError:
-            # An emitted plugin.json that exists but is not valid JSON is
-            # resolved by re-emitting, exactly like a missing one — return the
-            # documented diagnostic instead of crashing the equality CLI.
+            # An emitted plugin.json that exists but is unusable is resolved by
+            # re-emitting, exactly like a missing one — return the documented
+            # diagnostic instead of crashing the equality CLI. This single
+            # except clause is complete only because _read_emitted_plugin_json
+            # converts EVERY unusable shape into this one exception type.
             corrupt.append(bundle_dir.name)
 
     if missing or corrupt:
@@ -291,7 +391,13 @@ def run_equality_check(
         if missing:
             reasons.append(f"missing for: {', '.join(sorted(missing))}")
         if corrupt:
-            reasons.append(f"not valid JSON for: {', '.join(sorted(corrupt))}")
+            # Deliberately does NOT enumerate the unusable shapes. Every shape
+            # has the same remedy — re-emit, which the summary already states —
+            # so the list was never actionable, and it silently went stale the
+            # moment a fifth shape was enforced: an operator whose agents[0]
+            # was an object read four causes, none of them theirs.
+            reasons.append(f"present but unusable "
+                           f"for: {', '.join(sorted(corrupt))}")
         summary = (
             f"target/claude/{{bundle}}/.claude-plugin/plugin.json {'; '.join(reasons)} — "
             "run 'uv run python marketplace/targets/generate.py --target claude --output target/claude' first"
@@ -300,7 +406,10 @@ def run_equality_check(
             passed=False,
             diffs=all_diffs,
             summary=summary,
-            missing_target_bundles=sorted(missing) + sorted(corrupt),
+            # One sort over the union, not two sorted halves concatenated: the
+            # latter is only sorted within each half, so the list it hands the
+            # reader is not in the order its own name implies.
+            unusable_target_bundles=sorted(missing + corrupt),
         )
 
     # Compare the top-level marketplace.json. Bundles are sourced from

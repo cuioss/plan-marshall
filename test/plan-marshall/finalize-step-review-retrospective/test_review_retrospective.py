@@ -51,7 +51,14 @@ _SCRIPTS_DIR = (
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
-import review_retrospective as rr  # type: ignore[import-untyped]  # noqa: E402
+# The ignore is deliberately BARE. ``review_retrospective`` is project-local under
+# ``.claude/skills/``, reached only via the ``sys.path`` insert above, so which error
+# mypy raises depends on whether that directory is one of its search roots:
+# ``import-untyped`` when the module is found and unannotated, ``import-not-found``
+# when it is not found at all. A code-scoped ignore names exactly one of them and is
+# therefore UNUSED in the environment that raises the other — which
+# ``warn_unused_ignores`` turns into a hard error. The bare form is correct in both.
+import review_retrospective as rr  # type: ignore  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

@@ -241,3 +241,95 @@ def test_parse_log_no_tests(tmp_path):
 
     assert build_status == 'SUCCESS'
     assert test_summary is None
+
+
+# =============================================================================
+# The published executed-test count, from a maven caller
+# =============================================================================
+#
+# The count and the routed-arm propagation live in the SHARED emit choke point,
+# so they are tool-agnostic by construction. Driving them from a maven caller is
+# what makes that claim checkable rather than assumed: a fix that only worked for
+# the tool it was written against would pass its own suite and leave every other
+# build wrapper publishing the wrong number.
+
+
+def _emit_maven_success(capsys, parser, **result_extra) -> dict:
+    """Run the shared emit path with a maven-shaped result and return the JSON.
+
+    The result is built as a plain dict and cast, because ``tests_run`` — which
+    the routed arm stamps onto the result at the boundary — is not a declared key
+    of ``DirectCommandResult``. Declaring it there is the correct modelling and
+    is outside this deliverable's write set, so the gap is named here rather than
+    papered over silently.
+    """
+    import json
+    from typing import Any, cast
+
+    import _build_shared
+    from _build_result import DirectCommandResult
+
+    result: dict[str, Any] = {
+        'status': 'success',
+        'exit_code': 0,
+        'duration_seconds': 12,
+        'log_file': '/tmp/does-not-matter.log',
+        'command': './mvnw verify',
+        **result_extra,
+    }
+    assert (
+        _build_shared.cmd_run_common(
+            cast(DirectCommandResult, result), parser, 'maven', output_format='json'
+        )
+        == 0
+    )
+    emitted: dict = json.loads(capsys.readouterr().out)
+    return emitted
+
+
+def test_maven_published_count_excludes_skipped_tests(capsys):
+    """A Surefire summary with skips publishes only what Surefire actually ran."""
+
+    def _skips_parser(log_file, *args):
+        return ([], UnitTestSummary(passed=2, failed=0, skipped=9, total=11), 'SUCCESS')
+
+    emitted = _emit_maven_success(capsys, _skips_parser)
+
+    assert emitted['tests_run'] == 2
+
+
+def test_maven_routed_arm_publishes_the_routed_jobs_count(capsys):
+    """The routed job's count crosses the boundary instead of being re-derived.
+
+    This is the DA boundary fix. On the routed arm the log the outer wrapper
+    holds is the daemon's JOB log — the inner wrapper's result TOON with none of
+    Surefire's output — so the parser stub returns no summary, exactly as the
+    real parse of that log would. A re-derivation publishes ``0``; the propagated
+    count publishes what the routed job measured.
+
+    It is a RECURRENCE, not a new field bug: the same wrapper-boundary
+    substitution was already fixed field-scoped for ``duration_seconds`` at this
+    boundary, and ``tests_run`` was left behind it.
+    """
+
+    def _job_log_parser(log_file, *args):
+        return ([], None, 'SUCCESS')
+
+    emitted = _emit_maven_success(capsys, _job_log_parser, routed_tests_run=4892)
+
+    assert emitted['tests_run'] == 4892
+
+
+def test_control_maven_in_process_arm_still_parses_its_own_log(capsys):
+    """CONTROL: with no propagated count the local parse is still used.
+
+    Without this the propagation could be satisfied by ignoring the parse
+    entirely, which would zero the count for every non-routed maven build.
+    """
+
+    def _full_run_parser(log_file, *args):
+        return ([], UnitTestSummary(passed=4892, failed=0, skipped=0, total=4892), 'SUCCESS')
+
+    emitted = _emit_maven_success(capsys, _full_run_parser)
+
+    assert emitted['tests_run'] == 4892

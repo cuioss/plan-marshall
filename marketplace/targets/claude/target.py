@@ -10,7 +10,12 @@ provides ``--output``:
   the authoritative list of what is not (the regenerated
   ``.claude-plugin/plugin.json``, the role-eligible agents routed through
   variant emission, the excluded cache directories, and any component whose
-  ``targets:`` frontmatter scope omits this target). Immediately after
+  ``targets:`` frontmatter scope omits this target). On an UNSCOPED emit,
+  bundle directories under ``{output}/`` that no source bundle names are
+  then pruned (:func:`prune_removed_bundles`), because the per-bundle wipe
+  only touches directories it emits and the equality check only iterates
+  source bundles — so a bundle deleted from source would otherwise linger
+  in the published tree with nothing looking at it. Immediately after
   emit, the regenerated content is
   diffed against the just-written ``{output}/{bundle}/.claude-plugin/plugin.json``
   so callers see drift as part of the same TOON return. Equality
@@ -51,6 +56,7 @@ from marketplace.targets.claude.source_fingerprint import (
     hash_objects,
 )
 from marketplace.targets.component_targets import validate_component_scopes
+from marketplace.targets.fs_safety import refuse_tree_overlap, safe_rmtree
 
 # Sentinel file written at the end of every successful emit. The
 # project-local ``sync-plugin-cache`` skill reads it to decide whether
@@ -106,6 +112,54 @@ def _compute_emit_file_hashes(output_dir: Path) -> dict[str, str]:
     return dict(zip(rel_paths, shas, strict=True))
 
 
+def prune_removed_bundles(output_dir: Path, source_bundle_names: set[str]) -> list[Path]:
+    """Remove emitted bundle directories that no source bundle names.
+
+    ``emit_bundle_verbatim`` wipes and rewrites only the directories it emits,
+    so a bundle DELETED from ``marketplace/bundles/`` leaves its whole
+    previously-emitted directory behind and the published tree drifts past
+    source. The equality check cannot see it: that engine iterates the SOURCE
+    bundles, so a directory no source bundle names is never looked at — the
+    absence of a complaint is an absence of a look, not a clean verdict.
+
+    Every immediate child DIRECTORY of ``output_dir`` other than
+    ``.claude-plugin`` (the top-level marketplace.json holder) is an emitted
+    bundle. Files at the output root — ``.emit-marker.json``,
+    ``dist-manifest.json`` — are not bundles and are left untouched, as are
+    symlinks, which an emit never creates.
+
+    The removal goes through :func:`safe_rmtree` rather than a direct
+    ``shutil.rmtree`` so every destructive path in this module routes through
+    one primitive. That call is NOT what makes this safe, though, and reading
+    it as the guard is the mistake worth naming: every path passed to it is an
+    immediate child of ``output_dir``, so the containment check it performs is
+    satisfied by construction and can never refuse. What protects the tree is
+    :func:`marketplace.targets.fs_safety.refuse_tree_overlap` at the top of
+    :meth:`ClaudeTarget.generate` — the only check that fires when
+    ``bundle_dirs`` is empty and this sweep is therefore called with an empty
+    ``source_bundle_names``.
+
+    That refusal has to be SYMMETRIC to cover this sweep, and stating it as
+    "the only check that fires" is not the same as stating what it covers.
+    This sweep deletes an unnamed child of ``output_dir`` whichever tree the
+    source happens to be: when ``output_dir`` CONTAINS the source tree, the
+    source is one such child. A refusal keyed only on "output inside source"
+    is true of a case this sweep can reach and silent about the one it
+    destroys, so the check above tests both directions.
+
+    Returns the directories pruned, in the order they were removed.
+    """
+    pruned: list[Path] = []
+    for child in sorted(output_dir.iterdir()):
+        if child.is_symlink() or not child.is_dir():
+            continue
+        if child.name == '.claude-plugin' or child.name in source_bundle_names:
+            continue
+        safe_rmtree(child, output_dir)
+        pruned.append(child)
+    return pruned
+
+
 class ClaudeTarget(TargetBase):
     """Dual-mode Claude build target."""
 
@@ -156,6 +210,27 @@ class ClaudeTarget(TargetBase):
             return emitted
 
         # Emit mode: verbatim mirror + plugin.json regeneration.
+        #
+        # Refuse a destination overlapping the source tree BEFORE anything is
+        # created or deleted. ``emit_bundle_verbatim`` carries a per-bundle
+        # refusal, but it is reachable only from the per-bundle loop below, so an
+        # EMPTY ``bundle_dirs`` — what a ``marketplace_dir`` naming the wrong
+        # level produces, since no child of it then carries
+        # ``.claude-plugin/plugin.json`` — never runs it. ``prune_removed_bundles``
+        # would then delete every child directory of ``output_dir`` except
+        # ``.claude-plugin``, and ``safe_rmtree`` cannot object: each child is
+        # inside ``output_dir`` by construction, so its containment check passes
+        # trivially.
+        #
+        # The refusal is SYMMETRIC (:func:`refuse_tree_overlap`) because that
+        # prune sweep is destructive in whichever direction the two trees
+        # overlap. An ``output_dir`` that CONTAINS ``marketplace_dir`` reaches it
+        # on the same empty-``bundle_dirs`` path — and there the source tree is
+        # simply one more child of ``output_dir`` for the sweep to remove. A
+        # one-direction check passes that case cleanly. The sibling OpenCode
+        # emitter refuses the same overlap at the same point, through this same
+        # shared helper, so the two cannot drift apart again.
+        refuse_tree_overlap(output_dir, marketplace_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         for bundle_dir in bundle_dirs:
@@ -167,6 +242,14 @@ class ClaudeTarget(TargetBase):
             target_plugin_json.parent.mkdir(parents=True, exist_ok=True)
             target_plugin_json.write_text(generated, encoding='utf-8')
             emitted.append(target_plugin_json)
+
+        # Prune bundles that no longer exist in source. Unscoped runs only: a
+        # ``--bundles`` subset cannot distinguish "removed from source" from
+        # "simply not part of this run", so pruning a subset would delete a
+        # live bundle's output. Same gate, for the same reason, as the OpenCode
+        # emitter's ``_prune_stale_outputs``.
+        if bundles is None:
+            prune_removed_bundles(output_dir, {d.name for d in bundle_dirs})
 
         # Top-level marketplace.json so target/claude/ is registerable as a
         # Claude Code marketplace. plugins[].source paths are rewritten from

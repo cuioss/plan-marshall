@@ -49,6 +49,11 @@ caller derives them afresh, not that only one document carries them:
    write is the recurring case), which is the defect this guard now closes. The
    SAME shared predicate backs the layer-D main-checkout drift capture in
    ``plan-marshall/scripts/_invariants.py`` so the two guards cannot diverge.
+   The path ENCODING is shared for the same reason: both observations decode
+   ``git status --porcelain -z`` through
+   :func:`_porcelain.parse_porcelain_z`, so each spells a path the way the
+   NUL-delimited tracked set spells it. Two observations of one thing must not
+   disagree because they speak two encodings.
 3. **Failure action — loud, legible, NON-blocking.** ``phase-6-finalize``
    documents the post-run band as advisory and never blocking, so a hard failure
    would contradict it. This script therefore NEVER fails: ``clean: false`` is a
@@ -98,51 +103,11 @@ import sys
 from pathlib import Path
 
 from _plan_state_exemption import partition_plan_state_exemption
+from _porcelain import parse_porcelain_z
 from toon_parser import serialize_toon
-
-#: Porcelain status letters that introduce a second (original) path field in
-#: ``-z`` output: rename and copy. Both sides are reported, because either one
-#: being a tracked source path means the step moved tracked source.
-_TWO_PATH_STATUSES: frozenset[str] = frozenset({'R', 'C'})
 
 #: Seconds allowed for the single ``git status`` observation.
 _GIT_TIMEOUT_SECONDS: int = 60
-
-
-def parse_porcelain_z(payload: str) -> list[str]:
-    """Extract the dirty paths from ``git status --porcelain -z`` output.
-
-    The ``-z`` form is used rather than the default line form because it emits
-    paths verbatim (no shell-style quoting or escaping), so a path containing a
-    space, a quote, or a non-ASCII byte parses identically to a plain one.
-
-    Args:
-        payload: Raw stdout of ``git status --porcelain -z …``. Each record is
-            ``XY<space><path>\\0``; a rename/copy record is followed by one
-            additional ``<original-path>\\0`` field.
-
-    Returns:
-        Every path named by the payload, in payload order, with both sides of a
-        rename/copy record included. Deduplication and prefix filtering are the
-        caller's concern — this function only decodes.
-    """
-    fields = [field for field in payload.split('\0') if field]
-    paths: list[str] = []
-    index = 0
-    while index < len(fields):
-        record = fields[index]
-        index += 1
-        if len(record) < 4:
-            # Not a well-formed ``XY<space><path>`` record — skip it rather
-            # than guessing at a path that would become a phantom offender.
-            continue
-        status, path = record[:2], record[3:]
-        paths.append(path)
-        if _TWO_PATH_STATUSES & set(status):
-            if index < len(fields):
-                paths.append(fields[index])
-                index += 1
-    return paths
 
 
 def _observe_dirty_source(
@@ -186,7 +151,16 @@ def _observe_dirty_source(
                 '--untracked-files=no',
             ],
             capture_output=True,
-            text=True,
+            # ``surrogateescape``, matching the trackedness observation these
+            # paths are compared against (``_plan_state_exemption._observe_z``).
+            # A strict decode raises ``UnicodeDecodeError`` on a path carrying a
+            # byte that is not valid UTF-8 — a ``ValueError``, so outside the
+            # ``(OSError, SubprocessError)`` tuple below — and it would escape
+            # uncaught rather than degrading to the documented git-failure
+            # return. ``-z`` made the two sides agree on QUOTING; this is what
+            # makes them agree on BYTES.
+            encoding='utf-8',
+            errors='surrogateescape',
             timeout=_GIT_TIMEOUT_SECONDS,
             check=False,
         )
@@ -287,4 +261,4 @@ if __name__ == '__main__':
     sys.exit(main())
 
 
-__all__ = ['check_tracked_source', 'parse_porcelain_z']
+__all__ = ['check_tracked_source']

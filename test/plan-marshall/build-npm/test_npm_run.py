@@ -10,7 +10,6 @@ Tests the unified run command that combines execute + parse on failure:
 """
 
 import json
-import os
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -21,12 +20,17 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'build-npm', 'npm.py')
 
 
 @contextmanager
-def mock_npm_project():
+def mock_npm_project(monkeypatch):
     """Context manager that creates a temp directory with npm available.
 
-    Sets PLAN_BASE_DIR to the temp dir so subprocess scripts launched via
+    Points PLAN_BASE_DIR at the temp dir so subprocess scripts launched via
     run_script() resolve plan-marshall paths inside the sandbox instead of
     raising on the (intentional) missing-git-repo case.
+
+    The redirect goes through ``monkeypatch`` for the same reason its Maven
+    sibling does: the autouse ``_plan_base_dir_sandbox`` fixture already owns
+    this variable, and a hand-rolled save/assign/restore is a second owner of
+    the same global whose restore only agrees with the first by ordering luck.
     """
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
@@ -36,20 +40,13 @@ def mock_npm_project():
         # to create the directory it resolved.
         (temp_dir / '.plan').mkdir(parents=True)
         (temp_dir / 'package.json').write_text('{"name": "test", "version": "1.0.0"}')
-        previous = os.environ.get('PLAN_BASE_DIR')
-        os.environ['PLAN_BASE_DIR'] = str(temp_dir / '.plan')
-        try:
-            yield temp_dir
-        finally:
-            if previous is None:
-                os.environ.pop('PLAN_BASE_DIR', None)
-            else:
-                os.environ['PLAN_BASE_DIR'] = previous
+        monkeypatch.setenv('PLAN_BASE_DIR', str(temp_dir / '.plan'))
+        yield temp_dir
 
 
-def test_run_success_output_format():
+def test_run_success_output_format(monkeypatch):
     """Test run command success output format (TOON)."""
-    with mock_npm_project() as temp_dir:
+    with mock_npm_project(monkeypatch) as temp_dir:
         result = run_script(SCRIPT_PATH, 'run', '--command-args=--version', cwd=temp_dir)
 
         assert result.returncode == 0, f'Successful run should exit with 0: {result.stderr}'
@@ -68,9 +65,9 @@ def test_run_success_output_format():
         assert 'command' in toon, 'Should include command field'
 
 
-def test_run_includes_log_file():
+def test_run_includes_log_file(monkeypatch):
     """Test run command includes log_file path."""
-    with mock_npm_project() as temp_dir:
+    with mock_npm_project(monkeypatch) as temp_dir:
         result = run_script(SCRIPT_PATH, 'run', '--command-args=--version', cwd=temp_dir)
 
         assert result.returncode == 0
@@ -78,48 +75,48 @@ def test_run_includes_log_file():
         assert 'npm-' in result.stdout, 'Log file should contain npm prefix'
 
 
-def test_run_includes_duration():
+def test_run_includes_duration(monkeypatch):
     """Test run command includes duration in output."""
-    with mock_npm_project() as temp_dir:
+    with mock_npm_project(monkeypatch) as temp_dir:
         result = run_script(SCRIPT_PATH, 'run', '--command-args=--version', cwd=temp_dir)
 
         assert 'duration_seconds' in result.stdout, 'Should include duration_seconds'
 
 
-def test_run_failure_returns_exit_1():
+def test_run_failure_returns_exit_1(monkeypatch):
     """Test run command failure returns exit code 1."""
-    with mock_npm_project() as temp_dir:
+    with mock_npm_project(monkeypatch) as temp_dir:
         result = run_script(SCRIPT_PATH, 'run', '--command-args', 'run nonexistent-script-xyz', cwd=temp_dir)
 
         assert result.returncode == 0, 'Failed run should exit with 0 — status modeled in TOON output'
         assert 'status: error' in result.stdout, 'Should have error status'
 
 
-def test_run_mode_actionable():
+def test_run_mode_actionable(monkeypatch):
     """Test run with --mode actionable (default)."""
-    with mock_npm_project() as temp_dir:
+    with mock_npm_project(monkeypatch) as temp_dir:
         result = run_script(SCRIPT_PATH, 'run', '--command-args=--version', '--mode', 'actionable', cwd=temp_dir)
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
         assert 'status: success' in result.stdout
 
 
-def test_run_mode_errors():
+def test_run_mode_errors(monkeypatch):
     """Test run with --mode errors."""
-    with mock_npm_project() as temp_dir:
+    with mock_npm_project(monkeypatch) as temp_dir:
         result = run_script(SCRIPT_PATH, 'run', '--command-args=--version', '--mode', 'errors', cwd=temp_dir)
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
 
 
-def test_run_mode_structured():
+def test_run_mode_structured(monkeypatch):
     """Test run with --mode structured."""
-    with mock_npm_project() as temp_dir:
+    with mock_npm_project(monkeypatch) as temp_dir:
         result = run_script(SCRIPT_PATH, 'run', '--command-args=--version', '--mode', 'structured', cwd=temp_dir)
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
 
 
-def test_run_format_json():
+def test_run_format_json(monkeypatch):
     """Test run with --format json produces valid JSON."""
-    with mock_npm_project() as temp_dir:
+    with mock_npm_project(monkeypatch) as temp_dir:
         result = run_script(SCRIPT_PATH, 'run', '--command-args=--version', '--format', 'json', cwd=temp_dir)
         assert result.returncode == 0
 

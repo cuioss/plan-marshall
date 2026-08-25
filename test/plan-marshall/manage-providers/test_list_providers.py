@@ -412,8 +412,8 @@ class TestRunDiscoverAndPersist:
         marshal_path = plan_dir / 'marshal.json'
         marshal_path.write_text(json.dumps({'skill_domains': {}}))
 
-        _config_core.PLAN_BASE_DIR = tmp_path
-        _config_core.MARSHAL_PATH = marshal_path
+        monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', tmp_path)
+        monkeypatch.setattr(_config_core, 'MARSHAL_PATH', marshal_path)
 
         provider_dir = tmp_path / 'ext'
         provider_dir.mkdir()
@@ -457,8 +457,8 @@ class TestRunDiscoverAndPersist:
         marshal_path = plan_dir / 'marshal.json'
         marshal_path.write_text(json.dumps({'skill_domains': {}}))
 
-        _config_core.PLAN_BASE_DIR = tmp_path
-        _config_core.MARSHAL_PATH = marshal_path
+        monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', tmp_path)
+        monkeypatch.setattr(_config_core, 'MARSHAL_PATH', marshal_path)
 
         provider_dir = tmp_path / 'ext'
         provider_dir.mkdir()
@@ -512,8 +512,8 @@ class TestRunDiscoverAndPersist:
         marshal_path = plan_dir / 'marshal.json'
         marshal_path.write_text(json.dumps({'skill_domains': {}}))
 
-        _config_core.PLAN_BASE_DIR = tmp_path
-        _config_core.MARSHAL_PATH = marshal_path
+        monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', tmp_path)
+        monkeypatch.setattr(_config_core, 'MARSHAL_PATH', marshal_path)
 
         _mock_collect_and_base(monkeypatch, [])
 
@@ -533,8 +533,8 @@ class TestRunDiscoverAndPersist:
         marshal_path = plan_dir / 'marshal.json'
         marshal_path.write_text(json.dumps({'skill_domains': {}}))
 
-        _config_core.PLAN_BASE_DIR = tmp_path
-        _config_core.MARSHAL_PATH = marshal_path
+        monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', tmp_path)
+        monkeypatch.setattr(_config_core, 'MARSHAL_PATH', marshal_path)
 
         provider_dir = tmp_path / 'ext'
         provider_dir.mkdir()
@@ -567,8 +567,8 @@ class TestRunDiscoverAndPersist:
             )
         )
 
-        _config_core.PLAN_BASE_DIR = tmp_path
-        _config_core.MARSHAL_PATH = marshal_path
+        monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', tmp_path)
+        monkeypatch.setattr(_config_core, 'MARSHAL_PATH', marshal_path)
         _mock_collect_and_base(monkeypatch, [])
 
         run_discover_and_persist(Namespace(providers='nonexistent'))
@@ -586,7 +586,7 @@ class TestRunDiscoverAndPersist:
 class TestRunListProviders:
     """Tests for run_list_providers()."""
 
-    def test_returns_success_with_providers(self, tmp_path, capsys):
+    def test_returns_success_with_providers(self, tmp_path, monkeypatch, capsys):
         """Lists providers from marshal.json with skill_name, category, verify_command."""
         import _config_core
 
@@ -607,8 +607,8 @@ class TestRunListProviders:
             )
         )
 
-        _config_core.PLAN_BASE_DIR = tmp_path
-        _config_core.MARSHAL_PATH = marshal_path
+        monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', tmp_path)
+        monkeypatch.setattr(_config_core, 'MARSHAL_PATH', marshal_path)
 
         exit_code = run_list_providers(Namespace())
         assert exit_code == 0
@@ -618,7 +618,7 @@ class TestRunListProviders:
         assert 'version-control' in captured.out
         assert 'git --version' in captured.out
 
-    def test_returns_empty_when_no_providers_key(self, tmp_path, capsys):
+    def test_returns_empty_when_no_providers_key(self, tmp_path, monkeypatch, capsys):
         """Returns empty list when marshal.json has no providers key."""
         import _config_core
 
@@ -627,13 +627,13 @@ class TestRunListProviders:
         marshal_path = plan_dir / 'marshal.json'
         marshal_path.write_text(json.dumps({'skill_domains': {}}))
 
-        _config_core.PLAN_BASE_DIR = tmp_path
-        _config_core.MARSHAL_PATH = marshal_path
+        monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', tmp_path)
+        monkeypatch.setattr(_config_core, 'MARSHAL_PATH', marshal_path)
 
         exit_code = run_list_providers(Namespace())
         assert exit_code == 0
 
-    def test_outputs_persisted_fields(self, tmp_path, capsys):
+    def test_outputs_persisted_fields(self, tmp_path, monkeypatch, capsys):
         """Output contains persisted fields including url and description."""
         import _config_core
 
@@ -656,8 +656,8 @@ class TestRunListProviders:
             )
         )
 
-        _config_core.PLAN_BASE_DIR = tmp_path
-        _config_core.MARSHAL_PATH = marshal_path
+        monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', tmp_path)
+        monkeypatch.setattr(_config_core, 'MARSHAL_PATH', marshal_path)
 
         exit_code = run_list_providers(Namespace())
         assert exit_code == 0
@@ -680,7 +680,7 @@ class TestRunListProviders:
 class TestFindByCategory:
     """Tests for find_by_category()."""
 
-    def test_returns_matching_providers(self, tmp_path):
+    def test_returns_matching_providers(self, tmp_path, monkeypatch):
         """Returns providers matching the given category."""
         import _config_core
 
@@ -698,14 +698,14 @@ class TestFindByCategory:
                 }
             )
         )
-        _config_core.PLAN_BASE_DIR = tmp_path
-        _config_core.MARSHAL_PATH = marshal_path
+        monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', tmp_path)
+        monkeypatch.setattr(_config_core, 'MARSHAL_PATH', marshal_path)
 
         result = find_by_category('ci')
         assert len(result) == 1
         assert result[0]['skill_name'] == 'github'
 
-    def test_returns_empty_for_unknown_category(self, tmp_path):
+    def test_returns_empty_for_unknown_category(self, tmp_path, monkeypatch):
         """Returns empty list when no providers match."""
         import _config_core
 
@@ -721,13 +721,13 @@ class TestFindByCategory:
                 }
             )
         )
-        _config_core.PLAN_BASE_DIR = tmp_path
-        _config_core.MARSHAL_PATH = marshal_path
+        monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', tmp_path)
+        monkeypatch.setattr(_config_core, 'MARSHAL_PATH', marshal_path)
 
         result = find_by_category('nonexistent')
         assert result == []
 
-    def test_returns_empty_when_no_providers(self, tmp_path):
+    def test_returns_empty_when_no_providers(self, tmp_path, monkeypatch):
         """Returns empty list when no providers configured."""
         import _config_core
 
@@ -735,13 +735,13 @@ class TestFindByCategory:
         plan_dir.mkdir()
         marshal_path = plan_dir / 'marshal.json'
         marshal_path.write_text(json.dumps({}))
-        _config_core.PLAN_BASE_DIR = tmp_path
-        _config_core.MARSHAL_PATH = marshal_path
+        monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', tmp_path)
+        monkeypatch.setattr(_config_core, 'MARSHAL_PATH', marshal_path)
 
         result = find_by_category('ci')
         assert result == []
 
-    def test_run_find_by_category_cli(self, tmp_path, capsys):
+    def test_run_find_by_category_cli(self, tmp_path, monkeypatch, capsys):
         """CLI subcommand outputs TOON with matching providers."""
         import _config_core
 
@@ -757,8 +757,8 @@ class TestFindByCategory:
                 }
             )
         )
-        _config_core.PLAN_BASE_DIR = tmp_path
-        _config_core.MARSHAL_PATH = marshal_path
+        monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', tmp_path)
+        monkeypatch.setattr(_config_core, 'MARSHAL_PATH', marshal_path)
 
         exit_code = run_find_by_category(Namespace(category='ci'))
         assert exit_code == 0

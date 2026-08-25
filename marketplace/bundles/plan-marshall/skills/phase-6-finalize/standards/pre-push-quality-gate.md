@@ -64,11 +64,14 @@ keep it honest, both enforced in `build.py` and its pure `_gate_coverage` seam
   set could achieve is treated as **suspect, not reassurance** — `classify_check_duration` flags it
   and the gate fails closed rather than certifying the tree from a cache.
 - **Honest coverage boundary.** A run that could not fully check a footprint is **distinguishable**
-  from one that genuinely passed: `verify` / `quality-gate` print a coverage verdict that is COMPLETE
-  only when every dimension was checked over its full scope, and PARTIAL — naming the un-certified
-  dimension — otherwise. The same discipline governs this step's own `--display-detail`: see the
-  degraded detail variant under **Mark Step Complete** below, which never reports an un-run arm as
-  green.
+  from one that genuinely passed — and so is a run that established nothing at all. `verify` /
+  `quality-gate` print one of **three** verdicts. COMPLETE requires an *affirmative* signal: at least
+  one dimension checked over its full scope, and nothing degraded. PARTIAL names the un-certified
+  dimension. UNKNOWN is the empty boundary, which certifies nothing — *"no dimension was degraded"* is
+  vacuously true of a run that checked nothing, so an empty boundary must not render under the same
+  word as a run that checked everything. The same discipline governs this step's own
+  `--display-detail`: see the degraded detail variant under **Mark Step Complete** below, which never
+  reports an un-run arm as green.
 
 The local-gate-vs-CI parity population these properties defend is **recorded, not derived**
 (`_gate_coverage.parity_population`): each cell's verdict and note was established by reading both
@@ -92,7 +95,9 @@ The distinction is load-bearing, and the two axes must not be collapsed:
 |---|---|---|
 | **Coverage boundary** — a dimension the run could not fully check | re-running it at full scope | the PARTIAL verdict, naming the degraded dimension |
 | **Structural scope limit** — a defect class the analysis cannot reach at all | nothing. Not a wider sweep, not another round, not a re-run | a per-analysis block on **both** the COMPLETE and PARTIAL verdicts |
-| **Un-run analysis** — an analysis this gate does not perform at all | running the gate that does perform it (`verify`, not `quality-gate`) | a closing `not run in this gate at all: …` line |
+| **Out-of-scope analysis** — one this gate performs, but not at the scope this invocation ran | re-running at a wider scope (whole-tree rather than module-scoped) | a `not performed at this scope: …` line |
+| **Un-run analysis** — one no invocation of this gate performs, at any scope | running the gate that does perform it (`verify`, not `quality-gate`) | a `not performed by this gate at all: …` line |
+| **Empty-scope analysis** — one the gate reached, whose scope held nothing to analyse | nothing — there is nothing to check, so nothing to cure | an `attempted, nothing in scope — …` line |
 
 **The defect is not that a gate is narrow — it is that a narrow gate's green reads as whole-tree
 assurance.** Each analysis this gate runs decides one specific question and is silent on the rest:
@@ -113,17 +118,27 @@ same absence-read-as-coverage defect in miniature.
 
 **An analysis the gate never ran leaves no trace at all** — not checked, not degraded, simply absent
 from every list — so a reader cannot tell *"this gate does not execute tests"* from *"tests were
-fine"*. That is the same defect one level up, so the block closes with a derived
-`not run in this gate at all: …` line naming them. `quality-gate` runs no pytest and no test-tree
-mypy, and now says so; `verify` runs both, and the line correctly disappears. Degraded dimensions are
-excluded from it: those were attempted, and PARTIAL already reports them — listing them again would
-report one gap twice under two names and wrongly imply the gate cannot perform that analysis.
+fine"*. That is the same defect one level up, so the block closes with derived lines naming the
+absence. Naming it with a *single* reason, however, is how the first form of this went wrong: it
+subtracted the attempted dimensions from the registry and labelled the remainder *"not run in this
+gate at all"*, which reads a per-**invocation** absence as a statement about the **command**. A
+module-scoped `quality-gate` printed that the gate never performs `plugin-doctor` — false; it
+performs it whole-tree — and, over a bundle whose mypy scope was empty, that it never performs
+`mypy(production)` either.
+
+`_gate_coverage.coverage_gaps` therefore splits the absence into the three rows tabulated above, and
+the caller states the two facts the boundary cannot supply: which dimensions **this invocation** could
+run at its scope, and which the **gate** performs at any scope. A caller that leaves EITHER of the two
+undeclared gets an explicit `uncovered dimensions: UNKNOWN` line, with both derived sets empty — an
+undeclared scope must not render as a confident empty list. Degraded dimensions are excluded from every clause: those were attempted, and PARTIAL
+already reports them; listing them again would report one gap twice under two names and wrongly imply
+the gate cannot perform that analysis.
 
 This makes `_ANALYSIS_LIMITS` serve two purposes at once — the per-analysis limit registry, and the
-catalogue of analyses that exist for the un-run derivation to subtract from. That dual role is
+catalogue of analyses that exist for the gap derivation to subtract from. That dual role is
 deliberate and worth naming, because it bounds the guarantee: an analysis that is neither run nor
 registered is invisible to both halves. Registering every analysis the build performs is therefore
-the precondition for the un-run line meaning what it says.
+the precondition for the gap lines meaning what they say.
 
 This is the build-gate arm of a rule that binds every in-house gate. Its self-review counterpart is
 [`../workflow/pre-submission-self-review.md`](../workflow/pre-submission-self-review.md) § "A clean

@@ -83,12 +83,30 @@ from dataclasses import dataclass, field
 SUSPECT_MIN_FILES: int = 100
 
 #: The ceiling on files-per-second above which no real type-analysis occurred —
-#: only a cache hit or a short-circuited no-op processes files this fast. Set
-#: deliberately far above any cold-analysis throughput (cold mypy analyses tens
-#: of files per second, not thousands) so a legitimate run is never flagged.
-#: This is the "distinguish plausible-fast from impossible-fast" line: it keys on
-#: throughput relative to the claimed scope, not on raw speed.
-MAX_ANALYSIS_THROUGHPUT: float = 2000.0
+#: only a cache hit or a short-circuited no-op processes files this fast. This is
+#: the "distinguish plausible-fast from impossible-fast" line, and it keys on
+#: throughput relative to the claimed scope rather than on raw speed.
+#:
+#: The value is calibrated between two measurements, not picked as a round number
+#: comfortably above everything:
+#:
+#: * The INCIDENT this backstop exists to catch reported success over 660 files in
+#:   2-5 s — 132-330 files/s. A ceiling at or above 220.0 (= 660 / 3.0) therefore
+#:   rates that incident *plausible*, and the backstop never bites on the very
+#:   event it was written for. A ceiling set far above every conceivable run is
+#:   not conservative; it is inert.
+#: * A genuine COLD whole-tree run on this tree measures 417 files in 5.84 s =
+#:   71 files/s, with mypy under ``--no-incremental`` — the way ``build.py``
+#:   always runs it, so this is the throughput of the gate's own honest path, not
+#:   of a warm cache.
+#:
+#: 200.0 sits between them. It flags the incident band from 200 files/s upward
+#: (660 files in 3.3 s or faster) while leaving ~2.8x headroom over the measured
+#: cold throughput, so a legitimate cold run — including one on a materially
+#: faster machine — is not flagged. A small scope is not judged at all (see
+#: :data:`SUSPECT_MIN_FILES`), because a check that flagged every fast gate would
+#: be disabled within a week, which is worse than not having one.
+MAX_ANALYSIS_THROUGHPUT: float = 200.0
 
 
 @dataclass(frozen=True)
@@ -166,14 +184,26 @@ class CoverageBoundary:
     """Accumulator for what a gate run did and did not fully check.
 
     A dimension is recorded as *checked* when the gate ran the check over its
-    full intended scope, and as *degraded* when it could not — with the reason,
-    so the degradation is named rather than silently folded into a clean pass.
-    ``complete`` is the honest verdict: the run checked everything it set out to
-    only when nothing was degraded.
+    full intended scope, as *degraded* when it could not — with the reason, so
+    the degradation is named rather than silently folded into a clean pass — and
+    as *empty-scope* when the gate reached the check but its scope held nothing
+    to analyse. The third state is separate on purpose: an attempt over an empty
+    scope is neither a pass nor a gap, and folding it into either one is what let
+    a silently-skipped scope read as coverage.
+
+    ``complete`` is the honest verdict and requires an AFFIRMATIVE signal: at
+    least one dimension checked over its full scope, AND nothing degraded. A
+    boundary that recorded nothing is NOT complete — "no dimension was degraded"
+    is vacuously true of a run that checked nothing, so reading it as a full pass
+    is absence-of-change laundered into success, which is rule (d) in this
+    module's own docstring. An empty-scope record is not an affirmative signal
+    either: it certifies that there was nothing to check, never that something
+    checked out.
     """
 
     checked: list[str] = field(default_factory=list)
     degraded: list[tuple[str, str]] = field(default_factory=list)
+    empty_scope: list[tuple[str, str]] = field(default_factory=list)
 
     def record_checked(self, dimension: str) -> None:
         """Record that ``dimension`` was checked over its full scope."""
@@ -183,10 +213,19 @@ class CoverageBoundary:
         """Record that ``dimension`` was NOT fully checked, and why."""
         self.degraded.append((dimension, reason))
 
+    def record_empty_scope(self, dimension: str, scope: str) -> None:
+        """Record that ``dimension`` was attempted but ``scope`` held nothing to check.
+
+        The alternative — returning early with no record at all — leaves the
+        dimension indistinguishable from one the gate never performs, which is
+        the absence-read-as-coverage shape this module exists to close.
+        """
+        self.empty_scope.append((dimension, scope))
+
     @property
     def complete(self) -> bool:
-        """True only when no dimension was degraded — the full-coverage verdict."""
-        return not self.degraded
+        """True only when something was affirmatively checked and nothing was degraded."""
+        return bool(self.checked) and not self.degraded
 
 
 # ---------------------------------------------------------------------------
@@ -323,6 +362,10 @@ def _render_structural_limits(boundary: CoverageBoundary) -> list[str]:
     Returns an empty list for a boundary that checked nothing: attaching a
     scope-limit statement to a run that performed no analysis would read as though
     something had been analysed.
+
+    The dimensions this run did NOT cover are deliberately not rendered here —
+    see :func:`coverage_gaps`, which needs two scope facts the boundary alone
+    cannot supply and must not be guessed from it.
     """
     pairs = structural_limits(boundary.checked)
     if not pairs:
@@ -345,71 +388,196 @@ def _render_structural_limits(boundary: CoverageBoundary) -> list[str]:
         'A green above is evidence about the dimensions listed and is not whole-tree '
         'assurance that the change is sound.'
     )
-    # A dimension this run never attempted leaves NO trace — not checked, not
-    # degraded, simply absent. A reader then cannot tell "this gate does not run
-    # tests" from "tests were fine", which is the absence-read-as-coverage shape
-    # one level up from the one the per-analysis limits close. Naming it costs one
-    # line and is derived, so a run that did cover everything says nothing false.
-    # Degraded dimensions are excluded: those were attempted, and PARTIAL already
-    # reports them.
+    return lines
+
+
+# ---------------------------------------------------------------------------
+# Uncovered dimensions — WHY a dimension is absent, and the remedy each implies
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CoverageGaps:
+    """The dimensions a run did not cover, split by WHY — each implying its own remedy.
+
+    A dimension this run never recorded leaves NO trace: not checked, not
+    degraded, simply absent. A reader then cannot tell *"this gate does not run
+    tests"* from *"tests were fine"*, which is the absence-read-as-coverage shape
+    one level up from the one the per-analysis limits close. Naming the absence
+    is necessary — but naming it with ONE reason is how the previous form went
+    wrong: it derived a single "this gate never performs them" list from
+    ``registry - attempted``, which reads a per-INVOCATION absence as a statement
+    about the COMMAND. A module-scoped ``quality-gate`` printed that the gate
+    never performs ``plugin-doctor``, which is simply false — it performs it
+    whole-tree.
+
+    Attributes:
+        not_at_this_scope: Dimensions this gate DOES perform, but not at the scope
+            this invocation ran. Remedy: re-run at a wider scope, which reaches them.
+        not_by_this_gate: Dimensions no invocation of this gate performs at ANY
+            scope. Remedy: none here — widening the scope does not reach them, so
+            only a different command, or CI, can cover their defect classes.
+        empty_scope: ``(dimension, scope)`` pairs the gate DID reach, whose scope
+            held nothing to analyse. Remedy: none — there is nothing to check, so
+            the dimension is vacuously covered rather than skipped.
+        scope_declared: False when the caller did not state what its invocation
+            could run. Both derived sets are then empty because nothing
+            substantiates them, and the renderer says so instead of printing a
+            confident empty list.
+    """
+
+    not_at_this_scope: tuple[str, ...]
+    not_by_this_gate: tuple[str, ...]
+    empty_scope: tuple[tuple[str, str], ...]
+    scope_declared: bool
+
+
+def coverage_gaps(
+    boundary: CoverageBoundary,
+    could_run: frozenset[str] | None = None,
+    gate_dimensions: frozenset[str] | None = None,
+) -> CoverageGaps:
+    """Classify the registered dimensions this run left uncovered, by reason.
+
+    Splitting the absence by reason needs two facts the boundary cannot supply —
+    what THIS invocation could have run at its scope, and what the gate performs
+    at ANY scope — so the caller states both rather than the renderer inferring
+    them. Degraded dimensions are excluded from both derived sets: those were
+    attempted, and the PARTIAL verdict already reports them; listing them again
+    would report one gap twice under two names.
+
+    Args:
+        boundary: The accumulated :class:`CoverageBoundary`.
+        could_run: The dimension stems THIS invocation could have run at its
+            scope. ``None`` means the caller did not declare it.
+        gate_dimensions: The dimension stems this gate performs at ANY scope.
+            ``None`` means the caller did not declare it.
+
+    Returns:
+        A :class:`CoverageGaps`. When either declaration is missing,
+        ``scope_declared`` is False and both derived sets are empty — an
+        undeclared scope yields an explicit unknown, never a confident empty list.
+    """
     attempted = {dimension_stem(d) for d in boundary.checked}
     attempted |= {dimension_stem(d) for d, _ in boundary.degraded}
-    not_run = [stem for stem in _ANALYSIS_LIMITS if stem not in attempted]
-    if not_run:
+    attempted |= {dimension_stem(d) for d, _ in boundary.empty_scope}
+    empty = tuple(boundary.empty_scope)
+    if could_run is None or gate_dimensions is None:
+        return CoverageGaps((), (), empty, scope_declared=False)
+    return CoverageGaps(
+        not_at_this_scope=tuple(sorted((gate_dimensions - could_run) - attempted)),
+        not_by_this_gate=tuple(sorted((set(_ANALYSIS_LIMITS) - gate_dimensions) - attempted)),
+        empty_scope=empty,
+        scope_declared=True,
+    )
+
+
+def _render_coverage_gaps(gaps: CoverageGaps) -> list[str]:
+    """Render the uncovered-dimension clauses, each stating the remedy it implies."""
+    lines: list[str] = []
+    for dimension, scope in gaps.empty_scope:
         lines.append(
-            f'    not run in this gate at all: {", ".join(not_run)} — absent from the '
-            f'list above because this gate never performs them, NOT because they '
-            f'passed. Their defect classes are un-evaluated here.'
+            f'    attempted, nothing in scope — {dimension}: {scope}. The gate '
+            f'reached this check and found nothing to analyse, so the dimension is '
+            f'vacuously covered: there is nothing here to re-run, and no result is '
+            f'being withheld.'
+        )
+    if not gaps.scope_declared:
+        lines.append(
+            '    uncovered dimensions: UNKNOWN — this invocation did not declare '
+            'which analyses its scope could run, so this verdict cannot say which '
+            'of them were left out because of the scope and which this gate never '
+            'performs. Treat every dimension absent from the list above as '
+            'un-evaluated, not as passed.'
+        )
+        return lines
+    if gaps.not_at_this_scope:
+        lines.append(
+            f'    not performed at this scope: {", ".join(gaps.not_at_this_scope)} — '
+            f'performed by this gate, but NOT at the scope this invocation ran. '
+            f'Absent as a consequence of the scope, NOT because they passed; a run at '
+            f'a wider scope reaches them.'
+        )
+    if gaps.not_by_this_gate:
+        lines.append(
+            f'    not performed by this gate at all: {", ".join(gaps.not_by_this_gate)} — '
+            f'no invocation of this gate performs them at any scope, so widening the '
+            f'scope does not reach them either. Only a different command, or CI, '
+            f'covers their defect classes.'
         )
     return lines
 
 
-def render_coverage_summary(boundary: CoverageBoundary) -> str:
-    """Render a reader-facing coverage summary that distinguishes full from partial.
+def render_coverage_summary(
+    boundary: CoverageBoundary,
+    could_run: frozenset[str] | None = None,
+    gate_dimensions: frozenset[str] | None = None,
+) -> str:
+    """Render a reader-facing coverage summary that distinguishes full, partial and unknown.
 
-    The COMPLETE form names what was checked. The PARTIAL form names what was NOT
-    fully checked and states, in words, that the pass does not certify those
-    dimensions — so a reader asked "is it safe to push?" against a partial
-    verdict reads *no, the gate did not check X*, never a clean pass. The wording
-    is load-bearing: it is text whose value is what a reader does with it.
+    There are THREE verdicts, not two. The COMPLETE form names what was checked.
+    The PARTIAL form names what was NOT fully checked and states, in words, that
+    the pass does not certify those dimensions — so a reader asked "is it safe to
+    push?" against a partial verdict reads *no, the gate did not check X*, never a
+    clean pass. The UNKNOWN form is the empty boundary: a run that recorded
+    nothing at all certifies nothing, and it gets its own verdict rather than
+    falling through to COMPLETE with an easily-overlooked empty checked-list. The
+    wording is load-bearing: it is text whose value is what a reader does with it.
 
     **Both forms carry the structural scope limit** (:func:`structural_limits`),
     because the two properties answer different questions and the COMPLETE form
-    needs the second one most. COMPLETE means every dimension was checked over its
-    full scope — which a reader reasonably, and wrongly, reads as assurance that the
-    change is sound. The appended block states per analysis what that green does not
+    needs the second one most. A COMPLETE verdict is the one a reader most readily,
+    and most wrongly, reads as assurance that the change is sound. The appended
+    block states per analysis what that green does not
     evaluate at all, so the reader can answer *"what could still be wrong despite
     this passing?"*. PARTIAL carries it too: without it, naming the un-run dimension
     still implies the dimensions that DID run cover their subject completely.
 
     Args:
         boundary: The accumulated :class:`CoverageBoundary`.
+        could_run: The dimension stems this invocation could have run at its
+            scope, forwarded to :func:`coverage_gaps`. ``None`` renders the
+            uncovered dimensions as an explicit UNKNOWN instead of splitting them.
+        gate_dimensions: The dimension stems this gate performs at any scope, also
+            forwarded to :func:`coverage_gaps`.
 
     Returns:
         A single multi-line string suitable for printing as the gate's final
         coverage verdict.
     """
-    checked = ', '.join(boundary.checked) if boundary.checked else '(nothing)'
+    gaps = coverage_gaps(boundary, could_run, gate_dimensions)
+    if not boundary.checked and not boundary.degraded:
+        # The explicit-unknown verdict. Neither a pass nor a named gap exists, so
+        # there is no evidence in either direction — and an absence of evidence
+        # must not render as the same word a fully-checked run renders as.
+        lines = [
+            '>>> coverage: UNKNOWN — this run recorded no dimension it checked and '
+            'none it failed to check, so it certifies nothing. An empty coverage '
+            'boundary is an absence of evidence, never evidence of coverage: read '
+            'it as "the gate established nothing here", not as a pass.'
+        ]
+        lines.extend(_render_coverage_gaps(gaps))
+        return '\n'.join(lines)
     if boundary.complete:
         lines = [
             f'>>> coverage: COMPLETE over the dimensions below — checked over full '
-            f'scope: {checked}'
+            f'scope: {", ".join(boundary.checked)}'
         ]
-        lines.extend(_render_structural_limits(boundary))
-        return '\n'.join(lines)
-    lines = [
-        '>>> coverage: PARTIAL — this pass does NOT certify the whole tree. '
-        'The gate did NOT fully check:',
-    ]
-    for dimension, reason in boundary.degraded:
-        lines.append(f'      - {dimension}: {reason}')
-    lines.append(
-        '    A clean exit here is NOT a full pass — the dimensions above are '
-        'un-certified, so it is not safe to treat this as CI-equivalent.'
-    )
-    if boundary.checked:
-        lines.append(f'    (Fully checked: {checked}.)')
+    else:
+        lines = [
+            '>>> coverage: PARTIAL — this pass does NOT certify the whole tree. '
+            'The gate did NOT fully check:',
+        ]
+        for dimension, reason in boundary.degraded:
+            lines.append(f'      - {dimension}: {reason}')
+        lines.append(
+            '    A clean exit here is NOT a full pass — the dimensions above are '
+            'un-certified, so it is not safe to treat this as CI-equivalent.'
+        )
+        if boundary.checked:
+            lines.append(f'    (Fully checked: {", ".join(boundary.checked)}.)')
     lines.extend(_render_structural_limits(boundary))
+    lines.extend(_render_coverage_gaps(gaps))
     return '\n'.join(lines)
 
 
@@ -476,4 +644,20 @@ def parity_population() -> tuple[ParityCell, ...]:
         ParityCell('pytest-scope', 'subset', 'divergence heuristic ignores reverse cross-module coupling (sibling territory)'),
         ParityCell('freshness', 'closed', 'gate runs mypy cold (cache disabled) + duration sanity check, matching cold CI'),
         ParityCell('coverage-boundary', 'closed', 'gate output names its coverage boundary (partial vs full verdict)'),
+        # The two SHARED-BLIND cells. A parity table that lists only the dimensions
+        # somebody checks reads as though the unlisted ones do not exist; recording
+        # a dimension whose coverage is equal AND ZERO is what keeps 'equal' from
+        # meaning 'equally well covered'. Both are blind spots, not divergences —
+        # CI runs this same build.py — so the verdict is 'equal' and the note has
+        # to carry the zero, or the cell overstates.
+        ParityCell(
+            'ruff-mypy-build-py', 'equal',
+            'build.py is in no ruff path list and in no mypy scope on either side '
+            '(SPDX headers do cover it) — coverage is equal and zero',
+        ),
+        ParityCell(
+            'ruff-mypy-targets', 'equal',
+            'marketplace/targets is in no ruff path list and in no mypy scope on '
+            'either side (SPDX headers do cover it) — coverage is equal and zero',
+        ),
     )
