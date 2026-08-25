@@ -33,9 +33,16 @@ structurally different ways that share a single representation:
 * **Evaluated, and nothing was wanting.** The surface examined its whole subject
   and found no defect. The zero is a measurement.
 * **Could not evaluate.** The subject was out of reach — not configured, not
-  resolvable, not parseable, outside the scope actually swept, or matched by a
-  predicate that fits nothing the data carries. The zero is the absence of a
-  measurement.
+  resolvable, not parseable, outside the scope actually swept, or subject to a
+  predicate that **could not be applied** because the data or grammar it needs was
+  unavailable. The zero is the absence of a measurement.
+
+⛔ **The discriminator is whether the predicate could be APPLIED, never whether it
+matched.** A predicate applied successfully across the whole subject and matching
+nothing is a completed evaluation returning a true zero, and it belongs in the first
+category. Reading such a scan as "could not evaluate" is the mirror image of the defect
+this ADR exists to prevent, and it is just as damaging: it manufactures doubt about a
+sound result, which trains readers to discount the coverage signal entirely.
 
 Rendered identically, these two states are indistinguishable to every consumer,
 and they are indistinguishable in the direction that does harm: the second reads
@@ -123,9 +130,12 @@ consumer owns, and one this ADR does not make for it.
 
 === Positive
 
-* A zero from a conforming surface is **evidence**, and can be acted on as such.
-  The value of a clean report rises precisely because it can no longer be
-  produced by a surface that did not look.
+* A zero from a conforming surface **whose coverage is complete** is **evidence**,
+  and can be acted on as such. The value of a clean report rises precisely because it
+  can no longer be produced by a surface that did not look. A zero reported *alongside
+  a coverage gap* is evidence only about the subset actually evaluated, and carries no
+  claim about the remainder — which is why obligation 1 makes the gap visible rather
+  than leaving the consumer to assume totality.
 * Coverage gaps become **findable work**. An unmeasured subject that announces
   itself is a task; one that renders as clean is invisible, and stays invisible
   for exactly as long as nobody independently rediscovers it.
