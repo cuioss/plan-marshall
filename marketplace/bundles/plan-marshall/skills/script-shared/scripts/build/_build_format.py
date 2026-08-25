@@ -82,11 +82,14 @@ decided on — a ``test-failure`` finding is cleared only when a measured
 ``tests_run > 0`` — so a skips-only run publishing its collected count would clear
 a true test-failure finding on the strength of a run that executed nothing. It
 must be published, never left implicit; listing it here keeps the TOON and JSON
-success outputs in agreement. The ``parse`` verb publishes the same quantity from
-the same property under ``metrics.tests_run``, so ``run`` and ``parse`` cannot
-disagree about one log. It is emitted ONLY when the count was measured: an
-unmeasured run omits the key rather than publishing a zero that a consumer would
-read as "tested nothing".
+success outputs in agreement. The ``parse`` verb derives the same quantity from
+the same property under ``metrics.tests_run``. It is emitted ONLY when the count
+was measured: an unmeasured run omits the key rather than publishing a zero that a
+consumer would read as "tested nothing" — which is also where the two verbs part
+company, so they must not be described as interchangeable. Over a log with no
+parseable summary ``parse`` still publishes ``metrics.tests_run: 0`` while ``run``
+omits the key, because only ``run`` distinguishes an unmeasured population from a
+measured zero.
 
 ``tests_population`` is that omission's discriminator (``measured`` /
 ``unmeasured``). It is always present on a success result, so an absent

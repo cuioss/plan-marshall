@@ -192,8 +192,11 @@ def cmd_parse_common(
         # ``tests_run`` is the EXECUTED count (passed + failed), not the collected
         # total: a summary of "0 passed, 9 skipped" executed nothing, and
         # publishing 9 there would turn an un-run suite into evidence that the
-        # suite ran. ``run`` publishes the same quantity from the same property,
-        # so the two verbs cannot disagree about one log.
+        # suite ran. ``run`` derives the same quantity from the same property.
+        # It does NOT follow that the two verbs agree on every log: over one with
+        # no parseable summary this branch publishes 0, while ``run`` omits the
+        # key entirely, because only ``run`` separates an unmeasured population
+        # from a measured zero.
         'metrics': {
             'tests_run': test_summary.executed if test_summary else 0,
             'tests_failed': test_summary.failed if test_summary else 0,

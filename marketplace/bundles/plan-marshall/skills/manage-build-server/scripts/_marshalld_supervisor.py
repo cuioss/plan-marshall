@@ -257,9 +257,15 @@ def _wire_status_from_log_verdict(verdict_status: str) -> str:
     A status outside BOTH vocabularies (a truncated or foreign log yielding
     arbitrary text) does not reach this branch at all: it passes through
     :func:`wire_status_from_result` unchanged and
-    :func:`_terminal_payload` renders it verbatim for the client to map. Both
-    unrecognised classes therefore end at ``indeterminate``, by two different
-    routes, and neither crashes the daemon.
+    :func:`_terminal_payload` renders it verbatim for the client to map.
+
+    The two unrecognised classes therefore end DIFFERENTLY, and must not be
+    described as converging: this branch's class is re-read as ``indeterminate``
+    and so leaves on the wire as ``failure`` (``indeterminate`` has no wire row of
+    its own), which a client maps back to ``error``; the outside-both class leaves
+    verbatim, as whatever text the log carried. What they share is narrower than a
+    common outcome — neither crashes the daemon, and both still return a terminal
+    payload.
 
     Args:
         verdict_status: The ``status:`` value read back from the job log.
