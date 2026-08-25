@@ -744,7 +744,12 @@ def _reviewed_at_merge_candidate(
     of the tree being merged after a loop-back or a force-push. The credit is
     therefore anchored to the merge candidate's SHA, and the verdict is a PURE
     COMPARISON that consumes no observation state — so it is identical however many
-    times it is evaluated. That fixes both original defects at once: the dead-anchor
+    times it is evaluated **while the merge candidate remains resolvable**. That
+    qualification is the honest reach of the claim, not a hedge: the SHA is read per
+    fetch from a fallible provider call, so a resolved-then-unresolved sequence moves
+    the verdict from a credit to the undecidable outcome without any observation state
+    having been consumed. Idempotence holds over repeated evaluation, never over a
+    changed ability to read the head. That fixes both original defects at once: the dead-anchor
     false positive AND the observer effect (the old first-presence arm was *consumed*
     on the first fetch, flipping the same unedited comment to stale on the second
     look at the same HEAD).
@@ -899,8 +904,12 @@ def cmd_fetch_findings(args):
     stamp the current HEAD onto stale evidence, so the next fetch would read
     ``recorded_sha == merge_candidate_sha`` and credit the comment this fetch had just
     rejected. Because it is a pure comparison that consumes no observation
-    state, the verdict is idempotent: re-running the fetch at the same HEAD returns
-    the same answer, closing the observer effect the old first-presence arm had. And
+    state, the verdict is idempotent **while the merge candidate remains resolvable**:
+    re-running the fetch at the same HEAD returns the same answer, closing the observer
+    effect the old first-presence arm had. The qualification names the one sequence that
+    refutes the unconditional claim — a fetch at the SAME HEAD whose head-SHA read fails
+    yields the undecidable outcome instead of the credit, so the answer changed without
+    any observation state being consumed. And
     because a fresh edit is measured against the recorded ``updated_at`` rather than
     against ``created_at``, an edit at one commit credits that commit only, not every
     later HEAD.
@@ -915,6 +924,24 @@ def cmd_fetch_findings(args):
     ``--stale-participation-bots`` and classifies the bot ``participated_stale``
     rather than ``absent`` — two states whose remedies are opposite, since a stale
     publish is re-triggered while a true absence is escalated.
+
+    ``merge_candidate_sha_resolved`` / ``undecidable_participation_bots``: the THIRD
+    outcome, for when the merge candidate itself could not be read.
+    ``fetch_pr_head_sha`` returns '' on ANY failure path, so the flag reports only
+    whether the read produced a SHA — never a verdict an operator can act on. A
+    currency-subject bot whose comment matched a declared publish shape on such a fetch
+    is reported in ``undecidable_participation_bots`` (same ``{bot_kind, evidence_kind}``
+    shape, proven set subtracted) and in NEITHER other set: not credited, because
+    nothing anchors the credit; and not stale, because stale prescribes re-triggering a
+    review, which cannot fix a failed head read. Disjointness from
+    ``stale_participation_bots`` is structural — the head read is per-fetch, so a fetch
+    either resolved the candidate or did not.
+
+    ⚠ ``undecidable_participation_bots`` is PRODUCER-SIDE DISCLOSURE with no consumer
+    yet: ``review_completeness``'s taxonomy has no member for this state, so nothing
+    routes on it today. Widening the classifier is a separate plan, for which this field
+    is the prerequisite. The gap is stated rather than left to surface as an unreachable
+    branch.
 
     A bot declaring no evidence shape resolves FAIL-CLOSED — it can never be proven
     a participant. This proves PARTICIPATION only, never review QUALITY: the
@@ -1084,6 +1111,11 @@ def cmd_fetch_findings(args):
     # shapes and the update requirement are registry data.
     participated: dict[str, str] = {}
     stale_participation: dict[str, str] = {}
+    # The THIRD outcome: a currency-subject bot whose comment matched a declared publish
+    # shape while the merge candidate itself could not be read. It is neither credited
+    # (nothing anchors the credit) nor stale (stale's remedy is "re-trigger the review",
+    # which cannot fix a failed head read), so it is carried in its own disjoint set.
+    undecidable_participation: dict[str, str] = {}
     # Currency records staged for the ``participation_requires_update`` comments credited
     # this fetch — written to the ledger after the loop so the NEXT fetch measures a fresh
     # edit against THIS credit rather than against ``created_at``.
@@ -1133,6 +1165,15 @@ def cmd_fetch_findings(args):
             # Staging here would stamp the current HEAD onto stale evidence, and the very
             # next fetch would read ``recorded_sha == merge_candidate_sha`` and credit the
             # comment this fetch just rejected.
+            #
+            # WHY the credit was withheld decides WHERE the observation goes. An
+            # unreadable merge candidate is not evidence about the review at all — the
+            # bot may well have reviewed this very commit — so reporting it as stale
+            # would prescribe a re-review trigger for a failure a re-review cannot fix.
+            # It is disclosed as UNDECIDABLE instead, in its own disjoint set.
+            if not reviewed_commit_sha:
+                undecidable_participation.setdefault(_bot_kind, _kind)
+                continue
             stale_participation.setdefault(_bot_kind, _kind)
             continue
         # Credited. For a ``participation_requires_update`` bot, stage THIS comment's
@@ -1547,6 +1588,29 @@ def cmd_fetch_findings(args):
         'stale_participation_bots': [
             {'bot_kind': bot, 'evidence_kind': stale_participation[bot]}
             for bot in sorted(stale_participation)
+            if bot not in participated
+        ],
+        # Whether the merge candidate could be READ at all. It reports the read, and
+        # nothing else: ``fetch_pr_head_sha`` returns '' on every failure path, so a
+        # false here is "the head is unresolvable", never a verdict about any bot that
+        # an operator could act on. The bots it affects travel in their own set below
+        # rather than being folded into either existing one — which is what keeps the
+        # unreadable case legible instead of actionable-looking.
+        'merge_candidate_sha_resolved': bool(reviewed_commit_sha),
+        # The THIRD, DISJOINT outcome — same record shape as the two sets above, and
+        # subtracted against the proven set for the same reason. Disjointness from
+        # ``stale_participation_bots`` is structural rather than enforced here: the head
+        # read is per-FETCH, so a fetch either resolved the merge candidate (nothing can
+        # be undecidable) or did not (nothing can be stale).
+        #
+        # ⚠ PRODUCER-SIDE DISCLOSURE ONLY: ``review_completeness``'s taxonomy has no
+        # member for this state yet, so no consumer routes on it. Widening the
+        # classifier is a plan of its own; this field is the prerequisite it needs, and
+        # the gap is REPORTED here rather than left to be discovered as an unreachable
+        # branch.
+        'undecidable_participation_bots': [
+            {'bot_kind': bot, 'evidence_kind': undecidable_participation[bot]}
+            for bot in sorted(undecidable_participation)
             if bot not in participated
         ],
         'refused_bots': sorted(refused_set),

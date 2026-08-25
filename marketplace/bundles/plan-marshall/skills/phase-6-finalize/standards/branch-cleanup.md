@@ -797,6 +797,19 @@ predicate that fails closed would render every required bot `absent`, and feedin
 make the verdict a fiction either way. An absent input is an UNKNOWN verdict, never a `false` the
 operator can act on and never a `true`.
 
+**A well-formed return can still be an UNKNOWN, and `merge_candidate_sha_resolved: false` is that
+shape.** The producer emits the flag to report whether the merge-candidate SHA could be READ at all;
+`fetch_pr_head_sha` returns the empty string on every failure path, so a `false` says the head is
+unresolvable and says nothing whatever about any bot. The affected bots arrive in their own disjoint
+`undecidable_participation_bots[]` set — credited by neither `participated_bots` nor
+`stale_participation_bots`, because a re-review trigger cannot fix a failed read. The barrier therefore
+routes a return carrying `merge_candidate_sha_resolved: false` here, to UNKNOWN, on the same rule the
+rest of this section states: the participation question was not answered, so no verdict may be derived
+from it. This is the positive-validation rule applied to a field whose value — not whose absence —
+reports the unanswered read, and it is consistent with *"an absent input is an UNKNOWN verdict, never a
+`false` the operator can act on"*: a currency test that could not run is exactly such an absent input,
+however complete the envelope carrying it looks.
+
 **A second call fails separately.** The PR-wide `not_triggered` read (`ci checks pull-request-runs`,
 § "Predicate 2") is a separate call with its own positive shape requirement — `status: success` AND a
 **boolean** `has_pull_request_run` — and every other shape routes here. When the observable was never

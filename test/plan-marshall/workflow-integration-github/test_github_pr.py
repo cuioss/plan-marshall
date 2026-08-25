@@ -2768,6 +2768,11 @@ def test_unresolvable_head_sha_fails_closed_and_stays_idempotent(
     first-observation arm the first fetch would credit and the second — reading the
     recorded empty SHA — would go stale, re-introducing an observer effect on the one
     path where the SHA is absent.
+
+    The withheld credit is reported as UNDECIDABLE, not as stale. A stale verdict
+    prescribes re-triggering the review, which cannot fix a failed head read, so the
+    placement is re-derived here rather than left asserting the retired stale-set
+    position.
     """
     plan_id = f'gh-pr-empty-sha-{bot_kind}'
     comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
@@ -2779,12 +2784,15 @@ def test_unresolvable_head_sha_fails_closed_and_stays_idempotent(
     assert first['status'] == 'success' and second['status'] == 'success'
     # Fail-closed: an un-anchorable comment is not credited as a proven participant.
     assert first['participated_bots'] == []
-    assert first['stale_participation_bots'] == [
+    assert first['stale_participation_bots'] == []
+    assert first['merge_candidate_sha_resolved'] is False
+    assert first['undecidable_participation_bots'] == [
         {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
     ]
     # Idempotent: the second evaluation matches the first exactly.
     assert second['participated_bots'] == first['participated_bots']
     assert second['stale_participation_bots'] == first['stale_participation_bots']
+    assert second['undecidable_participation_bots'] == first['undecidable_participation_bots']
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
@@ -3034,11 +3042,15 @@ def test_a_fresh_edit_at_an_unreadable_head_blocks_on_both_fetches(
     second = _run_fetch(171, plan_id)
 
     assert first['participated_bots'] == []
-    assert first['stale_participation_bots'] == [
+    # The credit is withheld on the EDIT arm — and disclosed as undecidable rather than
+    # stale, because the head read is what failed (deliverable 4's routing).
+    assert first['stale_participation_bots'] == []
+    assert first['undecidable_participation_bots'] == [
         {'bot_kind': bot_kind, 'evidence_kind': edited['kind']}
     ]
     assert second['participated_bots'] == first['participated_bots']
     assert second['stale_participation_bots'] == first['stale_participation_bots']
+    assert second['undecidable_participation_bots'] == first['undecidable_participation_bots']
 
     ledger = github_pr._recorded_currency_records(plan_id)
     assert ledger == ledger_after_credit
@@ -3086,6 +3098,53 @@ def test_a_pre_upgrade_key_only_ledger_row_resolves_stale_not_participated(
         github_pr._recorded_currency_records(plan_id)[(bot_kind, 'guide-1')]
         is github_pr.INVALID_LEGACY_RECORD
     )
+
+
+# --- D3: an unresolvable merge candidate is UNDECIDABLE, never blocking-stale.
+#
+# ``fetch_pr_head_sha`` returns '' on any failure path. Reporting the affected bot as
+# stale prescribes "re-trigger the review", a remedy that cannot fix a failed read; and
+# reporting nothing at all leaves the caller unable to tell an unread head from a read
+# one. The producer therefore discloses the read itself and carries the affected bots in
+# their own disjoint set.
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_credited_bot_becomes_undecidable_when_the_head_read_fails(
+    bot_kind, plan_context, monkeypatch
+):
+    """A resolved-then-unresolved sequence moves the bot to undecidable, not to stale.
+
+    Fetch 1 reads a real head and credits the bot. Fetch 2 cannot read the head at all.
+    The bot is then in NEITHER existing set — not credited (nothing anchors it) and not
+    stale (its remedy would be a re-review, which cannot fix a read failure) — and the
+    return says so in as many words via ``merge_candidate_sha_resolved: false``.
+
+    The assertions are on the PRODUCER's emitted sets only. No downstream classification
+    is asserted, because ``review_completeness``'s taxonomy has no member for this state
+    yet: a test written against it would pin the consumer gap rather than the behaviour.
+    """
+    plan_id = f'gh-pr-undecidable-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_A)
+    credited = _run_fetch(180, plan_id)
+    assert credited['merge_candidate_sha_resolved'] is True
+    assert credited['participated_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
+    ]
+    assert credited['undecidable_participation_bots'] == []
+
+    _patch_provider(monkeypatch, [comment], head_sha='')
+    unread = _run_fetch(180, plan_id)
+
+    assert unread['status'] == 'success'
+    assert unread['merge_candidate_sha_resolved'] is False
+    assert unread['participated_bots'] == []
+    assert unread['stale_participation_bots'] == []
+    assert unread['undecidable_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
+    ]
 
 
 # =============================================================================
