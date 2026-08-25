@@ -75,6 +75,14 @@ from _cmd_force_push import cmd_force_push
 from _cmd_prune_ref import cmd_prune_ref
 from _cmd_switch_and_pull import cmd_switch_and_pull
 from _executor_slot import executor_landed, worktree_executor_path
+
+# The shared NUL-delimited git observation. Imported rather than re-derived so
+# the repository keeps ONE trackedness/ignore path predicate instead of a fourth
+# private copy with a fourth path spelling — the same "one predicate, not two
+# copies" rule that unified the .plan/ exemption guard sites. Its own docstring
+# names the `path in tracked` comparison as the failure `-z` was adopted to end,
+# which is precisely the comparison scan_artifacts performs below.
+from _plan_state_exemption import _observe_z
 from file_ops import (
     WorktreeResolutionError,
     get_executor_path,
@@ -545,47 +553,43 @@ def get_gitignored_files(root: Path) -> set[str] | None:
     — without it that arm receives no input and can never fire for any path. It
     also keeps the query small enough to finish: measured on this repository the
     flagged query returns 207 entries against 213256 unflagged, and the
-    unflagged form routinely exceeded the timeout below.
+    unflagged form routinely exceeded the observation's timeout.
+
+    ``-z`` is load-bearing for the same reason it is in
+    :func:`get_tracked_files`: with ``core.quotePath`` at its default, git
+    QUOTES any pathname carrying non-ASCII bytes or a newline, and the quoted
+    spelling never equals the ``rel`` :func:`scan_artifacts` computes — so the
+    exclusion silently misses exactly those paths.
     """
-    try:
-        result = subprocess.run(
-            ['git', 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory'],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=str(root),
-        )
-        if result.returncode != 0:
-            return None
-        return {line.strip() for line in result.stdout.splitlines() if line.strip()}
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError, OSError):
-        return None
+    return _observe_z(
+        root, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z']
+    )
 
 
-def get_tracked_files(root: Path) -> set[str]:
-    """Return set of paths (relative to ``root``) that are tracked by git.
+def get_tracked_files(root: Path) -> set[str] | None:
+    """Return the paths tracked by git relative to ``root``, or ``None``.
 
-    Uses ``git ls-files --cached`` with ``cwd=root`` so results are
-    relative to ``root`` — matching the ``rel`` computation in
-    ``scan_artifacts`` even when ``root`` is a subdirectory of a repo.
-    Returns empty set if not inside a git repo or git is unavailable.
-    Tracked files must never be classified as ``safe`` artifacts — even
-    if a filename matches a safe glob, a tracked entry may be a committed
-    fixture that the developer intends to keep.
+    ``git ls-files --cached -z`` runs against ``root`` so results are relative
+    to it — matching the ``rel`` computation in :func:`scan_artifacts` even when
+    ``root`` is a subdirectory of a repo. Tracked files must never be classified
+    as ``safe`` artifacts: a filename matching a safe glob may be a committed
+    fixture the developer intends to keep.
+
+    ``None`` means trackedness could NOT be determined, and is deliberately
+    distinct from an empty set. Empty asserts "nothing here is tracked", which
+    would let every match be promoted to ``safe``; ``None`` asserts nothing, and
+    :func:`scan_artifacts` fails closed on it. Returning ``set()`` for an
+    unreadable oracle is the fail-OPEN direction on a delete-these-files
+    surface.
+
+    ``-z`` is what makes the returned spelling comparable to ``rel`` at all.
+    Under the newline form, ``core.quotePath`` (default true) quotes any
+    pathname with non-ASCII bytes or a newline, and a per-line ``.strip()``
+    additionally destroys leading and trailing spaces — so the ``rel in
+    tracked`` demotion missed for precisely those names and offered a tracked,
+    committed fixture for deletion.
     """
-    try:
-        result = subprocess.run(
-            ['git', 'ls-files', '--cached'],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=str(root),
-        )
-        if result.returncode != 0:
-            return set()
-        return {line.strip() for line in result.stdout.splitlines() if line.strip()}
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError, OSError):
-        return set()
+    return _observe_z(root, ['ls-files', '--cached', '-z'])
 
 
 def _compile_patterns(patterns: list[str]) -> list[re.Pattern]:
@@ -715,7 +719,15 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
     else:
         reported = set()
     ignored_files, ignored_dirs = _split_ignored(reported)
+
+    # The tracked oracle fails closed on the same terms as the ignore oracle
+    # above: both feed the one promotion decision below, so an unknown answer
+    # from either must not promote anything to 'safe'. An empty tracked set
+    # would assert every match untracked and auto-deletable.
     tracked = get_tracked_files(root)
+    tracked_resolved = tracked is not None
+    if tracked is None:
+        tracked = set()
 
     safe: list[str] = []
     uncertain: list[str] = []
@@ -739,7 +751,7 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
             # Check safe patterns first, but demote tracked files to
             # 'uncertain' so committed fixtures are never auto-deleted.
             if any(rx.match(rel) for rx in _SAFE_REGEXES):
-                if rel in tracked or not gitignore_resolved:
+                if rel in tracked or not gitignore_resolved or not tracked_resolved:
                     uncertain.append(rel)
                 else:
                     safe.append(rel)
@@ -750,11 +762,13 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
         'safe': sorted(safe),
         'uncertain': sorted(uncertain),
         'total': len(safe) + len(uncertain),
-        # Whether the exclusion set this scan applied is trustworthy. False
-        # means the ignore query could not be read, so 'safe' is empty by
-        # construction and every match was routed to 'uncertain' — the caller
-        # must not read that empty 'safe' as "nothing to clean".
+        # Whether each oracle this scan applied is trustworthy. Either being
+        # False means 'safe' is empty by construction and every match was
+        # routed to 'uncertain' — the caller must not read that empty 'safe'
+        # as "nothing to clean". They are published separately because they
+        # fail for different reasons and a caller may want to say which.
         'gitignore_resolved': gitignore_resolved,
+        'tracked_resolved': tracked_resolved,
     }
 
 

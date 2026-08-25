@@ -1173,6 +1173,127 @@ class TestIgnoreQueryHonesty:
 
         assert git_workflow.get_gitignored_files(tmp_path) is None
 
+
+class TestTrackednessOraclePathSpelling:
+    """The trackedness oracle must spell paths the way ``scan_artifacts`` does.
+
+    Both git observations parsed newline-delimited output under a strict UTF-8
+    decode and called ``.strip()`` on every line. Two reachable defects follow,
+    and the second is the dangerous one:
+
+    1. ``.strip()`` destroys leading and trailing spaces, and with
+       ``core.quotePath`` at its default git additionally QUOTES any pathname
+       carrying non-ASCII bytes or a newline. Either way the returned set does
+       not spell the path the way ``scan_artifacts`` spells its ``rel``, so the
+       ``rel in tracked`` demotion MISSES — and a tracked, committed fixture
+       lands in ``safe[]``, which the subcommand documents as delete-them.
+    2. A strict decode raises ``UnicodeDecodeError`` — a ``ValueError``, outside
+       the caught tuple — so it escapes instead of yielding the documented
+       fail-closed result.
+
+    The remedy is already codified in this repository:
+    ``_plan_state_exemption._observe_z`` runs the same class of observation with
+    ``-z``, ``errors='surrogateescape'`` and a NUL split, and its own docstring
+    names ``path in tracked`` as "the failure ``-z`` was adopted to end". These
+    functions are reused rather than re-derived, so the repository keeps one
+    predicate instead of a fourth private copy with a fourth path spelling.
+    """
+
+    def test_tracked_file_with_leading_space_is_demoted_not_offered(self, tmp_path: Path):
+        """A tracked ``' leading.log'`` is recognised and demoted to uncertain.
+
+        Red pre-fix: ``.strip()`` turns the reported ``' leading.log'`` into
+        ``'leading.log'``, which never equals the walked ``rel``, so the tracked
+        demotion misses and the committed fixture is offered as safe to delete.
+        """
+        _git_init_with_identity(tmp_path)
+        _create_file(tmp_path, ' leading.log')
+        subprocess.run(['git', 'add', ' leading.log'], cwd=tmp_path, capture_output=True)
+        subprocess.run(['git', 'commit', '-m', 'commit spaced fixture'], cwd=tmp_path, capture_output=True)
+
+        result = scan_artifacts(tmp_path, respect_gitignore=True)
+
+        assert ' leading.log' in result['uncertain'], (
+            f'tracked spaced fixture not demoted: uncertain={result["uncertain"]}'
+        )
+        assert ' leading.log' not in result['safe'], (
+            f'tracked spaced fixture offered for deletion: {result["safe"]}'
+        )
+
+    def test_both_git_observations_are_nul_delimited_and_surrogate_decoded(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Both oracles request ``-z`` output and decode with ``surrogateescape``.
+
+        Asserted on the constructed call at the subprocess boundary: ``-z`` is
+        what makes git emit paths verbatim instead of quoting them, and
+        ``surrogateescape`` is what stops a non-UTF-8 byte raising
+        ``UnicodeDecodeError`` past the caught tuple. Neither guarantee is
+        observable from the returned set on a well-behaved tree, so a
+        return-value assertion would pass on a build that had silently lost
+        either one.
+        """
+        seen: list[tuple[list[str], dict]] = []
+
+        class _CompletedStub:
+            returncode = 0
+            stdout = ''
+
+        def _fake_run(argv, **kwargs):
+            seen.append((argv, kwargs))
+            return _CompletedStub()
+
+        monkeypatch.setattr(git_workflow.subprocess, 'run', _fake_run)
+        git_workflow.get_gitignored_files(tmp_path)
+        git_workflow.get_tracked_files(tmp_path)
+
+        assert len(seen) == 2, f'expected two git observations, saw {len(seen)}'
+        for argv, kwargs in seen:
+            assert '-z' in argv, f'observation is not NUL-delimited: {argv}'
+            assert kwargs.get('errors') == 'surrogateescape', (
+                f'observation does not decode with surrogateescape: {kwargs}'
+            )
+            assert not kwargs.get('text'), (
+                f'observation still uses strict text=True decoding: {kwargs}'
+            )
+
+    def test_unresolvable_tracked_set_offers_nothing_as_safe(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """An unreadable TRACKED set fails closed, exactly as the ignore set does.
+
+        Both oracles feed the same safety decision. An unknown tracked set means
+        no match can be proven untracked, so promoting any match to ``safe``
+        would be the same absence-read-as-measurement the ignore arm already
+        refuses.
+        """
+        _create_file(tmp_path, 'scratch.temp')
+        monkeypatch.setattr(git_workflow, 'get_tracked_files', lambda root: None)
+
+        result = scan_artifacts(tmp_path, respect_gitignore=False)
+
+        assert result['tracked_resolved'] is False
+        assert result['safe'] == [], (
+            f'unresolvable tracked set still offered safe deletions: {result["safe"]}'
+        )
+        assert 'scratch.temp' in result['uncertain']
+
+    def test_resolved_oracles_still_offer_safe(self, tmp_path: Path):
+        """Matched negative control for BOTH fail-closed arms above.
+
+        A change that simply stopped populating ``safe`` would satisfy every
+        degradation assertion in this class and in
+        :class:`TestIgnoreQueryHonesty` while breaking every real scan.
+        """
+        _git_init_with_identity(tmp_path)
+        _create_file(tmp_path, 'scratch.temp')
+
+        result = scan_artifacts(tmp_path, respect_gitignore=True)
+
+        assert result['gitignore_resolved'] is True
+        assert result['tracked_resolved'] is True
+        assert 'scratch.temp' in result['safe']
+
     def test_is_ignored_no_false_prefix_match(self):
         # A sibling path that merely shares a name prefix must NOT be excluded.
         ignored_dirs = ('build/',)
