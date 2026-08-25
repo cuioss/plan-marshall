@@ -82,6 +82,7 @@ Examples:
     github_pr.py post_responses --pr-number 123 --plan-id EXAMPLE-PLAN
 """
 
+import hashlib
 import json
 import re
 import sys
@@ -505,6 +506,11 @@ def _unconfigured_result(operation: str, detail: str) -> dict[str, Any]:
 _COMMENT_ID_DETAIL = re.compile(r'^comment_id:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
 _THREAD_ID_DETAIL = re.compile(r'^thread_id:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
 _KIND_DETAIL = re.compile(r'^kind:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
+# The EDIT TERM — the third term of the cross-iteration filing dedup identity, stamped
+# into every finding this producer stores so the key can be reconstructed from the store.
+# A finding written before this term existed carries no such line and extracts ``''``,
+# which is what makes a pre-upgrade row recognisable rather than merely different.
+_EDIT_TERM_DETAIL = re.compile(r'^edit_term:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
 # The originating PR, stamped by ``cmd_fetch_findings`` as the first ``detail``
 # line. ``post_responses`` filters on it so a plan whose findings store spans
 # several PRs transmits each disposition only to the PR it came from.
@@ -551,37 +557,75 @@ def _detail_field(detail: str | None, pattern: re.Pattern) -> str:
     return match.group('id') if match else ''
 
 
-def _existing_pr_comment_keys(query_findings, plan_id: str) -> set[tuple[str, str]]:
-    """Return the set of ``(bot_kind, comment_id)`` keys already stored as pr-comment findings.
+def _comment_edit_term(comment: dict) -> str:
+    """Return the EDIT TERM of ``comment`` — the third term of the dedup identity.
+
+    ``updated_at`` when the provider supplied one: a bot that edits its one persistent
+    comment in place moves that value, so an edited comment presents as new information
+    while an unchanged re-fetch still dedupes.
+
+    A body digest when it did not. The fallback is required rather than cosmetic: with
+    no third term at all an edited comment carrying no ``updated_at`` would collapse
+    back onto the two-term key and be dropped as a duplicate — the exact defect the
+    widening closes. The digest moves when the body moves, which is the same question
+    ``updated_at`` answers, read from the content instead of from the metadata.
+    """
+    updated_at = str(comment.get('updated_at') or '')
+    if updated_at:
+        return updated_at
+    digest = hashlib.sha256(str(comment.get('body') or '').encode('utf-8')).hexdigest()
+    return f'sha256:{digest}'
+
+
+def _existing_pr_comment_keys(
+    query_findings, plan_id: str
+) -> tuple[set[tuple[str, str, str]], set[tuple[str, str]]]:
+    """Return the dedup keys already stored as pr-comment findings, in BOTH shapes.
 
     Each pr-comment finding embeds its source ``comment_id`` on a
-    ``comment_id: <value>`` line inside its ``detail`` block and carries the
-    resolved ``bot_kind`` as a top-level field. Reconstructing the set of
-    ``(bot_kind, comment_id)`` pairs from the persisted findings (across all
-    resolution states) lets the producer skip any comment — thread-bearing or
-    thread_id-less, from any bot kind — that was already staged in a prior
-    finalize iteration, closing the cross-iteration phantom loop for all bots.
+    ``comment_id: <value>`` line inside its ``detail`` block, its ``edit_term`` on an
+    ``edit_term: <value>`` line, and carries the resolved ``bot_kind`` as a top-level
+    field. Reconstructing those keys from the persisted findings (across all resolution
+    states) lets the producer skip any comment — thread-bearing or thread_id-less, from
+    any bot kind — that was already staged in a prior finalize iteration, closing the
+    cross-iteration phantom loop for all bots.
 
-    Keying on ``(bot_kind, comment_id)`` rather than ``comment_id`` alone avoids
-    a collision between two distinct bots that happen to reuse the same numeric
-    comment id. A human-authored finding (``bot_kind`` unset) contributes
-    ``('', comment_id)``.
+    The identity is ``(bot_kind, comment_id, edit_term)``. Keying on ``bot_kind``
+    alongside the id avoids a collision between two distinct bots that happen to reuse
+    the same numeric comment id; a human-authored finding (``bot_kind`` unset)
+    contributes ``('', comment_id, edit_term)``. The EDIT TERM is what lets an
+    in-place-edited review present as new information: without it, a bot that edits its
+    one persistent comment to carry a real finding was credited as participating while
+    the dedup dropped the comment, so the reviewer read present-and-clean and its actual
+    feedback never became a finding.
 
     Args:
         query_findings: The ``_findings_core.query_findings`` callable.
         plan_id: Plan identifier whose findings store is queried.
 
     Returns:
-        Set of ``(bot_kind, comment_id)`` tuples already present in the
-        pr-comment store.
+        ``(keys, legacy_keys)`` — the three-term identities, and the two-term
+        ``(bot_kind, comment_id)`` identities of findings stored BEFORE the edit term
+        existed. A pre-upgrade row carries no ``edit_term`` line, so it can match no
+        three-term key; it is deduped on the two-term key against ANY edit term
+        instead. Without that, the upgrade would re-file a PR's entire comment history
+        once, on the first fetch after it landed.
     """
     result = query_findings(plan_id, finding_type='pr-comment')
-    keys: set[tuple[str, str]] = set()
+    keys: set[tuple[str, str, str]] = set()
+    legacy_keys: set[tuple[str, str]] = set()
     for finding in result.get('findings') or []:
-        comment_id = _detail_field(finding.get('detail'), _COMMENT_ID_DETAIL)
-        if comment_id:
-            keys.add((finding.get('bot_kind') or '', comment_id))
-    return keys
+        detail = finding.get('detail')
+        comment_id = _detail_field(detail, _COMMENT_ID_DETAIL)
+        if not comment_id:
+            continue
+        bot_kind = finding.get('bot_kind') or ''
+        edit_term = _detail_field(detail, _EDIT_TERM_DETAIL)
+        if edit_term:
+            keys.add((bot_kind, comment_id, edit_term))
+        else:
+            legacy_keys.add((bot_kind, comment_id))
+    return keys, legacy_keys
 
 
 # The plan-scoped CURRENCY LEDGER: per ``participation_requires_update`` comment the
@@ -844,8 +888,12 @@ def cmd_fetch_findings(args):
        no finding. It runs HERE — after the noise filter, not beside stage 2 —
        because a bot's own declared clean-review text must already have been dropped
        before a short anchor-less body can be read as a refusal.
-    6. Cross-iteration duplicate — a ``(bot_kind, comment_id)`` key already present
-       in the store, counted in ``count_skipped_duplicate``.
+    6. Cross-iteration duplicate — a ``(bot_kind, comment_id, edit_term)`` key already
+       present in the store, counted in ``count_skipped_duplicate``. The EDIT TERM is
+       the comment's ``updated_at``, or a body digest when the provider supplied none,
+       so an in-place-edited review presents as NEW INFORMATION and is filed while an
+       unchanged re-fetch still dedupes. A finding stored before the term existed
+       carries none, and dedupes on the two-term key against any edit term.
 
     ``self_response_loop_detected``: true when a single fetch observed
     ``count_self_response_current_cycle >= _SELF_RESPONSE_LOOP_BOUND``. Every turn
@@ -1061,10 +1109,14 @@ def cmd_fetch_findings(args):
     # bot comments can re-surface when HEAD advances). Without a dedup the
     # resolved comment re-enters as a fresh pending finding every time HEAD
     # advances, producing an endless finalize loop. Build the set of
-    # ``(bot_kind, comment_id)`` keys already recorded as ``pr-comment``
+    # ``(bot_kind, comment_id, edit_term)`` keys already recorded as ``pr-comment``
     # findings (regardless of resolution state) and skip any comment — from any
-    # bot kind, thread-bearing or not — whose key is already present.
-    existing_comment_keys = _existing_pr_comment_keys(query_findings, plan_id)
+    # bot kind, thread-bearing or not — whose key is already present. The
+    # ``legacy_comment_keys`` companion carries the two-term identities of findings
+    # stored before the edit term existed; see ``_existing_pr_comment_keys``.
+    existing_comment_keys, legacy_comment_keys = _existing_pr_comment_keys(
+        query_findings, plan_id
+    )
 
     # The MERGE CANDIDATE SHA — the current PR HEAD — is fetched up front (before the
     # participation loop, not only for the ingestion stamp below) because the currency
@@ -1362,14 +1414,33 @@ def cmd_fetch_findings(args):
         if bot_kind and bot_kind not in classified_bots:
             unclassified_set.add(bot_kind)
 
-        # Pre-filter 6: cross-iteration dedup keyed on (bot_kind, comment_id)
-        # for ALL bot kinds, thread-bearing and thread_id-less alike. A comment
-        # already staged in a prior iteration MUST NOT re-surface as a new
-        # pending finding when HEAD advances. Dropping the earlier
+        # Pre-filter 6: cross-iteration dedup keyed on
+        # (bot_kind, comment_id, edit_term) for ALL bot kinds, thread-bearing and
+        # thread_id-less alike. A comment already staged in a prior iteration MUST NOT
+        # re-surface as a new pending finding when HEAD advances. Dropping the earlier
         # ``not thread_id`` restriction closes the same phantom loop for
         # thread-bearing bot comments, and pairing the id with bot_kind avoids a
         # collision between two distinct bots reusing a numeric comment id.
-        if (bot_kind or '', comment_id) in existing_comment_keys:
+        #
+        # THE EDIT TERM is the third term, and it is what makes the identity answer
+        # "is this the same INFORMATION?" rather than merely "is this the same COMMENT?".
+        # A bot that re-reviews by editing its one persistent comment in place keeps the
+        # same ``comment_id`` forever: under the two-term key, an edit that replaced a
+        # clean Guide with a real finding was dropped as a duplicate while the currency
+        # test credited the bot as participating — so the reviewer read present and
+        # clean, and its actual feedback never became a finding. Widening the key by the
+        # edit term files the edited review and still dedupes an unchanged re-fetch,
+        # because an unchanged comment carries an unchanged term.
+        #
+        # A PRE-UPGRADE row carries no edit term at all, so it can match no three-term
+        # key. It dedupes on the two-term key against ANY edit term instead — otherwise
+        # the first fetch after this widening landed would re-file a PR's entire comment
+        # history once, which is a worse outcome than the defect being fixed.
+        edit_term = _comment_edit_term(comment)
+        if (bot_kind or '', comment_id) in legacy_comment_keys:
+            skipped_duplicate += 1
+            continue
+        if (bot_kind or '', comment_id, edit_term) in existing_comment_keys:
             skipped_duplicate += 1
             continue
 
@@ -1387,6 +1458,11 @@ def cmd_fetch_findings(args):
             f'author: {author}',
             f'thread_id: {thread_id}',
             f'comment_id: {comment_id}',
+            # The third dedup term, stamped so ``_existing_pr_comment_keys`` can
+            # reconstruct the full identity from the store. Without it the widened key
+            # would be write-only: every stored finding would read back as a
+            # pre-upgrade row and the dedup would silently fall back to two terms.
+            f'edit_term: {edit_term}',
         ]
         if path:
             detail_lines.append(f'path: {path}')

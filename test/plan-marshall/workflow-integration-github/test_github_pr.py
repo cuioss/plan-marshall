@@ -3147,6 +3147,125 @@ def test_a_credited_bot_becomes_undecidable_when_the_head_read_fails(
     ]
 
 
+# --- D4: the cross-iteration filing dedup identity carries an EDIT TERM.
+#
+# The identity is (bot_kind, comment_id, edit_term). Under the old two-term key a bot
+# that edits its one persistent comment in place kept the same comment_id forever, so an
+# edit that replaced a clean summary with a real finding was dropped as a duplicate while
+# the currency test credited the bot as participating: the reviewer read present and
+# clean, and its feedback never became a finding.
+
+_GUIDE_CLEAN_BODY = 'Nothing further to report on this pass; the change reads consistently.'
+_GUIDE_FINDING_BODY = 'The retry helper drops the final attempt when max_attempts is 1.'
+
+
+def _edit_term_comment(bot_kind, *, body, updated_at=None):
+    """One persistent comment of ``bot_kind``, re-published with a new body/timestamp."""
+    comment = _publish_comment(bot_kind, 'guide-persistent', created_at=_at(1), body=body)
+    comment['updated_at'] = updated_at if updated_at is not None else _at(1)
+    return comment
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_an_edited_comment_is_filed_as_new_information(bot_kind, plan_context, monkeypatch):
+    """A moved ``updated_at`` with a changed body files a NEW finding, never a duplicate.
+
+    This is the defect in full: the same ``comment_id``, so the two-term key matched and
+    the edited review — carrying a real finding — was dropped as already-seen.
+    """
+    plan_id = f'gh-pr-edit-term-files-{bot_kind}'
+    clean = _edit_term_comment(bot_kind, body=_GUIDE_CLEAN_BODY)
+    _patch_provider(monkeypatch, [clean], head_sha=_HEAD_A)
+    first = _run_fetch(190, plan_id)
+    assert first['count_stored'] == 1
+    assert first['count_skipped_duplicate'] == 0
+
+    edited = _edit_term_comment(bot_kind, body=_GUIDE_FINDING_BODY, updated_at=_at(9))
+    _patch_provider(monkeypatch, [edited], head_sha=_HEAD_A)
+    second = _run_fetch(190, plan_id)
+
+    assert second['status'] == 'success'
+    assert second['count_stored'] == 1
+    assert second['count_skipped_duplicate'] == 0
+    assert len(query_findings(plan_id, finding_type='pr-comment')['findings']) == 2
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_an_unchanged_comment_still_dedupes_under_the_widened_key(
+    bot_kind, plan_context, monkeypatch
+):
+    """The widening must not turn every re-fetch into a re-file.
+
+    The matched control for the case above: an unchanged comment carries an unchanged
+    edit term, so the three-term key still matches and the comment still dedupes.
+    """
+    plan_id = f'gh-pr-edit-term-dedupes-{bot_kind}'
+    clean = _edit_term_comment(bot_kind, body=_GUIDE_CLEAN_BODY)
+    _patch_provider(monkeypatch, [clean], head_sha=_HEAD_A)
+    first = _run_fetch(191, plan_id)
+    assert first['count_stored'] == 1
+
+    second = _run_fetch(191, plan_id)
+
+    assert second['status'] == 'success'
+    assert second['count_stored'] == 0
+    assert second['count_skipped_duplicate'] == 1
+    stored = query_findings(plan_id, finding_type='pr-comment')['findings']
+    assert len(stored) == 1
+    # The third term SURVIVED into the store. Without this the widened key would be
+    # write-only — every stored finding would read back as a pre-upgrade row and the
+    # dedup would silently fall back to two terms, which is indistinguishable from the
+    # defect while every count above still looks right.
+    assert github_pr._detail_field(stored[0].get('detail'), github_pr._EDIT_TERM_DETAIL) == (
+        clean['updated_at']
+    )
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_pre_upgrade_finding_without_an_edit_term_does_not_refile_history(
+    bot_kind, plan_context, monkeypatch
+):
+    """A finding stored before the edit term existed still dedupes, against ANY term.
+
+    A pre-upgrade row carries no ``edit_term`` line, so it can match no three-term key.
+    Were it not deduped on the two-term key, the first fetch after this widening landed
+    would re-file a PR's entire comment history at once — a worse outcome than the
+    defect being fixed.
+    """
+    plan_id = f'gh-pr-preupgrade-dedup-{bot_kind}'
+    comment = _edit_term_comment(bot_kind, body=_GUIDE_CLEAN_BODY)
+
+    # A pre-upgrade finding: the detail block the producer wrote before the third term
+    # existed — every line it carried then, and no ``edit_term``.
+    added = _live_findings_core().add_finding(
+        plan_id=plan_id,
+        finding_type='pr-comment',
+        title=f"PR #192 {comment['kind']} comment by {comment['author']} (guide-persistent)",
+        detail=(
+            'pr_number: 192\n'
+            f"kind: {comment['kind']}\n"
+            f"author: {comment['author']}\n"
+            'thread_id: \n'
+            'comment_id: guide-persistent'
+        ),
+        bot_kind=bot_kind,
+    )
+    assert added['status'] == 'success'
+
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_A)
+    result = _run_fetch(192, plan_id)
+
+    assert result['status'] == 'success'
+    assert result['count_stored'] == 0
+    assert result['count_skipped_duplicate'] == 1
+    stored = query_findings(plan_id, finding_type='pr-comment')['findings']
+    assert len(stored) == 1
+    # The surviving row is the PRE-UPGRADE one, still carrying no edit term — proving
+    # the two-term fallback is what deduped it, rather than the row having been
+    # rewritten or replaced by a three-term one.
+    assert github_pr._detail_field(stored[0].get('detail'), github_pr._EDIT_TERM_DETAIL) == ''
+
+
 # =============================================================================
 # Refusal CAUSE classification (github_pr.refusal_cause) — size vs quota
 # =============================================================================
