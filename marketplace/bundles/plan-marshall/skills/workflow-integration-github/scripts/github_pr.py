@@ -804,8 +804,14 @@ def cmd_fetch_findings(args):
     commit cannot credit it with reviewing the tree being merged. The credit is an
     SHA comparison against the current PR HEAD, read from the plan-scoped currency
     ledger — the ``(reviewed_commit_sha, updated_at)`` at which each such comment was
-    last credited, recorded uniformly whether the comment was stored as a finding or
-    dropped as noise. Because it is a pure comparison that consumes no observation
+    last credited. The ledger is blind to the STORAGE axis: a comment stored as a
+    finding and one dropped as noise record alike. It is NOT blind to the currency
+    verdict — a row is written or refreshed only for a comment that PASSED the currency
+    test on this fetch, and a comment that FAILED leaves its row exactly as it stood
+    (unchanged if it had one, absent if it had none). Staging a failing comment would
+    stamp the current HEAD onto stale evidence, so the next fetch would read
+    ``recorded_sha == merge_candidate_sha`` and credit the comment this fetch had just
+    rejected. Because it is a pure comparison that consumes no observation
     state, the verdict is idempotent: re-running the fetch at the same HEAD returns
     the same answer, closing the observer effect the old first-presence arm had. And
     because a fresh edit is measured against the recorded ``updated_at`` rather than
@@ -959,7 +965,7 @@ def cmd_fetch_findings(args):
     # ``(reviewed_commit_sha, updated_at)`` at that last credit. It is the SOLE currency
     # source, so a comment stored as a finding and a comment dropped as noise are
     # treated identically. ``existing_comment_keys`` (read above) stays the input to the
-    # cross-iteration dedup (pre-filter 5), which asks a different question — dedup asks
+    # cross-iteration dedup (pre-filter 6), which asks a different question — dedup asks
     # "was this already STAGED as a finding?", currency asks "which commit did this
     # comment review, and has it been re-edited since?".
     currency_records = _recorded_currency_records(plan_id)
@@ -990,7 +996,18 @@ def cmd_fetch_findings(args):
     currency_updates: dict[tuple[str, str], tuple[str, str]] = {}
     for _comment in raw_comments:
         _bot_kind = bot_kind_for_author(_comment.get('author') or 'unknown')
-        if not _bot_kind or _bot_kind in participated:
+        if not _bot_kind:
+            continue
+        _requires_update = bot_registry.participation_requires_update(_bot_kind)
+        # An already-credited bot is skipped only when its credit needed no currency
+        # test. For a CURRENCY-SUBJECT bot every declared-publish-shape comment is
+        # evaluated, credited or not: such a bot declares several publish shapes, and
+        # short-circuiting at its first credit left every LATER comment unevaluated and
+        # so unrecorded in the currency ledger. On the next fetch that unrecorded
+        # comment had no ledger row, took the first-observation arm, and credited the
+        # bot at whatever HEAD was resolvable — bypassing the very currency test the
+        # first comment had just failed. Evaluating every one of them is what closes it.
+        if _bot_kind in participated and not _requires_update:
             continue
         # A refusal is positive evidence the bot did NOT review, so it can never
         # be its own participation evidence — even though a refusal is published in
@@ -1002,7 +1019,6 @@ def cmd_fetch_findings(args):
         _kind = _comment.get('kind') or 'inline'
         if _kind not in bot_registry.participation_evidence(_bot_kind):
             continue
-        _requires_update = bot_registry.participation_requires_update(_bot_kind)
         if _requires_update and not _reviewed_at_merge_candidate(
             _comment, currency_records, _bot_kind, reviewed_commit_sha
         ):
@@ -1013,16 +1029,27 @@ def cmd_fetch_findings(args):
             # stale publish means it engaged against an EARLIER commit (re-trigger a
             # re-review). Record the observation so the classifier can tell them
             # apart instead of inferring absence from a failed currency test.
-            stale_participation[_bot_kind] = _kind
+            #
+            # NOTHING is staged on this branch. A failing comment leaves its ledger row
+            # exactly as it stood — unchanged if it had one, absent if it had none.
+            # Staging here would stamp the current HEAD onto stale evidence, and the very
+            # next fetch would read ``recorded_sha == merge_candidate_sha`` and credit the
+            # comment this fetch just rejected.
+            stale_participation.setdefault(_bot_kind, _kind)
             continue
-        # Credited. For a ``participation_requires_update`` bot, stage its currency
-        # record so the next fetch anchors on THIS credit's SHA and updated_at.
+        # Credited. For a ``participation_requires_update`` bot, stage THIS comment's
+        # currency record so the next fetch anchors on this credit's SHA and updated_at.
+        # One row per PASSING (bot_kind, comment_id) — every evidence comment that passed,
+        # not merely the one that happened to credit the bot first.
         if _requires_update:
             currency_updates[(_bot_kind, str(_comment.get('id') or 'unknown'))] = (
                 reviewed_commit_sha,
                 str(_comment.get('updated_at') or ''),
             )
-        participated[_bot_kind] = _kind
+        # The FIRST passing comment's kind is the credited record's ``evidence_kind`` and
+        # is never overwritten by a later pass, so the emitted record stays deterministic
+        # however many of the bot's comments pass.
+        participated.setdefault(_bot_kind, _kind)
 
     # Persist the currency ledger for the NEXT fetch: for each
     # ``participation_requires_update`` comment credited above, record (merge-candidate

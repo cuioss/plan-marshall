@@ -2863,6 +2863,100 @@ def test_a_fresh_comment_outranks_a_stale_one_through_the_subtraction(
     assert second['stale_participation_bots'] == []
 
 
+# --- D1: the currency test is evaluated for EVERY evidence comment, not just the first.
+#
+# A currency-subject bot declares several publish shapes and can have several evidence
+# comments live at once. While the participation loop short-circuited at the bot's first
+# credit, only that one comment was evaluated and recorded in the currency ledger; every
+# LATER comment stayed unrecorded, so on the next fetch it had no ledger row, took the
+# first-observation arm, and credited the bot at whatever HEAD was resolvable — bypassing
+# the currency test the first comment had just failed.
+
+
+def _two_evidence_comments(bot_kind):
+    """Two unchanged evidence comments of one bot, both in a declared publish shape."""
+    return [
+        _publish_comment(bot_kind, 'guide-a', created_at=_at(1)),
+        _publish_comment(
+            bot_kind,
+            'guide-b',
+            created_at=_at(2),
+            body='A second observation: the retry budget is read before the config is loaded.',
+        ),
+    ]
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_two_unchanged_evidence_comments_are_stale_at_an_advanced_head(
+    bot_kind, plan_context, monkeypatch
+):
+    """Neither of a bot's two unchanged comments credits it once HEAD advances.
+
+    Both are credited and recorded at HEAD_A. At HEAD_B neither has been edited and
+    both are recorded against HEAD_A, so BOTH fail the currency test and the bot
+    resolves to ``stale_participation_bots[]`` — never ``participated_bots[]``.
+
+    While the loop short-circuited at the first credit, only ``guide-a`` was ever
+    evaluated and recorded, so at HEAD_B ``guide-b`` had no ledger row, took the
+    first-observation arm, and credited the bot at the very HEAD the first comment
+    had just been found stale against.
+    """
+    plan_id = f'gh-pr-every-comment-{bot_kind}'
+    comments = _two_evidence_comments(bot_kind)
+
+    _patch_provider(monkeypatch, comments, head_sha=_HEAD_A)
+    at_a = _run_fetch(160, plan_id)
+    assert at_a['participated_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comments[0]['kind']}
+    ]
+
+    _patch_provider(monkeypatch, comments, head_sha=_HEAD_B)
+    at_b = _run_fetch(160, plan_id)
+    assert at_b['status'] == 'success'
+    assert at_b['participated_bots'] == []
+    assert at_b['stale_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comments[0]['kind']}
+    ]
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_rejecting_fetch_stages_no_ledger_row_so_the_verdict_holds(
+    bot_kind, plan_context, monkeypatch
+):
+    """A third fetch at the UNCHANGED advanced HEAD returns the identical verdict.
+
+    The pass-only staging rule, pinned by its consequence. A ledger row is written
+    only for a comment that PASSED the currency test on that fetch; a failing comment
+    leaves its row exactly as it stood. Were the rejecting fetch at HEAD_B to stage
+    HEAD_B onto both stale comments, the very next fetch would read
+    ``recorded_sha == merge_candidate_sha`` and credit the comments it had just
+    rejected — a stale review laundered into a credit by the act of rejecting it.
+    """
+    plan_id = f'gh-pr-pass-only-staging-{bot_kind}'
+    comments = _two_evidence_comments(bot_kind)
+
+    _patch_provider(monkeypatch, comments, head_sha=_HEAD_A)
+    _run_fetch(161, plan_id)
+
+    _patch_provider(monkeypatch, comments, head_sha=_HEAD_B)
+    at_b = _run_fetch(161, plan_id)
+
+    # Third fetch: nothing changed — not the comments, not HEAD.
+    third = _run_fetch(161, plan_id)
+    assert third['status'] == 'success'
+    assert third['participated_bots'] == at_b['participated_bots'] == []
+    assert third['stale_participation_bots'] == at_b['stale_participation_bots']
+    assert third['stale_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comments[0]['kind']}
+    ]
+
+    # And the ledger still anchors both comments on HEAD_A — the rejecting fetch wrote
+    # nothing, which is what makes the verdict above hold rather than flip.
+    ledger = github_pr._recorded_currency_records(plan_id)
+    assert ledger[(bot_kind, 'guide-a')][0] == _HEAD_A
+    assert ledger[(bot_kind, 'guide-b')][0] == _HEAD_A
+
+
 # =============================================================================
 # Refusal CAUSE classification (github_pr.refusal_cause) — size vs quota
 # =============================================================================
