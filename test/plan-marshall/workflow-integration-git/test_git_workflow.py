@@ -6,6 +6,7 @@ Tier 2 (direct import) tests with subprocess tests for CLI plumbing.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from argparse import Namespace
 from pathlib import Path
@@ -1293,6 +1294,52 @@ class TestTrackednessOraclePathSpelling:
         assert result['gitignore_resolved'] is True
         assert result['tracked_resolved'] is True
         assert 'scratch.temp' in result['safe']
+
+    def test_walked_path_is_normalised_once_for_every_consumer(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Every consumer of the walked path sees the same ``/``-spelled form.
+
+        ``os.path.relpath`` returns OS-native separators, while ``_observe_z``
+        returns the ``/``-spelled paths git emits. The ignore check normalised
+        for itself (``rel.replace(os.sep, '/')``) but the artifact-pattern match
+        and the ``rel in tracked`` demotion did not, so on a ``\\``-separator
+        platform those two diverged from the oracle they are compared against —
+        a nested tracked artifact like ``build/output.log`` misses the demotion
+        and the ``**/*.log`` safe pattern then routes it to the auto-deletable
+        bucket.
+
+        The separator is faked rather than the platform, so the asymmetry is
+        exercised on every runner instead of only on Windows: patching
+        ``os.sep`` and ``os.path.relpath`` to speak ``\\`` reproduces exactly
+        the divergence the native path produces there. On POSIX the production
+        normalisation is a no-op, which is precisely why this defect could sit
+        unnoticed behind a green suite.
+        """
+        _git_init_with_identity(tmp_path)
+        _create_file(tmp_path, 'build/output.log')
+        subprocess.run(['git', 'add', 'build/output.log'], cwd=tmp_path, capture_output=True)
+        subprocess.run(['git', 'commit', '-m', 'commit nested fixture'], cwd=tmp_path, capture_output=True)
+
+        real_relpath = os.path.relpath
+
+        def _backslash_relpath(path, start=None):
+            return real_relpath(path, start).replace('/', '\\')
+
+        monkeypatch.setattr(git_workflow.os, 'sep', '\\')
+        monkeypatch.setattr(git_workflow.os.path, 'relpath', _backslash_relpath)
+
+        result = scan_artifacts(tmp_path, respect_gitignore=True)
+
+        offered = result['safe'] + result['uncertain']
+        assert not any('output.log' in f for f in result['safe']), (
+            f'tracked nested fixture offered as safe under \\ separators: {result["safe"]}'
+        )
+        # Positive population: it WAS seen and classified, so the negative above
+        # is not a scan that simply matched nothing.
+        assert any('output.log' in f for f in offered), (
+            f'tracked nested fixture not classified at all: {offered}'
+        )
 
     def test_is_ignored_no_false_prefix_match(self):
         # A sibling path that merely shares a name prefix must NOT be excluded.

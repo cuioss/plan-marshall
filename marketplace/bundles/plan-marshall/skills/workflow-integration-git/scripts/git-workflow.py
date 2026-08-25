@@ -744,8 +744,17 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
         ]
 
         for filename in filenames:
-            rel = os.path.relpath(os.path.join(dirpath_str, filename), root_str)
-            if _is_ignored(rel.replace(os.sep, '/'), ignored_files, ignored_dirs):
+            # Normalised ONCE, here, so every consumer below sees the same
+            # spelling. os.path.relpath returns OS-native separators while the
+            # oracles return the '/'-spelled paths git emits; normalising per
+            # consumer instead let the ignore check speak '/' while the pattern
+            # match and the `rel in tracked` demotion still spoke '\', so on a
+            # '\'-separator platform a nested tracked artifact missed the
+            # demotion and reached the auto-deletable bucket.
+            rel = os.path.relpath(os.path.join(dirpath_str, filename), root_str).replace(
+                os.sep, '/'
+            )
+            if _is_ignored(rel, ignored_files, ignored_dirs):
                 continue
 
             # Check safe patterns first, but demote tracked files to
