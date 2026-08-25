@@ -243,7 +243,11 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'yes',
         'The producer. Evaluates the currency test for a participation_requires_update bot '
         'against the merge-candidate SHA, reading the durable currency ledger it writes on '
-        'credit, and reports a failed test in stale_participation_bots[].',
+        'credit, and reports the outcome across THREE disjoint sets: a passing test in '
+        'participated_bots[], a test failed against an earlier commit in '
+        'stale_participation_bots[], and one failed because the merge candidate itself '
+        'could not be read in undecidable_participation_bots[] (with the read disclosed '
+        'as merge_candidate_sha_resolved).',
     ),
     f'{_SKILLS}/workflow-integration-github/scripts/github_re_review.py': SiteExpectation(
         'live_comment_scan',
