@@ -6,9 +6,17 @@
     "Reviewer suggestions citing Ruff rules outside the project's selected lint set (E, W, F, I, B, C4, UP in pyproject [tool.ruff.lint] select) are accepted as out-of-profile rather than adopted \u2014 check a cited rule against the selected set before opening a fix task for it.",
     "Treat the qgate-mechanical-checks keyword_drift finding as a standing, expected consideration rather than a defect signal: task descriptions legitimately use structural vocabulary (CI, pipeline, ordinals) that the deliverable outline does not spell out, and the project consistently folds these into the work instead of rewording the task. Budget for the disposition; do not re-derive it per plan."
   ],
+  "generation": {
+    "by": "architecture",
+    "tree_sha": "91f01b389f6954bb3e9f4029dbb4ba41ba3d2701d9f590f57fe05ac0c9265b3a"
+  },
   "insights": [
     "Coverage instrumentation roughly triples runtime versus module-tests for this module, pushing past the host background-kill threshold. The command 'coverage plan-marshall' was killed twice with no output while module-tests of the same suite completed. Run coverage synchronously in the foreground with an extended Bash timeout of at least 600000ms rather than backgrounded. When coverage keeps getting killed, module-tests is the fallback verification signal.",
-    "build-maven and build-gradle each carry TWO independent path/glob classification tables that do not feed each other: classify_paths()/_CLASSIFY_PATTERNS (used by phase-4 aggregation) and classify_globs() (a separate glob-role table). A bug reported against the phase-4 unknown-bucket symptom is produced by _CLASSIFY_PATTERNS, not classify_globs(), even when a request names classify_globs() explicitly - root-cause each report against the correct table before scoping a fix."
+    "build-maven and build-gradle each carry TWO independent path/glob classification tables that do not feed each other: classify_paths()/_CLASSIFY_PATTERNS (used by phase-4 aggregation) and classify_globs() (a separate glob-role table). A bug reported against the phase-4 unknown-bucket symptom is produced by _CLASSIFY_PATTERNS, not classify_globs(), even when a request names classify_globs() explicitly - root-cause each report against the correct table before scoping a fix.",
+    "The project treats improvement findings as a standing consideration in plan-marshall rather than as defects to fix in the run that surfaces them: they are recorded with rationale and folded into later work, so an improvement raised mid-plan is expected to be closed as considered rather than either fixed or dropped.",
+    "The project treats a large share of external review-bot comments in plan-marshall as standing considerations rather than per-comment defects: a meaningful fraction of every bot review is status or meta traffic, so a reviewer's comment count is not a defect count and triage is expected to close many comments as considered.",
+    "The project tolerates accepting a correct review-bot finding in plan-marshall without fixing it in the same run, when the finding is a latent drift risk rather than a wrong verdict reachable at the current HEAD, and when fixing it would decide a design fork better settled once across every affected site than per-site under merge pressure.",
+    "The project treats anti-pattern findings in plan-marshall as standing concerns recorded against the corpus rather than as in-run blockers: the anti-patterns it detects are recurrence classes whose remedy is a rule applied across many sites, so an instance is expected to be recorded and generalized rather than fixed where it was found."
   ],
   "internal_dependencies": [],
   "key_dependencies": [],
