@@ -61,7 +61,7 @@ Apply this fix?
 ### Yes - Apply Fix
 
 ```python
-result = apply_fix(fix, bundle_dir)
+result = apply_single_fix(fix, bundle_dir, templates)
 if result['success']:
     log_applied(fix, result)
 else:
