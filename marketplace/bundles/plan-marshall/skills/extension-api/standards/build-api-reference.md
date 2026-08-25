@@ -109,9 +109,8 @@ does not say that what was examined could reach the finding being cleared.
 
 The skip exclusion is load-bearing rather than pedantic: publishing the collected
 total would let a skips-only run clear a stale `test-failure` finding on the
-strength of a run that executed nothing. The `parse` verb derives the same
-quantity under `metrics.tests_run`. On the daemon-routed arm the value published
-is the ROUTED JOB's count, propagated from the routed result rather than
+strength of a run that executed nothing. On the daemon-routed arm the value
+published is the ROUTED JOB's count, propagated from the routed result rather than
 re-derived by the outer wrapper from its own log.
 
 **Reconciliation contract.** A green build clears a pending finding of type `T`
