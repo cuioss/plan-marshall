@@ -520,10 +520,10 @@ These issues are detected but cannot be automatically fixed:
 
 ## Categorization
 
-Two functions categorize, and they differ. `categorize_all_issues`
-(`_doctor_shared.py`) gates on `fixable` first, so it yields an `unfixable`
-bucket alongside `safe` and `risky`. `categorize_fix` (`_cmd_categorize.py`) has
-no such gate and yields only `safe` and `risky`.
+`categorize_all_issues` (`_doctor_shared.py`) gates on `fixable` first, so it
+yields an `unfixable` bucket alongside `safe` and `risky`. `categorize_fix`
+(`_cmd_categorize.py`) has no such gate and yields only `safe` and `risky` — its
+caller `categorize_issues` filters to `fixable_issues` before calling it.
 
 Both treat `SAFE_FIX_TYPES` as the safe set and fall through to risky for
 everything else — an unrecognised type is categorized risky, not rejected. Read

@@ -18,11 +18,11 @@ Comprehensive diagnostic and fix skill for marketplace components. Combines diag
 - Do not prompt for safe fixes — apply them automatically without AskUserQuestion
 - Agents cannot use the Task tool (agent-task-tool-prohibited — unavailable at runtime)
 - Only maven-builder agent may execute Maven commands (agent-maven-restricted)
-- Do not invent script notations — use only documented notations from the skill being called (command-self-contained-notation)
+- Do not invent script notations — use only documented notations from the skill being called
 
 **Constraints:**
 - Load prerequisite skills and the component reference guide before analyzing
-- Every workflow step that performs a script operation must have an explicit bash code block with the full `python3 .plan/execute-script.py` command (workflow-explicit-script-calls)
+- Every workflow step that performs a script operation must have an explicit bash code block with the full `python3 .plan/execute-script.py` command
 - Agents must record lessons via manage-lessons skill, not self-invoke commands (agent-lessons-via-skill)
 - Only `doctor-marketplace.py` is registered in the executor. `_analyze.py`, `_validate.py`, and `_fix.py` are separate verb-bearing entry points whose verbs are NOT `doctor-marketplace` subcommands; a workflow needing one invokes the script directly, and no executor form may be documented for them. See § External Resources
 - Prose instructions adjacent to script calls must reference parameter values consistent with the script API (workflow-prose-parameter-inconsistency)
@@ -385,9 +385,8 @@ See [references/rule-catalog.md](references/rule-catalog.md) for the catalog of 
 Representative rule ids by category:
 
 - **Agent**: `agent-task-tool-prohibited`, `agent-maven-restricted`, `agent-lessons-via-skill`, `agent-skill-tool-visibility`
-- **Workflow**: `workflow-explicit-script-calls`, `workflow-hardcoded-script-path`, `workflow-prose-parameter-inconsistency`, `prose-verb-chain-consistency`
-- **Command**: `command-self-contained-notation`, `command-thin-wrapper`, `command-progressive-disclosure`, `command-completion-checks`, `command-no-embedded-standards`
-- **Skill**: `skill-enforcement-block-required`, `skill-naming-noun-suffix`
+- **Workflow**: `workflow-hardcoded-script-path`, `workflow-prose-parameter-inconsistency`, `prose-verb-chain-consistency`
+- **Skill**: `skill-naming-noun-suffix`
 - **Script**: `argparse_safety`, `notation-staleness`, `script-call-drift`
 - **Manage-invocation**: `manage-findings-invocation-invalid`, `manage-invocation-invalid`, `missing-canonical-block` (see [scripts/_analyze_manage_invocation.py](scripts/_analyze_manage_invocation.py) for the generalized analyzer)
 - **Mirror-drift**: `provides-method-table-drift`, `literal-count-drift`, `canonical-enum-choices-drift`, `readme-skill-registration-drift`, `broken-relative-link`, `fenced-code-no-language` (**build-failing** — registered in `cmd_quality_gate` so a drifted mirror fails the build, and also reported under `analyze`; `fenced-code-no-language` is auto-fixable; `provides-method-table-drift` detects drift between a `plan-marshall-plugin` extension.py `provides_*()` overrides and the SKILL.md "Extension API" table mirror — see [scripts/_analyze_provides_method_table.py](scripts/_analyze_provides_method_table.py); `canonical-enum-choices-drift` compares a documented `{a|b|c}` enum in a `## Canonical invocations` block against the flag's live argparse `choices=`; `readme-skill-registration-drift` compares a bundle README's skill enumeration against the set its `plugin.json` registers)

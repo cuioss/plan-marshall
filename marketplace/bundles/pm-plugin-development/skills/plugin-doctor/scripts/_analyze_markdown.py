@@ -427,7 +427,7 @@ def check_skill_tool_visibility(frontmatter: str, has_tools: bool) -> bool:
 
 
 def check_prose_parameter_consistency(content: str) -> list:
-    """Check workflow-prose-parameter-consistency near script call templates.
+    """Check workflow-prose-parameter-inconsistency near script call templates.
 
     Detects prose instructions adjacent to execute-script.py bash blocks that
     reference parameter values inconsistent with the actual script API.
