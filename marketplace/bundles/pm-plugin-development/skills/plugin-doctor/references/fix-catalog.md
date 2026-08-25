@@ -8,9 +8,8 @@ Catalog of fixable issue types, their categorization, and fix strategies.
 
 This catalog documents fixable issue types by category. It is **not** an
 enumeration of the fix-type population: the authoritative sets are
-`SAFE_FIX_TYPES` and `RISKY_FIX_TYPES` in `_doctor_shared.py`, with the
-auto-applicable subset registered in `_cmd_apply.py`'s `FIX_HANDLERS`. Several
-types in those sets have no section here.
+`SAFE_FIX_TYPES` and `RISKY_FIX_TYPES` in `_doctor_shared.py`. Several types in
+those sets have no section here.
 
 ## Safe Fix Types
 
@@ -96,7 +95,7 @@ description: [Description needed]
 
 **Why Safe**: Minimal default doesn't over-promise capabilities.
 
-### 5b. missing-user-invocable-field
+### 5b. missing-user-invocable
 
 **Description**: Skill frontmatter lacks required `user-invocable` field.
 
@@ -519,44 +518,12 @@ These issues are detected but cannot be automatically fixed:
 
 **Recommendation**: Replace with stdlib alternatives.
 
-## Categorization Algorithm
+## Categorization
 
-```python
-def categorize(issue_type):
-    SAFE = {
-        "missing-frontmatter", "invalid-yaml", "missing-name-field",
-        "missing-description-field", "missing-tools-field",
-        "missing-user-invocable-field",
-        "array-syntax-tools", "trailing-whitespace",
-        "improper-indentation", "missing-blank-line-before-list",
-        "agent-skill-tool-visibility",  # additive Skill append
-        "checklist-pattern",            # remove checkbox markers
-        "fenced-code-no-language",      # append default `text` info-string
-        "wrong-plan-parameter",         # PM-003: mechanical swap
-        "missing-plan-parameter",       # PM-004: add required param
-        "positional-argument",          # SCR-009: convert to named flag
-        "camelcase-flag",               # SCR-010: rename to kebab-case
-        "missing-subparser-required",   # SCR-011: add required=True
-        "SIMPLICITY_SIGNATURE_DOCSTRING"  # delete signature-restating docstring
-    }
-    RISKY = {
-        "unused-tool-declared", "tool-not-declared",
-        "agent-task-tool-prohibited", "agent-maven-restricted",
-        "workflow-hardcoded-script-path", "workflow-explicit-script-calls",
-        "agent-lessons-via-skill", "backup-file-pattern",
-        "ci-rule-self-update",
-        "implicit-script-call",      # PM-001: needs param lookup
-        "generic-api-reference",     # PM-002: needs script identification
-        "invalid-contract-path"      # PM-005: path resolution needed
-    }
-
-    if issue_type in SAFE:
-        return "safe"
-    elif issue_type in RISKY:
-        return "risky"
-    else:
-        return "risky"  # Default to risky for unknown types
-```
+Categorization is performed by `categorize_all_issues` in `_doctor_shared.py`,
+which gates on `fixable` first — yielding an `unfixable` bucket as well as `safe`
+and `risky` — and reads `SAFE_FIX_TYPES` / `RISKY_FIX_TYPES` directly. Read those
+constants for the current membership; this document does not mirror them.
 
 ## Fix Priority Order
 

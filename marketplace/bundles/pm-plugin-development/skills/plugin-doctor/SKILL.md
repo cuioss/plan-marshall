@@ -380,7 +380,7 @@ The matching, precedence ordering, and config-parsing logic are owned by [`scrip
 
 ## Rule Definitions
 
-See [references/rule-catalog.md](references/rule-catalog.md) for the complete catalog of rules that plugin-doctor validates (agent, workflow, command, skill, script, content, and PM-workflow rules).
+See [references/rule-catalog.md](references/rule-catalog.md) for the catalog of rules that plugin-doctor validates (agent, workflow, command, skill, script, content, and PM-workflow rules). It does not cover every emitted rule id; `references/rule-provenance.md` is the per-rule registry.
 
 Representative rule ids by category:
 
