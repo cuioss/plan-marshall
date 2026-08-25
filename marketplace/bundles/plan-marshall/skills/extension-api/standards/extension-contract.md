@@ -832,7 +832,7 @@ Not checked at all:
   on an unknown category; it never tests for a required category's absence.
 - *Build bundles: `discover_modules()` returns a contract-compliant structure
   with commands* — the function that would check it, `validate_command_mappings`,
-  has zero callers: a whole-tree search for the name returns only its own `def`.
+  has zero callers: the only occurrence of the name is its own `def`.
   `discover_modules()` is never executed by `validate_extension`.
 
 Checked in half — the first bullet, *"Extension class exists and inherits from

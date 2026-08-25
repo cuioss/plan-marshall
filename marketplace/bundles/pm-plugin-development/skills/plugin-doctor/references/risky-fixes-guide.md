@@ -1,6 +1,6 @@
 # Risky Fixes Guide
 
-Guide for presenting and applying risky fixes that require user confirmation. See `fix-catalog.md` for the complete list of risky fix types and their detection patterns.
+Guide for presenting and applying risky fixes that require user confirmation. See `fix-catalog.md` for risky fix types and their detection patterns.
 
 ## Risky Fix Principles
 

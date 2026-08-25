@@ -1,6 +1,6 @@
 # Safe Fixes Guide
 
-Detailed guide for applying safe fixes automatically without user confirmation. See `fix-catalog.md` for the complete list of safe fix types and their detection patterns.
+Detailed guide for applying safe fixes automatically without user confirmation. See `fix-catalog.md` for safe fix types and their detection patterns.
 
 ## Safe Fix Principles
 

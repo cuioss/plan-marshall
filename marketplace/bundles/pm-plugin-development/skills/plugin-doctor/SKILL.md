@@ -252,8 +252,8 @@ declares `list-components`, `analyze`, `fix`, `report`, `quality-gate`,
 `categorize`, `apply`, `verify`. No `doctor-marketplace` verb name appears among
 them, and `doctor-marketplace.py` imports none of the three.
 
-⛔ **Unregistered, so no executor form may be written for them** — not in this
-file and not in any consuming doc. A workflow that needs one of these verbs
+⛔ **Unregistered, so no executor form may be written for them** — here or in any
+consuming doc. A workflow that needs one of these verbs
 invokes the script directly and says so; the `doctor-skill-content` workflow does
 exactly that for `_analyze.py cross-file` (see
 [content-quality-guide.md § Integration](references/content-quality-guide.md#integration-with-doctor-skill-content-workflow)).
