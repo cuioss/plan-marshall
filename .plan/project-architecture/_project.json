@@ -22,13 +22,6 @@
       "description": "Core orchestration bundle providing the complete 5-phase development workflow (init, refine, outline, plan, execute, finalize), task planning, git/PR workflows, Sonar integration, and build automation across Maven/Gradle/npm/pyproject. Hosts foundational infrastructure (script executor, manage-config, manage-architecture, manage-lessons, permissions, logging) that every other bundle consumes.",
       "generation": {}
     },
-    "pm-code-intelligence": {
-      "description": "Marketplace bundle carrying the code-intelligence domain plugin. Its single plan-marshall-plugin skill declares the domain and its extension.py contributes the LSP derivation resolver that maps a code coordinate to its derivation, so plan-marshall can answer structural code queries through the extension surface rather than by grepping.",
-      "generation": {
-        "by": "architecture",
-        "tree_sha": "8f6ad2d6c74d27aeda307b9dadc5e867f037b170ee4bc1e7cc1e88ad6d98f93b"
-      }
-    },
     "pm-dev-frontend": {
       "description": "General frontend development standards bundle providing vanilla JavaScript (ES2022+) and CSS knowledge skills, JSDoc analyzer, ESLint flat-config standards, Jest testing patterns, and the JS/CSS triage extension. TypeScript and frameworks (React/Vue/Angular) are out of scope.",
       "generation": {}

@@ -142,7 +142,7 @@ every `path` and `import` edge unverified regardless of whether its site was cor
 confirmed when its line carries **either** the full notation **or** the target's final segment (the
 script name for a three-part notation, the skill name for a two-part one). ⚠ That tail is **not**
 generally discriminating — measured on this corpus, 18 tails are shared by more than one component
-(`extension` by four, `plan-marshall-plugin` by eleven) — so a tail-only match confirms that the
+(`extension` by four, `plan-marshall-plugin` by ten) — so a tail-only match confirms that the
 cited line mentions *a* component of that name, not necessarily this one. That is why the ranking
 below exists rather than a bare match.
 
@@ -325,4 +325,4 @@ python3 .plan/execute-script.py pm-plugin-development:tools-corpus-language-serv
 
 - `pm-plugin-development:tools-marketplace-inventory` — builds the index this skill reads
 - `plan-marshall:lsp-client` — the opposite direction: a client of a third-party code language server
-- `pm-code-intelligence:plan-marshall-plugin` — LSP as a derivation-time edge producer for the module graph
+- `plan-marshall:plan-marshall-plugin` — LSP as a derivation-time edge producer for the module graph (the `lsp` derivation resolver's host)

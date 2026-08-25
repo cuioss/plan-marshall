@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 ## Repository Overview
 
-This is a **Claude Code Marketplace** repository providing development standards, automation tools, and AI-assisted workflows for CUI (Common User Interface) Open Source projects. It contains 11 production bundles with 157 registered components (153 skills, 2 agents, 2 commands) that integrate with Claude Code's plugin system. For the bundle-by-bundle catalogue and directory layout, read the filesystem under `marketplace/bundles/` or `doc/developer/`.
+This is a **Claude Code Marketplace** repository providing development standards, automation tools, and AI-assisted workflows for CUI (Common User Interface) Open Source projects. It contains 10 production bundles with 158 registered components (154 skills, 2 agents, 2 commands) that integrate with Claude Code's plugin system. For the bundle-by-bundle catalogue and directory layout, read the filesystem under `marketplace/bundles/` or `doc/developer/`.
 
 ## Branch Naming
 

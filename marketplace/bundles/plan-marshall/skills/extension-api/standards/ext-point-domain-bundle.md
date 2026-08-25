@@ -114,12 +114,11 @@ above.
 
 ## Current Implementations
 
-All 11 production bundles ship a domain-bundle manifest under `skills/plan-marshall-plugin/`:
+All 10 production bundles ship a domain-bundle manifest under `skills/plan-marshall-plugin/`:
 
 | Bundle | Manifest Skill | Domain Key |
 |--------|----------------|------------|
-| plan-marshall | plan-marshall-plugin | build, general-dev |
-| pm-code-intelligence | plan-marshall-plugin | _(none — registers the `lsp` derivation resolver, not a skill domain)_ |
+| plan-marshall | plan-marshall-plugin | general-dev |
 | pm-dev-java | plan-marshall-plugin | java |
 | pm-dev-java-cui | plan-marshall-plugin | java-cui |
 | pm-dev-frontend | plan-marshall-plugin | javascript |
@@ -132,14 +131,20 @@ All 11 production bundles ship a domain-bundle manifest under `skills/plan-marsh
 
 **A bundle may register no skill domain.** `get_skill_domains()` is the one
 required method, but returning `[]` is a valid answer for a bundle whose
-contribution is not skills — `pm-code-intelligence` exists to host the `lsp`
-derivation resolver, and the one-resolver-per-bundle cardinality is what forces it
-to be its own bundle rather than a face on an existing one. Such a bundle still
-ships the manifest, because the manifest is how the extension is *discovered*: the
-Axis-C collector spans the Axis-A discovery path, so a bundle that skipped the
-manifest would register no resolver either. Declaring an empty domain instead of
-none would be worse than either — it would put a skill-less entry in front of every
-domain-selection surface and assert a capability the bundle does not have.
+contribution is not skills — a bundle whose whole substance is a derivation
+resolver, say. Such a bundle still ships the manifest, because the manifest is how
+the extension is *discovered*: the Axis-C collector spans the Axis-A discovery
+path, so a bundle that skipped the manifest would register no resolver either.
+Declaring an empty domain instead of none would be worse than either — it would
+put a skill-less entry in front of every domain-selection surface and assert a
+capability the bundle does not have.
+
+Every bundle in the table above declares a domain key, so no shipped bundle takes
+that shape today. The `lsp` resolver, which once justified one, is hosted on
+`plan-marshall` beside that bundle's `general-dev` domain — see
+[ext-point-derivation-resolver.md § Current implementations](ext-point-derivation-resolver.md#current-implementations)
+for the roster and for the one-resolver-per-bundle cardinality that decides where
+a resolver may live.
 
 ## Related Specifications
 
