@@ -136,12 +136,10 @@ class UnclassifiableSpecError(Exception):
 
 @dataclass(frozen=True)
 class PathEntry:
-    """One path a spec names, as written and as resolved."""
+    """One path a spec names, resolved against the repository root."""
 
-    raw: str
     path: str
     kind: str
-    excluded: bool
 
 
 @dataclass(frozen=True)
@@ -378,13 +376,9 @@ def _collect_bullet(
                 unresolved.append(span)
                 continue
             path = base + relative
-        entry = PathEntry(
-            raw=span,
-            path=path,
-            kind=_entry_kind(path),
-            excluded=force_excluded or negative or after_excluding,
-        )
-        (excluded if entry.excluded else claimed).append(entry)
+        entry = PathEntry(path=path, kind=_entry_kind(path))
+        is_exclusion = force_excluded or negative or after_excluding
+        (excluded if is_exclusion else claimed).append(entry)
 
 
 def _evidence_line(body: str, position: int) -> str:

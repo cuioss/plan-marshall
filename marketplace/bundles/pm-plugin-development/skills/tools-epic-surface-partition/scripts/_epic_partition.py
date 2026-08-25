@@ -72,7 +72,7 @@ DEFAULT_LINE_BUDGET = 400
 TEST_MODULE_GLOB = 'test_*.py'
 
 #: The population root. An entry spanning exactly this discriminates nothing.
-DEFAULT_ROOT_PREFIX = 'test'
+ROOT_PREFIX = 'test'
 
 
 @dataclass(frozen=True)
@@ -166,7 +166,7 @@ def entry_matches(entry_path: str, kind: str, module: str) -> bool:
     return _match_segments(_segments(entry_path), _segments(module))
 
 
-def is_root_span(entry_path: str, kind: str, root_prefix: str) -> bool:
+def is_root_span(entry_path: str, kind: str) -> bool:
     """Whether an entry covers the whole population root, discriminating nothing.
 
     Only a directory or a recursive glob can span the root; a named file and a
@@ -179,16 +179,12 @@ def is_root_span(entry_path: str, kind: str, root_prefix: str) -> bool:
     else:
         return False
     stem = prefix.strip('/')
-    return not stem or stem == root_prefix.strip('/')
+    return not stem or stem == ROOT_PREFIX
 
 
-def _discriminating(entries: tuple, root_prefix: str) -> list:
-    return [entry for entry in entries if not is_root_span(entry.path, entry.kind, root_prefix)]
-
-
-def _claims_module(claim: SpecClaim, module: str, root_prefix: str) -> bool:
+def _claims_module(claim: SpecClaim, module: str) -> bool:
     """Whether a spec claims ``module`` after root spans and exclusions subtract."""
-    claimed = _discriminating(claim.claimed, root_prefix)
+    claimed = [entry for entry in claim.claimed if not is_root_span(entry.path, entry.kind)]
     covered = any(entry_matches(entry.path, entry.kind, module) for entry in claimed)
     if not covered:
         return False
@@ -261,23 +257,17 @@ def iter_test_modules(test_root: Path, repo_root: Path) -> tuple[str, ...]:
     return tuple(sorted(found))
 
 
-def derive_partition(
-    claims: list[SpecClaim],
-    modules: tuple[str, ...],
-    root_prefix: str = DEFAULT_ROOT_PREFIX,
-) -> Partition:
+def derive_partition(claims: list[SpecClaim], modules: tuple[str, ...]) -> Partition:
     """Assign every module exactly one verdict against the claim model."""
     root_claims = tuple(
         RootClaim(plan_id=claim.plan_id, path=entry.path)
         for claim in claims
         for entry in claim.claimed
-        if is_root_span(entry.path, entry.kind, root_prefix)
+        if is_root_span(entry.path, entry.kind)
     )
     verdicts: list[ModuleVerdict] = []
     for module in modules:
-        owners = tuple(
-            claim.plan_id for claim in claims if _claims_module(claim, module, root_prefix)
-        )
+        owners = tuple(claim.plan_id for claim in claims if _claims_module(claim, module))
         if len(owners) == 1:
             verdicts.append(ModuleVerdict(module, VERDICT_CLAIMED, owners))
             continue

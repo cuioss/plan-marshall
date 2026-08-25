@@ -246,7 +246,7 @@ def test_exclusion_does_not_subtract_from_another_plans_claim(repo: Path, plans:
     ids=['bare_root', 'root_glob', 'subtree_dir', 'subtree_glob', 'named_file'],
 )
 def test_root_span_detection(entry: str, kind: str, expected: bool) -> None:
-    assert partition_mod.is_root_span(entry, kind, 'test') is expected
+    assert partition_mod.is_root_span(entry, kind) is expected
 
 
 def test_root_span_claims_nothing(partition) -> None:

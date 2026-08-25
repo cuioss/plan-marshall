@@ -340,9 +340,7 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
         for module in partition.modules
         if module.verdict in (VERDICT_UNCLAIMED, VERDICT_MULTIPLY_CLAIMED)
     ]
-    not_derivable = [
-        module for module in partition.modules if module.verdict == VERDICT_NOT_DERIVABLE
-    ]
+    not_derivable = partition.with_verdict(VERDICT_NOT_DERIVABLE)
     unresolvable_specs = [claim for claim in claims if claim.unresolved]
     overlaps = [
         {'plan_id': claim.plan_id, 'path': entry.path}
