@@ -18,9 +18,10 @@ shared corpus is the single-pass substrate (AST parsing happens at most once
 per file), while emission order is preserved.
 
 A rule summary is a label plus a finding count, and — for a rule that derives
-and publishes one — an ``population_size``. The extra key is additive and
-appears only where the rule supplies it, so an absent figure is never read as a
-zero; the ORDER and the LABEL set are what this contract fixes.
+and publishes them — a ``population_size`` and a ``blind_spots``. Both extra
+keys are additive and appear only where the rule supplies them, so an absent
+figure is never read as a zero; the ORDER and the LABEL set are what this
+contract fixes.
 
 Wrapping injection
 ------------------
@@ -42,7 +43,10 @@ from pathlib import Path
 from _analyze_agentfile_directory_tree import analyze_agentfile_directory_tree
 from _analyze_agentfile_line_budget import analyze_agentfile_line_budget
 from _analyze_allowed_tools_drift import analyze_allowed_tools_drift
-from _analyze_argument_naming import analyze_argument_naming
+from _analyze_argument_naming import (
+    analyze_argument_naming,
+    analyze_argument_naming_with_population,
+)
 from _analyze_askuserquestion_reachability import (
     analyze_askuserquestion_reachability,
 )
@@ -147,36 +151,51 @@ class RuleRunner:
         same ``rule_summaries`` labels in the same positions (including the
         ``provides-method-table-drift`` / ``literal-count-drift`` rule-name
         labels and the two-entry markdown-mirror split), and the same
-        scoped-vs-unscoped manage-invocation branch. Three summaries additionally
-        carry ``population_size`` (see :func:`emit`) — re-count them here rather
-        than carrying this number forward; it said "two" for a round after the
-        third was wired in this same file.
+        scoped-vs-unscoped manage-invocation branch. Four summaries additionally
+        carry ``population_size`` (see :func:`emit`), one of which —
+        ``analyze_argument_naming`` — also carries ``blind_spots``. Re-count both
+        here rather than carrying the numbers forward; the population count said
+        "two" for a round after the third was wired in this same file.
         """
         root = self.context.marketplace_root
         cache = self.context.ast_cache
         all_issues: list[dict] = []
         rule_summaries: list[dict] = []
 
-        def emit(label: str, findings: list[dict], population_size: int | None = None) -> None:
-            """Record a rule's findings and, where the rule knows it, its population.
+        def emit(
+            label: str,
+            findings: list[dict],
+            population_size: int | None = None,
+            blind_spots: int | None = None,
+        ) -> None:
+            """Record a rule's findings and, where the rule knows them, its coverage figures.
 
             ``findings`` alone cannot report coverage: ``details.population_size``
             rides on a FINDING, so on a clean tree — the only state a passing gate
             is ever in — the size the rule derived appears nowhere, and a rule
             that examined nothing is indistinguishable from one that examined the
-            whole tree and found it clean. A rule that can report the figure
-            supplies it here and it is published alongside the count.
+            whole tree and found it clean. A rule that can report the figures
+            supplies them here and they are published alongside the count.
 
-            The figure is WHOLE-TREE and is not narrowed by ``--paths``: the rule
-            runs over the whole tree and only its FINDINGS are scope-filtered, so
-            reporting a scope-narrowed population would describe a derivation that
-            never happened. The key is omitted entirely for a rule that does not
-            publish one, so an absent figure is never read as a zero.
+            ``population_size`` is what the rule enumerated; ``blind_spots`` is
+            the part of that population it looked at and could not decide. The
+            second is not derivable from the first two numbers, and without it a
+            rule that resolved an authority for a third of its population reports
+            exactly like one that resolved all of it.
+
+            Both figures are WHOLE-TREE and are not narrowed by ``--paths``: the
+            rule runs over the whole tree and only its FINDINGS are
+            scope-filtered, so reporting a scope-narrowed population would
+            describe a derivation that never happened. Each key is omitted
+            entirely for a rule that does not publish it, so an absent figure is
+            never read as a zero.
             """
             all_issues.extend(findings)
             summary: dict = {'rule': label, 'findings': len(findings)}
             if population_size is not None:
                 summary['population_size'] = population_size
+            if blind_spots is not None:
+                summary['blind_spots'] = blind_spots
             rule_summaries.append(summary)
 
         emit('scan_argparse_safety', scoped(scan_argparse_safety(root, cache=cache)))
@@ -200,7 +219,27 @@ class RuleRunner:
             {'rule': 'validate_extension_contracts', 'findings': len(contract_errors)}
         )
 
-        emit('analyze_argument_naming', scoped(analyze_argument_naming(root)))
+        # ``root`` is the BUNDLES dir (see CorpusContext), but
+        # analyze_argument_naming derives ``root/'bundles'`` for its markdown
+        # corpus and ``root.parent/'.plan'`` for the executor registry — so it
+        # takes the MARKETPLACE dir, exactly like validate_extension_contracts
+        # above. Passing ``root`` here resolved the executor to
+        # ``marketplace/.plan/execute-script.py``, which does not exist: the
+        # registry came back empty and the cluster returned [] before scanning a
+        # single file, reporting a clean zero it had never derived.
+        #
+        # The cluster publishes BOTH coverage figures because its authority — the
+        # generated executor — is git-ignored, so "judged nothing" is a state a
+        # checkout can genuinely be in while the finding count still reads zero.
+        naming_findings, naming_population, naming_blind_spots = (
+            analyze_argument_naming_with_population(root.parent)
+        )
+        emit(
+            'analyze_argument_naming',
+            scoped(naming_findings),
+            naming_population,
+            naming_blind_spots,
+        )
         emit(
             'analyze_shell_substitution_in_skills',
             scoped(analyze_shell_substitution_in_skills(root)),
@@ -428,6 +467,10 @@ class RuleRunner:
             issues.extend(analyze_script_call_drift(root))
 
         if 'argument_naming' in active_rules:
-            issues.extend(analyze_argument_naming(root))
+            # ``root.parent`` for the same reason as the quality-gate dispatch
+            # above: the analyzer takes the MARKETPLACE dir, not the bundles
+            # dir. This call carried the bug too, so opting the cluster in on
+            # the analyze path silently produced nothing on every run.
+            issues.extend(analyze_argument_naming(root.parent))
 
         return issues

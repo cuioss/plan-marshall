@@ -85,6 +85,14 @@ class DirectCommandResult(TypedDict, total=False):
         message: Operator-facing detail. Carries the no-blind-retry sentence on
             ``killed``, and on ``indeterminate`` it is the ONLY actionable
             content the result has — it says why nothing could be concluded.
+        routed_tests_run: Present ONLY on a daemon-routed green result, carrying
+            the executed-test count the INNER build wrapper measured and
+            published. It is an INPUT to the renderer, not part of the emitted
+            payload: the renderer reads it in preference to its own re-parse,
+            because the log a routed run hands back is the daemon job log (the
+            wrapper's emitted TOON) rather than the raw test-runner output, so
+            re-parsing yields no summary and the count would collapse to a false
+            zero. Its ABSENCE means the count is unknown — never that it is zero.
 
     Example (success):
         {
@@ -120,6 +128,7 @@ class DirectCommandResult(TypedDict, total=False):
     command_type: str  # npm: "npm" or "npx"
     error: str  # Error type id (on error/timeout/killed/indeterminate only)
     message: str  # Operator-facing detail (on killed and indeterminate)
+    routed_tests_run: int  # Daemon-routed green build: the INNER wrapper's count
 
 
 # =============================================================================

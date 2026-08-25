@@ -79,13 +79,26 @@ Completeness Issues:
 
 ### Script Pre-Processing
 
-Run `analyze cross-file` first to get structured analysis:
+The structured cross-file analysis comes from `_analyze_crossfile.py`, wired to
+the `cross-file` subcommand of `_analyze.py`.
 
-```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:analyze cross-file --skill-path {skill_path}
-```
+⛔ **`doctor-marketplace report` does not run it.** A `report` run emits exactly
+`summary`, `issues_by_type`, `issues_by_bundle`, `safe_fixes`, `risky_fixes`,
+`unfixable_issues`, `components_for_tool_analysis` and `llm_review_items`; no
+cross-file or duplication data appears in it at any scope.
 
-**Script Output Categories**:
+⛔ **Neither module is registered in the generated executor**, so this analysis
+has no sanctioned `.plan/execute-script.py` form and none may be documented —
+`ARGUMENT_NAMING_NOTATION_INVALID` fires on a prescribed unregistered notation.
+Registration is the operative fact, not the underscore prefix: an unregistered
+third part can still resolve through the executor's filename fallback, so a
+`--help` that answers is not evidence of a sanctioned form. The reviewer invokes
+the analyzer directly or performs the equivalent comparison by hand — the same
+standing as `_cmd_cross_file.py::verify_findings` under
+[Verification of LLM Findings](#verification-of-llm-findings) below.
+
+**Analyzer Output Categories** — what `_analyze_crossfile.py` itself produces,
+NOT the contents of a `report` run:
 
 | Category | Script Responsibility | LLM Responsibility |
 |----------|----------------------|-------------------|
@@ -183,7 +196,8 @@ Similarity Candidate:
 
 ### Script Pre-Processing
 
-The `analyze-cross-file-content.py` script extracts terminology and detects variants:
+`_analyze_crossfile.py`, wired to the `cross-file` subcommand of `_analyze.py`,
+extracts terminology and detects variants:
 
 **Script Output**:
 ```json
@@ -363,7 +377,8 @@ Quality Score = (Completeness + (100 - Duplication) + Consistency + (100 - Contr
 
 ### Script Pre-Processing
 
-The `analyze-cross-file-content.py` script detects extraction candidates:
+`_analyze_crossfile.py`, wired to the `cross-file` subcommand of `_analyze.py`,
+detects extraction candidates:
 
 **Script Output**:
 ```json
@@ -442,11 +457,11 @@ Extraction Candidate:
 
 ## Verification of LLM Findings
 
-After LLM analysis, run `validate cross-file` to validate claims:
-
-```bash
-echo '{llm_findings_json}' | python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate cross-file --analysis {script_analysis_json}
-```
+`_cmd_cross_file.py::verify_findings` re-checks a set of LLM claims against the
+script's own analysis. It is an internal library function, not a CLI verb — it has
+no executor notation, and **no pass invokes it**: the reviewer applies it, or
+performs the equivalent check by hand. Nothing in the pipeline gates finding
+emission on it.
 
 **Verification Output**:
 ```json
@@ -472,13 +487,20 @@ This guide is loaded in **Phase 3: Analyze Content Quality**.
 
 ### Step-by-Step Integration
 
-1. **Run cross-file analysis script**:
-   ```bash
-   python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:analyze cross-file --skill-path {skill_path} > analysis.json
-   ```
+1. **Run the cross-file analysis pass** — the `cross-file` subcommand of
+   `_analyze.py`, over the skill directory under review. It takes `--skill-path`
+   and an optional `--similarity-threshold`. Invoke it directly: the module is
+   unregistered, so no executor form may be documented here (see
+   [Script Pre-Processing](#script-pre-processing)).
+
+   ⛔ NOT `doctor-marketplace report`. That verb emits no cross-file or
+   duplication data at any scope, so a pass built on it would carry every
+   category below into the report empty and read that as "no duplication found".
+   See [Script Pre-Processing](#script-pre-processing) for the report's actual
+   key set.
 
 2. **Report exact duplicates directly** (no LLM needed):
-   - Parse `exact_duplicates` from JSON
+   - Parse `exact_duplicates` from the step-1 output
    - Generate consolidation recommendations
 
 3. **LLM analyzes candidates**:
@@ -490,10 +512,11 @@ This guide is loaded in **Phase 3: Analyze Content Quality**.
    - Completeness (TODO markers, missing examples)
    - Contradictions (conflicting rules)
 
-5. **Verify LLM findings**:
-   ```bash
-   echo '{llm_output}' | python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate cross-file --analysis analysis.json
-   ```
+5. **Verify LLM findings**: re-check each claim against the step-1 analysis output
+   before carrying it forward. `_cmd_cross_file.py::verify_findings` implements that
+   comparison, but nothing calls it for you — the step-1 pass ran before these
+   claims existed, so there is no automatic gate. An unverified claim reaches the
+   report unless this step removes it.
 
 6. **Generate quality report** with verified findings only.
 

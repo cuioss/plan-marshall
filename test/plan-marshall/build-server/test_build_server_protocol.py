@@ -463,3 +463,60 @@ class TestReadLogVerdict:
         d.mkdir()
 
         assert proto.read_log_verdict(str(d)) is None
+
+    # -- executed-test count ------------------------------------------------
+    # The reader carries the INNER wrapper's measured count because the routed
+    # client's own parser sees only this log (the wrapper's emitted TOON), never
+    # the raw test-runner output. Each half below is matched by its opposite, so
+    # "absent reads as unknown" cannot pass because the field is never read.
+
+    def test_carries_the_inner_executed_test_count(self, tmp_path):
+        log = tmp_path / 'job.log'
+        log.write_text('status: success\nexit_code: 0\ntests_run: 2750\n')
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.tests_run == 2750
+
+    def test_absent_count_is_unknown_not_zero(self, tmp_path):
+        # The matched negative: the SAME green verdict with no count line. The
+        # field must be None — a zero here is the false "this run tested nothing"
+        # over a fully-examined population.
+        log = tmp_path / 'job.log'
+        log.write_text('status: success\nexit_code: 0\n')
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.tests_run is None
+
+    def test_a_measured_zero_is_carried_as_zero(self, tmp_path):
+        # And a genuinely-measured zero (a non-test gate) is NOT confused with
+        # the absent case above: it round-trips as 0.
+        log = tmp_path / 'job.log'
+        log.write_text('status: success\nexit_code: 0\ntests_run: 0\n')
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.tests_run == 0
+
+    def test_unparseable_count_degrades_to_unknown(self, tmp_path):
+        log = tmp_path / 'job.log'
+        log.write_text('status: success\nexit_code: 0\ntests_run: -\n')
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.tests_run is None
+
+    def test_indented_count_row_is_ignored(self, tmp_path):
+        # Only the top-level key counts, matching the status:/exit_code: rule.
+        log = tmp_path / 'job.log'
+        log.write_text('status: success\nexit_code: 0\ntests[1]{a}:\n  tests_run: 99\n')
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.tests_run is None

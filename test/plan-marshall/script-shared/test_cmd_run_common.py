@@ -204,20 +204,20 @@ class TestCmdRunCommonModeFiltering:
 
 
 class TestCmdRunCommonGreenBuildReconciliation:
-    """A green build run terminalizes pending build findings from a prior
-    failing run, passing the executed-test count so the reconciler can decide
-    whether a test-failure finding may be cleared.
+    """A green build run terminalizes the pending build findings it was ENTITLED
+    to clear, passing the examined-analysis population and the executed-test
+    count so the reconciler can decide what that entitlement covers.
 
     ``cmd_run_common`` delegates the bulk-resolve to
     ``_reconcile_pending_build_findings`` (which itself calls
     ``resolve_findings_by_type``). These tests pin the routing contract at the
     ``cmd_run_common`` boundary: reconciliation fires on the green path when a
-    ``plan_id`` is supplied, carries the run's ``tests_run`` count, never fires
-    on a failing build, and is a clean no-op when nothing is pending. The
-    reconciler's internals — the type split that clears ``test-failure`` only
-    when ``tests_run > 0``, and the actual ``resolve_findings_by_type``
-    integration — are covered end-to-end against the real findings store in
-    ``test_build_findings_store.py``.
+    ``plan_id`` is supplied, carries BOTH population facts derived from
+    ``command_args``, never fires on a failing build, and is a clean no-op when
+    nothing is pending. The reconciler's own entitlement rule — a type is cleared
+    only when the run performed an analysis that reaches it — is covered against
+    the real findings store in ``test_build_findings_store.py``, and the pure
+    derivation in ``test_build_examined_population.py``.
     """
 
     def test_green_build_with_plan_id_terminalizes_pending_findings(self):
@@ -228,11 +228,34 @@ class TestCmdRunCommonGreenBuildReconciliation:
 
         with patch.object(_build_shared_mod, '_reconcile_pending_build_findings') as mock_reconcile:
             mock_reconcile.return_value = 3  # three stale findings terminalized
+            rc = cmd_run_common(
+                result, _noop_parser, 'python', plan_id='my-plan', command_args='verify'
+            )
+
+        assert rc == 0
+        # `verify` performs all three analyses; _noop_parser reports no test
+        # summary, so the count for a TEST-BEARING gate is unknown — not zero.
+        mock_reconcile.assert_called_once_with(
+            plan_id='my-plan',
+            command_str='./pw verify',
+            analyses=frozenset({'compile', 'lint', 'test'}),
+            tests_run=None,
+        )
+
+    def test_green_build_without_command_args_reports_an_unknown_population(self):
+        """The fail-closed default. A caller that supplies no canonical args
+        hands the reconciler an UNKNOWN population — never a silently
+        full-entitlement one — so nothing is cleared on no evidence."""
+        result = _make_result(status='success', command='./pw verify')
+
+        with patch.object(_build_shared_mod, '_reconcile_pending_build_findings') as mock_reconcile:
+            mock_reconcile.return_value = 0
             rc = cmd_run_common(result, _noop_parser, 'python', plan_id='my-plan')
 
         assert rc == 0
-        # _noop_parser reports no test summary, so the run executed zero tests.
-        mock_reconcile.assert_called_once_with(plan_id='my-plan', command_str='./pw verify', tests_run=0)
+        mock_reconcile.assert_called_once_with(
+            plan_id='my-plan', command_str='./pw verify', analyses=None, tests_run=None
+        )
 
     def test_failing_build_does_not_terminalize_findings(self):
         """Build fails → pending findings are NOT terminalized (the failure they
@@ -249,14 +272,23 @@ class TestCmdRunCommonGreenBuildReconciliation:
         """Build succeeds + nothing pending → reconciliation is invoked but
         resolves zero findings (no-op), and cmd_run_common still returns 0
         cleanly."""
-        result = _make_result(status='success', command='./pw verify')
+        result = _make_result(status='success', command='./pw compile')
 
         with patch.object(_build_shared_mod, '_reconcile_pending_build_findings') as mock_reconcile:
             mock_reconcile.return_value = 0  # nothing was pending
-            rc = cmd_run_common(result, _noop_parser, 'python', plan_id='my-plan')
+            rc = cmd_run_common(
+                result, _noop_parser, 'python', plan_id='my-plan', command_args='compile'
+            )
 
         assert rc == 0
-        mock_reconcile.assert_called_once_with(plan_id='my-plan', command_str='./pw verify', tests_run=0)
+        # A non-test gate with no summary genuinely executed zero tests: this
+        # zero is MEASURED, and is the matched half of the unknown above.
+        mock_reconcile.assert_called_once_with(
+            plan_id='my-plan',
+            command_str='./pw compile',
+            analyses=frozenset({'compile'}),
+            tests_run=0,
+        )
 
     def test_green_build_that_ran_tests_passes_executed_count(self):
         """A green build whose parser reports executed tests routes the non-zero
@@ -266,10 +298,17 @@ class TestCmdRunCommonGreenBuildReconciliation:
 
         with patch.object(_build_shared_mod, '_reconcile_pending_build_findings') as mock_reconcile:
             mock_reconcile.return_value = 1
-            rc = cmd_run_common(result, _tests_ran_parser, 'python', plan_id='my-plan')
+            rc = cmd_run_common(
+                result, _tests_ran_parser, 'python', plan_id='my-plan', command_args='verify'
+            )
 
         assert rc == 0
-        mock_reconcile.assert_called_once_with(plan_id='my-plan', command_str='./pw verify', tests_run=5)
+        mock_reconcile.assert_called_once_with(
+            plan_id='my-plan',
+            command_str='./pw verify',
+            analyses=frozenset({'compile', 'lint', 'test'}),
+            tests_run=5,
+        )
 
     def test_green_build_without_plan_id_skips_reconciliation(self):
         """No plan_id supplied → reconciliation is skipped entirely (preserves
@@ -281,3 +320,54 @@ class TestCmdRunCommonGreenBuildReconciliation:
 
         assert rc == 0
         mock_reconcile.assert_not_called()
+
+
+class TestCmdRunCommonPublishesItsPopulation:
+    """The emitted success result names what the run examined — and OMITS the
+    executed-test count when it was never measured, so a consumer reading
+    ``tests_run`` cannot read an unmeasured run as one that tested nothing."""
+
+    def test_measured_zero_publishes_the_count_and_the_discriminator(self, capsys):
+        result = _make_result(status='success', command='./pw compile')
+        cmd_run_common(result, _noop_parser, 'python', command_args='compile')
+        stdout = capsys.readouterr().out
+
+        assert 'tests_population: measured' in stdout
+        assert 'tests_run: 0' in stdout
+        assert 'analyses_examined: compile' in stdout
+
+    def test_unmeasured_count_omits_the_key_entirely(self, capsys):
+        # The matched negative: a TEST-bearing gate whose summary did not parse.
+        # `tests_run` must be absent, not zero — absence is what stops a consumer
+        # from reading "tested nothing" off an unmeasured run.
+        result = _make_result(status='success', command='./pw module-tests')
+        cmd_run_common(result, _noop_parser, 'python', command_args='module-tests')
+        stdout = capsys.readouterr().out
+
+        assert 'tests_population: unmeasured' in stdout
+        assert 'tests_run' not in stdout
+
+    def test_unknown_command_publishes_an_unknown_analysis_population(self, capsys):
+        result = _make_result(status='success', command='./pw publish')
+        cmd_run_common(result, _noop_parser, 'python', command_args='publish')
+        stdout = capsys.readouterr().out
+
+        assert 'analyses_examined: unknown' in stdout
+        assert 'tests_population: unmeasured' in stdout
+
+    def test_stderr_names_the_refusal_cause_when_nothing_is_clearable(self, capsys):
+        result = _make_result(status='success', command='./pw publish')
+        cmd_run_common(result, _noop_parser, 'python', command_args='publish')
+        stderr = capsys.readouterr().err
+
+        assert 'no pending finding cleared (population_unknown)' in stderr
+
+    def test_stderr_carries_no_refusal_note_when_something_is_clearable(self, capsys):
+        # Matched positive: the same line, a build that IS entitled to clear —
+        # so the refusal note above is shown to be conditional, not boilerplate.
+        result = _make_result(status='success', command='./pw compile')
+        cmd_run_common(result, _noop_parser, 'python', command_args='compile')
+        stderr = capsys.readouterr().err
+
+        assert 'analyses examined: compile' in stderr
+        assert 'no pending finding cleared' not in stderr

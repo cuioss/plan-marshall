@@ -1,6 +1,6 @@
 # Safe Fixes Guide
 
-Detailed guide for applying safe fixes automatically without user confirmation. See `fix-catalog.md` for the complete list of safe fix types and their detection patterns.
+Detailed guide for applying safe fixes automatically without user confirmation. See `fix-catalog.md` for safe fix types and their detection patterns.
 
 ## Safe Fix Principles
 
@@ -19,23 +19,20 @@ Safe fixes are mechanical transformations that:
 3. **Validate Result**: Ensure fix was applied correctly
 4. **Track Changes**: Record what was changed
 
-### Using fix.py apply subcommand
+### Using the doctor-marketplace fix subcommand
+
+`_fix.py` is unregistered and registers no executor notation of its own. The
+safe-fix pass documented here does not run it: `doctor-marketplace fix` reaches
+`_cmd_apply.py` directly. Scope by bundle / type / name, with `--dry-run` to
+preview:
 
 ```bash
-echo '{"type": "fix-type", "file": "path/to/file.md"}' | \
-  python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:fix apply --fix -
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace fix \
+  --bundles {bundle} --name {component_name} --dry-run
 ```
 
-Output:
-```json
-{
-  "success": true,
-  "fix_type": "fix-type",
-  "file": "path/to/file.md",
-  "changes": ["Description of change"],
-  "backup_created": "path/to/file.md.fix-backup"
-}
-```
+Drop `--dry-run` to apply. Each applied fix reports its type, the file it touched,
+and the changes it made.
 
 ## Batch Application
 
@@ -46,7 +43,7 @@ When applying multiple safe fixes to same file:
 fixes = sorted(fixes, key=lambda f: FIX_PRIORITY.get(f['type'], 99))
 
 for fix in fixes:
-    result = apply_fix(fix, bundle_dir)
+    result = apply_single_fix(fix, bundle_dir, templates)
     if not result['success']:
         # Log error, continue with next fix
         continue
@@ -71,7 +68,8 @@ If fix fails mid-application:
 cp file.md.fix-backup file.md
 ```
 
-`fix apply` does this automatically on error.
+`apply_single_fix` does this automatically on error, so the `cp` above is a
+manual fallback rather than the normal procedure.
 
 ### Validation After Fix
 
@@ -121,5 +119,5 @@ The other four `SIMPLICITY_*` rules (`SIMPLICITY_UNUSED_PARAMETER`, `SIMPLICITY_
 
 ## See Also
 
-- `fix-catalog.md` - Complete fix type reference with detection and fix strategies
+- `fix-catalog.md` - Fix type reference with detection and fix strategies
 - `verification-guide.md` - Verify fixes worked

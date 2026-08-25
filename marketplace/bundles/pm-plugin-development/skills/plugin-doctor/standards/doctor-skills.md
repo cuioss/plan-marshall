@@ -94,20 +94,41 @@ Skill directory names must not end with a noun suffix reserved for spawnable mar
 
 **Conditional**: Only execute if skill name is `plan-marshall-plugin`.
 
-**Validation**:
-1. Extract bundle name from skill path: `marketplace/bundles/{bundle}/skills/plan-marshall-plugin`
-2. Run manifest validation:
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:domain-extension-api:validate_manifest validate \
-     --bundle {bundle}
-   ```
-3. Parse validation output for issues
-4. Add findings to issue list with appropriate fix categories
+⛔ **A manifest validator exists but nothing reaches it, and no CLI verb may be
+documented as invoking it.** `_cmd_extension.py`'s `validate_extension` /
+`scan_extensions` check the manifest's structure, but they sit behind the
+unregistered, underscore-prefixed `_validate.py` and have no automatic caller. See
+[extension-contract.md § Validation](../../../../plan-marshall/skills/extension-api/standards/extension-contract.md#validation)
+for the coverage and the reason no invocation is written down.
 
-**Issue categorization**:
-- Schema/structure issues → Safe fix
-- Missing extension skills → Risky fix
-- Invalid skill references → Risky fix
+⛔ **The wired verb measures a different population.** `validate-contracts`
+(`_cmd_extension.py::validate_extension_contracts` — a distinct function from the
+two above, despite the name) selects implementors by **directory-name prefix**:
+`ext-triage-`, `ext-outline-`, `recipe-`, `build-` (excluding `build-server`),
+plus `*_provider.py` provider scripts. A `plan-marshall-plugin` directory matches
+none of them, so `validate-contracts --skill {bundle}:plan-marshall-plugin`
+returns `total_checked: 0` with `status: success` — a well-formed invocation over
+an empty population, which is a false green rather than a check. Measured: `0` for
+that filter, `1` for the control `--skill pm-dev-java:ext-triage-java`, `28`
+unfiltered. The manifest's `implements:` field does not bring it into scope — the
+validator checks that field, it does not select on it.
+
+At **runtime** the hooks are reached from a varying number of places, and the
+failure handling is not uniform across them. All of these shapes occur somewhere
+in the set: a WARNING through `log_entry`, a bare `except Exception: pass`, a
+silent `continue`, a stderr print, and collection into a `results['errors']` list
+that does surface. Which one a given failure gets depends on the hook and on
+which verb reached it, so a broken method may or may not announce itself.
+`discover_all_extensions()` itself calls none of them. It delegates to
+`load_extension_module()`, whose single `try` spans the spec load, the module
+exec, AND the `Extension()` instantiation — so a manifest whose `__init__` raises
+is swallowed on the same path as an unparseable one, and the bundle is omitted
+rather than failed. The absence of a diagnostic is therefore not evidence that
+the manifest is sound; see
+[plan-marshall-guide.md § plan-marshall-plugin Extension Validation](../../../../plan-marshall/skills/plan-marshall-plugin/references/plan-marshall-guide.md#plan-marshall-plugin-extension-validation)
+for the worked call-site detail. So review the manifest by reading it against the
+domain-bundle contract, and categorise findings as: schema/structure → safe fix;
+missing extension skills → risky fix; invalid skill references → risky fix.
 
 ### Validate Sub-Document Quality
 

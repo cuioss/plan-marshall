@@ -297,9 +297,9 @@ script therefore bootstraps its own `sys.path` from its location up to the bundl
 
 ## Canonical invocations
 
-The canonical argparse surface for `corpus_lsp.py`. The plugin-doctor analyzer
-(`_analyze_manage_invocation.py`) reads this section as source-of-truth for the
-`manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs
+The canonical argparse surface for `corpus_lsp.py`. The plugin-doctor `missing-canonical-block` rule checks that this section is PRESENT,
+matching its heading only — the body is never read; `manage-invocation-invalid` derives
+its accept-set from a live `--help` walk rather than from this section. Consuming docs
 xref this section by name instead of restating the command inline. See
 [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 

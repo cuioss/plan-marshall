@@ -281,30 +281,33 @@ If `affected_modules` is empty → Tier-1 is skipped; the step marks done with `
 
 ```bash
 # Step 6 — write responsibility + purpose
+# --project-dir is declared on the ROOT parser, so it goes BEFORE the verb:
+# argparse gives the subparser everything from `enrich` onward and rejects a
+# root flag written after it.
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  --project-dir {worktree_path} \
   enrich module --name M \
   --responsibility "{1-3 sentence description}" \
   --responsibility-reasoning "{source}" \
   --purpose {purpose-value} \
-  --purpose-reasoning "{signal}" \
-  --project-dir {worktree_path}
+  --purpose-reasoning "{signal}"
 ```
 
 ```bash
 # Step 7 — write 2-4 key packages (one call per architecturally significant package P)
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  --project-dir {worktree_path} \
   enrich package --module M --package P \
-  --description "{1-2 sentence description}" \
-  --project-dir {worktree_path}
+  --description "{1-2 sentence description}"
 ```
 
 ```bash
 # Step 8 — refresh skills-by-profile
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  --project-dir {worktree_path} \
   enrich skills-by-profile --module M \
   --skills-json '{"<profile>": ["<bundle:skill>", ...]}' \
-  --reasoning "{why these profiles/skills apply}" \
-  --project-dir {worktree_path}
+  --reasoning "{why these profiles/skills apply}"
 ```
 
 Each `enrich` call rewrites `enriched.json` for the named module only; there is no merge step. After the full loop, the orchestrator stages and commits the updated `enriched.json` files.

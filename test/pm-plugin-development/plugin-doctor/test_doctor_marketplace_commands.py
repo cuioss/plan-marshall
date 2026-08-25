@@ -15,6 +15,7 @@ import json
 import types
 from pathlib import Path
 
+from _plugin_doctor_dispatching_executor import seed_notation_registry
 from conftest import load_script_module
 
 _doctor = load_script_module(
@@ -52,7 +53,14 @@ def _write(path: Path, content: str) -> None:
 
 
 def _build_clean_marketplace(root: Path) -> Path:
-    """A marketplace whose single skill is clean of static-analysis findings."""
+    """A marketplace whose single skill is clean of static-analysis findings.
+
+    Carries a seeded notation registry: a tree with no executor is unexaminable,
+    not clean, so without it ``ARGUMENT_NAMING_SUBSTRATE_ABSENT`` reports
+    ``could_not_look`` and the clean-tree gate assertion pins a state this
+    fixture was never in. See ``seed_notation_registry``.
+    """
+    seed_notation_registry(root)
     bundles = root / 'marketplace' / 'bundles'
     bundle = bundles / 'qg-clean'
     _write(bundle / '.claude-plugin' / 'plugin.json', json.dumps({'name': 'qg-clean', 'version': '1.0.0'}))
@@ -76,7 +84,15 @@ def _build_defective_marketplace(root: Path) -> Path:
 
 
 def _build_argparse_violation_marketplace(root: Path) -> Path:
-    """A marketplace whose script omits ``allow_abbrev=False`` (a gate violation)."""
+    """A marketplace whose script omits ``allow_abbrev=False`` (a gate violation).
+
+    Seeded with a notation registry so the argparse violation is the only finding
+    over this tree. The scoping test below scopes AWAY from the violating skill
+    and expects a pass; the substrate finding is anchored tree-wide and survives
+    ``--paths`` by design, so an unseeded tree would fail that scoped run for a
+    reason unrelated to scoping.
+    """
+    seed_notation_registry(root)
     bundles = root / 'marketplace' / 'bundles'
     bundle = bundles / 'qg-violation'
     _write(bundle / '.claude-plugin' / 'plugin.json', json.dumps({'name': 'qg-violation', 'version': '1.0.0'}))

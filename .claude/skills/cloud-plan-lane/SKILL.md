@@ -2048,6 +2048,19 @@ Write it exactly as `**Verification loop exit:** budget-exhausted, non-convergin
 ## Deliverables
 Per deliverable: what was done, in which commit, and its verification state.
 
+## Collateral
+Every file the branch changed that the plan's § Expected surface does not name. **Derived, never
+recalled**: run `git diff --name-only {base}...HEAD` against the branch base and subtract the
+Expected surface; whatever is left is this section, one row per path with why it changed. Naming the
+substrate is part of the record — the diff command and the § Expected surface it was reconciled
+against — so a later reader can re-run the subtraction rather than trust the list.
+
+An empty section states the two populations it was derived from (`N` changed paths, `M` expected),
+never a bare "none": a subtraction that was never performed and one that came out empty are
+indistinguishable otherwise. A production file touched in passing — a resolver a fix reached through,
+say — is the case this exists to catch: it is invisible to a Deliverables section organized by
+deliverable, and it is exactly what a reviewer of the next change needs to know was moved.
+
 ## Build gate
 The `git diff --name-only origin/main...HEAD -- '*.py'` verdict, and the build result — or
 "no buildable footprint, build skipped".
@@ -2064,6 +2077,19 @@ gate — the report names the command that failed and states that condition 2 wa
 Every finding from the verification sub-agent, from CI, and from PR review — each with source,
 description, and disposition (fixed / rejected-with-reason / deferred / **survivor**). An empty
 section states what was checked to reach it.
+
+⛔ **A disposition that survives only on the PR thread is NOT recorded.** Answering a reviewer in the
+conversation and moving on feels like closing the finding, and it closes nothing: the branch is
+deleted after merge, the orchestrator's collect step reads this report and never opens the thread, and
+a review comment is not part of the diff. The reply is a courtesy to the reviewer; the row here is the
+record. So **every** review-cycle disposition is carried into this table **before the merge gate** —
+that is, before the pre-merge report commit (§ Step 8 condition 4), because the report is frozen the
+moment auto-merge is armed and a thread-only disposition can no longer be rescued after it. A finding
+answered on the thread and absent from this table is reported as **not dispositioned**, whatever the
+thread says.
+
+The same holds for a finding a reviewer raised and the run declined: `rejected-with-reason` belongs
+here with its reason, not only in the reply that carried it.
 
 Then the stop record (§ Step 6, "When the loop stops"):
 
@@ -2090,6 +2116,29 @@ Then the stop record (§ Step 6, "When the loop stops"):
   reports the deliverables, not the loop.
 
 A run that fixed everything says so, and has no survivor rows.
+
+### Mutation register
+
+Where a round's evidence was a mutation campaign, register **which mutations were actually applied
+and what each one did to the suite** — one row per mutation, composed from the sweep's **observed
+failure list**: the names of the tests that went red under it. ⛔ Never from a count written beside
+the result. "3 of 4 mutations caught" is a summary of a list the report does not carry, so nothing
+downstream can check it, and it reads identically whether the sweep ran or the sentence was typed.
+
+| Mutation (what was changed, where) | Tests observed red | Verdict |
+|---|---|---|
+| … | the test names, or `none` | `caught` / `survived` / `not re-derivable` |
+
+A mutation whose effect **cannot be re-derived against the landed tree** takes `not re-derivable` and
+says why — the code it mutated was itself rewritten later in the run, the sweep ran against a tree the
+branch no longer contains. That is a stated outcome, not a reason to carry the earlier verdict
+forward: a `caught` copied from a superseded tree is a claim about code that no longer exists.
+
+**Both derived figures here and in § Collateral are taken AFTER the review cycle closes**, immediately
+before the pre-merge report commit (§ Step 8 condition 4) — not at the moment the sweep ran. Review
+fixes change the diff and can change what a mutation does, so a figure measured mid-cycle describes a
+tree the PR does not contain, and no gate can catch it: the suite stays green while the row goes
+false.
 
 ⭐ **The exit belongs in the report HEADER, not only in this stop record.** `Outcome` reports the
 deliverables and says nothing about the loop, so a run that stopped because it ran out of rounds
@@ -2172,6 +2221,11 @@ or "none proposed", with the reason.
 
 ## Residue
 Anything left open, and where it should go next.
+
+An **empty** § Residue names the population it was derived from — the finding rows scanned, the
+review comments read, the survivor rows carried — never a bare "none". "Nothing left open" over a set
+nobody enumerated reads exactly like "nothing left open" over a set that was checked, and this is the
+section a collector trusts to decide whether the plan is finished.
 ```
 
 A finding is recorded **per instance**, not bundled: three occurrences of one defect are three rows.

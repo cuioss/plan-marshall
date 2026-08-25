@@ -32,7 +32,6 @@ Four seams are driven, none of them re-implemented here:
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -41,6 +40,7 @@ from conftest import load_script_module
 
 from _build_parse import Issue, UnitTestSummary
 from _build_result import KILLED_MESSAGE, STATUS_INDETERMINATE, STATUS_KILLED
+from _build_server_protocol import LogVerdict
 from _build_shared import cmd_run_common
 
 import _build_shared as _build_shared_mod
@@ -420,7 +420,15 @@ class TestCrossCheckPreservesTheLogVerdict:
         )
         verdict = None
         if verdict_status is not None:
-            verdict = SimpleNamespace(status=verdict_status, exit_code=exit_code)
+            # The REAL dataclass, never a hand-built stub. The cross-check reads
+            # whatever fields ``LogVerdict`` declares, so constructing the real
+            # type is what keeps this double from drifting behind it: a field
+            # added WITH a default flows in for free, and one added WITHOUT a
+            # default fails loudly here at the construction site rather than as
+            # an AttributeError raised deep inside the production read. Same
+            # convention as the sibling ``test_daemon_routed_test_count``, which
+            # drives a real on-disk job log for the same reason.
+            verdict = LogVerdict(status=verdict_status, exit_code=exit_code)
         with patch.object(factory, 'read_log_verdict', return_value=verdict):
             return factory._daemon_result_to_direct(
                 {

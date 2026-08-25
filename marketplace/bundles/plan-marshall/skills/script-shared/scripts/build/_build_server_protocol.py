@@ -684,10 +684,18 @@ class LogVerdict:
             very false signal this shared reader exists to catch, one layer in.
         exit_code: The ``exit_code:`` value, or ``None`` when the log carried no
             parseable one.
+        tests_run: The ``tests_run:`` value — the executed-test count the INNER
+            wrapper measured and published. ``None`` when the log carried no
+            parseable one, which means UNKNOWN and never zero: the routed client
+            reconstructs its own count from this field, and a zero substituted for
+            an absent one is what made a 2750-test run announce that it had tested
+            nothing. Only a green run publishes the key at all, so ``None`` is the
+            normal value on every non-green verdict.
     """
 
     status: str
     exit_code: int | None
+    tests_run: int | None = None
 
 
 def _toon_scalar(line: str) -> str:
@@ -702,11 +710,18 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     """Read the build wrapper's emitted TOON verdict back from a job log.
 
     Pure with respect to any daemon/client state — it only reads the log the
-    supervisor already streamed. Only the two top-level (column-0) ``status:``
-    and ``exit_code:`` keys are parsed; indented TOON rows (e.g. ``errors[]``
-    table lines) and every other key are ignored. The LAST occurrence of each key
-    wins, because the wrapper emits its result TOON after any progress output it
-    already wrote to the same log.
+    supervisor already streamed. Only the three top-level (column-0) ``status:``,
+    ``exit_code:`` and ``tests_run:`` keys are parsed; indented TOON rows (e.g.
+    ``errors[]`` table lines) and every other key are ignored. The LAST occurrence
+    of each key wins, because the wrapper emits its result TOON after any progress
+    output it already wrote to the same log.
+
+    ``tests_run`` is read here rather than re-derived by the client because the
+    client's own parser sees only THIS log — the wrapper's emitted TOON — and not
+    the raw test-runner output the inner build parsed. Re-parsing therefore yields
+    no test summary, and reporting that as a zero is a false could-not-look over a
+    fully-examined population. The inner wrapper already measured the count; the
+    reader's job is to carry it, not to recompute it.
 
     Args:
         log_file: Path to the job log the supervisor streamed the child into.
@@ -717,6 +732,7 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     """
     status: str | None = None
     exit_code: int | None = None
+    tests_run: int | None = None
     try:
         with open(log_file, encoding='utf-8', errors='replace') as handle:
             for line in handle:
@@ -727,8 +743,15 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
                         exit_code = int(_toon_scalar(line))
                     except ValueError:
                         exit_code = None
+                elif line.startswith('tests_run:'):
+                    try:
+                        tests_run = int(_toon_scalar(line))
+                    except ValueError:
+                        # An unparseable count is UNKNOWN, not zero — the whole
+                        # point of carrying the field is that the two differ.
+                        tests_run = None
     except OSError:
         return None
     if status is None:
         return None
-    return LogVerdict(status=status, exit_code=exit_code)
+    return LogVerdict(status=status, exit_code=exit_code, tests_run=tests_run)

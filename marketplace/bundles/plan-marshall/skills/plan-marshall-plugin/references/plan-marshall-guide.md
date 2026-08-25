@@ -239,14 +239,54 @@ API references in documentation sections (not workflow steps) may be acceptable 
 
 Applies when doctoring a skill where `name` equals `plan-marshall-plugin` and contains an `extension.py` implementing the Extension API.
 
-### Validation Script
+### No reachable validation script
 
-```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate extension \
-  --bundle {bundle_name}
-```
+⛔ **A validator exists but has no sanctioned invocation, so none may be
+documented here.** `_cmd_extension.py`'s `validate_extension` / `scan_extensions`
+check the module's structure against most of this contract, but they sit behind
+the unregistered, underscore-prefixed `_validate.py` and no pass calls them. See
+[extension-contract.md § Validation](../../extension-api/standards/extension-contract.md#validation).
 
-Extract bundle name from skill path: `marketplace/bundles/{bundle}/skills/plan-marshall-plugin`
+⛔ **The wired verb has an empty population here.** `validate-contracts` selects
+implementors by directory-name prefix — `ext-triage-`, `ext-outline-`, `recipe-`,
+`build-` (not `build-server`), plus `*_provider.py` scripts — so a
+`plan-marshall-plugin` directory is never in its population and
+`validate-contracts --skill {bundle}:plan-marshall-plugin` returns
+`total_checked: 0` with `status: success`: well-formed, and measuring nothing.
+The manifest's `implements:` declaration does not put it in scope; that field is
+something the validator checks, not how it picks what to check.
+
+In practice, then, the functions are checked by **reading the module against the
+two tables below**. Runtime does exercise them, but that is not a substitute for
+the reading, because the failure handling is not uniform across the set. All of
+these shapes occur somewhere in it: a WARNING through `log_entry`, a bare
+`except Exception: pass`, a silent `continue`, a stderr print, and collection
+into a `results['errors']` list that does surface. Which shape a given failure
+gets depends on the hook and on which verb reached it — some hooks have one call
+site, some several. Examples, not an enumeration:
+
+- `extension_discovery.py`'s `get_skill_domains_from_extensions()` and
+  `discover_applicable_extensions()` log a WARNING through `log_entry`.
+- On the `apply-config-defaults` path, a failing `discover_modules()` is swallowed
+  whole (`except Exception: extensions_skipped += 1; continue`, no log), while a
+  failing `config_defaults()` a few lines later IS collected into
+  `results['errors']` and surfaces as `status: error`.
+- `get_workflow_extensions_from_extensions()` runs `provides_triage()` and
+  `provides_outline_skill()` under a bare `except Exception: pass`.
+- `manage-config`'s `_cmd_skill_domains.py` calls `get_skill_domains()`,
+  `provides_triage()`, `provides_outline_skill()`, and `provides_recipes()` under
+  a single `try` whose handler PRINTS to stderr rather than logging — and other
+  helpers in that same file swallow the identical failure with
+  `except Exception: continue`.
+
+`discover_all_extensions()` itself calls none of them — it resolves the path,
+imports the module, and instantiates `Extension()` (which runs whatever the
+class's `__init__` does).
+
+⛔ **So the absence of a diagnostic is not evidence that a hook works.** It may
+mean the hook is fine, or that the one path which would have complained never
+ran. That is the same false-green shape as the empty-population call above, and
+it is why the reading below is the actual check.
 
 ### Required Functions
 
@@ -268,15 +308,29 @@ Extract bundle name from skill path: `marketplace/bundles/{bundle}/skills/plan-m
 `get_skill_domains()` must return objects with:
 - `domain.key` — Domain identifier (kebab-case)
 - `domain.name` — Human-readable name
-- `profiles.core` — Core profile (required)
+- `profiles.core` — Core profile (required by contract; **not enforced** —
+  `validate_skill_domains_structure` iterates only the profiles present and never
+  tests for `core`'s absence, so a manifest omitting it validates clean)
 - Each profile has `defaults` and `optionals` arrays
 
-Valid profile names: `core` (required), `implementation`, `testing`, `quality`.
+Valid profile names, as recognised by `_cmd_extension.py`'s
+`VALID_PROFILE_CATEGORIES`: `core`, `implementation`, `module_testing`,
+`integration_testing`, `quality`, `documentation`.
+
+⛔ **A name outside that set is not an error — it is a skipped check.** The
+validator reports `unknown_category` at severity `warning` (which does not fail)
+and then skips the profile, so the `defaults` / `optionals` structure check
+silently does not run for it. `testing` is the name most likely to be written by
+mistake; the contract name is `module_testing`.
 
 ### Integration with doctor-skills
 
 When `skill-name` matches `plan-marshall-plugin`:
 
-1. **Standard analysis**: Run `analyze.py structure` + `analyze.py markdown` + `validate.py references`
-2. **Extension validation**: Run extension validation script (see above)
-3. **Report**: Include extension validation status, categorize as safe/risky, auto-apply safe fixes
+1. **Standard analysis**: the structure, markdown, and link checks that
+   `doctor-marketplace analyze` runs for any skill.
+2. **Extension validation**: read the module against the two tables above. There
+   is no invocation to run — see [§ No reachable validation script](#no-reachable-validation-script)
+   for the validator that exists and why nothing reaches it.
+3. **Report**: record what the reading established, categorise as safe/risky, and
+   auto-apply safe fixes.

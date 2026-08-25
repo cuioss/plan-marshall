@@ -127,7 +127,7 @@ Load the relevant standard when performing specific operations:
 Every `ci` leaf subcommand accepts an optional top-level routing flag
 placed **before** the command/subcommand pair. When supplied, every
 underlying `gh`/`glab` subprocess runs with `cwd=<resolved_path>`, so
-branch-aware operations (`pr view`, `ci status`, `pr create`, `pr merge`,
+branch-aware operations (`pr view`, `checks status`, `pr create`, `pr merge`,
 …) resolve HEAD against the specified checkout instead of the Python
 process cwd.
 
@@ -303,7 +303,7 @@ Exit codes:
 
 ## Canonical invocations
 
-The canonical argparse surface for `ci.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation". Each top-level subcommand carries nested sub-verbs; the first positional after the notation is the subcommand, the second is the sub-verb.
+The canonical argparse surface for `ci.py`. The plugin-doctor `missing-canonical-block` rule checks that this section is PRESENT, matching its heading only — the body is never read; `manage-invocation-invalid` derives its accept-set from a live `--help` walk rather than from this section. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation". Each top-level subcommand carries nested sub-verbs; the first positional after the notation is the subcommand, the second is the sub-verb.
 
 ### pr
 

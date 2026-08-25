@@ -758,9 +758,9 @@ message: "plan state already integrated into main"
 ## Canonical invocations
 
 The canonical argparse surface for `git-workflow.py` and the standalone
-`prepare_execute.py`, `merge_lock.py`, and `integrate_into_main.py`. The plugin-doctor analyzer
-(`_analyze_manage_invocation.py`) reads this section as source-of-truth for markdown
-notation occurrences across the marketplace. Consuming skills xref this section by
+`prepare_execute.py`, `merge_lock.py`, and `integrate_into_main.py`. The plugin-doctor `missing-canonical-block` rule checks that this section is PRESENT,
+matching its heading only — the body is never read; `manage-invocation-invalid` derives
+its accept-set from a live `--help` walk rather than from this section. Consuming skills xref this section by
 name (e.g., "see `workflow-integration-git` Canonical invocations →
 `worktree-create`") instead of restating the command inline. The sibling
 `git_provider.py` module exposes shared helpers (`run_git`, provider declarations)

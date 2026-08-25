@@ -1,12 +1,15 @@
 # Fix Catalog Reference
 
-Comprehensive catalog of all fixable issue types, their categorization, and fix strategies.
+Catalog of fixable issue types, their categorization, and fix strategies.
 
 > **Provenance**: Every fix below is keyed on a rule emitted by an analyzer module. The source / classification / lesson citation for each rule lives in [rule-provenance.md](rule-provenance.md). New fixes must have a matching provenance entry.
 
 ## Fixable Issue Types Overview
 
-This catalog documents all issues that can be fixed by the plugin-doctor skill, organized by category.
+This catalog documents fixable issue types by category. It is **not** an
+enumeration of the fix-type population: the authoritative sets are
+`SAFE_FIX_TYPES` and `RISKY_FIX_TYPES` in `_doctor_shared.py`. Several types in
+those sets have no section here.
 
 ## Safe Fix Types
 
@@ -92,7 +95,7 @@ description: [Description needed]
 
 **Why Safe**: Minimal default doesn't over-promise capabilities.
 
-### 5b. missing-user-invocable-field
+### 5b. missing-user-invocable
 
 **Description**: Skill frontmatter lacks required `user-invocable` field.
 
@@ -320,7 +323,7 @@ Risky fixes require user confirmation because they involve judgment calls or may
 **Fix Strategy**:
 - Replace such paths with the executor pattern
 - Use notation: `python3 .plan/execute-script.py {bundle}:{skill}:{script} {subcommand} {args}`
-- Example: Replace a direct invocation of a bundle's `scripts` subdirectory script with the equivalent executor notation (e.g. `python3 .plan/execute-script.py pm-dev-java:java-core:java-core verify --input x`)
+- Example: Replace a direct invocation of a bundle's `scripts` subdirectory script with the equivalent executor notation (e.g. `python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles list --module x`)
 
 **Why Risky**:
 - Changes script resolution mechanism
@@ -515,44 +518,16 @@ These issues are detected but cannot be automatically fixed:
 
 **Recommendation**: Replace with stdlib alternatives.
 
-## Categorization Algorithm
+## Categorization
 
-```python
-def categorize(issue_type):
-    SAFE = {
-        "missing-frontmatter", "invalid-yaml", "missing-name-field",
-        "missing-description-field", "missing-tools-field",
-        "missing-user-invocable-field",
-        "array-syntax-tools", "trailing-whitespace",
-        "improper-indentation", "missing-blank-line-before-list",
-        "agent-skill-tool-visibility",  # additive Skill append
-        "checklist-pattern",            # remove checkbox markers
-        "fenced-code-no-language",      # append default `text` info-string
-        "wrong-plan-parameter",         # PM-003: mechanical swap
-        "missing-plan-parameter",       # PM-004: add required param
-        "positional-argument",          # SCR-009: convert to named flag
-        "camelcase-flag",               # SCR-010: rename to kebab-case
-        "missing-subparser-required",   # SCR-011: add required=True
-        "SIMPLICITY_SIGNATURE_DOCSTRING"  # delete signature-restating docstring
-    }
-    RISKY = {
-        "unused-tool-declared", "tool-not-declared",
-        "agent-task-tool-prohibited", "agent-maven-restricted",
-        "workflow-hardcoded-script-path", "workflow-explicit-script-calls",
-        "agent-lessons-via-skill", "backup-file-pattern",
-        "ci-rule-self-update",
-        "implicit-script-call",      # PM-001: needs param lookup
-        "generic-api-reference",     # PM-002: needs script identification
-        "invalid-contract-path"      # PM-005: path resolution needed
-    }
+`categorize_all_issues` (`_doctor_shared.py`) gates on `fixable` first, so it
+yields an `unfixable` bucket alongside `safe` and `risky`. `categorize_fix`
+(`_cmd_categorize.py`) has no such gate and yields only `safe` and `risky`.
 
-    if issue_type in SAFE:
-        return "safe"
-    elif issue_type in RISKY:
-        return "risky"
-    else:
-        return "risky"  # Default to risky for unknown types
-```
+Both treat `SAFE_FIX_TYPES` as the safe set and fall through to risky for
+everything else — an unrecognised type is categorized risky, not rejected. Read
+those constants in `_doctor_shared.py` for current membership; this document does
+not mirror them.
 
 ## Fix Priority Order
 

@@ -29,11 +29,31 @@ previously lived in ``test_analyze.py`` and
 ``test_analyze_argument_naming_workflow_scope.py``, differing only in one local
 binding; a later fix to dispatch semantics in one copy would have left the other
 cluster probing a materially different executor while both suites still passed.
+
+``seed_notation_registry`` is the second entry point: the one-call substrate a
+quality-gate fixture needs so its tree is EXAMINABLE rather than merely empty.
+See that function for why a fixture without an executor is not a clean tree.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
+
+#: The single notation a seeded fixture registry declares.
+#:
+#: One entry, because one is the minimum that makes the registry USABLE and the
+#: minimum is what keeps the seed cheap. An executor whose ``SCRIPTS`` literal
+#: parses to nothing is ``registry_empty`` — still a ``could_not_look`` outcome,
+#: still a finding — so an empty literal would not seed anything; and
+#: ``build_script_index`` spawns one ``--help`` probe per registered notation, so
+#: every additional entry is another subprocess per fixture that uses the seed.
+#:
+#: The notation deliberately resolves to no script in a fixture tree, so the
+#: probe fails fast and the cluster derives no accept-set for it. That is the
+#: correct answer rather than a shortcoming: a substrate-seeded fixture documents
+#: no invocations, so there is nothing for an accept-set to judge.
+FIXTURE_NOTATION = 'qg-fixture:fixture-skill:fixture-script'
 
 _PREAMBLE: tuple[str, ...] = (
     '#!/usr/bin/env python3',
@@ -112,3 +132,29 @@ def write_dispatching_executor(plan_dir: Path, notations: list[str]) -> Path:
     ]
     executor.write_text('\n'.join(lines) + '\n', encoding='utf-8')
     return executor
+
+
+def seed_notation_registry(
+    temp_root: Path, notations: Sequence[str] = (FIXTURE_NOTATION,)
+) -> Path:
+    """Give a fixture marketplace the notation-registry substrate a real tree has.
+
+    ``temp_root`` is the directory that CONTAINS ``marketplace/`` — the anchor
+    ``analyze_argument_naming`` resolves its registry from
+    (``marketplace_root.parent / '.plan' / 'execute-script.py'``). Every
+    quality-gate fixture in this suite builds ``{temp_root}/marketplace/bundles``,
+    so the executor belongs one level up at ``{temp_root}/.plan/``.
+
+    Why fixtures need this at all: a tree with no executor is UNEXAMINABLE, not
+    clean, and ``ARGUMENT_NAMING_SUBSTRATE_ABSENT`` says so. Seeding a real
+    substrate is what restores "clean" as an examinable state, so the suite's
+    clean-tree assertions keep their full strength as the NEGATIVE control
+    against an always-fires rule. Silencing the rule in fixtures would reinstate
+    the defect one surface over, and relaxing the clean-tree assertions would
+    retire the only check that can catch a rule which fires on everything. The
+    matched POSITIVE control is the deliberately unseeded fixture in
+    ``_plugin_doctor_fixtures.build_fixture_corpus``.
+
+    Returns the executor path.
+    """
+    return write_dispatching_executor(temp_root / '.plan', list(notations))

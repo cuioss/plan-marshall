@@ -1796,8 +1796,18 @@ def test_recurrence_signature_verb_scoped_flag_at_top_level_is_caught(tmp_path):
     """Signature 2 — a flag the script does not declare anywhere.
 
     The verb-scoped-vs-top-level confusion surfaces to this cluster as an
-    undeclared flag: ``--audit-plan-id`` is consumed by the executor wrapper
-    before the script's argparse runs, so it is in NO node's help surface.
+    undeclared flag. The fixture flag is one the script genuinely never declares,
+    which is what makes the finding true.
+
+    ⛔ This control used to be built on ``--audit-plan-id``, and that made it a
+    test that pinned a defect. ``--audit-plan-id`` is consumed by the EXECUTOR
+    before the target script's argparse runs, so it is in no node's ``--help``
+    and yet every invocation carrying it is accepted — verified live across all
+    eight scripts whose prose documents it: 8/8 accept it, 8/8 reject an
+    arbitrary unknown flag, 0/8 declare it. Asserting a finding for it asserted
+    that a working invocation is broken. Its acceptance is now owned by
+    ``argparse_surface.UNIVERSAL_FLAGS`` and is pinned as a NEGATIVE control in
+    ``test_argument_naming_router_consumed_flags.py``.
     """
     marketplace_root = _build_fixture_root(tmp_path)
     notation = 'plan-marshall:manage-architecture:architecture'
@@ -1811,14 +1821,14 @@ def test_recurrence_signature_verb_scoped_flag_at_top_level_is_caught(tmp_path):
         'manage-architecture',
         '# Architecture\n\n'
         '```bash\n'
-        f'python3 .plan/execute-script.py {notation} resolve --command compile --audit-plan-id X\n'
+        f'python3 .plan/execute-script.py {notation} resolve --command compile --audit-plan X\n'
         '```\n',
     )
 
     findings = analyze_argument_naming(marketplace_root)
     flag = _findings_by_rule(findings, 'ARGUMENT_NAMING_FLAG_UNKNOWN')
     assert len(flag) == 1, flag
-    assert flag[0]['details']['flag'] == 'audit-plan-id'
+    assert flag[0]['details']['flag'] == 'audit-plan'
 
 
 def test_recurrence_signature_status_instead_of_resolution_is_caught(tmp_path):
@@ -1909,7 +1919,11 @@ def test_unconfident_child_keeps_its_name_but_withdraws_its_flag_set():
 
     assert 'unprobeable' in entry.subcommands, 'unprobeable verb lost its acceptance'
     assert entry.subcommands['unprobeable'] is None, 'unknown flag surface read as empty'
-    assert entry.subcommands['probed'] == {'plan-id', 'field'}
+    # The acceptance surface is root ∪ subtree ∪ the executor/router universals,
+    # so containment rather than equality: an exact set here would re-pin the
+    # membership of ``argparse_surface.UNIVERSAL_FLAGS`` in a test about
+    # confidence-marker propagation.
+    assert {'plan-id', 'field'} <= entry.subcommands['probed']
 
 
 def test_unconfident_descendant_withdraws_the_whole_subtree_union():
@@ -1955,13 +1969,30 @@ def test_unconfident_root_flag_surface_withdraws_every_scope():
 
 
 def test_confident_surface_still_yields_concrete_accept_sets():
-    """Control: a fully confident surface produces sets, never ``None``."""
+    """Control: a fully confident surface produces sets, never ``None``.
+
+    ``root_flags`` is asserted EXACTLY and the acceptance sets by containment,
+    because the two surfaces are deliberately different sizes: ``root_flags`` is
+    the DERIVED root surface (the placement authority, which must stay exactly
+    what ``--help`` rendered), while ``subcommands`` and ``root_accept_flags``
+    additionally carry the executor/router universals. Asserting both exactly
+    would make this test fail on any change to that set; asserting both loosely
+    would stop pinning that ``root_flags`` is NOT widened, which is the property
+    ``scan_router_flag_placement`` depends on.
+    """
     entry = _entry_from_surface(
-        _surface(root_flags=['plan-id'], children={'read': _ParserNode(flags={'task'})})
+        _surface(root_flags=['config'], children={'read': _ParserNode(flags={'task'})})
     )
 
-    assert entry.root_flags == {'plan-id'}
-    assert entry.subcommands == {'read': {'plan-id', 'task'}}
+    assert entry.root_flags == {'config'}, 'the placement surface must stay derived-only'
+    assert {'config', 'task'} <= entry.subcommands['read']
+    assert {'config'} <= entry.root_accept_flags
+    assert 'audit-plan-id' in entry.root_accept_flags, (
+        'the executor-consumed accept-set is absent from the root acceptance surface'
+    )
+    assert 'audit-plan-id' not in entry.root_flags, (
+        'an executor-consumed flag leaked into the placement surface'
+    )
     assert entry.subcommands_confident is True
 
 
@@ -2098,6 +2129,60 @@ def test_canonical_forms_row_still_reports_drift_against_confident_surface(tmp_p
     findings = scan_canonical_forms(marketplace_root, index)
     assert len(findings) == 1, findings
     assert findings[0]['details']['reason'] == 'flag_drift'
+
+
+# -----------------------------------------------------------------------------
+# The analyzer half of the scope-filter pair
+# -----------------------------------------------------------------------------
+#
+# The runner half lives in ``test_runner.py``: it drives the ``scoped`` closure
+# ``doctor-marketplace.py::cmd_quality_gate`` injects into
+# ``RuleRunner.run_quality_gate`` over two byte-identical defects, and asserts
+# only the in-scope one is reported.
+#
+# That assertion rests on a premise about THIS layer, and the premise has to be
+# checked here or the pair proves nothing: a run reporting one finding is
+# equally consistent with "the filter dropped the other" and with "the analyzer
+# only ever found one". The analyzer is scope-blind by contract — it walks the
+# whole corpus and only its FINDINGS are filtered downstream — so the control
+# below is that both defects exist and are indistinguishable apart from their
+# anchor. Without it the runner-side negative control is unfalsifiable.
+
+
+def test_the_analyzer_reports_both_defects_because_scoping_is_not_its_job(tmp_path):
+    """Two byte-identical defects both surface: the cluster narrows nothing itself.
+
+    ``scoped`` is the runner's closure and this layer never sees it. Asserting
+    the two findings agree on everything except ``file`` is what makes them a
+    matched pair — findings that differed in reason or flag would leave the
+    downstream filter test comparing two different defects.
+    """
+    marketplace_root = _build_fixture_root(tmp_path)
+    notation = 'plan-marshall:manage-tasks:manage-tasks'
+    write_dispatching_executor(tmp_path / '.plan', [notation])
+    _write_fake_script(marketplace_root, notation, subcommands={'read': ['plan-id']})
+    body = (
+        '# Fixture\n\n```bash\n'
+        f'python3 .plan/execute-script.py {notation} read --invented X\n'
+        '```\n'
+    )
+    inside = _write_skill_md(marketplace_root, 'plan-marshall', 'inside-skill', body)
+    outside = _write_skill_md(marketplace_root, 'plan-marshall', 'outside-skill', body)
+
+    findings = _findings_by_rule(
+        _analyze_argument_naming_mod.analyze_argument_naming(marketplace_root),
+        'ARGUMENT_NAMING_FLAG_UNKNOWN',
+    )
+
+    assert {Path(f['file']).resolve() for f in findings} == {
+        inside.resolve(),
+        outside.resolve(),
+    }
+    assert len(findings) == 2, findings
+    assert findings[0]['details'] == findings[1]['details'], (
+        'the two sites must be indistinguishable apart from their anchor, or the '
+        'runner-side scope pair is comparing two different defects'
+    )
 
 
 # =============================================================================

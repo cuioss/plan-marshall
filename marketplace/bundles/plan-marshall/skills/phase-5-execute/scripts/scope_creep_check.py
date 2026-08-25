@@ -22,6 +22,22 @@ threshold. A persist the primitive REJECTS is reported as `status: error` with
 `error: finding_persist_failed` and a non-zero return code — never as a success
 carrying `finding_emitted: false`, which is indistinguishable from "no creep".
 
+An UNMEASURED run cannot render as a measured clean one
+-------------------------------------------------------
+Two paths perform no comparison at all: a plan with no `plan_creation_sha` (no
+baseline to diff against) and an explicitly disabled guard (`--threshold 0`).
+Both used to print `status: success` with `residual_count: 0`, and the count is
+the field consumers gate on — the `reason` that disambiguated it was advisory and
+trivially dropped, so "never measured" was indistinguishable from "measured, none
+found".
+
+Those paths now return `status: could_not_look` and OMIT `residual_count`
+entirely. The absence is the point: a caller branching on `residual_count == 0`
+finds no key rather than a zero it would read as a clean result, so the
+unmeasured state is structurally unable to render as a measured one. The measured
+paths are unchanged — a genuine zero still reports `status: success` with
+`residual_count: 0`.
+
 Threshold sources (precedence):
     1. --threshold CLI flag
     2. phase_5.scope_creep_threshold in marshal.json plan-scoped config
@@ -40,6 +56,43 @@ from _findings_core import QGATE_PERSIST_OK, add_qgate_finding
 from file_ops import WorktreeResolutionError, get_plan_dir, resolve_plan_context
 
 DEFAULT_THRESHOLD = 5
+
+STATUS_COULD_NOT_LOOK = 'could_not_look'
+"""Status for a run that performed no comparison at all.
+
+Distinct from ``success`` (the comparison ran) and from ``error`` (something
+went wrong). Nothing failed here — the guard simply had nothing to measure — and
+a run that measured nothing must not be reported in the vocabulary of one that
+measured and found nothing.
+"""
+
+
+def _emit_could_not_look(reason: str, detail: str, threshold: int) -> int:
+    """Report that no comparison was performed, WITHOUT a residual count.
+
+    The omission is load-bearing and is the whole remedy: ``residual_count`` is
+    the field consumers gate on, so publishing a ``0`` here would render an
+    unmeasured state as a measured clean one. A caller reading the key finds it
+    absent, which no consumer can mistake for "no scope creep".
+
+    ``finding_emitted: false`` is still published because it is TRUE and
+    unambiguous — no finding was emitted, and no reading of that field implies a
+    comparison happened.
+
+    Args:
+        reason: Short token naming which half could not look.
+        detail: One-line explanation of what was missing.
+        threshold: The resolved threshold, echoed for the caller's audit trail.
+
+    Returns:
+        ``0`` — an unmeasurable guard is not a failure of the run it guards.
+    """
+    print(f'status: {STATUS_COULD_NOT_LOOK}')
+    print(f'reason: {reason}')
+    print(f'detail: {detail}')
+    print(f'threshold: {threshold}')
+    print('finding_emitted: false')
+    return 0
 
 
 def _git_diff_files(worktree: Path, base_sha: str) -> list[str]:
@@ -137,25 +190,28 @@ def cmd_check(args: argparse.Namespace) -> int:
     plan_id = args.plan_id
     threshold = args.threshold if args.threshold is not None else DEFAULT_THRESHOLD
     if threshold == 0:
-        print('status: success')
-        print('residual_count: 0')
-        print(f'threshold: {threshold}')
-        print('finding_emitted: false')
-        print('disabled: true')
-        return 0
+        # The guard is switched off, so it examined nothing. That is a
+        # could-not-look, not a clean result.
+        return _emit_could_not_look(
+            'guard_disabled',
+            'threshold=0 disables the guard, so no comparison was performed; '
+            'residual_count is omitted because nothing was measured',
+            threshold,
+        )
 
     plan_dir = get_plan_dir(plan_id)
     worktree = _resolve_worktree(plan_id)
     refs = _read_references(plan_dir)
     base_sha = refs.get('plan_creation_sha')
     if not base_sha:
-        # No baseline to compare against; treat as no drift.
-        print('status: success')
-        print('residual_count: 0')
-        print(f'threshold: {threshold}')
-        print('finding_emitted: false')
-        print('reason: no_baseline_sha')
-        return 0
+        # No baseline sha means there was nothing to diff against — the guard
+        # could not look. Reporting a zero here is the defect this branch fixes.
+        return _emit_could_not_look(
+            'no_baseline_sha',
+            'references.json carries no plan_creation_sha, so no diff was computed; '
+            'residual_count is omitted because nothing was measured',
+            threshold,
+        )
 
     try:
         changed = _git_diff_files(worktree, base_sha)

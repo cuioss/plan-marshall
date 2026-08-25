@@ -77,8 +77,8 @@ python3 .plan/execute-script.py {bundle}:{skill}:{subcommand} {args}
 
 **Examples**:
 ```markdown
-PASS python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:analyze {input_file}
-PASS python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate {component_path}
+PASS python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace analyze --name {component_name}
+PASS python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate --paths {component_path}
 PASS python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write --plan-id {id} --file {file}
 ```
 

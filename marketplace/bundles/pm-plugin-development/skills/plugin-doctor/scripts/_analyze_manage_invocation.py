@@ -67,6 +67,15 @@ Public API
   files.
 - ``RULE_MANAGE_INVOCATION_INVALID`` / ``RULE_MISSING_CANONICAL_BLOCK``:
   the canonical rule keys.
+- ``ROUTER_VERBS``: the router-level verb model.
+- ``FIRST_FLAG_RE`` / ``TEMPLATE_SYNTAX_RE``: the positional-region split and
+  the usage-template patterns.
+
+The last three are public for one reason: the ``ARGUMENT_NAMING_*`` cluster in
+``_analyze_argument_naming`` needs the same three answers — which verbs exist
+outside the derived surface, where the positional region ends, and which lines
+are usage strings rather than calls. It imports them from here, so the two
+rules cannot disagree; a copy in the consumer could only claim agreement.
 """
 
 from __future__ import annotations
@@ -166,7 +175,7 @@ class _RouterVerb:
     required_flags: frozenset[str] = frozenset()
 
 
-_ROUTER_VERBS: dict[str, dict[str, _RouterVerb]] = {
+ROUTER_VERBS: dict[str, dict[str, _RouterVerb]] = {
     'plan-marshall:tools-integration-ci:ci': {
         'barrier': _RouterVerb(
             flags=frozenset({'settled-head', 'signal'}),
@@ -174,6 +183,15 @@ _ROUTER_VERBS: dict[str, dict[str, _RouterVerb]] = {
         ),
     },
 }
+
+#: Module-private alias retained for this module's own body. The name is PUBLIC
+#: because the ``ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN`` rule needs the same model:
+#: a router verb is invisible to the ``--help``-derived surface, so a cluster
+#: that judged verbs against that surface alone reported ``ci barrier`` as an
+#: invented subcommand — the identical false positive this table already removes
+#: here. Sharing the one table is what keeps the two rules from disagreeing about
+#: which verbs exist; a second copy would drift the moment a router verb is added.
+_ROUTER_VERBS = ROUTER_VERBS
 
 # =============================================================================
 # In-scope derivation
@@ -581,7 +599,12 @@ def _extract_flag_tokens(rest: str) -> list[str]:
 
 # First flag token on a line: whitespace immediately followed by ``-``. The
 # positional region is everything before it (or the whole line when no flag).
-_FIRST_FLAG_RE = re.compile(r'\s-')
+#
+# PUBLIC because the ``ARGUMENT_NAMING_*`` cluster splits its own invocation
+# lines at the same boundary, for the same reason ``ROUTER_VERBS`` is public:
+# sharing the one pattern is what keeps the two rules from disagreeing, and a
+# copy can only CLAIM to match this one, never be held to it.
+FIRST_FLAG_RE = re.compile(r'\s-')
 
 # Usage-template / placeholder syntax that marks a line as a NON-concrete
 # invocation: ``{plan_id}`` / ``<subcommand>`` placeholders, argparse usage
@@ -591,7 +614,11 @@ _FIRST_FLAG_RE = re.compile(r'\s-')
 # these in its subcommand/sub-verb region; they appear only in templated
 # examples and in the ``## Canonical invocations`` usage strings, which are
 # the spec rather than a call to validate.
-_TEMPLATE_SYNTAX_RE = re.compile(r'[{}<>\[\]|]|\.\.\.')
+#
+# PUBLIC for the same reason as :data:`FIRST_FLAG_RE`: the two rules scan the
+# same corpus for the same shapes, and a divergence would make one of them
+# report a usage string the other correctly skipped.
+TEMPLATE_SYNTAX_RE = re.compile(r'[{}<>\[\]|]|\.\.\.')
 
 
 def _positional_region_is_templated(rest: str) -> bool:
@@ -614,9 +641,9 @@ def _positional_region_is_templated(rest: str) -> bool:
     the first flag, e.g. ``--set k={worktree_path}``) is deliberately NOT
     covered — those invocations still get full subcommand and flag validation.
     """
-    flag_match = _FIRST_FLAG_RE.search(rest)
+    flag_match = FIRST_FLAG_RE.search(rest)
     region = rest[: flag_match.start()] if flag_match else rest
-    return bool(_TEMPLATE_SYNTAX_RE.search(region))
+    return bool(TEMPLATE_SYNTAX_RE.search(region))
 
 
 # =============================================================================

@@ -209,7 +209,7 @@ actionable remedy.
 
 ## CI Operations
 
-### ci status
+### checks status
 
 Check CI status for a pull request.
 
@@ -243,7 +243,7 @@ gh pr checks 123 --json name,state,conclusion
 | skipped | Check was skipped |
 | timed_out | Check timed out |
 
-### ci wait
+### checks wait
 
 Wait for CI checks to complete.
 
@@ -401,18 +401,24 @@ gh auth status  # Uses GH_TOKEN automatically
 
 ## Executor Mapping
 
-The script is invoked via the executor:
+The handler is reached through the provider-agnostic `ci` entry point — there is no
+`github` notation of its own; `ci.py` resolves the configured provider and dispatches
+to this implementation:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github <command> [args]
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci <command> [args]
 ```
 
-**Commands**:
+**Commands** — a PARTIAL illustration, not the registry. `ci.py` dispatches many
+more verbs than the six below. The authoritative surface for the `ci` notation is
+[`tools-integration-ci/SKILL.md`](../SKILL.md) § "Canonical invocations";
+`ci {group} --help` prints the live set.
+
 | Command | Description |
 |---------|-------------|
 | `pr create` | Create pull request |
 | `pr reviews` | Get PR reviews |
-| `ci status` | Check CI status |
-| `ci wait` | Wait for CI completion |
+| `checks status` | Check CI status |
+| `checks wait` | Wait for CI completion |
 | `issue create` | Create issue |
 | `issue view` | View issue details |

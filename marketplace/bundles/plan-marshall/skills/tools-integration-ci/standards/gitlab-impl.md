@@ -191,7 +191,7 @@ returns the actionable scope/permission remedy.
 
 ## CI Operations
 
-### ci status
+### checks status
 
 Check pipeline status for a merge request.
 
@@ -247,7 +247,7 @@ glab ci view 789 --json jobs
 | canceled | completed | cancelled |
 | skipped | completed | skipped |
 
-### ci wait
+### checks wait
 
 Wait for pipeline to complete.
 
@@ -421,19 +421,25 @@ glab auth status  # Uses GITLAB_TOKEN automatically
 
 ## Executor Mapping
 
-The script is invoked via the executor:
+The handler is reached through the provider-agnostic `ci` entry point — there is no
+`gitlab` notation of its own; `ci.py` resolves the configured provider and dispatches
+to this implementation:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:gitlab <command> [args]
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci <command> [args]
 ```
 
-**Commands**:
+**Commands** — a PARTIAL illustration, not the registry. `ci.py` dispatches many
+more verbs than the six below. The authoritative surface for the `ci` notation is
+[`tools-integration-ci/SKILL.md`](../SKILL.md) § "Canonical invocations";
+`ci {group} --help` prints the live set.
+
 | Command | Description |
 |---------|-------------|
 | `pr create` | Create merge request |
 | `pr reviews` | Get MR approvals |
-| `ci status` | Check pipeline status |
-| `ci wait` | Wait for pipeline completion |
+| `checks status` | Check pipeline status |
+| `checks wait` | Wait for pipeline completion |
 | `issue create` | Create issue |
 | `issue view` | View issue details |
 

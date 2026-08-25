@@ -209,7 +209,14 @@ def test_workflow_md_invented_flag_emits_flag_unknown(tmp_path):
     assert finding['details']['notation'] == 'plan-marshall:manage-findings:manage-findings'
     assert finding['details']['subcommand'] == 'add'
     assert finding['details']['flag'] == 'finding-type'
-    assert sorted(finding['details']['known_flags']) == ['detail', 'plan-id', 'title', 'type']
+    # The reported accept-set is a SUPERSET of the script's own declarations: it
+    # carries the executor/router universals, which no ``--help`` renders. Assert
+    # containment of the declared four plus absence of the offending flag rather
+    # than an exact list, so the assertion pins THIS rule's contract instead of
+    # re-pinning the membership of ``argparse_surface.UNIVERSAL_FLAGS``.
+    known_flags = set(finding['details']['known_flags'])
+    assert {'detail', 'plan-id', 'title', 'type'} <= known_flags, known_flags
+    assert 'finding-type' not in known_flags, known_flags
     assert finding['severity'] == 'error'
 
 

@@ -193,15 +193,15 @@ error: Task not found: TASK-999
 plan_id: EXAMPLE-PLAN
 ```
 
-## Script Chaining
+## Sequenced Invocations
 
-TOON output enables pipeline processing:
+A multi-step workflow runs as independent invocations, each read on its own. Nothing pipes one command's TOON into the next:
 
 ```bash
-# Extract → Categorize → Apply → Verify
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:fix extract --input file.md | \
-  python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:fix categorize | \
-  python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:fix apply
+# Analyze → apply the safe subset → re-check
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace analyze --bundles {bundle}
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace fix --bundles {bundle}
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate --paths {component_path}
 ```
 
 ## Output Quality Rules

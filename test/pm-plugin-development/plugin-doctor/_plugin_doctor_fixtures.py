@@ -1337,13 +1337,21 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     # documented AFTER the verb. The sibling unknown-flag rule cannot see this —
     # it judges against the accept-set widened with the root's flags, so a root
     # flag is in every subcommand's set by construction.
+    #
+    # ``--config`` rather than ``--plan-id``: the placement rule fires on a flag
+    # present in the DERIVED ``root_flags``, and ``--plan-id`` is also a member of
+    # the acceptance-side ``argparse_surface.UNIVERSAL_FLAGS``. Building the
+    # positive control on a name that appears in both sets would make the fixture
+    # unable to distinguish the two surfaces, so a regression that started reading
+    # the acceptance set here would still look green. ``--config`` belongs to the
+    # derived root surface only.
     corpus['ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED'] = FixtureSpec(
         analyzer=lambda root: _aan.scan_router_flag_placement(
             root,
             {
                 'b:s:x': _ScriptEntry(
-                    subcommands={'list': {'plan-id', 'status'}},
-                    root_flags={'plan-id'},
+                    subcommands={'list': {'config', 'status'}},
+                    root_flags={'config'},
                     subcommand_own_flags={'list': {'status'}},
                 )
             },
@@ -1351,7 +1359,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
         files={
             'bundles/b/skills/s/SKILL.md': (
                 '# F\n\n```bash\n'
-                'python3 .plan/execute-script.py b:s:x list --plan-id p1\n'
+                'python3 .plan/execute-script.py b:s:x list --config c1\n'
                 '```\n'
             ),
         },
@@ -1364,6 +1372,28 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
                 '| Script | Operation | Canonical form |\n'
                 '| --- | --- | --- |\n'
                 '| `ghost` | read | `ghost-unresolvable read --plan-id {id}` |\n'
+            ),
+        },
+    )
+    # ARGUMENT_NAMING_SUBSTRATE_ABSENT — the could_not_look outcome. Unlike its
+    # five siblings above, this rule lives in the CLUSTER ENTRY POINT's substrate
+    # check rather than in a sub-scanner, so it is fired through
+    # ``analyze_argument_naming`` itself; a sub-function call could not reach it.
+    #
+    # The fixture condition is an ABSENCE: a scratch tree carrying a non-empty
+    # bundles corpus (so ``_markdown_targets`` has files to report as unjudged)
+    # and NO ``{marketplace_root.parent}/.plan/execute-script.py``. Producing it
+    # takes writing nothing at all, which is precisely why this rule belongs here
+    # and NOT in ``EXEMPT_RULE_IDS`` — that door is for a rule that structurally
+    # cannot fire on a static fixture, and this is the cheapest static fixture in
+    # the corpus. Payload assertions (the ``details.reason`` discriminator across
+    # all three substrate states) live in
+    # ``test_argument_naming_absent_substrate.py``.
+    corpus['ARGUMENT_NAMING_SUBSTRATE_ABSENT'] = FixtureSpec(
+        analyzer=lambda root: _aan.analyze_argument_naming(root / 'marketplace'),
+        files={
+            'marketplace/bundles/b/skills/s/SKILL.md': (
+                '# F\n\nA skill body carrying no executor invocation to judge.\n'
             ),
         },
     )

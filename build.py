@@ -420,6 +420,61 @@ def check_spdx_headers(paths: list[str]) -> list[str]:
     return offenders
 
 
+def ensure_executor_substrate() -> int:
+    """Generate ``.plan/execute-script.py`` when it is absent; 0 on success.
+
+    The marketplace-wide plugin-doctor gate below derives the argument-naming
+    cluster's whole accept-set from this executor, and the path is **git-ignored**
+    — a fresh clone carries none, which is exactly what CI runs on. Without this
+    step the cluster reports ``ARGUMENT_NAMING_SUBSTRATE_ABSENT`` on every CI run:
+    the gate fails not because the corpus is wrong but because CI never had the
+    substrate to judge it. Generating it here is what lets CI actually examine the
+    2800-odd documented invocations instead of reporting that it could not.
+
+    The alternatives were considered and rejected for the same reason: dropping
+    the rule's severity to warning, or scoping the cluster out of the CI gate,
+    each keep CI green while leaving it structurally blind to argument-naming
+    drift — which is the false-clean the rule exists to remove, moved one layer
+    out to the gate that consumes it.
+
+    **Fail closed.** A generation failure returns non-zero and halts the gate
+    rather than letting plugin-doctor run against an absent registry. Proceeding
+    would produce a substrate-absent finding whose real cause is this step, and a
+    reader would triage the corpus instead of the bootstrap.
+
+    Idempotent and local-safe: an executor that already exists is left untouched,
+    so a developer machine's own (possibly newer) executor is never overwritten by
+    the gate.
+    """
+    executor = Path('.plan/execute-script.py')
+    if executor.is_file():
+        print(f'>>> quality-gate: executor substrate present at {executor}')
+        return 0
+    generator = (
+        BUNDLES_DIR / 'plan-marshall' / 'skills' / 'tools-script-executor'
+        / 'scripts' / 'generate_executor.py'
+    )
+    # Invoked by DIRECT PATH, never through .plan/execute-script.py — the file
+    # this step exists to create cannot be the thing that dispatches its own
+    # creation.
+    exit_code = run(
+        ['python3', str(generator), 'generate', '--marketplace', '--marketplace-root', '.'],
+        'quality-gate: bootstrapping the executor substrate (absent — fresh checkout)',
+    )
+    if exit_code != 0:
+        print('quality-gate: executor generation FAILED — the argument-naming cluster '
+              'has no notation registry to judge against, so this gate cannot report on '
+              'it. Halting rather than running plugin-doctor over an absent substrate.',
+              file=sys.stderr)
+        return exit_code
+    if not executor.is_file():
+        print(f'quality-gate: executor generation reported success but {executor} does '
+              'not exist. Halting: a zero exit code is not evidence the file landed.',
+              file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_quality_gate(module: str | None, boundary: CoverageBoundary | None = None) -> int:
     """Run mypy + ruff + plugin-doctor static-analysis on production sources.
 
@@ -484,6 +539,9 @@ def cmd_quality_gate(module: str | None, boundary: CoverageBoundary | None = Non
     boundary.record_checked(f'SPDX headers [{", ".join(spdx_paths)}]')
 
     if module is None:
+        exit_code = ensure_executor_substrate()
+        if exit_code != 0:
+            return exit_code
         doctor_script = (
             BUNDLES_DIR / 'pm-plugin-development' / 'skills' / 'plugin-doctor'
             / 'scripts' / 'doctor-marketplace.py'

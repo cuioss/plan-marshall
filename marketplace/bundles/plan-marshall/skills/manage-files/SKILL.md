@@ -368,9 +368,9 @@ domain: java
 
 ## Canonical invocations
 
-The canonical argparse surface for `manage-files.py`. The D4 plugin-doctor analyzer
-(`_analyze_manage_invocation.py`) reads this section as source-of-truth for markdown
-notation occurrences across the marketplace. Consuming skills xref this section by
+The canonical argparse surface for `manage-files.py`. The plugin-doctor `missing-canonical-block` rule checks that this section is PRESENT,
+matching its heading only — the body is never read; `manage-invocation-invalid` derives
+its accept-set from a live `--help` walk rather than from this section. Consuming skills xref this section by
 name (e.g., "see `manage-files` Canonical invocations → `write`") instead of
 restating the command inline.
 

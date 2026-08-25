@@ -47,6 +47,8 @@ EXTRA_FIELDS = [
     'command_type',
     'truncated',
     'tests_run',
+    'tests_population',
+    'analyses_examined',
 ]
 """Additional scalar fields that appear after core fields.
 
@@ -71,11 +73,25 @@ next to ``duration_seconds`` (wall clock) so a run killed before it finished sho
 how long the suite actually took before the kill. Like ``truncated`` it must be
 listed here or ``format_toon`` drops it silently.
 
-``tests_run`` is the executed-test count a green run reports on its success
-result (see ``_build_shared.cmd_run_common``). It is the population the
-green-build finding reconciliation was decided on — a ``test-failure`` finding is
-cleared only when ``tests_run > 0`` — so it must be published, never left
-implicit; listing it here keeps the TOON and JSON success outputs in agreement."""
+``tests_run`` is the MEASURED executed-test count a green run reports on its
+success result (see ``_build_shared.cmd_run_common``). It is part of the
+population the green-build finding reconciliation was decided on — a
+``test-failure`` finding is cleared only when a measured ``tests_run > 0`` — so it
+must be published, never left implicit; listing it here keeps the TOON and JSON
+success outputs in agreement. It is emitted ONLY when the count was measured: an
+unmeasured run omits the key rather than publishing a zero that a consumer would
+read as "tested nothing".
+
+``tests_population`` is that omission's discriminator (``measured`` /
+``unmeasured``). It is always present on a success result, so an absent
+``tests_run`` is legible as "not measured" rather than merely missing — the
+absence says something, and this field is what says it.
+
+``analyses_examined`` names the analysis kinds the run actually performed
+(``compile``, ``lint``, ``test``), or the literal ``unknown`` when the invocation
+is not one the canonical vocabulary describes. It is the OTHER half of the
+reconciliation population: a finding type is cleared only when the run performed
+an analysis that can reach it, and this field publishes which those were."""
 
 # Structured fields handled specially
 STRUCTURED_FIELDS = {'errors', 'warnings', 'tests'}

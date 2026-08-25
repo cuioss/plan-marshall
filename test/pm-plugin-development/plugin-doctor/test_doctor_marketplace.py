@@ -29,6 +29,7 @@ import types
 from pathlib import Path
 
 import pytest
+from _plugin_doctor_dispatching_executor import seed_notation_registry
 from toon_parser import parse_toon
 
 from conftest import PROJECT_ROOT, get_script_path, get_scripts_dir, load_script_module, run_script
@@ -884,7 +885,14 @@ def test_marketplace_root_invalid_path_errors_clearly(tmp_path, monkeypatch):
 
 
 def _build_clean_fixture(temp_root: Path) -> Path:
-    """Build a fixture marketplace whose components are clean of static-analysis findings."""
+    """Build a fixture marketplace whose components are clean of static-analysis findings.
+
+    Carries a seeded notation registry: a tree with no executor is unexaminable,
+    not clean, so without it ``ARGUMENT_NAMING_SUBSTRATE_ABSENT`` would report
+    ``could_not_look`` here and the clean-tree assertions below would be pinning
+    a state this fixture was never in. See ``seed_notation_registry``.
+    """
+    seed_notation_registry(temp_root)
     bundles_dir = temp_root / 'marketplace' / 'bundles'
     bundles_dir.mkdir(parents=True)
     bundle = bundles_dir / 'qg-clean'
@@ -911,7 +919,13 @@ No-op.
 
 
 def _build_argparse_violation_fixture(temp_root: Path) -> Path:
-    """Build a fixture marketplace whose script violates argparse_safety (no allow_abbrev=False)."""
+    """Build a fixture marketplace whose script violates argparse_safety (no allow_abbrev=False).
+
+    Seeded like the clean fixture so the argparse violation is the ONLY finding
+    the gate reports over this tree — a substrate absence alongside it would make
+    the fixture prove "some finding fired" rather than "this one did".
+    """
+    seed_notation_registry(temp_root)
     bundles_dir = temp_root / 'marketplace' / 'bundles'
     bundles_dir.mkdir(parents=True)
     bundle = bundles_dir / 'qg-violation'
@@ -1084,7 +1098,14 @@ def _build_two_skill_scope_fixture(temp_root: Path) -> tuple[Path, Path, Path]:
     allow_abbrev=False); skill B is clean. Returns
     ``(temp_root, skill_a_dir, skill_b_dir)`` so the scoping tests can target
     each skill dir directly.
+
+    Seeded with a notation registry. The substrate finding is anchored TREE-WIDE
+    at the bundles root and deliberately survives ``--paths`` scoping (it is an
+    anti-vacuity guard), so an unseeded tree would leak a finding outside skill A
+    into every scoped run here. With a substrate present the guard does not fire
+    and both scoping assertions hold unweakened.
     """
+    seed_notation_registry(temp_root)
     bundles_dir = temp_root / 'marketplace' / 'bundles'
     bundles_dir.mkdir(parents=True)
     bundle = bundles_dir / 'qg-scope'
@@ -2068,7 +2089,13 @@ def _build_historical_prose_fixture(temp_root: Path, *, disable_frontmatter: boo
     When ``disable_frontmatter`` is True, the SKILL.md frontmatter includes a
     ``plugin-doctor-disable: [no-historical-prose-in-skills]`` key (Granularity-3)
     so the per-file layer suppresses the finding.
+
+    Seeded with a notation registry so the historical-prose finding is the only
+    thing standing between this fixture and a passing gate — the suppression test
+    asserts ``status: pass`` once that finding is exempted, which an unseeded
+    tree's substrate finding would defeat.
     """
+    seed_notation_registry(temp_root)
     bundles_dir = temp_root / 'marketplace' / 'bundles'
     bundle = bundles_dir / 'sup-bundle'
     bundle.mkdir(parents=True)

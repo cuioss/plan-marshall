@@ -16,6 +16,14 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from _build_examined import (
+    BUILD_FINDING_TYPES,
+    clearable_finding_types,
+    examined_analyses,
+    population_label,
+    refusal_reason,
+    resolve_tests_run,
+)
 from _build_format import format_json, format_toon
 from _build_parse import (
     SEVERITY_ERROR,
@@ -260,11 +268,12 @@ def cmd_discover_common(args, discover_fn: Callable) -> int:
 # Issue → finding-type routing (used by the --plan-id auto-store path)
 # ---------------------------------------------------------------------------
 
-# The three per-type finding stores a build run writes to. A green build run
-# reconciles them via the path below (see ``_reconcile_pending_build_findings``):
-# build-error / lint-issue clear on any green build, while test-failure clears
-# only when the run actually executed tests (a non-zero executed-test count).
-BUILD_FINDING_TYPES: tuple[str, ...] = ('build-error', 'test-failure', 'lint-issue')
+# The three per-type finding stores a build run writes to are declared by
+# ``_build_examined`` alongside the analyses that can EXERCISE each of them, and
+# imported here (rather than restated) so the two can never disagree about which
+# types exist. A green build run reconciles them via the path below (see
+# ``_reconcile_pending_build_findings``), which clears a type only when the run
+# performed an analysis that could actually reach it.
 
 
 def _classify_issue_finding_type(issue: Issue) -> str:
@@ -427,51 +436,64 @@ def _record_producer_mismatch(
     return None
 
 
-def _reconcile_pending_build_findings(plan_id: str, command_str: str, tests_run: int) -> int:
-    """Terminalize pending build findings when the build run is green.
+def _reconcile_pending_build_findings(
+    plan_id: str,
+    command_str: str,
+    analyses: frozenset[str] | None,
+    tests_run: int | None,
+) -> int:
+    """Terminalize pending build findings the green run was ENTITLED to clear.
 
     A prior failing run appends ``build-error`` / ``test-failure`` /
     ``lint-issue`` findings to the per-type store. When the build subsequently
-    succeeds, those findings are stale — the failure they recorded has been
-    fixed — yet nothing resolves them, leaving the Q-Gate store dirty.
+    succeeds, some of those findings are stale — the failure they recorded has
+    been fixed — and nothing else resolves them, leaving the Q-Gate store dirty.
 
-    A ``test-failure`` finding is different in kind from the other two: ONLY a
-    run that actually executed tests proves a recorded test failure is gone. A
-    green build that ran zero tests — a ``compile``, a lint-only gate, or a test
-    command that collected nothing — proves the code compiles and lints, but it
-    tested nothing, so it must NOT clear a stale ``test-failure`` finding.
-    Clearing one on a zero-test build is the exact false-green this guard
-    exists to stop: a command that tested nothing would otherwise destroy a
-    true, already-recorded test-failure signal.
+    **A green exit code is not the evidence.** Entitlement is decided by
+    :func:`_build_examined.clearable_finding_types` from two facts about the run
+    that just went green: which analyses it actually performed, and how many tests
+    it actually executed. A type is cleared only when the run performed an analysis
+    that can reach it — a ``compile`` cannot evaluate a lint-issue at any scope, so
+    its green says nothing about that dimension and clears nothing in it. A run
+    whose population could not be determined at all clears nothing whatsoever.
+    ``test-failure`` keeps the stronger, pre-existing requirement of a MEASURED
+    non-zero executed-test count, and an unknown count no longer masquerades as a
+    zero that merely happens to refuse.
 
-    So ``build-error`` / ``lint-issue`` clear on any green build, while
-    ``test-failure`` clears only when ``tests_run > 0``. The executed-test count
-    is stamped into the resolution detail so the population the clearing
-    decision was made on is PUBLISHED, never left implicit.
+    The population the decision was made on is stamped into every resolution
+    detail via :func:`_build_examined.population_label`, so a reader of a resolved
+    finding can see what was examined rather than having to trust that something
+    was.
 
     Args:
         plan_id: The plan owning the finding store.
-        command_str: The green command that cleared the findings.
-        tests_run: The number of tests this run executed (0 when the run parsed
-            no test summary — a non-test command or a zero-collection run).
+        command_str: The green command whose entitlement is being spent.
+        analyses: The analyses this run performed, or ``None`` when the population
+            could not be determined.
+        tests_run: The measured executed-test count, or ``None`` when unknown.
 
     Returns:
-        The count of findings resolved (0 when none were pending).
+        The count of findings resolved — ``0`` both when nothing was pending and
+        when the run was entitled to clear nothing. The caller distinguishes the
+        two from :func:`_build_examined.refusal_reason`, which is ``None`` only in
+        the former case.
     """
     from _findings_core import resolve_findings_by_type
 
-    # build-error / lint-issue clear on any green build; test-failure requires
-    # evidence that tests actually ran. Derived from BUILD_FINDING_TYPES so the
-    # canonical set stays the single source of truth for what a build reconciles.
-    clearable_types = [t for t in BUILD_FINDING_TYPES if t != 'test-failure']
-    if tests_run > 0:
-        clearable_types.append('test-failure')
+    clearable_types = clearable_finding_types(analyses, tests_run)
+    if not clearable_types:
+        return 0
 
     reconcile_result = resolve_findings_by_type(
         plan_id=plan_id,
-        finding_types=tuple(clearable_types),
+        finding_types=clearable_types,
         to_resolution='fixed',
-        detail=f'auto-resolved by green build ({tests_run} test(s) executed): {command_str}',
+        detail=(
+            f'auto-resolved by green build '
+            f'({population_label(analyses, tests_run)}; '
+            f'types entitled: {", ".join(clearable_types)} '
+            f'of {", ".join(BUILD_FINDING_TYPES)}): {command_str}'
+        ),
     )
     if reconcile_result.get('status') == 'success':
         return int(reconcile_result.get('resolved_count', 0))
@@ -594,6 +616,7 @@ def cmd_run_common(
     project_dir: str = '.',
     parser_needs_command: bool = False,
     plan_id: str | None = None,
+    command_args: str | None = None,
 ) -> int:
     """Common cmd_run logic shared across all build skills.
 
@@ -629,6 +652,12 @@ def cmd_run_common(
             storage and green-build reconciliation engage ONLY when
             :func:`names_real_plan` accepts it, so a plan-less build parses and
             formats exactly as it always has.
+        command_args: The invocation's canonical ``--command-args`` value (e.g.
+            ``'quality-gate plan-marshall'``). It is the substrate the
+            examined-analysis population is derived from, so a green build can
+            only clear findings in dimensions it actually examined. Omitting it
+            yields an UNKNOWN population, which clears nothing — the fail-closed
+            default, never a silent full-entitlement one.
 
     Returns:
         Exit code (0 for success, 1 for failure).
@@ -741,39 +770,80 @@ def cmd_run_common(
             test_summary = None
 
         if test_summary is None or test_summary.failed == 0:
-            # The executed-test count is the evidence that authorises clearing a
-            # test-failure finding. A run that parsed no test summary
-            # (``test_summary is None`` — a non-test command, or a test command
-            # that collected nothing) executed zero tests, so a stale
-            # test-failure finding must survive it. The count is published on the
-            # emitted result as ``tests_run`` (the same field the ``parse`` verb
-            # emits) so the clearing decision's population is never implicit.
-            tests_run = test_summary.total if test_summary is not None else 0
+            # WHAT THIS RUN EXAMINED is the evidence that authorises clearing a
+            # finding — not the exit code. Two independent facts are derived and
+            # then PUBLISHED on the emitted result, so the clearing decision's
+            # population is never implicit and a consumer can re-derive the
+            # verdict without re-reading the log:
+            #
+            #   analyses  — which analysis kinds the canonical command performs.
+            #               `None` when the command is not one the canonical
+            #               vocabulary describes: undetermined, not empty.
+            #   tests_run — the MEASURED executed-test count. `None` when the run
+            #               was supposed to execute tests but no summary parsed;
+            #               a zero is emitted only when a non-test gate genuinely
+            #               executed none.
+            analyses = examined_analyses(command_args)
+            # A DAEMON-ROUTED build carries the inner wrapper's own measured count
+            # on the result (`routed_tests_run`), and it WINS over this layer's
+            # re-parse. The log a routed run hands back is the daemon job log —
+            # the wrapper's emitted TOON, not the raw test-runner output — so
+            # re-parsing it yields no summary and the count would collapse to a
+            # false zero over a fully-examined population. An in-process build
+            # carries no such key and falls through to its own parse unchanged.
+            routed_total = result.get('routed_tests_run')
+            parsed_total = test_summary.total if test_summary is not None else None
+            if routed_total is not None:
+                parsed_total = int(routed_total)
+            tests_run = resolve_tests_run(analyses, parsed_total)
+            refusal = refusal_reason(analyses, tests_run)
+            retained = (
+                '' if refusal is None
+                else f' — no pending finding cleared ({refusal})'
+            )
             print(
-                f'[EXEC] green build: {tests_run} test(s) executed'
-                + ('' if tests_run > 0 else ' — test-failure findings retained (this run tested nothing)'),
+                f'[EXEC] green build: {population_label(analyses, tests_run)}{retained}',
                 file=sys.stderr,
             )
 
-            # Terminalize pending build findings from a prior failing run: the
-            # build is now green. build-error / lint-issue clear unconditionally;
-            # test-failure clears only with executed-test evidence (see
-            # _reconcile_pending_build_findings). A plan-less build owns no
+            # Terminalize the pending build findings this run was ENTITLED to
+            # clear — the types whose analysis it actually performed. A run that
+            # examined nothing, or whose population is unknown, clears nothing
+            # (see _reconcile_pending_build_findings). A plan-less build owns no
             # finding store and reconciles nothing, exactly as before.
             if names_real_plan(plan_id):
                 try:
                     _reconcile_pending_build_findings(
-                        plan_id=plan_id, command_str=command_str, tests_run=tests_run
+                        plan_id=plan_id,
+                        command_str=command_str,
+                        analyses=analyses,
+                        tests_run=tests_run,
                     )
                 except Exception as e:
                     print(f"[WARNING] Failed to reconcile pending build findings: {e}", file=sys.stderr)
+
+            # `tests_run` is emitted ONLY when it was measured. A consumer reading
+            # the field on an unmeasured run finds it ABSENT rather than zero —
+            # the same "an unmeasured state must not render as a measured one"
+            # rule the reconciliation above enforces, applied to the published
+            # result. `tests_population` is the explicit discriminator so the
+            # absence is legible rather than merely inferable.
+            population_fields: dict[str, Any] = {
+                'tests_population': 'measured' if tests_run is not None else 'unmeasured',
+                'analyses_examined': (
+                    'unknown' if analyses is None
+                    else (', '.join(sorted(analyses)) if analyses else 'none')
+                ),
+            }
+            if tests_run is not None:
+                population_fields['tests_run'] = tests_run
 
             success_output = success_result(
                 duration_seconds=result['duration_seconds'],
                 log_file=log_file,
                 command=command_str,
                 exit_code=result['exit_code'],
-                tests_run=tests_run,
+                **population_fields,
             )
             # Fail-closed guard: never emit an untruthful success (success over a
             # non-zero exit code) from the run choke point.

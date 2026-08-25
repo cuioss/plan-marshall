@@ -18,14 +18,14 @@ Comprehensive diagnostic and fix skill for marketplace components. Combines diag
 - Do not prompt for safe fixes — apply them automatically without AskUserQuestion
 - Agents cannot use the Task tool (agent-task-tool-prohibited — unavailable at runtime)
 - Only maven-builder agent may execute Maven commands (agent-maven-restricted)
-- Do not invent script notations — use only documented notations from the skill being called (command-self-contained-notation)
+- Do not invent script notations — use only documented notations from the skill being called
 
 **Constraints:**
 - Load prerequisite skills and the component reference guide before analyzing
-- Every workflow step that performs a script operation must have an explicit bash code block with the full `python3 .plan/execute-script.py` command (workflow-explicit-script-calls)
+- Every workflow step that performs a script operation must have an explicit bash code block with the full `python3 .plan/execute-script.py` command
 - Agents must record lessons via manage-lessons skill, not self-invoke commands (agent-lessons-via-skill)
-- Only `doctor-marketplace.py` is registered in the executor; other scripts (`_analyze.py`, `_validate.py`, `_fix.py`) are internal modules accessed via `doctor-marketplace` subcommands
-- Prose instructions adjacent to script calls must reference parameter values consistent with the script API (workflow-prose-parameter-consistency)
+- Only `doctor-marketplace.py` is registered in the executor. `_analyze.py`, `_validate.py`, and `_fix.py` are separate verb-bearing entry points whose verbs are NOT `doctor-marketplace` subcommands; a workflow needing one invokes the script directly, and no executor form may be documented for them. See § External Resources
+- Prose instructions adjacent to script calls must reference parameter values consistent with the script API (workflow-prose-parameter-inconsistency)
 
 ## Purpose
 
@@ -240,7 +240,28 @@ Test-tree conventions enforced across the `test/` directory, at two severities. 
 
 ### Scripts (scripts/)
 
-Only `doctor-marketplace.py` is registered in the executor. The other scripts (`_analyze.py`, `_validate.py`, `_fix.py`) are internal modules with underscore prefix and are accessed via `doctor-marketplace` subcommands.
+Only `doctor-marketplace.py` is registered in the executor.
+
+`_analyze.py`, `_validate.py`, and `_fix.py` are separate verb-bearing entry
+points, each with its own argparse surface and `if __name__ == '__main__'` block.
+Their verbs are NOT `doctor-marketplace` subcommands: `doctor-marketplace`
+declares `list-components`, `analyze`, `fix`, `report`, `quality-gate`,
+`test-conventions`, `validate-contracts`, while `_analyze.py` declares `markdown`,
+`structure`, `coverage`, `cross-file`; `_validate.py` declares `references`,
+`cross-file`, `inventory`, `extension`; and `_fix.py` declares `extract`,
+`categorize`, `apply`, `verify`. No `doctor-marketplace` verb name appears among
+them, and `doctor-marketplace.py` imports none of the three.
+
+⛔ **Unregistered, so no executor form may be written for them** — here or in any
+consuming doc. A workflow that needs one of these verbs
+invokes the script directly and says so; the `doctor-skill-content` workflow does
+exactly that for `_analyze.py cross-file` (see
+[content-quality-guide.md § Integration](references/content-quality-guide.md#integration-with-doctor-skill-content-workflow)).
+An unregistered third part does still resolve through the executor's filename
+fallback, but that resolution is not a sanctioned form and documenting it as an
+invocation is a lint violation. The consequence for `extension` specifically is
+worked through in
+[`plan-marshall:extension-api` extension-contract.md § Validation](../../../plan-marshall/skills/extension-api/standards/extension-contract.md#validation).
 
 **Registered Script** (callable via executor):
 
@@ -251,20 +272,22 @@ Only `doctor-marketplace.py` is registered in the executor. The other scripts (`
 | `doctor-marketplace.py` | `fix` | **EXECUTE** | Auto-apply safe fixes across marketplace (`--bundles`, `--type`, `--name`, `--dry-run`) |
 | `doctor-marketplace.py` | `report` | **EXECUTE** | Generate comprehensive report for LLM review |
 | `doctor-marketplace.py` | `quality-gate` | **EXECUTE** | Run invariant rules as a build gate; optional `--paths` scoping (exit 1 on findings) |
+| `doctor-marketplace.py` | `test-conventions` | **EXECUTE** | Run test-tree convention rules (exit 1 on error-severity findings; warnings reported only) |
+| `doctor-marketplace.py` | `validate-contracts` | **EXECUTE** | Validate extension-POINT contract compliance (EC-01…EC-50); population selected by directory-name prefix |
 
 **Notation**: `pm-plugin-development:plugin-doctor:doctor-marketplace {subcommand}`
 
-**Internal Modules** (NOT directly callable - used internally by doctor-marketplace):
+**Internal Modules** (unregistered — no sanctioned executor form):
 
 | Module | Purpose |
 |--------|---------|
-| `_analyze.py` | Structural analysis, bloat, agent-task-tool-prohibited/maven-restricted/lessons-via-skill |
+| `_analyze.py` | Dispatcher declaring `markdown`, `structure`, `coverage`, `cross-file` — imports the four `_analyze_*` modules below; no verb reachable as a `doctor-marketplace` subcommand |
 | `_analyze_markdown.py` | Markdown structure analysis |
 | `_analyze_coverage.py` | Tool coverage extraction |
 | `_analyze_structure.py` | Skill directory structure validation |
 | `_analyze_crossfile.py` | Cross-file duplication analysis |
-| `_validate.py` | Reference extraction and validation |
-| `_fix.py` | Fix application and verification |
+| `_validate.py` | Dispatcher declaring `references`, `cross-file`, `inventory`, `extension` — no verb reachable as a `doctor-marketplace` subcommand |
+| `_fix.py` | Dispatcher declaring `extract`, `categorize`, `apply`, `verify` — no verb reachable as a `doctor-marketplace` subcommand |
 
 #### Hybrid Batch Processing
 
@@ -357,14 +380,13 @@ The matching, precedence ordering, and config-parsing logic are owned by [`scrip
 
 ## Rule Definitions
 
-See [references/rule-catalog.md](references/rule-catalog.md) for the complete catalog of rules that plugin-doctor validates (agent, workflow, command, skill, script, content, and PM-workflow rules).
+See [references/rule-catalog.md](references/rule-catalog.md) for the catalog of rules that plugin-doctor validates (agent, workflow, command, skill, script, content, and PM-workflow rules). It does not cover every emitted rule id; `references/rule-provenance.md` is the per-rule registry.
 
 Representative rule ids by category:
 
 - **Agent**: `agent-task-tool-prohibited`, `agent-maven-restricted`, `agent-lessons-via-skill`, `agent-skill-tool-visibility`
-- **Workflow**: `workflow-explicit-script-calls`, `workflow-hardcoded-script-path`, `workflow-prose-parameter-consistency`, `prose-verb-chain-consistency`
-- **Command**: `command-self-contained-notation`, `command-thin-wrapper`, `command-progressive-disclosure`, `command-completion-checks`, `command-no-embedded-standards`
-- **Skill**: `skill-enforcement-block-required`, `skill-naming-noun-suffix`
+- **Workflow**: `workflow-hardcoded-script-path`, `workflow-prose-parameter-inconsistency`, `prose-verb-chain-consistency`
+- **Skill**: `skill-naming-noun-suffix`
 - **Script**: `argparse_safety`, `notation-staleness`, `script-call-drift`
 - **Manage-invocation**: `manage-findings-invocation-invalid`, `manage-invocation-invalid`, `missing-canonical-block` (see [scripts/_analyze_manage_invocation.py](scripts/_analyze_manage_invocation.py) for the generalized analyzer)
 - **Mirror-drift**: `provides-method-table-drift`, `literal-count-drift`, `canonical-enum-choices-drift`, `readme-skill-registration-drift`, `broken-relative-link`, `fenced-code-no-language` (**build-failing** — registered in `cmd_quality_gate` so a drifted mirror fails the build, and also reported under `analyze`; `fenced-code-no-language` is auto-fixable; `provides-method-table-drift` detects drift between a `plan-marshall-plugin` extension.py `provides_*()` overrides and the SKILL.md "Extension API" table mirror — see [scripts/_analyze_provides_method_table.py](scripts/_analyze_provides_method_table.py); `canonical-enum-choices-drift` compares a documented `{a|b|c}` enum in a `## Canonical invocations` block against the flag's live argparse `choices=`; `readme-skill-registration-drift` compares a bundle README's skill enumeration against the set its `plugin.json` registers)
@@ -405,7 +427,7 @@ This skill is designed to run without user prompts for safe operations. Required
 
 ## Canonical invocations
 
-The canonical argparse surface for `doctor-marketplace.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+The canonical argparse surface for `doctor-marketplace.py`. The plugin-doctor `missing-canonical-block` rule checks that this section is PRESENT, matching its heading only — the body is never read; `manage-invocation-invalid` derives its accept-set from a live `--help` walk rather than from this section. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 
 ### list-components
 
