@@ -141,6 +141,76 @@ def test_self_edge_is_suppressed_and_reported():
     assert any(note.startswith('self-edge:') for note in notes)
 
 
+def test_non_mapping_reference_is_suppressed_without_taking_down_the_join():
+    """A corrupt element is reported, and its well-formed siblings still derive.
+
+    ``component_refs`` is materialized by four discovery engines across four
+    bundles, so a non-mapping element is a real possibility rather than a
+    theoretical one. Unguarded, ``ref.get()`` raised ``AttributeError`` and took
+    down the whole graph derivation — not just the offending reference.
+
+    The well-formed entry in the SAME list is the positive control: a fix that
+    swallowed the entire list would satisfy the suppression assertion below and
+    fail the edge assertion.
+    """
+    # Arrange — three corrupt shapes interleaved with one good reference.
+    refs = [None, 'not-a-mapping', 42, _ref('beta')]
+    derived = {'alpha': _module(refs), 'beta': _module([])}
+
+    # Act
+    edges, notes = _load_extension().derive_edges(derived, {})
+
+    # Assert — the well-formed sibling still yields its edge ...
+    assert edges == [('alpha', 'beta')]
+    # ... and all three corrupt entries surface in one aggregated note.
+    malformed = [note for note in notes if note.startswith('malformed-reference:')]
+    assert len(malformed) == 1
+    assert '3 reference(s) suppressed' in malformed[0]
+
+
+def test_unusable_target_bundle_is_suppressed_and_reported():
+    """A target that is absent, empty, or unhashable names no endpoint.
+
+    The unhashable case is the one that used to raise: ``target not in
+    derived_by_name`` is a membership test, so a list-valued target produced a
+    ``TypeError`` rather than resolving to a miss.
+    """
+    # Arrange — three unusable targets, plus a good reference as positive control.
+    refs = [_ref(None), _ref(''), _ref(['beta']), _ref('beta')]
+    derived = {'alpha': _module(refs), 'beta': _module([])}
+
+    # Act
+    edges, notes = _load_extension().derive_edges(derived, {})
+
+    # Assert
+    assert edges == [('alpha', 'beta')]
+    malformed = [note for note in notes if note.startswith('malformed-reference:')]
+    assert len(malformed) == 1
+    assert '3 reference(s) suppressed' in malformed[0]
+
+
+def test_malformed_reference_note_precedes_the_semantic_categories():
+    """Emission order follows SUPPRESSION_CATEGORIES: structural before semantic.
+
+    ``_aggregate_notes`` emits in the seeded mapping's key order, so the order
+    this resolver declares is the order consumers read. Pinning it here keeps the
+    declared ordering rationale from drifting into an unverified claim.
+    """
+    # Arrange — one entry per category, in a deliberately non-matching order.
+    refs = [None, _ref('ghost'), _ref('alpha')]
+    derived = {'alpha': _module(refs)}
+
+    # Act
+    _edges, notes = _load_extension().derive_edges(derived, {})
+
+    # Assert
+    assert [note.split(':', 1)[0] for note in notes] == [
+        'malformed-reference',
+        'unknown-endpoint',
+        'self-edge',
+    ]
+
+
 def test_harvest_that_did_not_run_is_reported_not_silent():
     """A failed harvest produces a stated reason, never a bare zero-edge success.
 

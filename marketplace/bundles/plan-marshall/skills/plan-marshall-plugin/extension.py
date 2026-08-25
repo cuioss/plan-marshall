@@ -58,8 +58,26 @@ as ``status: ok, edge_count: 0`` — the confident empty answer this substrate
 exists to eliminate.
 """
 
-SUPPRESSION_CATEGORIES = ('unresolved-target', 'unknown-endpoint', 'self-edge')
-"""Suppression buckets reported in ``notes[]``, in emission order."""
+SUPPRESSION_CATEGORIES = (
+    'malformed-reference',
+    'unresolved-target',
+    'unknown-endpoint',
+    'self-edge',
+)
+"""Suppression buckets reported in ``notes[]``, in emission order.
+
+``malformed-reference`` leads because it is a *structural* rejection decided
+before the reference can be classified at all: an element that is not a mapping,
+or whose ``target_bundle`` is not a usable non-empty string, cannot be asked
+whether it resolved or where it points. The other three are semantic verdicts
+about a well-formed reference.
+
+The category exists because ``component_refs`` is materialized by four different
+discovery engines across four bundles, so a malformed element is a real
+possibility rather than a theoretical one. Reporting it is the point: a silent
+skip would hide a producer defect, which is the opposite of what this resolver's
+notes contract exists for.
+"""
 
 
 class Extension(ExtensionBase, PathAttributionBase, DerivationResolverBase):
@@ -291,6 +309,15 @@ class Extension(ExtensionBase, PathAttributionBase, DerivationResolverBase):
         server that never started stays distinguishable from ``edge_count: 0`` on
         a workspace with genuinely no references.
 
+        ``component_refs`` is treated as untrusted input. Four discovery engines
+        across four bundles materialize that field, so an element that is not a
+        mapping — or one whose ``target_bundle`` is not a usable non-empty string
+        — is a real possibility. Such an element is suppressed under
+        ``malformed-reference`` and reported through the same aggregated-note path
+        as the semantic categories, never dropped silently and never allowed to
+        raise: an unguarded ``ref.get(...)`` on a non-mapping would take down the
+        entire graph derivation rather than just the offending reference.
+
         Args:
             derived_by_name: Module name → derived data. A module carrying no
                 harvest record contributes nothing.
@@ -312,10 +339,30 @@ class Extension(ExtensionBase, PathAttributionBase, DerivationResolverBase):
             saw_status |= self._collect_harvest_notes(module_data, harvest_notes, seen_notes)
 
             for ref in module_data.get('component_refs') or []:
+                if not isinstance(ref, dict):
+                    # Not a mapping, so its dep_type is unreadable and this
+                    # resolver cannot tell whether the entry was even its own.
+                    # Reported rather than skipped: the alternative to a note
+                    # here is an AttributeError that takes down the whole graph
+                    # derivation, not merely this reference.
+                    suppressed['malformed-reference'].append(
+                        f'{module_name} -> <non-mapping {type(ref).__name__}> [{LSP_DEP_TYPE}]'
+                    )
+                    continue
+
                 if ref.get('dep_type') != LSP_DEP_TYPE:
                     continue
 
                 target = ref.get('target_bundle')
+                if not isinstance(target, str) or not target:
+                    # An unhashable target would raise TypeError on the
+                    # membership test below, and an empty or absent one names no
+                    # endpoint that could be resolved either way.
+                    suppressed['malformed-reference'].append(
+                        f'{module_name} -> {target!r} [{LSP_DEP_TYPE}]'
+                    )
+                    continue
+
                 candidate = f'{module_name} -> {target} [{LSP_DEP_TYPE}]'
 
                 if not ref.get('resolved'):

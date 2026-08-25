@@ -41,7 +41,7 @@ See [extension-contract.md](../extension-api/standards/extension-contract.md) fo
 | `claim_paths()` | Declares the repo-relative trees the `plan-marshall` module owns — the bare `.plan` root segment |
 | `derivation_resolver_id()` | Returns the Axis-C provenance id `lsp`, stamped onto every edge this resolver produces |
 | `derivation_file_patterns()` | Declares the file patterns the harvest reads (`['**/*.py']`). Descriptive metadata for the resolver-configuration menu, never a filter |
-| `derive_edges()` | Pure join over the `component_refs` field discovery materializes, selecting only `lsp` entries. Reads the `lsp_harvest` status record and reports it, so a harvest that did not run is stated rather than collapsing into a zero-edge success. Unresolved targets, unknown endpoints, and self-edges are suppressed and reported as aggregated `notes[]` entries |
+| `derive_edges()` | Pure join over the `component_refs` field discovery materializes, selecting only `lsp` entries. Reads the `lsp_harvest` status record and reports it, so a harvest that did not run is stated rather than collapsing into a zero-edge success. Unresolved targets, unknown endpoints, self-edges, and malformed references — an element that is not a mapping, or whose `target_bundle` is not a usable non-empty string — are suppressed and reported as aggregated `notes[]` entries |
 
 ## Discovery Flow
 
