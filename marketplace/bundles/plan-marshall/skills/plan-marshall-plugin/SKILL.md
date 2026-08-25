@@ -1,6 +1,6 @@
 ---
 name: plan-marshall-plugin
-description: Build system module discovery consolidating Maven, Gradle, npm, and Python detection
+description: Build system module discovery consolidating Maven, Gradle, npm, and Python detection, plus the general-dev domain, the Axis-D path attribution for the .plan tree, and the Axis-C lsp derivation resolver
 implements: plan-marshall:extension-api/standards/ext-point-domain-bundle
 user-invocable: false
 mode: manifest

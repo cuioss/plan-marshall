@@ -5,7 +5,7 @@
      role="img" aria-labelledby="title desc"
      font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
   <title id="title">Extension topology — Plan Marshall core plus twelve named extension points</title>
-  <desc  id="desc">Plan Marshall is a core orchestrator plus six phase skills plus the execution-context dispatcher plus a family of manage-* services, extended by eleven production bundles through twelve named extension points: build, verify, triage, recipe, outline, provider, execution-context-workflow, dynamic-level-executor, self-review-surfacing, domain-verb, derivation-resolver, and path-attribution. The verify point is a findings-pipeline stage (producer-declared verification_profile, adversarial-refute before triage) rather than a domain-behaviour hook; derivation-resolver and path-attribution are opted into by multiple inheritance from a sibling ABC — DerivationResolverBase for module-edge derivation, PathAttributionBase for path-to-module ownership — rather than by a hook method or an implements: marker. The diagram shows the core on the left and the twelve extension points on the right as cards in a six-row two-column grid, each annotated with how the contract is declared (ExtensionBase method, sibling-ABC subclass, implements: frontmatter, producer declaration, or standalone convention) and a current implementation count.</desc>
+  <desc  id="desc">Plan Marshall is a core orchestrator plus six phase skills plus the execution-context dispatcher plus a family of manage-* services, extended by ten production bundles through twelve named extension points: build, verify, triage, recipe, outline, provider, execution-context-workflow, dynamic-level-executor, self-review-surfacing, domain-verb, derivation-resolver, and path-attribution. The verify point is a findings-pipeline stage (producer-declared verification_profile, adversarial-refute before triage) rather than a domain-behaviour hook; derivation-resolver and path-attribution are opted into by multiple inheritance from a sibling ABC — DerivationResolverBase for module-edge derivation, PathAttributionBase for path-to-module ownership — rather than by a hook method or an implements: marker. The diagram shows the core on the left and the twelve extension points on the right as cards in a six-row two-column grid, each annotated with how the contract is declared (ExtensionBase method, sibling-ABC subclass, implements: frontmatter, producer declaration, or standalone convention) and a current implementation count.</desc>
 
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
@@ -26,7 +26,7 @@
 
   <!-- ============= Title ============= -->
   <text x="600" y="32" class="col-header">Extension topology — core plus the twelve extension points</text>
-  <text x="600" y="52" class="col-sub">all eleven production bundles implement `get_skill_domains()`; the other points are optional and per-domain</text>
+  <text x="600" y="52" class="col-sub">all ten production bundles implement `get_skill_domains()`; the other points are optional and per-domain</text>
 
   <!-- ============= LEFT — Plan Marshall core ============= -->
   <rect class="stroke" x="60" y="100" width="320" height="784" rx="8" ry="8"/>
