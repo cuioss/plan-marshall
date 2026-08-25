@@ -130,9 +130,15 @@ then generates a fresh trigger event; see `../SKILL.md` § "Rate-limit refusal r
 
 The notice usually states its own reset time; `rate_limit_eta_patterns` extracts it so the caller
 can report a concrete ETA instead of an opaque "rate-limited". The patterns are *extraction* regexes,
-not detection regexes — detection is the bot-agnostic recogniser in `_github_pr._is_rate_limit_notice`
-paired with the `refusal_patterns` data layer above. A notice that states no ETA simply yields an empty
-`eta`, which the caller reports as unknown rather than as "reopens now".
+not detection regexes. The detection they run behind is the `_github_pr._is_refusal_notice` **seam**,
+which consults the arms answerable BEFORE the per-bot noise filter — the `refusal_patterns` data layer
+above alongside the bot-agnostic recogniser `_github_pr._is_rate_limit_notice`, with that function's own
+docstring the authority for the arms it reaches. Read that as a statement about **that seam**, never
+about refusal recognition as a whole: the arms the recognition stack defines are named in exactly one
+place, `_github_pr.REFUSAL_LAYERS`, and a `False` from the seam is on its own no evidence that the bot
+reviewed. See [`bot-participation-contract.md`](bot-participation-contract.md) § "Refusal recognition is
+ENUMERATIVE, and a rewording nobody enumerated is its own state". A notice that states no ETA simply
+yields an empty `eta`, which the caller reports as unknown rather than as "reopens now".
 
 ## Consumer stage — classify a surviving CodeRabbit finding
 

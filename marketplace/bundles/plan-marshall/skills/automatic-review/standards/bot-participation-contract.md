@@ -58,7 +58,7 @@ ten members. The taxonomy is closed: every non-participation resolves to one of 
 | `in_progress` | The bot's completion check-run is still running when the poll budget expires. | The bot engaged but did not finish in time; left to the pre-merge comment barrier. |
 | `refused_awaitable` | The bot posted a refusal whose limit reopens on its own (`rate_limit_class: awaitable_window`). | Worth awaiting — the window resets. |
 | `refused_hard` | The bot posted a refusal that does not reopen on a useful timescale (`rate_limit_class: hard_quota`) and whose cause is a rate/budget **quota** — an account- or plan-level allowance. | Not worth awaiting; whether the absence is tolerable is a required-vs-optional question, not a waiting question. |
-| `refused_unknown` | The bot posted a refusal whose class the registry declares `unknown` — its refusal shape has never been observed, so whether the window reopens is genuinely not known. | A declared *we-do-not-know*, NEVER a positive hard quota. Rendering it as `refused_hard` steers an operator toward "waiting is futile, force it" for a refusal that might have been awaitable. Its own member so the ignorance reaches the reader as ignorance. |
+| `refused_unknown` | The bot posted a refusal about whose awaitability nothing is known. Reached two ways: the registry declares its class `unknown` (its refusal shape has never been observed), or **no arm of the recognition stack could read the notice at all** — which resolves here whatever class the bot declares. | A declared *we-do-not-know*, NEVER a positive hard quota. Rendering it as `refused_hard` steers an operator toward "waiting is futile, force it" for a refusal that might have been awaitable. Its own member so the ignorance reaches the reader as ignorance. |
 | `refused_structural` | The bot posted a refusal whose **cause is a ceiling on the diff itself** — the PR is over a per-PR size budget (an observed `cause: size`). Decided by the cause axis, whatever the bot's `rate_limit_class` declares. | **The only member whose refusal is not temporal.** The other three say *not now*; this one says *not this diff*, and the same request never succeeds while the diff is this size. Remedies: **split**, **accept the gap**, or **disable this reviewer for this PR** — ⛔ **never await.** The finding carries the **cap** the notice stated, so the gap is auditable against the measured diff size. |
 | `participated_but_empty` | The bot posted at least one comment, but every comment was filtered out (noise) so it stored zero findings. | **Accounted-for, not a failure.** The bot did its pass and had nothing actionable to say. |
 | `participated_stale` | The bot's comment matched a declared `participation_evidence` publish shape but failed the `participation_requires_update` currency test — the comment was reviewed against a commit that is **not** the merge candidate, and it was not edited in place since. | The bot reviewed an **earlier** commit, so nothing has reviewed the current diff. Blocking, but the remedy is a re-review trigger. |
@@ -327,32 +327,87 @@ noise filter listing the routine sections a bot emits on a *successful* review (
 learning notices, summary tables); reusing it for refusal detection would classify ordinary
 successful reviews as refusals. The two lists answer different questions and must stay distinct.
 
-A bot whose `refusal_patterns[]` is empty has no observed refusal shape; its non-participation
-resolves to one of the non-refusal members — `participated_stale`, `in_progress`, `not_triggered`, or
-`absent` — rather than to any of the four refusal members. This is the fail-closed default: a refusal
-is only ever claimed on positive evidence.
+A bot whose `refusal_patterns[]` is empty has no observed refusal shape, so no refusal is claimed on
+the strength of a pattern it never declared. That is the fail-closed default for **this arm** — but it
+is not the whole of that bot's recognition, because recognition is enumerative.
 
-### A refusal resolves by CAUSE first, then ONE-TO-ONE by `rate_limit_class`
+### Refusal recognition is ENUMERATIVE, and a rewording nobody enumerated is its own state
 
-A recognised refusal resolves to exactly one of **four** members. The **cause** axis is consulted
-first, and it decides one member outright; every other refusal then splits one-to-one from the
-refusing bot's registry `rate_limit_class` — a three-valued field (`awaitable_window` / `hard_quota` /
-`unknown`), not a boolean:
+Recognition works by enumerating shapes that have been **observed**, so its reach is bounded by what
+has been written down. Two consequences follow, and both are properties of the mechanism rather than
+gaps in any one bot's record:
+
+- **A bot whose `refusal_patterns[]` is empty rests entirely on the arms that do not read its
+  registry record.** Nothing about that is hypothetical: PR-Agent declares an empty list today, and it
+  is the bot this repository's merge barrier treats as *required* — so the reviewer whose silence
+  actually blocks a merge is the one with no registry counterexample on file.
+- **A refusal REWORDED past every enumerated shape is recognised as an
+  `unrecognised_refusal`** — not filed as review feedback, and not credited as participation. It
+  resolves to the `refused_unknown` member, because an arm that could not read the notice supports no
+  claim about it; asserting a reset window nobody observed would be worse than admitting ignorance.
+  This arm is **fail-safe and inert until a threshold is measured**: it fires only under a derived
+  `UNRECOGNISED_REFUSAL_MAX_CHARS`, and at the shipped value of `None` it never fires at all, so the
+  behaviour described here is what the arm does once armed rather than what the stack does today.
+  Read that as the arm's shipped state, not as a caveat on the rule: with no threshold the recognition
+  stack behaves exactly as it did before this arm existed.
+
+**The rule applies at BOTH recognition sites**, and stating it for one only is how the second came to
+carry the gap unnoticed: the filing pre-filter (`github_pr fetch_findings`) and the re-review matcher
+(`github_re_review`) each run the same stack and each report the same state. A rule documented for the
+producer alone would leave the matcher silently exempt — which is exactly where the worse failure
+lived, since an unrecognised refusal reaching the matcher was admitted as a genuine review carrying
+`head_sha_verified: true`.
+
+The remedy the state carries is a **mechanism, not a description**: each record names the registry
+file and the field to add the observed phrasing to, and carries the withheld excerpt to add. Filing it
+moves that phrasing into the registry arm, where the next fetch reads it as an ordinary recognised
+refusal.
+
+⛔ **Do not restate here how many reviewers are registered, how many declare an empty list, or how
+many arms the stack has.** Every one of those figures moves whenever a bot or an arm is added, and a
+restated count is a duplicated fact with no mechanical link to its source. The rule is written so that
+the next reviewer registered inherits it with no edit here and no number to correct.
+
+### A refusal resolves by `rate_limit_class` BY DEFAULT, displaced by two overrides
+
+A recognised refusal resolves to exactly one of **four** members. The refusing bot's registry
+`rate_limit_class` — a three-valued field (`awaitable_window` / `hard_quota` / `unknown`), not a
+boolean — supplies the **default** member. Two **per-refusal observations** displace that default, and
+both are consulted before it:
 
 | Observation | Member | Meaning |
 |-------------|--------|---------|
-| `cause: size` (any `rate_limit_class`) | `refused_structural` | A ceiling on the diff itself. The same request never succeeds at this size, so **no wait is productive** — the remedies are split / accept / disable-for-this-PR. |
-| `awaitable_window` | `refused_awaitable` | The limit reopens on its own; awaiting the reset is productive. |
-| `hard_quota` | `refused_hard` | A budget that does not reopen on a useful timescale; awaiting it only burns budget. |
-| `unknown` | `refused_unknown` | The registry declares ignorance — the refusal shape has never been observed, so whether waiting helps is not known. |
+| **override (first) —** `cause: size` (any `rate_limit_class`) | `refused_structural` | A ceiling on the diff itself. The same request never succeeds at this size, so **no wait is productive** — the remedies are split / accept / disable-for-this-PR. |
+| **override (second) —** no arm of the recognition stack could READ the refusal (any `rate_limit_class`) | `refused_unknown` | Nothing was READ, so nothing is known — least of all whether the window reopens. Deferring to the declared class here would assert a reset time nobody observed. |
+| *default —* `awaitable_window` | `refused_awaitable` | The limit reopens on its own; awaiting the reset is productive. |
+| *default —* `hard_quota` | `refused_hard` | A budget that does not reopen on a useful timescale; awaiting it only burns budget. |
+| *default —* `unknown` | `refused_unknown` | The registry declares ignorance — the refusal shape has never been observed, so whether waiting helps is not known. |
 
-**Why the cause outranks the class.** `rate_limit_class` is declared once per **bot**, while a cause
-is observed per **refusal**, and one bot can refuse for both causes at a single class — Sourcery's
-per-PR size ceiling and its weekly quota are both `hard_quota`. The per-bot field therefore cannot
-separate them even in principle, so the more specific observation is the one that must win. Reading
-the class first would keep the structural case invisible in exactly the case that matters most: a bot
-declaring `awaitable_window` that refuses on size would resolve `refused_awaitable`, whose whole
-meaning is *worth awaiting*.
+**The two overrides CAN both hold, and the `size` cause is consulted first.** They would be
+contradictory only if they described the SAME refusal — a `size` cause is READ from the notice's own
+text, which is what the unrecognised override denies. But both are per-**bot** aggregates over that
+bot's refusals: the producer emits one `unrecognised_refusal[]` record per COMMENT, and the consumer
+receives a bot-kind list. A bot that published one refusal an arm read as a size ceiling and another no
+arm could read therefore satisfies both, from two different notices, with neither observation wrong.
+
+The positively-read cause wins, because an absence must not erase a ceiling the run actually
+extracted — taking the unrecognised override first would discard that figure and leave the operator
+deciding without the one remedy already in hand (split the PR under the stated cap). The ordering is
+safe in the awaitability direction, which is what makes it the conservative choice and not merely the
+more informative one: both members it can yield are non-awaitable, so neither order can offer a wait on
+a bot carrying an unreadable notice. The orders differ only in whether the operator is told WHY.
+
+**Why both overrides outrank the class.** `rate_limit_class` is declared once per **bot**, while each
+override is observed per **refusal**. One bot can refuse for both causes at a single class — Sourcery's
+per-PR size ceiling and its weekly quota are both `hard_quota` — so the per-bot field cannot separate
+them even in principle, and the more specific observation is the one that must win. The same reasoning
+carries the second override: a bot's declared class describes the refusals whose shape has been
+observed, and says nothing whatever about one that reached no arm at all.
+
+Reading the class first would keep both cases invisible in exactly the situation that matters most,
+and by the same mechanism: a bot declaring `awaitable_window` would resolve `refused_awaitable` —
+whose whole meaning is *worth awaiting* — for a size ceiling that waiting cannot move, and equally for
+a notice no arm could parse.
 
 `review_completeness._refusal_state()` is the one place this mapping lives. The class arm is total and
 injective: no class value collapses into another, and any value that is neither of the first two —
@@ -436,7 +491,7 @@ The producer therefore treats a recognised refusal as a **three-way branch**, no
 |--------|-----------|-----|
 | Filed as a `pr-comment` finding? | **No.** | A refusal is a signal *about the review*, not feedback about the code. Handing it to triage would ask the operator to dispose of a notice with nothing to fix. |
 | Counted as noise? | **No** — it has its own `count_skipped_refusal` counter. | Sharing `count_skipped_noise` is exactly the conflation that hid it. The two counters answer different questions. |
-| Surfaced? | **Yes** — the bot is named in `fetch_findings`'s `refused_bots[]` and forwarded to `review_completeness check --refused-bots`, with its cause and stated cap alongside. | This is what lets the taxonomy assign a refusal member — `refused_structural` for a size ceiling, `refused_awaitable` / `refused_hard` / `refused_unknown` otherwise — instead of inferring absence from silence. |
+| Surfaced? | **Yes** — the bot is named in `fetch_findings`'s `refused_bots[]` and forwarded to `review_completeness check --refused-bots`, with its cause and stated cap alongside. A refusal no arm could READ is surfaced in `unrecognised_refusal[]` instead and forwarded via `--unrecognised-refusal-bots`. | This is what lets the taxonomy assign a refusal member — by the bot's declared class, displaced by whichever override the observation carries — instead of inferring absence from silence. |
 | Counted as participation? | **No** — the refusing comment is excluded from `participated_bots[]`. | A refusal is published in one of the bot's declared publish shapes, so without an explicit exclusion the shape alone would credit it as a proven participant. |
 
 This is also why `refusal_patterns` must never be unioned into the producer's `ignore_patterns` drop
@@ -655,9 +710,9 @@ accumulate, the verb ships as a measurement with **no parity claim attached**.
 | Consumer | What it reads |
 |----------|---------------|
 | `automatic-review/SKILL.md` | Both lists, to drive the completion-aware poll, the re-review trigger set, and the step-done guard. |
-| `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]` **and the `stale_participation_bots[]` set that carries `participated_stale`**; each bot's `refusal_patterns`, to branch a refusal into `refused_bots[]` rather than drop it, and its `refusal_size_patterns`, to attribute each refusal's CAUSE into `refused_causes[]` (size vs quota), and its `refusal_size_cap_patterns`, to read the stated ceiling into `refused_size_caps[]`; each bot's `contentless_review_markers` / `actionable_content_markers`, to drop a fully clean review comment as noise. |
+| `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]` **and the `stale_participation_bots[]` set that carries `participated_stale`**; each bot's `refusal_patterns`, to branch a refusal into `refused_bots[]` rather than drop it, and its `refusal_size_patterns`, to attribute each refusal's CAUSE into `refused_causes[]` (size vs quota), and its `refusal_size_cap_patterns`, to read the stated ceiling into `refused_size_caps[]`; the enumerative arm, to report a refusal no earlier arm could read into `unrecognised_refusal[]` — withholding the finding, denying the participation credit, and carrying the registry file and field that close the gap; each bot's `contentless_review_markers` / `actionable_content_markers`, to drop a fully clean review comment as noise. |
 | `github_pr pull_request_runs` / `ci checks pull-request-runs` | Nothing from this contract — it is the **observation channel for `not_triggered`**, answering the PR-wide question of whether any `pull_request`-event workflow run exists for the PR at all. Its verdict reaches the predicate as the single `--not-triggered` bool. |
-| `review_completeness check` | `required_bots` for the quorum; `optional_bots` for reporting only; `participation_evidence` to admit each evidence pair; the `--refused-causes` overlay (from `refused_causes[]`) to resolve a `size` cause to `refused_structural`, and `rate_limit_class` to split every OTHER refusal one-to-one (`refused_awaitable` / `refused_hard` / `refused_unknown`). Consumes `stale_participation_bots[]` via `--stale-participation-bots` to assign `participated_stale`, the bots that answered a re-review without reviewing the merge candidate via `--declined-bots` to assign `declined`, the PR-wide `--not-triggered` bool to refine what would otherwise be `absent`, and `--refusal-size-caps` (from `refused_size_caps[]`) to carry each structural refusal's stated ceiling. Reports `refusal_causes[]` as `{bot_kind, cause, cap}`. Emits `review_state_summary` (the reviewer-state distribution) so `display_detail` can tell reviewed-clean from nobody-reviewed. |
+| `review_completeness check` | `required_bots` for the quorum; `optional_bots` for reporting only; `participation_evidence` to admit each evidence pair; `rate_limit_class` for the DEFAULT refusal member (`refused_awaitable` / `refused_hard` / `refused_unknown`), displaced by two per-refusal overlays: `--refused-causes` (from `refused_causes[]`) resolves a `size` cause to `refused_structural`, and `--unrecognised-refusal-bots` (from `unrecognised_refusal[]`) resolves a refusal no arm could read to `refused_unknown`. Consumes `stale_participation_bots[]` via `--stale-participation-bots` to assign `participated_stale`, the bots that answered a re-review without reviewing the merge candidate via `--declined-bots` to assign `declined`, the PR-wide `--not-triggered` bool to refine what would otherwise be `absent`, and `--refusal-size-caps` (from `refused_size_caps[]`) to carry each structural refusal's stated ceiling. Reports `refusal_causes[]` as `{bot_kind, cause, cap}`. Emits `review_state_summary` (the reviewer-state distribution) so `display_detail` can tell reviewed-clean from nobody-reviewed. |
 | `review_completeness size-caps` | Each bot's `refusal_size_patterns` and `refusal_size_cap_patterns`, to disclose IN ADVANCE which reviewers carry a structural diff-size ceiling and whether its value is recoverable. Reads no PR — the answer is registry data, so a plan can consult it before requesting a review. |
 | `review_completeness deficit` | The same observation flags as `check`, to classify each bot and derive its reviewed-at-all predicate and filed finding count, then report the comparative deficit signal — a reviewer-quality observation that gates no merge (§ "The comparative deficit signal"). |
 | `review_gate_delta assess` | The enabled roster (`required_bots ∪ optional_bots`) via `--enabled-bots` as the coverage denominator, and the reviewed-at-all set via `--reviewed-bots` as its numerator — both supplied by the caller from this rule's definitions rather than re-derived. Its escape count applies this rule's **filed-and-actionable** definition, review-body-summary carve-out included, matching `review_retrospective`'s classification; the two implement the same rule independently because they live in different bundles, so a change to the rule must land in both. Reports what review caught that the in-house gates did not — a signal about the GATES that gates no merge (§ "The review-versus-gate delta"). |

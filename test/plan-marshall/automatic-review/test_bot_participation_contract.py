@@ -104,10 +104,14 @@ _PROVENANCE_STATES = ('never_asked', 'migrated', 'answered')
 # the independent observations: like a refusal, it says the bot engaged and would
 # not review this commit, so it is not a refinement of ``absent``. Of the FOUR refusal
 # members, three (``refused_awaitable`` / ``refused_hard`` / ``refused_unknown``) are the
-# one-to-one split of the bot's three-valued ``rate_limit_class`` and are likewise
-# independent observations; ``refused_structural`` refines that branch on the orthogonal
-# CAUSE axis, and is checked FIRST because a per-bot class cannot separate two causes one
-# bot refuses under. This tuple's LENGTH is load-bearing — the closure-count
+# DEFAULT mapping of the bot's three-valued ``rate_limit_class`` — a default, not a
+# bijection, because TWO per-refusal observations displace it. ``refused_structural``
+# is one: a refusal whose observed CAUSE is a diff-size ceiling. The other reaches
+# ``refused_unknown``: a refusal NO arm of the recognition stack could READ, which
+# resolves there whatever the bot's declared class says, because nothing about an
+# unparsed notice is known. Both overrides are checked BEFORE the class, because a
+# class declared per BOT cannot separate observations made per REFUSAL. This tuple's
+# LENGTH is load-bearing — the closure-count
 # check below reads the contract's own prose count back as an integer and compares it
 # against ``len`` here, which is what stops a member reaching the classifier and the
 # table while the prose still claims fewer.
@@ -803,11 +807,15 @@ _FAMILY_B = 'github_pr fetch_findings'
 
 #: ``(family, doc-suffix, section-substring, expected list-flag count)`` for the
 #: four CONFIRMED call sites. The counts differ per site and are asserted per
-#: site: the participation guard passes six (``--declined-bots`` is documented in the
-#: canonical block but not interpolated at the FIND-step site), the pre-merge
-#: barrier's Predicate 2 passes six (it never observes an in-progress bot of its own,
-#: but it forwards the trigger-A ``--declined-bots`` observation), and both producer
-#: sites pass the two classification flags.
+#: site: the participation guard passes seven (``--declined-bots`` is documented in the
+#: canonical block but not interpolated at the FIND-step site, while
+#: ``--unrecognised-refusal-bots`` IS — the producer emits its observation on the same
+#: ``fetch_findings`` return the guard already threads forward), the pre-merge
+#: barrier's Predicate 2 passes seven (it never observes an in-progress bot of its own,
+#: but it forwards the trigger-A ``--declined-bots`` observation AND the producer's
+#: ``--unrecognised-refusal-bots`` observation — state-determining at the one site that
+#: renders an operator prompt, so a refusal no arm could read must not resolve there by
+#: the bot's declared class), and both producer sites pass the two classification flags.
 #:
 #: ``--not-triggered`` deliberately moves NEITHER count. It is a ``store_true``
 #: bool rather than a ``--*-bots`` list flag, so it carries no interpolated
@@ -819,14 +827,14 @@ _CONFIRMED_SITES = (
         _FAMILY_A,
         'automatic-review/SKILL.md',
         'Step-done participation guard',
-        6,
+        7,
         id='family-a-step-done-participation-guard',
     ),
     pytest.param(
         _FAMILY_A,
         'phase-6-finalize/standards/branch-cleanup.md',
         'Predicate 2',
-        6,
+        7,
         id='family-a-premerge-barrier-predicate-2',
     ),
     pytest.param(
@@ -847,7 +855,7 @@ _CONFIRMED_SITES = (
 
 #: Matches a list flag and the token that follows it inside a fenced command. The
 #: alternation is built from the SAME parser-derived tuple as ``_ALL_LIST_FLAGS``
-#: rather than restated as a second literal — a sixth flag reaches the quoting
+#: rather than restated as a second literal — a newly added flag reaches the quoting
 #: scan automatically. Longest-first ordering keeps a flag that is a prefix of
 #: another from shadowing it.
 _FLAG_VALUE = re.compile(
@@ -979,8 +987,12 @@ class TestCallSitePopulation:
         Never one aggregate "all sites pass" assertion: an aggregate cannot say
         WHICH site regressed, and a site that stopped being discovered at all
         would silently shrink the aggregate rather than fail. The expected flag
-        count is per-site, because the sites genuinely differ — the pre-merge
-        barrier passes five flags, not the participation guard's six.
+        count is per-site because the sites genuinely differ in WHICH flags they
+        interpolate — the pre-merge barrier observes no in-progress bot of its own,
+        while the FIND-step guard interpolates no ``--declined-bots`` — so a single
+        shared count would hide a site that dropped one flag and gained another.
+        The counts themselves live in ``_CONFIRMED_SITES`` and are deliberately not
+        restated here, where they would be a second place to go stale.
         """
         _family, doc, section, command = _find_confirmed(family, doc_suffix, section_substring)
 

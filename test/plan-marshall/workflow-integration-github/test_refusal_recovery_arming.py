@@ -42,7 +42,8 @@ for _dir in (_GH_SCRIPTS, _AR_SCRIPTS):
 import bot_registry  # noqa: E402
 import github_ops  # noqa: E402, F401 — import first; _github_pr closes a cycle with it
 import github_re_review  # noqa: E402
-from _github_pr import _detect_rate_limited_bots  # noqa: E402
+import _github_pr  # noqa: E402
+from _github_pr import REFUSAL_LAYERS, _detect_rate_limited_bots  # noqa: E402
 
 # The recovery each rate-limit class arms. This is the mapping under test; it is
 # expressed once here and applied to whatever population the registry declares.
@@ -90,6 +91,24 @@ def _registered_bots() -> list[str]:
 
 def _comment(bot_kind: str, body: str, created_at: str = '2026-01-09T00:00:00Z') -> dict:
     return {'author': f'{_login(bot_kind)}[bot]', 'body': body, 'created_at': created_at}
+
+
+def _arm_enumerative(monkeypatch, max_chars: int = 200) -> None:
+    """Give the enumerative arm a threshold, patched where the predicate READS it.
+
+    ``github_re_review`` binds the predicate with ``from _github_pr import
+    _is_unrecognised_refusal``, so the threshold name is resolved in the DEFINING
+    module's namespace at call time. Patching the function's own ``__globals__``
+    targets exactly that namespace, which holds whichever ``_github_pr`` object the
+    SUT actually imported — patching a module object this test resolved separately
+    would be a silent no-op that leaves the arm inert and fails every case below for
+    a reason unrelated to the arm.
+    """
+    monkeypatch.setitem(
+        github_re_review._is_unrecognised_refusal.__globals__,
+        'UNRECOGNISED_REFUSAL_MAX_CHARS',
+        max_chars,
+    )
 
 
 class TestNonCodeRabbitRefusalIsDetected:
@@ -228,16 +247,23 @@ class TestRefusalIsNeverABareTimeout:
 
         assert record is not None, f'{bot_kind} refusal must be recorded'
         assert record['bot_kind'] == bot_kind
-        assert record['layer'] in ('registry_refusal_patterns', 'structural_fallback')
+        # The admissible population is DERIVED from the shared vocabulary, never
+        # restated as a literal pair: a hand-written tuple here would keep passing
+        # while the producer emitted an arm the tuple had never heard of, which is
+        # the drift this vocabulary exists to prevent.
+        assert REFUSAL_LAYERS, 'the layer vocabulary is empty — this check is vacuous'
+        assert record['layer'] in REFUSAL_LAYERS
 
     @pytest.mark.parametrize('bot_kind', _registered_bots())
     def test_a_bots_declared_refusal_is_recognized_as_DATA(self, bot_kind):
         """A bot with declared refusal phrasing is matched by the registry layer.
 
-        The distinction matters: recognition as DATA means the bot's own observed
-        text is on file, whereas the structural fallback merely inferred it from
-        shape. Sourcery's real refusal is the motivating case — the structural
-        recognizer is blind to it, so only the data layer can see it.
+        The distinction matters, and the arms are ordered by how much they KNOW:
+        recognition as DATA means the bot's own observed text is on file, the
+        structural arm merely inferred a notice from its shape, and the enumerative
+        arm knows only that the body was not review feedback. Sourcery's real
+        refusal is the motivating case — the structural recognizer is blind to it,
+        so only the registry arm can see it.
         """
         if not bot_registry.refusal_patterns(bot_kind):
             pytest.skip(f'{bot_kind} declares no observed refusal phrasing')
@@ -246,7 +272,101 @@ class TestRefusalIsNeverABareTimeout:
             _refusal_body(bot_kind), bot_kind, 'issue_comment'
         )
 
-        assert record['layer'] == 'registry_refusal_patterns'
+        assert record['layer'] == _github_pr.REFUSAL_LAYER_REGISTRY
+
+
+class TestTheEnumerativeArmOnTheReReviewPath:
+    """An unrecognised refusal is RECORDED here too — never admitted as a review.
+
+    This is the worse half of the blind spot. On the producer path an unrecognised
+    refusal became a finding a human could at least read; here it reached
+    ``_match_review``, which admits any body that is "not a refusal notice" — so the
+    envelope asserted ``head_sha_verified: true`` for a HEAD the bot had declined.
+    """
+
+    def test_with_no_threshold_the_record_producer_is_unchanged(self):
+        """The fail-safe: at the SHIPPED value the enumerative arm never fires.
+
+        D1 derived no threshold, so ``_refusal_record`` behaves byte-identically to
+        how it behaved before this arm existed — an unrecognised body still returns
+        ``None``. Asserted at the shipped value rather than a patched one, so this
+        pins what actually ships.
+        """
+        assert (
+            github_re_review._is_unrecognised_refusal.__globals__['UNRECOGNISED_REFUSAL_MAX_CHARS']
+            is None
+        )
+        for bot in _registered_bots():
+            assert (
+                github_re_review._ReReviewStrategy._refusal_record(
+                    'Skipping this one.', bot, 'issue_comment'
+                )
+                is None
+            )
+
+    @pytest.mark.parametrize('bot_kind', _registered_bots())
+    def test_an_unrecognised_refusal_is_recorded_under_the_enumerative_arm(
+        self, bot_kind, monkeypatch
+    ):
+        """With a threshold available the reworded refusal is recorded, not returned None.
+
+        The body reaches no earlier arm — asserted — so the record can only come from
+        the enumerative one, and its ``layer`` is read from the shared vocabulary.
+        """
+        _arm_enumerative(monkeypatch)
+        body = 'Skipping this one.'
+
+        # Neither earlier arm sees it — that is what makes the record enumerative.
+        assert _github_pr._is_refusal_notice(body, bot_kind) is False
+
+        record = github_re_review._ReReviewStrategy._refusal_record(body, bot_kind, 'issue_comment')
+
+        assert record is not None
+        assert record['layer'] == _github_pr.REFUSAL_LAYER_ENUMERATIVE
+        assert record['bot_kind'] == bot_kind
+
+    @pytest.mark.parametrize('bot_kind', _registered_bots())
+    def test_an_unrecognised_refusal_is_still_a_refusal_and_states_no_eta(
+        self, bot_kind, monkeypatch
+    ):
+        """It arms A recovery rather than vanishing into a timeout — and claims no ETA.
+
+        What the enumerative arm supports is deliberately narrow: the body was not
+        review feedback. It read nothing further, so the record states no ETA —
+        nothing can be claimed about when the window reopens. Which recovery the
+        envelope then arms is a separate question, settled by
+        ``_resolve_refusal_class`` and pinned below rather than here.
+        """
+        _arm_enumerative(monkeypatch)
+        record = github_re_review._ReReviewStrategy._refusal_record(
+            'Skipping this one.', bot_kind, 'issue_comment'
+        )
+
+        assert record is not None
+        # It is a refusal, so it arms a recovery rather than vanishing into a timeout.
+        assert _arms(bot_kind) in ('claim_and_await', 'escalate_immediately')
+        # And it states no ETA — nothing was read, so nothing can be claimed about
+        # when the window reopens.
+        assert record['eta'] == ''
+
+    @pytest.mark.parametrize('bot_kind', _registered_bots())
+    def test_a_genuine_short_review_with_an_anchor_is_still_not_a_refusal(
+        self, bot_kind, monkeypatch
+    ):
+        """Matched negative control: the arm does not swallow a real short review.
+
+        Same bot, same length class, same armed threshold — the only difference is a
+        code anchor, which is what a genuine review carries and a status notice does
+        not. Without this control the positive case above would also pass on an arm
+        that classified every short comment as a refusal.
+        """
+        _arm_enumerative(monkeypatch)
+
+        record = github_re_review._ReReviewStrategy._refusal_record(
+            'Guard the bound at `src/idx.py:12`.', bot_kind, 'review'
+        )
+
+        assert record is None
 
     def test_a_genuine_review_is_not_recorded_as_a_refusal(self):
         """Precision guard on the recording path, across the whole population."""
@@ -270,3 +390,80 @@ class TestRefusalIsNeverABareTimeout:
         ]
 
         assert _detect_rate_limited_bots(human) == []
+
+
+class TestUnreadRefusalNeverReportsAnAwaitableClass:
+    """``refusal_class`` on the envelope, when an arm could not read the notice.
+
+    The envelope publishes ``layer`` and ``refusal_class`` side by side, so the pair
+    must not contradict itself: ``enumerative_unrecognised`` beside
+    ``awaitable_window`` asserts a window nobody observed, and the caller arms a wait
+    on it. This is the re-review half of the override ``review_completeness`` applies
+    through ``--unrecognised-refusal-bots``; the contract requires both recognition
+    sites to name the same state for one refusal, which is why the quantifier here is
+    pinned to the sibling's rather than chosen independently.
+    """
+
+    @staticmethod
+    def _enumerative(bot_kind: str) -> dict:
+        return {'bot_kind': bot_kind, 'layer': _github_pr.REFUSAL_LAYER_ENUMERATIVE, 'eta': ''}
+
+    @staticmethod
+    def _registry(bot_kind: str) -> dict:
+        return {'bot_kind': bot_kind, 'layer': _github_pr.REFUSAL_LAYER_REGISTRY, 'eta': ''}
+
+    def test_no_refusal_resolves_to_the_empty_string(self):
+        """Nothing was detected, so there is no recovery to arm."""
+        assert github_re_review._resolve_refusal_class('coderabbit', []) == ''
+
+    @pytest.mark.parametrize('bot_kind', _registered_bots())
+    def test_an_unread_refusal_resolves_unknown(self, bot_kind):
+        """Swept over the WHOLE population — no bot is exempt from the override."""
+        resolved = github_re_review._resolve_refusal_class(bot_kind, [self._enumerative(bot_kind)])
+
+        assert resolved == 'unknown'
+
+    def test_the_awaitable_window_bot_is_the_load_bearing_case(self):
+        """The case the override exists for, with its matched negative control.
+
+        A ``hard_quota`` bot resolves ``unknown`` either way, so sweeping the
+        population alone cannot show the override does anything: the value would be
+        right for the wrong reason. The discriminator is a bot whose DECLARED class
+        differs from ``unknown`` — only there does reading the declared class produce
+        a different, wrong answer. The control is the SAME bot with a refusal an
+        earlier arm DID read, which must still report the declared class.
+        """
+        awaitable = [
+            b for b in _registered_bots() if bot_registry.rate_limit_class(b) == 'awaitable_window'
+        ]
+        assert awaitable, 'registry must declare an awaitable_window bot for this to discriminate'
+
+        for bot in awaitable:
+            # Unread notice: the declared awaitability is NOT asserted.
+            assert github_re_review._resolve_refusal_class(bot, [self._enumerative(bot)]) == 'unknown'
+            # Matched negative control — same bot, a notice the registry arm READ.
+            assert (
+                github_re_review._resolve_refusal_class(bot, [self._registry(bot)])
+                == 'awaitable_window'
+            )
+
+    def test_a_mixed_set_matches_the_completeness_sites_quantifier(self):
+        """The parity case: one readable refusal alongside an unreadable one.
+
+        ``review_completeness`` receives this observation as a per-BOT membership test
+        over a list the producer fills one record per COMMENT, so such a bot IS inside
+        its override and classifies ``refused_unknown``. An ``all``-quantifier here
+        would report the declared class instead, leaving the two recognition sites
+        naming different states for one bot — the divergence the contract forbids.
+
+        This case is therefore a PARITY assertion, not a preference: it fails if this
+        side is quantified independently of the sibling, in either direction.
+        """
+        for bot in _registered_bots():
+            mixed = [self._registry(bot), self._enumerative(bot)]
+
+            assert github_re_review._resolve_refusal_class(bot, mixed) == 'unknown'
+
+    def test_an_unattributable_refusal_fails_closed_to_unknown(self):
+        """No bot_kind means no declared class to read — never an awaitable guess."""
+        assert github_re_review._resolve_refusal_class(None, [self._registry('')]) == 'unknown'

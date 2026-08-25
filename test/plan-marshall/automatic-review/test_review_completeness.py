@@ -10,9 +10,12 @@ reports whether every REQUIRED bot's participation is proven:
     participated_but_empty  — proven participant that filed none (accounted-for)
     refused_awaitable       — published a refusal whose window reopens on its own
     refused_hard            — published a refusal that does not usefully reopen
-    refused_unknown         — published a refusal whose class the registry declares
-                              unknown (neither awaitable nor a hard quota); its own
-                              member, never folded into refused_hard
+    refused_unknown         — declared ignorance about whether waiting helps. Reached
+                              either because the registry declares the bot's class
+                              unknown (neither awaitable nor a hard quota), or because
+                              NO arm of the recognition stack could read the refusal —
+                              an override that displaces whatever class the bot
+                              declares. Its own member, never folded into refused_hard
     participated_stale      — published in a declared shape, but the currency test
                               failed, so the review predates the merge candidate
                               (blocking, yet remedied by a re-trigger rather than by
@@ -464,11 +467,12 @@ class TestStateTaxonomy:
     def test_refusal_of_unknown_class_is_its_own_state_not_hard(self, plan_context):
         """An ``unknown`` rate-limit class resolves to ``refused_unknown``, never ``refused_hard``.
 
-        For a refusal whose cause is not ``size`` (a ``size`` cause resolves the
-        structural member ahead of this axis — see ``test_structural_refusal.py``), the
-        three-valued ``rate_limit_class`` splits ONE-TO-ONE into three refusal
-        members: ``awaitable_window`` -> ``refused_awaitable``, ``hard_quota`` ->
-        ``refused_hard``, ``unknown`` -> ``refused_unknown``.
+        With NEITHER override in play (no ``size`` cause and a refusal the stack could
+        read), the three-valued ``rate_limit_class`` supplies the DEFAULT member:
+        ``awaitable_window`` -> ``refused_awaitable``, ``hard_quota`` ->
+        ``refused_hard``, ``unknown`` -> ``refused_unknown``. The overrides that
+        displace that default are covered in ``test_structural_refusal.py`` (the
+        ``size`` cause) and in ``TestUnrecognisedRefusalOverride`` below.
 
         Keeping ``refused_unknown`` its own member is load-bearing: folding it into
         ``refused_hard`` would render a declared *we-do-not-know* as a positive
@@ -488,13 +492,16 @@ class TestStateTaxonomy:
         assert rc.STATE_REFUSED_UNKNOWN in rc._UNPROVEN_STATES
         assert result['participation_complete'] is False
 
-    def test_refusal_state_maps_one_to_one_over_the_three_classes(self, plan_context):
-        """``_refusal_state`` is total and injective over the three declared classes.
+    def test_the_default_class_mapping_is_total_and_injective(self, plan_context):
+        """``_refusal_state``'s DEFAULT mapping is total and injective over the classes.
 
         Asserted directly on the mapping so a future fold of any two classes into one
         member breaks here, not only via a downstream verdict. A value that is neither
         of the first two — including a malformed one — fails closed to
         ``refused_unknown`` rather than being asserted as a hard quota.
+
+        This is the mapping BEFORE either override; the overrides are asserted
+        separately, so a change to one cannot be mistaken for a change to the other.
         """
         assert rc._refusal_state('awaitable_window') == rc.STATE_REFUSED_AWAITABLE
         assert rc._refusal_state('hard_quota') == rc.STATE_REFUSED_HARD
@@ -741,9 +748,10 @@ class TestStateTaxonomy:
             stale_participation_bots=[bot_kind],
         )
 
-        # The expected member is derived ONE-TO-ONE from the bot's own three-valued
-        # rate_limit_class, never written as a literal, so a bot whose class is
-        # ``unknown`` (pr-agent) is asserted as ``refused_unknown`` — not folded into
+        # The expected member is derived from the bot's own three-valued
+        # rate_limit_class through the DEFAULT mapping (neither override is in play
+        # here), never written as a literal, so a bot whose class is ``unknown``
+        # (pr-agent) is asserted as ``refused_unknown`` — not folded into
         # ``refused_hard`` — and the sweep stays correct if a bot's class changes.
         expected = rc._refusal_state(rc.bot_registry.rate_limit_class(bot_kind))
 
@@ -911,19 +919,331 @@ class TestStateTaxonomy:
         classified = [r['bot_kind'] for r in result['bot_states']]
         assert classified == ['coderabbit', 'sourcery', 'pr-agent']
         assert len(set(classified)) == len(classified)
+        # DERIVED from the classifier's own ``STATE_`` constants rather than
+        # hand-listed. The hand-written set this replaces had already drifted: it
+        # omitted ``refused_structural``, and because the assertion is a SUBSET test
+        # the omission could never fail — a stale enumeration that reported green
+        # precisely because it was incomplete. A derived population cannot drift.
         known_states = {
-            rc.STATE_ABSENT,
-            rc.STATE_IN_PROGRESS,
-            rc.STATE_REFUSED_AWAITABLE,
-            rc.STATE_REFUSED_HARD,
-            rc.STATE_REFUSED_UNKNOWN,
-            rc.STATE_PARTICIPATED_BUT_EMPTY,
-            rc.STATE_PARTICIPATED_STALE,
-            rc.STATE_DECLINED,
-            rc.STATE_NOT_TRIGGERED,
-            rc.STATE_PARTICIPATED,
+            value
+            for name, value in vars(rc).items()
+            if name.startswith('STATE_') and isinstance(value, str)
         }
+        assert known_states, 'no STATE_ constants derived — the membership check is vacuous'
         assert {r['state'] for r in result['bot_states']} <= known_states
+
+
+# =============================================================================
+# The unrecognised-refusal override — the SECOND override of the class mapping
+# =============================================================================
+#
+# ``rate_limit_class`` supplies the DEFAULT refusal member. TWO per-refusal
+# observations displace it: a ``size`` cause (covered in test_structural_refusal.py)
+# and a refusal NO arm of the recognition stack could READ, covered here.
+#
+# The override is load-bearing rather than cosmetic. Without it a CodeRabbit
+# unrecognised refusal renders ``refused_awaitable`` — asserting a reset window
+# nobody observed, and steering the operator to wait on a notice no layer could even
+# parse. Nothing about an unread notice is known, so the declared-ignorance member is
+# the only honest one.
+
+#: The rate_limit_class values the REGISTRY actually declares, derived from the
+#: registered population rather than hand-listed. Guarded non-empty because every
+#: sweep below would otherwise cover nothing, and its size is published in the
+#: assertion messages so a shrunken population is visible rather than silent.
+_DECLARED_RATE_LIMIT_CLASSES = sorted(
+    {rc.bot_registry.rate_limit_class(bot) for bot in _REGISTERED_BOTS}
+)
+assert _DECLARED_RATE_LIMIT_CLASSES, (
+    'no rate_limit_class value is declared by any registered bot — the override '
+    'sweep below would cover nothing'
+)
+
+
+class TestUnrecognisedRefusalOverride:
+    """A refusal no recognition arm could read resolves ``refused_unknown``, always."""
+
+    def test_the_swept_class_population_is_non_empty_and_published(self):
+        """Guards every sweep below, and reports the two population sizes it derived.
+
+        Both figures are read from INDEPENDENT sources — the bot population from the
+        registry's bot list, the class population from each bot's declared class — so
+        the comparison is not a count checked against itself.
+        """
+        assert _REGISTERED_BOTS, 'the registered bot population is empty'
+        assert _DECLARED_RATE_LIMIT_CLASSES, 'the declared class population is empty'
+        # The class population is derived FROM the bot population, so it can never be
+        # larger; asserting the relation makes an empty or collapsed derivation visible.
+        assert len(_DECLARED_RATE_LIMIT_CLASSES) <= len(_REGISTERED_BOTS), (
+            f'{len(_DECLARED_RATE_LIMIT_CLASSES)} classes derived from '
+            f'{len(_REGISTERED_BOTS)} bots'
+        )
+
+    @pytest.mark.parametrize('bot_kind', _REGISTERED_BOTS)
+    def test_the_override_applies_whatever_class_the_bot_declares(self, bot_kind, plan_context):
+        """Swept over the WHOLE registered population, so every declared class is exercised.
+
+        The population is registry-derived, so a bot added or reclassified in a
+        standards doc is covered automatically. The assertion is the same for every
+        bot precisely because the override ignores the class — which is the property
+        under test.
+        """
+        plan_id = f'rc-unrecognised-{bot_kind}'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(
+            plan_id,
+            [bot_kind],
+            refused_bots=[bot_kind],
+            unrecognised_refusal_bots=[bot_kind],
+        )
+
+        assert _state_of(result, bot_kind) == rc.STATE_REFUSED_UNKNOWN
+        assert result['participation_complete'] is False
+        assert bot_kind in result['unproven_bots']
+
+    @pytest.mark.parametrize('bot_kind', _REGISTERED_BOTS)
+    def test_the_matched_control_classifies_by_the_declared_class(self, bot_kind, plan_context):
+        """Matched negative control: the SAME refusal without the override.
+
+        Identical inputs but for ``unrecognised_refusal_bots``, so the override is
+        isolated as the only difference. A recognised refusal keeps the member its
+        declared class maps to — without this control the sweep above would pass just
+        as happily against a classifier that returned ``refused_unknown`` for every
+        refusal, which would destroy the awaitability split entirely.
+        """
+        plan_id = f'rc-unrecognised-control-{bot_kind}'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(plan_id, [bot_kind], refused_bots=[bot_kind])
+
+        expected = rc._refusal_state(rc.bot_registry.rate_limit_class(bot_kind))
+        assert _state_of(result, bot_kind) == expected
+
+    def test_an_awaitable_window_bot_is_the_case_the_override_exists_for(self, plan_context):
+        """⭐ The load-bearing branch, asserted on a bot that declares ``awaitable_window``.
+
+        Reading the class here would render ``refused_awaitable`` — *worth awaiting* —
+        for a notice nobody could read, offering the operator a wait on a window that
+        was never observed. The bot is selected FROM the registry by its declared
+        class rather than named, and the selection is guarded so this cannot pass
+        vacuously if no such bot exists.
+        """
+        awaitable = [
+            b for b in _REGISTERED_BOTS
+            if rc.bot_registry.rate_limit_class(b) == 'awaitable_window'
+        ]
+        assert awaitable, 'no registered bot declares awaitable_window — case is vacuous'
+        bot_kind = awaitable[0]
+
+        plan_id = f'rc-unrecognised-awaitable-{bot_kind}'
+        plan_context.plan_dir_for(plan_id)
+        result = rc.check_completeness(
+            plan_id,
+            [bot_kind],
+            refused_bots=[bot_kind],
+            unrecognised_refusal_bots=[bot_kind],
+        )
+
+        assert _state_of(result, bot_kind) == rc.STATE_REFUSED_UNKNOWN
+        assert _state_of(result, bot_kind) != rc.STATE_REFUSED_AWAITABLE
+
+    def test_the_override_is_asserted_on_the_mapping_itself(self):
+        """Asserted directly on ``_refusal_state`` over every declared class value.
+
+        A verdict-level sweep alone could pass for a downstream reason; this pins the
+        mapping. Every class the registry declares is exercised, and the population
+        size is reported in the failure message.
+        """
+        for rate_limit_class in _DECLARED_RATE_LIMIT_CLASSES:
+            assert (
+                rc._refusal_state(rate_limit_class, None, True) == rc.STATE_REFUSED_UNKNOWN
+            ), (
+                f'{rate_limit_class!r} did not take the override '
+                f'(over {len(_DECLARED_RATE_LIMIT_CLASSES)} declared class values)'
+            )
+
+    def test_a_read_size_cause_outranks_the_unrecognised_override(self):
+        """Both overrides CAN hold, and the positively-read one wins.
+
+        They would be contradictory only if they described the SAME refusal. Both are
+        per-BOT aggregates over that bot's refusals: the producer emits one
+        ``unrecognised_refusal[]`` record per COMMENT and the consumer receives a
+        bot-kind list, so a bot that published one refusal an arm READ as a size
+        ceiling and another no arm could read satisfies both, from two different
+        notices, with neither observation wrong.
+
+        The size cause is taken first because it rests on text that WAS read; an
+        absence observed on some other notice must not erase a ceiling the run
+        actually extracted, leaving the operator without the one remedy already in
+        hand.
+        """
+        assert (
+            rc._refusal_state('hard_quota', rc.CAUSE_SIZE, True)
+            == rc.STATE_REFUSED_STRUCTURAL
+        )
+        # The override still decides when NO cause was read — it is displaced, not retired.
+        assert rc._refusal_state('hard_quota', None, True) == rc.STATE_REFUSED_UNKNOWN
+        # ...and the cause still resolves structural without the override present.
+        assert (
+            rc._refusal_state('hard_quota', rc.CAUSE_SIZE, False)
+            == rc.STATE_REFUSED_STRUCTURAL
+        )
+
+    def test_the_ordering_never_costs_awaitability(self):
+        """The safety property that makes the ordering conservative, not merely richer.
+
+        Whichever override wins, the member is non-awaitable — so no order of the two
+        can ever offer a wait on a bot carrying an unreadable notice. This is what
+        licenses preferring the more informative arm: the choice decides whether the
+        operator is told WHY, never whether they are told to wait. Asserted on the
+        awaitable-declaring class, the only one where a wrong answer would differ.
+        """
+        for cause in (rc.CAUSE_SIZE, None):
+            state = rc._refusal_state('awaitable_window', cause, True)
+
+            assert state != rc.STATE_REFUSED_AWAITABLE, (
+                f'cause={cause!r} with the unrecognised override resolved {state} — '
+                f'an awaitable member for a notice no arm could read'
+            )
+
+    def test_the_default_is_unchanged_when_no_bot_is_unrecognised(self, plan_context):
+        """An empty override set moves no verdict — the parameter is opt-in.
+
+        Pins that adding the input cannot disturb an existing caller that does not
+        pass it.
+        """
+        plan_id = 'rc-unrecognised-empty'
+        plan_context.plan_dir_for(plan_id)
+
+        with_empty = rc.check_completeness(
+            plan_id, ['coderabbit'], refused_bots=['coderabbit'], unrecognised_refusal_bots=[]
+        )
+        without = rc.check_completeness(plan_id, ['coderabbit'], refused_bots=['coderabbit'])
+
+        assert with_empty['bot_states'] == without['bot_states']
+        assert _state_of(with_empty, 'coderabbit') == rc.STATE_REFUSED_AWAITABLE
+
+    @pytest.mark.parametrize('bot_kind', _REGISTERED_BOTS)
+    def test_the_override_is_reachable_on_the_producers_real_output_shape(
+        self, bot_kind, plan_context
+    ):
+        """⭐ The override's OWN motivating case, staged as the producer really emits it.
+
+        The producer reports the two sets DISJOINTLY: ``unrecognised_refusal[]`` names a
+        bot and ``refused_bots`` does NOT ("an unrecognised one names no bot in
+        refused_bots"). Every other case in this class supplies BOTH, which is a shape
+        the producer never emits — so they exercised the override through a door only a
+        test opens, and the branch that gates it was never reached by the input it exists
+        for.
+
+        Staged the real way, the bot must still resolve ``refused_unknown``. Resolving
+        ``absent`` here is the failure the contract names in as many words: "the exact
+        conflation that let a PR with two refusing required bots report a complete
+        review".
+        """
+        plan_id = f'rc-unrecognised-only-{bot_kind}'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(
+            plan_id,
+            [bot_kind],
+            # refused_bots deliberately NOT supplied — this is the producer's shape.
+            unrecognised_refusal_bots=[bot_kind],
+        )
+
+        assert _state_of(result, bot_kind) == rc.STATE_REFUSED_UNKNOWN, (
+            'a bot whose only refusal no arm could read must resolve refused_unknown; '
+            'absent would report a bot that DECLINED as one that stayed silent'
+        )
+        assert _state_of(result, bot_kind) != rc.STATE_ABSENT
+        assert result['participation_complete'] is False
+        assert bot_kind in result['unproven_bots']
+
+    def test_a_bot_in_neither_refusal_set_keeps_its_own_state(self, plan_context):
+        """The override never manufactures a refusal for a bot that was SILENT.
+
+        The guard is real, but its subject is a bot the producer reported in NEITHER
+        refusal set. Membership in ``unrecognised_refusal`` is itself the refusal
+        OBSERVATION — the producer emits that record only on a detected refusal and
+        counts it in ``count_skipped_refusal`` — so it is not a qualifier waiting for a
+        separate one to arrive in ``refused_bots``. Reading it that way is what made the
+        override unreachable on the producer's real, disjoint output shape (see
+        ``test_the_override_is_reachable_on_the_producers_real_output_shape``).
+
+        Staged with neither set, the bot must still resolve ``absent``.
+        """
+        plan_id = 'rc-neither-refusal-set'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(plan_id, ['coderabbit'])
+
+        assert _state_of(result, 'coderabbit') == rc.STATE_ABSENT
+
+    def test_check_and_deficit_agree_on_the_overridden_member(self, plan_context):
+        """Both commands name the SAME member for one unrecognised refusal.
+
+        ``deficit`` publishes a per-reviewer ``state`` column, so an override consumed
+        by only one command would make the two disagree about one refusal — a
+        contradiction no reader of the output could adjudicate, and the exact failure
+        the shared cause flag already exists to prevent.
+        """
+        plan_id = 'rc-unrecognised-both-commands'
+        plan_context.plan_dir_for(plan_id)
+        shared = {'refused_bots': ['coderabbit'], 'unrecognised_refusal_bots': ['coderabbit']}
+
+        check = rc.check_completeness(plan_id, ['coderabbit'], **shared)
+        deficit = rc.check_deficit(plan_id, ['coderabbit'], **shared)
+
+        deficit_state = next(
+            r['state'] for r in deficit['reviewers'] if r['bot_kind'] == 'coderabbit'
+        )
+        assert deficit_state == _state_of(check, 'coderabbit') == rc.STATE_REFUSED_UNKNOWN
+
+    def test_the_cli_accepts_the_flag_and_drives_the_verdict(self, plan_context):
+        """Driven through the REAL parser, because that is what a caller reaches.
+
+        An in-process call would pass even if the argparse declaration were missing
+        entirely — the same gap the ``--not-triggered`` cases above exist to close.
+        """
+        plan_id = 'rc-cli-unrecognised'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'coderabbit',
+            '--refused-bots',
+            'coderabbit',
+            '--unrecognised-refusal-bots',
+            'coderabbit',
+        )
+
+        assert result.success, result.stderr
+        assert result.returncode != 2, result.stderr
+        assert 'coderabbit,refused_unknown' in result.stdout
+
+    def test_omitting_the_flag_leaves_the_declared_class_verdict(self, plan_context):
+        """The paired CLI control: without the flag the same command reports the default."""
+        plan_id = 'rc-cli-unrecognised-omitted'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'coderabbit',
+            '--refused-bots',
+            'coderabbit',
+        )
+
+        assert result.success, result.stderr
+        assert 'coderabbit,refused_awaitable' in result.stdout
 
 
 # =============================================================================
@@ -1642,7 +1962,7 @@ class TestLoadFailure:
 # Zero participation — every list flag may be supplied BARE
 # =============================================================================
 #
-# The defect this pins: the callers interpolate all five list flags into the
+# The defect this pins: the callers interpolate every list flag into the
 # command line, and every one of them is legitimately empty in normal operation
 # (no optional bots, no in-progress bots, no refusals). An unquoted
 # ``--refused-bots {refused_bots}`` with an empty value collapses to a BARE
@@ -1650,7 +1970,7 @@ class TestLoadFailure:
 # and a crashed gate that a caller reads as a pass is a participation verdict
 # nobody produced.
 #
-# Every case below is red against the pre-fix parser by construction: the five
+# Every case below is red against the pre-fix parser by construction: those
 # flags declared ``default=''`` with no ``nargs``, so argparse required a value
 # and answered a bare flag with ``expected one argument`` / exit 2. Nothing here
 # can pass without the ``nargs='?'`` + ``const=''`` relaxation.

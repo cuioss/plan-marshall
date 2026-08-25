@@ -17,12 +17,12 @@ Covers the three concerns of the post-merge re-review registry:
        body is not a refusal notice; reported with ``head_sha_verified: true``)
        OR ``_match_bot_comment`` (an issue comment from the awaited bot
        post-dating the trigger and likewise not a refusal notice; reported with
-       ``head_sha_verified: false``). BOTH paths apply the same two-layer refusal
-       test — the awaited bot's registry ``refusal_patterns`` first, then the
-       structural ``_is_rate_limit_notice`` fallback — so a bot that answers the
-       trigger by declining to review is never a completed review. The review
-       signal wins when both are present. Fail-closed on every missing or
-       unparseable input.
+       ``head_sha_verified: false``). BOTH paths run the same refusal-recognition
+       STACK as the producer — the arms are named once in
+       ``_github_pr.REFUSAL_LAYERS`` and the list is open — so a bot that answers
+       the trigger by declining to review is never a completed review, however
+       weakly the decline was recognized. The review signal wins when both are
+       present. Fail-closed on every missing or unparseable input.
     4. Refusal RECORDING — a rejected refusal is not a bare ``continue``. Both
        discriminators append every refusal they skip to an accumulator, and the
        envelope surfaces ``refusal_detected`` / ``refusal_class`` /
@@ -46,6 +46,7 @@ import argparse
 import sys
 import time
 
+import _github_pr
 import bot_registry
 import ci_base
 import github_re_review
@@ -708,10 +709,13 @@ def test_match_bot_comment_fail_closed_on_missing_trigger_time():
 # the envelope would assert the new HEAD was reviewed when the bot explicitly
 # said it was not.
 #
-# Both paths apply the same TWO-LAYER refusal test as the producer pre-filter:
-# the awaited bot's registry ``refusal_patterns`` (case-sensitive substring
-# containment) first, then the structural ``_is_rate_limit_notice`` fallback.
-# The data layer is ``refusal_patterns``, NOT ``ignore_patterns`` — the latter
+# Both paths run the same refusal-recognition STACK the producer applies, arm for
+# arm: the awaited bot's registry ``refusal_patterns`` (case-sensitive substring
+# containment), the structural ``_is_rate_limit_notice``, and the enumerative
+# ``_is_unrecognised_refusal`` for a body no earlier arm could read.
+# ``_github_pr.REFUSAL_LAYERS`` is the single place those arms are named, so an arm
+# added there is covered here without a count to correct.
+# The registry arm reads ``refusal_patterns``, NOT ``ignore_patterns`` — the latter
 # names sections of a SUCCESSFUL review, so reading it here would report a bot
 # that reviewed fine as having declined.
 # Every fixture body uses the FLATTENED single-line shape.
@@ -913,7 +917,7 @@ def test_refusal_delivered_as_a_review_is_recorded_not_swallowed(monkeypatch):
     assert len(result['refusals']) == 1
     assert result['refusals'][0]['source'] == 'review'
     assert result['refusals'][0]['bot_kind'] == 'sourcery'
-    assert result['refusals'][0]['layer'] == 'registry_refusal_patterns'
+    assert result['refusals'][0]['layer'] == _github_pr.REFUSAL_LAYER_REGISTRY
 
 
 def test_refusal_delivered_as_a_comment_is_recorded_not_swallowed(monkeypatch):
@@ -930,8 +934,13 @@ def test_refusal_delivered_as_a_comment_is_recorded_not_swallowed(monkeypatch):
 
 
 def test_structurally_detected_refusal_records_the_fallback_layer(monkeypatch):
-    """The record names WHICH layer fired, so a reader can tell registry DATA from
-    an inference off the bot-agnostic notice shape."""
+    """The record names WHICH arm fired, so a reader can tell how much is KNOWN.
+
+    The arms carry different evidential weight: registry DATA means the bot's own
+    text is on file, the structural arm inferred a notice from its shape, and the
+    enumerative arm read nothing at all. Conflating them would let the weakest
+    recognition borrow the authority of the strongest.
+    """
     result = _await_with_comments(
         monkeypatch,
         [
@@ -945,7 +954,7 @@ def test_structurally_detected_refusal_records_the_fallback_layer(monkeypatch):
     )
 
     assert result['refusal_detected'] is True
-    assert result['refusals'][0]['layer'] == 'structural_fallback'
+    assert result['refusals'][0]['layer'] == _github_pr.REFUSAL_LAYER_STRUCTURAL
 
 
 def test_refusal_surfaces_the_parsed_eta_when_the_registry_patterns_match(monkeypatch):
@@ -1015,12 +1024,292 @@ def test_recorded_refusal_body_is_a_single_truncated_line():
     assert len(record['body']) <= github_re_review._REFUSAL_BODY_EXCERPT_CHARS + len('...')
 
 
-def test_match_review_without_bot_kind_applies_only_the_structural_layer():
-    """With no ``bot_kind`` the data layer cannot fire — the review still matches.
+# =============================================================================
+# The ENUMERATIVE arm on the re-review path
+# =============================================================================
+#
+# This is the WORSE half of the blind spot the plan closes. On the producer path a
+# refusal no arm recognised became a finding a human could at least read; here it
+# fell through ``_refusal_record``'s terminal ``else: return None`` into
+# ``_match_review``, which admits any body that is "not a refusal notice" — so the
+# envelope reported ``head_sha_verified: true`` for a HEAD the bot had declined to
+# review. The record now exists, and neither matcher was edited to achieve it:
+# both already branch on ``_refusal_record`` returning non-``None``.
+#
+# The arm ships INERT (D1 derived no threshold), so the firing cases arm it
+# explicitly and the shipped behaviour is asserted separately.
 
-    Pins the bot-scoping of the registry layer: Sourcery's refusal marker must not
-    leak into a review being matched for an unknown/unregistered bot. Only the
-    structural test applies there, and it does not recognize this phrasing.
+
+def _arm_enumerative(monkeypatch, max_chars: int = 200) -> None:
+    """Give the enumerative arm a threshold, patched where the predicate READS it.
+
+    ``github_re_review`` binds the predicate by name, so the threshold is resolved
+    in the DEFINING module's namespace at call time. Patching the function's own
+    ``__globals__`` targets that namespace regardless of which ``_github_pr`` object
+    this test module happens to hold.
+    """
+    monkeypatch.setitem(
+        github_re_review._is_unrecognised_refusal.__globals__,
+        'UNRECOGNISED_REFUSAL_MAX_CHARS',
+        max_chars,
+    )
+
+
+#: A refusal reworded past both earlier arms: no registry marker, and no
+#: limit-exceeded statement paired with a notice shape.
+_UNRECOGNISED_REFUSAL = 'Not reviewing this one.'
+
+
+def test_the_layer_vocabulary_has_one_definition_site_read_by_this_consumer():
+    """``github_re_review`` READS the vocabulary; it does not declare its own.
+
+    Identity is asserted against the DEFINING module as the SUT itself resolved it
+    — ``_is_unrecognised_refusal.__globals__`` is the namespace ``_github_pr``
+    actually executed in for this import graph. That is the harness-independent
+    probe: comparing against a ``_github_pr`` this test module imported separately
+    tests pytest's module loading, not the code, because the harness can execute the
+    same file twice and produce two equal-but-distinct tuples.
+
+    Identity against the right object is still what is wanted over equality: a
+    parallel vocabulary declared here would compare equal while being a different
+    object that drifts on the next edit — the two-sources-of-truth failure the
+    shared constant exists to remove.
+    """
+    defining_namespace = github_re_review._is_unrecognised_refusal.__globals__
+
+    assert github_re_review.REFUSAL_LAYERS is defining_namespace['REFUSAL_LAYERS']
+    # And the values agree with the copy this test module resolved, so the two
+    # import paths describe one vocabulary rather than two that merely coexist.
+    assert list(github_re_review.REFUSAL_LAYERS) == list(_github_pr.REFUSAL_LAYERS)
+
+
+def test_the_envelope_publishes_the_declared_layer_population(monkeypatch):
+    """The envelope carries the vocabulary, and the population is non-empty.
+
+    Publishing it is what lets a consumer validate a ``layer`` value against the
+    producer's own declared set rather than a hand-copied list. The size is asserted
+    so an emptied or shrunken vocabulary fails here instead of silently making every
+    membership check below vacuous.
+    """
+    result = _await_with_comments(monkeypatch, [], bot_kind='sourcery')
+
+    published = result['refusal_layers']
+    assert published, 'the envelope published an empty layer vocabulary'
+    assert len(published) == len(_github_pr.REFUSAL_LAYERS)
+    assert published == list(_github_pr.REFUSAL_LAYERS)
+    # All three named arms are members of the published population.
+    for member in (
+        _github_pr.REFUSAL_LAYER_REGISTRY,
+        _github_pr.REFUSAL_LAYER_STRUCTURAL,
+        _github_pr.REFUSAL_LAYER_ENUMERATIVE,
+    ):
+        assert member in published
+
+
+def test_an_unrecognised_refusal_on_the_review_path_is_recorded_and_not_matched(monkeypatch):
+    """⛔ The false-green this deliverable closes, pinned directly.
+
+    The refusal satisfies the ``commit_sha`` and ``submitted_at`` gates, so before
+    the enumerative arm existed ``_match_review`` admitted it and the envelope
+    asserted the new HEAD had been reviewed. ``head_sha_verified`` is asserted
+    EXPLICITLY rather than inferred from ``matched``: that field is the actual claim
+    a consumer reads, and a regression could restore it while ``matched`` stayed
+    false.
+    """
+    _arm_enumerative(monkeypatch)
+    result = _await_with_comments(
+        monkeypatch,
+        [],
+        reviews=[
+            _review(
+                'headsha',
+                '2026-01-01T00:05:00Z',
+                user='sourcery-ai[bot]',
+                body=_UNRECOGNISED_REFUSAL,
+            )
+        ],
+        bot_kind='sourcery',
+    )
+
+    # Not a completed review...
+    assert result['matched'] is False
+    assert result['matched_signal'] == ''
+    # ...and specifically NOT a verified HEAD. This is the assertion that fails
+    # against the pre-fix code.
+    assert result['head_sha_verified'] is False
+    # ...but it IS recorded, under the third arm, so it arms a recovery instead of
+    # vanishing into an indistinguishable timeout.
+    assert result['refusal_detected'] is True
+    assert len(result['refusals']) == 1
+    assert result['refusals'][0]['layer'] == _github_pr.REFUSAL_LAYER_ENUMERATIVE
+    assert result['refusals'][0]['source'] == 'review'
+
+
+def test_an_unrecognised_refusal_on_the_comment_path_is_recorded_and_not_matched(monkeypatch):
+    """The same body arriving as an issue comment is likewise recorded, not matched."""
+    _arm_enumerative(monkeypatch)
+    result = _await_with_comments(
+        monkeypatch,
+        [
+            _comment(
+                _SOURCERY_LOGIN,
+                created_at='2026-01-01T00:05:00Z',
+                body=_UNRECOGNISED_REFUSAL,
+            )
+        ],
+        bot_kind='sourcery',
+    )
+
+    assert result['matched'] is False
+    assert result['head_sha_verified'] is False
+    assert result['refusal_detected'] is True
+    assert result['refusals'][0]['layer'] == _github_pr.REFUSAL_LAYER_ENUMERATIVE
+    assert result['refusals'][0]['source'] == 'issue_comment'
+
+
+def test_a_genuine_short_review_with_a_code_anchor_still_matches(monkeypatch):
+    """Matched negative control: the arm does not swallow a real short review.
+
+    Same bot, same armed threshold, same length class as the positive case — the
+    only difference is the code anchor a genuine review carries. Without this
+    control the positive cases above would pass just as happily against an arm that
+    classified EVERY short body as a refusal, which is the failure direction that
+    blocks a merge.
+    """
+    _arm_enumerative(monkeypatch)
+    result = _await_with_comments(
+        monkeypatch,
+        [],
+        reviews=[
+            _review(
+                'headsha',
+                '2026-01-01T00:05:00Z',
+                user='sourcery-ai[bot]',
+                body='Guard the bound at `src/idx.py:12`.',
+            )
+        ],
+        bot_kind='sourcery',
+    )
+
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'review'
+    assert result['head_sha_verified'] is True
+    assert result['refusal_detected'] is False
+    assert result['refusals'] == []
+
+
+def test_with_no_threshold_the_re_review_path_behaves_exactly_as_at_head(monkeypatch):
+    """⛔ The fail-safe, asserted at the SHIPPED value: the arm cannot over-tighten.
+
+    D1 derived no threshold, so ``_is_unrecognised_refusal`` returns ``False`` for
+    every input and ``_refusal_record`` returns ``None`` for an unrecognised body —
+    byte-identical to its behaviour before this deliverable. The unrecognised
+    refusal is therefore still ADMITTED as a review here, which is the defect; it is
+    asserted rather than hidden, because shipping an armed tightening on a bound
+    nobody measured would block merges on no evidence. Arming the threshold is what
+    turns the fix on, and that is a separate, evidence-gated decision.
+    """
+    assert (
+        github_re_review._is_unrecognised_refusal.__globals__['UNRECOGNISED_REFUSAL_MAX_CHARS']
+        is None
+    )
+
+    assert (
+        github_re_review._ReReviewStrategy._refusal_record(
+            _UNRECOGNISED_REFUSAL, 'sourcery', 'review'
+        )
+        is None
+    )
+
+    result = _await_with_comments(
+        monkeypatch,
+        [],
+        reviews=[
+            _review(
+                'headsha',
+                '2026-01-01T00:05:00Z',
+                user='sourcery-ai[bot]',
+                body=_UNRECOGNISED_REFUSAL,
+            )
+        ],
+        bot_kind='sourcery',
+    )
+
+    assert result['matched'] is True
+    assert result['refusal_detected'] is False
+
+
+@pytest.mark.parametrize(
+    'body',
+    [
+        pytest.param(_SOURCERY_REFUSAL, id='registry-recognised'),
+        pytest.param(_UNCAPTURED_SHAPED_REFUSAL, id='structurally-recognised'),
+    ],
+)
+def test_a_body_an_earlier_arm_recognised_keeps_its_own_layer(body, monkeypatch):
+    """Arming the third arm never re-labels a refusal an earlier arm already read.
+
+    Run with the arm LIVE, so this is not a vacuous comparison against an inert
+    predicate. The scope is deliberately bodies the earlier arms recognise: those
+    verdicts are the ones the new arm must not disturb, because their layer carries
+    real information about WHY the bot declined.
+    """
+    inert = github_re_review._ReReviewStrategy._refusal_record(body, 'sourcery', 'review')
+    assert inert is not None, 'fixture must be recognised by an earlier arm'
+
+    _arm_enumerative(monkeypatch)
+    live = github_re_review._ReReviewStrategy._refusal_record(body, 'sourcery', 'review')
+
+    assert live is not None
+    assert live['layer'] == inert['layer']
+    assert live['layer'] != _github_pr.REFUSAL_LAYER_ENUMERATIVE
+
+
+def test_an_armed_threshold_withholds_a_genuine_anchorless_review(monkeypatch):
+    """⛔ The tightening's COST, asserted rather than assumed away.
+
+    ``_GENUINE_REVIEW_BODY`` is a real review: it names a defect and prescribes a
+    fix. It carries no code anchor and is shorter than this test's deliberately
+    generous 200-character threshold, so the enumerative arm withholds it — a
+    genuine review recorded as a refusal, which on the re-review path means the bot
+    is treated as having declined.
+
+    This is not a defect in the arm; it is the arm's documented failure direction,
+    and it is what the threshold's DERIVATION exists to bound. The bound must be the
+    shortest GENUINE review comment actually observed, so that no real review can
+    fall below it. D1 measured a corpus containing zero such comments and therefore
+    emitted NO threshold — and this test is the concrete reason that was the right
+    call rather than a cautious one: a guessed bound of this size would withhold
+    real review feedback and block merges on evidence nobody gathered.
+
+    Pinned so the cost stays visible. If a future change derives a real threshold,
+    this test should be re-expressed against it — and it will fail loudly if that
+    threshold is set above a genuine review's length, which is exactly the guard
+    wanted.
+    """
+    assert '`' not in _GENUINE_REVIEW_BODY
+    assert len(_GENUINE_REVIEW_BODY) < 200
+
+    _arm_enumerative(monkeypatch, max_chars=200)
+    record = github_re_review._ReReviewStrategy._refusal_record(
+        _GENUINE_REVIEW_BODY, 'sourcery', 'review'
+    )
+
+    assert record is not None
+    assert record['layer'] == _github_pr.REFUSAL_LAYER_ENUMERATIVE
+    # The shipped (absent-threshold) behaviour for this same body is pinned by
+    # ``test_with_no_threshold_the_re_review_path_behaves_exactly_as_at_head``; it is
+    # deliberately not re-asserted here, where the arm is still armed.
+
+
+def test_match_review_without_bot_kind_applies_only_the_structural_layer():
+    """With no ``bot_kind`` only the structural arm can fire — the review still matches.
+
+    Pins the bot-scoping of the registry arm: Sourcery's refusal marker must not
+    leak into a review being matched for an unknown/unregistered bot. The
+    enumerative arm is likewise unable to fire without a resolved bot, so the
+    structural test is the only one that applies here — and it does not recognize
+    this phrasing.
     """
     trigger_dt = _parse('2026-01-01T00:00:00Z')
 
