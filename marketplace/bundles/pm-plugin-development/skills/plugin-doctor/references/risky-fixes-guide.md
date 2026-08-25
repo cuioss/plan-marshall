@@ -60,7 +60,7 @@ Apply this fix?
 
 The snippets below show control flow only. `apply_single_fix` is a real entry
 point (`_cmd_apply.py`); the recording and reporting steps are shown as comments
-because there is no shared helper for them to call.
+because plugin-doctor's scripts define no logging or reporting helper to call.
 
 ### Yes - Apply Fix
 
