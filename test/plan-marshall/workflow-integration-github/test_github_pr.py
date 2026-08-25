@@ -3824,3 +3824,90 @@ def test_fetch_findings_reports_an_unmeasurable_diff_as_unknown_never_zero(
     assert result['refused_size_caps'] == [
         {'bot_kind': 'sourcery', 'cap': '150000 diff characters'}
     ]
+
+
+# ============================================================================
+# _comment_predates_commit — the comparability guard
+# ============================================================================
+#
+# The predicate promises that THREE undecidable inputs resolve to False: an unreadable
+# commit timestamp, an absent comment timestamp, and TIMESTAMPS THAT DO NOT COMPARE.
+# The third had no guard — the ordering was a bare lexicographic string compare — so a
+# format mismatch did not fail to decide, it decided WRONGLY and confidently: a comment
+# stamped ``…T11:30:00-05:00`` names an instant AFTER a commit stamped ``…T12:00:00Z``,
+# yet sorts before it, and the withheld-credit guard would fire on a comment that
+# post-dates the code. Every case below is a shape whose lexicographic order disagrees
+# with (or says nothing about) the real instant order.
+#
+# The two controls at the end are matched positives: they prove the guard withholds on
+# uncomparable input WITHOUT neutering the predicate on the only shape it is valid over.
+
+_ISO_COMMIT_AT = '2026-08-25T12:00:00Z'
+
+
+@pytest.mark.parametrize(
+    ('updated_at', 'created_at', 'why'),
+    [
+        # Negative UTC offset: the real instant is 16:30Z, four and a half hours AFTER
+        # the commit, but '11:30' sorts before '12:00'. The pre-guard compare called
+        # this a comment that predates the commit.
+        ('2026-08-25T11:30:00-05:00', '', 'negative offset sorts before, happens after'),
+        # Fractional seconds: '.' (0x2E) sorts before 'Z' (0x5A), so a comment half a
+        # second AFTER the commit sorted before it.
+        ('2026-08-25T12:00:00.500000Z', '', 'fractional seconds sort before the Z'),
+        # Bare date — names a day, not a moment; nothing about it is comparable to a
+        # second-resolution instant.
+        ('2026-08-25', '', 'a bare date names no moment'),
+        # Epoch seconds: every digit string starting '1' sorts before every ISO string
+        # starting '2', so the shape reads as "predates" for the next ~250 years.
+        ('1787654400', '', 'epoch seconds sort before every ISO-8601 year'),
+        # The comment's OWN two stamps disagree in shape, so ``max`` over them does not
+        # select the later moment — guarded before the ordering, not after.
+        ('2026-08-25T11:30:00-05:00', '2026-08-25T10:00:00Z', 'max over mixed shapes'),
+    ],
+)
+def test_comment_predates_commit_withholds_when_the_timestamps_do_not_compare(
+    updated_at, created_at, why
+):
+    """An uncomparable timestamp yields the promised False, not a lexicographic guess.
+
+    ⛔ This is the docstring's third undecidable case, which had no guard. Withholding
+    here is the fail-closed direction the whole deliverable is about: an unknown
+    ordering is not a claim that the comment predates the commit.
+    """
+    comment = {'updated_at': updated_at, 'created_at': created_at}
+
+    assert github_pr._comment_predates_commit(comment, _ISO_COMMIT_AT) is False, why
+
+
+def test_comment_predates_commit_withholds_on_an_uncomparable_commit_timestamp():
+    """The guard is symmetric: a non-``Z`` COMMIT stamp is equally undecidable.
+
+    Guarding only the comment side would leave the same wrong-ordering claim reachable
+    from the other operand.
+    """
+    comment = {'updated_at': '2026-08-25T09:00:00Z', 'created_at': '2026-08-25T09:00:00Z'}
+
+    assert github_pr._comment_predates_commit(comment, '2026-08-25T12:00:00+02:00') is False
+
+
+def test_comment_predates_commit_still_decides_two_comparable_timestamps():
+    """Matched positive control — a comment that really does predate still reports True.
+
+    Without this, a guard that returned False unconditionally would pass the cases
+    above while silently deleting the predicate.
+    """
+    comment = {'updated_at': '2026-08-25T09:00:00Z', 'created_at': '2026-08-25T08:00:00Z'}
+
+    assert github_pr._comment_predates_commit(comment, _ISO_COMMIT_AT) is True
+
+
+def test_comment_predates_commit_reports_false_for_a_comment_after_the_commit():
+    """Matched negative control — the comparable, NOT-predating case stays False.
+
+    The later of the two stamps is what decides, so a comment created before the commit
+    but edited after it does not count as predating it.
+    """
+    comment = {'updated_at': '2026-08-25T14:00:00Z', 'created_at': '2026-08-25T08:00:00Z'}
+
+    assert github_pr._comment_predates_commit(comment, _ISO_COMMIT_AT) is False

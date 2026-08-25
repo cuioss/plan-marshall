@@ -781,6 +781,18 @@ def _record_currency_records(
         )
 
 
+#: The ONE timestamp shape the ordering below is valid over: fixed-width ISO-8601 UTC
+#: with a literal trailing ``Z``, as the GitHub API emits for both comment timestamps
+#: and commit timestamps. Two strings of this shape sort lexicographically in the same
+#: order as the instants they name, which is what makes a bare ``<`` a correct ordering
+#: test. A string in ANY other shape — a numeric UTC offset (``+02:00``), a
+#: fractional-second form, a bare date, an epoch integer — does NOT sort against this
+#: one, so mixing shapes turns ``<`` into a silently wrong ordering CLAIM rather than
+#: into a comparison error something would notice. The regex is therefore the
+#: comparability guard, not a validation nicety.
+_ISO_UTC_TIMESTAMP = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')
+
+
 def _comment_predates_commit(comment: dict, merge_candidate_committed_at: str) -> bool:
     """True when ``comment`` demonstrably existed BEFORE the merge-candidate commit.
 
@@ -794,16 +806,32 @@ def _comment_predates_commit(comment: dict, merge_candidate_committed_at: str) -
     unknown ordering is NOT a claim that the comment predates the commit, and the
     caller must not read it as one — the withholding here rests on positive evidence
     of the ordering, never on its absence.
+
+    "Do not compare" is a GUARDED condition, not an assumed one: every timestamp that
+    reaches the ``<`` must match :data:`_ISO_UTC_TIMESTAMP`, and any that does not
+    sends the whole question to False. Without that guard the ordering is a bare
+    lexicographic string compare, and a format mismatch — one side offset-stamped, one
+    side ``Z``-stamped — yields a confident but silently wrong ordering claim instead
+    of the undecided answer promised above. The comment's OWN two timestamps are
+    guarded for the same reason before ``max`` picks between them: a lexicographic max
+    over two differently-shaped strings does not select the later moment.
     """
-    if not merge_candidate_committed_at:
+    commit_at = str(merge_candidate_committed_at or '')
+    if not _ISO_UTC_TIMESTAMP.match(commit_at):
         return False
-    latest = max(
-        str(comment.get('updated_at') or ''),
-        str(comment.get('created_at') or ''),
-    )
-    if not latest:
+    stamps = [
+        stamp
+        for stamp in (
+            str(comment.get('updated_at') or ''),
+            str(comment.get('created_at') or ''),
+        )
+        if stamp
+    ]
+    if not stamps:
         return False
-    return latest < merge_candidate_committed_at
+    if not all(_ISO_UTC_TIMESTAMP.match(stamp) for stamp in stamps):
+        return False
+    return max(stamps) < commit_at
 
 
 def _reviewed_at_merge_candidate(
@@ -1155,8 +1183,11 @@ def cmd_fetch_findings(args):
     # The MERGE CANDIDATE SHA — the current PR HEAD — is fetched up front (before the
     # participation loop, not only for the ingestion stamp below) because the currency
     # test now compares each comment's reviewed SHA against it. Empty string on any
-    # failure path; the currency test then falls through to its first-observation /
-    # edit-movement arms rather than crediting on a SHA that could not be read.
+    # failure path, and the currency test then FAILS CLOSED on every arm — SHA currency,
+    # first observation, and edit movement alike — rather than crediting a review it
+    # cannot tie to a commit. The affected bots are disclosed as
+    # ``undecidable_participation_bots`` and the read itself as
+    # ``merge_candidate_sha_resolved``.
     reviewed_commit_sha = _github.fetch_pr_head_sha(pr_number)
 
     # The merge candidate's OWN timestamp, read alongside its SHA. It guards the

@@ -775,7 +775,8 @@ not a richer call. The two flags belong at § "Predicate 2" below, which is the 
 **The rule is a POSITIVE validation of the required shape, not an enumeration of known-bad shapes.**
 The barrier proceeds to Predicate 2 when, and only when, this `fetch_findings` call exited **zero** AND
 its return carries **EVERY** participation input it enumerates — `participated_bots`,
-`stale_participation_bots`, `refused_bots`, and `unrecognised_refusal`. **Every other shape is an
+`stale_participation_bots`, `refused_bots`, `unrecognised_refusal`, and
+`merge_candidate_sha_resolved`. **Every other shape is an
 UNKNOWN**, including a zero exit whose return omits any one of them. The enumeration is the
 requirement; it deliberately states no cardinal, because a restated count is a second place the set
 size lives and the one that goes stale silently when the set is widened. Keying the trigger on a single
@@ -796,6 +797,16 @@ Predicate 2** with any participation input absent: feeding an empty `--participa
 predicate that fails closed would render every required bot `absent`, and feeding nothing at all would
 make the verdict a fiction either way. An absent input is an UNKNOWN verdict, never a `false` the
 operator can act on and never a `true`.
+
+`merge_candidate_sha_resolved` is required present on exactly that ground. The producer emits it
+**unconditionally** — the flag is a key of the result mapping every successful `fetch_findings` return
+carries, so a run whose head read succeeded reports `true` and a run whose read failed reports `false`,
+and its ABSENCE is evidence of truncation rather than of a resolved head. **Absent is not false**:
+neither default is available to a reader, because defaulting an absent flag to `true` would credit a
+head nobody read, while defaulting it to `false` would route a clean run to UNKNOWN. Requiring the
+field is therefore what stops a truncated return that drops it from satisfying the enumeration and
+proceeding to Predicate 2 on a currency test that never ran — the identical failure this section
+records for `unrecognised_refusal` one paragraph above.
 
 **A well-formed return can still be an UNKNOWN, and `merge_candidate_sha_resolved: false` is that
 shape.** The producer emits the flag to report whether the merge-candidate SHA could be READ at all;

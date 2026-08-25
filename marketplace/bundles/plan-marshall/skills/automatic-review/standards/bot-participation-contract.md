@@ -208,7 +208,15 @@ budget-exhausted branch reaches `--in-progress-bots`.
 
 **A currency-tested participation credit is valid only against the merge candidate: such a review
 counts iff the commit it reviewed is the merge candidate's HEAD, and that verdict is a pure comparison
-that consumes no observation state, so it is identical however many times it is evaluated.**
+that consumes no observation state, so it is identical however many times it is evaluated while the
+merge candidate remains resolvable.**
+
+That qualification is the honest reach of the claim, not a hedge. The merge-candidate SHA is read per
+fetch from a fallible provider call, so a resolved-then-unresolved sequence moves the verdict from a
+credit to the undecidable outcome without any observation state having been consumed. Idempotence
+holds over repeated evaluation, never over a changed ability to read the head — and stating the reach
+that narrowly is what keeps this contract from asserting of the verdict what its own producer does
+not.
 
 **The rule's reach is exactly the bots whose registry record declares
 `participation_requires_update: true`** — the in-place re-reviewers. That is the set the producer
@@ -294,22 +302,36 @@ evidence requires the comment to prove a review of the **merge candidate**:
 - the comment is recorded against the merge-candidate SHA — the `reviewed_commit_sha` stamped on the
   stored finding, or (for a comment the pre-filter drops, so it files no finding) the merge-candidate
   SHA the noise sidecar recorded when the comment was first observed; **or**
-- it was **edited in place** (`updated_at` differs from `created_at`) since it was posted — a fresh
-  review at the current tree; **or**
+- it was **edited in place since it was last credited** — `updated_at` differs from the **recorded**
+  `updated_at` the currency ledger holds for that credit, never from `created_at` — a fresh review at
+  the current tree. Comparing against the recorded value is what stops the arm from becoming a
+  permanent "was ever edited" flag: an edit at commit N credits N, and not N+1 unless a further edit
+  lands. An absent `updated_at` reads as no movement, which is the fail-closed direction; **or**
 - this fetch is the **first observation** of the comment — a **bounded assumption**, never a verified
   fact. A fetched comment carries no reviewed SHA, so nothing in it says which commit the bot actually
   read, and the ledger's silence says only that this plan has not seen the comment before — which is
   not the same as the bot not having published it earlier. The assumption errs toward **crediting**: a
-  comment that in truth reviewed an **earlier** commit is credited at the merge candidate. Two guards
-  bound it — the credit is withheld when the merge-candidate SHA is unreadable, and, when the
-  merge-candidate commit's own timestamp can be read, when the comment's timestamps predate that
-  commit. Neither guard turns the assumption into a verification: a comment posted after the commit is
-  still credited without proof that it read it.
+  comment that in truth reviewed an **earlier** commit is credited at the merge candidate. One guard
+  bounds it on this arm specifically: when the merge-candidate commit's own timestamp can be read, a
+  comment whose timestamps predate that commit is refused, because it demonstrably existed before the
+  code did. The guard does not turn the assumption into a verification — a comment posted after the
+  commit is still credited without proof that it read it.
+
+**An unreadable merge candidate withholds the credit on EVERY arm, not on one of them.** With no
+readable head SHA there is no commit for any arm to anchor against: a recorded SHA has nothing to
+equal, an edit proves a fresh review of *something* without saying of what, and a first observation
+cannot be tied to the tree being merged. All of them therefore fail closed, and the bot is reported as
+`undecidable_participation` rather than as stale, since a re-review trigger cannot fix a failed read.
+The uniformity is itself load-bearing: failing closed on every arm is what keeps the verdict stable
+across a failed read, because a later fetch that likewise cannot resolve the head reaches the same
+blocking answer instead of flipping.
 
 A comment recorded against an **earlier** commit, unedited, fails the test. Because the test is an SHA
-comparison rather than a first-seen tally, re-running the fetch at the same HEAD returns the same
-answer — the credit no longer depends on how many times the plan has looked. No participation path
-reads the observation ledger (`observed_keys`) as a currency signal.
+comparison rather than a first-seen tally, re-running the fetch at the same HEAD — for as long as that
+HEAD stays resolvable — returns the same answer, so the credit no longer depends on how many times the
+plan has looked. Losing the ability to read the head is the one thing that moves the answer, and it
+moves it to the undecidable outcome rather than to a credit. No participation path reads the
+observation ledger (`observed_keys`) as a currency signal.
 
 A failed currency test is **not the same as no evidence at all**, and the taxonomy keeps the two
 apart: the bot published in a declared shape, so the producer reports it in
