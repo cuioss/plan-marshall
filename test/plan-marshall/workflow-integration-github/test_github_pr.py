@@ -20,6 +20,12 @@ import sys
 import bot_registry
 import pytest
 from _bot_flag_derivation import derive_bot_flags
+from _github_pr_fixtures import (
+    CURRENCY_SUBJECT_BOT_COUNT,
+    CURRENCY_SUBJECT_BOTS,
+    VacuousPopulationError,
+    guard_non_empty,
+)
 from _pr_agent_guide_bodies import GUIDE_WITH_FINDING, OBSERVED_CLEAN_GUIDE
 
 from conftest import get_script_path, load_script_module, run_script
@@ -191,8 +197,20 @@ def test_a_deduped_comment_is_still_credited_as_participating(plan_context, monk
     # Every bot with a comment in a declared publish shape is credited: coderabbit and
     # sourcery by presence of a declared evidence kind, pr-agent by the first-observation
     # currency arm at the resolvable head. (The human comment resolves to no bot_kind.)
+    # The expected participant list is DERIVED from the registry intersected with the
+    # bots the _COMMENTS fixture represents — never a hand-listed set of bot names, which
+    # would not notice a bot whose declared publish shapes changed.
+    expected_participants = sorted(
+        {
+            kind
+            for comment in _COMMENTS
+            if (kind := bot_registry.bot_kind_for_login(comment['author']))
+            and comment['kind'] in bot_registry.participation_evidence(kind)
+        }
+    )
+    assert expected_participants, 'the _COMMENTS fixture represents no participating bot'
     first_bots = [e['bot_kind'] for e in first['participated_bots']]
-    assert first_bots == ['coderabbit', 'pr-agent', 'sourcery']
+    assert first_bots == expected_participants
 
     # Re-fetch the IDENTICAL comments at the SAME head. Every comment is already stored,
     # so the storage dedup drops all of them...
@@ -2570,28 +2588,29 @@ def test_layer_three_is_consulted_only_after_layers_one_and_two_miss(monkeypatch
 #
 # The bot population is DERIVED from the registry rather than named, so a bot that
 # newly opts into ``participation_requires_update`` inherits every case below
-# instead of silently escaping it. The population is guarded against vacuity.
-
-_UPDATE_REQUIRING_BOTS = tuple(
-    bot for bot in bot_registry.bot_kinds() if bot_registry.participation_requires_update(bot)
-)
+# instead of silently escaping it. It is imported by bare name from this subtree's
+# ``_github_pr_fixtures`` helper, which is its single home in the test tree and
+# guards it non-empty at import — re-deriving or hand-listing it here would be the
+# duplicate definition that guard exists to forbid.
 
 #: ``bot_kind`` -> ``author_login``, inverted from the registry's forward map so a
 #: comment fixture can be authored for a derived bot without naming its login.
 _BOT_KIND_TO_LOGIN = {kind: login for login, kind in bot_registry.login_to_bot_kind().items()}
 
 
-def test_at_least_one_registered_bot_requires_update_movement():
-    """The derived population must be non-empty or every case below is vacuous.
+def test_the_currency_subject_population_guard_is_exercised():
+    """The population's import-time vacuity guard admits the real set and rejects an empty one.
 
-    A parametrize over an empty tuple produces a skip, not a failure, so the
-    stale-participation sweep could report clean while covering nothing. This
-    asserts the population exists before anything parametrizes over it.
+    A parametrize over an empty tuple produces a skip, not a failure, so an unguarded
+    empty population would let every case below report clean while covering nothing.
+    Both controls are asserted: a guard only ever observed on its PASSING input proves
+    nothing about what it rejects.
     """
-    assert _UPDATE_REQUIRING_BOTS, (
-        'no registered bot declares participation_requires_update — the '
-        'participated_stale cases below would parametrize over an empty set'
-    )
+    assert CURRENCY_SUBJECT_BOT_COUNT == len(CURRENCY_SUBJECT_BOTS)
+    assert CURRENCY_SUBJECT_BOT_COUNT > 0
+    assert guard_non_empty(CURRENCY_SUBJECT_BOTS, 'CURRENCY_SUBJECT_BOTS', 'the registry')
+    with pytest.raises(VacuousPopulationError, match='reporting clean while covering nothing'):
+        guard_non_empty((), 'CURRENCY_SUBJECT_BOTS', 'a registry declaring no such bot')
 
 
 def test_currency_anchor_is_recorded_in_the_ledger_on_credit(plan_context, monkeypatch):
@@ -2600,14 +2619,14 @@ def test_currency_anchor_is_recorded_in_the_ledger_on_credit(plan_context, monke
     D0 named the currency ledger as the single source the currency test compares
     against. A hand-maintained list of currency sites is the same defect class this
     plan closes, so the population of currency-subject bots is registry-derived and
-    guarded non-empty (``_UPDATE_REQUIRING_BOTS``, in the ``_dispatch_roster`` "guard
-    against vacuity" spirit), and the anchor is the ledger the producer itself writes
-    on credit. This drives a real fetch and reads the ledger back through the SUT's own
-    reader: a credited comment records its ``(merge_candidate_sha, updated_at)``, so the
-    derivation is re-run against production code rather than a copy.
+    guarded non-empty at import in ``_github_pr_fixtures`` (``CURRENCY_SUBJECT_BOTS``, in
+    the ``_dispatch_roster`` "guard against vacuity" spirit), and the anchor is the ledger
+    the producer itself writes on credit. This drives a real fetch and reads the ledger
+    back through the SUT's own reader: a credited comment records its
+    ``(merge_candidate_sha, updated_at)``, so the derivation is re-run against production
+    code rather than a copy.
     """
-    assert _UPDATE_REQUIRING_BOTS, 'currency-subject bot population is vacuous'
-    bot = _UPDATE_REQUIRING_BOTS[0]
+    bot = CURRENCY_SUBJECT_BOTS[0]
     plan_id = f'gh-pr-ledger-{bot}'
     comment = _publish_comment(bot, 'c-ledger', created_at=_at(1))
     _patch_provider(monkeypatch, [comment], head_sha=_HEAD_A)
@@ -2618,7 +2637,7 @@ def test_currency_anchor_is_recorded_in_the_ledger_on_credit(plan_context, monke
     assert ledger.get((bot, 'c-ledger')) == (_HEAD_A, comment['updated_at'])
 
 
-@pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_edit_at_one_commit_does_not_credit_a_later_commit(
     bot_kind, plan_context, monkeypatch
 ):
@@ -2689,7 +2708,7 @@ _HEAD_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 _HEAD_C = 'cccccccccccccccccccccccccccccccccccccccc'
 
 
-@pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_second_fetch_at_the_same_head_stays_participated(
     bot_kind, plan_context, monkeypatch
 ):
@@ -2720,7 +2739,7 @@ def test_second_fetch_at_the_same_head_stays_participated(
     assert second['stale_participation_bots'] == first['stale_participation_bots']
 
 
-@pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_unresolvable_head_sha_fails_closed_and_stays_idempotent(
     bot_kind, plan_context, monkeypatch
 ):
@@ -2754,7 +2773,7 @@ def test_unresolvable_head_sha_fails_closed_and_stays_idempotent(
     assert second['stale_participation_bots'] == first['stale_participation_bots']
 
 
-@pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_review_predating_the_merge_candidate_is_stale(
     bot_kind, plan_context, monkeypatch
 ):
@@ -2784,7 +2803,7 @@ def test_review_predating_the_merge_candidate_is_stale(
     ]
 
 
-@pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_in_place_edit_credits_participation_after_a_head_advance(
     bot_kind, plan_context, monkeypatch
 ):
@@ -2811,7 +2830,7 @@ def test_in_place_edit_credits_participation_after_a_head_advance(
     assert second['stale_participation_bots'] == []
 
 
-@pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_a_fresh_comment_outranks_a_stale_one_through_the_subtraction(
     bot_kind, plan_context, monkeypatch
 ):

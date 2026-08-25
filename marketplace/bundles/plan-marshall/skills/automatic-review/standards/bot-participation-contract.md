@@ -219,6 +219,24 @@ observation closes a second defect, the **observer effect** — a credit derived
 its answer on the second look, so the same unedited comment at the same HEAD flipped from
 `participated` to `participated_stale` between one fetch and the next.
 
+#### A wait's completion arm is timestamp-anchored, and that is correct
+
+`github_ops pr wait-for-comments` ends its poll on a movement arm that fires when a bot declaring
+`participation_requires_update` has edited its persistent comment since the wait started — a
+**timestamp** anchor, where this rule anchors a credit on a **commit SHA**. The recorded answer is
+that the timestamp anchor is **correct for that arm**, and the divergence from this rule is not a
+defect: a wait asks *"did anything move since I started?"*, which is a different question from *"did
+this review the merge candidate?"*. A poll is a scheduling decision — when to stop waiting and fetch
+— and movement since the wait began is the observable that answers it. Anchoring the poll on the
+merge-candidate SHA instead would end the wait on a comment that never moved, and would run an
+in-place re-reviewer to the full timeout, because such a bot's comment count never grows.
+
+The arm therefore grants no participation credit: it decides when to stop polling, and the credit is
+granted only by the currency test the producer applies afterwards. A movement match proves a
+re-review **arrived**; whether that review is current is decided against the commit, by this rule.
+That is a recorded classification rather than a gap, and no follow-up is filed against the wait
+predicate.
+
 ### Evidence for a bot that edits one comment in place
 
 A bot that re-reviews by **editing its single persistent comment** rather than posting a new one
