@@ -235,17 +235,6 @@ _PRUNE_SECTION_HEADING = '#### Release the cross-plan merge-lock (both paths)'
 #: The success-literal marker used for the "before returning success" ordering.
 _SUCCESS_LITERAL = "'status': 'success'"
 
-# The registry derivation itself — the `handlers: HandlerMap` literal, its row
-# grammar, the merge-shaped vocabulary, and the ast-based handler-body lookup —
-# is IMPORTED from `_merge_shaped_roster`, the designated single source. This
-# module deliberately defines no `handlers: HandlerMap` regex of its own: two
-# copies of a registry grammar drift independently, and a copy that stopped
-# matching would shrink this guard's population while the sibling suite over the
-# same registry stayed green — a divergence nothing would report. What stays
-# local is the PATH resolution (which module file, above), because the paths are
-# this guard's own subject; the roster's functions take source text precisely so
-# each caller keeps that decision.
-
 
 def _read(path: Path) -> str:
     return path.read_text(encoding='utf-8')

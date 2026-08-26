@@ -518,11 +518,10 @@ def test_offrouting_dispatch_is_refused_at_the_callee(monkeypatch, provider, ver
 
     # The refusal precedes the side effect: an enqueue verb that refused must not
     # have POSTed, and an immediate-merge verb must not have merged.
-    forbidden = 'api' if scenario == _REFUSE_UNCONFIGURED else 'merge'
-    side_effects = [
-        call for call in captured
-        if (call[:3] == ['api', '-X', 'POST'] if forbidden == 'api' else call[:2] in (['pr', 'merge'], ['mr', 'merge']))
-    ]
+    if scenario == _REFUSE_UNCONFIGURED:
+        side_effects = [call for call in captured if call[:3] == ['api', '-X', 'POST']]
+    else:
+        side_effects = [call for call in captured if call[:2] in (['pr', 'merge'], ['mr', 'merge'])]
     assert side_effects == [], (
         f'{provider}:{verb} refused an off-routing dispatch but had ALREADY acted: {side_effects}. '
         f'The guard must run before the side effect, or the refusal reports a state the verb '

@@ -652,13 +652,6 @@ class TestDocumentedReviewMergeInvocationsParse:
             'side means the matcher stopped seeing that doc rather than that the doc changed. '
             'A total-only floor cannot see this: the remaining docs keep the total above it.'
         )
-        # Reported for the same reason the per-doc arm exists — so a shrunken
-        # scan is visible as a number rather than inferred from a green run.
-        assert len(_DOCUMENTED_INVOCATIONS) >= len(_INVOCATION_DOCS), (
-            f'{len(_DOCUMENTED_INVOCATIONS)} invocations across {len(_INVOCATION_DOCS)} docs '
-            f'(per doc: {by_doc}) — fewer than one per doc, which the per-doc arm above '
-            'should already have named.'
-        )
 
     @pytest.mark.parametrize('invocation', _DOCUMENTED_INVOCATIONS, ids=_invocation_id)
     def test_documented_invocation_parses(self, invocation):
