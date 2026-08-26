@@ -742,7 +742,20 @@ _OUTLINE = """# Solution: fixture
 - Criteria: passes
 """
 
-_OUTLINE_DECLARED = {'src/flat_one.py', 'src/flat_two.py', 'src/surveyed.py', 'src/mutated.py'}
+#: The MUTATION half of ``_OUTLINE``'s declared surface — what ``affected_files``
+#: carries. ``src/mutated.py`` is here despite carrying no ``(intent)`` marker:
+#: it sits under a MODIFICATION heading, and an unmarked bullet there counts as a
+#: modification rather than being silently subtracted from the change footprint.
+_OUTLINE_MUTATION = {'src/flat_one.py', 'src/flat_two.py', 'src/mutated.py'}
+
+#: The READ half — what ``read_intent_files`` carries. ``src/surveyed.py`` sits
+#: under ``Files to survey``, which is analysis-only by definition, so its
+#: unmarked bullet resolves to ``read`` at parse time.
+_OUTLINE_READ_INTENT = {'src/surveyed.py'}
+
+#: The whole declared surface. The two halves are DISJOINT, so this union is also
+#: the figure ``declared_count`` must reconstruct.
+_OUTLINE_DECLARED = _OUTLINE_MUTATION | _OUTLINE_READ_INTENT
 
 
 def _sync_ns(plan_id='test-plan'):
@@ -757,17 +770,31 @@ def _write_outline(plan_id: str, content: str) -> None:
     outline_path.write_text(content, encoding='utf-8')
 
 
-def _affected(plan_id='test-plan') -> list:
-    """Read the persisted affected_files list back off disk."""
+def _persisted_list(plan_id: str, field: str) -> list:
+    """Read one persisted list-valued references key back off disk."""
     refs = require_references(plan_id)
     assert isinstance(refs, dict)
-    value = refs.get('affected_files')
-    assert isinstance(value, list), f'affected_files is not a list: {value!r}'
+    value = refs.get(field)
+    assert isinstance(value, list), f'{field} is not a list: {value!r}'
     return value
 
 
+def _affected(plan_id='test-plan') -> list:
+    """Read the persisted affected_files list back off disk."""
+    return _persisted_list(plan_id, 'affected_files')
+
+
+def _read_intent(plan_id='test-plan') -> list:
+    """Read the persisted read_intent_files list back off disk."""
+    return _persisted_list(plan_id, 'read_intent_files')
+
+
 def test_sync_derives_the_declared_set_from_the_outline(plan_context):
-    """The derived set is the outline's declared surface, not a caller-supplied list."""
+    """The derived set is the outline's declared surface, not a caller-supplied list.
+
+    ``affected_files`` carries the MUTATION half; the read half lands in its own
+    key, and the two together are the whole declared surface.
+    """
     cmd_create(_create_ns())
     _write_outline('test-plan', _OUTLINE)
 
@@ -775,7 +802,8 @@ def test_sync_derives_the_declared_set_from_the_outline(plan_context):
 
     assert result['status'] == 'success'
     assert result['field'] == 'affected_files'
-    assert set(_affected()) == _OUTLINE_DECLARED
+    assert set(_affected()) == _OUTLINE_MUTATION
+    assert set(_read_intent()) == _OUTLINE_READ_INTENT
 
 
 def test_sync_carries_a_survey_scope_deliverables_mutation_paths(plan_context):
@@ -784,15 +812,19 @@ def test_sync_carries_a_survey_scope_deliverables_mutation_paths(plan_context):
     Asserted as membership of the specific path rather than as a count: a
     derivation that read only `**Affected files:**` still produces a perfectly
     plausible result for this outline, differing only by the paths it dropped.
+
+    Its `Files to survey:` sibling is asserted in the OPPOSITE direction — the
+    survey pool is a reading surface, so it must reach the read key and must NOT
+    reach the expected-modification key.
     """
     cmd_create(_create_ns())
     _write_outline('test-plan', _OUTLINE)
 
     cmd_sync_affected_files(_sync_ns())
 
-    persisted = _affected()
-    assert 'src/mutated.py' in persisted
-    assert 'src/surveyed.py' in persisted
+    assert 'src/mutated.py' in _affected()
+    assert 'src/surveyed.py' in _read_intent()
+    assert 'src/surveyed.py' not in _affected()
 
 
 def test_sync_unions_rather_than_replaces_an_existing_entry(plan_context):
@@ -809,7 +841,7 @@ def test_sync_unions_rather_than_replaces_an_existing_entry(plan_context):
 
     assert result['status'] == 'success'
     assert 'src/recorded_earlier.py' in _affected()
-    assert set(_affected()) == _OUTLINE_DECLARED | {'src/recorded_earlier.py'}
+    assert set(_affected()) == _OUTLINE_MUTATION | {'src/recorded_earlier.py'}
 
 
 def test_sync_adds_a_post_outline_addition_on_a_later_run(plan_context):
@@ -827,7 +859,7 @@ def test_sync_adds_a_post_outline_addition_on_a_later_run(plan_context):
 
     assert result['added_count'] == 1
     assert result['added'] == ['src/added_later.py']
-    assert set(_affected()) == _OUTLINE_DECLARED | {'src/added_later.py'}
+    assert set(_affected()) == _OUTLINE_MUTATION | {'src/added_later.py'}
 
 
 def test_sync_is_idempotent_over_an_unchanged_outline(plan_context):
@@ -844,7 +876,8 @@ def test_sync_is_idempotent_over_an_unchanged_outline(plan_context):
     result = cmd_sync_affected_files(_sync_ns())
 
     assert result['added_count'] == 0
-    assert result['unchanged_count'] == len(_OUTLINE_DECLARED)
+    assert result['unchanged_count'] == len(_OUTLINE_MUTATION)
+    assert result['read_intent_added_count'] == 0
     assert _affected() == first
 
 
@@ -863,7 +896,7 @@ def test_sync_preserves_the_position_of_already_recorded_paths(plan_context):
 
     persisted = _affected()
     assert persisted[:2] == ['zzz_recorded_first.py', 'aaa_recorded_second.py']
-    assert persisted[2:] == sorted(_OUTLINE_DECLARED)
+    assert persisted[2:] == sorted(_OUTLINE_MUTATION)
 
 
 def test_sync_publishes_the_population_it_walked(plan_context):
@@ -894,10 +927,11 @@ def test_sync_refuses_when_the_outline_is_absent(plan_context):
     assert result['status'] == 'error'
     assert result['error'] == 'outline_not_found'
     assert 'added_count' not in result
-    # Nothing was written: the key the verb owns is still absent.
+    # Nothing was written: NEITHER key the verb owns exists yet.
     refs = require_references('test-plan')
     assert isinstance(refs, dict)
     assert 'affected_files' not in refs
+    assert 'read_intent_files' not in refs
 
 
 def test_sync_refuses_when_no_deliverable_was_parsed(plan_context):
@@ -974,4 +1008,184 @@ def test_cli_sync_affected_files_roundtrip(plan_context):
     data = parse_toon(sync_result.stdout)
     assert data['status'] == 'success'
 
-    assert set(_affected()) == _OUTLINE_DECLARED
+    assert set(_affected()) == _OUTLINE_MUTATION
+    assert set(_read_intent()) == _OUTLINE_READ_INTENT
+
+
+# =============================================================================
+# Test: sync-affected-files — the INTENT PARTITION
+# =============================================================================
+# ``affected_files`` means "expected modification". The realized footprint is a
+# diff, so a file the plan only READ can never appear in it — counted as an
+# expected modification it is a denominator member the numerator cannot contain,
+# and it caps every derived recall below threshold by construction. The read
+# declaration is therefore excluded from that key and CARRIED in
+# ``read_intent_files``, so the information survives and a filtered set stays
+# distinguishable from a small one.
+
+#: A flat ``Affected files:`` list carrying an EXPLICIT ``(read)`` marker beside
+#: two writes. The sharpest partition case: the read marker sits under the
+#: modification heading itself, so nothing about the heading rescues it — only
+#: the per-path intent can.
+_OUTLINE_EXPLICIT_READ = """# Solution: fixture
+
+## Deliverables
+
+### 1. A deliverable that reads one file and writes two
+
+**Affected files:**
+- `src/written_one.py` (write-replace)
+- `src/consulted.py` (read)
+- `src/written_two.py` (write-new)
+
+**Verification:**
+- Command: verify
+- Criteria: passes
+"""
+
+#: Two deliverables disagreeing about one path: deliverable 1 declares
+#: ``src/contested.py`` a write, deliverable 2 declares the same path a read.
+_OUTLINE_CONTESTED = """# Solution: fixture
+
+## Deliverables
+
+### 1. The deliverable that MODIFIES the contested path
+
+**Affected files:**
+- `src/contested.py` (write-replace)
+
+**Verification:**
+- Command: verify
+- Criteria: passes
+
+### 2. The deliverable that only READS the contested path
+
+**Affected files:**
+- `src/contested.py` (read)
+
+**Verification:**
+- Command: verify
+- Criteria: passes
+"""
+
+
+def test_sync_keeps_an_explicit_read_declaration_out_of_affected_files(plan_context):
+    """A `(read)`-marked path is excluded from the expected-modification key.
+
+    Both directions are asserted. Absence from ``affected_files`` is the defect
+    this partition closes; presence in ``read_intent_files`` is what makes the
+    exclusion a CARRY rather than a silent drop — an implementation that simply
+    discarded read declarations would pass the first assertion alone.
+    """
+    cmd_create(_create_ns())
+    _write_outline('test-plan', _OUTLINE_EXPLICIT_READ)
+
+    result = cmd_sync_affected_files(_sync_ns())
+
+    assert result['status'] == 'success'
+    assert 'src/consulted.py' not in _affected()
+    assert 'src/consulted.py' in _read_intent()
+    assert set(_affected()) == {'src/written_one.py', 'src/written_two.py'}
+
+
+def test_sync_counts_an_unannotated_modification_bullet_as_a_modification(plan_context):
+    """An unmarked bullet under a modification heading is a write, not a read.
+
+    The asymmetry is deliberate: filing it under ``read`` would subtract a
+    possibly-changing file from every footprint derived downstream and
+    manufacture a vacuously small denominator. ``unannotated_count`` publishes
+    how many paths arrived this way, so the assumption is visible rather than
+    folded silently into the total.
+    """
+    cmd_create(_create_ns())
+    _write_outline('test-plan', _OUTLINE)
+
+    result = cmd_sync_affected_files(_sync_ns())
+
+    # `src/mutated.py` carries no marker and sits under `Files expected to mutate`.
+    assert 'src/mutated.py' in _affected()
+    assert 'src/mutated.py' not in _read_intent()
+    assert result['unannotated_count'] == 1
+
+
+def test_sync_published_counts_reconstruct_the_distinct_declared_total(plan_context):
+    """``mutation_count + read_intent_count`` reconstructs the declared total.
+
+    The identity holds only because the two halves are DISJOINT, so this is the
+    assertion that a path counted twice — or dropped from both — would break.
+    Each count is also checked against the set actually persisted, so a correct
+    sum computed over the wrong sets cannot pass.
+    """
+    cmd_create(_create_ns())
+    _write_outline('test-plan', _OUTLINE)
+
+    result = cmd_sync_affected_files(_sync_ns())
+
+    assert result['mutation_count'] == len(_OUTLINE_MUTATION)
+    assert result['read_intent_count'] == len(_OUTLINE_READ_INTENT)
+    assert result['mutation_count'] + result['read_intent_count'] == result['declared_count']
+    assert result['declared_count'] == len(_OUTLINE_DECLARED)
+    # The counts describe the sets that were actually persisted.
+    assert len(_affected()) == result['mutation_count']
+    assert len(_read_intent()) == result['read_intent_count']
+
+
+def test_sync_lets_a_modification_declaration_win_a_contested_path(plan_context):
+    """A path declared BOTH ways is an expected modification, and is not double-counted.
+
+    Honouring the read declaration instead would subtract a genuinely-changing
+    file from the footprint. The reclassification is published rather than
+    silently shrinking ``read_intent_count``, so the subtraction is auditable.
+    """
+    cmd_create(_create_ns())
+    _write_outline('test-plan', _OUTLINE_CONTESTED)
+
+    result = cmd_sync_affected_files(_sync_ns())
+
+    assert _affected() == ['src/contested.py']
+    assert _read_intent() == []
+    assert result['read_reclassified_count'] == 1
+    # Disjointness holds: the contested path is counted exactly once.
+    assert result['mutation_count'] == 1
+    assert result['read_intent_count'] == 0
+    assert result['declared_count'] == 1
+
+
+def test_sync_unions_read_intent_files_rather_than_replacing_them(plan_context):
+    """The read key gets the same union treatment as its mutation sibling.
+
+    A replace-write on this key would make the carry unreliable in exactly the
+    situation it exists for — a refresh partway through a plan.
+    """
+    cmd_create(_create_ns())
+    cmd_add_list(_add_list_ns(field='read_intent_files', values='src/read_earlier.py'))
+    _write_outline('test-plan', _OUTLINE)
+
+    result = cmd_sync_affected_files(_sync_ns())
+
+    assert result['status'] == 'success'
+    assert set(_read_intent()) == _OUTLINE_READ_INTENT | {'src/read_earlier.py'}
+
+
+def test_sync_reports_a_non_list_read_intent_files_rather_than_overwriting_it(plan_context):
+    """A corrupt read key is surfaced by name, and neither key is written.
+
+    The matched counterpart of the ``affected_files`` corruption test: the same
+    refusal must fire for the sibling key, and the returned ``field`` must name
+    WHICH key was corrupt — a shared error code that named neither would leave
+    the operator guessing.
+    """
+    cmd_create(_create_ns())
+    cmd_set(_set_ns(field='read_intent_files', value='not-a-list'))
+    _write_outline('test-plan', _OUTLINE)
+
+    result = cmd_sync_affected_files(_sync_ns())
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'not_a_list'
+    assert result['field'] == 'read_intent_files'
+    assert cmd_get(_get_ns(field='read_intent_files'))['value'] == 'not-a-list'
+    # The refusal is total — the mutation key was not written either.
+    refs = require_references('test-plan')
+    assert isinstance(refs, dict)
+    assert 'affected_files' not in refs
