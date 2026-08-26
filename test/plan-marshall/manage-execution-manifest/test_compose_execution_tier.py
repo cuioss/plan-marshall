@@ -1065,14 +1065,21 @@ class TestUnresolvableStepProvenance:
     #: The origin-claim substring removed from every reason literal.
     _ORIGIN_CLAIM = 'referenced by `marshal.json`'
 
-    #: Every input shape on which the wrapper produces a NOT-authored message,
-    #: paired with the provenance marker it must carry and a fragment of the reason
-    #: it must still state. The reason fragment is the ANTI-VACUITY control: without
-    #: it, a message that lost its reason entirely would sail through the absence
-    #: assertion. The three cases cover both reason producers that carried the
-    #: substring (the external-implementor probe and the standards-file check) plus
-    #: the unknown-canonical producer that never did, so the property is asserted
-    #: over the whole not-authored population rather than one sampled shape.
+    #: The input shapes on which the wrapper produces a NOT-authored message that
+    #: CARRIES a provenance marker, paired with that marker and a fragment of the
+    #: reason it must still state. The reason fragment is the ANTI-VACUITY control:
+    #: without it, a message that lost its reason entirely would sail through the
+    #: absence assertion. The three cases cover both reason producers that carried
+    #: the substring (the external-implementor probe and the standards-file check)
+    #: plus the unknown-canonical producer that never did.
+    #:
+    #: This is NOT the whole not-authored population. Every case here supplies a
+    #: dict map for the phase under test, so none reaches the CSV-fallback branch,
+    #: which is entered when the phase's map is None and which states no provenance
+    #: marker at all. That branch is covered separately by
+    #: ``test_csv_fallback_branch_claims_no_origin`` below — it needs its own test
+    #: precisely because it has no marker to parametrize over, which is how it
+    #: escaped a table that asserted completeness.
     _NON_AUTHORED_CASES: dict[str, dict[str, Any]] = {
         'phase5_routed_unknown_canonical': {
             'phase_5_steps': ['verify:perf-suite'],
@@ -1126,6 +1133,37 @@ class TestUnresolvableStepProvenance:
         assert self._ORIGIN_CLAIM not in message, (
             f'{case_id}: the reason claims a marshal.json origin the wrapper '
             f'simultaneously denies — message: {message!r}'
+        )
+
+    def test_csv_fallback_branch_claims_no_origin(self):
+        """The no-marshal-map branch states NO origin — it holds no map to name one from.
+
+        ``_read_marshal_phase_step_map`` returns None when marshal.json is absent,
+        the phase keys are missing, or the value is not a dict. The wrapper then
+        falls back to the emitted id as the best identifier available. Naming
+        marshal.json in that message would send the reader hunting a key in a
+        section that may not exist — the same diagnosability harm the reason
+        literals had removed, one layer up.
+
+        The parametrized table above cannot reach this branch: every case there
+        supplies a dict map for the phase under test.
+        """
+        result = _mem.check_emitted_steps_resolvable(['verify:perf-suite'], [], None, None)
+
+        assert result is not None, 'the step was expected to be unresolvable'
+        message = result['message']
+        # Anti-vacuity: the message still states its reason...
+        assert 'names an unknown canonical' in message, (
+            f'the reason went missing entirely, so the absence assertions below '
+            f'would pass for the wrong reason — message: {message!r}'
+        )
+        # ...and claims no marshal.json origin, in the reason OR the wrapper phrasing.
+        assert self._ORIGIN_CLAIM not in message, (
+            f'the reason claims a marshal.json origin — message: {message!r}'
+        )
+        assert 'in marshal.json is unresolvable' not in message, (
+            f'the wrapper asserts a marshal.json origin on the one branch that holds '
+            f'no marshal.json key map — message: {message!r}'
         )
 
     def test_marshal_authored_message_states_origin_only_in_the_wrapper(self):

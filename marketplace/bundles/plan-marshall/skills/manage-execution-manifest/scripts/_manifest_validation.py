@@ -829,15 +829,15 @@ def check_emitted_steps_resolvable(
                         'message': f'{phase} step `{step}` is unresolvable: {base_reason}. {origin_note}',
                     }
                 # CSV-fallback compose path (no marshal step map): the emitted id is
-                # the best identifier available.
+                # the best identifier available. This branch holds NO marshal.json key
+                # map by construction, so it states no origin — naming marshal.json
+                # here would send the reader hunting a key in a section that may not
+                # exist. Origin-neutral, matching the sibling branch above.
                 return {
                     'phase': phase,
                     'step_id': step,
                     'marshal_key': step,
-                    'message': (
-                        f'{phase} step `{step}` in marshal.json is unresolvable: '
-                        f'{base_reason}'
-                    ),
+                    'message': f'{phase} step `{step}` is unresolvable: {base_reason}',
                 }
     return None
 
