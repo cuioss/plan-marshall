@@ -238,7 +238,7 @@ def _write_spec(
     return path
 
 
-def _spec_text_without_claim_section(surface_lines: list | None = None) -> str:
+def _spec_text_without_claim_section() -> str:
     """Render a spec carrying NO ``## Claim Labels`` heading at all.
 
     ``_spec_text`` always writes the heading, which is precisely the variable the
@@ -254,7 +254,7 @@ def _spec_text_without_claim_section(surface_lines: list | None = None) -> str:
         '',
         '## Expected Surface',
         '',
-        *(_DEFAULT_SURFACE if surface_lines is None else surface_lines),
+        *_DEFAULT_SURFACE,
     ]
     return '\n'.join(lines) + '\n'
 

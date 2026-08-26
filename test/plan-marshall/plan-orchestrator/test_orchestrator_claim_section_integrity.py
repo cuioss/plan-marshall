@@ -130,23 +130,18 @@ def _write_spec(plan_context, name: str, claim_lines: list | None) -> Path:
     return path
 
 
-def _section_scope_args(
-    plan: str,
-    verdict: str = 'corroborated',
-    rescoped: str = 'n/a',
-    evidence: str = 'the section is settled as a whole',
-) -> Namespace:
+def _section_scope_args(plan: str) -> Namespace:
     """A complete ``set-verdict`` Namespace in the ``--section-scope`` mode."""
     return Namespace(
         slug=SLUG,
         plan=plan,
         claim_index=None,
         section_scope=True,
-        verdict=verdict,
+        verdict='corroborated',
         checked_at=SHA,
         by=PRODUCER,
-        rescoped=rescoped,
-        evidence=evidence,
+        rescoped='n/a',
+        evidence='the section is settled as a whole',
     )
 
 
