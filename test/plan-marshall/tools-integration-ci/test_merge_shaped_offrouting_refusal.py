@@ -22,11 +22,18 @@ merge-shaped verb added to a registry without an off-routing scenario fails
 ``test_every_derived_member_has_an_offrouting_scenario``; one added without a
 working guard fails the behavioural parametrization.
 
-**The population is 8** — ``{merge, auto-merge, safe-merge, merge-queue}`` × two
-providers. The size is asserted (and published in the failure message) so a run
-that derived an empty or half-read population is self-evident from its own output
-rather than reporting a vacuous green — the empty-population trap this epic has
-been bitten by repeatedly.
+**Membership is decided by BEHAVIOUR.** A registry key is a member when the
+handler it binds reaches the platform queue/train surface in its own executable
+code, derived over EVERY registered ``('pr', verb)`` key — not over four
+pre-named verbs. ``MERGE_SHAPED_VERBS`` is a mirror of that derivation and is
+asserted against it bidirectionally by
+:func:`test_vocabulary_mirror_matches_the_behaviour_derivation`; it never narrows
+the population. No size literal is transcribed anywhere in this module: the size
+comes from the derivation, and what is *asserted* is that the two independent
+sides agree, that every provider contributes, and that no registered handler was
+left unclassified. A derivation that collapsed on one provider fails the
+per-provider arm rather than reporting a smaller green — the empty-population trap
+this epic has been bitten by repeatedly.
 
 **The off-routing scenarios, and the ONE sanctioned exception.** The documented
 route (``branch-cleanup.md`` § "Merge routing (``use_merge_queue``)") dispatches
@@ -68,23 +75,49 @@ from pathlib import Path
 import pytest
 
 from conftest import MARKETPLACE_ROOT
-from _merge_shaped_roster import MERGE_SHAPED_VERBS, merge_shaped_members
+from _merge_shaped_roster import (
+    MERGE_SHAPED_VERBS,
+    PROVIDERS,
+    ProviderSources,
+    derive_population,
+    mirror_drift,
+)
 
 # ---------------------------------------------------------------------------
 # Derived population — the single source of truth for what this suite covers
 # ---------------------------------------------------------------------------
 
 _SKILLS: Path = Path(MARKETPLACE_ROOT) / 'plan-marshall' / 'skills'
-_PROVIDER_PATHS: dict[str, Path] = {
-    'github': _SKILLS / 'workflow-integration-github' / 'scripts' / 'github_ops.py',
-    'gitlab': _SKILLS / 'workflow-integration-gitlab' / 'scripts' / 'gitlab_ops.py',
-}
-_PROVIDER_TEXTS: dict[str, str] = {
-    provider: path.read_text(encoding='utf-8') for provider, path in _PROVIDER_PATHS.items()
+_GITHUB_SCRIPTS: Path = _SKILLS / 'workflow-integration-github' / 'scripts'
+_GITLAB_SCRIPTS: Path = _SKILLS / 'workflow-integration-gitlab' / 'scripts'
+
+
+def _read(path: Path) -> str:
+    return path.read_text(encoding='utf-8')
+
+
+#: Each provider's registry text plus the module texts its handler symbols are
+#: defined in. GitHub registers in ``github_ops.py`` and defines its PR handlers
+#: in the ``_github_pr`` submodule; GitLab does both in one module.
+_PROVIDER_SOURCES: dict[str, ProviderSources] = {
+    'github': ProviderSources(
+        registry_text=_read(_GITHUB_SCRIPTS / 'github_ops.py'),
+        handler_texts=(
+            _read(_GITHUB_SCRIPTS / '_github_pr.py'),
+            _read(_GITHUB_SCRIPTS / 'github_ops.py'),
+        ),
+    ),
+    'gitlab': ProviderSources(
+        registry_text=_read(_GITLAB_SCRIPTS / 'gitlab_ops.py'),
+        handler_texts=(_read(_GITLAB_SCRIPTS / 'gitlab_ops.py'),),
+    ),
 }
 
-#: ``(provider, verb, handler_name)`` for every merge-shaped registry member.
-_MEMBERS: list[tuple[str, str, str]] = merge_shaped_members(_PROVIDER_TEXTS)
+#: The total three-bucket classification of every registered ``('pr', verb)`` key.
+_POPULATION = derive_population(_PROVIDER_SOURCES)
+
+#: ``(provider, verb, handler_name)`` for every BEHAVIOUR-shaped registry member.
+_MEMBERS: list[tuple[str, str, str]] = _POPULATION.members
 
 #: The provider handler modules, imported for dispatch. Both live on the
 #: conftest-configured marketplace ``sys.path`` and carry distinct module names,
@@ -243,35 +276,120 @@ def _dispatch(monkeypatch, provider: str, verb: str, handler: str, mode: str) ->
 # ---------------------------------------------------------------------------
 
 
-def test_merge_shaped_population_is_derived_nonempty_and_sized():
-    """The derived population is non-empty, exactly 8, and 4-per-provider.
+#: Divergences between the behaviour derivation and the ``MERGE_SHAPED_VERBS``
+#: mirror that are known and accepted, keyed by ``(provider, verb)`` with the
+#: reason as the value. EMPTY today: both directions currently agree exactly.
+#:
+#: An entry here is the ONLY way a verb may sit on one side of the mirror and not
+#: the other. Silently filtering such a verb out of the population — which is what
+#: running the registry through the vocabulary used to do — is the defect this
+#: table exists to prevent: it removed a member and reported nothing about the
+#: condition that removed it. A stale entry is a failure too; see the third arm of
+#: :func:`test_vocabulary_mirror_matches_the_behaviour_derivation`.
+_DRIFT_EXEMPTIONS: dict[tuple[str, str], str] = {}
+
+
+def test_derived_population_is_behaviour_shaped_and_covers_every_provider():
+    """The population is non-empty, per-provider non-empty, and fully classified.
 
     Asserted first and on its own: every behavioural parametrization below iterates
-    ``_MEMBERS``, so a derivation that silently collapsed to an empty set would make
-    those checks pass vacuously. The size is published in every failure message so
-    an under-read population is self-evident from the test output — the trap this
-    epic has repeatedly hit (a hand-list of two routed verbs understated the real
-    population fourfold).
+    ``_MEMBERS``, so a derivation that silently collapsed would make those checks
+    pass vacuously. Three arms, each closing a distinct collapse:
+
+    * **Non-empty overall** — the ``handlers: HandlerMap`` literal stopped matching
+      on both providers at once.
+    * **Non-empty per provider** — it stopped matching on ONE provider. A total-size
+      arm cannot see this: a halved population is still a population, and comparing
+      it against a size derived from the same collapsed read compares a number with
+      itself.
+    * **Nothing unresolved** — every registered ``('pr', verb)`` key's handler was
+      located and classified. A handler whose source cannot be read is a member the
+      derivation cannot speak about, and recording it as "not merge-shaped" would
+      assert an absence never established.
+
+    No size literal is transcribed: the sizes here are reported, and what is
+    asserted about them is a property (non-emptiness, total classification), not a
+    remembered number.
     """
     assert _MEMBERS, (
-        'The derived merge-shaped population is EMPTY. The registry HandlerMap literal '
-        'stopped matching, so every behavioural assertion below would pass vacuously.'
+        'The behaviour-derived merge-shaped population is EMPTY. Every behavioural '
+        'assertion below would pass vacuously. Either both registry literals stopped '
+        f'matching, or no handler reaches the queue/train surface. Classified: '
+        f'{len(_POPULATION.members)} member(s), {len(_POPULATION.inert)} inert, '
+        f'{len(_POPULATION.unresolved)} unresolved.'
     )
-    size = len(_MEMBERS)
-    assert size == 8, (
-        f'Derived merge-shaped population size = {size}, expected 8 (4 verbs x 2 providers). '
-        f'Members: {_MEMBERS}. A smaller set means a verb is registered under a name this '
-        'derivation does not see — exactly how cmd_pr_auto_merge was missed twice.'
-    )
-    verbs_by_provider: dict[str, set[str]] = {}
+
+    by_provider: dict[str, list[str]] = {}
     for provider, verb, _handler in _MEMBERS:
-        verbs_by_provider.setdefault(provider, set()).add(verb)
-    for provider in ('github', 'gitlab'):
-        assert verbs_by_provider.get(provider) == set(MERGE_SHAPED_VERBS), (
-            f'{provider} merge-shaped verbs = {sorted(verbs_by_provider.get(provider) or set())}, '
-            f'expected {sorted(MERGE_SHAPED_VERBS)}. A missing verb is an under-enumeration; an '
-            'extra one is a vocabulary drift.'
+        by_provider.setdefault(provider, []).append(verb)
+    for provider in PROVIDERS:
+        assert by_provider.get(provider), (
+            f'{provider} contributes ZERO merge-shaped members, while the population as a '
+            f'whole has {len(_MEMBERS)} ({by_provider}). Both providers register the '
+            'merge-shaped surface, so an empty side means this provider\'s registry or '
+            'handler sources stopped resolving — and every parametrized arm below silently '
+            'stopped covering it.'
         )
+
+    assert not _POPULATION.unresolved, (
+        f'{len(_POPULATION.unresolved)} registered `pr` handler(s) could not be located in '
+        f'the supplied provider sources: {_POPULATION.unresolved}. An unresolvable handler '
+        'is NOT evidence of an absent guard — it is an absence of evidence, and folding it '
+        'into the inert bucket would drop a possible member with nothing reported.'
+    )
+
+
+def test_vocabulary_mirror_matches_the_behaviour_derivation():
+    """``MERGE_SHAPED_VERBS`` mirrors the derivation in BOTH directions.
+
+    The constant is a mirror, not a filter. Reading only one direction catches a
+    vocabulary that lost a verb the handlers still guard, or one that kept a verb
+    they no longer do — never both, and the two are different defects:
+
+    * **unnamed** — a handler reaches the queue/train surface under a verb the
+      vocabulary does not list. Under the old vocabulary-filtered derivation this
+      member was dropped from the population before any guard saw it, with nothing
+      reported. Registering a queue-guarded ``('pr', 'queue-merge')`` handler in
+      either registry lands here and NAMES the verb.
+    * **stale** — a verb the vocabulary lists is registered, but its handler
+      reaches no queue/train symbol. The vocabulary claims a guard the code does
+      not perform.
+
+    The third arm rejects a stale exemption, so an entry cannot outlive the
+    divergence it was written for and quietly pre-authorise a future one.
+    """
+    drift = mirror_drift(_POPULATION)
+    unnamed = {(provider, verb): handler for provider, verb, handler in drift.unnamed}
+    stale = {(provider, verb): handler for provider, verb, handler in drift.stale}
+
+    unexplained_unnamed = sorted(key for key in unnamed if key not in _DRIFT_EXEMPTIONS)
+    assert not unexplained_unnamed, (
+        f'{len(unexplained_unnamed)} verb(s) are merge-shaped BY BEHAVIOUR but absent from '
+        f'MERGE_SHAPED_VERBS {sorted(MERGE_SHAPED_VERBS)}: '
+        f'{ {key: unnamed[key] for key in unexplained_unnamed} }. Their handlers reach the '
+        'platform queue/train surface, so they carry the same close-unmerged risk as the '
+        'named verbs. Add the verb to the mirror and give it an off-routing scenario, or '
+        'record it in _DRIFT_EXEMPTIONS with a reason — never leave it diverging silently. '
+        f'Population: {len(_MEMBERS)} member(s), {len(_POPULATION.inert)} inert.'
+    )
+
+    unexplained_stale = sorted(key for key in stale if key not in _DRIFT_EXEMPTIONS)
+    assert not unexplained_stale, (
+        f'{len(unexplained_stale)} verb(s) in MERGE_SHAPED_VERBS are registered but their '
+        f'handlers reach NO queue/train symbol: '
+        f'{ {key: stale[key] for key in unexplained_stale} }. The mirror claims a guard the '
+        'handler does not perform — either the guard was removed (a regression) or the verb '
+        'was never merge-shaped (a stale mirror entry). Fix the handler, drop the verb from '
+        'the mirror, or record it in _DRIFT_EXEMPTIONS with a reason.'
+    )
+
+    divergent = set(unnamed) | set(stale)
+    stale_exemptions = sorted(key for key in _DRIFT_EXEMPTIONS if key not in divergent)
+    assert not stale_exemptions, (
+        f'_DRIFT_EXEMPTIONS carries {len(stale_exemptions)} entry/entries for verbs that no '
+        f'longer diverge: {stale_exemptions}. An exemption that outlives its cause silently '
+        'pre-authorises the next divergence on the same verb. Remove it.'
+    )
 
 
 def test_every_derived_member_has_an_offrouting_scenario():

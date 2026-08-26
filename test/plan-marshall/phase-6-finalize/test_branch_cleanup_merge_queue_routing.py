@@ -84,13 +84,18 @@ against a MUTANT — each real handler with its executable guard lines deleted a
 its docstring and comments left verbatim, i.e. a handler that fully documents a
 guard it does not perform — the two predicates separate completely:
 
-===========================================  =========  =========
-predicate                                    hits/8 on  hits/8 on
-                                             live tree  mutants
-===========================================  =========  =========
-raw-text search of the handler source              8/8        7/8
-identifier-bound (:func:`_first_queue_symbol`)     8/8        0/8
-===========================================  =========  =========
+=================================================  =========  =========
+predicate                                          hits/8 on  hits/8 on
+                                                   live tree  mutants
+=================================================  =========  =========
+raw-text search of the handler source                    8/8        7/8
+identifier-bound (``first_queue_symbol``)                8/8        0/8
+=================================================  =========  =========
+
+The identifier-bound predicate, its ``QUEUE_VOCAB_RE`` vocabulary and the
+tokenizing helpers it needs are imported from
+:mod:`_merge_shaped_roster`, the designated single source for this derivation,
+rather than redefined here.
 
 The raw-text predicate accepts 7 of the 8 gutted handlers, because this diff gave
 every merge-shaped handler a docstring naming the queue or the train. Both arms
@@ -115,7 +120,6 @@ Two defects the mutation run exposed in the fix itself, both now locked by
 
 from __future__ import annotations
 
-import io
 import re
 import tokenize
 from pathlib import Path
@@ -123,6 +127,12 @@ from pathlib import Path
 import pytest
 
 from conftest import MARKETPLACE_ROOT
+from _merge_shaped_roster import (
+    QUEUE_VOCAB_RE,
+    first_queue_symbol,
+    line_starts,
+    source_tokens,
+)
 
 _BUNDLE_ROOT: Path = Path(MARKETPLACE_ROOT)
 _SKILLS: Path = _BUNDLE_ROOT / 'plan-marshall' / 'skills'
@@ -223,29 +233,6 @@ _HANDLER_ROW_RE = re.compile(r"\(\s*('[^']+'(?:\s*,\s*'[^']+')*)\s*\)\s*:")
 
 #: A top-level ``def name(`` in a handler source.
 _DEF_RE = re.compile(r'^def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(', re.MULTILINE)
-
-#: A symbol that touches the platform queue / train state. Derived per provider
-#: from the module's own vocabulary rather than listed, so a guard renamed or a
-#: new probe helper added is picked up without editing this file.
-#:
-#: Matched ONLY against IDENTIFIER tokens of the handler under test (see
-#: :func:`_first_queue_symbol`), never against its raw source text. Against raw
-#: text the pattern is satisfied by the handler's own DOCSTRING — every
-#: merge-shaped handler documents the queue/train surface it guards — so the
-#: predicate would report a hit for a handler that merely talks about the queue
-#: and never probes it, and the ordering arm below could not fail at all,
-#: because a docstring necessarily precedes every executable literal. Binding
-#: the match to identifiers binds it to the artifact under test: the executable
-#: code. :func:`test_queue_guard_predicate_is_falsifiable` locks that property.
-#:
-#: Deliberately UNANCHORED — no leading ``\b``. Identifiers carry the vocabulary
-#: mid-token (``skip_merge_queue_preflight``, ``_refuse_on_required_merge_queue``,
-#: ``_probe_merge_train_state``, ``_MERGE_TRAIN_INELIGIBLE_HINT``), and ``_`` is
-#: a word character, so a word-boundary anchor matches only the identifiers that
-#: BEGIN with the vocabulary. Against prose the anchor is invisible — every prose
-#: mention has real boundaries — which is why it survives a raw-text match and
-#: silently under-matches the moment the predicate is bound to code.
-_QUEUE_VOCAB_RE = re.compile(r'(?i)merge[_-]?(?:queue|train)')
 
 #: The success-literal marker used for the "before returning success" ordering.
 _SUCCESS_LITERAL = "'status': 'success'"
@@ -539,61 +526,6 @@ def _handler_source(provider: str, symbol: str) -> str:
     return ''
 
 
-def _line_starts(source: str) -> list[int]:
-    """Absolute character offset at which each 1-based source line begins.
-
-    Lets a ``(row, col)`` token position be converted back to the absolute
-    offset the ordering assertion compares on, so every position this module
-    reports is an offset into the ORIGINAL handler text.
-    """
-    starts = [0, 0]
-    position = 0
-    for line in source.splitlines(keepends=True):
-        position += len(line)
-        starts.append(position)
-    return starts
-
-
-def _tokens(source: str) -> list[tokenize.TokenInfo]:
-    """Tokenize one handler fragment.
-
-    Deliberately un-guarded: a fragment that cannot be tokenized is a handler
-    this module cannot reason about, and a loud error is the honest outcome —
-    swallowing it would silently downgrade every derivation below to "no hits
-    found", which is indistinguishable from a passing check.
-    """
-    return list(tokenize.generate_tokens(io.StringIO(source).readline))
-
-
-def _first_queue_symbol(source: str, own_symbol: str) -> tuple[int, str] | None:
-    """First ``(offset, identifier)`` in ``source`` naming the queue/train surface.
-
-    The predicate behind assertion (2b), and it is deliberately narrow in two
-    ways — each closing a way the check could pass without the property holding:
-
-    * **Identifiers only.** Docstrings, comments and string literals are excluded
-      by construction, because only ``NAME`` tokens are considered. A handler
-      that merely *describes* the queue in prose therefore yields ``None``. This
-      is the load-bearing narrowing: matching raw text made both arms of (2b)
-      satisfiable by the handler docstrings, and made the ordering arm
-      structurally incapable of failing.
-    * **Not the handler's own name.** ``cmd_pr_merge_queue`` contains the
-      vocabulary in its own identifier, so an unfiltered scan would match the
-      ``def`` line of exactly the two verbs whose guard matters most — again at
-      an offset preceding every literal, so again unfalsifiable.
-
-    Returns ``None`` when the handler references no queue/train symbol.
-    """
-    starts = _line_starts(source)
-    for token in _tokens(source):
-        if token.type != tokenize.NAME or token.string == own_symbol:
-            continue
-        if _QUEUE_VOCAB_RE.search(token.string):
-            row, col = token.start
-            return starts[row] + col, token.string
-    return None
-
-
 def _code_without_prose(source: str) -> str:
     """``source`` with every comment and docstring blanked to spaces.
 
@@ -612,11 +544,11 @@ def _code_without_prose(source: str) -> str:
     a statement-opening string and gets blanked, erasing the very literal this
     view exists to locate.
     """
-    starts = _line_starts(source)
+    starts = line_starts(source)
     chars = list(source)
     statement_start = True
     depth = 0
-    for token in _tokens(source):
+    for token in source_tokens(source):
         is_docstring = token.type == tokenize.STRING and statement_start and depth == 0
         if is_docstring or token.type == tokenize.COMMENT:
             begin = starts[token.start[0]] + token.start[1]
@@ -681,7 +613,7 @@ def test_every_merge_shaped_verb_reaches_its_platform_queue_guard(provider, key)
     asserting success would report a disposition it had not yet established.
 
     **Bound to the artifact, not to prose.** Both arms read
-    :func:`_first_queue_symbol` / :func:`_code_without_prose`, which see only
+    ``first_queue_symbol`` / :func:`_code_without_prose`, which see only
     identifiers and only non-documentation text. Matching the raw handler source
     instead would satisfy both arms from the handler's own docstring — every
     merge-shaped handler documents the surface it guards — and the ordering arm
@@ -704,7 +636,7 @@ def test_every_merge_shaped_verb_reaches_its_platform_queue_guard(provider, key)
         'cannot be read is a member this parity check silently skips.'
     )
 
-    hit = _first_queue_symbol(source, handler)
+    hit = first_queue_symbol(source, handler)
     assert hit is not None, (
         f'{provider}:{handler} ({key[0]} {key[1]}) references no platform queue/train SYMBOL '
         'in its executable code. Every merge-shaped verb must establish the platform state '
@@ -820,21 +752,21 @@ def test_queue_guard_predicate_is_falsifiable():
        it BEFORE the success literal, so arm 2 is a real discrimination and not
        a predicate that rejects everything.
     """
-    raw_hit = _QUEUE_VOCAB_RE.search(_PROSE_ONLY_HANDLER)
+    raw_hit = QUEUE_VOCAB_RE.search(_PROSE_ONLY_HANDLER)
     assert raw_hit is not None, (
         'The prose-only fixture no longer mentions the queue/train vocabulary in its '
         'documentation, so it cannot demonstrate the raw-text failure mode and arm 2 below '
         'would prove nothing. Restore the docstring/comment mentions.'
     )
 
-    assert _first_queue_symbol(_PROSE_ONLY_HANDLER, 'cmd_pr_prose_only') is None, (
+    assert first_queue_symbol(_PROSE_ONLY_HANDLER, 'cmd_pr_prose_only') is None, (
         'The queue-guard predicate reported a hit for a handler that references the '
         'platform surface ONLY in its docstring and comments. It is therefore satisfiable '
         'by prose and assertion (2b) is vacuous — every merge-shaped handler documents the '
         'queue it guards, so the check would pass whether or not the guard exists.'
     )
 
-    guarded = _first_queue_symbol(_GUARDED_HANDLER, 'cmd_pr_guarded')
+    guarded = first_queue_symbol(_GUARDED_HANDLER, 'cmd_pr_guarded')
     assert guarded is not None, (
         'The queue-guard predicate missed a real, executable guard '
         '(`_refuse_on_required_merge_queue`). A predicate that rejects everything is no '
