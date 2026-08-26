@@ -573,7 +573,9 @@ def test_create_pr_doc_creates_only_on_the_no_pr_cause():
     so what is asserted is that each cause now routes explicitly, and that the
     three non-absence causes route to a STOP rather than to creation.
     """
-    lines = _CREATE_PR_DOC.read_text(encoding='utf-8').splitlines()
+    # Annotated because `conftest` is an untyped import for mypy, so every path
+    # derived from it — and everything read through it — arrives as `Any`.
+    lines: list[str] = _CREATE_PR_DOC.read_text(encoding='utf-8').splitlines()
 
     def _line_naming(needle: str) -> str:
         matches = [line for line in lines if needle in line]

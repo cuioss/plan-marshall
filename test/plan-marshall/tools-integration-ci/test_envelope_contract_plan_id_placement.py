@@ -236,7 +236,9 @@ def _minimal_argv(leaf, *, skip: frozenset[str] = frozenset()) -> list[str] | No
 
 def _parses(argv: list[str]) -> argparse.Namespace | None:
     """Parse *argv* through a fresh full parser, or ``None`` if argparse rejects it."""
-    parser = _build_full_parser()
+    # Annotated because `ci_base` is an untyped import for mypy, so the parser it
+    # builds — and everything parsed through it — arrives as `Any`.
+    parser: argparse.ArgumentParser = _build_full_parser()
     with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
         try:
             return parser.parse_args(argv)
