@@ -314,7 +314,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr landing
   [--branch BRANCH]
 ```
 
-`pr landing-state` classifies a branch's done-ness at the PR rather than at the commit, returning exactly one of `merged` / `pr_open` / `pushed_no_pr` / `unpushed`. Omit `--branch` to classify the checked-out branch of the routed working tree. It is **GitHub-only** — registered on the GitHub front-end rather than in the shared parser, so the GitLab surface rejects it until that provider implements the handler. Only a PR whose head IS the branch's current tip counts, so a stale PR that merged an earlier tip on a reused branch name cannot report `merged` for new, unlanded commits. It fails closed: whenever the evidence a verdict rests on cannot be read, it returns `status: error` rather than a state that could clear the pre-archive gate.
+`pr landing-state` classifies a branch's done-ness at the PR rather than at the commit, returning exactly one of `merged` / `pr_open` / `pushed_no_pr` / `unpushed`. Omit `--branch` to classify the checked-out branch of the routed working tree. It is **GitHub-only** — registered on the GitHub front-end rather than in the shared parser, so the GitLab surface rejects it until that provider implements the handler. Only a PR whose head IS the branch's current tip counts, so a stale PR that merged a previous tip on a reused branch name cannot report `merged` for new, unlanded commits. It fails closed: whenever the evidence a verdict rests on cannot be read, it returns `status: error` rather than a state that could clear the pre-archive gate.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
