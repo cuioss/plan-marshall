@@ -689,3 +689,164 @@ class TestDocumentedReviewMergeInvocationsParse:
             f'{doc_name}: `{command}` names a flag {notation.split(":")[-1]}.py does not '
             f'declare.\nstderr: {result.stderr.strip()}'
         )
+
+
+# =============================================================================
+# D3b — prose form-split parity: the derived flag FORMS vs the two doc paragraphs
+# =============================================================================
+#
+# `review_completeness`'s list flags split by FORM — the pair-form flags take
+# `bot_kind:value` tokens, the bare-form flags take bare `bot_kind` tokens — and a
+# token on the wrong form is rejected as a caller error, never reinterpreted. Two
+# prose paragraphs ENUMERATE those sets, one in the barrier doc and one in the
+# review doc, and both were hand-reconciled against the parser.
+#
+# Hand-reconciliation demonstrably does not hold here: inside this plan's own run
+# the pair-form arm needed one manual correction and the bare-form arm another (it
+# named FIVE flags where the parser routes six, omitting `--in-progress-bots`).
+# Two corrections on one paragraph is the evidence. A doc that names a flag on the
+# wrong side tells a caller to send a value argparse rejects at runtime — the exact
+# archetype D3 exists to close, reached through prose rather than a call site.
+#
+# Both sets are DERIVED from review_completeness.py and compared against BOTH
+# paragraphs, so either side gaining, losing, or MOVING a flag between forms fails.
+# Covering only one prose site would close one drift path and leave the sibling
+# doc's open.
+
+_REVIEW_COMPLETENESS = _SKILLS / 'automatic-review' / 'scripts' / 'review_completeness.py'
+
+#: The routing call a flag passes through IS its form: `_split_bots` is the
+#: bare-form reader, `parse_participation` / `parse_causes` the pair-form ones.
+#: This is the routing `_parse_bot_observations`'s own docstring names as the place
+#: the form split "actually lives".
+_FORM_ROUTE_RE = re.compile(
+    r"(?P<fn>_split_bots|parse_participation|parse_causes)\(\s*args\.\w+,\s*'(?P<flag>--[a-z-]+)'"
+)
+#: A flag declared on the shared observation-flag adder.
+_DECLARED_FLAG_RE = re.compile(r"add_argument\(\s*'(--[a-z-]+)'")
+#: `--plan-id` rides on the same adder but is not a bot-list flag and has no form.
+_NOT_A_LIST_FLAG = frozenset({'--plan-id'})
+
+
+def _function_body(source: str, name: str) -> str:
+    """The text of top-level ``def name`` up to the next top-level ``def``."""
+    start = source.index(f'def {name}(')
+    end = source.find('\ndef ', start)
+    return source[start:] if end == -1 else source[start:end]
+
+
+def _derive_form_sets() -> tuple[frozenset[str], frozenset[str]]:
+    """``(pair_form, bare_form)`` read off ``_parse_bot_observations``'s routing."""
+    body = _function_body(
+        _REVIEW_COMPLETENESS.read_text(encoding='utf-8'), '_parse_bot_observations'
+    )
+    pair: set[str] = set()
+    bare: set[str] = set()
+    for match in _FORM_ROUTE_RE.finditer(body):
+        target = bare if match.group('fn') == '_split_bots' else pair
+        target.add(match.group('flag'))
+    return frozenset(pair), frozenset(bare)
+
+
+def _declared_list_flags() -> frozenset[str]:
+    """Every bot-list flag the shared adder declares, ``--plan-id`` excluded."""
+    body = _function_body(
+        _REVIEW_COMPLETENESS.read_text(encoding='utf-8'), '_add_bot_observation_flags'
+    )
+    return frozenset(_DECLARED_FLAG_RE.findall(body)) - _NOT_A_LIST_FLAG
+
+
+PAIR_FORM_FLAGS, BARE_FORM_FLAGS = _derive_form_sets()
+
+#: The uppercase form markers both paragraphs use. `PAIRS` opens the pair-form
+#: enumeration and `BARE` opens the bare-form one. The split is case-SENSITIVE on
+#: purpose: the lowercase word "bare" occurs INSIDE the barrier doc's pair-form
+#: region ("a bare `{bot_kind}` on any of them is rejected"), and a case-insensitive
+#: split would cut the region there and read the pair-form set as empty.
+_PAIR_MARKER = 'PAIRS'
+_BARE_MARKER = 'BARE'
+
+#: A backticked bot-list flag token as the prose writes it.
+_PROSE_FLAG_RE = re.compile(r'`(--[a-z][a-z-]*)`')
+
+#: Both prose sites stating the form split. Named, not derived: which docs carry the
+#: paragraph is a semantic fact about this contract, and the paragraph's CONTENT is
+#: what gets derived and compared.
+_FORM_PROSE_DOCS = (_BARRIER_DOC, _REVIEW_DOC)
+
+
+def _form_paragraph(doc) -> str:
+    """The single paragraph in *doc* that enumerates the two form sets."""
+    paragraphs = [
+        block
+        for block in doc.read_text(encoding='utf-8').split('\n\n')
+        if _PAIR_MARKER in block
+    ]
+    assert len(paragraphs) == 1, (
+        f'{doc.name}: expected exactly ONE paragraph carrying the {_PAIR_MARKER!r} form '
+        f'marker, found {len(paragraphs)}. The parity check below cannot identify which '
+        'paragraph enumerates the form sets, so it would compare the wrong text.'
+    )
+    return paragraphs[0]
+
+
+def _named_form_sets(paragraph: str) -> tuple[frozenset[str], frozenset[str]]:
+    """The ``(pair, bare)`` flag sets *paragraph* names, split at the BARE marker."""
+    marker_at = paragraph.find(_BARE_MARKER)
+    assert marker_at != -1, (
+        f'The form paragraph carries {_PAIR_MARKER!r} but no {_BARE_MARKER!r} marker, so the '
+        'bare-form enumeration cannot be bounded and every flag would read as pair-form.'
+    )
+    return (
+        frozenset(_PROSE_FLAG_RE.findall(paragraph[:marker_at])),
+        frozenset(_PROSE_FLAG_RE.findall(paragraph[marker_at:])),
+    )
+
+
+def test_derived_form_sets_partition_every_declared_list_flag():
+    """The derived forms are non-empty, disjoint, and TOTAL over the declared flags.
+
+    Asserted before the prose comparison because both parity assertions below are
+    set equalities against these: a routing scan that silently matched nothing
+    would make them compare two empty sets and pass vacuously. Totality is the arm
+    that matters most — a flag the regex failed to attribute would vanish from the
+    expected set, and the doc could then omit it with nothing reporting the gap.
+    """
+    declared = _declared_list_flags()
+
+    assert PAIR_FORM_FLAGS, 'No pair-form flag was derived; the routing scan matched nothing.'
+    assert BARE_FORM_FLAGS, 'No bare-form flag was derived; the routing scan matched nothing.'
+    assert not (PAIR_FORM_FLAGS & BARE_FORM_FLAGS), (
+        f'These flags were derived as BOTH forms: {sorted(PAIR_FORM_FLAGS & BARE_FORM_FLAGS)}.'
+    )
+    assert PAIR_FORM_FLAGS | BARE_FORM_FLAGS == declared, (
+        'The derived form sets do not cover the declared bot-list flags exactly.\n'
+        f'  declared but unattributed: {sorted(declared - PAIR_FORM_FLAGS - BARE_FORM_FLAGS)}\n'
+        f'  attributed but undeclared: {sorted((PAIR_FORM_FLAGS | BARE_FORM_FLAGS) - declared)}\n'
+        f'  declared: {sorted(declared)}'
+    )
+
+
+@pytest.mark.parametrize('doc', _FORM_PROSE_DOCS, ids=lambda doc: doc.parent.name + '/' + doc.name)
+def test_form_paragraph_names_exactly_the_flags_the_parser_routes(doc):
+    """Each prose form paragraph enumerates exactly the parser's two form sets.
+
+    Fails when either side gains a flag, loses one, or MOVES one between forms —
+    the three ways this paragraph has already drifted. The message names the
+    direction so the fix is unambiguous: prose is corrected to the parser, never
+    the other way round.
+    """
+    named_pair, named_bare = _named_form_sets(_form_paragraph(doc))
+
+    assert named_pair == PAIR_FORM_FLAGS, (
+        f'{doc.name}: the PAIR-form enumeration disagrees with what the parser routes.\n'
+        f'  named but bare-form or unrouted: {sorted(named_pair - PAIR_FORM_FLAGS)}\n'
+        f'  routed pair-form but unnamed:    {sorted(PAIR_FORM_FLAGS - named_pair)}\n'
+        'A caller quoting this paragraph would send a token argparse rejects.'
+    )
+    assert named_bare == BARE_FORM_FLAGS, (
+        f'{doc.name}: the BARE-form enumeration disagrees with what the parser routes.\n'
+        f'  named but pair-form or unrouted: {sorted(named_bare - BARE_FORM_FLAGS)}\n'
+        f'  routed bare-form but unnamed:    {sorted(BARE_FORM_FLAGS - named_bare)}\n'
+        'This is the arm that already shipped naming five flags where the parser routes six.'
+    )
