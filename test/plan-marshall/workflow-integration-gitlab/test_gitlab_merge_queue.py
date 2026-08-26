@@ -342,6 +342,110 @@ def test_repo_merge_queue_probe_auth_failure(monkeypatch):
     assert result['status'] == 'error'
 
 
+# --- Present-but-non-boolean merge_trains_enabled must fail CLOSED -----------
+#
+# `error is None` is the probe's "this verdict established the project's
+# merge-train support" marker, and `_refuse_on_required_merge_train` permits an
+# immediate merge on exactly that set. A present-but-non-boolean value —
+# `null`, a string, a number — establishes nothing, so landing it in that set
+# made the guard fail OPEN on precisely the malformed input its docstring
+# promises it fails closed on. These cases pin the tuple the guard reads, and
+# the one below them pins the refusal that tuple produces.
+
+
+@pytest.mark.parametrize(
+    'value',
+    [None, 'true', 1, 0.0, [], {}],
+    ids=['null', 'string', 'int', 'float', 'list', 'object'],
+)
+def test_probe_non_boolean_merge_trains_enabled_is_unsupported_with_error(monkeypatch, value):
+    # Arrange — the field IS present, so the absent-field branch does not apply.
+    _install_common(monkeypatch)
+    monkeypatch.setattr(
+        gitlab_ops, 'run_api', lambda ep: (0, {'merge_trains_enabled': value}, '')
+    )
+
+    # Act
+    discriminator, detail, error = gitlab_ops._probe_merge_train_state()
+
+    # Assert — outside the `error is None` set, and naming the concrete project.
+    assert discriminator == gitlab_ops.MERGE_QUEUE_UNSUPPORTED
+    assert error is not None
+    assert 'group/repo' in detail
+    assert 'not a boolean' in detail
+
+
+@pytest.mark.parametrize(
+    ('value', 'expected'),
+    [
+        (True, gitlab_ops.MERGE_QUEUE_ELIGIBLE_CONFIGURED),
+        (False, gitlab_ops.MERGE_QUEUE_ELIGIBLE_UNCONFIGURED),
+    ],
+    ids=['true', 'false'],
+)
+def test_probe_boolean_merge_trains_enabled_still_establishes_support(
+    monkeypatch, value, expected
+):
+    """Matched negative control: the two real booleans keep their error-free verdicts.
+
+    Without this arm, a non-boolean guard that rejected everything — including
+    `True` and `False` — would satisfy the cases above while destroying the
+    probe.
+    """
+    _install_common(monkeypatch)
+    monkeypatch.setattr(
+        gitlab_ops, 'run_api', lambda ep: (0, {'merge_trains_enabled': value}, '')
+    )
+
+    discriminator, _detail, error = gitlab_ops._probe_merge_train_state()
+
+    assert discriminator == expected
+    assert error is None
+
+
+def test_probe_absent_merge_trains_enabled_stays_ineligible_with_no_error(monkeypatch):
+    """The absent-field branch is a real verdict and must NOT become UNSUPPORTED.
+
+    An absent field means the tier does not expose merge trains — a genuine
+    `ineligible` that DID read the project. The non-boolean guard is ordered
+    after this branch precisely so tightening the malformed case cannot swallow
+    it.
+    """
+    _install_common(monkeypatch)
+    monkeypatch.setattr(gitlab_ops, 'run_api', lambda ep: (0, {'id': 5}, ''))
+
+    discriminator, detail, error = gitlab_ops._probe_merge_train_state()
+
+    assert discriminator == gitlab_ops.MERGE_QUEUE_INELIGIBLE
+    assert error is None
+    assert 'group/repo' in detail
+
+
+@pytest.mark.parametrize(
+    'value',
+    [None, 'true', 1],
+    ids=['null', 'string', 'int'],
+)
+def test_refuse_on_required_merge_train_refuses_on_non_boolean(monkeypatch, value):
+    """The consequence the tuple exists for: an immediate merge is NOT permitted.
+
+    Asserting the discriminator alone would leave the fail-open path free to
+    return if the guard's arm-1 predicate ever changed, so the refusal itself is
+    pinned here.
+    """
+    _install_common(monkeypatch)
+    monkeypatch.setattr(
+        gitlab_ops, 'run_api', lambda ep: (0, {'merge_trains_enabled': value}, '')
+    )
+
+    refusal = gitlab_ops._refuse_on_required_merge_train('pr_merge')
+
+    assert refusal is not None, 'a non-boolean merge_trains_enabled must not permit a merge'
+    assert refusal['status'] == 'error'
+    message = ' '.join(str(v) for v in refusal.values())
+    assert 'group/repo' in message
+
+
 # ---------------------------------------------------------------------------
 # repo merge-queue enable — idempotent / PUT / refuse
 # ---------------------------------------------------------------------------

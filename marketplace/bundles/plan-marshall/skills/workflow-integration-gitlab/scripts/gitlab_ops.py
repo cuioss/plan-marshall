@@ -623,7 +623,11 @@ def _probe_merge_train_state() -> tuple[str, str, str | None]:
       no project path, because there is no resolved path to name;
     * an auth-scope failure reading the project;
     * a generic non-auth ``run_api`` failure;
-    * a malformed (non-object) project response.
+    * a malformed (non-object) project response;
+    * a present-but-non-boolean ``merge_trains_enabled`` value — ``null``, a
+      string, or a number establishes nothing about merge-train support, so it
+      is reported as ``unsupported`` rather than falling through to an eligible
+      verdict.
 
     ``error`` is None only for the three verdicts that DID establish that
     support: an absent ``merge_trains_enabled`` field (``ineligible`` — the tier
@@ -658,7 +662,14 @@ def _probe_merge_train_state() -> tuple[str, str, str | None]:
     if 'merge_trains_enabled' not in data:
         # Field absent → the tier/feature does not expose merge trains.
         return MERGE_QUEUE_INELIGIBLE, f'project {project_path}: merge_trains_enabled not present', None
-    if data.get('merge_trains_enabled') is True:
+    merge_trains_enabled = data.get('merge_trains_enabled')
+    if not isinstance(merge_trains_enabled, bool):
+        # Present but not a boolean → the probe established NOTHING about this
+        # project's merge-train support, so it must not land in the
+        # ``error is None`` set that lets an immediate merge proceed.
+        detail = f'project {project_path}: merge_trains_enabled was not a boolean'
+        return MERGE_QUEUE_UNSUPPORTED, detail, detail
+    if merge_trains_enabled:
         return MERGE_QUEUE_ELIGIBLE_CONFIGURED, f'project {project_path}: merge_trains_enabled=true', None
     return MERGE_QUEUE_ELIGIBLE_UNCONFIGURED, f'project {project_path}: merge_trains_enabled=false', None
 
