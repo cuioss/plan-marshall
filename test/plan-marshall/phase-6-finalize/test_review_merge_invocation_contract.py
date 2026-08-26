@@ -722,25 +722,25 @@ _REVIEW_COMPLETENESS = _SKILLS / 'automatic-review' / 'scripts' / 'review_comple
 _FORM_ROUTE_RE = re.compile(
     r"(?P<fn>_split_bots|parse_participation|parse_causes)\(\s*args\.\w+,\s*'(?P<flag>--[a-z-]+)'"
 )
-#: A flag declared on the shared observation-flag adder.
-_DECLARED_FLAG_RE = re.compile(r"add_argument\(\s*'(--[a-z-]+)'")
-#: A flag declared on that adder as a `store_true` BOOL. It carries no value of its
-#: own, so it is not a list flag and has no form — the barrier doc says exactly this
-#: of `--not-triggered` ("a `store_true` bool carrying no value of its own ... the
-#: quoting discipline below governs the list flags only").
+#: A bot-list flag declared on the shared observation-flag adder, matched POSITIVELY
+#: by the shape every one of them carries and nothing else on that adder does:
+#: ``nargs='?'``. The adder's own docstring names that shape as the thing the two
+#: subcommands must not drift on.
 #:
-#: DERIVED rather than added to the hand-list below, and the distinction is the point:
-#: a second bool on this adder would silently join the declared set and fail the
-#: totality arm with no indication that the cause is a bool rather than a doc gap.
-#: Extending a literal exclusion set is the transcribed-population defect this plan
-#: exists to close, reached one step further out.
-_BOOL_FLAG_RE = re.compile(
-    r"add_argument\(\s*'(--[a-z-]+)'[^)]*?action\s*=\s*'store_true'", re.DOTALL
-)
-#: `--plan-id` rides on the same adder but is not a bot-list flag and has no form.
-#: It stays hand-named because it is not derivable from the declaration's SHAPE —
-#: it is a value-taking flag like the list flags, and only its MEANING excludes it.
-_NOT_A_LIST_FLAG = frozenset({'--plan-id'})
+#: A positive derivation rather than "everything declared, minus exclusions", because
+#: the exclusion form was wrong twice in a row here. First it omitted the
+#: ``store_true`` bool ``--not-triggered``, which has no form at all. Then it kept
+#: ``--plan-id`` hand-named on the stated ground that the exclusion "is not derivable
+#: from the declaration's SHAPE" — refuted by the declaration it cites:
+#: ``add_argument('--plan-id', required=True)`` is the adder's ONLY ``required=True``
+#: flag and its ONLY flag without ``nargs='?'``, so it is shape-distinguishable twice
+#: over. A false reason for keeping a population transcribed licenses the next
+#: non-list flag to be added to the literal set, which is the transcribed-population
+#: defect this suite exists to close.
+#:
+#: Matching what a list flag IS retires both exclusions: a new bool, a new required
+#: scalar, or any other non-list flag simply never matches, with no list to maintain.
+_LIST_FLAG_RE = re.compile(r"add_argument\(\s*'(--[a-z-]+)'[^)]*?nargs\s*=\s*'\?'", re.DOTALL)
 
 
 def _function_body(source: str, name: str) -> str:
@@ -764,26 +764,24 @@ def _derive_form_sets() -> tuple[frozenset[str], frozenset[str]]:
 
 
 def _declared_list_flags() -> frozenset[str]:
-    """Every bot-list flag the shared adder declares.
+    """Every bot-list flag the shared adder declares, matched by shape.
 
-    Two exclusions, and they are excluded differently on purpose. The
-    ``store_true`` bools are DERIVED from their own declarations, so a bool added
-    later drops out on its own. ``--plan-id`` is hand-named because nothing in the
-    shape of its declaration distinguishes it — it takes a value exactly as the
-    list flags do, and only its meaning puts it outside the form split.
+    No exclusion set: a flag is a list flag iff its declaration carries
+    ``nargs='?'``, which every list flag on this adder has and nothing else on it
+    does. The two non-list flags fall out for their own reasons rather than by
+    being named — ``--not-triggered`` is a ``store_true`` bool and ``--plan-id`` is
+    a ``required=True`` scalar, and neither declares ``nargs``.
     """
     body = _function_body(
         _REVIEW_COMPLETENESS.read_text(encoding='utf-8'), '_add_bot_observation_flags'
     )
-    declared = frozenset(_DECLARED_FLAG_RE.findall(body))
-    bools = frozenset(_BOOL_FLAG_RE.findall(body))
-    assert bools, (
-        'No store_true flag was derived from _add_bot_observation_flags, but at least '
-        '--not-triggered is declared there as one. The bool regex stopped matching, so '
-        'every bool would fall into the declared list-flag set and the totality arm '
-        'below would report it as a documentation gap rather than as a bool.'
+    flags = frozenset(_LIST_FLAG_RE.findall(body))
+    assert flags, (
+        'No list flag was derived from _add_bot_observation_flags, which declares ten. '
+        'The nargs-shape regex stopped matching, so the declared set is empty and every '
+        'parity assertion below would compare against nothing and pass vacuously.'
     )
-    return declared - bools - _NOT_A_LIST_FLAG
+    return flags
 
 
 PAIR_FORM_FLAGS, BARE_FORM_FLAGS = _derive_form_sets()
