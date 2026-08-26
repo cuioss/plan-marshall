@@ -248,6 +248,7 @@ Then execute the workflow described in that file. Each reference file is loaded 
 | `standards/effort-menu.md` | Per-phase effort configuration (Effort submenu) | Menu option 4 |
 | `menu-recipes.md` | Built-in recipes available in the wizard | Linked from `menu-configuration.md` |
 | `menu-derivation-resolvers.md` | Inspect and change which module-edge derivation resolvers run in this checkout; machine-local, keyed by resolver id, unconfigured means every discovered resolver is active | Linked from `menu-configuration.md` (Derivation Resolvers) |
+| `menu-display-timezone.md` | Inspect and change the IANA zone operator-facing timestamps are rendered in; machine-local, display-only (storage and comparison stay UTC), unconfigured renders `UTC` | Linked from `menu-configuration.md` (Display Timezone) |
 | `menu-terminal-title.md` | Two-action sub-menu: install render-hook wiring; override active-plan for the current session | Linked from `menu-configuration.md` (Terminal Title) |
 | `menu-enforcement-hook.md` | Detect→confirm→install sub-menu for the conditional PreToolUse enforcement hook (orthogonal `--enforcement` install) | Linked from `menu-configuration.md` (Enforcement Hook) |
 | `merge-queue-setup.md` | Idempotent probe→ask→configure provisioning of the platform merge queue (GitHub merge queue / GitLab merge train) via the `ci repo merge-queue` verbs | Linked from `wizard-flow.md` Step 13.5 and `menu-configuration.md` (Merge Queue) |
@@ -261,11 +262,26 @@ Then execute the workflow described in that file. Each reference file is loaded 
 
 The Health Check may surface the machine-global `marshalld` build server's status
 by running `manage-build-server status` and reporting the returned `running` /
-`version` / `registered` fields to the operator:
+`version` / `registered` / `binary_diverges` fields — plus the `note`, whenever
+the payload carries one — to the operator:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_server status
 ```
+
+⛔ **`running: true` with a version is NOT by itself a healthy daemon.** Read
+`binary_diverges` before reporting health. A `true` value means the live process
+is executing a different binary from the one a fresh start would resolve today —
+an older pinned copy — so the daemon is **stale and owes a reconcile**: report it
+as owing a restart against the current copy, never as healthy. The accompanying
+`note` spells the divergence out (which path is running, which one would be
+resolved) and is the text to relay verbatim. The daemon is healthy only when
+`running: true` **and** `binary_diverges: false`; reporting the version alone
+would present accumulated drift as a clean status line.
+
+A `note` also appears with `binary_diverges: false` when the running provenance
+could not be read at all — that note says so explicitly, and the resolved-now
+path is never substituted for it.
 
 This is a **read-only pointer only**. Steward carries NO daemon lifecycle logic —
 enrolment (`register` / `unregister`) and control (`start` / `stop` / `drain` /
@@ -497,7 +513,12 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config normal
 ```
 
 See the `manage-config` Canonical invocations (`normalize-keys`) for the verb
-shape. The call is idempotent — an already-canonical file is left byte-stable.
+shape. Its **position in this pass is immaterial** — every `marshal.json` write
+from the three reconcile verbs of this pass ((a) `normalize-keys`, (e)
+`sync-defaults`, (f) `steps-sort`) canonicalizes through `save_config`, so
+running it before or after steps (e) and (f) yields the same key order; it is
+sequenced first only for readability. The
+call is idempotent — an already-canonical file is left byte-stable.
 When it returns `status: warning` with a non-empty `unrecognized_keys`, surface
 that list to the operator: those top-level keys are absent from the canonical order
 and were preserved but appended out of position (a stray or consumer-added block),
@@ -894,11 +915,28 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:gitignore_setup [
 python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade plan [--integrate {true|false}] [--project-kind {auto|meta|consumer}]
 ```
 
+### upgrade — migrate-bot-lists
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade migrate-bot-lists
+```
+
+Takes no arguments and operates on the live `marshal.json`. Driven as the
+`migrate-bot-lists` sub-step of upgrade Stage 2; idempotent and self-disarming,
+so a re-run after the legacy `enabled_bots` key is gone is a no-op success.
+
 ### cache_freshness — check
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-steward:cache_freshness check [--cache-root CACHE_ROOT]
 ```
+
+Emits `freshness` (`fresh` | `stale` | `unknown`), `refuses_upgrade`,
+`cache_version`, `manifest_version`, `compared_against`, `cache_root`,
+`manifest_path`, `remediation` and `warning`. `compared_against` names the
+comparison scope the verdict rests on — this verb has no upstream leg, so report
+a `fresh` verdict WITH that scope attached rather than as an unqualified
+currency claim.
 
 ### cache_retention — sweep
 

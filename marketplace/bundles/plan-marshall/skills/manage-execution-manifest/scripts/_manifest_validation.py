@@ -476,8 +476,17 @@ def _check_step_loadable(step_id: str) -> dict[str, Any]:
             'standards_path': rel_path,
             'loadable': True,
         }
+    # Origin-neutral: this reason states WHY the step does not resolve, not WHERE
+    # the step id came from — this function is handed a bare id and cannot tell a
+    # marshal.json-authored one from a routed / composer-injected one. Provenance is
+    # added on the compose path only, by ``check_emitted_steps_resolvable``, which
+    # holds the marshal.json key map. Every other call path returns this message
+    # verbatim, so those aborts name no origin — currently the ``validate-loadable``
+    # handler that phase-6-finalize Step 1.5 aborts on, and ``cmd_reconcile``, which
+    # surfaces it as ``error: unreconcilable_step``. The remediation hint below stays
+    # — it is advice about the likely repair, not a claim about the origin.
     message = (
-        f'step `{bare}` referenced by `marshal.json` is missing standards file '
+        f'step `{bare}` is missing standards file '
         f'`{rel_path}` — the plan likely deleted the file without sweeping `marshal.json`'
     )
     return {
@@ -665,7 +674,7 @@ def _check_step_resolvable(step_id: str, phase: str) -> dict[str, Any]:
         if skill_path.is_file():
             return {'step_id': step_id, 'resolvable': True}
         message = (
-            f'step `{step_id}` referenced by `marshal.json` resolves to no project-local '
+            f'step `{step_id}` resolves to no project-local '
             f'skill `{project_bare}/SKILL.md` — the plan likely renamed or removed the '
             f'skill without sweeping `marshal.json`'
         )
@@ -680,7 +689,7 @@ def _check_step_resolvable(step_id: str, phase: str) -> dict[str, Any]:
             if step_id in names or bare in names:
                 return {'step_id': step_id, 'resolvable': True}
             message = (
-                f'step `{step_id}` referenced by `marshal.json` is not a discovered '
+                f'step `{step_id}` is not a discovered '
                 f'ext-point-build-verify-step implementor — the id resolves to no '
                 f'built-in verify step, project-local skill, or bundle discovery-registry entry'
             )
@@ -703,7 +712,7 @@ def _check_step_resolvable(step_id: str, phase: str) -> dict[str, Any]:
         if step_id in names or bare in names:
             return {'step_id': step_id, 'resolvable': True}
         message = (
-            f'step `{step_id}` referenced by `marshal.json` is not a discovered '
+            f'step `{step_id}` is not a discovered '
             f'ext-point-finalize-step implementor — the id resolves to no built-in '
             f'finalize step, project-local skill, or bundle discovery-registry entry'
         )
@@ -820,15 +829,15 @@ def check_emitted_steps_resolvable(
                         'message': f'{phase} step `{step}` is unresolvable: {base_reason}. {origin_note}',
                     }
                 # CSV-fallback compose path (no marshal step map): the emitted id is
-                # the best identifier available.
+                # the best identifier available. This branch holds NO marshal.json key
+                # map by construction, so it states no origin — naming marshal.json
+                # here would send the reader hunting a key in a section that may not
+                # exist. Origin-neutral, matching the sibling branch above.
                 return {
                     'phase': phase,
                     'step_id': step,
                     'marshal_key': step,
-                    'message': (
-                        f'{phase} step `{step}` in marshal.json is unresolvable: '
-                        f'{base_reason}'
-                    ),
+                    'message': f'{phase} step `{step}` is unresolvable: {base_reason}',
                 }
     return None
 

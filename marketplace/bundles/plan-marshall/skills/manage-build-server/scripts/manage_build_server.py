@@ -30,14 +30,20 @@ Verbs:
   (never silently lost), so a drained-then-restarted daemon reports them
   truthfully rather than resuming them.
 * ``status`` — ping the daemon over its ``0600`` socket and report the running
-  version, the daemon's in-flight / queued job counts, and the binary the RUNNING
-  process is executing (``running_binary_path``, read from the live process)
+  version, the daemon's in-flight / queued job counts (``unknown`` when the
+  daemon did not send them — never ``0``, which would read as idle), and the
+  binary the RUNNING process is executing (``running_binary_path``, read from
+  the live process)
   alongside the resolve-now path (``resolved_binary_path``); ``binary_diverges``
   flags a stale daemon and an undeterminable running provenance is ``unknown``,
   never the resolved path (S5, D4). Reports ``down`` with a named reason when the
   daemon is unreachable.
 * ``install`` — idempotent version-pinned start (a no-op when already running).
 * ``upgrade`` — drain the running daemon then start the verified version (S7).
+  Reports ``drain_exited`` and ``already_running`` — the two fields that can
+  carry a FAILED upgrade — and sets ``status: error`` with a ``reason`` when
+  either says the old daemon was never replaced, so a caller never has to read
+  success out of the word alone.
 * ``logs`` — read-only, project-scoped inspection of the daemon's central
   ``interaction-audit.log`` (the derived per-project view); never mutates it.
   Each row is rendered with an explicit ``kind`` label, and an interaction row
@@ -105,6 +111,12 @@ _UNKNOWN_PROVENANCE = 'unknown'
 """Sentinel ``status`` reports when the RUNNING daemon's binary cannot be
 determined from the live process. It is NEVER the resolved-now path — substituting
 that path for an undeterminable running provenance IS the drift-hiding defect."""
+
+_UNKNOWN_COUNT = 'unknown'
+"""Sentinel ``status`` reports for an in-flight / queued count the daemon did not
+send. A daemon pinned to a copy predating the counts extension omits both keys;
+coercing that absence to ``0`` would render it indistinguishable from a genuinely
+idle daemon, which is precisely what lets a reconcile drain a live build."""
 
 _DEFAULT_LOGS_LIMIT = 50
 """Default bounded tail size for the read-only ``logs`` audit-inspection verb."""
@@ -247,8 +259,15 @@ def _ping(timeout: float = _PING_TIMEOUT_SECONDS) -> dict[str, Any] | None:
         timeout: Socket connect / I/O timeout in seconds.
 
     Returns:
-        The decoded ping response (``{'status': 'ok', 'pid': int,
-        'version': str}``), or ``None`` when the daemon is unreachable.
+        The decoded ping response, or ``None`` when the daemon is unreachable.
+        A current daemon answers with five keys — ``status`` (``'ok'``), ``pid``
+        (``int``), ``version`` (``str``), ``in_flight`` (``int``) and ``queued``
+        (``int``). ``in_flight`` and ``queued`` are NOT guaranteed: a daemon
+        pinned to a copy predating the counts extension answers without them,
+        and the running daemon's version is the only thing that decides which
+        shape arrives. Callers MUST treat an absent count as *unreported*
+        (see :func:`_reported_count`) rather than as zero — the two are
+        different facts, and conflating them reports a busy daemon as idle.
     """
     sock_path = marshalld.socket_path()
     if not sock_path.exists():
@@ -263,6 +282,32 @@ def _ping(timeout: float = _PING_TIMEOUT_SECONDS) -> dict[str, Any] | None:
         return None
     finally:
         sock.close()
+
+
+def _reported_count(response: dict[str, Any], key: str) -> int | str:
+    """Return a daemon-reported job count, or the ``unknown`` sentinel.
+
+    Reports the count ONLY when the ping response actually carries it. A daemon
+    older than the counts extension omits the key entirely, and that absence is
+    reported as :data:`_UNKNOWN_COUNT` rather than coerced to ``0`` — so "the
+    daemon did not tell us" stays distinguishable from "the daemon told us it is
+    idle". The two were once the same value, and a reconcile read the resulting
+    zero as idleness and drained a live build.
+
+    Args:
+        response: The decoded ping response.
+        key: The count key to read (``in_flight`` or ``queued``).
+
+    Returns:
+        The count as an ``int``, or :data:`_UNKNOWN_COUNT` when the key is
+        absent or its value is not an integer.
+    """
+    if key not in response:
+        return _UNKNOWN_COUNT
+    try:
+        return int(response[key])
+    except (TypeError, ValueError):
+        return _UNKNOWN_COUNT
 
 
 def _wait_for_exit(pid: int, grace: float) -> bool:
@@ -600,22 +645,78 @@ def run_upgrade(_args: Namespace) -> dict[str, Any]:
     A version-pinned in-place upgrade: gracefully drain the current daemon, then
     launch the verified bundle copy. When no daemon is running the drain is a
     no-op and this reduces to a plain start.
+
+    Reports two fields that can carry a FAILED upgrade, so a caller never has to
+    infer success from the word ``success`` alone:
+
+    * ``drain_exited`` — whether the old daemon actually exited within the drain
+      grace window. ``False`` means the process the upgrade meant to replace is
+      still alive. An upgrade with nothing to drain reports ``True``: there was
+      no process that failed to exit.
+    * ``already_running`` — whether the start half found a daemon still up. For
+      an upgrade this is a failure signal, not an idempotent no-op: the drain was
+      supposed to have removed it, so a live daemon here means the old one was
+      never replaced.
+
+    Either signal sets ``status: error``. Without them the verb reported
+    ``success`` unconditionally and its caller cleared a reconcile-owed marker on
+    that word alone.
+
+    The failure payload carries the full shared error shape — ``error`` (the
+    machine-readable code) and ``message`` (a human-readable sentence naming what
+    failed) from ``ref-workflow-architecture/standards/manage-contract.md``,
+    alongside the ``reason`` this verb has always reported. ``reason`` is kept
+    because ``reconcile_daemon._reconcile_failure`` and the operator surface in
+    ``SKILL.md`` read it; ``error`` and ``message`` are added because a payload
+    that survives to a contract-aware consumer (``print_toon`` exits 0, so
+    ``_invoke_executor`` hands the whole dict on) must be decodable by one. Both
+    error branches set the three fields from a single place, so the code can
+    never drift from the reason.
     """
     drain_result = run_drain(_args)
     start_result = _start_daemon()
+    # Absent `exited` means the drain had no daemon to wait for, which is not a
+    # failure — nothing was left running.
+    drain_exited = bool(drain_result.get('exited', True))
+    already_running = bool(start_result.get('already_running', False))
     _append_lifecycle_audit(
         'upgrade',
         drained=drain_result.get('was_running', False),
         version=marshalld.VERSION,
     )
-    return {
+    result: dict[str, Any] = {
         'status': 'success',
         'action': 'upgrade',
         'drained': drain_result.get('was_running', False),
+        'drain_exited': drain_exited,
+        'already_running': already_running,
         'running': start_result.get('running', False),
         'binary_path': start_result.get('binary_path'),
         'version': marshalld.VERSION,
     }
+
+    def _fail(code: str, message: str) -> None:
+        """Stamp the full error shape from ONE place, so ``error`` cannot drift."""
+        result['status'] = 'error'
+        result['reason'] = code
+        result['error'] = code
+        result['message'] = message
+
+    if not drain_exited:
+        _fail(
+            'drain_did_not_exit',
+            f'The running daemon (pid {drain_result.get("pid")}) did not exit within the '
+            f'{_DRAIN_GRACE_SECONDS}s drain window; the process this upgrade meant to '
+            f'replace is still alive, so version {marshalld.VERSION} did not take over.',
+        )
+    elif already_running:
+        _fail(
+            'already_running_after_drain',
+            'A daemon was already running when the upgrade tried to start version '
+            f'{marshalld.VERSION}; the drain reported a clean exit, so the old daemon '
+            'was never actually replaced.',
+        )
+    return result
 
 
 def run_status(_args: Namespace) -> dict[str, Any]:
@@ -623,7 +724,9 @@ def run_status(_args: Namespace) -> dict[str, Any]:
 
     Pings the daemon over its ``0600`` socket. On a successful handshake reports
     ``running: true`` with the daemon-reported version + pid, the daemon's
-    in-flight / queued job counts, and — this is the D4 truthfulness fix — the
+    in-flight / queued job counts — reported as ``unknown`` when the daemon did
+    not send them, so a daemon predating the counts extension is never rendered
+    as an idle one — and — this is the D4 truthfulness fix — the
     binary the RUNNING process is actually executing (``running_binary_path``,
     sourced from the live process, not a call-time re-resolution) ALONGSIDE the
     resolved-now path a fresh start would use (``resolved_binary_path``). When the
@@ -666,8 +769,10 @@ def run_status(_args: Namespace) -> dict[str, Any]:
             # The resolve-now path: which binary a fresh start would launch today.
             'resolved_binary_path': resolved_binary_path,
             'binary_diverges': diverges,
-            'in_flight': int(response.get('in_flight', 0) or 0),
-            'queued': int(response.get('queued', 0) or 0),
+            # Reported only when the daemon actually sent them; an absent count
+            # is `unknown`, NEVER 0 — see `_reported_count`.
+            'in_flight': _reported_count(response, 'in_flight'),
+            'queued': _reported_count(response, 'queued'),
             'socket_path': str(marshalld.socket_path()),
             'caller_root': caller_root,
             'registered': registered,
@@ -869,9 +974,15 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     sub.add_parser('drain', help='Gracefully stop the daemon (no SIGKILL).', allow_abbrev=False).set_defaults(
         func=run_drain
     )
-    sub.add_parser('status', help='Report running version + binary path.', allow_abbrev=False).set_defaults(
-        func=run_status
-    )
+    sub.add_parser(
+        'status',
+        help=(
+            'Report running version, in-flight/queued counts (unknown when the daemon did not '
+            'send them, never 0), and running-vs-resolved binary provenance (divergence flagged; '
+            'unknown never the resolved path).'
+        ),
+        allow_abbrev=False,
+    ).set_defaults(func=run_status)
     sub.add_parser('install', help='Idempotent version-pinned start.', allow_abbrev=False).set_defaults(
         func=run_install
     )

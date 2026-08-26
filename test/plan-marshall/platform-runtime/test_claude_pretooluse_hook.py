@@ -56,7 +56,7 @@ _SUB_AGENT_IDENTITY = "plan-marshall:execution-context-level-4"
 
 def _worktree_cwd() -> str:
     """A cwd resolving under the plan-worktree path segment (Signal 2)."""
-    return f"/Users/dev/project/{gate.WORKTREE_PATH_SEGMENT}/my-plan"
+    return f"/home/dev/project/{gate.WORKTREE_PATH_SEGMENT}/my-plan"
 
 
 def _signal1_payload(tool_name: str, tool_input: dict) -> dict:
@@ -654,7 +654,7 @@ def test_r3_denies_write_with_absolute_path() -> None:
     payload = {
         gate.CWD_FIELD: _worktree_cwd(),
         "tool_name": "Write",
-        "tool_input": {"file_path": "/Users/dev/project/.plan/execute-script.py"},
+        "tool_input": {"file_path": "/home/dev/project/.plan/execute-script.py"},
     }
     assert hook.evaluate(payload) == hook._R3_REASON
 

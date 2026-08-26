@@ -87,13 +87,24 @@ class ConcurrentConfigModificationError(Exception):
 # the threat model needs. The lost update these CLI verbs can actually suffer is
 # CROSS-process — two concurrent ``manage-config`` / ``marshall-steward``
 # invocations, each its own process with its own copy of this map — and there the
-# guard fails closed (the second process's recorded load fingerprint no longer
-# matches the disk the first process rewrote). It does NOT serialize two
-# concurrent writers sharing ONE process: they share this map, so the first
-# save's fingerprint update becomes the second's baseline. These one-shot CLI
-# verbs never mutate the config from two in-process writers concurrently, and
-# serializing that case would require a per-load token or a held file lock — the
-# general locking primitive the plan deliberately leaves out of scope.
+# guard catches the SEQUENTIAL race: the second process's recorded load
+# fingerprint no longer matches the disk the first process already rewrote.
+#
+# It is OPTIMISTIC, not atomic, and the difference is load-bearing. ``save_config``
+# reads the current fingerprint and then calls ``os.replace`` as two separate
+# operations, so a writer that commits INSIDE that window is compared against and
+# then overwritten — still a lost update, and still silent. What the guard
+# genuinely delivers is detection of a writer that committed before the
+# comparison, which is the ordinary sequential-CLI race; it is not a guarantee
+# that no concurrent write is ever lost. Closing the remaining window needs a
+# held file lock or a per-load token — the general locking primitive the plan
+# deliberately leaves out of scope — so the claim is stated at the width of the
+# mechanism rather than the mechanism widened to fit a claim.
+#
+# It also does NOT serialize two concurrent writers sharing ONE process: they
+# share this map, so the first save's fingerprint update becomes the second's
+# baseline. These one-shot CLI verbs never mutate the config from two in-process
+# writers concurrently.
 _CONFIG_FINGERPRINTS: dict[str, str] = {}
 
 # Monotonic per-process counter for unique temp-file names in the atomic write,
@@ -148,7 +159,16 @@ CANONICAL_TOP_LEVEL_KEY_ORDER = [
     'code_intelligence',
     'credentials_config',
     'project',
+    # `project_dir` and `runtime` are written at the top level by the platform
+    # runtime seed (`project initial-setup`): the Claude seed writes both, the
+    # OpenCode seed writes `runtime`. `runtime.target` is read back by
+    # `platform_runtime._resolve_target`, so they are first-party product
+    # configuration rather than stray blocks — omitting them made `normalize-keys`
+    # report the product's own seed as unrecognized. Both take their alphabetical
+    # slot among the trailing keys.
+    'project_dir',
     'providers',
+    'runtime',
     'skill_domains',
     'system',
 ]
@@ -165,16 +185,35 @@ def order_config_keys(config: dict) -> dict:
     :func:`unrecognized_top_level_keys` and :func:`normalize_keys`, which surface
     that set.
 
-    This is the ordering authority for top-level marshal.json key ordering. The
-    two whole-document write paths route through it — :func:`save_config` and the
-    ``manage-providers`` ``write_provider_config`` path (via its ``_save_marshal``)
-    — so those paths never append a block (e.g. a freshly created
-    ``credentials_config``) out of canonical order. It is NOT reached by *every*
-    write to marshal.json: the extension-defaults writers
-    (:func:`ext_defaults_set`, :func:`ext_defaults_set_default`) and the OpenCode
-    runtime seed write the document directly with ``json.dumps`` and do not
-    re-order — they preserve the order they loaded rather than enforcing the
-    canonical one.
+    This is the ordering authority for top-level marshal.json key ordering, and
+    it is reached by one of the five marshal.json writer sites in the tree. The
+    split below is stated at FUNCTION level, because a file-level split would be
+    lossy: this module carries both the routed path and two bypass paths.
+
+    A "writer site" here is a function that writes the document itself, not a
+    caller that reaches one. ``_providers_core._save_marshal`` is deliberately
+    NOT counted: it no longer orders and writes for itself but delegates the
+    whole document to :func:`save_config`, so it is a caller of the routed site
+    rather than a sixth site of its own. It inherits this ordering along with the
+    lost-update guard and the atomic replace.
+
+    ROUTED — 1 site:
+
+    * :func:`save_config`, which calls this function before its atomic write.
+
+    BYPASS — 4 sites, which write the document directly and preserve the order
+    they loaded rather than enforcing the canonical one:
+
+    * :func:`ext_defaults_set` and :func:`ext_defaults_set_default`, the two
+      extension-defaults writers in this module.
+    * BOTH platform-runtime seeds of ``project initial-setup`` —
+      ``opencode_runtime.OpenCodeRuntime.project_initial_setup`` and
+      ``_claude_runtime_impl.ClaudeRuntime.project_initial_setup``. Naming only
+      the OpenCode one understated the bypass set by half; the two seeds bypass
+      identically.
+
+    The routed paths therefore never append a block (e.g. a freshly created
+    ``credentials_config``) out of canonical order, while a bypass path can.
     """
     ordered: dict = {}
     for key in CANONICAL_TOP_LEVEL_KEY_ORDER:
@@ -199,9 +238,21 @@ def save_config(config: dict) -> None:
     directory + :func:`os.replace`) so a crashed or interrupted writer never
     leaves a half-written config behind.
 
-    The guarantee is CROSS-process, which is the mode these one-shot CLI verbs can
-    actually race in — see :data:`_CONFIG_FINGERPRINTS` for why per-process state
-    is the right granularity and what it deliberately does not cover.
+    **The check is OPTIMISTIC, not atomic.** The fingerprint comparison and the
+    ``os.replace`` below are two separate operations, so a writer committing
+    between them is compared against and then overwritten — that lost update is
+    detected by nothing here. What is refused is a writer that committed BEFORE
+    the comparison, which is the ordinary sequential race two one-shot CLI
+    invocations actually run: the CROSS-process mode. Read the guard as detection
+    of that race, never as a guarantee that no concurrent write can be lost. See
+    :data:`_CONFIG_FINGERPRINTS` for why per-process state is the right
+    granularity, what closing the remaining window would cost, and what the guard
+    deliberately does not cover.
+
+    Callers outside this module reach it too: ``manage-providers``'
+    ``_providers_core._save_marshal`` delegates its whole-document write here, so
+    the provider-config path is covered by the same guard and the same atomic
+    replace rather than carrying a second copy of them.
     """
     MARSHAL_PATH.parent.mkdir(parents=True, exist_ok=True)
     ordered = order_config_keys(config)

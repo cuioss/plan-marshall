@@ -14,6 +14,7 @@ Sub-menu for skill domains and project structure configuration.
 - [Configuration: Terminal Title](#configuration-terminal-title)
 - [Configuration: Enforcement Hook](#configuration-enforcement-hook)
 - [Configuration: Derivation Resolvers](#configuration-derivation-resolvers)
+- [Configuration: Display Timezone](#configuration-display-timezone)
 - [Configuration: Merge Queue](#configuration-merge-queue)
 - [Configuration: Recipes](#configuration-recipes)
 
@@ -21,7 +22,7 @@ Sub-menu for skill domains and project structure configuration.
 
 ## Configuration Submenu
 
-The Configuration submenu has 12 options, which exceeds the `AskUserQuestion` 4-option cap. It is presented as a multi-page paginated menu following the "More actions..." pattern documented in `plan-marshall/workflow/planning.md` (§ Action: list): options are chunked into pages of ≤4, every non-final page reserves its 4th slot for a "More..." continuation that triggers the next page's `AskUserQuestion`, and the final page exposes a "Back" element returning to the Main Menu without quitting.
+The Configuration submenu has 13 options, which exceeds the `AskUserQuestion` 4-option cap. It is presented as a multi-page paginated menu following the "More actions..." pattern documented in `plan-marshall/workflow/planning.md` (§ Action: list): options are chunked into pages of ≤4, every non-final page reserves its 4th slot for a "More..." continuation that triggers the next page's `AskUserQuestion`, and the final page exposes a "Back" element returning to the Main Menu without quitting.
 
 **Page 1** — first 3 options plus the "More..." continuation:
 
@@ -86,7 +87,7 @@ AskUserQuestion:
       value: "more-3"
 ```
 
-**Page 4** — shown only when the user selects "More..." on Page 3 — the final 3 options plus the "Back" element:
+**Page 4** — shown only when the user selects "More..." on Page 3 — the next 3 options plus the "More..." continuation:
 
 ```text
 AskUserQuestion:
@@ -96,9 +97,24 @@ AskUserQuestion:
     - label: "Derivation Resolvers"
       description: "Which module-edge resolvers run in this checkout (machine-local)"
       value: "derivation-resolvers"
+    - label: "Display Timezone"
+      description: "IANA zone timestamps are rendered in (machine-local; default UTC)"
+      value: "display-timezone"
     - label: "Merge Queue"
       description: "Probe and enable the platform merge queue (GitHub merge queue / GitLab merge train)"
       value: "merge-queue"
+    - label: "More..."
+      description: "Show remaining configuration options"
+      value: "more-4"
+```
+
+**Page 5** — shown only when the user selects "More..." on Page 4 — the final option plus the "Back" element:
+
+```text
+AskUserQuestion:
+  question: "What would you like to configure?"
+  header: "Configuration (continued)"
+  options:
     - label: "Full Reconfigure"
       description: "Re-run setup wizard from Step 5 onwards (skips bootstrap steps 1-4)"
       value: "wizard"
@@ -124,7 +140,9 @@ AskUserQuestion:
 | recipes | Load `Read references/menu-recipes.md` → Execute "Configuration: Recipes" below |
 | more-3 | Present Configuration Page 4 `AskUserQuestion` |
 | derivation-resolvers | Load `Read references/menu-derivation-resolvers.md` → Execute |
+| display-timezone | Load `Read references/menu-display-timezone.md` → Execute |
 | merge-queue | Load `Read references/merge-queue-setup.md` → Execute the provisioning flow |
+| more-4 | Present Configuration Page 5 `AskUserQuestion` |
 | wizard | Load `Read references/wizard-flow.md` — skip to Step 5 (bootstrap already done) |
 | back | Do nothing → Return to the Main Menu |
 
@@ -279,7 +297,7 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fi
 
 **Finalize steps** (phase-6-finalize): preset-first, with a Custom escape hatch. Present the finalize-step preset picker BEFORE the per-step `list-finalize-steps` / `set-steps` multi-select, mirroring the single-AskUserQuestion preset-picker pattern documented in [effort-menu.md](../standards/effort-menu.md) (do not inline-copy that flow — the normative contract lives there). The three preset descriptions are sourced verbatim from `FinalizeStepPresets.describe(name)` (`finalize_step_presets.py`), and the Custom option falls through to the existing per-step multi-select.
 
-Optionally detect the current preset first — deep-equality of `plan.phase-6-finalize.steps` against `FinalizeStepPresets.get(name)` for each name in `FinalizeStepPresets.all_names()` — and surface it as `Current: {name} preset` / `Current: custom (manually edited)`, mirroring effort-menu Step 1.
+Optionally detect the current preset first — deep-equality of `plan.phase-6-finalize.steps` against `FinalizeStepPresets.get(name)` for each name in `FinalizeStepPresets.all_names()` — and surface it as `Current: {name} preset` / `Current: custom (manually edited)`. This comparison is performed here, in the wizard: unlike the effort menu's Step 1, which delegates to the deterministic `manage-config effort identify` recogniser, `finalize-steps` exposes no equivalent verb, so there is nothing to hand the deep-equality walk to.
 
 ```text
 AskUserQuestion:
@@ -826,6 +844,20 @@ Load and execute the dedicated reference:
 
 ```text
 Read references/menu-derivation-resolvers.md
+```
+
+After completion, return to Main Menu.
+
+---
+
+## Configuration: Display Timezone
+
+Inspect and change the IANA timezone plan-marshall renders operator-facing timestamps in. The binding is machine-local — it persists to the git-ignored run-configuration store beside the other machine-local bindings — and it changes only how an already-recorded instant is DISPLAYED; nothing is re-stamped and no artifact is rewritten. An unconfigured project renders in `UTC`.
+
+Load and execute the dedicated reference:
+
+```text
+Read references/menu-display-timezone.md
 ```
 
 After completion, return to Main Menu.

@@ -48,17 +48,33 @@ live re-hash compute identically, hashing the gitignored
 ``target/claude/`` tree directly via ``git hash-object`` (which reads
 arbitrary worktree bytes regardless of tracking).
 
+The guard reports the failure that OCCURRED, not the failure it hunts
+for. Its refusals are discriminated into two kinds (see
+:class:`GuardRefusal`): ``stale`` — a probe ran and observed a staleness
+condition, so the remedy is to regenerate the target tree — and
+``probe_failed`` — a probe could not run at all (the helper would not
+import, git would not answer), so nothing was observed about the target
+tree and its freshness is unknown. A ``probe_failed`` refusal never
+borrows the regenerate remedy, because sending the operator to re-run a
+generator whose output may already be current is a misreport, not a fix.
+Both kinds refuse (exit 2), and ``--skip-staleness-guard`` remains the
+deliberate override.
+
 Outputs a TOON document on stdout:
 
     status: success | partial | error
     synced_count: N
     failed_count: M
     summary_message: "<human-readable summary>"
+    guard_outcome: stale | probe_failed   # only on a guard refusal
     synced[N]{bundle,version,status}:
       bundle1,0.1.0,success
       bundle2,unknown,skipped
     failed[M]{bundle,error}:
       bundle3,"rsync exited 23"
+
+``guard_outcome`` is present only when the staleness guard refused; its
+absence on every other path means no guard verdict was reached.
 
 Exit codes:
 
@@ -84,12 +100,64 @@ Flags:
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import shutil
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import NamedTuple
+
+
+class GuardRefusal(NamedTuple):
+    """A guard refusal, discriminated by WHY the guard refused.
+
+    Two kinds, and the distinction is the whole point of the type:
+
+    * ``stale`` — the guard's probe RAN and observed a real staleness
+      condition (missing sentinel, fingerprint mismatch, file-level
+      drift). The remedy is to regenerate the target tree, so the
+      message carries :func:`_regenerate_hint`.
+    * ``probe_failed`` — the guard's probe could NOT run (the helper
+      would not import, git would not answer). Nothing was observed
+      about the target tree, so its freshness is UNKNOWN. A
+      ``probe_failed`` message therefore says so plainly and carries the
+      remedy for the probe's own fault — never the regenerate hint,
+      which would send the operator to re-run a generator whose output
+      may already be current.
+
+    Collapsing the second kind into the first is the defect this type
+    exists to prevent: a guard that reports the failure it hunts for
+    instead of the failure that occurred.
+    """
+
+    kind: str
+    message: str
+
+
+def _stale(message: str) -> GuardRefusal:
+    """Build a ``stale`` refusal — the probe ran and found staleness."""
+    return GuardRefusal(kind='stale', message=message)
+
+
+def _probe_failed(what: str, detail: str, remedy: str) -> GuardRefusal:
+    """Build a ``probe_failed`` refusal — the probe could not run at all.
+
+    The message states what could not run, why, that the target tree was
+    consequently NOT checked, and the remedy for the probe's own fault.
+    It deliberately does NOT carry :func:`_regenerate_hint` — borrowing
+    the staleness remedy for a failure that observed no staleness is
+    exactly the misreport this shape prevents.
+    """
+    return GuardRefusal(
+        kind='probe_failed',
+        message=(
+            f'staleness_guard: could not run — {what} ({detail}). '
+            'The target tree was NOT checked, so its freshness is unknown; '
+            f'this is not a staleness verdict. {remedy}'
+        ),
+    )
 
 
 def _resolve_repo_root_for_sentinel(source_root: Path) -> Path:
@@ -110,51 +178,101 @@ def _resolve_repo_root_for_sentinel(source_root: Path) -> Path:
     return source_root.parent.parent
 
 
-def _import_source_fingerprint():
-    """Import the shared fingerprint helper.
+#: Repo-relative location of the shared fingerprint helper.
+SOURCE_FINGERPRINT_RELPATH = Path('marketplace') / 'targets' / 'claude' / 'source_fingerprint.py'
 
-    The helper lives under ``marketplace/targets/claude/source_fingerprint.py``
-    in the project tree. This script runs as a standalone Python file
-    with no marketplace package on ``sys.path``, so we resolve the
-    project root from the script's own location (``.claude/skills/
-    sync-plugin-cache/scripts/sync.py`` -> repo root is four parents up)
-    and prepend it to ``sys.path`` before importing.
+#: Module name the helper is loaded under. Deliberately NOT
+#: ``marketplace.targets.claude.source_fingerprint`` — see
+#: :func:`_load_source_fingerprint_module` for why the package path is
+#: avoided entirely.
+HELPER_MODULE_NAME = '_sync_plugin_cache_source_fingerprint'
+
+
+def _repo_root_from_script() -> Path:
+    """Resolve the project root from this script's own location.
+
+    ``.claude/skills/sync-plugin-cache/scripts/sync.py`` -> the repo root
+    is four parents up: parents[0]=scripts, [1]=sync-plugin-cache,
+    [2]=skills, [3]=.claude, [4]=repo.
     """
-    script_path = Path(__file__).resolve()
-    # script_path = .../{repo}/.claude/skills/sync-plugin-cache/scripts/sync.py
-    # parents[0]=scripts, [1]=sync-plugin-cache, [2]=skills, [3]=.claude, [4]=repo
-    repo_root = script_path.parents[4]
-    if str(repo_root) not in sys.path:
-        sys.path.insert(0, str(repo_root))
-    from marketplace.targets.claude.source_fingerprint import (  # noqa: E402
-        FingerprintError,
-        compute_source_tree_fingerprint,
-    )
+    return Path(__file__).resolve().parents[4]
 
-    return compute_source_tree_fingerprint, FingerprintError
+
+def _load_source_fingerprint_module():
+    """Load the fingerprint helper BY FILE LOCATION, not by package path.
+
+    The helper (``marketplace/targets/claude/source_fingerprint.py``) is
+    stdlib-only — ``hashlib``, ``shutil``, ``subprocess``, ``pathlib``.
+    Reaching it through the package path
+    ``marketplace.targets.claude.source_fingerprint`` does NOT import
+    only that file: Python must first execute
+    ``marketplace/targets/__init__.py``, which imports every registered
+    target sub-package to fire their ``register_target`` side effects,
+    and those target modules pull in third-party dependencies (``yaml``).
+    This script is invoked as a standalone file under a bare ``python3``
+    with no project virtualenv, where those dependencies are absent — so
+    the package route raises ``ModuleNotFoundError`` on a dependency the
+    helper itself never needed.
+
+    Loading the single file via ``importlib.util.spec_from_file_location``
+    executes exactly that module and nothing else, which keeps the
+    stdlib-only helper reachable under a bare interpreter.
+
+    The loaded module is cached in ``sys.modules`` under
+    :data:`HELPER_MODULE_NAME` so repeated calls (the fingerprint check
+    and the file-level drift check) share one module object — and
+    therefore one ``FingerprintError`` class, so ``except`` clauses match
+    across both call sites.
+
+    Raises:
+        ImportError: the helper file is absent, has no loadable spec, or
+            fails while executing. Every failure is normalised to
+            ``ImportError`` so callers have one exception type to handle.
+    """
+    cached = sys.modules.get(HELPER_MODULE_NAME)
+    if cached is not None:
+        return cached
+
+    helper_path = _repo_root_from_script() / SOURCE_FINGERPRINT_RELPATH
+    if not helper_path.is_file():
+        raise ImportError(f'fingerprint helper not found at {helper_path}')
+
+    spec = importlib.util.spec_from_file_location(HELPER_MODULE_NAME, helper_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f'no loadable module spec for fingerprint helper at {helper_path}')
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[HELPER_MODULE_NAME] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:  # noqa: BLE001 - normalised to ImportError below
+        sys.modules.pop(HELPER_MODULE_NAME, None)
+        raise ImportError(f'fingerprint helper at {helper_path} failed to import: {exc}') from exc
+    return module
+
+
+def _import_source_fingerprint():
+    """Return ``(compute_source_tree_fingerprint, FingerprintError)``.
+
+    Thin accessor over :func:`_load_source_fingerprint_module`; raises
+    ``ImportError`` when the helper cannot be loaded.
+    """
+    module = _load_source_fingerprint_module()
+    return module.compute_source_tree_fingerprint, module.FingerprintError
 
 
 def _import_hash_objects():
-    """Import the shared per-file blob-hash helper.
+    """Return ``(hash_objects, FingerprintError)``.
 
-    Resolves the project root the same way as
-    :func:`_import_source_fingerprint` (script location -> four parents
-    up) and returns the ``hash_objects`` primitive plus its
-    ``FingerprintError`` type. ``hash_objects`` hashes arbitrary worktree
-    bytes via ``git hash-object --stdin-paths`` regardless of whether the
-    paths are tracked — so it works on the gitignored ``target/claude/``
-    tree as well as the tracked ``marketplace/bundles/`` source.
+    ``hash_objects`` hashes arbitrary worktree bytes via
+    ``git hash-object --stdin-paths`` regardless of whether the paths are
+    tracked — so it works on the gitignored ``target/claude/`` tree as
+    well as the tracked ``marketplace/bundles/`` source. Thin accessor
+    over :func:`_load_source_fingerprint_module`; raises ``ImportError``
+    when the helper cannot be loaded.
     """
-    script_path = Path(__file__).resolve()
-    repo_root = script_path.parents[4]
-    if str(repo_root) not in sys.path:
-        sys.path.insert(0, str(repo_root))
-    from marketplace.targets.claude.source_fingerprint import (  # noqa: E402
-        FingerprintError,
-        hash_objects,
-    )
-
-    return hash_objects, FingerprintError
+    module = _load_source_fingerprint_module()
+    return module.hash_objects, module.FingerprintError
 
 
 DEFAULT_CACHE_ROOT = Path.home() / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
@@ -188,7 +306,17 @@ def _emit_toon(
     synced: list[dict[str, str]],
     failed: list[dict[str, str]],
     summary_message: str,
+    guard_outcome: str | None = None,
 ) -> str:
+    """Render the result document.
+
+    ``guard_outcome`` is emitted only on a staleness-guard refusal and
+    carries the refusal KIND (``stale`` / ``probe_failed``) so a consumer
+    can tell "the target tree is stale" from "the guard could not run"
+    without parsing prose. It is absent on every non-guard path, because
+    no guard verdict was reached there — an absent field is honest about
+    that, where a default value would not be.
+    """
     synced_count = sum(1 for row in synced if row['status'] == 'success')
     failed_count = len(failed)
     lines = [
@@ -197,6 +325,8 @@ def _emit_toon(
         f'failed_count: {failed_count}',
         f'summary_message: "{summary_message}"',
     ]
+    if guard_outcome is not None:
+        lines.append(f'guard_outcome: {guard_outcome}')
     lines.append(f'synced[{len(synced)}]{{bundle,version,status}}:')
     for row in synced:
         lines.append(f'  {row["bundle"]},{row["version"]},{row["status"]}')
@@ -260,8 +390,8 @@ def _relative_file_map(root: Path) -> dict[str, Path]:
     return file_map
 
 
-def _file_level_drift(source_root: Path, file_hashes: dict[str, str]) -> str | None:
-    """Return a human-readable reason naming per-file target drift, else None.
+def _file_level_drift(source_root: Path, file_hashes: dict[str, str]) -> GuardRefusal | None:
+    """Return a :class:`GuardRefusal` naming per-file target drift, else None.
 
     Supplements the single ``source_tree_fingerprint`` sentinel with
     per-file granularity by comparing the emitted ``target/claude/`` tree
@@ -292,10 +422,17 @@ def _file_level_drift(source_root: Path, file_hashes: dict[str, str]) -> str | N
     git repo — as it always does in production. ``git hash-object`` reads
     arbitrary worktree bytes and therefore works on the gitignored
     ``target/claude/`` tree. Returns ``None`` when every manifest entry
-    matches its live file and the tree carries no extra file. A clean
-    import / hashing failure degrades to ``None`` (the sentinel fingerprint
-    check remains the primary guard) rather than blocking sync on an
-    environmental fault.
+    matches its live file and the tree carries no extra file.
+
+    When the check cannot RUN — the helper will not import, or ``git
+    hash-object`` will not answer — it returns a ``probe_failed``
+    refusal naming that fault. It does NOT return ``None``: a ``None``
+    here is read by the caller as "the file-level check ran and found
+    nothing", so returning it for a check that never ran would report a
+    clean tree on no evidence and let the sync proceed as though the
+    supplementary guard had passed. Refusing loudly, and saying which
+    probe broke, is the honest outcome; ``--skip-staleness-guard``
+    remains the deliberate override.
     """
     live_files = _relative_file_map(source_root)
     live_files.pop(EMIT_MARKER_FILENAME, None)
@@ -305,8 +442,14 @@ def _file_level_drift(source_root: Path, file_hashes: dict[str, str]) -> str | N
 
     try:
         hash_objects, _FingerprintError = _import_hash_objects()
-    except ImportError:
-        return None
+    except ImportError as exc:
+        return _probe_failed(
+            'the file-level drift check failed to import the hashing helper',
+            str(exc),
+            'Repair the helper at '
+            f'{SOURCE_FINGERPRINT_RELPATH.as_posix()}, or re-run with '
+            '--skip-staleness-guard to sync without the check.',
+        )
 
     common = sorted(set(file_hashes) & set(live_files))
     diverged: list[str] = []
@@ -314,8 +457,14 @@ def _file_level_drift(source_root: Path, file_hashes: dict[str, str]) -> str | N
         abs_paths = [str(live_files[rel].resolve()) for rel in common]
         try:
             live_shas = hash_objects(source_root, abs_paths)
-        except _FingerprintError:
-            return None
+        except _FingerprintError as exc:
+            return _probe_failed(
+                'the file-level drift check could not hash the live target tree',
+                str(exc),
+                'The check needs a working `git` on PATH and a git work tree '
+                f'containing {source_root}; re-run with --skip-staleness-guard '
+                'to sync without the check.',
+            )
         for rel, live_sha in zip(common, live_shas, strict=True):
             if live_sha != file_hashes[rel]:
                 diverged.append(rel)
@@ -330,15 +479,22 @@ def _file_level_drift(source_root: Path, file_hashes: dict[str, str]) -> str | N
         parts.append(f'extra in target: {", ".join(extra)}')
     if diverged:
         parts.append(f'content diverged: {", ".join(diverged)}')
-    return (
+    return _stale(
         'staleness_guard: target/claude/ drifted from its emit manifest at file level — '
         + '; '.join(parts)
         + f'. {_regenerate_hint()}'
     )
 
 
-def _staleness_guard(source_root: Path, marketplace_root: Path) -> str | None:
-    """Return a human-readable reason when source is missing/stale, else None.
+def _staleness_guard(source_root: Path, marketplace_root: Path) -> GuardRefusal | None:
+    """Return a :class:`GuardRefusal` when sync must not proceed, else None.
+
+    The refusal is discriminated: ``stale`` means a probe RAN and saw a
+    staleness condition; ``probe_failed`` means a probe could NOT run, so
+    nothing was observed about the target tree. The two carry different
+    messages and different remedies, and neither is reported as the
+    other — a guard must report the failure that occurred, not the
+    failure it hunts for.
 
     Sentinel-based staleness check:
 
@@ -367,36 +523,36 @@ def _staleness_guard(source_root: Path, marketplace_root: Path) -> str | None:
        transformed generator output, not a verbatim source mirror.
     """
     if not source_root.is_dir():
-        return f'source root not found: {source_root}. {_regenerate_hint()}'
+        return _stale(f'source root not found: {source_root}. {_regenerate_hint()}')
     bundles_in_source = sorted(p.name for p in source_root.iterdir() if _is_bundle_dir(p))
     if not bundles_in_source:
-        return f'source root contains no bundles: {source_root}. {_regenerate_hint()}'
+        return _stale(f'source root contains no bundles: {source_root}. {_regenerate_hint()}')
 
     if marketplace_root.is_dir():
         bundles_in_market = sorted(p.name for p in marketplace_root.iterdir() if _is_bundle_dir(p))
         missing = [b for b in bundles_in_market if b not in bundles_in_source]
         if missing:
-            return (
+            return _stale(
                 'target/claude/ appears stale — bundles in marketplace/bundles/ are missing '
                 f'from target output: {", ".join(missing)}. {_regenerate_hint()}'
             )
 
     sentinel_path = source_root / EMIT_MARKER_FILENAME
     if not sentinel_path.is_file():
-        return (
+        return _stale(
             f'staleness_guard: sentinel missing or unreadable at {sentinel_path} '
             f'— run finalize-step-deploy-target first. {_regenerate_hint()}'
         )
     try:
         sentinel = json.loads(sentinel_path.read_text(encoding='utf-8'))
     except (OSError, json.JSONDecodeError) as exc:
-        return (
+        return _stale(
             f'staleness_guard: sentinel missing or unreadable at {sentinel_path} '
             f'({exc}). {_regenerate_hint()}'
         )
     stored_fingerprint = sentinel.get('source_tree_fingerprint')
     if not isinstance(stored_fingerprint, str) or not stored_fingerprint:
-        return (
+        return _stale(
             f'staleness_guard: sentinel at {sentinel_path} is missing '
             f'source_tree_fingerprint. {_regenerate_hint()}'
         )
@@ -404,22 +560,34 @@ def _staleness_guard(source_root: Path, marketplace_root: Path) -> str | None:
     try:
         compute_source_tree_fingerprint, FingerprintError = _import_source_fingerprint()
     except ImportError as exc:
-        return (
-            f'staleness_guard: cannot import source_fingerprint helper ({exc}). '
-            f'{_regenerate_hint()}'
+        # The helper would not load, so the fingerprint was never
+        # recomputed and nothing is known about the target tree. Report
+        # THAT, without the regenerate hint — re-running the generator
+        # fixes staleness, and no staleness was observed here.
+        return _probe_failed(
+            'the source-fingerprint probe failed to import its helper',
+            str(exc),
+            f'Repair the helper at {SOURCE_FINGERPRINT_RELPATH.as_posix()} or run the '
+            'sync through the project environment; --skip-staleness-guard syncs '
+            'without the check.',
         )
 
     repo_root = _resolve_repo_root_for_sentinel(source_root)
     try:
         live_fingerprint = compute_source_tree_fingerprint(repo_root)
     except FingerprintError as exc:
-        return (
-            f'staleness_guard: failed to recompute source fingerprint ({exc}). '
-            f'{_regenerate_hint()}'
+        # Same shape as the import failure: the recompute did not
+        # produce a fingerprint, so there is nothing to compare and no
+        # staleness verdict to report.
+        return _probe_failed(
+            'the source-fingerprint probe could not recompute the fingerprint',
+            str(exc),
+            f'The fingerprint needs a working `git` on PATH and a git work tree at '
+            f'{repo_root}; --skip-staleness-guard syncs without the check.',
         )
 
     if live_fingerprint != stored_fingerprint:
-        return (
+        return _stale(
             'staleness_guard: source tree changed since last emit — '
             f're-run finalize-step-deploy-target. {_regenerate_hint()}'
         )
@@ -519,14 +687,15 @@ def main(argv: list[str] | None = None) -> int:
     marketplace_root = _resolve_marketplace_root(args)
 
     if not args.skip_staleness_guard:
-        reason = _staleness_guard(source_root, marketplace_root)
-        if reason is not None:
+        refusal = _staleness_guard(source_root, marketplace_root)
+        if refusal is not None:
             sys.stdout.write(
                 _emit_toon(
                     status='error',
                     synced=[],
                     failed=[],
-                    summary_message=reason,
+                    summary_message=refusal.message,
+                    guard_outcome=refusal.kind,
                 )
             )
             return 2

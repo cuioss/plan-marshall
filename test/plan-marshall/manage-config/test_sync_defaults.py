@@ -8,14 +8,26 @@ Covers the non-destructive deep-merge contract:
 - deeply-nested missing sub-keys are added (including the keyed-map step structure)
 - idempotency (re-running adds nothing)
 - TOON output enumerates added dotted paths correctly
+
+and the verb's DECLARED SURFACE: ``sync-defaults`` consumes no plan identifier,
+so it declares none. Every namespace here is produced by the script's own
+parser (see :func:`_sync_ns`), which is what keeps that claim honest — a
+hand-built namespace can carry an attribute the CLI never supplies, and did.
 """
 
 # ruff: noqa: I001, E402
 
 from pathlib import Path
+import copy
 import json
 from argparse import Namespace
-from conftest import load_script_module
+
+import pytest
+
+from conftest import load_script_module, parse_ns
+
+_MANAGE_CONFIG = ('plan-marshall', 'manage-config')
+_SCRIPT = (*_MANAGE_CONFIG, 'manage-config.py')
 
 _sync_mod = load_script_module(
     'plan-marshall', 'manage-config', '_cmd_sync_defaults.py', module_name='_cmd_sync_defaults'
@@ -25,6 +37,26 @@ _config_defaults_mod = load_script_module(
 )
 
 cmd_sync_defaults = _sync_mod.cmd_sync_defaults
+
+
+# The namespace the real ``sync-defaults`` parser produces, built ONCE (parse_ns
+# re-executes the script module on every call) and copied per test.
+_SYNC_NS_TEMPLATE: Namespace = parse_ns(*_SCRIPT, 'sync-defaults', register=False)
+
+
+def _sync_ns() -> Namespace:
+    """Args for ``manage-config sync-defaults``, built by the script's own parser.
+
+    Every call here used to hand-build ``Namespace(audit_plan_id=None)``. That
+    namespace named a flag the verb does not declare and the handler never reads
+    — ``cmd_sync_defaults`` takes no plan identifier at all — so the tests kept
+    describing an attribution channel that did not exist, and would have gone on
+    doing so after the declaration was retired. Driving the production parser
+    makes the namespace BE the declared surface: an argument the CLI does not
+    accept cannot be smuggled in, and a flag added or removed is reflected here
+    with no test edit.
+    """
+    return copy.copy(_SYNC_NS_TEMPLATE)
 
 
 # =============================================================================
@@ -62,7 +94,7 @@ def _read_marshal(fixture_dir: Path) -> dict:
 
 def test_sync_defaults_errors_when_uninitialized(plan_context):
     """sync-defaults fails cleanly when marshal.json does not exist."""
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'error'
     assert 'marshal.json' in result['error'].lower()
@@ -72,7 +104,7 @@ def test_sync_defaults_empty_marshal_gains_all_defaults(plan_context):
     """An empty marshal.json gains every key present in get_default_config()."""
     _write_marshal(plan_context.fixture_dir, {})
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     assert result['added_count'] > 0
@@ -100,7 +132,7 @@ def test_sync_defaults_backfills_orchestrator_block(plan_context):
     """
     _write_marshal(plan_context.fixture_dir, {'plan': {'effort': 'level-3'}})
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -127,7 +159,7 @@ def test_sync_defaults_backfills_new_knobs_into_legacy_block(plan_context):
         {'orchestrator': {'auto_emit': False}, 'plan': {'effort': 'level-3'}},
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -163,7 +195,7 @@ def test_sync_defaults_preserves_populated_orchestrator_block(plan_context):
         },
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -181,11 +213,11 @@ def test_sync_defaults_orchestrator_backfill_is_idempotent(plan_context):
     """A second sync after back-filling the orchestrator block adds nothing further."""
     _write_marshal(plan_context.fixture_dir, {'plan': {'effort': 'level-3'}})
 
-    first = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    first = cmd_sync_defaults(_sync_ns())
     assert first['status'] == 'success'
     assert 'orchestrator' in first['added']
 
-    second = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    second = cmd_sync_defaults(_sync_ns())
 
     assert second['status'] == 'success'
     assert 'orchestrator' not in second['added']
@@ -204,7 +236,7 @@ def test_sync_defaults_preserves_user_set_param_in_keyed_map(plan_context):
         {'plan': {'phase-6-finalize': {'steps': {'default:branch-cleanup': {'pr_merge_strategy': 'merge'}}}}},
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -232,7 +264,7 @@ def test_sync_defaults_preserves_user_set_true_in_keyed_map(plan_context):
         {'plan': {'phase-6-finalize': {'steps': {'default:branch-cleanup': {'final_merge_without_asking': True}}}}},
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -257,7 +289,7 @@ def test_sync_defaults_deep_merges_missing_siblings_into_keyed_map_steps(plan_co
         {'plan': {'phase-6-finalize': {'steps': {'default:branch-cleanup': {'pr_merge_strategy': 'squash'}}}}},
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -282,7 +314,7 @@ def test_sync_defaults_backfills_missing_steps_into_pruned_keyed_map(plan_contex
         {'plan': {'phase-6-finalize': {'steps': {'default:push': {}}}}},
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -298,12 +330,12 @@ def test_sync_defaults_backfills_missing_steps_into_pruned_keyed_map(plan_contex
 def test_sync_defaults_is_idempotent(plan_context):
     """Re-running sync-defaults immediately produces an empty added list."""
     _write_marshal(plan_context.fixture_dir, {})
-    first = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    first = cmd_sync_defaults(_sync_ns())
     assert first['status'] == 'success'
     assert first['added_count'] > 0
 
     # second run
-    second = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    second = cmd_sync_defaults(_sync_ns())
 
     assert second['status'] == 'success'
     assert second['added'] == []
@@ -314,7 +346,7 @@ def test_sync_defaults_reports_added_paths_sorted(plan_context):
     """The TOON report enumerates added dotted paths in sorted order."""
     _write_marshal(plan_context.fixture_dir, {})
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     assert result['added'] == sorted(result['added'])
@@ -336,7 +368,7 @@ def test_sync_defaults_backfills_verification_steps_as_keyed_map(plan_context):
     """Syncing an empty marshal.json back-fills verification_steps as a keyed map of {}."""
     _write_marshal(plan_context.fixture_dir, {})
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -366,7 +398,7 @@ def test_sync_defaults_materializes_all_finalize_steps_as_keyed_map_form(plan_co
 
     _write_marshal(plan_context.fixture_dir, {})
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -428,7 +460,7 @@ def test_sync_defaults_preserves_present_steps_map_untouched(plan_context):
         {'plan': {'phase-6-finalize': {'steps': {'default:create-pr': {}}}}},
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -449,11 +481,11 @@ def test_sync_defaults_is_idempotent_against_keyed_map_steps(plan_context):
     proving the merge is stable against the keyed map it just wrote.
     """
     _write_marshal(plan_context.fixture_dir, {})
-    first = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    first = cmd_sync_defaults(_sync_ns())
     assert first['status'] == 'success'
 
     # second run observes the back-filled keyed map and adds nothing
-    second = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    second = cmd_sync_defaults(_sync_ns())
 
     assert second['status'] == 'success'
     assert second['added'] == []
@@ -479,7 +511,7 @@ def test_sync_defaults_seeds_auto_route_recipe_knobs_into_legacy_config(plan_con
         {'plan': {'phase-1-init': {'branch_strategy': 'feature', 'deep_lane': 'auto'}}},
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -509,7 +541,7 @@ def test_sync_defaults_stamps_provisioning_fields(plan_context):
     """sync-defaults stamps the provisioning fields into a config that lacks them."""
     _write_marshal(plan_context.fixture_dir, {})
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -532,7 +564,7 @@ def test_sync_defaults_refreshes_stale_provisioning_fields(plan_context):
         {'system': {'provisioned_version': '0.0.0', 'config_seed_fingerprint': 'staaaale'}},
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -584,7 +616,7 @@ def test_sync_defaults_migrates_retired_review_key_preserving_knob_block(plan_co
         },
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -617,7 +649,7 @@ def test_sync_defaults_migrates_bare_retired_review_key(plan_context):
         },
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -650,7 +682,7 @@ def test_sync_defaults_retired_key_migration_preserves_position(plan_context):
         },
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -681,7 +713,7 @@ def test_sync_defaults_drops_retired_duplicate_when_canonical_present(plan_conte
         },
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -709,11 +741,11 @@ def test_sync_defaults_retired_key_migration_is_idempotent(plan_context):
         },
     )
 
-    first = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    first = cmd_sync_defaults(_sync_ns())
     assert first['status'] == 'success'
     assert first['renamed_count'] == 1
 
-    second = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    second = cmd_sync_defaults(_sync_ns())
 
     assert second['status'] == 'success'
     # the retired key is already migrated — the second run renames nothing
@@ -741,7 +773,7 @@ def test_sync_defaults_migrates_retired_key_in_verification_steps_container(plan
         },
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -756,7 +788,7 @@ def test_sync_defaults_no_renames_reported_for_clean_config(plan_context):
     """An empty marshal.json sync reports zero renames (no retired keys present)."""
     _write_marshal(plan_context.fixture_dir, {})
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     assert result['renamed'] == []
@@ -808,7 +840,7 @@ def test_sync_defaults_materializes_preexisting_steps_to_effective_lane(plan_con
         {'plan': {'phase-6-finalize': {'steps': {_CORE_STEP: {}, _ADVERSARIAL_STEP: {}}}}},
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -838,7 +870,7 @@ def test_sync_defaults_materializes_freshly_merged_default_step_to_off(plan_cont
         {'plan': {'phase-6-finalize': {'steps': {_CORE_STEP: {}}}}},
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -873,7 +905,7 @@ def test_sync_defaults_materializes_wholesale_copied_steps_subtree_to_off(plan_c
         {'plan': {'phase-6-finalize': {'max_iterations': 3}}},
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -912,7 +944,7 @@ def test_sync_defaults_preserves_explicit_lane_untouched(plan_context):
         },
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -936,15 +968,66 @@ def test_sync_defaults_lane_materialization_is_idempotent(plan_context):
         {'plan': {'phase-6-finalize': {'steps': {_CORE_STEP: {}, _ADVERSARIAL_STEP: {}}}}},
     )
 
-    first = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    first = cmd_sync_defaults(_sync_ns())
     assert first['status'] == 'success'
     assert first['materialized_count'] > 0
 
-    second = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    second = cmd_sync_defaults(_sync_ns())
 
     assert second['status'] == 'success'
     assert second['materialized'] == []
     assert second['materialized_count'] == 0
+
+
+# =============================================================================
+# Declared surface
+# =============================================================================
+#
+# `sync-defaults` consumes NO plan identifier: it reads and rewrites the live
+# marshal.json and reports what it changed. The verb nevertheless declared an
+# `--audit-plan-id` flag that no code path read, so the CLI advertised an
+# attribution channel that did not exist. These two tests pin the declaration
+# and its handler against each other, as a matched pair: one shows the retired
+# flag is rejected, the other shows the verb still parses without it.
+
+
+def test_sync_defaults_parser_rejects_the_retired_audit_plan_id_flag():
+    """``sync-defaults --audit-plan-id X`` is rejected by the real parser."""
+    with pytest.raises(SystemExit) as excinfo:
+        parse_ns(*_SCRIPT, 'sync-defaults', '--audit-plan-id', 'my-plan', register=False)
+
+    assert excinfo.value.code == 2
+
+
+def test_sync_defaults_declares_no_plan_identifier():
+    """The bare verb parses, and carries no plan-identifier attribute at all.
+
+    Matched control for the rejection above: on its own, a rejection is also
+    what a wholly broken sub-parser would produce. Together they say the flag is
+    gone and only the flag is gone. Both spellings are asserted absent, so
+    re-adding either under the other's name would fail here.
+    """
+    ns = _sync_ns()
+
+    assert ns.noun == 'sync-defaults'
+    assert not hasattr(ns, 'audit_plan_id')
+    assert not hasattr(ns, 'plan_id')
+
+
+def test_sync_defaults_handler_reads_no_plan_identifier(plan_context):
+    """The handler runs on the parser's own namespace — no attribute injection.
+
+    The declaration and the handler are checked against the SAME object the CLI
+    would build, so a handler that started reading a plan identifier the parser
+    does not declare would fail here rather than silently working only for the
+    hand-built namespaces a test supplied.
+    """
+    _write_marshal(plan_context.fixture_dir, {})
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    assert result['added_count'] > 0
 
 
 def test_sync_defaults_leaves_unresolvable_frontmatter_step_lane_less(plan_context):
@@ -961,7 +1044,7 @@ def test_sync_defaults_leaves_unresolvable_frontmatter_step_lane_less(plan_conte
         {'plan': {'phase-6-finalize': {'steps': {unresolvable: {}}}}},
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -1023,7 +1106,7 @@ def test_sync_defaults_fresh_wizard_materializes_every_finalize_step_lane(plan_c
         {'plan': {'phase-6-finalize': {'steps': _fresh_wizard_finalize_steps()}}},
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_ns())
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
@@ -1053,11 +1136,11 @@ def test_sync_defaults_fresh_wizard_materialization_is_idempotent(plan_context):
         {'plan': {'phase-6-finalize': {'steps': _fresh_wizard_finalize_steps()}}},
     )
 
-    first = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    first = cmd_sync_defaults(_sync_ns())
     assert first['status'] == 'success'
     assert first['materialized_count'] > 0
 
-    second = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    second = cmd_sync_defaults(_sync_ns())
 
     assert second['status'] == 'success'
     assert second['materialized'] == []

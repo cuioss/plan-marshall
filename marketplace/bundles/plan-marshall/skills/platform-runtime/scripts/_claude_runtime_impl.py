@@ -31,7 +31,14 @@ from typing import Any
 import claude_runtime
 import session_binding
 from manage_terminal_title import _compose_body, compose
-from runtime_base import PERMISSION_FIX_OPERATIONS, Runtime, toon_error, toon_noop, toon_success
+from runtime_base import (
+    PERMISSION_FIX_OPERATIONS,
+    Runtime,
+    marshal_shape_error,
+    toon_error,
+    toon_noop,
+    toon_success,
+)
 from toon_parser import serialize_toon
 
 
@@ -88,11 +95,47 @@ class ClaudeRuntime(Runtime):
                 f"Failed to create .plan/temp/: {exc}",
             )
 
-        # Write marshal.json with runtime.target.
-        marshal_data: dict[str, Any] = {
-            "runtime": {"target": "claude"},
-            "project_dir": str(pd),
-        }
+        # Read-modify-write marshal.json: set runtime.target and project_dir on
+        # whatever the project already carries, so an initialized project keeps
+        # every other top-level block. An unconditional write here would destroy
+        # the whole config and still return marshal_written: True — the reported
+        # success is precisely what makes that loss invisible.
+        #
+        # The failure edges mirror the sibling OpenCodeRuntime implementation of
+        # this same contract operation, and there are THREE of them, not two: a
+        # MISSING file starts from {}; an unreadable or unparseable one is caught
+        # by the except clause below; and a PARSEABLE file of the wrong SHAPE is
+        # caught by the marshal_shape_error guard after it. The parse edge and the
+        # shape edge are separate — `json.loads` succeeding proves the bytes were
+        # valid JSON, not that they were an object — and naming only the first
+        # read as "corrupt input is handled" is what left `[]` and
+        # `{"runtime": null}` crashing this verb with an uncaught TypeError.
+        # All three corrupt cases deliberately refuse rather than fall back to {}:
+        # that fallback would overwrite exactly the config this read exists to
+        # preserve. The mirror holds by construction because both runtimes call
+        # the one shared guard rather than each carrying a copy.
+        try:
+            if marshal_path.exists():
+                # Untyped until the shape guard below runs — see marshal_shape_error.
+                marshal_data: Any = json.loads(marshal_path.read_text(encoding="utf-8"))
+            else:
+                marshal_data = {}
+        except (OSError, json.JSONDecodeError) as exc:
+            return toon_error(
+                "project initial-setup",
+                "io_error",
+                f"Failed to read marshal.json at {marshal_path}: {exc}",
+            )
+
+        shape_error = marshal_shape_error("project initial-setup", marshal_path, marshal_data)
+        if shape_error is not None:
+            return shape_error
+
+        if "runtime" not in marshal_data:
+            marshal_data["runtime"] = {}
+        marshal_data["runtime"]["target"] = "claude"
+        marshal_data["project_dir"] = str(pd)
+
         if not claude_runtime._write_json(marshal_path, marshal_data):
             return toon_error(
                 "project initial-setup",

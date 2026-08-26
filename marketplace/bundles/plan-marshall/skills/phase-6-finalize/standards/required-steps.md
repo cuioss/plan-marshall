@@ -131,9 +131,19 @@ message?}, unloadable_count}`. See
 **Failure shape**: on any unloadable built-in step, Step 1.5 aborts
 finalize with the canonical actionable message:
 
-> step `{step_id}` referenced by `marshal.json` is missing standards file
+> step `{step_id}` is missing standards file
 > `{standards_path}` — the plan likely deleted the file without sweeping
 > `marshal.json`
+
+The reason literal is **origin-neutral**: it states why the step does not
+resolve, not where the step id came from. This abort carries no provenance —
+`validate-loadable` returns the reason literal verbatim. Provenance is added on
+the OTHER path only: the compose-time gate
+`_manifest_validation.check_emitted_steps_resolvable` holds the marshal.json key
+map, so its wrapper phrasing can name the step "in marshal.json is unresolvable"
+and distinguish a marshal.json-authored step from a routed / composer-injected
+one. The remediation hint above stays: it is advice about the likely repair, not
+a claim about the origin.
 
 Self-modifying plans that delete a `phase-6-finalize/standards/{name}.md`
 without also pruning `marshal.json::plan.phase-6-finalize.steps` are the

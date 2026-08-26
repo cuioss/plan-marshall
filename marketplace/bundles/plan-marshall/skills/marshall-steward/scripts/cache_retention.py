@@ -16,8 +16,13 @@ removed only when NO rule keeps it:
    ``system.retention.plugin_cache_keep_versions``, default 5),
 2. any dir younger than ``D`` days (``D`` =
    ``system.retention.plugin_cache_keep_days``, default 3),
-3. the newest-on-disk dir — the version the highest-version-wins resolver
-   actually selects,
+3. the newest-on-disk dir — the numerically-newest version dir present under the
+   bundle. This is a SUPERSET of what the newest-*eligible* resolver selects, not
+   the same set: the resolver skips a version dir that does not carry the path it
+   was asked for and falls through to an older one, while this rule keeps the
+   numerically-newest dir either way. Stating the two as identical would make a
+   fall-through look impossible, when it is exactly the case this rule is here to
+   survive,
 4. the version named by ``marshal.json``'s ``system.provisioned_version``,
 5. the version named by the cache-root ``dist-manifest.json``,
 6. the version dir THIS process is executing from (``Path(__file__)``) — the
@@ -28,9 +33,13 @@ Rules 3-6 pin **this project only**: the sweep enumerates no other project root
 and never reads the build-server registry as a project inventory. The ``N``/``D``
 union (rules 1-2) is the accepted cross-project safety margin.
 
-``.orphaned_at`` is **advisory only** and is NEVER consulted as a keep-or-delete
-oracle. The marker has saturated in practice (every version dir marked, none
-live), so a marker-driven oracle would delete the live version on its first run.
+``.orphaned_at`` is written by Claude Code's own plugin garbage collector, which
+is its **sole producer** — nothing in plan-marshall creates, refreshes, or removes
+it, and this sweep is not that GC. It is **advisory only** here and is NEVER
+consulted as a keep-or-delete oracle: the marker records what that foreign GC
+observed on its own schedule, and the same GC removes markers as well as writing
+them, so neither its presence nor its absence answers any question this sweep
+asks.
 
 The report distinguishes a silent no-op from a clean run: ``kept`` names the
 FIRST keep-rule that fired for every retained dir and ``removed`` names every

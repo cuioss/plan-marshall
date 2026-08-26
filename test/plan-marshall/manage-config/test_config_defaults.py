@@ -1077,6 +1077,59 @@ def test_code_intelligence_is_not_reported_as_unrecognized():
     assert _config_core_mod.unrecognized_top_level_keys(config) == []
 
 
+# ---------------------------------------------------------------------------
+# The platform-runtime seed keys: `project_dir` and `runtime`
+# ---------------------------------------------------------------------------
+#
+# `platform_runtime project initial-setup` is their sole writer — the Claude
+# runtime writes both, the OpenCode runtime writes `runtime` only — and
+# `platform_runtime._resolve_target` reads `runtime.target` back on every routed
+# operation. They are therefore first-party product configuration, not stray
+# consumer blocks, and they take their alphabetical slots among the trailing keys.
+
+
+def test_platform_runtime_seed_keys_take_their_canonical_slots():
+    """`project_dir` and `runtime` sit alphabetically among the trailing keys.
+
+    The slot is asserted rather than mere membership because membership alone is
+    satisfied by appending them anywhere in the constant, and the position is what
+    `save_config` writes: `project_dir` between `project` and `providers`,
+    `runtime` between `providers` and `skill_domains`.
+    """
+    order = _config_core_mod.CANONICAL_TOP_LEVEL_KEY_ORDER
+
+    assert order.index('project') < order.index('project_dir') < order.index('providers')
+    assert order.index('providers') < order.index('runtime') < order.index('skill_domains')
+
+
+def test_platform_runtime_seed_is_not_reported_as_unrecognized():
+    """The product's own seed must not be reported back to the operator as stray.
+
+    `unrecognized_top_level_keys` names the keys an operator is meant to act on.
+    Omitting these two made `normalize-keys` report plan-marshall's own seed —
+    keys no operator wrote and none could remove — which is noise the signal
+    cannot afford.
+    """
+    config = {'plan': {}, 'project_dir': '/absolute/path/to/project', 'runtime': {'target': 'claude'}}
+
+    assert _config_core_mod.unrecognized_top_level_keys(config) == []
+
+
+def test_get_default_config_does_not_seed_the_platform_runtime_keys():
+    """Neither key belongs to the config seed — `init` must not invent them.
+
+    Recognizing the two keys is a job for the ORDERING authority, not for the
+    default-config seed: `runtime.target` is chosen by `project initial-setup`
+    and `project_dir` records where that setup ran, so a seeded placeholder would
+    assert a runtime the project never selected and a path it never had. A project
+    that never ran the seed legitimately carries neither key.
+    """
+    config = _config_defaults_mod.get_default_config()
+
+    assert 'runtime' not in config
+    assert 'project_dir' not in config
+
+
 def test_orchestrator_get_returns_auto_emit_default_false(plan_context):
     """`orchestrator get --field auto_emit` returns False from the merged default on a fresh marshal.json."""
     _cmd_init_mod.cmd_init(Namespace(force=False))

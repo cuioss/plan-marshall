@@ -14,7 +14,16 @@ properties are asserted without a real daemon:
 * down-but-enrolled (socket_absent) → plain start, no drain;
 * running the fresh pin → no-op;
 * not enrolled / status unavailable → silent no-op;
-* running provenance unknown → defer, fail-closed (never drain on a guess).
+* running provenance unknown → defer, fail-closed (never drain on a guess);
+* in-flight / queued counts unreported → defer, the same fail-closed shape: an
+  absent count is silence, not idleness;
+* a reconcile verb whose own fields say the daemon was never replaced → the owed
+  marker is WRITTEN at ``reconcile_failed``, never cleared on the word
+  ``success``.
+
+Each fail-closed case carries a matched control — a genuine zero count, and a
+verb whose fields do substantiate success — so a guard that fired on everything
+would be caught rather than read as green.
 
 The script is project-local (``.claude/skills/sync-plugin-cache/scripts``), not a
 marketplace bundle — sync-plugin-cache is meta-project-only tooling.
@@ -120,6 +129,56 @@ def test_unknown_provenance_defers_never_drains():
     assert decision.reason == 'provenance_unknown'
 
 
+def test_absent_counts_defer_never_drain():
+    # A daemon pinned to a copy predating the counts extension answers WITHOUT
+    # the count keys. That is not idleness — it is silence — and the two were
+    # once the same value here, which is how a live build got drained.
+    status = _status(running_binary_path=_RUNNING_STALE, binary_diverges=True)
+    del status['in_flight']
+    del status['queued']
+
+    decision = rd.decide(status)
+
+    assert decision.action == rd.ACTION_DEFER
+    assert decision.action not in (rd.ACTION_UPGRADE, rd.ACTION_START)
+    assert decision.reason == 'counts_unknown'
+
+
+def test_unknown_count_sentinel_defers():
+    # The sentinel `status` now emits for an unreported count must reach the same
+    # fail-closed branch as an absent key — this is the seam between the status
+    # verb's `unknown` and the reconcile's decision.
+    status = _status(
+        running_binary_path=_RUNNING_STALE,
+        binary_diverges=True,
+        in_flight='unknown',
+        queued='unknown',
+    )
+    assert rd.decide(status).reason == 'counts_unknown'
+
+
+def test_one_absent_count_is_enough_to_defer():
+    status = _status(running_binary_path=_RUNNING_STALE, binary_diverges=True, queued=0)
+    del status['in_flight']
+    assert rd.decide(status).reason == 'counts_unknown'
+
+
+def test_counts_arriving_as_strings_are_still_counts():
+    # The matched negative control: status reaches this script as TOON, so a
+    # count legitimately arrives as its decimal string. If those read as unknown
+    # the guard above would defer EVERY reconcile and the upgrade path would be
+    # dead code that still looked green.
+    idle = _status(
+        running_binary_path=_RUNNING_STALE, binary_diverges=True, in_flight='0', queued='0'
+    )
+    assert rd.decide(idle) == rd.ReconcileDecision(rd.ACTION_UPGRADE, 'idle_and_stale')
+
+    busy = _status(
+        running_binary_path=_RUNNING_STALE, binary_diverges=True, in_flight='1', queued='0'
+    )
+    assert rd.decide(busy).reason == 'busy'
+
+
 # =============================================================================
 # reconcile() — orchestration with injected fakes
 # =============================================================================
@@ -131,11 +190,35 @@ def marker(tmp_path) -> Path:
 
 
 class _Runner:
-    """Records every reconcile verb the orchestration runs."""
+    """Records every reconcile verb the orchestration runs.
+
+    The default result models what ``upgrade`` / ``start`` ACTUALLY return: a
+    status word plus the two fields that can carry a failed reconcile. A bare
+    ``{'status': 'success'}`` is deliberately not the default, because the
+    orchestration now refuses to treat an unsubstantiated success as one — a
+    fake that omits them would be asserting against a verb shape that no longer
+    exists.
+
+    The default is selected on ``result is not None``, NOT on truthiness. A
+    falsy-triggered ``or`` default silently swapped the SUCCESS default in for
+    ``_Runner({})``, which made the fixture structurally incapable of producing
+    the one result the production fail-open actually emits: ``_invoke_executor``
+    returns ``{}`` whenever the executor is absent, the subprocess errors, the
+    return code is non-zero, or the TOON does not parse. The empty dict must
+    reach the orchestration verbatim.
+    """
 
     def __init__(self, result: dict | None = None):
         self.calls: list[str] = []
-        self._result = result or {'status': 'success'}
+        self._result = (
+            result
+            if result is not None
+            else {
+                'status': 'success',
+                'drain_exited': True,
+                'already_running': False,
+            }
+        )
 
     def __call__(self, action: str) -> dict:
         self.calls.append(action)
@@ -246,6 +329,155 @@ def test_not_enrolled_is_silent_noop_with_no_verb(marker):
     )
     assert summary['action'] == rd.ACTION_NOOP
     assert runner.calls == []
+
+
+def test_failed_upgrade_writes_the_owed_marker_and_never_clears_it(marker):
+    # The verb says `success` but its own fields say the daemon was never
+    # replaced. Gating on the word alone is what cleared a genuine owed marker
+    # and recorded a still-stale daemon as reconciled.
+    marker.write_text(
+        json.dumps({'owed': True, 'since': 'T0', 'defer_count': 1}), encoding='utf-8'
+    )
+    runner = _Runner({'status': 'success', 'drain_exited': False, 'already_running': True})
+    status = _status(running_binary_path=_RUNNING_STALE, binary_diverges=True)
+
+    summary = rd.reconcile(
+        status_reader=lambda: status, action_runner=runner, marker=marker, now='T1'
+    )
+
+    assert runner.calls == ['upgrade']
+    assert summary['reconcile_result'] == 'failed'
+    assert summary['owed'] is True
+    # WRITTEN, never cleared — the marker is the only durable trace that the
+    # daemon is still stale.
+    assert marker.exists()
+    recorded = json.loads(marker.read_text(encoding='utf-8'))
+    assert recorded['reason'] == 'reconcile_failed'
+    assert recorded['failed_action'] == rd.ACTION_UPGRADE
+    # Carries the same binary-path fields the defer branch records.
+    assert recorded['running_binary_path'] == _RUNNING_STALE
+    assert recorded['resolved_binary_path'] == _RESOLVED
+    # The prior deferral is continued, not restarted.
+    assert recorded['since'] == 'T0'
+    assert recorded['defer_count'] == 2
+    assert 'reconcile FAILED' in summary['display_detail']
+
+
+def test_failed_start_is_reported_by_already_running(marker):
+    # `start` was chosen only because status said the daemon was DOWN. Finding
+    # one already up means the world disagrees with that decision, so this is a
+    # failed reconcile rather than an idempotent no-op.
+    runner = _Runner({'status': 'success', 'already_running': True})
+    status = _status(running=False, reason='socket_absent', running_binary_path=None)
+
+    summary = rd.reconcile(
+        status_reader=lambda: status, action_runner=runner, marker=marker, now='T1'
+    )
+
+    assert runner.calls == ['start']
+    assert summary['reconcile_result'] == 'failed'
+    assert summary['failure_reason'] == 'daemon_already_running'
+    assert json.loads(marker.read_text(encoding='utf-8'))['reason'] == 'reconcile_failed'
+
+
+def test_verb_that_reports_neither_field_cannot_prove_success(marker):
+    # A verb that SAYS success but carries no failure-bearing field cannot
+    # substantiate the claim. This is the field-absence arm only — the status word
+    # is already 'success', so the gate is reached past the status check. The
+    # fail-open {} is a DIFFERENT arm and has its own test below; folding the two
+    # together is what left that one uncovered. The owed marker must survive an
+    # unverifiable claim rather than be cleared by it.
+    marker.write_text(json.dumps({'owed': True, 'defer_count': 4}), encoding='utf-8')
+    runner = _Runner({'status': 'success'})
+    status = _status(running_binary_path=_RUNNING_STALE, binary_diverges=True)
+
+    summary = rd.reconcile(
+        status_reader=lambda: status, action_runner=runner, marker=marker, now='T1'
+    )
+
+    assert summary['reconcile_result'] == 'failed'
+    assert summary['failure_reason'] == 'already_running_absent'
+    assert marker.exists()
+
+
+def test_empty_verb_result_is_a_failed_reconcile_that_keeps_the_debt(marker):
+    # The production fail-open: `_invoke_executor` returns {} when the executor is
+    # absent, the subprocess errors, the return code is non-zero, or the TOON does
+    # not parse — the single most likely real failure. It carries no status word
+    # at all, so it fails at the status gate as `verb_reported_nothing`, EARLIER
+    # and under a different reason than the field-absence case above.
+    #
+    # This case was unreachable until `_Runner` stopped selecting its default on
+    # truthiness: `_Runner({})` used to hand back the success default, so the
+    # fixture could not express the input two comments claimed was covered.
+    marker.write_text(json.dumps({'owed': True, 'defer_count': 4}), encoding='utf-8')
+    runner = _Runner({})
+    status = _status(running_binary_path=_RUNNING_STALE, binary_diverges=True)
+
+    summary = rd.reconcile(
+        status_reader=lambda: status, action_runner=runner, marker=marker, now='T1'
+    )
+
+    assert runner.calls == ['upgrade']
+    assert summary['reconcile_result'] == 'failed'
+    assert summary['failure_reason'] == 'verb_reported_nothing'
+    # An unverifiable success must NEVER discharge the debt.
+    assert marker.exists()
+    assert json.loads(marker.read_text(encoding='utf-8'))['reason'] == 'reconcile_failed'
+
+
+def test_runner_fixture_returns_an_empty_result_verbatim():
+    # Guards the fixture itself, not the orchestration: the case above is only
+    # meaningful while `_Runner({})` really hands `{}` back. A truthiness-selected
+    # default would substitute the success shape here and quietly turn that test
+    # into a duplicate of the confirmed-success path.
+    assert _Runner({})('upgrade') == {}
+    # Matched negative control: the default is still supplied when nothing is passed.
+    assert _Runner()('upgrade')['status'] == 'success'
+
+
+def test_verb_reporting_error_is_a_failed_reconcile(marker):
+    runner = _Runner({'status': 'error', 'reason': 'drain_did_not_exit'})
+    status = _status(running_binary_path=_RUNNING_STALE, binary_diverges=True)
+
+    summary = rd.reconcile(
+        status_reader=lambda: status, action_runner=runner, marker=marker, now='T1'
+    )
+
+    assert summary['reconcile_result'] == 'failed'
+    assert summary['failure_reason'] == 'verb_reported_error'
+    assert marker.exists()
+
+
+def test_confirmed_upgrade_still_clears_the_marker(marker):
+    # The matched positive control for the four failure cases above: a verb whose
+    # fields DO substantiate success still discharges the debt, so the gate is
+    # not simply refusing to clear the marker in every case.
+    marker.write_text(json.dumps({'owed': True, 'defer_count': 2}), encoding='utf-8')
+    runner = _Runner({'status': 'success', 'drain_exited': True, 'already_running': False})
+    status = _status(running_binary_path=_RUNNING_STALE, binary_diverges=True)
+
+    summary = rd.reconcile(
+        status_reader=lambda: status, action_runner=runner, marker=marker, now='T1'
+    )
+
+    assert summary['reconcile_result'] == 'success'
+    assert summary['owed_cleared'] is True
+    assert not marker.exists()
+
+
+def test_toon_string_booleans_are_read_as_booleans(marker):
+    # The result crosses a TOON boundary in production, so `false` arrives as a
+    # string. Reading that as a truthy non-empty string would invert the guard.
+    runner = _Runner({'status': 'success', 'drain_exited': 'false', 'already_running': 'true'})
+    status = _status(running_binary_path=_RUNNING_STALE, binary_diverges=True)
+
+    summary = rd.reconcile(
+        status_reader=lambda: status, action_runner=runner, marker=marker, now='T1'
+    )
+
+    assert summary['reconcile_result'] == 'failed'
+    assert summary['failure_reason'] == 'daemon_already_running'
 
 
 # =============================================================================

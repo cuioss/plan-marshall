@@ -41,7 +41,7 @@ import pretooluse_gate as gate  # noqa: E402
 def _worktree_cwd() -> str:
     """A cwd resolving under the plan-worktree path segment (Signal 2)."""
     return os.path.join(
-        "/Users/dev/project",
+        "/home/dev/project",
         gate.WORKTREE_PATH_SEGMENT,
         "my-plan",
     )
@@ -136,8 +136,8 @@ def test_sub_agent_identity_returns_none_on_non_dict() -> None:
 
 
 def test_cwd_reads_field() -> None:
-    payload = {gate.CWD_FIELD: "/Users/dev/project"}
-    assert gate.cwd(payload) == "/Users/dev/project"
+    payload = {gate.CWD_FIELD: "/home/dev/project"}
+    assert gate.cwd(payload) == "/home/dev/project"
 
 
 def test_cwd_returns_none_when_absent() -> None:
@@ -215,7 +215,7 @@ def test_context_gate_false_when_neither_signal_fires() -> None:
     # Fail-open: a benign main-checkout call is never gated.
     payload = {
         gate.SUB_AGENT_IDENTITY_FIELD: "some-other-agent",
-        gate.CWD_FIELD: "/Users/dev/project",
+        gate.CWD_FIELD: "/home/dev/project",
     }
     assert gate.context_gate(payload) is False
 
@@ -278,14 +278,14 @@ def test_signal2_not_triggered_by_partial_segment_match() -> None:
 def test_signal2_triggered_on_proper_directory_boundary() -> None:
     # A cwd that resolves exactly under the segment as a directory component
     # must trigger Signal 2.
-    proper_path = f"/Users/dev/project/{gate.WORKTREE_PATH_SEGMENT}/my-plan/subdir"
+    proper_path = f"/home/dev/project/{gate.WORKTREE_PATH_SEGMENT}/my-plan/subdir"
     payload = {gate.CWD_FIELD: proper_path}
     assert gate.context_gate(payload) is True
 
 
 def test_signal2_triggered_on_trailing_segment_match() -> None:
     # A cwd that ends exactly at the segment boundary (no sub-path) also matches.
-    trailing_path = f"/Users/dev/project/{gate.WORKTREE_PATH_SEGMENT}"
+    trailing_path = f"/home/dev/project/{gate.WORKTREE_PATH_SEGMENT}"
     payload = {gate.CWD_FIELD: trailing_path}
     assert gate.context_gate(payload) is True
 

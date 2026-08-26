@@ -86,13 +86,27 @@ Output (TOON):
     ...
 
 Exit 0 on success, 2 on argparse rejection.
+
+``main`` is wrapped in ``file_ops.safe_main``, so stdout carries parseable TOON
+on EVERY path — including an unexpected exception, which is rendered as
+``status: error`` / ``error: internal_error`` at exit 1 rather than a traceback
+on stderr and an empty stdout. A caller parsing this script's output therefore
+never has to distinguish "no output" from "output it could not read". A refused
+save (another writer committed to marshal.json in between) is not a crash: it is
+reported as ``error_type: concurrent_modification`` at exit 0.
 """
 
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
+
+# Cross-skill imports resolve through the PYTHONPATH the executor injects. This
+# script is Stage 2 (reconcile-config) of the upgrade flow, which runs AFTER
+# Stage 1 has regenerated the executor, so there is no pre-executor window to
+# bootstrap around and the imports are written plainly.
+from file_ops import safe_main
+from toon_parser import serialize_toon
 
 # The fixed four-stage plan. Each spec is ``integrate``-invariant except for
 # ``top_level_gate``, which build_plan() fills from the ``integrate`` flag.
@@ -327,8 +341,21 @@ def cmd_migrate_bot_lists(_args: argparse.Namespace) -> dict:
     the steward upgrade flow, and an un-initialized project has no legacy
     ``enabled_bots`` value to migrate. The guard is on a real filesystem boundary
     the caller can genuinely present, not a speculative one.
+
+    A concurrent writer that commits to marshal.json between the load and the
+    save is reported as ``error_type: concurrent_modification`` at exit 0 — the
+    migration refused to overwrite that writer's change, which is a recoverable
+    outcome (re-run the upgrade) rather than a crash. Without this clause the
+    refusal reached ``@safe_main`` and surfaced as an ``internal_error`` at exit
+    1, telling the operator the steward broke when in fact it declined to
+    destroy data.
     """
-    from _config_core import is_initialized, load_config, save_config
+    from _config_core import (
+        ConcurrentConfigModificationError,
+        is_initialized,
+        load_config,
+        save_config,
+    )
 
     if not is_initialized():
         return {
@@ -351,7 +378,15 @@ def cmd_migrate_bot_lists(_args: argparse.Namespace) -> dict:
 
     report = migrate_bot_lists(params)
     if report['state'] != 'noop':
-        save_config(config)
+        try:
+            save_config(config)
+        except ConcurrentConfigModificationError as exc:
+            return {
+                'status': 'error',
+                'operation': 'migrate-bot-lists',
+                'error': str(exc),
+                'error_type': 'concurrent_modification',
+            }
     return {'status': 'success', 'operation': 'migrate-bot-lists', **report}
 
 
@@ -369,7 +404,8 @@ def cmd_plan(args: argparse.Namespace) -> dict:
     return build_plan(integrate, project_kind)
 
 
-def main(argv: list[str] | None = None) -> int:
+@safe_main
+def main() -> int:
     parser = argparse.ArgumentParser(
         prog='upgrade',
         description="Emit the marshall-steward 'upgrade' verb stage plan and per-stage gate dispositions.",
@@ -409,7 +445,7 @@ def main(argv: list[str] | None = None) -> int:
         allow_abbrev=False,
     )
 
-    args = parser.parse_args(argv)
+    args = parser.parse_args()
 
     if args.command == 'plan':
         result = cmd_plan(args)
@@ -419,11 +455,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 2
 
-    from toon_parser import serialize_toon
-
     print(serialize_toon(result))
     return 0
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()

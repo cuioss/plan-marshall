@@ -54,7 +54,7 @@ from _cmd_skill_resolution import (
 from _cmd_steps_sort import cmd_steps_sort
 from _cmd_sync_defaults import cmd_sync_defaults
 from _cmd_system_plan import cmd_plan, cmd_project, cmd_system
-from _config_core import normalize_keys
+from _config_core import ConcurrentConfigModificationError, error_exit, normalize_keys
 
 # Direct imports - PYTHONPATH set by executor
 from effort_presets import EffortPresets
@@ -385,11 +385,6 @@ def main() -> int:
         dest='plan_id',
         help='Plan identifier whose live footprint gates the decision',
     )
-    p_bd.add_argument(
-        '--audit-plan-id',
-        dest='audit_plan_id',
-        help='Alias for --plan-id (execution-log attribution parity with other verbs)',
-    )
 
     # --- init ---
     p_init = subparsers.add_parser('init', help='Initialize marshal.json', allow_abbrev=False)
@@ -411,15 +406,10 @@ def main() -> int:
     )
 
     # --- sync-defaults ---
-    p_sync = subparsers.add_parser(
+    subparsers.add_parser(
         'sync-defaults',
         help='Non-destructively merge keys present in defaults but absent from the live marshal.json',
         allow_abbrev=False,
-    )
-    p_sync.add_argument(
-        '--audit-plan-id',
-        dest='audit_plan_id',
-        help='Plan identifier for execution-log attribution (optional).',
     )
 
     # --- effort ---
@@ -880,123 +870,142 @@ def main() -> int:
         parser.print_help()
         return 2
 
-    # Route to handler
+    # Route to handler.
+    #
+    # The dispatch is wrapped so a lost update is reported as what it is. A verb
+    # that mutates marshal.json THROUGH save_config goes load -> modify -> save,
+    # and save_config refuses the save when another writer committed in between,
+    # raising ConcurrentConfigModificationError. That is a RECOVERABLE outcome —
+    # reload and re-apply — so it is reported as a structured TOON error at exit 0.
+    # The guard reaches only that path: the ext-defaults writers documented as
+    # BYPASS sites in _config_core.order_config_keys write the document directly
+    # and carry no lost-update guard, so they cannot raise here.
+    # Left to @safe_main it surfaced as an internal_error crash at exit 1, which
+    # tells a caller that the tool broke rather than that its write was refused
+    # to protect someone else's. @safe_main still covers genuine crashes.
     result = None
-    if args.noun == 'skill-domains':
-        if not args.verb:
-            p_sd.print_help()
-            return 2
-        result = cmd_skill_domains(args)
-    elif args.noun == 'system':
-        if not args.sub_noun or not args.verb:
-            p_sys.print_help()
-            return 2
-        result = cmd_system(args)
-    elif args.noun == 'project':
-        if not args.verb:
-            p_proj.print_help()
-            return 2
-        result = cmd_project(args)
-    elif args.noun == 'plan':
-        if not args.sub_noun or not args.verb:
-            p_plan.print_help()
-            return 2
-        result = cmd_plan(args)
-    elif args.noun == 'ext-defaults':
-        if not args.verb:
-            p_ext.print_help()
-            return 2
-        result = cmd_ext_defaults(args)
-    elif args.noun == 'build-map':
-        if not args.verb:
-            p_bm.print_help()
-            return 2
-        result = cmd_build_map(args)
-    elif args.noun == 'build-decision':
-        result = cmd_build_decision(args)
-    elif args.noun == 'init':
-        result = cmd_init(args)
-    elif args.noun == 'normalize-keys':
-        try:
-            # normalize_keys() returns its own status: 'warning' (naming any
-            # unrecognized top-level key it could not order) or 'success'.
-            result = normalize_keys()
-        except Exception as e:
-            result = {'status': 'error', 'error': str(e)}
-    elif args.noun == 'steps-sort':
-        result = cmd_steps_sort(args)
-    elif args.noun == 'sync-defaults':
-        result = cmd_sync_defaults(args)
-    elif args.noun == 'effort':
-        if not args.verb:
-            p_effort.print_help()
-            return 2
-        if args.verb == 'apply-preset':
-            result = cmd_effort_apply_preset(args)
-        elif args.verb == 'resolve-target':
-            result = cmd_effort_resolve_target(args)
-        elif args.verb == 'set':
-            result = cmd_effort_set(args)
-        elif args.verb == 'identify':
-            result = cmd_effort_identify(args)
+    try:
+        if args.noun == 'skill-domains':
+            if not args.verb:
+                p_sd.print_help()
+                return 2
+            result = cmd_skill_domains(args)
+        elif args.noun == 'system':
+            if not args.sub_noun or not args.verb:
+                p_sys.print_help()
+                return 2
+            result = cmd_system(args)
+        elif args.noun == 'project':
+            if not args.verb:
+                p_proj.print_help()
+                return 2
+            result = cmd_project(args)
+        elif args.noun == 'plan':
+            if not args.sub_noun or not args.verb:
+                p_plan.print_help()
+                return 2
+            result = cmd_plan(args)
+        elif args.noun == 'ext-defaults':
+            if not args.verb:
+                p_ext.print_help()
+                return 2
+            result = cmd_ext_defaults(args)
+        elif args.noun == 'build-map':
+            if not args.verb:
+                p_bm.print_help()
+                return 2
+            result = cmd_build_map(args)
+        elif args.noun == 'build-decision':
+            result = cmd_build_decision(args)
+        elif args.noun == 'init':
+            result = cmd_init(args)
+        elif args.noun == 'normalize-keys':
+            try:
+                # normalize_keys() returns its own status: 'warning' (naming any
+                # unrecognized top-level key it could not order) or 'success'.
+                result = normalize_keys()
+            except ConcurrentConfigModificationError:
+                # Let the outer handler name it; the blanket clause below would
+                # otherwise flatten a refused save into a generic error string.
+                raise
+            except Exception as e:
+                result = {'status': 'error', 'error': str(e)}
+        elif args.noun == 'steps-sort':
+            result = cmd_steps_sort(args)
+        elif args.noun == 'sync-defaults':
+            result = cmd_sync_defaults(args)
+        elif args.noun == 'effort':
+            if not args.verb:
+                p_effort.print_help()
+                return 2
+            if args.verb == 'apply-preset':
+                result = cmd_effort_apply_preset(args)
+            elif args.verb == 'resolve-target':
+                result = cmd_effort_resolve_target(args)
+            elif args.verb == 'set':
+                result = cmd_effort_set(args)
+            elif args.verb == 'identify':
+                result = cmd_effort_identify(args)
+            else:
+                result = cmd_effort(args)
+        elif args.noun == 'orchestrator':
+            if not args.verb:
+                p_orch.print_help()
+                return 2
+            if args.verb == 'get':
+                result = cmd_orchestrator_get(args)
+            else:
+                result = cmd_orchestrator_set(args)
+        elif args.noun == 'coverage':
+            if not args.verb:
+                p_coverage.print_help()
+                return 2
+            if args.verb == 'resolve':
+                result = cmd_coverage_resolve(args)
+            elif args.verb == 'expand':
+                result = cmd_coverage_expand(args)
+            else:
+                result = cmd_coverage_read(args)
+        elif args.noun == 'finalize-steps':
+            if not args.verb:
+                p_finalize_steps.print_help()
+                return 2
+            if args.verb == 'apply-preset':
+                result = cmd_finalize_steps_apply_preset(args)
+            elif args.verb == 'list-ask-lane':
+                result = cmd_finalize_steps_list_ask_lane(args)
+            elif args.verb == 'set-lane':
+                result = cmd_finalize_steps_set_lane(args)
+            else:
+                p_finalize_steps.print_help()
+                return 2
+        elif args.noun == 'resolve-domain-skills':
+            result = cmd_resolve_domain_skills(args)
+        elif args.noun == 'resolve-workflow-skill-extension':
+            result = cmd_resolve_workflow_skill_extension(args)
+        elif args.noun == 'get-skills-by-profile':
+            result = cmd_get_skills_by_profile(args)
+        elif args.noun == 'domain-detect':
+            result = cmd_domain_detect(args)
+        elif args.noun == 'list-recipes':
+            result = cmd_list_recipes(args)
+        elif args.noun == 'resolve-recipe':
+            result = cmd_resolve_recipe(args)
+        elif args.noun == 'recipe-match':
+            result = cmd_recipe_match(args)
+        elif args.noun == 'aspect-classify':
+            result = cmd_aspect_classify(args)
+        elif args.noun == 'resolve-outline-skill':
+            result = cmd_resolve_outline_skill(args)
+        elif args.noun == 'list-finalize-steps':
+            result = cmd_list_finalize_steps(args)
+        elif args.noun == 'list-verify-steps':
+            result = cmd_list_verify_steps(args)
         else:
-            result = cmd_effort(args)
-    elif args.noun == 'orchestrator':
-        if not args.verb:
-            p_orch.print_help()
+            parser.print_help()
             return 2
-        if args.verb == 'get':
-            result = cmd_orchestrator_get(args)
-        else:
-            result = cmd_orchestrator_set(args)
-    elif args.noun == 'coverage':
-        if not args.verb:
-            p_coverage.print_help()
-            return 2
-        if args.verb == 'resolve':
-            result = cmd_coverage_resolve(args)
-        elif args.verb == 'expand':
-            result = cmd_coverage_expand(args)
-        else:
-            result = cmd_coverage_read(args)
-    elif args.noun == 'finalize-steps':
-        if not args.verb:
-            p_finalize_steps.print_help()
-            return 2
-        if args.verb == 'apply-preset':
-            result = cmd_finalize_steps_apply_preset(args)
-        elif args.verb == 'list-ask-lane':
-            result = cmd_finalize_steps_list_ask_lane(args)
-        elif args.verb == 'set-lane':
-            result = cmd_finalize_steps_set_lane(args)
-        else:
-            p_finalize_steps.print_help()
-            return 2
-    elif args.noun == 'resolve-domain-skills':
-        result = cmd_resolve_domain_skills(args)
-    elif args.noun == 'resolve-workflow-skill-extension':
-        result = cmd_resolve_workflow_skill_extension(args)
-    elif args.noun == 'get-skills-by-profile':
-        result = cmd_get_skills_by_profile(args)
-    elif args.noun == 'domain-detect':
-        result = cmd_domain_detect(args)
-    elif args.noun == 'list-recipes':
-        result = cmd_list_recipes(args)
-    elif args.noun == 'resolve-recipe':
-        result = cmd_resolve_recipe(args)
-    elif args.noun == 'recipe-match':
-        result = cmd_recipe_match(args)
-    elif args.noun == 'aspect-classify':
-        result = cmd_aspect_classify(args)
-    elif args.noun == 'resolve-outline-skill':
-        result = cmd_resolve_outline_skill(args)
-    elif args.noun == 'list-finalize-steps':
-        result = cmd_list_finalize_steps(args)
-    elif args.noun == 'list-verify-steps':
-        result = cmd_list_verify_steps(args)
-    else:
-        parser.print_help()
-        return 2
+    except ConcurrentConfigModificationError as e:
+        result = error_exit(str(e), error_type='concurrent_modification')
 
     output_toon(result)
     return 0

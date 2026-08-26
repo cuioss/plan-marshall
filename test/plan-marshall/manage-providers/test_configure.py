@@ -7,6 +7,7 @@ and the check command for credential completeness.
 """
 
 import pytest
+from _providers_fixtures import stage_marshal
 
 from conftest import get_script_path, run_script
 
@@ -339,8 +340,6 @@ class TestConfigureMarshalJsonSeparation:
 
     def test_configure_writes_url_to_marshal_json(self, tmp_path, monkeypatch):
         """Configure writes url to marshal.json, not to credential file."""
-        import json as _json
-
         from _providers_core import (
             load_credential,
             read_provider_config,
@@ -348,9 +347,14 @@ class TestConfigureMarshalJsonSeparation:
 
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
-        _marshal = {'providers': [_SONAR_PROVIDER]}
-        (plan_dir / 'marshal.json').write_text(_json.dumps(_marshal))
-        monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+        # ``stage_marshal`` redirects BOTH the PLAN_BASE_DIR env (which the
+        # subprocess writer reads) and the ``_config_core`` module attributes
+        # (which the in-process ``read_provider_config`` reads through
+        # ``load_config``). Setting only the env leaves the two bound to
+        # DIFFERENT marshal.json files — the autouse sandbox keeps
+        # ``_config_core.MARSHAL_PATH`` — so the read below would target a file
+        # the writer never wrote.
+        stage_marshal(plan_dir, monkeypatch, {'providers': [_SONAR_PROVIDER]})
         creds_dir = tmp_path / 'creds'
         creds_dir.mkdir()
         monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(creds_dir))
@@ -381,8 +385,6 @@ class TestConfigureMarshalJsonSeparation:
 
     def test_configure_writes_extra_fields_to_marshal_json(self, tmp_path, monkeypatch):
         """Configure writes extra fields (organization, project_key) to marshal.json."""
-        import json as _json
-
         from _providers_core import (
             load_credential,
             read_provider_config,
@@ -390,9 +392,7 @@ class TestConfigureMarshalJsonSeparation:
 
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
-        _marshal = {'providers': [_SONAR_PROVIDER]}
-        (plan_dir / 'marshal.json').write_text(_json.dumps(_marshal))
-        monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+        stage_marshal(plan_dir, monkeypatch, {'providers': [_SONAR_PROVIDER]})
         creds_dir = tmp_path / 'creds'
         creds_dir.mkdir()
         monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(creds_dir))
@@ -456,12 +456,12 @@ class TestConfigureSonarPomDerive:
     """
 
     def _stage(self, tmp_path, monkeypatch, pom_content: str | None):
-        import json as _json
-
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
-        (plan_dir / 'marshal.json').write_text(_json.dumps({'providers': [_SONAR_PROVIDER]}))
-        monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+        # See the note in TestConfigureMarshalJsonSeparation: the subprocess
+        # writer binds through the env while the in-process read binds through
+        # the ``_config_core`` module attributes, so both must be redirected.
+        stage_marshal(plan_dir, monkeypatch, {'providers': [_SONAR_PROVIDER]})
         creds_dir = tmp_path / 'creds'
         creds_dir.mkdir()
         monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(creds_dir))
@@ -590,8 +590,6 @@ class TestConfigureSonarPomDerive:
 
     def test_non_sonar_provider_skips_derivation(self, tmp_path, monkeypatch):
         """A non-Sonar provider is unaffected even when a Sonar-bearing pom.xml is present."""
-        import json as _json
-
         from _providers_core import read_provider_config
 
         plan_dir = tmp_path / '.plan'
@@ -603,8 +601,7 @@ class TestConfigureSonarPomDerive:
             'default_url': 'https://github.com',
             'description': 'Git provider',
         }
-        (plan_dir / 'marshal.json').write_text(_json.dumps({'providers': [non_sonar_provider]}))
-        monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+        stage_marshal(plan_dir, monkeypatch, {'providers': [non_sonar_provider]})
         creds_dir = tmp_path / 'creds'
         creds_dir.mkdir()
         monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(creds_dir))

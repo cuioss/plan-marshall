@@ -397,7 +397,7 @@ The bulk form returns `{status, results[N]{step_id, standards_path, loadable, me
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Manifest loadability check failed — step `{step_id}` referenced by `marshal.json` is missing standards file `{standards_path}` — the plan likely deleted the file without sweeping `marshal.json`"
+  work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Manifest loadability check failed — step `{step_id}` is missing standards file `{standards_path}` — the plan likely deleted the file without sweeping `marshal.json`"
 ```
 
 The actionable message is fixed by [`standards/required-steps.md`](standards/required-steps.md) § "Loadability Contract" — the wording above is the canonical phrasing the contract guarantees. Self-modifying plans that delete a `phase-6-finalize/standards/{name}.md` without also pruning `marshal.json::plan.phase-6-finalize.steps` are the motivating failure mode — and after the reconcile above, that is the ONLY failure this abort can now represent. A step whose doc is gone *and* which live config has also dropped was reconciled away rather than aborting here; one that survives to this point is still scheduled by live `marshal.json` and genuinely cannot run.

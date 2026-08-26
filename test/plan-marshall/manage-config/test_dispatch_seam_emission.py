@@ -22,12 +22,17 @@ write), asserting:
   envelope (resolve) set, field-for-field;
 - (D2)  both audit surfaces (decision-log resolve record + work-log [DISPATCH]
   line) are written from the ONE seam, so they share an emitter;
-- backward-compat: a bare resolve with no ``--workflow`` still emits nothing.
+- backward-compat: a bare resolve with no ``--workflow`` still emits nothing —
+  asserted against the log the emission would actually route to, which is the
+  plan-scoped log when ``--plan-id`` names a plan and the dated global log when
+  it does not;
+- the ``[DISPATCH]`` line's ``plan_id=`` field names the log the record was
+  filed under, so the truthy ``NO_PLAN`` sentinel renders as ``none``.
 """
 
 import json
 
-from plan_logging import read_decision_log, read_work_log
+from plan_logging import get_log_path, read_decision_log, read_work_log
 from toon_parser import parse_toon
 
 from conftest import get_script_path, run_script
@@ -81,6 +86,32 @@ def _resolve_records(plan_id: str) -> list[str]:
     result = read_decision_log(plan_id)
     assert result['status'] == 'success'
     return [e['message'] for e in result['entries'] if 'effort resolve-target' in e['message']]
+
+
+def _global_log_lines(log_type: str) -> int:
+    """Line count of the dated GLOBAL ``log_type`` log.
+
+    The seam routes a record to the plan-scoped log only when the plan id
+    ``names_real_plan``; an absent id (and the ``NO_PLAN`` sentinel) maps to
+    ``None`` and lands in this dated global log instead. A "nothing was emitted"
+    assertion for a resolve carrying no ``--plan-id`` therefore has to read HERE
+    — reading a plan-scoped log the emission could never have reached asserts
+    nothing about whether the emission happened.
+    """
+    path = get_log_path(None, log_type)
+    if not path.exists():
+        return 0
+    return len(path.read_text(encoding='utf-8').splitlines())
+
+
+def _global_dispatch_lines() -> list[str]:
+    """The ``[DISPATCH]`` lines in the dated global work log."""
+    path = get_log_path(None, 'work')
+    if not path.exists():
+        return []
+    return [
+        line for line in path.read_text(encoding='utf-8').splitlines() if '[DISPATCH]' in line
+    ]
 
 
 # =============================================================================
@@ -267,12 +298,62 @@ def test_both_surfaces_written_from_the_seam(plan_context):
 
 # =============================================================================
 # Backward-compat: a bare resolve with no --workflow still emits nothing.
+#
+# Both halves read the log the emission WOULD have been routed to had the
+# ``--workflow`` gate not held. Which log that is depends on the plan id, so the
+# two halves are separate tests rather than one:
+#
+#   * WITH ``--plan-id`` — the record would land in that plan's own log, so the
+#     plan-scoped log is the surface to read.
+#   * WITHOUT ``--plan-id`` — the id maps to ``None`` and the record would land
+#     in the dated GLOBAL log, so a plan-scoped assertion is unreachable by
+#     construction and proves nothing.
+#
+# The earlier single test combined the two wrongly: it passed NO ``--plan-id``
+# and then asserted over the ``bare`` PLAN log. That log could not receive the
+# emission under any behaviour of the gate, so the assertion held whether the
+# gate worked or not — the test stayed green with ``if workflow:`` replaced by
+# ``if True:``.
 # =============================================================================
 
 
 def test_bare_resolve_without_workflow_emits_nothing(plan_context):
+    """A plan-bound resolve carrying no ``--workflow`` writes to that plan's logs.
+
+    ``--plan-id bare`` is load-bearing: it is what makes the plan-scoped log the
+    destination the emission would actually route to, so the empty assertions
+    below are a real observation of the ``--workflow`` gate holding.
+    """
     _seed_marshal(plan_context)
     _init_plan(plan_context, 'bare')
+
+    result = run_script(
+        SCRIPT_PATH,
+        'effort',
+        'resolve-target',
+        '--phase',
+        'phase-5-execute',
+        '--plan-id',
+        'bare',
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert _dispatch_lines('bare') == []
+    assert _resolve_records('bare') == []
+
+
+def test_bare_resolve_without_plan_id_emits_nothing_to_the_global_log(plan_context):
+    """A resolve with neither ``--workflow`` nor ``--plan-id`` writes nothing anywhere.
+
+    With no plan id the seam routes to the dated global log, so that is the only
+    surface on which "emitted nothing" is falsifiable for this call shape. The
+    before/after line counts are compared rather than asserted to be zero, so
+    the check does not depend on the global log starting out absent.
+    """
+    _seed_marshal(plan_context)
+
+    before_work = _global_log_lines('work')
+    before_decision = _global_log_lines('decision')
 
     result = run_script(
         SCRIPT_PATH,
@@ -283,5 +364,48 @@ def test_bare_resolve_without_workflow_emits_nothing(plan_context):
     )
 
     assert result.returncode == 0, result.stderr
-    assert _dispatch_lines('bare') == []
-    assert _resolve_records('bare') == []
+    assert _global_log_lines('work') == before_work, (
+        'a resolve with no --workflow must not append to the global work log'
+    )
+    assert _global_log_lines('decision') == before_decision, (
+        'a resolve with no --workflow must not append to the global decision log'
+    )
+
+
+# =============================================================================
+# The audit line names the plan the record was FILED UNDER.
+#
+# ``NO_PLAN`` is truthy, so a bare ``if plan_id`` display check rendered
+# ``plan_id=NO_PLAN`` while ``names_real_plan`` routed the record to the global
+# log — the line named a plan the record was deliberately not filed under.
+# Display and routing must read the ONE predicate.
+# =============================================================================
+
+
+def test_sentinel_plan_id_is_displayed_as_none_and_filed_globally(plan_context):
+    _seed_marshal(plan_context)
+
+    result = run_script(
+        SCRIPT_PATH,
+        'effort',
+        'resolve-target',
+        '--phase',
+        'phase-5-execute',
+        '--workflow',
+        _WORKFLOW,
+        '--plan-id',
+        'NO_PLAN',
+        '--caller',
+        _CALLER,
+    )
+    assert result.returncode == 0, result.stderr
+
+    # The record IS emitted — into the global log, because the sentinel names no
+    # plan directory.
+    lines = _global_dispatch_lines()
+    assert len(lines) == 1, f'expected exactly one global [DISPATCH] line, got {lines}'
+    # ... and the line agrees with where it was filed.
+    assert 'plan_id=none' in lines[0]
+    assert 'plan_id=NO_PLAN' not in lines[0], (
+        'the audit line must not name a plan the record was not filed under'
+    )

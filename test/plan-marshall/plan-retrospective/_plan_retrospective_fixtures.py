@@ -355,7 +355,7 @@ SLASH_COMMAND = (
 )
 
 SKILL_LOAD_TEXT = (
-    'Base directory for this skill: /Users/x/.claude/plugins/cache/demo/skills/demo\n\n'
+    'Base directory for this skill: /home/dev/.claude/plugins/cache/demo/skills/demo\n\n'
     '# Demo Skill\n\n'
     'Long injected skill body. ' * 40
 )

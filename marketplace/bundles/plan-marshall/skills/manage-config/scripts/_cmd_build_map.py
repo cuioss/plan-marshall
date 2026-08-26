@@ -157,9 +157,9 @@ def cmd_build_decision(args: argparse.Namespace) -> dict:
     """
     from extension_base import should_execute_build
 
-    plan_id = getattr(args, 'plan_id', None) or getattr(args, 'audit_plan_id', None)
+    plan_id = getattr(args, 'plan_id', None)
     if not plan_id:
-        return {'status': 'error', 'error': 'build-decision requires --plan-id (or --audit-plan-id)'}
+        return {'status': 'error', 'error': 'build-decision requires --plan-id'}
     try:
         verdict = should_execute_build(getattr(args, 'command', None), plan_id)
         return {'status': 'success', **verdict}

@@ -11,6 +11,7 @@ Handles:
     effort resolve-target --role <name> (target variant name resolver)
     effort apply-preset --preset <name> (whole-tree preset writer)
     effort set --scope <scope> --level <v> (surgical per-scope writer)
+    effort identify                     (classify on-disk config as a preset)
 
 Storage layout — per-phase effort config lives **inside the matching
 plan-phase entry** under the ``effort`` key, alongside the rest of the
@@ -491,7 +492,11 @@ def _emit_dispatch_records(
             prefix; defaults to the seam's own notation when absent.
     """
     dispatch_caller = caller or 'plan-marshall:manage-config'
-    plan_display = plan_id if plan_id else 'none'
+    # Display and routing MUST read the same predicate. A bare truthiness check
+    # here made the truthy NO_PLAN sentinel render as `plan_id=NO_PLAN` while
+    # `names_real_plan` routed it to the global log — the audit line named a plan
+    # that the record was deliberately not filed under.
+    plan_display = plan_id if names_real_plan(plan_id) else 'none'
     role_display = role if role else 'default'
     # Route a real plan id to its plan-scoped log. The NO_PLAN sentinel or an
     # absent id maps to None, and log_entry writes the dated global log. A

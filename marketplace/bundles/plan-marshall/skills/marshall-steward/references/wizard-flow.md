@@ -369,7 +369,7 @@ The `verification_steps` list feeds the whole-tree end-of-phase-5 sweep; the mod
 
 **Finalize steps** (phase-6-finalize) — preset-first, with a Custom escape hatch. Present the finalize-step preset picker BEFORE the per-step `list-finalize-steps` / `set-steps` flow, mirroring the single-AskUserQuestion preset-picker pattern documented in [effort-menu.md](../standards/effort-menu.md) (do not inline-copy that flow — the normative contract lives there). The three preset descriptions are sourced verbatim from `FinalizeStepPresets.describe(name)` (`finalize_step_presets.py`), and the Custom option falls through to the existing per-step multi-select escape hatch.
 
-Optionally detect the current preset first — deep-equality of `plan.phase-6-finalize.steps` against `FinalizeStepPresets.get(name)` for each name in `FinalizeStepPresets.all_names()` — and surface it as `Current: {name} preset` / `Current: custom (manually edited)`, mirroring effort-menu Step 1.
+Optionally detect the current preset first — deep-equality of `plan.phase-6-finalize.steps` against `FinalizeStepPresets.get(name)` for each name in `FinalizeStepPresets.all_names()` — and surface it as `Current: {name} preset` / `Current: custom (manually edited)`. This comparison is performed here, in the wizard: unlike the effort menu's Step 1, which delegates to the deterministic `manage-config effort identify` recogniser, `finalize-steps` exposes no equivalent verb, so there is nothing to hand the deep-equality walk to.
 
 ```text
 AskUserQuestion:

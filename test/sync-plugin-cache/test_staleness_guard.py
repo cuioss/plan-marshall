@@ -31,15 +31,32 @@ manifest file (``diverged``), a live file absent from the manifest
 (``extra``) — covering the three classes individually and together, the
 intact-tree negative control, and the ``--skip-staleness-guard`` bypass of
 the file-level branch.
+
+A final group pins that the guard reports the failure that OCCURRED rather
+than the failure it hunts for. Two distinct failures reach the same refusal
+point — a probe that RAN and observed staleness (``kind: stale``) and a probe
+that COULD NOT RUN and observed nothing (``kind: probe_failed``) — and the
+second must never be dressed as the first, nor carry the first's regenerate
+remedy. The group covers both refusal kinds, the two probe sites (the
+fingerprint recompute and the file-level re-hash, the latter of which
+previously disabled itself by returning ``None``), the ``guard_outcome`` field
+that makes the kind machine-readable, and its absence on the success path. It
+also pins the root cause that made the misreport observable: the stdlib-only
+fingerprint helper is loaded by file location, so a bare interpreter without
+the project's third-party dependencies can still run the guard — with a
+matched negative control proving the dependency block used in that test is
+effective.
 """
 
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import shutil
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -640,3 +657,387 @@ def test_skip_staleness_guard_bypasses_file_drift(tmp_path: Path) -> None:
     data = parse_toon(result.stdout)
     assert data['status'] == 'success'
     assert (cache / 'demo' / '0.1.0' / 'README.md').is_file()
+
+
+# =============================================================================
+# The guard reports the failure that OCCURRED, not the failure it hunts for
+# =============================================================================
+#
+# Two distinct failures reach the same refusal point:
+#
+#   * the probe RAN and observed staleness            -> kind 'stale'
+#   * the probe COULD NOT RUN and observed nothing    -> kind 'probe_failed'
+#
+# Collapsing the second into the first is the defect these tests pin: it
+# reports a target tree as stale on no evidence and hands the operator the
+# staleness remedy ("regenerate") for a fault regeneration cannot fix. The
+# guard's refusal is therefore discriminated by a ``kind`` and surfaced as a
+# ``guard_outcome`` field on the emitted TOON.
+#
+# The first test also pins the ROOT CAUSE that made the misreport observable:
+# the fingerprint helper is stdlib-only, but reaching it through the
+# ``marketplace.targets`` package path executes that package's __init__, which
+# imports every registered target and with them third-party dependencies absent
+# under a bare interpreter. sync.py loads the helper file directly instead.
+
+
+def _load_sync_module():
+    """Load ``sync.py`` by file location, exactly as ``python3 sync.py`` does."""
+    spec = importlib.util.spec_from_file_location('sync_under_test', _SYNC_PY)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture
+def sync_module():
+    """A freshly loaded sync.py, with its helper-module cache torn down after.
+
+    ``_load_source_fingerprint_module`` caches the helper in ``sys.modules``
+    under a module name of its own choosing; popping it keeps each test
+    independent of whichever test ran first.
+    """
+    module = _load_sync_module()
+    yield module
+    sys.modules.pop(module.HELPER_MODULE_NAME, None)
+
+
+#: Installs a meta-path finder that makes ``yaml`` unimportable, reproducing a
+#: bare interpreter that has no project virtualenv.
+_BLOCK_YAML = """
+import sys
+
+
+class _Blocker:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == 'yaml' or fullname.startswith('yaml.'):
+            raise ModuleNotFoundError(f"No module named {fullname!r}", name=fullname)
+        return None
+
+
+sys.meta_path.insert(0, _Blocker())
+"""
+
+
+def _run_python(program: str, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run ``program`` in a child interpreter. It must already be flat.
+
+    Dedenting here would be a silent no-op for any caller that concatenates a
+    column-0 fragment (such as :data:`_BLOCK_YAML`) with an indented
+    triple-quoted body: the common leading-whitespace prefix across the joined
+    text is then the empty string, so the indented half survives verbatim and
+    the child dies with ``IndentationError`` before running a line of the
+    subject code — failing every assertion for a reason that has nothing to do
+    with the behaviour under test. Callers dedent each indented fragment at its
+    own site, where the text is still uniformly indented.
+    """
+    return subprocess.run(
+        [sys.executable, '-c', program, *args],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+
+def test_fingerprint_helper_loads_without_the_marketplace_package() -> None:
+    """The helper import must not walk the ``marketplace.targets`` package.
+
+    Under a bare interpreter the project's third-party dependencies are
+    absent. The helper itself needs none of them — but the package route
+    ``marketplace.targets.claude.source_fingerprint`` executes
+    ``marketplace/targets/__init__.py`` first, which imports every registered
+    target sub-package and, through them, ``yaml``. Loading the helper file
+    directly is what keeps it reachable.
+
+    Run under a ``yaml``-blocking meta-path finder, in a subprocess so the
+    blocker cannot leak into the test session.
+    """
+    result = _run_python(
+        _BLOCK_YAML
+        + textwrap.dedent(
+            """
+            import importlib.util
+            import sys
+
+            spec = importlib.util.spec_from_file_location('sync_under_test', sys.argv[1])
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            module._import_source_fingerprint()
+            module._import_hash_objects()
+
+            print('marketplace_imported=' + str('marketplace.targets' in sys.modules))
+            """
+        ),
+        str(_SYNC_PY),
+    )
+
+    assert result.returncode == 0, result.stderr
+    # Both helper accessors returned, and the package chain was never walked.
+    assert 'marketplace_imported=False' in result.stdout
+
+
+def test_marketplace_package_route_is_blocked_under_the_same_conditions() -> None:
+    """Matched negative control for the test above.
+
+    If ``yaml`` were importable in the child interpreter after all, the
+    previous test would pass without proving anything. This asserts the
+    blocker is effective: under the SAME blocker, the package route that
+    sync.py deliberately avoids does still fail.
+    """
+    result = _run_python(
+        _BLOCK_YAML
+        + textwrap.dedent(
+            """
+            import sys
+
+            sys.path.insert(0, sys.argv[1])
+            try:
+                import marketplace.targets.claude.source_fingerprint  # noqa: F401
+            except ModuleNotFoundError as exc:
+                print('blocked=' + exc.name)
+            else:
+                print('blocked=NONE')
+            """
+        ),
+        str(PROJECT_ROOT),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert 'blocked=yaml' in result.stdout
+
+
+def _guard_ready_project(cwd: Path) -> tuple[Path, Path]:
+    """Build a project whose guard reaches the fingerprint-probe branch.
+
+    Every earlier branch is satisfied — the target root exists and holds a
+    bundle, no marketplace bundle is missing from it, and the sentinel parses
+    with a non-empty fingerprint — so the guard's next act is the probe.
+    Returns ``(source_root, marketplace_root)``.
+    """
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+    _write_sentinel(cwd, 'deadbeef' * 5)
+    return cwd / 'target' / 'claude', cwd / 'marketplace' / 'bundles'
+
+
+@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
+def test_helper_import_failure_is_reported_as_probe_failed_not_stale(
+    tmp_path: Path, sync_module, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unimportable helper must not be reported as a stale target tree."""
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    source_root, marketplace_root = _guard_ready_project(cwd)
+
+    def _boom():
+        raise ImportError("No module named 'yaml'")
+
+    monkeypatch.setattr(sync_module, '_import_source_fingerprint', _boom)
+
+    refusal = sync_module._staleness_guard(source_root, marketplace_root)
+
+    assert refusal is not None
+    assert refusal.kind == 'probe_failed'
+    assert 'could not run' in refusal.message
+    assert 'not a staleness verdict' in refusal.message
+    # The underlying fault is named, not swallowed.
+    assert "No module named 'yaml'" in refusal.message
+
+
+@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
+def test_probe_failure_does_not_borrow_the_staleness_remedy(
+    tmp_path: Path, sync_module, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A probe failure must not tell the operator to regenerate.
+
+    Regeneration is the remedy for staleness. Handing it to an operator whose
+    target tree was never checked sends them to re-run a generator whose
+    output may already be current — the concrete harm of the misreport.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    source_root, marketplace_root = _guard_ready_project(cwd)
+
+    def _boom():
+        raise ImportError("No module named 'yaml'")
+
+    monkeypatch.setattr(sync_module, '_import_source_fingerprint', _boom)
+
+    refusal = sync_module._staleness_guard(source_root, marketplace_root)
+
+    assert refusal is not None
+    assert refusal.kind == 'probe_failed'
+    assert sync_module._regenerate_hint() not in refusal.message
+    assert 'Regenerate with' not in refusal.message
+
+
+@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
+def test_fingerprint_recompute_failure_is_reported_as_probe_failed(
+    tmp_path: Path, sync_module, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fingerprint that could not be computed yields no staleness verdict.
+
+    The helper imported, but the recompute raised — so there is no live
+    fingerprint to compare against the sentinel, and nothing was observed
+    about the target tree.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    source_root, marketplace_root = _guard_ready_project(cwd)
+
+    def _raiser(_repo_root):
+        raise FingerprintError('git binary not found on PATH')
+
+    monkeypatch.setattr(
+        sync_module, '_import_source_fingerprint', lambda: (_raiser, FingerprintError)
+    )
+
+    refusal = sync_module._staleness_guard(source_root, marketplace_root)
+
+    assert refusal is not None
+    assert refusal.kind == 'probe_failed'
+    assert 'git binary not found on PATH' in refusal.message
+    assert sync_module._regenerate_hint() not in refusal.message
+
+
+@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
+def test_genuine_staleness_is_still_reported_as_stale_with_the_remedy(
+    tmp_path: Path, sync_module
+) -> None:
+    """Matched positive control: a probe that RAN and saw drift still says stale.
+
+    Without this the tests above could pass against a guard that had simply
+    stopped reporting staleness at all.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    source_root, marketplace_root = _guard_ready_project(cwd)
+    # _guard_ready_project writes a deliberately wrong fingerprint, so the
+    # real (unpatched) probe runs and observes the mismatch.
+
+    refusal = sync_module._staleness_guard(source_root, marketplace_root)
+
+    assert refusal is not None
+    assert refusal.kind == 'stale'
+    assert 'source tree changed since last emit' in refusal.message
+    assert sync_module._regenerate_hint() in refusal.message
+
+
+@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
+def test_file_level_probe_import_failure_refuses_instead_of_returning_none(
+    tmp_path: Path, sync_module, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The file-level check must not silently disable itself.
+
+    ``None`` from ``_file_level_drift`` is read by the caller as "the check
+    ran and found nothing". Returning it for a check that never ran would let
+    the sync report success as though the supplementary guard had passed.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+    source_root = cwd / 'target' / 'claude'
+
+    def _boom():
+        raise ImportError("No module named 'yaml'")
+
+    monkeypatch.setattr(sync_module, '_import_hash_objects', _boom)
+
+    drift = sync_module._file_level_drift(source_root, _target_file_hashes(cwd))
+
+    assert drift is not None, '_file_level_drift silently returned None on a probe failure'
+    assert drift.kind == 'probe_failed'
+    assert 'could not run' in drift.message
+    assert sync_module._regenerate_hint() not in drift.message
+
+
+@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
+def test_file_level_hashing_failure_refuses_instead_of_returning_none(
+    tmp_path: Path, sync_module, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A live re-hash that could not run is reported, not swallowed."""
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+    source_root = cwd / 'target' / 'claude'
+    manifest = _target_file_hashes(cwd)
+    assert manifest, 'fixture must produce a non-empty manifest to reach the re-hash'
+
+    def _raiser(_root, _paths):
+        raise FingerprintError('git hash-object exited 128')
+
+    monkeypatch.setattr(sync_module, '_import_hash_objects', lambda: (_raiser, FingerprintError))
+
+    drift = sync_module._file_level_drift(source_root, manifest)
+
+    assert drift is not None, '_file_level_drift silently returned None on a hashing failure'
+    assert drift.kind == 'probe_failed'
+    assert 'git hash-object exited 128' in drift.message
+
+
+@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
+def test_file_level_check_still_returns_none_on_an_intact_tree(
+    tmp_path: Path, sync_module
+) -> None:
+    """Matched negative control for the two refusals above.
+
+    A check that RAN and found nothing still returns ``None`` — so the
+    refusals above are attributable to the probe failing, not to the check
+    having become unconditionally noisy.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+
+    drift = sync_module._file_level_drift(cwd / 'target' / 'claude', _target_file_hashes(cwd))
+
+    assert drift is None
+
+
+@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
+def test_cli_refusal_surfaces_guard_outcome_on_the_toon(tmp_path: Path) -> None:
+    """The refusal KIND is machine-readable, not only prose in the summary."""
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+    # No sentinel — the guard refuses on a real staleness condition.
+
+    result = _run(cwd=cwd)
+    assert result.returncode == 2, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert data['guard_outcome'] == 'stale'
+
+
+@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
+@pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
+def test_successful_sync_emits_no_guard_outcome(tmp_path: Path) -> None:
+    """No guard verdict was reached, so no guard verdict is reported.
+
+    The field's ABSENCE is the contract: a default value on a path where the
+    guard never refused would be a verdict nobody rendered.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+    _write_sentinel(cwd, _compute_fingerprint_for(cwd), _target_file_hashes(cwd))
+
+    cache = tmp_path / 'cache'
+    result = _run('--cache-root', str(cache), cwd=cwd)
+    assert result.returncode == 0, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'success'
+    assert 'guard_outcome' not in data

@@ -89,26 +89,47 @@ def canonical_credentials_key(skill_name: str) -> str:
 
 
 def _save_marshal(config: dict[str, Any]) -> None:
-    """Persist ``config`` to marshal.json in the canonical top-level key order.
+    """Persist ``config`` to marshal.json through the manage-config save authority.
 
-    Routes the top-level key order through the single authority in
-    ``_config_core`` so a freshly created ``credentials_config`` block lands in
-    its canonical slot rather than appended at end-of-object — otherwise the
-    committed marshal.json drifts out of the order ``save_config`` enforces and
-    the next save produces a spurious reorder diff. Imported lazily (the
-    executor sets the cross-skill PYTHONPATH); no import cycle — ``_config_core``
-    never imports this module.
+    Delegates the whole document to ``_config_core.save_config`` rather than
+    ordering and writing here, so this path inherits all three properties that
+    authority owns: the canonical top-level key order (a freshly created
+    ``credentials_config`` block lands in its canonical slot rather than
+    appended at end-of-object), the lost-update guard, and the atomic
+    temp-file + ``os.replace`` swap.
+
+    Ordering alone was never the whole contract. This path used to borrow
+    ``order_config_keys`` and then persist with a plain ``write_text``, which
+    kept the diff clean while dropping the other two: a writer that committed
+    between this module's read and this write was clobbered with no error, and
+    an interrupted write could leave a truncated config behind. Both sides
+    resolve the same file — ``_config_core.MARSHAL_PATH`` and
+    :func:`_marshal_path` are the same ``file_ops.get_marshal_path()`` — so the
+    delegation needs no path plumbing.
+
+    Two of the three inherited properties are unconditional, but the lost-update
+    guard is NOT: ``save_config`` compares against a fingerprint only a
+    ``load_config`` records, so this delegation confers the guard only on an
+    entry path that read through ``load_config``. Both callers now do —
+    :func:`write_provider_config` and :func:`read_provider_config` — which is
+    what makes the ``Raises`` clause below reachable from either. A caller that
+    reintroduced a bare ``json.loads`` would silently take ``save_config``'s
+    unguarded branch while this docstring still claimed the guard.
+
+    Raises:
+        ConcurrentConfigModificationError: propagated from ``save_config`` when
+            marshal.json changed on disk since it was loaded. Callers on a WRITE
+            path let it surface (a lost update is a real, recoverable failure);
+            the opportunistic migration on the read path swallows it, because a
+            read must not become a hard failure over a canonicalization it only
+            attempted in passing.
+
+    Imported lazily (the executor sets the cross-skill PYTHONPATH); no import
+    cycle — ``_config_core`` never imports this module.
     """
-    from _config_core import order_config_keys
+    from _config_core import save_config
 
-    ordered = order_config_keys(config)
-
-    marshal_path = _marshal_path()
-    marshal_path.parent.mkdir(parents=True, exist_ok=True)
-    marshal_path.write_text(
-        json.dumps(ordered, indent=2, ensure_ascii=False) + '\n',
-        encoding='utf-8',
-    )
+    save_config(config)
 
 
 def _migrate_credentials_config_keys_if_needed(config: dict[str, Any]) -> str:
@@ -134,10 +155,22 @@ def _migrate_credentials_config_keys_if_needed(config: dict[str, Any]) -> str:
       them loses nothing.
     - **Migrated** — at least one key changed. ``config`` is updated in place
       and persisted. The persist is best-effort: an ``OSError`` (read-only or
-      full filesystem, permission denied) is logged to stderr and swallowed so
-      an opportunistic migration on a read path never turns a resilient read
-      into a hard crash. The status literal stays ``'migrated'`` because the
-      in-memory ``config`` IS canonicalized either way.
+      full filesystem, permission denied) and a
+      ``ConcurrentConfigModificationError`` (another writer committed between
+      this module's read and the save) are both logged to stderr and swallowed,
+      so an opportunistic migration on a read path never turns a resilient read
+      into a hard crash. The refusal is genuinely reachable from BOTH entry
+      paths — :func:`read_provider_config` and :func:`write_provider_config`
+      each read through ``_config_core.load_config``, which is what records the
+      fingerprint ``save_config`` compares against; a bare ``json.loads`` on
+      either would make this clause describe a guard that cannot fire.
+      Swallowing the concurrent-modification case is right
+      HERE and wrong on the write path: this migration is a canonicalization
+      the caller did not ask for, and losing it costs nothing because the next
+      access re-attempts it, whereas losing a caller's own provider write would
+      discard data it believes it stored. The status literal stays
+      ``'migrated'`` because the in-memory ``config`` IS canonicalized either
+      way.
 
     Args:
         config: The loaded marshal.json mapping. Mutated in place on the
@@ -167,9 +200,11 @@ def _migrate_credentials_config_keys_if_needed(config: dict[str, Any]) -> str:
         return 'already_canonical'
 
     config['credentials_config'] = canonicalized
+    from _config_core import ConcurrentConfigModificationError
+
     try:
         _save_marshal(config)
-    except OSError as exc:
+    except (OSError, ConcurrentConfigModificationError) as exc:
         print(
             f'WARNING: credentials_config key migration could not be persisted: {exc}; '
             'continuing with the in-memory canonicalized config.',
@@ -186,14 +221,30 @@ def read_provider_config(skill_name: str) -> dict[str, Any]:
     then a canonical-equality scan matches a key stored under the other
     spelling. Stale keys are canonicalized transparently on this access path.
 
+    The read goes through ``_config_core.load_config`` for the same reason
+    :func:`write_provider_config` does: the lost-update guard in
+    :func:`_save_marshal` fires only when a load recorded the on-disk
+    fingerprint it can compare against. This path can write — the lazy key
+    migration below persists on its ``migrated`` branch — so a bare
+    ``json.loads`` here would leave that write unguarded no matter what the save
+    side does, and the guard's documented refusal would be unreachable rather
+    than merely rare. Load and save are one pair on BOTH entry paths.
+
     Returns:
         Dict with provider config fields, or empty dict if not found.
     """
     marshal_path = _marshal_path()
     if not marshal_path.exists():
         return {}
+    from _config_core import load_config
+
     try:
-        config = json.loads(marshal_path.read_text(encoding='utf-8'))
+        # ``load_config`` wraps a decode failure in a plain ``ValueError``, so the
+        # except clause names ``ValueError`` rather than ``json.JSONDecodeError``
+        # (its subclass) — naming the subclass alone would let the wrapped error
+        # escape this documented graceful-fallback read. ``KeyError`` is retained
+        # from the previous bare read so the fallback set is unchanged.
+        config = load_config()
         _migrate_credentials_config_keys_if_needed(config)
         credentials_config: dict[str, Any] = config.get('credentials_config', {})
         if skill_name in credentials_config:
@@ -205,7 +256,7 @@ def read_provider_config(skill_name: str) -> dict[str, Any]:
                 matched: dict[str, Any] = value
                 return matched
         return {}
-    except (json.JSONDecodeError, KeyError):
+    except (ValueError, KeyError):
         return {}
 
 
@@ -217,13 +268,30 @@ def write_provider_config(skill_name: str, provider_config: dict[str, Any]) -> N
     the same value is removed first, so a re-configure never leaves two shadow
     blocks for one provider. Creates or updates the marshal.json file,
     preserving existing content.
+
+    The read goes through ``_config_core.load_config``, which is what makes the
+    guard in :func:`_save_marshal` bite on this path: the guard fires only when
+    a load recorded the on-disk fingerprint it can compare against, so a bare
+    ``json.loads`` here would leave every provider write unguarded no matter
+    what the save side does. Load and save are one pair, not two independent
+    choices.
+
+    Raises:
+        ConcurrentConfigModificationError: when another writer committed to
+            marshal.json between this read and the save. The write is refused
+            rather than clobbering that writer's change; reload and re-apply.
     """
     marshal_path = _marshal_path()
     config: dict[str, Any] = {}
     if marshal_path.exists():
+        from _config_core import load_config
+
         try:
-            config = json.loads(marshal_path.read_text(encoding='utf-8'))
-        except json.JSONDecodeError:
+            config = load_config()
+        except ValueError:
+            # Unparseable marshal.json: start from an empty document, exactly as
+            # the previous bare read did. No fingerprint is recorded on this
+            # path, so the save is unguarded — there is no prior state to lose.
             config = {}
 
     _migrate_credentials_config_keys_if_needed(config)
