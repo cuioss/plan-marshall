@@ -83,11 +83,14 @@ from ci_base import (
     MERGE_QUEUE_ELIGIBLE_UNCONFIGURED,
     MERGE_QUEUE_INELIGIBLE,
     MERGE_QUEUE_UNSUPPORTED,
+    PR_VIEW_CAUSE_AUTH_FAILED,
+    PR_VIEW_CAUSE_MALFORMED_RESPONSE,
     HandlerMap,
     add_pr_create_args,
     add_pr_resolve_thread_pr_number,
     build_parser,
     check_auth_cli,
+    classify_pr_view_failure,
     compute_elapsed,
     compute_total_elapsed,
     delete_consumed_body,
@@ -309,20 +312,36 @@ def view_pr_data(head: str | None = None) -> dict:
     ``merge_commit_sha`` is the landing commit of a merged MR, or ``None`` when the
     provider reports none. See :func:`_extract_merge_commit_sha` for the two-key read
     (squash vs regular merge) and why the absent form is ``None`` and never ``''``.
+
+    Every error return carries an ``error_cause`` drawn from ``PR_VIEW_CAUSES``,
+    in LOCK-STEP with the GitHub provider: the same three causes, the same
+    vocabulary, the same additive placement. See
+    ``github_ops.view_pr_data`` for why the collapsed envelope opens duplicate
+    PRs. The ``error`` message, the ``status`` value and the exit codes are
+    unchanged.
     """
     is_auth, err = check_auth()
     if not is_auth:
-        return {'status': 'error', 'operation': 'pr_view', 'error': err}
+        return {
+            'status': 'error',
+            'operation': 'pr_view',
+            'error': err,
+            'error_cause': PR_VIEW_CAUSE_AUTH_FAILED,
+        }
 
     glab_args = ['mr', 'view', '--output', 'json']
     if head:
         glab_args = ['mr', 'view', head, '--output', 'json']
     returncode, stdout, stderr = run_glab(glab_args)
     if returncode != 0:
+        # As on GitHub: the historical no-MR wording stays, and the CAUSE is what
+        # discriminates — no_pr_found only on glab's own "no merge requests
+        # found" signature, never on an unreadable failure.
         return {
             'status': 'error',
             'operation': 'pr_view',
             'error': 'No MR found for current branch',
+            'error_cause': classify_pr_view_failure(stderr),
             'context': stderr.strip(),
         }
 
@@ -333,6 +352,7 @@ def view_pr_data(head: str | None = None) -> dict:
             'status': 'error',
             'operation': 'pr_view',
             'error': 'Failed to parse glab output',
+            'error_cause': PR_VIEW_CAUSE_MALFORMED_RESPONSE,
             'context': stdout[:100],
         }
 

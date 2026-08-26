@@ -46,10 +46,16 @@ decides whether CI was read at all.
 - **`exit_code == 0` AND `status: success`**: parse the returned TOON and use
   the value as the step describes.
 - **`exit_code == 0` with a `status` other than `success`**: NOT a usable value
-  — it takes the `exit_code != 0` disposition below. A zero exit is not evidence
+  — STOP exactly as the `exit_code != 0` disposition below requires, with one
+  difference in what the error TOON carries: on this path the diagnostic is on
+  STDOUT, not stderr. Preserve the stdout **error envelope** — the `status`,
+  `error`, and `message` fields — verbatim into the returned error TOON; they
+  are the only account of the cause that exists. A zero exit is not evidence
   the operation succeeded; a script MAY print `status: error` and still exit 0.
-  Read `status` FIRST, and never read a payload field off a non-`success`
-  return. Here that means an absent `ci_final_status` is an **unread** CI
+  Read `status` FIRST, and never read a **success-payload** field off a
+  non-`success` return — the three diagnostic fields above are not success
+  payload, and discarding them leaves the step reporting a failure with no
+  cause. Here that means an absent `ci_final_status` is an **unread** CI
   verdict, never a green one.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator
   carrying the script's stderr verbatim. Non-zero exits include
