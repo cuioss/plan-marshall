@@ -139,6 +139,7 @@ Every PR subcommand returns the standard envelope: success shape (`status: succe
 | `pr create` | `--title`, `--plan-id` | `--slot`, `--base` (default: repo default), `--head`, `--draft`, `--label` (repeatable) | `pr_number`, `pr_url` |
 | `pr view` | — (uses current branch) | _at most one of_ `--pr-number` _or_ `--head` | `pr_number`, `pr_url`, `state`, `title`, `head_branch`, `base_branch`, `is_draft`, `mergeable`, `merge_state`, `review_decision` |
 | `pr list` | — | `--head {branch}`, `--state open\|closed\|all` (default `open`) | `total`, `state_filter`, `head_filter`, `prs[N]{number,url,title,state,head_branch,base_branch}` |
+| `pr landing-state` **(GitHub only)** | — (uses the routed working tree's checked-out branch) | `--branch {branch}` | `provider`, `branch`, `tip_sha`, `pushed`, `pr_count`, `landing_state`, `landing_states` |
 | `pr reply` | `--pr-number`, `--plan-id` | `--slot` | `pr_number` |
 | `pr resolve-thread` | `--thread-id` (GitLab also requires `--pr-number`) | — | `thread_id` |
 | `pr thread-reply` | `--pr-number`, `--thread-id`, `--plan-id` | `--slot` | `pr_number`, `thread_id` |
@@ -146,6 +147,8 @@ Every PR subcommand returns the standard envelope: success shape (`status: succe
 | `pr comments` | `--pr-number` | `--unresolved-only` | `provider`, `pr_number`, `total`, `unresolved`, `comments[N]{id,author,body,path,line,resolved,created_at}` |
 | `pr wait-for-comments` | `--pr-number` | `--timeout` (default 300), `--interval` (default 30) | `pr_number`, `timed_out`, `duration_sec`, `polls`, `baseline_count`, `final_count`, `new_count`, `rate_limited_bots[N]{bot_kind,rate_limit_class,eta}`, `movement_matched_bots[N]{bot_kind}`, `detector_answerable`, `unanswerable_reason` |
 | `pr update-branch` | _exactly one of_ `--pr-number` _or_ `--head` | — | `pr_number` |
+
+**`pr landing-state` field semantics.** `landing_state` is exactly one member of `landing_states`, the verb's own declared population (`merged`, `pr_open`, `pushed_no_pr`, `unpushed`) — published on the response so a consumer asserts against the verb's declaration rather than a hand-copied list. `pr_count` counts only PRs whose head IS `tip_sha`, which is why a stale PR that merged an earlier tip on a reused branch name cannot report `merged`. `pushed` is `true` / `false` when remote containment was readable and `null` when it was not; a `null` is only ever returned alongside a `merged` / `pr_open` verdict, because those rest on the PR listing rather than on git — when the verdict WOULD rest on push evidence that could not be read, the verb returns `status: error` instead. That is the general posture: unreadable evidence produces an error, never a state that could clear the pre-archive gate.
 
 ### Provider Field Mapping
 

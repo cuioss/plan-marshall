@@ -985,6 +985,23 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
 it measures the PR rather than a bot. Omit it when unmeasured — the classifier then reports no
 `measured_diff_size` line at all, which reads as unknown rather than as a zero-sized diff.
 
+**The ten list flags split by FORM, and the form is what the parser routes on.** FOUR take
+comma-separated `{bot_kind}:{value}` PAIRS: `--participated-bots` and `--stale-participation-bots`
+take `bot_kind:evidence_kind` (through `parse_participation`, which additionally drops a well-formed
+pair whose evidence kind is not one of that bot's declared publish shapes — a semantic non-match, not
+a caller error), and `--refused-causes` and `--refusal-size-caps` take `bot_kind:cause` /
+`bot_kind:cap` (through `parse_causes`, which checks the SHAPE only and carries the producer's value
+through even when it does not recognise it). The other SIX take BARE `{bot_kind}` tokens through
+`_split_bots`: `--required-bots`, `--optional-bots`, `--in-progress-bots`, `--refused-bots`,
+`--declined-bots` and `--unrecognised-refusal-bots`. Each pair-form flag is fed a `github_pr
+fetch_findings` field verbatim, so its form is the producer's rather than a choice made here. ⛔ A
+token on the wrong form is REJECTED as a caller error — `status: error`, `error:
+malformed_bot_flag`, a non-zero exit, and NO `participation_complete` field, which reads as an
+UNKNOWN verdict — never silently reinterpreted: a bare kind dropped from a pair-form parse resolves
+the bot to `absent` (a blocking member) and a pair fed to a bare-form flag matches no configured bot
+and vanishes, so both directions manufacture a confident verdict over a population nobody
+classified. An empty value is the empty list, never a malformed token.
+
 Every list flag above takes an OPTIONAL value: each may be supplied bare (the flag with no value at
 all), which reads as the empty list — identical to omitting it. Callers interpolating a possibly-empty
 variable MUST still double-quote the placeholder; the bare form is the parser-side backstop, not a
@@ -1034,6 +1051,13 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
   [--not-triggered] [--refused-causes [REFUSED_CAUSES]] \
   [--refusal-size-caps [REFUSAL_SIZE_CAPS]] [--min-deficit N]
 ```
+
+The FORM split documented under `check` governs `deficit` unchanged, and structurally so: both
+subcommands build this flag set from the same `_add_bot_observation_flags` and read it through the
+same `_parse_bot_observations`, so the pair-form four and the bare-form six are the same flags here
+and a token malformed for one subcommand is malformed for the other, with the same
+`malformed_bot_flag` UNKNOWN verdict. `--min-deficit` is not a list flag: it takes a required
+integer.
 
 The `deficit` subcommand takes the SAME observation flags as `check` (so the step forwards the sets it
 already gathered) plus `--min-deficit` (default 1). `--refused-causes` **and `--refusal-size-caps`**

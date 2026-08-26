@@ -894,6 +894,8 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
 
 Append the bare `--not-triggered` flag to that call when and only when the read above reported `has_pull_request_run: false`. It is a `store_true` bool carrying no value of its own, so it is never interpolated and never quoted — the quoting discipline below governs the list flags only.
 
+**The list flags divide by FORM, and the two forms are not interchangeable.** Four take comma-separated `{bot_kind}:{value}` PAIRS — `--participated-bots` and `--stale-participation-bots` (`{bot_kind}:{evidence_kind}`), `--refused-causes` (`{bot_kind}:{cause}`) and `--refusal-size-caps` (`{bot_kind}:{cap}`) — and a bare `{bot_kind}` on any of them is rejected as a malformed caller error, never silently dropped. The rest take BARE `{bot_kind}` tokens: `--required-bots`, `--optional-bots`, `--refused-bots`, `--declined-bots` and `--unrecognised-refusal-bots`. Each retained set above is already rendered in its flag's form by the producer, so it forwards verbatim; the forms here state what the parser actually routes (`parse_participation` / `parse_causes` for the pair-form flags, the bare-token split for the others), which is the authority when a producer's field name suggests otherwise.
+
 This site never passes `--in-progress-bots` — the barrier has no completion-poll observation of its
 own. It **does** pass `--refused-causes`, `--refusal-size-caps`, and `--unrecognised-refusal-bots` (the
 CAUSE and CAP overlays from the retained `refused_causes[]` / `refused_size_caps[]`, plus the

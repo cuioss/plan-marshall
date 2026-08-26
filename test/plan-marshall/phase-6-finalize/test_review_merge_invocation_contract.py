@@ -26,13 +26,18 @@ call sites — a curated list is the artifact this plan exists to retire:
   of the two discharge arms — the doc-level clause or a call-site positive shape requirement.
 
 * **D3 — every documented review-and-merge invocation parses against its own parser.**
-  A workflow doc that prescribes a flag no script declares (``--enabled-bots``), or a
-  flag in a position the parser rejects (``--plan-id`` after a router verb), makes a
-  dispatched leaf that quotes the doc verbatim fail with an argparse rejection (exit 2).
-  This suite derives the documented invocation population from the docs, substitutes
-  the placeholders, runs each against its REAL parser, and fails on any argparse
-  rejection — so a reintroduced ``--enabled-bots`` fails here where it previously only
-  failed a dispatched agent at merge time.
+  A workflow doc that prescribes a flag on a parser which does not DECLARE it — the
+  observed case is ``--enabled-bots`` written onto a ``github_pr fetch_findings`` call —
+  or a flag in a position the parser rejects (``--plan-id`` after a router verb), makes
+  a dispatched leaf that quotes the doc verbatim fail with an argparse rejection
+  (exit 2). The mismatch is PER-PARSER, never global: ``--enabled-bots`` is a real,
+  legitimately declared flag on ``review_gate_delta assess``, so what is wrong is the
+  PAIRING of flag and script and not the flag itself — a guard phrased as "a flag no
+  script declares" would be false of this tree and would go looking for the wrong thing.
+  This suite derives the documented invocation population from the docs, substitutes the
+  placeholders, runs each against its REAL parser, and fails on any argparse rejection —
+  so an ``--enabled-bots`` reintroduced onto a parser that does not declare it fails
+  here, where it previously only failed a dispatched agent at merge time.
 
 Both populations are asserted NON-EMPTY before anything is swept over them (an empty
 parametrize is a pytest SKIP, not a failure) and publish their size in the failure
@@ -527,10 +532,14 @@ class TestExitZeroNonSuccessIsDisposedOf:
 class TestDocumentedReviewMergeInvocationsParse:
     """Every documented review/merge invocation parses against its live argparse.
 
-    A documented ``--enabled-bots`` (a flag no parser declares) or a ``--plan-id``
-    after a router verb (a mispositioned flag) is an argparse rejection — exit 2 —
-    when a leaf quotes the doc verbatim. This sweep runs each documented invocation
-    against its REAL parser and fails on that rejection.
+    A flag prescribed on a parser that does not DECLARE it — the observed case is
+    ``--enabled-bots`` written onto a ``github_pr fetch_findings`` call — or a
+    ``--plan-id`` placed after a router verb is an argparse rejection (exit 2) when a
+    leaf quotes the doc verbatim. The mismatch is PER-PARSER: ``--enabled-bots`` IS
+    declared, on ``review_gate_delta assess``, so what fails is the flag/script
+    PAIRING rather than the flag. Running each documented invocation against its REAL
+    parser is what catches the pairing without this suite having to know which flags
+    belong where.
     """
 
     def test_the_population_size_is_published(self):
