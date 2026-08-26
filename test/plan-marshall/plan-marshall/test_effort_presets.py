@@ -641,7 +641,9 @@ def test_identify_malformed_payload_is_custom(bad: object) -> None:
 # The eight role slots; the ninth is the plan-level ``default``. This tuple is
 # not trusted as an assertion — ``test_expanded_slot_population_is_nine``
 # derives the population from the preset payloads and pins it against this
-# tuple, so a registry change that adds or drops a slot fails there first.
+# tuple, so a preset-payload change that adds or drops a slot fails there first.
+# A KNOWN_ROLES change alone does not: neither side of that assertion reads the
+# registry. The registry cross-check is the subset assertion further down.
 _ROLE_SLOTS: tuple[str, ...] = (
     'phase-2-refine',
     'phase-3-outline',

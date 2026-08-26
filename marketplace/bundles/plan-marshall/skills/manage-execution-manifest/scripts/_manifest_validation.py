@@ -480,10 +480,11 @@ def _check_step_loadable(step_id: str) -> dict[str, Any]:
     # the step id came from — this function is handed a bare id and cannot tell a
     # marshal.json-authored one from a routed / composer-injected one. Provenance is
     # added on the compose path only, by ``check_emitted_steps_resolvable``, which
-    # holds the marshal.json key map. The other call path — the ``validate-loadable``
-    # handler that phase-6-finalize Step 1.5 aborts on — returns this message
-    # verbatim, so its abort names no origin. The remediation hint below stays — it
-    # is advice about the likely repair, not a claim about the origin.
+    # holds the marshal.json key map. Every other call path returns this message
+    # verbatim, so those aborts name no origin — currently the ``validate-loadable``
+    # handler that phase-6-finalize Step 1.5 aborts on, and ``cmd_reconcile``, which
+    # surfaces it as ``error: unreconcilable_step``. The remediation hint below stays
+    # — it is advice about the likely repair, not a claim about the origin.
     message = (
         f'step `{bare}` is missing standards file '
         f'`{rel_path}` — the plan likely deleted the file without sweeping `marshal.json`'
