@@ -68,11 +68,13 @@ Count `R`, the plans currently in `launched` status, and select up to `N − R` 
 
   A candidate is prep-ready **iff** no row of its spec carries `admits: false`. `corpus verdicts` is the field's only interpreter, so the admission outcome is a property of one parse rather than of two readers agreeing. The admission table — which of the six states admits and which blocks, and why — is defined once at [orchestration-model.md § Re-Grounding Verdict Field](../../persona-plan-orchestrator/standards/orchestration-model.md#re-grounding-verdict-field) and is not restated here.
 
+  **A section the parser could not read now contributes such a row.** Rows are addressed at two scopes, and a spec whose `## Claim Labels` section the parser could not read — content is present, but authored as a table or as prose rather than as top-level bullets — while carrying no section-scoped verdict contributes exactly one row with `scope: section`, `claim_index: -1` and `admits: false`. Such a candidate is therefore **not** prep-ready, where previously it contributed no row at all and passed the test vacuously. The one-call remedy is `corpus set-verdict --section-scope`, which settles the section without re-authoring any claim prose; a spec is never asked to convert its section into bullets to become emittable. A section reported `absent` or `empty` contributes no row and still admits.
+
 Four rules govern the outcome, every one of them decided by the parser rather than by a reader: an **OPEN (absent) clause does NOT fail the test** — settling it is the LAUNCHED plan's own job per [orchestration-model.md § Verify-First Contract for Inferred Claims](../../persona-plan-orchestrator/standards/orchestration-model.md#verify-first-contract-for-inferred-claims), so blocking on an unchecked clause would make the verifying phase unreachable and the spec permanently unemittable; **only a refutation the spec has not absorbed blocks**; an **`unverifiable` verdict never blocks**, because an unreachable population is not a refutation; and a **malformed field blocks**, reported as `indeterminate` with the offending line quoted, so a typo can never hide a refutation.
 
 **Staleness is reported, never promoted.** A row whose `stale` flag is set rides into the report alongside the admission outcome and does not change it — neither silently promoted to blocking as HEAD advances, nor silently dropped.
 
-A candidate failing either test is sequenced, not emitted. **Never emit a colliding or unprepared plan merely to fill a slot** — when fewer than `N − R` candidates qualify, report the shortfall with the blocking reason per candidate instead. A prep-ready shortfall reason is **derived from the blocking row**, naming the claim and its verdict (`claim {claim_index}: contradicted, not re-scoped`, `claim {claim_index}: indeterminate — {quoted line}`) rather than being a hand-typed sentence.
+A candidate failing either test is sequenced, not emitted. **Never emit a colliding or unprepared plan merely to fill a slot** — when fewer than `N − R` candidates qualify, report the shortfall with the blocking reason per candidate instead. A prep-ready shortfall reason is **derived from the blocking row**, naming the claim and its verdict (`claim {claim_index}: contradicted, not re-scoped`, `claim {claim_index}: indeterminate — {quoted line}`) rather than being a hand-typed sentence. A `scope: section` row carries no addressable ordinal, so its reason names the section instead, derived from that row like any other — its `synthesised` field distinguishes an unreadable section never settled from one whose stamped verdict blocks on its own terms, and the two do not share a reason.
 
 ### Step 5 (verb = `next`): Emit the commands
 
@@ -148,14 +150,24 @@ slug: {slug}
 verb: next
 parallelization_scope: {N}
 launched_count: {R}
+specs_scanned: {P}
+claim_section_states[4]{state,count}:
+  absent,{A}
+  empty,{Y}
+  unreadable,{U}
+  parsed,{Q}
+unreadable_claim_section_count: {U}
 emitted[E]{plan,command}:
   PLAN-NN,/plan-marshall task="implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
 shortfall[S]{plan,reason}:
   PLAN-MM,"overlaps {surface} with PLAN-KK"
   PLAN-PP,"claim 2: contradicted, not re-scoped"
   PLAN-QQ,"claim 0: indeterminate — {offending line}"
+  PLAN-RR,"claim section: unreadable, not settled — {quoted first line}"
 stale_verdicts[T]{plan,claim_index,sha}:
   PLAN-NN,1,9f3a1c2
 ```
 
-`display_detail` is ≤80 chars, ASCII, no trailing period. `emitted[]` is empty when no candidate qualifies; `shortfall[]` is empty when the block fills every slot, and otherwise names one blocking reason per unemittable candidate — a prep-ready reason is derived from the blocking `corpus verdicts` row (its claim index and verdict), never hand-typed. `stale_verdicts[]` reports every row the parser flagged stale and carries no admission consequence: a candidate with stale verdicts and no blocking row is emitted normally.
+`display_detail` is ≤80 chars, ASCII, no trailing period. `emitted[]` is empty when no candidate qualifies; `shortfall[]` is empty when the block fills every slot, and otherwise names one blocking reason per unemittable candidate — a prep-ready reason is derived from the blocking `corpus verdicts` row (its claim index and verdict, or the section when the row is section-scoped), never hand-typed. `stale_verdicts[]` reports every row the parser flagged stale and carries no admission consequence: a candidate with stale verdicts and no blocking row is emitted normally.
+
+`specs_scanned`, `claim_section_states[]` and `unreadable_claim_section_count` are forwarded from the same `corpus verdicts` read, so the reader sees how much of each section the parser could read and over what population that was computed. The tally spans the whole four-member vocabulary, so a state no spec is in reports a stated zero rather than being absent — `unreadable_claim_section_count: 0` beside a non-zero `specs_scanned` is a measured "nothing unreadable", never an unasked question.

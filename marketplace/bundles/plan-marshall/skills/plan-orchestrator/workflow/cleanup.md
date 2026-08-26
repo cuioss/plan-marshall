@@ -43,6 +43,10 @@ For every enumerated spec whose row is NOT `running`, corroborate its verify-fir
 
 **Persist every returned verdict**, one `corpus set-verdict` call per claim, with the producer recorded as `{slug}/cleanup` — see [`plan-orchestrator/SKILL.md`](../SKILL.md) § Canonical invocations → `corpus set-verdict` for the argument surface.
 
+**Zero-claim branch.** A claim section the parser cannot read yields no parsed claims, so a `corpus set-verdict --claim-index N` call above is refused with `error: claim_index_out_of_range`. That refusal is this branch's trigger — it is what this step observes, and it carries what to do next: `claims_total: 0`, the observed `claim_section_state`, and a `recovery` field naming the alternative address. When `claim_section_state` is `unreadable`, re-issue the call once with `--section-scope` instead, settling the section as a whole with the same producer. This is an addressing change only: the claim prose is not re-authored, and no spec is asked to convert its section into bullets in order to be settled. A section whose state is `absent` or `empty` needs no call at all — it admits already.
+
+When the corroboration returned no verdict for such a spec at all, no call is issued and no refusal is seen, so the section stays unsettled. That is not a silent pass: the unreadable section contributes a blocking row to `corpus verdicts`, which [`orchestrate.md`](orchestrate.md) Step 4's prep-ready test refuses to emit on.
+
 The field's grammar is defined once at [§ Re-Grounding Verdict Field](../../persona-plan-orchestrator/standards/orchestration-model.md#re-grounding-verdict-field) and is restated nowhere here — not its keys, not its value sets, not the parse rule both sides use. **This doc never hand-writes the field**: `corpus set-verdict` is the only sanctioned emitter, so the single-emitter property holds at the producer as well as inside the script.
 
 This split is the Dispatch Decision Rule made operational: the dispatched leaf returns verdicts (write-free, so it passes the write-freedom test) and the inline orchestrator performs the write through the seam.

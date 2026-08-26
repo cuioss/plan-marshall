@@ -514,10 +514,15 @@ def _write_fixture_spec(plan_context) -> Path:
 
 
 def _stamp(evidence: str = 'holds at this sha') -> Namespace:
+    # ``section_scope`` is the second member of the REQUIRED mutually exclusive
+    # addressing pair argparse declares, so the attribute exists on every real
+    # parse. A hand-built Namespace must carry it too, or the emitter reads an
+    # attribute the parser would always have supplied.
     return Namespace(
         slug=SLUG,
         plan='PLAN-01',
         claim_index=0,
+        section_scope=False,
         verdict='corroborated',
         checked_at=SHA,
         by=PRODUCER,
