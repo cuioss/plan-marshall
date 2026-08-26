@@ -29,7 +29,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from runtime_base import PERMISSION_FIX_OPERATIONS, Runtime, toon_error, toon_noop, toon_success
+from runtime_base import (
+    PERMISSION_FIX_OPERATIONS,
+    Runtime,
+    marshal_shape_error,
+    toon_error,
+    toon_noop,
+    toon_success,
+)
 
 
 class OpenCodeRuntime(Runtime):
@@ -66,18 +73,39 @@ class OpenCodeRuntime(Runtime):
             )
 
         marshal_path = plan_dir / "marshal.json"
+        # Three corrupt-input edges, mirroring the sibling ClaudeRuntime: a MISSING
+        # file starts from {}; an unreadable or unparseable one is caught by the
+        # except clause; and a PARSEABLE file of the wrong SHAPE is refused by the
+        # shared marshal_shape_error guard. The parse edge and the shape edge are
+        # separate — a successful json.loads proves the bytes were valid JSON, not
+        # that they were an object — so `[]` and `{"runtime": null}` used to reach
+        # the seeding assignments and raise an uncaught TypeError here too. The
+        # mirror holds by construction because both runtimes call the ONE shared
+        # guard rather than each carrying its own copy.
         try:
             if marshal_path.exists():
-                existing: dict[str, Any] = json.loads(marshal_path.read_text(encoding="utf-8"))
+                # Untyped until the shape guard below runs — see marshal_shape_error.
+                existing: Any = json.loads(marshal_path.read_text(encoding="utf-8"))
             else:
                 existing = {}
-
-            if "runtime" not in existing:
-                existing["runtime"] = {}
-            existing["runtime"]["target"] = target
-
-            marshal_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
         except (OSError, json.JSONDecodeError) as exc:
+            return toon_error(
+                "project initial-setup",
+                "io_error",
+                f"Failed to read marshal.json: {exc}",
+            )
+
+        shape_error = marshal_shape_error("project initial-setup", marshal_path, existing)
+        if shape_error is not None:
+            return shape_error
+
+        if "runtime" not in existing:
+            existing["runtime"] = {}
+        existing["runtime"]["target"] = target
+
+        try:
+            marshal_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+        except OSError as exc:
             return toon_error(
                 "project initial-setup",
                 "io_error",

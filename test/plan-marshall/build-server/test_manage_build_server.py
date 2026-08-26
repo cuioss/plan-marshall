@@ -277,6 +277,10 @@ def test_upgrade_drains_then_starts(home, monkeypatch):
     assert result['already_running'] is False
     assert result['status'] == 'success'
     assert 'reason' not in result
+    # The error fields are set only on a failure branch — a payload that always
+    # carried them would make them useless as a failure discriminator.
+    assert 'error' not in result
+    assert 'message' not in result
 
 
 def test_upgrade_reports_a_failed_drain_instead_of_claiming_success(home, monkeypatch):
@@ -295,6 +299,33 @@ def test_upgrade_reports_a_failed_drain_instead_of_claiming_success(home, monkey
     assert result['already_running'] is True
     assert result['status'] != 'success'
     assert result['reason'] == 'drain_did_not_exit'
+    # The shared error contract, not just `reason`: a consumer that decodes
+    # `error`/`message` (manage-contract.md) receives a readable payload. The
+    # result survives to one — `print_toon` exits 0, so reconcile_daemon's
+    # `_invoke_executor` hands the whole dict on rather than discarding it.
+    assert result['error'] == 'drain_did_not_exit'
+    assert 'drain' in result['message']
+
+
+def test_upgrade_reports_a_daemon_still_up_after_a_clean_drain(home, monkeypatch):
+    # The SECOND failure branch, documented on the operator surface in SKILL.md
+    # and previously unreached by any test. It is NOT the branch above: the drain
+    # window closes cleanly (`drain_exited: True`), yet the start half still finds
+    # a daemon up — so the old daemon was never actually replaced. A pid that
+    # stays live across both halves is what separates the two branches.
+    monkeypatch.setattr(mbs, '_running_pid', lambda: 999)
+    monkeypatch.setattr(mbs, '_signal', lambda pid, sig: None)
+    monkeypatch.setattr(mbs, '_wait_for_exit', lambda pid, grace: True)
+    monkeypatch.setattr(mbs, '_spawn_detached', lambda command, env: None)
+
+    result = mbs.run_upgrade(Namespace())
+
+    assert result['drain_exited'] is True
+    assert result['already_running'] is True
+    assert result['status'] != 'success'
+    assert result['reason'] == 'already_running_after_drain'
+    assert result['error'] == 'already_running_after_drain'
+    assert 'never actually replaced' in result['message']
 
 
 def test_upgrade_with_nothing_to_drain_stays_a_success(home, monkeypatch):

@@ -310,9 +310,17 @@ tree and both leave superseded version dirs behind. The sweep and its
 
 ## Stage 2: reconcile-config (mutating)
 
-Honor the Stage 2 top-level gate, then reconcile `marshal.json`. Run the three
-reconcile verbs in order — `sync-defaults` then `steps-sort` then, LAST,
-`normalize-keys`:
+Honor the Stage 2 top-level gate, then run exactly the Stage 2 `sub_steps` the
+plan emitted. That list is kind-invariant — `reconcile-marshal-json` then
+`migrate-bot-lists` — and both sub-steps are expanded below, in that order. The
+prose enumerates the emitted set: a sub-step the planner emits but this section
+never names is one a reader completes the documented upgrade without ever
+running.
+
+### Sub-step `reconcile-marshal-json`
+
+Reconcile `marshal.json`. Run the three reconcile verbs in order —
+`sync-defaults` then `steps-sort` then, LAST, `normalize-keys`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config sync-defaults
@@ -353,6 +361,29 @@ When `normalize-keys` returns `status: warning` with a non-empty
 `unrecognized_keys`, surface that list to the operator: those top-level keys are
 absent from the canonical order and were preserved but appended out of position (a
 stray or consumer-added block) rather than dropped.
+
+### Sub-step `migrate-bot-lists`
+
+Run after the three reconcile verbs and before the `build-map` drift gate below,
+matching the emitted order:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade migrate-bot-lists
+```
+
+A one-shot legacy auto-map of the retired `enabled_bots` knob onto the two-list
+participation model (`required_bots` / `optional_bots`) on the
+`plan-marshall:automatic-review` step. It takes no arguments and is
+**self-disarming**: once the legacy key is gone the verb is a no-op success, so
+re-running the upgrade flow is always safe. An operator answer already recorded
+in the new keys WINS — the migration removes only the stale legacy key and never
+downgrades `bot_lists_provenance` from `answered`. See the `marshall-steward`
+Canonical invocations (`upgrade migrate-bot-lists`) for the verb shape and
+`upgrade.py`'s `migrate_bot_lists` docstring for the four exhaustive input states.
+
+Reaching Stage 3 without running this sub-step is the concrete loss it guards: a
+project carrying a legacy `enabled_bots` value completes the upgrade with the
+retired knob still in `marshal.json` and neither participation list seeded.
 
 **Nested gate — `build-map` re-seed (STILL prompts under `integrate=true`).**
 Compute the drift between the persisted `build.map` and the live-tree derivation,

@@ -198,15 +198,27 @@ class _Runner:
     orchestration now refuses to treat an unsubstantiated success as one — a
     fake that omits them would be asserting against a verb shape that no longer
     exists.
+
+    The default is selected on ``result is not None``, NOT on truthiness. A
+    falsy-triggered ``or`` default silently swapped the SUCCESS default in for
+    ``_Runner({})``, which made the fixture structurally incapable of producing
+    the one result the production fail-open actually emits: ``_invoke_executor``
+    returns ``{}`` whenever the executor is absent, the subprocess errors, the
+    return code is non-zero, or the TOON does not parse. The empty dict must
+    reach the orchestration verbatim.
     """
 
     def __init__(self, result: dict | None = None):
         self.calls: list[str] = []
-        self._result = result or {
-            'status': 'success',
-            'drain_exited': True,
-            'already_running': False,
-        }
+        self._result = (
+            result
+            if result is not None
+            else {
+                'status': 'success',
+                'drain_exited': True,
+                'already_running': False,
+            }
+        )
 
     def __call__(self, action: str) -> dict:
         self.calls.append(action)
@@ -369,9 +381,12 @@ def test_failed_start_is_reported_by_already_running(marker):
 
 
 def test_verb_that_reports_neither_field_cannot_prove_success(marker):
-    # A verb result carrying no failure-bearing field cannot substantiate its own
-    # success — including the fail-open {} an unreachable executor produces. The
-    # owed marker must survive that, not be cleared by an unverifiable claim.
+    # A verb that SAYS success but carries no failure-bearing field cannot
+    # substantiate the claim. This is the field-absence arm only — the status word
+    # is already 'success', so the gate is reached past the status check. The
+    # fail-open {} is a DIFFERENT arm and has its own test below; folding the two
+    # together is what left that one uncovered. The owed marker must survive an
+    # unverifiable claim rather than be cleared by it.
     marker.write_text(json.dumps({'owed': True, 'defer_count': 4}), encoding='utf-8')
     runner = _Runner({'status': 'success'})
     status = _status(running_binary_path=_RUNNING_STALE, binary_diverges=True)
@@ -383,6 +398,42 @@ def test_verb_that_reports_neither_field_cannot_prove_success(marker):
     assert summary['reconcile_result'] == 'failed'
     assert summary['failure_reason'] == 'already_running_absent'
     assert marker.exists()
+
+
+def test_empty_verb_result_is_a_failed_reconcile_that_keeps_the_debt(marker):
+    # The production fail-open: `_invoke_executor` returns {} when the executor is
+    # absent, the subprocess errors, the return code is non-zero, or the TOON does
+    # not parse — the single most likely real failure. It carries no status word
+    # at all, so it fails at the status gate as `verb_reported_nothing`, EARLIER
+    # and under a different reason than the field-absence case above.
+    #
+    # This case was unreachable until `_Runner` stopped selecting its default on
+    # truthiness: `_Runner({})` used to hand back the success default, so the
+    # fixture could not express the input two comments claimed was covered.
+    marker.write_text(json.dumps({'owed': True, 'defer_count': 4}), encoding='utf-8')
+    runner = _Runner({})
+    status = _status(running_binary_path=_RUNNING_STALE, binary_diverges=True)
+
+    summary = rd.reconcile(
+        status_reader=lambda: status, action_runner=runner, marker=marker, now='T1'
+    )
+
+    assert runner.calls == ['upgrade']
+    assert summary['reconcile_result'] == 'failed'
+    assert summary['failure_reason'] == 'verb_reported_nothing'
+    # An unverifiable success must NEVER discharge the debt.
+    assert marker.exists()
+    assert json.loads(marker.read_text(encoding='utf-8'))['reason'] == 'reconcile_failed'
+
+
+def test_runner_fixture_returns_an_empty_result_verbatim():
+    # Guards the fixture itself, not the orchestration: the case above is only
+    # meaningful while `_Runner({})` really hands `{}` back. A truthiness-selected
+    # default would substitute the success shape here and quietly turn that test
+    # into a duplicate of the confirmed-success path.
+    assert _Runner({})('upgrade') == {}
+    # Matched negative control: the default is still supplied when nothing is passed.
+    assert _Runner()('upgrade')['status'] == 'success'
 
 
 def test_verb_reporting_error_is_a_failed_reconcile(marker):

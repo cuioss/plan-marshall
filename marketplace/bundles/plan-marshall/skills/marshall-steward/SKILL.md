@@ -915,6 +915,16 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:gitignore_setup [
 python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade plan [--integrate {true|false}] [--project-kind {auto|meta|consumer}]
 ```
 
+### upgrade — migrate-bot-lists
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade migrate-bot-lists
+```
+
+Takes no arguments and operates on the live `marshal.json`. Driven as the
+`migrate-bot-lists` sub-step of upgrade Stage 2; idempotent and self-disarming,
+so a re-run after the legacy `enabled_bots` key is gone is a no-op success.
+
 ### cache_freshness — check
 
 ```bash

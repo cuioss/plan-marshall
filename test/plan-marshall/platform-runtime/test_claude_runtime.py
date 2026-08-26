@@ -232,6 +232,66 @@ class TestProjectInitialSetup:
         # a fresh document, and not emptied.
         assert marshal_path.read_text(encoding="utf-8") == corrupt
 
+    @pytest.mark.parametrize(
+        ("raw", "case_id"),
+        [
+            pytest.param("[]", "top-level-list", id="top-level-list"),
+            pytest.param('{"runtime": null}', "null-runtime", id="null-runtime-block"),
+        ],
+    )
+    def test_parseable_but_wrong_shape_yields_io_error_and_leaves_file_intact(
+        self, rt, tmp_path, raw, case_id
+    ):
+        """A PARSEABLE marshal.json of the wrong shape takes the io_error route too.
+
+        The parse edge and the shape edge are distinct: ``json.loads`` succeeds on
+        both documents below, so neither is caught by the
+        ``(OSError, json.JSONDecodeError)`` handler. Before the shape guard each
+        reached the seeding assignments and raised an UNCAUGHT ``TypeError``, so
+        the verb died with a traceback instead of the contract's structured
+        ``io_error`` — and the two arrive by different routes:
+
+        - ``[]`` — ``"runtime" not in []`` is True, so ``data["runtime"] = {}``
+          raises "list indices must be integers".
+        - ``{"runtime": null}`` — the key IS present, so the re-init guard does
+          NOT fire and ``data["runtime"]["target"] = ...`` raises "'NoneType'
+          object does not support item assignment". A ``.get()``-based shape check
+          would read ``None`` as "absent" and miss this one entirely.
+
+        Both assert the file is byte-unchanged: refusing must not overwrite the
+        config the refusal exists to preserve.
+        """
+        project_dir = tmp_path / f"shape-{case_id}"
+        marshal_path = project_dir / ".plan" / "marshal.json"
+        marshal_path.parent.mkdir(parents=True)
+        marshal_path.write_text(raw, encoding="utf-8")
+
+        result = _parsed(rt.project_initial_setup(str(project_dir), "claude"))
+
+        assert result["status"] == "error"
+        assert result["error"] == "io_error"
+        assert marshal_path.read_text(encoding="utf-8") == raw
+
+    def test_absent_runtime_key_is_not_treated_as_a_shape_violation(self, rt, tmp_path):
+        """Matched negative control: a runtime-less object still initializes.
+
+        Key-absent and key-present-but-null are different states, and only the
+        second is corrupt. Without this control a guard that rejected every
+        document lacking a dict ``runtime`` block would satisfy both rejection
+        cases above while making a first-run initialization impossible.
+        """
+        project_dir = tmp_path / "no-runtime-key"
+        marshal_path = project_dir / ".plan" / "marshal.json"
+        marshal_path.parent.mkdir(parents=True)
+        marshal_path.write_text(json.dumps({"plan": {"keep": True}}), encoding="utf-8")
+
+        result = _parsed(rt.project_initial_setup(str(project_dir), "claude"))
+
+        assert result["status"] == "success"
+        marshal = json.loads(marshal_path.read_text())
+        assert marshal["runtime"]["target"] == "claude"
+        assert marshal["plan"] == {"keep": True}
+
     def test_response_includes_target_and_marshal_written(self, rt, tmp_path):
         """Success response includes target, project_dir, marshal_written fields."""
         project_dir = tmp_path / "proj2"

@@ -87,13 +87,24 @@ class ConcurrentConfigModificationError(Exception):
 # the threat model needs. The lost update these CLI verbs can actually suffer is
 # CROSS-process — two concurrent ``manage-config`` / ``marshall-steward``
 # invocations, each its own process with its own copy of this map — and there the
-# guard fails closed (the second process's recorded load fingerprint no longer
-# matches the disk the first process rewrote). It does NOT serialize two
-# concurrent writers sharing ONE process: they share this map, so the first
-# save's fingerprint update becomes the second's baseline. These one-shot CLI
-# verbs never mutate the config from two in-process writers concurrently, and
-# serializing that case would require a per-load token or a held file lock — the
-# general locking primitive the plan deliberately leaves out of scope.
+# guard catches the SEQUENTIAL race: the second process's recorded load
+# fingerprint no longer matches the disk the first process already rewrote.
+#
+# It is OPTIMISTIC, not atomic, and the difference is load-bearing. ``save_config``
+# reads the current fingerprint and then calls ``os.replace`` as two separate
+# operations, so a writer that commits INSIDE that window is compared against and
+# then overwritten — still a lost update, and still silent. What the guard
+# genuinely delivers is detection of a writer that committed before the
+# comparison, which is the ordinary sequential-CLI race; it is not a guarantee
+# that no concurrent write is ever lost. Closing the remaining window needs a
+# held file lock or a per-load token — the general locking primitive the plan
+# deliberately leaves out of scope — so the claim is stated at the width of the
+# mechanism rather than the mechanism widened to fit a claim.
+#
+# It also does NOT serialize two concurrent writers sharing ONE process: they
+# share this map, so the first save's fingerprint update becomes the second's
+# baseline. These one-shot CLI verbs never mutate the config from two in-process
+# writers concurrently.
 _CONFIG_FINGERPRINTS: dict[str, str] = {}
 
 # Monotonic per-process counter for unique temp-file names in the atomic write,
@@ -227,9 +238,16 @@ def save_config(config: dict) -> None:
     directory + :func:`os.replace`) so a crashed or interrupted writer never
     leaves a half-written config behind.
 
-    The guarantee is CROSS-process, which is the mode these one-shot CLI verbs can
-    actually race in — see :data:`_CONFIG_FINGERPRINTS` for why per-process state
-    is the right granularity and what it deliberately does not cover.
+    **The check is OPTIMISTIC, not atomic.** The fingerprint comparison and the
+    ``os.replace`` below are two separate operations, so a writer committing
+    between them is compared against and then overwritten — that lost update is
+    detected by nothing here. What is refused is a writer that committed BEFORE
+    the comparison, which is the ordinary sequential race two one-shot CLI
+    invocations actually run: the CROSS-process mode. Read the guard as detection
+    of that race, never as a guarantee that no concurrent write can be lost. See
+    :data:`_CONFIG_FINGERPRINTS` for why per-process state is the right
+    granularity, what closing the remaining window would cost, and what the guard
+    deliberately does not cover.
 
     Callers outside this module reach it too: ``manage-providers``'
     ``_providers_core._save_marshal`` delegates its whole-document write here, so

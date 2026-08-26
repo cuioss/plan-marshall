@@ -72,15 +72,18 @@ AskUserQuestion:
 ```
 
 On `set`, ask for the zone as an IANA name (for example `UTC`, `Europe/Berlin`,
-`America/New_York`). Pass whatever the operator supplies straight to the verb — the verb validates it.
-Do NOT pre-screen the name against a list written here: a hand-maintained zone list would go stale
-against the host's own zone database, and the verb already rejects a name that does not load.
+`America/New_York`). Pass whatever the operator supplies to the verb as a **single quoted argument**
+— the verb validates it. Quoting is not cosmetic: the verb's validation runs only after the shell has
+already parsed the command line, so an unquoted operator answer carrying a shell metacharacter is
+interpreted by the shell before validation is ever reached. Do NOT pre-screen the name against a list
+written here: a hand-maintained zone list would go stale against the host's own zone database, and
+the verb already rejects a name that does not load.
 
 ## Step 3: Apply the change
 
 | Selection | Command |
 |-----------|---------|
-| set | `python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config display-timezone set --value {zone}` |
+| set | `python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config display-timezone set --value "{zone}"` |
 | reset | `python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config display-timezone set --value UTC` |
 | back | Do nothing → Return to the Configuration menu |
 

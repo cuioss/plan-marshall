@@ -1773,6 +1773,87 @@ class TestCredentialsConfigKeyLazyMigration:
         assert read_provider_config(_CANONICAL_SKILL) == {'url': _SONAR_URL}
         assert 'WARNING' in capsys.readouterr().err
 
+    def test_read_path_guard_refuses_a_writer_that_commits_mid_read(self, tmp_path, monkeypatch, capsys):
+        """The swallowed refusal is REACHABLE from the read path, not merely asserted.
+
+        The two cases above inject the exception directly, so they pin the
+        swallow while saying nothing about whether the real guard can ever raise
+        here. It can only when a ``load_config`` recorded the on-disk fingerprint
+        ``save_config`` compares against — so this drives the REAL
+        ``_save_marshal`` with a concurrent writer committing in the window
+        between the read's load and the migration's save.
+
+        Against the previous bare ``json.loads`` read no fingerprint is
+        recorded, ``save_config`` takes its unguarded branch, and the concurrent
+        writer's document is destroyed with no error at all. The surviving
+        ``plan.v == 99`` is what separates the two: it fails on the unguarded
+        read and passes on the guarded one.
+        """
+        import _config_core
+
+        marshal = stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {'plan': {'v': 1}, 'credentials_config': {_PREFIXED_SKILL: {'url': _SONAR_URL}}},
+        )
+        # The fingerprint map is module-level and keyed by path; clearing it makes
+        # this test's own recorded load unambiguously the one the save compares
+        # against (mirrors ``TestMarshalWriteDelegation._stage``).
+        _config_core._CONFIG_FINGERPRINTS.clear()
+
+        real_save = _providers_core._save_marshal
+
+        def _commit_a_concurrent_write_then_save(config):
+            marshal.write_text(json.dumps({'plan': {'v': 99}}), encoding='utf-8')
+            real_save(config)
+
+        monkeypatch.setattr('_providers_core._save_marshal', _commit_a_concurrent_write_then_save)
+
+        # The read still succeeds — the in-memory config IS canonicalized.
+        assert read_provider_config(_CANONICAL_SKILL) == {'url': _SONAR_URL}
+
+        persisted = json.loads(marshal.read_text())
+        assert persisted['plan']['v'] == 99
+        assert 'credentials_config' not in persisted
+        assert 'WARNING' in capsys.readouterr().err
+
+    def test_uninterrupted_read_path_migration_still_persists(self, tmp_path, monkeypatch):
+        """Matched negative control: with no concurrent writer the migration lands.
+
+        Without it, a read path that refused every migration save would satisfy
+        the case above while never canonicalizing anything. The real
+        ``_save_marshal`` runs here too, so the pair differs only in whether a
+        writer commits in the window.
+        """
+        import _config_core
+
+        marshal = stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {'plan': {'v': 1}, 'credentials_config': {_PREFIXED_SKILL: {'url': _SONAR_URL}}},
+        )
+        _config_core._CONFIG_FINGERPRINTS.clear()
+
+        assert read_provider_config(_CANONICAL_SKILL) == {'url': _SONAR_URL}
+
+        persisted = json.loads(marshal.read_text())
+        assert persisted['plan']['v'] == 1
+        assert persisted['credentials_config'] == {_CANONICAL_SKILL: {'url': _SONAR_URL}}
+
+    def test_unparseable_marshal_read_falls_back_to_empty(self, tmp_path, monkeypatch):
+        """An unparseable marshal.json still resolves to ``{}`` on the read path.
+
+        The read moved from ``json.loads`` to ``_config_core.load_config``, which
+        wraps a decode failure in a plain ``ValueError`` rather than letting
+        ``json.JSONDecodeError`` surface. An except clause that still named only
+        ``JSONDecodeError`` would let the wrapped error escape the verb entirely,
+        turning a documented fallback into a crash.
+        """
+        marshal = stage_marshal(tmp_path, monkeypatch, config=None)
+        marshal.write_text('not json {{{', encoding='utf-8')
+
+        assert read_provider_config(_CANONICAL_SKILL) == {}
+
     def test_identical_bodies_collapse_without_conflict(self, tmp_path, monkeypatch):
         """Two spellings carrying the same body collapse — nothing is lost."""
         marshal = stage_marshal(

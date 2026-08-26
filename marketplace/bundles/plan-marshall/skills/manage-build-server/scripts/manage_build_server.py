@@ -658,9 +658,20 @@ def run_upgrade(_args: Namespace) -> dict[str, Any]:
       supposed to have removed it, so a live daemon here means the old one was
       never replaced.
 
-    Either signal sets ``status: error`` with a ``reason``. Without them the verb
-    reported ``success`` unconditionally and its caller cleared a reconcile-owed
-    marker on that word alone.
+    Either signal sets ``status: error``. Without them the verb reported
+    ``success`` unconditionally and its caller cleared a reconcile-owed marker on
+    that word alone.
+
+    The failure payload carries the full shared error shape — ``error`` (the
+    machine-readable code) and ``message`` (a human-readable sentence naming what
+    failed) from ``ref-workflow-architecture/standards/manage-contract.md``,
+    alongside the ``reason`` this verb has always reported. ``reason`` is kept
+    because ``reconcile_daemon._reconcile_failure`` and the operator surface in
+    ``SKILL.md`` read it; ``error`` and ``message`` are added because a payload
+    that survives to a contract-aware consumer (``print_toon`` exits 0, so
+    ``_invoke_executor`` hands the whole dict on) must be decodable by one. Both
+    error branches set the three fields from a single place, so the code can
+    never drift from the reason.
     """
     drain_result = run_drain(_args)
     start_result = _start_daemon()
@@ -683,12 +694,28 @@ def run_upgrade(_args: Namespace) -> dict[str, Any]:
         'binary_path': start_result.get('binary_path'),
         'version': marshalld.VERSION,
     }
+
+    def _fail(code: str, message: str) -> None:
+        """Stamp the full error shape from ONE place, so ``error`` cannot drift."""
+        result['status'] = 'error'
+        result['reason'] = code
+        result['error'] = code
+        result['message'] = message
+
     if not drain_exited:
-        result['status'] = 'error'
-        result['reason'] = 'drain_did_not_exit'
+        _fail(
+            'drain_did_not_exit',
+            f'The running daemon (pid {drain_result.get("pid")}) did not exit within the '
+            f'{_DRAIN_GRACE_SECONDS}s drain window; the process this upgrade meant to '
+            f'replace is still alive, so version {marshalld.VERSION} did not take over.',
+        )
     elif already_running:
-        result['status'] = 'error'
-        result['reason'] = 'already_running_after_drain'
+        _fail(
+            'already_running_after_drain',
+            'A daemon was already running when the upgrade tried to start version '
+            f'{marshalld.VERSION}; the drain reported a clean exit, so the old daemon '
+            'was never actually replaced.',
+        )
     return result
 
 

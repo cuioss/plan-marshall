@@ -96,6 +96,8 @@ error: unknown_target
 message: "Target 'foobar' is not in the registry; valid targets are: claude, opencode"
 ```
 
+The seed is a read-modify-write, so it also returns `error: io_error` on three corrupt-input edges, identically on both targets: the directory tree cannot be created; `marshal.json` exists but is unreadable or unparseable; or it parses yet carries a shape the seed cannot mutate — a top-level non-object, or a `runtime` key present with a non-object value. The parse edge and the shape edge are separate, because a successful parse proves the bytes were valid JSON and not that they were an object. Every corrupt edge refuses **before any write**: the operation never falls back to an empty document, since that fallback would destroy exactly the configuration the read exists to preserve.
+
 ---
 
 ### `project install-hook`

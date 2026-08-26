@@ -163,8 +163,15 @@ to the journal's bounded-retention model.
   upgrade with nothing to drain reports `true`) and `already_running` (whether
   the start half found a daemon still up, which for an upgrade is a failure, not
   an idempotent no-op, because the drain was supposed to have removed it).
-  Either signal yields `status: error` with a named `reason`, so a caller gates
-  on a field that can report failure rather than on the word `success`.
+  Either signal yields `status: error`, so a caller gates on a field that can
+  report failure rather than on the word `success`. The failure payload carries
+  the full shared error shape — `error` (the machine-readable code) and `message`
+  (what failed, in words) per `ref-workflow-architecture/standards/manage-contract.md`
+  — alongside the `reason` this verb has always reported, which is retained
+  because `reconcile_daemon` reads it. `error` and `reason` always carry the same
+  value, drawn from the closed set `drain_did_not_exit` (the old daemon outlived
+  the drain grace window) and `already_running_after_drain` (the drain reported a
+  clean exit, yet the start half still found a daemon up).
 
 **Crash recovery.** A crashed daemon leaves a stale socket and pidfile; the next
 `start` liveness-probes the recorded pid and, finding it dead, cleans the stale
@@ -186,7 +193,7 @@ survive, and any job that was in flight when the daemon died is marked `killed`
 | `drain` | Gracefully stop the daemon (no `SIGKILL`) |
 | `status` | Report running version, in-flight/queued counts (`unknown` when the daemon did not send them — never `0`), running vs resolved binary provenance (divergence flagged; `unknown` never the resolved path) |
 | `install` | Idempotent version-pinned start |
-| `upgrade` | Drain then start the verified version. Reports `drain_exited` (did the old daemon actually exit?) and `already_running` (did the start find one still up?), and returns `status: error` with a `reason` when either says the daemon was never replaced |
+| `upgrade` | Drain then start the verified version. Reports `drain_exited` (did the old daemon actually exit?) and `already_running` (did the start find one still up?); when either says the daemon was never replaced it returns `status: error` with `error` + `message` + `reason`, where `error` and `reason` carry the same code (`drain_did_not_exit` or `already_running_after_drain`) |
 | `logs` | Read-only, project-scoped view of the daemon's interaction-audit log |
 
 **Script**: `plan-marshall:manage-build-server:marshalld` — the daemon binary,

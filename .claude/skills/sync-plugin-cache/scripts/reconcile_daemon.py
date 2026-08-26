@@ -353,8 +353,13 @@ def _reconcile_failure(action: str, result: dict) -> str | None:
 
     A verb reporting NEITHER field cannot substantiate its own success, and is
     treated as a failure: an unverifiable success is exactly the report this gate
-    exists to stop. That also covers the fail-open ``{}`` an unreachable executor
-    produces.
+    exists to stop.
+
+    The fail-open ``{}`` an unreachable executor produces is caught EARLIER and
+    by a different arm — it carries no ``status`` word, so the status check above
+    rejects it as ``verb_reported_nothing`` before either field is consulted. The
+    two are separate reasons, not one: reading them as a single case is what let
+    the ``{}`` route go untested while a comment claimed it covered.
 
     Args:
         action: The reconcile action that was run (``upgrade`` or ``start``).

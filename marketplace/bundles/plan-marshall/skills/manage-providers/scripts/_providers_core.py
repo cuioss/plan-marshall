@@ -107,6 +107,15 @@ def _save_marshal(config: dict[str, Any]) -> None:
     :func:`_marshal_path` are the same ``file_ops.get_marshal_path()`` — so the
     delegation needs no path plumbing.
 
+    Two of the three inherited properties are unconditional, but the lost-update
+    guard is NOT: ``save_config`` compares against a fingerprint only a
+    ``load_config`` records, so this delegation confers the guard only on an
+    entry path that read through ``load_config``. Both callers now do —
+    :func:`write_provider_config` and :func:`read_provider_config` — which is
+    what makes the ``Raises`` clause below reachable from either. A caller that
+    reintroduced a bare ``json.loads`` would silently take ``save_config``'s
+    unguarded branch while this docstring still claimed the guard.
+
     Raises:
         ConcurrentConfigModificationError: propagated from ``save_config`` when
             marshal.json changed on disk since it was loaded. Callers on a WRITE
@@ -150,7 +159,12 @@ def _migrate_credentials_config_keys_if_needed(config: dict[str, Any]) -> str:
       ``ConcurrentConfigModificationError`` (another writer committed between
       this module's read and the save) are both logged to stderr and swallowed,
       so an opportunistic migration on a read path never turns a resilient read
-      into a hard crash. Swallowing the concurrent-modification case is right
+      into a hard crash. The refusal is genuinely reachable from BOTH entry
+      paths — :func:`read_provider_config` and :func:`write_provider_config`
+      each read through ``_config_core.load_config``, which is what records the
+      fingerprint ``save_config`` compares against; a bare ``json.loads`` on
+      either would make this clause describe a guard that cannot fire.
+      Swallowing the concurrent-modification case is right
       HERE and wrong on the write path: this migration is a canonicalization
       the caller did not ask for, and losing it costs nothing because the next
       access re-attempts it, whereas losing a caller's own provider write would
@@ -207,14 +221,30 @@ def read_provider_config(skill_name: str) -> dict[str, Any]:
     then a canonical-equality scan matches a key stored under the other
     spelling. Stale keys are canonicalized transparently on this access path.
 
+    The read goes through ``_config_core.load_config`` for the same reason
+    :func:`write_provider_config` does: the lost-update guard in
+    :func:`_save_marshal` fires only when a load recorded the on-disk
+    fingerprint it can compare against. This path can write — the lazy key
+    migration below persists on its ``migrated`` branch — so a bare
+    ``json.loads`` here would leave that write unguarded no matter what the save
+    side does, and the guard's documented refusal would be unreachable rather
+    than merely rare. Load and save are one pair on BOTH entry paths.
+
     Returns:
         Dict with provider config fields, or empty dict if not found.
     """
     marshal_path = _marshal_path()
     if not marshal_path.exists():
         return {}
+    from _config_core import load_config
+
     try:
-        config = json.loads(marshal_path.read_text(encoding='utf-8'))
+        # ``load_config`` wraps a decode failure in a plain ``ValueError``, so the
+        # except clause names ``ValueError`` rather than ``json.JSONDecodeError``
+        # (its subclass) — naming the subclass alone would let the wrapped error
+        # escape this documented graceful-fallback read. ``KeyError`` is retained
+        # from the previous bare read so the fallback set is unchanged.
+        config = load_config()
         _migrate_credentials_config_keys_if_needed(config)
         credentials_config: dict[str, Any] = config.get('credentials_config', {})
         if skill_name in credentials_config:
@@ -226,7 +256,7 @@ def read_provider_config(skill_name: str) -> dict[str, Any]:
                 matched: dict[str, Any] = value
                 return matched
         return {}
-    except (json.JSONDecodeError, KeyError):
+    except (ValueError, KeyError):
         return {}
 
 

@@ -105,6 +105,57 @@ def toon_noop(operation: str, reason: str, alternative: str) -> str:
     return serialize_toon(data)
 
 
+def marshal_shape_error(operation: str, marshal_path: Any, marshal_data: Any) -> str | None:
+    """Return a TOON ``io_error`` when a PARSED marshal.json is the wrong shape.
+
+    A successful ``json.loads`` says only that the bytes were valid JSON — not
+    that they were an object. Every ``project initial-setup`` implementation
+    then seeds ``runtime.target`` by item assignment, which raises an UNCAUGHT
+    ``TypeError`` on two parseable documents:
+
+    - a top-level non-object (``[]``, ``"x"``, ``3``, ``null``) — item
+      assignment against it is unsupported, so the verb dies with a traceback;
+    - an object whose ``runtime`` key is PRESENT but not an object
+      (``{"runtime": null}``) — the ``"runtime" not in data`` guard does not
+      fire, so the nested assignment lands on the wrong type. Key-absent and
+      key-present-but-wrong are distinct states, and only the second reaches
+      here; a ``.get()``-based check would miss it entirely.
+
+    Both are caller-visible corruption, so they take the route the unparseable
+    case already takes: a structured ``io_error``, refused BEFORE any write, so
+    the config this read exists to preserve is never overwritten.
+
+    Published here rather than copied into each runtime so the implementations
+    mirror one another BY CONSTRUCTION — the property both call sites' comments
+    claim. A per-runtime copy is what let the parse edge be handled in both and
+    the shape edge in neither.
+
+    Args:
+        operation: The operation name, used verbatim in the error response.
+        marshal_path: The marshal.json path, rendered into the message.
+        marshal_data: The value ``json.loads`` returned — of unknown shape.
+
+    Returns:
+        A serialized TOON ``io_error`` string when the shape is unsafe to
+        mutate, or ``None`` when it is safe.
+    """
+    if not isinstance(marshal_data, dict):
+        return toon_error(
+            operation,
+            "io_error",
+            f"marshal.json at {marshal_path} parsed as "
+            f"{type(marshal_data).__name__}, not a JSON object; refusing to overwrite it",
+        )
+    if "runtime" in marshal_data and not isinstance(marshal_data["runtime"], dict):
+        return toon_error(
+            operation,
+            "io_error",
+            f"marshal.json at {marshal_path} carries a 'runtime' key that is "
+            f"{type(marshal_data['runtime']).__name__}, not a JSON object; refusing to overwrite it",
+        )
+    return None
+
+
 # =============================================================================
 # Abstract Base Class
 # =============================================================================
