@@ -35,9 +35,22 @@ from input_validation import (
     parse_args_with_toon_errors,
 )
 from retro_sections import (
+    AGGREGATE_PARTIAL_COVERAGE,
+    AGGREGATE_UNMEASURABLE,
+    COMPOSE_TIME_ARTIFACT,
+    COMPOSE_TIME_DEGRADED_TOKEN,
+    COMPOSE_TIME_PRODUCER,
+    FOOTPRINT_AGGREGATE_KEY,
+    FOOTPRINT_DEGRADED_TOKENS,
+    PRODUCER_DEGRADED,
+    PRODUCER_RESOLVED,
+    PRODUCER_UNREAD,
+    PROVENANCE_ASPECT_REGISTRY,
+    PROVENANCE_COMPOSE_TIME,
     SECTION_SPEC,
     ZERO_ATTRIBUTION_FIELDS,
     ZERO_DECLARED_UNMEASURED_STATUSES,
+    footprint_consuming_aspect_keys,
 )
 from toon_parser import parse_toon
 
@@ -616,6 +629,159 @@ def build_document(
     return '\n'.join(parts), written, omitted, dropped
 
 
+def _iter_string_values(value: Any):
+    """Yield every string VALUE in a fragment tree — never a dict KEY.
+
+    The key/value split is the whole correctness of the degradation probe below,
+    not a stylistic preference. ``check-artifact-consistency`` publishes a
+    ``summary.inconclusive`` COUNTER on every run, so a walk that also matched
+    keys would find the token ``inconclusive`` in a perfectly clean fragment
+    (``inconclusive: 0``) and read it as degraded — firing the aggregate on
+    precisely the runs it must stay silent for, which is the control case
+    deliverable 5 pins.
+    """
+    if isinstance(value, str):
+        yield value
+        return
+    if isinstance(value, dict):
+        for item in value.values():
+            yield from _iter_string_values(item)
+        return
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _iter_string_values(item)
+
+
+def _declares_degraded(fragment: Any, tokens: tuple[str, ...]) -> bool:
+    """Return True when *fragment* carries one of its producers' degradation tokens.
+
+    Substring rather than equality, because the two tokens are emitted in two
+    different shapes and both are the producer's own existing honest degradation:
+    ``inconclusive`` is an exact per-check ``status`` value, while
+    ``ARTIFACT_COVERAGE_UNMEASURABLE`` is embedded in the TEXT of the warning
+    finding ``analyze-logs`` raises. An equality-only probe would read the second
+    producer as resolved on exactly the run where it declared it could not
+    measure — leaving the aggregate one member short of firing, forever.
+    """
+    for text in _iter_string_values(fragment):
+        if any(token in text for token in tokens):
+            return True
+    return False
+
+
+def _compose_time_producer_verdict(plan_dir: Path) -> str:
+    """Return the compose-time producer's verdict, read from the plan's manifest.
+
+    Unlike the fragment probe above this matches the artifact's raw text, keys
+    included, because ``pre_push_quality_gate_inactive`` is a STATE NAME rather
+    than a counter key — there is no clean-run shape that carries the name beside
+    a zero, so the key/value distinction that protects the fragment probe has
+    nothing to protect here.
+
+    An absent or unreadable manifest is :data:`PRODUCER_UNREAD`, never
+    ``resolved``: a plan composed before the manifest existed has no verdict to
+    report, and reporting one as clean would let an aggregate claim rest on a
+    member nothing was ever read from.
+    """
+    artifact = plan_dir / COMPOSE_TIME_ARTIFACT
+    if not artifact.is_file():
+        return PRODUCER_UNREAD
+    try:
+        text = artifact.read_text(encoding='utf-8')
+    except OSError:
+        return PRODUCER_UNREAD
+    return PRODUCER_DEGRADED if COMPOSE_TIME_DEGRADED_TOKEN in text else PRODUCER_RESOLVED
+
+
+def footprint_derivation_record(
+    fragments: dict[str, Any], plan_dir: Path
+) -> dict[str, Any] | None:
+    """Return the ONE plan-level footprint-derivation record, or ``None``.
+
+    Every producer keeps its own honest report unchanged; this says once, with
+    the roster attached, that N independent consumers all went unmeasurable on
+    the SAME missing derivation — the separate-what-you-could-not-evaluate shape
+    applied one level up, carrying producer identity in the answer.
+
+    The roster has two provenances and publishes them separately: the
+    retrospective-time members are DERIVED from the aspect registry
+    (:func:`retro_sections.footprint_consuming_aspect_keys`), and the single
+    compose-time member is named explicitly because it has no registry entry.
+
+    Returns ``None`` — no record, and therefore no section — unless every member
+    that was READ degraded. Two live states remain:
+
+    * :data:`AGGREGATE_UNMEASURABLE` — the roster was fully read and every member
+      degraded. The verdict fires.
+    * :data:`AGGREGATE_PARTIAL_COVERAGE` — every member that could be read
+      degraded, but at least one could not be read at all. The verdict is
+      SUPPRESSED and the coverage gap reported in its place: an aggregate
+      computed over a roster that was not fully read is the vacuous-authority
+      shape this signal exists to remove.
+
+    A run in which any member resolved yields ``None``: the signal is that they
+    all failed together, and a mixed roster is not that signal.
+    """
+    producers: list[dict[str, str]] = []
+    for fragment_key in footprint_consuming_aspect_keys():
+        if fragment_key not in fragments:
+            verdict = PRODUCER_UNREAD
+        elif _declares_degraded(fragments.get(fragment_key), FOOTPRINT_DEGRADED_TOKENS):
+            verdict = PRODUCER_DEGRADED
+        else:
+            verdict = PRODUCER_RESOLVED
+        producers.append(
+            {
+                'producer': fragment_key,
+                'verdict': verdict,
+                'provenance': PROVENANCE_ASPECT_REGISTRY,
+            }
+        )
+    producers.append(
+        {
+            'producer': COMPOSE_TIME_PRODUCER,
+            'verdict': _compose_time_producer_verdict(plan_dir),
+            'provenance': PROVENANCE_COMPOSE_TIME,
+        }
+    )
+
+    degraded = [p for p in producers if p['verdict'] == PRODUCER_DEGRADED]
+    resolved = [p for p in producers if p['verdict'] == PRODUCER_RESOLVED]
+    unread = [p for p in producers if p['verdict'] == PRODUCER_UNREAD]
+
+    if resolved or not degraded:
+        return None
+
+    state = AGGREGATE_PARTIAL_COVERAGE if unread else AGGREGATE_UNMEASURABLE
+    names = ', '.join(p['producer'] for p in degraded)
+    if state == AGGREGATE_UNMEASURABLE:
+        message = (
+            f'All {len(producers)} footprint-consuming producers went unmeasurable on the '
+            f'same missing derivation: {names}.'
+        )
+        severity = 'warning'
+    else:
+        message = (
+            f'{len(degraded)} of {len(producers)} footprint-consuming producers went '
+            f'unmeasurable ({names}), but {len(unread)} could not be read — the aggregate '
+            f'verdict is suppressed rather than computed over a partially-read roster.'
+        )
+        severity = 'info'
+
+    return {
+        'status': 'success',
+        'aspect': 'footprint-derivation',
+        'state': state,
+        'roster_source': f'{PROVENANCE_ASPECT_REGISTRY}+{PROVENANCE_COMPOSE_TIME}',
+        'producers': producers,
+        'producer_count': len(producers),
+        'degraded_count': len(degraded),
+        'resolved_count': len(resolved),
+        'unread_count': len(unread),
+        'findings': [{'severity': severity, 'message': message}],
+    }
+
+
 def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     plan_dir = resolve_plan_dir(args.mode, args.plan_id, args.archived_plan_path)
     if not plan_dir.exists():
@@ -623,6 +789,15 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
 
     fragments = load_fragments(Path(args.fragments_file))
     plan_id = args.plan_id or plan_dir.name
+
+    # Derived here — every fragment is still on disk and the bundle cleanup below
+    # has not run. The ordering is load-bearing rather than incidental: this
+    # script DELETES the fragment bundle on success, so an aggregate computed
+    # after that point could not read its own roster, and acting on its warning
+    # would mean rebuilding every fragment first.
+    derivation_record = footprint_derivation_record(fragments, plan_dir)
+    if derivation_record is not None:
+        fragments[FOOTPRINT_AGGREGATE_KEY] = derivation_record
 
     content, written, omitted, dropped = build_document(
         plan_id, args.mode, plan_dir, args.session_id, fragments
@@ -661,6 +836,12 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         # Reported, never gating: a written section whose "zero findings" cannot
         # be told apart from "could not look". See ``unattributed_zero_sections``.
         'sections_unattributed_zero': unattributed_zero_sections(written, fragments),
+        # The plan-level footprint-derivation aggregate's state, or ``None`` when
+        # no record was derived. Published so a caller can branch on the signal
+        # without re-parsing the rendered document.
+        'footprint_derivation_state': (
+            derivation_record['state'] if derivation_record is not None else None
+        ),
     }
     if dropped:
         result['message'] = (
