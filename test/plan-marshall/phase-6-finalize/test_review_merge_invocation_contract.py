@@ -49,9 +49,13 @@ heading-bounded LIST-roster walk (``_dispatch_roster`` parses ``- `key` `` list 
 a different shape from a fenced code block).
 
 Scope, stated honestly. "The finalize merge-and-review path" is a SEMANTIC scope with
-no machine-readable manifest, so the doc SET below (the barrier, the FIND/participation
-step, and the dispatcher that orchestrates them) is named from the plan's own scope
-definition. What is DERIVED — never hand-listed — is (a) WHERE each script is invoked
+no machine-readable manifest, so the doc SETS below are named from the plan's own scope
+definition rather than derived. They are two distinct sets and this paragraph does not
+enumerate either: ``_INVOCATION_DOCS`` is what gets scanned for invocations and
+``_CONVENTION_DOCS`` is what must carry the widened convention, the second being the
+first plus the dispatcher that orchestrates them. Reading the tuples is the only
+reliable way to know their membership — an enumeration written out here drifts from
+them silently, which it previously did. What is DERIVED — never hand-listed — is (a) WHERE each script is invoked
 within those docs, and (b) each doc's widening OBLIGATION, read off its own non-manage-*
 invocations rather than asserted. D3's runnable surface is the three participation verbs
 the plan names (``fetch_findings`` / ``review_completeness check`` / ``ci checks
@@ -75,12 +79,16 @@ from conftest import MARKETPLACE_ROOT, get_script_path, run_script
 # The finalize merge-and-review docs — the population source
 # =============================================================================
 #
-# These two documents carry the review-and-merge DECISION invocations: the
-# pre-merge barrier (branch-cleanup.md) and the FIND + participation guard
-# (automatic-review/SKILL.md). The dispatcher SKILL.md orchestrates them and
-# carries the same exit-code convention, so it is included in the convention-scope
-# check but not scanned for invocations (its own calls are the dispatcher's, not the
-# barrier's).
+# The review-and-merge DECISION invocations live in the pre-merge barrier
+# (branch-cleanup.md), the FIND + participation guard (automatic-review/SKILL.md),
+# and the rebased-HEAD re-review walkthrough (branch-cleanup-rereview.md). The
+# dispatcher SKILL.md orchestrates them and carries the same exit-code convention,
+# so it is included in the convention-scope check but not scanned for invocations
+# (its own calls are the dispatcher's, not the barrier's).
+#
+# The two tuples below are the authority for their own membership; this comment
+# states no count, because a number here restates a tuple that changes and goes
+# stale in the direction that hides a doc dropping out of a population.
 
 _SKILLS = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
 _BARRIER_DOC = _SKILLS / 'phase-6-finalize' / 'standards' / 'branch-cleanup.md'
@@ -554,8 +562,8 @@ class TestExitZeroNonSuccessIsDisposedOf:
 
         **No numeric floor is asserted, and that is deliberate.** An earlier form
         of this assertion pinned ``>= 2`` — a transcribed integer, contradicting
-        the rule its sibling `test_the_population_size_is_published` states thirty
-        lines below as the stated reason an identical ``>= 4`` floor was deleted:
+        the rule its sibling `test_the_population_size_is_published` states, in
+        this same file, as the reason an identical ``>= 4`` floor was deleted:
         a remembered number is a claim about the tree at the moment someone typed
         it, and as a floor it goes stale SILENTLY in the direction that matters,
         staying satisfied while the scan shrinks toward it.

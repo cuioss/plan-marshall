@@ -166,9 +166,11 @@ _IDS = [f'{provider}:{verb}' for provider, verb, _handler in _MEMBERS]
 #: ``pytest_report_header``. A population guard that only reports its size in a
 #: FAILURE message says nothing on the run that matters most: a green run over a
 #: silently shrunken population is indistinguishable from a green run over the
-#: whole of it. Naming the pair uniformly across the three routing guards is what
-#: lets one header entry publish all three without conftest re-deriving any of
-#: them — the number reported is the number this module actually swept.
+#: whole of it. Naming the pair uniformly across every registered routing guard is
+#: what lets one header entry publish them all without conftest re-deriving any of
+#: them — the number reported is the number this module actually swept. No count of
+#: those guards is stated here: the roster is ``_ROUTING_GUARD_MODULES`` in the root
+#: conftest and it grows, so a number written here goes stale silently.
 GUARD_POPULATION_LABEL = 'merge-shaped off-routing members'
 GUARD_POPULATION_SIZE = len(_MEMBERS)
 
