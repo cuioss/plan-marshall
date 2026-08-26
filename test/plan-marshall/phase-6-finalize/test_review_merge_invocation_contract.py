@@ -416,7 +416,7 @@ def _ci_invocation_sections() -> list[tuple[str, str, bool]]:
         if not ci_call.search(text):
             continue
         lines = text.splitlines()
-        marks = [i for i, ln in enumerate(lines) if re.match(r'^#{2,4} ', ln)]
+        marks = [i for i, ln in enumerate(lines) if re.match(r'^#{2,} ', ln)]
         marks.append(len(lines))
         for start, end in zip(marks, marks[1:], strict=False):
             blob = '\n'.join(lines[start:end])
@@ -570,26 +570,30 @@ class TestExitZeroNonSuccessIsDisposedOf:
         ``len(shape_marked) >= len(shape_marked_docs)`` holds by construction and
         can never fail.
 
-        So this test asserts a PROPERTY (the split is non-vacuous) and publishes
-        the population, and the per-section obligation is carried where it can be
-        grounded: `test_ci_invocation_is_discharged` requires every derived `ci`
-        section to be discharged by one arm or the other.
+        So this test asserts a PROPERTY (the split is non-vacuous), and the
+        per-section obligation is carried where it can be grounded:
+        `test_ci_invocation_is_discharged` requires every derived `ci` section to
+        be discharged by one arm or the other.
+
+        **This test publishes nothing itself, deliberately.** An earlier form
+        ended with a bare ``print`` of the split under a comment claiming it was
+        "visible as a number on a passing run". That claim was false as
+        implemented: the canonical `module-tests` / `verify` path carries no
+        ``-s`` / ``--capture=no`` / ``-rP``, so pytest captures and discards
+        stdout for a PASSING test — the only run on which the line was supposed
+        to appear. This module's real publication channel is the
+        ``GUARD_POPULATION_LABEL`` / ``GUARD_POPULATION_SIZE`` pair declared near
+        the top of this file, which the root conftest's ``pytest_report_header``
+        emits on every run; adding a second, ad-hoc reporter idiom here would
+        seed a third convention rather than use the proven one.
         """
         shape_marked = sorted(f'{rel} § {head}' for rel, head, shape in _CI_SECTIONS if shape)
-        by_convention_only = len(_CI_SECTIONS) - len(shape_marked)
 
         assert shape_marked, (
             f'ZERO of {len(_CI_SECTIONS)} derived `ci` sections carry a {_SHAPE_MARKER!r}. '
             'Every call-site positive shape requirement vanished at once, so the discharge '
             'sweep is carried entirely by the doc-level convention arm and this split is '
             'vacuous — which is precisely the deletion this test exists to catch.'
-        )
-        # Reported, not pinned — so a shrinking shape-marked side is visible as a
-        # number on a passing run rather than inferred from a green one.
-        print(
-            f'[review-merge] discharge split: {len(shape_marked)} shape-marked, '
-            f'{by_convention_only} convention-only, of {len(_CI_SECTIONS)} derived `ci` '
-            f'section(s): {shape_marked}'
         )
 
 

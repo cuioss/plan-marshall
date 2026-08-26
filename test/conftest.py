@@ -960,15 +960,23 @@ def pytest_collection_modifyitems(items):
 # Routing-guard population sizes, published on every run
 # =============================================================================
 
-#: The three population-derived routing guards, as
+#: The population-derived routing guards, as
 #: ``(label, path-relative-to-TEST_ROOT)``. Each module publishes its own
 #: ``GUARD_POPULATION_LABEL`` / ``GUARD_POPULATION_SIZE`` pair; this header reads
 #: those rather than re-deriving anything, so the number reported is the number
 #: the guard actually swept and the two cannot drift apart.
+#:
+#: No count is claimed for this tuple. A guard added without a row here is
+#: silent on exactly the run its population matters on — the passing one — and a
+#: transcribed size in this comment would go stale in that same direction.
 _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
     ('offrouting', 'plan-marshall/tools-integration-ci/test_merge_shaped_offrouting_refusal.py'),
     ('branch-cleanup', 'plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing.py'),
     ('review-merge', 'plan-marshall/phase-6-finalize/test_review_merge_invocation_contract.py'),
+    (
+        'envelope-plan-id',
+        'plan-marshall/tools-integration-ci/test_envelope_contract_plan_id_placement.py',
+    ),
 )
 
 

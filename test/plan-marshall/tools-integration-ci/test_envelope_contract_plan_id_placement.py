@@ -117,20 +117,15 @@ def test_derived_post_verb_population_is_non_empty():
     )
 
 
-def test_population_sizes_are_published(request):
-    """A passing run states the populations the guard covered."""
-    message = (
-        f'[envelope-contract plan_id placement] derived population: '
-        f'{len(POST_VERB_SUBCOMMANDS)} post-verb --plan-id subcommand(s) '
-        f'of {len(ALL_SUBCOMMANDS)} ci subcommand(s): '
-        f'{", ".join(sorted(POST_VERB_SUBCOMMANDS))}'
-    )
-    reporter = request.config.pluginmanager.get_plugin('terminalreporter')
-    if reporter is None:
-        print(message)
-    else:
-        reporter.write_line(message)
-    assert len(POST_VERB_SUBCOMMANDS) > 0
+#: Published on EVERY run — passing included — by the root conftest's
+#: ``pytest_report_header``, which reads this pair rather than re-deriving
+#: anything. Declared here rather than reported from inside a test because a
+#: test-body reporter call is not a publication channel on the canonical
+#: ``module-tests`` / ``verify`` path: that path carries no ``-s`` /
+#: ``--capture=no`` / ``-rP``, so pytest captures and discards a passing test's
+#: stdout — the only run on which a population line is supposed to appear.
+GUARD_POPULATION_LABEL = 'post-verb --plan-id ci subcommands'
+GUARD_POPULATION_SIZE = len(POST_VERB_SUBCOMMANDS)
 
 
 def test_pre_verb_clause_names_no_post_verb_subcommand():
