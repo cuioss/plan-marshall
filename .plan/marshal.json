@@ -283,7 +283,7 @@
     ],
     "pr_strategy": "compact",
     "pr_compact_max_changed_files": 150,
-    "merge_queue_managed_externally": false
+    "merge_queue_managed_externally": true
   },
   "providers": [
     {
