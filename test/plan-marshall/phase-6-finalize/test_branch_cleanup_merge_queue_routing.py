@@ -135,8 +135,9 @@ import pytest
 
 from conftest import MARKETPLACE_ROOT
 from _merge_shaped_roster import (
-    MERGE_SHAPED_VERBS,
     QUEUE_VOCAB_RE,
+    ProviderSources,
+    derive_population,
     first_queue_symbol,
     handler_source,
     line_starts,
@@ -488,13 +489,36 @@ def _registry_handler_names(provider: str) -> dict[tuple[str, ...], str]:
     return registry_handler_names(_read(_PROVIDER_MODULES[provider]))
 
 
+def _provider_sources(provider: str) -> ProviderSources:
+    """One provider's derivation inputs as text; path resolution stays local."""
+    return ProviderSources(
+        registry_text=_read(_PROVIDER_MODULES[provider]),
+        handler_texts=tuple(_read(path) for path in _PROVIDER_HANDLER_SOURCES[provider]),
+    )
+
+
 def _merge_shaped_registry_keys(provider: str) -> list[tuple[str, ...]]:
-    """The merge-shaped subset of a provider's registry — derived, not listed."""
-    return [
-        key
-        for key in _registry_keys(provider)
-        if len(key) == 2 and key[0] == 'pr' and key[1] in MERGE_SHAPED_VERBS
-    ]
+    """The merge-shaped subset of a provider's registry — derived by BEHAVIOUR.
+
+    Membership comes from :func:`derive_population`, which classifies a registry
+    key as merge-shaped when the handler it binds reaches the platform
+    queue/train surface in its own executable code.
+
+    It is deliberately NOT filtered through ``MERGE_SHAPED_VERBS``. The shared
+    roster names that constant a MIRROR of this derivation and forbids narrowing
+    a derived set through it: filtering the registry by a hand-listed vocabulary
+    is precisely what made "population-complete" mean "complete over four
+    pre-named verbs", dropping a merge-shaped handler registered under any other
+    name before any guard saw it. The bidirectional mirror-vs-behaviour drift
+    check lives in the sibling ``test_merge_shaped_offrouting_refusal`` suite,
+    which is where the vocabulary is legitimately read.
+
+    ``unresolved`` entries are NOT folded in here: a handler whose source could
+    not be located is a member this derivation cannot speak about, and the
+    sibling suite asserts that bucket is empty rather than silently absorbing it.
+    """
+    population = derive_population({provider: _provider_sources(provider)})
+    return [('pr', verb) for _provider, verb, _symbol in population.members]
 
 
 _REGISTRY_SIZES: dict[str, int] = {p: len(_registry_keys(p)) for p in _PROVIDER_MODULES}

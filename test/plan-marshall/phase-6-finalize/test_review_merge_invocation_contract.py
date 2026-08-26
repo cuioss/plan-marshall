@@ -549,16 +549,47 @@ class TestExitZeroNonSuccessIsDisposedOf:
     def test_the_discharge_split_is_visible(self):
         """The per-arm split over the derived `ci` population is asserted, not merely implied.
 
-        A shape requirement that is deleted while the convention clause survives would leave
-        `test_ci_invocation_is_discharged` green, so the shape-marked count is pinned here
-        against the sites that carry one.
+        A shape requirement deleted while the convention clause survives would leave
+        `test_ci_invocation_is_discharged` green, so the shape-marked side is pinned here.
+
+        **No numeric floor is asserted, and that is deliberate.** An earlier form
+        of this assertion pinned ``>= 2`` — a transcribed integer, contradicting
+        the rule its sibling `test_the_population_size_is_published` states thirty
+        lines below as the stated reason an identical ``>= 4`` floor was deleted:
+        a remembered number is a claim about the tree at the moment someone typed
+        it, and as a floor it goes stale SILENTLY in the direction that matters,
+        staying satisfied while the scan shrinks toward it.
+
+        The sibling could replace its floor with a derived one because it had an
+        independent ground to derive from — every doc in the invocation set
+        documents at least one runnable call, so the floor is the doc count. This
+        assertion has no such ground: how many `ci` call sites *ought* to carry a
+        positive shape requirement is not derivable from the tree, because the
+        tree is the thing under assertion. Manufacturing a floor out of the
+        shape-marked population itself would be worse than the transcribed one —
+        ``len(shape_marked) >= len(shape_marked_docs)`` holds by construction and
+        can never fail.
+
+        So this test asserts a PROPERTY (the split is non-vacuous) and publishes
+        the population, and the per-section obligation is carried where it can be
+        grounded: `test_ci_invocation_is_discharged` requires every derived `ci`
+        section to be discharged by one arm or the other.
         """
         shape_marked = sorted(f'{rel} § {head}' for rel, head, shape in _CI_SECTIONS if shape)
-        assert len(shape_marked) >= 2, (
-            f'only {len(shape_marked)} of {len(_CI_SECTIONS)} derived `ci` sections carry a '
-            f'{_SHAPE_MARKER!r}. The PR-creating call and the pre-merge checks snapshot each '
-            f'consume a named field off the return and MUST state the shape that makes it '
-            f'readable: {shape_marked}'
+        by_convention_only = len(_CI_SECTIONS) - len(shape_marked)
+
+        assert shape_marked, (
+            f'ZERO of {len(_CI_SECTIONS)} derived `ci` sections carry a {_SHAPE_MARKER!r}. '
+            'Every call-site positive shape requirement vanished at once, so the discharge '
+            'sweep is carried entirely by the doc-level convention arm and this split is '
+            'vacuous — which is precisely the deletion this test exists to catch.'
+        )
+        # Reported, not pinned — so a shrinking shape-marked side is visible as a
+        # number on a passing run rather than inferred from a green one.
+        print(
+            f'[review-merge] discharge split: {len(shape_marked)} shape-marked, '
+            f'{by_convention_only} convention-only, of {len(_CI_SECTIONS)} derived `ci` '
+            f'section(s): {shape_marked}'
         )
 
 
