@@ -103,7 +103,7 @@ format = "uv run ruff format marketplace/bundles/ test/ .claude/"
 # Multi-target generator (Claude Code, OpenCode, …) — see marketplace/targets/.
 generate = "uv run python marketplace/targets/generate.py"
 generate-claude = "uv run python marketplace/targets/generate.py --target claude --output target/claude"
-generate-opencode = "uv run python marketplace/targets/generate.py --target opencode"
+generate-opencode = "uv run python marketplace/targets/generate.py --target opencode --output target/opencode"
 
 # =============================================================================
 # Tool Configurations
