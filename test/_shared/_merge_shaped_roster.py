@@ -122,9 +122,12 @@ class Population(NamedTuple):
             executable code. This is the merge-shaped population.
         inert: Handlers whose source was located and references no queue/train
             symbol.
-        unresolved: Keys whose bound handler symbol could not be located in any
-            supplied handler text. NOT an absence of queue behaviour — an absence
-            of evidence, which consumers must fail on rather than absorb.
+        unresolved: Keys the derivation could not speak about, on either of two
+            grounds: no handler symbol could be READ for the key (the row grammar
+            found the key but no binding), or the bound symbol could not be
+            LOCATED in any supplied handler text. NOT an absence of queue
+            behaviour — an absence of evidence, which consumers must fail on
+            rather than absorb.
     """
 
     members: list[tuple[str, str, str]]
@@ -294,8 +297,19 @@ def derive_population(provider_sources: dict[str, ProviderSources]) -> Populatio
         for key in registry_keys(sources.registry_text):
             if len(key) != 2 or key[0] != 'pr':
                 continue
-            symbol = names[key]
+            # `registry_keys` scans the WHOLE body (its `\s` spans newlines), while
+            # `registry_handler_names` binds per line — so a key wrapped across
+            # lines is returned here with no readable binding. That is an absence
+            # of evidence, which `unresolved` is the designed home for; a bare
+            # `names[key]` would instead raise KeyError at import time of every
+            # consumer of this shared module. `registry_keys` is deliberately NOT
+            # narrowed to per-line matching: the whole-body scan is what makes the
+            # key population total.
+            symbol = names.get(key, '')
             entry = (provider, key[1], symbol)
+            if not symbol:
+                unresolved.append(entry)
+                continue
             body = handler_source(symbol, sources.handler_texts)
             if not body:
                 unresolved.append(entry)
