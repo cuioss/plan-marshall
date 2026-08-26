@@ -20,7 +20,10 @@
     },
     "plan-marshall": {
       "description": "Core orchestration bundle providing the complete 5-phase development workflow (init, refine, outline, plan, execute, finalize), task planning, git/PR workflows, Sonar integration, and build automation across Maven/Gradle/npm/pyproject. Hosts foundational infrastructure (script executor, manage-config, manage-architecture, manage-lessons, permissions, logging) that every other bundle consumes.",
-      "generation": {}
+      "generation": {
+        "by": "architecture",
+        "tree_sha": "91f01b389f6954bb3e9f4029dbb4ba41ba3d2701d9f590f57fe05ac0c9265b3a"
+      }
     },
     "pm-dev-frontend": {
       "description": "General frontend development standards bundle providing vanilla JavaScript (ES2022+) and CSS knowledge skills, JSDoc analyzer, ESLint flat-config standards, Jest testing patterns, and the JS/CSS triage extension. TypeScript and frameworks (React/Vue/Angular) are out of scope.",
