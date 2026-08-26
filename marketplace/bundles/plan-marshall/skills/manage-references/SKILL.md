@@ -1,6 +1,6 @@
 ---
 name: manage-references
-description: Manage references.json files with field-level access and list management
+description: Manage references.json files with field-level access and list management, plus the two plan-footprint surfaces — the realized footprint derived and captured from the worktree git state, and the declared footprint re-derived from the solution outline's structured deliverable data by set union
 user-invocable: false
 mode: script-executor
 scope: plan
@@ -18,6 +18,7 @@ Manage references.json files with field-level access and list management. Tracks
 - Do not mix `add-list` and `set-list` without understanding their semantics (append vs replace)
 - References are plan-scoped; always provide `--plan-id`
 - File paths in affected_files are always relative to repository root
+- `affected_files` is written by `sync-affected-files`, which derives it from the outline. Do not hand-compose it through `set-list` / `add-list`: a CSV composed by reading outline prose can only be as complete as that reading, and nothing downstream can audit a reading
 
 ## Storage Location
 
@@ -55,7 +56,7 @@ JSON format for storage:
 | `issue_url` | string | GitHub issue URL |
 | `build_system` | string | Build system (maven, gradle, npm, none) |
 | `domains` | list | Plan domains (e.g., java, documentation) |
-| `affected_files` | list | Files identified during outline phase as potentially needing changes (scope tracking) |
+| `affected_files` | list | The plan's DECLARED footprint — the paths the solution outline says the plan expects to touch. Derived by `sync-affected-files` from the outline's structured per-deliverable declarations (all three declaration headings, so a survey-scope deliverable's `Files expected to mutate:` paths are included), never composed by reading outline prose. Re-derived by set union at every point a later consumer depends on it being current, so it is not frozen at outline time. Contrast `realized_footprint`, which records what the worktree actually touched. |
 | `external_docs` | table | External documentation references |
 | `realized_footprint` | list | The realized plan footprint, captured from the worktree by `capture-footprint` (called by `default:branch-cleanup` before worktree removal). The footprint resolver prefers it over any re-derivation. |
 | `merge_commit_sha` | string | The landing commit SHA, recorded by `default:branch-cleanup` on the synchronous merge path. Feeds the footprint resolver's merge-commit fallback tier. Absent on the async merge-queue path. |
@@ -293,6 +294,49 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 ---
 
+### sync-affected-files
+
+Re-derive the plan's **declared** footprint from `solution_outline.md` and union it into `references.affected_files`. Where `compute-footprint` / `capture-footprint` answer "what did the worktree touch", this verb answers "what did the outline say the plan expects to touch".
+
+The derivation is structural, not narrative: every path comes from `_plan_parsing.declared_paths_by_intent`, which walks all three declaration headings — `Affected files`, `Files expected to mutate`, `Files to survey` — across every deliverable. A **survey-scope deliverable** declares the latter pair INSTEAD of a flat `Affected files` list, so its expected-to-mutate paths reach the key through this verb and through no other route.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references sync-affected-files \
+  --plan-id {plan_id}
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier
+
+There is no `--values` argument by design. The outline is the input, so no caller composes a CSV — and therefore no caller can compose one incompletely.
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-feature
+field: affected_files
+added_count: 2
+unchanged_count: 7
+total: 9
+declared_count: 9
+added[2]:
+  - marketplace/bundles/plan-marshall/skills/manage-references/SKILL.md
+  - test/plan-marshall/manage-references/test_manage_references.py
+deliverables_scanned: 5
+headings_found: 6
+bullets_parsed: 31
+```
+
+**Notes**:
+- The write is a **set union** over the existing value. A path recorded by an earlier run always survives a later one, a path that appeared after the outline was first read is added, and a repeat run over an unchanged outline changes nothing — which is what makes the verb safe to call at every point a consumer depends on the value being current.
+- Ordering is stable: already-recorded paths keep their position, newly derived ones are appended in sorted order.
+- `deliverables_scanned` / `headings_found` / `bullets_parsed` publish the population the derivation walked, so a small result states what it was derived FROM rather than only what it derived.
+- It **refuses rather than reporting a clean zero** when nothing could be derived: a missing or unreadable outline, and an outline whose Deliverables section yielded no deliverable blocks, are `status: error` and write nothing.
+
+**Call sites**: `q-gate-validation` § Step 7 (first write), `phase-4-plan` § Step 7b (before the manifest reads `affected_files_count`), and `phase-6-finalize` (loop-back re-entry refresh). The two later sites exist because a faithful read of a stale value cannot detect its own staleness — re-reading the key returns exactly what was written, so only a re-derivation can tell a current value from a stale one.
+
+---
+
 ## Scripts
 
 **Script**: `plan-marshall:manage-references:manage-references`
@@ -305,6 +349,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 | `set` | `--plan-id --field --value` | Set specific field value |
 | `add-list` | `--plan-id --field --values` | Add multiple values to a list field |
 | `set-list` | `--plan-id --field --values` | Set a list field (replaces existing) |
+| `sync-affected-files` | `--plan-id` | Re-derive `references.affected_files` from the outline's structured deliverable data (set union) |
 | `get-context` | `--plan-id` | Get the plan's scalar reference context |
 | `compute-footprint` | `--plan-id --worktree-path [--base-ref]` | Derive the live plan footprint from the worktree git state (read-only) |
 | `capture-footprint` | `--plan-id --worktree-path [--base-ref]` | Compute the live footprint AND persist it to `references.realized_footprint` |
@@ -362,6 +407,13 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --plan-id PLAN_ID --field FIELD --values CSV
 ```
 
+### sync-affected-files
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references sync-affected-files \
+  --plan-id PLAN_ID
+```
+
 ### get-context
 
 ```bash
@@ -400,6 +452,10 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 | `worktree_not_found` | `--worktree-path` does not exist or is not a directory (compute-footprint) |
 | `references_not_found` | references.json not found (compute-footprint) |
 | `not_a_git_worktree` | `--worktree-path` is not inside a git worktree (compute-footprint) |
+| `outline_not_found` | `solution_outline.md` does not exist — there is nothing to derive the declared footprint from (sync-affected-files) |
+| `outline_unreadable` | `solution_outline.md` exists but could not be read (sync-affected-files) |
+| `no_deliverables_parsed` | The outline yielded no deliverable blocks, so nothing was derived and nothing was written. Reported as an error rather than an empty derivation, because an unread outline and a plan that declares nothing are not the same state (sync-affected-files) |
+| `not_a_list` | `references.affected_files` exists but is not a list (sync-affected-files) |
 
 **Default values**: Unset fields return `field_not_found` on `get`. The `create` command initializes `branch` and `base_branch` (the latter to `main`). All other fields are optional — only present if explicitly set via `--field` / `set-list` arguments.
 
@@ -412,7 +468,9 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 | Client | Operation | Purpose |
 |--------|-----------|---------|
 | `phase-1-init` | create, set, set-list | Initialize references with branch, domains, build system |
-| `phase-3-outline` | set-list | Set affected_files from solution outline |
+| `q-gate-validation` (§ Step 7) | sync-affected-files | First derivation of `affected_files` from the outline's structured deliverable data |
+| `phase-4-plan` (§ Step 7b) | sync-affected-files | Refresh before the manifest is composed from `affected_files_count`, so scope added between outline and plan reaches the manifest |
+| `phase-6-finalize` | sync-affected-files | Refresh on the loop-back re-entry path, so scope added after phase-3 reaches the finalize-time consumers |
 | `phase-6-finalize` (`create-pr`) | set | Record `pr_number` immediately after the PR is created or an open one is reused |
 
 ### Consumers
@@ -421,6 +479,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 |--------|-----------|---------|
 | `phase-3-outline` | get, get-context | Read domains and build system for skill routing |
 | `phase-5-execute` | get-context | Read build system for task execution |
+| `manage-execution-manifest` (via `phase-4-plan` § Step 7b) | get | Read `affected_files` as the declared surface the compose-time classification is decided from |
 | `phase-6-finalize` | compute-footprint | Derive the live plan footprint for commit scope and PR body |
 | `phase-6-finalize` (`branch-cleanup`) | capture-footprint, set | Persist `realized_footprint` before worktree removal, and record `merge_commit_sha` after the base pull |
 | `plan-retrospective`, `audit-archived-plan-retrospectives` | (reads `realized_footprint` / `merge_commit_sha` / `pr_number` via the shared footprint resolver) | Resolve the realized footprint for recall and mis-prune checks post-merge. `pr_number` backs the PR-landing tier, which is the only tier that resolves a squash / merge-queue landing — the path on which `realized_footprint` and `merge_commit_sha` are both unwritten |

@@ -14,6 +14,7 @@ Usage:
     python3 manage-references.py set --plan-id EXAMPLE-PLAN --field branch --value feature/x
     python3 manage-references.py add-list --plan-id EXAMPLE-PLAN --field affected_files --values file1.md,file2.md
     python3 manage-references.py set-list --plan-id EXAMPLE-PLAN --field affected_files --values file1.md,file2.md
+    python3 manage-references.py sync-affected-files --plan-id EXAMPLE-PLAN
 """
 
 import argparse
@@ -66,6 +67,22 @@ def main() -> int:
     add_field_arg(set_list_parser)
     set_list_parser.add_argument('--values', required=True, help='Comma-separated values')
 
+    # sync-affected-files — re-derive the DECLARED footprint from the solution
+    # outline's structured per-deliverable data and union it into
+    # references.affected_files. Takes no value argument by design: the outline is
+    # the input, so there is no CSV for a caller to compose (and therefore none to
+    # compose wrongly). It is the write-side counterpart of compute-footprint,
+    # which derives the REALIZED footprint from the worktree.
+    sync_affected_files_parser = subparsers.add_parser(
+        'sync-affected-files',
+        help=(
+            'Re-derive references.affected_files from the solution outline\'s structured '
+            'deliverable data (set union — never removes an already-recorded path)'
+        ),
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(sync_affected_files_parser)
+
     # get-context
     get_context_parser = subparsers.add_parser(
         'get-context', help='Get all references context in one call', allow_abbrev=False
@@ -113,7 +130,13 @@ def main() -> int:
     from _cmd_compute_footprint import cmd_capture_footprint, cmd_compute_footprint
     from _cmd_context import cmd_get_context
     from _cmd_list import cmd_add_list, cmd_set_list
-    from _references_crud import cmd_create, cmd_get, cmd_read, cmd_set
+    from _references_crud import (
+        cmd_create,
+        cmd_get,
+        cmd_read,
+        cmd_set,
+        cmd_sync_affected_files,
+    )
 
     # Dispatch to handlers
     handlers = {
@@ -123,6 +146,7 @@ def main() -> int:
         'set': cmd_set,
         'add-list': cmd_add_list,
         'set-list': cmd_set_list,
+        'sync-affected-files': cmd_sync_affected_files,
         'get-context': cmd_get_context,
         'compute-footprint': cmd_compute_footprint,
         'capture-footprint': cmd_capture_footprint,

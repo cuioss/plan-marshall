@@ -821,29 +821,19 @@ Optional parameters (add when applicable):
 
 ### Step 7: Update Affected Files
 
-Persist the verified affected files to references.json.
-
-**CRITICAL**: The `--values` parameter requires a **single comma-separated string** with NO spaces between items:
+Persist the plan's declared footprint to `references.affected_files`:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set-list \
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references sync-affected-files \
   --plan-id {plan_id} \
-  --field affected_files \
-  --values "file1.py,file2.py,file3.md" \
   --audit-plan-id {plan_id}
 ```
 
-**Example** (correct):
-```bash
---values "src/foo.py,src/bar.py,test/test_foo.py"
-```
+The verb derives the set itself from `solution_outline.md`'s structured per-deliverable declarations — all three declaration headings, so a survey-scope deliverable's `Files expected to mutate:` paths are included — and unions it into the existing value. **Compose no list here.** A path set assembled by reading outline prose can only be as complete as that reading, and nothing downstream can audit a reading; there is no `--values` argument to get wrong because there is no argument at all.
 
-**Example** (WRONG - will fail):
-```bash
---values src/foo.py src/bar.py test/test_foo.py
-```
+**Constraint the verb honours:** the write is a set union, so it never removes a path an earlier pass recorded. Deliverables still under a pending finding therefore remain declared rather than being silently dropped from the plan's footprint while the finding is open — a path that leaves scope leaves it by being removed from the outline, not by failing this gate.
 
-Only include files from deliverables that passed verification.
+Branch on the returned `status`: `success` carries `added_count` / `unchanged_count` / `total` plus the population walked (`deliverables_scanned`, `headings_found`, `bullets_parsed`). An `outline_not_found` / `outline_unreadable` / `no_deliverables_parsed` error means nothing was derived and nothing was written — record it as a Q-Gate finding per Step 6 rather than treating the unchanged key as a verified footprint.
 
 ---
 
@@ -945,4 +935,4 @@ context:
 - **Run AND record findings from EVERY applicable validator (§2.1–§2.17, scoped to the active phase's subset) before returning — never short-circuit on the first failing validator class. A single pass MUST surface all finding classes at once, collapsing N sequential round-trips into 1. This full-coverage guarantee is the precondition FIX 4-lite (per-deliverable content-hash skip) relies on.**
 - Log each verification decision
 - Record findings for any issues
-- Persist only verified affected_files
+- Persist the declared footprint through `sync-affected-files` (Step 7) — never by hand-composing a path list
