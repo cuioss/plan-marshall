@@ -74,7 +74,7 @@ Four rules govern the outcome, every one of them decided by the parser rather th
 
 **Staleness is reported, never promoted.** A row whose `stale` flag is set rides into the report alongside the admission outcome and does not change it — neither silently promoted to blocking as HEAD advances, nor silently dropped.
 
-A candidate failing either test is sequenced, not emitted. **Never emit a colliding or unprepared plan merely to fill a slot** — when fewer than `N − R` candidates qualify, report the shortfall with the blocking reason per candidate instead. A prep-ready shortfall reason is **derived from the blocking row**, naming the claim and its verdict (`claim {claim_index}: contradicted, not re-scoped`, `claim {claim_index}: indeterminate — {quoted line}`) rather than being a hand-typed sentence. A `scope: section` row carries no addressable ordinal, so its reason names the section instead (`claim section: unreadable, not settled — {quoted first line}`) and names `--section-scope` as its remedy.
+A candidate failing either test is sequenced, not emitted. **Never emit a colliding or unprepared plan merely to fill a slot** — when fewer than `N − R` candidates qualify, report the shortfall with the blocking reason per candidate instead. A prep-ready shortfall reason is **derived from the blocking row**, naming the claim and its verdict (`claim {claim_index}: contradicted, not re-scoped`, `claim {claim_index}: indeterminate — {quoted line}`) rather than being a hand-typed sentence. A `scope: section` row carries no addressable ordinal, so its reason names the section instead (`claim section: unreadable, not settled — {quoted first line}`).
 
 ### Step 5 (verb = `next`): Emit the commands
 
@@ -153,7 +153,7 @@ launched_count: {R}
 specs_scanned: {P}
 claim_section_states[4]{state,count}:
   absent,{A}
-  empty,{E}
+  empty,{Y}
   unreadable,{U}
   parsed,{Q}
 unreadable_claim_section_count: {U}
