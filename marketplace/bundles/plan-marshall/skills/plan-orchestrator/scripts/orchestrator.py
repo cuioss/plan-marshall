@@ -38,8 +38,12 @@ operation groups against the main-anchored orchestrator store
   second run finds every block ``unchanged`` and writes nothing. Refuses a
   closed epic (``refused_closed``): compaction is a live-epic operation only.
   The narrative-versus-settled RELOCATION judgement is NOT here; it stays LLM.
-- ``corpus {enumerate,cross-check,verdicts,set-verdict}`` — the epic's staged
-  spec corpus: reconcile the ``status.json`` ``plans[]`` queue against the
+- ``corpus {epics,enumerate,cross-check,verdicts,set-verdict}`` — the epic
+  population and the epic's staged
+  spec corpus: enumerate every epic slug in the store (``epics`` — the one
+  slug-free verb, partitioned into active and archived, publishing the roots it
+  walked and the population size so a zero names the directory it came from),
+  reconcile the ``status.json`` ``plans[]`` queue against the
   ``plans/PLAN-*.md`` spec files in BOTH directions, cross-check those specs
   against sibling epics and live plans for duplicate work (the arm a single
   ledger structurally cannot perform, scored on ``manage-status
@@ -151,6 +155,25 @@ TERMINAL_REQUIRED_FIELDS = ('pr', 'landing')
 # the layout contract gives them (``plans/PLAN-NN-{plan_slug}.md``).
 PLANS_SUBDIR = 'plans'
 SPEC_GLOB = 'PLAN-*.md'
+
+#: The two homes one epic tree can occupy, named once so the enumeration's
+#: partition keys and its per-root ``scope`` columns cannot drift apart. An epic
+#: is ACTIVE while ``orchestrator/{slug}`` holds it and ARCHIVED once ``archive``
+#: has relocated it to ``archived-orchestrators/{slug}``. The same slug can
+#: legitimately appear in BOTH — a partially relocated epic — which is why the
+#: partitions are reported separately and the distinct population is derived
+#: from their union rather than assumed to be their sum.
+SCOPE_ACTIVE = 'active'
+SCOPE_ARCHIVED = 'archived'
+
+#: A syntactically valid entry id that names no real epic, used ONLY to resolve
+#: the two store ROOTS as the PARENT of a resolved entry. Taking the parent of an
+#: entry resolved through the existing main-anchored resolvers keeps the
+#: directory names (``orchestrator/``, ``archived-orchestrators/``) owned solely
+#: by ``file_ops``: this module holds no second copy of them, so a layout change
+#: moves this walk with it instead of leaving it pointing at a stale directory.
+#: The probe is never joined onto anything that is read, written or created.
+_ROOT_PROBE_ENTRY = 'root-probe'
 
 # ``RUNNING_STATUS`` — a row at this status is enumerated but carries
 # ``excluded_reason`` so a caller cannot re-scope it: re-scoping a spec
@@ -1673,6 +1696,136 @@ def cmd_corpus_verdicts(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _epic_store_roots() -> tuple[tuple[str, Path], ...]:
+    """Resolve the two epic store roots, each paired with its scope name.
+
+    The single place this module derives the store ROOTS. Both are taken as the
+    PARENT of an entry resolved through the existing main-anchored resolvers
+    (:func:`_epic_root` and :func:`file_ops.get_archived_orchestrator_dir`), so a
+    root is main-anchored for exactly the same reason every per-epic path is —
+    the walk resolves identically from a worktree and from the main checkout —
+    and no path-resolution rule is restated here. Both consumers share it: the
+    sibling walk below and the ``corpus epics`` enumeration.
+    """
+    return (
+        (SCOPE_ACTIVE, _epic_root(_ROOT_PROBE_ENTRY).parent),
+        (SCOPE_ARCHIVED, get_archived_orchestrator_dir(_ROOT_PROBE_ENTRY).parent),
+    )
+
+
+def _scan_epic_store_root(scope: str, root: Path) -> dict[str, Any]:
+    """Walk ONE epic store root, reporting what it holds AND what it could not read.
+
+    Returns the root's own row (``root``) plus the three populations its entries
+    partition into: ``slugs`` (a directory entry — one epic each),
+    ``non_directory`` (an entry that is present but is not an epic tree), and
+    ``unreadable`` (an entry whose type could not be determined). Every entry
+    ``iterdir`` yields lands in exactly one of the three, so the row's
+    ``entries_scanned`` is their sum and a consumer can check that identity
+    rather than take the partition on trust. Nothing is silently dropped.
+
+    The row distinguishes the two ways a root yields no slugs, because they mean
+    opposite things. ``exists: false`` with an empty ``error`` is a DERIVED zero
+    — the store has simply never been scaffolded in this checkout. A non-empty
+    ``error`` means the root is THERE but could not be listed (permissions, not a
+    directory, I/O), and ``listed`` stays false so an unreadable store is never
+    published as an empty one. ``exists`` is false ONLY when the listing failed
+    with :class:`FileNotFoundError`; any other failure reports ``exists: true``,
+    because something occupies the path.
+    """
+    row: dict[str, Any] = {
+        'scope': scope,
+        'path': str(root),
+        'exists': False,
+        'listed': False,
+        'entries_scanned': 0,
+        'error': '',
+    }
+    slugs: list[str] = []
+    non_directory: list[dict[str, str]] = []
+    unreadable: list[dict[str, str]] = []
+    result: dict[str, Any] = {
+        'root': row,
+        'slugs': slugs,
+        'non_directory': non_directory,
+        'unreadable': unreadable,
+    }
+    try:
+        entries = sorted(root.iterdir())
+    except FileNotFoundError:
+        return result
+    except OSError as exc:
+        row['exists'] = True
+        row['error'] = str(exc)
+        return result
+    row['exists'] = True
+    row['listed'] = True
+    row['entries_scanned'] = len(entries)
+    for entry in entries:
+        try:
+            is_dir = entry.is_dir()
+        except OSError as exc:  # pragma: no cover - platform-dependent stat failure
+            unreadable.append({'scope': scope, 'entry': entry.name, 'error': str(exc)})
+            continue
+        if is_dir:
+            slugs.append(entry.name)
+        else:
+            non_directory.append({'scope': scope, 'entry': entry.name})
+    return result
+
+
+def cmd_corpus_epics(args: argparse.Namespace) -> dict[str, Any]:
+    """Enumerate every epic slug in the store, partitioned into active and archived.
+
+    The DERIVED substrate for any question whose subject is the WHOLE epic
+    corpus: a consumer that needs the epic population reads it from here instead
+    of hand-assembling or sampling one. Read-only, and slug-free by construction
+    — it walks the store roots themselves rather than one epic's tree, so it is
+    the only verb in the group that takes no ``--slug``.
+
+    Every count carries the population it was derived from. The roots walked are
+    published beside the slug lists, so a zero is a DERIVED zero naming the
+    directory that was walked rather than a bare absence; ``entries_scanned``
+    states how much was looked at; and every entry the walk saw is accounted for
+    as an epic, a non-directory entry, or an unreadable one.
+
+    A slug present in BOTH homes (a partially relocated epic) appears in both
+    partitions: ``total_count`` is the row population and ``distinct_count`` the
+    union, so the two together state whether such an overlap exists rather than
+    hiding it inside one number.
+    """
+    del args  # slug-free: the whole store is the subject, so there is nothing to address
+    roots: list[dict[str, Any]] = []
+    by_scope: dict[str, list[str]] = {}
+    non_directory: list[dict[str, str]] = []
+    unreadable: list[dict[str, str]] = []
+    for scope, root in _epic_store_roots():
+        scan = _scan_epic_store_root(scope, root)
+        roots.append(scan['root'])
+        by_scope[scope] = scan['slugs']
+        non_directory.extend(scan['non_directory'])
+        unreadable.extend(scan['unreadable'])
+    active = by_scope[SCOPE_ACTIVE]
+    archived = by_scope[SCOPE_ARCHIVED]
+    return {
+        'status': 'success',
+        'operation': 'corpus-epics',
+        'store': ORCHESTRATOR_STORE,
+        'roots': roots,
+        'entries_scanned': sum(row['entries_scanned'] for row in roots),
+        'active_count': len(active),
+        'archived_count': len(archived),
+        'total_count': len(active) + len(archived),
+        'distinct_count': len(set(active) | set(archived)),
+        'active': active,
+        'archived': archived,
+        'non_directory_count': len(non_directory),
+        'non_directory': non_directory,
+        'unreadable_count': len(unreadable),
+        'unreadable': unreadable,
+    }
+
+
 def _sibling_epic_roots(slug: str) -> list[Path]:
     """Enumerate the OTHER epics' store roots — active and archived alike.
 
@@ -1682,7 +1835,7 @@ def _sibling_epic_roots(slug: str) -> list[Path]:
     epic present in both homes is yielded once.
     """
     roots: dict[str, Path] = {}
-    bases = (_epic_root(slug).parent, get_archived_orchestrator_dir(slug).parent)
+    bases = [base for _, base in _epic_store_roots()]
     for base in bases:
         if not base.is_dir():
             continue
@@ -2802,19 +2955,33 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 def _add_corpus_group(subparsers: Any) -> None:
     """Register the ``corpus`` verb group.
 
-    Sub-verbs: ``enumerate``, ``cross-check``, ``verdicts``, ``set-verdict``.
-    The first three are read-only; ``set-verdict`` is the group's single write
-    action, and the only surface in the tree that formats a ``verdict:`` line.
+    Sub-verbs: ``epics``, ``enumerate``, ``cross-check``, ``verdicts``,
+    ``set-verdict``. The first four are read-only; ``set-verdict`` is the group's
+    single write action, and the only surface in the tree that formats a
+    ``verdict:`` line. ``epics`` is the only one that takes no ``--slug``: its
+    subject is the whole store rather than one epic in it.
     """
     corpus = subparsers.add_parser(
         'corpus',
         help=(
-            "Epic spec corpus: reconcile the queue against the plans/ specs in both "
-            'directions, and read or stamp the re-grounding verdict field.'
+            "Epic spec corpus: enumerate the epic population, reconcile the queue "
+            'against the plans/ specs in both directions, and read or stamp the '
+            're-grounding verdict field.'
         ),
         allow_abbrev=False,
     )
     actions = corpus.add_subparsers(dest='corpus_action', required=True)
+
+    epics = actions.add_parser(
+        'epics',
+        help=(
+            'Enumerate every epic slug in the store, partitioned into active and '
+            'archived, naming the roots walked and the population size (read-only; '
+            'takes no --slug).'
+        ),
+        allow_abbrev=False,
+    )
+    epics.set_defaults(handler=cmd_corpus_epics)
 
     enumerate_specs = actions.add_parser(
         'enumerate',
