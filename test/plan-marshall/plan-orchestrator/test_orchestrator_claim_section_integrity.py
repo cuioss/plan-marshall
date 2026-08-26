@@ -422,7 +422,8 @@ def _pre_fix_parse_claims(lines: list) -> list:
     return claims
 
 
-#: The three forms the pre-fix parser could not tell apart, and the one it could.
+#: The three forms the pre-fix parser could not tell apart — it returned the same
+#: empty list for every one of them, which is what the class below pins.
 _COLLAPSED_FORMS = (
     ('table', _TABLE_FORM),
     ('prose', _PROSE_FORM),

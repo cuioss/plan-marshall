@@ -1768,7 +1768,7 @@ def _scan_epic_store_root(scope: str, root: Path) -> dict[str, Any]:
     for entry in entries:
         try:
             is_dir = entry.is_dir()
-        except OSError as exc:  # pragma: no cover - platform-dependent stat failure
+        except OSError as exc:
             unreadable.append({'scope': scope, 'entry': entry.name, 'error': str(exc)})
             continue
         if is_dir:
