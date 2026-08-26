@@ -43,6 +43,8 @@ For every enumerated spec whose row is NOT `running`, corroborate its verify-fir
 
 **Persist every returned verdict**, one `corpus set-verdict` call per claim, with the producer recorded as `{slug}/cleanup` — see [`plan-orchestrator/SKILL.md`](../SKILL.md) § Canonical invocations → `corpus set-verdict` for the argument surface.
 
+**Zero-claim branch.** A spec whose claim section `corpus verdicts` reports as `unreadable` has no claim to iterate, so the per-claim loop above persists nothing for it and it would be left unsettled. Persist that spec's verdict through `--section-scope` instead — exactly one call, settling the section as a whole, with the same producer. This is an addressing change only: the claim prose is not re-authored, and no spec is asked to convert its section into bullets in order to be settled. A section reported `absent` or `empty` needs no call at all — it admits already.
+
 The field's grammar is defined once at [§ Re-Grounding Verdict Field](../../persona-plan-orchestrator/standards/orchestration-model.md#re-grounding-verdict-field) and is restated nowhere here — not its keys, not its value sets, not the parse rule both sides use. **This doc never hand-writes the field**: `corpus set-verdict` is the only sanctioned emitter, so the single-emitter property holds at the producer as well as inside the script.
 
 This split is the Dispatch Decision Rule made operational: the dispatched leaf returns verdicts (write-free, so it passes the write-freedom test) and the inline orchestrator performs the write through the seam.

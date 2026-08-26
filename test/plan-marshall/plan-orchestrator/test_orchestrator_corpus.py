@@ -91,7 +91,8 @@ parse_verdict_text = _orch._parse_verdict_text
 fenced_mask = _orch._fenced_mask
 section_span = _orch._section_span
 expected_surface_paths = _orch._expected_surface_paths
-parse_claims = _orch._parse_claims
+parse_claim_section = _orch._parse_claim_section
+build_arg_parser = _orch._build_arg_parser
 CLAIM_LABELS_HEADING_RE = _orch.CLAIM_LABELS_HEADING_RE
 EXPECTED_SURFACE_HEADING_RE = _orch.EXPECTED_SURFACE_HEADING_RE
 HEADING_RE = _orch._HEADING_RE
@@ -99,6 +100,11 @@ VERDICT_KEYS = _orch.VERDICT_KEYS
 VERDICT_SEPARATOR = _orch.VERDICT_SEPARATOR
 VERDICT_VALUES = _orch.VERDICT_VALUES
 RESCOPED_VALUES = _orch.RESCOPED_VALUES
+CLAIM_SECTION_STATES = _orch.CLAIM_SECTION_STATES
+CLAIM_SECTION_ABSENT = _orch.CLAIM_SECTION_ABSENT
+CLAIM_SECTION_EMPTY = _orch.CLAIM_SECTION_EMPTY
+CLAIM_SECTION_UNREADABLE = _orch.CLAIM_SECTION_UNREADABLE
+CLAIM_SECTION_PARSED = _orch.CLAIM_SECTION_PARSED
 
 SLUG = 'fixture-corpus-epic'
 FIXED_TIMESTAMP = '2020-01-01T00:00:00Z'
@@ -224,9 +230,40 @@ def _write_spec(
     root = _epic_dir(plan_context) if epic_dir is None else epic_dir
     path = root / 'plans' / name
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        _spec_text(claim_lines or [_DEFAULT_CLAIM], surface_lines, objective), encoding='utf-8'
-    )
+    # ``is None`` rather than falsy: the EMPTY list is a meaningful fixture (a
+    # present-but-empty claim section), and a falsy test would silently swap it
+    # for the default one-claim body — the exact collapse this module now pins.
+    body = [_DEFAULT_CLAIM] if claim_lines is None else claim_lines
+    path.write_text(_spec_text(body, surface_lines, objective), encoding='utf-8')
+    return path
+
+
+def _spec_text_without_claim_section(surface_lines: list | None = None) -> str:
+    """Render a spec carrying NO ``## Claim Labels`` heading at all.
+
+    ``_spec_text`` always writes the heading, which is precisely the variable the
+    ``absent`` state turns on, so that section is omitted here rather than
+    emptied.
+    """
+    lines = [
+        '# PLAN-NN: Fixture',
+        '',
+        '## Objective',
+        '',
+        'Fixture objective.',
+        '',
+        '## Expected Surface',
+        '',
+        *(_DEFAULT_SURFACE if surface_lines is None else surface_lines),
+    ]
+    return '\n'.join(lines) + '\n'
+
+
+def _write_spec_without_claim_section(plan_context, name: str) -> Path:
+    """Write one spec whose claim section is ABSENT — a legitimately empty population."""
+    path = _epic_dir(plan_context) / 'plans' / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_spec_text_without_claim_section(), encoding='utf-8')
     return path
 
 
@@ -297,25 +334,39 @@ def _verdict_bullet(verdict: str, rescoped: str, evidence: str = 'checked', chec
 
 def _set_verdict_args(
     plan: str,
-    claim_index: int,
+    claim_index: int | None,
     verdict: str = 'corroborated',
     rescoped: str = 'n/a',
     evidence: str = 'holds at this sha',
     checked_at: str = SHA,
     by: str = PRODUCER,
     slug: str = SLUG,
+    section_scope: bool = False,
 ) -> Namespace:
-    """Build a complete ``set-verdict`` Namespace so every flag attribute exists."""
+    """Build a complete ``set-verdict`` Namespace so every flag attribute exists.
+
+    ``claim_index`` and ``section_scope`` are the two addressing modes argparse
+    declares as a REQUIRED mutually exclusive pair. This builder does not enforce
+    the exclusivity — that is argparse's job, pinned separately — so a caller may
+    construct either mode, and the section mode passes ``claim_index=None``
+    exactly as the parser's default would.
+    """
     return Namespace(
         slug=slug,
         plan=plan,
         claim_index=claim_index,
+        section_scope=section_scope,
         verdict=verdict,
         checked_at=checked_at,
         by=by,
         rescoped=rescoped,
         evidence=evidence,
     )
+
+
+def _section_scope_args(plan: str, **overrides) -> Namespace:
+    """The ``--section-scope`` addressing mode: no ordinal, section flag set."""
+    return _set_verdict_args(plan, None, section_scope=True, **overrides)
 
 
 # =============================================================================
@@ -504,6 +555,54 @@ class TestCorpusEnumerateUnreadable:
 # corpus verdicts — one control per admission-table row
 # =============================================================================
 
+# --- claim-section parse-coverage fixtures -----------------------------------
+#
+# One fixture per authoring form the four-member parse-coverage vocabulary has to
+# tell apart. The two UNREADABLE forms are the ones the collapsed parser reported
+# as an empty claim population; the empty and absent pair are the matched
+# negative controls that keep the resulting block attributable to unreadability
+# alone rather than to any spec that declares no claims.
+
+#: A claim section authored as a markdown TABLE — content the parser cannot
+#: address, because a claim is read only as a top-level ``- `` bullet.
+_TABLE_CLAIM_SECTION = [
+    '| Claim | Confirm at |',
+    '|-------|------------|',
+    '| the write seam is single | `a.py` § `f` |',
+]
+
+#: A claim section authored as PROSE — the second known-blind form.
+_PROSE_CLAIM_SECTION = [
+    'The write seam is single: every stamp goes through `a.py` § `f`, verify at outline.',
+]
+
+#: A body whose ONLY non-blank content sits inside a fence. The parser
+#: deliberately never reads a fenced ``- item`` as a claim, so by the stated
+#: conservative rule this section is EMPTY rather than unreadable.
+_FENCED_ONLY_CLAIM_SECTION = [
+    '```text',
+    '- OBSERVED: an illustrative claim — read at `a.py` § `f`',
+    '```',
+]
+
+#: A present-but-empty claim section.
+_EMPTY_CLAIM_SECTION: list = []
+
+
+def _section_verdict_bullet(
+    verdict: str = 'corroborated',
+    rescoped: str = 'n/a',
+    evidence: str = 'the section is settled as a whole',
+) -> str:
+    """A TOP-LEVEL verdict bullet — the SECTION-scoped verdict, not a claim's.
+
+    Built from :func:`_verdict_bullet` so both scopes are formatted by one
+    fixture body; only the nesting differs, which is exactly the distinction the
+    parser reads.
+    """
+    return _verdict_bullet(verdict, rescoped, evidence).lstrip()
+
+
 _ADMISSION_CLAIMS = [
     '- HYPOTHESIS: absent clause — confirm/refute at `a.py` § `f` (verify-at-outline)',
     '- HYPOTHESIS: corroborated clause — confirm/refute at `a.py` § `f` (verify-at-outline)',
@@ -572,6 +671,45 @@ class TestCorpusVerdictsAdmissionTable:
         assert rows[5]['verdict'] == 'indeterminate'
         assert rows[5]['admits'] is False
         assert rows[5]['line'] == _MALFORMED_LINE
+
+    def test_an_unsettled_unreadable_section_contributes_one_blocking_row(self, plan_context):
+        # The re-pointed control. This pins the BLOCKING property, not the
+        # not-blocking one: a table-form section carries claim content the parser
+        # cannot address, and before the parse-state split it contributed NO row,
+        # so the prep-ready test passed it over an empty population.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', list(_TABLE_CLAIM_SECTION))
+
+        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+
+        assert result['specs_scanned'] == 1, 'the fixture population did not materialize'
+        assert result['claims_scanned'] == 0, 'a table-form section yields no addressable claim'
+        assert result['count'] == 1, 'exactly one section-scoped row, never one per table line'
+        row = result['claims'][0]
+        assert row['verdict'] == 'indeterminate'
+        assert row['admits'] is False
+        assert row['scope'] == 'section'
+        assert row['claim_index'] == -1
+        assert row['synthesised'] is True, 'the row stands in for a verdict never written'
+        assert result['blocking_count'] == 1
+
+    def test_an_empty_or_absent_section_contributes_no_row_and_no_block(self, plan_context):
+        # Matched negative control for the row above, both forms in ONE payload:
+        # the block is therefore shown to be caused by unreadability SPECIFICALLY.
+        # Without this pair the blocking assertion is equally consistent with a
+        # parser that blocks every spec declaring no claims — which would make the
+        # gate fire on the whole corpus.
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-empty.md', list(_EMPTY_CLAIM_SECTION))
+        _write_spec_without_claim_section(plan_context, 'PLAN-02-absent.md')
+
+        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+
+        assert result['specs_scanned'] == 2, 'the fixture population did not materialize'
+        assert result['count'] == 0
+        assert result['blocking_count'] == 0
+        assert result['unreadable_claim_section_count'] == 0
+        assert result['unreadable_claim_sections'] == []
 
     def test_counts_ride_with_their_populations(self, plan_context):
         _write_status(plan_context, [_row('PLAN-01')])
@@ -848,6 +986,10 @@ class TestCorpusSetVerdictRejections:
         assert result['status'] == 'error'
         assert result['error'] == 'claim_index_out_of_range'
         assert result['claims_total'] == 1
+        # The refusal reports the state it observed and names its own remedy, so
+        # a caller never has to re-derive why the ordinal was refused.
+        assert result['claim_section_state'] == CLAIM_SECTION_PARSED
+        assert '--section-scope' in result['recovery']
         assert spec.read_bytes() == before
 
     def test_should_reject_an_out_of_set_verdict_without_writing(self, plan_context):
@@ -903,6 +1045,346 @@ class TestCorpusSetVerdictRejections:
 
         assert result['status'] == 'success'
         assert spec.read_bytes() != before
+
+
+# =============================================================================
+# Claim-section parse coverage — the four-state discrimination and its reporting
+# =============================================================================
+#
+# ``_parse_claims`` returned an empty list for two structurally different
+# documents: a spec with no ``## Claim Labels`` section, and a spec whose section
+# is present but authored as a table or as prose. Only the first is a legitimate
+# empty population. The controls below pin the discrimination at the unit seam,
+# its reporting on the ``corpus verdicts`` payload, and the section-scoped write
+# that recovers a spec the parser cannot read — each count stated beside the
+# population it was computed over.
+
+#: The parse-state cases, each an ``(expected_state, claim_lines)`` pair. The
+#: population is published so the coverage guard below can DERIVE which members
+#: of the vocabulary it exercises rather than asserting a hand-typed count.
+_PARSE_STATE_CASES = (
+    (CLAIM_SECTION_PARSED, [_DEFAULT_CLAIM]),
+    (CLAIM_SECTION_EMPTY, list(_EMPTY_CLAIM_SECTION)),
+    (CLAIM_SECTION_EMPTY, list(_FENCED_ONLY_CLAIM_SECTION)),
+    (CLAIM_SECTION_UNREADABLE, list(_TABLE_CLAIM_SECTION)),
+    (CLAIM_SECTION_UNREADABLE, list(_PROSE_CLAIM_SECTION)),
+)
+
+_PARSE_STATE_IDS = ('parsed', 'empty', 'empty-fenced-only', 'unreadable-table', 'unreadable-prose')
+
+
+class TestClaimSectionStateDiscrimination:
+    """Unit controls on ``_parse_claim_section``, one per authoring form."""
+
+    def test_the_case_population_covers_the_whole_vocabulary(self):
+        # Non-vacuity guard, derived rather than asserted: the parametrized cases
+        # plus the separately-built absent case must cover EVERY member of the
+        # vocabulary, so a state added to the module without a control here fails
+        # loudly instead of going unexercised.
+        covered = {state for state, _ in _PARSE_STATE_CASES} | {CLAIM_SECTION_ABSENT}
+
+        assert len(_PARSE_STATE_CASES) == len(_PARSE_STATE_IDS)
+        assert covered == set(CLAIM_SECTION_STATES), (
+            f'{len(CLAIM_SECTION_STATES)} state(s) in the vocabulary, {len(covered)} exercised'
+        )
+
+    @pytest.mark.parametrize(
+        ('expected_state', 'claim_lines'), _PARSE_STATE_CASES, ids=_PARSE_STATE_IDS
+    )
+    def test_each_authoring_form_resolves_to_its_own_state(self, expected_state, claim_lines):
+        lines = _spec_text(claim_lines).splitlines()
+
+        section = parse_claim_section(lines)
+
+        assert section['state'] == expected_state
+
+    def test_a_missing_heading_resolves_to_absent_not_to_empty(self):
+        lines = _spec_text_without_claim_section().splitlines()
+
+        section = parse_claim_section(lines)
+
+        assert section['state'] == CLAIM_SECTION_ABSENT
+        assert section['claims'] == []
+        assert section['body_start'] == -1, 'an absent section offers no insertion point'
+
+    def test_an_all_fenced_body_is_empty_because_a_fenced_bullet_is_never_a_claim(self):
+        # The conservative rule stated in the parser's docstring, pinned: the
+        # fenced bullet IS in the document, so ``empty`` here is the rule holding
+        # rather than the scan failing to reach the body.
+        text = _spec_text(list(_FENCED_ONLY_CLAIM_SECTION))
+
+        section = parse_claim_section(text.splitlines())
+
+        assert section['state'] == CLAIM_SECTION_EMPTY
+        assert '- OBSERVED: an illustrative claim' in text
+
+    def test_an_unreadable_section_quotes_its_first_body_line(self):
+        lines = _spec_text(list(_TABLE_CLAIM_SECTION)).splitlines()
+
+        section = parse_claim_section(lines)
+
+        assert section['state'] == CLAIM_SECTION_UNREADABLE
+        assert section['first_line'] == _TABLE_CLAIM_SECTION[0]
+
+    def test_a_top_level_verdict_bullet_is_the_section_verdict_not_a_claim(self):
+        bullet = _section_verdict_bullet()
+        lines = _spec_text([bullet, *_TWO_CLAIMS]).splitlines()
+
+        section = parse_claim_section(lines)
+
+        assert section['section_verdict_line'] >= 0
+        assert section['section_verdict_text'] == bullet.removeprefix('- ')
+        assert [claim['text'] for claim in section['claims']] == [
+            line.removeprefix('- ') for line in _TWO_CLAIMS
+        ]
+
+
+class TestCorpusVerdictsClaimSectionReporting:
+    """The three readings ride the payload beside ``specs_scanned``."""
+
+    def _payload(self, plan_context) -> dict:
+        _write_status(
+            plan_context,
+            [_row('PLAN-01'), _row('PLAN-02'), _row('PLAN-03'), _row('PLAN-04')],
+        )
+        _write_spec_without_claim_section(plan_context, 'PLAN-01-absent.md')
+        _write_spec(plan_context, 'PLAN-02-empty.md', list(_EMPTY_CLAIM_SECTION))
+        _write_spec(plan_context, 'PLAN-03-unreadable.md', list(_TABLE_CLAIM_SECTION))
+        _write_spec(plan_context, 'PLAN-04-parsed.md', list(_ONE_CLAIM))
+        result: dict = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        assert result['status'] == 'success'
+        assert result['specs_scanned'] == 4, 'the fixture population did not materialize'
+        return result
+
+    def test_the_tally_spans_the_whole_vocabulary_with_one_spec_per_state(self, plan_context):
+        result = self._payload(plan_context)
+
+        tally = {row['state']: row['count'] for row in result['claim_section_states']}
+
+        assert [row['state'] for row in result['claim_section_states']] == list(
+            CLAIM_SECTION_STATES
+        ), 'the tally is derived from the vocabulary, so its order and membership are total'
+        assert tally == dict.fromkeys(CLAIM_SECTION_STATES, 1)
+        assert sum(tally.values()) == result['specs_scanned']
+
+    def test_a_state_no_spec_is_in_reports_a_stated_zero(self, plan_context):
+        # The whole point of deriving the tally from the vocabulary: an absent
+        # state must publish 0, not vanish from the list and read as "unasked".
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-parsed.md', list(_ONE_CLAIM))
+
+        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        tally = {row['state']: row['count'] for row in result['claim_section_states']}
+
+        assert result['specs_scanned'] == 1
+        assert tally[CLAIM_SECTION_PARSED] == 1
+        assert tally[CLAIM_SECTION_UNREADABLE] == 0
+        assert set(tally) == set(CLAIM_SECTION_STATES)
+
+    def test_only_the_unreadable_spec_is_named_with_its_offending_line(self, plan_context):
+        result = self._payload(plan_context)
+
+        assert result['unreadable_claim_section_count'] == 1
+        assert result['unreadable_claim_sections'] == [
+            {
+                'spec': 'PLAN-03-unreadable.md',
+                'first_line': _TABLE_CLAIM_SECTION[0],
+                'section_verdict': 'absent',
+            }
+        ]
+
+    def test_the_blocking_row_belongs_to_the_unreadable_spec_alone(self, plan_context):
+        result = self._payload(plan_context)
+
+        blocking = [row for row in result['claims'] if not row['admits']]
+
+        assert result['blocking_count'] == 1
+        assert [row['spec'] for row in blocking] == ['PLAN-03-unreadable.md']
+        assert result['claims_scanned'] == 1, 'only the parsed spec contributes a claim'
+
+    def test_a_claim_scoped_row_still_carries_its_own_scope_and_ordinal(self, plan_context):
+        # The new key is TOTAL over the payload, so a claim row is readable by the
+        # same test a section row is — no consumer has to special-case its absence.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', _ONE_CLAIM)
+        cmd_corpus_set_verdict(_set_verdict_args('PLAN-01', 0))
+
+        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+
+        assert result['count'] == 1
+        assert result['claims'][0]['scope'] == 'claim'
+        assert result['claims'][0]['claim_index'] == 0
+        assert result['claims'][0]['synthesised'] is False
+
+
+class TestSectionScopedStamp:
+    """``--section-scope``: the write-side recovery address for an unread section."""
+
+    def _unreadable_spec(self, plan_context) -> Path:
+        _write_status(plan_context, [_row('PLAN-01')])
+        return _write_spec(plan_context, 'PLAN-01-alpha.md', list(_TABLE_CLAIM_SECTION))
+
+    def test_should_stamp_a_top_level_bullet_and_clear_the_block(self, plan_context):
+        spec = self._unreadable_spec(plan_context)
+
+        stamped = cmd_corpus_set_verdict(_section_scope_args('PLAN-01'))
+        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+
+        assert stamped['status'] == 'success'
+        assert stamped['scope'] == 'section'
+        assert stamped['claim_index'] == -1
+        assert stamped['claim_section_state'] == CLAIM_SECTION_UNREADABLE
+        assert stamped['replaced'] is False
+        # The recovery CLEARS the block rather than merely writing a bullet.
+        assert result['count'] == 1
+        assert result['blocking_count'] == 0
+        row = result['claims'][0]
+        assert row['scope'] == 'section'
+        assert row['claim_index'] == -1
+        assert row['admits'] is True
+        assert row['synthesised'] is False
+        for key in VERDICT_KEYS:
+            assert row[key], f'{key} did not survive the section-scoped round trip'
+        assert result['unreadable_claim_sections'][0]['section_verdict'] == 'present'
+        assert spec.read_text(encoding='utf-8').count('- verdict:') == 1
+
+    def test_should_leave_the_claim_prose_byte_identical(self, plan_context):
+        # "Recovered without re-authoring the prose", pinned on the DISK rather
+        # than on the return envelope: every original body line survives verbatim.
+        spec = self._unreadable_spec(plan_context)
+        before = spec.read_text(encoding='utf-8')
+
+        cmd_corpus_set_verdict(_section_scope_args('PLAN-01'))
+
+        after = spec.read_text(encoding='utf-8')
+        for line in _TABLE_CLAIM_SECTION:
+            assert line in after
+        assert after.endswith('\n')
+        assert len(after.splitlines()) == len(before.splitlines()) + 1
+
+    def test_should_replace_an_existing_section_verdict_in_place(self, plan_context):
+        spec = self._unreadable_spec(plan_context)
+
+        first = cmd_corpus_set_verdict(_section_scope_args('PLAN-01', evidence='first pass'))
+        second = cmd_corpus_set_verdict(
+            _section_scope_args(
+                'PLAN-01', verdict='contradicted', rescoped='no', evidence='second pass'
+            )
+        )
+
+        assert first['replaced'] is False
+        assert second['replaced'] is True
+        assert 'first pass' in second['previous_line']
+        text = spec.read_text(encoding='utf-8')
+        assert text.count('- verdict:') == 1, 'a section must never carry two verdicts'
+        assert 'first pass' not in text
+
+    def test_should_be_idempotent_on_an_identical_restamp(self, plan_context):
+        spec = self._unreadable_spec(plan_context)
+
+        cmd_corpus_set_verdict(_section_scope_args('PLAN-01'))
+        after_first = spec.read_bytes()
+        cmd_corpus_set_verdict(_section_scope_args('PLAN-01'))
+
+        assert spec.read_bytes() == after_first
+
+    @pytest.mark.parametrize(
+        ('claim_lines', 'expected_state'),
+        ((list(_EMPTY_CLAIM_SECTION), CLAIM_SECTION_EMPTY), (list(_ONE_CLAIM), CLAIM_SECTION_PARSED)),
+        ids=['empty', 'parsed'],
+    )
+    def test_should_refuse_a_readable_section_without_writing(
+        self, plan_context, claim_lines, expected_state
+    ):
+        _write_status(plan_context, [_row('PLAN-01')])
+        spec = _write_spec(plan_context, 'PLAN-01-alpha.md', claim_lines)
+        before = spec.read_bytes()
+
+        result = cmd_corpus_set_verdict(_section_scope_args('PLAN-01'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'section_scope_not_applicable'
+        assert result['claim_section_state'] == expected_state
+        assert spec.read_bytes() == before
+
+    def test_should_refuse_an_absent_section_without_writing(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        spec = _write_spec_without_claim_section(plan_context, 'PLAN-01-alpha.md')
+        before = spec.read_bytes()
+
+        result = cmd_corpus_set_verdict(_section_scope_args('PLAN-01'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'claim_section_absent'
+        assert result['claim_section_state'] == CLAIM_SECTION_ABSENT
+        assert spec.read_bytes() == before
+
+
+class TestSetVerdictAddressingModes:
+    """The two addressing modes are mutually exclusive AND one is required."""
+
+    _BASE = (
+        'corpus',
+        'set-verdict',
+        '--slug',
+        SLUG,
+        '--plan',
+        'PLAN-01',
+        '--verdict',
+        'corroborated',
+        '--checked-at',
+        SHA,
+        '--by',
+        PRODUCER,
+        '--rescoped',
+        'n/a',
+        '--evidence',
+        'holds at this sha',
+    )
+
+    def test_argparse_refuses_both_addressing_modes(self):
+        parser = build_arg_parser()
+
+        with pytest.raises(SystemExit):
+            parser.parse_args([*self._BASE, '--claim-index', '0', '--section-scope'])
+
+    def test_argparse_refuses_neither_addressing_mode(self):
+        parser = build_arg_parser()
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(list(self._BASE))
+
+    def test_argparse_accepts_each_addressing_mode_on_its_own(self):
+        # Matched positive control: the pair is EXCLUSIVE, not disabled — without
+        # this both refusals above are equally consistent with a broken parser.
+        parser = build_arg_parser()
+
+        by_index = parser.parse_args([*self._BASE, '--claim-index', '0'])
+        by_section = parser.parse_args([*self._BASE, '--section-scope'])
+
+        assert by_index.claim_index == 0
+        assert by_index.section_scope is False
+        assert by_section.claim_index is None
+        assert by_section.section_scope is True
+
+    def test_a_section_verdict_does_not_shift_the_claim_ordinals(self, plan_context):
+        # The section verdict is excluded from ``claims[]``, so the ordinal a
+        # caller already holds keeps addressing the same bullet. Asserted against
+        # a hand-authored section verdict, since the tool refuses to write one
+        # onto a parsed section.
+        _write_status(plan_context, [_row('PLAN-01')])
+        spec = _write_spec(
+            plan_context, 'PLAN-01-alpha.md', [_section_verdict_bullet(), *_TWO_CLAIMS]
+        )
+
+        stamped = cmd_corpus_set_verdict(_set_verdict_args('PLAN-01', 1, evidence='second only'))
+
+        assert stamped['status'] == 'success'
+        assert stamped['claims_total'] == 2, 'the section verdict was counted as a claim'
+        assert stamped['claim_index'] == 1
+        assert stamped['scope'] == 'claim'
+        text = spec.read_text(encoding='utf-8')
+        assert text.index('second only') > text.index(_TWO_CLAIMS[1])
 
 
 # =============================================================================
@@ -1985,8 +2467,10 @@ class TestHeadingCaseIsNotSectionIdentity:
             claim_heading, '## Expected Surface', claim_lines, list(_DEFAULT_SURFACE)
         )
 
-        claims = parse_claims(variant.splitlines())
+        section = parse_claim_section(variant.splitlines())
+        claims = section['claims']
 
+        assert section['state'] == CLAIM_SECTION_PARSED
         assert len(claims) == len(claim_lines), (
             f'{len(claim_lines)} claim(s) declared under {claim_heading!r}, '
             f'{len(claims)} parsed'
@@ -1997,7 +2481,10 @@ class TestHeadingCaseIsNotSectionIdentity:
         ]
 
     def test_a_spec_that_declares_no_claim_section_still_parses_no_claims(self):
-        # Matched negative control for the claim peer.
+        # Matched negative control for the claim peer. The empty claim list is
+        # asserted TOGETHER with the state that explains it: after the parse-state
+        # split, "no claims" is only the right answer here because the section is
+        # genuinely ABSENT rather than merely unread.
         lines = [
             '# PLAN-NN: Fixture',
             '',
@@ -2010,7 +2497,10 @@ class TestHeadingCaseIsNotSectionIdentity:
             *_DEFAULT_SURFACE,
         ]
 
-        assert parse_claims(lines) == []
+        section = parse_claim_section(lines)
+
+        assert section['claims'] == []
+        assert section['state'] == CLAIM_SECTION_ABSENT
 
     def test_the_section_span_locates_a_case_variant_heading(self):
         # The shared primitive both consumers ride, pinned directly: the span is
@@ -2079,8 +2569,10 @@ class TestIndentedDelimiterClaimAddressing:
     def test_the_parsed_claims_exclude_the_in_fence_bullet(self):
         lines = _spec_text(list(_INDENTED_DELIMITER_CLAIMS)).splitlines()
 
-        claims = parse_claims(lines)
+        section = parse_claim_section(lines)
+        claims = section['claims']
 
+        assert section['state'] == CLAIM_SECTION_PARSED
         assert len(claims) == 2, (
             f'{len(claims)} claim(s) parsed from a section declaring 2 — note the '
             'count alone does not discriminate here, so the membership is asserted next'
@@ -2136,6 +2628,8 @@ class TestIndentedDelimiterClaimAddressing:
         assert result['status'] == 'error'
         assert result['error'] == 'claim_index_out_of_range'
         assert result['claims_total'] == 2
+        assert result['claim_section_state'] == CLAIM_SECTION_PARSED
+        assert '--section-scope' in result['recovery']
         assert spec.read_bytes() == before
 
 

@@ -180,6 +180,38 @@ BLOCKING_RESCOPED = 'no'
 CONTRADICTED = 'contradicted'
 NOT_APPLICABLE = 'n/a'
 
+#: The claim-section PARSE-COVERAGE vocabulary: how much of one spec's
+#: ``## Claim Labels`` section the parser could read. It is INDEPENDENT of
+#: :data:`VERDICT_VALUES` (a settlement reached about one claim) and of
+#: :data:`READINESS_ORDER` (a restart signal), so it carries its own bindings for
+#: the same reason :data:`READINESS_INDETERMINATE` does — one binding shared
+#: across two vocabularies lets a change to either silently move the other. The
+#: one point of contact is deliberate and one-way: an ``unreadable`` section with
+#: no section-scoped verdict is reported as :data:`VERDICT_INDETERMINATE`, which
+#: is a parse outcome in both vocabularies and a settlement in neither.
+CLAIM_SECTION_ABSENT = 'absent'
+CLAIM_SECTION_EMPTY = 'empty'
+CLAIM_SECTION_UNREADABLE = 'unreadable'
+CLAIM_SECTION_PARSED = 'parsed'
+#: The WHOLE vocabulary, ordered from least to most read. ``claim_section_states``
+#: is derived from this tuple rather than from the states actually observed, so a
+#: state no spec is in publishes a stated zero instead of vanishing from the tally.
+CLAIM_SECTION_STATES = (
+    CLAIM_SECTION_ABSENT,
+    CLAIM_SECTION_EMPTY,
+    CLAIM_SECTION_UNREADABLE,
+    CLAIM_SECTION_PARSED,
+)
+
+#: What one verdict row is ADDRESSED BY. A ``claim``-scoped row carries its real
+#: zero-based ordinal; a ``section``-scoped row settles the section as a whole and
+#: carries ``claim_index: -1``, this module's not-applicable marker (mirroring
+#: ``verdict_line: -1``), never an addressable ordinal.
+SCOPE_CLAIM = 'claim'
+SCOPE_SECTION = 'section'
+#: The ``claim_index`` a section-scoped row and a section-scoped stamp report.
+NO_CLAIM_INDEX = -1
+
 # --- resume-summary self-validation ----------------------------------------
 
 #: The count claims a rendered START-HERE block can assert about the plan queue,
@@ -1211,37 +1243,89 @@ def _own_pointer(slug: str, spec_name: str) -> str:
     return f'{slug}/plans/{spec_name}'
 
 
-def _parse_claims(lines: list[str]) -> list[dict[str, Any]]:
-    """Parse the claim bullets of the ``## Claim Labels`` section.
+def _parse_claim_section(lines: list[str]) -> dict[str, Any]:
+    """Read the ``## Claim Labels`` section in ONE walk: its state AND its claims.
 
-    A claim is a TOP-LEVEL ``- `` bullet inside the section. Its verdict is the
-    nested child bullet whose text begins with the literal ``verdict:`` token —
-    association is by NESTING, never by ordinal position, so inserting or
-    reordering a claim never re-binds an existing verdict to a different claim.
+    Returns ``state`` (a member of :data:`CLAIM_SECTION_STATES`), ``claims`` (the
+    top-level claim bullets), ``first_line`` (the section body's first non-blank
+    unfenced line, quoted), ``section_verdict_line`` / ``section_verdict_text``
+    (the SECTION-scoped verdict bullet, else ``-1`` / ``''``) and ``body_start``
+    (the line index immediately after the heading — the section-scoped insertion
+    point — else ``-1``).
 
-    Each returned record carries ``block_end``: the insertion point for a new
-    verdict bullet, being one past the claim's own wrapped text lines and before
-    any further bullet, with trailing blank lines excluded.
+    Both readings come out of the SAME :func:`_fenced_mask` + :func:`_section_span`
+    walk, so the state and the claim list cannot disagree and the corpus is never
+    walked twice. Reporting the state is what separates the two structurally
+    different documents that a bare zero-length claim list used to collapse: a
+    spec carrying no claim section at all, and a spec whose section is present but
+    authored as a table or as prose. Collapsed, the second one reads as a
+    legitimately empty population — a vacuous pass at every consumer.
 
-    Fenced lines are skipped on both scans: a ``- item`` inside a fenced example
-    is not a claim, and a ``#`` comment inside one does not end the section.
+    The discrimination rule is deliberately conservative:
+
+    * ``absent`` — :func:`_section_span` finds no heading.
+    * ``empty`` — the body carries no non-blank UNFENCED line.
+    * ``unreadable`` — the body carries non-blank unfenced content but yields zero
+      top-level claim bullets.
+    * ``parsed`` — at least one claim bullet was found.
+
+    A body whose only non-blank content sits inside a fence is therefore ``empty``
+    and not ``unreadable``, because the parser deliberately never reads a fenced
+    ``- item`` as a claim; that residue is measured from outside this function
+    rather than guessed at here.
+
+    A claim is a TOP-LEVEL ``- `` bullet. Its verdict is the NESTED child bullet
+    whose text begins with :data:`VERDICT_PREFIX` — association is by nesting,
+    never by ordinal position, so inserting or reordering a claim never re-binds
+    an existing verdict to a different claim. Each claim carries ``block_end``:
+    the insertion point for a new verdict bullet, one past the claim's own wrapped
+    text lines and before any further bullet, trailing blank lines excluded.
+
+    A TOP-LEVEL bullet beginning with :data:`VERDICT_PREFIX` is NOT a claim — it
+    is the section-scoped verdict, recorded apart and excluded from ``claims``, so
+    ``--claim-index`` ordinals are unaffected by its presence. ``first_line`` is
+    the body's first line AS AUTHORED, so after a section-scoped stamp it quotes
+    that verdict bullet rather than the offending prose: by then the diagnostic
+    value has moved to the section verdict being present.
+
+    Fenced lines are skipped on every scan: a ``- item`` inside a fenced example is
+    not a claim, and a ``#`` comment inside one does not end the section.
     Admitting either would shift every later ``--claim-index`` and understate
     ``claims_total``.
     """
     fenced = _fenced_mask(lines)
     start, end = _section_span(lines, CLAIM_LABELS_HEADING_RE, fenced)
     if start < 0:
-        return []
+        return {
+            'state': CLAIM_SECTION_ABSENT,
+            'claims': [],
+            'first_line': '',
+            'section_verdict_line': -1,
+            'section_verdict_text': '',
+            'body_start': -1,
+        }
     claims: list[dict[str, Any]] = []
+    first_line = ''
+    has_content = False
+    section_verdict_line = -1
+    section_verdict_text = ''
     for index in range(start, end):
-        if fenced[index]:
+        if fenced[index] or not lines[index].strip():
             continue
+        if not has_content:
+            first_line = lines[index].strip()
+        has_content = True
         match = _BULLET_RE.match(lines[index])
         if match is None:
             continue
         indent = match.group('indent')
         text = match.group('text').strip()
         if not indent:
+            if text.startswith(VERDICT_PREFIX):
+                if section_verdict_line < 0:
+                    section_verdict_line = index
+                    section_verdict_text = text
+                continue
             claims.append(
                 {
                     'index': len(claims),
@@ -1256,7 +1340,20 @@ def _parse_claims(lines: list[str]) -> list[dict[str, Any]]:
         elif claims and text.startswith(VERDICT_PREFIX) and claims[-1]['verdict_line'] < 0:
             claims[-1]['verdict_line'] = index
             claims[-1]['verdict_text'] = text
-    return claims
+    if claims:
+        state = CLAIM_SECTION_PARSED
+    elif has_content:
+        state = CLAIM_SECTION_UNREADABLE
+    else:
+        state = CLAIM_SECTION_EMPTY
+    return {
+        'state': state,
+        'claims': claims,
+        'first_line': first_line,
+        'section_verdict_line': section_verdict_line,
+        'section_verdict_text': section_verdict_text,
+        'body_start': start,
+    }
 
 
 def _claim_block_end(
@@ -1328,34 +1425,98 @@ def _admits(verdict: str, rescoped: str) -> bool:
     return not (verdict == CONTRADICTED and rescoped == BLOCKING_RESCOPED)
 
 
-def _verdict_row(spec_name: str, claim: dict[str, Any], line: str, head: str) -> dict[str, Any]:
-    """Build one ``verdicts`` payload row for a claim carrying a verdict bullet."""
-    parsed = _parse_verdict_text(str(claim['verdict_text']))
-    if parsed is None:
-        return {
-            'spec': spec_name,
-            'claim_index': claim['index'],
-            'verdict': VERDICT_INDETERMINATE,
-            'checked_at': '',
-            'by': '',
-            'rescoped': '',
-            'evidence': '',
-            'admits': False,
-            'stale': False,
-            'line': line,
-        }
-    return {
+def _verdict_row(
+    spec_name: str,
+    claim: dict[str, Any],
+    line: str,
+    head: str,
+    scope: str = SCOPE_CLAIM,
+    synthesised: bool = False,
+) -> dict[str, Any]:
+    """Build one ``verdicts`` payload row. The SOLE row constructor.
+
+    ``scope`` says what the row is addressed by (:data:`SCOPE_CLAIM` or
+    :data:`SCOPE_SECTION`) and ``synthesised`` whether the row stands in for a
+    verdict that was never written. Every row carries both keys, so a consumer
+    reads provenance from ``synthesised`` rather than inferring it from a
+    sentinel elsewhere in the row.
+
+    The indeterminate shape is the base: a ``verdict_text`` that does not parse —
+    including the empty one a synthesised row passes — leaves the five grammar
+    keys blank, ``verdict`` at :data:`VERDICT_INDETERMINATE` and ``admits``
+    false, so an unparseable bullet is never silently admitted and never dropped.
+    """
+    row = {
         'spec': spec_name,
         'claim_index': claim['index'],
-        'verdict': parsed['verdict'],
-        'checked_at': parsed['checked_at'],
-        'by': parsed['by'],
-        'rescoped': parsed['rescoped'],
-        'evidence': parsed['evidence'],
-        'admits': _admits(parsed['verdict'], parsed['rescoped']),
-        'stale': bool(head) and not head.startswith(parsed['checked_at']),
+        'scope': scope,
+        'synthesised': synthesised,
+        'verdict': VERDICT_INDETERMINATE,
+        'checked_at': '',
+        'by': '',
+        'rescoped': '',
+        'evidence': '',
+        'admits': False,
+        'stale': False,
         'line': line,
     }
+    parsed = _parse_verdict_text(str(claim['verdict_text']))
+    if parsed is None:
+        return row
+    row.update(parsed)
+    row['admits'] = _admits(parsed['verdict'], parsed['rescoped'])
+    row['stale'] = bool(head) and not head.startswith(parsed['checked_at'])
+    return row
+
+
+def _spec_verdict_rows(
+    spec_name: str, lines: list[str], section: dict[str, Any], head: str
+) -> list[dict[str, Any]]:
+    """Every payload row one spec contributes: its claim rows, then AT MOST one section row.
+
+    The section row has two mutually exclusive causes, which is what makes "at
+    most one" structural rather than asserted. A section carrying a top-level
+    verdict bullet contributes that bullet, read through the SAME
+    :func:`_verdict_row` path as any claim so the admission table applies to it
+    unchanged. An ``unreadable`` section carrying NO such bullet instead
+    contributes one SYNTHESISED row — the only row in the payload not derived
+    from a verdict bullet on disk — which comes out
+    :data:`VERDICT_INDETERMINATE` with ``admits: false`` and therefore counts
+    into ``blocking_count``, so a section the parser could not read can no longer
+    pass a gate by contributing nothing at all.
+
+    An ``empty`` or ``absent`` section contributes no section row: it is a
+    legitimately empty population, not an unread one, and blocking it would make
+    the gate fire on every spec that declares no claims.
+    """
+    rows = [
+        _verdict_row(spec_name, claim, lines[claim['verdict_line']].strip(), head)
+        for claim in section['claims']
+        if claim['verdict_line'] >= 0
+    ]
+    verdict_line = int(section['section_verdict_line'])
+    if verdict_line >= 0:
+        rows.append(
+            _verdict_row(
+                spec_name,
+                {'index': NO_CLAIM_INDEX, 'verdict_text': section['section_verdict_text']},
+                lines[verdict_line].strip(),
+                head,
+                scope=SCOPE_SECTION,
+            )
+        )
+    elif section['state'] == CLAIM_SECTION_UNREADABLE:
+        rows.append(
+            _verdict_row(
+                spec_name,
+                {'index': NO_CLAIM_INDEX, 'verdict_text': ''},
+                '',
+                head,
+                scope=SCOPE_SECTION,
+                synthesised=True,
+            )
+        )
+    return rows
 
 
 def cmd_corpus_enumerate(args: argparse.Namespace) -> dict[str, Any]:
@@ -1440,6 +1601,20 @@ def cmd_corpus_verdicts(args: argparse.Namespace) -> dict[str, Any]:
     with ``verdict: indeterminate``, ``admits: false`` and the offending line
     quoted verbatim — never dropped. ``specs_scanned`` and ``claims_scanned``
     ride the payload so a ``count: 0`` states which zero it is.
+
+    Rows are addressed at two scopes (see :func:`_spec_verdict_rows`), so ``count``
+    and ``blocking_count`` span claim-scoped AND section-scoped rows while
+    ``claims_scanned`` continues to count claims only — the two denominators are
+    deliberately not the same population.
+
+    Parse coverage rides the payload beside them: ``claim_section_states`` tallies
+    every spec over the WHOLE :data:`CLAIM_SECTION_STATES` vocabulary, and
+    ``unreadable_claim_sections`` names each spec whose claim section could not be
+    read, quoting its ``first_line`` and reporting whether a ``section_verdict`` is
+    already ``present`` or still ``absent`` — the second being exactly the set that
+    contributes a blocking row. Both are computed over ``specs_scanned``, never
+    over ``specs_total``: a spec whose file could not be read at all is counted in
+    ``unreadable`` instead and is in no parse state.
     """
     invalid = _validate_slug(args.slug)
     if invalid:
@@ -1451,6 +1626,8 @@ def cmd_corpus_verdicts(args: argparse.Namespace) -> dict[str, Any]:
     head = _current_head_sha()
     rows: list[dict[str, Any]] = []
     unreadable: list[dict[str, str]] = []
+    unreadable_sections: list[dict[str, str]] = []
+    state_counts = dict.fromkeys(CLAIM_SECTION_STATES, 0)
     specs_scanned = 0
     claims_scanned = 0
     for spec in specs:
@@ -1460,13 +1637,20 @@ def cmd_corpus_verdicts(args: argparse.Namespace) -> dict[str, Any]:
             continue
         specs_scanned += 1
         lines = text.splitlines()
-        claims = _parse_claims(lines)
-        claims_scanned += len(claims)
-        rows.extend(
-            _verdict_row(spec.name, claim, lines[claim['verdict_line']].strip(), head)
-            for claim in claims
-            if claim['verdict_line'] >= 0
-        )
+        section = _parse_claim_section(lines)
+        state_counts[section['state']] += 1
+        claims_scanned += len(section['claims'])
+        rows.extend(_spec_verdict_rows(spec.name, lines, section, head))
+        if section['state'] == CLAIM_SECTION_UNREADABLE:
+            unreadable_sections.append(
+                {
+                    'spec': spec.name,
+                    'first_line': section['first_line'],
+                    'section_verdict': (
+                        'present' if section['section_verdict_line'] >= 0 else 'absent'
+                    ),
+                }
+            )
     return {
         'status': 'success',
         'operation': 'corpus-verdicts',
@@ -1476,6 +1660,11 @@ def cmd_corpus_verdicts(args: argparse.Namespace) -> dict[str, Any]:
         'specs_total': len(specs),
         'specs_scanned': specs_scanned,
         'claims_scanned': claims_scanned,
+        'claim_section_states': [
+            {'state': state, 'count': state_counts[state]} for state in CLAIM_SECTION_STATES
+        ],
+        'unreadable_claim_section_count': len(unreadable_sections),
+        'unreadable_claim_sections': unreadable_sections,
         'count': len(rows),
         'blocking_count': sum(1 for row in rows if not row['admits']),
         'claims': rows,
@@ -1709,13 +1898,58 @@ def _validate_set_verdict_args(args: argparse.Namespace) -> dict[str, Any] | Non
     return None
 
 
-def cmd_corpus_set_verdict(args: argparse.Namespace) -> dict[str, Any]:
-    """Stamp one re-grounding verdict onto one claim. The group's single write.
+def _section_scope_rejection(
+    slug: str, spec_name: str, section: dict[str, Any]
+) -> dict[str, Any]:
+    """The rejection envelope for a ``--section-scope`` stamp that does not apply.
 
-    The ONLY formatter of the verdict line in the tree. Writes exactly one
-    nested bullet under the addressed claim, REPLACING an existing one in place
-    rather than appending a second — so re-stamping is idempotent by
-    construction and a claim can never carry two verdicts.
+    Called only once the state is known NOT to be ``unreadable``, so it always
+    returns an envelope. The two refusals are kept apart because their remedies
+    differ: an ``absent`` section has nowhere to write and the spec must gain the
+    heading first, while an ``empty`` or ``parsed`` one is readable and already has
+    its correct address. Both name the observed ``claim_section_state``, so the
+    caller never has to re-derive why it was refused.
+    """
+    state = str(section['state'])
+    if state == CLAIM_SECTION_ABSENT:
+        return _error(
+            slug,
+            'claim_section_absent',
+            f'spec {spec_name!r} carries no ## Claim Labels heading to stamp',
+            spec=spec_name,
+            claim_section_state=state,
+        )
+    return _error(
+        slug,
+        'section_scope_not_applicable',
+        f'--section-scope applies only to an {CLAIM_SECTION_UNREADABLE!r} claim section; '
+        f'spec {spec_name!r} is {state!r}',
+        spec=spec_name,
+        claim_section_state=state,
+        claims_total=len(section['claims']),
+    )
+
+
+def cmd_corpus_set_verdict(args: argparse.Namespace) -> dict[str, Any]:
+    """Stamp one re-grounding verdict. The group's single write.
+
+    The ONLY formatter of the verdict line in the tree. Exactly one addressing
+    mode is always supplied, argparse-enforced as a required mutually exclusive
+    pair:
+
+    * ``--claim-index N`` — the ordinary address. Writes one NESTED bullet under
+      the addressed claim.
+    * ``--section-scope`` — the recovery address for a section the claim parser
+      could not read. Writes one TOP-LEVEL bullet immediately after the heading,
+      settling the SECTION rather than any one claim, and touching none of the
+      claim prose. It applies ONLY to an ``unreadable`` section: an ``absent``
+      one is refused with ``claim_section_absent`` and an ``empty`` or ``parsed``
+      one with ``section_scope_not_applicable``, because an empty section already
+      admits and a parsed one has the per-claim form as its correct address.
+
+    Either way the write REPLACES an existing verdict bullet in place rather than
+    appending a second, so re-stamping is idempotent by construction and neither
+    a claim nor a section can ever carry two verdicts.
     """
     invalid = _validate_slug(args.slug)
     if invalid:
@@ -1736,16 +1970,9 @@ def cmd_corpus_set_verdict(args: argparse.Namespace) -> dict[str, Any]:
     if text is None:
         return _error(args.slug, error, f'spec {spec.name!r} could not be read', spec=spec.name)
     lines = text.splitlines()
-    claims = _parse_claims(lines)
-    if not 0 <= args.claim_index < len(claims):
-        return _error(
-            args.slug,
-            'claim_index_out_of_range',
-            f'--claim-index {args.claim_index} is outside the parsed claim list',
-            spec=spec.name,
-            claims_total=len(claims),
-        )
-    claim = claims[args.claim_index]
+    section = _parse_claim_section(lines)
+    claims = section['claims']
+    state = str(section['state'])
     body = _format_verdict_line(
         {
             'verdict': args.verdict,
@@ -1755,13 +1982,40 @@ def cmd_corpus_set_verdict(args: argparse.Namespace) -> dict[str, Any]:
             'evidence': args.evidence,
         }
     )
-    bullet = f'{claim["indent"]}  - {body}'
-    replaced = claim['verdict_line'] >= 0
-    previous_line = lines[claim['verdict_line']].strip() if replaced else ''
-    if replaced:
-        lines[claim['verdict_line']] = bullet
+    if args.section_scope:
+        if state != CLAIM_SECTION_UNREADABLE:
+            return _section_scope_rejection(args.slug, spec.name, section)
+        scope = SCOPE_SECTION
+        claim_index = NO_CLAIM_INDEX
+        bullet = f'- {body}'
+        verdict_line = int(section['section_verdict_line'])
+        insert_at = int(section['body_start'])
     else:
-        lines.insert(int(claim['block_end']), bullet)
+        if not 0 <= args.claim_index < len(claims):
+            return _error(
+                args.slug,
+                'claim_index_out_of_range',
+                f'--claim-index {args.claim_index} is outside the parsed claim list',
+                spec=spec.name,
+                claims_total=len(claims),
+                claim_section_state=state,
+                recovery=(
+                    f'--section-scope stamps the section itself, and applies when '
+                    f'claim_section_state is {CLAIM_SECTION_UNREADABLE!r}'
+                ),
+            )
+        claim = claims[args.claim_index]
+        scope = SCOPE_CLAIM
+        claim_index = int(args.claim_index)
+        bullet = f'{claim["indent"]}  - {body}'
+        verdict_line = int(claim['verdict_line'])
+        insert_at = int(claim['block_end'])
+    replaced = verdict_line >= 0
+    previous_line = lines[verdict_line].strip() if replaced else ''
+    if replaced:
+        lines[verdict_line] = bullet
+    else:
+        lines.insert(insert_at, bullet)
     spec.write_text('\n'.join(lines) + ('\n' if text.endswith('\n') else ''), encoding='utf-8')
     return {
         'status': 'success',
@@ -1770,8 +2024,10 @@ def cmd_corpus_set_verdict(args: argparse.Namespace) -> dict[str, Any]:
         'store': ORCHESTRATOR_STORE,
         'plan': args.plan,
         'spec': spec.name,
-        'claim_index': args.claim_index,
+        'scope': scope,
+        'claim_index': claim_index,
         'claims_total': len(claims),
+        'claim_section_state': state,
         'replaced': replaced,
         'previous_line': previous_line,
         'line': bullet.strip(),
@@ -2592,19 +2848,31 @@ def _add_corpus_group(subparsers: Any) -> None:
 
     set_verdict = actions.add_parser(
         'set-verdict',
-        help='Stamp one re-grounding verdict onto one claim (replaces in place).',
+        help='Stamp one re-grounding verdict onto one claim or one section (replaces in place).',
         allow_abbrev=False,
     )
     _add_slug_arg(set_verdict)
     set_verdict.add_argument(
         '--plan', required=True, metavar='PLAN-NN', help='Plan id whose spec carries the claim.'
     )
-    set_verdict.add_argument(
+    # Exactly one addressing mode, always. Making the pair required keeps
+    # ``--claim-index`` a pure zero-based ordinal — the section address is its own
+    # flag rather than a negative sentinel smuggled through the ordinal.
+    address = set_verdict.add_mutually_exclusive_group(required=True)
+    address.add_argument(
         '--claim-index',
-        required=True,
         type=int,
+        default=None,
         metavar='N',
         help='Zero-based index of the claim bullet within the spec\'s ## Claim Labels section.',
+    )
+    address.add_argument(
+        '--section-scope',
+        action='store_true',
+        help=(
+            'Stamp the ## Claim Labels section itself, for a section the claim parser '
+            'could not read; refused for an absent, empty or parsed one.'
+        ),
     )
     set_verdict.add_argument(
         '--verdict', required=True, help=f'One of {sorted(VERDICT_VALUES)}.'
