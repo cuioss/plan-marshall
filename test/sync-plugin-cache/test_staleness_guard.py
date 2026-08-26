@@ -505,7 +505,7 @@ def test_file_drift_missing_from_target_refuses(tmp_path: Path) -> None:
     assert 'missing from target: demo/README.md' in data['summary_message']
     # The refusal carries the regenerate hint so the operator knows the fix.
     assert 'Regenerate with' in data['summary_message']
-    assert 'marketplace/targets/generate.py' in data['summary_message']
+    assert './pw generate-claude' in data['summary_message']
 
 
 @pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
