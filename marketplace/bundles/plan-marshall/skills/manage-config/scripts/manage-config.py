@@ -872,11 +872,14 @@ def main() -> int:
 
     # Route to handler.
     #
-    # The dispatch is wrapped so a lost update is reported as what it is. Any
-    # verb that mutates marshal.json goes load -> modify -> save, and save_config
-    # refuses the save when another writer committed in between, raising
-    # ConcurrentConfigModificationError. That is a RECOVERABLE outcome — reload
-    # and re-apply — so it is reported as a structured TOON error at exit 0.
+    # The dispatch is wrapped so a lost update is reported as what it is. A verb
+    # that mutates marshal.json THROUGH save_config goes load -> modify -> save,
+    # and save_config refuses the save when another writer committed in between,
+    # raising ConcurrentConfigModificationError. That is a RECOVERABLE outcome —
+    # reload and re-apply — so it is reported as a structured TOON error at exit 0.
+    # The guard reaches only that path: the ext-defaults writers documented as
+    # BYPASS sites in _config_core.order_config_keys write the document directly
+    # and carry no lost-update guard, so they cannot raise here.
     # Left to @safe_main it surfaced as an internal_error crash at exit 1, which
     # tells a caller that the tool broke rather than that its write was refused
     # to protect someone else's. @safe_main still covers genuine crashes.

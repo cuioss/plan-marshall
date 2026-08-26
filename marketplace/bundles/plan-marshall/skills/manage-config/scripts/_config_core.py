@@ -175,18 +175,20 @@ def order_config_keys(config: dict) -> dict:
     that set.
 
     This is the ordering authority for top-level marshal.json key ordering, and
-    it is reached by two of the six marshal.json writer sites in the tree. The
+    it is reached by one of the five marshal.json writer sites in the tree. The
     split below is stated at FUNCTION level, because a file-level split would be
-    lossy: this module carries both a routed path and two bypass paths.
+    lossy: this module carries both the routed path and two bypass paths.
 
-    ROUTED — 2 sites:
+    A "writer site" here is a function that writes the document itself, not a
+    caller that reaches one. ``_providers_core._save_marshal`` is deliberately
+    NOT counted: it no longer orders and writes for itself but delegates the
+    whole document to :func:`save_config`, so it is a caller of the routed site
+    rather than a sixth site of its own. It inherits this ordering along with the
+    lost-update guard and the atomic replace.
+
+    ROUTED — 1 site:
 
     * :func:`save_config`, which calls this function before its atomic write.
-    * ``manage-providers``' ``_providers_core._save_marshal``, whose
-      ``write_provider_config`` caller is the only route to it. It no longer
-      orders and writes for itself; it delegates the whole document to
-      :func:`save_config`, so it inherits this ordering along with the
-      lost-update guard and the atomic replace.
 
     BYPASS — 4 sites, which write the document directly and preserve the order
     they loaded rather than enforcing the canonical one:
