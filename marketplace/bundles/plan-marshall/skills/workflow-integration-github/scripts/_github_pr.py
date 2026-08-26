@@ -55,6 +55,7 @@ from urllib.parse import quote
 import bot_registry
 import github_ops
 from ci_base import (
+    AUTO_MERGE_ROUTING_NOTE,
     BODY_KIND_PR_CREATE,
     BODY_KIND_PR_EDIT,
     BODY_KIND_PR_REPLY,
@@ -1842,6 +1843,12 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
 
     The envelope carries NO ``enabled`` key and no alias for one: a bare boolean
     would report a disposition this verb cannot know from the exit code.
+
+    On the ``enqueued`` disposition the envelope also carries an ADVISORY
+    ``routing_note`` (:data:`ci_base.AUTO_MERGE_ROUTING_NOTE`). This verb is the
+    one sanctioned exception to the closed dispatch set branch-cleanup.md
+    declares, so the note reports the divergence rather than refusing it: the
+    call still succeeds, and the enqueue is still the safe outcome.
     """
     is_auth, err = github_ops.check_auth()
     if not is_auth:
@@ -1863,7 +1870,7 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
         return make_error('pr_auto_merge', f'Failed to schedule auto-merge for PR {identifier}', stderr.strip())
 
     disposition = 'enqueued' if discriminator == MERGE_QUEUE_ELIGIBLE_CONFIGURED else 'enabled'
-    return {
+    result: dict = {
         'status': 'success',
         'operation': 'pr_auto_merge',
         'pr_number': args.pr_number if args.pr_number else identifier,
@@ -1871,6 +1878,15 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
         'disposition': disposition,
         'disposition_detail': detail,
     }
+    if discriminator == MERGE_QUEUE_ELIGIBLE_CONFIGURED:
+        # Advisory only — this call SUCCEEDED and the enqueue is the safe
+        # outcome. The note records that the documented routing would have
+        # reached the queue through a different verb, so the divergence is
+        # observable in the response rather than only in the routing table.
+        # Turning it into a refusal would break the sanctioned
+        # enqueue-via-auto-merge path this exception exists to preserve.
+        result['routing_note'] = dict(AUTO_MERGE_ROUTING_NOTE)
+    return result
 
 
 # Mergeable states for which a normal merge will succeed. ``clean`` is the

@@ -184,29 +184,59 @@ def _substitute(command: str) -> str:
     return _PLACEHOLDER.sub(lambda m: _SUBSTITUTIONS.get(m.group(0)[1:-1], ''), command)
 
 
+#: The ADVERTISED-FORM marker: argparse renders an optional flag as `[--flag]` /
+#: `[--flag VALUE]`, and a choice group as `(--a | --b)`. Such a block is a
+#: SPECIFICATION of the surface, not a call, and substituting it would test the
+#: substitution rather than the doc.
+#:
+#: Anchored to a bracket that OPENS A FLAG, never to a bare `[`. A bare-bracket
+#: skip drops any real invocation whose arguments happen to contain one — a JSON
+#: array value, a glob, a shell index — and it drops it SILENTLY, shrinking the
+#: parse population to whatever survived. The narrow form excludes exactly the
+#: advertised shapes and nothing else.
+#: The opening bracket is ESCAPED. An unescaped ``[`` as the first member of a
+#: character class reads as a nested set to ``re``, which warns — and this suite
+#: turns warnings into errors, so the unescaped spelling fails at import and
+#: takes the whole module's collection with it.
+_ADVERTISED_FORM = re.compile(r'[\[(]\s*-{1,2}[a-zA-Z]')
+
+
+def _command_segments(block: str) -> list[tuple[str, str]]:
+    """Split a fenced block into `(notation, command)` per executor invocation.
+
+    A block may document more than one call. Reading only the FIRST match — which
+    is what `search` does — parses the first and silently ignores every later
+    one, so a bad flag on the second call of a two-call block is invisible to the
+    sweep. Each match therefore opens a segment that runs to the next match (or
+    to the end of the block), and every segment is returned.
+    """
+    matches = list(_EXEC_CALL.finditer(block))
+    segments: list[tuple[str, str]] = []
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(block)
+        segments.append((match.group('notation'), block[match.start() : end].strip()))
+    return segments
+
+
 def _documented_invocations() -> list[tuple[str, str, str]]:
     """Return `(doc_name, notation, command)` for every RUNNABLE documented invocation.
 
     A runnable invocation is a concrete `execute-script.py` call of one of the three
     review-and-merge surface verbs (see `_is_review_merge_surface`), excluding the
-    `## Canonical invocations` advertised forms (which carry argparse's
-    `[--flag [VALUE]]` optional-bracket notation and are specifications, not calls).
-    The population is derived from the docs, never listed.
+    `## Canonical invocations` advertised forms (see `_ADVERTISED_FORM`). The
+    population is derived from the docs, never listed — and EVERY invocation in a
+    block is derived, not just the block's first.
     """
     invocations: list[tuple[str, str, str]] = []
     for doc in _INVOCATION_DOCS:
         text = doc.read_text(encoding='utf-8')
         for block in _fenced_commands(text):
-            match = _EXEC_CALL.search(block)
-            if not match:
-                continue
-            if not _is_review_merge_surface(block):
-                continue
-            # Skip an advertised form: argparse renders optional flags as
-            # `[--flag [VALUE]]`, which is a spec, not a runnable call.
-            if '[' in block:
-                continue
-            invocations.append((doc.name, match.group('notation'), block.strip()))
+            for notation, command in _command_segments(block):
+                if not _is_review_merge_surface(command):
+                    continue
+                if _ADVERTISED_FORM.search(command):
+                    continue
+                invocations.append((doc.name, notation, command))
     return invocations
 
 
@@ -221,6 +251,14 @@ assert _DOCUMENTED_INVOCATIONS, (
     f'docs {[d.name for d in _INVOCATION_DOCS]} — the D3 population is vacuous and the '
     'parse sweep would pass over an empty set'
 )
+
+
+#: Published on EVERY run — passing included — by the root conftest's
+#: ``pytest_report_header``. The import-time assertion above fails an EMPTY
+#: population, but a population that merely SHRANK still passes it; publishing
+#: the size on the green run is what makes that shrink visible.
+GUARD_POPULATION_LABEL = 'documented review/merge invocations'
+GUARD_POPULATION_SIZE = len(_DOCUMENTED_INVOCATIONS)
 
 
 def _invocation_id(item: tuple[str, str, str]) -> str:
@@ -543,19 +581,35 @@ class TestDocumentedReviewMergeInvocationsParse:
     """
 
     def test_the_population_size_is_published(self):
-        """A future reader can tell a passing sweep from an empty one by the count."""
-        assert len(_DOCUMENTED_INVOCATIONS) >= 1
-        # The floor is derived-not-guessed: the barrier and the FIND step each carry at
-        # least a fetch_findings and a review_completeness check invocation (four), and
-        # the re-review walkthrough carries a fetch_findings of its own (one), so the
-        # honest floor of the scan is five. A scan that silently dropped below it means
-        # the matcher stopped seeing real invocations.
-        assert len(_DOCUMENTED_INVOCATIONS) >= 5, (
-            f'only {len(_DOCUMENTED_INVOCATIONS)} runnable invocations were scanned from '
-            f'{[d.name for d in _INVOCATION_DOCS]}; the barrier and the FIND step each '
-            'document a fetch_findings and a review_completeness check and the re-review '
-            'walkthrough documents a fetch_findings, so the floor is 5 '
-            f'— the matcher likely stopped matching: {[i[1] for i in _DOCUMENTED_INVOCATIONS]}'
+        """A future reader can tell a passing sweep from an empty one by the count.
+
+        The floor is DERIVED, not transcribed. A remembered integer is a claim
+        about the tree at the moment someone typed it: it goes stale the instant
+        a doc gains or loses an invocation, and — being a floor — it goes stale
+        SILENTLY in the direction that matters, staying satisfied while the scan
+        shrinks toward it. The derived floor is a per-doc obligation instead:
+        every doc in the invocation set documents at least one runnable call, so
+        a doc that stopped matching is named rather than absorbed into a total
+        that still clears a number.
+        """
+        by_doc: dict[str, list[str]] = {doc.name: [] for doc in _INVOCATION_DOCS}
+        for doc_name, notation, _command in _DOCUMENTED_INVOCATIONS:
+            by_doc[doc_name].append(notation.split(':')[-1])
+
+        silent = sorted(name for name, found in by_doc.items() if not found)
+        assert not silent, (
+            f'{silent} contributed ZERO runnable review/merge invocations to a population of '
+            f'{len(_DOCUMENTED_INVOCATIONS)} (per doc: {by_doc}). Each doc in the invocation '
+            'set documents at least one call of the review-and-merge surface, so an empty '
+            'side means the matcher stopped seeing that doc rather than that the doc changed. '
+            'A total-only floor cannot see this: the remaining docs keep the total above it.'
+        )
+        # Reported for the same reason the per-doc arm exists — so a shrunken
+        # scan is visible as a number rather than inferred from a green run.
+        assert len(_DOCUMENTED_INVOCATIONS) >= len(_INVOCATION_DOCS), (
+            f'{len(_DOCUMENTED_INVOCATIONS)} invocations across {len(_INVOCATION_DOCS)} docs '
+            f'(per doc: {by_doc}) — fewer than one per doc, which the per-doc arm above '
+            'should already have named.'
         )
 
     @pytest.mark.parametrize('invocation', _DOCUMENTED_INVOCATIONS, ids=_invocation_id)

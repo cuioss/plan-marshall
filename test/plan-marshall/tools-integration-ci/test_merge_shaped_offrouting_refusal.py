@@ -145,7 +145,32 @@ _SCENARIOS: dict[str, str] = {
     'auto-merge': _REPORT_DISPOSITION,
 }
 
+#: The routed verb each refusal must name as the caller's way forward. A refusal
+#: that names none is a WALL: the caller is told the dispatch was wrong and not
+#: what to dispatch instead. Naming the wrong one is worse than naming none —
+#: it routes the caller straight back into the state that was just refused.
+#:
+#: The two directions are opposites by construction, which is what makes this
+#: assertion discriminate rather than merely check for a non-empty message: an
+#: immediate-merge verb refused because the platform REQUIRES the queue, so the
+#: way forward is the enqueue verb; the enqueue verb refused because there is NO
+#: queue to enqueue into, so the way forward is the immediate one.
+_ALTERNATIVE_VERB: dict[str, str] = {
+    _REFUSE_IMMEDIATE: 'ci pr merge-queue',
+    _REFUSE_UNCONFIGURED: 'ci pr safe-merge',
+}
+
 _IDS = [f'{provider}:{verb}' for provider, verb, _handler in _MEMBERS]
+
+#: Published on EVERY run — passing included — by the root conftest's
+#: ``pytest_report_header``. A population guard that only reports its size in a
+#: FAILURE message says nothing on the run that matters most: a green run over a
+#: silently shrunken population is indistinguishable from a green run over the
+#: whole of it. Naming the pair uniformly across the three routing guards is what
+#: lets one header entry publish all three without conftest re-deriving any of
+#: them — the number reported is the number this module actually swept.
+GUARD_POPULATION_LABEL = 'merge-shaped off-routing members'
+GUARD_POPULATION_SIZE = len(_MEMBERS)
 
 
 def _ok_auth() -> tuple[bool, str]:
@@ -188,17 +213,20 @@ def _gh_run_stub(captured: list[list[str]]):
     return stub
 
 
-def _gl_run_stub(captured: list[list[str]], *, mt_post_ok: bool):
-    """A ``run_glab`` stub: ``mr merge`` accepted; the merge-train POST gated by ``mt_post_ok``.
+def _gl_run_stub(captured: list[list[str]]):
+    """A ``run_glab`` stub in which EVERY call, including the merge-train POST, succeeds.
 
-    ``mt_post_ok`` is what makes the GitLab ``merge-queue`` off-routing case a
-    genuine refusal: GitLab's ``cmd_pr_merge_queue`` does not probe first, it POSTs
-    to the merge-train endpoint and reads an HTTP 404 as the ineligible refusal.
+    Deliberately unconditional. GitLab's ``cmd_pr_merge_queue`` now reads the
+    project's train state BEFORE the POST, so the off-routing refusal is produced
+    by the probe discriminator rather than by an HTTP 404 the stub has to fake.
+    Letting the POST succeed is what makes that assertion meaningful: a handler
+    that still posted would report a successful enqueue, so the refusal cannot
+    come from the transport.
     """
     def stub(args, capture_json=False, timeout=60):
         captured.append(list(args))
         if args[:3] == ['api', '-X', 'POST']:
-            return (0, '{"id": 7}', '') if mt_post_ok else (1, '', 'HTTP 404: not found')
+            return 0, '{"id": 7}', ''
         return 0, '', ''
 
     return stub
@@ -208,10 +236,10 @@ def _discriminator_for(mod, verb: str, mode: str) -> str:
     """The queue/train state the base is in for this member under this mode.
 
     Off-routing means the base is in the state the verb must NOT be dispatched
-    against; compliant means the state it may. The one exception where the
-    discriminator does not decide the outcome is GitLab ``merge-queue`` (its
-    handler POSTs rather than reading the probe) — the run stub's ``mt_post_ok``
-    carries that case.
+    against; compliant means the state it may. The discriminator decides the
+    outcome for EVERY member on both providers — GitLab ``merge-queue`` included,
+    since it now probes the project's train state before the enqueue POST rather
+    than inferring the verdict from the endpoint's own 404.
     """
     configured = str(mod.MERGE_QUEUE_ELIGIBLE_CONFIGURED)
     unconfigured = str(mod.MERGE_QUEUE_ELIGIBLE_UNCONFIGURED)
@@ -264,8 +292,7 @@ def _dispatch(monkeypatch, provider: str, verb: str, handler: str, mode: str) ->
             mod, '_probe_merge_train_state',
             lambda: (discriminator, 'probe detail', None),
         )
-        mt_post_ok = not (verb == 'merge-queue' and mode == 'off_routing')
-        monkeypatch.setattr(mod, 'run_glab', _gl_run_stub(captured, mt_post_ok=mt_post_ok))
+        monkeypatch.setattr(mod, 'run_glab', _gl_run_stub(captured))
 
     result = getattr(mod, handler)(_namespace_for(verb))
     return result, captured
@@ -392,6 +419,22 @@ def test_vocabulary_mirror_matches_the_behaviour_derivation():
     )
 
 
+def test_published_population_size_matches_the_swept_population():
+    """The size conftest publishes is the size THIS module sweeps.
+
+    The header entry is only worth reading if it tracks the parametrization. A
+    constant that drifted from ``_MEMBERS`` would publish a reassuring number
+    over a sweep of a different size — the reporting equivalent of the vacuous
+    green this whole module exists to prevent.
+    """
+    assert GUARD_POPULATION_SIZE == len(_MEMBERS) == len(_IDS), (
+        f'published size {GUARD_POPULATION_SIZE} disagrees with the swept population '
+        f'{len(_MEMBERS)} (ids: {len(_IDS)}). The header would report a number no '
+        'parametrization used.'
+    )
+    assert GUARD_POPULATION_LABEL, 'the published population needs a name to be readable'
+
+
 def test_every_derived_member_has_an_offrouting_scenario():
     """Every derived member is classified, so a new merge-shaped verb cannot slip through.
 
@@ -426,7 +469,7 @@ def test_offrouting_dispatch_is_refused_at_the_callee(monkeypatch, provider, ver
     disposition, and critically NEVER emits ``merged``, so it too cannot report a
     false merge.
     """
-    result, _captured = _dispatch(monkeypatch, provider, verb, handler, 'off_routing')
+    result, captured = _dispatch(monkeypatch, provider, verb, handler, 'off_routing')
     scenario = _SCENARIOS[verb]
 
     if scenario == _REPORT_DISPOSITION:
@@ -439,11 +482,50 @@ def test_offrouting_dispatch_is_refused_at_the_callee(monkeypatch, provider, ver
             f'{provider}:{verb} reported a merge verdict on a scheduling verb. auto-merge '
             f'schedules; it must never claim merged. Result: {result}'
         )
-    else:
-        assert result.get('status') == 'error', (
-            f'{provider}:{verb} did NOT refuse an off-routing dispatch at the callee. This is the '
-            f'incident shape: a merge-shaped verb reached off-routing without a guard. Result: {result}'
-        )
+        # The sanctioned exception REPORTS its divergence from the documented
+        # route instead of refusing it, so the advisory note is what makes the
+        # off-routing observable at all on this verb.
+        note = result.get('routing_note') or {}
+        assert note.get('documented_route') == 'ci pr merge-queue', result
+        assert note.get('expected_branch') == 'use_merge_queue: true', result
+        assert note.get('dispatched_verb') == 'ci pr auto-merge', result
+        return
+
+    assert result.get('status') == 'error', (
+        f'{provider}:{verb} did NOT refuse an off-routing dispatch at the callee. This is the '
+        f'incident shape: a merge-shaped verb reached off-routing without a guard. Result: {result}'
+    )
+
+    # A REFUSAL, not a transport failure. Every stubbed CLI call in this dispatch
+    # SUCCEEDS, so a handler that reached the platform would have reported success:
+    # the error can only have come from the handler's own guard.
+    expected_verb = _ALTERNATIVE_VERB[scenario]
+    message = ' '.join(str(value) for value in result.values())
+    assert expected_verb in message, (
+        f'{provider}:{verb} refused an off-routing dispatch without naming {expected_verb!r} '
+        f'as the way forward. A refusal that names no routed alternative is a wall: the caller '
+        f'learns the dispatch was wrong and not what to dispatch instead. Result: {result}'
+    )
+    wrong_verb = _ALTERNATIVE_VERB[
+        _REFUSE_UNCONFIGURED if scenario == _REFUSE_IMMEDIATE else _REFUSE_IMMEDIATE
+    ]
+    assert wrong_verb not in message, (
+        f'{provider}:{verb} refused an off-routing dispatch but named {wrong_verb!r} as the way '
+        f'forward. That routes the caller back into the state just refused. Result: {result}'
+    )
+
+    # The refusal precedes the side effect: an enqueue verb that refused must not
+    # have POSTed, and an immediate-merge verb must not have merged.
+    forbidden = 'api' if scenario == _REFUSE_UNCONFIGURED else 'merge'
+    side_effects = [
+        call for call in captured
+        if (call[:3] == ['api', '-X', 'POST'] if forbidden == 'api' else call[:2] in (['pr', 'merge'], ['mr', 'merge']))
+    ]
+    assert side_effects == [], (
+        f'{provider}:{verb} refused an off-routing dispatch but had ALREADY acted: {side_effects}. '
+        f'The guard must run before the side effect, or the refusal reports a state the verb '
+        f'itself has already changed.'
+    )
 
 
 # ---------------------------------------------------------------------------

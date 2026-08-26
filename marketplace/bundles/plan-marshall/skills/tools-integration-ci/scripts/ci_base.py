@@ -69,6 +69,36 @@ MERGE_QUEUE_ELIGIBLE_STATES = frozenset(
 )
 
 # ---------------------------------------------------------------------------
+# Auto-merge routing note (advisory, shared across providers)
+# ---------------------------------------------------------------------------
+# `phase-6-finalize/standards/branch-cleanup.md` § "Merge routing
+# (`use_merge_queue`)" declares a CLOSED dispatch set: the step reaches only
+# `ci pr safe-merge` (use_merge_queue: false) and `ci pr merge-queue`
+# (use_merge_queue: true). `ci pr merge` and `ci pr auto-merge` are unreachable
+# from it.
+#
+# `pr auto-merge` is nonetheless the ONE sanctioned exception among the
+# merge-shaped verbs, because it SELF-ROUTES: against a configured queue/train
+# the platform enqueues rather than merging immediately, so it is never in the
+# close-unmerged unsafe state and a blanket refusal would break the legitimate
+# enqueue-via-auto-merge path. The handling is therefore probe-and-REPORT.
+#
+# This note is the report. It is ADVISORY and rides on a SUCCEEDING call: it
+# records that a verb the documented routing does not dispatch was nonetheless
+# dispatched against a queued target, so the divergence is observable in the
+# response rather than only reconstructible from the routing table. It is
+# single-sourced here because both providers publish the identical three fields
+# — the route is a property of the documented routing table, not of a provider.
+AUTO_MERGE_ROUTING_NOTE: dict[str, str] = {
+    # The verb branch-cleanup.md's routing table dispatches for this key value.
+    'documented_route': 'ci pr merge-queue',
+    # The routing-table branch a configured queue/train corresponds to.
+    'expected_branch': 'use_merge_queue: true',
+    # The verb that actually reached the platform.
+    'dispatched_verb': 'ci pr auto-merge',
+}
+
+# ---------------------------------------------------------------------------
 # Body store (path-allocate pattern for PR/issue/comment bodies)
 # ---------------------------------------------------------------------------
 

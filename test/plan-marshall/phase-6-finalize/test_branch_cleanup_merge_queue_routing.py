@@ -95,7 +95,14 @@ identifier-bound (``first_queue_symbol``)                8/8        0/8
 The identifier-bound predicate, its ``QUEUE_VOCAB_RE`` vocabulary and the
 tokenizing helpers it needs are imported from
 :mod:`_merge_shaped_roster`, the designated single source for this derivation,
-rather than redefined here.
+rather than redefined here — and so is the registry derivation itself: the
+``handlers: HandlerMap`` grammar, the row grammar, the ``MERGE_SHAPED_VERBS``
+vocabulary and the ast-based handler-body lookup. This module defines no
+registry regex of its own. Two copies of a registry grammar drift
+independently, and a copy that stopped matching would shrink this guard's
+population while the sibling suite reading the same registry stayed green, with
+nothing reporting the divergence. Only the PATH resolution stays local, because
+which module files to read is this guard's own subject.
 
 The raw-text predicate accepts 7 of the 8 gutted handlers, because this diff gave
 every merge-shaped handler a docstring naming the queue or the train. Both arms
@@ -128,9 +135,13 @@ import pytest
 
 from conftest import MARKETPLACE_ROOT
 from _merge_shaped_roster import (
+    MERGE_SHAPED_VERBS,
     QUEUE_VOCAB_RE,
     first_queue_symbol,
+    handler_source,
     line_starts,
+    registry_handler_names,
+    registry_keys,
     source_tokens,
 )
 
@@ -156,11 +167,6 @@ _PROVIDER_HANDLER_SOURCES: dict[str, tuple[Path, ...]] = {
     ),
     'gitlab': (_SKILLS / 'workflow-integration-gitlab' / 'scripts' / 'gitlab_ops.py',),
 }
-
-#: The candidate merge-shaped ``pr`` sub-verbs. This is the VOCABULARY the
-#: derivations filter against — not a membership claim. WHICH of these are
-#: dispatched, and which are registered, is derived below.
-_MERGE_SHAPED_VERBS: frozenset[str] = frozenset({'merge', 'auto-merge', 'safe-merge', 'merge-queue'})
 
 #: The dispatch set the step body is permitted to issue. This IS the contract
 #: under assertion, stated once here and cross-checked against the derived set.
@@ -225,17 +231,19 @@ _OBSERVABILITY_MARKER = '**Observability (mandatory)**'
 #: negative start index would slice from the END of the document.
 _PRUNE_SECTION_HEADING = '#### Release the cross-plan merge-lock (both paths)'
 
-#: One provider ``handlers: HandlerMap`` registry literal.
-_HANDLER_MAP_RE = re.compile(r'handlers:\s*HandlerMap\s*=\s*\{(.*?)\n    \}', re.DOTALL)
-
-#: One registry row: a ``('group', 'verb'[, 'sub'])`` key.
-_HANDLER_ROW_RE = re.compile(r"\(\s*('[^']+'(?:\s*,\s*'[^']+')*)\s*\)\s*:")
-
-#: A top-level ``def name(`` in a handler source.
-_DEF_RE = re.compile(r'^def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(', re.MULTILINE)
-
 #: The success-literal marker used for the "before returning success" ordering.
 _SUCCESS_LITERAL = "'status': 'success'"
+
+# The registry derivation itself — the `handlers: HandlerMap` literal, its row
+# grammar, the merge-shaped vocabulary, and the ast-based handler-body lookup —
+# is IMPORTED from `_merge_shaped_roster`, the designated single source. This
+# module deliberately defines no `handlers: HandlerMap` regex of its own: two
+# copies of a registry grammar drift independently, and a copy that stopped
+# matching would shrink this guard's population while the sibling suite over the
+# same registry stayed green — a divergence nothing would report. What stays
+# local is the PATH resolution (which module file, above), because the paths are
+# this guard's own subject; the roster's functions take source text precisely so
+# each caller keeps that decision.
 
 
 def _read(path: Path) -> str:
@@ -467,32 +475,17 @@ def _registry_keys(provider: str) -> list[tuple[str, ...]]:
     ``def cmd_`` scan or a search for handlers that shell out to the CLI — is what
     stops the sample-read-as-enumeration failure that missed ``cmd_pr_auto_merge``
     on each provider in turn.
+
+    Path resolution stays here; the grammar comes from the shared roster, which
+    fails loudly on a registry literal it cannot find rather than yielding an
+    empty derivation every assertion below would then pass vacuously over.
     """
-    match = _HANDLER_MAP_RE.search(_read(_PROVIDER_MODULES[provider]))
-    assert match, (
-        f'No `handlers: HandlerMap = {{...}}` literal was found in '
-        f'{_PROVIDER_MODULES[provider].name}. The registry IS the population; without it '
-        'every parity assertion below is vacuous.'
-    )
-    keys: list[tuple[str, ...]] = []
-    for raw in _HANDLER_ROW_RE.findall(match.group(1)):
-        keys.append(tuple(part.strip().strip("'") for part in raw.split(',')))
-    return keys
+    return registry_keys(_read(_PROVIDER_MODULES[provider]))
 
 
 def _registry_handler_names(provider: str) -> dict[tuple[str, ...], str]:
     """Map each registry key to the handler symbol it is bound to."""
-    match = _HANDLER_MAP_RE.search(_read(_PROVIDER_MODULES[provider]))
-    assert match
-    bindings: dict[tuple[str, ...], str] = {}
-    for line in match.group(1).splitlines():
-        row = _HANDLER_ROW_RE.search(line)
-        if row is None:
-            continue
-        key = tuple(part.strip().strip("'") for part in row.group(1).split(','))
-        _, _, handler = line.partition('):')
-        bindings[key] = handler.strip().rstrip(',').strip()
-    return bindings
+    return registry_handler_names(_read(_PROVIDER_MODULES[provider]))
 
 
 def _merge_shaped_registry_keys(provider: str) -> list[tuple[str, ...]]:
@@ -500,7 +493,7 @@ def _merge_shaped_registry_keys(provider: str) -> list[tuple[str, ...]]:
     return [
         key
         for key in _registry_keys(provider)
-        if len(key) == 2 and key[0] == 'pr' and key[1] in _MERGE_SHAPED_VERBS
+        if len(key) == 2 and key[0] == 'pr' and key[1] in MERGE_SHAPED_VERBS
     ]
 
 
@@ -510,20 +503,25 @@ _MERGE_SHAPED: dict[str, list[tuple[str, ...]]] = {
 }
 _MERGE_SHAPED_TOTAL: int = sum(len(v) for v in _MERGE_SHAPED.values())
 
+#: Published on EVERY run — passing included — by the root conftest's
+#: ``pytest_report_header``. Every other size in this module travels only in a
+#: FAILURE message, which is silent on exactly the run a shrunken population is
+#: most likely to slip through: the green one.
+GUARD_POPULATION_LABEL = 'merge-shaped registry members'
+GUARD_POPULATION_SIZE = _MERGE_SHAPED_TOTAL
+
 
 def _handler_source(provider: str, symbol: str) -> str:
-    """The source text of one handler function, across the provider's modules."""
-    for path in _PROVIDER_HANDLER_SOURCES[provider]:
-        text = _read(path)
-        marker = f'\ndef {symbol}('
-        start = text.find(marker)
-        if start == -1:
-            continue
-        body_start = start + 1
-        nxt = _DEF_RE.search(text, body_start + 1)
-        end = nxt.start() if nxt else len(text)
-        return text[body_start:end]
-    return ''
+    """The source text of one handler function, across the provider's modules.
+
+    Delegates the LOOKUP to the shared roster, which resolves a bound symbol to
+    its own top-level statement by parsing rather than by slicing to the next
+    ``def``. A slice over-reads — it swallows every module-level constant sitting
+    between two functions, crediting a handler with vocabulary it never
+    references — and it cannot see a factory-bound handler at all, since those
+    have no ``def`` line. Path resolution stays here.
+    """
+    return handler_source(symbol, tuple(_read(path) for path in _PROVIDER_HANDLER_SOURCES[provider]))
 
 
 def _code_without_prose(source: str) -> str:

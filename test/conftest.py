@@ -956,6 +956,88 @@ def pytest_collection_modifyitems(items):
             item.add_marker('touches_real_state')
 
 
+# =============================================================================
+# Routing-guard population sizes, published on every run
+# =============================================================================
+
+#: The three population-derived routing guards, as
+#: ``(label, path-relative-to-TEST_ROOT)``. Each module publishes its own
+#: ``GUARD_POPULATION_LABEL`` / ``GUARD_POPULATION_SIZE`` pair; this header reads
+#: those rather than re-deriving anything, so the number reported is the number
+#: the guard actually swept and the two cannot drift apart.
+_ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
+    ('offrouting', 'plan-marshall/tools-integration-ci/test_merge_shaped_offrouting_refusal.py'),
+    ('branch-cleanup', 'plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing.py'),
+    ('review-merge', 'plan-marshall/phase-6-finalize/test_review_merge_invocation_contract.py'),
+)
+
+
+def _load_never_registering(path: Path):
+    """Execute ``path`` as a module that is NEVER published in ``sys.modules``.
+
+    A deliberately different primitive from :func:`_exec_module_from_path`, not a
+    copy of it. That one's contract is "load, and register unless told otherwise",
+    which is why the loader-contract guard treats every helper reaching it as one
+    whose registrations the collision guard must account for. This one cannot
+    register under any argument, so it has nothing for that guard to account for —
+    and the distinction is real rather than a spelling: the caller here reads one
+    constant off a module pytest is about to import under that same name, and a
+    registration would leave a second copy published for collection to displace.
+
+    Nothing is cached. The only caller runs once per session per module.
+    """
+    import importlib.util
+
+    if not path.is_file():
+        raise FileNotFoundError(f'Module not found: {path}')
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f'Could not create import spec for {path}')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def pytest_report_header(config):
+    """Publish each routing guard's derived population size at session start.
+
+    Every one of these guards asserts over a population it DERIVES from the tree,
+    and each already publishes its size in its own failure messages. That leaves
+    the case those messages cannot reach: a run where the derivation quietly
+    shrank and every assertion over the smaller set still passed. A green run
+    reports nothing, so a population that halved looks exactly like one that did
+    not. Printing the sizes unconditionally makes the shrink visible in the
+    ordinary output of a passing run.
+
+    The sizes are READ from each module rather than recomputed here. A second
+    derivation in this file would be a second thing to keep in step, and it could
+    report a healthy number for a sweep that used a different one.
+
+    A module that cannot be loaded is reported as ``UNAVAILABLE`` with its error
+    rather than omitted or defaulted to zero: a missing number must not read as a
+    small one, and collection will surface the underlying failure properly a
+    moment later. Reporting it here — instead of raising — keeps a real test
+    failure from being reshaped into a session-startup error that names neither
+    the test nor the cause.
+
+    The load goes through :func:`_load_never_registering`, NOT through
+    :func:`_exec_module_from_path`. This hook runs before collection, so it
+    cannot read a module pytest has already imported, and it must not leave one
+    published under a name collection would then displace.
+    """
+    entries: list[str] = []
+    for short_name, relative in _ROUTING_GUARD_MODULES:
+        try:
+            module = _load_never_registering(TEST_ROOT / relative)
+            label = module.GUARD_POPULATION_LABEL
+            size = module.GUARD_POPULATION_SIZE
+        except BaseException as exc:  # noqa: BLE001 — reported, never swallowed
+            entries.append(f'{short_name}: UNAVAILABLE ({type(exc).__name__}: {exc})')
+            continue
+        entries.append(f'{label}: {size}')
+    return ['routing-guard populations: ' + '; '.join(entries)]
+
+
 #: Opt-in flag for the reference-platform ``skipped == 0`` gate. The gate is off
 #: by default so a developer's ``-k``-filtered or otherwise partial run is never
 #: failed by it.
