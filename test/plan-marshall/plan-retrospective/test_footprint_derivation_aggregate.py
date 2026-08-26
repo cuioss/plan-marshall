@@ -98,9 +98,52 @@ def _routing_decisions(*, degraded: bool) -> dict:
     }
 
 
+def _outline_vs_shipped(*, degraded: bool) -> dict:
+    """``check-outline-vs-shipped``. Its token is the ``comparison`` verdict value.
+
+    The clean shape carries the second half of the counter trap: a matched plan
+    publishes three ``count: 0`` entries beside their denominators, and none of
+    them names the degradation token. Only the unresolvable-footprint shape does —
+    and it WITHHOLDS the ``counts`` block rather than publishing three zeros.
+    """
+    if degraded:
+        return {
+            'status': 'success',
+            'aspect': 'outline-vs-shipped',
+            'comparison': 'inconclusive',
+            'footprint_source': 'unresolved',
+            'findings': [
+                {'severity': 'info', 'message': 'outline-vs-shipped is inconclusive: no tier resolved it'}
+            ],
+        }
+    return {
+        'status': 'success',
+        'aspect': 'outline-vs-shipped',
+        'comparison': 'measured',
+        'footprint_source': 'resolved',
+        'footprint_path_count': 2,
+        'counts': {
+            'include_unrealised': {
+                'count': 0, 'denominator': 2,
+                'population': 'certain_include_assessed_paths', 'members': [],
+            },
+            'touched_but_unassessed': {
+                'count': 0, 'denominator': 2,
+                'population': 'realized_footprint_paths', 'members': [],
+            },
+            'exclude_violated': {
+                'count': 0, 'denominator': 1,
+                'population': 'certain_exclude_assessed_paths', 'members': [],
+            },
+        },
+        'findings': [],
+    }
+
+
 _BUILDERS = {
     'artifact-consistency': _artifact_consistency,
     'log-analysis': _log_analysis,
+    'outline-vs-shipped': _outline_vs_shipped,
     'routing-decisions': _routing_decisions,
 }
 

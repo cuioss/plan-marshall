@@ -44,14 +44,20 @@ FOOTPRINT_AGGREGATE_KEY = '_footprint-derivation'
 #: no footprint-degradation verdict at all: a content sweep for the degradation
 #: tokens below returns no match in that script, a sweep for
 #: ``footprint_resolved`` / ``FOOTPRINT_UNRESOLVED`` returns none either, and it
-#: carries a single ``resolve_footprint`` mention against 9, 8 and 3 in the three
-#: members that do report one. A producer with no degraded verdict reads as
-#: ``resolved`` on EVERY run, and one resolved member suppresses the record — so
-#: rostering it would not make the aggregate broader, it would make it incapable of
-#: ever firing. Add it here the moment it grows a degradation verdict, not before.
+#: carries a single ``resolve_footprint`` mention against the 9, 8 and 3 carried by
+#: ``artifact-consistency``, ``log-analysis`` and ``routing-decisions``. A producer
+#: with no degraded verdict reads as ``resolved`` on EVERY run, and one resolved
+#: member suppresses the record — so rostering it would not make the aggregate
+#: broader, it would make it incapable of ever firing. Add it here the moment it
+#: grows a degradation verdict, not before.
+#: ``outline-vs-shipped`` (``check-outline-vs-shipped``) IS a member on exactly that
+#: test: it resolves the footprint through the shared chain and publishes
+#: ``comparison: inconclusive`` — the first token below, as a VALUE — whenever no
+#: tier answers, so it goes unmeasurable on the same missing derivation as the rest.
 FOOTPRINT_CONSUMING_ASPECTS: tuple[str, ...] = (
     'artifact-consistency',
     'log-analysis',
+    'outline-vs-shipped',
     'routing-decisions',
 )
 
@@ -124,9 +130,9 @@ SECTION_SPEC: tuple[tuple[str, str, str | None], ...] = (
     # fired nor lost coverage, so the section then takes the ordinary benign-
     # omission path.
     #
-    # Positioned BEFORE the four aspects it aggregates so a reader meets the
+    # Positioned BEFORE every aspect it aggregates so a reader meets the
     # plan-level caveat before any individual footprint-derived verdict, rather
-    # than after having already read four of them at face value. It sits after
+    # than after having already read some of them at face value. It sits after
     # ``Goals vs Outcomes`` because inserting it anywhere later would break the
     # adjacency ``Chat History Analysis`` pins between ``Routing Decisions`` and
     # ``Proposed Lessons``.
@@ -176,6 +182,19 @@ SECTION_SPEC: tuple[tuple[str, str, str | None], ...] = (
     # this row on the underscored form silently empties the section because the
     # consumer lookup never finds the producer's payload.
     ('Chat History Analysis', 'chat-history-analysis', 'chat-history-analysis'),
+    # Outline vs Shipped is ALWAYS emitted (``conditional_trigger = None``), for
+    # the same reason ``Direct gh/glab Usage`` and ``Execution-Context Dispatch
+    # Audit`` are: the aspect runs for every plan, and a plan whose work matched
+    # its outline emits a populated ``counts`` block with an EMPTY ``findings``
+    # list. A self-trigger would refuse exactly that fragment while
+    # ``_fragment_has_payload`` still reports payload — mis-classifying the
+    # healthy, matched-control run as ``sections_dropped``, which is the state
+    # this aspect most needs to render cleanly.
+    #
+    # Positioned after ``Chat History Analysis`` so it does not disturb the
+    # adjacency that row pins between ``Routing Decisions`` and ``Proposed
+    # Lessons``.
+    ('Outline vs Shipped', 'outline-vs-shipped', None),
     ('Proposed Lessons', 'lessons-proposal', None),
 )
 

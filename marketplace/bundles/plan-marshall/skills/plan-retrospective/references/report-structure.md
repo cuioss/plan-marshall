@@ -27,7 +27,8 @@ The compiler must emit exactly these sections in this order:
 15. Manifest Decisions — conditional. Emit only when the `manifest-decisions` fragment is present. Renders the manifest body plus the paired decision-log entries.
 16. Routing Decisions — conditional. Emit only when the `routing-decisions` fragment is present. Renders the lane/recipe/posture verdict, the mis-prune checks, and the cost preview.
 17. Chat History Analysis — conditional. Emit only when the `chat-history-analysis` fragment is present. A Tier-2 `status: skipped` fragment carrying a warning finding still renders — the warning is required to be visible.
-18. Proposed Lessons — renders the `lessons_proposal` aspect fragment as a list of draft lesson blocks. In user-invocable mode, each draft that the user recorded is marked with a trailing `[recorded]` tag.
+18. Outline vs Shipped — always emitted; the aspect runs for every plan and a plan whose work matched its outline emits a populated `counts` block with an empty `findings` list. Renders the `outline-vs-shipped` aspect fragment: the three separately-named outcome classes (`include_unrealised`, `touched_but_unassessed`, `exclude_violated`), each with its own denominator and the population that denominator counts. On an unresolvable footprint the `counts` block is absent and `comparison` reads `inconclusive` — the three classes are never published as zeros. See `outline-vs-shipped.md`.
+19. Proposed Lessons — renders the `lessons_proposal` aspect fragment as a list of draft lesson blocks. In user-invocable mode, each draft that the user recorded is marked with a trailing `[recorded]` tag.
 
 ## Conditional Rule
 
@@ -43,7 +44,7 @@ The counterpart holds too: a fragment that IS present and DOES carry payload but
 
 ## Footprint Derivation Aggregate
 
-Section 3 is the one section the compiler DERIVES rather than renders from a producer's fragment. Every aspect that consumes the shared footprint derivation degrades honestly on its own when that derivation cannot be resolved — `check-artifact-consistency` and `check-routing-decisions` report `inconclusive`, `analyze-logs` reports `ARTIFACT_COVERAGE_UNMEASURABLE`, and manifest compose-time reports `pre_push_quality_gate_inactive`. Each of those reports is correct and none of them is altered, rewritten, or replaced by this section.
+Section 3 is the one section the compiler DERIVES rather than renders from a producer's fragment. Every aspect that consumes the shared footprint derivation degrades honestly on its own when that derivation cannot be resolved — `check-artifact-consistency` and `check-routing-decisions` report `inconclusive`, `check-outline-vs-shipped` reports `comparison: inconclusive` and withholds its counts entirely, `analyze-logs` reports `ARTIFACT_COVERAGE_UNMEASURABLE`, and manifest compose-time reports `pre_push_quality_gate_inactive`. Each of those reports is correct and none of them is altered, rewritten, or replaced by this section.
 
 Membership is decided by whether a producer publishes a degradation verdict, not by whether it names the resolver. `check-manifest-consistency` is the one consumer that mentions the resolver but publishes no such verdict, so it is not a roster member: a producer that can only ever read as `resolved` would suppress the record on every run, leaving the aggregate structurally unable to fire. The roster grows the moment that producer grows a verdict — the declaration in `scripts/retro_sections.py` is where that judgement lives, and it carries the measurement behind it. What the aggregate adds is the plan-level statement none of them can make alone: that N independent consumers went unmeasurable on the *same* missing derivation.
 

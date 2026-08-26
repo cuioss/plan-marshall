@@ -28,7 +28,7 @@ implements:
 
 ## Enforcement
 
-**Execution mode**: Select a mode (finalize-step live, user-invocable live, archived) from the Input Contract, dispatch the 14 aspect references in the documented order, compile the report, then record proposals per Step 5b's orchestration branch — to the global lessons store when `orchestrated: false`, to the epic inbox as `kind: candidate-lesson` messages when `orchestrated: true` — and emit the mode-appropriate termination (mark-step-done tail for finalize-step mode only).
+**Execution mode**: Select a mode (finalize-step live, user-invocable live, archived) from the Input Contract, dispatch the 15 aspect references in the documented order, compile the report, then record proposals per Step 5b's orchestration branch — to the global lessons store when `orchestrated: false`, to the epic inbox as `kind: candidate-lesson` messages when `orchestrated: true` — and emit the mode-appropriate termination (mark-step-done tail for finalize-step mode only).
 
 **Prohibited actions**:
 - Never re-run invariant capture. Read `{plan_dir}/handshakes.toon` directly — invariants are already captured by phase transitions.
@@ -193,7 +193,8 @@ For each aspect below, produce a TOON fragment on disk at `work/fragment-{aspect
 | 12 | Manifest decisions (conditional) | `manifest-decisions` | `check-manifest-consistency` | `standards/manifest-crosscheck.md` |
 | 13 | Routing decisions (conditional) | `routing-decisions` | `check-routing-decisions` | `references/routing-decision-verification.md` |
 | 14 | Chat history (conditional) | `chat-history-analysis` | (LLM on session transcript) | `references/chat-history-analysis.md` |
-| 15 | Lessons proposal | `lessons-proposal` | (LLM on compiled fragments) | `references/lessons-proposal.md` |
+| 15 | Outline vs shipped | `outline-vs-shipped` | `check-outline-vs-shipped` | `references/outline-vs-shipped.md` |
+| 16 | Lessons proposal | `lessons-proposal` | (LLM on compiled fragments) | `references/lessons-proposal.md` |
 
 The Execution-context dispatch audit (aspect 11) is a **deterministic** aspect: the `check-dispatch-audit` script consumes the `[DISPATCH]` work-log lines emitted by every dispatch site per [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) — the authoritative source for the line shape — and emits three fact blocks, each publishing the size of the population it evaluated so a zero is legible. `shape_violation` pairs the decision-log `effort resolve-target` records (Surface B, the resolve/intent side) against the `[DISPATCH]` work-log lines (Surface A, the observable side); when Surface B is empty it reports `not_evaluated` with its reason rather than a bare `0`. `dispatch_coverage` classifies each terminal finalize step (`status.metadata.phase_steps["6-finalize"]`) by its **token record** — the second, independent evidence source — into `dispatched` / `ran_inline` / `no_evidence`, and reports a step token-proven to have dispatched with no `[DISPATCH]` line as `missing_dispatch_emission` (an instrumentation finding against the DISPATCHER), never as a discipline finding against the step. `channel_completeness` publishes the dispatch-line count against the completion count and downgrades the audit's own `confidence` when the channel is sparse. The reference doc `standards/execution-context-dispatch-audit.md` guides the LLM's *judgement* of these facts; the script never judges. Report readers tracing a finding back to its evidence land in `dispatch-logging.md` § "Emission contract" for the canonical log-line format.
 
@@ -204,6 +205,8 @@ The Execution-context dispatch audit (aspect 11) is a **deterministic** aspect: 
 **Aspect 13 (routing decisions)** is skipped when `execution.toon` is absent. When present, it re-evaluates the lane prune predicates against the realized footprint (see Aspect 13 capture pattern below).
 
 **Aspect 14** is skipped when `--session-id` is absent.
+
+**Aspect 15 (outline vs shipped)** runs for every plan — it needs no manifest and no session. It compares the per-file assessments `phase-3-outline` recorded against the realized footprint and emits three separately-counted outcome classes, each with its own denominator. It **reports and never gates**: informational severity only, no failing status, and it assigns assessments no `resolution` lifecycle — they are scope inputs consumed by the decision they informed, not defects awaiting closure. An unresolvable footprint yields `comparison: inconclusive` with the counts withheld, never three confident zeros.
 
 > **Achieved thoroughness**: there is no mechanical achieved-thoroughness measurement. The *achieved* side of coverage is the floor-graded self-report defined in [`../persona-plan-marshall-agent/standards/thoroughness.md`](../persona-plan-marshall-agent/standards/thoroughness.md) § Floor-Graded Self-Report; the Artifact-consistency aspect (aspect 1, above) supplies the deterministic declared-vs-actual footprint (resolved through the shared footprint resolver: live worktree diff, else the realized-footprint capture / merge-commit / legacy key) that the self-report grades against.
 
@@ -289,6 +292,8 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:extract-chat-si
 ```
 
 The pre-pass output drives the two-tier degradation path: when `no_signal == false` AND `over_budget == false` (Tier 1), feed `reduced_transcript` to the LLM analysis prompt and synthesize the `status: success` fragment; otherwise (Tier 2 — transcript absent, no signal, or still over the 2 MiB read budget), emit a `status: skipped` fragment carrying the canonical skip-reason token. The two-tier path and the normative skip-reason token contract (`transcript_too_large` for a size-driven skip vs `transcript_unavailable` for a genuine data absence, and how downstream aggregation MUST distinguish them) are specified in `references/chat-history-analysis.md` — see [`references/chat-history-analysis.md`](references/chat-history-analysis.md) §§ "Two-Tier Degradation Path" and "Skip-Reason Token Contract". Do not restate the token semantics here.
+
+**Aspect 15 (outline-vs-shipped)** — a deterministic script-backed aspect run per the generic deterministic-aspect pattern above with the `check-outline-vs-shipped` script. It reads the plan's own assessments store and resolves the realized footprint through the shared resolver, so it needs no manifest input; pass `--diff-file work/footprint.txt` when the end-of-execute footprint capture is available. The concrete capture-and-register commands live in [`references/outline-vs-shipped.md`](references/outline-vs-shipped.md) § "Persistence" (SKILL.md dispatches the aspect and delegates its registration to that document). The script emits the three counted outcome classes with their denominators; the judgement of which divergence matters on this plan is synthesized from those facts per that same document — the script never judges.
 
 ### Step 4: Compile Report
 
@@ -463,7 +468,7 @@ display_detail: "<{aspects_dispatched} aspects, {lessons_recorded} lessons recor
 
 ## Canonical invocations
 
-The canonical argparse surface for the twelve entry-point scripts this skill registers (fourteen invocation forms — `collect-fragments` carries three sub-verbs). The plugin-doctor `missing-canonical-block` rule checks that this section is PRESENT, matching its heading only — the body is never read; `manage-invocation-invalid` derives its accept-set from a live `--help` walk rather than from this section. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation". The single-aspect scripts share the same `run` flag surface; `collect-fragments` carries the `init` / `add` / `finalize` sub-verbs.
+The canonical argparse surface for the thirteen entry-point scripts this skill registers (fifteen invocation forms — `collect-fragments` carries three sub-verbs). The plugin-doctor `missing-canonical-block` rule checks that this section is PRESENT, matching its heading only — the body is never read; `manage-invocation-invalid` derives its accept-set from a live `--help` walk rather than from this section. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation". The single-aspect scripts share the same `run` flag surface; `collect-fragments` carries the `init` / `add` / `finalize` sub-verbs.
 
 ### extract-chat-signal — run
 
@@ -493,6 +498,16 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-routing-d
 ```
 
 `--diff-file` carries the realized footprint (one path per line) that the prune-predicate re-evaluation tests. A relative path is resolved against the plan directory first and the cwd second, so the `work/footprint.txt` form above resolves to the same file an absolute path names; a supplied path that resolves to nothing is an error, never an empty footprint. Absent → the footprint is recovered through the shared resolver (realized-footprint capture → merge-commit → legacy key), and only a still-unresolvable footprint SKIPs the mis-prune checks.
+
+### check-outline-vs-shipped — run
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-outline-vs-shipped run \
+  --mode {live,archived} [--plan-id PLAN_ID] [--archived-plan-path ARCHIVED_PLAN_PATH] \
+  [--diff-file DIFF_FILE]
+```
+
+`--diff-file` carries the realized footprint (one path per line) the outline assessments are compared against, resolved plan-directory-first then cwd exactly as `check-routing-decisions` resolves it; a supplied path that resolves to nothing is an error, never an empty footprint. Absent → the footprint is recovered through the shared resolver, and only a still-unresolvable footprint yields `comparison: inconclusive` with the `counts` block withheld.
 
 ### check-dispatch-audit — run
 
