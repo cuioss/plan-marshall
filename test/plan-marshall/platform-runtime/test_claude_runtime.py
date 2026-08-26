@@ -170,6 +170,68 @@ class TestProjectInitialSetup:
         assert marshal["runtime"]["target"] == "claude"
         assert marshal["project_dir"] == str(project_dir.resolve())
 
+    def test_preserves_pre_existing_marshal_blocks(self, rt, tmp_path):
+        """An existing marshal.json is MERGED into, never overwritten.
+
+        The write is a read-modify-write: every top-level block an initialized
+        project already carries survives, and only ``runtime.target`` and
+        ``project_dir`` are set. An unconditional write would report
+        ``marshal_written: True`` while silently destroying the whole config —
+        the reported success is exactly what makes the loss invisible, so the
+        surviving block is asserted rather than the status alone.
+
+        Mirrors ``OpenCodeRuntime.project_initial_setup``, which already
+        read-merges; the two targets implement one contract operation and must
+        not disagree on whether it is destructive.
+        """
+        project_dir = tmp_path / "preserve-proj"
+        marshal_path = project_dir / ".plan" / "marshal.json"
+        marshal_path.parent.mkdir(parents=True)
+        marshal_path.write_text(
+            json.dumps(
+                {
+                    "plan": {"phase-2-refine": {"compatibility": "breaking"}},
+                    "build": {"map": {"python": []}},
+                    "runtime": {"target": "opencode"},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = _parsed(rt.project_initial_setup(str(project_dir), "claude"))
+        assert result["status"] == "success"
+
+        marshal = json.loads(marshal_path.read_text())
+        # The operation's own effect landed...
+        assert marshal["runtime"]["target"] == "claude"
+        assert marshal["project_dir"] == str(project_dir.resolve())
+        # ...and every pre-existing block survived it.
+        assert marshal["plan"] == {"phase-2-refine": {"compatibility": "breaking"}}
+        assert marshal["build"] == {"map": {"python": []}}
+
+    def test_unparseable_marshal_yields_io_error_and_leaves_file_intact(self, rt, tmp_path):
+        """A corrupt marshal.json is reported as io_error and left untouched.
+
+        The failure edge is copied from the OpenCode sibling, which catches
+        ``(OSError, json.JSONDecodeError)`` and returns ``io_error``. It
+        deliberately does NOT fall back to ``{}``: starting from an empty
+        document would overwrite precisely the config a corrupt-file path must
+        preserve, turning an unreadable config into a destroyed one.
+        """
+        project_dir = tmp_path / "corrupt-proj"
+        marshal_path = project_dir / ".plan" / "marshal.json"
+        marshal_path.parent.mkdir(parents=True)
+        corrupt = '{"plan": {"phase-2-refine": '  # truncated — not valid JSON
+        marshal_path.write_text(corrupt, encoding="utf-8")
+
+        result = _parsed(rt.project_initial_setup(str(project_dir), "claude"))
+
+        assert result["status"] == "error"
+        assert result["error"] == "io_error"
+        # The corrupt bytes are still exactly what they were — not replaced by
+        # a fresh document, and not emptied.
+        assert marshal_path.read_text(encoding="utf-8") == corrupt
+
     def test_response_includes_target_and_marshal_written(self, rt, tmp_path):
         """Success response includes target, project_dir, marshal_written fields."""
         project_dir = tmp_path / "proj2"
@@ -2347,7 +2409,7 @@ class TestCommandIsBuildMentionVsInvocation:
         """The executor is commonly invoked by absolute path — the structural
         match keys on the path SUFFIX, so that form must still be detected."""
         command = (
-            "python3 /Users/x/repo/.plan/execute-script.py "
+            "python3 /home/dev/repo/.plan/execute-script.py "
             "plan-marshall:build-maven:maven run --targets verify"
         )
         assert _command_is_build(command) is True

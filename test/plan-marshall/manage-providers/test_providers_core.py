@@ -439,6 +439,135 @@ class TestProviderConfig:
         assert config['url'] == 'https://new.com'
 
 
+class TestMarshalWriteDelegation:
+    """Tests for the provider-config write path's delegation to manage-config.
+
+    ``_save_marshal`` no longer orders and writes for itself: it hands the whole
+    document to ``_config_core.save_config``. Ordering alone was never the whole
+    contract — the old path borrowed ``order_config_keys`` and then persisted with
+    a plain ``write_text``, which kept the on-disk diff clean while dropping the
+    other two properties that authority owns. A writer that committed between this
+    module's read and its write was clobbered with no error at all, and an
+    interrupted write could leave a truncated config behind.
+
+    The guard is only half of the pair: it fires when a load recorded the on-disk
+    fingerprint it can compare against, so ``write_provider_config`` reads through
+    ``load_config`` too. A bare ``json.loads`` on the read side would leave every
+    provider write unguarded no matter what the save side does.
+    """
+
+    @staticmethod
+    def _stage(tmp_path, monkeypatch, config):
+        """Stage an isolated marshal.json and clear the fingerprint cache.
+
+        The cache is module-level and keyed by path. Each test owns a distinct
+        ``tmp_path`` so cross-test contamination is not the hazard; the clear is
+        here so each test's own recorded load is unambiguously the one the save
+        compares against.
+        """
+        import _config_core
+
+        marshal = stage_marshal(tmp_path, monkeypatch, config)
+        _config_core._CONFIG_FINGERPRINTS.clear()
+        return marshal, _config_core
+
+    def test_save_marshal_refuses_a_concurrent_overwrite(self, tmp_path, monkeypatch):
+        """The lost-update guard reaches this path: a clobbering save is refused.
+
+        Pre-delegation this wrote unconditionally, so the other writer's change
+        was destroyed and the caller was told nothing. Both halves are asserted —
+        that the save raised, and that the change it would have destroyed is still
+        on disk.
+        """
+        marshal, _config_core = self._stage(tmp_path, monkeypatch, {'plan': {'v': 1}})
+
+        config = _config_core.load_config()  # records the load-time fingerprint
+        config['credentials_config'] = {'test-skill': {'url': 'https://mine.example'}}
+
+        # A concurrent writer commits between our load and our save.
+        marshal.write_text(json.dumps({'plan': {'v': 99}}), encoding='utf-8')
+
+        with pytest.raises(_config_core.ConcurrentConfigModificationError):
+            _providers_core._save_marshal(config)
+
+        persisted = json.loads(marshal.read_text())
+        assert persisted['plan']['v'] == 99
+        assert 'credentials_config' not in persisted
+
+    def test_write_provider_config_refuses_a_writer_that_commits_mid_call(self, tmp_path, monkeypatch):
+        """The guard bites on the public write verb, not merely on the private save.
+
+        The concurrent write is injected at the key-migration hook, which runs
+        between ``write_provider_config``'s load and its save — the exact window a
+        lost update opens in. Reaching the refusal from the public entry point is
+        what proves the load side records a fingerprint at all; the private-save
+        case above would pass just as well against a ``json.loads`` read.
+        """
+        marshal, _config_core = self._stage(tmp_path, monkeypatch, {'plan': {'v': 1}})
+
+        def _commit_a_concurrent_write(config):
+            marshal.write_text(json.dumps({'plan': {'v': 99}}), encoding='utf-8')
+            return 'already_canonical'
+
+        monkeypatch.setattr(
+            '_providers_core._migrate_credentials_config_keys_if_needed',
+            _commit_a_concurrent_write,
+        )
+
+        with pytest.raises(_config_core.ConcurrentConfigModificationError):
+            write_provider_config('test-skill', {'url': 'https://mine.example'})
+
+        persisted = json.loads(marshal.read_text())
+        assert persisted['plan']['v'] == 99
+        assert 'credentials_config' not in persisted
+
+    def test_uninterrupted_provider_write_still_persists(self, tmp_path, monkeypatch):
+        """Matched negative control: with no concurrent writer the write lands.
+
+        Without this, a delegation that refused every provider write would satisfy
+        both rejection cases above while making the verb useless.
+        """
+        marshal, _config_core = self._stage(tmp_path, monkeypatch, {'plan': {'v': 1}})
+
+        write_provider_config('test-skill', {'url': 'https://mine.example'})
+
+        persisted = json.loads(marshal.read_text())
+        assert persisted['plan']['v'] == 1
+        assert persisted['credentials_config']['test-skill'] == {'url': 'https://mine.example'}
+
+    def test_created_credentials_config_lands_in_its_canonical_slot(self, tmp_path, monkeypatch):
+        """The delegation kept the ordering the old borrowed call provided.
+
+        A freshly created ``credentials_config`` must land in its canonical slot
+        rather than appended at end-of-object, otherwise the committed marshal.json
+        drifts out of the order ``save_config`` enforces and the next save produces
+        a spurious reorder diff.
+        """
+        marshal, _config_core = self._stage(tmp_path, monkeypatch, {'plan': {}, 'system': {}})
+
+        write_provider_config('test-skill', {'url': 'https://mine.example'})
+
+        keys = list(json.loads(marshal.read_text()))
+        assert keys.index('plan') < keys.index('credentials_config') < keys.index('system')
+
+    def test_unparseable_marshal_starts_from_an_empty_document(self, tmp_path, monkeypatch):
+        """An unparseable marshal.json still starts from ``{}``, as the bare read did.
+
+        The read moved from ``json.loads`` to ``_config_core.load_config``, which
+        wraps a decode failure in a plain ``ValueError`` rather than letting
+        ``json.JSONDecodeError`` surface. An except clause that still named only
+        ``JSONDecodeError`` would let the wrapped error escape the verb entirely,
+        turning a documented fallback into a crash.
+        """
+        marshal, _config_core = self._stage(tmp_path, monkeypatch, None)
+        marshal.write_text('not json {{{', encoding='utf-8')
+
+        write_provider_config('test-skill', {'url': 'https://mine.example'})
+
+        persisted = json.loads(marshal.read_text())
+        assert persisted['credentials_config']['test-skill'] == {'url': 'https://mine.example'}
+
+
 class TestApplyExtraPassthroughDenylist:
     """Tests for apply_extra_passthrough() — the case-normalized secret/reserved denylist.
 
@@ -1610,6 +1739,39 @@ class TestCredentialsConfigKeyLazyMigration:
 
         assert _providers_core._migrate_credentials_config_keys_if_needed(config) == 'migrated'
         assert list(config['credentials_config']) == [_CANONICAL_SKILL]
+
+    def test_persist_refused_as_concurrent_keeps_the_read_resilient(self, tmp_path, monkeypatch, capsys):
+        """A REFUSED migration persist is swallowed exactly like a failed one.
+
+        The sibling of the ``OSError`` case above, and the reason the swallow list
+        grew: now that ``_save_marshal`` delegates to ``save_config``, the persist
+        can also fail because another writer committed in between.
+        ``read_provider_config`` catches only ``(json.JSONDecodeError, KeyError)``,
+        so an unguarded ``ConcurrentConfigModificationError`` would propagate out
+        of a documented graceful-fallback read.
+
+        Swallowing it is right HERE and wrong on the write path (see
+        ``TestMarshalWriteDelegation``): this canonicalization is one the caller
+        never asked for and the next access re-attempts it, whereas losing a
+        caller's own provider write would discard data it believes it stored.
+        """
+        from _config_core import ConcurrentConfigModificationError
+
+        stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {'credentials_config': {_PREFIXED_SKILL: {'url': _SONAR_URL}}},
+        )
+
+        def _raise_concurrent(config):
+            raise ConcurrentConfigModificationError(
+                'marshal.json changed on disk since it was loaded; refusing to overwrite'
+            )
+
+        monkeypatch.setattr('_providers_core._save_marshal', _raise_concurrent)
+
+        assert read_provider_config(_CANONICAL_SKILL) == {'url': _SONAR_URL}
+        assert 'WARNING' in capsys.readouterr().err
 
     def test_identical_bodies_collapse_without_conflict(self, tmp_path, monkeypatch):
         """Two spellings carrying the same body collapse — nothing is lost."""

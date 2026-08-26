@@ -287,10 +287,6 @@ def _deep_merge_missing(live: dict, defaults: dict, prefix: str, added: list[str
     Returns:
         The mutated ``live`` subtree.
     """
-    # SHIM(B): an ownerless-step value stored as a legacy {} before the writer switched to None.
-    # shim-owner: manage-config
-    # shim-floor: the ownerless-step writer change that defaults an empty step to None instead of an empty {} dict
-    # shim-remove-when: no marshal.json carries a legacy {} ownerless-step value
     for key, default_value in defaults.items():
         path = f'{prefix}.{key}' if prefix else key
         if key not in live:

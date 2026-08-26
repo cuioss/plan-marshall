@@ -1053,3 +1053,118 @@ class TestUnresolvableStepProvenance:
         message = result['message']
         assert 'derive-verification' not in message
         assert 'composer-injected' in message
+
+    # ---- the reason literal makes no origin claim (D8a) --------------------
+    #
+    # The wrapper is the SINGLE place provenance is stated, because it is the only
+    # layer that can tell a marshal.json-authored id from a routed / composer-
+    # injected one. A reason literal that also claimed an origin contradicted the
+    # wrapper on exactly the inputs where the wrapper says "NOT authored in
+    # marshal.json" — the message asserted both at once.
+
+    #: The origin-claim substring removed from every reason literal.
+    _ORIGIN_CLAIM = 'referenced by `marshal.json`'
+
+    #: Every input shape on which the wrapper produces a NOT-authored message,
+    #: paired with the provenance marker it must carry and a fragment of the reason
+    #: it must still state. The reason fragment is the ANTI-VACUITY control: without
+    #: it, a message that lost its reason entirely would sail through the absence
+    #: assertion. The three cases cover both reason producers that carried the
+    #: substring (the external-implementor probe and the standards-file check) plus
+    #: the unknown-canonical producer that never did, so the property is asserted
+    #: over the whole not-authored population rather than one sampled shape.
+    _NON_AUTHORED_CASES: dict[str, dict[str, Any]] = {
+        'phase5_routed_unknown_canonical': {
+            'phase_5_steps': ['verify:perf-suite'],
+            'phase_6_steps': [],
+            'phase_5_map': {},
+            'phase_6_map': None,
+            'marker': 'NOT authored in marshal.json',
+            'reason_fragment': 'names an unknown canonical',
+        },
+        'phase5_routed_external_step': {
+            'phase_5_steps': ['my-bundle:ghost-verify'],
+            'phase_6_steps': [],
+            'phase_5_map': {},
+            'phase_6_map': None,
+            'marker': 'NOT authored in marshal.json',
+            'reason_fragment': 'is not a discovered ext-point-build-verify-step implementor',
+        },
+        'phase6_composer_injected_builtin': {
+            'phase_5_steps': [],
+            'phase_6_steps': ['bogus-finalize-step'],
+            'phase_5_map': None,
+            'phase_6_map': {},
+            'marker': 'composer-injected',
+            'reason_fragment': 'is missing standards file',
+        },
+    }
+
+    @pytest.mark.parametrize('case_id', sorted(_NON_AUTHORED_CASES))
+    def test_non_authored_message_makes_no_origin_claim(self, case_id: str):
+        """A routed / composer-injected message never claims a marshal.json origin."""
+        case = self._NON_AUTHORED_CASES[case_id]
+        result = _mem.check_emitted_steps_resolvable(
+            case['phase_5_steps'],
+            case['phase_6_steps'],
+            case['phase_5_map'],
+            case['phase_6_map'],
+        )
+
+        assert result is not None, f'{case_id}: the step was expected to be unresolvable'
+        message = result['message']
+        # Anti-vacuity: the message still STATES its reason and its provenance...
+        assert case['reason_fragment'] in message, (
+            f'{case_id}: the reason went missing entirely, so the absence assertion '
+            f'below would pass for the wrong reason — message: {message!r}'
+        )
+        assert case['marker'] in message, (
+            f'{case_id}: expected the not-authored provenance marker '
+            f'{case["marker"]!r} — message: {message!r}'
+        )
+        # ...and makes no origin claim inside that reason.
+        assert self._ORIGIN_CLAIM not in message, (
+            f'{case_id}: the reason claims a marshal.json origin the wrapper '
+            f'simultaneously denies — message: {message!r}'
+        )
+
+    def test_marshal_authored_message_states_origin_only_in_the_wrapper(self):
+        """Control: the authored branch keeps its origin claim — in the WRAPPER only.
+
+        The origin did not vanish, it moved: the wrapper's own
+        ``in marshal.json is unresolvable`` phrasing still names marshal.json, while
+        the reason embedded after the colon no longer does.
+        """
+        result = _mem.check_emitted_steps_resolvable(
+            [], ['bogus-finalize-step'], None, {'bogus-finalize-step': {}}
+        )
+
+        assert result is not None
+        message = result['message']
+        assert 'in marshal.json is unresolvable' in message
+        assert 'is missing standards file' in message
+        assert self._ORIGIN_CLAIM not in message
+
+    def test_reason_reads_contiguously_where_the_origin_claim_used_to_sit(self):
+        """The substring was REMOVED, not the clause around it TRUNCATED.
+
+        Asserting that the step id and the reason now read contiguously is what
+        distinguishes a surgical removal from a message that simply lost its tail.
+        """
+        result = _mem.check_emitted_steps_resolvable([], ['bogus-finalize-step'], None, {})
+
+        assert result is not None
+        assert 'step `bogus-finalize-step` is missing standards file' in result['message']
+
+    def test_remediation_hint_survives_the_origin_claim_removal(self):
+        """The ``without sweeping `marshal.json``` hint is ADVICE, not an origin claim.
+
+        It names the likely repair, so it survives the removal; only the claim about
+        where the step id CAME FROM was dropped. Pinning both halves in one test is
+        what keeps a future sweep from over-reaching into the remediation text.
+        """
+        result = _mem.check_emitted_steps_resolvable([], ['bogus-finalize-step'], None, {})
+
+        assert result is not None
+        assert 'without sweeping `marshal.json`' in result['message']
+        assert self._ORIGIN_CLAIM not in result['message']

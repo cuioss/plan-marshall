@@ -49,6 +49,8 @@ JSON structure and field definitions for project configuration.
       "init_without_asking": true,
       "deep_lane": "auto",
       "escalation": "auto",
+      "auto_route_recipe": true,
+      "auto_route_recipe_threshold": 0.6,
       "lane_selection": "ask",
       "lane_prune_thresholds": {
         "confidence_complete": 95,
@@ -144,6 +146,10 @@ JSON structure and field definitions for project configuration.
       "organization": "cuioss",
       "project_key": "cuioss_plan-marshall"
     }
+  },
+  "project_dir": "/absolute/path/to/project",
+  "runtime": {
+    "target": "claude"
   },
   "skill_domains": {
     "system": {
@@ -413,6 +419,32 @@ Non-secret per-provider configuration (committed, shared via git), written by `m
 |-------|------|----------|-------------|
 | `<key>` | string | No | A non-secret provider-config field (e.g. `organization`, `project_key` for SonarCloud). Keys are provider-defined; `manage-providers` upserts them idempotently via `--extra KEY=VALUE`. |
 
+## Section: runtime and project_dir
+
+The two top-level keys the platform-runtime seed writes. `platform_runtime project initial-setup --target <id>` is their sole writer: the Claude runtime writes both, the OpenCode runtime writes `runtime` only. Neither is part of `get_default_config()`, so `init` does not seed them and `sync-defaults` does not back-fill them — a project acquires them the first time its runtime is set up, and a project that never ran the seed legitimately carries neither.
+
+Both are first-party product configuration rather than stray blocks: `platform_runtime._resolve_target` reads `runtime.target` back on every routed operation. `save_config` orders them canonically among the trailing keys — `project_dir` between `project` and `providers`, `runtime` between `providers` and `skill_domains` (see `CANONICAL_TOP_LEVEL_KEY_ORDER` in `_config_core.py`). Omitting them from that constant made `normalize-keys` report the product's own seed as unrecognized, which is why they are listed there rather than left to the append-unrecognized tail.
+
+### Structure
+
+```json
+{
+  "project_dir": "/absolute/path/to/project",
+  "runtime": {
+    "target": "claude"
+  }
+}
+```
+
+### Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `runtime.target` | string | none (absent until the seed runs) | The registered runtime the platform router dispatches to — one of the `_REGISTRY` keys in `platform_runtime.py` (`claude`, `opencode`). An absent block, a non-object block, or an empty `target` all resolve to "no target", and the router falls back to its `claude` default rather than failing. |
+| `project_dir` | string | none (absent until the Claude seed runs) | Absolute path of the project root recorded at setup time, written by the Claude runtime seed only. |
+
+The seed is a read-modify-write: it merges these two keys into whatever the project already carries rather than replacing the document, so setting up (or re-targeting) a runtime on an initialized project leaves every other top-level block intact.
+
 ## Section: skill_domains
 
 Skill configuration per domain. See [skill-domains.md](skill-domains.md) for complete domain structure, profiles, validation rules, and technical domain catalog. See [skill-domains-operations.md](skill-domains-operations.md) for resolution commands and usage patterns.
@@ -570,6 +602,8 @@ These fields live directly under `plan`, outside any phase block.
       "init_without_asking": true,
       "deep_lane": "auto",
       "escalation": "auto",
+      "auto_route_recipe": true,
+      "auto_route_recipe_threshold": 0.6,
       "lane_selection": "ask",
       "lane_prune_thresholds": {
         "confidence_complete": 95,
@@ -587,10 +621,12 @@ These fields live directly under `plan`, outside any phase block.
 | `init_without_asking` | bool | true | Auto-continue from `phase-1-init` to `phase-2-refine`. `true` (default) skips the gate; `false` stops after init and waits for the user. |
 | `deep_lane` | enum(`auto`\|`always`\|`never`) | auto | `gate_mode` gate for the precondition-driven deep planning lane. Consumed by the phase-1-init `planning-lane route`. `always` forces deep; `never` forces light (the DQ3 hard-escalation ratchet still fires unless `escalation` is also `never`); `auto` defers to the DQ1 signal set. Validated by `validate_gate_mode` at set-time. |
 | `escalation` | enum(`auto`\|`always`\|`never`) | auto | `gate_mode` gate for the hard-escalation safety ratchet (DQ3 explosion / build-break / premise). `auto` keeps it live; `never` is the explicit full-speed-full-risk opt-in. Validated by `validate_gate_mode` at set-time. |
+| `auto_route_recipe` | bool | true | Tier 1 recipe-match auto-route gate. `true` (default) ⇒ a high-confidence recipe match (top confidence ≥ `auto_route_recipe_threshold`) auto-routes to the matched recipe without prompting; `false` ⇒ the orchestrator proposes the ranked matches via `AskUserQuestion` first. Mirrors the sibling `init_without_asking` boolean-knob pattern. Bool-coerced by `_coerce_value`, so it carries no bespoke `validate_*` helper. |
+| `auto_route_recipe_threshold` | float | 0.6 | Confidence at or above which a top recipe match counts as high-confidence and may auto-route (when `auto_route_recipe` is `true`). The `0.6` default is the ceiling keyword-overlap-only confidence reaches: a free-form request carries no plan domain/scope, so the recipe-match verb's own `--threshold` default and the request-aspect classifier share the same value. |
 | `lane_selection` | enum(`ask`\|`auto`) | ask | Whether init PROMPTS for the execution-profile posture (`ask` surfaces the minimal/standard/full dialogue) or silently takes the computed projection (`auto`). Validated by `validate_lane_selection`. The per-element lane vocabulary (closed `lane.class` enum, class→default tier table, prune-predicate names) is owned by [`../../extension-api/standards/ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md). |
 | `lane_prune_thresholds` | dict | `{confidence_complete: 95, linear_change_max_deliverables: 1}` | Tunable numeric thresholds the `standard` posture evaluates its prunable-element predicates against at manifest-compose time. `confidence_complete` (int 0–100) is the post-init confidence floor that prunes `refine`; `linear_change_max_deliverables` (int ≥ 1) is the deliverable-count ceiling that prunes the 4-plan decomposition element. The boolean predicates (`no_code_delta`, `footprint_no_lesson_component`) carry no threshold. Validated by `validate_lane_prune_thresholds` (exact key set + range enforcement). |
 
-**Per-element lane override** (`plan.<phase>.steps.<step>.lane`, value ∈ `off`\|`minimal`\|`standard`\|`full`\|`ask`, validated by `validate_lane_override`): pins any lane-participating element to a fixed posture cutoff via the same nested step-param channel finalize-step params use. `off` never runs an `adversarial`/`prunable` element (a real opt-out), but a weakening `off` on a `derived-state`/`core` floor element is **immune** — it is ignored at compose time, the element stays at its class-default tier, and an informational note records the neutralized override; `minimal` force-keeps it in every posture; `auto`/`full` pin its tier; `ask` always surfaces it individually in the init dialogue. Absent by default — the shipped per-element default lives in each element's frontmatter `lane:` block, and the override channels carry only the project / plan overrides.
+**Per-element lane override** (`plan.<phase>.steps.<step>.lane`, value ∈ `off`\|`minimal`\|`standard`\|`full`\|`ask`, validated by `validate_lane_override`): pins any lane-participating element to a fixed posture cutoff via the same nested step-param channel finalize-step params use. `off` never runs an `adversarial`/`prunable` element (a real opt-out), but a weakening `off` on a `derived-state`/`core` floor element is **immune** — it is ignored at compose time, the element stays at its class-default tier, and an informational note records the neutralized override; `minimal` force-keeps it in every posture; `standard`/`full` pin its tier; `ask` always surfaces it individually in the init dialogue. Absent by default — the shipped per-element default lives in each element's frontmatter `lane:` block, and the override channels carry only the project / plan overrides.
 
 **Two declaration channels, one merged source.** The marshal.json path above is the project-wide channel. Its plan-scoped sibling is `status.metadata.finalize_step_overrides` — the same id-keyed map of nested param objects, the same key forms, the same enum, but scoped to ONE plan and never written into marshal.json, so an answer given about one plan does not become policy for every later plan. Both are written by the single verb `manage-config finalize-steps set-lane`, where the optional `--plan-id` is the channel selector (see [api-reference.md § Noun: finalize-steps](api-reference.md#noun-finalize-steps)). The composer merges them **plan-local ▸ marshal**, per step key and per knob (shallow), into the one map every per-element reader consults — the lane resolution, the scope gate's declared-lane immunity, and the four finalize ceremony gates alike. The precedence ordering and the channel contract are owned by [`../../extension-api/standards/ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md) § "Per-element override knob".
 

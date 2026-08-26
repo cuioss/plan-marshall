@@ -25,7 +25,7 @@ step is at least +5).
   ``level-4`` and the highest-value reasoning slots (``phase-3-outline``,
   ``phase-5-execute.default``, ``phase-6-finalize.post-run-review``) to
   ``level-5`` (opus, high), keeping the triage (verification-feedback)
-  slots at ``level-3``.
+  slots AND ``phase-6-finalize.default`` at ``level-3``.
 - ``HIGH_END`` — upper-tier profile; stored in literal-expanded form
   (every ``KNOWN_ROLES`` phase carries an explicit entry mirroring the
   on-disk shape that ``apply-preset high-end`` writes after
@@ -83,9 +83,26 @@ ALLOWED_LEVELS: tuple[str, ...] = (
     'level-1', 'level-2', 'level-3', 'level-4', 'level-5', 'level-6', 'level-7', 'inherit'
 )
 
-# No effort levels are currently reserved. ``level-7`` is the current top
-# tier (resolves to fable, max — sits above Opus) so presets may reference
-# it. Future palette expansion may repopulate this tuple.
+# RESERVED_LEVELS names keywords that are in the palette but not yet safe to
+# select anywhere — a future-additive placeholder. It is currently empty.
+#
+# Empty does NOT mean a preset may carry any level. No preset carries
+# ``level-6`` or ``level-7``, and none may: both resolve to
+# alias-capability-gated efforts (opus xhigh / fable max) that the build target
+# silently downgrades to the canonical variant when the resolved alias lacks
+# the capability. A preset naming them would advertise a tier it cannot
+# guarantee to every project that applies it. They remain available for an
+# explicit per-phase opt-in, where the operator picks the tier knowingly and
+# the possible downgrade is their own trade to make.
+#
+# The validator below nonetheless accepts ``level-7`` inside a preset, and that
+# asymmetry is deliberate rather than a gap: ``_validate_level_keyword``
+# enforces the ALLOWED_LEVELS keyword enum, and ``level-7`` is legitimately a
+# member of it because per-phase config uses it. "Which levels may appear in a
+# PRESET" is a narrower policy the keyword enum cannot express, so it is
+# carried by the preset payloads themselves and by this comment — not by a
+# validator rejection. Repopulating this tuple would be the wrong fix: it would
+# forbid ``level-7`` in the per-phase config too, where it is sanctioned.
 RESERVED_LEVELS: tuple[str, ...] = ()
 
 
@@ -164,7 +181,8 @@ class EffortPresets:
     phase-4-plan) to ``level-4`` and the highest-value reasoning slots
     (``phase-3-outline``, ``phase-5-execute.default``,
     ``phase-6-finalize.post-run-review``) to ``level-5`` (opus, high),
-    keeping the triage (verification-feedback) slots at ``level-3``.
+    keeping the triage (verification-feedback) slots AND
+    ``phase-6-finalize.default`` at ``level-3``.
     Summed-level spread 36. The redundancy against the bubbling-resolution
     semantics is intentional — it mirrors the on-disk shape produced by
     ``apply-preset balanced`` after ``_expand_phase_effort`` so the wizard's
@@ -279,20 +297,38 @@ class EffortPresets:
             'summed-level spread 30. Mirrors the on-disk shape written by '
             'apply-preset economic.'
         ),
+        # ``balanced`` is the only preset with slots BELOW its stated default,
+        # so it is the only one whose description must name the remainder:
+        # economic's level-3 default is its floor and nothing sits under
+        # high-end's level-4, so their unnamed slots correctly reconstruct to
+        # the stated default. Leaving balanced's three level-3 slots unnamed
+        # reconstructed to a spread of 39 against a payload of 36, overstating
+        # the tier to an operator reading this string in the wizard prompt.
         'balanced': (
             'Middle-of-the-road preset (literal-expanded) — default level-4 '
-            '(opus medium), with the analytical phases at level-4 and the '
-            'highest-value slots (phase-3-outline, phase-5-execute.default, '
-            'phase-6-finalize.post-run-review) at level-5 (opus high); '
+            '(opus medium), with the analytical phases phase-2-refine and '
+            'phase-4-plan at level-4, the highest-value slots '
+            '(phase-3-outline, phase-5-execute.default, '
+            'phase-6-finalize.post-run-review) at level-5 (opus high), and '
+            'the triage slots (phase-5-execute.verification-feedback, '
+            'phase-6-finalize.verification-feedback) plus '
+            'phase-6-finalize.default at level-3 (sonnet high); '
             'summed-level spread 36. Mirrors the on-disk shape written by '
             'apply-preset balanced.'
         ),
+        # Like ``balanced`` above, every slot that deviates from the stated
+        # default is named by its canonical token. "every analytical phase"
+        # and a bare "post-run-review" both read as prose an operator can only
+        # resolve by already knowing the registry, which is exactly what a
+        # reconstructable description must not require.
         'high-end': (
             'Upper-tier preset (literal-expanded) — default level-4 (opus '
-            'medium), with every analytical phase, phase-5-execute.default, '
-            'and post-run-review at level-5 (opus high); summed-level spread '
-            '41. Mirrors the on-disk shape written by apply-preset high-end. '
-            'level-6/level-7 stay opt-in only (alias-gated).'
+            'medium), with the analytical phases phase-2-refine, '
+            'phase-3-outline and phase-4-plan, plus phase-5-execute.default '
+            'and phase-6-finalize.post-run-review, at level-5 (opus high); '
+            'summed-level spread 41. Mirrors the on-disk shape written by '
+            'apply-preset high-end. level-6/level-7 stay opt-in only '
+            '(alias-gated).'
         ),
     }
 
@@ -426,9 +462,15 @@ class EffortPresets:
 def _validate_level_keyword(level: str, where: str) -> None:
     """Raise ValueError when ``level`` is not in the allowed-levels enum."""
     if level in RESERVED_LEVELS:
+        # This validator only ever runs over PRESETS, so the advice names the
+        # highest tier a preset may carry — not the highest tier the palette
+        # has. Pointing a preset author at ``level-7`` (as it used to) sent
+        # them straight into the alias-gated tiers the RESERVED_LEVELS comment
+        # above rules out of presets.
         raise ValueError(
             f"{where} effort '{level}' is reserved (future-additive); "
-            f"use 'level-7' for the current top tier"
+            f"use 'level-5', the highest tier a preset carries — 'level-6' "
+            f"and 'level-7' are alias-gated and stay per-phase opt-in only"
         )
     if level not in ALLOWED_LEVELS:
         raise ValueError(

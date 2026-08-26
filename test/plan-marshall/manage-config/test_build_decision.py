@@ -26,10 +26,21 @@ itself — not a live git worktree — is exercised deterministically.
 
 from argparse import Namespace
 
+import pytest
+
 from conftest import add_skill_scripts_to_path, load_script_module, parse_ns
 
-_MANAGE_CONFIG = ('plan-marshall', 'manage-config')
-_SCRIPT = (*_MANAGE_CONFIG, 'manage-config.py')
+#: Split into three module-level string constants rather than written inline, so a
+#: loader call spelled with them positionally stays statically resolvable: the
+#: registration walker in ``test_conftest_loader_contract`` reads the script
+#: argument at a fixed index and resolves a bare ``Name`` through the module's
+#: string constants, but gives up entirely on a ``*tuple`` unpacked ahead of it.
+_BUNDLE = 'plan-marshall'
+_SKILL = 'manage-config'
+_SCRIPT_NAME = 'manage-config.py'
+
+_MANAGE_CONFIG = (_BUNDLE, _SKILL)
+_SCRIPT = (*_MANAGE_CONFIG, _SCRIPT_NAME)
 
 add_skill_scripts_to_path(*_MANAGE_CONFIG)
 
@@ -38,20 +49,20 @@ _cmd_build_map_mod = load_script_module(
 )
 
 
-def _decision_ns(
-    *, command: str | None = None, plan_id: str | None = None, audit_plan_id: str | None = None
-) -> Namespace:
+def _decision_ns(*, command: str | None = None, plan_id: str | None = None) -> Namespace:
     """Args for ``manage-config build-decision``, built by the script's own parser.
 
     Built through the real parser rather than by hand, so the namespace carries
     every attribute the CLI would supply — including ones no test names, which a
-    hand-built namespace silently omits.
+    hand-built namespace silently omits. The corollary is what makes this helper
+    load-bearing for the retired ``--audit-plan-id`` alias: because the parser is
+    the real one, there is no way to hand this helper an argument the CLI does
+    not declare, so no test here can assert against a surface that no longer
+    exists.
     """
     argv = ['build-decision']
     if plan_id is not None:
         argv += ['--plan-id', plan_id]
-    if audit_plan_id is not None:
-        argv += ['--audit-plan-id', audit_plan_id]
     if command is not None:
         argv += ['--command', command]
     ns: Namespace = parse_ns(*_SCRIPT, *argv)
@@ -302,30 +313,51 @@ def test_phase5_gate_does_not_skip_on_an_unknown_verdict(monkeypatch):
     assert result['decision'] != 'not_necessary'
 
 
-def test_handler_accepts_audit_plan_id_alias(monkeypatch):
-    """--audit-plan-id is honoured as an alias when --plan-id is absent."""
-    monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
-    monkeypatch.setattr(
-        extension_base, '_resolve_plan_footprint', lambda _plan: ['scripts/foo.py']
-    )
+def test_parser_rejects_the_retired_audit_plan_id_alias():
+    """``build-decision`` no longer declares ``--audit-plan-id``.
 
-    # only audit_plan_id is set.
-    result = _cmd_build_map_mod.cmd_build_decision(
-        _decision_ns(command='quality-gate', audit_plan_id='my-plan')
-    )
+    The alias was a second name for the one identifier the verdict is computed
+    from, so the declared surface offered two spellings where the handler needs
+    exactly one. Retiring it makes the declaration match what runs: argparse now
+    rejects the flag outright rather than quietly routing it to the same field.
+    """
+    with pytest.raises(SystemExit) as excinfo:
+        parse_ns(_BUNDLE, _SKILL, _SCRIPT_NAME, 'build-decision', '--audit-plan-id', 'my-plan')
 
-    assert result['status'] == 'success'
-    assert result['decision'] == 'build'
+    assert excinfo.value.code == 2
+
+
+def test_parser_still_accepts_the_surviving_plan_id_flag():
+    """Matched control for the rejection above: ``--plan-id`` is unaffected.
+
+    Without this half, the rejection test would also pass if the whole
+    ``build-decision`` sub-parser had been broken — a rejection proves the flag
+    is gone only alongside evidence that its surviving sibling still parses.
+    """
+    ns = _decision_ns(command='quality-gate', plan_id='my-plan')
+
+    assert ns.plan_id == 'my-plan'
+    assert not hasattr(ns, 'audit_plan_id'), (
+        'the retired alias must leave no attribute behind on the namespace'
+    )
 
 
 def test_handler_errors_when_plan_id_missing():
-    """A missing plan identifier surfaces a structured error, not a crash."""
+    """A missing plan identifier surfaces a structured error, not a crash.
+
+    The message names ``--plan-id`` and nothing else: it used to offer
+    ``--audit-plan-id`` as an alternative, which would now send a reader to a
+    flag the parser rejects.
+    """
     result = _cmd_build_map_mod.cmd_build_decision(
         _decision_ns(command='quality-gate')
     )
 
     assert result['status'] == 'error'
     assert 'plan-id' in result['error']
+    assert 'audit-plan-id' not in result['error'], (
+        'the error must not point at the retired alias'
+    )
 
 
 # =============================================================================

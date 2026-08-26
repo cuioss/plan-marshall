@@ -16,7 +16,10 @@ fixture must carry those segments verbatim) and assert:
   from ``stale``,
 * that no input combination yields a fourth verdict or an age-inferred
   downgrade of ``unknown``,
-* that the remediation string names the operator commands literally.
+* that the remediation string names the operator commands literally, and that
+  it carries the closing session-reload step — in that order, and on every
+  refusing verdict — because an update the running session never reloads leaves
+  that session reading the pre-update cache.
 
 ``cache_freshness.py`` is a marshall-steward skill script, not on ``PYTHONPATH``
 during pytest collection; the canonical ``sys.path.insert`` prologue (see
@@ -268,6 +271,95 @@ def test_remediation_names_the_commands_literally():
     assert '/plugin install' not in cache_freshness.REMEDIATION
     # the update is followed by a version-verify step
     assert 'version' in cache_freshness.REMEDIATION
+
+
+def test_remediation_closes_with_the_session_reload_step():
+    """The remediation ends with the session-reload step, and names how to
+    resolve it on both runtimes.
+
+    Updating the cache is not the same as the running session SEEING the update:
+    the plugin registry is pinned at session start, so an operator who updates
+    and carries on keeps reading the pre-update cache and concludes the update
+    did not work. A remediation that stops at 'update, then verify the version'
+    stops one step short of the outcome it promises."""
+    remediation = cache_freshness.REMEDIATION
+
+    # the reload step itself, and the seam that resolves the runtime directive
+    assert "reload the session's plugin set" in remediation
+    assert 'platform_runtime session reload-directive' in remediation
+    # both runtimes are named: the Claude directive, and OpenCode's no-op
+    # alternative — otherwise an OpenCode operator is told to run a directive
+    # their runtime does not have.
+    assert '/reload-plugins' in remediation
+    assert 'full session restart' in remediation
+
+
+def test_remediation_orders_update_then_verify_then_reload():
+    """The three steps appear in causal order.
+
+    Order is the whole point: a reload performed BEFORE the update reloads the
+    pre-update cache, and a version-verify performed after a reload of the old
+    cache reports the old version. Asserting mere presence of the three clauses
+    would pass on any permutation, including the ones that do not work."""
+    remediation = cache_freshness.REMEDIATION
+
+    update_at = remediation.index("'/plugin update plan-marshall'")
+    verify_at = remediation.index('confirming plan-marshall reports the expected version')
+    reload_at = remediation.index("reload the session's plugin set")
+
+    assert update_at < verify_at < reload_at
+    # the reload is the LAST of the three, not merely present somewhere
+    assert reload_at == max(update_at, verify_at, reload_at)
+
+
+def test_every_refusing_verdict_emits_the_reload_step(tmp_path: Path):
+    """Both refusing verdicts hand the operator the reload step.
+
+    ``stale`` and ``unknown`` are distinct verdicts reached by different
+    branches; this asserts the reload instruction is in the string the operator
+    actually RECEIVES on each of them, not merely in the module constant."""
+    stale_dir = tmp_path / 'stale'
+    stale_root = _make_cache(stale_dir, ['0.1.100'])
+    _make_clone_manifest(stale_dir, '0.1.200')
+    unknown_root = _make_cache(tmp_path / 'unknown', ['0.1.100'])
+
+    stale = cache_freshness.check_freshness(stale_root)
+    unknown = cache_freshness.check_freshness(unknown_root)
+
+    assert stale['freshness'] == 'stale'
+    assert unknown['freshness'] == 'unknown'
+    for verdict in (stale, unknown):
+        assert verdict['refuses_upgrade'] is True
+        assert "reload the session's plugin set" in verdict['remediation']
+        assert 'platform_runtime session reload-directive' in verdict['remediation']
+
+    # the non-refusing verdict carries no remediation at all, so the reload step
+    # is not emitted to an operator who has nothing to do.
+    fresh_dir = tmp_path / 'fresh'
+    fresh_root = _make_cache(fresh_dir, ['0.1.200'])
+    _make_clone_manifest(fresh_dir, '0.1.100')
+    fresh = cache_freshness.check_freshness(fresh_root)
+    assert fresh['freshness'] == 'fresh'
+    assert fresh['remediation'] == ''
+
+
+def test_cli_stale_verdict_carries_the_reload_step_through_toon(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    """The reload step survives TOON serialization to the CLI consumer.
+
+    The remediation is a long single-line value containing quotes, an em dash and
+    parentheses; this asserts the operator-facing text reaches stdout intact
+    rather than being truncated or re-wrapped into a value the parser splits."""
+    cache_root = _make_cache(tmp_path, ['0.1.100'])
+    _make_clone_manifest(tmp_path, '0.1.200')
+
+    exit_code = cache_freshness.main(['check', '--cache-root', str(cache_root)])
+    parsed = parse_toon(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert parsed['freshness'] == 'stale'
+    assert parsed['remediation'] == cache_freshness.REMEDIATION
 
 
 def test_newest_cache_version_orders_numerically(tmp_path: Path):

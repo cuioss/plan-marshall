@@ -65,7 +65,7 @@ def _read_records(tmp_path: Path) -> list[dict]:
 
 
 def _worktree_cwd() -> str:
-    return f"/Users/dev/project/{gate.WORKTREE_PATH_SEGMENT}/my-plan"
+    return f"/home/dev/project/{gate.WORKTREE_PATH_SEGMENT}/my-plan"
 
 
 # =============================================================================
@@ -135,7 +135,7 @@ def test_recorded_verdict_true_inside_plan_context(tmp_path: Path) -> None:
 
 
 def test_recorded_verdict_false_outside_plan_context(tmp_path: Path) -> None:
-    payload = {gate.CWD_FIELD: "/Users/dev/project", "tool_name": "Bash"}
+    payload = {gate.CWD_FIELD: "/home/dev/project", "tool_name": "Bash"}
     _run(json.dumps(payload), tmp_path)
     assert _read_records(tmp_path)[0]["would_be_context_verdict"] is False
 

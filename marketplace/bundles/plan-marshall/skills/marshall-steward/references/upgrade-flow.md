@@ -137,7 +137,11 @@ plan emitted for the resolved kind:
 
   See the [`../SKILL.md`](../SKILL.md) Canonical invocations
   (`cache_freshness — check`) for the verb shape. Parse `freshness`,
-  `refuses_upgrade`, and `remediation`. The verdict set is exactly three-valued
+  `refuses_upgrade`, `compared_against`, and `remediation`. `compared_against`
+  names the scope the verdict was computed over, and a `fresh` verdict MUST be
+  reported with that scope attached — "current with the local marketplace clone",
+  never a bare "the cache is current", which would read as an upstream-currency
+  claim this verb has no leg to make. The verdict set is exactly three-valued
   and there is **no** age-based, mtime-based, or otherwise-inferred fallback that
   downgrades an unsubstantiable verdict to a guess:
 
@@ -152,8 +156,13 @@ plan emitted for the resolved kind:
   report the emitted `remediation`, which names the operator commands verbatim:
   run `/plugin update plan-marshall` to update the installed plugin in place
   (non-destructive — no uninstall or reinstall), then verify the update landed by
-  running `/plugin` and confirming plan-marshall reports the expected version.
-  Re-run `/marshall-steward upgrade` afterwards.
+  running `/plugin` and confirming plan-marshall reports the expected version,
+  then reload the session's plugin set so the refreshed cache is actually visible
+  to it — the plugin registry is pinned at session start, so a session that skips
+  the reload keeps reading the pre-update cache. Resolve the harness-appropriate
+  directive through `platform_runtime session reload-directive` (on Claude it is
+  `/reload-plugins`; on OpenCode the seam returns a `no-op` whose alternative is a
+  full session restart). Re-run `/marshall-steward upgrade` afterwards.
 
   Note the division of labour with Stage 3's `executor-preflight`: preflight
   compares the executor's stamp against a LOCAL manifest and answers "is my
@@ -288,7 +297,8 @@ repository `CLAUDE.md` § "Plugin Cache Sync"): it is a project-local skill unde
 consumer projects neither ship it nor have it seeded. So the mechanism that keeps
 the meta cache fresh is invisible to — and does not cover — a consumer, whose
 cache is refreshed only when the operator explicitly runs
-`/plugin update plan-marshall`. A consumer therefore has a real
+`/plugin update plan-marshall` and then reloads the session's plugin set so the
+refreshed cache becomes visible to the running session. A consumer therefore has a real
 "my cache silently fell behind" failure mode that meta does not, which is exactly
 the failure the freshness gate refuses on. Adding the gate to the meta kind would
 gate on a condition meta's own finalize pipeline already guarantees.
@@ -318,13 +328,28 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config normal
 
 See the `manage-config` Canonical invocations (`sync-defaults`, `steps-sort`,
 `normalize-keys`) for the verb shapes. All three are idempotent and byte-stable on
-an already-current config. `normalize-keys` runs **last** and its position is
-load-bearing: `sync-defaults` and `steps-sort` are conditional writes — they
-persist only when they actually change something — so on a config whose only drift
-is a non-canonical top-level key order NEITHER writes and the order is never
-corrected. `normalize-keys` is the **unconditional** top-level canonicalizer (it
-always re-writes in canonical order), and running it after any key-adding reconcile
-gives it the final word. When it returns `status: warning` with a non-empty
+an already-current config.
+
+What `normalize-keys` is in this sequence for is **presence, not placement**:
+`sync-defaults` and `steps-sort` are conditional writes — they persist only when
+they actually change something — so on a config whose only drift is a
+non-canonical top-level key order NEITHER writes and the order is never
+corrected. `normalize-keys` is the **unconditional** top-level canonicalizer: it
+always re-writes in canonical order, which is why the sequence has to contain it
+at all.
+
+**Its position among the three does not change the resulting key order.** Every
+write to `marshal.json` — from any of the three verbs — goes through
+`save_config`, which imposes the canonical top-level order on the way out. So
+whichever verb happens to write last has already produced a canonically-ordered
+file, and moving `normalize-keys` earlier or later leaves the resulting order
+identical. It is written last here only for readability. The Stage-2 order test
+asserts this sequence, and what it pins is that all three verbs are present and
+run — not that their order affects the outcome. (The Re-Run Remediation Pass step
+(a) in [`../SKILL.md`](../SKILL.md) states the same thing about its own ordering;
+the two documents agree.)
+
+When `normalize-keys` returns `status: warning` with a non-empty
 `unrecognized_keys`, surface that list to the operator: those top-level keys are
 absent from the canonical order and were preserved but appended out of position (a
 stray or consumer-added block) rather than dropped.

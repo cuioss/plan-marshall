@@ -947,9 +947,15 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     sub.add_parser('drain', help='Gracefully stop the daemon (no SIGKILL).', allow_abbrev=False).set_defaults(
         func=run_drain
     )
-    sub.add_parser('status', help='Report running version + binary path.', allow_abbrev=False).set_defaults(
-        func=run_status
-    )
+    sub.add_parser(
+        'status',
+        help=(
+            'Report running version, in-flight/queued counts (unknown when the daemon did not '
+            'send them, never 0), and running-vs-resolved binary provenance (divergence flagged; '
+            'unknown never the resolved path).'
+        ),
+        allow_abbrev=False,
+    ).set_defaults(func=run_status)
     sub.add_parser('install', help='Idempotent version-pinned start.', allow_abbrev=False).set_defaults(
         func=run_install
     )

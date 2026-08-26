@@ -78,7 +78,7 @@ def _text_blocks(*texts: str) -> list[dict[str, str]]:
 # The structural signature of a skill body injected as a synthetic ``user``
 # turn: the base-directory line followed by a markdown heading and a body.
 SKILL_LOAD_TEXT = (
-    'Base directory for this skill: /Users/x/.claude/plugins/cache/demo/skills/demo\n\n'
+    'Base directory for this skill: /home/dev/.claude/plugins/cache/demo/skills/demo\n\n'
     '# Demo Skill\n\n'
     'Long injected skill body. ' * 40
 )

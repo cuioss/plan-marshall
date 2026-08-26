@@ -933,7 +933,7 @@ class TestProjectDirPropagation:
         mock_log_file.return_value = '/tmp/test.log'
         mock_run.return_value = MagicMock(returncode=0)
 
-        worktree_path = '/Users/test/.claude/worktrees/some-plan'
+        worktree_path = '/home/dev/.claude/worktrees/some-plan'
         execute_direct_base(
             args='verify',
             command_key='test:verify',

@@ -25,6 +25,7 @@ Covers behavior and cross-checks defined for deliverable 1 of the
 
 from __future__ import annotations
 
+import re
 import sys
 
 import pytest
@@ -617,3 +618,247 @@ def test_identify_malformed_payload_is_custom(bad: object) -> None:
     """A payload missing ``default``/``roles`` (or not a dict) is ``custom``, never a crash."""
     # Deliberately passing non-dict / malformed inputs to exercise the guard.
     assert mp.EffortPresets.identify(bad) == {'name': None, 'status': 'custom'}  # type: ignore[arg-type]
+
+
+# =============================================================================
+# (12) describe() reconstruction — a preset's description string, read ALONE,
+#      rebuilds every one of the nine effort slots of the payload it describes.
+#
+#      The description is what an operator sees in the wizard's preset prompt;
+#      it is the only thing they see. A description that leaves a slot to be
+#      inferred from prose ("the analytical phases", "post-run-review") is one
+#      the operator cannot resolve without already knowing the registry, and a
+#      description that omits a slot deviating from its stated default
+#      overstates or understates the tier being chosen.
+#
+#      The reconstruction below is deliberately preset-AGNOSTIC: it knows only
+#      the canonical slot tokens and the rule "a slot the description does not
+#      name reconstructs to the stated default". It carries no per-preset alias
+#      table, so it cannot supply knowledge a description failed to supply.
+# =============================================================================
+
+
+# The eight role slots; the ninth is the plan-level ``default``. This tuple is
+# not trusted as an assertion — ``test_expanded_slot_population_is_nine``
+# derives the population from the preset payloads and pins it against this
+# tuple, so a registry change that adds or drops a slot fails there first.
+_ROLE_SLOTS: tuple[str, ...] = (
+    'phase-2-refine',
+    'phase-3-outline',
+    'phase-4-plan',
+    'phase-5-execute.default',
+    'phase-5-execute.verification-feedback',
+    'phase-6-finalize.default',
+    'phase-6-finalize.verification-feedback',
+    'phase-6-finalize.post-run-review',
+)
+
+_LEVEL_RE = re.compile(r'level-\d')
+_STATED_DEFAULT_RE = re.compile(r'\bdefault\s+(level-\d)\b')
+_STATED_SPREAD_RE = re.compile(r'\bsummed-level spread (\d+)\b')
+
+
+def _expand_slots(preset: dict) -> dict[str, str]:
+    """Flatten a preset payload into its dotted ``slot -> level`` map.
+
+    A string-valued phase contributes one slot under the bare phase name; a
+    dict-valued phase contributes one ``phase.subkey`` slot per sub-key. The
+    plan-level ``default`` is carried under the key ``default``.
+    """
+    slots: dict[str, str] = {'default': str(preset['default'])}
+    for group, group_value in preset['roles'].items():
+        if isinstance(group_value, str):
+            slots[group] = group_value
+        else:
+            for subkey, level in group_value.items():
+                slots[f'{group}.{subkey}'] = level
+    return slots
+
+
+def _mentioned_slots(description: str) -> dict[str, str]:
+    """Return the slots the description NAMES, mapped to the level it gives them.
+
+    A slot is named only by its canonical token (the dotted ``phase.subkey``
+    form, or the bare phase name for a phase with no sub-keys). The level
+    governing a mention is the first ``level-N`` token that follows it, which
+    is what makes an enumerated list ("A, B and C at level-5") resolve for
+    every member. A slot named twice must be given the same level both times.
+
+    Raises:
+        AssertionError: when a named slot is followed by no level at all, or
+            when two mentions of the same slot disagree — both are descriptions
+            no reader could resolve, so they fail loudly rather than silently
+            reconstructing to something.
+    """
+    level_positions = [(m.start(), m.group(0)) for m in _LEVEL_RE.finditer(description)]
+    mentioned: dict[str, str] = {}
+    for slot in _ROLE_SLOTS:
+        governing: set[str] = set()
+        start = description.find(slot)
+        while start != -1:
+            following = [level for pos, level in level_positions if pos > start]
+            if not following:
+                raise AssertionError(
+                    f"slot '{slot}' is named at offset {start} but no level-N "
+                    f'follows it: {description!r}'
+                )
+            governing.add(following[0])
+            start = description.find(slot, start + 1)
+        if not governing:
+            continue
+        if len(governing) > 1:
+            raise AssertionError(
+                f"slot '{slot}' is named with conflicting levels "
+                f'{sorted(governing)}: {description!r}'
+            )
+        mentioned[slot] = governing.pop()
+    return mentioned
+
+
+def _stated_default(description: str) -> str:
+    match = _STATED_DEFAULT_RE.search(description)
+    if match is None:
+        raise AssertionError(
+            f'description states no plan-level default: {description!r}'
+        )
+    return match.group(1)
+
+
+def _reconstruct_from_description(description: str) -> dict[str, str]:
+    """Rebuild the full nine-slot map from the description string alone.
+
+    Named slots take the level the description gives them; every other slot
+    reconstructs to the stated plan-level default, mirroring the bubbling
+    resolution an operator would apply when reading the string.
+    """
+    stated_default = _stated_default(description)
+    mentioned = _mentioned_slots(description)
+    reconstructed: dict[str, str] = {'default': stated_default}
+    for slot in _ROLE_SLOTS:
+        reconstructed[slot] = mentioned.get(slot, stated_default)
+    return reconstructed
+
+
+def _sum_ordinals(slots: dict[str, str]) -> int:
+    return sum(int(level.split('-', 1)[1]) for level in slots.values())
+
+
+@pytest.mark.parametrize('preset_name', ['economic', 'balanced', 'high-end'])
+def test_expanded_slot_population_is_nine(preset_name: str) -> None:
+    """The nine-slot claim is DERIVED from the payload, not asserted.
+
+    Every preset is stored literal-expanded, so flattening it must yield
+    exactly the plan default plus the eight role slots. A registry change that
+    adds or removes a slot fails here, before any reconstruction test can pass
+    against a stale slot list.
+    """
+    slots = _expand_slots(mp.EffortPresets.get(preset_name))
+    assert set(slots) == {'default', *_ROLE_SLOTS}, (
+        f"preset '{preset_name}' expands to slots {sorted(slots)}, which is "
+        f'not the expected population {sorted({"default", *_ROLE_SLOTS})}'
+    )
+    assert len(slots) == 9
+
+
+@pytest.mark.parametrize('preset_name', ['economic', 'balanced', 'high-end'])
+def test_describe_reconstructs_every_slot_of_its_payload(preset_name: str) -> None:
+    """describe(name) alone rebuilds the payload get(name) returns — all nine slots."""
+    payload_slots = _expand_slots(mp.EffortPresets.get(preset_name))
+    reconstructed = _reconstruct_from_description(mp.EffortPresets.describe(preset_name))
+    differing = {
+        slot: (reconstructed[slot], level)
+        for slot, level in payload_slots.items()
+        if reconstructed[slot] != level
+    }
+    assert reconstructed == payload_slots, (
+        f"preset '{preset_name}' description does not reconstruct its "
+        f'payload; slot -> (reconstructed, actual): {differing}'
+    )
+
+
+@pytest.mark.parametrize('preset_name', ['economic', 'balanced', 'high-end'])
+def test_describe_names_every_slot_that_deviates_from_the_stated_default(
+    preset_name: str,
+) -> None:
+    """Unnamed means default — so every deviating slot MUST be named.
+
+    Naming a slot that happens to equal the default is fine (``balanced`` does
+    exactly that for the analytical phases); leaving a deviating slot unnamed
+    is the failure, because it silently reconstructs to the wrong level.
+    """
+    description = mp.EffortPresets.describe(preset_name)
+    slots = _expand_slots(mp.EffortPresets.get(preset_name))
+    stated_default = _stated_default(description)
+    deviating = {
+        slot for slot, level in slots.items()
+        if slot != 'default' and level != stated_default
+    }
+    named = set(_mentioned_slots(description))
+    assert deviating <= named, (
+        f"preset '{preset_name}' description leaves deviating slot(s) "
+        f'{sorted(deviating - named)} unnamed — they would reconstruct to the '
+        f'stated default {stated_default}'
+    )
+
+
+@pytest.mark.parametrize('preset_name', ['economic', 'balanced', 'high-end'])
+def test_describe_stated_spread_matches_the_reconstructed_spread(preset_name: str) -> None:
+    """The spread the description quotes is the spread its own words add up to.
+
+    Three numbers must agree: the literal in the description, the sum over the
+    reconstruction, and the sum over the actual payload. A description that
+    quotes the payload's true spread while its words add up to something else
+    is the exact failure this deliverable removes.
+    """
+    preset = mp.EffortPresets.get(preset_name)
+    description = mp.EffortPresets.describe(preset_name)
+    match = _STATED_SPREAD_RE.search(description)
+    assert match is not None, (
+        f"preset '{preset_name}' description quotes no summed-level spread"
+    )
+    stated_spread = int(match.group(1))
+    reconstructed_spread = _sum_ordinals(_reconstruct_from_description(description))
+    assert stated_spread == reconstructed_spread == _spread(preset), (
+        f"preset '{preset_name}': stated spread {stated_spread}, "
+        f'reconstructed spread {reconstructed_spread}, payload spread '
+        f'{_spread(preset)} — the three must agree'
+    )
+
+
+def test_reconstruction_detects_a_description_that_drops_a_deviating_slot() -> None:
+    """Matched negative control: the reconstruction above is not vacuous.
+
+    Removing a deviating slot's name from a truthful description must make the
+    reconstruction disagree with the payload. Without this, every assertion in
+    this section could pass against a parser that recognised nothing at all.
+    """
+    payload_slots = _expand_slots(mp.EffortPresets.get('economic'))
+    truthful = mp.EffortPresets.describe('economic')
+    assert 'phase-3-outline, ' in truthful
+    lossy = truthful.replace('phase-3-outline, ', '', 1)
+
+    reconstructed = _reconstruct_from_description(lossy)
+    assert reconstructed != payload_slots
+    # And it fails in the specific way the contract predicts: the dropped slot
+    # silently reconstructs to the stated default instead of its real level.
+    assert reconstructed['phase-3-outline'] == _stated_default(truthful)
+    assert payload_slots['phase-3-outline'] != _stated_default(truthful)
+
+
+def test_reconstruction_detects_a_description_that_misstates_a_level() -> None:
+    """Matched negative control: a wrong level is caught, not just a missing name."""
+    payload_slots = _expand_slots(mp.EffortPresets.get('high-end'))
+    truthful = mp.EffortPresets.describe('high-end')
+    assert 'at level-5' in truthful
+    wrong = truthful.replace('at level-5', 'at level-3', 1)
+
+    assert _reconstruct_from_description(wrong) != payload_slots
+
+
+def test_reconstruction_rejects_a_self_contradictory_description() -> None:
+    """A slot named twice with two different levels fails loudly, never resolves."""
+    truthful = mp.EffortPresets.describe('economic')
+    contradictory = truthful + ' Also phase-3-outline at level-2.'
+    with pytest.raises(AssertionError) as excinfo:
+        _reconstruct_from_description(contradictory)
+    assert 'conflicting levels' in str(excinfo.value)

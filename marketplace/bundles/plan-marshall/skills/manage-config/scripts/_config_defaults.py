@@ -936,7 +936,9 @@ FINALIZE_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-final
 # The two adversarial infra-dependent finalize elements that seed with a
 # `lane: ask` override. Their on/off/tier is answered by the operator at
 # marshall-steward setup / update-config (which persists a resolved
-# `off`/`auto`/`full`), and an UNRESOLVED `ask` (operator never answered) whose
+# `off`/`standard`/`full` — the values `_RESOLVED_ASK_LANE_VALUES` actually
+# accepts; `auto` is not among them and is rejected at set-time), and an
+# UNRESOLVED `ask` (operator never answered) whose
 # provider is absent is dropped at compose time by the drop-when-no-provider
 # safety net. `ask` is seeded here rather than in each step's `configurable:`
 # frontmatter because it is a project-provisioning posture, not a step param the

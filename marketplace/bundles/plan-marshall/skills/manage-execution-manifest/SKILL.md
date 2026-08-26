@@ -184,7 +184,7 @@ On the first unresolvable id, `compose` returns `status: error`, `error: unresol
 status: error
 plan_id: EXAMPLE-PLAN
 error: unresolvable_step
-message: "phase_6 step `plan-marshall:ghost-review` in marshal.json is unresolvable: step `plan-marshall:ghost-review` referenced by `marshal.json` is not a discovered ext-point-finalize-step implementor — the id resolves to no built-in finalize step, project-local skill, or bundle discovery-registry entry"
+message: "phase_6 step `plan-marshall:ghost-review` in marshal.json is unresolvable: step `plan-marshall:ghost-review` is not a discovered ext-point-finalize-step implementor — the id resolves to no built-in finalize step, project-local skill, or bundle discovery-registry entry"
 phase: phase_6
 step_id: "plan-marshall:ghost-review"
 marshal_key: "plan-marshall:ghost-review"
@@ -488,7 +488,7 @@ plan_id: EXAMPLE-PLAN
 step_id: missing-step
 standards_path: marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/missing-step.md
 loadable: false
-message: "step `missing-step` referenced by `marshal.json` is missing standards file `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/missing-step.md` — the plan likely deleted the file without sweeping `marshal.json`"
+message: "step `missing-step` is missing standards file `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/missing-step.md` — the plan likely deleted the file without sweeping `marshal.json`"
 ```
 
 **Output (bulk form)**: a `results[N]` table with one row per manifest step plus an `unloadable_count` summary, e.g.:
@@ -499,7 +499,7 @@ unloadable_count: 1
 results[3]{step_id,standards_path,loadable,message}:
   push,marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/push.md,true,
   create-pr,marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/create-pr.md,true,
-  ghost-step,marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/ghost-step.md,false,"step `ghost-step` referenced by `marshal.json` is missing standards file `…ghost-step.md` — the plan likely deleted the file without sweeping `marshal.json`"
+  ghost-step,marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/ghost-step.md,false,"step `ghost-step` is missing standards file `…ghost-step.md` — the plan likely deleted the file without sweeping `marshal.json`"
 ```
 
 The bulk form requires the manifest to exist on disk; if it does not, the script returns the standard `file_not_found` error.

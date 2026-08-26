@@ -59,7 +59,8 @@ Output (TOON):
     compared_against: local_clone_manifest
     cache_root: /Users/x/.claude/plugins/cache/plan-marshall
     manifest_path: /Users/x/.claude/plugins/marketplaces/plan-marshall/dist-manifest.json
-    remediation: Run '/plugin update plan-marshall' (non-destructive), then verify the version ...
+    remediation: Run '/plugin update plan-marshall' (non-destructive), then verify the version,
+                 then reload the session's plugin set so the refreshed cache is visible ...
     warning:
 
 Exit 0 on success, 2 on argparse rejection.
@@ -83,10 +84,23 @@ _VERSION_DIR_RE = re.compile(r'^\d+\.\d+')
 # The remediation names the operator commands verbatim rather than describing
 # them. It is a module constant so every refusing branch emits the identical
 # string and a test can assert the literal commands.
+#
+# It ends with the reload step because updating the cache is not the same as the
+# running session SEEING the update: the plugin registry is pinned at session
+# start, so a session that updates and carries on keeps reading the pre-update
+# cache and the operator concludes the update did not work. Three in-tree
+# surfaces state that requirement independently (`doc/user/installation.adoc`,
+# `platform-runtime/standards/contract.md`,
+# `extension-api/standards/ext-point-dynamic-level-executor.md`); omitting it
+# here made this remediation the one that stopped a step short of the outcome.
 REMEDIATION = (
     "Run '/plugin update plan-marshall' to update the installed plugin in place "
     "(non-destructive — no uninstall or reinstall), then verify the update landed by "
-    "running '/plugin' and confirming plan-marshall reports the expected version."
+    "running '/plugin' and confirming plan-marshall reports the expected version, then "
+    "reload the session's plugin set so the refreshed cache is visible to the running "
+    "session — resolve the directive with 'platform_runtime session reload-directive' "
+    "(on Claude it is '/reload-plugins'; on OpenCode the seam returns a no-op whose "
+    "alternative is a full session restart)."
 )
 
 FRESH = 'fresh'

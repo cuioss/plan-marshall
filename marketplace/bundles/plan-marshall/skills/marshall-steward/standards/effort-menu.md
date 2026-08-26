@@ -86,5 +86,5 @@ When the user picks "Back to Main Menu" in Step 2, return to the Main Menu witho
 | [`effort-levels.md`](../../plan-marshall/standards/effort-levels.md) | Level enum and primitive binding. |
 | [`effort-roles.md`](../../plan-marshall/standards/effort-roles.md) | Role registry that the presets cover. |
 | [`effort-variants.md`](../../plan-marshall/standards/effort-variants.md) | User-facing centralised guide cross-linked from save confirmations. |
-| [`effort_presets.py`](../../plan-marshall/scripts/effort_presets.py) | `EffortPresets` constant-class — per-preset payloads, `get`, `all_names`, `describe`. |
+| [`effort_presets.py`](../../plan-marshall/scripts/effort_presets.py) | `EffortPresets` constant-class — per-preset payloads, `get`, `all_names`, `describe`, `identify`. |
 | `manage-config:_cmd_effort.py` | Resolver that reads the same per-phase `effort` configuration written by this wizard, plus `apply-preset` writer. |

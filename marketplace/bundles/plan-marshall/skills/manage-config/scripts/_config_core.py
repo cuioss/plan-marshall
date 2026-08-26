@@ -148,7 +148,16 @@ CANONICAL_TOP_LEVEL_KEY_ORDER = [
     'code_intelligence',
     'credentials_config',
     'project',
+    # `project_dir` and `runtime` are written at the top level by the platform
+    # runtime seed (`project initial-setup`): the Claude seed writes both, the
+    # OpenCode seed writes `runtime`. `runtime.target` is read back by
+    # `platform_runtime._resolve_target`, so they are first-party product
+    # configuration rather than stray blocks — omitting them made `normalize-keys`
+    # report the product's own seed as unrecognized. Both take their alphabetical
+    # slot among the trailing keys.
+    'project_dir',
     'providers',
+    'runtime',
     'skill_domains',
     'system',
 ]
@@ -165,16 +174,33 @@ def order_config_keys(config: dict) -> dict:
     :func:`unrecognized_top_level_keys` and :func:`normalize_keys`, which surface
     that set.
 
-    This is the ordering authority for top-level marshal.json key ordering. The
-    two whole-document write paths route through it — :func:`save_config` and the
-    ``manage-providers`` ``write_provider_config`` path (via its ``_save_marshal``)
-    — so those paths never append a block (e.g. a freshly created
-    ``credentials_config``) out of canonical order. It is NOT reached by *every*
-    write to marshal.json: the extension-defaults writers
-    (:func:`ext_defaults_set`, :func:`ext_defaults_set_default`) and the OpenCode
-    runtime seed write the document directly with ``json.dumps`` and do not
-    re-order — they preserve the order they loaded rather than enforcing the
-    canonical one.
+    This is the ordering authority for top-level marshal.json key ordering, and
+    it is reached by two of the six marshal.json writer sites in the tree. The
+    split below is stated at FUNCTION level, because a file-level split would be
+    lossy: this module carries both a routed path and two bypass paths.
+
+    ROUTED — 2 sites:
+
+    * :func:`save_config`, which calls this function before its atomic write.
+    * ``manage-providers``' ``_providers_core._save_marshal``, whose
+      ``write_provider_config`` caller is the only route to it. It no longer
+      orders and writes for itself; it delegates the whole document to
+      :func:`save_config`, so it inherits this ordering along with the
+      lost-update guard and the atomic replace.
+
+    BYPASS — 4 sites, which write the document directly and preserve the order
+    they loaded rather than enforcing the canonical one:
+
+    * :func:`ext_defaults_set` and :func:`ext_defaults_set_default`, the two
+      extension-defaults writers in this module.
+    * BOTH platform-runtime seeds of ``project initial-setup`` —
+      ``opencode_runtime.OpenCodeRuntime.project_initial_setup`` and
+      ``_claude_runtime_impl.ClaudeRuntime.project_initial_setup``. Naming only
+      the OpenCode one understated the bypass set by half; the two seeds bypass
+      identically.
+
+    The routed paths therefore never append a block (e.g. a freshly created
+    ``credentials_config``) out of canonical order, while a bypass path can.
     """
     ordered: dict = {}
     for key in CANONICAL_TOP_LEVEL_KEY_ORDER:
@@ -202,6 +228,11 @@ def save_config(config: dict) -> None:
     The guarantee is CROSS-process, which is the mode these one-shot CLI verbs can
     actually race in — see :data:`_CONFIG_FINGERPRINTS` for why per-process state
     is the right granularity and what it deliberately does not cover.
+
+    Callers outside this module reach it too: ``manage-providers``'
+    ``_providers_core._save_marshal`` delegates its whole-document write here, so
+    the provider-config path is covered by the same guard and the same atomic
+    replace rather than carrying a second copy of them.
     """
     MARSHAL_PATH.parent.mkdir(parents=True, exist_ok=True)
     ordered = order_config_keys(config)

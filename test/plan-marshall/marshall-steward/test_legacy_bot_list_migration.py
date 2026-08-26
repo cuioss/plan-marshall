@@ -35,8 +35,13 @@ from conftest import get_script_path
 
 _STEWARD_SCRIPTS = get_script_path('plan-marshall', 'marshall-steward', 'upgrade.py').parent
 _AR_SCRIPTS = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py').parent
+# ``upgrade`` imports ``file_ops`` at module scope (for the ``safe_main`` entry
+# wrapper), and ``file_ops`` in turn imports from ``script-shared``. Under the
+# executor both arrive on one injected PYTHONPATH; here each dir is named.
+_FILE_OPS_SCRIPTS = get_script_path('plan-marshall', 'tools-file-ops', 'file_ops.py').parent
+_SHARED_SCRIPTS = get_script_path('plan-marshall', 'script-shared', 'marketplace_paths.py').parent
 
-for _dir in (_STEWARD_SCRIPTS, _AR_SCRIPTS):
+for _dir in (_STEWARD_SCRIPTS, _AR_SCRIPTS, _FILE_OPS_SCRIPTS, _SHARED_SCRIPTS):
     if str(_dir) not in sys.path:
         sys.path.insert(0, str(_dir))
 
