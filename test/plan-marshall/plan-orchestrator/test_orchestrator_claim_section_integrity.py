@@ -250,6 +250,48 @@ class TestUnreadableToStampedJourney:
         assert after['blocking_count'] == before['blocking_count'] - 1
         assert spec.is_file()
 
+    def test_the_blocking_row_carries_the_offending_line_itself(self, plan_context):
+        # The shortfall reason `orchestrate.md` prescribes quotes the section's
+        # first line, and that document also requires the reason to be DERIVED
+        # from the blocking row rather than hand-typed. Both hold only if the
+        # synthesised row carries the line itself; a blank `line` would force a
+        # join against `unreadable_claim_sections[]` or an author typing the
+        # value the same rule forbids.
+        self._spec(plan_context)
+
+        payload = cmd_corpus_verdicts(Namespace(slug=SLUG))
+
+        assert payload['specs_scanned'] == 1, 'the fixture population did not materialize'
+        synthesised = [row for row in payload['claims'] if row['synthesised']]
+        assert len(synthesised) == 1, (
+            f'{len(synthesised)} synthesised row(s) over 1 unreadable section, expected 1'
+        )
+        assert synthesised[0]['line'] == _TABLE_FORM[0], (
+            'the blocking row does not carry the offending line, so the shortfall '
+            'reason cannot be derived from it'
+        )
+        # Same value, both surfaces: the join is now redundant, not broken.
+        assert payload['unreadable_claim_sections'][0]['first_line'] == _TABLE_FORM[0]
+
+    def test_a_readable_section_row_still_carries_its_own_bullet_line(self, plan_context):
+        # Matched negative control for the assertion above: the `line` field is
+        # not unconditionally the section's first line. A section carrying a real
+        # top-level verdict bullet takes the non-synthesised branch, whose `line`
+        # is that bullet — so a fix that hard-wired `first_line` into every
+        # section row would fail here.
+        self._spec(plan_context)
+        cmd_corpus_set_verdict(_section_scope_args('PLAN-01'))
+
+        payload = cmd_corpus_verdicts(Namespace(slug=SLUG))
+
+        rows = [row for row in payload['claims'] if row['scope'] == 'section']
+        assert len(rows) == 1, f'{len(rows)} section row(s), expected 1'
+        assert rows[0]['synthesised'] is False
+        assert rows[0]['line'].startswith(_TOP_LEVEL_VERDICT_PREFIX), (
+            'a settled section row must quote its own verdict bullet, not the '
+            'section heading line'
+        )
+
     def test_the_claim_prose_survives_the_stamp_byte_for_byte(self, plan_context):
         # The disk-level half of "recovered without re-authoring the prose": the
         # stamped file is the original file plus EXACTLY the one added bullet.

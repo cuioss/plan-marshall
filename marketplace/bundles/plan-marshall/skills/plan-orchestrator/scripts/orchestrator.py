@@ -1506,7 +1506,11 @@ def _spec_verdict_rows(
     from a verdict bullet on disk — which comes out
     :data:`VERDICT_INDETERMINATE` with ``admits: false`` and therefore counts
     into ``blocking_count``, so a section the parser could not read can no longer
-    pass a gate by contributing nothing at all.
+    pass a gate by contributing nothing at all. That synthesised row carries the
+    section's ``first_line`` in its ``line`` field, so a shortfall reason naming
+    the unreadable section is derivable from the blocking row alone — without
+    joining the sibling ``unreadable_claim_sections[]`` list and without an
+    author hand-typing the quoted line.
 
     An ``empty`` or ``absent`` section contributes no section row: it is a
     legitimately empty population, not an unread one, and blocking it would make
@@ -1533,7 +1537,7 @@ def _spec_verdict_rows(
             _verdict_row(
                 spec_name,
                 {'index': NO_CLAIM_INDEX, 'verdict_text': ''},
-                '',
+                str(section['first_line']),
                 head,
                 scope=SCOPE_SECTION,
                 synthesised=True,
