@@ -83,13 +83,24 @@ Invoke the project-local `sync.py` directly. The script:
 
 1. Resolves the source root (`{worktree_path}/target/claude/` when
    `--from-worktree` is supplied; cwd's `target/claude/` otherwise).
-2. Runs the staleness guard — refuses to sync when the source root is
-   missing or stale relative to `marketplace/bundles/` (regeneration
-   required).
+2. Runs the staleness guard, whose refusals are discriminated by kind.
+   `stale` — a probe ran and observed the source root missing, carrying
+   no bundles, or stale relative to `marketplace/bundles/`; the remedy is
+   to regenerate the target tree. `probe_failed` — a probe could not run
+   at all (the fingerprint helper would not import, `git` would not
+   answer), so nothing was observed about the target tree and its
+   freshness is unknown; the remedy repairs the named probe, and the
+   message deliberately does NOT carry the regenerate hint, which would
+   send the operator to re-run a generator whose output may already be
+   current. Both kinds refuse (exit 2); `--skip-staleness-guard` is the
+   deliberate override.
 3. Fans out parallel rsync invocations (one per bundle).
 4. Aggregates a `synced[N]{bundle,version,status}` TOON table plus a
    summary status (`success` | `partial` | `error`),
-   `synced_count`, `failed_count`, and `summary_message`.
+   `synced_count`, `failed_count`, `summary_message`, and — on a guard
+   refusal only — `guard_outcome` (`stale` | `probe_failed`). The
+   absence of `guard_outcome` on every other path means no guard verdict
+   was reached.
 
 ```bash
 python3 .claude/skills/sync-plugin-cache/scripts/sync.py
@@ -105,10 +116,20 @@ python3 .claude/skills/sync-plugin-cache/scripts/sync.py \
 ### Step 2: Inspect the summary
 
 The script's TOON output reports each per-bundle status (`success`,
-`failed`, `skipped`) plus the aggregate. On `status: error` (no bundles
-synced) or `status: partial` (some failed), inspect the `synced` rows
-and the optional `failed[N]{bundle,error}` table for diagnostics, then
-re-run with `--bundle NAME` to retry the failures individually.
+`failed`, `skipped`) plus the aggregate.
+
+**When `guard_outcome` is present**, the staleness guard refused before
+any bundle was attempted: `synced` and `failed` are both empty by
+construction, so there are no rows to inspect and no per-bundle retry to
+make. Read `summary_message` and act on the kind — `stale` → regenerate
+the target tree (`finalize-step-deploy-target`); `probe_failed` → repair
+the probe the message names, because the target tree's freshness is
+unknown and regenerating it is not the fix.
+
+**Otherwise**, on `status: error` (no bundles synced) or
+`status: partial` (some failed), inspect the `synced` rows and the
+optional `failed[N]{bundle,error}` table for diagnostics, then re-run
+with `--bundle NAME` to retry the failures individually.
 
 ### Step 2b: SESSION RELOAD REQUIRED before next dispatch
 

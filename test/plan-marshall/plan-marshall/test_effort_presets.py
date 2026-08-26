@@ -748,9 +748,9 @@ def test_expanded_slot_population_is_nine(preset_name: str) -> None:
     """The nine-slot claim is DERIVED from the payload, not asserted.
 
     Every preset is stored literal-expanded, so flattening it must yield
-    exactly the plan default plus the eight role slots. A registry change that
-    adds or removes a slot fails here, before any reconstruction test can pass
-    against a stale slot list.
+    exactly the plan default plus the eight role slots. A preset-payload change
+    that adds or removes a slot fails here, before any reconstruction test can
+    pass against a stale slot list.
     """
     slots = _expand_slots(mp.EffortPresets.get(preset_name))
     assert set(slots) == {'default', *_ROLE_SLOTS}, (

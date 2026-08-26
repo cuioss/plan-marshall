@@ -136,13 +136,14 @@ finalize with the canonical actionable message:
 > `marshal.json`
 
 The reason literal is **origin-neutral**: it states why the step does not
-resolve, not where the step id came from. Provenance is stated once, by the
-caller that can actually establish it —
-`_manifest_validation.check_emitted_steps_resolvable`, whose wrapper phrasing
-names the step "in marshal.json is unresolvable" and so distinguishes a
-marshal.json-authored step from a routed / composer-injected one. The
-remediation hint above stays: it is advice about the likely repair, not a claim
-about the origin.
+resolve, not where the step id came from. This abort carries no provenance —
+`validate-loadable` returns the reason literal verbatim. Provenance is added on
+the OTHER path only: the compose-time gate
+`_manifest_validation.check_emitted_steps_resolvable` holds the marshal.json key
+map, so its wrapper phrasing can name the step "in marshal.json is unresolvable"
+and distinguish a marshal.json-authored step from a routed / composer-injected
+one. The remediation hint above stays: it is advice about the likely repair, not
+a claim about the origin.
 
 Self-modifying plans that delete a `phase-6-finalize/standards/{name}.md`
 without also pruning `marshal.json::plan.phase-6-finalize.steps` are the

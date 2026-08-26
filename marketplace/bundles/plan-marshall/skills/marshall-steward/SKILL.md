@@ -514,8 +514,10 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config normal
 
 See the `manage-config` Canonical invocations (`normalize-keys`) for the verb
 shape. Its **position in this pass is immaterial** — every `marshal.json` write
-canonicalizes through `save_config`, so running it before or after steps (e) and
-(f) yields the same key order; it is sequenced first only for readability. The
+from the three reconcile verbs of this pass ((a) `normalize-keys`, (e)
+`sync-defaults`, (f) `steps-sort`) canonicalizes through `save_config`, so
+running it before or after steps (e) and (f) yields the same key order; it is
+sequenced first only for readability. The
 call is idempotent — an already-canonical file is left byte-stable.
 When it returns `status: warning` with a non-empty `unrecognized_keys`, surface
 that list to the operator: those top-level keys are absent from the canonical order
