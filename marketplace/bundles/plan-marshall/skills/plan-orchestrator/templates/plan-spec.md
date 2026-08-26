@@ -36,7 +36,7 @@ verified exactly like an asserted presence. A claim whose verify-first clause ha
 settled carries at most one nested child bullet recording that settlement — stamped through the
 `corpus set-verdict` seam, never hand-typed — whose shape is defined once at
 `persona-plan-orchestrator/standards/orchestration-model.md` § Re-Grounding Verdict Field
-and is not restated here. Claims are read as TOP-LEVEL `- ` bullets of this section, so a
+and is not restated here. Claims are read as TOP-LEVEL `-` bullets of this section, so a
 section authored as a table or as prose alone carries no claim the parser can address; such
 a section is settled as a whole through the section-scoped stamp instead, and is never
 required to be re-authored into bullets.}
