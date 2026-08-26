@@ -304,6 +304,10 @@ def view_pr_data(head: str | None = None) -> dict:
 
     Returns dict with 'status' key ('success' or 'error').
     Importable by other scripts for direct data access without subprocess.
+
+    ``merge_commit_sha`` is the landing commit of a merged MR, or ``None`` when the
+    provider reports none. See :func:`_extract_merge_commit_sha` for the two-key read
+    (squash vs regular merge) and why the absent form is ``None`` and never ``''``.
     """
     is_auth, err = check_auth()
     if not is_auth:
@@ -366,7 +370,34 @@ def view_pr_data(head: str | None = None) -> dict:
         'mergeable': mergeable,
         'merge_state': merge_status,
         'review_decision': review_decision,
+        'merge_commit_sha': _extract_merge_commit_sha(data),
     }
+
+
+def _extract_merge_commit_sha(data: dict) -> str | None:
+    """Return the landing commit SHA from a ``glab mr view`` payload, or ``None``.
+
+    The GitLab peer of ``github_ops._extract_merge_commit_sha``, so the provider-neutral
+    ``pr view`` contract is satisfied on BOTH providers rather than on one — a
+    consumer resolving a landing must not silently work on GitHub and go unresolvable on
+    GitLab.
+
+    **Two keys, because GitLab splits the landing SHA across them.** A regular merge
+    populates ``merge_commit_sha`` and leaves ``squash_commit_sha`` null; a SQUASH merge
+    does the reverse. Reading only ``merge_commit_sha`` would therefore go blind on
+    exactly the squash landing this field exists to resolve. ``squash_commit_sha`` is
+    consulted first: when a project squashes, it is the commit that actually landed on
+    the target branch.
+
+    Every shape that is not a non-empty string in one of those keys yields ``None`` — the
+    explicit absent form, never ``''`` (see the GitHub peer for why the distinction is
+    load-bearing across the serialization boundary).
+    """
+    for key in ('squash_commit_sha', 'merge_commit_sha'):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
 
 
 def cmd_pr_view(args: argparse.Namespace) -> dict:

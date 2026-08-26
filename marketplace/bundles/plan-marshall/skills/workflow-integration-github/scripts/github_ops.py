@@ -257,6 +257,10 @@ def view_pr_data(head: str | None = None) -> dict:
 
     Returns dict with 'status' key ('success' or 'error').
     Importable by other scripts for direct data access without subprocess.
+
+    ``merge_commit_sha`` is the landing commit of a merged PR, or ``None`` when the
+    provider reports none. See :func:`_extract_merge_commit_sha` for why the absent
+    form is ``None`` and never ``''``.
     """
     is_auth, err = check_auth()
     if not is_auth:
@@ -268,7 +272,8 @@ def view_pr_data(head: str | None = None) -> dict:
     pr_view_args.extend(
         [
             '--json',
-            'number,url,state,title,headRefName,baseRefName,isDraft,mergeable,mergeStateStatus,reviewDecision',
+            'number,url,state,title,headRefName,baseRefName,isDraft,mergeable,'
+            'mergeStateStatus,reviewDecision,mergeCommit',
         ]
     )
     returncode, stdout, stderr = run_gh(pr_view_args)
@@ -303,7 +308,38 @@ def view_pr_data(head: str | None = None) -> dict:
         'mergeable': data.get('mergeable', 'unknown').lower() if data.get('mergeable') else 'unknown',
         'merge_state': data.get('mergeStateStatus', 'unknown').lower() if data.get('mergeStateStatus') else 'unknown',
         'review_decision': data.get('reviewDecision', 'none').lower() if data.get('reviewDecision') else 'none',
+        'merge_commit_sha': _extract_merge_commit_sha(data),
     }
+
+
+def _extract_merge_commit_sha(data: dict) -> str | None:
+    """Return the landing commit SHA from a ``gh pr view`` payload, or ``None``.
+
+    ``gh`` reports the field as ``{'mergeCommit': {'oid': '<sha>'}}`` on a merged PR and
+    ``{'mergeCommit': None}`` on one that has not landed. Every shape that is not a
+    non-empty ``oid`` string — the key absent, the object null, the object present with
+    no usable ``oid`` — yields ``None``.
+
+    **The absent form is ``None``, deliberately never ``''``.** A consumer resolving a
+    landing from this field reads a SHA it will hand to ``git``; an empty string is a
+    *value* that flows through a truthiness test the same way a real SHA's absence would
+    not, and it reads in a serialized payload as a resolved-but-blank commit. ``None``
+    serializes to the TOON ``null`` token, which round-trips back to ``None`` — so the
+    absence stays an absence across the process boundary instead of arriving as a string
+    the consumer must guess about.
+
+    This function reports only what the provider SAID. It is not the tri-state read: a
+    failure to reach the provider never reaches here, because :func:`view_pr_data`
+    returns ``status: error`` before constructing a payload at all. That is what keeps
+    "this PR has not landed" distinguishable from "we could not ask".
+    """
+    merge_commit = data.get('mergeCommit')
+    if not isinstance(merge_commit, dict):
+        return None
+    oid = merge_commit.get('oid')
+    if not isinstance(oid, str) or not oid.strip():
+        return None
+    return oid.strip()
 
 
 # GraphQL query for PR review threads (inline), review submission bodies, and issue-level comments

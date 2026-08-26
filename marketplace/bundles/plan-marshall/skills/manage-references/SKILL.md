@@ -59,6 +59,7 @@ JSON format for storage:
 | `external_docs` | table | External documentation references |
 | `realized_footprint` | list | The realized plan footprint, captured from the worktree by `capture-footprint` (called by `default:branch-cleanup` before worktree removal). The footprint resolver prefers it over any re-derivation. |
 | `merge_commit_sha` | string | The landing commit SHA, recorded by `default:branch-cleanup` on the synchronous merge path. Feeds the footprint resolver's merge-commit fallback tier. Absent on the async merge-queue path. |
+| `pr_number` | string | The plan's PR/MR number, recorded by `default:create-pr` immediately after the PR is created or an open one is reused. Feeds the footprint resolver's PR-landing tier, which resolves the landing commit through `ci pr view --pr-number N` when `merge_commit_sha` was never written. Present from PR creation onward; absent on a plan that never opened a PR. |
 
 ---
 
@@ -412,6 +413,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 |--------|-----------|---------|
 | `phase-1-init` | create, set, set-list | Initialize references with branch, domains, build system |
 | `phase-3-outline` | set-list | Set affected_files from solution outline |
+| `phase-6-finalize` (`create-pr`) | set | Record `pr_number` immediately after the PR is created or an open one is reused |
 
 ### Consumers
 
@@ -421,7 +423,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 | `phase-5-execute` | get-context | Read build system for task execution |
 | `phase-6-finalize` | compute-footprint | Derive the live plan footprint for commit scope and PR body |
 | `phase-6-finalize` (`branch-cleanup`) | capture-footprint, set | Persist `realized_footprint` before worktree removal, and record `merge_commit_sha` after the base pull |
-| `plan-retrospective`, `audit-archived-plan-retrospectives` | (reads `realized_footprint` / `merge_commit_sha` via the shared footprint resolver) | Resolve the realized footprint for recall and mis-prune checks post-merge |
+| `plan-retrospective`, `audit-archived-plan-retrospectives` | (reads `realized_footprint` / `merge_commit_sha` / `pr_number` via the shared footprint resolver) | Resolve the realized footprint for recall and mis-prune checks post-merge. `pr_number` backs the PR-landing tier, which is the only tier that resolves a squash / merge-queue landing — the path on which `realized_footprint` and `merge_commit_sha` are both unwritten |
 
 ## Related
 

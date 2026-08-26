@@ -937,6 +937,25 @@ def build_parser(
     # merges, so a --head-keyed poll stops resolving at exactly the moment the
     # terminal state it exists to observe becomes observable. The PR number is
     # stable across that branch deletion.
+    #
+    # PROVIDER-NEUTRAL RETURNED-FIELD CONTRACT. Every provider's `pr view` handler
+    # returns the same keys: pr_number, pr_url, state, title, head_branch,
+    # base_branch, is_draft, mergeable, merge_state, review_decision, and
+    # merge_commit_sha.
+    #
+    # `merge_commit_sha` is the commit the PR/MR landed as, and it is declared HERE —
+    # not per provider — because a consumer resolving a landing from it must be able
+    # to rely on it existing on whichever provider is configured. Its ABSENT form is
+    # the explicit null (Python `None`, TOON `null`), never an empty string: `''` is a
+    # value that survives a truthiness test the way a real SHA does not, and it reads
+    # in a serialized payload as a resolved-but-blank commit. Each provider maps its
+    # own source onto the field — GitHub from `mergeCommit.oid`, GitLab from
+    # `squash_commit_sha` or `merge_commit_sha`, whichever its merge method populated.
+    #
+    # A read FAILURE is not an absent SHA. The verb returns `status: error` when the
+    # provider could not be read at all, so a consumer can distinguish "this PR has
+    # not landed" from "we could not ask" — collapsing the two would make a provider
+    # outage indistinguishable from an open PR.
     pr_view = pr_sub.add_parser(
         'view',
         help='View a PR by number, by branch, or for the current branch',

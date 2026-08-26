@@ -297,6 +297,23 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:phase-6-finalize) Created PR #{pr_number}: {pr_url}"
 ```
 
+## Persist the PR number to `references.json`
+
+**Runs on BOTH branches** — the newly created PR (Branch A) and the reused open PR (Branch B). Bind `{pr_number}` to whichever branch produced it, then write it:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set \
+  --plan-id {plan_id} --field pr_number --value {pr_number}
+```
+
+**This write is load-bearing, not bookkeeping.** `references.pr_number` is the key the shared footprint resolver's PR-landing tier resolves a squash / merge-queue landing from (see [`../../plan-retrospective/scripts/_footprint_resolver.py`](../../plan-retrospective/scripts/_footprint_resolver.py)). On the async merge-queue path `default:branch-cleanup` writes neither `realized_footprint` nor `merge_commit_sha`, so those tiers fail together and the PR number is the ONLY key left that can resolve the landing — and it is the only selector that survives the head-branch deletion the queue performs as it merges. Without this write the tier has nothing to key on and every downstream footprint consumer reports the landing unmeasurable.
+
+Write it **here**, at creation, rather than at merge time: this is the first and only moment the number is known for certain, and a plan that never reaches `branch-cleanup` still leaves the key recorded.
+
+Both branches MUST write it. Skipping the write on Branch B would leave a reused PR unrecorded — the run would have a live PR whose number `references.json` does not carry, which is exactly the unresolvable state this key exists to prevent.
+
+Per the exit-code convention above, a non-zero exit STOPs the step. A `status: error` in the returned TOON is likewise not ignorable: the key is a required input for the landing resolution, so a failed write must not pass silently.
+
 ## Mark Step Complete
 
 Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time.

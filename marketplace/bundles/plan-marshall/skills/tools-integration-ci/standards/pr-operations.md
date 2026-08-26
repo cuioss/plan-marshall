@@ -89,7 +89,26 @@ state: open
 title: Add feature X
 head_branch: feature/add-x
 base_branch: main
+merge_commit_sha: null
 ```
+
+#### `merge_commit_sha` — the landing commit, and its explicitly-absent form
+
+`merge_commit_sha` is the commit the PR/MR landed as. It is a **provider-neutral** field: each provider maps its own source onto it — GitHub from `mergeCommit.oid`, GitLab from `squash_commit_sha` or `merge_commit_sha`, whichever the project's merge method populated — so a consumer resolving a landing can rely on the field regardless of which provider is configured.
+
+The field has three readings, and the third is the one callers get wrong:
+
+| Observation | Meaning |
+|-------------|---------|
+| `merge_commit_sha: {sha}` with `state: merged` | The PR landed as `{sha}`. |
+| `merge_commit_sha: null` | The provider **answered**, and the answer is that there is no landing commit — the PR is open, or it merged without the provider reporting one. |
+| `status: error` | The provider could **not be read**. Nothing is known about the landing. |
+
+The absent form is the explicit `null` token, **never an empty string**. An empty string is a value that survives a truthiness test the way a genuine absence does not, and it reads in a serialized payload as a resolved-but-blank commit.
+
+⛔ **A read failure is not an absent SHA.** The second and third rows must stay distinct in every consumer: collapsing `status: error` onto `merge_commit_sha: null` makes a provider outage indistinguishable from an open PR, so a transport failure gets attributed to the PR's own state.
+
+**`--pr-number` is the selector that survives head-branch deletion**, which is what makes this field readable at all after a merge-queue landing: the queue deletes the head branch as it merges, so a `--head`-keyed lookup stops resolving at exactly the moment a landing SHA exists to be read. See *`--head` is not a landing-poll selector* above.
 
 ---
 
