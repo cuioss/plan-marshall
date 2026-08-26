@@ -460,10 +460,15 @@ def _ci_section_id(item: tuple[str, str, bool]) -> str:
 class TestWideningReachesTheWholeFinalizePool:
     """Every finalize doc that invokes a non-``manage-*`` script carries the widened convention.
 
-    The three merge-and-review docs above are a semantic scope; this sweep is the mechanical
+    The merge-and-review docs above are a semantic scope; this sweep is the mechanical
     one over the whole pool, so a doc that invokes a non-``manage-*`` script under a narrow
     or absent convention fails here even though nobody listed it. That is the property the
     curated ``_CONVENTION_DOCS`` tuple cannot give: a NEW such doc fails on arrival.
+
+    No size is stated for that semantic scope. ``_CONVENTION_DOCS`` holds the membership,
+    and the test below already derives ``len(_CONVENTION_DOCS)`` as the floor it reports —
+    a numeral here would restate a tuple that has already grown once and contradict the
+    derived figure one screen below.
     """
 
     def test_the_obligated_population_is_non_empty_and_published(self):
