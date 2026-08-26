@@ -70,6 +70,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -158,6 +159,42 @@ _SCENARIOS: dict[str, str] = {
 _ALTERNATIVE_VERB: dict[str, str] = {
     _REFUSE_IMMEDIATE: 'ci pr merge-queue',
     _REFUSE_UNCONFIGURED: 'ci pr safe-merge',
+}
+
+#: The argv predicate for the side effect each cell's refusal must PRECEDE,
+#: keyed by ``(provider, scenario)``.
+#:
+#: Keyed by provider and not by scenario alone because the side-effect shape is
+#: a property of the PROVIDER's transport: GitLab enqueues via a merge-train
+#: ``api -X POST`` while GitHub enqueues via ``gh pr merge --auto`` — the SAME
+#: ``pr merge`` argv its immediate merge uses, told apart only by ``--auto``.
+#:
+#: Probing one provider's transport for every cell is what made this assertion
+#: unfalsifiable over half its own population: a GitHub handler that HAD already
+#: enqueued emits argv a GitLab-shaped probe cannot match, so ``side_effects``
+#: came back empty and the assertion passed vacuously. Unioning the two shapes
+#: is NOT the fix either — it trades vacuity for imprecision, since every cell
+#: would then match every shape and an enqueue verb that performed an IMMEDIATE
+#: merge would still look correct.
+_SIDE_EFFECT_ARGV: dict[tuple[str, str], Callable[[list[str]], bool]] = {
+    ('github', _REFUSE_IMMEDIATE): lambda c: c[:2] == ['pr', 'merge'] and '--auto' not in c,
+    ('github', _REFUSE_UNCONFIGURED): lambda c: c[:2] == ['pr', 'merge'] and '--auto' in c,
+    ('gitlab', _REFUSE_IMMEDIATE): lambda c: c[:2] == ['mr', 'merge'],
+    ('gitlab', _REFUSE_UNCONFIGURED): lambda c: c[:3] == ['api', '-X', 'POST'],
+}
+
+#: A representative argv for the side effect each cell must NOT have performed,
+#: matching the constructed-argv shapes the provider suites already pin
+#: (``['pr', 'merge', '42', '--auto']`` for the GitHub enqueue,
+#: ``['api', '-X', 'POST', 'projects/.../merge_trains/merge_requests/42']`` for
+#: the GitLab one). These drive the matched control below.
+_SIDE_EFFECT_SAMPLES: dict[tuple[str, str], list[str]] = {
+    ('github', _REFUSE_IMMEDIATE): ['pr', 'merge', '42', '--merge'],
+    ('github', _REFUSE_UNCONFIGURED): ['pr', 'merge', '42', '--auto'],
+    ('gitlab', _REFUSE_IMMEDIATE): ['mr', 'merge', '42'],
+    ('gitlab', _REFUSE_UNCONFIGURED): [
+        'api', '-X', 'POST', 'projects/octo%2Frepo/merge_trains/merge_requests/42',
+    ],
 }
 
 _IDS = [f'{provider}:{verb}' for provider, verb, _handler in _MEMBERS]
@@ -455,6 +492,64 @@ def test_every_derived_member_has_an_offrouting_scenario():
     )
 
 
+def test_every_refusal_cell_has_a_side_effect_matcher():
+    """Every derived refusal cell has a provider-specific side-effect probe.
+
+    Population-derived, not transcribed: the cells come from ``_MEMBERS``, so a
+    new provider — or an existing provider gaining a refusing verb — fails here
+    rather than raising a distant ``KeyError`` inside the behavioural arm. A
+    missing matcher must never degrade to "observed no side effect".
+    """
+    required = sorted(
+        {
+            (provider, _SCENARIOS[verb])
+            for provider, verb, _handler in _MEMBERS
+            if _SCENARIOS[verb] != _REPORT_DISPOSITION
+        }
+    )
+    missing = [cell for cell in required if cell not in _SIDE_EFFECT_ARGV]
+    assert not missing, (
+        f'{len(required)} derived (provider, scenario) refusal cell(s); these have NO '
+        f'side-effect matcher: {missing}. Without one the refusal assertion for that cell '
+        'cannot observe the side effect it exists to forbid.'
+    )
+
+
+@pytest.mark.parametrize(
+    'cell', sorted(_SIDE_EFFECT_ARGV), ids=lambda cell: f'{cell[0]}:{cell[1]}'
+)
+def test_side_effect_matcher_is_falsifiable_and_discriminating(cell):
+    """Matched control: each matcher SEES its own side effect and no other cell's.
+
+    This is what establishes the refusal assertion is non-vacuous. The defect it
+    replaces was invisible precisely because an empty ``side_effects`` list reads
+    identically whether the handler performed no side effect or performed one the
+    probe could not match — so a probe that matches nothing must be caught here,
+    on a sample, rather than in the behavioural arm where it looks like a pass.
+
+    The cross-exclusion arm is what keeps the fix from degenerating into a union
+    of both providers' shapes: a matcher that matched every sample would satisfy
+    the first assertion and fail this one.
+    """
+    matcher = _SIDE_EFFECT_ARGV[cell]
+
+    own = _SIDE_EFFECT_SAMPLES[cell]
+    assert matcher(own), (
+        f'{cell} matcher does not match its OWN side-effect argv {own}. The refusal '
+        'assertion for this cell would pass vacuously: a handler that had already acted '
+        'produces argv this probe cannot see.'
+    )
+
+    for other_cell, sample in sorted(_SIDE_EFFECT_SAMPLES.items()):
+        if other_cell == cell:
+            continue
+        assert not matcher(sample), (
+            f'{cell} matcher also matches {other_cell}\'s argv {sample}. A probe that '
+            'matches every shape is imprecise rather than vacuous — it would pass an '
+            'enqueue verb that performed an immediate merge.'
+        )
+
+
 # ---------------------------------------------------------------------------
 # Behavioural arm (a): an off-routing dispatch is refused at the callee
 # ---------------------------------------------------------------------------
@@ -517,11 +612,12 @@ def test_offrouting_dispatch_is_refused_at_the_callee(monkeypatch, provider, ver
     )
 
     # The refusal precedes the side effect: an enqueue verb that refused must not
-    # have POSTed, and an immediate-merge verb must not have merged.
-    if scenario == _REFUSE_UNCONFIGURED:
-        side_effects = [call for call in captured if call[:3] == ['api', '-X', 'POST']]
-    else:
-        side_effects = [call for call in captured if call[:2] in (['pr', 'merge'], ['mr', 'merge'])]
+    # have enqueued, and an immediate-merge verb must not have merged. The probe
+    # is selected per (provider, scenario), so each cell watches the argv ITS OWN
+    # provider's handler would emit rather than one provider's transport standing
+    # in for both.
+    matcher = _SIDE_EFFECT_ARGV[(provider, scenario)]
+    side_effects = [call for call in captured if matcher(call)]
     assert side_effects == [], (
         f'{provider}:{verb} refused an off-routing dispatch but had ALREADY acted: {side_effects}. '
         f'The guard must run before the side effect, or the refusal reports a state the verb '

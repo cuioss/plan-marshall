@@ -84,13 +84,20 @@ against a MUTANT — each real handler with its executable guard lines deleted a
 its docstring and comments left verbatim, i.e. a handler that fully documents a
 guard it does not perform — the two predicates separate completely:
 
-=================================================  =========  =========
-predicate                                          hits/8 on  hits/8 on
-                                                   live tree  mutants
-=================================================  =========  =========
-raw-text search of the handler source                    8/8        7/8
-identifier-bound (``first_queue_symbol``)                8/8        0/8
-=================================================  =========  =========
+=================================================  =============  =============
+predicate                                          live tree      mutants
+=================================================  =============  =============
+raw-text search of the handler source              all members    all but one
+identifier-bound (``first_queue_symbol``)          all members    no members
+=================================================  =============  =============
+
+Stated as ratios rather than against a standing denominator, because the counts
+above are the values OBSERVED at that mutation run — over the eight members the
+population held at the time — and NOT a live expectation. This change de-pinned
+the fixed eight-member expectation precisely because a behaviour-derived
+population may legitimately grow (see the module docstring's population note), so
+a transcribed ``/8`` would go stale on the first added merge-shaped verb and this
+module would then document a number its own assertions reject.
 
 The identifier-bound predicate, its ``QUEUE_VOCAB_RE`` vocabulary and the
 tokenizing helpers it needs are imported from
