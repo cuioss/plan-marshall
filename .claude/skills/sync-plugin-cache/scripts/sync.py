@@ -226,10 +226,7 @@ def _resolve_marketplace_root(args: argparse.Namespace) -> Path:
 
 
 def _regenerate_hint() -> str:
-    return (
-        'Regenerate with `uv run python marketplace/targets/generate.py '
-        '--target claude --output target/claude`.'
-    )
+    return 'Regenerate with `./pw generate-claude`.'
 
 
 def _is_bundle_dir(path: Path) -> bool:

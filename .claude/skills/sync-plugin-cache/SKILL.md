@@ -18,9 +18,9 @@ marketplace/bundles/  →  target/claude/  →  ~/.claude/plugins/cache/plan-mar
 
 The middle hop (`target/claude/`) is produced by the
 `project:finalize-step-deploy-target` finalize step or by an explicit
-`uv run python marketplace/targets/generate.py --target claude --output target/claude`
-invocation. This skill consumes that output as its source of truth — it
-does **NOT** rsync directly from `marketplace/bundles/`.
+`./pw generate-claude` invocation. This skill consumes that output as
+its source of truth — it does **NOT** rsync directly from
+`marketplace/bundles/`.
 
 This skill is **project-local** (lives under `.claude/skills/`) because
 it only makes sense for this meta-project: the plan-marshall repo where
@@ -173,7 +173,9 @@ python3 .claude/skills/sync-plugin-cache/scripts/list_bundles_and_versions.py
 - Always use rsync with `--delete` so the cache matches source exactly.
 - Do **not** modify source files — the skill only writes to the cache.
 - The staleness guard is non-negotiable: if `target/claude/` is missing
-  or stale, regenerate first with `marketplace/targets/generate.py`.
+  or stale, regenerate first with `./pw generate-claude`. Always go
+  through the wrapper — `uv` lives in the project-local `.pyprojectx/`
+  tree and is not on `PATH`, so a bare `uv run …` fails outside it.
 
 ## Related
 
