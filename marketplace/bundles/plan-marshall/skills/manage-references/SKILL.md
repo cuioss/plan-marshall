@@ -1,6 +1,6 @@
 ---
 name: manage-references
-description: Manage references.json files with field-level access and list management, plus the two plan-footprint surfaces — the realized footprint derived and captured from the worktree git state, and the declared footprint re-derived from the solution outline's structured deliverable data by set union and partitioned by declared intent, so an expected modification and a read-only reference are recorded as separate, disjoint keys
+description: Manage references.json files with field-level access and list management, plus the two plan-footprint surfaces — the realized footprint derived and captured from the worktree git state, and the declared footprint re-derived from the solution outline's structured deliverable data by set union and partitioned by declared intent, so an expected modification and a read-only reference are recorded as separate, disjoint keys — and the read-only three-way reconciliation that compares the recorded declaration, the structured derivation and the realized footprint pairwise by symmetric difference in both directions, so two equal-sized but disjoint sets are reported as fully disagreeing rather than as identical
 user-invocable: false
 mode: script-executor
 scope: plan
@@ -367,6 +367,112 @@ bullets_parsed: 31
 
 ---
 
+### reconcile-scope
+
+Compare the plan's file surface as it is asserted in three independent places, and report where they disagree. **Read-only** — it writes no key, persists no finding, and returns no failing status.
+
+The three sides:
+
+| Side | Source | What it is |
+|------|--------|------------|
+| **A** | `references.affected_files` | The **recorded** declaration — the value every downstream consumer actually reads |
+| **B** | `_plan_parsing.declared_paths_by_intent`, mutation half | The **declared** derivation — the outline's structured per-path `intent` data, never scraped from prose |
+| **C** | The shared whole-chain footprint resolver | The **realized** footprint — what the landing actually touched |
+
+All three pairs are compared and reported: **A↔B** is the primary comparison (the recorded declaration against the structured derivation it is supposed to equal); **A↔C** and **B↔C** are reported alongside it. B is derived through the same partition rule `sync-affected-files` writes A with, so a difference between them is real drift rather than two readings of the same outline disagreeing about what a declaration means.
+
+**Symmetric difference, never cardinality.** Each pair is compared by set difference in **both directions**, and no code path compares set sizes. Two sets of equal size that share no member are maximally different, and a cardinality check calls them identical — that is the defect this verb exists to detect, and it is not hypothetical: a measured instance had two 29-entry lists disagreeing on 7 members each way, which a size check reported as clean. Both directions are published as named lists with their own sizes, alongside the pair's symmetric-difference size. The intersection is never computed, so no verdict can rest on an overlap.
+
+**A side is established or unmeasured — never "empty" by default.** An empty set is a *measurement*: the plan declared nothing, or the landing touched nothing, and it compares meaningfully. A side that could not be built is not a measurement, and reporting it as an empty set would make every difference against it read as a total disagreement — or, against another empty side, as agreement. Each unmeasured side names its own cause (see the reason table below); the request's three named causes — an unparseable outline, an absent `references.json`, and an unresolvable footprint — are three distinct reasons, never one collapsed state.
+
+**Agreement is admissible only when both sides were established AND at least one carried a member.** Two conditions, because two different things manufacture a false clean:
+
+- One side unbuilt → the pair reports `unmeasured`, naming which sides were unbuilt. It publishes no difference lists and no counts at all; their **absence is the contract**, so a consumer that branches on `{pair}_symmetric_difference_count` finds no key rather than a zero.
+- Both sides established but **both empty** → nothing was compared, so the zero symmetric difference certifies nothing. That pair reports `vacuous`, not `agree`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references reconcile-scope \
+  --plan-id {plan_id}
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier
+
+There is no value argument by design. All three sides are derived, so there is nothing for a caller to supply — and therefore nothing to supply wrongly.
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-feature
+primary_pair: a_b
+sides[3]:
+  - a
+  - b
+  - c
+side_count: 3
+pairs[3]:
+  - a_b
+  - a_c
+  - b_c
+pair_count: 3
+a_source: references.affected_files
+a_state: established
+a_count: 29
+b_source: outline.declared_mutation_intent
+b_state: established
+b_count: 29
+deliverables_scanned: 7
+headings_found: 9
+bullets_parsed: 41
+c_source: realized_footprint
+c_state: unmeasured
+c_unmeasured_reason: footprint_unresolved
+a_b_state: disagree
+a_not_b_count: 7
+b_not_a_count: 7
+a_b_symmetric_difference_count: 14
+a_not_b[7]:
+  - marketplace/bundles/plan-marshall/skills/manage-references/SKILL.md
+a_c_state: unmeasured
+a_c_unmeasured_sides[1]:
+  - c
+b_c_state: unmeasured
+b_c_unmeasured_sides[1]:
+  - c
+established_side_count: 2
+measured_pair_count: 1
+unmeasured_pair_count: 2
+```
+
+**Pair states**:
+
+| State | Meaning |
+|-------|---------|
+| `agree` | Both sides established, at least one non-empty, and neither difference carries a member |
+| `disagree` | Both sides established and at least one difference carries a member |
+| `vacuous` | Both sides established and **both empty** — the zero symmetric difference certifies nothing, because nothing was compared |
+| `unmeasured` | At least one side could not be built, so no comparison was made. `{pair}_unmeasured_sides` names which; each side's own reason is published once, on the side |
+
+**Unmeasured side reasons**:
+
+| Reason | Side | Cause |
+|--------|------|-------|
+| `references_absent` | A | `references.json` does not exist |
+| `references_unreadable` | A | `references.json` exists but could not be read as a JSON object |
+| `affected_files_absent` | A | The key was never written. A **missing** key is not an empty list — nothing was recorded, so there is no recorded declaration to compare. A key present as an empty list *is* a measurement and establishes the side |
+| `affected_files_not_a_list` | A | The key exists but is not a list, so no path set can be built from it |
+| `outline_not_found` | B | `solution_outline.md` does not exist |
+| `outline_unreadable` | B | `solution_outline.md` exists but could not be read |
+| `no_deliverables_parsed` | B | The outline was read and yielded no deliverable blocks. The population is still published — the zero is measured |
+| `footprint_unresolved` | C | No tier of the shared footprint resolver answered |
+
+**Notes**:
+- Every count names the population it was computed from: `a_count` / `b_count` / `c_count` size each side; `deliverables_scanned` / `headings_found` / `bullets_parsed` report the walk side B derived from, and are present whenever the outline was read; `established_side_count` / `side_count` and `measured_pair_count` / `unmeasured_pair_count` / `pair_count` report the coverage of the run itself.
+- Exactly one of `{side}_count` and `{side}_unmeasured_reason` is present per side, so a side's state cannot be misread from a placeholder value.
+- The `sides` and `pairs` rosters are derived from the verb's own declaration rather than restated, and the pair set is derived from the side set — so the published roster is what was actually compared.
+
+---
+
 ## Scripts
 
 **Script**: `plan-marshall:manage-references:manage-references`
@@ -380,6 +486,7 @@ bullets_parsed: 31
 | `add-list` | `--plan-id --field --values` | Add multiple values to a list field |
 | `set-list` | `--plan-id --field --values` | Set a list field (replaces existing) |
 | `sync-affected-files` | `--plan-id` | Re-derive the declared footprint from the outline's structured deliverable data and union it, intent-partitioned, into `references.affected_files` (mutation) and `references.read_intent_files` (read) |
+| `reconcile-scope` | `--plan-id` | Compare the recorded declaration, the structured derivation and the realized footprint pairwise by symmetric difference in both directions (read-only) |
 | `get-context` | `--plan-id` | Get the plan's scalar reference context |
 | `compute-footprint` | `--plan-id --worktree-path [--base-ref]` | Derive the live plan footprint from the worktree git state (read-only) |
 | `capture-footprint` | `--plan-id --worktree-path [--base-ref]` | Compute the live footprint AND persist it to `references.realized_footprint` |
@@ -444,6 +551,13 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --plan-id PLAN_ID
 ```
 
+### reconcile-scope
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references reconcile-scope \
+  --plan-id PLAN_ID
+```
+
 ### get-context
 
 ```bash
@@ -486,6 +600,8 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 | `outline_unreadable` | `solution_outline.md` exists but could not be read (sync-affected-files) |
 | `no_deliverables_parsed` | The outline yielded no deliverable blocks, so nothing was derived and nothing was written. Reported as an error rather than an empty derivation, because an unread outline and a plan that declares nothing are not the same state (sync-affected-files) |
 | `not_a_list` | The target key exists but is not a list, so the union has nothing well-formed to union into. Raised for `references.affected_files` and for `references.read_intent_files` alike; the returned `field` names which one, and nothing is written on either branch (sync-affected-files) |
+
+**`reconcile-scope` contributes no code to the table above, deliberately.** It is an audit, and an audit that could not evaluate something reports *that it could not* — it does not fail. Every condition that would be an error for a writing verb (an absent `references.json`, an unreadable or deliverable-less outline, an unresolvable footprint) is reported instead as an `unmeasured` side carrying its own named reason, under `status: success`, so the pairs that *were* comparable are still reported rather than being lost behind a whole-call failure. That vocabulary is the § `reconcile-scope` "Unmeasured side reasons" table; it is the verb's failure surface, and it is exhaustive. The one condition that does abort the call is a malformed `--plan-id`, which `invalid_plan_id` above already covers for every verb.
 
 **Default values**: Unset fields return `field_not_found` on `get`. The `create` command initializes `branch` and `base_branch` (the latter to `main`). All other fields are optional — only present if explicitly set via `--field` / `set-list` arguments.
 

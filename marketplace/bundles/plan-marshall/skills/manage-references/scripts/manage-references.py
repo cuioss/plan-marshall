@@ -15,6 +15,7 @@ Usage:
     python3 manage-references.py add-list --plan-id EXAMPLE-PLAN --field affected_files --values file1.md,file2.md
     python3 manage-references.py set-list --plan-id EXAMPLE-PLAN --field affected_files --values file1.md,file2.md
     python3 manage-references.py sync-affected-files --plan-id EXAMPLE-PLAN
+    python3 manage-references.py reconcile-scope --plan-id EXAMPLE-PLAN
 """
 
 import argparse
@@ -83,6 +84,23 @@ def main() -> int:
     )
     add_plan_id_arg(sync_affected_files_parser)
 
+    # reconcile-scope — compare the RECORDED declaration
+    # (references.affected_files), the DECLARED derivation (the outline's
+    # structured mutation-intent paths) and the REALIZED footprint (the shared
+    # whole-chain resolver) pairwise, by symmetric difference in both directions.
+    # Read-only: it writes no key and emits no finding. Takes no value argument —
+    # all three sides are derived, so there is nothing for a caller to supply and
+    # therefore nothing to supply wrongly.
+    reconcile_scope_parser = subparsers.add_parser(
+        'reconcile-scope',
+        help=(
+            'Reconcile the recorded, declared and realized file sets three ways by '
+            'symmetric difference, publishing both difference directions per pair (read-only)'
+        ),
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(reconcile_scope_parser)
+
     # get-context
     get_context_parser = subparsers.add_parser(
         'get-context', help='Get all references context in one call', allow_abbrev=False
@@ -130,6 +148,7 @@ def main() -> int:
     from _cmd_compute_footprint import cmd_capture_footprint, cmd_compute_footprint
     from _cmd_context import cmd_get_context
     from _cmd_list import cmd_add_list, cmd_set_list
+    from _cmd_reconcile_scope import cmd_reconcile_scope
     from _references_crud import (
         cmd_create,
         cmd_get,
@@ -147,6 +166,7 @@ def main() -> int:
         'add-list': cmd_add_list,
         'set-list': cmd_set_list,
         'sync-affected-files': cmd_sync_affected_files,
+        'reconcile-scope': cmd_reconcile_scope,
         'get-context': cmd_get_context,
         'compute-footprint': cmd_compute_footprint,
         'capture-footprint': cmd_capture_footprint,
