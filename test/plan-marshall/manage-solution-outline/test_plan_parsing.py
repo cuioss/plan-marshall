@@ -33,13 +33,17 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from _plan_parsing import (  # noqa: E402
+    INTENT_UNANNOTATED,
     _extract_affected_files,
     _extract_profiles,
     _slugify_section_name,
+    declared_paths_by_intent,
+    declared_paths_population,
     extract_deliverables,
     parse_document_sections,
     split_deliverable_blocks,
 )
+from constants import VALID_STEP_INTENTS  # noqa: E402
 
 
 # =============================================================================
@@ -557,3 +561,259 @@ class TestExtractDeliverables:
 
     def test_empty_section_returns_empty_list(self):
         assert extract_deliverables('') == []
+
+
+# =============================================================================
+# declared_paths_by_intent() / declared_paths_population() — the structured
+# derivation of a plan's DECLARED footprint
+# =============================================================================
+
+# One outline carrying BOTH declaration forms, so a derivation that reads only
+# the flat heading fails visibly rather than merely returning a smaller set.
+#
+# Deliverable 1 declares the flat `**Affected files:**` list with one bullet per
+# intent form (two writes, one read, one unmarked). Deliverable 2 is a
+# SURVEY-SCOPE deliverable: it declares the `Files to survey:` /
+# `Files expected to mutate:` pair INSTEAD of a flat list, which is exactly the
+# shape whose change-bearing paths belonged to no declared set before this
+# derivation existed.
+_DECLARED_FOOTPRINT_OUTLINE = """# Solution: two declaration forms in one outline
+
+plan_id: fixture-plan
+
+## Summary
+
+Prose that declares no paths at all.
+
+## Deliverables
+
+### 1. A flat-declaration deliverable
+
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `src/flat_replaced.py` (write-replace)
+- `src/flat_created.py` (write-new)
+- `doc/flat_consulted.md` (read)
+- `src/flat_unmarked.py`
+
+**Verification:**
+- Command: verify one
+- Criteria: one passes
+
+### 2. A survey-scope deliverable
+
+**Profiles:**
+- implementation
+
+**Files to survey:**
+- `src/surveyed_only.py`
+- `src/also_surveyed.py`
+
+**Files expected to mutate:**
+- `src/mutated.py`
+- `src/retired.py` (delete)
+
+**Verification:**
+- Command: verify two
+- Criteria: two passes
+"""
+
+
+class TestDeclaredPathsByIntent:
+    """The derivation reads all three declaration headings and keys by intent."""
+
+    def test_a_survey_scope_deliverables_mutation_paths_reach_the_derivation(self):
+        """The headline case: `Files expected to mutate:` is part of the declared set.
+
+        Asserted as membership of the specific paths rather than as a count,
+        because a derivation that read only `**Affected files:**` returns a
+        perfectly plausible four-path result for this outline — the failure it
+        produces is a MISSING path, not a wrong total.
+        """
+        by_intent = declared_paths_by_intent(_DECLARED_FOOTPRINT_OUTLINE)
+
+        declared = set().union(*by_intent.values())
+        assert 'src/mutated.py' in declared
+        assert 'src/retired.py' in declared
+
+    def test_the_survey_pool_reaches_the_derivation_as_read_intent(self):
+        """A `Files to survey:` bullet is analysis-only, so it lands under ``read``.
+
+        Positively asserted as ``read`` rather than as "not a write": a
+        regression that filed it under ``unannotated`` or a write intent would
+        satisfy a negative assertion while changing which set every downstream
+        consumer subtracts it from.
+        """
+        by_intent = declared_paths_by_intent(_DECLARED_FOOTPRINT_OUTLINE)
+
+        assert by_intent['read'] == {
+            'doc/flat_consulted.md',
+            'src/surveyed_only.py',
+            'src/also_surveyed.py',
+        }
+
+    def test_each_flat_marker_keys_its_own_intent(self):
+        by_intent = declared_paths_by_intent(_DECLARED_FOOTPRINT_OUTLINE)
+
+        assert by_intent['write-replace'] == {'src/flat_replaced.py'}
+        assert by_intent['write-new'] == {'src/flat_created.py'}
+        assert by_intent['delete'] == {'src/retired.py'}
+
+    def test_an_unmarked_bullet_lands_in_its_own_bucket_under_both_headings(self):
+        """A bullet that stated no intent is neither a write nor a read.
+
+        Both available lies are worse than a bucket of its own: filing it as a
+        write invents a declaration the author never made, while filing it as a
+        read subtracts the path from every change footprint derived downstream.
+        The two members here come from DIFFERENT headings — the flat list and the
+        mutation scope — so a regression that defaulted either heading collapses
+        this set rather than merely shrinking it.
+        """
+        by_intent = declared_paths_by_intent(_DECLARED_FOOTPRINT_OUTLINE)
+
+        assert by_intent[INTENT_UNANNOTATED] == {'src/flat_unmarked.py', 'src/mutated.py'}
+
+    def test_the_returned_key_set_is_closed_and_always_fully_populated(self):
+        """Every intent key is present, so a consumer iterates rather than guesses.
+
+        Derived from `VALID_STEP_INTENTS` rather than from a hand-written list:
+        an intent added to the enum must show up here without editing the test,
+        which is what keeps this an exhaustiveness assertion instead of a
+        snapshot of whatever the enum held on the day it was written.
+        """
+        by_intent = declared_paths_by_intent(_DECLARED_FOOTPRINT_OUTLINE)
+
+        assert set(by_intent) == set(VALID_STEP_INTENTS) | {INTENT_UNANNOTATED}
+        assert INTENT_UNANNOTATED not in VALID_STEP_INTENTS, (
+            'the unannotated bucket must stay OUTSIDE the closed intent enum — '
+            'a bullet that stated no intent declared none of them'
+        )
+
+    def test_an_intent_nothing_declared_maps_to_an_empty_set_not_a_missing_key(self):
+        outline = (
+            '## Deliverables\n\n'
+            '### 1. Only reads\n\n'
+            '**Files to survey:**\n- `src/looked_at.py`\n\n'
+            '**Files expected to mutate:**\n- `src/changed.py` (write-replace)\n'
+        )
+
+        by_intent = declared_paths_by_intent(outline)
+
+        assert by_intent['delete'] == set()
+        assert by_intent['write-new'] == set()
+
+    def test_a_path_declared_under_two_headings_contributes_one_member(self):
+        """The values are SETS, so the same path declared twice is one member.
+
+        Asserted as the exact set rather than as membership: a list-accumulating
+        regression yields two identical entries, which an ``in``-style assertion
+        would still accept.
+        """
+        outline = (
+            '## Deliverables\n\n'
+            '### 1. Declares one path under two headings\n\n'
+            '**Affected files:**\n- `src/dup.py` (write-replace)\n\n'
+            '**Files expected to mutate:**\n- `src/dup.py` (write-replace)\n'
+        )
+
+        by_intent = declared_paths_by_intent(outline)
+
+        assert by_intent['write-replace'] == {'src/dup.py'}
+
+    def test_a_marker_outside_the_enum_lands_in_the_unannotated_bucket(self):
+        """An unrecognised marker declared no VALID intent, so it is not one.
+
+        Routing it to a bucket of its own is what keeps the returned key set
+        closed — admitting the raw marker as a key would let an outline typo
+        invent a key a consumer iterating the mapping has never heard of.
+        """
+        outline = (
+            '## Deliverables\n\n'
+            '### 1. Cites a marker the enum does not carry\n\n'
+            '**Affected files:**\n- `src/typo.py` (write-replaced)\n'
+        )
+
+        by_intent = declared_paths_by_intent(outline)
+
+        assert set(by_intent) == set(VALID_STEP_INTENTS) | {INTENT_UNANNOTATED}
+        assert by_intent[INTENT_UNANNOTATED] == {'src/typo.py'}
+
+
+class TestDeclaredPathsPopulation:
+    """The published population is what separates an empty result from an unread one."""
+
+    def test_the_population_reports_the_walk_not_the_result(self):
+        population = declared_paths_population(_DECLARED_FOOTPRINT_OUTLINE)
+
+        assert population == {
+            'deliverables_scanned': 2,
+            # deliverable 1 declares one heading; deliverable 2 declares the pair.
+            'headings_found': 3,
+            # counted BEFORE deduplication: 4 flat bullets + 2 survey + 2 mutation.
+            'bullets_parsed': 8,
+        }
+
+    def test_an_unreadable_outline_and_an_empty_one_differ_only_in_the_population(self):
+        """The matched pair this figure exists for.
+
+        Both outlines yield the same empty path sets, so a consumer reading only
+        the sets cannot tell "the plan declared nothing" from "the parser found
+        no deliverables to read". Only `deliverables_scanned` separates them —
+        which is precisely why the derivation publishes it.
+        """
+        no_deliverables_section = '# Solution\n\n## Summary\n\nProse only.\n'
+        declares_nothing = (
+            '## Deliverables\n\n'
+            '### 1. Declares no paths\n\n'
+            '**Profiles:**\n- verification\n'
+        )
+
+        unread = declared_paths_population(no_deliverables_section)
+        empty = declared_paths_population(declares_nothing)
+
+        # matched negative control: the sets agree...
+        assert declared_paths_by_intent(no_deliverables_section) == declared_paths_by_intent(
+            declares_nothing
+        )
+        # ...and only the population disagrees.
+        assert unread['deliverables_scanned'] == 0
+        assert empty['deliverables_scanned'] == 1
+
+    def test_a_heading_with_no_bullets_still_counts_as_found(self):
+        """Presence is asked separately from extraction, deliberately.
+
+        An author who wrote the heading and then declared nothing under it is a
+        different state from one who never wrote the heading, and counting only
+        extractions would report the two identically.
+        """
+        outline = (
+            '## Deliverables\n\n'
+            '### 1. Declares a heading and nothing under it\n\n'
+            '**Files expected to mutate:**\n\n'
+            '**Verification:**\n- Command: verify\n- Criteria: passes\n'
+        )
+
+        population = declared_paths_population(outline)
+
+        assert population['headings_found'] == 1
+        assert population['bullets_parsed'] == 0
+
+    def test_the_population_and_the_paths_come_from_the_same_walk(self):
+        """Two public faces, one derivation — they cannot disagree about what was read.
+
+        A `bullets_parsed` of zero alongside a non-empty path set (or the
+        reverse) would mean the two faces walked different inputs.
+        """
+        by_intent = declared_paths_by_intent(_DECLARED_FOOTPRINT_OUTLINE)
+        population = declared_paths_population(_DECLARED_FOOTPRINT_OUTLINE)
+
+        distinct_paths = set().union(*by_intent.values())
+        assert distinct_paths, 'precondition: the fixture declares paths'
+        # dedupe can only shrink the count, never grow it.
+        assert len(distinct_paths) <= population['bullets_parsed']
+
+    def test_an_empty_string_reports_a_zero_population(self):
+        assert declared_paths_population('')['deliverables_scanned'] == 0
+        assert declared_paths_by_intent('')[INTENT_UNANNOTATED] == set()

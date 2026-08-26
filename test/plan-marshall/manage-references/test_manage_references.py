@@ -697,3 +697,281 @@ def test_script_source_uses_canonical_local_plans_path():
     assert '.plan/local/plans/' in source
     legacy = re.findall(r'(?<!local/)\.plan/plans/', source)
     assert legacy == [], f'Legacy .plan/plans/ strings remain: {legacy}'
+
+
+# =============================================================================
+# Test: sync-affected-files — the DECLARED footprint, derived and unioned
+# =============================================================================
+# ``references.affected_files`` is derived from the outline's structured
+# per-deliverable declarations rather than composed by reading outline prose.
+# Two properties carry the weight: the derivation reads all three declaration
+# headings (so a survey-scope deliverable's change-bearing paths are included),
+# and the write is a SET UNION (so the verb is safe to re-run at every point a
+# later consumer depends on the value being current).
+
+cmd_sync_affected_files = _crud.cmd_sync_affected_files
+
+#: One flat-declaration deliverable and one SURVEY-SCOPE deliverable, which
+#: declares the `Files to survey:` / `Files expected to mutate:` pair INSTEAD of
+#: a flat list. A derivation that read only the flat heading returns a plausible
+#: two-path result here — the failure is a missing path, not a wrong total.
+_OUTLINE = """# Solution: fixture
+
+## Deliverables
+
+### 1. A flat-declaration deliverable
+
+**Affected files:**
+- `src/flat_one.py` (write-replace)
+- `src/flat_two.py` (write-new)
+
+**Verification:**
+- Command: verify
+- Criteria: passes
+
+### 2. A survey-scope deliverable
+
+**Files to survey:**
+- `src/surveyed.py`
+
+**Files expected to mutate:**
+- `src/mutated.py`
+
+**Verification:**
+- Command: verify
+- Criteria: passes
+"""
+
+_OUTLINE_DECLARED = {'src/flat_one.py', 'src/flat_two.py', 'src/surveyed.py', 'src/mutated.py'}
+
+
+def _sync_ns(plan_id='test-plan'):
+    """Build Namespace for cmd_sync_affected_files."""
+    return Namespace(plan_id=plan_id)
+
+
+def _write_outline(plan_id: str, content: str) -> None:
+    """Write solution_outline.md into the plan directory."""
+    outline_path = get_references_path(plan_id).parent / 'solution_outline.md'
+    outline_path.parent.mkdir(parents=True, exist_ok=True)
+    outline_path.write_text(content, encoding='utf-8')
+
+
+def _affected(plan_id='test-plan') -> list:
+    """Read the persisted affected_files list back off disk."""
+    refs = require_references(plan_id)
+    assert isinstance(refs, dict)
+    value = refs.get('affected_files')
+    assert isinstance(value, list), f'affected_files is not a list: {value!r}'
+    return value
+
+
+def test_sync_derives_the_declared_set_from_the_outline(plan_context):
+    """The derived set is the outline's declared surface, not a caller-supplied list."""
+    cmd_create(_create_ns())
+    _write_outline('test-plan', _OUTLINE)
+
+    result = cmd_sync_affected_files(_sync_ns())
+
+    assert result['status'] == 'success'
+    assert result['field'] == 'affected_files'
+    assert set(_affected()) == _OUTLINE_DECLARED
+
+
+def test_sync_carries_a_survey_scope_deliverables_mutation_paths(plan_context):
+    """The headline case: `Files expected to mutate:` reaches ``affected_files``.
+
+    Asserted as membership of the specific path rather than as a count: a
+    derivation that read only `**Affected files:**` still produces a perfectly
+    plausible result for this outline, differing only by the paths it dropped.
+    """
+    cmd_create(_create_ns())
+    _write_outline('test-plan', _OUTLINE)
+
+    cmd_sync_affected_files(_sync_ns())
+
+    persisted = _affected()
+    assert 'src/mutated.py' in persisted
+    assert 'src/surveyed.py' in persisted
+
+
+def test_sync_unions_rather_than_replaces_an_existing_entry(plan_context):
+    """A path recorded before the sync survives it.
+
+    The union is what makes the verb safe to re-run mid-plan: a `set-list`-style
+    replace would silently drop a path that entered the key from anywhere else.
+    """
+    cmd_create(_create_ns())
+    cmd_add_list(_add_list_ns(values='src/recorded_earlier.py'))
+    _write_outline('test-plan', _OUTLINE)
+
+    result = cmd_sync_affected_files(_sync_ns())
+
+    assert result['status'] == 'success'
+    assert 'src/recorded_earlier.py' in _affected()
+    assert set(_affected()) == _OUTLINE_DECLARED | {'src/recorded_earlier.py'}
+
+
+def test_sync_adds_a_post_outline_addition_on_a_later_run(plan_context):
+    """Scope that appears after the first sync is added by the next one."""
+    cmd_create(_create_ns())
+    _write_outline('test-plan', _OUTLINE)
+    cmd_sync_affected_files(_sync_ns())
+
+    widened = _OUTLINE.replace(
+        '- `src/mutated.py`',
+        '- `src/mutated.py`\n- `src/added_later.py`',
+    )
+    _write_outline('test-plan', widened)
+    result = cmd_sync_affected_files(_sync_ns())
+
+    assert result['added_count'] == 1
+    assert result['added'] == ['src/added_later.py']
+    assert set(_affected()) == _OUTLINE_DECLARED | {'src/added_later.py'}
+
+
+def test_sync_is_idempotent_over_an_unchanged_outline(plan_context):
+    """A repeat run against the same outline changes nothing at all.
+
+    The exact list is compared, not its length: a re-run that appended duplicates
+    would keep the same membership while doubling the list.
+    """
+    cmd_create(_create_ns())
+    _write_outline('test-plan', _OUTLINE)
+    cmd_sync_affected_files(_sync_ns())
+    first = list(_affected())
+
+    result = cmd_sync_affected_files(_sync_ns())
+
+    assert result['added_count'] == 0
+    assert result['unchanged_count'] == len(_OUTLINE_DECLARED)
+    assert _affected() == first
+
+
+def test_sync_preserves_the_position_of_already_recorded_paths(plan_context):
+    """Recorded paths keep their order; newly derived ones append sorted.
+
+    Stable ordering is what keeps the key from churning between runs that derived
+    the same set — a re-sort of the whole list would produce a diff on every
+    refresh even when nothing was added.
+    """
+    cmd_create(_create_ns())
+    cmd_add_list(_add_list_ns(values='zzz_recorded_first.py,aaa_recorded_second.py'))
+    _write_outline('test-plan', _OUTLINE)
+
+    cmd_sync_affected_files(_sync_ns())
+
+    persisted = _affected()
+    assert persisted[:2] == ['zzz_recorded_first.py', 'aaa_recorded_second.py']
+    assert persisted[2:] == sorted(_OUTLINE_DECLARED)
+
+
+def test_sync_publishes_the_population_it_walked(plan_context):
+    """A small result states what it was derived FROM, not only what it derived."""
+    cmd_create(_create_ns())
+    _write_outline('test-plan', _OUTLINE)
+
+    result = cmd_sync_affected_files(_sync_ns())
+
+    assert result['deliverables_scanned'] == 2
+    # deliverable 1 declares one heading; deliverable 2 declares the pair.
+    assert result['headings_found'] == 3
+    assert result['bullets_parsed'] == 4
+    assert result['declared_count'] == len(_OUTLINE_DECLARED)
+
+
+def test_sync_refuses_when_the_outline_is_absent(plan_context):
+    """A missing outline is a refusal, never a clean zero.
+
+    An empty derivation reported as ``success`` would be indistinguishable from
+    a plan that genuinely declares nothing — and only one of those is a failure
+    of this verb.
+    """
+    cmd_create(_create_ns())
+
+    result = cmd_sync_affected_files(_sync_ns())
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'outline_not_found'
+    assert 'added_count' not in result
+    # Nothing was written: the key the verb owns is still absent.
+    refs = require_references('test-plan')
+    assert isinstance(refs, dict)
+    assert 'affected_files' not in refs
+
+
+def test_sync_refuses_when_no_deliverable_was_parsed(plan_context):
+    """An outline the parser could not read reports the unread population.
+
+    The matched counterpart of the refusal above: the outline EXISTS, so the
+    failure is not file-not-found — it is that nothing was derived from it.
+    """
+    cmd_create(_create_ns())
+    _write_outline('test-plan', '# Solution\n\n## Summary\n\nProse with no deliverables.\n')
+
+    result = cmd_sync_affected_files(_sync_ns())
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'no_deliverables_parsed'
+    assert result['deliverables_scanned'] == 0
+    assert 'added_count' not in result
+
+
+def test_sync_does_not_write_when_it_refuses(plan_context):
+    """A refusal leaves the previously-derived value exactly as it was.
+
+    This is what makes a failed refresh non-blocking for its callers: the union
+    write never removes anything, so a caller that proceeds past an error is
+    reading the last successful derivation rather than a damaged one.
+    """
+    cmd_create(_create_ns())
+    _write_outline('test-plan', _OUTLINE)
+    cmd_sync_affected_files(_sync_ns())
+    before = list(_affected())
+
+    _write_outline('test-plan', '# Solution\n\n## Summary\n\nThe deliverables went away.\n')
+    result = cmd_sync_affected_files(_sync_ns())
+
+    assert result['status'] == 'error'
+    assert _affected() == before
+
+
+def test_sync_reports_a_non_list_affected_files_rather_than_overwriting_it(plan_context):
+    """A corrupt key is surfaced, not silently replaced with a derived list."""
+    cmd_create(_create_ns())
+    cmd_set(_set_ns(field='affected_files', value='not-a-list'))
+    _write_outline('test-plan', _OUTLINE)
+
+    result = cmd_sync_affected_files(_sync_ns())
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'not_a_list'
+    assert cmd_get(_get_ns(field='affected_files'))['value'] == 'not-a-list'
+
+
+def test_cli_sync_affected_files_is_registered_on_the_live_argparse_surface():
+    """``--help`` lists the verb — the surface a caller actually reaches.
+
+    A handler wired into the dispatch map but never registered as a subparser is
+    unreachable from the CLI while every direct-import test still passes, so the
+    registration is asserted against the live help output rather than inferred.
+    """
+    result = run_script(SCRIPT_PATH, '--help')
+
+    assert result.returncode == 0
+    assert 'sync-affected-files' in result.stdout
+
+
+def test_cli_sync_affected_files_roundtrip(plan_context):
+    """CLI create + sync + get roundtrip verifies end-to-end plumbing."""
+    from toon_parser import parse_toon
+
+    cmd_create(_create_ns())
+    _write_outline('test-plan', _OUTLINE)
+
+    sync_result = run_script(SCRIPT_PATH, 'sync-affected-files', '--plan-id', 'test-plan')
+    assert sync_result.success, f'Script failed: {sync_result.stderr}'
+    data = parse_toon(sync_result.stdout)
+    assert data['status'] == 'success'
+
+    assert set(_affected()) == _OUTLINE_DECLARED
