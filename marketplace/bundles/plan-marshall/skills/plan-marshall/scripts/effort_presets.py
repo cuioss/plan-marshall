@@ -101,8 +101,7 @@ ALLOWED_LEVELS: tuple[str, ...] = (
 # member of it because per-phase config uses it. "Which levels may appear in a
 # PRESET" is a narrower policy the keyword enum cannot express, so it is
 # carried by the preset payloads themselves and by this comment — not by a
-# validator rejection. Repopulating this tuple would be the wrong fix: it would
-# forbid ``level-7`` in the per-phase config too, where it is sanctioned.
+# validator rejection.
 RESERVED_LEVELS: tuple[str, ...] = ()
 
 
