@@ -643,7 +643,7 @@ def test_identify_malformed_payload_is_custom(bad: object) -> None:
 # derives the population from the preset payloads and pins it against this
 # tuple, so a preset-payload change that adds or drops a slot fails there first.
 # A KNOWN_ROLES change alone does not: neither side of that assertion reads the
-# registry. The registry cross-check is the subset assertion further down.
+# registry.
 _ROLE_SLOTS: tuple[str, ...] = (
     'phase-2-refine',
     'phase-3-outline',
