@@ -45,6 +45,20 @@ if str(CMD_MODELS_DIR) not in sys.path:
 import _cmd_effort as cmd_effort  # noqa: E402
 import effort_presets as mp  # noqa: E402
 
+#: The preset population every guard below parametrizes over, DERIVED from the
+#: live registry rather than restated as a literal. ``all_names()`` is the same
+#: public API production consumes for its ``argparse choices=`` list, so a
+#: preset that ships reaches every guard here automatically. A literal list
+#: would leave a fourth preset silently uncovered while all guards stayed green
+#: — the same derive-the-population discipline this file already applies to the
+#: INNER slot population (see ``_ROLE_SLOTS``), now applied to the outer one.
+#:
+#: ANTI-VACUITY: ``test_all_names_returns_canonical_order`` pins this population
+#: against the canonical literal. Without that pin an empty registry would yield
+#: zero parametrized cases and every guard below would pass vacuously — the
+#: archetype these guards exist to catch, recurring inside their own fix.
+_ALL_PRESET_NAMES: list[str] = mp.EffortPresets.all_names()
+
 
 # =============================================================================
 # (1) Presets exist as class-level attributes
@@ -179,9 +193,10 @@ def test_high_end_reaches_level_5_but_never_level_6_or_7() -> None:
         'HIGH_END must reach level-5 (opus, high) so the top rung is '
         'genuinely high-end after the reservation was lifted'
     )
-    # Retained reservation: no preset (economic/balanced/high-end) may bake in
-    # the alias-gated level-6/level-7 tiers.
-    for preset_name in ('economic', 'balanced', 'high-end'):
+    # Retained reservation: NO preset may bake in the alias-gated
+    # level-6/level-7 tiers. Derived from the registry, so a newly-shipped
+    # preset is covered by this safety guard without an edit here.
+    for preset_name in _ALL_PRESET_NAMES:
         for level in _leaf_levels(mp.EffortPresets.get(preset_name)):
             assert level not in ('level-6', 'level-7'), (
                 f"preset '{preset_name}' carries alias-gated level '{level}'; "
@@ -211,7 +226,7 @@ def test_get_unknown_name_raises_with_valid_names_listed() -> None:
 
 @pytest.mark.parametrize(
     'preset_name',
-    ['economic', 'balanced', 'high-end'],
+    _ALL_PRESET_NAMES,
 )
 def test_preset_levels_are_subset_of_cmd_models_allowed_levels(preset_name: str) -> None:
     preset = mp.EffortPresets.get(preset_name)
@@ -261,7 +276,7 @@ def test_allowed_levels_is_numeric_palette() -> None:
 
 @pytest.mark.parametrize(
     'preset_name',
-    ['economic', 'balanced', 'high-end'],
+    _ALL_PRESET_NAMES,
 )
 def test_preset_role_keys_are_subset_of_cmd_models_known_roles(preset_name: str) -> None:
     """Every preset role key must be registered in _cmd_effort.KNOWN_ROLES.
@@ -301,7 +316,7 @@ def test_all_names_returns_canonical_order() -> None:
 
 @pytest.mark.parametrize(
     'preset_name',
-    ['economic', 'balanced', 'high-end'],
+    _ALL_PRESET_NAMES,
 )
 def test_describe_returns_non_empty_string(preset_name: str) -> None:
     description = mp.EffortPresets.describe(preset_name)
@@ -487,7 +502,7 @@ def _spread(preset: dict) -> int:
     return total
 
 
-@pytest.mark.parametrize('preset_name', ['economic', 'balanced', 'high-end'])
+@pytest.mark.parametrize('preset_name', _ALL_PRESET_NAMES)
 def test_preset_spread_matches_target(preset_name: str) -> None:
     """Each preset's summed-level spread equals its re-spread target."""
     preset = mp.EffortPresets.get(preset_name)
@@ -571,7 +586,7 @@ _PRE_RESPREAD_HIGH_END = {
 }
 
 
-@pytest.mark.parametrize('preset_name', ['economic', 'balanced', 'high-end'])
+@pytest.mark.parametrize('preset_name', _ALL_PRESET_NAMES)
 def test_identify_recognises_each_current_preset(preset_name: str) -> None:
     """A payload equal to a current preset classifies as that preset, ``current``."""
     payload = mp.EffortPresets.get(preset_name)
@@ -745,7 +760,7 @@ def _sum_ordinals(slots: dict[str, str]) -> int:
     return sum(int(level.split('-', 1)[1]) for level in slots.values())
 
 
-@pytest.mark.parametrize('preset_name', ['economic', 'balanced', 'high-end'])
+@pytest.mark.parametrize('preset_name', _ALL_PRESET_NAMES)
 def test_expanded_slot_population_is_nine(preset_name: str) -> None:
     """The nine-slot claim is DERIVED from the payload, not asserted.
 
@@ -762,7 +777,7 @@ def test_expanded_slot_population_is_nine(preset_name: str) -> None:
     assert len(slots) == 9
 
 
-@pytest.mark.parametrize('preset_name', ['economic', 'balanced', 'high-end'])
+@pytest.mark.parametrize('preset_name', _ALL_PRESET_NAMES)
 def test_describe_reconstructs_every_slot_of_its_payload(preset_name: str) -> None:
     """describe(name) alone rebuilds the payload get(name) returns — all nine slots."""
     payload_slots = _expand_slots(mp.EffortPresets.get(preset_name))
@@ -778,7 +793,7 @@ def test_describe_reconstructs_every_slot_of_its_payload(preset_name: str) -> No
     )
 
 
-@pytest.mark.parametrize('preset_name', ['economic', 'balanced', 'high-end'])
+@pytest.mark.parametrize('preset_name', _ALL_PRESET_NAMES)
 def test_describe_names_every_slot_that_deviates_from_the_stated_default(
     preset_name: str,
 ) -> None:
@@ -803,7 +818,7 @@ def test_describe_names_every_slot_that_deviates_from_the_stated_default(
     )
 
 
-@pytest.mark.parametrize('preset_name', ['economic', 'balanced', 'high-end'])
+@pytest.mark.parametrize('preset_name', _ALL_PRESET_NAMES)
 def test_describe_stated_spread_matches_the_reconstructed_spread(preset_name: str) -> None:
     """The spread the description quotes is the spread its own words add up to.
 
