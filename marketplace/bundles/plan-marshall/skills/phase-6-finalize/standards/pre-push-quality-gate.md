@@ -148,11 +148,12 @@ verdict carries the structural limit of the analysis"; the participation guard's
 § "Participation is not review quality" already requires. **A gate whose green is scope-limited says
 so in its verdict** — read each gate's own limit there rather than from a copy here.
 
-## Exit-code convention for `manage-*` script calls
+## Exit-code convention for every script call
 
-Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+Every `python3 .plan/execute-script.py` call in this document — of EVERY notation, **not only `manage-*`** — carries the following exit-code contract unless a step explicitly states otherwise. The scope is widened past `manage-*` because this document invokes non-`manage-*` scripts too, and a `manage-*`-scoped convention left exactly those calls uncovered — the swallowed-rejection gap.
 
-- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code == 0` AND `status: success`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code == 0` with a `status` other than `success`**: NOT a usable value — it takes the `exit_code != 0` disposition below. A zero exit is not evidence the operation succeeded; a script MAY print `status: error` and still exit 0. Read `status` FIRST, and never read a payload field off a non-`success` return. The build wrapper is the standing example: it exits 0 even on a failed gate, so the verdict is read from the result TOON's `status` / `errors[]`, never from the exit code.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
 
 This document carries NO step-activation logic. Activation is controlled by the manifest composer in `manage-execution-manifest/scripts/manage-execution-manifest.py` via the `pre_push_quality_gate_inactive` pre-filter, which is a pure consumer of the command-free `build-decision` verdict — the sole build/no-build authority (see `manage-execution-manifest/standards/decision-rules.md` and ADR-004 § "Amendment: `build-decision` is the sole build/no-build authority").

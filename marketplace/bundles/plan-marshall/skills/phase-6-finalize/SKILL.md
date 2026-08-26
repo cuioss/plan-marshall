@@ -45,8 +45,11 @@ Skill: plan-marshall:tools-integration-ci
 
 Every `python3 .plan/execute-script.py` call in this document — of EVERY notation, **not only `manage-*`** — carries the following exit-code contract unless a step explicitly states otherwise. The scope is widened past `manage-*` because the swallowed-rejection failures this convention exists to prevent reached non-`manage-*` calls (`github_pr`, `review_completeness`, `ci`) in the review-and-merge path; a `manage-*`-only scope left them uncovered.
 
-- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code == 0` AND `status: success`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code == 0` with a `status` other than `success`**: NOT a usable value — it takes the `exit_code != 0` disposition below. A zero exit is not evidence the operation succeeded; a script MAY print `status: error` and still exit 0. Read `status` FIRST, and never read a payload field off a non-`success` return.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
+
+The middle clause is what the `ci` family makes load-bearing: `ci_base.output_error` prints `status: error` and returns exit 0, and both provider `main()` functions return 0 without branching on the result's `status`. An exit-code-only reading of the first clause therefore accepts a failed `ci` call as a usable value.
 
 Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., `manage-files exists` returning `exists: false`, `manage-status get-worktree-path` returning an empty `worktree_path`) — are documented inline in the step that issues them.
 

@@ -14,6 +14,17 @@ call sites — a curated list is the artifact this plan exists to retire:
   This suite derives the NON-``manage-*`` invocation population from the merge-and-review
   docs and fails unless each doc's exit-code convention is widened past ``manage-*``.
 
+* **D2 — the widening reaches the whole pool, and the convention disposes of the exit-0
+  non-``success`` return.** Keying the convention on the exit code alone left a second hole
+  behind the first: ``ci_base.output_error`` prints ``status: error`` and returns exit 0, and
+  both provider ``main()`` functions return 0 without branching on the result's ``status``, so
+  a FAILED call satisfies an exit-code-only ``exit_code == 0`` clause. Two sweeps close it,
+  both derived from the tree: every doc under the two skills that invokes a non-``manage-*``
+  script must carry the widened convention (so a NEW such doc fails on arrival, which the
+  curated doc tuple above cannot catch), and every such convention must state the
+  exit-0-non-``success`` disposition. A third sweep ties each derived ``ci`` call site to one
+  of the two discharge arms — the doc-level clause or a call-site positive shape requirement.
+
 * **D3 — every documented review-and-merge invocation parses against its own parser.**
   A workflow doc that prescribes a flag no script declares (``--enabled-bots``), or a
   flag in a position the parser rejects (``--plan-id`` after a router verb), makes a
@@ -70,11 +81,20 @@ _SKILLS = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
 _BARRIER_DOC = _SKILLS / 'phase-6-finalize' / 'standards' / 'branch-cleanup.md'
 _REVIEW_DOC = _SKILLS / 'automatic-review' / 'SKILL.md'
 _DISPATCHER_DOC = _SKILLS / 'phase-6-finalize' / 'SKILL.md'
+#: The rebased-HEAD re-review walkthrough. It invokes `github_re_review re-review` and
+#: `github_pr fetch_findings` — neither `manage-*` — and is reached from the barrier's own
+#: flow, so it belongs in both populations below.
+_REREVIEW_DOC = _SKILLS / 'phase-6-finalize' / 'standards' / 'branch-cleanup-rereview.md'
 
 #: The docs scanned for the invocation population.
-_INVOCATION_DOCS = (_BARRIER_DOC, _REVIEW_DOC)
+_INVOCATION_DOCS = (_BARRIER_DOC, _REVIEW_DOC, _REREVIEW_DOC)
 #: The docs whose exit-code convention must be widened past manage-*.
-_CONVENTION_DOCS = (_BARRIER_DOC, _REVIEW_DOC, _DISPATCHER_DOC)
+_CONVENTION_DOCS = (_BARRIER_DOC, _REVIEW_DOC, _DISPATCHER_DOC, _REREVIEW_DOC)
+
+#: The whole finalize doc pool the widening sweep walks. The merge-and-review doc SET above
+#: is a semantic scope; THIS is the mechanical one — every markdown file under the two
+#: skills — so a doc added later is swept without anyone remembering to list it.
+_POOL_ROOTS = (_SKILLS / 'phase-6-finalize', _SKILLS / 'automatic-review')
 
 #: A canonical `bundle:skill:script` executor notation.
 _NOTATION = re.compile(r'\bplan-marshall:[a-z0-9-]+:[a-z0-9_-]+\b')
@@ -210,6 +230,21 @@ def _invocation_id(item: tuple[str, str, str]) -> str:
 _WIDE_HEADING = '## Exit-code convention for every script call'
 _NARROW_HEADING = '## Exit-code convention for `manage-*` script calls'
 
+#: The convention's exit-0-non-success clause. An `exit_code == 0` return whose `status` is
+#: anything other than `success` is not a usable value and takes the `exit_code != 0`
+#: disposition. Matched as a literal because the clause IS the contract.
+_NEW_CLAUSE = '- **`exit_code == 0` with a `status` other than `success`**'
+
+#: The per-step positive shape requirement — the stricter, call-site-local discharge.
+_SHAPE_MARKER = '**Positive shape requirement.**'
+
+#: Docs that invoke a non-`manage-*` script yet are deliberately exempt from the widened
+#: convention, mapped to the reason. **Empty**: the sweep below found no doc in the pool
+#: that needed one. An entry here must name a real, currently-obligated doc — a stale
+#: exemption fails `test_no_exemption_is_stale`, so the dict cannot quietly outlive its
+#: reason.
+_WIDENING_EXEMPTIONS: dict[str, str] = {}
+
 
 class TestExitCodeConventionCoversEveryScript:
     """Each merge-and-review doc's exit-code convention is scoped past ``manage-*``.
@@ -281,6 +316,210 @@ class TestExitCodeConventionCoversEveryScript:
 
 
 # =============================================================================
+# D2 — the widening reaches the WHOLE finalize pool, and the convention disposes
+#      of the exit-0 non-success return
+# =============================================================================
+
+
+def _pool_docs() -> list:
+    """Every markdown file under the finalize + automatic-review skills."""
+    docs = []
+    for root in _POOL_ROOTS:
+        docs.extend(sorted(root.rglob('*.md')))
+    return docs
+
+
+def _widening_obligated() -> list[tuple[str, list[str]]]:
+    """Return `(relative_path, non_manage_notations)` for every doc the sweep obligates.
+
+    The obligation is READ OFF each doc's own fenced invocations: a doc that invokes a
+    non-`manage-*` script needs the widened convention, and a doc that invokes only
+    `manage-*` scripts does not. Nothing here is curated.
+    """
+    obligated: list[tuple[str, list[str]]] = []
+    for doc in _pool_docs():
+        non_manage = sorted(
+            n for n in _invoked_notations(doc.read_text(encoding='utf-8'))
+            if not _is_manage_star(n)
+        )
+        if non_manage:
+            obligated.append((str(doc.relative_to(MARKETPLACE_ROOT)), non_manage))
+    return obligated
+
+
+_WIDENING_OBLIGATED = _widening_obligated()
+
+# Non-emptiness asserted at IMPORT, before any parametrize sweeps it.
+assert _WIDENING_OBLIGATED, (
+    'no doc under '
+    f'{[str(r.name) for r in _POOL_ROOTS]} was found to invoke a non-manage-* script — the '
+    'widening population is vacuous and the sweep would pass over an empty set'
+)
+
+
+def _ci_invocation_sections() -> list[tuple[str, str, bool]]:
+    """Return `(relative_path, section_heading, has_shape_requirement)` per `ci`-invoking section.
+
+    A "section" is a ``##``-or-deeper heading and the lines up to the next heading. The
+    population is derived from the pool, so a `ci` call added to any finalize doc is swept
+    without being listed.
+    """
+    ci_call = re.compile(
+        r'python3\s+\.plan/execute-script\.py\s+plan-marshall:tools-integration-ci:ci\b'
+    )
+    found: list[tuple[str, str, bool]] = []
+    for doc in _pool_docs():
+        text = doc.read_text(encoding='utf-8')
+        if not ci_call.search(text):
+            continue
+        lines = text.splitlines()
+        marks = [i for i, ln in enumerate(lines) if re.match(r'^#{2,4} ', ln)]
+        marks.append(len(lines))
+        for start, end in zip(marks, marks[1:], strict=False):
+            blob = '\n'.join(lines[start:end])
+            if ci_call.search(blob):
+                found.append(
+                    (
+                        str(doc.relative_to(MARKETPLACE_ROOT)),
+                        lines[start].strip(),
+                        _SHAPE_MARKER in blob,
+                    )
+                )
+    return found
+
+
+_CI_SECTIONS = _ci_invocation_sections()
+
+assert _CI_SECTIONS, (
+    'no `ci` invocation was scanned from the finalize doc pool — the discharge sweep '
+    'would pass over an empty set'
+)
+
+
+def _obligated_id(item: tuple[str, list[str]]) -> str:
+    return re.sub(r'[^A-Za-z0-9]+', '-', item[0]).strip('-').lower()
+
+
+def _ci_section_id(item: tuple[str, str, bool]) -> str:
+    path, heading, _shape = item
+    stem = f'{path.rsplit("/", 1)[-1]}--{heading.lstrip("# ")}'
+    return re.sub(r'[^A-Za-z0-9]+', '-', stem).strip('-').lower()[:80]
+
+
+class TestWideningReachesTheWholeFinalizePool:
+    """Every finalize doc that invokes a non-``manage-*`` script carries the widened convention.
+
+    The three merge-and-review docs above are a semantic scope; this sweep is the mechanical
+    one over the whole pool, so a doc that invokes a non-``manage-*`` script under a narrow
+    or absent convention fails here even though nobody listed it. That is the property the
+    curated ``_CONVENTION_DOCS`` tuple cannot give: a NEW such doc fails on arrival.
+    """
+
+    def test_the_obligated_population_is_non_empty_and_published(self):
+        """The sweep found real obligations, and says how many it covered."""
+        assert len(_WIDENING_OBLIGATED) >= len(_CONVENTION_DOCS), (
+            f'the pool sweep obligated only {len(_WIDENING_OBLIGATED)} doc(s), fewer than the '
+            f'{len(_CONVENTION_DOCS)} merge-and-review docs already known to need the widening '
+            f'— the scan regressed: {[p for p, _ in _WIDENING_OBLIGATED]}'
+        )
+
+    @pytest.mark.parametrize('obligated', _WIDENING_OBLIGATED, ids=_obligated_id)
+    def test_obligated_doc_carries_the_widened_convention(self, obligated):
+        """A doc invoking a non-manage-* script carries the wide heading, not the narrow one."""
+        rel, non_manage = obligated
+        if rel in _WIDENING_EXEMPTIONS:
+            pytest.skip(f'{rel} is an enumerated exemption: {_WIDENING_EXEMPTIONS[rel]}')
+        text = (MARKETPLACE_ROOT / rel).read_text(encoding='utf-8')
+
+        assert _WIDE_HEADING in text, (
+            f'{rel} invokes non-manage-* scripts {non_manage} yet carries no widened exit-code '
+            f'convention ({_WIDE_HEADING!r}). Widen it, or add it to _WIDENING_EXEMPTIONS with '
+            'a reason. Population swept: '
+            f'{len(_WIDENING_OBLIGATED)} obligated doc(s).'
+        )
+        assert _NARROW_HEADING not in text, (
+            f'{rel}: the manage-*-scoped heading {_NARROW_HEADING!r} survives alongside the '
+            'widened one, so the widening did not fully land'
+        )
+
+    def test_no_exemption_is_stale(self):
+        """An exemption must name a doc the sweep currently obligates.
+
+        Without this, an exemption outlives the doc (or the invocation) that justified it and
+        silently suppresses a case nobody re-examined.
+        """
+        obligated_paths = {p for p, _ in _WIDENING_OBLIGATED}
+        stale = sorted(set(_WIDENING_EXEMPTIONS) - obligated_paths)
+        assert not stale, (
+            f'_WIDENING_EXEMPTIONS names {stale}, which the sweep does not obligate — the doc '
+            'no longer invokes a non-manage-* script, or its path changed. Remove the entry.'
+        )
+        blank = sorted(k for k, v in _WIDENING_EXEMPTIONS.items() if not v.strip())
+        assert not blank, f'_WIDENING_EXEMPTIONS entries {blank} carry no reason'
+
+
+class TestExitZeroNonSuccessIsDisposedOf:
+    """The widened convention states a disposition for an exit-0 non-``success`` return.
+
+    The defect this pins: keying the convention on the exit code ALONE. ``ci_base.output_error``
+    prints ``status: error`` and returns exit 0, and both provider ``main()`` functions return 0
+    without branching on the result's ``status`` — so a FAILED call satisfies an exit-code-only
+    ``exit_code == 0`` clause and its payload fields are then read off a return that has none.
+    """
+
+    @pytest.mark.parametrize('obligated', _WIDENING_OBLIGATED, ids=_obligated_id)
+    def test_widened_convention_carries_the_exit_zero_non_success_clause(self, obligated):
+        """A widened convention without the clause is the exit-0 hole left open."""
+        rel, _non_manage = obligated
+        if rel in _WIDENING_EXEMPTIONS:
+            pytest.skip(f'{rel} is an enumerated exemption: {_WIDENING_EXEMPTIONS[rel]}')
+        text = (MARKETPLACE_ROOT / rel).read_text(encoding='utf-8')
+
+        assert _NEW_CLAUSE in text, (
+            f"{rel} carries the widened convention but states no disposition for an exit-0 "
+            f"return whose status is not `success` (expected the clause {_NEW_CLAUSE!r}). "
+            'Keying on the exit code alone is exactly how a failed call reads as usable.'
+        )
+
+    @pytest.mark.parametrize('section', _CI_SECTIONS, ids=_ci_section_id)
+    def test_ci_invocation_is_discharged(self, section):
+        """Every documented ``ci`` invocation is discharged by one of the two arms.
+
+        The two arms are the convention's exit-0-non-success clause (doc-level) and a
+        per-step positive shape requirement (call-site-level). Stated honestly: the
+        convention arm currently discharges EVERY invocation, because the sweep above
+        requires that clause of every obligated doc — so this assertion's force lives in
+        that sweep, and this test is what ties each concrete ``ci`` call site to it. The
+        per-arm split is published below so a future reader can see which arm carried
+        which call rather than inferring it from a green run.
+        """
+        rel, heading, has_shape = section
+        text = (MARKETPLACE_ROOT / rel).read_text(encoding='utf-8')
+        by_convention = _NEW_CLAUSE in text
+
+        assert by_convention or has_shape, (
+            f'{rel} § {heading} invokes `ci` but the call is discharged by neither arm: its '
+            f'doc states no exit-0-non-success clause and the section states no '
+            f'{_SHAPE_MARKER!r}. A failed `ci` call there is read as a usable value.'
+        )
+
+    def test_the_discharge_split_is_visible(self):
+        """The per-arm split over the derived `ci` population is asserted, not merely implied.
+
+        A shape requirement that is deleted while the convention clause survives would leave
+        `test_ci_invocation_is_discharged` green, so the shape-marked count is pinned here
+        against the sites that carry one.
+        """
+        shape_marked = sorted(f'{rel} § {head}' for rel, head, shape in _CI_SECTIONS if shape)
+        assert len(shape_marked) >= 2, (
+            f'only {len(shape_marked)} of {len(_CI_SECTIONS)} derived `ci` sections carry a '
+            f'{_SHAPE_MARKER!r}. The PR-creating call and the pre-merge checks snapshot each '
+            f'consume a named field off the return and MUST state the shape that makes it '
+            f'readable: {shape_marked}'
+        )
+
+
+# =============================================================================
 # D3 — every documented review-and-merge invocation parses against its own parser
 # =============================================================================
 
@@ -297,14 +536,16 @@ class TestDocumentedReviewMergeInvocationsParse:
     def test_the_population_size_is_published(self):
         """A future reader can tell a passing sweep from an empty one by the count."""
         assert len(_DOCUMENTED_INVOCATIONS) >= 1
-        # The floor is derived-not-guessed: the two docs each carry at least a
-        # fetch_findings and a review_completeness check invocation, so the honest
-        # floor of the scan is four. A scan that silently dropped below it means the
-        # matcher stopped seeing real invocations.
-        assert len(_DOCUMENTED_INVOCATIONS) >= 4, (
+        # The floor is derived-not-guessed: the barrier and the FIND step each carry at
+        # least a fetch_findings and a review_completeness check invocation (four), and
+        # the re-review walkthrough carries a fetch_findings of its own (one), so the
+        # honest floor of the scan is five. A scan that silently dropped below it means
+        # the matcher stopped seeing real invocations.
+        assert len(_DOCUMENTED_INVOCATIONS) >= 5, (
             f'only {len(_DOCUMENTED_INVOCATIONS)} runnable invocations were scanned from '
             f'{[d.name for d in _INVOCATION_DOCS]}; the barrier and the FIND step each '
-            'document a fetch_findings and a review_completeness check, so the floor is 4 '
+            'document a fetch_findings and a review_completeness check and the re-review '
+            'walkthrough documents a fetch_findings, so the floor is 5 '
             f'— the matcher likely stopped matching: {[i[1] for i in _DOCUMENTED_INVOCATIONS]}'
         )
 

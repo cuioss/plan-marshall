@@ -61,8 +61,11 @@ This step's late pre-merge rebase (`order: 70`, onto the newly-fetched `origin/{
 
 Every `python3 .plan/execute-script.py` call in this document — of EVERY notation, **not only `manage-*`** — carries the following exit-code contract unless a step explicitly states otherwise. The scope is deliberately widened past `manage-*`: the swallowed-rejection failures this convention exists to prevent reached `github_pr`, `review_completeness`, and `ci`, none of which is `manage-*`, and every one of which the review-and-merge path below invokes. A convention scoped to `manage-*` alone left exactly those three calls uncovered.
 
-- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code == 0` AND `status: success`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code == 0` with a `status` other than `success`**: NOT a usable value — it takes the `exit_code != 0` disposition below. A zero exit is not evidence the operation succeeded; a script MAY print `status: error` and still exit 0. Read `status` FIRST, and never read a payload field off a non-`success` return.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden. A `github_pr` / `review_completeness` / `ci` rejection a step reads as an empty-but-clean result is exactly that swallow.
+
+The middle clause exists because the exit code alone does not carry the verdict on this path: `ci_base.output_error` prints `status: error` and returns exit 0, and both provider `main()` functions return 0 without branching on the result's `status`. A failed `ci` call therefore passes an exit-code-only reading of the first clause, and the payload fields the step wants to read are simply absent from it.
 
 A step MAY carry a STRICTER disposition than "STOP and return an error" — the pre-merge barrier's two § "UNKNOWN — …" branches route a failed `fetch_findings` / `ci checks pull-request-runs` / `review_completeness check` into an explicit UNKNOWN verdict that blocks the merge and is never authorizable. That is this convention's "unless a step explicitly states otherwise" at work: a tighter handling of the same non-zero exit, never a licence to swallow it.
 
@@ -431,6 +434,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} checks status \
       --pr-number {pr_number}
   ```
+
+  **Positive shape requirement.** This snapshot is usable when and only when the return carries `status: success` **and** an `overall_status` drawn from the handler's vocabulary (`pending` / `success` / `failure` / `none`). Every other shape — including the exit-0 `status: error` return, which carries no `overall_status` at all and so matches none of the branches below — STOPS this step with an error TOON per the § "Exit-code convention for every script call" middle clause. Do NOT fall through a missing `overall_status` into the enqueue: "no `overall_status`" is an unread gate, not a not-obviously-red one.
 
   Parse `overall_status` from the returned TOON. `pending`, `success`, and `none` all proceed straight to the merge routing without waiting — the queue re-tests regardless. A `failure` snapshot (CI has already gone clearly red on the current HEAD, which on this path is the un-rebased branch tip) logs the warning below but still proceeds; the merge queue will re-test and refuse a still-red HEAD, so this gate never hard-blocks — it only surfaces the early signal cheaply. This is the fold: the redundant full-green pre-merge CI wait is removed under the merge-queue path, leaving only this single non-blocking snapshot.
 

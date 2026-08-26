@@ -23,11 +23,12 @@ Pure executor for the `lessons-capture` finalize step. Records lessons learned f
 
 **Post-run review (`post_run_review: true`, `mutates_source: false`)**: this step reads the triage findings and PR-review escalations the merge gate's re-review barrier produces, so its evidence is only complete once `default:branch-cleanup` has run — `order: 991` places it after that gate. Being post-merge-ordered, the step writes NO tracked source: every branch writes only UNTRACKED plan state under `.plan/` (lesson files, inbox payloads). The step therefore never reaches the dispatcher's commit instrumentation — item 5f reads the declared `mutates_source` fact first and skips (a)-(d) entirely. The declaration is not taken on trust, though: because this step also declares `post_run_review: true`, item 5f's sub-item (0) observes the MAIN CHECKOUT once on return (the worktree is gone by this order) and reports any dirty TRACKED path — source, or a tracked `.plan/` config/descriptor, the exemption being keyed on git trackedness rather than the path prefix — as a non-blocking WARNING plus a finding. So the claim is checked, not merely asserted. Branch B3's architecture hints are NOT written in the worktree — an `architecture enrich` write post-merge would land as an uncommitted diff on `main`, the exact defect [`../standards/source-edit-pushability.md`](../standards/source-edit-pushability.md) exists to prevent — so B3 names each owed hint in a follow-up artifact via that document's discover-after-merge route instead.
 
-## Exit-code convention for `manage-*` script calls
+## Exit-code convention for every script call
 
-Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+Every `python3 .plan/execute-script.py` call in this document — of EVERY notation, **not only `manage-*`** — carries the following exit-code contract unless a step explicitly states otherwise. The scope is widened past `manage-*` because this document invokes non-`manage-*` scripts too, and a `manage-*`-scoped convention left exactly those calls uncovered — the swallowed-rejection gap.
 
-- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code == 0` AND `status: success`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code == 0` with a `status` other than `success`**: NOT a usable value — it takes the `exit_code != 0` disposition below. A zero exit is not evidence the operation succeeded; a script MAY print `status: error` and still exit 0. Read `status` FIRST, and never read a payload field off a non-`success` return.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
 
 See also `standards/lessons-integration.md` for conceptual guidance on when and what to capture.

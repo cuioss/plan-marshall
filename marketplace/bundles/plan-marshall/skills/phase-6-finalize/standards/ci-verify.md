@@ -34,6 +34,29 @@ default:ci-verify`, `order: 22`, `default_on: true`), mirroring how
 `branch-cleanup.md` — also a pure executor — carries its finalize-step
 frontmatter in `standards/`.
 
+## Exit-code convention for every script call
+
+Every `python3 .plan/execute-script.py` call in this document — of EVERY
+notation, **not only `manage-*`** — carries the following exit-code contract
+unless a step explicitly states otherwise. The scope is widened past `manage-*`
+because this document's two calls, `ci_complete_precondition resolve` and
+`ci_verify run`, are neither of them `manage-*` — and they are the pair that
+decides whether CI was read at all.
+
+- **`exit_code == 0` AND `status: success`**: parse the returned TOON and use
+  the value as the step describes.
+- **`exit_code == 0` with a `status` other than `success`**: NOT a usable value
+  — it takes the `exit_code != 0` disposition below. A zero exit is not evidence
+  the operation succeeded; a script MAY print `status: error` and still exit 0.
+  Read `status` FIRST, and never read a payload field off a non-`success`
+  return. Here that means an absent `ci_final_status` is an **unread** CI
+  verdict, never a green one.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator
+  carrying the script's stderr verbatim. Non-zero exits include
+  `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters`
+  rejections is the prohibited anti-pattern; "log and continue" is equally
+  forbidden.
+
 ## Executor contract
 
 The dispatcher runs the executor inline through the executor proxy after

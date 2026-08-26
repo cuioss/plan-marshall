@@ -21,11 +21,12 @@ implements:
 
 Pure executor for the `create-pr` finalize step. Creates a pull request for the feature branch.
 
-## Exit-code convention for `manage-*` script calls
+## Exit-code convention for every script call
 
-Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+Every `python3 .plan/execute-script.py` call in this document — of EVERY notation, **not only `manage-*`** — carries the following exit-code contract unless a step explicitly states otherwise. The scope is widened past `manage-*` because this document's decision calls are `ci` and `pr_intent_section`, neither of which is `manage-*`; a `manage-*`-scoped convention left the PR-creating call itself uncovered.
 
-- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code == 0` AND `status: success`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code == 0` with a `status` other than `success`**: NOT a usable value — it takes the `exit_code != 0` disposition below. A zero exit is not evidence the operation succeeded: `ci_base.output_error` prints `status: error` and returns exit 0, and both provider `main()` functions return 0 without branching on the result's `status`. Read `status` FIRST, and never read a payload field off a non-`success` return.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
 
 This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `create-pr` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
@@ -70,9 +71,9 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
 
 Inspect the returned TOON — branch on BOTH `status` AND `state` (an open PR is reusable; a merged/closed one is not):
 
-- `status: success` AND `state == open` → an open PR already exists for this branch. Skip creation; reuse the returned `pr_number` for the automated review step. **Still run § "Persist the PR number" with the reused `pr_number` before Mark Step Complete → Branch B** — skipping creation does not skip the persist. The PR-landing footprint tier keys on `references.pr_number`, so a reused-PR run that never writes it leaves that tier with nothing to resolve and the plan's post-merge footprint reports unmeasurable.
+- `status: success` AND `state == open` AND `pr_number` non-empty → an open PR already exists for this branch. Skip creation; reuse the returned `pr_number` for the automated review step. **Still run § "Persist the PR number" with the reused `pr_number` before Mark Step Complete → Branch B** — skipping creation does not skip the persist. The PR-landing footprint tier keys on `references.pr_number`, so a reused-PR run that never writes it leaves that tier with nothing to resolve and the plan's post-merge footprint reports unmeasurable. A `status: success` return whose `pr_number` is absent or empty satisfies no branch here: STOP with an error TOON rather than reusing an unnamed PR.
 - `status: success` AND `state ∈ {merged, closed}` → the returned PR is a **stale association**, not a reusable PR. This happens when the branch name is reused across runs (a deterministic `feature/{plan_id}` whose prior run already merged): `gh pr view <branch>` returns the most-recent PR for the branch name regardless of state when no open PR exists, so a merged/closed PR resolves here. The current branch's new commits need their own PR — do NOT reuse it. Proceed to create a fresh PR (Mark Step Complete → Branch A). Recipe plan_ids carry a `{yyyy-mm-dd-hh}` suffix (see `phase-1-init/SKILL.md` Step 2 "From recipe") precisely to avoid this branch-name reuse, but this state guard is the structural backstop if a collision ever occurs by another path.
-- `status: error` → no PR exists, proceed to create one (Branch A).
+- `status: error` → no PR exists, proceed to create one (Branch A). This is a **documented step-level exception** to the § "Exit-code convention for every script call" middle clause: `pr view`'s exit-0 `status: error` is this step's "no PR found" signal, so it is read rather than escalated. The exception is scoped to `pr view` here and to no other call in this document.
 
 ### Generate PR body
 
@@ -288,7 +289,11 @@ the PR, and deletes the scratch on success. `{label_args}` is either empty or th
 `--label skip-bot-review` fragment resolved in Step 3.6; the `--label` flag is a
 repeatable passthrough to `gh pr create --label`.
 
-Read `pr_number` and `pr_url` from the TOON output.
+**Positive shape requirement.** This call is usable when and only when the returned TOON carries `status: success` **and** a non-empty `pr_number`. That is the same positive shape the pre-merge review barrier already requires of its own reads, applied at the call that creates the object every later step addresses.
+
+Every other shape — a non-zero exit, an exit-0 `status: error`, or a `status: success` whose `pr_number` is absent or empty — STOPS this step with an error TOON and returns it to the orchestrator. Such a shape MUST NOT reach `Log PR creation` and MUST NOT reach `Mark Step Complete`: there is no `--outcome done` branch below that is reachable with an absent `pr_number`. The reason this requirement is explicit rather than implied by the exit-code convention is that `ci_base.output_error` prints `status: error` and still returns exit 0, so an exit-code-only reading would mark the step `done` and record a `pr_number` fact for a PR that does not exist — after which review and merge address a PR number nothing created.
+
+Only once the shape holds, read `pr_number` and `pr_url` from the TOON output.
 
 ### Log PR creation
 

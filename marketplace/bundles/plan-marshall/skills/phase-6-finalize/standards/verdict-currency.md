@@ -14,6 +14,27 @@ obtained**. It does not restate head-dependence membership, which is declared pe
 step and read from frontmatter — see [`../SKILL.md`](../SKILL.md) § "Special case —
 HEAD-dependent steps" for the single authoritative statement.
 
+## Exit-code convention for every script call
+
+Every `python3 .plan/execute-script.py` call in this document — of EVERY notation, **not
+only `manage-*`** — carries the following exit-code contract unless a step explicitly
+states otherwise. The scope is widened past `manage-*` because the classifier this
+document owns, `verdict_currency classify`, is not `manage-*`, and its verdict is what
+decides whether a gate re-fires.
+
+- **`exit_code == 0` AND `status: success`**: parse the returned TOON and use the value as
+  the step describes.
+- **`exit_code == 0` with a `status` other than `success`**: NOT a usable value — it takes
+  the `exit_code != 0` disposition below. A zero exit is not evidence the operation
+  succeeded; a script MAY print `status: error` and still exit 0. Read `status` FIRST, and
+  never read a payload field off a non-`success` return. Here that means an absent
+  classification is an **unread** one, never a "not invalidating" verdict — an unread
+  classifier re-fires the gate rather than silently retiring it.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the
+  script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent
+  swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and
+  continue" is equally forbidden.
+
 ## Two levers, and only one of them was ever pulled
 
 Bounding this cost has exactly two levers, and they are independent:

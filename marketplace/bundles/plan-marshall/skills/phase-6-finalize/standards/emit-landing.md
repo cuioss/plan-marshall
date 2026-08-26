@@ -38,12 +38,19 @@ so it runs AFTER every reporting step and can carry their facts. `lessons-captur
 candidate-lesson emission; only the landing moved here. Relocating a whole step past what it needed is
 how the read-direction defect this epic tracks was created, so the two were separated deliberately.
 
-## Exit-code convention for `manage-*` script calls
+## Exit-code convention for every script call
 
-Every `manage-*` script call in this document carries the following exit-code contract unless a step
-explicitly states otherwise:
+Every `python3 .plan/execute-script.py` call in this document — of EVERY notation, **not only
+`manage-*`** — carries the following exit-code contract unless a step explicitly states otherwise. The
+scope is widened past `manage-*` because this document invokes non-`manage-*` scripts too, and a
+`manage-*`-scoped convention left exactly those calls uncovered — the swallowed-rejection gap.
 
-- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code == 0` AND `status: success`**: parse the returned TOON and use the value as the step
+  describes.
+- **`exit_code == 0` with a `status` other than `success`**: NOT a usable value — it takes the
+  `exit_code != 0` disposition below. A zero exit is not evidence the operation succeeded; a script MAY
+  print `status: error` and still exit 0. Read `status` FIRST, and never read a payload field off a
+  non-`success` return.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr
   verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of
   `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
