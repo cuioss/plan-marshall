@@ -22,6 +22,7 @@ pytest path (``[tool.pytest.ini_options]``), so the root ``build`` module import
 by bare name.
 """
 
+import os
 from pathlib import Path
 
 import build
@@ -190,6 +191,96 @@ def test_module_tests_distinct_invocations_do_not_collide(monkeypatch):
 
     assert len(seen) == 2
     assert seen[0] != seen[1], f'invocations must not collide; got {seen[0]!r} twice'
+
+
+# ---------------------------------------------------------------------------
+# Basetemp retention: the entry budget, and the measurement behind it.
+#
+# PYTEST_BASETEMP_KEEP bounds how MANY session dirs are retained and says
+# nothing about how large they are, so every test below holds the session count
+# inside ``keep`` — any pruning they observe is therefore attributable to the
+# entry budget and to nothing else.
+# ---------------------------------------------------------------------------
+
+
+def _seed_session(root: Path, name: str, files: int, mtime: int) -> Path:
+    """Create a session dir under ``root`` holding ``files`` files, with a fixed mtime.
+
+    The ``utime`` call comes last on purpose: writing into a directory bumps its
+    mtime, so stamping it first would leave the newest-first ordering to whatever
+    order the files happened to land in.
+    """
+    session = root / name
+    session.mkdir(parents=True)
+    for index in range(files):
+        (session / f'f{index}').write_text('x', encoding='utf-8')
+    os.utime(session, (mtime, mtime))
+    return session
+
+
+def test_count_entries_within_returns_the_exact_total_when_the_tree_fits(tmp_path):
+    """A readable tree at or under the headroom reports its exact entry count."""
+    session = _seed_session(tmp_path, 'session', files=5, mtime=1)
+    (session / 'nested').mkdir()
+    (session / 'nested' / 'deep').write_text('x', encoding='utf-8')
+
+    assert build._count_entries_within(session, headroom=10) == 7
+
+
+def test_count_entries_within_returns_none_when_the_tree_exceeds_the_headroom(tmp_path):
+    """A tree past the headroom reports None, never the partial count in hand."""
+    session = _seed_session(tmp_path, 'session', files=5, mtime=1)
+
+    assert build._count_entries_within(session, headroom=3) is None
+
+
+def test_count_entries_within_separates_an_empty_tree_from_an_unwalkable_one(tmp_path):
+    """An empty directory measures 0; one the walk cannot enter measures None.
+
+    The two demand opposite treatment — an empty session costs nothing to retain,
+    an unmeasurable one must not be admitted as free — so a walk that never ran
+    must not publish the number a walk that ran and found nothing would.
+    """
+    empty = tmp_path / 'empty'
+    empty.mkdir()
+
+    assert build._count_entries_within(empty, headroom=10) == 0
+    assert build._count_entries_within(tmp_path / 'absent', headroom=10) is None
+
+
+def test_prune_retires_sessions_that_breach_the_entry_budget(tmp_path, monkeypatch):
+    """Three sessions inside ``keep=3`` are still pruned once their entries exceed the budget."""
+    root = tmp_path / 'pytest-basetemp'
+    root.mkdir()
+    for name, mtime in (('oldest', 1), ('middle', 2), ('newest', 3)):
+        _seed_session(root, name, files=4, mtime=mtime)
+    monkeypatch.setattr(build, 'PYTEST_BASETEMP_ROOT', root)
+
+    build._prune_basetemp_roots(keep=3, max_entries=9)
+
+    assert _child_dirs(root) == ['middle', 'newest'], (
+        'the entry budget must retire oldest-first once the retained total exceeds it'
+    )
+
+
+def test_prune_leaves_a_root_within_both_bounds_untouched(tmp_path, monkeypatch):
+    """Matched negative control: nothing is removed when both bounds already hold.
+
+    Load-bearing — without it the budget test above is satisfied just as well by a
+    prune that deletes everything it is handed.
+    """
+    root = tmp_path / 'pytest-basetemp'
+    root.mkdir()
+    for name, mtime in (('oldest', 1), ('middle', 2), ('newest', 3)):
+        _seed_session(root, name, files=4, mtime=mtime)
+    monkeypatch.setattr(build, 'PYTEST_BASETEMP_ROOT', root)
+
+    build._prune_basetemp_roots(keep=3, max_entries=12)
+
+    assert _child_dirs(root) == ['middle', 'newest', 'oldest']
+    assert all(len(list((root / name).iterdir())) == 4 for name in _child_dirs(root)), (
+        'a retained session must keep its contents, not merely its directory'
+    )
 
 
 # ---------------------------------------------------------------------------

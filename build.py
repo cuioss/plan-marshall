@@ -110,18 +110,89 @@ _FRESHNESS_SUSPECT_RC = 3
 # shared pytest-of-{user} root, so concurrent worktrees and a killed-then-
 # restarted session never share a basetemp and never race each other's cleanup.
 PYTEST_BASETEMP_ROOT = Path('.plan/temp/pytest-basetemp')
-# Bounded-growth retention: keep at most this many recent per-session basetemp
-# dirs. An explicit --basetemp forgoes pytest's own keep-last-3 retention, so we
-# prune here to keep PYTEST_BASETEMP_ROOT from growing without bound.
+# Retention is bounded on TWO dimensions, because neither implies the other and
+# only the second is the one that actually grows.
+#
+# PYTEST_BASETEMP_KEEP bounds how MANY per-session dirs survive a prune. It
+# exists because an explicit --basetemp forgoes pytest's own keep-last-3
+# retention. It says nothing about how large those dirs are: three retained
+# sessions of ~92k entries each satisfies it exactly, and that is precisely the
+# 276,757-entry / 1.0 GB root measured on this repository.
 PYTEST_BASETEMP_KEEP = 3
+# PYTEST_BASETEMP_MAX_ENTRIES bounds the total filesystem entries retained
+# across those dirs — the dimension the count bound leaves free. Sized to admit
+# roughly one session of the measured size, so a suite whose sessions are small
+# keeps all PYTEST_BASETEMP_KEEP of them and only a suite that produces large
+# sessions retains fewer.
+#
+# Denominated in ENTRIES rather than bytes for the same reason
+# git-workflow.py::_count_tree_entries is: os.walk consumes the directory-entry
+# names scandir already supplies, so the measurement needs no per-entry stat and
+# stays cheap over a tree with hundreds of thousands of files. Both surfaces
+# therefore measure the same dimension in the same unit — there is no second,
+# independent notion of "size" here. That helper is mirrored rather than
+# imported because `git-workflow.py` is a hyphenated module in another bundle,
+# so it is not importable by name, and reaching it through importlib would pull
+# its whole provider/executor import chain into this build script.
+PYTEST_BASETEMP_MAX_ENTRIES = 100_000
 
 
-def _prune_basetemp_roots(keep: int = PYTEST_BASETEMP_KEEP) -> None:
-    """Drop all but the ``keep`` most-recent per-session basetemp dirs.
+def _count_entries_within(root: Path, headroom: int) -> int | None:
+    """Return the entry count under ``root``, or ``None`` when it does not fit.
 
-    Best-effort: a prune failure (a dir vanishing mid-scan, a permission error)
-    never aborts the build — bounded growth is a housekeeping concern, not a
-    correctness gate. This is the retention step that replaces pytest's own
+    ``None`` means no exact count at or below ``headroom`` could be established:
+    either the walk passed ``headroom`` (the tree provably does not fit) or it
+    could not read the whole tree (the true count is unknown). Both outcomes
+    retire the directory, which is why they share a return value; what they must
+    NOT share is a number. A count the walk never established is
+    indistinguishable from a measured one once it is added to a running total,
+    and that running total is what decides how much history survives — so an
+    unreadable tree reports ``None``, never ``0``, and is never admitted as a
+    free one.
+
+    Only directory-entry names are consumed (``scandir`` supplies the
+    directory/file split without a per-entry ``stat``), and the walk stops as
+    soon as the answer is decided, so its cost is bounded by ``headroom`` rather
+    than by the tree. ``followlinks=False`` is stated rather than left to the
+    default so the walk provably cannot leave the tree through a symlink and
+    count some other directory's entries into this budget.
+    """
+    entries = 0
+    yielded = False
+    unreadable = False
+
+    def _note_unreadable(_exc: OSError) -> None:
+        nonlocal unreadable
+        unreadable = True
+
+    for _dirpath, dirnames, filenames in os.walk(root, onerror=_note_unreadable, followlinks=False):
+        yielded = True
+        entries += len(dirnames) + len(filenames)
+        if entries > headroom:
+            return None
+    if not yielded or unreadable:
+        return None
+    return entries
+
+
+def _prune_basetemp_roots(
+    keep: int = PYTEST_BASETEMP_KEEP,
+    max_entries: int = PYTEST_BASETEMP_MAX_ENTRIES,
+) -> None:
+    """Retire per-session basetemp dirs until the root satisfies BOTH bounds.
+
+    On return the root holds at most ``keep`` per-session dirs AND at most
+    ``max_entries`` filesystem entries across them. Retention walks newest-first
+    and stops at the first dir that would breach either bound, so removal is
+    oldest-first and the newest session's scratch is the last thing given up. A
+    dir whose size could not be established exactly is retired rather than
+    retained — admitting an unmeasured dir as free is how a count-only bound came
+    to permit a 1.0 GB root in the first place.
+
+    Best-effort: a prune failure (a dir vanishing mid-scan, a permission error,
+    an unreadable subtree) never aborts the build — retention is a housekeeping
+    concern, not a correctness gate — and a root that cannot be listed at all is
+    left untouched. This is the retention step that replaces pytest's own
     keep-last-3 behaviour, which an explicit ``--basetemp`` disables.
 
     Concurrency-safe: an in-process test that invokes ``cmd_module_tests`` /
@@ -140,7 +211,17 @@ def _prune_basetemp_roots(keep: int = PYTEST_BASETEMP_KEEP) -> None:
         )
     except OSError:
         return
-    for stale in session_dirs[keep:]:
+
+    retained = 0
+    retained_entries = 0
+    for session in session_dirs[:keep]:
+        counted = _count_entries_within(session, max_entries - retained_entries)
+        if counted is None:
+            break
+        retained_entries += counted
+        retained += 1
+
+    for stale in session_dirs[retained:]:
         try:
             shutil.rmtree(stale, ignore_errors=True)
         except OSError:
@@ -160,9 +241,13 @@ def _prepare_session_basetemp() -> Path:
     sessions; under ``filterwarnings=["error"]`` that race promotes a cleanup
     ``OSError`` into a session-killing exception on an otherwise-green suite.
 
-    The root is created if missing and pruned to ``PYTEST_BASETEMP_KEEP`` recent
-    per-session dirs before the new path is returned, so the directory cannot
-    grow without bound.
+    The root is created if missing and pruned before the new path is returned,
+    so the RETAINED history is bounded on both dimensions
+    :func:`_prune_basetemp_roots` enforces: at most ``PYTEST_BASETEMP_KEEP``
+    per-session dirs, holding at most ``PYTEST_BASETEMP_MAX_ENTRIES`` entries
+    between them. The session about to run is NOT bounded by this function — it
+    is created after the prune and grows as the suite writes to it. Bringing it
+    back inside the budget is the next invocation's prune.
     """
     PYTEST_BASETEMP_ROOT.mkdir(parents=True, exist_ok=True)
     _prune_basetemp_roots()
