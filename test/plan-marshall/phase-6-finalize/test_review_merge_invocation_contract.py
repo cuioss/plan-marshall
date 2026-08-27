@@ -349,12 +349,8 @@ def _clause_body(text: str) -> str:
     if idx == -1:
         return ''
     tail = text[idx + len(_NEW_CLAUSE) :]
-    stop = len(tail)
-    for boundary in (r'\n- ', r'\n#{1,6} '):
-        match = re.search(boundary, tail)
-        if match is not None:
-            stop = min(stop, match.start())
-    return tail[:stop]
+    boundary = re.search(r'\n(?:- |#{1,6} )', tail)
+    return tail if boundary is None else tail[: boundary.start()]
 
 
 def _missing_disposition_markers(text: str) -> list[str]:
