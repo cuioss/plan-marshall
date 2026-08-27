@@ -282,9 +282,26 @@ _WIDE_HEADING = '## Exit-code convention for every script call'
 _NARROW_HEADING = '## Exit-code convention for `manage-*` script calls'
 
 #: The convention's exit-0-non-success clause. An `exit_code == 0` return whose `status` is
-#: anything other than `success` is not a usable value and takes the `exit_code != 0`
-#: disposition. Matched as a literal because the clause IS the contract.
-_NEW_CLAUSE = '- **`exit_code == 0` with a `status` other than `success`**'
+#: anything other than `success` — OR that carries no parseable `status` at all — is not a
+#: usable value and takes the `exit_code != 0` disposition. Matched as a literal because the
+#: clause IS the contract.
+#:
+#: The no-parseable-`status` arm is part of the pinned literal, not a separate optional
+#: sentence, because it closes the hole the exit-code-only reading left BEHIND the first
+#: one: a return whose stdout is malformed or truncated matches neither `status: success`
+#: nor "a `status` other than `success`", so under the narrower wording it fell through
+#: every clause and back onto the false-green. Pinning the widened wording is what stops a
+#: doc reverting to the narrow form.
+#:
+#: Deliberately NOT weakened to a prefix match on the narrow wording. A prefix match would
+#: pass on BOTH wordings, which is exactly how a doc keeps the superseded contract while the
+#: guard stays green — the failure mode this literal exists to make impossible. The cost is
+#: that a doc which LINE-WRAPS the clause fails the substring test even though its prose is
+#: correct; that is accepted, and the fix is to keep the bolded lead-in on one line.
+_NEW_CLAUSE = (
+    '- **`exit_code == 0` with a `status` other than `success`, '
+    'or with no parseable `status` at all**'
+)
 
 #: The per-step positive shape requirement — the stricter, call-site-local discharge.
 _SHAPE_MARKER = '**Positive shape requirement.**'

@@ -24,8 +24,7 @@ decides whether a gate re-fires.
 
 - **`exit_code == 0` AND `status: success`**: parse the returned TOON and use the value as
   the step describes.
-- **`exit_code == 0` with a `status` other than `success`, or with no parseable `status` at
-  all**: NOT a usable value — STOP
+- **`exit_code == 0` with a `status` other than `success`, or with no parseable `status` at all**: NOT a usable value — STOP
   exactly as the `exit_code != 0` disposition below requires, with one difference in what
   the error TOON carries: on this path the diagnostic is on STDOUT, not stderr. Preserve
   the stdout **error envelope** as emitted — every field it carries, verbatim — into the
