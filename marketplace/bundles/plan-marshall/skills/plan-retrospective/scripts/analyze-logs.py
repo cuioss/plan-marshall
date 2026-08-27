@@ -45,6 +45,7 @@ from _footprint_resolver import (
     read_captured_footprint,
     read_legacy_footprint,
     resolve_merge_commit_footprint,
+    resolve_pr_landing_footprint,
 )
 from _ledger_core import read_entries
 from _references_core import (
@@ -239,7 +240,7 @@ def resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> list[str] |
     regression check below, which is the defect the sentinel removes — a check
     that cannot run must say so, not report nothing to report.
 
-    Five-tier resolution, in order:
+    Six-entry resolution — five resolving tiers then the sentinel — in order:
 
     1. **Live diff** — when ``plan_id`` names a live plan whose worktree the
        ONE resolver (:func:`_references_core.resolve_live_worktree`) resolves to
@@ -252,21 +253,27 @@ def resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> list[str] |
     3. **Merge-commit** — ``references.merge_commit_sha`` resolved via
        :func:`_footprint_resolver.resolve_merge_commit_footprint` (``git diff
        {sha}^1 {sha}``). A post-merge-only fallback below the deterministic capture.
-    4. **Legacy key** — ``references.modified_files`` via
+    4. **PR-landing** — ``references.pr_number`` resolved via
+       :func:`_footprint_resolver.resolve_pr_landing_footprint`, which reads THIS PR's
+       own landing SHA through the CI abstraction and diffs it by the same first-parent
+       range as tier 3. Strictly below tier 3, so a recorded ``merge_commit_sha`` keeps
+       precedence; it resolves the squash / merge-queue landing on which tiers 2 and 3
+       are both unwritten.
+    5. **Legacy key** — ``references.modified_files`` via
        :func:`_footprint_resolver.read_legacy_footprint`, which owns both the
        ``SHIM(B)`` declaration for the key and the absent-vs-present-but-empty
        distinction (archived plans created before the ledger was removed still
        carry it).
-    5. **Unresolvable** — when nothing resolves, return
+    6. **Unresolvable** — when nothing resolves, return
        :data:`_footprint_resolver.FOOTPRINT_UNRESOLVED`. The regression check
        then reports the gap instead of grading it: it neither fires (which would
        be a finding derived from an input nobody measured) nor passes silently
        (which would present an un-run check as a clean one).
 
-    Every resolved tier returns a **sorted, de-duplicated** list. Tier 4 shares
-    that shape now that it comes from the shared helper (it previously preserved
-    the key's raw order and any duplicates), so ``len(footprint)`` counts
-    distinct paths on every tier rather than only on tiers 1-3.
+    Every resolved tier returns a **sorted, de-duplicated** list. The legacy tier
+    shares that shape now that it comes from the shared helper (it previously
+    preserved the key's raw order and any duplicates), so ``len(footprint)`` counts
+    distinct paths on every tier rather than only on the ones above it.
 
     Archived mode passes ``plan_id=None`` and therefore skips tier 1 entirely:
     an archived plan's recorded worktree names a directory finalize has already
@@ -309,7 +316,17 @@ def resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> list[str] |
     if merge_set is not None:
         return sorted(merge_set)
 
-    # Tier 4 comes from the shared helper rather than a private re-implementation:
+    # Tier 4 is reached ONLY because this resolver composes the per-tier helpers itself
+    # (for its own diff-failure policy) and so does NOT inherit a new tier for free from
+    # the whole-chain resolver. Migrating the three whole-chain consumers and leaving
+    # this one on the old tier set is the incomplete-refactor shape the consumer sweep
+    # exists to prevent: it would resolve a squash landing for three graders and report
+    # ARTIFACT_COVERAGE_UNMEASURABLE for the fourth, on the same plan.
+    pr_landing_set = resolve_pr_landing_footprint(plan_dir, refs)
+    if pr_landing_set is not None:
+        return sorted(pr_landing_set)
+
+    # Tier 5 comes from the shared helper rather than a private re-implementation:
     # it already owns the SHIM(B) declaration for the legacy key AND the
     # absent-vs-present-but-empty distinction (an absent or unusable key is the
     # unresolvable sentinel; a present empty list is a resolved, genuinely-empty

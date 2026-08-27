@@ -20,6 +20,97 @@ without pulling in transitive dependencies.
 
 from __future__ import annotations
 
+#: Fragment key the plan-level footprint-derivation aggregate is injected under.
+#: UNDERSCORE-PREFIXED deliberately: ``compile-report`` computes and injects this
+#: record itself, so — exactly like ``_executive-summary`` — it must never be
+#: registerable through ``collect-fragments add``. :func:`valid_aspect_keys`
+#: filters it out by that prefix, so the exclusion is structural rather than a
+#: second list to keep in step.
+FOOTPRINT_AGGREGATE_KEY = '_footprint-derivation'
+
+#: The aspects that consume the SHARED footprint derivation
+#: (``_footprint_resolver.resolve_footprint`` and the helpers it composes), and so
+#: go unmeasurable TOGETHER when that derivation cannot be resolved.
+#:
+#: This is a declaration of WHICH registry rows consume the derivation, not a
+#: second copy of the roster: the roster itself is derived from
+#: :data:`SECTION_SPEC` by :func:`footprint_consuming_aspect_keys`, so a member
+#: named here with no registry row contributes nothing, and the reported order is
+#: always the registry's own. Adding a footprint-consuming aspect means adding its
+#: registry row (which any new aspect needs regardless) and naming it here — the
+#: aggregate's ``producer_count`` then grows with no consumer edit.
+#: ⛔ ``manifest-decisions`` (``check-manifest-consistency``) is deliberately NOT a
+#: member, though it is often described as one. Measured against HEAD it publishes
+#: no footprint-degradation verdict at all: a content sweep for the degradation
+#: tokens below returns no match in that script, a sweep for
+#: ``footprint_resolved`` / ``FOOTPRINT_UNRESOLVED`` returns none either, and it
+#: carries a single ``resolve_footprint`` mention against the 9, 8 and 3 carried by
+#: ``artifact-consistency``, ``log-analysis`` and ``routing-decisions``. A producer
+#: with no degraded verdict reads as ``resolved`` on EVERY run, and one resolved
+#: member suppresses the record — so rostering it would not make the aggregate
+#: broader, it would make it incapable of ever firing. Add it here the moment it
+#: grows a degradation verdict, not before.
+#: ``outline-vs-shipped`` (``check-outline-vs-shipped``) IS a member on exactly that
+#: test: it resolves the footprint through the shared chain and publishes
+#: ``comparison: inconclusive`` — the first token below, as a VALUE — whenever no
+#: tier answers, so it goes unmeasurable on the same missing derivation as the rest.
+FOOTPRINT_CONSUMING_ASPECTS: tuple[str, ...] = (
+    'artifact-consistency',
+    'log-analysis',
+    'outline-vs-shipped',
+    'routing-decisions',
+)
+
+#: Tokens by which a footprint-consuming aspect DECLARES it could not derive the
+#: footprint. Each is the producer's own existing honest-degradation token, read
+#: rather than introduced — ``inconclusive`` is the per-check status the three
+#: ``check-*`` aspects emit, and ``ARTIFACT_COVERAGE_UNMEASURABLE`` is the token
+#: ``analyze-logs`` embeds in its warning finding's message.
+#:
+#: ⛔ HOW each token is matched is owned by ``compile-report._declares_degraded``
+#: and differs PER TOKEN — ``inconclusive`` by equality against a verdict field,
+#: the other as a substring of any string value. Read the rule there rather than
+#: assuming one uniform match; neither shape is restated here.
+FOOTPRINT_DEGRADED_TOKENS: tuple[str, ...] = (
+    'inconclusive',
+    'ARTIFACT_COVERAGE_UNMEASURABLE',
+)
+
+#: The compose-time producer of the same signal. It has NO aspect-registry entry —
+#: it runs at manifest-compose time, not retrospective time — so it is named
+#: explicitly and published under its own provenance, keeping the derived half of
+#: the roster distinguishable from the declared one.
+COMPOSE_TIME_PRODUCER = 'manage-execution-manifest'
+
+#: The artifact the compose-time producer's verdict is read from, relative to the
+#: plan directory.
+COMPOSE_TIME_ARTIFACT = 'execution.toon'
+
+#: The compose-time producer's own degradation token.
+COMPOSE_TIME_DEGRADED_TOKEN = 'pre_push_quality_gate_inactive'
+
+#: Provenance labels, published per roster member so a reader can tell the
+#: registry-derived members from the single explicitly-named one.
+PROVENANCE_ASPECT_REGISTRY = 'aspect_registry'
+PROVENANCE_COMPOSE_TIME = 'named_compose_time_producer'
+
+#: What the aggregate says it did with each roster member.
+PRODUCER_DEGRADED = 'degraded'
+PRODUCER_RESOLVED = 'resolved'
+
+#: The member's artifact was not on disk, so nothing is known about its verdict.
+#: Distinct from ``resolved`` in the way that matters: an unread member cannot
+#: support an aggregate claim, so any of them suppresses the verdict.
+PRODUCER_UNREAD = 'unread'
+
+#: The aggregate fired: every roster member was read, and every one degraded.
+AGGREGATE_UNMEASURABLE = 'unmeasurable'
+
+#: The aggregate would have fired, but the roster was not fully read. Reported in
+#: place of the verdict — an aggregate computed over a roster that was not fully
+#: read is the vacuous-authority shape this signal exists to remove.
+AGGREGATE_PARTIAL_COVERAGE = 'partial_coverage'
+
 # Section order matches ``references/report-structure.md``.
 # Fragment keys MUST match the hyphenated aspect names produced by
 # ``collect-fragments add --aspect <name>``. Underscored variants silently
@@ -31,6 +122,20 @@ SECTION_SPEC: tuple[tuple[str, str, str | None], ...] = (
     # for the section to be emitted. ``None`` means always emit.
     ('Executive Summary', '_executive-summary', None),
     ('Goals vs Outcomes', 'request-result-alignment', None),
+    # Footprint Derivation Coverage — the PLAN-LEVEL aggregate over every aspect
+    # that consumes the shared footprint derivation. Injected by
+    # ``compile-report`` itself (never registered by a producer), and conditional
+    # on that injection: the record is absent whenever the aggregate neither
+    # fired nor lost coverage, so the section then takes the ordinary benign-
+    # omission path.
+    #
+    # Positioned BEFORE every aspect it aggregates so a reader meets the
+    # plan-level caveat before any individual footprint-derived verdict, rather
+    # than after having already read some of them at face value. It sits after
+    # ``Goals vs Outcomes`` because inserting it anywhere later would break the
+    # adjacency ``Chat History Analysis`` pins between ``Routing Decisions`` and
+    # ``Proposed Lessons``.
+    ('Footprint Derivation Coverage', FOOTPRINT_AGGREGATE_KEY, FOOTPRINT_AGGREGATE_KEY),
     ('Artifact Consistency', 'artifact-consistency', None),
     ('Log Analysis', 'log-analysis', None),
     # Phase Dispatch Boundaries — gated on the presence of at least one phase
@@ -76,6 +181,19 @@ SECTION_SPEC: tuple[tuple[str, str, str | None], ...] = (
     # this row on the underscored form silently empties the section because the
     # consumer lookup never finds the producer's payload.
     ('Chat History Analysis', 'chat-history-analysis', 'chat-history-analysis'),
+    # Outline vs Shipped is ALWAYS emitted (``conditional_trigger = None``), for
+    # the same reason ``Direct gh/glab Usage`` and ``Execution-Context Dispatch
+    # Audit`` are: the aspect runs for every plan, and a plan whose work matched
+    # its outline emits a populated ``counts`` block with an EMPTY ``findings``
+    # list. A self-trigger would refuse exactly that fragment while
+    # ``_fragment_has_payload`` still reports payload — mis-classifying the
+    # healthy, matched-control run as ``sections_dropped``, which is the state
+    # this aspect most needs to render cleanly.
+    #
+    # Positioned after ``Chat History Analysis`` so it does not disturb the
+    # adjacency that row pins between ``Routing Decisions`` and ``Proposed
+    # Lessons``.
+    ('Outline vs Shipped', 'outline-vs-shipped', None),
     ('Proposed Lessons', 'lessons-proposal', None),
 )
 
@@ -90,6 +208,29 @@ def valid_aspect_keys() -> set[str]:
     ``_``-prefixed keys, and that rule is preserved independently.
     """
     return {fragment_key for _heading, fragment_key, _trigger in SECTION_SPEC if not fragment_key.startswith('_')}
+
+
+def footprint_consuming_aspect_keys() -> tuple[str, ...]:
+    """Return the registry rows that consume the shared footprint derivation.
+
+    DERIVED from :data:`SECTION_SPEC` — walked in registry order and filtered by
+    :data:`FOOTPRINT_CONSUMING_ASPECTS` — rather than returning that tuple
+    directly. The difference is what makes the aggregate's roster a property of
+    the registry instead of a second list beside it: a name declared as a
+    consumer but carrying no registry row contributes no roster member (it has no
+    fragment to read, so counting it would manufacture a permanently-unread
+    producer), and the reported order is always the registry's own.
+
+    Four cross-checks in this skill previously hard-coded a population that then
+    drifted from its authoritative source; deriving here is the direct answer to
+    that shape.
+    """
+    declared = set(FOOTPRINT_CONSUMING_ASPECTS)
+    return tuple(
+        fragment_key
+        for _heading, fragment_key, _trigger in SECTION_SPEC
+        if fragment_key in declared
+    )
 
 
 # Fields whose presence lets a reader tell a section's "zero findings" apart from

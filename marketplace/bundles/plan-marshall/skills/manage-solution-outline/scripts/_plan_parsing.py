@@ -12,15 +12,17 @@ Usage:
         extract_deliverable_headings,
         split_deliverable_blocks,
         extract_deliverables,
+        declared_paths_by_intent,
+        declared_paths_population,
         parse_toon_simple,
     )
 """
 
 import os
 import re
-from typing import Any
+from typing import Any, NamedTuple
 
-from constants import STEP_INTENT_READ
+from constants import STEP_INTENT_READ, VALID_STEP_INTENTS
 
 #: The ``<!-- bucket: X -->`` audit-trail comment recorded on the
 #: ``**Profiles:**`` line. Owned here because ``_extract_profiles`` reads the
@@ -356,8 +358,42 @@ def _extract_profiles(content: str) -> list[str]:
 #: its expected-to-mutate paths belonged to no write-set, so every set-guarding
 #: check downstream — the recall check, the bucket adjudication, the
 #: verification-only guard — saw a deliverable that touched nothing.
+_AFFECTED_FILES_HEADING = 'Affected files'
 _SURVEY_SCOPE_HEADING = 'Files to survey'
 _MUTATION_SCOPE_HEADING = 'Files expected to mutate'
+
+#: The three declaration headings paired with the intent a marker-less bullet
+#: under each one carries. The SINGLE enumeration of "every heading a deliverable
+#: may declare its file surface under" — :func:`_walk_declared_paths` iterates it,
+#: so a fourth heading added to the standard reaches the declared-footprint
+#: derivation by editing this tuple alone.
+#:
+#: Only ``Files to survey`` supplies a default: it is analysis-only by definition,
+#: so an unmarked bullet there IS a read. The two modification headings supply
+#: ``None`` so an unmarked bullet stays distinguishable from a marked one rather
+#: than being silently promoted to a write it never declared.
+_DECLARATION_HEADINGS: tuple[tuple[str, str | None], ...] = (
+    (_AFFECTED_FILES_HEADING, None),
+    (_MUTATION_SCOPE_HEADING, None),
+    (_SURVEY_SCOPE_HEADING, STEP_INTENT_READ),
+)
+
+#: The bucket a bullet lands in when it declares no intent this parser recognises.
+#:
+#: Deliberately OUTSIDE the closed :data:`constants.VALID_STEP_INTENTS` enum, and
+#: deliberately not collapsed into either neighbour. A bullet with no ``(intent)``
+#: marker stated no intent at all, and both available lies are worse than a bucket
+#: of its own: filing it under a write invents a declaration the author never made,
+#: while filing it under ``read`` subtracts the path from every change footprint
+#: derived downstream. Keeping it separate lets the CONSUMER decide the direction
+#: while still being able to report how many such bullets there were — so a set
+#: that was filtered stays distinguishable from a set that was simply small.
+#:
+#: An unrecognised marker (the per-path ``(intent)`` group is parsed unvalidated,
+#: and ``validate_deliverable_contract`` is what enum-checks it) lands here too:
+#: it likewise declared no VALID intent, and routing it here keeps the returned
+#: key set closed so a consumer can iterate it exhaustively.
+INTENT_UNANNOTATED = 'unannotated'
 
 
 def _extract_scope_field(
@@ -435,14 +471,22 @@ def extract_mutation_scope(content: str) -> list[dict[str, Any]]:
 def _extract_affected_files(content: str) -> list[dict[str, Any]]:
     """Extract **Affected files:** list from deliverable content.
 
-    This is the FREEZE POINT of the plan's declared footprint: the list is
-    captured here, at outline time (phase-3), and is not re-derived when scope
-    moves during execution. It is therefore a *declaration* of the surface a
-    deliverable expects to touch — a lower-bound estimate — and NEVER a record
-    of what was actually touched; the authoritative touched-file record is the
-    live footprint derived from the worktree. See
-    ``manage-execution-manifest/standards/decision-rules.md`` § "Declared surface
-    vs. live footprint" for the consumer contract.
+    The FLAT declaration heading only. It is one of the three headings
+    :func:`declared_paths_by_intent` reads; a survey-scope deliverable declares
+    ``Files expected to mutate`` / ``Files to survey`` instead and yields nothing
+    here, so this extractor is never the whole declared surface on its own.
+
+    The list is a *declaration* of the surface a deliverable expects to touch — a
+    lower-bound estimate — and NEVER a record of what was actually touched; the
+    authoritative touched-file record is the live footprint derived from the
+    worktree. See ``manage-execution-manifest/standards/decision-rules.md``
+    § "Declared surface vs. live footprint" for the consumer contract.
+
+    The declared footprint is NOT frozen at outline time. ``references.affected_files``
+    is re-derived from this structured data by ``manage-references sync-affected-files``
+    at every point a later reader depends on it being current — before phase-4-plan
+    composes the manifest, and again on the phase-6-finalize loop-back re-entry —
+    because a faithful read of a stale value cannot detect its own staleness.
 
     Each entry is returned as a ``{'path': str, 'intent': str | None}`` object.
     The canonical annotated form is a backticked path followed by a
@@ -450,7 +494,7 @@ def _extract_affected_files(content: str) -> list[dict[str, Any]]:
     with no ``(intent)`` suffix yields ``intent=None`` so the validator — not
     this parser — produces the precise per-deliverable "missing marker" error.
     """
-    return _extract_scope_field(content, 'Affected files')
+    return _extract_scope_field(content, _AFFECTED_FILES_HEADING)
 
 
 def deliverable_write_set(deliverable: dict[str, Any]) -> list[str]:
@@ -511,6 +555,125 @@ def deliverable_write_set(deliverable: dict[str, Any]) -> list[str]:
                 seen.add(path)
                 write_set.append(path)
     return write_set
+
+
+class _DeclaredPathWalk(NamedTuple):
+    """One walk of the outline's declared file surface: the paths and the population.
+
+    The two faces are produced by the SAME pass so they cannot disagree about
+    what was read. :func:`declared_paths_by_intent` and
+    :func:`declared_paths_population` are thin views onto this pair.
+    """
+
+    by_intent: dict[str, set[str]]
+    population: dict[str, int]
+
+
+def _heading_present(content: str, heading: str) -> bool:
+    """Return True when ``**{heading}:**`` appears in a deliverable block.
+
+    Presence is asked separately from extraction because the two answers differ
+    where it matters: :func:`_extract_scope_field` returns an empty list BOTH for
+    a heading that is absent and for one that is present with no bullets beneath
+    it. Counting only extractions would report those two states identically, and
+    the second is the one worth seeing — an author who wrote the heading and then
+    declared nothing under it.
+    """
+    return re.search(rf'\*\*{re.escape(heading)}:\*\*', content, re.IGNORECASE) is not None
+
+
+def _walk_declared_paths(outline_content: str) -> _DeclaredPathWalk:
+    """Walk every deliverable's every declaration heading exactly once.
+
+    The single derivation behind both public faces. Returns the intent-keyed path
+    sets plus the population the walk covered.
+    """
+    by_intent: dict[str, set[str]] = {intent: set() for intent in VALID_STEP_INTENTS}
+    by_intent[INTENT_UNANNOTATED] = set()
+    population = {'deliverables_scanned': 0, 'headings_found': 0, 'bullets_parsed': 0}
+
+    sections = parse_document_sections(outline_content or '')
+    deliverables_section = sections.get('deliverables')
+    if not isinstance(deliverables_section, str) or not deliverables_section.strip():
+        # No Deliverables section: nothing was walked. The zero population is the
+        # signal — the caller can tell this from an outline whose deliverables
+        # genuinely declare no paths, which reports a non-zero deliverable count.
+        return _DeclaredPathWalk(by_intent, population)
+
+    for block in split_deliverable_blocks(deliverables_section):
+        population['deliverables_scanned'] += 1
+        content = str(block.get('content') or '')
+        for heading, default_intent in _DECLARATION_HEADINGS:
+            if not _heading_present(content, heading):
+                continue
+            population['headings_found'] += 1
+            for entry in _extract_scope_field(content, heading, default_intent):
+                path = entry.get('path')
+                if not isinstance(path, str) or not path:
+                    continue
+                population['bullets_parsed'] += 1
+                intent = entry.get('intent')
+                if intent not in VALID_STEP_INTENTS:
+                    intent = INTENT_UNANNOTATED
+                by_intent[intent].add(path)
+
+    return _DeclaredPathWalk(by_intent, population)
+
+
+def declared_paths_by_intent(outline_content: str) -> dict[str, set[str]]:
+    """Return every path the outline DECLARES, keyed by the intent it declared.
+
+    The single structured derivation of a plan's declared footprint. It reads all
+    three declaration headings the outline standard defines — ``Affected files``,
+    ``Files expected to mutate``, and ``Files to survey`` (:data:`_DECLARATION_HEADINGS`)
+    — across every deliverable, so a **survey-scope deliverable's**
+    expected-to-mutate paths reach the derivation. A survey-scope deliverable
+    declares that pair INSTEAD of a flat ``Affected files`` list, so a derivation
+    that read only the flat heading saw such a deliverable as declaring nothing
+    at all, and its change-bearing paths belonged to no declared set anywhere.
+
+    This function exists so ``references.affected_files`` is computed from the
+    outline's STRUCTURED per-path ``intent`` data rather than composed by reading
+    outline prose. A prose-scraped list can only be as complete as the reading
+    that produced it, and nothing downstream can audit a reading — whereas this
+    walk publishes the population it covered (:func:`declared_paths_population`).
+
+    Returns:
+        A mapping whose key set is CLOSED: every member of
+        :data:`constants.VALID_STEP_INTENTS` plus :data:`INTENT_UNANNOTATED`.
+        Every key is always present, so a consumer iterates the mapping rather
+        than guessing which intents occurred; an intent nothing declared maps to
+        an empty set. Values are deduplicated path sets — a path declared under
+        two headings, or by two deliverables, contributes one member.
+
+    Note:
+        The returned sets answer "what was DECLARED", never "what was touched".
+        The authoritative touched-file record is the live footprint derived from
+        the worktree (``manage-references compute-footprint``); these two are
+        reconciled against each other rather than substituted for one another.
+    """
+    return _walk_declared_paths(outline_content).by_intent
+
+
+def declared_paths_population(outline_content: str) -> dict[str, int]:
+    """Return the population :func:`declared_paths_by_intent` walked.
+
+    Published so an empty derivation is never mistaken for a measured one. An
+    outline the parser could not read and an outline whose deliverables declare
+    no paths both yield empty path sets, and only the population separates them:
+    the first reports ``deliverables_scanned: 0``, the second a positive count.
+    A consumer that reports "0 declared paths" without this figure is reporting
+    what it managed to read, not what the plan declared.
+
+    Returns:
+        ``deliverables_scanned`` — deliverable blocks walked;
+        ``headings_found`` — declaration headings PRESENT across those blocks
+        (a heading with no bullets under it still counts, which is what makes it
+        distinguishable from an absent one);
+        ``bullets_parsed`` — path bullets parsed under those headings, counted
+        before deduplication, so it reports the walk rather than the result.
+    """
+    return _walk_declared_paths(outline_content).population
 
 
 def extract_declared_bucket(content: str) -> str | None:

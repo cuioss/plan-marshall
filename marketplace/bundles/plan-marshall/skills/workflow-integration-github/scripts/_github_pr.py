@@ -818,6 +818,15 @@ def cmd_pr_view(args: argparse.Namespace) -> dict:
     merges, so a ``--head``-keyed poll stops resolving at exactly the moment the
     terminal ``state: merged`` it waits for becomes observable. The PR number is
     stable across that deletion.
+
+    The payload carries ``merge_commit_sha`` — the landing commit of a merged PR, or
+    ``None`` when there is none (an open PR, or a provider reporting no merge commit).
+    ``None`` is the EXPLICIT absent form and is never an empty string, because a
+    consumer reading the SHA cannot distinguish ``''`` from a resolved value without
+    re-deriving the PR's state. A read failure is not an absent SHA either: it surfaces
+    as ``status: error`` from this verb, so absent-because-open and
+    could-not-read stay distinguishable at the boundary. See
+    ``github_ops.view_pr_data`` for the field's construction.
     """
     pr_number = getattr(args, 'pr_number', None)
     head = getattr(args, 'head', None)

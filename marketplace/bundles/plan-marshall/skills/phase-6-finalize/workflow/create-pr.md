@@ -70,7 +70,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
 
 Inspect the returned TOON — branch on BOTH `status` AND `state` (an open PR is reusable; a merged/closed one is not):
 
-- `status: success` AND `state == open` → an open PR already exists for this branch. Skip creation; reuse the returned `pr_number` for the automated review step (Mark Step Complete → Branch B).
+- `status: success` AND `state == open` → an open PR already exists for this branch. Skip creation; reuse the returned `pr_number` for the automated review step. **Still run § "Persist the PR number" with the reused `pr_number` before Mark Step Complete → Branch B** — skipping creation does not skip the persist. The PR-landing footprint tier keys on `references.pr_number`, so a reused-PR run that never writes it leaves that tier with nothing to resolve and the plan's post-merge footprint reports unmeasurable.
 - `status: success` AND `state ∈ {merged, closed}` → the returned PR is a **stale association**, not a reusable PR. This happens when the branch name is reused across runs (a deterministic `feature/{plan_id}` whose prior run already merged): `gh pr view <branch>` returns the most-recent PR for the branch name regardless of state when no open PR exists, so a merged/closed PR resolves here. The current branch's new commits need their own PR — do NOT reuse it. Proceed to create a fresh PR (Mark Step Complete → Branch A). Recipe plan_ids carry a `{yyyy-mm-dd-hh}` suffix (see `phase-1-init/SKILL.md` Step 2 "From recipe") precisely to avoid this branch-name reuse, but this state guard is the structural backstop if a collision ever occurs by another path.
 - `status: error` → no PR exists, proceed to create one (Branch A).
 
@@ -296,6 +296,23 @@ Read `pr_number` and `pr_url` from the TOON output.
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:phase-6-finalize) Created PR #{pr_number}: {pr_url}"
 ```
+
+## Persist the PR number to `references.json`
+
+**Runs on BOTH branches** — the newly created PR (Branch A) and the reused open PR (Branch B). Bind `{pr_number}` to whichever branch produced it, then write it:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set \
+  --plan-id {plan_id} --field pr_number --value {pr_number}
+```
+
+**This write is load-bearing, not bookkeeping.** `references.pr_number` is the key the shared footprint resolver's PR-landing tier resolves a squash / merge-queue landing from (see [`../../plan-retrospective/scripts/_footprint_resolver.py`](../../plan-retrospective/scripts/_footprint_resolver.py)). On the async merge-queue path `default:branch-cleanup` writes neither `realized_footprint` nor `merge_commit_sha`, so those tiers fail together and the PR number is the ONLY key left that can resolve the landing — and it is the only selector that survives the head-branch deletion the queue performs as it merges. Without this write the tier has nothing to key on and every downstream footprint consumer reports the landing unmeasurable.
+
+Write it **here**, at creation, rather than at merge time: this is the first and only moment the number is known for certain, and a plan that never reaches `branch-cleanup` still leaves the key recorded.
+
+Both branches MUST write it. Skipping the write on Branch B would leave a reused PR unrecorded — the run would have a live PR whose number `references.json` does not carry, which is exactly the unresolvable state this key exists to prevent.
+
+Per the exit-code convention above, a non-zero exit STOPs the step. A `status: error` in the returned TOON is likewise not ignorable: the key is a required input for the landing resolution, so a failed write must not pass silently.
 
 ## Mark Step Complete
 

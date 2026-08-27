@@ -1457,6 +1457,29 @@ FOR each step_id in manifest.phase_6.steps:
 
       `max_iterations` keeps its declared default — this gate makes the existing value load-bearing and does not change it.
 
+      **(i-b) Declared-footprint refresh — re-derive `references.affected_files` on the admitted loop-back.**
+
+      A loop-back is the point at which the plan's scope moves after phase-3: the disposition that raised it opens fix tasks, revises the outline, or widens the surface, and every finalize-time consumer that reads `references.affected_files` on the re-entry would otherwise read the phase-3 snapshot. **A faithful read of a stale value cannot detect its own staleness** — re-reading the key returns exactly what was written, so no consumer downstream can tell a current declared footprint from a superseded one. Only a re-derivation can. Re-run the derivation here, once per admitted iteration:
+
+         python3 .plan/execute-script.py plan-marshall:manage-references:manage-references sync-affected-files \
+           --plan-id {plan_id}
+
+      The `affected_files` write is a set union over the existing value, so the refresh only ever ADDS to that key: it is never narrowed, and a re-entry whose outline did not move changes nothing (`added_count: 0`). The claim is scoped to `affected_files` deliberately — the sibling `read_intent_files` key the verb also writes CAN have its stored half narrowed by the persisted mutation-wins subtraction (`stored_read_reclassified_count`), and no finalize-time consumer reads that key. See `manage-references` Canonical invocations → `sync-affected-files`.
+
+      **Placement is load-bearing — it is BEFORE the (ii) knob check, deliberately.** Both continuations re-read the key: the `value == true` branch re-enters the FOR loop in this same dispatch, and the `value == false` branch halts for an operator re-run that re-enters finalize fresh. Refreshing after the knob would leave the default (halting) configuration re-entering against the stale snapshot — the configuration that loops most.
+
+      Branch on the returned `status`. On `success`, bind `{added}` to the returned `added` list — the verb reports the newly-unioned paths themselves alongside `added_count`, so the promise below costs no extra call — and log the refresh only when it changed something (`added_count > 0`), naming those paths so the scope movement is auditable. A count alone is not auditable: it says the surface moved without saying where, which is the one thing an operator reading this line needs:
+
+         python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+           work --plan-id {plan_id} --level INFO \
+           --message "[STATUS] (plan-marshall:phase-6-finalize) Declared-footprint refresh on loop-back iteration {loop_back_iteration + 1}: {added_count} path(s) added, total {total} — added: {added}"
+
+      On any error status — the `sync-affected-files` error set, whose single source of truth is [`../manage-references/SKILL.md`](../manage-references/SKILL.md) § "Error Responses" (the rows tagged `sync-affected-files`); it is cross-referenced rather than restated so this call site cannot drift out of agreement with its sibling consumers — the refresh wrote nothing. This is **non-blocking** — the loop-back still proceeds, because the `affected_files` union never removes anything and a failed refresh leaves the key exactly as the last successful derivation left it. Log the failure at WARNING so the re-entry is not silently reading an unrefreshed value, then continue to (ii):
+
+         python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+           work --plan-id {plan_id} --level WARNING \
+           --message "[STATUS] (plan-marshall:phase-6-finalize) Declared-footprint refresh did not run ({error}) — references.affected_files is unchanged from the last successful derivation and may understate scope added this round"
+
       **(ii) Symmetric-knob check (AFTER the ceiling gate, BEFORE the granularity branch)** — the `loop_back_without_asking` knob applies uniformly to BOTH granularity tiers and gates whether the admitted loop-back executes inline or halts and prompts. The `loop_back_target` value selects the dispatch shape AFTER this gate passes.
 
       Consult the symmetric auto-continuation knob to decide whether to halt or re-enter inline:
