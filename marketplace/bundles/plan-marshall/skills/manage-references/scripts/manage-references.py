@@ -12,9 +12,15 @@ Usage:
     python3 manage-references.py read --plan-id EXAMPLE-PLAN
     python3 manage-references.py get --plan-id EXAMPLE-PLAN --field branch
     python3 manage-references.py set --plan-id EXAMPLE-PLAN --field branch --value feature/x
-    python3 manage-references.py add-list --plan-id EXAMPLE-PLAN --field affected_files --values file1.md,file2.md
-    python3 manage-references.py set-list --plan-id EXAMPLE-PLAN --field affected_files --values file1.md,file2.md
+    python3 manage-references.py add-list --plan-id EXAMPLE-PLAN --field domains --values java,documentation
+    python3 manage-references.py set-list --plan-id EXAMPLE-PLAN --field domains --values java,documentation
     python3 manage-references.py sync-affected-files --plan-id EXAMPLE-PLAN
+
+Note: add-list / set-list take a free-form --field and reject nothing, but the
+declared-footprint keys (affected_files, read_intent_files) are DERIVED — they are
+written together by sync-affected-files, which takes no --values argument precisely
+so no caller composes them by hand. Never advertise or use the list verbs against
+either key; see the skill's Enforcement section.
     python3 manage-references.py reconcile-scope --plan-id EXAMPLE-PLAN
 """
 

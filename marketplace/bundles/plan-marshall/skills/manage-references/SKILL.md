@@ -18,7 +18,7 @@ Manage references.json files with field-level access and list management. Tracks
 - Do not mix `add-list` and `set-list` without understanding their semantics (append vs replace)
 - References are plan-scoped; always provide `--plan-id`
 - File paths in affected_files are always relative to repository root
-- `affected_files` and `read_intent_files` are written together by `sync-affected-files`, which derives both from the outline. Do not hand-compose either through `set-list` / `add-list`: a CSV composed by reading outline prose can only be as complete as that reading, nothing downstream can audit a reading, and a hand-composed value cannot honour the intent partition that keeps the two keys disjoint
+- `affected_files` and `read_intent_files` are written together by `sync-affected-files`, which derives both from the outline. Do not hand-compose either through `set-list` / `add-list`: a CSV composed by reading outline prose can only be as complete as that reading, nothing downstream can audit a reading, and a hand-composed value cannot honour the intent partition that keeps the two keys disjoint. **This is an agent-directed convention, not a runtime guard, and the scope is stated rather than mechanised.** `add-list` / `set-list` take a free-form `--field` (no argparse `choices=`) and `_cmd_list.py` rejects neither key, so nothing refuses a hand-composed write at the CLI boundary — a reader must not infer an enforcement that is not there. The mechanism that actually keeps the two keys derived is that `sync-affected-files` takes **no** `--values` argument, so the derived path has no CSV to compose wrongly; the constraint here is what stops a caller reaching around it
 
 ## Storage Location
 
@@ -170,28 +170,29 @@ Add multiple values to a list field.
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references add-list \
   --plan-id {plan_id} \
-  --field affected_files \
-  --values "path/to/file1.md,path/to/file2.md,path/to/file3.md"
+  --field domains \
+  --values "java,documentation"
 ```
 
 **Parameters**:
 - `--plan-id` (required): Plan identifier
-- `--field` (required): List field name (e.g., `affected_files`)
+- `--field` (required): List field name (e.g., `domains`)
 - `--values` (required): Comma-separated values to add
 
 **Output** (TOON):
 ```toon
 status: success
 plan_id: my-feature
-field: affected_files
-added_count: 3
-total: 3
+field: domains
+added_count: 2
+total: 2
 ```
 
 **Notes**:
 - Creates the field as an empty list if it doesn't exist
 - Skips values that already exist in the list (no duplicates)
 - Returns error if the field exists but is not a list
+- ⛔ **Never pass `--field affected_files` or `--field read_intent_files`.** Both are derived keys written together by `sync-affected-files`; see § Enforcement for why a hand-composed value cannot honour the intent partition. The verb does not refuse them — the restriction is a convention, so the caller is what upholds it.
 
 ### set-list
 
@@ -200,20 +201,20 @@ Set a list field to new values, replacing any existing content.
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set-list \
   --plan-id {plan_id} \
-  --field affected_files \
-  --values "path/to/file1.md,path/to/file2.md"
+  --field domains \
+  --values "java,documentation"
 ```
 
 **Parameters**:
 - `--plan-id` (required): Plan identifier
-- `--field` (required): List field name (e.g., `affected_files`)
+- `--field` (required): List field name (e.g., `domains`)
 - `--values` (required): Comma-separated values
 
 **Output** (TOON):
 ```toon
 status: success
 plan_id: my-feature
-field: affected_files
+field: domains
 previous_count: 5
 count: 2
 ```
@@ -222,10 +223,12 @@ count: 2
 - Replaces the entire list (does not append like `add-list`)
 - Empty `--values ""` clears the list
 - Returns `previous_count` showing how many items were replaced
+- ⛔ **Never pass `--field affected_files` or `--field read_intent_files`** — the same derived-key restriction stated under `add-list` above, and unenforced in the same way.
 
 **When to use `set-list` vs `add-list`**:
-- Use `set-list` when you have the complete, authoritative list (e.g., after re-scanning affected files)
-- Use `add-list` when incrementally building a list (e.g., adding files as they are modified during execution)
+- Use `set-list` when you have the complete, authoritative list for a **caller-owned** key such as `domains`
+- Use `add-list` when incrementally building such a list
+- Use **neither** for the declared footprint: `affected_files` and `read_intent_files` are re-derived by `sync-affected-files`, which is also what makes the refresh safe to repeat at every point a consumer depends on the value being current
 
 ### get-context
 
