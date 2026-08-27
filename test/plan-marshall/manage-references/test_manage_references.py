@@ -1189,3 +1189,109 @@ def test_sync_reports_a_non_list_read_intent_files_rather_than_overwriting_it(pl
     refs = require_references('test-plan')
     assert isinstance(refs, dict)
     assert 'affected_files' not in refs
+
+
+# =============================================================================
+# Test: sync-affected-files — the partition survives an INTENT TRANSITION
+# =============================================================================
+# Enforcing mutation-wins over one derivation is not enough. Both writes are
+# unions that only ADD, so a path whose declared intent moves between two runs
+# lands in BOTH stored keys: the earlier run's entry survives while the later
+# declaration is unioned into its sibling. The returned counts are computed
+# from the derived sets, so they stay correct and the divergence is invisible
+# in the verb's own output — only the STORED partition is wrong. Both
+# directions are covered, because the two are reached by different code paths:
+# read -> mutation leaves a stale read entry beside a fresh mutation one, while
+# mutation -> read adds a fresh read entry beside a stale mutation one.
+
+#: One deliverable declaring a single path with READ intent.
+_OUTLINE_INTENT_READ = """# Solution: fixture
+
+## Deliverables
+
+### 1. A deliverable that only consults the path
+
+**Affected files:**
+- `src/moves.py` (read)
+
+**Verification:**
+- Command: verify
+- Criteria: passes
+"""
+
+#: The same outline after the declared intent moved to a modification. Paired
+#: with ``_OUTLINE_INTENT_READ`` so one fixture pair drives both directions.
+_OUTLINE_INTENT_MUTATION = """# Solution: fixture
+
+## Deliverables
+
+### 1. The same deliverable, now modifying the path
+
+**Affected files:**
+- `src/moves.py` (write-replace)
+
+**Verification:**
+- Command: verify
+- Criteria: passes
+"""
+
+
+def test_sync_keeps_the_stored_halves_disjoint_when_read_becomes_mutation(plan_context):
+    """A path that moves read -> mutation does not remain in the read key.
+
+    The first run is the matched NEGATIVE control: nothing has transitioned
+    yet, so ``stored_read_reclassified_count`` must be 0 there. A subtraction
+    that fired unconditionally would pass the second run's assertions on its
+    own, and this pairing is what rules that out.
+    """
+    cmd_create(_create_ns())
+    _write_outline('test-plan', _OUTLINE_INTENT_READ)
+    first = cmd_sync_affected_files(_sync_ns())
+
+    assert _read_intent() == ['src/moves.py']
+    assert _affected() == []
+    assert first['stored_read_reclassified_count'] == 0
+
+    _write_outline('test-plan', _OUTLINE_INTENT_MUTATION)
+    second = cmd_sync_affected_files(_sync_ns())
+
+    assert second['status'] == 'success'
+    assert _affected() == ['src/moves.py']
+    assert _read_intent() == []
+    # The invariant the returned counts alone could never have caught.
+    assert set(_affected()) & set(_read_intent()) == set()
+    assert second['stored_read_reclassified_count'] == 1
+    assert second['mutation_count'] + second['read_intent_count'] == second['declared_count']
+    assert len(set(_affected()) | set(_read_intent())) == second['declared_count']
+
+
+def test_sync_keeps_the_stored_halves_disjoint_when_mutation_becomes_read(plan_context):
+    """A path that moves mutation -> read is not added to the read key.
+
+    Mutation still wins, so the path stays in ``affected_files``: the union
+    contract is deliberate and a path leaves scope by leaving the outline, not
+    by this verb narrowing the mutation half. What must NOT happen is the path
+    appearing in both keys. ``read_intent_added`` reports what was actually
+    persisted, so a proposal the subtraction then reclaimed is not counted as
+    an addition.
+    """
+    cmd_create(_create_ns())
+    _write_outline('test-plan', _OUTLINE_INTENT_MUTATION)
+    first = cmd_sync_affected_files(_sync_ns())
+
+    assert _affected() == ['src/moves.py']
+    assert _read_intent() == []
+    assert first['stored_read_reclassified_count'] == 0
+
+    _write_outline('test-plan', _OUTLINE_INTENT_READ)
+    second = cmd_sync_affected_files(_sync_ns())
+
+    assert second['status'] == 'success'
+    assert _affected() == ['src/moves.py']
+    assert _read_intent() == []
+    assert set(_affected()) & set(_read_intent()) == set()
+    assert second['stored_read_reclassified_count'] == 1
+    assert second['read_intent_added'] == []
+    assert second['read_intent_added_count'] == 0
+    assert second['mutation_count'] + second['read_intent_count'] == second['declared_count']
+    assert len(set(_affected()) | set(_read_intent())) == second['declared_count']

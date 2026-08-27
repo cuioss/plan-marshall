@@ -311,11 +311,12 @@ The derivation is structural, not narrative: every path comes from `_plan_parsin
 | Mutation | `affected_files` | Every `write-new`, `write-replace`, `delete`, and *unannotated-under-a-modification-heading* path |
 | Read | `read_intent_files` | Paths declared `read` — including every marker-less bullet under `Files to survey`, which is analysis-only by definition |
 
-Three rules govern the split:
+Four rules govern the split:
 
 - **A read-intent path never lands in `affected_files`.** That key is the denominator of every recall figure derived downstream, and the realized footprint is a diff — a file the plan only read can never appear in one. Counted as an expected modification it is a denominator member the numerator cannot ever contain, capping recall below threshold no matter how completely the plan executed.
 - **An unannotated bullet under a modification heading counts as a modification.** It stated no intent, and the two readings are not symmetric: over-stating the write-set by one path is recoverable, whereas filing it under `read` subtracts a possibly-changing file from every downstream footprint and manufactures a vacuously small denominator. Its count is published separately so the assumption stays visible.
 - **Mutation wins the overlap.** A path one deliverable declares a write and another declares a read is an expected modification, and appears under `affected_files` only. The two halves are therefore disjoint, which is what lets `mutation_count + read_intent_count` reconstruct the distinct declared-path total exactly. The number of read declarations reclassified this way is published as `read_reclassified_count`, so the subtraction is visible rather than silently shrinking `read_intent_count`.
+- **Mutation wins the overlap in the STORED keys too, across runs.** Applying the rule to one derivation is not enough: both writes are unions that only add, so a path whose declared intent moves between two runs would be recorded in both keys while the returned counts — computed from the derived sets — stayed correct and hid it. The rule is therefore applied a second time to the persisted halves, by subtracting the post-union `affected_files` from the stored `read_intent_files`; the stored read entries reclaimed that way are published as `stored_read_reclassified_count`. Only the read half is ever narrowed — see the union-semantics note below.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references sync-affected-files \
@@ -350,13 +351,14 @@ read_intent_added[3]:
   - marketplace/bundles/plan-marshall/skills/manage-solution-outline/scripts/_plan_parsing.py
   - marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/_footprint_resolver.py
   - marketplace/bundles/plan-marshall/skills/tools-integration-ci/scripts/ci_base.py
+stored_read_reclassified_count: 0
 deliverables_scanned: 5
 headings_found: 6
 bullets_parsed: 31
 ```
 
 **Notes**:
-- Both writes are a **set union** over the existing value. An already-recorded path always survives a subsequent run, a path that appeared after the outline was first read is added, and a repeat run over an unchanged outline changes nothing — which is what makes the verb safe to call at every point a consumer depends on the value being current.
+- Both writes are a **set union** over the existing value. An already-recorded path always survives a subsequent run, a path that appeared after the outline was first read is added, and a repeat run over an unchanged outline changes nothing — which is what makes the verb safe to call at every point a consumer depends on the value being current. The one narrowing is the persisted mutation-wins subtraction above, and it applies to `read_intent_files` only: a path it removes from the read key is present in `affected_files` on the same run, so it leaves neither the declaration nor the plan's footprint. `affected_files` itself is never narrowed — a path leaves scope by leaving the outline, never by failing this verb.
 - Ordering is stable: already-recorded paths keep their position, newly derived ones are appended in sorted order.
 - The three partition counts exist so a **filtered** set is never mistaken for a **small** one. `mutation_count + read_intent_count == declared_count` (the halves are disjoint); `unannotated_count` is a SUB-count of `mutation_count`, naming how much of the mutation half arrived by the unmarked-bullet default rather than by an explicit marker.
 - `added_count` / `unchanged_count` / `total` / `added` describe `affected_files`; the `read_intent_*` peers describe `read_intent_files`. Each names the key it was computed over, so neither set's figures can be read against the wrong key.

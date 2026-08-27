@@ -257,6 +257,19 @@ def cmd_sync_affected_files(args: argparse.Namespace) -> dict:
     that appeared after the outline was first read is added, and a repeat run
     with no new paths changes nothing.
 
+    **Disjointness holds over the STORED keys, across runs — not only over one
+    derivation.** Enforcing mutation-wins on the derived sets alone would leave
+    the invariant unenforced against the state on disk: a union only adds, so a
+    path whose declared intent moves between two runs would end up recorded in
+    both keys, while the returned counts — computed from the derived sets —
+    stayed correct and hid the divergence. Mutation-wins is therefore applied
+    a second time, to the persisted halves, by subtracting the post-union
+    ``affected_files`` from the stored ``read_intent_files``; the number of
+    stored read entries reclaimed that way is published as
+    ``stored_read_reclassified_count``. Only the read half is ever narrowed —
+    ``affected_files`` keeps pure union semantics, so a path still leaves scope
+    by leaving the outline rather than by failing this gate.
+
     Refuses rather than reporting a clean zero when it could not derive anything:
     a missing or unreadable outline, and an outline whose Deliverables section
     yielded no deliverable blocks at all, are ``status: error`` — an empty
@@ -305,6 +318,27 @@ def cmd_sync_affected_files(args: argparse.Namespace) -> dict:
     if error:
         return {'plan_id': args.plan_id, **error}
 
+    # Mutation wins over the STORED partition, not only over the sets derived on
+    # this run. ``read_intent = declared_read - mutation`` above enforces
+    # disjointness across one derivation, but both writes are unions that only
+    # ever ADD, so a path whose declared intent moved between runs lands in both
+    # keys: the earlier run's entry survives in one while the later declaration
+    # is unioned into the other. Subtracting the post-union mutation half from
+    # the stored read half applies the same mutation-wins rule to the state on
+    # disk, and it is what keeps the two stored keys a true partition — and
+    # therefore ``mutation_count + read_intent_count`` a true reconstruction of
+    # the distinct declared total — for a plan that runs this verb more than
+    # once. The mutation key's union semantics are untouched: a path still
+    # leaves scope by leaving the outline, never by failing this gate.
+    stored_mutation = set(refs[_AFFECTED_FILES_FIELD])
+    read_stored = refs[_READ_INTENT_FILES_FIELD]
+    read_kept = [path for path in read_stored if path not in stored_mutation]
+    stored_read_reclassified_count = len(read_stored) - len(read_kept)
+    refs[_READ_INTENT_FILES_FIELD] = read_kept
+    # Report what actually landed, not what the union proposed: an added path
+    # the subtraction then removed was never persisted to the read key.
+    read_added = [path for path in read_added if path not in stored_mutation]
+
     write_references(args.plan_id, refs)
 
     return {
@@ -335,5 +369,10 @@ def cmd_sync_affected_files(args: argparse.Namespace) -> dict:
         'read_intent_added_count': len(read_added),
         'read_intent_total': len(refs[_READ_INTENT_FILES_FIELD]),
         'read_intent_added': read_added,
+        # Stored read entries the post-union mutation half reclaimed on THIS run
+        # — the persisted-state peer of ``read_reclassified_count``. Published
+        # for the same reason: the subtraction is visible rather than silently
+        # shrinking ``read_intent_total``.
+        'stored_read_reclassified_count': stored_read_reclassified_count,
         **population,
     }
