@@ -1026,7 +1026,7 @@ def _guard_roster() -> tuple[list[tuple[str, str]], list[str]]:
     row. ``discrepancies`` names both failure directions: a publisher with no
     row, and a row whose module no longer publishes.
     """
-    listed = [(short_name, relative) for short_name, relative in _ROUTING_GUARD_MODULES]
+    listed = list(_ROUTING_GUARD_MODULES)
     listed_paths = {relative for _short_name, relative in listed}
     discovered = _discover_guard_publishers()
 
