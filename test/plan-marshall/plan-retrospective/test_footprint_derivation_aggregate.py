@@ -222,7 +222,12 @@ class TestRosterIsDerived:
             _rs, 'FOOTPRINT_CONSUMING_ASPECTS', (*_rs.FOOTPRINT_CONSUMING_ASPECTS, 'new-aspect')
         )
         fragments = _fragments(degraded=True)
-        fragments['new-aspect'] = {'status': 'success', 'verdict': 'inconclusive'}
+        # Shaped like the live producers: the token is a per-check ``status``
+        # VALUE, which is where the probe's verdict arm reads it from.
+        fragments['new-aspect'] = {
+            'status': 'success',
+            'checks': [{'name': 'footprint', 'status': 'inconclusive'}],
+        }
 
         after = _cr.footprint_derivation_record(fragments, plan_dir)
 
@@ -258,6 +263,98 @@ class TestDegradationProbeKeyValueSplit:
         assert _cr._declares_degraded(
             _log_analysis(degraded=False), _rs.FOOTPRINT_DEGRADED_TOKENS
         ) is False
+
+
+# =============================================================================
+# The degradation probe reads `inconclusive` from VERDICT FIELDS, not any string
+# =============================================================================
+# The key/value split above protects the ``summary.inconclusive`` COUNTER KEY.
+# It does not protect the VALUES: three of the four roster producers publish a
+# ``plan_id`` / ``plan_dir`` pair in their result dict, and both embed the plan
+# id. A plan whose id contains the token therefore makes a fully RESOLVED
+# fragment match — and because the aggregate is suppressed unless EVERY member
+# degraded, one such false positive across the whole roster fires
+# AGGREGATE_UNMEASURABLE on a run where every producer resolved.
+
+#: A plan id that CONTAINS the token. Not contrived: ``inconclusive`` is an
+#: ordinary English word, and a plan about unmeasurable footprints is precisely
+#: the kind whose id names one.
+_POISONED_PLAN_ID = 'plan-recall-was-inconclusive'
+_POISONED_PLAN_DIR = f'/repo/.plan/local/plans/{_POISONED_PLAN_ID}'
+
+
+def _with_producer_metadata(fragment: dict) -> dict:
+    """Attach the ``plan_id`` / ``plan_dir`` pair the real producers emit."""
+    enriched = copy.deepcopy(fragment)
+    enriched['plan_id'] = _POISONED_PLAN_ID
+    enriched['plan_dir'] = _POISONED_PLAN_DIR
+    return enriched
+
+
+def _poisoned_fragments(*, degraded: bool) -> dict:
+    """Every roster fragment, carrying the token-bearing plan metadata."""
+    return {
+        key: _with_producer_metadata(fragment)
+        for key, fragment in _fragments(degraded=degraded).items()
+    }
+
+
+class TestDegradationProbeIsFieldScoped:
+    """A plan id carrying the token is not a producer declaring degradation."""
+
+    def test_a_resolved_fragment_whose_plan_metadata_carries_the_token_is_not_degraded(self):
+        """The discriminating control: the token is present, the verdict is not."""
+        clean = _with_producer_metadata(_artifact_consistency(degraded=False))
+        assert 'inconclusive' in clean['plan_dir']
+        assert 'inconclusive' in clean['plan_id']
+        assert _cr._declares_degraded(clean, _rs.FOOTPRINT_DEGRADED_TOKENS) is False
+
+    def test_the_same_metadata_beside_a_real_status_value_is_still_degraded(self):
+        """The matched positive: identical metadata, the verdict field moved."""
+        degraded = _with_producer_metadata(_artifact_consistency(degraded=True))
+        assert 'inconclusive' in degraded['plan_dir']
+        assert _cr._declares_degraded(degraded, _rs.FOOTPRINT_DEGRADED_TOKENS) is True
+
+    def test_the_comparison_verdict_field_is_read_as_a_verdict(self):
+        """``check-outline-vs-shipped`` publishes under ``comparison``, not ``status``."""
+        assert _cr._declares_degraded(
+            _with_producer_metadata(_outline_vs_shipped(degraded=True)),
+            _rs.FOOTPRINT_DEGRADED_TOKENS,
+        ) is True
+        assert _cr._declares_degraded(
+            _with_producer_metadata(_outline_vs_shipped(degraded=False)),
+            _rs.FOOTPRINT_DEGRADED_TOKENS,
+        ) is False
+
+    def test_narrowing_inconclusive_did_not_narrow_the_free_text_token(self):
+        """The other arm is untouched — ``analyze-logs`` never emits its token bare."""
+        poisoned_clean = _with_producer_metadata(_log_analysis(degraded=False))
+        poisoned_degraded = _with_producer_metadata(_log_analysis(degraded=True))
+        assert _cr._declares_degraded(poisoned_clean, _rs.FOOTPRINT_DEGRADED_TOKENS) is False
+        assert _cr._declares_degraded(poisoned_degraded, _rs.FOOTPRINT_DEGRADED_TOKENS) is True
+
+    def test_a_fully_resolved_roster_with_token_bearing_metadata_fires_nothing(self, tmp_path):
+        """The plan-level consequence: no AGGREGATE_UNMEASURABLE on a resolved run.
+
+        The compose-time member is degraded, so the ONLY thing keeping the record
+        suppressed is that the four registry-derived members read as resolved.
+        """
+        plan_dir = _plan_dir(tmp_path, compose_degraded=True)
+
+        record = _cr.footprint_derivation_record(_poisoned_fragments(degraded=False), plan_dir)
+
+        assert record is None
+
+    def test_the_matched_positive_still_fires_on_the_same_metadata(self, tmp_path):
+        """Discrimination, not suppression: the genuine all-degraded run still fires."""
+        plan_dir = _plan_dir(tmp_path, compose_degraded=True)
+
+        record = _cr.footprint_derivation_record(_poisoned_fragments(degraded=True), plan_dir)
+
+        assert record is not None
+        assert record['state'] == _rs.AGGREGATE_UNMEASURABLE
+        assert record['resolved_count'] == 0
+        assert record['degraded_count'] == record['producer_count']
 
 
 # =============================================================================

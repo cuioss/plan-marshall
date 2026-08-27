@@ -632,13 +632,15 @@ def build_document(
 def _iter_string_values(value: Any):
     """Yield every string VALUE in a fragment tree — never a dict KEY.
 
-    The key/value split is the whole correctness of the degradation probe below,
-    not a stylistic preference. ``check-artifact-consistency`` publishes a
-    ``summary.inconclusive`` COUNTER on every run, so a walk that also matched
-    keys would find the token ``inconclusive`` in a perfectly clean fragment
-    (``inconclusive: 0``) and read it as degraded — firing the aggregate on
-    precisely the runs it must stay silent for, which is the control case
-    deliverable 5 pins.
+    The key/value split is load-bearing for the free-text arm of the degradation
+    probe below, not a stylistic preference. ``check-artifact-consistency``
+    publishes a ``summary.inconclusive`` COUNTER on every run, so a walk that
+    also matched keys would find the token ``inconclusive`` in a perfectly clean
+    fragment (``inconclusive: 0``) and read it as degraded — firing the
+    aggregate on precisely the runs it must stay silent for, which is the
+    control case deliverable 5 pins. The verdict arm has its own, narrower walk
+    (:func:`_iter_verdict_field_values`); this one stays as broad as a free-text
+    token needs.
     """
     if isinstance(value, str):
         yield value
@@ -652,20 +654,76 @@ def _iter_string_values(value: Any):
             yield from _iter_string_values(item)
 
 
+#: Fragment keys under which a producer publishes its own degradation VERDICT.
+#: ``status`` is the per-check verdict the three ``check-*`` aspects emit;
+#: ``comparison`` is the peer field ``check-outline-vs-shipped`` publishes.
+_VERDICT_FIELD_KEYS: frozenset[str] = frozenset({'status', 'comparison'})
+
+#: The degradation tokens matched by EQUALITY against a verdict field only,
+#: rather than as a substring of any string value in the fragment. Membership
+#: here is a property of how the token is EMITTED — see :func:`_declares_degraded`.
+_VERDICT_SCOPED_TOKENS: frozenset[str] = frozenset({'inconclusive'})
+
+
+def _iter_verdict_field_values(value: Any):
+    """Yield every string stored under one of :data:`_VERDICT_FIELD_KEYS`.
+
+    Narrower than :func:`_iter_string_values` on purpose: it yields a string
+    only where the producer published it AS a verdict, so an incidental string
+    field carrying the same characters is never read as one. Three of the four
+    roster producers emit a ``plan_dir`` (and a ``plan_id``) in their result
+    dict, and both embed the plan id — so an all-values scan makes a plan whose
+    id contains the token match on a fully RESOLVED fragment.
+    """
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key in _VERDICT_FIELD_KEYS and isinstance(item, str):
+                yield item
+            else:
+                yield from _iter_verdict_field_values(item)
+        return
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _iter_verdict_field_values(item)
+
+
 def _declares_degraded(fragment: Any, tokens: tuple[str, ...]) -> bool:
     """Return True when *fragment* carries one of its producers' degradation tokens.
 
-    Substring rather than equality, because the two tokens are emitted in two
-    different shapes and both are the producer's own existing honest degradation:
-    ``inconclusive`` is an exact per-check ``status`` value, while
-    ``ARTIFACT_COVERAGE_UNMEASURABLE`` is embedded in the TEXT of the warning
-    finding ``analyze-logs`` raises. An equality-only probe would read the second
-    producer as resolved on exactly the run where it declared it could not
-    measure — leaving the aggregate one member short of firing, forever.
+    TWO ARMS, because the two tokens are EMITTED in two different shapes and
+    each must be read the way its producer writes it:
+
+    * **Verdict-field equality** (:data:`_VERDICT_SCOPED_TOKENS`) —
+      ``inconclusive`` is an exact per-check ``status`` / ``comparison`` VALUE,
+      so it is matched by equality and only under those keys. A substring scan
+      over every string value would also match the ``plan_dir`` / ``plan_id``
+      fields three of the four roster producers publish: a plan whose id
+      contains the token would then read as degraded on a fully resolved
+      fragment, and because the aggregate is suppressed unless EVERY member
+      degraded, one such false positive across the whole roster fires
+      ``AGGREGATE_UNMEASURABLE`` on a run where every producer resolved — the
+      confidently-wrong plan-level claim this signal exists to remove.
+    * **Free-text substring** (every other token) —
+      ``ARTIFACT_COVERAGE_UNMEASURABLE`` is embedded in the TEXT of the warning
+      finding ``analyze-logs`` raises, so it is matched as a substring of any
+      string value. Narrowing THIS arm to equality would read that producer as
+      resolved on exactly the run where it declared it could not measure,
+      leaving the aggregate one member short of firing, forever.
+
+    Neither arm is a relaxation of honest degradation reporting: a producer that
+    genuinely declares itself unmeasurable is still read as degraded by both.
     """
-    for text in _iter_string_values(fragment):
-        if any(token in text for token in tokens):
-            return True
+    verdict_tokens = tuple(token for token in tokens if token in _VERDICT_SCOPED_TOKENS)
+    free_text_tokens = tuple(token for token in tokens if token not in _VERDICT_SCOPED_TOKENS)
+
+    if verdict_tokens:
+        for text in _iter_verdict_field_values(fragment):
+            if text in verdict_tokens:
+                return True
+    if free_text_tokens:
+        for text in _iter_string_values(fragment):
+            if any(token in text for token in free_text_tokens):
+                return True
     return False
 
 
