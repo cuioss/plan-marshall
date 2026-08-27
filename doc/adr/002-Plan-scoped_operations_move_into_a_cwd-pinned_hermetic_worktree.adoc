@@ -168,12 +168,20 @@ These six are reached through ONE sanctioned main-anchored resolver UTILITY:
 under the MAIN checkout's `.plan/local` cwd-independently — honouring the
 `set_base_dir()` / `PLAN_BASE_DIR` test override first, then resolving via
 `git rev-parse --git-common-dir` (which points at main's `.git` even from a linked worktree).
-All six consumers CALL the utility rather than each carrying its own git-common-dir copy;
-`merge_lock.py` is one consumer among six, not the sole owner of the resolution.
+Every one of the six corpora is reached by CALLING the utility rather than by each script
+carrying its own git-common-dir copy; `merge_lock.py` resolves one corpus among six, not the
+sole owner of the resolution.
+
+The six bound what RESIDES on main, not the set of callers. The plan directory MOVES between
+main and its worktree rather than residing on main, so it is not a seventh corpus — but asking
+*where main's slot for it is* remains a main-anchored question, and it too is asked through this
+utility: `integrate_into_main.py` resolves `plans/{plan_id}` as the move-back destination it
+writes, and `git-workflow.py`'s `worktree-remove` move-back guard resolves that same subpath to
+verify the write happened before it destroys the worktree.
 
 This is the SINGLE, deliberate exception to cwd-relative resolution for *per-repo* state: every
 other resolution in the codebase is uniform cwd-relative. Confining the main-anchored resolution
-to ONE small, explicitly-enumerated utility — used by exactly six consumers — prevents a
+to ONE small utility, over an explicitly-enumerated set of six main-resident corpora, prevents a
 pervasive main-anchored resolution layer from re-forming; new *per-repo* cross-session shared
 state MUST route through the utility rather than re-implement git-common-dir resolution
 (machine-wide state uses the home-root tier per ADR-008). Correspondingly, the
@@ -241,12 +249,12 @@ is expected behaviour.
 
 == References
 
-* `marketplace/bundles/plan-marshall/skills/tools-script-executor/standards/cwd-policy.md` — the uniform cwd-relative resolution rule and the one-utility / six-consumer main-anchored exception.
+* `marketplace/bundles/plan-marshall/skills/tools-script-executor/standards/cwd-policy.md` — the uniform cwd-relative resolution rule and the one-utility / six-corpus main-anchored exception.
 * `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md` — the worktree-lifecycle and dispatch contract.
 * `marketplace/bundles/plan-marshall/skills/script-shared/scripts/marketplace_paths.py` — `resolve_main_anchored_path`, the single sanctioned main-anchored resolver utility.
 * `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/prepare_execute.py` — the atomic move-in script.
 * `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/integrate_into_main.py` — the atomic move-back script.
-* `marketplace/bundles/plan-marshall/skills/manage-locks/scripts/merge_lock.py` — the cooperative merge lock, one of six consumers of the shared resolver utility.
+* `marketplace/bundles/plan-marshall/skills/manage-locks/scripts/merge_lock.py` — the cooperative merge lock, which main-anchors one of the six shared corpora through the shared resolver utility.
 * `marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts/file_ops.py` — `get_store_dir`, the parameterized store-root mechanism routing the `orchestrator` store through the shared resolver utility.
 * `marketplace/bundles/plan-marshall/skills/manage-run-config/scripts/run_config.py` — main-anchors `run-configuration.json` via the shared resolver utility.
 * `marketplace/bundles/plan-marshall/skills/manage-lessons/scripts/manage-lessons.py` — main-anchors the lessons corpus via the shared resolver utility.

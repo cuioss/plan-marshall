@@ -63,8 +63,10 @@ Examples:
 """
 
 import fnmatch
+import json
 import os
 import re
+import shutil
 import subprocess
 import textwrap
 from pathlib import Path
@@ -83,14 +85,43 @@ from _executor_slot import executor_landed, worktree_executor_path
 # names the `path in tracked` comparison as the failure `-z` was adopted to end,
 # which is precisely the comparison scan_artifacts performs below.
 from _plan_state_exemption import _observe_z
+
+# The archived-plans directory name is shared state between the archiving verb
+# (manage-status) and this guard, so it is imported from the one constants
+# module both sides already read rather than re-spelled as a third literal.
+from constants import DIR_ARCHIVED
 from file_ops import (
     WorktreeResolutionError,
     get_executor_path,
     get_worktree_root,
     resolve_plan_context,
 )
-from git_provider import run_git
-from marketplace_paths import _find_plan_root_from_cwd
+
+# ``_DEFAULT_TIMEOUT_SECONDS`` is imported alongside ``run_git`` rather than
+# re-spelled here because :func:`_derive_removal_timeout` uses it as the FLOOR of
+# the derived removal budget. A second literal 60 in this module would be a copy
+# that silently disagrees with the helper's own default the moment either moves —
+# the same "one predicate, not two copies" rule the ``_observe_z`` import above
+# follows. It is private to ``git_provider`` in the sense of "not part of the
+# provider-declaration surface", not in the sense of "off-limits to its own
+# skill's sibling scripts".
+from git_provider import _DEFAULT_TIMEOUT_SECONDS, run_git
+
+# Two main-facing resolvers, imported side by side because they answer two
+# DIFFERENT questions and must not be collapsed into one.
+# ``resolve_main_anchored_path`` is the single sanctioned main-anchored resolver
+# (ADR-002): it honours the PLAN_BASE_DIR / set_base_dir() override before
+# falling back to git's common dir, so a path derived from it is the same path
+# ``integrate_into_main`` writes when it moves a plan dir back. That is what
+# :func:`_plan_dir_on_main_checkout` probes with.
+# ``main_checkout_root`` is pure ``git rev-parse --git-common-dir``. It stays the
+# resolver for the ``git -C`` target, which must name a real git checkout — an
+# override directory is not one.
+from marketplace_paths import (
+    _find_plan_root_from_cwd,
+    main_checkout_root,
+    resolve_main_anchored_path,
+)
 from toon_parser import parse_toon, parse_toon_table
 from triage_helpers import (
     ErrorCode,
@@ -1501,6 +1532,367 @@ def cmd_worktree_create(args):
     return payload
 
 
+#: Glob shape of the date prefix ``manage-status archive`` puts on an archived
+#: plan directory. DERIVED from the archiving code, not from prose:
+#: ``manage-status/_cmd_lifecycle.cmd_archive`` builds the destination name as
+#: ``f'{now_utc_iso()[:10]}-{plan_id}'`` under ``get_archive_dir()`` — i.e.
+#: ``{base}/archived-plans/YYYY-MM-DD-{plan_id}``. Because the name is
+#: date-PREFIXED, a literal ``archived-plans / plan_id`` join can never find it;
+#: the probe has to scan the directory. The glob is anchored to the exact
+#: ten-character date shape rather than a loose ``*-{plan_id}`` so an unrelated
+#: sibling whose name merely ENDS in the plan id cannot satisfy the guard.
+_ARCHIVE_DATE_GLOB = '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+
+
+def _main_anchored_plan_records(plan_id: str) -> list[Path]:
+    """Every existing main-anchored ``status.json`` that holds ``plan_id``'s record.
+
+    ONE resolution rule, shared by every consumer in this module that needs
+    MAIN's copy of a plan's record — the move-back guard below and the branch
+    lookup in :func:`cmd_worktree_remove` — so the archived path is spelled once
+    here rather than once per caller. Candidates are returned in precedence
+    order, live before archived, and only when they exist on disk.
+
+    Both shapes are subpaths handed to
+    :func:`marketplace_paths.resolve_main_anchored_path`, the ONE sanctioned
+    main-anchored resolver (ADR-002), which is the SAME call the plan dir's
+    producer writes through: ``integrate_into_main.run_integrate_into_main``
+    computes its move-back DESTINATION as
+    ``resolve_main_anchored_path(f'plans/{plan_id}')``. Producer and consumers
+    thus derive main's plan slot by one mechanism and cannot disagree about
+    where it is.
+
+    ⛔ That agreement is load-bearing, not tidiness. The resolver's FIRST
+    precedence branch honours the ``PLAN_BASE_DIR`` / ``file_ops.set_base_dir()``
+    override, whereas ``main_checkout_root()`` is pure ``git rev-parse
+    --git-common-dir`` and never consults it. Under any active override the two
+    name different trees: the move-back writes ``{override}/plans/{plan_id}``
+    while a git-derived probe reads ``{git-common-parent}/.plan/local/plans/...``,
+    finds nothing, and refuses ``plan_dir_not_moved_back`` — a refusal that is
+    deliberately NOT ``--force``-overridable, so the removal would be blocked
+    permanently with no escape. ``main_checkout_root()`` remains correct for
+    :func:`cmd_worktree_remove`'s ``git -C`` target, which must name a real git
+    checkout; the two needs take two resolvers.
+
+    **Two main-anchored shapes count**, because the question every consumer here
+    asks — "has this plan's record left the tree that is about to be
+    destroyed?" — is answered by a record finalize has already ARCHIVED exactly
+    as well as by a live one. Both are spelled as subpaths handed to the
+    resolver (``{main}/.plan/local/…`` in production, ``{override}/…`` when an
+    override is installed):
+
+    - ``plans/{plan_id}/status.json`` — the live record ``integrate_into_main``
+      moves back.
+    - ``archived-plans/{YYYY-MM-DD}-{plan_id}/status.json`` — the archived record
+      ``manage-status archive`` writes. The date-prefixed shape is derived from
+      ``_cmd_lifecycle.cmd_archive``'s own destination construction (see
+      :data:`_ARCHIVE_DATE_GLOB`), NOT from the archive-plan prose, which spells
+      the destination inconsistently across its call sites. Because the name
+      carries that prefix the archive half is a directory SCAN, not a literal
+      join. Its producer is ``_status_core.get_archive_dir`` —
+      ``base_path(DIR_ARCHIVED)``, which honours the same override — so the
+      archive scan is resolved by the same rule as the live probe rather than by
+      a second one.
+
+    ⛔ An EMPTY list means "no record was established", and that deliberately
+    collapses two distinct states: no such record exists, and the main anchor
+    could not be resolved at all (``resolve_main_anchored_path`` raises
+    ``RuntimeError`` when no override is installed AND no git repo resolves).
+    The collapse is sound ONLY because both consumers in this module treat the
+    two identically and safely — the move-back guard REFUSES, and the branch
+    lookup REPORTS rather than skipping in silence. A consumer that must tell
+    "absent" from "could not look" apart cannot use this helper and has to
+    resolve the anchor itself. Absence within a resolved anchor is likewise
+    closed: ``Path.glob`` over a missing ``archived-plans/`` directory yields
+    nothing rather than raising.
+    """
+    try:
+        live_status = resolve_main_anchored_path(f'plans/{plan_id}/status.json')
+        archived_root = resolve_main_anchored_path(DIR_ARCHIVED)
+    except RuntimeError:
+        return []
+    records = [live_status] if live_status.is_file() else []
+    records.extend(
+        candidate / 'status.json'
+        for candidate in sorted(archived_root.glob(f'{_ARCHIVE_DATE_GLOB}-{plan_id}'))
+        if (candidate / 'status.json').is_file()
+    )
+    return records
+
+
+def _plan_dir_on_main_checkout(plan_id: str) -> bool:
+    """Return True when the plan's authoritative state lives on the MAIN checkout.
+
+    The move-back guard in :func:`cmd_worktree_remove` asks a question the
+    cwd-relative walk-up cannot answer: has the plan directory landed back on
+    **main**? A cwd-derived probe resolves through whichever checkout the caller
+    happens to stand in, so a caller cwd-pinned inside the worktree it is about
+    to destroy finds the plan dir *in that worktree* and reads it as "moved
+    back" — the guard then authorises the removal of the sole authoritative
+    plan-state copy.
+
+    The probe is therefore :func:`_main_anchored_plan_records`, which resolves
+    main-anchored and accepts the archived shape alongside the live one.
+    Accepting the archived shape is what keeps the structural-probe fallback in
+    :func:`cmd_worktree_remove` from being vacuous: the plan whose worktree the
+    probe exists to reach is precisely the archived one, so a ``plans/``-only
+    predicate would refuse every worktree the fallback made reachable. It does
+    NOT widen what the guard permits for a LIVE plan — a plan whose directory is
+    still resident in its worktree matches neither shape and is still refused.
+
+    Fails **closed**: an unresolvable main anchor establishes no record and so
+    answers ``False``, which is never evidence that the move-back happened.
+    """
+    return bool(_main_anchored_plan_records(plan_id))
+
+
+def _worktree_branch_on_main_checkout(plan_id: str) -> str:
+    """Read ``metadata.worktree_branch`` out of MAIN's copy of the plan's record.
+
+    The canonical channel (:func:`_read_metadata_field` → ``manage-status
+    metadata``) resolves through ``get_plan_dir`` →
+    ``{base}/plans/{plan_id}/status.json``, which has NO archived fallback. An
+    archived plan holds no record there — that is the very condition
+    :func:`_structural_worktree_probe` exists to work around — so for one the
+    canonical channel returns ``''`` BY CONSTRUCTION, on every archived-plan
+    removal rather than by accident. Without this fallback the branch delete in
+    :func:`cmd_worktree_remove` was skipped for all of them while the payload
+    reported a clean removal and named no branch.
+
+    Resolved through :func:`_main_anchored_plan_records`, so the branch lookup
+    accepts exactly the shapes the move-back guard accepts, by the same resolver
+    and the same rule — one archive spelling in this module, not two.
+
+    Returns ``''`` when no record is established, none parses as a JSON object,
+    or none carries a non-empty string at ``metadata.worktree_branch``. Each of
+    those is "the name could not be resolved", and the caller REPORTS that as a
+    ``branch_warning`` instead of skipping the delete in silence.
+    """
+    for record in _main_anchored_plan_records(plan_id):
+        try:
+            parsed = json.loads(record.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        metadata = parsed.get('metadata')
+        if not isinstance(metadata, dict):
+            continue
+        branch = metadata.get('worktree_branch')
+        if isinstance(branch, str) and branch:
+            return branch
+    return ''
+
+
+def _structural_worktree_probe(plan_id: str) -> Path | None:
+    """Probe the canonical worktree slot for ``plan_id`` without manage-status.
+
+    The canonical layout ``worktree-create`` materializes is
+    ``get_worktree_root() / {plan_id}``, so the slot is derivable from the plan
+    id alone — no read of any plan record. That is what makes this probe the
+    resolution of last resort for a plan whose ``status.json`` manage-status can
+    no longer find: the archived-plan case, where finalize has moved the record
+    out of ``.plan/local/plans/`` and the metadata channel has nothing to read.
+
+    Returns the candidate path only when the directory exists AND carries the
+    ``.git`` worktree link ``git worktree add`` plants in it. The link is what
+    separates a live worktree slot from a bare directory that merely occupies
+    the name. It is deliberately a filesystem test and runs NO git subprocess,
+    so a probe MISS costs nothing and leaves ``cmd_worktree_remove``'s standing
+    "no git call runs after a resolution failure" contract intact — on EVERY
+    miss, not merely on the ones a fixture happens to arrange.
+
+    The link's presence is not proof of *registration*: a pruned worktree keeps
+    its ``.git`` file after git has forgotten it. That residual case is safe
+    because git itself is the final authority — ``git worktree remove`` refuses
+    an unregistered path and the verb surfaces ``worktree_remove_failed``. The
+    probe never widens what gets destroyed, only what gets *reached*.
+    """
+    try:
+        candidate = get_worktree_root() / plan_id
+    except RuntimeError:
+        # Outside a git repo there is no worktree root to probe.
+        return None
+    if not candidate.is_dir():
+        return None
+    if not (candidate / '.git').exists():
+        return None
+    return candidate
+
+
+#: Location of the pytest scratch tree inside a worktree, relative to the
+#: worktree root. Spelled from ``build.py``'s OWN construction —
+#: ``PYTEST_BASETEMP_ROOT = Path('.plan/temp/pytest-basetemp')``, whose leading
+#: segment is the same ``.plan`` this module already names as
+#: :data:`_PLAN_DIR_NAME` — rather than from prose about where scratch lives, so
+#: the directory this clears and the directory the build fills cannot drift into
+#: being two different directories.
+_SCRATCH_PARTS = ('temp', 'pytest-basetemp')
+
+#: Ceiling on the measuring walk. The tree being measured is unbounded, and a
+#: measurement that is itself unbounded would just relocate the problem the
+#: budget exists to solve. Reaching the cap is REPORTED
+#: (:data:`_BASIS_CAPPED`) rather than rendered as an exact total.
+_MEASURE_ENTRY_CAP = 2_000_000
+
+#: Entries per second the removal is assumed to sustain. Deliberately pessimistic
+#: against a warm local filesystem: ``git worktree remove`` unlinks every entry
+#: and then rewrites git's worktree bookkeeping, and a cold cache or a network
+#: filesystem is far slower than the several-thousand-per-second an APFS/ext4
+#: page-cache-warm delete reaches. Under-estimating the rate LENGTHENS the
+#: budget, which is the safe direction — the failure this derivation exists to
+#: prevent is a budget that expires on a healthy removal.
+_REMOVAL_ENTRIES_PER_SECOND = 2_000
+
+#: Upper bound on the derived budget. Past this a removal is not slow, it is
+#: wedged, and the distinct :data:`worktree_remove_timed_out` verdict serves an
+#: operator better than a longer wait. It also bounds every basis that yields a
+#: lower bound rather than a total (see :func:`_derive_removal_timeout`).
+_REMOVAL_TIMEOUT_CEILING_SECONDS = 1800
+
+#: The walk read every directory it descended into and did not reach the cap, so
+#: the entry count is an exact total. This is the ONLY basis on which the budget
+#: is scaled from the count.
+_BASIS_MEASURED = 'measured_tree'
+#: The walk stopped at :data:`_MEASURE_ENTRY_CAP`; the count is a lower bound.
+_BASIS_CAPPED = 'measurement_capped'
+#: At least one directory could not be read; the count is a lower bound.
+_BASIS_INCOMPLETE = 'measurement_incomplete'
+#: Nothing was counted at all — the root itself could not be scanned.
+_BASIS_FAILED = 'measurement_failed'
+
+
+def _count_tree_entries(root: Path) -> tuple[int | None, str]:
+    """Count filesystem entries under ``root`` and name the basis of the count.
+
+    Returns ``(entries, basis)``. The basis is what makes the number readable:
+    :data:`_BASIS_MEASURED` is an exact total, :data:`_BASIS_CAPPED` and
+    :data:`_BASIS_INCOMPLETE` are lower bounds, and on :data:`_BASIS_FAILED`
+    ``entries`` is ``None``.
+
+    ⛔ ``None`` rather than ``0`` on the failed basis, and that is the contract.
+    A zero published by a walk that never ran is indistinguishable from a walk
+    that ran and found an empty tree — and the two demand opposite budgets (the
+    floor for a genuinely empty tree, the ceiling for an unmeasurable one). A
+    caller that reads the count without the basis therefore finds no number to
+    misread, which is the same discipline ``scope_creep_check`` applies by
+    omitting ``residual_count`` from its ``could_not_look`` shape.
+
+    "Failed" is distinguished from "incomplete" by whether the walk yielded
+    ANYTHING: :func:`os.walk` yields exactly one tuple for a readable empty
+    directory, so yielding nothing means the root itself could not be scanned,
+    while an error raised part-way through leaves a partial count worth
+    reporting. Errors are collected through ``onerror`` rather than allowed to
+    propagate, because ``os.walk`` swallows them by default and a bare
+    ``except OSError`` around it would be a guard that can never fire.
+
+    The walk is cheap relative to the removal it budgets: only directory-entry
+    names are consumed (``scandir`` supplies the directory/file split without a
+    per-entry ``stat``), and no entry is opened. ``followlinks=False`` is stated
+    rather than left to the default so the walk provably cannot leave the tree
+    through a symlink and count some other tree's entries into this budget.
+    """
+    entries = 0
+    yielded = False
+    unreadable = False
+
+    def _note_unreadable(_exc: OSError) -> None:
+        nonlocal unreadable
+        unreadable = True
+
+    for _dirpath, dirnames, filenames in os.walk(root, onerror=_note_unreadable, followlinks=False):
+        yielded = True
+        entries += len(dirnames) + len(filenames)
+        if entries >= _MEASURE_ENTRY_CAP:
+            return _MEASURE_ENTRY_CAP, _BASIS_CAPPED
+    if not yielded:
+        return None, _BASIS_FAILED
+    if unreadable:
+        return entries, _BASIS_INCOMPLETE
+    return entries, _BASIS_MEASURED
+
+
+def _derive_removal_timeout(entries: int | None, basis: str) -> int:
+    """Derive the ``git worktree remove`` budget in seconds from the measurement.
+
+    An exact count scales linearly at :data:`_REMOVAL_ENTRIES_PER_SECOND`,
+    bounded below by ``git_provider._DEFAULT_TIMEOUT_SECONDS`` (a small tree
+    still gets the ordinary short-git-call budget, so this derivation never
+    SHORTENS what the removal had before) and above by
+    :data:`_REMOVAL_TIMEOUT_CEILING_SECONDS`.
+
+    Every other basis takes the ceiling. Capped, incomplete and failed all mean
+    the same thing for budgeting purposes: the real size is unknown and is at
+    least the number in hand, so scaling that number would produce exactly the
+    too-short budget this derivation exists to prevent. ``entries is None``
+    occurs only on :data:`_BASIS_FAILED`; it is tested first so the arithmetic
+    below is unambiguously over an ``int`` rather than resting on that coupling.
+
+    This is deliberately NOT a raised fixed constant. A fixed budget is wrong
+    for the same reason at every size — it encodes an assumption about the tree
+    that nothing checked — and raising it only moves the size at which it is
+    wrong again.
+    """
+    if entries is None or basis != _BASIS_MEASURED:
+        return _REMOVAL_TIMEOUT_CEILING_SECONDS
+    scaled = -(-entries // _REMOVAL_ENTRIES_PER_SECOND)  # ceiling division
+    return max(_DEFAULT_TIMEOUT_SECONDS, min(scaled, _REMOVAL_TIMEOUT_CEILING_SECONDS))
+
+
+def _clear_regenerable_scratch(target: Path, resolved_target: Path) -> tuple[bool, int | None, str]:
+    """Delete the worktree's regenerable pytest scratch before the tree is measured.
+
+    Returns ``(cleared, entries_removed, note)``. ``entries_removed`` is ``None``
+    when the scratch was removed but its size was never established exactly (the
+    measuring walk capped out, hit an unreadable directory, or could not run) and
+    when a removal failed part-way — in both cases a number would be a guess. The
+    ``note`` names why nothing was cleared, and is empty on success.
+
+    Clearing before measuring is the point: the scratch is the largest thing in a
+    worktree that has run the suite, it is regenerated by the next build
+    (``build.py::_prepare_session_basetemp`` recreates the root it prunes), and
+    removing it costs the caller nothing it will miss. Budgeting the git call
+    against the tree AFTER it is gone is what keeps the budget honest about the
+    work git actually has to do.
+
+    Three refusals, all fail-safe — a refusal leaves the scratch in place, so it
+    is simply counted into the measurement and the budget grows to cover it:
+
+    - the path is a SYMLINK. It is never followed, because following it would
+      delete whatever it points at rather than scratch inside this worktree.
+    - the path resolves OUTSIDE ``resolved_target``. Under ADR-002 a worktree's
+      ``.plan`` tree is fully real (see
+      :func:`_ensure_worktree_plan_local_real`), but a worktree materialized by
+      an older symlinking revision, or one edited by hand, can still have a
+      symlinked ancestor — and the resolved path is then some other checkout's
+      scratch. The containment test is the same ``is_relative_to`` shape the cwd
+      guard uses, applied to the same resolved-absolute-paths discipline.
+    - the path is absent or is not a directory. Nothing to clear.
+
+    ``shutil.rmtree`` is called WITHOUT ``ignore_errors`` on purpose: a partial
+    removal must be reportable, and swallowing the error would let the caller
+    publish ``scratch_cleared: true`` over a scratch that is still there.
+    """
+    scratch = target.joinpath(_PLAN_DIR_NAME, *_SCRATCH_PARTS)
+    if scratch.is_symlink():
+        return False, 0, f'scratch path is a symlink and was not followed: {scratch}'
+    if not scratch.is_dir():
+        return False, 0, 'no scratch directory present'
+    try:
+        resolved_scratch = scratch.resolve()
+    except OSError as exc:
+        return False, 0, f'scratch path could not be resolved: {exc}'
+    if not resolved_scratch.is_relative_to(resolved_target):
+        return False, 0, f'scratch resolves outside the removal target: {resolved_scratch}'
+
+    counted, basis = _count_tree_entries(scratch)
+    try:
+        shutil.rmtree(scratch)
+    except OSError as exc:
+        return False, None, f'scratch removal failed part-way: {exc}'
+    return True, (counted if basis == _BASIS_MEASURED else None), ''
+
+
 def cmd_worktree_remove(args):
     """Remove a worktree (worktree first, then branch ref).
 
@@ -1508,20 +1900,91 @@ def cmd_worktree_remove(args):
     that is still checked out. We remove the worktree first, then delete
     the branch ref so the cleanup is symmetric with ``cmd_worktree_create``.
 
-    Precondition (script-enforced): the plan directory MUST already live on
-    the current checkout (``integrate_into_main`` has landed it back on main)
-    before the worktree may be removed — otherwise the removal would destroy
-    the sole authoritative plan-state copy still resident in the worktree.
-    The refusal (``error: plan_dir_not_moved_back``) is NOT overridable by
-    ``--force``: that flag keeps its dirty-tree meaning only. An abandonment
-    flow moves or deletes the plan dir first, then removes the worktree.
+    The worktree path resolves by two paths, tried in order, exactly as
+    :func:`cmd_locate_plan_checkout` layers them: first the canonical
+    manage-status channel (:func:`_resolve_worktree_path_for_plan`), then the
+    structural :func:`_structural_worktree_probe` when that channel refuses.
+    The fallback lives HERE, at the call site, and NOT inside the shared
+    resolver — the resolver's other consumers are worktree verbs whose refusal
+    semantics must not change. The success payload names which path was taken
+    (``resolution: metadata | structural_probe``) so an operator can tell a
+    routine removal from an archived-plan recovery.
+
+    The BRANCH NAME layers the same way, and for the same reason: the canonical
+    ``manage-status`` read (:func:`_read_metadata_field`) first, then
+    :func:`_worktree_branch_on_main_checkout` against main's own copy of the
+    record. manage-status resolves ``{base}/plans/{plan_id}`` with no archived
+    fallback, so on the ``structural_probe`` route the canonical read yields
+    nothing for EVERY archived plan. Whichever channel answers, branch cleanup
+    this verb did NOT do is always reported — a failed delete and an
+    unresolvable name both surface as ``branch_warning`` — so no success payload
+    leaves a stranded branch unmentioned.
+
+    Precondition (script-enforced): the plan's authoritative state MUST already
+    live on the MAIN checkout before the worktree may be removed — either as
+    the live directory ``integrate_into_main`` landed back there, or as the
+    archived record ``manage-status archive`` wrote (see
+    :func:`_plan_dir_on_main_checkout` for both shapes and why the archived one
+    counts). Otherwise the removal would destroy the sole authoritative
+    plan-state copy still resident in the worktree.
+    Neither the probe nor the ``git`` target is decided by the caller's cwd, but
+    they resolve through two DIFFERENT main-facing resolvers because they need
+    two different things. The probe asks
+    :func:`marketplace_paths.resolve_main_anchored_path` for the plan slot — the
+    same call ``integrate_into_main`` uses to write it, and the one that honours
+    the ``PLAN_BASE_DIR`` / ``set_base_dir()`` override. The ``git -C`` target
+    below stays on :func:`marketplace_paths.main_checkout_root` (git's common
+    dir, which points at main even from a linked worktree), because that
+    argument must be a real git checkout and an override directory is not.
+    The refusal (``error: plan_dir_not_moved_back``) is
+    NOT overridable by ``--force``: that flag keeps its dirty-tree meaning
+    only. An abandonment flow moves or deletes the plan dir first, then
+    removes the worktree.
+
+    Second precondition (script-enforced, independent of the first): the
+    current working directory MUST NOT be the worktree being removed nor any
+    directory beneath it (``error: cwd_inside_removal_target``). It is a plain
+    containment test between two resolved absolute paths, so it holds whatever
+    the move-back probe concluded — the two failure modes do not share a single
+    predicate. It is likewise NOT overridable by ``--force``; the remedy is to
+    change directory out of the worktree and re-run.
+
+    **The removal is budgeted against the observed tree, not against a
+    constant.** Once BOTH refusals have passed — so nothing below is a side
+    effect of a call that then refuses — the regenerable pytest scratch is
+    deleted (:func:`_clear_regenerable_scratch`), what remains is measured
+    (:func:`_count_tree_entries`), and the git call's timeout is derived from
+    that measurement (:func:`_derive_removal_timeout`). Both the success and the
+    timeout payload carry ``scratch_cleared``, ``scratch_entries_removed``,
+    ``measured_entries``, ``timeout_seconds`` and ``budget_basis``, so the budget
+    a run chose and the evidence behind it are readable after the fact rather
+    than reconstructed. An expired budget returns ``worktree_remove_timed_out``,
+    deliberately distinct from ``worktree_remove_failed``: the documented remedy
+    for the latter is a manual ``--force`` for a dirty worktree, which is the
+    wrong — and the most destructive available — response to a removal that is
+    merely slow.
     """
     target, error = _resolve_worktree_path_for_plan(args.plan_id)
+    resolution = 'metadata'
     if error is not None:
-        return error
+        # The metadata channel reads the plan's status.json; an archived plan no
+        # longer has one where manage-status looks, so the channel refuses and
+        # the worktree becomes unreachable — the very tree the operator needs to
+        # clean up. Fall back to the structural probe. Reachability is all this
+        # restores: both refusals below still run on this path, in the same
+        # order, against the same evidence.
+        probed = _structural_worktree_probe(args.plan_id)
+        if probed is None:
+            # The probe missed too — nothing corroborates a worktree for this
+            # plan, so the resolver's own diagnosis stands. Propagate it
+            # verbatim rather than replacing it with a worse-informed one.
+            return error
+        target = probed
+        resolution = 'structural_probe'
 
-    main_root = _find_plan_root_from_cwd()
-    if main_root is None:
+    try:
+        main_root = main_checkout_root()
+    except RuntimeError:
         return {
             'status': 'error',
             'plan_id': args.plan_id,
@@ -1535,31 +1998,115 @@ def cmd_worktree_remove(args):
             'plan_id': args.plan_id,
             'worktree_path': str(target),
             'action': 'noop',
+            'resolution': resolution,
             'message': 'Worktree does not exist',
         }
 
     # Script-enforced move-back precondition: refuse while the plan dir has
-    # not landed back on the current checkout. Deliberately NOT overridable
-    # by --force (dirty-tree meaning only) — destroying the sole
-    # authoritative plan-state copy has no legitimate fast path.
-    if not _plan_dir_on_current_checkout(args.plan_id):
+    # not landed back on the MAIN checkout. Probed through
+    # ``resolve_main_anchored_path`` rather than the cwd walk-up so a caller
+    # standing inside the worktree cannot satisfy the guard with the very copy
+    # the removal is about to destroy — and through THAT resolver rather than
+    # ``main_checkout_root()`` so the probe lands on the same path the move-back
+    # writes under an active PLAN_BASE_DIR / set_base_dir() override.
+    # Deliberately NOT overridable by --force
+    # (dirty-tree meaning only) — destroying the sole authoritative plan-state
+    # copy has no legitimate fast path.
+    if not _plan_dir_on_main_checkout(args.plan_id):
         return {
             'status': 'error',
             'plan_id': args.plan_id,
             'error': 'plan_dir_not_moved_back',
             'worktree_path': str(target),
             'message': (
-                'Plan directory has not been moved back to the current checkout — '
+                'Plan directory has not been moved back to the main checkout — '
                 'run integrate_into_main before worktree-remove. The refusal is '
                 'not overridable by --force.'
             ),
         }
 
+    # Independent cwd-containment refusal. A caller standing inside the tree it
+    # is about to destroy would lose its own working directory to the removal,
+    # and every cwd-relative resolution it performs afterwards would resolve
+    # through a directory that no longer exists. This is a direct containment
+    # test between two resolved absolute paths — deliberately NOT carried by the
+    # move-back predicate above, so the two failure modes rest on two separate
+    # defences rather than both riding on one probe. ``is_relative_to`` is true
+    # for the target itself as well as for any descendant, which is exactly the
+    # condition being refused. Like ``plan_dir_not_moved_back`` this is NOT
+    # overridable by --force; the remedy is to leave the directory, not to
+    # insist harder.
+    resolved_target = target.resolve()
+    cwd = Path.cwd().resolve()
+    if cwd.is_relative_to(resolved_target):
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'cwd_inside_removal_target',
+            'worktree_path': str(target),
+            'cwd': str(cwd),
+            'message': (
+                'Current working directory is inside the worktree being removed — '
+                'change directory out of the worktree, then re-run worktree-remove. '
+                'The refusal is not overridable by --force.'
+            ),
+        }
+
+    # Budget the removal against the tree that will actually be walked, rather
+    # than against a fixed constant. Both refusals above have already passed, so
+    # this is the first point at which the removal is going to happen — clearing
+    # scratch is a side effect and must never precede a refusal.
+    scratch_cleared, scratch_entries_removed, scratch_note = _clear_regenerable_scratch(
+        target, resolved_target
+    )
+    measured_entries, budget_basis = _count_tree_entries(target)
+    timeout_seconds = _derive_removal_timeout(measured_entries, budget_basis)
+    budget: dict[str, Any] = {
+        'scratch_cleared': scratch_cleared,
+        'scratch_entries_removed': scratch_entries_removed,
+        'measured_entries': measured_entries,
+        'timeout_seconds': timeout_seconds,
+        'budget_basis': budget_basis,
+    }
+    if scratch_note:
+        budget['scratch_note'] = scratch_note
+
     # Step 1: remove the worktree itself.
     git_args = ['-C', str(main_root), 'worktree', 'remove', str(target)]
     if args.force:
         git_args.append('--force')
-    rc, _out, err = run_git(git_args)
+    rc, _out, err = run_git(git_args, timeout=timeout_seconds)
+    if rc == 124:
+        # ``run_git``'s timeout sentinel — the budget expired, so git never
+        # rendered a verdict on the worktree. This is deliberately NOT
+        # ``worktree_remove_failed``: the one remedy that code carries is a
+        # deliberate --force for a dirty worktree, which is the most destructive
+        # available response to a removal that is merely slow on a large but
+        # perfectly clean tree. A distinct code keeps that remedy off this path.
+        measurement = (
+            f'{measured_entries} entries ({budget_basis})'
+            if measured_entries is not None
+            else f'an unmeasurable tree ({budget_basis})'
+        )
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'worktree_remove_timed_out',
+            'message': (
+                f'git worktree remove exceeded its derived {timeout_seconds}s budget for '
+                f'{measurement}. The removal is slow, not refused — git reported no verdict '
+                'on the worktree, which is still on disk.'
+            ),
+            'worktree_path': str(target),
+            'hint': (
+                'Do NOT pass --force: it addresses a dirty worktree, which is a different '
+                'failure, and adds nothing to a command that never finished. Re-run '
+                'worktree-remove — the regenerable scratch has already been cleared, so a '
+                'retry walks a smaller tree — or delete the directory out-of-band and run '
+                'git worktree prune.'
+            ),
+            **budget,
+        }
     if rc != 0:
         return {
             'status': 'error',
@@ -1567,25 +2114,54 @@ def cmd_worktree_remove(args):
             'error': 'worktree_remove_failed',
             'message': f'git worktree remove failed: {err}',
             'worktree_path': str(target),
-            'hint': 'Pass --force only after verifying the worktree is clean.',
+            'hint': (
+                'Read message first — it carries git\'s own stderr, and this code is '
+                'the catch-all for any non-timeout failure rather than a dirtiness '
+                'verdict. --force addresses a dirty worktree and nothing else: on that '
+                'cause salvage the uncommitted work, then force deliberately. On any '
+                'other cause forcing is not the remedy.'
+            ),
         }
 
-    # Step 2: delete the branch ref. Read the branch from status metadata
-    # (canonical source) and best-effort delete. Failure to delete the
-    # branch is reported but does not fail the command — the worktree is
-    # already gone and branch cleanup is recoverable.
+    # Step 2: delete the branch ref. The NAME resolves by two channels tried in
+    # order, mirroring the worktree-path layering above: the canonical
+    # manage-status read, then MAIN's own copy of the plan record when that
+    # channel yields nothing. The fallback is not belt-and-braces —
+    # manage-status resolves ``{base}/plans/{plan_id}`` with no archived
+    # fallback, so on the ``structural_probe`` route it yields '' for EVERY
+    # archived plan, which is exactly the route that fallback exists to serve.
+    #
+    # ⛔ An unresolved name is REPORTED, never silently skipped. A success
+    # payload naming no branch at all is indistinguishable from one that had no
+    # branch to delete, so a silent skip strands a local branch behind a clean
+    # removal report. A delete that FAILED and a name that could not be RESOLVED
+    # are both branch cleanup this verb did not do, so both surface the same way
+    # — as ``branch_warning``, not as a command failure: the worktree is gone
+    # either way and branch cleanup stays recoverable.
     branch_warning: str | None = None
-    branch_name = _read_metadata_field(args.plan_id, 'worktree_branch')
+    branch_name = _read_metadata_field(args.plan_id, 'worktree_branch') or (
+        _worktree_branch_on_main_checkout(args.plan_id)
+    )
     if branch_name:
         rc, _out, err = run_git(['-C', str(main_root), 'branch', '-D', branch_name])
         if rc != 0:
             branch_warning = f'branch ref {branch_name} not deleted: {err}'
+    else:
+        branch_warning = (
+            'branch ref not deleted: no worktree_branch could be resolved for '
+            f'{args.plan_id}, from status metadata or from the main-anchored plan '
+            'record (live or archived), so no branch name was known to delete. The '
+            'worktree is gone; a local feature branch may still exist — identify it '
+            'with git branch --list and delete it manually.'
+        )
 
     payload: dict[str, Any] = {
         'status': 'success',
         'plan_id': args.plan_id,
         'worktree_path': str(target),
         'action': 'removed',
+        'resolution': resolution,
+        **budget,
     }
     if branch_name:
         payload['branch'] = branch_name

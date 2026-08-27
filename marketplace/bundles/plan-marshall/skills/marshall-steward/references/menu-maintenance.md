@@ -263,7 +263,9 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
   --plan-id {plan_id}
 ```
 
-If the removal fails with `worktree_remove_failed` (non-clean worktree), surface the error and do NOT retry with `--force`. The user must manually inspect and recover.
+If the removal fails with `worktree_remove_failed`, surface the error and do NOT retry with `--force`. That code is the catch-all for any non-timeout `git worktree remove` failure, not a dirtiness verdict — git's own stderr rides in `message`, and that is where the cause is read. The user must manually inspect and recover.
+
+**This menu forbids `--force` deliberately, and the prohibition is narrower than it looks.** The general contract for this error code is conditional: on a dirty-worktree cause, `--force` IS the remedy once the uncommitted work has been salvaged (see [`phase-6-finalize/standards/branch-cleanup.md`](../../phase-6-finalize/standards/branch-cleanup.md) § the `worktree_remove_failed` disposition). This menu withholds that branch because it cannot satisfy the precondition the branch rests on: it runs unattended over **archived** plans, it has no salvage step, and the operator who would judge what is worth keeping is being shown a summary rather than the diff. Forcing here would discard uncommitted work in a tree nobody has inspected. The recovery path is not refused — it is handed to the operator, who runs it by hand after reading `message` and salvaging.
 
 ### Step 4: Report orphans
 

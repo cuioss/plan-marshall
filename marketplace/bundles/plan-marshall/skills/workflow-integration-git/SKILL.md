@@ -531,7 +531,20 @@ bootstrap: ok
 
 ### worktree-remove
 
-Remove the worktree (`git worktree remove`) first, then delete the branch ref read from status metadata. Order matters: `git worktree remove` refuses to drop a branch ref that is still checked out, so cleanup is always worktree-first. Branch deletion failures surface as `branch_warning` rather than failing the command — the worktree is gone, branch cleanup is recoverable.
+Remove the worktree (`git worktree remove`) first, then delete the plan's branch ref. Order matters for two independent reasons. The branch ref is one: `git worktree remove` refuses to drop a branch ref that is still checked out, so cleanup is always worktree-first. The plan's own state is the other, and there the ordering is script-enforced rather than merely sequenced — the verb refuses to remove a worktree whose plan directory has not landed back on the main checkout. **Branch cleanup the verb did not do is always reported and never fails the command** — the worktree is gone and branch cleanup is recoverable, so both a delete that failed and a name that could not be resolved surface as `branch_warning`.
+
+**The verb resolves main-anchored, not caller-anchored.** Neither the tree the removal acts on nor the guard applied to it is decided by where the caller happens to stand — but the two resolve through two *different* main-facing resolvers, because they need different things:
+
+- The **move-back probe** asks `marketplace_paths.resolve_main_anchored_path` for `plans/{plan_id}/status.json`, and scans `archived-plans/` through the same call. That is the one sanctioned main-anchored resolver, and it is the same call `integrate_into_main` uses to compute the destination it writes — so guard and producer derive main's plan slot by one mechanism and cannot disagree. It also honours `PLAN_BASE_DIR` / `set_base_dir()`, which a raw git-common-dir walk does not: under an active override, a git-derived probe would read a tree the move-back never wrote to and refuse a plan whose state genuinely landed.
+- The **`git -C` target** derives from `marketplace_paths.main_checkout_root()` — git's common dir, which names the main checkout from inside any linked worktree — because that argument must be a real git checkout, and an override directory is not one.
+
+The main-anchoring is the point rather than an implementation detail: a cwd-relative probe lets a caller standing inside the worktree satisfy the move-back guard with the very plan-state copy the removal is about to destroy. The guard accepts either main-anchored shape — the live directory `integrate_into_main` lands, or the date-prefixed archived record `manage-status archive` writes — and fails closed, since an unresolvable main anchor is not evidence that the move-back happened. The one thing the verb reads from the caller is `Path.cwd()`, and it reads it only in order to refuse.
+
+The worktree path itself resolves through two channels tried in order — the canonical `manage-status get-worktree-path`, then a structural `get_worktree_root() / {plan_id}` probe for the archived plan whose `status.json` that channel can no longer find. The success payload names which one was taken as `resolution: metadata | structural_probe`, so a routine removal is distinguishable from an archived-plan recovery.
+
+**The branch name layers the same way, and for the same reason.** It is read first from `status.metadata.worktree_branch` through `manage-status`, and — when that yields nothing — from main's own copy of the plan record, resolved through the same `resolve_main_anchored_path` rule and the same two shapes the move-back guard accepts (the live record, or the date-prefixed archived one). The fallback is load-bearing rather than defensive: `manage-status` resolves `{base}/plans/{plan_id}` with no archived fallback, so on the `structural_probe` route the canonical read answers with nothing for *every* archived plan. Whichever channel answers, the outcome is reported: a deleted branch appears as `branch`, and a branch this verb did not clean up — whether `git branch -D` failed or no name could be resolved at all — appears as `branch_warning`. A success payload never omits the branch silently, because a payload that names no branch is indistinguishable from one that had no branch to delete.
+
+**The removal is budgeted against the observed tree, not against a constant.** Once both refusals have passed — so nothing measured is the side effect of a call that then refuses — the regenerable pytest scratch is cleared, what remains is counted, and the `git worktree remove` timeout is derived from that count (floored at the ordinary short-git-call budget, so the derivation can only ever lengthen it). Both the success payload and the `worktree_remove_timed_out` payload carry `scratch_cleared`, `scratch_entries_removed`, `measured_entries`, `timeout_seconds` and `budget_basis`, so the budget a run chose and the evidence behind it are readable afterwards rather than reconstructed.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-remove \
@@ -540,7 +553,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 
 **Parameters**:
 - `--plan-id` (required): Plan identifier (mandatory).
-- `--force`: Force removal (use only if worktree is clean).
+- `--force`: Force removal of a **dirty** worktree, and nothing else. Of the error codes this verb returns it bears on `worktree_remove_failed` only — and there only on the dirty subset of that catch-all, since the same code is returned for any non-timeout non-zero git result (see `## Error Handling`, where `message` carries git's own stderr). Neither `plan_dir_not_moved_back` nor `cwd_inside_removal_target` is overridable by it — those refusals protect the sole authoritative plan-state copy and the caller's own working directory, and neither has a legitimate fast path. It adds nothing to a `worktree_remove_timed_out` either, which is a command that never finished rather than one that refused. See `## Error Handling` for the per-refusal remedies.
 
 **Output** (TOON, success):
 ```toon
@@ -548,7 +561,13 @@ status: success
 plan_id: EXAMPLE-PLAN
 worktree_path: /repo/.plan/local/worktrees/EXAMPLE-PLAN
 action: removed
+resolution: metadata
 branch: feature/EXAMPLE-PLAN
+scratch_cleared: true
+scratch_entries_removed: 4812
+measured_entries: 184000
+timeout_seconds: 92
+budget_basis: measured_tree
 ```
 
 ### worktree-list
@@ -964,12 +983,17 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:integrate
 | git commit failure (hook rejection, conflict) | Report error with full output. Do not retry automatically. |
 | git push failure | Report error. Never force-push as fallback. |
 | `worktree-*` invoked without `--plan-id` | argparse rejects with non-zero exit. The verbs operate on a worktree; a plan id is mandatory. |
-| `worktree-path`/`worktree-remove` on plan without configured worktree | Return `error: plan_resolution_failed` — `status.metadata.use_worktree` is false or `worktree_path` is unset. |
+| `worktree-path` on plan without configured worktree | Return `error: plan_resolution_failed` — `status.metadata.use_worktree` is false or `worktree_path` is unset. |
+| `worktree-remove` cannot resolve the worktree at all | Return `error: plan_resolution_failed`. Reached on either of two paths: (1) the metadata channel refuses AND the structural probe finds no `.git`-carrying directory at the canonical slot — the resolver's own diagnosis is propagated verbatim; (2) `main_checkout_root()` cannot resolve the main checkout for the `git -C` target. **No git call runs after the resolution failure on either path.** Path 1 returns before any git subprocess at all — the structural probe is a pure filesystem test. Path 2 is *reached by* a git call: `main_checkout_root()` runs `git rev-parse --git-common-dir`, and that call failing IS the condition, so the claim there is about what runs afterwards, not about what ran. |
 | `worktree-create` against a path that already exists | Return `error: worktree_exists` with the conflicting path. |
 | `worktree-create` `git worktree add` failure | Return `error: worktree_add_failed` with stderr from git. |
 | `worktree-create` `.plan` symlink helper rejects a real directory | Return `error: plan_symlink_failed`; the worktree exists but `.plan/local` is a real directory or file (refused so user data is never clobbered). |
-| `worktree-remove` worktree is dirty | Return `error: worktree_remove_failed` with hint to verify cleanliness before passing `--force`. |
-| `worktree-remove` branch ref delete fails | Return success with `branch_warning` — the worktree is gone, branch cleanup is recoverable. |
+| `worktree-remove` plan dir has not landed back on main | Return `error: plan_dir_not_moved_back`. The move-back precondition, probed through `resolve_main_anchored_path` (the same resolver `integrate_into_main` writes through) and satisfied by either the live plan directory `integrate_into_main` lands or the archived record `manage-status archive` writes: removing now would destroy the sole authoritative copy of the plan's state. Surface the error, run `integrate_into_main`, then re-run. NOT overridable by `--force` — that flag keeps its dirty-tree meaning only. |
+| `worktree-remove` cwd is the removal target or a directory beneath it | Return `error: cwd_inside_removal_target`, carrying the offending `cwd`. Git itself imposes no such condition — `git worktree remove` will delete a shell's own working directory with or without `--force` — so this refusal is ours, not git's. Change the working directory out of the worktree (to the main checkout) and re-run. NOT overridable by `--force`; the remedy is to leave the directory, not to insist harder. |
+| `worktree-remove` `git worktree remove` exits non-zero for any non-timeout reason | Return `error: worktree_remove_failed` with a hint to verify cleanliness before passing `--force`. **This code is the catch-all, not an established dirtiness verdict.** The branch is selected by the exit code alone — nothing inspects the tree — so a locked worktree or a filesystem error reaches it exactly as a dirty one does; git's own stderr is forwarded verbatim in `message`, and that is where the real cause is read. A dirty worktree is the common case and the only one `--force` addresses: salvage any uncommitted work first, then remove with `--force` deliberately — never `--force` as the salvage. On any other cause reaching this code, forcing is not the remedy; read `message` first. |
+| `worktree-remove` derived removal budget expires | Return `error: worktree_remove_timed_out` alongside `timeout_seconds`, `measured_entries` and `budget_basis`. The removal is slow, not refused — git rendered no verdict and the worktree is still on disk. Re-run `worktree-remove` (the regenerable scratch was cleared before the attempt, so the retry walks a smaller tree), or delete the directory out-of-band and run `git worktree prune`. Deliberately distinct from `worktree_remove_failed` so that code's `--force` remedy stays off this path: forcing addresses a dirty worktree, a different failure, and adds nothing to a command that never finished. |
+| `worktree-remove` branch ref delete fails | Return success with `branch_warning` naming the branch and git's stderr — the worktree is gone, branch cleanup is recoverable. |
+| `worktree-remove` branch NAME cannot be resolved | Return success with `branch_warning` and NO `branch` field. Neither channel answered: `status.metadata.worktree_branch` is unset or unreadable, and main's plan record — live or archived — carries no branch either. No `git branch -D` runs, so a local feature branch may still exist; the warning names the plan and the manual remedy. Reported rather than skipped in silence, because the alternative is a clean-removal payload over a stranded branch. |
 
 ## Standards (Load On-Demand)
 
