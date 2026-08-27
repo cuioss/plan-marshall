@@ -2079,10 +2079,10 @@ def cmd_worktree_remove(args):
     if rc == 124:
         # ``run_git``'s timeout sentinel — the budget expired, so git never
         # rendered a verdict on the worktree. This is deliberately NOT
-        # ``worktree_remove_failed``: branch-cleanup.md maps that code to
-        # "uncommitted changes" and recommends a manual --force, which is both
-        # wrong and the most destructive available response to a removal that is
-        # merely slow. A distinct code keeps that remedy off this path.
+        # ``worktree_remove_failed``: the one remedy that code carries is a
+        # deliberate --force for a dirty worktree, which is the most destructive
+        # available response to a removal that is merely slow on a large but
+        # perfectly clean tree. A distinct code keeps that remedy off this path.
         measurement = (
             f'{measured_entries} entries ({budget_basis})'
             if measured_entries is not None
@@ -2114,7 +2114,13 @@ def cmd_worktree_remove(args):
             'error': 'worktree_remove_failed',
             'message': f'git worktree remove failed: {err}',
             'worktree_path': str(target),
-            'hint': 'Pass --force only after verifying the worktree is clean.',
+            'hint': (
+                'Read message first — it carries git\'s own stderr, and this code is '
+                'the catch-all for any non-timeout failure rather than a dirtiness '
+                'verdict. --force addresses a dirty worktree and nothing else: on that '
+                'cause salvage the uncommitted work, then force deliberately. On any '
+                'other cause forcing is not the remedy.'
+            ),
         }
 
     # Step 2: delete the branch ref. The NAME resolves by two channels tried in

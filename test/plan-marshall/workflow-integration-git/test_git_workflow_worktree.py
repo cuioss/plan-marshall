@@ -832,10 +832,11 @@ class TestRemovalBudgetReachesGit:
 class TestRemovalTimeoutIsItsOwnFailure:
     """An expired budget is NOT ``worktree_remove_failed``.
 
-    ``branch-cleanup.md`` maps ``worktree_remove_failed`` to "uncommitted
-    changes" and recommends a manual ``--force``. That is the wrong and the most
-    destructive available response to a removal that is merely slow on a large
-    but perfectly clean tree, so the timeout carries its own code.
+    ``worktree_remove_failed`` is the catch-all for a removal git actually
+    rendered a verdict on, and the one remedy it carries is a deliberate
+    ``--force`` for a dirty worktree. That is the most destructive available
+    response to a removal which is merely slow on a large but perfectly clean
+    tree, so the timeout carries its own code.
     """
 
     PLAN_ID = 'budget-plan'
@@ -895,7 +896,13 @@ class TestRemovalTimeoutIsItsOwnFailure:
         assert result['error'] == 'worktree_remove_failed', (
             f'A non-timeout failure must keep its own code, got {result!r}.'
         )
-        assert 'Pass --force only after verifying' in result['hint']
+        assert 'Read message first' in result['hint'], (
+            "the payload must point the operator at git's own stderr, which is the "
+            'only place the cause of this catch-all code is readable'
+        )
+        assert '--force addresses a dirty worktree and nothing else' in result['hint'], (
+            'the one cause --force does address must stay named as the only one'
+        )
 
 
 class TestScratchClearingNeverLeavesTheTarget:

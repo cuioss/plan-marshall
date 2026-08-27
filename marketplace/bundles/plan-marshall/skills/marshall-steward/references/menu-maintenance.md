@@ -263,7 +263,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
   --plan-id {plan_id}
 ```
 
-If the removal fails with `worktree_remove_failed` (non-clean worktree), surface the error and do NOT retry with `--force`. The user must manually inspect and recover.
+If the removal fails with `worktree_remove_failed`, surface the error and do NOT retry with `--force`. That code is the catch-all for any non-timeout `git worktree remove` failure, not a dirtiness verdict — git's own stderr rides in `message`, and that is where the cause is read. The user must manually inspect and recover.
 
 ### Step 4: Report orphans
 
