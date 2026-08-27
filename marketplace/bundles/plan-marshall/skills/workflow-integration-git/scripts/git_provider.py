@@ -23,6 +23,12 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+#: Budget applied to a git call whose caller names none. See :func:`run_git` for
+#: what it is and is not: a floor for calls whose cost does not scale with a
+#: tree, never a fitted budget for one that walks a worktree. It is also read by
+#: ``git-workflow.py::_derive_removal_timeout`` as the LOWER bound of the derived
+#: worktree-removal budget, so a small tree keeps exactly this budget and the
+#: derivation can only ever lengthen it.
 _DEFAULT_TIMEOUT_SECONDS = 60
 
 
@@ -36,8 +42,29 @@ def run_git(
 
     Centralized so ``git_workflow`` subcommands share a single subprocess
     contract: ``check=False`` (callers decide what an error means),
-    ``capture_output=True``, ``text=True``, and a default 60s timeout
-    that matches the absorbed worktree helper.
+    ``capture_output=True``, ``text=True``, and
+    :data:`_DEFAULT_TIMEOUT_SECONDS` when the caller names no budget of its own.
+
+    **That default is a FLOOR for SHORT-RUNNING git calls, not a budget that
+    fits every invocation.** It suits the calls whose cost does not scale with
+    the size of any tree — ``rev-parse``, ``merge-base``, ``branch -D``,
+    ``ls-remote``, a ref lookup — for which 60 seconds is already far more than
+    the call can legitimately need, so the timeout only ever fires on something
+    genuinely wedged. It is NOT a defensible budget for a call whose cost scales
+    with the tree it walks: ``git worktree remove`` unlinks every entry under
+    the worktree, so on a GB-scale tree the default expires on a perfectly
+    healthy removal. A caller in that position derives its own budget from the
+    tree it observes and passes it as ``timeout`` — see
+    ``git-workflow.py::_derive_removal_timeout``. Raising the default instead
+    would not fix that class of caller; it would only move the size at which the
+    constant is wrong again.
+
+    On expiry the helper returns ``124`` with the timeout described in
+    ``stderr``, and ``127`` when ``git`` is not on ``PATH``. Both are sentinels
+    the helper synthesizes, not exit codes git produced — a caller that must
+    distinguish "the budget expired, so git rendered no verdict" from "git ran
+    and reported a failure" branches on ``124`` before its generic non-zero
+    branch.
 
     Callers MUST pass a fully-formed argument list (e.g.
     ``['-C', repo, 'worktree', 'add', ...]``) — the helper does not

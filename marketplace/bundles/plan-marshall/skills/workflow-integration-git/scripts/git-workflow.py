@@ -65,6 +65,7 @@ Examples:
 import fnmatch
 import os
 import re
+import shutil
 import subprocess
 import textwrap
 from pathlib import Path
@@ -94,7 +95,16 @@ from file_ops import (
     get_worktree_root,
     resolve_plan_context,
 )
-from git_provider import run_git
+
+# ``_DEFAULT_TIMEOUT_SECONDS`` is imported alongside ``run_git`` rather than
+# re-spelled here because :func:`_derive_removal_timeout` uses it as the FLOOR of
+# the derived removal budget. A second literal 60 in this module would be a copy
+# that silently disagrees with the helper's own default the moment either moves —
+# the same "one predicate, not two copies" rule the ``_observe_z`` import above
+# follows. It is private to ``git_provider`` in the sense of "not part of the
+# provider-declaration surface", not in the sense of "off-limits to its own
+# skill's sibling scripts".
+from git_provider import _DEFAULT_TIMEOUT_SECONDS, run_git
 from marketplace_paths import _find_plan_root_from_cwd, main_checkout_root
 from toon_parser import parse_toon, parse_toon_table
 from triage_helpers import (
@@ -1611,6 +1621,179 @@ def _structural_worktree_probe(plan_id: str) -> Path | None:
     return candidate
 
 
+#: Location of the pytest scratch tree inside a worktree, relative to the
+#: worktree root. Spelled from ``build.py``'s OWN construction —
+#: ``PYTEST_BASETEMP_ROOT = Path('.plan/temp/pytest-basetemp')``, whose leading
+#: segment is the same ``.plan`` this module already names as
+#: :data:`_PLAN_DIR_NAME` — rather than from prose about where scratch lives, so
+#: the directory this clears and the directory the build fills cannot drift into
+#: being two different directories.
+_SCRATCH_PARTS = ('temp', 'pytest-basetemp')
+
+#: Ceiling on the measuring walk. The tree being measured is unbounded, and a
+#: measurement that is itself unbounded would just relocate the problem the
+#: budget exists to solve. Reaching the cap is REPORTED
+#: (:data:`_BASIS_CAPPED`) rather than rendered as an exact total.
+_MEASURE_ENTRY_CAP = 2_000_000
+
+#: Entries per second the removal is assumed to sustain. Deliberately pessimistic
+#: against a warm local filesystem: ``git worktree remove`` unlinks every entry
+#: and then rewrites git's worktree bookkeeping, and a cold cache or a network
+#: filesystem is far slower than the several-thousand-per-second an APFS/ext4
+#: page-cache-warm delete reaches. Under-estimating the rate LENGTHENS the
+#: budget, which is the safe direction — the failure this derivation exists to
+#: prevent is a budget that expires on a healthy removal.
+_REMOVAL_ENTRIES_PER_SECOND = 2_000
+
+#: Upper bound on the derived budget. Past this a removal is not slow, it is
+#: wedged, and the distinct :data:`worktree_remove_timed_out` verdict serves an
+#: operator better than a longer wait. It also bounds every basis that yields a
+#: lower bound rather than a total (see :func:`_derive_removal_timeout`).
+_REMOVAL_TIMEOUT_CEILING_SECONDS = 1800
+
+#: The walk read every directory it descended into and did not reach the cap, so
+#: the entry count is an exact total. This is the ONLY basis on which the budget
+#: is scaled from the count.
+_BASIS_MEASURED = 'measured_tree'
+#: The walk stopped at :data:`_MEASURE_ENTRY_CAP`; the count is a lower bound.
+_BASIS_CAPPED = 'measurement_capped'
+#: At least one directory could not be read; the count is a lower bound.
+_BASIS_INCOMPLETE = 'measurement_incomplete'
+#: Nothing was counted at all — the root itself could not be scanned.
+_BASIS_FAILED = 'measurement_failed'
+
+
+def _count_tree_entries(root: Path) -> tuple[int | None, str]:
+    """Count filesystem entries under ``root`` and name the basis of the count.
+
+    Returns ``(entries, basis)``. The basis is what makes the number readable:
+    :data:`_BASIS_MEASURED` is an exact total, :data:`_BASIS_CAPPED` and
+    :data:`_BASIS_INCOMPLETE` are lower bounds, and on :data:`_BASIS_FAILED`
+    ``entries`` is ``None``.
+
+    ⛔ ``None`` rather than ``0`` on the failed basis, and that is the contract.
+    A zero published by a walk that never ran is indistinguishable from a walk
+    that ran and found an empty tree — and the two demand opposite budgets (the
+    floor for a genuinely empty tree, the ceiling for an unmeasurable one). A
+    caller that reads the count without the basis therefore finds no number to
+    misread, which is the same discipline ``scope_creep_check`` applies by
+    omitting ``residual_count`` from its ``could_not_look`` shape.
+
+    "Failed" is distinguished from "incomplete" by whether the walk yielded
+    ANYTHING: :func:`os.walk` yields exactly one tuple for a readable empty
+    directory, so yielding nothing means the root itself could not be scanned,
+    while an error raised part-way through leaves a partial count worth
+    reporting. Errors are collected through ``onerror`` rather than allowed to
+    propagate, because ``os.walk`` swallows them by default and a bare
+    ``except OSError`` around it would be a guard that can never fire.
+
+    The walk is cheap relative to the removal it budgets: only directory-entry
+    names are consumed (``scandir`` supplies the directory/file split without a
+    per-entry ``stat``), and no entry is opened. ``followlinks=False`` is stated
+    rather than left to the default so the walk provably cannot leave the tree
+    through a symlink and count some other tree's entries into this budget.
+    """
+    entries = 0
+    yielded = False
+    unreadable = False
+
+    def _note_unreadable(_exc: OSError) -> None:
+        nonlocal unreadable
+        unreadable = True
+
+    for _dirpath, dirnames, filenames in os.walk(root, onerror=_note_unreadable, followlinks=False):
+        yielded = True
+        entries += len(dirnames) + len(filenames)
+        if entries >= _MEASURE_ENTRY_CAP:
+            return _MEASURE_ENTRY_CAP, _BASIS_CAPPED
+    if not yielded:
+        return None, _BASIS_FAILED
+    if unreadable:
+        return entries, _BASIS_INCOMPLETE
+    return entries, _BASIS_MEASURED
+
+
+def _derive_removal_timeout(entries: int | None, basis: str) -> int:
+    """Derive the ``git worktree remove`` budget in seconds from the measurement.
+
+    An exact count scales linearly at :data:`_REMOVAL_ENTRIES_PER_SECOND`,
+    bounded below by ``git_provider._DEFAULT_TIMEOUT_SECONDS`` (a small tree
+    still gets the ordinary short-git-call budget, so this derivation never
+    SHORTENS what the removal had before) and above by
+    :data:`_REMOVAL_TIMEOUT_CEILING_SECONDS`.
+
+    Every other basis takes the ceiling. Capped, incomplete and failed all mean
+    the same thing for budgeting purposes: the real size is unknown and is at
+    least the number in hand, so scaling that number would produce exactly the
+    too-short budget this derivation exists to prevent. ``entries is None``
+    occurs only on :data:`_BASIS_FAILED`; it is tested first so the arithmetic
+    below is unambiguously over an ``int`` rather than resting on that coupling.
+
+    This is deliberately NOT a raised fixed constant. A fixed budget is wrong
+    for the same reason at every size — it encodes an assumption about the tree
+    that nothing checked — and raising it only moves the size at which it is
+    wrong again.
+    """
+    if entries is None or basis != _BASIS_MEASURED:
+        return _REMOVAL_TIMEOUT_CEILING_SECONDS
+    scaled = -(-entries // _REMOVAL_ENTRIES_PER_SECOND)  # ceiling division
+    return max(_DEFAULT_TIMEOUT_SECONDS, min(scaled, _REMOVAL_TIMEOUT_CEILING_SECONDS))
+
+
+def _clear_regenerable_scratch(target: Path, resolved_target: Path) -> tuple[bool, int | None, str]:
+    """Delete the worktree's regenerable pytest scratch before the tree is measured.
+
+    Returns ``(cleared, entries_removed, note)``. ``entries_removed`` is ``None``
+    when the scratch was removed but its size was never established exactly (the
+    measuring walk capped out, hit an unreadable directory, or could not run) and
+    when a removal failed part-way — in both cases a number would be a guess. The
+    ``note`` names why nothing was cleared, and is empty on success.
+
+    Clearing before measuring is the point: the scratch is the largest thing in a
+    worktree that has run the suite, it is regenerated by the next build
+    (``build.py::_prepare_session_basetemp`` recreates the root it prunes), and
+    removing it costs the caller nothing it will miss. Budgeting the git call
+    against the tree AFTER it is gone is what keeps the budget honest about the
+    work git actually has to do.
+
+    Three refusals, all fail-safe — a refusal leaves the scratch in place, so it
+    is simply counted into the measurement and the budget grows to cover it:
+
+    - the path is a SYMLINK. It is never followed, because following it would
+      delete whatever it points at rather than scratch inside this worktree.
+    - the path resolves OUTSIDE ``resolved_target``. Under ADR-002 a worktree's
+      ``.plan`` tree is fully real (see
+      :func:`_ensure_worktree_plan_local_real`), but a worktree materialized by
+      an older symlinking revision, or one edited by hand, can still have a
+      symlinked ancestor — and the resolved path is then some other checkout's
+      scratch. The containment test is the same ``is_relative_to`` shape the cwd
+      guard uses, applied to the same resolved-absolute-paths discipline.
+    - the path is absent or is not a directory. Nothing to clear.
+
+    ``shutil.rmtree`` is called WITHOUT ``ignore_errors`` on purpose: a partial
+    removal must be reportable, and swallowing the error would let the caller
+    publish ``scratch_cleared: true`` over a scratch that is still there.
+    """
+    scratch = target.joinpath(_PLAN_DIR_NAME, *_SCRATCH_PARTS)
+    if scratch.is_symlink():
+        return False, 0, f'scratch path is a symlink and was not followed: {scratch}'
+    if not scratch.is_dir():
+        return False, 0, 'no scratch directory present'
+    try:
+        resolved_scratch = scratch.resolve()
+    except OSError as exc:
+        return False, 0, f'scratch path could not be resolved: {exc}'
+    if not resolved_scratch.is_relative_to(resolved_target):
+        return False, 0, f'scratch resolves outside the removal target: {resolved_scratch}'
+
+    counted, basis = _count_tree_entries(scratch)
+    try:
+        shutil.rmtree(scratch)
+    except OSError as exc:
+        return False, None, f'scratch removal failed part-way: {exc}'
+    return True, (counted if basis == _BASIS_MEASURED else None), ''
+
+
 def cmd_worktree_remove(args):
     """Remove a worktree (worktree first, then branch ref).
 
@@ -1650,6 +1833,21 @@ def cmd_worktree_remove(args):
     the move-back probe concluded — the two failure modes do not share a single
     predicate. It is likewise NOT overridable by ``--force``; the remedy is to
     change directory out of the worktree and re-run.
+
+    **The removal is budgeted against the observed tree, not against a
+    constant.** Once BOTH refusals have passed — so nothing below is a side
+    effect of a call that then refuses — the regenerable pytest scratch is
+    deleted (:func:`_clear_regenerable_scratch`), what remains is measured
+    (:func:`_count_tree_entries`), and the git call's timeout is derived from
+    that measurement (:func:`_derive_removal_timeout`). Both the success and the
+    timeout payload carry ``scratch_cleared``, ``scratch_entries_removed``,
+    ``measured_entries``, ``timeout_seconds`` and ``budget_basis``, so the budget
+    a run chose and the evidence behind it are readable after the fact rather
+    than reconstructed. An expired budget returns ``worktree_remove_timed_out``,
+    deliberately distinct from ``worktree_remove_failed``: the documented remedy
+    for the latter is a manual ``--force`` for a dirty worktree, which is the
+    wrong — and the most destructive available — response to a removal that is
+    merely slow.
     """
     target, error = _resolve_worktree_path_for_plan(args.plan_id)
     resolution = 'metadata'
@@ -1736,11 +1934,61 @@ def cmd_worktree_remove(args):
             ),
         }
 
+    # Budget the removal against the tree that will actually be walked, rather
+    # than against a fixed constant. Both refusals above have already passed, so
+    # this is the first point at which the removal is going to happen — clearing
+    # scratch is a side effect and must never precede a refusal.
+    scratch_cleared, scratch_entries_removed, scratch_note = _clear_regenerable_scratch(
+        target, resolved_target
+    )
+    measured_entries, budget_basis = _count_tree_entries(target)
+    timeout_seconds = _derive_removal_timeout(measured_entries, budget_basis)
+    budget: dict[str, Any] = {
+        'scratch_cleared': scratch_cleared,
+        'scratch_entries_removed': scratch_entries_removed,
+        'measured_entries': measured_entries,
+        'timeout_seconds': timeout_seconds,
+        'budget_basis': budget_basis,
+    }
+    if scratch_note:
+        budget['scratch_note'] = scratch_note
+
     # Step 1: remove the worktree itself.
     git_args = ['-C', str(main_root), 'worktree', 'remove', str(target)]
     if args.force:
         git_args.append('--force')
-    rc, _out, err = run_git(git_args)
+    rc, _out, err = run_git(git_args, timeout=timeout_seconds)
+    if rc == 124:
+        # ``run_git``'s timeout sentinel — the budget expired, so git never
+        # rendered a verdict on the worktree. This is deliberately NOT
+        # ``worktree_remove_failed``: branch-cleanup.md maps that code to
+        # "uncommitted changes" and recommends a manual --force, which is both
+        # wrong and the most destructive available response to a removal that is
+        # merely slow. A distinct code keeps that remedy off this path.
+        measurement = (
+            f'{measured_entries} entries ({budget_basis})'
+            if measured_entries is not None
+            else f'an unmeasurable tree ({budget_basis})'
+        )
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'worktree_remove_timed_out',
+            'message': (
+                f'git worktree remove exceeded its derived {timeout_seconds}s budget for '
+                f'{measurement}. The removal is slow, not refused — git reported no verdict '
+                'on the worktree, which is still on disk.'
+            ),
+            'worktree_path': str(target),
+            'hint': (
+                'Do NOT pass --force: it addresses a dirty worktree, which is a different '
+                'failure, and adds nothing to a command that never finished. Re-run '
+                'worktree-remove — the regenerable scratch has already been cleared, so a '
+                'retry walks a smaller tree — or delete the directory out-of-band and run '
+                'git worktree prune.'
+            ),
+            **budget,
+        }
     if rc != 0:
         return {
             'status': 'error',
@@ -1768,6 +2016,7 @@ def cmd_worktree_remove(args):
         'worktree_path': str(target),
         'action': 'removed',
         'resolution': resolution,
+        **budget,
     }
     if branch_name:
         payload['branch'] = branch_name
