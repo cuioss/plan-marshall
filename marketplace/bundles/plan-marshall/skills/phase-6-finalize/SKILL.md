@@ -1464,7 +1464,7 @@ FOR each step_id in manifest.phase_6.steps:
          python3 .plan/execute-script.py plan-marshall:manage-references:manage-references sync-affected-files \
            --plan-id {plan_id}
 
-      The write is a set union over the existing value, so the refresh only ever ADDS: no path an earlier pass recorded is dropped, and a re-entry whose outline did not move changes nothing (`added_count: 0`). See `manage-references` Canonical invocations → `sync-affected-files`.
+      The write is a set union over the existing value, so the refresh only ever ADDS: no already-recorded path is dropped, and a re-entry whose outline did not move changes nothing (`added_count: 0`). See `manage-references` Canonical invocations → `sync-affected-files`.
 
       **Placement is load-bearing — it is BEFORE the (ii) knob check, deliberately.** Both continuations re-read the key: the `value == true` branch re-enters the FOR loop in this same dispatch, and the `value == false` branch halts for an operator re-run that re-enters finalize fresh. Refreshing after the knob would leave the default (halting) configuration re-entering against the stale snapshot — the configuration that loops most.
 

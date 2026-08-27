@@ -831,7 +831,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 The verb derives the set itself from `solution_outline.md`'s structured per-deliverable declarations — all three declaration headings, so a survey-scope deliverable's `Files expected to mutate:` paths are included — and unions it into the existing value. **Compose no list here.** A path set assembled by reading outline prose can only be as complete as that reading, and nothing downstream can audit a reading; there is no `--values` argument to get wrong because there is no argument at all.
 
-**Constraint the verb honours:** the write is a set union, so it never removes a path an earlier pass recorded. Deliverables still under a pending finding therefore remain declared rather than being silently dropped from the plan's footprint while the finding is open — a path that leaves scope leaves it by being removed from the outline, not by failing this gate.
+**Constraint the verb honours:** the write is a set union, so it never removes an already-recorded path. Deliverables still under a pending finding therefore remain declared rather than being silently dropped from the plan's footprint while the finding is open — a path that leaves scope leaves it by being removed from the outline, not by failing this gate.
 
 Branch on the returned `status`: `success` carries `added_count` / `unchanged_count` / `total` plus the population walked (`deliverables_scanned`, `headings_found`, `bullets_parsed`). An `outline_not_found` / `outline_unreadable` / `no_deliverables_parsed` error means nothing was derived and nothing was written — record it as a Q-Gate finding per Step 6 rather than treating the unchanged key as a verified footprint.
 

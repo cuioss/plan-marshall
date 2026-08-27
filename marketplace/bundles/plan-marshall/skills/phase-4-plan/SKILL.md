@@ -718,7 +718,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --plan-id {plan_id}
 ```
 
-The write is a set union, so the refresh only ever adds — no path an earlier pass recorded is dropped, and an outline that did not move yields `added_count: 0`. On an error status (`outline_not_found`, `outline_unreadable`, `no_deliverables_parsed`, `not_a_list`) nothing was derived and nothing was written; log the failure and proceed with the unrefreshed value rather than aborting the compose, since the union write cannot have damaged it. See `manage-references` Canonical invocations → `sync-affected-files`.
+The write is a set union, so the refresh only ever adds — no already-recorded path is dropped, and an outline that did not move yields `added_count: 0`. On an error status (`outline_not_found`, `outline_unreadable`, `no_deliverables_parsed`, `not_a_list`) nothing was derived and nothing was written; log the failure and proceed with the unrefreshed value rather than aborting the compose, since the union write cannot have damaged it. See `manage-references` Canonical invocations → `sync-affected-files`.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \

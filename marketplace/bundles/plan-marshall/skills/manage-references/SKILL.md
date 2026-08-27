@@ -356,7 +356,7 @@ bullets_parsed: 31
 ```
 
 **Notes**:
-- Both writes are a **set union** over the existing value. A path recorded by an earlier run always survives a later one, a path that appeared after the outline was first read is added, and a repeat run over an unchanged outline changes nothing — which is what makes the verb safe to call at every point a consumer depends on the value being current.
+- Both writes are a **set union** over the existing value. An already-recorded path always survives a subsequent run, a path that appeared after the outline was first read is added, and a repeat run over an unchanged outline changes nothing — which is what makes the verb safe to call at every point a consumer depends on the value being current.
 - Ordering is stable: already-recorded paths keep their position, newly derived ones are appended in sorted order.
 - The three partition counts exist so a **filtered** set is never mistaken for a **small** one. `mutation_count + read_intent_count == declared_count` (the halves are disjoint); `unannotated_count` is a SUB-count of `mutation_count`, naming how much of the mutation half arrived by the unmarked-bullet default rather than by an explicit marker.
 - `added_count` / `unchanged_count` / `total` / `added` describe `affected_files`; the `read_intent_*` peers describe `read_intent_files`. Each names the key it was computed over, so neither set's figures can be read against the wrong key.
