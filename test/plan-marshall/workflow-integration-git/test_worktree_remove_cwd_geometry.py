@@ -81,9 +81,19 @@ from _resolve_project_dir_fixtures import patch_query_worktree_path
 
 from conftest import load_script_module, parse_ns
 
-_GIT_WF = ('plan-marshall', 'workflow-integration-git', 'git-workflow.py')
+#: The script under test, hoisted as three module-level constants rather than only as
+#: the tuple below. The loader-contract guard resolves each registration statically, and
+#: a ``load_script_module(*_GIT_WF)`` unpacking leaves the script position unreadable to
+#: it: the call still publishes ``git_workflow`` in ``sys.modules`` at run time, but as a
+#: registration the collision guard cannot see. Naming the positionals keeps it visible.
+#: ⛔ Do not collapse the load below back to an unpacking. The ``parse_ns`` calls may
+#: keep using ``_GIT_WF`` — they pass ``register=False`` and so publish nothing.
+_BUNDLE = 'plan-marshall'
+_SKILL = 'workflow-integration-git'
+_SCRIPT = 'git-workflow.py'
+_GIT_WF = (_BUNDLE, _SKILL, _SCRIPT)
 
-git_workflow = load_script_module(*_GIT_WF)
+git_workflow = load_script_module(_BUNDLE, _SKILL, _SCRIPT)
 
 _PLAN_ID = 'cwd-geometry-plan'
 _BRANCH = f'feature/{_PLAN_ID}'
