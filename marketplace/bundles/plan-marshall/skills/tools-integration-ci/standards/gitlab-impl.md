@@ -199,13 +199,22 @@ glab api projects/{id}     # → reads the merge_trains_enabled boolean
 | `merge_trains_enabled: true` | `eligible_configured` |
 | `merge_trains_enabled: false` | `eligible_unconfigured` |
 | `merge_trains_enabled` absent (tier/feature does not expose it) | `ineligible` |
+| `merge_trains_enabled` present but NOT a boolean (`null`, a string, a number) | `unsupported`, carrying the non-boolean value as the actionable error |
 | HTTP 401/403 | actionable auth-scope error (never a stack trace) |
 | Project scope unresolvable — no API call is made | `unsupported`, carrying an actionable scope-resolution error that names no project path |
 | Non-auth API failure, or a non-object project response | `unsupported`, carrying the failure itself as the actionable error |
 
-Only the first three rows are verdicts ABOUT a project; the rest establish
-nothing, which is why they carry an error and every merge-shaped consumer
-refuses on them.
+Only the first three rows — the two boolean values and the absent field — are
+verdicts ABOUT a project; each of the remaining four establishes nothing, which
+is why they carry an error and every merge-shaped consumer refuses on them.
+
+A present-but-non-boolean `merge_trains_enabled` is deliberately on the
+establishes-nothing side of that split rather than folded into the three verdict
+rows. `null`, a string, or a number is not the field's declared type, so the read
+answered nothing about this project's merge-train support — and placing it with
+the verdicts would produce an error-free `eligible_*` or `ineligible` that
+permits an immediate merge on a project whose train state was never established.
+The probe refuses it instead.
 
 ### repo merge-queue enable
 

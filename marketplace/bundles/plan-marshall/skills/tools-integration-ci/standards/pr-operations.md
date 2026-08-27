@@ -92,6 +92,8 @@ base_branch: main
 merge_commit_sha: null
 ```
 
+**A `status: error` from this verb is not a no-PR signal.** One envelope covers several materially different causes, and its `error` message is hard-coded to the no-PR wording, so branching on `status` alone reads an auth or transient failure as an absent PR. Every error return carries an `error_cause` discriminator; only `no_pr_found` establishes that the PR genuinely does not exist. See [`api-contract.md`](api-contract.md) § "`pr view` and the `error_cause` discriminator" for the vocabulary and the fail-closed classification.
+
 #### `merge_commit_sha` — the landing commit, and its explicitly-absent form
 
 `merge_commit_sha` is the commit the PR/MR landed as. It is a **provider-neutral** field: each provider maps its own source onto it — GitHub from `mergeCommit.oid`, GitLab from `squash_commit_sha` or `merge_commit_sha`, whichever the project's merge method populated — so a consumer resolving a landing can rely on the field regardless of which provider is configured.
@@ -290,6 +292,36 @@ disposition_detail: no merge_queue rule on branch
 `disposition_detail` carries the probe evidence behind the value. `base_branch` is GitHub-only — the queue is a base-branch property there, whereas a GitLab merge train is project-scoped and has no per-branch value to report.
 
 There is **no `enabled` key** on this envelope, and no alias for one. A boolean derived from the exit code cannot distinguish the two dispositions above — it reads "auto-merge enabled" for a PR the platform actually placed on a queue — which is precisely the claim the verb must not make. Callers branch on the two `disposition` values; a truthiness check is not a substitute, because both values are truthy.
+
+The block above is the `enabled` shape. The `enqueued` disposition carries one further key, documented next.
+
+#### `routing_note` — present only on `enqueued`
+
+On the `enqueued` disposition — and **only** there, on **both** providers — the success envelope carries one additional key, `routing_note`:
+
+```toon
+status: success
+operation: pr_auto_merge
+pr_number: 123
+base_branch: main
+disposition: enqueued
+disposition_detail: merge_queue rule on branch main
+
+routing_note:
+  documented_route: ci pr merge-queue
+  expected_branch: "use_merge_queue: true"
+  dispatched_verb: ci pr auto-merge
+```
+
+| `routing_note` field | Meaning |
+|----------------------|---------|
+| `documented_route` | The verb [`phase-6-finalize/standards/branch-cleanup.md`](../../phase-6-finalize/standards/branch-cleanup.md) § "Merge routing (`use_merge_queue`)" dispatches for this routing-table branch. |
+| `expected_branch` | The routing-table branch a configured queue/train corresponds to. |
+| `dispatched_verb` | The verb that actually reached the platform — `ci pr auto-merge`. |
+
+The note is **advisory** and rides on a call that **succeeded**: the enqueue is the safe outcome and nothing was refused. Its purpose is disclosure. `branch-cleanup.md`'s routing table declares a closed dispatch set that reaches only `ci pr safe-merge` and `ci pr merge-queue`; `pr auto-merge` is the one sanctioned exception among the merge-shaped verbs, because it self-routes — against a configured queue/train the platform enqueues rather than merging immediately, so it is never in the close-unmerged unsafe state and a blanket refusal would break the legitimate enqueue-via-auto-merge path. The handling is therefore probe-and-**report**, and `routing_note` is the report: it makes the divergence observable in the response itself rather than only reconstructible by hand from the routing table. A consumer that never reads the field is unaffected — the key is additive, and its absence on the `enabled` disposition is the normal shape, not a missing field.
+
+Both providers publish the identical three fields from a single shared definition (`ci_base.AUTO_MERGE_ROUTING_NOTE`), because the route is a property of the documented routing table rather than of a provider.
 
 ---
 
