@@ -1451,7 +1451,7 @@ class TestToonContract:
 
 
 class TestWorktreeRemoveMoveBackPrecondition:
-    """worktree-remove — the script-enforced plan-dir move-back precondition.
+    """worktree-remove — the two script-enforced removal preconditions.
 
     Proves (a) removal REFUSES with ``plan_dir_not_moved_back`` while the
     worktree still holds the sole plan-state copy and main holds no plan dir;
@@ -1460,6 +1460,15 @@ class TestWorktreeRemoveMoveBackPrecondition:
     ``.plan/local/plans/{plan_id}/``; (d) the existing noop branch (target
     absent) is unchanged. Fixture ``.gitignore`` covers ``.plan/`` so
     worktree-resident plan state never blocks the non-force removal.
+
+    It also proves (e) the independent ``cwd_inside_removal_target`` refusal:
+    standing at or beneath the target refuses even once the move-back has
+    landed, refuses under ``--force``, and refuses while the move-back
+    predicate is forced to report success — the last of these is what shows the
+    two preconditions are carried by two defences rather than by one. Those
+    cases vary **cwd** via ``monkeypatch.chdir`` and never patch a resolver,
+    because a patched resolver cannot observe where the process is standing;
+    each is paired with a matched control that differs in cwd alone.
     """
 
     PLAN_ID = 'moveback-plan'
@@ -1493,6 +1502,15 @@ class TestWorktreeRemoveMoveBackPrecondition:
         )
         monkeypatch.setattr(git_workflow, 'main_checkout_root', lambda: main)
         monkeypatch.setattr(git_workflow, '_read_metadata_field', lambda plan_id, field: '')
+
+    def _land_plan_dir_on_main(self, main: Path) -> None:
+        """Simulate integrate_into_main landing the plan dir back on main."""
+        main_plan_dir = main / '.plan' / 'local' / 'plans' / self.PLAN_ID
+        main_plan_dir.mkdir(parents=True)
+        (main_plan_dir / 'status.json').write_text('{}')
+
+    def _worktree_status_json(self, worktree: Path) -> Path:
+        return worktree / '.plan' / 'local' / 'plans' / self.PLAN_ID / 'status.json'
 
     def _remove(self, force: bool = False) -> dict:
         return dict(
@@ -1532,10 +1550,7 @@ class TestWorktreeRemoveMoveBackPrecondition:
         """(c) plan dir landed on main → removal proceeds."""
         main, worktree = self._seed_main_and_worktree(tmp_path)
         self._patch(monkeypatch, main, worktree)
-        # Simulate integrate_into_main: land the plan dir on main.
-        main_plan_dir = main / '.plan' / 'local' / 'plans' / self.PLAN_ID
-        main_plan_dir.mkdir(parents=True)
-        (main_plan_dir / 'status.json').write_text('{}')
+        self._land_plan_dir_on_main(main)
 
         result = self._remove()
 
@@ -1560,6 +1575,96 @@ class TestWorktreeRemoveMoveBackPrecondition:
             'The target-absent noop branch must fire BEFORE the move-back '
             f'precondition, got {result!r}.'
         )
+
+    @pytest.mark.parametrize('subdir', ['', 'nested/deeper'])
+    def test_refuses_when_cwd_inside_removal_target(
+        self, tmp_path: Path, monkeypatch, subdir: str
+    ):
+        """(e) cwd at — or beneath — the target refuses, move-back notwithstanding.
+
+        The plan dir HAS landed on main here, so the move-back precondition is
+        satisfied and the only thing left to refuse is the containment test.
+        """
+        main, worktree = self._seed_main_and_worktree(tmp_path)
+        self._patch(monkeypatch, main, worktree)
+        self._land_plan_dir_on_main(main)
+        cwd = worktree / subdir if subdir else worktree
+        cwd.mkdir(parents=True, exist_ok=True)
+        monkeypatch.chdir(cwd)
+
+        result = self._remove()
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'cwd_inside_removal_target', (
+            f'Standing at {cwd} must refuse the removal, got {result!r}.'
+        )
+        assert Path(result['cwd']) == cwd.resolve()
+        assert 'change directory out of the worktree' in result['message']
+        assert 'Pass --force' not in result['message'], (
+            'The message must name the remedy, not offer --force as one.'
+        )
+        assert worktree.exists()
+
+    def test_cwd_refusal_not_overridable_by_force(self, tmp_path: Path, monkeypatch):
+        """(e) --force does not buy a way out of the containment refusal."""
+        main, worktree = self._seed_main_and_worktree(tmp_path)
+        self._patch(monkeypatch, main, worktree)
+        self._land_plan_dir_on_main(main)
+        monkeypatch.chdir(worktree)
+
+        result = self._remove(force=True)
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'cwd_inside_removal_target', (
+            f'--force must NOT bypass the cwd-containment refusal, got {result!r}.'
+        )
+        assert worktree.exists()
+
+    def test_cwd_refusal_survives_a_neutralised_move_back_predicate(
+        self, tmp_path: Path, monkeypatch
+    ):
+        """(e) the refusal does not ride on the move-back predicate's verdict.
+
+        The predicate is forced to report "moved back" while main in fact holds
+        no plan dir at all — the geometry in which the two defences would be
+        indistinguishable if one predicate carried both. The worktree-resident
+        ``status.json`` surviving is the property under test; the return code
+        alone would not show that the file the refusal exists to protect is
+        still there.
+        """
+        main, worktree = self._seed_main_and_worktree(tmp_path)
+        self._patch(monkeypatch, main, worktree)
+        monkeypatch.setattr(git_workflow, '_plan_dir_on_main_checkout', lambda plan_id: True)
+        monkeypatch.chdir(worktree)
+
+        result = self._remove()
+
+        assert result['error'] == 'cwd_inside_removal_target', (
+            f'The containment test must refuse on its own, got {result!r}.'
+        )
+        assert self._worktree_status_json(worktree).is_file(), (
+            'The refusal exists to protect the worktree-resident plan state.'
+        )
+
+    def test_matched_control_cwd_on_main_still_succeeds(self, tmp_path: Path, monkeypatch):
+        """(e) matched negative control — identical fixture, cwd on main.
+
+        Differs from ``test_refuses_when_cwd_inside_removal_target`` in cwd and
+        nothing else, which is what makes that refusal attributable to where the
+        process stands rather than to anything the fixture set up.
+        """
+        main, worktree = self._seed_main_and_worktree(tmp_path)
+        self._patch(monkeypatch, main, worktree)
+        self._land_plan_dir_on_main(main)
+        monkeypatch.chdir(main)
+
+        result = self._remove()
+
+        assert result['status'] == 'success', (
+            f'Standing on main must still reach the existing outcome, got {result!r}.'
+        )
+        assert result['action'] == 'removed'
+        assert not worktree.exists()
 
 
 # =============================================================================

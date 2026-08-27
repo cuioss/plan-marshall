@@ -1545,6 +1545,14 @@ def cmd_worktree_remove(args):
     NOT overridable by ``--force``: that flag keeps its dirty-tree meaning
     only. An abandonment flow moves or deletes the plan dir first, then
     removes the worktree.
+
+    Second precondition (script-enforced, independent of the first): the
+    current working directory MUST NOT be the worktree being removed nor any
+    directory beneath it (``error: cwd_inside_removal_target``). It is a plain
+    containment test between two resolved absolute paths, so it holds whatever
+    the move-back probe concluded — the two failure modes do not share a single
+    predicate. It is likewise NOT overridable by ``--force``; the remedy is to
+    change directory out of the worktree and re-run.
     """
     target, error = _resolve_worktree_path_for_plan(args.plan_id)
     if error is not None:
@@ -1586,6 +1594,33 @@ def cmd_worktree_remove(args):
                 'Plan directory has not been moved back to the main checkout — '
                 'run integrate_into_main before worktree-remove. The refusal is '
                 'not overridable by --force.'
+            ),
+        }
+
+    # Independent cwd-containment refusal. A caller standing inside the tree it
+    # is about to destroy would lose its own working directory to the removal,
+    # and every cwd-relative resolution it performs afterwards would resolve
+    # through a directory that no longer exists. This is a direct containment
+    # test between two resolved absolute paths — deliberately NOT carried by the
+    # move-back predicate above, so the two failure modes rest on two separate
+    # defences rather than both riding on one probe. ``is_relative_to`` is true
+    # for the target itself as well as for any descendant, which is exactly the
+    # condition being refused. Like ``plan_dir_not_moved_back`` this is NOT
+    # overridable by --force; the remedy is to leave the directory, not to
+    # insist harder.
+    resolved_target = target.resolve()
+    cwd = Path.cwd().resolve()
+    if cwd.is_relative_to(resolved_target):
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'cwd_inside_removal_target',
+            'worktree_path': str(target),
+            'cwd': str(cwd),
+            'message': (
+                'Current working directory is inside the worktree being removed — '
+                'change directory out of the worktree, then re-run worktree-remove. '
+                'The refusal is not overridable by --force.'
             ),
         }
 
