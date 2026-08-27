@@ -134,6 +134,7 @@ Two defects the mutation run exposed in the fix itself, both now locked by
 
 from __future__ import annotations
 
+import ast
 import re
 import tokenize
 from pathlib import Path
@@ -1107,3 +1108,165 @@ def test_queue_landing_gate_precedes_and_guards_the_branch_prune():
         'Without the guard the prune runs whether or not the queue merge landed, which is '
         'the destructive outcome the gate exists to prevent.'
     )
+
+
+# =============================================================================
+# (6) The CI `overall_status` vocabulary the positive-shape requirement names is
+#     PARITY-GUARDED against both provider definitions, never merely transcribed
+# =============================================================================
+#
+# The CI-gate section's "Positive shape requirement" admits a snapshot only when
+# its `overall_status` is drawn from the handler's vocabulary, and names the four
+# values inline. A hand-copied population standing in for an authoritative
+# definition goes stale SILENTLY IN BOTH DIRECTIONS: a handler that gains a value
+# makes the gate reject a valid snapshot, one that loses a value makes it admit an
+# unsupported one — and the gate's whole purpose is to STOP on a shape it cannot
+# vouch for, so a stale list is a false verdict either way.
+#
+# The definition is NOT singular. `_derive_overall_status` exists once per
+# provider, and the definition population below is DERIVED by scanning the bundle
+# tree rather than named — so a third provider added later joins the parity check
+# on arrival instead of drifting outside a two-entry list nobody revisits.
+
+#: The sentence that names the vocabulary, and the backticked tokens inside it.
+#: Line-scoped and non-greedy: a document-wide match would sweep in every unrelated
+#: backticked token and inflate the doc side until the equality could not fail.
+_VOCAB_SENTENCE_RE = re.compile(
+    r"an `overall_status` drawn from the handler's vocabulary\s*[—-]\s*(`.+?)\.",
+    re.MULTILINE,
+)
+
+#: The function whose returned literals ARE the vocabulary.
+_DERIVE_FN_NAME = '_derive_overall_status'
+
+
+def _vocabulary_definition_modules() -> list[Path]:
+    """Every bundle module that DEFINES ``_derive_overall_status``.
+
+    Derived by scanning, never listed. CodeRabbit's report of this finding named
+    one provider as "the authoritative definition"; there are two, and a guard
+    bound to a hand-written pair would repeat the same mistake one level up.
+    """
+    needle = f'def {_DERIVE_FN_NAME}('
+    return sorted(
+        path
+        for path in _SKILLS.rglob('*.py')
+        if needle in path.read_text(encoding='utf-8')
+    )
+
+
+def _returned_status_literals(path: Path) -> frozenset[str]:
+    """The set of first-tuple-element string literals ``_derive_overall_status`` returns.
+
+    Bound to the EXECUTABLE code via ``ast``, not to the source text: the
+    docstring of both definitions also spells the four values out, so a text scan
+    would be satisfied by prose a gutted function could keep verbatim.
+    """
+    tree = ast.parse(path.read_text(encoding='utf-8'))
+    values: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef) or node.name != _DERIVE_FN_NAME:
+            continue
+        for ret in (n for n in ast.walk(node) if isinstance(n, ast.Return)):
+            value = ret.value
+            if isinstance(value, ast.Tuple) and value.elts:
+                value = value.elts[0]
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                values.add(value.value)
+    return frozenset(values)
+
+
+_VOCAB_DEFINITION_MODULES = _vocabulary_definition_modules()
+
+# Non-emptiness asserted at IMPORT, before any parametrize sweeps it: an empty
+# population is a pytest SKIP, not a failure, and a parity check over zero
+# definitions is vacuously green.
+assert _VOCAB_DEFINITION_MODULES, (
+    f'no module under {_SKILLS} defines {_DERIVE_FN_NAME} — the vocabulary-parity '
+    'population is vacuous and every assertion below would pass over an empty set'
+)
+
+
+def _doc_vocabulary() -> frozenset[str]:
+    """The four values the branch-cleanup positive-shape requirement names."""
+    text = _BRANCH_CLEANUP.read_text(encoding='utf-8')
+    match = _VOCAB_SENTENCE_RE.search(text)
+    assert match is not None, (
+        f'{_BRANCH_CLEANUP.name} no longer states the `overall_status` vocabulary in the '
+        'form this guard parses. The positive-shape requirement is only as good as the '
+        'population it admits, so re-point this regex at the new wording rather than '
+        'dropping the parity check.'
+    )
+    return frozenset(_BACKTICKED_RE.findall(match.group(1)))
+
+
+class TestOverallStatusVocabularyParity:
+    """The doc's `overall_status` list equals what BOTH provider definitions return.
+
+    Three independently derived sides — the doc sentence, and each provider's
+    ``_derive_overall_status`` returned-literal set — asserted equal. A handler
+    change therefore fails the build here instead of silently invalidating the CI
+    gate, and a provider drifting away from its sibling fails too.
+    """
+
+    def test_the_definition_population_is_published_and_plural(self):
+        """The scan found the definitions, and found more than one of them.
+
+        Published as a size so a shrinking scan is visible on the failure message.
+        The plurality assertion is the finding's own correction made structural:
+        the reported "one authoritative definition" was wrong, and a guard that
+        could pass while seeing only one provider would re-admit that error.
+        """
+        assert len(_VOCAB_DEFINITION_MODULES) >= 2, (
+            f'the scan found only {len(_VOCAB_DEFINITION_MODULES)} definition(s) of '
+            f'{_DERIVE_FN_NAME} '
+            f'({[p.name for p in _VOCAB_DEFINITION_MODULES]}) — cross-provider parity '
+            'cannot be demonstrated from a single side, so either a provider module '
+            'moved or the scan regressed'
+        )
+
+    def test_the_doc_vocabulary_is_non_empty(self):
+        """The doc side is real prose, not an empty match the equality would accept."""
+        doc_vocab = _doc_vocabulary()
+        assert doc_vocab, (
+            f'{_BRANCH_CLEANUP.name} matched the vocabulary sentence but yielded no '
+            'backticked values — an empty doc side would compare equal to an empty '
+            'derived side and the parity check would be vacuous'
+        )
+
+    @pytest.mark.parametrize(
+        'module', _VOCAB_DEFINITION_MODULES, ids=lambda p: p.parent.parent.name
+    )
+    def test_definition_vocabulary_matches_the_doc(self, module):
+        """Each provider's returned-literal set equals the vocabulary the doc names."""
+        derived = _returned_status_literals(module)
+        assert derived, (
+            f'{module} defines {_DERIVE_FN_NAME} but no string literal was read off its '
+            'return statements — the ast derivation regressed, and an empty derived side '
+            'would make this comparison vacuous'
+        )
+        doc_vocab = _doc_vocabulary()
+        assert derived == doc_vocab, (
+            f'{module.name}:{_DERIVE_FN_NAME} returns {sorted(derived)} but '
+            f'{_BRANCH_CLEANUP.name} admits {sorted(doc_vocab)}. The CI-gate positive-shape '
+            'requirement would '
+            f'{"reject a valid" if derived - doc_vocab else "admit an unsupported"} '
+            'snapshot. Update both sides together — the handler is authoritative.'
+        )
+
+    def test_the_providers_agree_with_each_other(self):
+        """Cross-provider parity, asserted directly rather than inferred via the doc.
+
+        Each provider is compared to the doc above, so agreement between them
+        follows — but only while the doc assertion holds. Asserting it directly is
+        what keeps the cross-provider claim standing on its own evidence, and names
+        the divergence per-provider when it breaks.
+        """
+        by_module = {p: _returned_status_literals(p) for p in _VOCAB_DEFINITION_MODULES}
+        distinct = set(by_module.values())
+        assert len(distinct) == 1, (
+            'the provider definitions of '
+            f'{_DERIVE_FN_NAME} disagree: '
+            f'{ {p.name: sorted(v) for p, v in by_module.items()} }. One provider gained or '
+            'lost a status the other did not, so a caller cannot rely on a single vocabulary.'
+        )

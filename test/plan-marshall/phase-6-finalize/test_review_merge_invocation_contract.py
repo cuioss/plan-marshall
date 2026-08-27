@@ -303,8 +303,64 @@ _NEW_CLAUSE = (
     'or with no parseable `status` at all**'
 )
 
+#: The disposition markers the clause BODY must carry — the part that actually prescribes
+#: something. ``_NEW_CLAUSE`` above pins only the bolded lead-in, and a doc can keep that
+#: lead-in byte-for-byte while deleting every instruction beneath it: the STOP disposition,
+#: the preservation of the full stdout error envelope, and the synthesis of an error TOON
+#: from raw stdout when no ``status`` parses. A heading-only assertion passes such a doc,
+#: which is the vacuous-guard shape this literal exists to prevent — so the heading is
+#: pinned AND the body is required to still prescribe those three things.
+#:
+#: Each marker is DERIVED from the live clause bodies across the pool, not composed from
+#: memory: every one is carried by every clause-bearing doc today, so no doc fails on
+#: arrival of the assertion. They are deliberately the SHORT invariant fragments rather
+#: than whole sentences — the pool's clause bodies are not byte-identical (two docs carry
+#: an abridged body that drops sentences the others keep), so a longer literal would pin
+#: one doc's phrasing and fail the abridged ones for wording rather than for substance.
+#:
+#: This ADDS to the heading assertion; it does not weaken it. The exact-substring
+#: ``_NEW_CLAUSE`` check is unchanged, so the standing decision recorded above — not to
+#: soften the heading into a prefix match — is preserved and the guard strengthens in the
+#: same direction.
+_NEW_CLAUSE_REQUIRED_MARKERS: tuple[str, ...] = (
+    'STOP',
+    '**error envelope**',
+    'synthesize the error TOON',
+)
+
 #: The per-step positive shape requirement — the stricter, call-site-local discharge.
 _SHAPE_MARKER = '**Positive shape requirement.**'
+
+
+def _clause_body(text: str) -> str:
+    """Return the disposition body that follows the clause's bolded lead-in.
+
+    The body runs from the end of the lead-in to whichever comes first: the next
+    top-level bullet, the next markdown heading, or end-of-text. Scoping the marker
+    assertion to the BODY rather than to the whole document is what stops an unrelated
+    occurrence of a marker word elsewhere in the doc from discharging the assertion —
+    a whole-document search would let a doc delete the disposition and still pass on
+    the strength of prose in some other section.
+
+    Returns the empty string when the clause is absent, so a doc missing the clause
+    entirely reports every marker as missing rather than raising.
+    """
+    idx = text.find(_NEW_CLAUSE)
+    if idx == -1:
+        return ''
+    tail = text[idx + len(_NEW_CLAUSE) :]
+    stop = len(tail)
+    for boundary in (r'\n- ', r'\n#{1,6} '):
+        match = re.search(boundary, tail)
+        if match is not None:
+            stop = min(stop, match.start())
+    return tail[:stop]
+
+
+def _missing_disposition_markers(text: str) -> list[str]:
+    """Return the required disposition markers absent from the doc's clause body."""
+    body = _clause_body(text)
+    return [marker for marker in _NEW_CLAUSE_REQUIRED_MARKERS if marker not in body]
 
 #: Docs that invoke a non-`manage-*` script yet are deliberately exempt from the widened
 #: convention, mapped to the reason. **Empty**: the sweep below found no doc in the pool
@@ -542,7 +598,14 @@ class TestExitZeroNonSuccessIsDisposedOf:
 
     @pytest.mark.parametrize('obligated', _WIDENING_OBLIGATED, ids=_obligated_id)
     def test_widened_convention_carries_the_exit_zero_non_success_clause(self, obligated):
-        """A widened convention without the clause is the exit-0 hole left open."""
+        """A widened convention without the clause — or without its body — is the hole left open.
+
+        Two assertions, because the clause has two halves and only the second one
+        prescribes anything. The heading pins WHICH returns the clause covers; the body
+        pins WHAT to do with them. A doc that keeps the heading and deletes the body
+        satisfies a heading-only guard while instructing nobody to do anything — the
+        vacuous-guard shape.
+        """
         rel, _non_manage = obligated
         if rel in _WIDENING_EXEMPTIONS:
             pytest.skip(f'{rel} is an enumerated exemption: {_WIDENING_EXEMPTIONS[rel]}')
@@ -552,6 +615,51 @@ class TestExitZeroNonSuccessIsDisposedOf:
             f"{rel} carries the widened convention but states no disposition for an exit-0 "
             f"return whose status is not `success` (expected the clause {_NEW_CLAUSE!r}). "
             'Keying on the exit code alone is exactly how a failed call reads as usable.'
+        )
+        missing = _missing_disposition_markers(text)
+        assert not missing, (
+            f'{rel} keeps the exit-0-non-success clause HEADING but its body no longer '
+            f'prescribes {missing} — the clause states which returns it covers and then '
+            'instructs nobody to do anything. Restore the disposition (STOP, preserve the '
+            'stdout error envelope, synthesize the error TOON when no `status` parses), or '
+            'add the doc to _WIDENING_EXEMPTIONS with a reason.'
+        )
+
+    def test_the_disposition_marker_check_can_fail_for_the_reason_it_exists_for(self):
+        """Matched control pair: a real doc passes, a heading-only doc FAILS.
+
+        The negative control is the whole point. A doc that keeps the clause heading
+        byte-for-byte while deleting the disposition body is exactly the mutation the
+        heading-only assertion could not see, so the check is proved able to fail on it
+        rather than assumed to be. The positive control — a doc the sweep currently
+        obligates — is what proves the markers are satisfiable by real prose and that a
+        green run above is not green merely because the markers match nothing anywhere.
+        """
+        obligated_paths = [p for p, _ in _WIDENING_OBLIGATED if p not in _WIDENING_EXEMPTIONS]
+        assert obligated_paths, (
+            'every obligated doc is exempt, so this control has no real doc to check '
+            'the positive arm against'
+        )
+        real = (MARKETPLACE_ROOT / obligated_paths[0]).read_text(encoding='utf-8')
+        assert _missing_disposition_markers(real) == [], (
+            f'positive control: {obligated_paths[0]} is a doc the sweep obligates, yet the '
+            'marker set is not satisfied by its live clause body — the markers were composed '
+            'rather than derived from the pool'
+        )
+
+        heading_only = (
+            f'{_WIDE_HEADING}\n\n'
+            f'{_NEW_CLAUSE}: see the convention above.\n\n'
+            '- **`exit_code != 0`**: STOP and return an error TOON.\n'
+        )
+        assert _NEW_CLAUSE in heading_only, (
+            'the negative control must keep the heading intact — otherwise it would fail '
+            'the heading assertion and prove nothing about the body assertion'
+        )
+        assert _missing_disposition_markers(heading_only) == list(_NEW_CLAUSE_REQUIRED_MARKERS), (
+            'negative control: a doc carrying the clause heading with no disposition body '
+            'was not reported as missing every marker — the body assertion cannot fail for '
+            'the reason it exists for, so it is vacuous'
         )
 
     @pytest.mark.parametrize('section', _CI_SECTIONS, ids=_ci_section_id)
