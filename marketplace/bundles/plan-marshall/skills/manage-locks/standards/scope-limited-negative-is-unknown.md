@@ -19,6 +19,23 @@ the concrete case where a live merge-lock holder in a sibling worktree read as
 absent from a worktree-scoped enumeration and its lock was released while it was
 still live in another session.
 
+## Scope of this encoding — the negative polarity only
+
+This document encodes ONE polarity of the scope-limited-read shape, and its title
+says which: the negative. The mirror polarity is the positive read — a hit proves
+only that the subject exists *in the scope that was searched*, never that it exists
+where the consumer needs it to be — and it authorizes destructive acts just as
+readily. The move-back guard in `git-workflow`'s `cmd_worktree_remove` is the
+concrete instance: cwd-pinned inside the worktree it was about to destroy, it found
+the plan directory in that very worktree and read the hit as proof the state had
+already landed back on main.
+
+The positive polarity is stated and dispositioned in
+[cwd-keyed-store-resolution-audit.md](cwd-keyed-store-resolution-audit.md), not
+here. A disposition that clears only one polarity has not cleared the site, so a
+consumer checked against this document has been checked against half the shape and
+must be checked against that two-polarity statement as well.
+
 ## Relationship to ADR-009 (a generalization, not a new principle)
 
 This is the scope-limited-enumeration face of

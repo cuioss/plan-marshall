@@ -31,8 +31,15 @@ failure shape. The population, and the criterion that bounds it, are derived in
 The governing decision is ADR-009 (`Status reporting fails closed with an explicit
 unknown state`), generalized here to the scope-limited-enumeration case: an empty
 result from a scope that could not have observed the subject is `unknown`, not
-`absent`. The structural encoding of that invariant is
-[`scope-limited-negative-is-unknown.md`](scope-limited-negative-is-unknown.md).
+`absent`. That generalization — and its structural encoding in
+[`scope-limited-negative-is-unknown.md`](scope-limited-negative-is-unknown.md) —
+states the **negative polarity only**, in its title and throughout. The positive
+polarity is not covered there and must not be read out of it: a scope-limited hit is
+likewise `unknown` presence, never authoritative presence, and it is governed by the
+two-polarity statement above. The omitted side is the one that actually cut here —
+the move-back guard reached its destructive branch on a scope-limited `True`, not on
+an empty read — so a site checked only against that encoding has been checked
+against half the invariant.
 
 ## Population, and how it was derived
 
@@ -42,11 +49,19 @@ authority-bearing consumer that draws an existence conclusion from the result. T
 criterion — not the word "every" — is what a later reader re-derives against.
 
 **Method.** `architecture search --content` over the crawled file inventory, scoped
-`--category script` so exactly one module attribution is read. Classifying a single
+`--category script`. The inventory indexes each file twice — once under the `default`
+module with a generic category, once under its OWNING module with a specific one — so
+`--category script` keeps only the owning-module row and each script file contributes
+exactly one row. It bounds the CATEGORY, not the module: the surviving rows span every
+bundle that owns a script, which is why a `pm-plugin-development` file appears in the
+resolver-consumer sweeps below. Classifying a single
 file's matches into definition / cross-reference / call site needs a `Read` of that
 file as a second step, because `search` deliberately returns no line numbers and no
-line bodies. Every figure below is therefore reproducible by the same two moves; no
-number here is asserted from reading alone.
+line bodies. Where a criterion rather than a `Read` separates the classes, the sweep
+is instead narrowed to a discriminating literal and the narrowed `file_count` is
+published beside the unnarrowed one, so the criterion is visible in the commands
+themselves. Every figure below is therefore reproducible by those moves; no number
+here is asserted from reading alone.
 
 **⛔ Sum `match_count` over ONE attribution — never read the top-level `count`.**
 `count` is a count of result ROWS, and this repository indexes each file under two
@@ -81,10 +96,41 @@ figure moves whenever this document is edited, which is exactly why the method i
 published beside the number instead of the number alone. A reader who finds a
 different total should re-run the sweep rather than assume either figure is wrong.
 
-**Resolver-consumer population (derived).** `get_base_dir()` resolves in 15 distinct
-script files and `get_worktree_root()` in 8; three files (`file_ops.py`,
-`constants.py`, `_status_query.py`) carry both, so the union is **20 distinct script
-files**. This audit dispositions the members of that union which meet the
+**Resolver-consumer population (derived).** Each resolver is swept twice — once for
+the bare name, once narrowed to the invocation form — because the two reads disagree,
+and which one is the population is a criterion question rather than a counting one.
+All four sweeps are `architecture search --content --literal --category script`:
+
+| `--pattern` | `file_count` |
+|-------------|--------------|
+| `get_base_dir` | 17 |
+| `get_base_dir(` | **15** |
+| `get_worktree_root` | 8 |
+| `get_worktree_root(` | **8** |
+
+**The criterion: a resolving caller INVOKES the resolver.** Naming a resolver is not
+resolving through it, so the invocation-form figure is the population and the
+bare-name figure is not. The two reads disagree for `get_base_dir` by exactly two
+files, and both are mentions rather than calls:
+`manage-locks/scripts/merge_lock.py` carries the dotted attribute reference
+(`--pattern .get_base_dir` matches it) but no invocation anywhere, and
+`pm-plugin-development/skills/plugin-doctor/scripts/_analyze_plan_path_in_scripts.py`
+names the resolver in prose (`--pattern 'get_base_dir '`, trailing space). For
+`get_worktree_root` the two reads coincide at 8 over an identical file set, so that
+figure is criterion-independent and the criterion changes nothing there.
+
+**The union.** Exactly three files invoke both — `tools-file-ops/scripts/file_ops.py`,
+`tools-file-ops/scripts/constants.py` and `manage-status/scripts/_status_query.py` —
+which is the intersection of the two invocation-form result sets, read off the sweeps
+rather than tallied by hand. The union is therefore 15 + 8 − 3 = **20 distinct script
+files**.
+
+Unlike the occurrence figure above, these four are scoped `--category script`, so
+documentation is outside them and **this document is not in its own
+resolver-consumer population**: editing this prose cannot move any of the four
+numbers.
+
+This audit dispositions the members of that union which meet the
 enumeration-surface criterion above, plus the lessons and lock store resolvers that
 reach the same failure shape without passing through either cwd resolver. The
 residue — resolvers used to locate `.plan/` for a caller's own reads and writes,
@@ -174,11 +220,17 @@ so the fix belongs at the authority-bearing CONSUMERS, not the resolver.
   benign zero or by bypassing the resolver outright. That population is derived
   from the store-path sweep (not from any roster) and dispositioned in
   [`../../manage-lessons/standards/cwd-keyed-store-resolution-audit.md`](../../manage-lessons/standards/cwd-keyed-store-resolution-audit.md).
-- **Completeness here is derived, not asserted.** The population, the method, the
-  field summed (`match_count`), the attribution it was summed over, the
-  self-inclusion of this document, and the inventory-scope caveat are all published
-  in § "Population, and how it was derived", so a later reader re-derives rather
-  than trusts. Within the enumeration-surface criterion stated there, every site is
+- **Completeness here is derived, not asserted.** § "Population, and how it was
+  derived" publishes each derivation in full rather than its number alone. For the
+  occurrence figure: the field summed (`match_count`), the attribution it was summed
+  over, and this document's self-inclusion. For the resolver-consumer population: the
+  four sweeps, the raw `file_count` each returned, the invocation criterion that
+  separates a resolving caller from a mention, the two files that criterion excludes,
+  and the dual-carry subtraction behind the union. The inventory-scope caveat bounds
+  both, and a later reader therefore re-derives rather than trusts — including where
+  the re-derivation disagrees with a number here, since the bare-name sweep and the
+  invocation sweep return different totals by design. Within the
+  enumeration-surface criterion stated there, every site is
   dispositioned above; the resolver-consumer residue outside that criterion is named
   there as out of universe rather than left as an unstated tail. The lesson-store
   consumer surface is likewise not a deferred tail of this audit — it is a distinct
