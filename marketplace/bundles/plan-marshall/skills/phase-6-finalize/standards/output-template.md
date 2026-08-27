@@ -6,11 +6,12 @@ The renderer is a pure assembler: it never invents per-step content. Each finali
 
 When `finalize-step-print-phase-breakdown` is present in `manifest.phase_6.steps` AND its outcome is `done`, the renderer enters **Phase Breakdown supplement mode**: the verbatim Phase Breakdown table content captured from `metrics.md` is appended as an additional section AFTER the Finalize-steps block. Every step row in the Finalize-steps block (including `record-metrics`) emits unchanged; the breakdown supplements the per-step list rather than substituting for any row. All other blocks (Headline, Goal, Deliverables, Repository trailer) emit unchanged as well. See `## Phase Breakdown Supplement` below for the full toggle, snapshot read, and append emission rule.
 
-## Exit-code convention for `manage-*` script calls
+## Exit-code convention for every script call
 
-Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+Every `python3 .plan/execute-script.py` call in this document — of EVERY notation, **not only `manage-*`** — carries the following exit-code contract unless a step explicitly states otherwise. The scope is widened past `manage-*` because this document invokes non-`manage-*` scripts too, and a `manage-*`-scoped convention left exactly those calls uncovered — the swallowed-rejection gap.
 
-- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code == 0` AND `status: success`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code == 0` with a `status` other than `success`, or with no parseable `status` at all**: NOT a usable value — STOP exactly as the `exit_code != 0` disposition below requires, with one difference in what the error TOON carries: on this path the diagnostic is on STDOUT, not stderr. Preserve the stdout **error envelope** as emitted — every field it carries, verbatim — into the returned error TOON; it is the only account of the cause that exists. Copy the whole envelope rather than looking for a fixed field list: beyond `status` and `error` the diagnostic fields vary by verb — `ci` verbs carry `operation`, `error_cause`, and `context`, the plan-resolution envelopes carry `message` and `plan_id` instead, and neither list is exhaustive. `error` is sometimes a hard-coded generic string whose real cause sits in one of the other fields, so dropping them can discard the cause entirely. A zero exit is not evidence the operation succeeded; a script MAY print `status: error` and still exit 0. Read `status` FIRST, and never read a **success-payload** field off a non-`success` return — the envelope's diagnostic fields are not success payload, and dropping any of them leaves the step reporting a failure with no cause. A malformed or truncated stdout that carries **no parseable `status` at all** takes this same path: an unreadable read is not evidence of success, so it fails closed onto STOP rather than falling through to the first clause. There is no envelope to preserve on that sub-path — synthesize the error TOON instead, naming the call (notation, subcommand, and arguments) and carrying the raw stdout verbatim as the only account of the cause that exists.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
 
 ## Template Skeleton
@@ -80,7 +81,7 @@ Repository: main up-to-date | worktree removed | working tree clean
 Placeholder glossary:
 
 - `{TOKEN}` — one of `MERGED`, `OPEN`, `LOOP_BACK`, `SKIPPED`, `FAILED` (see rules below)
-- `{n}` — PR number, or `n/a` when no PR exists
+- `{n}` — PR number, or a sentinel when the read produced no number (see the Emission Procedure step 2 glossary for the value set and which read each names)
 - `{N}` / `{N_done}` / `{N_total}` — integer counts
 - `{branch}` — the feature branch name pushed by `push`
 - `{archive_path}` — relative path returned by `default:archive-plan`
@@ -149,11 +150,25 @@ Capture the following into in-memory state (no work file is written):
 4. **PR state + number** — via the CI abstraction (never direct `gh`/`glab`).
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view \
-     --plan-id {plan_id}
+   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
+     --plan-id {plan_id} pr view
    ```
 
-   The `--plan-id` form auto-resolves the active worktree (or falls back to the main checkout once the plan's worktree has been removed). Use `--project-dir {main_checkout}` instead if an explicit override is required (the two flags are mutually exclusive). Capture `state` and `number`. This call may return an error when no PR exists for the branch; treat as `state=n/a, number=n/a`.
+   `pr view` declares no `--plan-id` of its own, so the flag is the router's and is written BEFORE the `pr view` verb — written after it, argparse rejects the call with `unrecognized arguments: --plan-id`. The `--plan-id` form auto-resolves the active worktree (or falls back to the main checkout once the plan's worktree has been removed). Use `--project-dir {main_checkout}` instead if an explicit override is required (the two flags are mutually exclusive). On `status: success`, capture `state` and `pr_number`. The identifier key on the envelope is `pr_number`, not `number`: `number` is the RAW provider key (`.number` on GitHub, `.iid` on GitLab) that normalization maps INTO `pr_number`, so it never survives into the serialized response — see [`tools-integration-ci/standards/api-contract.md`](../../tools-integration-ci/standards/api-contract.md) § "Provider Field Mapping". A renderer reading `number` reads a key the envelope does not carry.
+
+   On `status: error` the read did **not** establish that no PR exists. Branch on `error_cause`, the machine-readable discriminator the `pr view` error envelope carries — the same three-arm shape `workflow/create-pr.md` § "Check if PR already exists" applies to the same call, and the two sites state one contract:
+
+   - **`error_cause: no_pr_found`** → the provider positively reported that this branch has no PR. Degrade to `state=n/a, number=n/a`. This ONE cause is the **documented step-level exception** to the § "Exit-code convention for every script call" middle clause above; the exception is scoped to this cause on this call and to nothing else in this document.
+   - **`error_cause: auth_failed` / `provider_call_failed` / `malformed_response`** → the question *does a PR exist?* is **UNANSWERED**, which is not the same as answered "no". Do NOT degrade to `n/a`. Preserve the stdout error envelope as emitted — **every field it carries**, copied whole rather than against a fixed field list — per the middle clause. Where the cause is stated differs per arm, so do not read one field as *the* place it lives:
+
+     - **`auth_failed`** — `error` carries the **provider-specific** auth failure reason. `context` is **ABSENT**: the arm returns before the provider call is attempted, so there is no provider output to report.
+     - **`provider_call_failed`** — `error` is the hard-coded no-PR wording; the cause is the provider's stderr, carried in `context`.
+     - **`malformed_response`** — `error` is the hard-coded no-PR wording; the cause is the leading slice of the unparsable stdout, carried in `context`.
+
+     See [`tools-integration-ci/standards/api-contract.md`](../../tools-integration-ci/standards/api-contract.md) § "`pr view` and the `error_cause` discriminator" for the per-arm field sets.
+   - **`error_cause` absent** → treat as UNANSWERED and preserve the envelope, exactly as above. A missing discriminator is not evidence of absence, so it must never fall through to the `n/a` degradation.
+
+   **What the renderer does with a preserved envelope**: the snapshot stores `state = unread`, `number = unread`, and the whole envelope under `pr_read_error`. `unread` is deliberately a different sentinel from `n/a` — `n/a` now means only *the provider reported no PR* — so the two states stay distinguishable downstream (Emission Procedure step 1 item 1 routes `unread` to `[FAILED]`, and the `{n}` glossary in step 2 renders it verbatim). The renderer never drops the preserved envelope and never renders an unanswered read as a PR state.
 
 5. **Repository state** — branch name and porcelain status for the trailer.
 
@@ -217,12 +232,12 @@ Invoked after `default:archive-plan` completes. Inputs: the snapshot from above 
 
 Walk the precedence chain:
 
-1. If any manifest step's `outcome` is `failed` (including the dispatcher-recorded `failed` from a per-agent timeout), any required step (per `required-steps.md`) that is also in `manifest.phase_6.steps` is missing from `phase_steps`, or any manifest step's `display_detail` is missing or empty -> `[FAILED]`. A missing/empty `display_detail` violates the interface contract defined in `SKILL.md` and surfaces as `<missing display_detail>` in the step row. Required steps that are NOT in the manifest for this plan are not enforced — they cannot trigger `[FAILED]`.
+1. If any manifest step's `outcome` is `failed` (including the dispatcher-recorded `failed` from a per-agent timeout), any required step (per `required-steps.md`) that is also in `manifest.phase_6.steps` is missing from `phase_steps`, any manifest step's `display_detail` is missing or empty, or the Snapshot Procedure's `pr view` read was UNANSWERED (`state == unread`) -> `[FAILED]`. A missing/empty `display_detail` violates the interface contract defined in `SKILL.md` and surfaces as `<missing display_detail>` in the step row. An `unread` PR state lands here because a finalize summary that cannot say whether a PR exists is not a green one — the state summary names the preserved envelope's `error_cause` and `context`, and rendering the read as `[OPEN]` instead would be exactly the false green this document's own exit-code convention forbids. Required steps that are NOT in the manifest for this plan are not enforced — they cannot trigger `[FAILED]`.
 2. Else if `finalize_iteration > 1` -> `[LOOP_BACK]`.
 3. Else if PR `state == merged` -> `[MERGED]`.
 4. Else if PR exists (any other state) -> `[OPEN]`.
 5. Else if `create-pr` is NOT in `manifest.phase_6.steps` AND no PR exists -> `[SKIPPED]`.
-6. Otherwise default to `[OPEN]` (PR was in the manifest but `ci pr view` returned `n/a` — treat as degraded).
+6. Otherwise default to `[OPEN]` (PR was in the manifest but `ci pr view` positively reported `no_pr_found`, so the state is `n/a` — treat as degraded). An `unread` state never reaches this rule; item 1 already routed it to `[FAILED]`.
 
 ### 2. Build headline
 
@@ -230,7 +245,7 @@ Walk the precedence chain:
 {TOKEN} PR #{n} -- {N} deliverable(s) shipped, {state summary}
 ```
 
-- `{n}` = PR number or `n/a`.
+- `{n}` = PR number; `n/a` when the provider reported `no_pr_found`; `unread` when the `pr view` read was unanswered (see step 1 item 1 — that headline is `[FAILED]`).
 - `{N}` = total deliverables count from the outline.
 - `{state summary}` = short free-text summary authored by the renderer from step outcomes (e.g., `all steps done`, `1 step failed`, `loop-back iteration 2`).
 

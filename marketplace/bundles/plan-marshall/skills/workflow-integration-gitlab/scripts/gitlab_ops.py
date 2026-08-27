@@ -71,6 +71,7 @@ from typing import Any
 from urllib.parse import quote
 
 from ci_base import (
+    AUTO_MERGE_ROUTING_NOTE,
     BODY_KIND_ISSUE_COMMENT,
     BODY_KIND_ISSUE_CREATE,
     BODY_KIND_PR_CREATE,
@@ -82,11 +83,14 @@ from ci_base import (
     MERGE_QUEUE_ELIGIBLE_UNCONFIGURED,
     MERGE_QUEUE_INELIGIBLE,
     MERGE_QUEUE_UNSUPPORTED,
+    PR_VIEW_CAUSE_AUTH_FAILED,
+    PR_VIEW_CAUSE_MALFORMED_RESPONSE,
     HandlerMap,
     add_pr_create_args,
     add_pr_resolve_thread_pr_number,
     build_parser,
     check_auth_cli,
+    classify_pr_view_failure,
     compute_elapsed,
     compute_total_elapsed,
     delete_consumed_body,
@@ -308,20 +312,36 @@ def view_pr_data(head: str | None = None) -> dict:
     ``merge_commit_sha`` is the landing commit of a merged MR, or ``None`` when the
     provider reports none. See :func:`_extract_merge_commit_sha` for the two-key read
     (squash vs regular merge) and why the absent form is ``None`` and never ``''``.
+
+    Every error return carries an ``error_cause`` drawn from ``PR_VIEW_CAUSES``,
+    in LOCK-STEP with the GitHub provider: the same three causes, the same
+    vocabulary, the same additive placement. See
+    ``github_ops.view_pr_data`` for why the collapsed envelope opens duplicate
+    PRs. The ``error`` message, the ``status`` value and the exit codes are
+    unchanged.
     """
     is_auth, err = check_auth()
     if not is_auth:
-        return {'status': 'error', 'operation': 'pr_view', 'error': err}
+        return {
+            'status': 'error',
+            'operation': 'pr_view',
+            'error': err,
+            'error_cause': PR_VIEW_CAUSE_AUTH_FAILED,
+        }
 
     glab_args = ['mr', 'view', '--output', 'json']
     if head:
         glab_args = ['mr', 'view', head, '--output', 'json']
     returncode, stdout, stderr = run_glab(glab_args)
     if returncode != 0:
+        # As on GitHub: the historical no-MR wording stays, and the CAUSE is what
+        # discriminates — no_pr_found only on glab's own "no merge requests
+        # found" signature, never on an unreadable failure.
         return {
             'status': 'error',
             'operation': 'pr_view',
             'error': 'No MR found for current branch',
+            'error_cause': classify_pr_view_failure(stderr),
             'context': stderr.strip(),
         }
 
@@ -332,6 +352,7 @@ def view_pr_data(head: str | None = None) -> dict:
             'status': 'error',
             'operation': 'pr_view',
             'error': 'Failed to parse glab output',
+            'error_cause': PR_VIEW_CAUSE_MALFORMED_RESPONSE,
             'context': stdout[:100],
         }
 
@@ -588,6 +609,18 @@ _MERGE_TRAIN_INELIGIBLE_HINT = (
     'not eligible or the feature is unavailable on the current tier.'
 )
 
+# Actionable remedy surfaced when the GitLab project scope itself cannot be
+# resolved. It deliberately interpolates NO project path: the entire content of
+# this verdict is that no project was resolved, so naming one would report a
+# scope nothing established. Every OTHER merge-train refusal is reached only
+# after resolution succeeded, and each of those names the concrete resolved path.
+_MERGE_TRAIN_SCOPE_UNRESOLVED_HINT = (
+    'the GitLab project scope could not be resolved, so the project-level '
+    'merge_trains_enabled setting that governs this operation could not be read. '
+    "Check that the working tree has a GitLab remote 'glab repo view' resolves, "
+    'then retry.'
+)
+
 
 def _is_auth_scope_error(stderr: str) -> bool:
     """Return True when *stderr* names an auth/permission-scope failure (401/403)."""
@@ -599,35 +632,66 @@ def _probe_merge_train_state() -> tuple[str, str, str | None]:
     """Probe the project merge-train configuration state.
 
     Returns ``(discriminator, detail, error)`` where ``discriminator`` is one of
-    the shared ``MERGE_QUEUE_*`` constants. ``error`` is a non-None actionable
-    string (the caller converts it to a ``make_error`` result) on every failure
-    that is NOT a confirmed feature-availability verdict — an auth-scope failure,
-    a generic non-auth ``run_api`` failure, or a malformed (non-object) project
-    response. Only the genuine feature/tier-absence verdicts carry ``error=None``:
-    an unresolvable project path and an absent ``merge_trains_enabled`` field
-    (both mapped to ``ineligible``), plus the two eligible outcomes. A
-    transient/API failure therefore surfaces as a real, retryable ``unsupported``
-    error rather than being folded into a permanent ``ineligible`` refusal.
+    the shared ``MERGE_QUEUE_*`` constants and ``error`` is a non-None actionable
+    string the caller converts into a ``make_error`` result.
+
+    ``error`` is non-None on every outcome that establishes NOTHING about the
+    project's merge-train support:
+
+    * an **unresolvable project scope** — reported as ``unsupported``, since no
+      project was reached at all. This is the one outcome whose ``detail`` names
+      no project path, because there is no resolved path to name;
+    * an auth-scope failure reading the project;
+    * a generic non-auth ``run_api`` failure;
+    * a malformed (non-object) project response;
+    * a present-but-non-boolean ``merge_trains_enabled`` value — ``null``, a
+      string, or a number establishes nothing about merge-train support, so it
+      is reported as ``unsupported`` rather than falling through to an eligible
+      verdict.
+
+    ``error`` is None only for the three verdicts that DID establish that
+    support: an absent ``merge_trains_enabled`` field (``ineligible`` — the tier
+    does not expose the feature) and the two eligible outcomes.
+
+    Keeping the unresolvable scope OUT of the ``error is None`` set is what lets
+    :func:`_refuse_on_required_merge_train` fail closed. An ``ineligible`` with
+    no error reads as "this project cannot run a merge train, so an immediate
+    merge bypasses nothing" — a claim about a project, and an unresolved scope
+    identifies no project to make it about.
+
+    Every ``detail`` produced after the project path resolved names that concrete
+    path, so a refusal states which project it is about.
     """
     project_path = get_project_path()
     if not project_path:
-        return MERGE_QUEUE_INELIGIBLE, 'could not determine project path', None
+        return (
+            MERGE_QUEUE_UNSUPPORTED,
+            'could not resolve the GitLab project scope',
+            _MERGE_TRAIN_SCOPE_UNRESOLVED_HINT,
+        )
     project_id = quote(project_path, safe='')
     returncode, data, err = run_api(f'projects/{project_id}')
     if returncode != 0:
         if _is_auth_scope_error(err):
-            return MERGE_QUEUE_INELIGIBLE, err.strip(), _MERGE_TRAIN_AUTH_SCOPE_HINT
-        detail = err.strip() or 'project merge-train probe failed'
+            return MERGE_QUEUE_INELIGIBLE, f'project {project_path}: {err.strip()}', _MERGE_TRAIN_AUTH_SCOPE_HINT
+        detail = f'project {project_path}: {err.strip() or "project merge-train probe failed"}'
         return MERGE_QUEUE_UNSUPPORTED, detail, detail
     if not isinstance(data, dict):
-        detail = 'project response was not an object'
+        detail = f'project {project_path}: project response was not an object'
         return MERGE_QUEUE_UNSUPPORTED, detail, detail
     if 'merge_trains_enabled' not in data:
         # Field absent → the tier/feature does not expose merge trains.
-        return MERGE_QUEUE_INELIGIBLE, 'merge_trains_enabled not present on project', None
-    if data.get('merge_trains_enabled') is True:
-        return MERGE_QUEUE_ELIGIBLE_CONFIGURED, 'merge_trains_enabled=true', None
-    return MERGE_QUEUE_ELIGIBLE_UNCONFIGURED, 'merge_trains_enabled=false', None
+        return MERGE_QUEUE_INELIGIBLE, f'project {project_path}: merge_trains_enabled not present', None
+    merge_trains_enabled = data.get('merge_trains_enabled')
+    if not isinstance(merge_trains_enabled, bool):
+        # Present but not a boolean → the probe established NOTHING about this
+        # project's merge-train support, so it must not land in the
+        # ``error is None`` set that lets an immediate merge proceed.
+        detail = f'project {project_path}: merge_trains_enabled was not a boolean'
+        return MERGE_QUEUE_UNSUPPORTED, detail, detail
+    if merge_trains_enabled:
+        return MERGE_QUEUE_ELIGIBLE_CONFIGURED, f'project {project_path}: merge_trains_enabled=true', None
+    return MERGE_QUEUE_ELIGIBLE_UNCONFIGURED, f'project {project_path}: merge_trains_enabled=false', None
 
 
 # ---------------------------------------------------------------------------
@@ -653,13 +717,30 @@ def _probe_merge_train_state() -> tuple[str, str, str | None]:
 def _refuse_on_required_merge_train(operation: str) -> dict | None:
     """Return an error dict when an IMMEDIATE merge in this project would be unsafe.
 
-    Returns ``None`` when the merge may proceed. Fails closed: a probe error
-    (auth scope, transient API failure, malformed project response) refuses the
-    merge rather than merging blind, exactly as its GitHub sibling does.
+    Returns ``None`` only when the probe established that this project runs no
+    merge train for the merge to bypass. It refuses on TWO distinct grounds, and
+    the enumeration below is the whole of them:
 
-    The refusal names BOTH remedies so the caller is never left with a bare
-    error: route the MR onto the train, or reconcile the plan's
-    ``use_merge_queue`` step param.
+    1. **The probe carried an actionable error** — an unresolvable project scope,
+       an auth-scope failure, a transient API failure, or a malformed project
+       response. None of these established anything about the project, and a
+       merge is not permitted on an unread setting. This is the fail-closed arm,
+       and it is why :func:`_probe_merge_train_state` reports an unresolvable
+       scope with a non-None error rather than as a bare ``ineligible``.
+    2. **The project has merge trains enabled**
+       (``MERGE_QUEUE_ELIGIBLE_CONFIGURED``) — an immediate merge would bypass
+       the train the project requires.
+
+    Exactly two outcomes permit the merge, and both are positive verdicts about
+    a resolved project: ``MERGE_QUEUE_ELIGIBLE_UNCONFIGURED`` (the project could
+    run a train but does not) and an error-free ``MERGE_QUEUE_INELIGIBLE`` (the
+    tier does not expose the feature). ``MERGE_QUEUE_UNSUPPORTED`` never reaches
+    this point — every probe path that returns it carries an error, so arm 1
+    has already refused.
+
+    Both refusal arms name their remedies, so the caller is never left with a
+    bare error, and every refusal reached after the project path resolved names
+    that concrete project via the probe's ``detail``.
     """
     discriminator, detail, scope_error = _probe_merge_train_state()
     if scope_error is not None:
@@ -672,8 +753,9 @@ def _refuse_on_required_merge_train(operation: str) -> dict | None:
             "the plan's use_merge_queue step param via /marshall-steward.",
             detail,
         )
-    # MERGE_QUEUE_ELIGIBLE_UNCONFIGURED / MERGE_QUEUE_INELIGIBLE /
-    # MERGE_QUEUE_UNSUPPORTED all permit the immediate merge.
+    # Reached only by MERGE_QUEUE_ELIGIBLE_UNCONFIGURED and an error-free
+    # MERGE_QUEUE_INELIGIBLE — the two verdicts that read the project's setting
+    # and found no train to bypass.
     return None
 
 
@@ -715,8 +797,21 @@ def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
     Performs a REAL merge-train enqueue via
     ``POST /projects/:id/merge_trains/merge_requests/:iid`` rather than silently
     falling back to an immediate merge (which would defeat the external-commit
-    serialization the caller asked for). When the project/tier does not offer
-    merge trains the handler returns the actionable ineligible error.
+    serialization the caller asked for).
+
+    **The train state is READ BEFORE the POST**, which is this verb's side
+    effect. The enqueue endpoint answers a project that runs no train with a 404
+    that reads identically to a routing mistake, so probing first is what lets an
+    off-routed dispatch refuse with the actual reason instead of provoking an
+    ambiguous platform error. The probe is read-only, so paying it before the
+    side effect costs nothing on the path that goes on to refuse. Any
+    discriminator other than ``MERGE_QUEUE_ELIGIBLE_CONFIGURED`` refuses, and the
+    refusal names both remedies: provision merge trains for the project, or stop
+    routing through the queue and merge via ``ci pr safe-merge``.
+
+    Fails closed on the scope itself: a project scope that cannot be resolved
+    refuses without posting, because an unread merge-train setting is not
+    evidence that the enqueue is the right call.
     """
     is_auth, err = check_auth()
     if not is_auth:
@@ -727,9 +822,23 @@ def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
         return err_dict
     assert iid is not None  # noqa: S101 — narrowing after err_dict guard
 
+    # Probe BEFORE the POST — see the docstring for why the read precedes the
+    # side effect rather than letting the endpoint's 404 stand in for a verdict.
+    discriminator, detail, scope_error = _probe_merge_train_state()
+    if scope_error is not None:
+        return make_error('pr_merge_queue', scope_error, detail)
+    if discriminator != MERGE_QUEUE_ELIGIBLE_CONFIGURED:
+        return make_error(
+            'pr_merge_queue',
+            f'{_MERGE_TRAIN_INELIGIBLE_HINT} Provision merge trains for this project and '
+            "reconcile the plan's use_merge_queue step param via /marshall-steward, or disable "
+            'that step param and merge via "ci pr safe-merge".',
+            detail,
+        )
+
     project_path = get_project_path()
     if not project_path:
-        return make_error('pr_merge_queue', 'Could not determine project path')
+        return make_error('pr_merge_queue', _MERGE_TRAIN_SCOPE_UNRESOLVED_HINT)
 
     project_id = quote(project_path, safe='')
     endpoint = f'projects/{project_id}/merge_trains/merge_requests/{iid}'
@@ -741,14 +850,19 @@ def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
             # reader who cannot enable merge trains must be led to the correct next
             # verb (a boundary), never left at a dead end (a wall). Mirrors the
             # GitHub cmd_pr_merge_queue refusal, which also offers the safe-merge path.
+            # The project path resolved above, so the refusal names it.
             return make_error(
                 'pr_merge_queue',
-                f'{_MERGE_TRAIN_INELIGIBLE_HINT} To merge this MR now instead, disable the '
-                "plan's use_merge_queue step param (via /marshall-steward) and merge via "
-                '"ci pr safe-merge".',
+                f'project {project_path}: {_MERGE_TRAIN_INELIGIBLE_HINT} To merge this MR now '
+                "instead, disable the plan's use_merge_queue step param (via /marshall-steward) "
+                'and merge via "ci pr safe-merge".',
                 stderr_text,
             )
-        return make_error('pr_merge_queue', f'Failed to enqueue MR {iid} onto the merge train', stderr_text)
+        return make_error(
+            'pr_merge_queue',
+            f'Failed to enqueue MR {iid} onto the merge train of project {project_path}',
+            stderr_text,
+        )
 
     # Best-effort parse of the returned merge-train car for the position/id.
     car_id = ''
@@ -821,7 +935,7 @@ def cmd_repo_merge_queue_enable(args: argparse.Namespace) -> dict:
     if discriminator == MERGE_QUEUE_ELIGIBLE_UNCONFIGURED:
         project_path = get_project_path()
         if not project_path:
-            return make_error('repo_merge_queue_enable', 'Could not determine project path')
+            return make_error('repo_merge_queue_enable', _MERGE_TRAIN_SCOPE_UNRESOLVED_HINT)
         project_id = quote(project_path, safe='')
         returncode, _stdout, stderr = run_glab(
             ['api', '-X', 'PUT', f'projects/{project_id}', '-f', 'merge_trains_enabled=true']
@@ -2136,6 +2250,12 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
 
     The envelope carries NO ``enabled`` key and no alias for one: a bare boolean
     would report a disposition this verb cannot know from the exit code.
+
+    On the ``enqueued`` disposition the envelope also carries an ADVISORY
+    ``routing_note`` (:data:`ci_base.AUTO_MERGE_ROUTING_NOTE`). This verb is the
+    one sanctioned exception to the closed dispatch set branch-cleanup.md
+    declares, so the note reports the divergence rather than refusing it: the
+    call still succeeds, and the enqueue is still the safe outcome.
     """
     is_auth, err = check_auth()
     if not is_auth:
@@ -2159,13 +2279,22 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
         return make_error('pr_auto_merge', f'Failed to schedule auto-merge for MR {iid}', stderr.strip())
 
     disposition = 'enqueued' if discriminator == MERGE_QUEUE_ELIGIBLE_CONFIGURED else 'enabled'
-    return {
+    result: dict[str, Any] = {
         'status': 'success',
         'operation': 'pr_auto_merge',
         'pr_number': args.pr_number if args.pr_number else iid,
         'disposition': disposition,
         'disposition_detail': detail,
     }
+    if discriminator == MERGE_QUEUE_ELIGIBLE_CONFIGURED:
+        # Advisory only — this call SUCCEEDED and the enqueue is the safe
+        # outcome. The note records that the documented routing would have
+        # reached the train through a different verb, so the divergence is
+        # observable in the response rather than only in the routing table.
+        # Turning it into a refusal would break the sanctioned
+        # enqueue-via-auto-merge path this exception exists to preserve.
+        result['routing_note'] = dict(AUTO_MERGE_ROUTING_NOTE)
+    return result
 
 
 # GitLab ``merge_status`` values for which a merge will succeed. ``can_be_merged``

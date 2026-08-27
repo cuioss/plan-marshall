@@ -113,10 +113,13 @@ from ci_base import (
     MERGE_QUEUE_ELIGIBLE_UNCONFIGURED,
     MERGE_QUEUE_INELIGIBLE,
     MERGE_QUEUE_UNSUPPORTED,
+    PR_VIEW_CAUSE_AUTH_FAILED,
+    PR_VIEW_CAUSE_MALFORMED_RESPONSE,
     HandlerMap,
     add_pr_create_args,
     build_parser,
     check_auth_cli,
+    classify_pr_view_failure,
     compute_elapsed,
     compute_total_elapsed,
     dispatch,
@@ -261,10 +264,24 @@ def view_pr_data(head: str | None = None) -> dict:
     ``merge_commit_sha`` is the landing commit of a merged PR, or ``None`` when the
     provider reports none. See :func:`_extract_merge_commit_sha` for why the absent
     form is ``None`` and never ``''``.
+
+    Every error return carries an ``error_cause`` drawn from ``PR_VIEW_CAUSES``.
+    It exists because this envelope collapses three materially different causes
+    onto one shape whose human ``error`` reads as "no PR exists" — so a consumer
+    branching on ``status`` alone treats an auth or transient failure as an
+    absent PR. ``create-pr`` acts on that reading, which is how a transient
+    failure on a branch that already has an open PR opens a DUPLICATE. The field
+    is ADDITIVE: the message, the ``status`` value and the exit codes are
+    unchanged.
     """
     is_auth, err = check_auth()
     if not is_auth:
-        return {'status': 'error', 'operation': 'pr_view', 'error': err}
+        return {
+            'status': 'error',
+            'operation': 'pr_view',
+            'error': err,
+            'error_cause': PR_VIEW_CAUSE_AUTH_FAILED,
+        }
 
     pr_view_args = ['pr', 'view']
     if head:
@@ -278,10 +295,15 @@ def view_pr_data(head: str | None = None) -> dict:
     )
     returncode, stdout, stderr = run_gh(pr_view_args)
     if returncode != 0:
+        # The message stays the historical no-PR wording (changing it is
+        # PROPOSAL 1 ground, deliberately out of scope here); the CAUSE is what
+        # discriminates, and it resolves to no_pr_found only on gh's own
+        # "no pull requests found" signature — never on an unreadable failure.
         return {
             'status': 'error',
             'operation': 'pr_view',
             'error': 'No PR found for current branch',
+            'error_cause': classify_pr_view_failure(stderr),
             'context': stderr.strip(),
         }
 
@@ -292,6 +314,7 @@ def view_pr_data(head: str | None = None) -> dict:
             'status': 'error',
             'operation': 'pr_view',
             'error': 'Failed to parse gh output',
+            'error_cause': PR_VIEW_CAUSE_MALFORMED_RESPONSE,
             'context': stdout[:100],
         }
 

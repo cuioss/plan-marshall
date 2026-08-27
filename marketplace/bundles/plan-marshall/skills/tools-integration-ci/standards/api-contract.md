@@ -130,6 +130,8 @@ git_present: true
 
 Every PR subcommand returns the standard envelope: success shape (`status: success`, `operation: {op}`, plus the identifiers listed in the "Response fields" column) and error shape (`status: error`, `operation: {op}`, `error: ...`, `context: {cli exit reason}`).
 
+Those four keys describe the error shape of a subcommand that reached the provider and the provider call failed. They are **not** a universal minimum, and the set is **not** closed in either direction — a subcommand may add error-only fields a consumer branching on `status` alone will never see, and a failure raised before the provider call is even attempted may carry a different set entirely. Two shapes are documented in their own named subsections under § "Error Format" below: `pr view` adds `error_cause` on **every** error return, and `plan_not_found` — raised when a body-store verb's `--plan-id` does not resolve, before any provider call — drops `operation` and `context`, carries `message`, `plan_id`, and `plan_dir` in their place, and adds `hint` + `hint_caveat`. Other shapes exist and are not enumerated here. Read the envelope you actually received rather than assuming a fixed field list, and read the relevant subsection before treating a `status: error` from those verbs as self-explanatory.
+
 **Bodies are never passed as arguments.** Every body-bearing verb takes `--plan-id` (plus an optional `--slot`) and reads the body from the scratch file its paired `prepare-body` / `prepare-comment` call allocated. There is no `--body` and no `--body-file` argument on this surface; a plan-less caller passes `--plan-id NO_PLAN`. See [`../SKILL.md`](../SKILL.md) § "The `NO_PLAN` sentinel — one plan-less convention for every `--plan-id` verb".
 
 | Subcommand | Required args | Optional flags | Response fields |
@@ -137,8 +139,9 @@ Every PR subcommand returns the standard envelope: success shape (`status: succe
 | `pr prepare-body` | `--plan-id` | `--for create\|edit`, `--slot` | `path` |
 | `pr prepare-comment` | `--plan-id` | `--for reply\|thread-reply`, `--slot` | `path` |
 | `pr create` | `--title`, `--plan-id` | `--slot`, `--base` (default: repo default), `--head`, `--draft`, `--label` (repeatable) | `pr_number`, `pr_url` |
-| `pr view` | — (uses current branch) | _at most one of_ `--pr-number` _or_ `--head` | `pr_number`, `pr_url`, `state`, `title`, `head_branch`, `base_branch`, `is_draft`, `mergeable`, `merge_state`, `review_decision` |
+| `pr view` | — (uses current branch) | _at most one of_ `--pr-number` _or_ `--head` | **Success**: `pr_number`, `pr_url`, `state`, `title`, `head_branch`, `base_branch`, `is_draft`, `mergeable`, `merge_state`, `review_decision`. **Error**: `status`, `operation`, `error`, and `error_cause` on every arm; `context` on every arm EXCEPT the pre-provider auth failure, which has no provider output to report — see § "`pr view` and the `error_cause` discriminator" |
 | `pr list` | — | `--head {branch}`, `--state open\|closed\|all` (default `open`) | `total`, `state_filter`, `head_filter`, `prs[N]{number,url,title,state,head_branch,base_branch}` |
+| `pr landing-state` **(GitHub only)** | — (uses the routed working tree's checked-out branch) | `--branch {branch}` | `provider`, `branch`, `tip_sha`, `pushed`, `pr_count`, `landing_state`, `landing_states` |
 | `pr reply` | `--pr-number`, `--plan-id` | `--slot` | `pr_number` |
 | `pr resolve-thread` | `--thread-id` (GitLab also requires `--pr-number`) | — | `thread_id` |
 | `pr thread-reply` | `--pr-number`, `--thread-id`, `--plan-id` | `--slot` | `pr_number`, `thread_id` |
@@ -146,6 +149,8 @@ Every PR subcommand returns the standard envelope: success shape (`status: succe
 | `pr comments` | `--pr-number` | `--unresolved-only` | `provider`, `pr_number`, `total`, `unresolved`, `comments[N]{id,author,body,path,line,resolved,created_at}` |
 | `pr wait-for-comments` | `--pr-number` | `--timeout` (default 300), `--interval` (default 30) | `pr_number`, `timed_out`, `duration_sec`, `polls`, `baseline_count`, `final_count`, `new_count`, `rate_limited_bots[N]{bot_kind,rate_limit_class,eta}`, `movement_matched_bots[N]{bot_kind}`, `detector_answerable`, `unanswerable_reason` |
 | `pr update-branch` | _exactly one of_ `--pr-number` _or_ `--head` | — | `pr_number` |
+
+**`pr landing-state` field semantics.** `landing_state` is exactly one member of `landing_states`, the verb's own declared population (`merged`, `pr_open`, `pushed_no_pr`, `unpushed`) — published on the response so a consumer asserts against the verb's declaration rather than a hand-copied list. `pr_count` counts only PRs whose head IS `tip_sha`, which is why a stale PR that merged a previous tip on a reused branch name cannot report `merged`. `pushed` is `true` / `false` when remote containment was readable and `null` when it was not; a `null` is only ever returned alongside a `merged` / `pr_open` verdict, because those rest on the PR listing rather than on git — when the verdict WOULD rest on push evidence that could not be read, the verb returns `status: error` instead. That is the general posture: unreadable evidence produces an error, never a state that could clear the pre-archive gate.
 
 ### Provider Field Mapping
 
@@ -192,7 +197,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks sta
 status: success
 operation: ci_status
 pr_number: 123
-overall_status: pending|success|failure
+overall_status: pending|success|failure|none
 check_count: 3
 elapsed_sec: 45
 
@@ -206,6 +211,19 @@ lint	completed	failure	30	https://github.com/org/repo/actions/runs/113	Lint
 - `success`: All checks completed with success
 - `failure`: Any check completed with failure
 - `pending`: Any check still in progress
+- `none`: No checks are configured for the ref at all
+
+Those four values are the CLOSED set — there is no fifth, and `none` is not a synonym for
+`success`: a ref nothing tested is a different state from one every check passed, and a
+consumer that folds them reports an untested ref as green. The set is not authored here. It
+is the returned-literal set of `_derive_overall_status`, which is defined once per provider
+(`workflow-integration-github/scripts/_github_checks.py`,
+`workflow-integration-gitlab/scripts/gitlab_ops.py`), so the handlers are authoritative and
+this list mirrors them. `test/plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing.py`
+derives each handler's literals via `ast` and asserts every documented statement of the set —
+this one included — equals them, so a handler change fails the build here rather than
+silently invalidating a consumer's branch table. Do not edit this list without changing the
+handlers; the guard will reject it.
 
 ---
 
@@ -547,7 +565,7 @@ The following subcommands all return the standard success shape (`status: succes
 | Subcommand | Required args | Optional flags | Notes |
 |------------|---------------|----------------|-------|
 | `pr merge` | _exactly one of_ `--pr-number` _or_ `--head` | `--strategy merge\|squash\|rebase` (default `merge`), `--delete-branch` | Success adds `strategy`, `merged: true`, `merge_corroboration`. Refuses (`status: error`) when the platform requires the queue/train. |
-| `pr auto-merge` | _exactly one of_ `--pr-number` _or_ `--head` | `--strategy` | Schedules the merge without waiting; success adds `disposition` (`enabled`\|`enqueued`) and `disposition_detail`, plus `base_branch` on GitHub. There is no `enabled` key: which of the two dispositions the platform performed is not derivable from the exit code, so the verb reports the probed disposition instead. |
+| `pr auto-merge` | _exactly one of_ `--pr-number` _or_ `--head` | `--strategy` | Schedules the merge without waiting; success adds `disposition` (`enabled`\|`enqueued`) and `disposition_detail`, plus `base_branch` on GitHub, plus — on the `enqueued` disposition only, both providers — an advisory `routing_note` (`documented_route`, `expected_branch`, `dispatched_verb`) disclosing that a queued target was reached through this verb rather than through the routing table's `ci pr merge-queue`. There is no `enabled` key: which of the two dispositions the platform performed is not derivable from the exit code, so the verb reports the probed disposition instead. See [`pr-operations.md`](pr-operations.md) § "`routing_note` — present only on `enqueued`". |
 | `pr safe-merge` | _exactly one of_ `--pr-number` _or_ `--head` | `--strategy merge\|squash\|rebase` (default `merge`), `--delete-branch`, `--admin-merge-on-stuck-state` (GitHub-only), `--poll-timeout`, `--poll-interval` | Polls readiness then merges. Success adds `strategy`, `merge_path` (`polled_clean`\|`admin_fallback`), `polls`, `duration_sec`, `merged: true`, `merge_corroboration`. Refuses like `pr merge` when the platform requires the queue/train. The `--admin` stuck-state fallback is GitHub-only, gated by `--admin-merge-on-stuck-state` + provably-met ruleset; ignored on GitLab. |
 | `pr update-branch` | _exactly one of_ `--pr-number` _or_ `--head` | — | Updates PR branch with base branch (GitHub REST API). |
 | `pr close --pr-number N` | `--pr-number` | — | Closes without merging. |
@@ -590,6 +608,67 @@ context: <additional_context>
 | Invalid PR number | PR 999 not found |
 | Permission denied | No write access to repository |
 | `plan_not_found` | The `--plan-id` on a body-store verb does not resolve to an initialized plan. Carries `hint` + `hint_caveat` — see below |
+
+### `pr view` and the `error_cause` discriminator
+
+`pr view` returns ONE error envelope for materially different causes, and its human
+`error` message is hard-coded to the no-PR wording (`No PR found for current branch`
+/ `No MR found for current branch`) on the provider-call arm. A consumer reading
+"not success" as "no PR exists" therefore treats an auth failure or a transient
+provider failure as an **absent PR**.
+
+`error_cause` is the machine-readable discriminator that makes the causes
+distinguishable. **Every** error return from `pr view` carries it, on **both**
+providers:
+
+```toon
+status: error
+operation: pr_view
+error: No PR found for current branch
+error_cause: provider_call_failed
+context: <provider stderr>
+```
+
+| `error_cause` | Meaning | Carries `context`? | Safe to conclude "no PR exists"? |
+|---------------|---------|--------------------|----------------------------------|
+| `no_pr_found` | The provider POSITIVELY reported that this branch has no PR/MR — matched against `gh` / `glab`'s own "no pull/merge requests found" signature. | Yes — the provider's stderr | **Yes** — this is the one cause that answers the question "no". |
+| `auth_failed` | The provider auth check failed before the call was made. | **No — ABSENT** | No |
+| `provider_call_failed` | The provider call exited non-zero for a reason that is not a recognised no-PR signature — a network error, a permission error, a rate limit, an empty stderr. | Yes — the provider's stderr | No |
+| `malformed_response` | The call succeeded but its output could not be parsed. | Yes — the leading slice of the unparsable stdout | No |
+
+**`error_cause` is on every arm; `context` is not.** `view_pr_data` has three error
+returns on each provider, and they do not carry the same fields. The auth arm returns
+*before* the provider call is attempted, so there is no provider output to report and it
+carries exactly `status`, `operation`, `error`, `error_cause` — no `context`. The other two
+arms (non-zero provider call, unparsable output) carry `context` as well. A consumer that
+reads `context` unconditionally on a `pr view` error finds nothing on the auth arm, and
+prose that names `context` as *the* place the cause lives is wrong there. Read the envelope
+you actually received rather than a fixed field list. The auth arm:
+
+```toon
+status: error
+operation: pr_view
+error: <provider auth failure reason>
+error_cause: auth_failed
+```
+
+The classification **fails closed**: only a positively-matched no-PR signature
+resolves to `no_pr_found`; anything unrecognised resolves to
+`provider_call_failed`. An unreadable failure must leave the question unanswered
+rather than answer it in the direction that acts.
+
+**Reading the field is not optional for a consumer that acts on absence.** Every
+cause other than `no_pr_found` — and an **absent** `error_cause`, which is not
+evidence of absence either — leaves *does a PR exist?* UNANSWERED, which is not the
+same as answered "no". Acting on the unanswered case is precisely how a transient
+failure on a branch that already has an open PR opens a **duplicate**; see
+[`phase-6-finalize/workflow/create-pr.md`](../../phase-6-finalize/workflow/create-pr.md)
+§ "Check if PR already exists" for the consuming branch logic.
+
+The field is **additive**: the `error` message, the `status` value, and every exit
+code are unchanged, so no existing consumer's behaviour moves until it opts in by
+reading the field. The vocabulary is single-sourced as `ci_base.PR_VIEW_CAUSES`,
+and `ci_base.PR_VIEW_CAUSE_SAFE_TO_CREATE` names the one member a caller may act on.
 
 ### `plan_not_found` and the sentinel hint
 

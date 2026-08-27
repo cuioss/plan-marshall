@@ -22,11 +22,18 @@ merge-shaped verb added to a registry without an off-routing scenario fails
 ``test_every_derived_member_has_an_offrouting_scenario``; one added without a
 working guard fails the behavioural parametrization.
 
-**The population is 8** — ``{merge, auto-merge, safe-merge, merge-queue}`` × two
-providers. The size is asserted (and published in the failure message) so a run
-that derived an empty or half-read population is self-evident from its own output
-rather than reporting a vacuous green — the empty-population trap this epic has
-been bitten by repeatedly.
+**Membership is decided by BEHAVIOUR.** A registry key is a member when the
+handler it binds reaches the platform queue/train surface in its own executable
+code, derived over EVERY registered ``('pr', verb)`` key — not over four
+pre-named verbs. ``MERGE_SHAPED_VERBS`` is a mirror of that derivation and is
+asserted against it bidirectionally by
+:func:`test_vocabulary_mirror_matches_the_behaviour_derivation`; it never narrows
+the population. No size literal is transcribed anywhere in this module: the size
+comes from the derivation, and what is *asserted* is that the two independent
+sides agree, that every provider contributes, and that no registered handler was
+left unclassified. A derivation that collapsed on one provider fails the
+per-provider arm rather than reporting a smaller green — the empty-population trap
+this epic has been bitten by repeatedly.
 
 **The off-routing scenarios, and the ONE sanctioned exception.** The documented
 route (``branch-cleanup.md`` § "Merge routing (``use_merge_queue``)") dispatches
@@ -63,28 +70,55 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 from conftest import MARKETPLACE_ROOT
-from _merge_shaped_roster import MERGE_SHAPED_VERBS, merge_shaped_members
+from _merge_shaped_roster import (
+    MERGE_SHAPED_VERBS,
+    PROVIDERS,
+    ProviderSources,
+    derive_population,
+    mirror_drift,
+)
 
 # ---------------------------------------------------------------------------
 # Derived population — the single source of truth for what this suite covers
 # ---------------------------------------------------------------------------
 
 _SKILLS: Path = Path(MARKETPLACE_ROOT) / 'plan-marshall' / 'skills'
-_PROVIDER_PATHS: dict[str, Path] = {
-    'github': _SKILLS / 'workflow-integration-github' / 'scripts' / 'github_ops.py',
-    'gitlab': _SKILLS / 'workflow-integration-gitlab' / 'scripts' / 'gitlab_ops.py',
-}
-_PROVIDER_TEXTS: dict[str, str] = {
-    provider: path.read_text(encoding='utf-8') for provider, path in _PROVIDER_PATHS.items()
+_GITHUB_SCRIPTS: Path = _SKILLS / 'workflow-integration-github' / 'scripts'
+_GITLAB_SCRIPTS: Path = _SKILLS / 'workflow-integration-gitlab' / 'scripts'
+
+
+def _read(path: Path) -> str:
+    return path.read_text(encoding='utf-8')
+
+
+#: Each provider's registry text plus the module texts its handler symbols are
+#: defined in. GitHub registers in ``github_ops.py`` and defines its PR handlers
+#: in the ``_github_pr`` submodule; GitLab does both in one module.
+_PROVIDER_SOURCES: dict[str, ProviderSources] = {
+    'github': ProviderSources(
+        registry_text=_read(_GITHUB_SCRIPTS / 'github_ops.py'),
+        handler_texts=(
+            _read(_GITHUB_SCRIPTS / '_github_pr.py'),
+            _read(_GITHUB_SCRIPTS / 'github_ops.py'),
+        ),
+    ),
+    'gitlab': ProviderSources(
+        registry_text=_read(_GITLAB_SCRIPTS / 'gitlab_ops.py'),
+        handler_texts=(_read(_GITLAB_SCRIPTS / 'gitlab_ops.py'),),
+    ),
 }
 
-#: ``(provider, verb, handler_name)`` for every merge-shaped registry member.
-_MEMBERS: list[tuple[str, str, str]] = merge_shaped_members(_PROVIDER_TEXTS)
+#: The total three-bucket classification of every registered ``('pr', verb)`` key.
+_POPULATION = derive_population(_PROVIDER_SOURCES)
+
+#: ``(provider, verb, handler_name)`` for every BEHAVIOUR-shaped registry member.
+_MEMBERS: list[tuple[str, str, str]] = _POPULATION.members
 
 #: The provider handler modules, imported for dispatch. Both live on the
 #: conftest-configured marketplace ``sys.path`` and carry distinct module names,
@@ -112,7 +146,70 @@ _SCENARIOS: dict[str, str] = {
     'auto-merge': _REPORT_DISPOSITION,
 }
 
+#: The routed verb each refusal must name as the caller's way forward. A refusal
+#: that names none is a WALL: the caller is told the dispatch was wrong and not
+#: what to dispatch instead. Naming the wrong one is worse than naming none —
+#: it routes the caller straight back into the state that was just refused.
+#:
+#: The two directions are opposites by construction, which is what makes this
+#: assertion discriminate rather than merely check for a non-empty message: an
+#: immediate-merge verb refused because the platform REQUIRES the queue, so the
+#: way forward is the enqueue verb; the enqueue verb refused because there is NO
+#: queue to enqueue into, so the way forward is the immediate one.
+_ALTERNATIVE_VERB: dict[str, str] = {
+    _REFUSE_IMMEDIATE: 'ci pr merge-queue',
+    _REFUSE_UNCONFIGURED: 'ci pr safe-merge',
+}
+
+#: The argv predicate for the side effect each cell's refusal must PRECEDE,
+#: keyed by ``(provider, scenario)``.
+#:
+#: Keyed by provider and not by scenario alone because the side-effect shape is
+#: a property of the PROVIDER's transport: GitLab enqueues via a merge-train
+#: ``api -X POST`` while GitHub enqueues via ``gh pr merge --auto`` — the SAME
+#: ``pr merge`` argv its immediate merge uses, told apart only by ``--auto``.
+#:
+#: Probing one provider's transport for every cell is what made this assertion
+#: unfalsifiable over half its own population: a GitHub handler that HAD already
+#: enqueued emits argv a GitLab-shaped probe cannot match, so ``side_effects``
+#: came back empty and the assertion passed vacuously. Unioning the two shapes
+#: is NOT the fix either — it trades vacuity for imprecision, since every cell
+#: would then match every shape and an enqueue verb that performed an IMMEDIATE
+#: merge would still look correct.
+_SIDE_EFFECT_ARGV: dict[tuple[str, str], Callable[[list[str]], bool]] = {
+    ('github', _REFUSE_IMMEDIATE): lambda c: c[:2] == ['pr', 'merge'] and '--auto' not in c,
+    ('github', _REFUSE_UNCONFIGURED): lambda c: c[:2] == ['pr', 'merge'] and '--auto' in c,
+    ('gitlab', _REFUSE_IMMEDIATE): lambda c: c[:2] == ['mr', 'merge'],
+    ('gitlab', _REFUSE_UNCONFIGURED): lambda c: c[:3] == ['api', '-X', 'POST'],
+}
+
+#: A representative argv for the side effect each cell must NOT have performed,
+#: matching the constructed-argv shapes the provider suites already pin
+#: (``['pr', 'merge', '42', '--auto']`` for the GitHub enqueue,
+#: ``['api', '-X', 'POST', 'projects/.../merge_trains/merge_requests/42']`` for
+#: the GitLab one). These drive the matched control below.
+_SIDE_EFFECT_SAMPLES: dict[tuple[str, str], list[str]] = {
+    ('github', _REFUSE_IMMEDIATE): ['pr', 'merge', '42', '--merge'],
+    ('github', _REFUSE_UNCONFIGURED): ['pr', 'merge', '42', '--auto'],
+    ('gitlab', _REFUSE_IMMEDIATE): ['mr', 'merge', '42'],
+    ('gitlab', _REFUSE_UNCONFIGURED): [
+        'api', '-X', 'POST', 'projects/octo%2Frepo/merge_trains/merge_requests/42',
+    ],
+}
+
 _IDS = [f'{provider}:{verb}' for provider, verb, _handler in _MEMBERS]
+
+#: Published on EVERY run — passing included — by the root conftest's
+#: ``pytest_report_header``. A population guard that only reports its size in a
+#: FAILURE message says nothing on the run that matters most: a green run over a
+#: silently shrunken population is indistinguishable from a green run over the
+#: whole of it. Naming the pair uniformly across every registered routing guard is
+#: what lets one header entry publish them all without conftest re-deriving any of
+#: them — the number reported is the number this module actually swept. No count of
+#: those guards is stated here: the roster is ``_ROUTING_GUARD_MODULES`` in the root
+#: conftest and it grows, so a number written here goes stale silently.
+GUARD_POPULATION_LABEL = 'merge-shaped off-routing members'
+GUARD_POPULATION_SIZE = len(_MEMBERS)
 
 
 def _ok_auth() -> tuple[bool, str]:
@@ -155,17 +252,20 @@ def _gh_run_stub(captured: list[list[str]]):
     return stub
 
 
-def _gl_run_stub(captured: list[list[str]], *, mt_post_ok: bool):
-    """A ``run_glab`` stub: ``mr merge`` accepted; the merge-train POST gated by ``mt_post_ok``.
+def _gl_run_stub(captured: list[list[str]]):
+    """A ``run_glab`` stub in which EVERY call, including the merge-train POST, succeeds.
 
-    ``mt_post_ok`` is what makes the GitLab ``merge-queue`` off-routing case a
-    genuine refusal: GitLab's ``cmd_pr_merge_queue`` does not probe first, it POSTs
-    to the merge-train endpoint and reads an HTTP 404 as the ineligible refusal.
+    Deliberately unconditional. GitLab's ``cmd_pr_merge_queue`` now reads the
+    project's train state BEFORE the POST, so the off-routing refusal is produced
+    by the probe discriminator rather than by an HTTP 404 the stub has to fake.
+    Letting the POST succeed is what makes that assertion meaningful: a handler
+    that still posted would report a successful enqueue, so the refusal cannot
+    come from the transport.
     """
     def stub(args, capture_json=False, timeout=60):
         captured.append(list(args))
         if args[:3] == ['api', '-X', 'POST']:
-            return (0, '{"id": 7}', '') if mt_post_ok else (1, '', 'HTTP 404: not found')
+            return 0, '{"id": 7}', ''
         return 0, '', ''
 
     return stub
@@ -175,10 +275,10 @@ def _discriminator_for(mod, verb: str, mode: str) -> str:
     """The queue/train state the base is in for this member under this mode.
 
     Off-routing means the base is in the state the verb must NOT be dispatched
-    against; compliant means the state it may. The one exception where the
-    discriminator does not decide the outcome is GitLab ``merge-queue`` (its
-    handler POSTs rather than reading the probe) — the run stub's ``mt_post_ok``
-    carries that case.
+    against; compliant means the state it may. The discriminator decides the
+    outcome for EVERY member on both providers — GitLab ``merge-queue`` included,
+    since it now probes the project's train state before the enqueue POST rather
+    than inferring the verdict from the endpoint's own 404.
     """
     configured = str(mod.MERGE_QUEUE_ELIGIBLE_CONFIGURED)
     unconfigured = str(mod.MERGE_QUEUE_ELIGIBLE_UNCONFIGURED)
@@ -231,8 +331,7 @@ def _dispatch(monkeypatch, provider: str, verb: str, handler: str, mode: str) ->
             mod, '_probe_merge_train_state',
             lambda: (discriminator, 'probe detail', None),
         )
-        mt_post_ok = not (verb == 'merge-queue' and mode == 'off_routing')
-        monkeypatch.setattr(mod, 'run_glab', _gl_run_stub(captured, mt_post_ok=mt_post_ok))
+        monkeypatch.setattr(mod, 'run_glab', _gl_run_stub(captured))
 
     result = getattr(mod, handler)(_namespace_for(verb))
     return result, captured
@@ -243,35 +342,136 @@ def _dispatch(monkeypatch, provider: str, verb: str, handler: str, mode: str) ->
 # ---------------------------------------------------------------------------
 
 
-def test_merge_shaped_population_is_derived_nonempty_and_sized():
-    """The derived population is non-empty, exactly 8, and 4-per-provider.
+#: Divergences between the behaviour derivation and the ``MERGE_SHAPED_VERBS``
+#: mirror that are known and accepted, keyed by ``(provider, verb)`` with the
+#: reason as the value. EMPTY today: both directions currently agree exactly.
+#:
+#: An entry here is the ONLY way a verb may sit on one side of the mirror and not
+#: the other. Silently filtering such a verb out of the population — which is what
+#: running the registry through the vocabulary used to do — is the defect this
+#: table exists to prevent: it removed a member and reported nothing about the
+#: condition that removed it. A stale entry is a failure too; see the third arm of
+#: :func:`test_vocabulary_mirror_matches_the_behaviour_derivation`.
+_DRIFT_EXEMPTIONS: dict[tuple[str, str], str] = {}
+
+
+def test_derived_population_is_behaviour_shaped_and_covers_every_provider():
+    """The population is non-empty, per-provider non-empty, and fully classified.
 
     Asserted first and on its own: every behavioural parametrization below iterates
-    ``_MEMBERS``, so a derivation that silently collapsed to an empty set would make
-    those checks pass vacuously. The size is published in every failure message so
-    an under-read population is self-evident from the test output — the trap this
-    epic has repeatedly hit (a hand-list of two routed verbs understated the real
-    population fourfold).
+    ``_MEMBERS``, so a derivation that silently collapsed would make those checks
+    pass vacuously. Three arms, each closing a distinct collapse:
+
+    * **Non-empty overall** — the ``handlers: HandlerMap`` literal stopped matching
+      on both providers at once.
+    * **Non-empty per provider** — it stopped matching on ONE provider. A total-size
+      arm cannot see this: a halved population is still a population, and comparing
+      it against a size derived from the same collapsed read compares a number with
+      itself.
+    * **Nothing unresolved** — every registered ``('pr', verb)`` key's handler was
+      located and classified. A handler whose source cannot be read is a member the
+      derivation cannot speak about, and recording it as "not merge-shaped" would
+      assert an absence never established.
+
+    No size literal is transcribed: the sizes here are reported, and what is
+    asserted about them is a property (non-emptiness, total classification), not a
+    remembered number.
     """
     assert _MEMBERS, (
-        'The derived merge-shaped population is EMPTY. The registry HandlerMap literal '
-        'stopped matching, so every behavioural assertion below would pass vacuously.'
+        'The behaviour-derived merge-shaped population is EMPTY. Every behavioural '
+        'assertion below would pass vacuously. Either both registry literals stopped '
+        f'matching, or no handler reaches the queue/train surface. Classified: '
+        f'{len(_POPULATION.members)} member(s), {len(_POPULATION.inert)} inert, '
+        f'{len(_POPULATION.unresolved)} unresolved.'
     )
-    size = len(_MEMBERS)
-    assert size == 8, (
-        f'Derived merge-shaped population size = {size}, expected 8 (4 verbs x 2 providers). '
-        f'Members: {_MEMBERS}. A smaller set means a verb is registered under a name this '
-        'derivation does not see — exactly how cmd_pr_auto_merge was missed twice.'
-    )
-    verbs_by_provider: dict[str, set[str]] = {}
+
+    by_provider: dict[str, list[str]] = {}
     for provider, verb, _handler in _MEMBERS:
-        verbs_by_provider.setdefault(provider, set()).add(verb)
-    for provider in ('github', 'gitlab'):
-        assert verbs_by_provider.get(provider) == set(MERGE_SHAPED_VERBS), (
-            f'{provider} merge-shaped verbs = {sorted(verbs_by_provider.get(provider) or set())}, '
-            f'expected {sorted(MERGE_SHAPED_VERBS)}. A missing verb is an under-enumeration; an '
-            'extra one is a vocabulary drift.'
+        by_provider.setdefault(provider, []).append(verb)
+    for provider in PROVIDERS:
+        assert by_provider.get(provider), (
+            f'{provider} contributes ZERO merge-shaped members, while the population as a '
+            f'whole has {len(_MEMBERS)} ({by_provider}). Both providers register the '
+            'merge-shaped surface, so an empty side means this provider\'s registry or '
+            'handler sources stopped resolving — and every parametrized arm below silently '
+            'stopped covering it.'
         )
+
+    assert not _POPULATION.unresolved, (
+        f'{len(_POPULATION.unresolved)} registered `pr` handler(s) could not be located in '
+        f'the supplied provider sources: {_POPULATION.unresolved}. An unresolvable handler '
+        'is NOT evidence of an absent guard — it is an absence of evidence, and folding it '
+        'into the inert bucket would drop a possible member with nothing reported.'
+    )
+
+
+def test_vocabulary_mirror_matches_the_behaviour_derivation():
+    """``MERGE_SHAPED_VERBS`` mirrors the derivation in BOTH directions.
+
+    The constant is a mirror, not a filter. Reading only one direction catches a
+    vocabulary that lost a verb the handlers still guard, or one that kept a verb
+    they no longer do — never both, and the two are different defects:
+
+    * **unnamed** — a handler reaches the queue/train surface under a verb the
+      vocabulary does not list. Under the old vocabulary-filtered derivation this
+      member was dropped from the population before any guard saw it, with nothing
+      reported. Registering a queue-guarded ``('pr', 'queue-merge')`` handler in
+      either registry lands here and NAMES the verb.
+    * **stale** — a verb the vocabulary lists is registered, but its handler
+      reaches no queue/train symbol. The vocabulary claims a guard the code does
+      not perform.
+
+    The third arm rejects a stale exemption, so an entry cannot outlive the
+    divergence it was written for and quietly pre-authorise a future one.
+    """
+    drift = mirror_drift(_POPULATION)
+    unnamed = {(provider, verb): handler for provider, verb, handler in drift.unnamed}
+    stale = {(provider, verb): handler for provider, verb, handler in drift.stale}
+
+    unexplained_unnamed = sorted(key for key in unnamed if key not in _DRIFT_EXEMPTIONS)
+    assert not unexplained_unnamed, (
+        f'{len(unexplained_unnamed)} verb(s) are merge-shaped BY BEHAVIOUR but absent from '
+        f'MERGE_SHAPED_VERBS {sorted(MERGE_SHAPED_VERBS)}: '
+        f'{ {key: unnamed[key] for key in unexplained_unnamed} }. Their handlers reach the '
+        'platform queue/train surface, so they carry the same close-unmerged risk as the '
+        'named verbs. Add the verb to the mirror and give it an off-routing scenario, or '
+        'record it in _DRIFT_EXEMPTIONS with a reason — never leave it diverging silently. '
+        f'Population: {len(_MEMBERS)} member(s), {len(_POPULATION.inert)} inert.'
+    )
+
+    unexplained_stale = sorted(key for key in stale if key not in _DRIFT_EXEMPTIONS)
+    assert not unexplained_stale, (
+        f'{len(unexplained_stale)} verb(s) in MERGE_SHAPED_VERBS are registered but their '
+        f'handlers reach NO queue/train symbol: '
+        f'{ {key: stale[key] for key in unexplained_stale} }. The mirror claims a guard the '
+        'handler does not perform — either the guard was removed (a regression) or the verb '
+        'was never merge-shaped (a stale mirror entry). Fix the handler, drop the verb from '
+        'the mirror, or record it in _DRIFT_EXEMPTIONS with a reason.'
+    )
+
+    divergent = set(unnamed) | set(stale)
+    stale_exemptions = sorted(key for key in _DRIFT_EXEMPTIONS if key not in divergent)
+    assert not stale_exemptions, (
+        f'_DRIFT_EXEMPTIONS carries {len(stale_exemptions)} entry/entries for verbs that no '
+        f'longer diverge: {stale_exemptions}. An exemption that outlives its cause silently '
+        'pre-authorises the next divergence on the same verb. Remove it.'
+    )
+
+
+def test_published_population_size_matches_the_swept_population():
+    """The size conftest publishes is the size THIS module sweeps.
+
+    The header entry is only worth reading if it tracks the parametrization. A
+    constant that drifted from ``_MEMBERS`` would publish a reassuring number
+    over a sweep of a different size — the reporting equivalent of the vacuous
+    green this whole module exists to prevent.
+    """
+    assert GUARD_POPULATION_SIZE == len(_MEMBERS) == len(_IDS), (
+        f'published size {GUARD_POPULATION_SIZE} disagrees with the swept population '
+        f'{len(_MEMBERS)} (ids: {len(_IDS)}). The header would report a number no '
+        'parametrization used.'
+    )
+    assert GUARD_POPULATION_LABEL, 'the published population needs a name to be readable'
 
 
 def test_every_derived_member_has_an_offrouting_scenario():
@@ -292,6 +492,64 @@ def test_every_derived_member_has_an_offrouting_scenario():
     )
 
 
+def test_every_refusal_cell_has_a_side_effect_matcher():
+    """Every derived refusal cell has a provider-specific side-effect probe.
+
+    Population-derived, not transcribed: the cells come from ``_MEMBERS``, so a
+    new provider — or an existing provider gaining a refusing verb — fails here
+    rather than raising a distant ``KeyError`` inside the behavioural arm. A
+    missing matcher must never degrade to "observed no side effect".
+    """
+    required = sorted(
+        {
+            (provider, _SCENARIOS[verb])
+            for provider, verb, _handler in _MEMBERS
+            if _SCENARIOS[verb] != _REPORT_DISPOSITION
+        }
+    )
+    missing = [cell for cell in required if cell not in _SIDE_EFFECT_ARGV]
+    assert not missing, (
+        f'{len(required)} derived (provider, scenario) refusal cell(s); these have NO '
+        f'side-effect matcher: {missing}. Without one the refusal assertion for that cell '
+        'cannot observe the side effect it exists to forbid.'
+    )
+
+
+@pytest.mark.parametrize(
+    'cell', sorted(_SIDE_EFFECT_ARGV), ids=lambda cell: f'{cell[0]}:{cell[1]}'
+)
+def test_side_effect_matcher_is_falsifiable_and_discriminating(cell):
+    """Matched control: each matcher SEES its own side effect and no other cell's.
+
+    This is what establishes the refusal assertion is non-vacuous. The defect it
+    replaces was invisible precisely because an empty ``side_effects`` list reads
+    identically whether the handler performed no side effect or performed one the
+    probe could not match — so a probe that matches nothing must be caught here,
+    on a sample, rather than in the behavioural arm where it looks like a pass.
+
+    The cross-exclusion arm is what keeps the fix from degenerating into a union
+    of both providers' shapes: a matcher that matched every sample would satisfy
+    the first assertion and fail this one.
+    """
+    matcher = _SIDE_EFFECT_ARGV[cell]
+
+    own = _SIDE_EFFECT_SAMPLES[cell]
+    assert matcher(own), (
+        f'{cell} matcher does not match its OWN side-effect argv {own}. The refusal '
+        'assertion for this cell would pass vacuously: a handler that had already acted '
+        'produces argv this probe cannot see.'
+    )
+
+    for other_cell, sample in sorted(_SIDE_EFFECT_SAMPLES.items()):
+        if other_cell == cell:
+            continue
+        assert not matcher(sample), (
+            f'{cell} matcher also matches {other_cell}\'s argv {sample}. A probe that '
+            'matches every shape is imprecise rather than vacuous — it would pass an '
+            'enqueue verb that performed an immediate merge.'
+        )
+
+
 # ---------------------------------------------------------------------------
 # Behavioural arm (a): an off-routing dispatch is refused at the callee
 # ---------------------------------------------------------------------------
@@ -308,7 +566,7 @@ def test_offrouting_dispatch_is_refused_at_the_callee(monkeypatch, provider, ver
     disposition, and critically NEVER emits ``merged``, so it too cannot report a
     false merge.
     """
-    result, _captured = _dispatch(monkeypatch, provider, verb, handler, 'off_routing')
+    result, captured = _dispatch(monkeypatch, provider, verb, handler, 'off_routing')
     scenario = _SCENARIOS[verb]
 
     if scenario == _REPORT_DISPOSITION:
@@ -321,11 +579,50 @@ def test_offrouting_dispatch_is_refused_at_the_callee(monkeypatch, provider, ver
             f'{provider}:{verb} reported a merge verdict on a scheduling verb. auto-merge '
             f'schedules; it must never claim merged. Result: {result}'
         )
-    else:
-        assert result.get('status') == 'error', (
-            f'{provider}:{verb} did NOT refuse an off-routing dispatch at the callee. This is the '
-            f'incident shape: a merge-shaped verb reached off-routing without a guard. Result: {result}'
-        )
+        # The sanctioned exception REPORTS its divergence from the documented
+        # route instead of refusing it, so the advisory note is what makes the
+        # off-routing observable at all on this verb.
+        note = result.get('routing_note') or {}
+        assert note.get('documented_route') == 'ci pr merge-queue', result
+        assert note.get('expected_branch') == 'use_merge_queue: true', result
+        assert note.get('dispatched_verb') == 'ci pr auto-merge', result
+        return
+
+    assert result.get('status') == 'error', (
+        f'{provider}:{verb} did NOT refuse an off-routing dispatch at the callee. This is the '
+        f'incident shape: a merge-shaped verb reached off-routing without a guard. Result: {result}'
+    )
+
+    # A REFUSAL, not a transport failure. Every stubbed CLI call in this dispatch
+    # SUCCEEDS, so a handler that reached the platform would have reported success:
+    # the error can only have come from the handler's own guard.
+    expected_verb = _ALTERNATIVE_VERB[scenario]
+    message = ' '.join(str(value) for value in result.values())
+    assert expected_verb in message, (
+        f'{provider}:{verb} refused an off-routing dispatch without naming {expected_verb!r} '
+        f'as the way forward. A refusal that names no routed alternative is a wall: the caller '
+        f'learns the dispatch was wrong and not what to dispatch instead. Result: {result}'
+    )
+    wrong_verb = _ALTERNATIVE_VERB[
+        _REFUSE_UNCONFIGURED if scenario == _REFUSE_IMMEDIATE else _REFUSE_IMMEDIATE
+    ]
+    assert wrong_verb not in message, (
+        f'{provider}:{verb} refused an off-routing dispatch but named {wrong_verb!r} as the way '
+        f'forward. That routes the caller back into the state just refused. Result: {result}'
+    )
+
+    # The refusal precedes the side effect: an enqueue verb that refused must not
+    # have enqueued, and an immediate-merge verb must not have merged. The probe
+    # is selected per (provider, scenario), so each cell watches the argv ITS OWN
+    # provider's handler would emit rather than one provider's transport standing
+    # in for both.
+    matcher = _SIDE_EFFECT_ARGV[(provider, scenario)]
+    side_effects = [call for call in captured if matcher(call)]
+    assert side_effects == [], (
+        f'{provider}:{verb} refused an off-routing dispatch but had ALREADY acted: {side_effects}. '
+        f'The guard must run before the side effect, or the refusal reports a state the verb '
+        f'itself has already changed.'
+    )
 
 
 # ---------------------------------------------------------------------------

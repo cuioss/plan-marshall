@@ -8,9 +8,14 @@ the --pr-number/--head dual-flag validation works as expected.
 
 import argparse
 
+import ci_base
 import github_ops
+import gitlab_ops
+import pytest
 from _ci_wait_contract import _ok_auth
 from _resolve_project_dir_fixtures import worktree_query_result
+
+from conftest import MARKETPLACE_ROOT
 
 # The post-merge corroboration re-read ``cmd_pr_merge`` issues. It is
 # distinguished from an ordinary ``pr view`` by its ``--json`` field list, so
@@ -392,6 +397,230 @@ def test_ci_status_with_head(monkeypatch):
     assert result['status'] == 'success', result
     checks_call = next(c for c in captured if c[:2] == ['pr', 'checks'])
     assert checks_call[2] == 'feature/x'
+
+
+# =============================================================================
+# `pr view` error-cause discriminator — both providers, in lock-step
+# =============================================================================
+#
+# `view_pr_data` collapses THREE materially different causes onto one error
+# envelope — an auth failure, a non-zero provider call, and an unparseable
+# response — and its human `error` message is hard-coded to the no-PR wording.
+# A consumer branching on `status` alone therefore reads an auth failure or a
+# transient provider error as "no PR exists", and `create-pr` acts on exactly
+# that reading: a transient failure on a branch that ALREADY has an open PR
+# opens a DUPLICATE.
+#
+# Both providers are asserted in ONE module because the invariant under test IS
+# their lock-step — the same three causes, one shared vocabulary, the same
+# additive placement. Splitting the halves across two modules is precisely what
+# lets one provider gain or rename a cause while the other does not, with
+# nothing comparing them.
+
+_PROVIDERS = (github_ops, gitlab_ops)
+_PROVIDER_IDS = ('github', 'gitlab')
+
+#: Each provider's own "this branch has no PR/MR" stderr sentence, and a success
+#: payload in its own JSON shape. Keyed by module so a provider added to
+#: `_PROVIDERS` without a fixture row fails loudly on lookup.
+_PROVIDER_FIXTURES = {
+    github_ops: {
+        'no_pr_stderr': 'no pull requests found for branch "feature/x"',
+        'success_stdout': '{"number": 42, "url": "https://github.com/octo/repo/pull/42", "state": "OPEN"}',
+    },
+    gitlab_ops: {
+        'no_pr_stderr': 'no merge requests found for branch "feature/x"',
+        'success_stdout': '{"iid": 42, "web_url": "https://gitlab.com/octo/repo/-/merge_requests/42", "state": "opened"}',
+    },
+}
+
+
+def _stub_pr_view_cli(monkeypatch, provider, *, returncode, stdout, stderr):
+    """Stub auth plus the single CLI seam ``view_pr_data`` reaches on *provider*."""
+    monkeypatch.setattr(provider, 'check_auth', _ok_auth)
+    runner = 'run_gh' if provider is github_ops else 'run_glab'
+    monkeypatch.setattr(provider, runner, lambda *_a, **_kw: (returncode, stdout, stderr))
+
+
+def test_the_four_pr_view_causes_are_distinct_members_of_one_vocabulary():
+    """The shared vocabulary is closed and its four members are distinct.
+
+    Asserted before the arms below because each of them compares against one of
+    these constants: two constants that collapsed to the same string would make
+    a wrong-cause return satisfy the assertion for the right one.
+    """
+    causes = (
+        ci_base.PR_VIEW_CAUSE_AUTH_FAILED,
+        ci_base.PR_VIEW_CAUSE_NO_PR,
+        ci_base.PR_VIEW_CAUSE_PROVIDER_FAILED,
+        ci_base.PR_VIEW_CAUSE_MALFORMED_RESPONSE,
+    )
+    assert len(set(causes)) == len(causes), f'Cause constants collapsed: {causes}'
+    assert set(causes) == set(ci_base.PR_VIEW_CAUSES)
+    assert ci_base.PR_VIEW_CAUSE_SAFE_TO_CREATE == ci_base.PR_VIEW_CAUSE_NO_PR
+
+
+@pytest.mark.parametrize('provider', _PROVIDERS, ids=_PROVIDER_IDS)
+def test_pr_view_auth_failure_carries_the_auth_cause(monkeypatch, provider):
+    monkeypatch.setattr(provider, 'check_auth', lambda: (False, 'not logged in'))
+
+    result = provider.view_pr_data()
+
+    assert result['status'] == 'error'
+    assert result['error_cause'] == ci_base.PR_VIEW_CAUSE_AUTH_FAILED
+    # The human message is unchanged — the cause is ADDITIVE, not a rewording.
+    assert 'not logged in' in result['error']
+
+
+@pytest.mark.parametrize('provider', _PROVIDERS, ids=_PROVIDER_IDS)
+def test_pr_view_genuine_absence_carries_the_no_pr_cause(monkeypatch, provider):
+    """The one cause a caller may act on: the provider positively said "none"."""
+    _stub_pr_view_cli(
+        monkeypatch,
+        provider,
+        returncode=1,
+        stdout='',
+        stderr=_PROVIDER_FIXTURES[provider]['no_pr_stderr'],
+    )
+
+    result = provider.view_pr_data()
+
+    assert result['status'] == 'error'
+    assert result['error_cause'] == ci_base.PR_VIEW_CAUSE_NO_PR
+
+
+@pytest.mark.parametrize('provider', _PROVIDERS, ids=_PROVIDER_IDS)
+@pytest.mark.parametrize(
+    'stderr',
+    [
+        'dial tcp: lookup api.host: no such host',
+        'HTTP 403: Resource not accessible by integration',
+        'error connecting to api.host',
+        '',
+    ],
+    ids=['network', 'permission', 'transient', 'silent'],
+)
+def test_pr_view_unreadable_failure_is_never_a_no_pr_verdict(monkeypatch, provider, stderr):
+    """FAIL-CLOSED: an unreadable non-zero exit leaves the question UNANSWERED.
+
+    This is the duplicate-PR defect itself. Each stderr here is a real failure on
+    a branch that may well have an open PR; resolving any of them to
+    ``no_pr_found`` is what licenses `create-pr` to open a second one. The empty
+    stderr arm matters most — it is the case with no evidence at all, and the one
+    a permissive default would silently wave through.
+    """
+    _stub_pr_view_cli(monkeypatch, provider, returncode=1, stdout='', stderr=stderr)
+
+    result = provider.view_pr_data()
+
+    assert result['status'] == 'error'
+    assert result['error_cause'] == ci_base.PR_VIEW_CAUSE_PROVIDER_FAILED
+    assert result['error_cause'] != ci_base.PR_VIEW_CAUSE_SAFE_TO_CREATE
+
+
+@pytest.mark.parametrize('provider', _PROVIDERS, ids=_PROVIDER_IDS)
+def test_pr_view_unparseable_response_carries_the_malformed_cause(monkeypatch, provider):
+    _stub_pr_view_cli(monkeypatch, provider, returncode=0, stdout='not-json', stderr='')
+
+    result = provider.view_pr_data()
+
+    assert result['status'] == 'error'
+    assert result['error_cause'] == ci_base.PR_VIEW_CAUSE_MALFORMED_RESPONSE
+
+
+@pytest.mark.parametrize('provider', _PROVIDERS, ids=_PROVIDER_IDS)
+def test_pr_view_success_is_unchanged_and_carries_no_cause(monkeypatch, provider):
+    """Matched control: the success envelope did not move.
+
+    The discriminator is additive, so a success return must gain no
+    ``error_cause`` and keep its ``status`` and payload. Without this arm a
+    change that stamped a cause onto every return — success included — would
+    satisfy every assertion above.
+    """
+    _stub_pr_view_cli(
+        monkeypatch,
+        provider,
+        returncode=0,
+        stdout=_PROVIDER_FIXTURES[provider]['success_stdout'],
+        stderr='',
+    )
+
+    result = provider.view_pr_data()
+
+    assert result['status'] == 'success', result
+    assert 'error_cause' not in result
+    assert result['pr_number'] == 42
+
+
+# --- The consumer side: create-pr must create ONLY on the genuine absence -----
+
+_CREATE_PR_DOC = (
+    MARKETPLACE_ROOT
+    / 'plan-marshall'
+    / 'skills'
+    / 'phase-6-finalize'
+    / 'workflow'
+    / 'create-pr.md'
+)
+
+
+def test_create_pr_doc_creates_only_on_the_no_pr_cause():
+    """`create-pr.md` gates creation on ``no_pr_found`` and STOPs on every other cause.
+
+    The consumer here is a document an agent executes, so the doc text IS the
+    behaviour. Before the discriminator existed this step read a bare
+    ``status: error`` as "no PR exists" — the reading that opens the duplicate —
+    so what is asserted is that each cause now routes explicitly, and that the
+    three non-absence causes route to a STOP rather than to creation.
+    """
+    # Annotated because `conftest` is an untyped import for mypy, so every path
+    # derived from it — and everything read through it — arrives as `Any`.
+    lines: list[str] = _CREATE_PR_DOC.read_text(encoding='utf-8').splitlines()
+
+    def _line_naming(needle: str) -> str:
+        matches = [line for line in lines if needle in line]
+        assert len(matches) == 1, (
+            f'create-pr.md: expected exactly one line naming {needle!r}, found {len(matches)}. '
+            'The cause routing cannot be read unambiguously.'
+        )
+        return matches[0]
+
+    creating = _line_naming(ci_base.PR_VIEW_CAUSE_NO_PR)
+    assert 'create' in creating.lower(), (
+        f'create-pr.md does not route {ci_base.PR_VIEW_CAUSE_NO_PR} to creation: {creating}'
+    )
+
+    for cause in (
+        ci_base.PR_VIEW_CAUSE_AUTH_FAILED,
+        ci_base.PR_VIEW_CAUSE_PROVIDER_FAILED,
+        ci_base.PR_VIEW_CAUSE_MALFORMED_RESPONSE,
+    ):
+        stopping = _line_naming(cause)
+        assert 'STOP' in stopping, (
+            f'create-pr.md does not STOP on {cause}: {stopping}. A non-absence cause that '
+            'falls through to creation opens a duplicate PR.'
+        )
+        assert 'Do NOT create' in stopping or 'do NOT create' in stopping, (
+            f'create-pr.md does not forbid creation on {cause}: {stopping}'
+        )
+
+
+def test_create_pr_doc_treats_an_absent_cause_as_unanswered():
+    """A missing discriminator must not fall through to creation.
+
+    The fail-closed default matters for exactly the window this change opens: a
+    provider (or a cached older copy of one) that does not yet stamp the field.
+    Reading its absence as "no PR exists" would reintroduce the defect on the
+    one path the new branch does not otherwise cover.
+    """
+    text = _CREATE_PR_DOC.read_text(encoding='utf-8')
+
+    assert '`error_cause` absent' in text, (
+        'create-pr.md names no disposition for a MISSING error_cause, so a provider that '
+        'does not stamp the field falls through to whichever branch happens to match.'
+    )
+    absent_line = next(line for line in text.splitlines() if '`error_cause` absent' in line)
+    assert 'STOP' in absent_line, absent_line
 
 
 # =============================================================================

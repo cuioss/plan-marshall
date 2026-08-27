@@ -101,44 +101,67 @@ glab api projects/:id/merge_requests/123/approvals
 ### pr merge-queue (merge train enqueue)
 
 GitLab's platform equivalent of a GitHub merge queue is a **merge train** — a
-Premium/Ultimate-tier feature enabled per-project. `pr merge-queue` performs a
-real enqueue via the merge-train API rather than any silent immediate-merge
-fallback.
+Premium/Ultimate-tier feature enabled per-project. `pr merge-queue` reads the
+project's train state first and performs a real enqueue via the merge-train API
+only against a project that actually runs one; there is no silent
+immediate-merge fallback.
 
-**CLI Command**:
+**Probe** (runs first, read-only):
+```bash
+glab api projects/{id}
+```
+
+**Enqueue** (the side effect, reached only past the probe):
 ```bash
 glab api -X POST projects/{id}/merge_trains/merge_requests/{iid}
 ```
 
 - `{id}` is the URL-encoded `namespace/project` path.
 - `{iid}` is the MR internal id (resolved from `--pr-number` or `--head`).
+- The probe runs BEFORE the POST. Any eligibility other than
+  `eligible_configured` refuses, and so does a probe that established nothing —
+  an unresolvable project scope, an auth-scope failure, a non-auth API error, or
+  a malformed project response.
 - Success returns the merge-train **car** object; the handler surfaces
   `enqueued: true` and a `merge_train_car_id` (best-effort from the response `id`).
 - HTTP 403/404 from the merge-train endpoint → the project/tier is not
   merge-train-eligible → the handler returns the actionable ineligible error.
 
-The dedicated train endpoint is what makes `enqueued: true` a **corroborated**
-claim rather than an exit-code echo: it succeeds only against a real train, and
-its 403/404 is the refusal. The car read-back rides on that success and is
-best-effort, so `merge_train_car_id` may be an empty string; the corroboration
-rests on the endpoint, not on the id. GitLab emits no `enqueue_corroboration`
+The probe is what keeps an off-routed dispatch from reaching a side effect: the
+enqueue endpoint answers a project with no train with a 404 that reads
+identically to a routing mistake, so a verb that learns only from the POST cannot
+tell the two apart. Reading the state first costs nothing on the refusal path,
+because the probe is read-only.
+
+The dedicated train endpoint still makes `enqueued: true` a **corroborated**
+claim rather than an exit-code echo: it succeeds only against a real train. The
+car read-back rides on that success and is best-effort, so `merge_train_car_id`
+may be an empty string; the corroboration rests on the endpoint, not on the id.
+Every refusal — the pre-POST one and the endpoint's 403/404 alike — names both
+remedies: provision merge trains for the project, or stop routing through the
+queue and merge via `ci pr safe-merge`. GitLab emits no `enqueue_corroboration`
 field — that key is GitHub's, carrying its pre-enqueue base-branch probe verdict.
 The actionable-ineligible contract itself is cross-provider: GitHub refuses the
 same way when its base branch has no configured queue.
 
 ### Merge-shaped verbs: project-scoped preflight and state corroboration
 
-`pr merge`, `pr safe-merge`, and `pr auto-merge` each consult the project's
-merge-train state before acting, and each establishes its own success claim from
-a re-read rather than the `glab` exit code. Two provider-shaped details are
-specific to GitLab and are NOT transliterations of the GitHub guards:
+`pr merge`, `pr safe-merge`, `pr auto-merge`, and `pr merge-queue` each consult
+the project's merge-train state before acting, and each merging verb establishes
+its own success claim from a re-read rather than the `glab` exit code. Two
+provider-shaped details are specific to GitLab and are NOT transliterations of
+the GitHub guards:
 
 - **The preflight is project-scoped, not base-branch-scoped.** A merge train is a
   per-project flag (`merge_trains_enabled`), so the probe takes no branch
-  argument. `pr merge` and `pr safe-merge` refuse an immediate merge when it
-  returns `eligible_configured`; `pr auto-merge` never refuses and instead
-  reports the resulting `disposition` (`enabled` for a plain
-  when-pipeline-succeeds schedule, `enqueued` when the project has trains).
+  argument. `pr merge` and `pr safe-merge` refuse an immediate merge on
+  `eligible_configured`, and equally on any probe that established nothing — an
+  unresolvable project scope, an auth-scope failure, a non-auth API error, or a
+  malformed project response. `pr merge-queue` inverts the eligibility test and
+  refuses on anything OTHER than `eligible_configured`. `pr auto-merge` never
+  refuses on eligibility — it reports the resulting `disposition` (`enabled` for
+  a plain when-pipeline-succeeds schedule, `enqueued` when the project has
+  trains) — but it still refuses when the probe established nothing.
 - **Corroboration reads `state`, with no timestamp arm.** `view_pr_data` surfaces
   no `merged_at` on GitLab, so `merged` is established from `state == 'merged'`
   alone — there is no `mergedAt` to parse and therefore no strategy-selected
@@ -146,8 +169,13 @@ specific to GitLab and are NOT transliterations of the GitHub guards:
   branch-delete REST call so a merge that did not land never deletes the source
   branch.
 
-Both fail closed: an unreadable project or MR state is a refusal, never a
-permissive default. See [`pr-operations.md`](pr-operations.md) § "The
+All of them fail closed: an unreadable project or MR state is a refusal, never a
+permissive default. The unresolvable project scope is the case that makes this
+concrete — an unread `merge_trains_enabled` is not evidence that there is no
+train to bypass, so it refuses rather than permitting the merge. That message
+names the unresolved scope and interpolates no project path, because none was
+resolved; every refusal reached after resolution succeeded names the concrete
+project. See [`pr-operations.md`](pr-operations.md) § "The
 corroborate-not-report contract" for the cross-provider statement.
 
 ---
@@ -171,7 +199,22 @@ glab api projects/{id}     # → reads the merge_trains_enabled boolean
 | `merge_trains_enabled: true` | `eligible_configured` |
 | `merge_trains_enabled: false` | `eligible_unconfigured` |
 | `merge_trains_enabled` absent (tier/feature does not expose it) | `ineligible` |
+| `merge_trains_enabled` present but NOT a boolean (`null`, a string, a number) | `unsupported`, carrying an actionable error that names the project path and states the field was not a boolean (the offending value itself is not included) |
 | HTTP 401/403 | actionable auth-scope error (never a stack trace) |
+| Project scope unresolvable — no API call is made | `unsupported`, carrying an actionable scope-resolution error that names no project path |
+| Non-auth API failure, or a non-object project response | `unsupported`, carrying the failure itself as the actionable error |
+
+Only the first three rows — the two boolean values and the absent field — are
+verdicts ABOUT a project; each of the remaining four establishes nothing, which
+is why they carry an error and every merge-shaped consumer refuses on them.
+
+A present-but-non-boolean `merge_trains_enabled` is deliberately on the
+establishes-nothing side of that split rather than folded into the three verdict
+rows. `null`, a string, or a number is not the field's declared type, so the read
+answered nothing about this project's merge-train support — and placing it with
+the verdicts would produce an error-free `eligible_*` or `ineligible` that
+permits an immediate merge on a project whose train state was never established.
+The probe refuses it instead.
 
 ### repo merge-queue enable
 

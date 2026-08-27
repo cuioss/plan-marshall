@@ -820,3 +820,145 @@ def test_mr_auto_merge_probe_error_fails_closed(monkeypatch):
     assert 'probe failed' in result['error'], result
     # The probe precedes the call, so no auto-merge was scheduled as a side effect.
     assert captured == [], captured
+
+
+# ---------------------------------------------------------------------------
+# Project scope: the guards fail closed on a project they never identified
+# ---------------------------------------------------------------------------
+#
+# Every scenario above stubs ``_probe_merge_train_state``, so the probe's OWN
+# scope handling has no coverage there. The cases below drive the REAL probe
+# through a stubbed Projects API, because what they assert — which outcomes
+# carry an actionable error, and which refusals name the concrete project — is
+# a property of the probe itself.
+
+
+def _install_unresolvable_scope(monkeypatch) -> None:
+    """Auth OK, project scope unresolvable, REAL probe, Projects API trip-wired.
+
+    The trip-wire is the negative control: an unresolved scope must refuse
+    before any API call, so reaching ``run_api`` is itself the failure.
+    """
+    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(gitlab_ops, 'get_project_path', lambda: None)
+
+    def _boom(endpoint):  # pragma: no cover — guard only
+        raise AssertionError('an unresolved scope must not reach the Projects API')
+
+    monkeypatch.setattr(gitlab_ops, 'run_api', _boom)
+
+
+def test_mr_merge_refuses_when_project_scope_unresolvable(monkeypatch):
+    """An unresolvable project scope refuses the merge and runs no merge command.
+
+    The unresolvable scope used to return ``ineligible`` with no error, which
+    ``_refuse_on_required_merge_train`` read as "no train to bypass" and let
+    through — issuing a merge against a project nothing had identified.
+    """
+    _install_unresolvable_scope(monkeypatch)
+    run_glab_stub, captured = _capture_run_glab(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+    monkeypatch.setattr(gitlab_ops, 'view_pr_data', lambda head=None: _mr_view_success_payload())
+
+    result = gitlab_ops.cmd_pr_merge(_merge_ns(delete_branch=True))
+
+    assert result['status'] == 'error', result
+    assert result['operation'] == 'pr_merge'
+    # ``run_glab`` is stubbed to SUCCEED, so a merge that was issued would have
+    # been reported as a landed merge. Its absence is the contract.
+    merge_calls = [c for c in captured if c[:2] == ['mr', 'merge']]
+    assert merge_calls == [], merge_calls
+    assert captured == [], captured
+
+
+def test_scope_resolution_failure_message_names_the_scope_not_a_path(monkeypatch):
+    """The scope-resolution refusal names the unresolved scope and NO project path.
+
+    Nothing resolved a project, so interpolating one would report a scope the
+    probe never established.
+    """
+    _install_unresolvable_scope(monkeypatch)
+    run_glab_stub, _captured = _capture_run_glab(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+
+    result = gitlab_ops.cmd_pr_merge(_merge_ns(delete_branch=False))
+
+    message = ' '.join(str(v) for v in result.values())
+    assert 'scope could not be resolved' in message, result
+    assert 'merge_trains_enabled' in message, result
+    assert 'octo/repo' not in message, result
+    assert 'projects/' not in message, result
+
+
+#: Every refusal reachable AFTER the project path resolved, as
+#: ``(projects-API result, id)``. The three probe outcomes that establish
+#: nothing about the project they DID reach, plus the positive train-required
+#: verdict — which is the whole of the set, because the remaining two probe
+#: outcomes (``eligible_unconfigured`` and an error-free ``ineligible``) permit
+#: the merge rather than refusing it.
+_KNOWN_PATH_REFUSALS: list[tuple[tuple, str]] = [
+    ((1, None, 'HTTP 403 Forbidden'), 'auth_scope'),
+    ((1, None, 'HTTP 500 Internal Server Error'), 'api_failure'),
+    ((0, ['not', 'an', 'object'], ''), 'malformed_response'),
+    ((0, {'merge_trains_enabled': True}, ''), 'train_required'),
+]
+
+
+@pytest.mark.parametrize(
+    'api_result',
+    [result for result, _ in _KNOWN_PATH_REFUSALS],
+    ids=[case_id for _, case_id in _KNOWN_PATH_REFUSALS],
+)
+def test_known_path_refusal_names_the_concrete_project(monkeypatch, api_result):
+    """Every refusal reached after resolution succeeded names the resolved project.
+
+    A refusal that names no project cannot be acted on when several checkouts
+    are in play — the reader cannot tell which project's setting to change.
+    """
+    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(gitlab_ops, 'get_project_path', lambda: 'octo/repo')
+    monkeypatch.setattr(gitlab_ops, 'run_api', lambda endpoint: api_result)
+    run_glab_stub, captured = _capture_run_glab(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+    monkeypatch.setattr(gitlab_ops, 'view_pr_data', lambda head=None: _mr_view_success_payload())
+
+    result = gitlab_ops.cmd_pr_merge(_merge_ns(delete_branch=True))
+
+    assert result['status'] == 'error', result
+    message = ' '.join(str(v) for v in result.values())
+    assert 'octo/repo' in message, result
+    # Each of these refuses BEFORE the side effect.
+    assert captured == [], captured
+
+
+@pytest.mark.parametrize(
+    'api_result',
+    [result for result, _ in _KNOWN_PATH_REFUSALS],
+    ids=[case_id for _, case_id in _KNOWN_PATH_REFUSALS],
+)
+def test_safe_merge_known_path_refusal_names_the_concrete_project(monkeypatch, api_result):
+    """``safe-merge`` shares the preflight, so it names the project identically.
+
+    It refuses before spending any of the readiness-poll budget.
+    """
+    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(gitlab_ops, 'get_project_path', lambda: 'octo/repo')
+    monkeypatch.setattr(gitlab_ops, 'run_api', lambda endpoint: api_result)
+    run_glab_stub, captured = _capture_run_glab(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
+    view_calls = {'i': 0}
+
+    def counting_view(head=None):
+        view_calls['i'] += 1
+        return _safe_merge_view_payload('can_be_merged')
+
+    monkeypatch.setattr(gitlab_ops, 'view_pr_data', counting_view)
+
+    result = gitlab_ops.cmd_pr_safe_merge(_safe_merge_ns())
+
+    assert result['status'] == 'error', result
+    assert result['operation'] == 'pr_safe_merge'
+    message = ' '.join(str(v) for v in result.values())
+    assert 'octo/repo' in message, result
+    assert view_calls['i'] == 0, view_calls
+    assert captured == [], captured

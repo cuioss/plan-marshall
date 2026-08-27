@@ -105,7 +105,7 @@ Walk the producer surfaces sequentially, emitting findings of each type to the s
      --project-dir {worktree} pr view
    ```
 
-   Read `pr_number` from the TOON output. If no PR exists, return `status: success`, `display_detail: "no PR available — nothing to triage"`.
+   On `status: success`, read `pr_number` from the TOON output. A `status: error` is NOT a no-PR signal: one envelope covers several materially different causes and its `error` message is hard-coded to the no-PR wording, so only the `error_cause: no_pr_found` arm establishes that the branch genuinely has no PR — that arm alone returns `status: success`, `display_detail: "no PR available — nothing to triage"`. Every other cause, and an absent `error_cause`, leaves the question UNANSWERED rather than answered "no"; STOP and return an error TOON preserving the stdout error envelope as emitted. The discriminator's vocabulary and its per-arm field sets are owned by [`tools-integration-ci/standards/api-contract.md`](../../tools-integration-ci/standards/api-contract.md) § "`pr view` and the `error_cause` discriminator" and are deliberately not restated here.
 
 3. **Wait for CI** (when `wait=true`, default). Pass `--adaptive` so this wait seeds its ceiling from — and records its observed duration back into — the persisted `ci:wait` budget (the same #849 ratchet `ci_complete_precondition` drives), instead of the fixed `DEFAULT_CI_TIMEOUT`:
 

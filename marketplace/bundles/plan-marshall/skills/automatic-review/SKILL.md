@@ -173,8 +173,11 @@ in `manifest.phase_6.steps`. When the dispatcher runs this step, the document ex
 
 Every `python3 .plan/execute-script.py` call in this document — of EVERY notation, **not only `manage-*`** — carries the following exit-code contract unless a step explicitly states otherwise. The widening past `manage-*` is load-bearing here: the producer `github_pr fetch_findings` (the FIND entry-point), the `ci checks pull-request-runs` read, and the `review_completeness check` guard are NOT `manage-*`, and a non-zero exit from any of them that this step reads as an empty-but-clean result is the swallowed-rejection defect this convention exists to prevent.
 
-- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code == 0` AND `status: success`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code == 0` with a `status` other than `success`, or with no parseable `status` at all**: NOT a usable value — STOP exactly as the `exit_code != 0` disposition below requires, with one difference in what the error TOON carries: on this path the diagnostic is on STDOUT, not stderr. Preserve the stdout **error envelope** as emitted — every field it carries, verbatim — into the returned error TOON; it is the only account of the cause that exists. Copy the whole envelope rather than looking for a fixed field list: beyond `status` and `error` the diagnostic fields vary by verb — `ci` verbs carry `operation`, `error_cause`, and `context`, the plan-resolution envelopes carry `message` and `plan_id` instead, and neither list is exhaustive. `error` is sometimes a hard-coded generic string whose real cause sits in one of the other fields, so dropping them can discard the cause entirely. A zero exit is not evidence the operation succeeded; a script MAY print `status: error` and still exit 0. Read `status` FIRST, and never read a **success-payload** field off a non-`success` return — the envelope's diagnostic fields are not success payload, and dropping any of them leaves the step reporting a failure with no cause. A malformed or truncated stdout that carries **no parseable `status` at all** takes this same path: an unreadable read is not evidence of success, so it fails closed onto STOP rather than falling through to the first clause. There is no envelope to preserve on that sub-path — synthesize the error TOON instead, naming the call (notation, subcommand, and arguments) and carrying the raw stdout verbatim as the only account of the cause that exists.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
+
+The middle clause is the one the `ci` family makes load-bearing: `ci_base.output_error` prints `status: error` and returns exit 0, and both provider `main()` functions close with `print(serialize_toon(result))` / `return 0` without branching on the result's `status`. A failed `ci` call therefore satisfies an exit-code-only reading of the first clause, which is exactly how a failure comes to be read as an empty-but-clean result.
 
 The step-done participation guard carries a STRICTER disposition for the `review_completeness check` and `ci checks pull-request-runs` calls: its § "UNKNOWN verdict" routes a non-zero exit (or a return missing `participation_complete`) into a loop_back rather than a `false`, and the force-done hatch is unavailable there. That is this convention's "unless a step explicitly states otherwise" — a tighter handling of the same non-zero exit, never a swallow. The producer `github_pr fetch_findings` FIND call carries no richer disposition of its own and so takes THIS convention directly: a non-zero exit STOPS the step with an error TOON, rather than proceeding into the participation guard on the absent participation inputs a failed fetch would leave.
 
@@ -982,6 +985,23 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
 it measures the PR rather than a bot. Omit it when unmeasured — the classifier then reports no
 `measured_diff_size` line at all, which reads as unknown rather than as a zero-sized diff.
 
+**The ten list flags split by FORM, and the form is what the parser routes on.** FOUR take
+comma-separated `{bot_kind}:{value}` PAIRS: `--participated-bots` and `--stale-participation-bots`
+take `bot_kind:evidence_kind` (through `parse_participation`, which additionally drops a well-formed
+pair whose evidence kind is not one of that bot's declared publish shapes — a semantic non-match, not
+a caller error), and `--refused-causes` and `--refusal-size-caps` take `bot_kind:cause` /
+`bot_kind:cap` (through `parse_causes`, which checks the SHAPE only and carries the producer's value
+through even when it does not recognise it). The other SIX take BARE `{bot_kind}` tokens through
+`_split_bots`: `--required-bots`, `--optional-bots`, `--in-progress-bots`, `--refused-bots`,
+`--declined-bots` and `--unrecognised-refusal-bots`. Each pair-form flag is fed a `github_pr
+fetch_findings` field verbatim, so its form is the producer's rather than a choice made here. ⛔ A
+token on the wrong form is REJECTED as a caller error — `status: error`, `error:
+malformed_bot_flag`, a non-zero exit, and NO `participation_complete` field, which reads as an
+UNKNOWN verdict — never silently reinterpreted: a bare kind dropped from a pair-form parse resolves
+the bot to `absent` (a blocking member) and a pair fed to a bare-form flag matches no configured bot
+and vanishes, so both directions manufacture a confident verdict over a population nobody
+classified. An empty value is the empty list, never a malformed token.
+
 Every list flag above takes an OPTIONAL value: each may be supplied bare (the flag with no value at
 all), which reads as the empty list — identical to omitting it. Callers interpolating a possibly-empty
 variable MUST still double-quote the placeholder; the bare form is the parser-side backstop, not a
@@ -1031,6 +1051,13 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
   [--not-triggered] [--refused-causes [REFUSED_CAUSES]] \
   [--refusal-size-caps [REFUSAL_SIZE_CAPS]] [--min-deficit N]
 ```
+
+The FORM split documented under `check` governs `deficit` unchanged, and structurally so: both
+subcommands build this flag set from the same `_add_bot_observation_flags` and read it through the
+same `_parse_bot_observations`, so the pair-form four and the bare-form six are the same flags here
+and a token malformed for one subcommand is malformed for the other, with the same
+`malformed_bot_flag` UNKNOWN verdict. `--min-deficit` is not a list flag: it takes a required
+integer.
 
 The `deficit` subcommand takes the SAME observation flags as `check` (so the step forwards the sets it
 already gathered) plus `--min-deficit` (default 1). `--refused-causes` **and `--refusal-size-caps`**

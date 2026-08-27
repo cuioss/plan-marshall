@@ -13,9 +13,11 @@ Tests functions:
 import argparse
 import re
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import ci_base
 import pytest
+from _merge_shaped_roster import PROVIDERS, registry_keys
 from _resolve_project_dir_fixtures import worktree_query_result
 from ci_base import (
     BODY_KIND_ISSUE_COMMENT,
@@ -1295,6 +1297,198 @@ def test_the_checks_verb_set_agrees_with_the_documented_contract():
         f'registered but undocumented={sorted(registered - documented)}, '
         f'documented but unregistered={sorted(documented - registered)}'
     )
+
+
+# =============================================================================
+# pr doc-parity — the registered sub-verbs against their documentation rows
+# =============================================================================
+#
+# The ``checks`` guard above takes its live side from ``checks_sub.choices``,
+# because every ``checks`` verb is registered in the shared ``ci_base.build_parser``
+# and that subparser IS the registry. ``pr`` cannot use that source: the group is
+# SPLIT. ``pr landing-state`` is added to ``pr_sub`` by the GitHub front-end
+# (``github_ops.main``) rather than by ``build_parser``, so ``pr_sub.choices`` off a
+# bare ``build_parser('test')`` is short by exactly the provider-specific additions
+# — and a verb the live-side derivation cannot see is one no parity guard can pin.
+#
+# The authority here is therefore each provider's ``handlers: HandlerMap`` registry
+# literal, read through the designated shared derivation in ``_merge_shaped_roster``
+# (the same literal and the same regexes that module's other consumers use, so the
+# ``pr`` population is derived once rather than re-derived per suite). The
+# population is the UNION over both providers: a verb EITHER provider registers is
+# reachable through the ``ci`` abstraction and must be documented, even where the
+# other provider has no handler for it.
+#
+# Two documents are pinned, because they answer different questions and a verb can
+# be present in one and missing from the other: ``leaf-command-reference.md`` is the
+# flag cheat-sheet (pinned by EQUALITY, as for ``checks``, since it declares its
+# group tables a complete index), and ``api-contract.md`` is the response-shape
+# authority (pinned by COVERAGE modulo a documented exemption, since it documents
+# shapes rather than commands).
+
+#: The response-shape authority. Its ``pr`` rows are spread over TWO tables — the
+#: read-verb table under "PR Operations" and the "State-Transition Operations
+#: (summary)" table — so the derivation reads the whole document and a row in
+#: EITHER satisfies the guard. Resolved as a sibling of the leaf-command reference
+#: rather than by re-typing the path chain above it.
+_API_CONTRACT = _LEAF_COMMAND_REFERENCE.parent / 'api-contract.md'
+
+#: ``marketplace/bundles/plan-marshall/skills`` — the leaf-command reference sits at
+#: ``{skills}/tools-integration-ci/standards/leaf-command-reference.md``, so three
+#: levels up is the skills root the provider modules also hang off.
+_BUNDLE_SKILLS = _LEAF_COMMAND_REFERENCE.parents[2]
+
+#: Each provider's ``*_ops.py`` source text, keyed by the provider set the shared
+#: roster declares — iterated rather than re-typed, so a third provider joins this
+#: guard by being added there.
+_PROVIDER_OPS_TEXT: dict[str, str] = {
+    provider: (
+        _BUNDLE_SKILLS / f'workflow-integration-{provider}' / 'scripts' / f'{provider}_ops.py'
+    ).read_text(encoding='utf-8')
+    for provider in PROVIDERS
+}
+
+#: A ``pr {verb}`` documentation row in either reference. The verb is the backticked
+#: command's second word; the remainder of the leading cell is skipped (``[^|]*``)
+#: because a row legitimately carries more there — an inline argument
+#: (``pr close --pr-number N``) or a provider annotation (``**(GitHub only)**``).
+#: Anchored at the line start and requiring the leading pipe AND the backtick, so a
+#: ``ci pr merge`` shown in an anti-pattern table or a fenced example is prose and
+#: never joins the documented population.
+_PR_ROW = re.compile(r'^\|\s*`pr (?P<verb>[a-z][a-z0-9-]*)[^|]*\|', re.MULTILINE)
+
+#: Registered ``pr`` verbs deliberately absent from ``api-contract.md``, each mapped
+#: to the reason it is exempt. An exemption is a recorded decision rather than a
+#: silence, and it is kept honest from both directions by
+#: ``test_api_contract_pr_exemptions_are_live`` below: an entry naming a verb that is
+#: no longer registered, or one that HAS since gained its row, fails rather than
+#: quietly widening the allowance.
+_API_CONTRACT_PR_EXEMPT: dict[str, str] = {
+    'submit-review': (
+        'api-contract.md documents response SHAPES, and this verb adds none — it '
+        'publishes a pending draft review and returns the standard envelope with no '
+        'extra response field. Its argument surface is documented in '
+        'leaf-command-reference.md (which this guard pins by equality) and its '
+        'GitLab-side refusal in that provider impl doc.'
+    ),
+}
+
+
+def _registered_pr_verbs() -> set[str]:
+    """Return every ``pr`` sub-verb some CI provider registers.
+
+    Derived from the providers' ``handlers: HandlerMap`` registry literals — the
+    closed population — never from a ``def cmd_pr_`` scan, which is a sample.
+
+    Raises:
+        AssertionError: if no ``('pr', verb)`` key was derived at all. An empty
+            derivation is the vacuity every guard below would otherwise pass over.
+    """
+    verbs = {
+        key[1]
+        for text in _PROVIDER_OPS_TEXT.values()
+        for key in registry_keys(text)
+        if len(key) == 2 and key[0] == 'pr'
+    }
+    assert verbs, (
+        f'no ("pr", verb) registry key was derived from {sorted(_PROVIDER_OPS_TEXT)} — '
+        f'the registered population is vacuous, so it cannot pin any documentation'
+    )
+    return verbs
+
+
+def _documented_pr_verbs(document: Path) -> set[str]:
+    """Return the ``pr`` sub-verbs ``document`` carries a table row for.
+
+    Raises:
+        AssertionError: if the document yielded no row at all — the same vacuity
+            guard ``_documented_checks_verbs`` applies, for the same reason.
+    """
+    verbs = {match.group('verb') for match in _PR_ROW.finditer(document.read_text(encoding='utf-8'))}
+    assert verbs, (
+        f'no `pr {{verb}}` table row was derived from {document} — the documented '
+        f'population is vacuous, so it cannot pin the registered verb set'
+    )
+    return verbs
+
+
+def test_the_pr_verb_set_agrees_with_the_documented_contract():
+    """The registered ``pr`` verb set equals the one the leaf-command reference documents.
+
+    The ``checks`` assertion's contract, applied to the split ``pr`` group: both
+    sides DERIVED from independent sources, compared by EQUALITY so a verb added to
+    a provider registry fails here until its reference row exists, and a row added
+    without a registration fails the other way.
+
+    The reference table is a legitimate authority for the equality because it
+    declares itself one: "Every group table below carries one row per registered
+    sub-verb of that group — the tables are the complete index, not a selection."
+    ``pr`` spans TWO of its tables (Pull Request Operations and Review Operations);
+    the row regex is table-agnostic, so the documented side is their union — which is
+    what that declaration is about, the group rather than any one table.
+    """
+    registered = _registered_pr_verbs()
+    documented = _documented_pr_verbs(_LEAF_COMMAND_REFERENCE)
+
+    assert registered == documented, (
+        f'the pr provider registries and the leaf-command reference disagree — '
+        f'registered but undocumented={sorted(registered - documented)}, '
+        f'documented but unregistered={sorted(documented - registered)}'
+    )
+
+
+def test_every_registered_pr_verb_has_an_api_contract_row():
+    """Every registered ``pr`` verb is documented in ``api-contract.md``, or is exempt.
+
+    Coverage rather than equality, because the two documents answer different
+    questions: the leaf-command reference indexes COMMANDS (and declares itself
+    complete), while ``api-contract.md`` documents RESPONSE SHAPES and legitimately
+    says nothing about a verb that adds no field beyond the standard envelope. The
+    allowance for that is a NAMED exemption carrying its reason, not a subset
+    relation — a subset check would cover a newly added verb by ignoring it.
+
+    A row in EITHER of the document's two ``pr`` tables counts: the read-verb table
+    under "PR Operations" and the "State-Transition Operations (summary)" table
+    partition the group by what a verb DOES, and that split is a presentation choice
+    the guard must not read as a contract.
+
+    The reverse direction is asserted too: a ``pr`` row for a verb no provider
+    registers is documentation for a command that cannot be run.
+    """
+    registered = _registered_pr_verbs()
+    documented = _documented_pr_verbs(_API_CONTRACT)
+
+    undocumented = registered - documented - set(_API_CONTRACT_PR_EXEMPT)
+    assert not undocumented, (
+        f'registered pr verbs with no {_API_CONTRACT.name} row and no recorded '
+        f'exemption: {sorted(undocumented)}'
+    )
+    assert not documented - registered, (
+        f'{_API_CONTRACT.name} documents pr verbs no provider registry registers: '
+        f'{sorted(documented - registered)}'
+    )
+
+
+def test_api_contract_pr_exemptions_are_live():
+    """Each recorded exemption names a registered verb that is genuinely undocumented.
+
+    An exemption list is the one part of the guard above that is asserted rather than
+    derived, so it is pinned from BOTH directions here — otherwise it decays into a
+    permanent hole. A key whose verb is no longer registered is stale; a key whose
+    verb HAS since gained its row is an allowance that is now silently covering
+    nothing, and either would let a future gap slip in under a name nobody re-read.
+    Each entry must also carry a non-empty reason: the exemption is the reason.
+    """
+    registered = _registered_pr_verbs()
+    documented = _documented_pr_verbs(_API_CONTRACT)
+
+    for verb, reason in _API_CONTRACT_PR_EXEMPT.items():
+        assert verb in registered, f'exemption {verb!r} names a verb no provider registry registers'
+        assert verb not in documented, (
+            f'exemption {verb!r} is obsolete — {_API_CONTRACT.name} now carries a row for it, '
+            f'so the entry should be removed rather than left covering nothing'
+        )
+        assert reason.strip(), f'exemption {verb!r} carries no reason'
 
 
 # =============================================================================

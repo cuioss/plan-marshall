@@ -84,13 +84,32 @@ against a MUTANT — each real handler with its executable guard lines deleted a
 its docstring and comments left verbatim, i.e. a handler that fully documents a
 guard it does not perform — the two predicates separate completely:
 
-===========================================  =========  =========
-predicate                                    hits/8 on  hits/8 on
-                                             live tree  mutants
-===========================================  =========  =========
-raw-text search of the handler source              8/8        7/8
-identifier-bound (:func:`_first_queue_symbol`)     8/8        0/8
-===========================================  =========  =========
+=================================================  =============  =============
+predicate                                          live tree      mutants
+=================================================  =============  =============
+raw-text search of the handler source              all members    all but one
+identifier-bound (``first_queue_symbol``)          all members    no members
+=================================================  =============  =============
+
+Stated as ratios rather than against a standing denominator, because the counts
+above are the values OBSERVED at that mutation run — over the eight members the
+population held at the time — and NOT a live expectation. This change de-pinned
+the fixed eight-member expectation precisely because a behaviour-derived
+population may legitimately grow (see the module docstring's population note), so
+a transcribed ``/8`` would go stale on the first added merge-shaped verb and this
+module would then document a number its own assertions reject.
+
+The identifier-bound predicate, its ``QUEUE_VOCAB_RE`` vocabulary and the
+tokenizing helpers it needs are imported from
+:mod:`_merge_shaped_roster`, the designated single source for this derivation,
+rather than redefined here — and so is the registry derivation itself: the
+``handlers: HandlerMap`` grammar, the row grammar, the ``MERGE_SHAPED_VERBS``
+vocabulary and the ast-based handler-body lookup. This module defines no
+registry regex of its own. Two copies of a registry grammar drift
+independently, and a copy that stopped matching would shrink this guard's
+population while the sibling suite reading the same registry stayed green, with
+nothing reporting the divergence. Only the PATH resolution stays local, because
+which module files to read is this guard's own subject.
 
 The raw-text predicate accepts 7 of the 8 gutted handlers, because this diff gave
 every merge-shaped handler a docstring naming the queue or the train. Both arms
@@ -115,14 +134,26 @@ Two defects the mutation run exposed in the fix itself, both now locked by
 
 from __future__ import annotations
 
-import io
+import ast
 import re
 import tokenize
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 from conftest import MARKETPLACE_ROOT
+from _merge_shaped_roster import (
+    QUEUE_VOCAB_RE,
+    ProviderSources,
+    derive_population,
+    first_queue_symbol,
+    handler_source,
+    line_starts,
+    registry_handler_names,
+    registry_keys,
+    source_tokens,
+)
 
 _BUNDLE_ROOT: Path = Path(MARKETPLACE_ROOT)
 _SKILLS: Path = _BUNDLE_ROOT / 'plan-marshall' / 'skills'
@@ -146,11 +177,6 @@ _PROVIDER_HANDLER_SOURCES: dict[str, tuple[Path, ...]] = {
     ),
     'gitlab': (_SKILLS / 'workflow-integration-gitlab' / 'scripts' / 'gitlab_ops.py',),
 }
-
-#: The candidate merge-shaped ``pr`` sub-verbs. This is the VOCABULARY the
-#: derivations filter against — not a membership claim. WHICH of these are
-#: dispatched, and which are registered, is derived below.
-_MERGE_SHAPED_VERBS: frozenset[str] = frozenset({'merge', 'auto-merge', 'safe-merge', 'merge-queue'})
 
 #: The dispatch set the step body is permitted to issue. This IS the contract
 #: under assertion, stated once here and cross-checked against the derived set.
@@ -214,38 +240,6 @@ _OBSERVABILITY_MARKER = '**Observability (mandatory)**'
 #: `{merge_landed}` guard sentence out of view as the section grows, and a
 #: negative start index would slice from the END of the document.
 _PRUNE_SECTION_HEADING = '#### Release the cross-plan merge-lock (both paths)'
-
-#: One provider ``handlers: HandlerMap`` registry literal.
-_HANDLER_MAP_RE = re.compile(r'handlers:\s*HandlerMap\s*=\s*\{(.*?)\n    \}', re.DOTALL)
-
-#: One registry row: a ``('group', 'verb'[, 'sub'])`` key.
-_HANDLER_ROW_RE = re.compile(r"\(\s*('[^']+'(?:\s*,\s*'[^']+')*)\s*\)\s*:")
-
-#: A top-level ``def name(`` in a handler source.
-_DEF_RE = re.compile(r'^def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(', re.MULTILINE)
-
-#: A symbol that touches the platform queue / train state. Derived per provider
-#: from the module's own vocabulary rather than listed, so a guard renamed or a
-#: new probe helper added is picked up without editing this file.
-#:
-#: Matched ONLY against IDENTIFIER tokens of the handler under test (see
-#: :func:`_first_queue_symbol`), never against its raw source text. Against raw
-#: text the pattern is satisfied by the handler's own DOCSTRING — every
-#: merge-shaped handler documents the queue/train surface it guards — so the
-#: predicate would report a hit for a handler that merely talks about the queue
-#: and never probes it, and the ordering arm below could not fail at all,
-#: because a docstring necessarily precedes every executable literal. Binding
-#: the match to identifiers binds it to the artifact under test: the executable
-#: code. :func:`test_queue_guard_predicate_is_falsifiable` locks that property.
-#:
-#: Deliberately UNANCHORED — no leading ``\b``. Identifiers carry the vocabulary
-#: mid-token (``skip_merge_queue_preflight``, ``_refuse_on_required_merge_queue``,
-#: ``_probe_merge_train_state``, ``_MERGE_TRAIN_INELIGIBLE_HINT``), and ``_`` is
-#: a word character, so a word-boundary anchor matches only the identifiers that
-#: BEGIN with the vocabulary. Against prose the anchor is invisible — every prose
-#: mention has real boundaries — which is why it survives a raw-text match and
-#: silently under-matches the moment the predicate is bound to code.
-_QUEUE_VOCAB_RE = re.compile(r'(?i)merge[_-]?(?:queue|train)')
 
 #: The success-literal marker used for the "before returning success" ordering.
 _SUCCESS_LITERAL = "'status': 'success'"
@@ -480,41 +474,49 @@ def _registry_keys(provider: str) -> list[tuple[str, ...]]:
     ``def cmd_`` scan or a search for handlers that shell out to the CLI — is what
     stops the sample-read-as-enumeration failure that missed ``cmd_pr_auto_merge``
     on each provider in turn.
+
+    Path resolution stays here; the grammar comes from the shared roster, which
+    fails loudly on a registry literal it cannot find rather than yielding an
+    empty derivation every assertion below would then pass vacuously over.
     """
-    match = _HANDLER_MAP_RE.search(_read(_PROVIDER_MODULES[provider]))
-    assert match, (
-        f'No `handlers: HandlerMap = {{...}}` literal was found in '
-        f'{_PROVIDER_MODULES[provider].name}. The registry IS the population; without it '
-        'every parity assertion below is vacuous.'
-    )
-    keys: list[tuple[str, ...]] = []
-    for raw in _HANDLER_ROW_RE.findall(match.group(1)):
-        keys.append(tuple(part.strip().strip("'") for part in raw.split(',')))
-    return keys
+    return registry_keys(_read(_PROVIDER_MODULES[provider]))
 
 
 def _registry_handler_names(provider: str) -> dict[tuple[str, ...], str]:
     """Map each registry key to the handler symbol it is bound to."""
-    match = _HANDLER_MAP_RE.search(_read(_PROVIDER_MODULES[provider]))
-    assert match
-    bindings: dict[tuple[str, ...], str] = {}
-    for line in match.group(1).splitlines():
-        row = _HANDLER_ROW_RE.search(line)
-        if row is None:
-            continue
-        key = tuple(part.strip().strip("'") for part in row.group(1).split(','))
-        _, _, handler = line.partition('):')
-        bindings[key] = handler.strip().rstrip(',').strip()
-    return bindings
+    return registry_handler_names(_read(_PROVIDER_MODULES[provider]))
+
+
+def _provider_sources(provider: str) -> ProviderSources:
+    """One provider's derivation inputs as text; path resolution stays local."""
+    return ProviderSources(
+        registry_text=_read(_PROVIDER_MODULES[provider]),
+        handler_texts=tuple(_read(path) for path in _PROVIDER_HANDLER_SOURCES[provider]),
+    )
 
 
 def _merge_shaped_registry_keys(provider: str) -> list[tuple[str, ...]]:
-    """The merge-shaped subset of a provider's registry — derived, not listed."""
-    return [
-        key
-        for key in _registry_keys(provider)
-        if len(key) == 2 and key[0] == 'pr' and key[1] in _MERGE_SHAPED_VERBS
-    ]
+    """The merge-shaped subset of a provider's registry — derived by BEHAVIOUR.
+
+    Membership comes from :func:`derive_population`, which classifies a registry
+    key as merge-shaped when the handler it binds reaches the platform
+    queue/train surface in its own executable code.
+
+    It is deliberately NOT filtered through ``MERGE_SHAPED_VERBS``. The shared
+    roster names that constant a MIRROR of this derivation and forbids narrowing
+    a derived set through it: filtering the registry by a hand-listed vocabulary
+    is precisely what made "population-complete" mean "complete over four
+    pre-named verbs", dropping a merge-shaped handler registered under any other
+    name before any guard saw it. The bidirectional mirror-vs-behaviour drift
+    check lives in the sibling ``test_merge_shaped_offrouting_refusal`` suite,
+    which is where the vocabulary is legitimately read.
+
+    ``unresolved`` entries are NOT folded in here: a handler whose source could
+    not be located is a member this derivation cannot speak about, and the
+    sibling suite asserts that bucket is empty rather than silently absorbing it.
+    """
+    population = derive_population({provider: _provider_sources(provider)})
+    return [('pr', verb) for _provider, verb, _symbol in population.members]
 
 
 _REGISTRY_SIZES: dict[str, int] = {p: len(_registry_keys(p)) for p in _PROVIDER_MODULES}
@@ -523,75 +525,25 @@ _MERGE_SHAPED: dict[str, list[tuple[str, ...]]] = {
 }
 _MERGE_SHAPED_TOTAL: int = sum(len(v) for v in _MERGE_SHAPED.values())
 
+#: Published on EVERY run — passing included — by the root conftest's
+#: ``pytest_report_header``. Every other size in this module travels only in a
+#: FAILURE message, which is silent on exactly the run a shrunken population is
+#: most likely to slip through: the green one.
+GUARD_POPULATION_LABEL = 'merge-shaped registry members'
+GUARD_POPULATION_SIZE = _MERGE_SHAPED_TOTAL
+
 
 def _handler_source(provider: str, symbol: str) -> str:
-    """The source text of one handler function, across the provider's modules."""
-    for path in _PROVIDER_HANDLER_SOURCES[provider]:
-        text = _read(path)
-        marker = f'\ndef {symbol}('
-        start = text.find(marker)
-        if start == -1:
-            continue
-        body_start = start + 1
-        nxt = _DEF_RE.search(text, body_start + 1)
-        end = nxt.start() if nxt else len(text)
-        return text[body_start:end]
-    return ''
+    """The source text of one handler function, across the provider's modules.
 
-
-def _line_starts(source: str) -> list[int]:
-    """Absolute character offset at which each 1-based source line begins.
-
-    Lets a ``(row, col)`` token position be converted back to the absolute
-    offset the ordering assertion compares on, so every position this module
-    reports is an offset into the ORIGINAL handler text.
+    Delegates the LOOKUP to the shared roster, which resolves a bound symbol to
+    its own top-level statement by parsing rather than by slicing to the next
+    ``def``. A slice over-reads — it swallows every module-level constant sitting
+    between two functions, crediting a handler with vocabulary it never
+    references — and it cannot see a factory-bound handler at all, since those
+    have no ``def`` line. Path resolution stays here.
     """
-    starts = [0, 0]
-    position = 0
-    for line in source.splitlines(keepends=True):
-        position += len(line)
-        starts.append(position)
-    return starts
-
-
-def _tokens(source: str) -> list[tokenize.TokenInfo]:
-    """Tokenize one handler fragment.
-
-    Deliberately un-guarded: a fragment that cannot be tokenized is a handler
-    this module cannot reason about, and a loud error is the honest outcome —
-    swallowing it would silently downgrade every derivation below to "no hits
-    found", which is indistinguishable from a passing check.
-    """
-    return list(tokenize.generate_tokens(io.StringIO(source).readline))
-
-
-def _first_queue_symbol(source: str, own_symbol: str) -> tuple[int, str] | None:
-    """First ``(offset, identifier)`` in ``source`` naming the queue/train surface.
-
-    The predicate behind assertion (2b), and it is deliberately narrow in two
-    ways — each closing a way the check could pass without the property holding:
-
-    * **Identifiers only.** Docstrings, comments and string literals are excluded
-      by construction, because only ``NAME`` tokens are considered. A handler
-      that merely *describes* the queue in prose therefore yields ``None``. This
-      is the load-bearing narrowing: matching raw text made both arms of (2b)
-      satisfiable by the handler docstrings, and made the ordering arm
-      structurally incapable of failing.
-    * **Not the handler's own name.** ``cmd_pr_merge_queue`` contains the
-      vocabulary in its own identifier, so an unfiltered scan would match the
-      ``def`` line of exactly the two verbs whose guard matters most — again at
-      an offset preceding every literal, so again unfalsifiable.
-
-    Returns ``None`` when the handler references no queue/train symbol.
-    """
-    starts = _line_starts(source)
-    for token in _tokens(source):
-        if token.type != tokenize.NAME or token.string == own_symbol:
-            continue
-        if _QUEUE_VOCAB_RE.search(token.string):
-            row, col = token.start
-            return starts[row] + col, token.string
-    return None
+    return handler_source(symbol, tuple(_read(path) for path in _PROVIDER_HANDLER_SOURCES[provider]))
 
 
 def _code_without_prose(source: str) -> str:
@@ -612,11 +564,11 @@ def _code_without_prose(source: str) -> str:
     a statement-opening string and gets blanked, erasing the very literal this
     view exists to locate.
     """
-    starts = _line_starts(source)
+    starts = line_starts(source)
     chars = list(source)
     statement_start = True
     depth = 0
-    for token in _tokens(source):
+    for token in source_tokens(source):
         is_docstring = token.type == tokenize.STRING and statement_start and depth == 0
         if is_docstring or token.type == tokenize.COMMENT:
             begin = starts[token.start[0]] + token.start[1]
@@ -640,11 +592,23 @@ def _code_without_prose(source: str) -> str:
 
 
 def test_registry_populations_are_published_and_plausible():
-    """(2a) All three derived sizes are published, and none is vacuous.
+    """(2a) The derived sizes are published, and none is vacuous.
 
     A parity check that ran against an empty or half-read registry would report
-    "every member passes" while covering nothing. Publishing the three sizes in
-    the failure message makes that state self-evident from the test output.
+    "every member passes" while covering nothing. Publishing the sizes in the
+    failure message makes that state self-evident from the test output; the
+    merge-shaped total is additionally published on EVERY run — passing included
+    — through ``GUARD_POPULATION_SIZE`` and the root conftest's
+    ``pytest_report_header``.
+
+    **No total is pinned for the merge-shaped subset, and that is a consequence
+    of the derivation.** Membership is decided by BEHAVIOUR — whether a handler
+    reaches the queue/train surface — not by a verb name, so an unlisted
+    merge-shaped verb makes the total LARGER and an equality pin would fail on
+    exactly the correct outcome. The collapse this arm must catch is a provider
+    whose registry or handler sources stopped resolving, and per-provider
+    non-emptiness catches that where a total cannot: a halved population is
+    still a population.
     """
     assert _REGISTRY_SIZES['github'] >= 30, (
         f'GitHub registry size = {_REGISTRY_SIZES["github"]} — implausibly small for a '
@@ -655,13 +619,15 @@ def test_registry_populations_are_published_and_plausible():
         f'GitLab registry size = {_REGISTRY_SIZES["gitlab"]} — implausibly small; see the '
         'GitHub message above.'
     )
-    assert _MERGE_SHAPED_TOTAL == 8, (
-        f'Derived merge-shaped subset size = {_MERGE_SHAPED_TOTAL}, expected 8 '
-        f'(4 verbs x 2 providers). Derived registry sizes: github={_REGISTRY_SIZES["github"]}, '
-        f'gitlab={_REGISTRY_SIZES["gitlab"]}. Per provider the merge-shaped members are '
-        f'{ {p: [k[1] for k in v] for p, v in _MERGE_SHAPED.items()} }. A subset smaller than '
-        'the closed vocabulary means a verb is registered under a name this derivation does '
-        'not see — which is exactly how cmd_pr_auto_merge was missed twice.'
+    by_provider = {p: sorted(k[1] for k in v) for p, v in _MERGE_SHAPED.items()}
+    empty = sorted(p for p, verbs in by_provider.items() if not verbs)
+    assert not empty, (
+        f'{empty} contributes ZERO merge-shaped members while the derived total is '
+        f'{_MERGE_SHAPED_TOTAL} (per provider: {by_provider}). Derived registry sizes: '
+        f'github={_REGISTRY_SIZES["github"]}, gitlab={_REGISTRY_SIZES["gitlab"]}. Both '
+        'providers register the merge-shaped surface, so an empty side means that provider '
+        'stopped resolving and every parametrized arm below silently stopped covering it. A '
+        'total-only check cannot see this: a halved population is still a population.'
     )
 
 
@@ -681,7 +647,7 @@ def test_every_merge_shaped_verb_reaches_its_platform_queue_guard(provider, key)
     asserting success would report a disposition it had not yet established.
 
     **Bound to the artifact, not to prose.** Both arms read
-    :func:`_first_queue_symbol` / :func:`_code_without_prose`, which see only
+    ``first_queue_symbol`` / :func:`_code_without_prose`, which see only
     identifiers and only non-documentation text. Matching the raw handler source
     instead would satisfy both arms from the handler's own docstring — every
     merge-shaped handler documents the surface it guards — and the ordering arm
@@ -704,7 +670,7 @@ def test_every_merge_shaped_verb_reaches_its_platform_queue_guard(provider, key)
         'cannot be read is a member this parity check silently skips.'
     )
 
-    hit = _first_queue_symbol(source, handler)
+    hit = first_queue_symbol(source, handler)
     assert hit is not None, (
         f'{provider}:{handler} ({key[0]} {key[1]}) references no platform queue/train SYMBOL '
         'in its executable code. Every merge-shaped verb must establish the platform state '
@@ -820,21 +786,21 @@ def test_queue_guard_predicate_is_falsifiable():
        it BEFORE the success literal, so arm 2 is a real discrimination and not
        a predicate that rejects everything.
     """
-    raw_hit = _QUEUE_VOCAB_RE.search(_PROSE_ONLY_HANDLER)
+    raw_hit = QUEUE_VOCAB_RE.search(_PROSE_ONLY_HANDLER)
     assert raw_hit is not None, (
         'The prose-only fixture no longer mentions the queue/train vocabulary in its '
         'documentation, so it cannot demonstrate the raw-text failure mode and arm 2 below '
         'would prove nothing. Restore the docstring/comment mentions.'
     )
 
-    assert _first_queue_symbol(_PROSE_ONLY_HANDLER, 'cmd_pr_prose_only') is None, (
+    assert first_queue_symbol(_PROSE_ONLY_HANDLER, 'cmd_pr_prose_only') is None, (
         'The queue-guard predicate reported a hit for a handler that references the '
         'platform surface ONLY in its docstring and comments. It is therefore satisfiable '
         'by prose and assertion (2b) is vacuous — every merge-shaped handler documents the '
         'queue it guards, so the check would pass whether or not the guard exists.'
     )
 
-    guarded = _first_queue_symbol(_GUARDED_HANDLER, 'cmd_pr_guarded')
+    guarded = first_queue_symbol(_GUARDED_HANDLER, 'cmd_pr_guarded')
     assert guarded is not None, (
         'The queue-guard predicate missed a real, executable guard '
         '(`_refuse_on_required_merge_queue`). A predicate that rejects everything is no '
@@ -1143,3 +1109,260 @@ def test_queue_landing_gate_precedes_and_guards_the_branch_prune():
         'Without the guard the prune runs whether or not the queue merge landed, which is '
         'the destructive outcome the gate exists to prevent.'
     )
+
+
+# =============================================================================
+# (6) The CI `overall_status` vocabulary the positive-shape requirement names is
+#     PARITY-GUARDED against both provider definitions, never merely transcribed
+# =============================================================================
+#
+# The CI-gate section's "Positive shape requirement" admits a snapshot only when
+# its `overall_status` is drawn from the handler's vocabulary, and names the four
+# values inline. A hand-copied population standing in for an authoritative
+# definition goes stale SILENTLY IN BOTH DIRECTIONS: a handler that gains a value
+# makes the gate reject a valid snapshot, one that loses a value makes it admit an
+# unsupported one — and the gate's whole purpose is to STOP on a shape it cannot
+# vouch for, so a stale list is a false verdict either way.
+#
+# The definition is NOT singular. `_derive_overall_status` exists once per
+# provider, and the definition population below is DERIVED by scanning the bundle
+# tree rather than named — so a third provider added later joins the parity check
+# on arrival instead of drifting outside a two-entry list nobody revisits.
+#
+# NEITHER IS THE DOCUMENTED SIDE. This guard originally bound one document — the
+# branch-cleanup positive-shape requirement — and stayed green while the CI
+# abstraction's own API contract went on declaring a THREE-value set for the same
+# field, in two places, omitting `none`. A parity guard that covers one statement
+# of a closed set does not protect the set; it protects that statement, and every
+# unguarded sibling is free to drift exactly as the guarded one no longer can. So
+# the doc side below is a POPULATION of sites, each with its own extractor,
+# because the sites state the set in different forms (a prose sentence, a TOON
+# alternation, a bullet block) and a single regex silently covers only the form it
+# was written for.
+
+#: The branch-cleanup sentence that names the vocabulary, and the backticked
+#: tokens inside it. Line-scoped and non-greedy: a document-wide match would sweep
+#: in every unrelated backticked token and inflate the doc side until the equality
+#: could not fail.
+_VOCAB_SENTENCE_RE = re.compile(
+    r"an `overall_status` drawn from the handler's vocabulary\s*[—-]\s*(`.+?)\.",
+    re.MULTILINE,
+)
+
+#: The CI API contract document, which states the same set twice in two forms.
+_CI_API_CONTRACT: Path = _SKILLS / 'tools-integration-ci' / 'standards' / 'api-contract.md'
+
+#: The `checks status` response-schema line. Requires an ALTERNATION (two or more
+#: `|`-joined values), so a single-valued illustrative `overall_status: pending`
+#: elsewhere in the document is not mistaken for a declaration of the set.
+_API_TOON_ALTERNATION_RE = re.compile(
+    r'^overall_status: ([a-z_]+(?:\|[a-z_]+)+)$', re.MULTILINE
+)
+
+#: The `Overall Status Logic` bullet block in the same document — one `- \`value\`:`
+#: row per member.
+_API_LOGIC_BLOCK_RE = re.compile(
+    r'\*\*Overall Status Logic\*\*:\n((?:- `[a-z_]+`:[^\n]*\n)+)'
+)
+
+#: The function whose returned literals ARE the vocabulary.
+_DERIVE_FN_NAME = '_derive_overall_status'
+
+
+def _vocabulary_definition_modules() -> list[Path]:
+    """Every bundle module that DEFINES ``_derive_overall_status``.
+
+    Derived by scanning, never listed. CodeRabbit's report of this finding named
+    one provider as "the authoritative definition"; there are two, and a guard
+    bound to a hand-written pair would repeat the same mistake one level up.
+    """
+    needle = f'def {_DERIVE_FN_NAME}('
+    return sorted(
+        path
+        for path in _SKILLS.rglob('*.py')
+        if needle in path.read_text(encoding='utf-8')
+    )
+
+
+def _returned_status_literals(path: Path) -> frozenset[str]:
+    """The set of first-tuple-element string literals ``_derive_overall_status`` returns.
+
+    Bound to the EXECUTABLE code via ``ast``, not to the source text: the
+    docstring of both definitions also spells the four values out, so a text scan
+    would be satisfied by prose a gutted function could keep verbatim.
+    """
+    tree = ast.parse(path.read_text(encoding='utf-8'))
+    values: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef) or node.name != _DERIVE_FN_NAME:
+            continue
+        for ret in (n for n in ast.walk(node) if isinstance(n, ast.Return)):
+            value = ret.value
+            if isinstance(value, ast.Tuple) and value.elts:
+                value = value.elts[0]
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                values.add(value.value)
+    return frozenset(values)
+
+
+_VOCAB_DEFINITION_MODULES = _vocabulary_definition_modules()
+
+# Non-emptiness asserted at IMPORT, before any parametrize sweeps it: an empty
+# population is a pytest SKIP, not a failure, and a parity check over zero
+# definitions is vacuously green.
+assert _VOCAB_DEFINITION_MODULES, (
+    f'no module under {_SKILLS} defines {_DERIVE_FN_NAME} — the vocabulary-parity '
+    'population is vacuous and every assertion below would pass over an empty set'
+)
+
+
+def _branch_cleanup_vocabulary() -> frozenset[str]:
+    """The values the branch-cleanup positive-shape requirement names."""
+    text = _BRANCH_CLEANUP.read_text(encoding='utf-8')
+    match = _VOCAB_SENTENCE_RE.search(text)
+    assert match is not None, (
+        f'{_BRANCH_CLEANUP.name} no longer states the `overall_status` vocabulary in the '
+        'form this guard parses. The positive-shape requirement is only as good as the '
+        'population it admits, so re-point this regex at the new wording rather than '
+        'dropping the parity check.'
+    )
+    return frozenset(_BACKTICKED_RE.findall(match.group(1)))
+
+
+def _api_contract_schema_vocabulary() -> frozenset[str]:
+    """The values the `checks status` response schema declares as an alternation."""
+    text = _CI_API_CONTRACT.read_text(encoding='utf-8')
+    matches = _API_TOON_ALTERNATION_RE.findall(text)
+    assert len(matches) == 1, (
+        f'{_CI_API_CONTRACT.name} carries {len(matches)} `overall_status` alternation '
+        f'line(s) ({matches}), expected exactly one. Zero means the response schema no '
+        'longer declares the set in the form this guard parses — re-point the regex '
+        'rather than dropping the site, because an unparsed site is an unguarded one. '
+        'More than one means the document states the set in two schema blocks that this '
+        'extractor would silently union.'
+    )
+    return frozenset(matches[0].split('|'))
+
+
+def _api_contract_logic_vocabulary() -> frozenset[str]:
+    """The values the `Overall Status Logic` bullet block enumerates."""
+    text = _CI_API_CONTRACT.read_text(encoding='utf-8')
+    match = _API_LOGIC_BLOCK_RE.search(text)
+    assert match is not None, (
+        f'{_CI_API_CONTRACT.name} no longer carries an `Overall Status Logic` bullet '
+        'block in the form this guard parses. Re-point the regex rather than dropping '
+        'the site — this block is what a consumer builds its branch table from.'
+    )
+    return frozenset(_BACKTICKED_RE.findall(match.group(1)))
+
+
+#: Every DOCUMENTED statement of the `overall_status` closed set, each with the
+#: extractor its own form needs. Keyed by a human-readable site label so a failure
+#: names WHICH statement drifted rather than only which file.
+#:
+#: This is the population the guard's coverage claim is made over. It is
+#: hand-listed, and that is a real residual limit rather than an oversight: a site
+#: is a passage inside a document, not a file, so no scan enumerates them —
+#: which is precisely why `test_the_documented_sites_are_plural` publishes the
+#: size, so a shrinking population is visible instead of silently narrowing the
+#: guard back to the single-site shape that let a sibling drift.
+_DOC_VOCABULARY_SITES: dict[str, Callable[[], frozenset[str]]] = {
+    f'{_BRANCH_CLEANUP.name} § positive-shape requirement': _branch_cleanup_vocabulary,
+    f'{_CI_API_CONTRACT.name} § checks status response schema': (
+        _api_contract_schema_vocabulary
+    ),
+    f'{_CI_API_CONTRACT.name} § Overall Status Logic': _api_contract_logic_vocabulary,
+}
+
+
+class TestOverallStatusVocabularyParity:
+    """EVERY documented `overall_status` list equals what EVERY provider returns.
+
+    Two independently derived populations — the documented sites in
+    :data:`_DOC_VOCABULARY_SITES`, and the ``_derive_overall_status``
+    returned-literal set of each definition module — with every cross pair
+    asserted equal. A handler change therefore fails the build here instead of
+    silently invalidating the CI gate; a provider drifting away from its sibling
+    fails too; and so does a document that states the set and falls behind, which
+    is the failure the single-site shape of this guard could not see.
+    """
+
+    def test_the_definition_population_is_published_and_plural(self):
+        """The scan found the definitions, and found more than one of them.
+
+        Published as a size so a shrinking scan is visible on the failure message.
+        The plurality assertion is the finding's own correction made structural:
+        the reported "one authoritative definition" was wrong, and a guard that
+        could pass while seeing only one provider would re-admit that error.
+        """
+        assert len(_VOCAB_DEFINITION_MODULES) >= 2, (
+            f'the scan found only {len(_VOCAB_DEFINITION_MODULES)} definition(s) of '
+            f'{_DERIVE_FN_NAME} '
+            f'({[p.name for p in _VOCAB_DEFINITION_MODULES]}) — cross-provider parity '
+            'cannot be demonstrated from a single side, so either a provider module '
+            'moved or the scan regressed'
+        )
+
+    def test_the_documented_sites_are_plural(self):
+        """More than one document states this set, and the guard covers them all.
+
+        Published as a size because the site population is the one side of this
+        guard that no scan derives (a site is a passage, not a file). The single
+        assertion that matters is plurality: a guard narrowed back to one site
+        would pass while every other statement of the set drifted, which is the
+        exact state this section was extended to end.
+        """
+        assert len(_DOC_VOCABULARY_SITES) >= 2, (
+            f'only {len(_DOC_VOCABULARY_SITES)} documented site '
+            f'({sorted(_DOC_VOCABULARY_SITES)}) is covered. A one-site parity guard '
+            'protects that statement, not the closed set: the CI API contract declared a '
+            'three-value set for this field, in two places, for as long as this guard read '
+            'branch-cleanup.md alone. Add the site back rather than shrinking the coverage.'
+        )
+
+    @pytest.mark.parametrize('site', sorted(_DOC_VOCABULARY_SITES))
+    def test_each_documented_site_is_non_empty(self, site):
+        """Each doc side is real content, not an empty match the equality accepts."""
+        doc_vocab = _DOC_VOCABULARY_SITES[site]()
+        assert doc_vocab, (
+            f'{site} matched its extractor but yielded no values — an empty doc side '
+            'would compare equal to an empty derived side and the parity check would be '
+            'vacuous'
+        )
+
+    @pytest.mark.parametrize('site', sorted(_DOC_VOCABULARY_SITES))
+    @pytest.mark.parametrize(
+        'module', _VOCAB_DEFINITION_MODULES, ids=lambda p: p.parent.parent.name
+    )
+    def test_definition_vocabulary_matches_each_documented_site(self, module, site):
+        """Every provider's returned-literal set equals every documented statement."""
+        derived = _returned_status_literals(module)
+        assert derived, (
+            f'{module} defines {_DERIVE_FN_NAME} but no string literal was read off its '
+            'return statements — the ast derivation regressed, and an empty derived side '
+            'would make this comparison vacuous'
+        )
+        doc_vocab = _DOC_VOCABULARY_SITES[site]()
+        assert derived == doc_vocab, (
+            f'{module.name}:{_DERIVE_FN_NAME} returns {sorted(derived)} but {site} admits '
+            f'{sorted(doc_vocab)}. A consumer reading that site would '
+            f'{"reject a valid" if derived - doc_vocab else "admit an unsupported"} '
+            'value. Update every side together — the handler is authoritative.'
+        )
+
+    def test_the_providers_agree_with_each_other(self):
+        """Cross-provider parity, asserted directly rather than inferred via the doc.
+
+        Each provider is compared to the doc above, so agreement between them
+        follows — but only while the doc assertion holds. Asserting it directly is
+        what keeps the cross-provider claim standing on its own evidence, and names
+        the divergence per-provider when it breaks.
+        """
+        by_module = {p: _returned_status_literals(p) for p in _VOCAB_DEFINITION_MODULES}
+        distinct = set(by_module.values())
+        assert len(distinct) == 1, (
+            'the provider definitions of '
+            f'{_DERIVE_FN_NAME} disagree: '
+            f'{ {p.name: sorted(v) for p, v in by_module.items()} }. One provider gained or '
+            'lost a status the other did not, so a caller cannot rely on a single vocabulary.'
+        )

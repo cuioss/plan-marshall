@@ -69,6 +69,99 @@ MERGE_QUEUE_ELIGIBLE_STATES = frozenset(
 )
 
 # ---------------------------------------------------------------------------
+# `pr view` failure-cause vocabulary (shared across providers)
+# ---------------------------------------------------------------------------
+# `view_pr_data` returns ONE error envelope for three materially different
+# causes — an auth failure, a non-zero provider call, and an unparseable
+# response — and its human `error` message is hard-coded to the no-PR wording on
+# the middle arm. A consumer reading "not success" as "no PR exists" therefore
+# treats an auth or transient failure as an absent PR, and `create-pr` acts on
+# exactly that reading: a transient failure on a branch that ALREADY has an open
+# PR opens a DUPLICATE.
+#
+# `error_cause` is the machine-readable discriminator. It is carried ADDITIVELY:
+# the `error` message, the `status` value, and every exit code are unchanged, so
+# no existing consumer's behaviour moves until it opts in by reading the field.
+PR_VIEW_CAUSE_AUTH_FAILED = 'auth_failed'
+PR_VIEW_CAUSE_NO_PR = 'no_pr_found'
+PR_VIEW_CAUSE_PROVIDER_FAILED = 'provider_call_failed'
+PR_VIEW_CAUSE_MALFORMED_RESPONSE = 'malformed_response'
+
+PR_VIEW_CAUSES = frozenset(
+    {
+        PR_VIEW_CAUSE_AUTH_FAILED,
+        PR_VIEW_CAUSE_NO_PR,
+        PR_VIEW_CAUSE_PROVIDER_FAILED,
+        PR_VIEW_CAUSE_MALFORMED_RESPONSE,
+    }
+)
+
+#: The ONE cause on which a caller may conclude the PR genuinely does not exist
+#: and act on that absence (create one). Every other cause leaves the question
+#: UNANSWERED, which is not the same as answered "no".
+PR_VIEW_CAUSE_SAFE_TO_CREATE = PR_VIEW_CAUSE_NO_PR
+
+#: Provider stderr signatures that POSITIVELY identify "this branch has no
+#: PR/MR" — `gh pr view` and `glab mr view` respectively. Substring-matched
+#: case-insensitively because both CLIs interpolate the branch name into the
+#: sentence.
+_NO_PR_STDERR_SIGNATURES = (
+    'no pull requests found',
+    'no open pull requests found',
+    'no merge requests found',
+    'no open merge requests found',
+)
+
+
+def classify_pr_view_failure(stderr: str) -> str:
+    """Classify a non-zero ``pr view`` exit as a genuine absence or a real failure.
+
+    FAIL-CLOSED by construction: only a stderr that positively matches a
+    provider's own "no pull/merge requests found" signature resolves to
+    :data:`PR_VIEW_CAUSE_NO_PR`. Anything unrecognised — a network error, a
+    permission error, a rate limit, an empty stderr — resolves to
+    :data:`PR_VIEW_CAUSE_PROVIDER_FAILED`.
+
+    The polarity is the whole point: concluding "no PR exists" from a failure
+    nobody could read is what opens the duplicate. An unreadable failure must
+    leave the question unanswered, never answer it in the direction that acts.
+    """
+    haystack = (stderr or '').lower()
+    if any(signature in haystack for signature in _NO_PR_STDERR_SIGNATURES):
+        return PR_VIEW_CAUSE_NO_PR
+    return PR_VIEW_CAUSE_PROVIDER_FAILED
+
+# ---------------------------------------------------------------------------
+# Auto-merge routing note (advisory, shared across providers)
+# ---------------------------------------------------------------------------
+# `phase-6-finalize/standards/branch-cleanup.md` § "Merge routing
+# (`use_merge_queue`)" declares a CLOSED dispatch set: the step reaches only
+# `ci pr safe-merge` (use_merge_queue: false) and `ci pr merge-queue`
+# (use_merge_queue: true). `ci pr merge` and `ci pr auto-merge` are unreachable
+# from it.
+#
+# `pr auto-merge` is nonetheless the ONE sanctioned exception among the
+# merge-shaped verbs, because it SELF-ROUTES: against a configured queue/train
+# the platform enqueues rather than merging immediately, so it is never in the
+# close-unmerged unsafe state and a blanket refusal would break the legitimate
+# enqueue-via-auto-merge path. The handling is therefore probe-and-REPORT.
+#
+# This note is the report. It is ADVISORY and rides on a SUCCEEDING call: it
+# records that a verb the documented routing does not dispatch was nonetheless
+# dispatched against a queued target, so the divergence is observable in the
+# response rather than only reconstructible from the routing table. It is
+# single-sourced here because both providers publish the identical three fields
+# — the route is a property of the documented routing table, not of a provider.
+AUTO_MERGE_ROUTING_NOTE: dict[str, str] = {
+    # The verb branch-cleanup.md's routing table dispatches for this key value.
+    'documented_route': 'ci pr merge-queue',
+    # The routing-table branch a configured queue/train corresponds to.
+    'expected_branch': 'use_merge_queue: true',
+    # The verb that actually reached the platform.
+    'dispatched_verb': 'ci pr auto-merge',
+}
+
+# ---------------------------------------------------------------------------
 # Body store (path-allocate pattern for PR/issue/comment bodies)
 # ---------------------------------------------------------------------------
 

@@ -956,6 +956,178 @@ def pytest_collection_modifyitems(items):
             item.add_marker('touches_real_state')
 
 
+# =============================================================================
+# Routing-guard population sizes, published on every run
+# =============================================================================
+
+#: The population-derived routing guards, as
+#: ``(label, path-relative-to-TEST_ROOT)``. Each module publishes its own
+#: ``GUARD_POPULATION_LABEL`` / ``GUARD_POPULATION_SIZE`` pair; this header reads
+#: those rather than re-deriving anything, so the number reported is the number
+#: the guard actually swept and the two cannot drift apart.
+#:
+#: No count is claimed for this tuple, and membership is NOT read from it. The
+#: tuple supplies ORDER and the short names used in the UNAVAILABLE branch;
+#: which modules are reported is derived from the tree by
+#: :func:`_discover_guard_publishers`. A guard added without a row here is
+#: therefore still reported — as an ``UNLISTED`` entry — rather than being
+#: silent on exactly the run its population matters on, the passing one.
+_ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
+    ('offrouting', 'plan-marshall/tools-integration-ci/test_merge_shaped_offrouting_refusal.py'),
+    ('branch-cleanup', 'plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing.py'),
+    ('review-merge', 'plan-marshall/phase-6-finalize/test_review_merge_invocation_contract.py'),
+    (
+        'envelope-plan-id',
+        'plan-marshall/tools-integration-ci/test_envelope_contract_plan_id_placement.py',
+    ),
+    (
+        'api-contract-parity',
+        'plan-marshall/workflow-integration-github/test_pr_landing_state.py',
+    ),
+)
+
+
+#: The module-level constant a routing-guard module publishes to opt into the
+#: population header. Matched at the START of a line so a module that merely
+#: MENTIONS the name — this file included — is not counted as a publisher.
+_GUARD_PUBLISHER_MARKER = 'GUARD_POPULATION_LABEL'
+
+
+def _discover_guard_publishers() -> list[str]:
+    """Every ``TEST_ROOT``-relative test module that publishes a guard population.
+
+    Derived from the tree, never transcribed. This is what closes the membership
+    gap ``_ROUTING_GUARD_MODULES`` cannot close on its own: a hand-listed tuple
+    omits a live publisher silently, so a green run is indistinguishable from one
+    whose guard vanished from the report.
+
+    Text-matched rather than imported: this runs before collection, and importing
+    every test module in the tree to read one constant would be both far more
+    expensive and a source of import side effects. Detection only decides what to
+    REPORT; the size itself is still read from the loaded module.
+    """
+    found: list[str] = []
+    for path in sorted(TEST_ROOT.rglob('test_*.py')):
+        try:
+            text = path.read_text(encoding='utf-8')
+        except OSError:
+            continue
+        if any(line.startswith(_GUARD_PUBLISHER_MARKER) for line in text.splitlines()):
+            found.append(path.relative_to(TEST_ROOT).as_posix())
+    return found
+
+
+def _guard_roster() -> tuple[list[tuple[str, str]], list[str]]:
+    """The modules to report, in tuple order, plus any roster discrepancies.
+
+    Returns ``(entries, discrepancies)`` where ``entries`` is
+    ``(short_name, relative_path)`` — the ``_ROUTING_GUARD_MODULES`` rows first,
+    in their declared order, followed by every discovered publisher that has no
+    row. ``discrepancies`` names both failure directions: a publisher with no
+    row, and a row whose module no longer publishes.
+    """
+    listed = list(_ROUTING_GUARD_MODULES)
+    listed_paths = {relative for _short_name, relative in listed}
+    discovered = _discover_guard_publishers()
+
+    unlisted = [relative for relative in discovered if relative not in listed_paths]
+    no_longer_publishing = [
+        relative for relative in listed_paths if relative not in discovered
+    ]
+
+    entries = listed + [
+        (f'UNLISTED:{relative.rsplit("/", 1)[-1].removesuffix(".py")}', relative)
+        for relative in unlisted
+    ]
+
+    discrepancies: list[str] = []
+    if unlisted:
+        discrepancies.append(
+            f'{len(unlisted)} publisher(s) with no _ROUTING_GUARD_MODULES row: '
+            + ', '.join(unlisted)
+        )
+    if no_longer_publishing:
+        discrepancies.append(
+            f'{len(no_longer_publishing)} row(s) whose module no longer publishes '
+            f'{_GUARD_PUBLISHER_MARKER}: ' + ', '.join(sorted(no_longer_publishing))
+        )
+    return entries, discrepancies
+
+
+def _load_never_registering(path: Path):
+    """Execute ``path`` as a module that is NEVER published in ``sys.modules``.
+
+    A deliberately different primitive from :func:`_exec_module_from_path`, not a
+    copy of it. That one's contract is "load, and register unless told otherwise",
+    which is why the loader-contract guard treats every helper reaching it as one
+    whose registrations the collision guard must account for. This one cannot
+    register under any argument, so it has nothing for that guard to account for —
+    and the distinction is real rather than a spelling: the caller here reads one
+    constant off a module pytest is about to import under that same name, and a
+    registration would leave a second copy published for collection to displace.
+
+    Nothing is cached. The only caller runs once per session per module.
+    """
+    import importlib.util
+
+    if not path.is_file():
+        raise FileNotFoundError(f'Module not found: {path}')
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f'Could not create import spec for {path}')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def pytest_report_header(config):
+    """Publish each routing guard's derived population size at session start.
+
+    Every one of these guards asserts over a population it DERIVES from the tree,
+    and each already publishes its size in its own failure messages. That leaves
+    the case those messages cannot reach: a run where the derivation quietly
+    shrank and every assertion over the smaller set still passed. A green run
+    reports nothing, so a population that halved looks exactly like one that did
+    not. Printing the sizes unconditionally makes the shrink visible in the
+    ordinary output of a passing run.
+
+    The sizes are READ from each module rather than recomputed here. A second
+    derivation in this file would be a second thing to keep in step, and it could
+    report a healthy number for a sweep that used a different one.
+
+    A module that cannot be loaded is reported as ``UNAVAILABLE`` with its error
+    rather than omitted or defaulted to zero: a missing number must not read as a
+    small one, and collection will surface the underlying failure properly a
+    moment later. Reporting it here — instead of raising — keeps a real test
+    failure from being reshaped into a session-startup error that names neither
+    the test nor the cause.
+
+    The load goes through :func:`_load_never_registering`, NOT through
+    :func:`_exec_module_from_path`. This hook runs before collection, so it
+    cannot read a module pytest has already imported, and it must not leave one
+    published under a name collection would then displace.
+    """
+    roster, discrepancies = _guard_roster()
+    entries: list[str] = []
+    for short_name, relative in roster:
+        try:
+            module = _load_never_registering(TEST_ROOT / relative)
+            label = module.GUARD_POPULATION_LABEL
+            size = module.GUARD_POPULATION_SIZE
+        except BaseException as exc:  # noqa: BLE001 — reported, never swallowed
+            entries.append(f'{short_name}: UNAVAILABLE ({type(exc).__name__}: {exc})')
+            continue
+        entries.append(f'{label}: {size}')
+    lines = ['routing-guard populations: ' + '; '.join(entries)]
+    if discrepancies:
+        # Reported, not raised: this hook runs before collection, and raising here
+        # reshapes a real roster defect into a session-startup error naming
+        # neither the test nor the cause. The line is unconditional when it fires,
+        # so the omission cannot pass unseen on a green run.
+        lines.append('routing-guard roster DRIFT: ' + '; '.join(discrepancies))
+    return lines
+
+
 #: Opt-in flag for the reference-platform ``skipped == 0`` gate. The gate is off
 #: by default so a developer's ``-k``-filtered or otherwise partial run is never
 #: failed by it.
