@@ -299,7 +299,9 @@ def cmd_sync_affected_files(args: argparse.Namespace) -> dict:
     if error:
         return {'plan_id': args.plan_id, **error}
 
-    read_recorded, read_added, error = _union_into(refs, _READ_INTENT_FILES_FIELD, read_intent)
+    # The recorded half is unused here: the read key publishes no ``unchanged_count``
+    # peer, so only the added paths and the post-union total are reported.
+    _, read_added, error = _union_into(refs, _READ_INTENT_FILES_FIELD, read_intent)
     if error:
         return {'plan_id': args.plan_id, **error}
 
