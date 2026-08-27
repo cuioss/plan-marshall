@@ -478,21 +478,33 @@ class TestWorktreeRemove:
         assert branch_idx is not None, 'branch ref must be deleted after worktree removal'
         assert branch_idx > worktree_idx, 'worktree must be removed before branch ref'
 
-    def test_remove_propagates_plan_resolution_failed(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """When manage-status cannot resolve the plan,
-        ``cmd_worktree_remove`` must surface ``plan_resolution_failed``
-        and never call ``git worktree remove``."""
-
+    @staticmethod
+    def _fail_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+        """Make the manage-status channel refuse, as it does for an archived plan."""
         import file_ops  # noqa: PLC0415
-
-        monkeypatch.setattr(git_workflow, 'main_checkout_root', lambda: tmp_path)
 
         def _raise(_plan_id):
             raise file_ops.WorktreeResolutionError('plan does not exist')
 
         monkeypatch.setattr(file_ops, '_query_worktree_path', _raise)
+
+    def test_remove_propagates_plan_resolution_failed_when_the_probe_misses(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Resolution fails AND the structural probe misses ⇒ the diagnosis survives.
+
+        The canonical worktree root is pinned to the fixture so the probe's verdict is
+        decided by what this test staged (nothing) rather than by whatever happens to
+        sit under the test runner's own checkout. With no worktree to reach, nothing
+        corroborates a target, so the resolver's own ``plan_resolution_failed`` must be
+        propagated verbatim and no git call may run.
+        """
+        worktrees_root = tmp_path / '.plan' / 'local' / 'worktrees'
+        worktrees_root.mkdir(parents=True)
+
+        monkeypatch.setattr(git_workflow, 'main_checkout_root', lambda: tmp_path)
+        monkeypatch.setattr(git_workflow, 'get_worktree_root', lambda: worktrees_root)
+        self._fail_resolution(monkeypatch)
 
         called = []
 
@@ -506,6 +518,55 @@ class TestWorktreeRemove:
         assert result['status'] == 'error'
         assert result['error'] == 'plan_resolution_failed'
         assert called == [], 'no git call must run after a resolution failure'
+
+    def test_remove_falls_back_to_the_structural_probe_when_it_hits(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Matched positive: resolution fails BUT the canonical slot holds a worktree.
+
+        Same failing resolution as the sibling above; the ONE thing that differs is
+        that the canonical ``get_worktree_root() / {plan_id}`` slot exists and carries
+        the ``.git`` link ``git worktree add`` plants. The removal must then proceed and
+        the payload must name the path taken, so an archived-plan recovery is
+        distinguishable from a routine removal.
+        """
+        worktrees_root = tmp_path / '.plan' / 'local' / 'worktrees'
+        worktree = worktrees_root / 'ghost'
+        worktree.mkdir(parents=True)
+        (worktree / '.git').write_text('gitdir: /nowhere\n')
+
+        # The move-back precondition is independent of the resolution path and still
+        # binds here; satisfying it is what leaves the probe as the only variable.
+        plan_dir = tmp_path / '.plan' / 'local' / 'plans' / 'ghost'
+        plan_dir.mkdir(parents=True)
+        (plan_dir / 'status.json').write_text('{}')
+
+        monkeypatch.setattr(git_workflow, 'main_checkout_root', lambda: tmp_path)
+        monkeypatch.setattr(git_workflow, 'get_worktree_root', lambda: worktrees_root)
+        self._fail_resolution(monkeypatch)
+        # No branch metadata is staged: the read is a soft signal, and stubbing the
+        # channel keeps it from shelling out to a real executor.
+        _stub_manage_status_call(monkeypatch, {})
+
+        called: list[list[str]] = []
+
+        def fake_run_git(args):
+            called.append(list(args))
+            if 'worktree' in args and 'remove' in args:
+                shutil.rmtree(worktree, ignore_errors=True)
+            return 0, '', ''
+
+        monkeypatch.setattr(git_workflow, 'run_git', fake_run_git)
+
+        result = cmd_worktree_remove(Namespace(plan_id='ghost', force=False))
+
+        assert result['status'] == 'success', result
+        assert result['action'] == 'removed'
+        assert result['resolution'] == 'structural_probe'
+        assert result['worktree_path'] == str(worktree)
+        assert any('worktree' in c and 'remove' in c for c in called), (
+            'the probe path must reach the real removal, not merely report success'
+        )
 
 
 # =============================================================================

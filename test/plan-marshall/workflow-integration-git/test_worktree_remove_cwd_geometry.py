@@ -69,12 +69,37 @@ predicate being forced.
 Every refusal asserts that the worktree-resident ``status.json`` is still on disk
 afterwards. The return code alone would not show that the file these guards exist to
 protect survived — which is the property under test.
+
+Archived-plan reachability (``TestArchivedPlanReachability``)
+-------------------------------------------------------------
+The same real-worktree fixture also carries the structural-probe pair, because that
+fallback is decided by the same two things this suite already stages for real: a
+worktree that genuinely exists at the canonical ``get_worktree_root() / {plan_id}``
+slot (with the ``.git`` link ``git worktree add`` plants, which the probe requires),
+and what the MAIN checkout does or does not hold for the plan. Only the manage-status
+seam is moved: it is made to FAIL, which is what an archived plan produces for real —
+``status.json`` is no longer under ``plans/`` where manage-status looks.
+
+The pair differs along ONE axis, whether main carries the ARCHIVED record:
+
+* archived record present on main → the probe reaches the worktree AND the widened
+  move-back predicate is satisfied, so the removal proceeds and reports
+  ``resolution: structural_probe``;
+* no record on main at all (the plan dir still resident in its worktree) → the probe
+  still reaches the worktree, and the removal is still refused with
+  ``plan_dir_not_moved_back``.
+
+The negative is the load-bearing half: restoring REACHABILITY must not become a
+BYPASS. A probe that reached the worktree and skipped the guard would pass the
+positive cell just as well.
 """
 
 from __future__ import annotations
 
 import subprocess
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from _resolve_project_dir_fixtures import patch_query_worktree_path
@@ -181,6 +206,27 @@ def _land_plan_dir_on_main(geometry: dict[str, Path]) -> None:
     (main_plan_dir / 'status.json').write_text('{"sentinel": "main"}\n')
 
 
+#: A FIXED archive date, deliberately not "today". ``manage-status archive`` writes the
+#: destination as ``{YYYY-MM-DD}-{plan_id}``, so pinning an arbitrary past date is what
+#: shows the guard matches the date SHAPE rather than a date it recomputed itself.
+_ARCHIVE_DATE = '2026-01-15'
+
+
+def _archive_plan_record_on_main(geometry: dict[str, Path]) -> Path:
+    """Put the ARCHIVED record on main, the state ``manage-status archive`` leaves.
+
+    Mirrors ``_cmd_lifecycle.cmd_archive``'s own destination construction —
+    ``{base}/archived-plans/{YYYY-MM-DD}-{plan_id}`` — rather than the bare
+    ``{plan_id}`` shape some prose spells, because the code is what the guard has to
+    agree with. No live ``plans/{plan_id}`` directory is created: an archived plan has
+    none, which is exactly why manage-status can no longer resolve its worktree.
+    """
+    archived = geometry['main_local'] / 'archived-plans' / f'{_ARCHIVE_DATE}-{_PLAN_ID}'
+    archived.mkdir(parents=True)
+    (archived / 'status.json').write_text('{"sentinel": "archived"}\n')
+    return archived
+
+
 def _worktree_status_json(geometry: dict[str, Path]) -> Path:
     return geometry['worktree'] / '.plan' / 'local' / 'plans' / _PLAN_ID / 'status.json'
 
@@ -188,6 +234,32 @@ def _worktree_status_json(geometry: dict[str, Path]) -> Path:
 def _remove(geometry: dict[str, Path], *, force: bool = False) -> dict:
     """Invoke ``worktree-remove`` with only the manage-status subprocess seam stubbed."""
     with patch_query_worktree_path(True, str(geometry['worktree'])):
+        return dict(git_workflow.cmd_worktree_remove(_NS_FORCE if force else _NS_PLAIN))
+
+
+@contextmanager
+def _manage_status_cannot_resolve():
+    """Make the manage-status channel REFUSE, as it does for an archived plan.
+
+    An archived plan's ``status.json`` no longer sits under ``.plan/local/plans/``,
+    so ``manage-status get-worktree-path`` cannot resolve it — the resolver raises and
+    ``_resolve_worktree_path_for_plan`` returns ``plan_resolution_failed``. This stands
+    in for that state at the one subprocess seam, leaving every filesystem resolver the
+    structural probe and the move-back guard use running for real.
+    """
+    import file_ops
+
+    def _raise(_plan_id: str):
+        raise file_ops.WorktreeResolutionError('status.json not found')
+
+    with patch('file_ops._query_worktree_path', new=_raise):
+        yield
+
+
+def _remove_unresolvable(geometry: dict[str, Path], *, force: bool = False) -> dict:
+    """Invoke ``worktree-remove`` with the manage-status channel refusing."""
+    del geometry  # The probe derives the target itself; nothing is handed to it.
+    with _manage_status_cannot_resolve():
         return dict(git_workflow.cmd_worktree_remove(_NS_FORCE if force else _NS_PLAIN))
 
 
@@ -359,3 +431,116 @@ class TestNeitherRefusalIsForceOverridable:
         assert result['status'] == 'success', result
         assert result['action'] == 'removed'
         assert not geometry['worktree'].exists()
+
+
+class TestArchivedPlanReachability:
+    """The structural-probe fallback restores REACHABILITY, never a bypass.
+
+    Every cell runs with the manage-status channel refusing — the archived-plan state —
+    so the probe is the only thing that can produce a target. The matched pair differs
+    in ONE thing: whether main carries the archived record the widened move-back
+    predicate accepts.
+    """
+
+    def test_an_archived_plan_is_removable_through_the_structural_probe(
+        self, geometry: dict[str, Path]
+    ) -> None:
+        """Positive: archived record on main, worktree present ⇒ removal proceeds.
+
+        Before the fallback existed the resolver's refusal ended the verb here, so the
+        worktree of every archived plan was unreachable — the exact tree an operator
+        needs to clean up once finalize has archived the record.
+        """
+        archived = _archive_plan_record_on_main(geometry)
+        assert not (geometry['main_local'] / 'plans' / _PLAN_ID).exists(), (
+            'The archived cell must carry NO live plan dir on main — otherwise the '
+            'live half of the predicate would decide the outcome and the archived '
+            'half would go unexercised.'
+        )
+
+        result = _remove_unresolvable(geometry)
+
+        assert result['status'] == 'success', result
+        assert result['action'] == 'removed'
+        assert result['resolution'] == 'structural_probe', (
+            'The payload must name the path taken so an operator can tell an '
+            f'archived-plan recovery from a routine removal; got {result!r}.'
+        )
+        assert result['worktree_path'] == str(geometry['worktree'])
+        assert not geometry['worktree'].exists(), (
+            'The positive cell must reach the real removal, not merely report success.'
+        )
+        assert (archived / 'status.json').is_file(), (
+            'The archived record lives on main and must be untouched by the removal.'
+        )
+
+    def test_a_plan_still_resident_in_its_worktree_is_still_refused(
+        self, geometry: dict[str, Path]
+    ) -> None:
+        """Negative control: the probe hits, and the guard still refuses.
+
+        The load-bearing half of the pair. The probe reaches the SAME worktree as the
+        positive cell — the only difference is that main holds no record of the plan,
+        live or archived, so its sole authoritative copy is still inside the tree the
+        removal would destroy. A fallback that reached the worktree and skipped the
+        guard would pass the positive cell just as well as the real one does.
+        """
+        assert not (geometry['main_local'] / 'plans' / _PLAN_ID).exists()
+        assert not (geometry['main_local'] / 'archived-plans').exists()
+
+        result = _remove_unresolvable(geometry)
+
+        _assert_refused(result, geometry, 'plan_dir_not_moved_back')
+
+    def test_the_probe_path_refusal_is_not_force_overridable(
+        self, geometry: dict[str, Path]
+    ) -> None:
+        """``--force`` buys no way past the guard on the probe path either.
+
+        Force-independence was established for the metadata resolution path; the probe
+        path reaches the same guard by a different route, and a route is exactly the
+        kind of thing a guard gets accidentally bypassed along.
+        """
+        result = _remove_unresolvable(geometry, force=True)
+
+        _assert_refused(result, geometry, 'plan_dir_not_moved_back')
+
+    def test_a_missed_probe_still_propagates_the_resolvers_own_diagnosis(
+        self, geometry: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Matched control for the probe itself: no worktree ⇒ nothing is invented.
+
+        With the canonical slot emptied the probe misses, so the resolver's own
+        ``plan_resolution_failed`` must survive verbatim rather than being replaced by
+        a worse-informed refusal — and no git call may run against a target the verb
+        could not resolve.
+        """
+        _archive_plan_record_on_main(geometry)
+        subprocess.run(
+            [
+                'git',
+                '-C',
+                str(geometry['main']),
+                'worktree',
+                'remove',
+                '--force',
+                str(geometry['worktree']),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        assert not geometry['worktree'].exists()
+
+        called: list[list[str]] = []
+
+        def trap_run_git(args):
+            called.append(list(args))
+            return 0, '', ''
+
+        monkeypatch.setattr(git_workflow, 'run_git', trap_run_git)
+
+        result = _remove_unresolvable(geometry)
+
+        assert result['status'] == 'error', result
+        assert result['error'] == 'plan_resolution_failed'
+        assert called == [], 'no git call may run after a resolution failure the probe missed'

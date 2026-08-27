@@ -83,6 +83,11 @@ from _executor_slot import executor_landed, worktree_executor_path
 # names the `path in tracked` comparison as the failure `-z` was adopted to end,
 # which is precisely the comparison scan_artifacts performs below.
 from _plan_state_exemption import _observe_z
+
+# The archived-plans directory name is shared state between the archiving verb
+# (manage-status) and this guard, so it is imported from the one constants
+# module both sides already read rather than re-spelled as a third literal.
+from constants import DIR_ARCHIVED
 from file_ops import (
     WorktreeResolutionError,
     get_executor_path,
@@ -1501,8 +1506,20 @@ def cmd_worktree_create(args):
     return payload
 
 
+#: Glob shape of the date prefix ``manage-status archive`` puts on an archived
+#: plan directory. DERIVED from the archiving code, not from prose:
+#: ``manage-status/_cmd_lifecycle.cmd_archive`` builds the destination name as
+#: ``f'{now_utc_iso()[:10]}-{plan_id}'`` under ``get_archive_dir()`` — i.e.
+#: ``{base}/archived-plans/YYYY-MM-DD-{plan_id}``. Because the name is
+#: date-PREFIXED, a literal ``archived-plans / plan_id`` join can never find it;
+#: the probe has to scan the directory. The glob is anchored to the exact
+#: ten-character date shape rather than a loose ``*-{plan_id}`` so an unrelated
+#: sibling whose name merely ENDS in the plan id cannot satisfy the guard.
+_ARCHIVE_DATE_GLOB = '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+
+
 def _plan_dir_on_main_checkout(plan_id: str) -> bool:
-    """Return True when the plan directory lives on the MAIN checkout.
+    """Return True when the plan's authoritative state lives on the MAIN checkout.
 
     The move-back guard in :func:`cmd_worktree_remove` asks a question the
     cwd-relative walk-up cannot answer: has the plan directory landed back on
@@ -1516,15 +1533,82 @@ def _plan_dir_on_main_checkout(plan_id: str) -> bool:
     through main regardless of the caller's cwd, so the guard is asked about
     the tree it actually protects.
 
+    **Two main-resident shapes satisfy it**, because the predicate's real
+    question is "has the sole authoritative copy of this plan's state left the
+    tree that is about to be destroyed?" — and a plan whose record finalize has
+    already ARCHIVED answers that exactly as well as a live one:
+
+    - ``{main}/.plan/local/plans/{plan_id}/status.json`` — the live record
+      ``integrate_into_main`` moves back.
+    - ``{main}/.plan/local/archived-plans/{YYYY-MM-DD}-{plan_id}/status.json``
+      — the archived record ``manage-status archive`` writes. The date-prefixed
+      shape is derived from ``_cmd_lifecycle.cmd_archive``'s own destination
+      construction (see :data:`_ARCHIVE_DATE_GLOB`), NOT from the archive-plan
+      prose, which spells the destination inconsistently across its call sites.
+      Because the name carries that prefix the archive half is a directory
+      SCAN, not a literal join.
+
+    Accepting the archived shape is what keeps the structural-probe fallback in
+    :func:`cmd_worktree_remove` from being vacuous: the plan whose worktree the
+    probe exists to reach is precisely the archived one, so a ``plans/``-only
+    predicate would refuse every worktree the fallback made reachable. Widening
+    the predicate does NOT widen what the guard permits for a LIVE plan — a plan
+    whose directory is still resident in its worktree matches neither shape and
+    is still refused.
+
     Fails **closed**: when ``main_checkout_root()`` raises ``RuntimeError``
     (no git repo resolvable), the answer is ``False`` — an unresolvable main
-    checkout is never evidence that the move-back happened.
+    checkout is never evidence that the move-back happened. The archive scan
+    is likewise closed on absence: ``Path.glob`` over a missing
+    ``archived-plans/`` directory yields nothing rather than raising.
     """
     try:
         main_root = main_checkout_root()
     except RuntimeError:
         return False
-    return (main_root / _PLAN_DIR_NAME / 'local' / 'plans' / plan_id / 'status.json').is_file()
+    local = main_root / _PLAN_DIR_NAME / 'local'
+    if (local / 'plans' / plan_id / 'status.json').is_file():
+        return True
+    return any(
+        (candidate / 'status.json').is_file()
+        for candidate in (local / DIR_ARCHIVED).glob(f'{_ARCHIVE_DATE_GLOB}-{plan_id}')
+    )
+
+
+def _structural_worktree_probe(plan_id: str) -> Path | None:
+    """Probe the canonical worktree slot for ``plan_id`` without manage-status.
+
+    The canonical layout ``worktree-create`` materializes is
+    ``get_worktree_root() / {plan_id}``, so the slot is derivable from the plan
+    id alone — no read of any plan record. That is what makes this probe the
+    resolution of last resort for a plan whose ``status.json`` manage-status can
+    no longer find: the archived-plan case, where finalize has moved the record
+    out of ``.plan/local/plans/`` and the metadata channel has nothing to read.
+
+    Returns the candidate path only when the directory exists AND carries the
+    ``.git`` worktree link ``git worktree add`` plants in it. The link is what
+    separates a live worktree slot from a bare directory that merely occupies
+    the name. It is deliberately a filesystem test and runs NO git subprocess,
+    so a probe MISS costs nothing and leaves ``cmd_worktree_remove``'s standing
+    "no git call runs after a resolution failure" contract intact — on EVERY
+    miss, not merely on the ones a fixture happens to arrange.
+
+    The link's presence is not proof of *registration*: a pruned worktree keeps
+    its ``.git`` file after git has forgotten it. That residual case is safe
+    because git itself is the final authority — ``git worktree remove`` refuses
+    an unregistered path and the verb surfaces ``worktree_remove_failed``. The
+    probe never widens what gets destroyed, only what gets *reached*.
+    """
+    try:
+        candidate = get_worktree_root() / plan_id
+    except RuntimeError:
+        # Outside a git repo there is no worktree root to probe.
+        return None
+    if not candidate.is_dir():
+        return None
+    if not (candidate / '.git').exists():
+        return None
+    return candidate
 
 
 def cmd_worktree_remove(args):
@@ -1534,10 +1618,23 @@ def cmd_worktree_remove(args):
     that is still checked out. We remove the worktree first, then delete
     the branch ref so the cleanup is symmetric with ``cmd_worktree_create``.
 
-    Precondition (script-enforced): the plan directory MUST already live on
-    the MAIN checkout (``integrate_into_main`` has landed it back there)
-    before the worktree may be removed — otherwise the removal would destroy
-    the sole authoritative plan-state copy still resident in the worktree.
+    The worktree path resolves by two paths, tried in order, exactly as
+    :func:`cmd_locate_plan_checkout` layers them: first the canonical
+    manage-status channel (:func:`_resolve_worktree_path_for_plan`), then the
+    structural :func:`_structural_worktree_probe` when that channel refuses.
+    The fallback lives HERE, at the call site, and NOT inside the shared
+    resolver — the resolver's other consumers are worktree verbs whose refusal
+    semantics must not change. The success payload names which path was taken
+    (``resolution: metadata | structural_probe``) so an operator can tell a
+    routine removal from an archived-plan recovery.
+
+    Precondition (script-enforced): the plan's authoritative state MUST already
+    live on the MAIN checkout before the worktree may be removed — either as
+    the live directory ``integrate_into_main`` landed back there, or as the
+    archived record ``manage-status archive`` wrote (see
+    :func:`_plan_dir_on_main_checkout` for both shapes and why the archived one
+    counts). Otherwise the removal would destroy the sole authoritative
+    plan-state copy still resident in the worktree.
     Both the probe and the ``git`` target resolve through
     :func:`marketplace_paths.main_checkout_root`, so the guard is asked about
     the tree it protects rather than about whichever checkout the caller
@@ -1555,8 +1652,22 @@ def cmd_worktree_remove(args):
     change directory out of the worktree and re-run.
     """
     target, error = _resolve_worktree_path_for_plan(args.plan_id)
+    resolution = 'metadata'
     if error is not None:
-        return error
+        # The metadata channel reads the plan's status.json; an archived plan no
+        # longer has one where manage-status looks, so the channel refuses and
+        # the worktree becomes unreachable — the very tree the operator needs to
+        # clean up. Fall back to the structural probe. Reachability is all this
+        # restores: both refusals below still run on this path, in the same
+        # order, against the same evidence.
+        probed = _structural_worktree_probe(args.plan_id)
+        if probed is None:
+            # The probe missed too — nothing corroborates a worktree for this
+            # plan, so the resolver's own diagnosis stands. Propagate it
+            # verbatim rather than replacing it with a worse-informed one.
+            return error
+        target = probed
+        resolution = 'structural_probe'
 
     try:
         main_root = main_checkout_root()
@@ -1574,6 +1685,7 @@ def cmd_worktree_remove(args):
             'plan_id': args.plan_id,
             'worktree_path': str(target),
             'action': 'noop',
+            'resolution': resolution,
             'message': 'Worktree does not exist',
         }
 
@@ -1655,6 +1767,7 @@ def cmd_worktree_remove(args):
         'plan_id': args.plan_id,
         'worktree_path': str(target),
         'action': 'removed',
+        'resolution': resolution,
     }
     if branch_name:
         payload['branch'] = branch_name
