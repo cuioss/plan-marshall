@@ -423,11 +423,11 @@ class TestWorktreeRemove:
         worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'rm-me'
         worktree.mkdir(parents=True)
 
-        monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: tmp_path)
+        monkeypatch.setattr(git_workflow, 'main_checkout_root', lambda: tmp_path)
 
         # Satisfy the script-level plan-dir move-back precondition: removal
         # requires {root}/.plan/local/plans/{plan_id}/status.json on the
-        # current checkout (mirrors TestWorktreeRemoveMoveBackPrecondition's
+        # MAIN checkout (mirrors TestWorktreeRemoveMoveBackPrecondition's
         # seeding in test_git_workflow.py), so this test keeps exercising its
         # original worktree-then-branch removal-ordering contract.
         plan_dir = tmp_path / '.plan' / 'local' / 'plans' / 'rm-me'
@@ -487,7 +487,7 @@ class TestWorktreeRemove:
 
         import file_ops  # noqa: PLC0415
 
-        monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: tmp_path)
+        monkeypatch.setattr(git_workflow, 'main_checkout_root', lambda: tmp_path)
 
         def _raise(_plan_id):
             raise file_ops.WorktreeResolutionError('plan does not exist')

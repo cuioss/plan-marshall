@@ -90,7 +90,7 @@ from file_ops import (
     resolve_plan_context,
 )
 from git_provider import run_git
-from marketplace_paths import _find_plan_root_from_cwd
+from marketplace_paths import _find_plan_root_from_cwd, main_checkout_root
 from toon_parser import parse_toon, parse_toon_table
 from triage_helpers import (
     ErrorCode,
@@ -1501,6 +1501,32 @@ def cmd_worktree_create(args):
     return payload
 
 
+def _plan_dir_on_main_checkout(plan_id: str) -> bool:
+    """Return True when the plan directory lives on the MAIN checkout.
+
+    The move-back guard in :func:`cmd_worktree_remove` asks a question the
+    cwd-relative walk-up cannot answer: has the plan directory landed back on
+    **main**? A cwd-derived probe resolves through whichever checkout the
+    caller happens to stand in, so a caller cwd-pinned inside the worktree it
+    is about to destroy finds the plan dir *in that worktree* and reads it as
+    "moved back" — the guard then authorises the removal of the sole
+    authoritative plan-state copy. Anchoring on
+    :func:`marketplace_paths.main_checkout_root` (git's common dir, which
+    points at main even from a linked worktree) makes the predicate resolve
+    through main regardless of the caller's cwd, so the guard is asked about
+    the tree it actually protects.
+
+    Fails **closed**: when ``main_checkout_root()`` raises ``RuntimeError``
+    (no git repo resolvable), the answer is ``False`` — an unresolvable main
+    checkout is never evidence that the move-back happened.
+    """
+    try:
+        main_root = main_checkout_root()
+    except RuntimeError:
+        return False
+    return (main_root / _PLAN_DIR_NAME / 'local' / 'plans' / plan_id / 'status.json').is_file()
+
+
 def cmd_worktree_remove(args):
     """Remove a worktree (worktree first, then branch ref).
 
@@ -1509,19 +1535,24 @@ def cmd_worktree_remove(args):
     the branch ref so the cleanup is symmetric with ``cmd_worktree_create``.
 
     Precondition (script-enforced): the plan directory MUST already live on
-    the current checkout (``integrate_into_main`` has landed it back on main)
+    the MAIN checkout (``integrate_into_main`` has landed it back there)
     before the worktree may be removed — otherwise the removal would destroy
     the sole authoritative plan-state copy still resident in the worktree.
-    The refusal (``error: plan_dir_not_moved_back``) is NOT overridable by
-    ``--force``: that flag keeps its dirty-tree meaning only. An abandonment
-    flow moves or deletes the plan dir first, then removes the worktree.
+    Both the probe and the ``git`` target resolve through
+    :func:`marketplace_paths.main_checkout_root`, so the guard is asked about
+    the tree it protects rather than about whichever checkout the caller
+    happens to stand in. The refusal (``error: plan_dir_not_moved_back``) is
+    NOT overridable by ``--force``: that flag keeps its dirty-tree meaning
+    only. An abandonment flow moves or deletes the plan dir first, then
+    removes the worktree.
     """
     target, error = _resolve_worktree_path_for_plan(args.plan_id)
     if error is not None:
         return error
 
-    main_root = _find_plan_root_from_cwd()
-    if main_root is None:
+    try:
+        main_root = main_checkout_root()
+    except RuntimeError:
         return {
             'status': 'error',
             'plan_id': args.plan_id,
@@ -1539,17 +1570,20 @@ def cmd_worktree_remove(args):
         }
 
     # Script-enforced move-back precondition: refuse while the plan dir has
-    # not landed back on the current checkout. Deliberately NOT overridable
-    # by --force (dirty-tree meaning only) — destroying the sole
-    # authoritative plan-state copy has no legitimate fast path.
-    if not _plan_dir_on_current_checkout(args.plan_id):
+    # not landed back on the MAIN checkout. Probed through
+    # ``main_checkout_root()`` rather than the cwd walk-up so a caller standing
+    # inside the worktree cannot satisfy the guard with the very copy the
+    # removal is about to destroy. Deliberately NOT overridable by --force
+    # (dirty-tree meaning only) — destroying the sole authoritative plan-state
+    # copy has no legitimate fast path.
+    if not _plan_dir_on_main_checkout(args.plan_id):
         return {
             'status': 'error',
             'plan_id': args.plan_id,
             'error': 'plan_dir_not_moved_back',
             'worktree_path': str(target),
             'message': (
-                'Plan directory has not been moved back to the current checkout — '
+                'Plan directory has not been moved back to the main checkout — '
                 'run integrate_into_main before worktree-remove. The refusal is '
                 'not overridable by --force.'
             ),

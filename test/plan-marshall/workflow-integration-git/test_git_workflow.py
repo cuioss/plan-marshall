@@ -1491,7 +1491,7 @@ class TestWorktreeRemoveMoveBackPrecondition:
         monkeypatch.setattr(
             git_workflow, '_resolve_worktree_path_for_plan', lambda plan_id: (worktree, None)
         )
-        monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: main)
+        monkeypatch.setattr(git_workflow, 'main_checkout_root', lambda: main)
         monkeypatch.setattr(git_workflow, '_read_metadata_field', lambda plan_id, field: '')
 
     def _remove(self, force: bool = False) -> dict:
@@ -1550,7 +1550,7 @@ class TestWorktreeRemoveMoveBackPrecondition:
         monkeypatch.setattr(
             git_workflow, '_resolve_worktree_path_for_plan', lambda plan_id: (absent, None)
         )
-        monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: main)
+        monkeypatch.setattr(git_workflow, 'main_checkout_root', lambda: main)
         monkeypatch.setattr(git_workflow, '_read_metadata_field', lambda plan_id, field: '')
 
         result = self._remove()
