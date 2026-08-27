@@ -137,6 +137,7 @@ from __future__ import annotations
 import ast
 import re
 import tokenize
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -1127,13 +1128,41 @@ def test_queue_landing_gate_precedes_and_guards_the_branch_prune():
 # provider, and the definition population below is DERIVED by scanning the bundle
 # tree rather than named — so a third provider added later joins the parity check
 # on arrival instead of drifting outside a two-entry list nobody revisits.
+#
+# NEITHER IS THE DOCUMENTED SIDE. This guard originally bound one document — the
+# branch-cleanup positive-shape requirement — and stayed green while the CI
+# abstraction's own API contract went on declaring a THREE-value set for the same
+# field, in two places, omitting `none`. A parity guard that covers one statement
+# of a closed set does not protect the set; it protects that statement, and every
+# unguarded sibling is free to drift exactly as the guarded one no longer can. So
+# the doc side below is a POPULATION of sites, each with its own extractor,
+# because the sites state the set in different forms (a prose sentence, a TOON
+# alternation, a bullet block) and a single regex silently covers only the form it
+# was written for.
 
-#: The sentence that names the vocabulary, and the backticked tokens inside it.
-#: Line-scoped and non-greedy: a document-wide match would sweep in every unrelated
-#: backticked token and inflate the doc side until the equality could not fail.
+#: The branch-cleanup sentence that names the vocabulary, and the backticked
+#: tokens inside it. Line-scoped and non-greedy: a document-wide match would sweep
+#: in every unrelated backticked token and inflate the doc side until the equality
+#: could not fail.
 _VOCAB_SENTENCE_RE = re.compile(
     r"an `overall_status` drawn from the handler's vocabulary\s*[—-]\s*(`.+?)\.",
     re.MULTILINE,
+)
+
+#: The CI API contract document, which states the same set twice in two forms.
+_CI_API_CONTRACT: Path = _SKILLS / 'tools-integration-ci' / 'standards' / 'api-contract.md'
+
+#: The `checks status` response-schema line. Requires an ALTERNATION (two or more
+#: `|`-joined values), so a single-valued illustrative `overall_status: pending`
+#: elsewhere in the document is not mistaken for a declaration of the set.
+_API_TOON_ALTERNATION_RE = re.compile(
+    r'^overall_status: ([a-z_]+(?:\|[a-z_]+)+)$', re.MULTILINE
+)
+
+#: The `Overall Status Logic` bullet block in the same document — one `- \`value\`:`
+#: row per member.
+_API_LOGIC_BLOCK_RE = re.compile(
+    r'\*\*Overall Status Logic\*\*:\n((?:- `[a-z_]+`:[^\n]*\n)+)'
 )
 
 #: The function whose returned literals ARE the vocabulary.
@@ -1187,8 +1216,8 @@ assert _VOCAB_DEFINITION_MODULES, (
 )
 
 
-def _doc_vocabulary() -> frozenset[str]:
-    """The four values the branch-cleanup positive-shape requirement names."""
+def _branch_cleanup_vocabulary() -> frozenset[str]:
+    """The values the branch-cleanup positive-shape requirement names."""
     text = _BRANCH_CLEANUP.read_text(encoding='utf-8')
     match = _VOCAB_SENTENCE_RE.search(text)
     assert match is not None, (
@@ -1200,13 +1229,62 @@ def _doc_vocabulary() -> frozenset[str]:
     return frozenset(_BACKTICKED_RE.findall(match.group(1)))
 
 
-class TestOverallStatusVocabularyParity:
-    """The doc's `overall_status` list equals what BOTH provider definitions return.
+def _api_contract_schema_vocabulary() -> frozenset[str]:
+    """The values the `checks status` response schema declares as an alternation."""
+    text = _CI_API_CONTRACT.read_text(encoding='utf-8')
+    matches = _API_TOON_ALTERNATION_RE.findall(text)
+    assert len(matches) == 1, (
+        f'{_CI_API_CONTRACT.name} carries {len(matches)} `overall_status` alternation '
+        f'line(s) ({matches}), expected exactly one. Zero means the response schema no '
+        'longer declares the set in the form this guard parses — re-point the regex '
+        'rather than dropping the site, because an unparsed site is an unguarded one. '
+        'More than one means the document states the set in two schema blocks that this '
+        'extractor would silently union.'
+    )
+    return frozenset(matches[0].split('|'))
 
-    Three independently derived sides — the doc sentence, and each provider's
-    ``_derive_overall_status`` returned-literal set — asserted equal. A handler
-    change therefore fails the build here instead of silently invalidating the CI
-    gate, and a provider drifting away from its sibling fails too.
+
+def _api_contract_logic_vocabulary() -> frozenset[str]:
+    """The values the `Overall Status Logic` bullet block enumerates."""
+    text = _CI_API_CONTRACT.read_text(encoding='utf-8')
+    match = _API_LOGIC_BLOCK_RE.search(text)
+    assert match is not None, (
+        f'{_CI_API_CONTRACT.name} no longer carries an `Overall Status Logic` bullet '
+        'block in the form this guard parses. Re-point the regex rather than dropping '
+        'the site — this block is what a consumer builds its branch table from.'
+    )
+    return frozenset(_BACKTICKED_RE.findall(match.group(1)))
+
+
+#: Every DOCUMENTED statement of the `overall_status` closed set, each with the
+#: extractor its own form needs. Keyed by a human-readable site label so a failure
+#: names WHICH statement drifted rather than only which file.
+#:
+#: This is the population the guard's coverage claim is made over. It is
+#: hand-listed, and that is a real residual limit rather than an oversight: a site
+#: is a passage inside a document, not a file, so no scan enumerates them —
+#: which is precisely why `test_the_documented_sites_are_plural` publishes the
+#: size, so a shrinking population is visible instead of silently narrowing the
+#: guard back to the single-site shape that let a sibling drift.
+_DOC_VOCABULARY_SITES: dict[str, Callable[[], frozenset[str]]] = {
+    f'{_BRANCH_CLEANUP.name} § positive-shape requirement': _branch_cleanup_vocabulary,
+    f'{_CI_API_CONTRACT.name} § checks status response schema': (
+        _api_contract_schema_vocabulary
+    ),
+    f'{_CI_API_CONTRACT.name} § Overall Status Logic': _api_contract_logic_vocabulary,
+}
+
+
+class TestOverallStatusVocabularyParity:
+    """EVERY documented `overall_status` list equals what EVERY provider returns.
+
+    Two independently derived populations — the documented sites in
+    :data:`_DOC_VOCABULARY_SITES`, and the ``_derive_overall_status``
+    returned-literal set of each definition module — with every cross pair
+    asserted equal. A handler change therefore fails the build here instead of
+    silently invalidating the CI gate; a provider drifting away from its sibling
+    fails too; and so does a document that states the set and falls behind, which
+    is the failure the single-site shape of this guard could not see.
     """
 
     def test_the_definition_population_is_published_and_plural(self):
@@ -1225,33 +1303,51 @@ class TestOverallStatusVocabularyParity:
             'moved or the scan regressed'
         )
 
-    def test_the_doc_vocabulary_is_non_empty(self):
-        """The doc side is real prose, not an empty match the equality would accept."""
-        doc_vocab = _doc_vocabulary()
-        assert doc_vocab, (
-            f'{_BRANCH_CLEANUP.name} matched the vocabulary sentence but yielded no '
-            'backticked values — an empty doc side would compare equal to an empty '
-            'derived side and the parity check would be vacuous'
+    def test_the_documented_sites_are_plural(self):
+        """More than one document states this set, and the guard covers them all.
+
+        Published as a size because the site population is the one side of this
+        guard that no scan derives (a site is a passage, not a file). The single
+        assertion that matters is plurality: a guard narrowed back to one site
+        would pass while every other statement of the set drifted, which is the
+        exact state this section was extended to end.
+        """
+        assert len(_DOC_VOCABULARY_SITES) >= 2, (
+            f'only {len(_DOC_VOCABULARY_SITES)} documented site '
+            f'({sorted(_DOC_VOCABULARY_SITES)}) is covered. A one-site parity guard '
+            'protects that statement, not the closed set: the CI API contract declared a '
+            'three-value set for this field, in two places, for as long as this guard read '
+            'branch-cleanup.md alone. Add the site back rather than shrinking the coverage.'
         )
 
+    @pytest.mark.parametrize('site', sorted(_DOC_VOCABULARY_SITES))
+    def test_each_documented_site_is_non_empty(self, site):
+        """Each doc side is real content, not an empty match the equality accepts."""
+        doc_vocab = _DOC_VOCABULARY_SITES[site]()
+        assert doc_vocab, (
+            f'{site} matched its extractor but yielded no values — an empty doc side '
+            'would compare equal to an empty derived side and the parity check would be '
+            'vacuous'
+        )
+
+    @pytest.mark.parametrize('site', sorted(_DOC_VOCABULARY_SITES))
     @pytest.mark.parametrize(
         'module', _VOCAB_DEFINITION_MODULES, ids=lambda p: p.parent.parent.name
     )
-    def test_definition_vocabulary_matches_the_doc(self, module):
-        """Each provider's returned-literal set equals the vocabulary the doc names."""
+    def test_definition_vocabulary_matches_each_documented_site(self, module, site):
+        """Every provider's returned-literal set equals every documented statement."""
         derived = _returned_status_literals(module)
         assert derived, (
             f'{module} defines {_DERIVE_FN_NAME} but no string literal was read off its '
             'return statements — the ast derivation regressed, and an empty derived side '
             'would make this comparison vacuous'
         )
-        doc_vocab = _doc_vocabulary()
+        doc_vocab = _DOC_VOCABULARY_SITES[site]()
         assert derived == doc_vocab, (
-            f'{module.name}:{_DERIVE_FN_NAME} returns {sorted(derived)} but '
-            f'{_BRANCH_CLEANUP.name} admits {sorted(doc_vocab)}. The CI-gate positive-shape '
-            'requirement would '
+            f'{module.name}:{_DERIVE_FN_NAME} returns {sorted(derived)} but {site} admits '
+            f'{sorted(doc_vocab)}. A consumer reading that site would '
             f'{"reject a valid" if derived - doc_vocab else "admit an unsupported"} '
-            'snapshot. Update both sides together — the handler is authoritative.'
+            'value. Update every side together — the handler is authoritative.'
         )
 
     def test_the_providers_agree_with_each_other(self):

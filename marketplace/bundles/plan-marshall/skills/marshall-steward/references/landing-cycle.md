@@ -155,9 +155,8 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge-q
 ```
 
 ⛔ **This dispatch requires an already-provisioned merge queue — it enqueues, it never
-provisions.** On GitHub the verb probes the PR's own base branch *before* it calls `gh` and
-reports `enqueued: true` only when that branch carries a configured queue; on GitLab the enqueue
-targets the merge-train endpoint, which succeeds only against a real train. Every other
+provisions.** Both providers probe eligibility *before* the enqueue call and report
+`enqueued: true` only against a queue or train that actually exists. Every other
 eligibility value returns `status: error`, and the verb never falls back to an immediate merge —
 so on an unprovisioned repository the PR is left open and the landing cycle stops here rather
 than landing outside the queue. The **operator remedy is to provision the queue** — run

@@ -197,7 +197,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks sta
 status: success
 operation: ci_status
 pr_number: 123
-overall_status: pending|success|failure
+overall_status: pending|success|failure|none
 check_count: 3
 elapsed_sec: 45
 
@@ -211,6 +211,19 @@ lint	completed	failure	30	https://github.com/org/repo/actions/runs/113	Lint
 - `success`: All checks completed with success
 - `failure`: Any check completed with failure
 - `pending`: Any check still in progress
+- `none`: No checks are configured for the ref at all
+
+Those four values are the CLOSED set — there is no fifth, and `none` is not a synonym for
+`success`: a ref nothing tested is a different state from one every check passed, and a
+consumer that folds them reports an untested ref as green. The set is not authored here. It
+is the returned-literal set of `_derive_overall_status`, which is defined once per provider
+(`workflow-integration-github/scripts/_github_checks.py`,
+`workflow-integration-gitlab/scripts/gitlab_ops.py`), so the handlers are authoritative and
+this list mirrors them. `test/plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing.py`
+derives each handler's literals via `ast` and asserts every documented statement of the set —
+this one included — equals them, so a handler change fails the build here rather than
+silently invalidating a consumer's branch table. Do not edit this list without changing the
+handlers; the guard will reject it.
 
 ---
 
