@@ -81,7 +81,7 @@ Repository: main up-to-date | worktree removed | working tree clean
 Placeholder glossary:
 
 - `{TOKEN}` — one of `MERGED`, `OPEN`, `LOOP_BACK`, `SKIPPED`, `FAILED` (see rules below)
-- `{n}` — PR number, or `n/a` when no PR exists
+- `{n}` — PR number, or a sentinel when the read produced no number (see the Emission Procedure step 2 glossary for the value set and which read each names)
 - `{N}` / `{N_done}` / `{N_total}` — integer counts
 - `{branch}` — the feature branch name pushed by `push`
 - `{archive_path}` — relative path returned by `default:archive-plan`
