@@ -150,11 +150,11 @@ Capture the following into in-memory state (no work file is written):
 4. **PR state + number** — via the CI abstraction (never direct `gh`/`glab`).
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view \
-     --plan-id {plan_id}
+   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
+     --plan-id {plan_id} pr view
    ```
 
-   The `--plan-id` form auto-resolves the active worktree (or falls back to the main checkout once the plan's worktree has been removed). Use `--project-dir {main_checkout}` instead if an explicit override is required (the two flags are mutually exclusive). On `status: success`, capture `state` and `number`.
+   `pr view` declares no `--plan-id` of its own, so the flag is the router's and is written BEFORE the `pr view` verb — written after it, argparse rejects the call with `unrecognized arguments: --plan-id`. The `--plan-id` form auto-resolves the active worktree (or falls back to the main checkout once the plan's worktree has been removed). Use `--project-dir {main_checkout}` instead if an explicit override is required (the two flags are mutually exclusive). On `status: success`, capture `state` and `number`.
 
    On `status: error` the read did **not** establish that no PR exists. Branch on `error_cause`, the machine-readable discriminator the `pr view` error envelope carries — the same three-arm shape `workflow/create-pr.md` § "Check if PR already exists" applies to the same call, and the two sites state one contract:
 
