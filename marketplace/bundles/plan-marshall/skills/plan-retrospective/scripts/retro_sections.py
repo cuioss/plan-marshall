@@ -67,11 +67,10 @@ FOOTPRINT_CONSUMING_ASPECTS: tuple[str, ...] = (
 #: ``check-*`` aspects emit, and ``ARTIFACT_COVERAGE_UNMEASURABLE`` is the token
 #: ``analyze-logs`` embeds in its warning finding's message.
 #:
-#: ⛔ Matched against string VALUES only, never against dict KEYS — see
-#: ``compile-report._declares_degraded``. ``check-artifact-consistency`` publishes
-#: a ``summary.inconclusive`` COUNTER on every run, so a key-matching probe would
-#: read a clean plan (``inconclusive: 0``) as degraded and fire the aggregate on
-#: exactly the runs it must stay silent for.
+#: ⛔ HOW each token is matched is owned by ``compile-report._declares_degraded``
+#: and differs PER TOKEN — ``inconclusive`` by equality against a verdict field,
+#: the other as a substring of any string value. Read the rule there rather than
+#: assuming one uniform match; neither shape is restated here.
 FOOTPRINT_DEGRADED_TOKENS: tuple[str, ...] = (
     'inconclusive',
     'ARTIFACT_COVERAGE_UNMEASURABLE',

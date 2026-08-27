@@ -716,14 +716,12 @@ def _declares_degraded(fragment: Any, tokens: tuple[str, ...]) -> bool:
     verdict_tokens = tuple(token for token in tokens if token in _VERDICT_SCOPED_TOKENS)
     free_text_tokens = tuple(token for token in tokens if token not in _VERDICT_SCOPED_TOKENS)
 
-    if verdict_tokens:
-        for text in _iter_verdict_field_values(fragment):
-            if text in verdict_tokens:
-                return True
-    if free_text_tokens:
-        for text in _iter_string_values(fragment):
-            if any(token in text for token in free_text_tokens):
-                return True
+    for text in _iter_verdict_field_values(fragment):
+        if text in verdict_tokens:
+            return True
+    for text in _iter_string_values(fragment):
+        if any(token in text for token in free_text_tokens):
+            return True
     return False
 
 
