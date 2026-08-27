@@ -105,7 +105,22 @@ from file_ops import (
 # provider-declaration surface", not in the sense of "off-limits to its own
 # skill's sibling scripts".
 from git_provider import _DEFAULT_TIMEOUT_SECONDS, run_git
-from marketplace_paths import _find_plan_root_from_cwd, main_checkout_root
+
+# Two main-facing resolvers, imported side by side because they answer two
+# DIFFERENT questions and must not be collapsed into one.
+# ``resolve_main_anchored_path`` is the single sanctioned main-anchored resolver
+# (ADR-002): it honours the PLAN_BASE_DIR / set_base_dir() override before
+# falling back to git's common dir, so a path derived from it is the same path
+# ``integrate_into_main`` writes when it moves a plan dir back. That is what
+# :func:`_plan_dir_on_main_checkout` probes with.
+# ``main_checkout_root`` is pure ``git rev-parse --git-common-dir``. It stays the
+# resolver for the ``git -C`` target, which must name a real git checkout — an
+# override directory is not one.
+from marketplace_paths import (
+    _find_plan_root_from_cwd,
+    main_checkout_root,
+    resolve_main_anchored_path,
+)
 from toon_parser import parse_toon, parse_toon_table
 from triage_helpers import (
     ErrorCode,
@@ -1537,26 +1552,48 @@ def _plan_dir_on_main_checkout(plan_id: str) -> bool:
     caller happens to stand in, so a caller cwd-pinned inside the worktree it
     is about to destroy finds the plan dir *in that worktree* and reads it as
     "moved back" — the guard then authorises the removal of the sole
-    authoritative plan-state copy. Anchoring on
-    :func:`marketplace_paths.main_checkout_root` (git's common dir, which
-    points at main even from a linked worktree) makes the predicate resolve
-    through main regardless of the caller's cwd, so the guard is asked about
-    the tree it actually protects.
+    authoritative plan-state copy.
 
-    **Two main-resident shapes satisfy it**, because the predicate's real
+    The probe therefore resolves through
+    :func:`marketplace_paths.resolve_main_anchored_path`, the ONE sanctioned
+    main-anchored resolver (ADR-002), and asks for the SAME subpath the plan
+    dir's producer writes: ``integrate_into_main.run_integrate_into_main``
+    computes its move-back DESTINATION as
+    ``resolve_main_anchored_path(f'plans/{plan_id}')``. Guard and producer thus
+    derive main's plan slot by one mechanism and cannot disagree about where it
+    is.
+
+    ⛔ That agreement is load-bearing, not tidiness. The resolver's FIRST
+    precedence branch honours the ``PLAN_BASE_DIR`` / ``file_ops.set_base_dir()``
+    override, whereas ``main_checkout_root()`` is pure ``git rev-parse
+    --git-common-dir`` and never consults it. Under any active override the two
+    name different trees: the move-back writes ``{override}/plans/{plan_id}``
+    while a git-derived probe reads ``{git-common-parent}/.plan/local/plans/...``,
+    finds nothing, and refuses ``plan_dir_not_moved_back`` — a refusal that is
+    deliberately NOT ``--force``-overridable, so the removal would be blocked
+    permanently with no escape. ``main_checkout_root()`` remains correct for
+    :func:`cmd_worktree_remove`'s ``git -C`` target, which must name a real git
+    checkout; the two needs take two resolvers.
+
+    **Two main-anchored shapes satisfy it**, because the predicate's real
     question is "has the sole authoritative copy of this plan's state left the
     tree that is about to be destroyed?" — and a plan whose record finalize has
-    already ARCHIVED answers that exactly as well as a live one:
+    already ARCHIVED answers that exactly as well as a live one. Both are
+    spelled as subpaths handed to the resolver (``{main}/.plan/local/…`` in
+    production, ``{override}/…`` when an override is installed):
 
-    - ``{main}/.plan/local/plans/{plan_id}/status.json`` — the live record
-      ``integrate_into_main`` moves back.
-    - ``{main}/.plan/local/archived-plans/{YYYY-MM-DD}-{plan_id}/status.json``
-      — the archived record ``manage-status archive`` writes. The date-prefixed
-      shape is derived from ``_cmd_lifecycle.cmd_archive``'s own destination
-      construction (see :data:`_ARCHIVE_DATE_GLOB`), NOT from the archive-plan
-      prose, which spells the destination inconsistently across its call sites.
-      Because the name carries that prefix the archive half is a directory
-      SCAN, not a literal join.
+    - ``plans/{plan_id}/status.json`` — the live record ``integrate_into_main``
+      moves back.
+    - ``archived-plans/{YYYY-MM-DD}-{plan_id}/status.json`` — the archived record
+      ``manage-status archive`` writes. The date-prefixed shape is derived from
+      ``_cmd_lifecycle.cmd_archive``'s own destination construction (see
+      :data:`_ARCHIVE_DATE_GLOB`), NOT from the archive-plan prose, which spells
+      the destination inconsistently across its call sites. Because the name
+      carries that prefix the archive half is a directory SCAN, not a literal
+      join. Its producer is ``_status_core.get_archive_dir`` —
+      ``base_path(DIR_ARCHIVED)``, which honours the same override — so the
+      archive scan is resolved by the same rule as the live probe rather than by
+      a second one.
 
     Accepting the archived shape is what keeps the structural-probe fallback in
     :func:`cmd_worktree_remove` from being vacuous: the plan whose worktree the
@@ -1566,22 +1603,22 @@ def _plan_dir_on_main_checkout(plan_id: str) -> bool:
     whose directory is still resident in its worktree matches neither shape and
     is still refused.
 
-    Fails **closed**: when ``main_checkout_root()`` raises ``RuntimeError``
-    (no git repo resolvable), the answer is ``False`` — an unresolvable main
-    checkout is never evidence that the move-back happened. The archive scan
-    is likewise closed on absence: ``Path.glob`` over a missing
+    Fails **closed**: when ``resolve_main_anchored_path`` raises ``RuntimeError``
+    (no override installed AND no git repo resolvable), the answer is ``False`` —
+    an unresolvable main anchor is never evidence that the move-back happened.
+    The archive scan is likewise closed on absence: ``Path.glob`` over a missing
     ``archived-plans/`` directory yields nothing rather than raising.
     """
     try:
-        main_root = main_checkout_root()
+        live_status = resolve_main_anchored_path(f'plans/{plan_id}/status.json')
+        archived_root = resolve_main_anchored_path(DIR_ARCHIVED)
     except RuntimeError:
         return False
-    local = main_root / _PLAN_DIR_NAME / 'local'
-    if (local / 'plans' / plan_id / 'status.json').is_file():
+    if live_status.is_file():
         return True
     return any(
         (candidate / 'status.json').is_file()
-        for candidate in (local / DIR_ARCHIVED).glob(f'{_ARCHIVE_DATE_GLOB}-{plan_id}')
+        for candidate in archived_root.glob(f'{_ARCHIVE_DATE_GLOB}-{plan_id}')
     )
 
 
@@ -1818,10 +1855,16 @@ def cmd_worktree_remove(args):
     :func:`_plan_dir_on_main_checkout` for both shapes and why the archived one
     counts). Otherwise the removal would destroy the sole authoritative
     plan-state copy still resident in the worktree.
-    Both the probe and the ``git`` target resolve through
-    :func:`marketplace_paths.main_checkout_root`, so the guard is asked about
-    the tree it protects rather than about whichever checkout the caller
-    happens to stand in. The refusal (``error: plan_dir_not_moved_back``) is
+    Neither the probe nor the ``git`` target is decided by the caller's cwd, but
+    they resolve through two DIFFERENT main-facing resolvers because they need
+    two different things. The probe asks
+    :func:`marketplace_paths.resolve_main_anchored_path` for the plan slot — the
+    same call ``integrate_into_main`` uses to write it, and the one that honours
+    the ``PLAN_BASE_DIR`` / ``set_base_dir()`` override. The ``git -C`` target
+    below stays on :func:`marketplace_paths.main_checkout_root` (git's common
+    dir, which points at main even from a linked worktree), because that
+    argument must be a real git checkout and an override directory is not.
+    The refusal (``error: plan_dir_not_moved_back``) is
     NOT overridable by ``--force``: that flag keeps its dirty-tree meaning
     only. An abandonment flow moves or deletes the plan dir first, then
     removes the worktree.
@@ -1889,9 +1932,12 @@ def cmd_worktree_remove(args):
 
     # Script-enforced move-back precondition: refuse while the plan dir has
     # not landed back on the MAIN checkout. Probed through
-    # ``main_checkout_root()`` rather than the cwd walk-up so a caller standing
-    # inside the worktree cannot satisfy the guard with the very copy the
-    # removal is about to destroy. Deliberately NOT overridable by --force
+    # ``resolve_main_anchored_path`` rather than the cwd walk-up so a caller
+    # standing inside the worktree cannot satisfy the guard with the very copy
+    # the removal is about to destroy — and through THAT resolver rather than
+    # ``main_checkout_root()`` so the probe lands on the same path the move-back
+    # writes under an active PLAN_BASE_DIR / set_base_dir() override.
+    # Deliberately NOT overridable by --force
     # (dirty-tree meaning only) — destroying the sole authoritative plan-state
     # copy has no legitimate fast path.
     if not _plan_dir_on_main_checkout(args.plan_id):

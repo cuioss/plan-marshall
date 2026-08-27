@@ -410,6 +410,23 @@ class TestWorktreeCreate:
 # =============================================================================
 
 
+def _pin_main_anchor(monkeypatch: pytest.MonkeyPatch, root: Path) -> None:
+    """Tell the move-back guard which tree is "main", via the real resolver.
+
+    ``_plan_dir_on_main_checkout`` probes through
+    ``marketplace_paths.resolve_main_anchored_path``, whose FIRST precedence branch is
+    the ``PLAN_BASE_DIR`` / ``set_base_dir()`` override — so pinning the override at
+    ``{root}/.plan/local`` points the guard at the fixture's tree without replacing the
+    resolver. ``main_checkout_root`` is pinned separately at each call site, because it
+    is a DIFFERENT resolver serving a different need: the ``git -C`` target, which must
+    name a real git checkout and therefore cannot come from an override directory.
+    """
+    import file_ops  # noqa: PLC0415
+
+    monkeypatch.setenv('PLAN_BASE_DIR', str(root / '.plan' / 'local'))
+    monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
+
+
 class TestWorktreeRemove:
     """``cmd_worktree_remove`` removes the worktree before deleting the
     branch ref. Integration is decoupled from a real git via
@@ -424,6 +441,7 @@ class TestWorktreeRemove:
         worktree.mkdir(parents=True)
 
         monkeypatch.setattr(git_workflow, 'main_checkout_root', lambda: tmp_path)
+        _pin_main_anchor(monkeypatch, tmp_path)
 
         # Satisfy the script-level plan-dir move-back precondition: removal
         # requires {root}/.plan/local/plans/{plan_id}/status.json on the
@@ -546,6 +564,7 @@ class TestWorktreeRemove:
 
         monkeypatch.setattr(git_workflow, 'main_checkout_root', lambda: tmp_path)
         monkeypatch.setattr(git_workflow, 'get_worktree_root', lambda: worktrees_root)
+        _pin_main_anchor(monkeypatch, tmp_path)
         self._fail_resolution(monkeypatch)
         # No branch metadata is staged: the read is a soft signal, and stubbing the
         # channel keeps it from shelling out to a real executor.
@@ -596,9 +615,11 @@ def _stage_removal(
     """Stage a removable worktree under ``root`` and return its path.
 
     Mirrors ``TestWorktreeRemove``'s staging — ``main_checkout_root`` pinned to
-    ``root``, the move-back precondition satisfied by a plan dir on main, the
-    manage-status channel stubbed — so the tests below differ from the ordering
-    tests in what they OBSERVE, not in how they reach the removal. ``cwd`` is
+    ``root`` for the ``git -C`` target, the main anchor pinned to
+    ``root/.plan/local`` for the move-back probe (:func:`_pin_main_anchor`), the
+    precondition satisfied by a plan dir there, the manage-status channel stubbed
+    — so the tests below differ from the ordering tests in what they OBSERVE, not
+    in how they reach the removal. ``cwd`` is
     left alone: the test process stands in the repository, never inside
     ``root``, so the containment refusal cannot fire.
 
@@ -613,6 +634,7 @@ def _stage_removal(
         (worktree / 'src' / f'pad{index}.py').write_text('x\n')
 
     monkeypatch.setattr(git_workflow, 'main_checkout_root', lambda: root)
+    _pin_main_anchor(monkeypatch, root)
     plan_dir = root / '.plan' / 'local' / 'plans' / plan_id
     plan_dir.mkdir(parents=True)
     (plan_dir / 'status.json').write_text('{}')

@@ -5,10 +5,11 @@
 Both of ``cmd_worktree_remove``'s preconditions are decided by **where the calling
 process stands**:
 
-* ``plan_dir_not_moved_back`` — probed through ``marketplace_paths.main_checkout_root``
-  (git's common dir), which names main from any linked worktree. Its predecessor
-  probed through the cwd-relative walk-up, so a caller standing inside the worktree
-  satisfied the guard with the very plan-state copy the removal was about to destroy.
+* ``plan_dir_not_moved_back`` — probed through
+  ``marketplace_paths.resolve_main_anchored_path``, the one sanctioned main-anchored
+  resolver, which names main from any linked worktree. Its predecessor probed through
+  the cwd-relative walk-up, so a caller standing inside the worktree satisfied the
+  guard with the very plan-state copy the removal was about to destroy.
 * ``cwd_inside_removal_target`` — a containment test between ``Path.cwd()`` and the
   resolved removal target.
 
@@ -17,8 +18,8 @@ resolver returns whatever the test told it to and cannot report where the proces
 standing, so the pre-fix and post-fix implementations answer identically under it.
 This suite therefore varies **cwd and nothing else**, over a real ``git init`` main
 checkout with a real ``git worktree add`` linked worktree, using ``monkeypatch.chdir``.
-``_find_plan_root_from_cwd`` and ``main_checkout_root`` are NEVER patched here — that
-is the deliverable, not an implementation detail.
+``_find_plan_root_from_cwd``, ``main_checkout_root`` and ``resolve_main_anchored_path``
+are NEVER patched here — that is the deliverable, not an implementation detail.
 
 The geometry mirrors production: the worktree is nested under the main checkout at
 ``main/.plan/local/worktrees/{plan_id}``, so main is an ANCESTOR of the target and the
@@ -92,6 +93,32 @@ The pair differs along ONE axis, whether main carries the ARCHIVED record:
 The negative is the load-bearing half: restoring REACHABILITY must not become a
 BYPASS. A probe that reached the worktree and skipped the guard would pass the
 positive cell just as well.
+
+Override-anchored resolution (``TestOverrideBaseDirIsHonoured``)
+----------------------------------------------------------------
+⛔ Everything above runs with ``PLAN_BASE_DIR`` pinned at ``main/.plan/local`` — which
+is *also* where a ``git rev-parse --git-common-dir`` walk from this fixture lands. The
+override-honouring resolver and the pure-git one therefore COINCIDE BY CONSTRUCTION in
+that geometry, so no cell above can tell them apart: a guard probing either one passes
+every row identically. The blindness is structural, not an oversight of the matrix — no
+amount of extra cells along the cwd axis reaches it.
+
+``TestOverrideBaseDirIsHonoured`` breaks the coincidence by re-pointing
+``PLAN_BASE_DIR`` at a store OUTSIDE the main checkout, somewhere the git-common-dir
+walk cannot reach. The two resolvers then name two different trees, and the matched
+pair drives the plan state into one tree at a time:
+
+* landed under the OVERRIDE base only ⇒ the removal must proceed — this is the cell a
+  ``main_checkout_root()``-derived probe fails, refusing ``plan_dir_not_moved_back``
+  against a plan whose state really did move back;
+* landed under the GIT-derived tree only ⇒ the removal must still be refused — the
+  mirror, which a probe that consulted only the override would wrongly pass.
+
+Both directions are asserted because a probe that reads the wrong tree fails one of
+them whichever tree it reads. The producer this pins the guard to is
+``integrate_into_main``, which resolves its move-back destination as
+``resolve_main_anchored_path(f'plans/{plan_id}')`` — the same call, so guard and
+producer cannot derive different paths.
 """
 
 from __future__ import annotations
@@ -225,6 +252,20 @@ def _archive_plan_record_on_main(geometry: dict[str, Path]) -> Path:
     archived.mkdir(parents=True)
     (archived / 'status.json').write_text('{"sentinel": "archived"}\n')
     return archived
+
+
+def _land_plan_dir_under(base: Path) -> Path:
+    """Land the plan dir under an arbitrary ``.plan/local`` stand-in.
+
+    Spelled ``{base}/plans/{plan_id}/status.json`` because that is what
+    ``resolve_main_anchored_path('plans/{plan_id}')`` yields on its override branch:
+    the override directory IS the ``.plan/local`` stand-in, so the subpath sits
+    directly under it with no ``.plan/local`` segment of its own.
+    """
+    plan_dir = base / 'plans' / _PLAN_ID
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'status.json').write_text('{"sentinel": "override-base"}\n')
+    return plan_dir
 
 
 def _worktree_status_json(geometry: dict[str, Path]) -> Path:
@@ -544,3 +585,113 @@ class TestArchivedPlanReachability:
         assert result['status'] == 'error', result
         assert result['error'] == 'plan_resolution_failed'
         assert called == [], 'no git call may run after a resolution failure the probe missed'
+
+
+@pytest.fixture
+def external_base(
+    geometry: dict[str, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Path:
+    """Re-point ``PLAN_BASE_DIR`` at a store the git-common-dir walk cannot reach.
+
+    Ordered after ``geometry`` because that fixture sets ``PLAN_BASE_DIR`` to
+    ``main/.plan/local``, and this one must overwrite it. The directory is a SIBLING of
+    the main checkout under ``tmp_path``, so ``git rev-parse --git-common-dir`` — which
+    resolves ``main`` — can never name it. The assertion below states that separation
+    rather than assuming it: if the two trees ever coincided, every cell in the class
+    would pass under a probe reading either resolver, which is precisely the blindness
+    this fixture exists to remove.
+    """
+    base = (tmp_path / 'external-plan-store').resolve()
+    assert base != geometry['main_local'] and not base.is_relative_to(geometry['main']), (
+        'The override base must lie outside the main checkout for the two resolvers '
+        'to name different trees.'
+    )
+    base.mkdir()
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+    return base
+
+
+class TestOverrideBaseDirIsHonoured:
+    """The guard reads the OVERRIDE tree, which is the tree the move-back writes.
+
+    Every other class in this file runs where the override tree and the git-derived
+    tree are the same directory, so none of them can observe which resolver the guard
+    uses. These cells pull the two apart and assert the guard follows the override in
+    BOTH directions — the direction a pure-git probe gets wrong, and the mirror a
+    pure-override probe would get wrong.
+    """
+
+    def test_a_plan_landed_under_the_override_base_satisfies_the_guard(
+        self, geometry: dict[str, Path], external_base: Path
+    ) -> None:
+        """Positive: state landed where the move-back writes it ⇒ removal proceeds.
+
+        This is the cell a ``main_checkout_root()``-derived probe fails. It would look
+        under ``main/.plan/local/plans/`` — a tree the move-back never wrote to when an
+        override is active — find nothing, and refuse ``plan_dir_not_moved_back``
+        against a plan whose state genuinely did land. Because that refusal is
+        deliberately not ``--force``-overridable, the failure has no escape hatch.
+        """
+        landed = _land_plan_dir_under(external_base)
+        assert not (geometry['main_local'] / 'plans' / _PLAN_ID).exists(), (
+            'The git-derived tree must be EMPTY here, or the cell would pass under a '
+            'probe that never consulted the override.'
+        )
+
+        result = _remove(geometry)
+
+        assert result['status'] == 'success', result
+        assert result['action'] == 'removed'
+        assert not geometry['worktree'].exists(), (
+            'The positive cell must reach the real removal, not merely report success.'
+        )
+        assert (landed / 'status.json').is_file(), (
+            'The landed plan state lives outside the worktree and must survive it.'
+        )
+
+    def test_a_plan_landed_only_under_the_git_derived_tree_is_still_refused(
+        self, geometry: dict[str, Path], external_base: Path
+    ) -> None:
+        """Mirror control: the guard must not fall back to the git-derived tree.
+
+        The same two trees as the cell above, with the plan state in the OTHER one.
+        A probe that consulted only ``main_checkout_root()`` — or one that accepted a
+        hit from either tree — passes here, and passing here means authorising the
+        destruction of a worktree whose plan state the move-back never moved. Without
+        this mirror the positive cell alone is equally consistent with a guard that had
+        simply been weakened.
+        """
+        _land_plan_dir_on_main(geometry)
+        assert not (external_base / 'plans' / _PLAN_ID).exists()
+
+        result = _remove(geometry)
+
+        _assert_refused(result, geometry, 'plan_dir_not_moved_back')
+
+    def test_the_archived_scan_follows_the_override_base_too(
+        self, geometry: dict[str, Path], external_base: Path
+    ) -> None:
+        """The archived half is resolved by the same rule as the live half.
+
+        ``manage-status archive`` writes through ``get_archive_dir()`` —
+        ``base_path(DIR_ARCHIVED)``, which honours the same override — so a guard whose
+        live probe followed the override while its archive scan did not would refuse
+        every archived plan under an override. The two halves are separate lookups in
+        the predicate and need separate evidence.
+        """
+        archived = external_base / 'archived-plans' / f'{_ARCHIVE_DATE}-{_PLAN_ID}'
+        archived.mkdir(parents=True)
+        (archived / 'status.json').write_text('{"sentinel": "archived-override"}\n')
+        assert not (external_base / 'plans' / _PLAN_ID).exists(), (
+            'No live plan dir under the override base, or the live half of the '
+            'predicate would decide the outcome and the archived half go unexercised.'
+        )
+
+        result = _remove(geometry)
+
+        assert result['status'] == 'success', result
+        assert result['action'] == 'removed'
+        assert not geometry['worktree'].exists()
+        assert (archived / 'status.json').is_file()

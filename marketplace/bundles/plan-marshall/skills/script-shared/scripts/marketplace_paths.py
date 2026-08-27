@@ -529,13 +529,25 @@ def resolve_main_anchored_path(subpath: str | Path) -> Path:
     It is the ONLY mechanism that resolves to the main checkout regardless of
     cwd; every other resolution in the codebase is uniform cwd-relative. New
     cross-session shared state MUST route through this function rather than
-    re-implementing git-common-dir resolution. The bounded exception set is
-    exactly: ``merge.lock``, ``run-configuration.json``, ``lessons-learned``,
-    ``merge-queue.json``, ``orchestrator``, ``plans/NO_PLAN/build-results``
-    (the plan-less build's results, which belong to no worktree — see
-    ``file_ops.get_build_results_dir``). (Machine-global state such as
-    ``build-queue.json`` and ``credentials/`` is NOT in this set — it anchors to
-    the host-wide ``home_root()`` tier, not a repository's main checkout.)
+    re-implementing git-common-dir resolution. The bounded set of main-RESIDENT
+    corpora is exactly: ``merge.lock``, ``run-configuration.json``,
+    ``lessons-learned``, ``merge-queue.json``, ``orchestrator``,
+    ``plans/NO_PLAN/build-results`` (the plan-less build's results, which belong
+    to no worktree — see ``file_ops.get_build_results_dir``). (Machine-global
+    state such as ``build-queue.json`` and ``credentials/`` is NOT in this set —
+    it anchors to the host-wide ``home_root()`` tier, not a repository's main
+    checkout.)
+
+    Beyond those residents, this function is also how main's slot is NAMED for
+    state that does not live there: ``plans/{plan_id}``, the plan directory that
+    MOVES between main and its worktree (ADR-002). It is not a seventh resident
+    corpus — but the question "where is main's slot for this plan?" is
+    main-anchored, and both sides of it route here rather than carrying private
+    git-common-dir copies. ``integrate_into_main.py`` resolves that subpath as
+    the move-back DESTINATION it writes, and ``git-workflow.py``'s
+    ``worktree-remove`` move-back guard resolves the same subpath (plus a scan of
+    ``archived-plans/``) to confirm the write happened before destroying the
+    worktree. One writer and one reader of one path, derived by one call.
 
     Resolution precedence:
 

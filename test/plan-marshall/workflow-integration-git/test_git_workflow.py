@@ -1496,11 +1496,29 @@ class TestWorktreeRemoveMoveBackPrecondition:
         (plan_dir / 'status.json').write_text('{}')
         return main, worktree
 
+    @staticmethod
+    def _pin_main_anchor(monkeypatch, main: Path) -> None:
+        """Tell the move-back guard which tree is "main", via the real resolver.
+
+        ``_plan_dir_on_main_checkout`` probes through
+        ``marketplace_paths.resolve_main_anchored_path``, whose FIRST precedence branch
+        is the ``PLAN_BASE_DIR`` / ``set_base_dir()`` override — so pinning the override
+        at ``{main}/.plan/local`` points the guard at the fixture's main tree without
+        replacing the resolver. ``main_checkout_root`` is pinned separately by
+        :meth:`_patch`, because it is a different resolver serving a different need (the
+        ``git -C`` target, which must name a real git checkout).
+        """
+        import file_ops  # noqa: PLC0415
+
+        monkeypatch.setenv('PLAN_BASE_DIR', str(main / '.plan' / 'local'))
+        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
+
     def _patch(self, monkeypatch, main: Path, worktree: Path) -> None:
         monkeypatch.setattr(
             git_workflow, '_resolve_worktree_path_for_plan', lambda plan_id: (worktree, None)
         )
         monkeypatch.setattr(git_workflow, 'main_checkout_root', lambda: main)
+        self._pin_main_anchor(monkeypatch, main)
         monkeypatch.setattr(git_workflow, '_read_metadata_field', lambda plan_id, field: '')
 
     def _land_plan_dir_on_main(self, main: Path) -> None:
