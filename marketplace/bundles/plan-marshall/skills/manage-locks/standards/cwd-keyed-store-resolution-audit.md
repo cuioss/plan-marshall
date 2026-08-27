@@ -293,11 +293,10 @@ so the fix belongs at the authority-bearing CONSUMERS, not the resolver.
   separates a call from a definition, an import, a bare reference and a
   comment/docstring, the alias resolution without which the count is short by one, the
   8 mention-only files the criterion excludes, and the dual-carry subtraction behind
-  the union. **A textual sweep cannot make this population**, and the earlier revision
-  of this section that published a parenthesis-narrowed `file_count` as the invocation
-  figure was wrong in exactly that way: it counted a comment in
-  `tools-file-ops/scripts/constants.py` as a call and placed a file that invokes
-  neither resolver into the intersection of both. The inventory-scope caveat bounds
+  the union. **A textual sweep cannot make this population.** A parenthesis-narrowed
+  `file_count` is not an invocation figure: it counts the comment in
+  `tools-file-ops/scripts/constants.py` as a call, placing a file that invokes neither
+  resolver into the intersection of both. The inventory-scope caveat bounds
   the derivation, and a later reader therefore re-derives rather than trusts —
   resolving any disagreement by comparing per-file classifications rather than
   totals. Within the
