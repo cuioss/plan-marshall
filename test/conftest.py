@@ -980,6 +980,10 @@ _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
         'envelope-plan-id',
         'plan-marshall/tools-integration-ci/test_envelope_contract_plan_id_placement.py',
     ),
+    (
+        'api-contract-parity',
+        'plan-marshall/workflow-integration-github/test_pr_landing_state.py',
+    ),
 )
 
 

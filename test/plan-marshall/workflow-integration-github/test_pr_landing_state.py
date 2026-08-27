@@ -3,7 +3,7 @@
 # ruff: noqa: I001, E402
 """Tests for the ``ci pr landing-state`` verb — the foreign done-ness discriminator.
 
-Two layers:
+Three layers:
 
 * the pure correlation :func:`ci_base.derive_landing_state`, with ONE case per
   return value and the produced-state population asserted against the verb's OWN
@@ -12,18 +12,28 @@ Two layers:
   with the git / gh / auth primitives monkeypatched on ``github_ops`` so each of
   the four landing states — plus the stale-tip, truncation, malformed-entry,
   auth, and git-evidence fail-closed paths — is exercised through the real
-  handler body.
+  handler body;
+* the DOC-vs-runtime parity guard at the end of this module, which holds
+  ``tools-integration-ci/standards/api-contract.md`` to the two closed
+  populations ``ci_base`` declares — :data:`ci_base.LANDING_STATES` and
+  :data:`ci_base.PR_VIEW_CAUSES`. The runtime sides were already guarded; the
+  DOCUMENTED copies were not, and that document is the surface a consumer reads
+  to decide what to branch on.
 """
 
 import argparse
 import json
+import re
+from pathlib import Path
 
 import pytest
 
 import ci_base
 import github_ops
 import _github_pr
-from ci_base import LANDING_STATES, derive_landing_state
+from ci_base import LANDING_STATES, PR_VIEW_CAUSES, derive_landing_state
+
+from conftest import PROJECT_ROOT
 
 # --------------------------------------------------------------------------- #
 # Pure correlation: one case per return value, asserted vs the declared set
@@ -302,3 +312,188 @@ def test_landing_states_is_the_authoritative_population_reference():
     # here. (Not a mirrored-literal assertion — it names the single source.)
     assert ci_base.LANDING_STATES is LANDING_STATES
     assert 'pushed_no_pr' in LANDING_STATES
+
+
+# --------------------------------------------------------------------------- #
+# Doc-vs-runtime parity: api-contract.md vs the two declared populations
+# --------------------------------------------------------------------------- #
+#
+# ``api-contract.md`` states two CLOSED populations that live in code: the
+# ``pr view`` ``error_cause`` values (``ci_base.PR_VIEW_CAUSES``) and the
+# ``landing_state`` values (``ci_base.LANDING_STATES``). Both runtime sides are
+# already guarded — above, and in ``test_github_ops.py`` — but nothing guarded
+# the DOCUMENTED copies, so a fifth cause or a renamed state left the document
+# silently stale while every existing test stayed green.
+#
+# Both sides are DERIVED: the code side from ``ci_base``, the doc side by
+# parsing the document at STABLE ANCHORS (a table header row and a sentence
+# fragment — never a line number, which moves). They are compared for set
+# EQUALITY, which fails in BOTH directions: a member the code gained and the doc
+# did not, and a member the doc still lists after the code dropped it. Every
+# failure message publishes both measured sizes, so a comparison that went green
+# over a shrunken population cannot be mistaken for a healthy one.
+#
+# Falsifiability is ASSERTED here, not demonstrated once by hand: the controls
+# below run the same extractor over a deliberately mutated copy of the document
+# and assert the comparison REJECTS it. A parity guard that passes against a
+# broken input is the vacuous guard this module exists to avoid, and a permanent
+# matched negative control is what keeps that provable on every run rather than
+# only on the day it was written.
+
+_API_CONTRACT: Path = (
+    PROJECT_ROOT
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'tools-integration-ci'
+    / 'standards'
+    / 'api-contract.md'
+)
+
+#: Anchor for the ``error_cause`` population: the cause table's header row. The
+#: member rows run from the line after the separator to the first non-table line.
+_CAUSE_TABLE_HEADER = '| `error_cause` |'
+
+#: Anchor for the ``landing_state`` population: the sentence that names it. The
+#: apostrophe in "the verb's own declared population" is deliberately left
+#: OUTSIDE the pattern so the anchor survives a straight-vs-typographic edit.
+_LANDING_POPULATION_RE = re.compile(r'own declared population \(([^)]*)\)')
+
+#: A backticked lower-snake token — the spelling every member of both
+#: populations uses.
+_MEMBER_RE = re.compile(r'`([a-z_]+)`')
+
+#: A markdown table separator row (``|---|---|``), alignment colons allowed.
+_SEPARATOR_RE = re.compile(r'^\|[\s:|-]+$')
+
+
+def _api_contract_text() -> str:
+    return _API_CONTRACT.read_text(encoding='utf-8')
+
+
+def _documented_pr_view_causes(text: str) -> set[str]:
+    """The ``error_cause`` members the api-contract cause table names."""
+    lines = text.splitlines()
+    header_at = next(
+        (i for i, line in enumerate(lines) if line.startswith(_CAUSE_TABLE_HEADER)), None
+    )
+    assert header_at is not None, (
+        f'{_API_CONTRACT} no longer carries the cause-table header '
+        f'{_CAUSE_TABLE_HEADER!r}, so the documented population cannot be located at all. '
+        f'ci_base declares {len(PR_VIEW_CAUSES)} cause(s): {sorted(PR_VIEW_CAUSES)}.'
+    )
+    assert _SEPARATOR_RE.match(lines[header_at + 1]), (
+        f'The row after the cause-table header in {_API_CONTRACT} is not a markdown '
+        f'separator, so the table shape changed and its member rows cannot be bounded.'
+    )
+    members: set[str] = set()
+    for line in lines[header_at + 2 :]:
+        if not line.startswith('|'):
+            break
+        cell = line.split('|')[1].strip()
+        matched = _MEMBER_RE.fullmatch(cell)
+        assert matched is not None, (
+            f'A cause-table row in {_API_CONTRACT} has first cell {cell!r}, which is not a '
+            f'single backticked member name; the extractor cannot say what it documents.'
+        )
+        members.add(matched.group(1))
+    return members
+
+
+def _documented_landing_states(text: str) -> set[str]:
+    """The ``landing_state`` members the api-contract field-semantics sentence names."""
+    matched = _LANDING_POPULATION_RE.search(text)
+    assert matched is not None, (
+        f'{_API_CONTRACT} no longer carries the "own declared population (...)" sentence, '
+        f'so the documented landing-state list cannot be located at all. ci_base declares '
+        f'{len(LANDING_STATES)} state(s): {sorted(LANDING_STATES)}.'
+    )
+    return set(_MEMBER_RE.findall(matched.group(1)))
+
+
+#: Published on EVERY run — passing included — by the root conftest's
+#: ``pytest_report_header``, which reads this pair rather than re-deriving
+#: anything. The size is the TOTAL number of members swept across BOTH
+#: populations, so a shrink in either is visible on a green run; the per-population
+#: sizes are published in each assertion message.
+GUARD_POPULATION_LABEL = 'api-contract parity members (pr_view_causes + landing_states)'
+GUARD_POPULATION_SIZE = len(PR_VIEW_CAUSES) + len(LANDING_STATES)
+
+
+def test_both_declared_populations_are_non_empty():
+    # Non-vacuity: a set-equality guard over two empty sets passes while measuring
+    # nothing, and the published total would then read as a healthy zero.
+    assert len(PR_VIEW_CAUSES) >= 1
+    assert len(LANDING_STATES) >= 1
+    assert GUARD_POPULATION_SIZE == len(PR_VIEW_CAUSES) + len(LANDING_STATES)
+
+
+def test_api_contract_names_exactly_the_declared_pr_view_causes():
+    documented = _documented_pr_view_causes(_api_contract_text())
+    declared = set(PR_VIEW_CAUSES)
+    assert documented == declared, (
+        f'api-contract.md and ci_base.PR_VIEW_CAUSES disagree: documented-only '
+        f'{sorted(documented - declared)}, declared-only {sorted(declared - documented)}. '
+        f'Measured sizes: doc={len(documented)}, code={len(declared)}.'
+    )
+
+
+def test_api_contract_names_exactly_the_declared_landing_states():
+    documented = _documented_landing_states(_api_contract_text())
+    declared = set(LANDING_STATES)
+    assert documented == declared, (
+        f'api-contract.md and ci_base.LANDING_STATES disagree: documented-only '
+        f'{sorted(documented - declared)}, declared-only {sorted(declared - documented)}. '
+        f'Measured sizes: doc={len(documented)}, code={len(declared)}.'
+    )
+
+
+# --- Matched negative controls: the guard must REJECT a mutated document ---- #
+
+
+def test_cause_parity_rejects_a_renamed_member():
+    text = _api_contract_text()
+    mutated = text.replace('`no_pr_found`', '`no_pr_found_x`')
+    assert mutated != text, 'the rename mutation did not apply; the control proves nothing'
+    assert _documented_pr_view_causes(mutated) != set(PR_VIEW_CAUSES)
+
+
+def test_cause_parity_rejects_an_extra_documented_member():
+    lines = _api_contract_text().splitlines()
+    header_at = next(i for i, line in enumerate(lines) if line.startswith(_CAUSE_TABLE_HEADER))
+    lines.insert(header_at + 2, '| `invented_cause` | fabricated | Yes | No |')
+    documented = _documented_pr_view_causes('\n'.join(lines))
+    assert 'invented_cause' in documented
+    assert documented != set(PR_VIEW_CAUSES)
+
+
+def test_cause_parity_rejects_a_dropped_documented_member():
+    kept = [
+        line
+        for line in _api_contract_text().splitlines()
+        if not line.startswith('| `no_pr_found` |')
+    ]
+    documented = _documented_pr_view_causes('\n'.join(kept))
+    assert 'no_pr_found' not in documented
+    assert documented != set(PR_VIEW_CAUSES)
+
+
+def test_landing_parity_rejects_a_renamed_member():
+    text = _api_contract_text()
+    mutated = _LANDING_POPULATION_RE.sub(
+        'own declared population (`merged`, `pr_open`, `pushed_no_pr`, `unpushed_x`)',
+        text,
+        count=1,
+    )
+    assert mutated != text, 'the rename mutation did not apply; the control proves nothing'
+    assert _documented_landing_states(mutated) != set(LANDING_STATES)
+
+
+def test_landing_parity_rejects_a_dropped_member():
+    text = _api_contract_text()
+    mutated = _LANDING_POPULATION_RE.sub(
+        'own declared population (`merged`, `pr_open`, `pushed_no_pr`)', text, count=1
+    )
+    assert mutated != text, 'the drop mutation did not apply; the control proves nothing'
+    assert _documented_landing_states(mutated) != set(LANDING_STATES)

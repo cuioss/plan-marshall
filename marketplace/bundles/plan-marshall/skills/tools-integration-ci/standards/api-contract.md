@@ -139,7 +139,7 @@ Those four keys describe the error shape of a subcommand that reached the provid
 | `pr prepare-body` | `--plan-id` | `--for create\|edit`, `--slot` | `path` |
 | `pr prepare-comment` | `--plan-id` | `--for reply\|thread-reply`, `--slot` | `path` |
 | `pr create` | `--title`, `--plan-id` | `--slot`, `--base` (default: repo default), `--head`, `--draft`, `--label` (repeatable) | `pr_number`, `pr_url` |
-| `pr view` | — (uses current branch) | _at most one of_ `--pr-number` _or_ `--head` | **Success**: `pr_number`, `pr_url`, `state`, `title`, `head_branch`, `base_branch`, `is_draft`, `mergeable`, `merge_state`, `review_decision`. **Error**: the standard shape plus `error_cause` — see § "`pr view` and the `error_cause` discriminator" |
+| `pr view` | — (uses current branch) | _at most one of_ `--pr-number` _or_ `--head` | **Success**: `pr_number`, `pr_url`, `state`, `title`, `head_branch`, `base_branch`, `is_draft`, `mergeable`, `merge_state`, `review_decision`. **Error**: `status`, `operation`, `error`, and `error_cause` on every arm; `context` on every arm EXCEPT the pre-provider auth failure, which has no provider output to report — see § "`pr view` and the `error_cause` discriminator" |
 | `pr list` | — | `--head {branch}`, `--state open\|closed\|all` (default `open`) | `total`, `state_filter`, `head_filter`, `prs[N]{number,url,title,state,head_branch,base_branch}` |
 | `pr landing-state` **(GitHub only)** | — (uses the routed working tree's checked-out branch) | `--branch {branch}` | `provider`, `branch`, `tip_sha`, `pushed`, `pr_count`, `landing_state`, `landing_states` |
 | `pr reply` | `--pr-number`, `--plan-id` | `--slot` | `pr_number` |
@@ -616,12 +616,28 @@ error_cause: provider_call_failed
 context: <provider stderr>
 ```
 
-| `error_cause` | Meaning | Safe to conclude "no PR exists"? |
-|---------------|---------|----------------------------------|
-| `no_pr_found` | The provider POSITIVELY reported that this branch has no PR/MR — matched against `gh` / `glab`'s own "no pull/merge requests found" signature. | **Yes** — this is the one cause that answers the question "no". |
-| `auth_failed` | The provider auth check failed before the call was made. | No |
-| `provider_call_failed` | The provider call exited non-zero for a reason that is not a recognised no-PR signature — a network error, a permission error, a rate limit, an empty stderr. | No |
-| `malformed_response` | The call succeeded but its output could not be parsed. | No |
+| `error_cause` | Meaning | Carries `context`? | Safe to conclude "no PR exists"? |
+|---------------|---------|--------------------|----------------------------------|
+| `no_pr_found` | The provider POSITIVELY reported that this branch has no PR/MR — matched against `gh` / `glab`'s own "no pull/merge requests found" signature. | Yes — the provider's stderr | **Yes** — this is the one cause that answers the question "no". |
+| `auth_failed` | The provider auth check failed before the call was made. | **No — ABSENT** | No |
+| `provider_call_failed` | The provider call exited non-zero for a reason that is not a recognised no-PR signature — a network error, a permission error, a rate limit, an empty stderr. | Yes — the provider's stderr | No |
+| `malformed_response` | The call succeeded but its output could not be parsed. | Yes — the leading slice of the unparsable stdout | No |
+
+**`error_cause` is on every arm; `context` is not.** `view_pr_data` has three error
+returns on each provider, and they do not carry the same fields. The auth arm returns
+*before* the provider call is attempted, so there is no provider output to report and it
+carries exactly `status`, `operation`, `error`, `error_cause` — no `context`. The other two
+arms (non-zero provider call, unparsable output) carry `context` as well. A consumer that
+reads `context` unconditionally on a `pr view` error finds nothing on the auth arm, and
+prose that names `context` as *the* place the cause lives is wrong there. Read the envelope
+you actually received rather than a fixed field list. The auth arm:
+
+```toon
+status: error
+operation: pr_view
+error: <provider auth failure reason>
+error_cause: auth_failed
+```
 
 The classification **fails closed**: only a positively-matched no-PR signature
 resolves to `no_pr_found`; anything unrecognised resolves to
