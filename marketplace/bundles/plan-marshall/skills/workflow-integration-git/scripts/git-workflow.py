@@ -63,6 +63,7 @@ Examples:
 """
 
 import fnmatch
+import json
 import os
 import re
 import shutil
@@ -1543,25 +1544,23 @@ def cmd_worktree_create(args):
 _ARCHIVE_DATE_GLOB = '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
 
 
-def _plan_dir_on_main_checkout(plan_id: str) -> bool:
-    """Return True when the plan's authoritative state lives on the MAIN checkout.
+def _main_anchored_plan_records(plan_id: str) -> list[Path]:
+    """Every existing main-anchored ``status.json`` that holds ``plan_id``'s record.
 
-    The move-back guard in :func:`cmd_worktree_remove` asks a question the
-    cwd-relative walk-up cannot answer: has the plan directory landed back on
-    **main**? A cwd-derived probe resolves through whichever checkout the
-    caller happens to stand in, so a caller cwd-pinned inside the worktree it
-    is about to destroy finds the plan dir *in that worktree* and reads it as
-    "moved back" — the guard then authorises the removal of the sole
-    authoritative plan-state copy.
+    ONE resolution rule, shared by every consumer in this module that needs
+    MAIN's copy of a plan's record — the move-back guard below and the branch
+    lookup in :func:`cmd_worktree_remove` — so the archived path is spelled once
+    here rather than once per caller. Candidates are returned in precedence
+    order, live before archived, and only when they exist on disk.
 
-    The probe therefore resolves through
+    Both shapes are subpaths handed to
     :func:`marketplace_paths.resolve_main_anchored_path`, the ONE sanctioned
-    main-anchored resolver (ADR-002), and asks for the SAME subpath the plan
-    dir's producer writes: ``integrate_into_main.run_integrate_into_main``
+    main-anchored resolver (ADR-002), which is the SAME call the plan dir's
+    producer writes through: ``integrate_into_main.run_integrate_into_main``
     computes its move-back DESTINATION as
-    ``resolve_main_anchored_path(f'plans/{plan_id}')``. Guard and producer thus
-    derive main's plan slot by one mechanism and cannot disagree about where it
-    is.
+    ``resolve_main_anchored_path(f'plans/{plan_id}')``. Producer and consumers
+    thus derive main's plan slot by one mechanism and cannot disagree about
+    where it is.
 
     ⛔ That agreement is load-bearing, not tidiness. The resolver's FIRST
     precedence branch honours the ``PLAN_BASE_DIR`` / ``file_ops.set_base_dir()``
@@ -1575,12 +1574,12 @@ def _plan_dir_on_main_checkout(plan_id: str) -> bool:
     :func:`cmd_worktree_remove`'s ``git -C`` target, which must name a real git
     checkout; the two needs take two resolvers.
 
-    **Two main-anchored shapes satisfy it**, because the predicate's real
-    question is "has the sole authoritative copy of this plan's state left the
-    tree that is about to be destroyed?" — and a plan whose record finalize has
-    already ARCHIVED answers that exactly as well as a live one. Both are
-    spelled as subpaths handed to the resolver (``{main}/.plan/local/…`` in
-    production, ``{override}/…`` when an override is installed):
+    **Two main-anchored shapes count**, because the question every consumer here
+    asks — "has this plan's record left the tree that is about to be
+    destroyed?" — is answered by a record finalize has already ARCHIVED exactly
+    as well as by a live one. Both are spelled as subpaths handed to the
+    resolver (``{main}/.plan/local/…`` in production, ``{override}/…`` when an
+    override is installed):
 
     - ``plans/{plan_id}/status.json`` — the live record ``integrate_into_main``
       moves back.
@@ -1595,31 +1594,94 @@ def _plan_dir_on_main_checkout(plan_id: str) -> bool:
       archive scan is resolved by the same rule as the live probe rather than by
       a second one.
 
-    Accepting the archived shape is what keeps the structural-probe fallback in
-    :func:`cmd_worktree_remove` from being vacuous: the plan whose worktree the
-    probe exists to reach is precisely the archived one, so a ``plans/``-only
-    predicate would refuse every worktree the fallback made reachable. Widening
-    the predicate does NOT widen what the guard permits for a LIVE plan — a plan
-    whose directory is still resident in its worktree matches neither shape and
-    is still refused.
-
-    Fails **closed**: when ``resolve_main_anchored_path`` raises ``RuntimeError``
-    (no override installed AND no git repo resolvable), the answer is ``False`` —
-    an unresolvable main anchor is never evidence that the move-back happened.
-    The archive scan is likewise closed on absence: ``Path.glob`` over a missing
-    ``archived-plans/`` directory yields nothing rather than raising.
+    ⛔ An EMPTY list means "no record was established", and that deliberately
+    collapses two distinct states: no such record exists, and the main anchor
+    could not be resolved at all (``resolve_main_anchored_path`` raises
+    ``RuntimeError`` when no override is installed AND no git repo resolves).
+    The collapse is sound ONLY because both consumers in this module treat the
+    two identically and safely — the move-back guard REFUSES, and the branch
+    lookup REPORTS rather than skipping in silence. A consumer that must tell
+    "absent" from "could not look" apart cannot use this helper and has to
+    resolve the anchor itself. Absence within a resolved anchor is likewise
+    closed: ``Path.glob`` over a missing ``archived-plans/`` directory yields
+    nothing rather than raising.
     """
     try:
         live_status = resolve_main_anchored_path(f'plans/{plan_id}/status.json')
         archived_root = resolve_main_anchored_path(DIR_ARCHIVED)
     except RuntimeError:
-        return False
-    if live_status.is_file():
-        return True
-    return any(
-        (candidate / 'status.json').is_file()
-        for candidate in archived_root.glob(f'{_ARCHIVE_DATE_GLOB}-{plan_id}')
+        return []
+    records = [live_status] if live_status.is_file() else []
+    records.extend(
+        candidate / 'status.json'
+        for candidate in sorted(archived_root.glob(f'{_ARCHIVE_DATE_GLOB}-{plan_id}'))
+        if (candidate / 'status.json').is_file()
     )
+    return records
+
+
+def _plan_dir_on_main_checkout(plan_id: str) -> bool:
+    """Return True when the plan's authoritative state lives on the MAIN checkout.
+
+    The move-back guard in :func:`cmd_worktree_remove` asks a question the
+    cwd-relative walk-up cannot answer: has the plan directory landed back on
+    **main**? A cwd-derived probe resolves through whichever checkout the caller
+    happens to stand in, so a caller cwd-pinned inside the worktree it is about
+    to destroy finds the plan dir *in that worktree* and reads it as "moved
+    back" — the guard then authorises the removal of the sole authoritative
+    plan-state copy.
+
+    The probe is therefore :func:`_main_anchored_plan_records`, which resolves
+    main-anchored and accepts the archived shape alongside the live one.
+    Accepting the archived shape is what keeps the structural-probe fallback in
+    :func:`cmd_worktree_remove` from being vacuous: the plan whose worktree the
+    probe exists to reach is precisely the archived one, so a ``plans/``-only
+    predicate would refuse every worktree the fallback made reachable. It does
+    NOT widen what the guard permits for a LIVE plan — a plan whose directory is
+    still resident in its worktree matches neither shape and is still refused.
+
+    Fails **closed**: an unresolvable main anchor establishes no record and so
+    answers ``False``, which is never evidence that the move-back happened.
+    """
+    return bool(_main_anchored_plan_records(plan_id))
+
+
+def _worktree_branch_on_main_checkout(plan_id: str) -> str:
+    """Read ``metadata.worktree_branch`` out of MAIN's copy of the plan's record.
+
+    The canonical channel (:func:`_read_metadata_field` → ``manage-status
+    metadata``) resolves through ``get_plan_dir`` →
+    ``{base}/plans/{plan_id}/status.json``, which has NO archived fallback. An
+    archived plan holds no record there — that is the very condition
+    :func:`_structural_worktree_probe` exists to work around — so for one the
+    canonical channel returns ``''`` BY CONSTRUCTION, on every archived-plan
+    removal rather than by accident. Without this fallback the branch delete in
+    :func:`cmd_worktree_remove` was skipped for all of them while the payload
+    reported a clean removal and named no branch.
+
+    Resolved through :func:`_main_anchored_plan_records`, so the branch lookup
+    accepts exactly the shapes the move-back guard accepts, by the same resolver
+    and the same rule — one archive spelling in this module, not two.
+
+    Returns ``''`` when no record is established, none parses as a JSON object,
+    or none carries a non-empty string at ``metadata.worktree_branch``. Each of
+    those is "the name could not be resolved", and the caller REPORTS that as a
+    ``branch_warning`` instead of skipping the delete in silence.
+    """
+    for record in _main_anchored_plan_records(plan_id):
+        try:
+            parsed = json.loads(record.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        metadata = parsed.get('metadata')
+        if not isinstance(metadata, dict):
+            continue
+        branch = metadata.get('worktree_branch')
+        if isinstance(branch, str) and branch:
+            return branch
+    return ''
 
 
 def _structural_worktree_probe(plan_id: str) -> Path | None:
@@ -1848,6 +1910,16 @@ def cmd_worktree_remove(args):
     (``resolution: metadata | structural_probe``) so an operator can tell a
     routine removal from an archived-plan recovery.
 
+    The BRANCH NAME layers the same way, and for the same reason: the canonical
+    ``manage-status`` read (:func:`_read_metadata_field`) first, then
+    :func:`_worktree_branch_on_main_checkout` against main's own copy of the
+    record. manage-status resolves ``{base}/plans/{plan_id}`` with no archived
+    fallback, so on the ``structural_probe`` route the canonical read yields
+    nothing for EVERY archived plan. Whichever channel answers, branch cleanup
+    this verb did NOT do is always reported — a failed delete and an
+    unresolvable name both surface as ``branch_warning`` — so no success payload
+    leaves a stranded branch unmentioned.
+
     Precondition (script-enforced): the plan's authoritative state MUST already
     live on the MAIN checkout before the worktree may be removed — either as
     the live directory ``integrate_into_main`` landed back there, or as the
@@ -2045,16 +2117,37 @@ def cmd_worktree_remove(args):
             'hint': 'Pass --force only after verifying the worktree is clean.',
         }
 
-    # Step 2: delete the branch ref. Read the branch from status metadata
-    # (canonical source) and best-effort delete. Failure to delete the
-    # branch is reported but does not fail the command — the worktree is
-    # already gone and branch cleanup is recoverable.
+    # Step 2: delete the branch ref. The NAME resolves by two channels tried in
+    # order, mirroring the worktree-path layering above: the canonical
+    # manage-status read, then MAIN's own copy of the plan record when that
+    # channel yields nothing. The fallback is not belt-and-braces —
+    # manage-status resolves ``{base}/plans/{plan_id}`` with no archived
+    # fallback, so on the ``structural_probe`` route it yields '' for EVERY
+    # archived plan, which is exactly the route that fallback exists to serve.
+    #
+    # ⛔ An unresolved name is REPORTED, never silently skipped. A success
+    # payload naming no branch at all is indistinguishable from one that had no
+    # branch to delete, so a silent skip strands a local branch behind a clean
+    # removal report. A delete that FAILED and a name that could not be RESOLVED
+    # are both branch cleanup this verb did not do, so both surface the same way
+    # — as ``branch_warning``, not as a command failure: the worktree is gone
+    # either way and branch cleanup stays recoverable.
     branch_warning: str | None = None
-    branch_name = _read_metadata_field(args.plan_id, 'worktree_branch')
+    branch_name = _read_metadata_field(args.plan_id, 'worktree_branch') or (
+        _worktree_branch_on_main_checkout(args.plan_id)
+    )
     if branch_name:
         rc, _out, err = run_git(['-C', str(main_root), 'branch', '-D', branch_name])
         if rc != 0:
             branch_warning = f'branch ref {branch_name} not deleted: {err}'
+    else:
+        branch_warning = (
+            'branch ref not deleted: no worktree_branch could be resolved for '
+            f'{args.plan_id}, from status metadata or from the main-anchored plan '
+            'record (live or archived), so no branch name was known to delete. The '
+            'worktree is gone; a local feature branch may still exist — identify it '
+            'with git branch --list and delete it manually.'
+        )
 
     payload: dict[str, Any] = {
         'status': 'success',

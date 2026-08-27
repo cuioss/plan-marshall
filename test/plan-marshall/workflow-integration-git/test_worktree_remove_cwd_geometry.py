@@ -94,6 +94,18 @@ The negative is the load-bearing half: restoring REACHABILITY must not become a
 BYPASS. A probe that reached the worktree and skipped the guard would pass the
 positive cell just as well.
 
+Branch cleanup (``TestBranchCleanupIsDoneOrReported``)
+------------------------------------------------------
+The archived route resolves the worktree, but the BRANCH name resolves separately —
+and ``manage-status`` reads ``{base}/plans/{plan_id}`` with no archived fallback, so
+on that route it answered ``''`` for every archived plan. The delete was skipped and
+nothing was reported, because the warning fired only when a name had been read and the
+delete then failed. This class asserts the branch OUTCOME rather than only the removal:
+the archived route deletes it, the ordinary metadata route still deletes it (the
+matched control, so a broken canonical channel cannot masquerade as a working
+fallback), and a name that neither channel can resolve is REPORTED as
+``branch_warning`` over a branch the repository really does still carry.
+
 Override-anchored resolution (``TestOverrideBaseDirIsHonoured``)
 ----------------------------------------------------------------
 ⛔ Everything above runs with ``PLAN_BASE_DIR`` pinned at ``main/.plan/local`` — which
@@ -123,6 +135,7 @@ producer cannot derive different paths.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from contextlib import contextmanager
 from pathlib import Path
@@ -239,7 +252,7 @@ def _land_plan_dir_on_main(geometry: dict[str, Path]) -> None:
 _ARCHIVE_DATE = '2026-01-15'
 
 
-def _archive_plan_record_on_main(geometry: dict[str, Path]) -> Path:
+def _archive_plan_record_on_main(geometry: dict[str, Path], *, branch: str | None = _BRANCH) -> Path:
     """Put the ARCHIVED record on main, the state ``manage-status archive`` leaves.
 
     Mirrors ``_cmd_lifecycle.cmd_archive``'s own destination construction —
@@ -247,11 +260,64 @@ def _archive_plan_record_on_main(geometry: dict[str, Path]) -> Path:
     ``{plan_id}`` shape some prose spells, because the code is what the guard has to
     agree with. No live ``plans/{plan_id}`` directory is created: an archived plan has
     none, which is exactly why manage-status can no longer resolve its worktree.
+
+    The record carries ``metadata.worktree_branch`` by default because a real archived
+    record does: the branch is recorded at phase-5 materialization and travels into the
+    archive with the rest of the record. ``branch=None`` writes the record WITHOUT it,
+    which is the cell where no channel can resolve a name and the skip has to be
+    reported rather than performed in silence.
     """
     archived = geometry['main_local'] / 'archived-plans' / f'{_ARCHIVE_DATE}-{_PLAN_ID}'
     archived.mkdir(parents=True)
-    (archived / 'status.json').write_text('{"sentinel": "archived"}\n')
+    record: dict = {'sentinel': 'archived'}
+    if branch is not None:
+        record['metadata'] = {'worktree_branch': branch}
+    (archived / 'status.json').write_text(f'{json.dumps(record)}\n')
     return archived
+
+
+def _local_branches(main: Path) -> list[str]:
+    """The main checkout's real local branch refs.
+
+    Queried from the git repository the fixture actually built rather than inferred
+    from the verb's payload: the payload reporting a branch and the branch really
+    being gone are two different claims, and the second is the one the reviewer's
+    finding is about.
+    """
+    listed = subprocess.run(
+        ['git', '-C', str(main), 'branch', '--format=%(refname:short)'],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return listed.stdout.split()
+
+
+@contextmanager
+def _manage_status_serves_branch(branch: str):
+    """Serve ``worktree_branch`` at the ONE manage-status subprocess seam.
+
+    The fixture's main checkout is a bare ``git init`` tree with no
+    ``.plan/execute-script.py``, so ``_manage_status_call`` cannot reach a real
+    executor and the canonical branch channel returns ``''`` for every test in this
+    file. That would make an "ordinary route still deletes the branch" control
+    vacuous — it would pass through the archived fallback and prove nothing about the
+    route it names.
+
+    The stub is placed at the subprocess boundary, not at ``_read_metadata_field``, so
+    the TOON parse and the empty-value handling still run for real. The served payload
+    is the shape ``manage-status metadata --get`` actually emits.
+    """
+
+    def _served(subcommand: str, *extra_args: str, timeout: int = 30):
+        del timeout
+        assert subcommand == 'metadata' and '--get' in extra_args, (
+            f'unexpected manage-status call: {subcommand} {extra_args}'
+        )
+        return 0, f'status: success\nplan_id: {_PLAN_ID}\nfield: worktree_branch\nvalue: {branch}\n', ''
+
+    with patch.object(git_workflow, '_manage_status_call', new=_served):
+        yield
 
 
 def _land_plan_dir_under(base: Path) -> Path:
@@ -514,6 +580,18 @@ class TestArchivedPlanReachability:
         assert (archived / 'status.json').is_file(), (
             'The archived record lives on main and must be untouched by the removal.'
         )
+        assert result['branch'] == _BRANCH, (
+            'The archived route must resolve the branch name, not fall through to an '
+            f'empty one; got {result!r}.'
+        )
+        assert 'branch_warning' not in result, (
+            f'The branch was deletable here, so nothing should be warned about: {result!r}.'
+        )
+        assert _BRANCH not in _local_branches(geometry['main']), (
+            'The branch must really be gone from the repository the fixture built. '
+            'This assertion is the one the class previously lacked, and its absence '
+            'is why the archived route shipped skipping the delete in silence.'
+        )
 
     def test_a_plan_still_resident_in_its_worktree_is_still_refused(
         self, geometry: dict[str, Path]
@@ -585,6 +663,82 @@ class TestArchivedPlanReachability:
         assert result['status'] == 'error', result
         assert result['error'] == 'plan_resolution_failed'
         assert called == [], 'no git call may run after a resolution failure the probe missed'
+
+
+class TestBranchCleanupIsDoneOrReported:
+    """No success payload leaves a stranded branch unmentioned.
+
+    ``cmd_worktree_remove`` resolves the branch name by two channels and deletes the
+    ref best-effort. Before the main-anchored fallback existed the archived route
+    resolved NO name at all: ``manage-status`` looks under ``{base}/plans/{plan_id}``
+    with no archived fallback, so the read returned ``''`` by construction for every
+    archived plan. The delete was then skipped, and because the warning only fired
+    when a name HAD been read and ``git branch -D`` then failed, the payload carried
+    neither ``branch`` nor ``branch_warning`` — a clean-removal report over a stranded
+    branch.
+
+    Each cell states its claim against the real git repository the fixture built, not
+    against the payload alone: reporting a branch and the branch really being gone are
+    two different claims, and only the second one is about the defect.
+    """
+
+    def test_the_metadata_route_still_deletes_the_branch(
+        self, geometry: dict[str, Path]
+    ) -> None:
+        """Matched control: the ordinary route is not what the archived fix repaired.
+
+        Without it, the archived cell in ``TestArchivedPlanReachability`` is equally
+        consistent with a regression that broke the canonical channel and left the
+        fallback carrying every removal — the fallback would look like it worked while
+        the route it is a fallback FOR had silently stopped answering.
+        """
+        _land_plan_dir_on_main(geometry)
+        assert _BRANCH in _local_branches(geometry['main']), (
+            "Precondition: the fixture's real git worktree add created the branch, so "
+            'a later absence is a deletion rather than a branch that never existed.'
+        )
+
+        with _manage_status_serves_branch(_BRANCH):
+            result = _remove(geometry)
+
+        assert result['status'] == 'success', result
+        assert result['resolution'] == 'metadata', (
+            f'This cell must exercise the canonical channel, not the probe: {result!r}.'
+        )
+        assert result['branch'] == _BRANCH
+        assert 'branch_warning' not in result, result
+        assert _BRANCH not in _local_branches(geometry['main'])
+
+    def test_an_unresolvable_branch_name_is_reported_not_silently_skipped(
+        self, geometry: dict[str, Path]
+    ) -> None:
+        """The floor: a skip the verb cannot avoid must still be a skip it declares.
+
+        The archived record carries no ``worktree_branch`` and the canonical channel
+        has no record to read it from, so NEITHER channel resolves a name. The removal
+        still succeeds — the worktree is gone and branch cleanup stays recoverable —
+        but the branch it did not clean up has to be named.
+        """
+        _archive_plan_record_on_main(geometry, branch=None)
+
+        result = _remove_unresolvable(geometry)
+
+        assert result['status'] == 'success', result
+        assert result['action'] == 'removed'
+        assert 'branch' not in result, (
+            f'No name was resolved, so none may be reported as deleted: {result!r}.'
+        )
+        warning = result.get('branch_warning')
+        assert warning, (
+            'A success payload that mentions the branch nowhere is indistinguishable '
+            f'from one that had no branch to delete; got {result!r}.'
+        )
+        assert 'no worktree_branch could be resolved' in warning
+        assert _PLAN_ID in warning, 'the warning must name the plan it is about'
+        assert _BRANCH in _local_branches(geometry['main']), (
+            'The branch really is stranded here, which is what makes the warning a '
+            'true report rather than a defensive string.'
+        )
 
 
 @pytest.fixture
