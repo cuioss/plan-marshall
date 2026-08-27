@@ -27,12 +27,17 @@ decides whether a gate re-fires.
 - **`exit_code == 0` with a `status` other than `success`**: NOT a usable value — STOP
   exactly as the `exit_code != 0` disposition below requires, with one difference in what
   the error TOON carries: on this path the diagnostic is on STDOUT, not stderr. Preserve
-  the stdout **error envelope** — the `status`, `error`, and `message` fields — verbatim
-  into the returned error TOON; they are the only account of the cause that exists. A zero
-  exit is not evidence the operation succeeded; a script MAY print `status: error` and
-  still exit 0. Read `status` FIRST, and never read a **success-payload** field off a
-  non-`success` return — the three diagnostic fields above are not success payload, and
-  discarding them leaves the step reporting a failure with no cause. Here that means an
+  the stdout **error envelope** as emitted — every field it carries, verbatim — into the
+  returned error TOON; it is the only account of the cause that exists. Copy the whole
+  envelope rather than looking for a fixed field list: beyond `status` and `error` the
+  diagnostic fields vary by verb — `ci` verbs carry `operation`, `error_cause`, and
+  `context`, the plan-resolution envelopes carry `message` and `plan_id` instead, and
+  neither list is exhaustive. `error` is sometimes a hard-coded generic string whose real
+  cause sits in one of the other fields, so dropping them can discard the cause entirely.
+  A zero exit is not evidence the operation succeeded; a script MAY print `status: error`
+  and still exit 0. Read `status` FIRST, and never read a **success-payload** field off a
+  non-`success` return — the envelope's diagnostic fields are not success payload, and
+  dropping any of them leaves the step reporting a failure with no cause. Here that means an
   absent classification is an **unread** one, never a "not invalidating" verdict — an
   unread classifier re-fires the gate rather than silently retiring it.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the

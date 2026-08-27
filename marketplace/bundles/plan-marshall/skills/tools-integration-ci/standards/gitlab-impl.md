@@ -199,7 +199,7 @@ glab api projects/{id}     # → reads the merge_trains_enabled boolean
 | `merge_trains_enabled: true` | `eligible_configured` |
 | `merge_trains_enabled: false` | `eligible_unconfigured` |
 | `merge_trains_enabled` absent (tier/feature does not expose it) | `ineligible` |
-| `merge_trains_enabled` present but NOT a boolean (`null`, a string, a number) | `unsupported`, carrying the non-boolean value as the actionable error |
+| `merge_trains_enabled` present but NOT a boolean (`null`, a string, a number) | `unsupported`, carrying an actionable error that names the project path and states the field was not a boolean (the offending value itself is not included) |
 | HTTP 401/403 | actionable auth-scope error (never a stack trace) |
 | Project scope unresolvable — no API call is made | `unsupported`, carrying an actionable scope-resolution error that names no project path |
 | Non-auth API failure, or a non-object project response | `unsupported`, carrying the failure itself as the actionable error |
