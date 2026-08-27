@@ -1464,7 +1464,7 @@ FOR each step_id in manifest.phase_6.steps:
          python3 .plan/execute-script.py plan-marshall:manage-references:manage-references sync-affected-files \
            --plan-id {plan_id}
 
-      The write is a set union over the existing value, so the refresh only ever ADDS: no already-recorded path is dropped, and a re-entry whose outline did not move changes nothing (`added_count: 0`). See `manage-references` Canonical invocations → `sync-affected-files`.
+      The `affected_files` write is a set union over the existing value, so the refresh only ever ADDS to that key: it is never narrowed, and a re-entry whose outline did not move changes nothing (`added_count: 0`). The claim is scoped to `affected_files` deliberately — the sibling `read_intent_files` key the verb also writes CAN have its stored half narrowed by the persisted mutation-wins subtraction (`stored_read_reclassified_count`), and no finalize-time consumer reads that key. See `manage-references` Canonical invocations → `sync-affected-files`.
 
       **Placement is load-bearing — it is BEFORE the (ii) knob check, deliberately.** Both continuations re-read the key: the `value == true` branch re-enters the FOR loop in this same dispatch, and the `value == false` branch halts for an operator re-run that re-enters finalize fresh. Refreshing after the knob would leave the default (halting) configuration re-entering against the stale snapshot — the configuration that loops most.
 
@@ -1474,7 +1474,7 @@ FOR each step_id in manifest.phase_6.steps:
            work --plan-id {plan_id} --level INFO \
            --message "[STATUS] (plan-marshall:phase-6-finalize) Declared-footprint refresh on loop-back iteration {loop_back_iteration + 1}: {added_count} path(s) added, total {total} — added: {added}"
 
-      On any error status — the `sync-affected-files` error set, whose single source of truth is [`../manage-references/SKILL.md`](../manage-references/SKILL.md) § "Error Responses" (the rows tagged `sync-affected-files`); it is cross-referenced rather than restated so this call site cannot drift out of agreement with its sibling consumers — the refresh wrote nothing. This is **non-blocking** — the loop-back still proceeds, because the union write never removes anything and a failed refresh leaves the key exactly as the last successful derivation left it. Log the failure at WARNING so the re-entry is not silently reading an unrefreshed value, then continue to (ii):
+      On any error status — the `sync-affected-files` error set, whose single source of truth is [`../manage-references/SKILL.md`](../manage-references/SKILL.md) § "Error Responses" (the rows tagged `sync-affected-files`); it is cross-referenced rather than restated so this call site cannot drift out of agreement with its sibling consumers — the refresh wrote nothing. This is **non-blocking** — the loop-back still proceeds, because the `affected_files` union never removes anything and a failed refresh leaves the key exactly as the last successful derivation left it. Log the failure at WARNING so the re-entry is not silently reading an unrefreshed value, then continue to (ii):
 
          python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
            work --plan-id {plan_id} --level WARNING \
