@@ -1468,13 +1468,13 @@ FOR each step_id in manifest.phase_6.steps:
 
       **Placement is load-bearing — it is BEFORE the (ii) knob check, deliberately.** Both continuations re-read the key: the `value == true` branch re-enters the FOR loop in this same dispatch, and the `value == false` branch halts for an operator re-run that re-enters finalize fresh. Refreshing after the knob would leave the default (halting) configuration re-entering against the stale snapshot — the configuration that loops most.
 
-      Branch on the returned `status`. On `success`, log the refresh only when it changed something (`added_count > 0`), naming the added paths so the scope movement is auditable:
+      Branch on the returned `status`. On `success`, bind `{added}` to the returned `added` list — the verb reports the newly-unioned paths themselves alongside `added_count`, so the promise below costs no extra call — and log the refresh only when it changed something (`added_count > 0`), naming those paths so the scope movement is auditable. A count alone is not auditable: it says the surface moved without saying where, which is the one thing an operator reading this line needs:
 
          python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
            work --plan-id {plan_id} --level INFO \
-           --message "[STATUS] (plan-marshall:phase-6-finalize) Declared-footprint refresh on loop-back iteration {loop_back_iteration + 1}: {added_count} path(s) added, total {total}"
+           --message "[STATUS] (plan-marshall:phase-6-finalize) Declared-footprint refresh on loop-back iteration {loop_back_iteration + 1}: {added_count} path(s) added, total {total} — added: {added}"
 
-      On any error status (`outline_not_found`, `outline_unreadable`, `no_deliverables_parsed`, `not_a_list`) the refresh derived nothing and wrote nothing. This is **non-blocking** — the loop-back still proceeds, because the union write never removes anything and a failed refresh leaves the key exactly as the last successful derivation left it. Log the failure at WARNING so the re-entry is not silently reading an unrefreshed value, then continue to (ii):
+      On any error status — the `sync-affected-files` error set, whose single source of truth is [`../manage-references/SKILL.md`](../manage-references/SKILL.md) § "Error Responses" (the rows tagged `sync-affected-files`); it is cross-referenced rather than restated so this call site cannot drift out of agreement with its sibling consumers — the refresh derived nothing and wrote nothing. This is **non-blocking** — the loop-back still proceeds, because the union write never removes anything and a failed refresh leaves the key exactly as the last successful derivation left it. Log the failure at WARNING so the re-entry is not silently reading an unrefreshed value, then continue to (ii):
 
          python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
            work --plan-id {plan_id} --level WARNING \
