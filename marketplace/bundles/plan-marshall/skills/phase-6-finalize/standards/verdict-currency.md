@@ -24,7 +24,8 @@ decides whether a gate re-fires.
 
 - **`exit_code == 0` AND `status: success`**: parse the returned TOON and use the value as
   the step describes.
-- **`exit_code == 0` with a `status` other than `success`**: NOT a usable value — STOP
+- **`exit_code == 0` with a `status` other than `success`, or with no parseable `status` at
+  all**: NOT a usable value — STOP
   exactly as the `exit_code != 0` disposition below requires, with one difference in what
   the error TOON carries: on this path the diagnostic is on STDOUT, not stderr. Preserve
   the stdout **error envelope** as emitted — every field it carries, verbatim — into the
@@ -37,7 +38,12 @@ decides whether a gate re-fires.
   A zero exit is not evidence the operation succeeded; a script MAY print `status: error`
   and still exit 0. Read `status` FIRST, and never read a **success-payload** field off a
   non-`success` return — the envelope's diagnostic fields are not success payload, and
-  dropping any of them leaves the step reporting a failure with no cause. Here that means an
+  dropping any of them leaves the step reporting a failure with no cause. A malformed or
+  truncated stdout that carries **no parseable `status` at all** takes this same path: an
+  unreadable read is not evidence of success, so it fails closed onto STOP rather than
+  falling through to the first clause. There is no envelope to preserve on that sub-path —
+  synthesize the error TOON instead, naming the call (notation, subcommand, and arguments)
+  and carrying the raw stdout verbatim as the only account of the cause that exists. Here that means an
   absent classification is an **unread** one, never a "not invalidating" verdict — an
   unread classifier re-fires the gate rather than silently retiring it.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the
