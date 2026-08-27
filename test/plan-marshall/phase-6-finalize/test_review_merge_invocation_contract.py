@@ -733,10 +733,16 @@ _FORM_ROUTE_RE = re.compile(
 #: ``--plan-id`` hand-named on the stated ground that the exclusion "is not derivable
 #: from the declaration's SHAPE" — refuted by the declaration it cites:
 #: ``add_argument('--plan-id', required=True)`` is the adder's ONLY ``required=True``
-#: flag and its ONLY flag without ``nargs='?'``, so it is shape-distinguishable twice
-#: over. A false reason for keeping a population transcribed licenses the next
-#: non-list flag to be added to the literal set, which is the transcribed-population
-#: defect this suite exists to close.
+#: flag, so it is shape-distinguishable. A false reason for keeping a population
+#: transcribed licenses the next non-list flag to be added to the literal set, which
+#: is the transcribed-population defect this suite exists to close.
+#:
+#: Note what does NOT distinguish it: absence of ``nargs='?'`` separates non-list
+#: flags from list flags generally, not ``--plan-id`` from everything else —
+#: ``--not-triggered`` lacks it too. That is exactly why matching ``nargs='?'``
+#: positively works as the membership test, and exactly why it is not a
+#: ``--plan-id``-unique property. An earlier revision of this comment claimed both
+#: discriminators were unique to it; only the first is.
 #:
 #: Matching what a list flag IS retires both exclusions: a new bool, a new required
 #: scalar, or any other non-list flag simply never matches, with no list to maintain.
