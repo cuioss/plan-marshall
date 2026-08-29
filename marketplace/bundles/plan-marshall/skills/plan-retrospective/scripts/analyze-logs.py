@@ -969,6 +969,13 @@ def artifact_emission_population(
     artifacts produced" when the real signal may be "emission was bypassed" — a
     count-based detector cannot guard a per-item emission defect.
 
+    ⛔ That floor is not merely weak, it is DEAD: ``artifact_entries`` counts
+    ``[ARTIFACT]`` lines from EVERY caller, and ``phase-1-init`` emits its own
+    unconditionally, so no real plan can reach zero. Nothing may be deferred to
+    it. The per-task population below is the only detector of this class that can
+    fire, which is why its consumer grades ``N == 0`` itself rather than leaving
+    it to the plan-level count.
+
     This states BOTH numbers instead — ``N of M completed tasks emitted >= 1
     [ARTIFACT] line`` — so a consumer cannot read a partial count as a total.
     ``M`` (``completed_tasks``) is the completed-task population (task files with
@@ -1720,29 +1727,67 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     # satisfied by a single artifact even when most completed tasks emitted none.
     # Stating ``N of M completed tasks emitted`` makes that partiality legible so a
     # consumer cannot read a partial count as a total. The population is ALWAYS
-    # published (below); the WARNING fires only for unambiguous partiality —
-    # ``0 < N < M`` — where the per-task emitting path is demonstrably in use yet
-    # incomplete. ``N == 0`` is left to the plan-level floor and the published
-    # population (a plan may simply not use per-task emission), and ``N == M`` is
-    # complete. The finding always carries both numbers, never a bare non-zero
-    # assertion.
+    # published (below); the guard fires across the whole incomplete range
+    # ``N < M``, not just the ``0 < N < M`` interior. ``N == 0`` USED to be
+    # deferred to the plan-level floor, and that deferral was to a check that can
+    # never fire: the floor counts ``[ARTIFACT]`` lines from every caller and
+    # ``phase-1-init`` emits one unconditionally, so the total-absence case was
+    # guarded by nothing at all.
+    #
+    # ``N == 0`` therefore gets its own message here, and the discriminator
+    # between its two causes is the plan's own footprint, already resolved above:
+    #   * footprint resolved and NON-EMPTY — the plan changed files and completed
+    #     tasks, yet not one task emitted. The emitting path was bypassed.
+    #   * footprint empty, or the ``FOOTPRINT_UNRESOLVED`` sentinel — "this plan
+    #     uses no per-task emission" and "emission was bypassed" are
+    #     indistinguishable, so NO finding is made. This is what keeps archived
+    #     plans predating per-task emission from suddenly reporting one; the
+    #     published population still states ``0 of M`` either way.
+    # ``N == M`` is complete. Every finding carries both numbers, never a bare
+    # non-zero assertion.
     artifact_emission = artifact_emission_population(work, plan_dir)
-    if 0 < artifact_emission['tasks_with_artifacts'] < artifact_emission['completed_tasks']:
-        missing_count = (
-            artifact_emission['completed_tasks'] - artifact_emission['tasks_with_artifacts']
-        )
-        findings.append(
-            {
-                'severity': 'warning',
-                'message': (
-                    f'ARTIFACT_EMISSION_PARTIAL: {artifact_emission["tasks_with_artifacts"]} of '
-                    f'{artifact_emission["completed_tasks"]} completed task(s) emitted >= 1 '
-                    f'[ARTIFACT] line ({missing_count} emitted none). A completed task with an '
-                    'empty diff legitimately emits nothing; a broad gap indicates the emitting '
-                    'path was bypassed. See logging-gap-analysis.md § ARTIFACT_EMISSION.'
-                ),
-            }
-        )
+    tasks_with_artifacts = artifact_emission['tasks_with_artifacts']
+    completed_tasks = artifact_emission['completed_tasks']
+    # Read by the sentinel's NAME first: `FOOTPRINT_UNRESOLVED` is "could not
+    # look", an empty footprint is a resolved "nothing changed", and neither
+    # substantiates a bypass claim. The size is taken once here, inside the one
+    # place both states are excluded, so the message below cannot re-measure a
+    # footprint that may be the sentinel.
+    footprint_path_count = (
+        len(footprint) if footprint is not FOOTPRINT_UNRESOLVED and footprint else 0
+    )
+    footprint_non_empty = footprint_path_count > 0
+    if tasks_with_artifacts < completed_tasks:
+        missing_count = completed_tasks - tasks_with_artifacts
+        if tasks_with_artifacts > 0:
+            findings.append(
+                {
+                    'severity': 'warning',
+                    'message': (
+                        f'ARTIFACT_EMISSION_PARTIAL: {tasks_with_artifacts} of '
+                        f'{completed_tasks} completed task(s) emitted >= 1 '
+                        f'[ARTIFACT] line ({missing_count} emitted none). A completed task with an '
+                        'empty diff legitimately emits nothing; a broad gap indicates the emitting '
+                        'path was bypassed. See logging-gap-analysis.md § ARTIFACT_EMISSION.'
+                    ),
+                }
+            )
+        elif footprint_non_empty:
+            findings.append(
+                {
+                    'severity': 'warning',
+                    'message': (
+                        f'ARTIFACT_EMISSION_ABSENT: 0 of {completed_tasks} completed task(s) '
+                        'emitted a per-task [ARTIFACT] line, while the plan footprint is '
+                        f'non-empty ({footprint_path_count} path(s)) — so the emitting path was '
+                        'bypassed rather than the plan simply not using per-task emission. '
+                        'The plan-level artifact_entries floor cannot see this: it counts '
+                        '[ARTIFACT] lines from every caller, including the unconditional '
+                        'phase-1-init emission, so it never reaches zero on a real plan. '
+                        'See logging-gap-analysis.md § ARTIFACT_EMISSION.'
+                    ),
+                }
+            )
 
     # Phase-5 logging-gap fact extractors (lesson 2026-05-08-14-001).
     # Pure counting/pairing — judgement lives in the LLM rules.

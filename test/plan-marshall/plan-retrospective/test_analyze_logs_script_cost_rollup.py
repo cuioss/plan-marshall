@@ -92,8 +92,11 @@ class TestArtifactEmissionPopulation:
         assert not any('ARTIFACT_EMISSION_PARTIAL' in f.get('message', '') for f in findings), findings
 
     def test_population_always_published_even_with_no_per_task_emission(self, tmp_path, monkeypatch):
-        # Population is published even at N == 0 so a consumer reads N-of-M
-        # rather than inferring a total from a floor; no partiality finding at 0.
+        # Population is published even at N == 0 so a consumer reads N-of-M rather
+        # than inferring a total from a floor. PARTIAL is the interior-range
+        # finding and is not owed here; the N == 0 case has its own finding
+        # (ARTIFACT_EMISSION_ABSENT), gated on the plan's footprint and pinned with
+        # both its controls in test_retrospective_checks_input_availability.py.
         plan_id, _ = self._setup(
             tmp_path, monkeypatch, done_tasks=[1, 2], artifact_task_nums=[],
             plan_id='retro-artifact-none',

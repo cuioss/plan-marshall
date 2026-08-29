@@ -377,6 +377,36 @@ class TestCmdRunInProcess:
         assert not any('ARTIFACT_COVERAGE_UNMEASURABLE' in f['message'] for f in result['findings'])
         assert not any('ARTIFACT entries missing' in f['message'] for f in result['findings'])
 
+    def test_no_completed_tasks_cannot_trigger_the_emission_guard(self, tmp_path):
+        """The widened ``N < M`` guard is unreachable over an empty population.
+
+        The per-task ``[ARTIFACT]`` guard used to fire only on ``0 < N < M`` and
+        now covers the whole incomplete range, which puts ``N == 0`` inside it.
+        This plan has a non-empty footprint and zero per-task artifact lines — the
+        shape the widened guard reacts to — but no completed tasks at all, so
+        ``M == 0`` and there was nothing to emit for.
+
+        It is the in-process negative control for the widening: without it, a
+        guard that dropped the population comparison and keyed on ``N == 0``
+        alone would report every task-less plan, and the end-to-end suite's
+        positive case would not notice.
+        """
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        self._write_logs(
+            plan_dir,
+            [_line('2026-04-17T10:00:00Z', 'INFO', '[STATUS] (plan-marshall:phase-1-init) Starting')],
+        )
+        (plan_dir / 'references.json').write_text(
+            json.dumps({'modified_files': ['src/a.py']}), encoding='utf-8'
+        )
+
+        result = _al.cmd_run(_run_args(plan_dir))
+
+        assert result['artifact_emission']['completed_tasks'] == 0
+        assert result['artifact_emission']['tasks_with_artifacts'] == 0
+        assert not any('ARTIFACT_EMISSION' in f['message'] for f in result['findings'])
+
     def test_voluntary_checkpoint_polling_finding(self, tmp_path):
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir()

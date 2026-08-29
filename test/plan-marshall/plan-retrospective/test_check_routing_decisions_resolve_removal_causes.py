@@ -30,7 +30,7 @@ from _check_routing_decisions_fixtures import (
     _diff_file,
     _run_args,
 )
-from _decision_line_shapes import format_dropped_record
+from _decision_line_shapes import RECONCILE_CALLER, format_dropped_record
 
 
 class TestFootprintResolverFallback:
@@ -197,6 +197,85 @@ class TestResolveRemovalCauses:
             'some_future_gate', 'sonar-roundtrip', 'a reason', target=' from phase_6.steps'
         )
         assert _crd.resolve_removal_causes([line]) == {'sonar-roundtrip': 'some_future_gate'}
+
+    def test_reconcile_stale_drop_resolves_its_cause(self):
+        """The ``reconcile`` verb's own subtraction, read through the shared shape.
+
+        The emission carries a caller prefix of its own — it is the reconcile verb,
+        not the composer — and the reader is anchored on the ``[STATUS]`` tag rather
+        than on the prefix, so attribution and shape stay independent. Rendered
+        through the WRITER'S formatter, never a transcription, so a change to the
+        shape breaks writer and reader together.
+
+        Pre-fix this line carried no ``[STATUS]`` tag and wrapped the step id in
+        backticks — two independent mismatches, either of which alone left every
+        reconcile-dropped step resolving no cause and falling through to predicate
+        re-evaluation as a false mis-prune.
+        """
+        line = '[2026-04-17T10:00:04Z] [INFO] [hhhhhh] ' + format_dropped_record(
+            'frozen_manifest_stale',
+            'sonar-roundtrip',
+            'its standards doc is absent AND live marshal.json no longer lists it',
+            target=' from phase_6.steps',
+            caller=RECONCILE_CALLER,
+        )
+
+        assert _crd.resolve_removal_causes([line]) == {'sonar-roundtrip': 'frozen_manifest_stale'}
+
+    def test_reconcile_line_keeps_its_own_caller_attribution(self):
+        """Sharing the shape must not borrow the composer's attribution.
+
+        ``check-manifest-consistency`` surfaces compose-tagged decision lines by
+        caller tag, so a reconcile line rendered under the compose prefix would be
+        reported as a composer decision it never was.
+        """
+        line = format_dropped_record(
+            'frozen_manifest_stale', 'sonar-roundtrip', 'a reason', caller=RECONCILE_CALLER
+        )
+
+        assert line.startswith(RECONCILE_CALLER)
+        assert 'manage-execution-manifest:compose' not in line
+
+    def test_archived_backticked_reconcile_line_still_resolves(self):
+        """An ARCHIVED log written under the retired backticked reconcile emitter.
+
+        Transcribed literally on purpose: no live emitter produces this shape any
+        more, so there is no writer to render it from. Archived decision logs are
+        immutable history, and dropping the pattern would leave every pre-change
+        archive resolving NO cause for its reconcile drops — reintroducing the false
+        `mis_prune` on the corpus the fix was meant to make readable.
+        """
+        legacy = (
+            '[2026-04-17T10:00:04Z] [INFO] [iiiiii] '
+            '(plan-marshall:manage-execution-manifest:reconcile) frozen_manifest_stale — '
+            'dropped `sonar-roundtrip` from phase_6.steps: its standards doc is absent AND '
+            'live marshal.json no longer lists it'
+        )
+
+        causes = _crd.resolve_removal_causes([legacy])
+
+        assert causes == {'sonar-roundtrip': 'frozen_manifest_stale_legacy_backticked'}
+
+    def test_the_legacy_reconcile_pattern_does_not_match_the_live_shape(self):
+        """The two shapes are disjoint, so neither can mask the other.
+
+        The legacy pattern REQUIRES the backticks the live emitter no longer writes.
+        Without that requirement it would also match the current line and the
+        recorded cause would name a retired emitter for a drop the live one made.
+        """
+        live = format_dropped_record(
+            'frozen_manifest_stale',
+            'sonar-roundtrip',
+            'a reason',
+            target=' from phase_6.steps',
+            caller=RECONCILE_CALLER,
+        )
+
+        matching = [
+            cause for cause, pattern in _crd._REMOVAL_CAUSE_PATTERNS if pattern.search(live)
+        ]
+        assert matching == []
+        assert _crd._DROPPED_RECORD_RE.search(live) is not None
 
     def test_unresolved_ask_provider_drop(self):
         causes = _crd.resolve_removal_causes([UNRESOLVED_ASK_LINE])

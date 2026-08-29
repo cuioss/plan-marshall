@@ -272,8 +272,15 @@ def filter_bookkeeping(files: list[str]) -> tuple[list[str], list[str], dict[str
         # an absent key for a measured zero.
         'by_category': {category: len(paths) for category, paths in buckets.items()},
         'majority_discarded': len(dropped) > len(kept),
-        # Filled in by the caller, which owns the base-label signal.
-        'diff_available': True,
+        # Seeded FAIL-CLOSED and overwritten by the caller, which owns the
+        # loader's evidence signal. ``False`` is the only safe seed: this filter
+        # never observes a diff, so it cannot know one was available, and a
+        # ``True`` seed makes a caller that forgets the assignment publish
+        # "evidence existed" on no evidence at all — the exact
+        # could-not-look-versus-nothing-to-look-at conflation the surrounding
+        # code exists to prevent. Seeded ``False``, a forgotten assignment
+        # withholds every clean verdict instead of granting one.
+        'diff_available': False,
     }
     return kept, dropped, reduction
 
@@ -434,29 +441,46 @@ def evaluate_tests_only(
 def evaluate_branch_cleanup(
     manifest: dict[str, Any],
     filtered_files: list[str],
-    base_label: str,
     raw_files_total: int,
+    evidence_available: bool,
 ) -> tuple[dict[str, str], dict[str, Any] | None]:
     """Rule M4: branch-cleanup present in phase_6 → some implementation file changed.
 
-    The rule is skipped when no diff data is available — ``base_label`` is
-    ``"unknown"`` or the raw diff is empty (``raw_files_total == 0``). In those
-    cases the absence of changes is an artefact of missing diff input, not a
-    real defect, so emitting a fail would be a false positive. This mirrors the
-    skip-on-missing-data behaviour of the other diff evaluators
-    (``evaluate_docs_only``, ``evaluate_early_terminate``, etc.).
+    The rule is skipped on ``evidence_available is False`` and on nothing else.
+    That flag is the loader's own answer to "did a diff observation reach the
+    rules AT ALL" (:func:`load_diff_files`), so the rule no longer re-derives an
+    input condition it was handed. It must not be re-derived from
+    ``raw_files_total == 0``, because an empty file list has two incompatible
+    causes: a SUPPLIED diff naming nothing is a resolved empty footprint the rule
+    can and must evaluate, while an absent or failed observation is an absence of
+    evidence no rule may verdict on. Collapsing the two produced a skip message
+    that was false about its own inputs — "no diff data available" emitted two
+    lines from a ``diff_available: True`` field contradicting it.
 
-    ⛔ **The failing state is "no implementation file changed", NOT "the diff is
-    empty", and the two are different.** This rule is the only diff-fed one that
-    fails on the EMPTINESS of the filtered set rather than on a culprit present
-    within it, so the filter is what produces that emptiness: reaching the fail
-    branch requires a non-empty raw diff (guarded above) whose every entry the
-    filter dropped. Saying "the diff is empty" there states something the
-    ``raw_files_total`` guard has already ruled out. The verdict itself is
-    substantiated — every drop category (``runtime_state`` / ``report`` /
-    ``config``) is a POSITIVE classification, so an empty survivor set means every
-    supplied path was positively identified as non-implementation — but the message
-    must name the reduction that produced it.
+    ``base_label`` is deliberately not a parameter: ``"unknown"`` is precisely the
+    label the loader pairs with ``evidence_available=False``, so testing it here
+    would only restate the flag.
+
+    ⛔ **The failing state is "no implementation file changed", and the message
+    must name which of its two causes produced it.** This rule is the only
+    diff-fed one that fails on the EMPTINESS of the filtered set rather than on a
+    culprit present within it, and with evidence in hand that emptiness has two
+    distinguishable origins, each with its own wording:
+
+    - ``raw_files_total == 0`` — the observation itself named no path. The
+      footprint is a RESOLVED empty one (a supplied diff file naming nothing, or a
+      git diff that ran and returned nothing), so the message says the observed
+      diff was empty. It may say so only here, where the loader's flag has already
+      established that a diff really was observed.
+    - ``raw_files_total > 0`` — every supplied entry was filtered away, so the
+      filter is what produced the emptiness and the message names the reduction
+      instead. Saying "the diff is empty" in this branch would state the opposite
+      of what was observed.
+
+    The verdict itself is substantiated in both branches — every drop category
+    (``runtime_state`` / ``report`` / ``config``) is a POSITIVE classification, so
+    an empty survivor set means every supplied path was positively identified as
+    non-implementation.
 
     ⚠ It must not go further and infer that there was nothing to push. Every drop
     category can contain tracked files that really did change on the branch — a
@@ -473,11 +497,12 @@ def evaluate_branch_cleanup(
             'branch_cleanup_changes', 'skip', 'rule M4 not applicable — branch-cleanup not in phase_6.steps'
         ), None
 
-    if base_label == 'unknown' or raw_files_total == 0:
+    if not evidence_available:
         return _make_check(
             'branch_cleanup_changes',
             'skip',
-            'rule M4 skipped — no diff data available (base=unknown or empty diff)',
+            'rule M4 skipped — no diff evidence was available (no --diff-file supplied '
+            'and no usable --base-ref diff), so nothing was observed to evaluate',
         ), None
 
     if filtered_files:
@@ -485,16 +510,25 @@ def evaluate_branch_cleanup(
             'branch_cleanup_changes', 'pass', f'branch-cleanup paired with {len(filtered_files)} changed file(s)'
         ), None
 
-    # Reachable only with raw_files_total > 0 and an empty survivor set, so the
-    # whole raw diff was filtered and this count is always non-zero.
-    dropped_total = raw_files_total - len(filtered_files)
-    finding = _make_finding(
-        'info',
-        'branch_cleanup_without_changes',
-        'phase_6.steps includes branch-cleanup but no implementation file changed — '
-        f'all {dropped_total} diff entries classified as bookkeeping '
-        '(plan state, the plan report, or a build-config route)',
-    )
+    if raw_files_total == 0:
+        # A diff WAS observed and named no path — a resolved empty footprint, not
+        # an absence of evidence. Only this branch may describe the diff itself as
+        # empty; see the two-cause note in the docstring.
+        message = (
+            'phase_6.steps includes branch-cleanup but the observed diff is empty — '
+            'the footprint resolved to no changed path at all, so no implementation '
+            'file changed'
+        )
+    else:
+        # A non-empty raw diff whose every entry the filter dropped, so this count
+        # is always non-zero.
+        dropped_total = raw_files_total - len(filtered_files)
+        message = (
+            'phase_6.steps includes branch-cleanup but no implementation file changed — '
+            f'all {dropped_total} diff entries classified as bookkeeping '
+            '(plan state, the plan report, or a build-config route)'
+        )
+    finding = _make_finding('info', 'branch_cleanup_without_changes', message)
     return _make_check('branch_cleanup_changes', 'fail', finding['message']), finding
 
 
@@ -755,10 +789,11 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         if finding is not None:
             findings.append(finding)
 
-    # evaluate_branch_cleanup needs the diff-availability signal so it can skip
-    # (instead of false-positive failing) when no diff data was resolved.
+    # evaluate_branch_cleanup takes the loader's evidence signal itself, so it can
+    # skip (instead of false-positive failing) when no diff was observed, and can
+    # still EVALUATE a resolved-empty footprint that was.
     cleanup_check, cleanup_finding = evaluate_branch_cleanup(
-        manifest, kept_files, base_label, len(raw_files)
+        manifest, kept_files, len(raw_files), evidence_available
     )
     checks.append(cleanup_check)
     if cleanup_finding is not None:
