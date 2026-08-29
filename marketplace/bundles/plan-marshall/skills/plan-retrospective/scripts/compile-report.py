@@ -234,6 +234,16 @@ def _names_checked_set(fragment: Any) -> bool:
     2. It publishes the population it examined, under one of
        :data:`retro_sections.ZERO_ATTRIBUTION_FIELDS`.
 
+    ⛔ **A non-empty ``counts`` dict alone is NOT route 2.** ``counts`` is a
+    member of that vocabulary because a populated count block usually names what
+    was counted — but a fragment that evaluated NOTHING publishes an
+    all-zero ``counts`` block too, and it is fully populated. The log-less
+    ``check-dispatch-audit`` fragment is exactly that: every category present,
+    every value ``0``, nothing named. It passed this probe on the strength of a
+    block that names nothing, which is the ambiguity the probe exists to report.
+    :func:`_counts_names_population` is the narrowing — see its docstring for the
+    two admissible shapes.
+
     The empty-sentinel tuple below deliberately EXCLUDES ``False``, which is
     filtered by a separate identity check — the same split ``_fragment_has_payload``
     makes, for the same reason. ``False == 0`` in Python, so folding ``False`` into
@@ -268,6 +278,17 @@ def _has_attribution_field(candidate: Any) -> bool:
 
     ``False`` is matched by identity for the reason spelled out in
     :func:`_names_checked_set` — a published population of ``0`` must survive.
+
+    ⛔ ``counts`` is admitted ONLY when it names a population, never on the
+    strength of being a non-empty dict. It is the one member of
+    :data:`retro_sections.ZERO_ATTRIBUTION_FIELDS` whose VALUE is itself a
+    container rather than a number or a roster, and a fragment that evaluated
+    nothing still publishes a fully-populated all-zero ``counts`` block — so
+    "``counts`` is non-empty" was satisfied by a block that names nothing. The
+    probe therefore descends one level into ``counts`` and asks the same question
+    of what it finds: a ``counts`` whose entries are themselves population-bearing
+    (or which carries a population field of its own) attributes the zero; a
+    ``counts`` of bare integers does not.
     """
     if not isinstance(candidate, dict):
         return False
@@ -275,9 +296,72 @@ def _has_attribution_field(candidate: Any) -> bool:
         value = candidate.get(field)
         if value is False:
             continue
-        if value not in (None, '', [], {}):
-            return True
+        if value in (None, '', [], {}):
+            continue
+        if field == 'counts':
+            if _counts_names_population(value):
+                return True
+            continue
+        return True
     return False
+
+
+def _counts_names_population(counts: Any) -> bool:
+    """Return True unless the ``counts`` block itself declares it evaluated nothing.
+
+    The narrowing is a READ of what the block already says, not a new vocabulary.
+    A producer whose count entries are STRUCTURED — each carrying its own
+    ``status`` alongside its number, the shape ``check-dispatch-audit`` emits for
+    every ``by_category`` member — is stating per entry whether that count came
+    from an evaluation. When EVERY such entry declares one of
+    :data:`retro_sections.ZERO_DECLARED_UNMEASURED_STATUSES`, the block has said
+    in its own output that nothing was evaluated, and a fragment whose only
+    attribution is that block has not named a checked set. That is precisely the
+    log-less case: all four categories present, every count ``0``, every status
+    ``not_evaluated``, and the fragment envelope nonetheless ``status: success``
+    so route 1 of :func:`_names_checked_set` does not fire.
+
+    Everything else attributes, and the breadth is deliberate. A ``counts`` block
+    of BARE integers declares nothing either way, and the producers that publish
+    one — ``direct-gh-glab-usage`` emits ``{total, by_surface: {...}}`` on every
+    clean run — are counting over a population they really did examine. Reading
+    silence as "named nothing" would flag them on every healthy run, which is the
+    cry-wolf failure ``retro_sections.ZERO_ATTRIBUTION_FIELDS`` warns this probe
+    against. Only an explicit self-declaration narrows the answer.
+    """
+    if not isinstance(counts, dict):
+        return False
+    declared_unmeasured = 0
+    declared_total = 0
+    for value in counts.values():
+        for entry in _iter_count_entries(value):
+            status = entry.get('status')
+            if not isinstance(status, str):
+                continue
+            declared_total += 1
+            if status in ZERO_DECLARED_UNMEASURED_STATUSES:
+                declared_unmeasured += 1
+    if declared_total > 0 and declared_unmeasured == declared_total:
+        return False
+    return True
+
+
+def _iter_count_entries(value: Any):
+    """Yield the dict entries of a ``counts`` value, one nesting level deep.
+
+    A count block publishes its structured entries either directly
+    (``counts[name] = {...}``) or under one grouping key
+    (``counts['by_category'][name] = {...}``). Both shapes are walked; the depth
+    stops there for the same reason :func:`_names_checked_set` bounds its own
+    probe — an unbounded walk would let any incidental nested dict decide the
+    answer.
+    """
+    if not isinstance(value, dict):
+        return
+    yield value
+    for nested in value.values():
+        if isinstance(nested, dict):
+            yield nested
 
 
 def _heading_to_fragment_key(fragments: dict[str, Any]) -> dict[str, str]:
