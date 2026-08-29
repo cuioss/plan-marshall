@@ -221,7 +221,9 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator cor
   --slug {slug}
 ```
 
-A folded spec whose row still reports a `derivation_status` in the indeterminate set — or a `claimed_count` that does not reflect the added surface — has not discharged the obligation, whatever the narrative says.
+A folded spec whose row reports a `claimed_count` that does not reflect the added surface has not discharged the obligation, whatever the narrative says.
+
+**One carve-out, and it is [`cleanup.md`](cleanup.md)'s, not a second rule.** A spec whose surface genuinely IS a function of other plans' stays `derived` — an indeterminate status — and that declaration is permitted to stand, so a `derivation_status` in the indeterminate set is NOT by itself an undischarged obligation. Requiring the fold to convert such a spec to `declarative` would demand a declaration the spec cannot honestly make, and the gate is already safe without it: an indeterminate candidate is SEQUENCED rather than passed. What the fold owes in that case is the same thing cleanup.md asks for — say so explicitly in the decision line, recording that the spec is deliberately unpickable until those plans land. An unrecorded `derived` fold is undischarged; a recorded one is not.
 
 ### Step 6: Log and set the resume anchor
 

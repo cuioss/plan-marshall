@@ -56,14 +56,23 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 
 Count `R`, the plans currently in `launched` status, and select up to `N − R` candidates — a block sized by the scope knob rather than a hardcoded single (at the default `N = 1` that block is exactly one). Walk `staged` plans in queue order whose dependencies (sequencing notes in their `plans/PLAN-NN-{plan_slug}.md` spec) are satisfied, and admit a candidate ONLY when both admission tests pass:
 
-- **Disjoint** — decided from the PARSER, not from a reader's judgement over the rendered `Surface (expected)` cell. Read the corpus's declared surfaces once:
+- **Disjoint** — decided from the PARSER, not from a reader's judgement over the rendered `Surface (expected)` cell. The test has two halves and they come from **two different reads**, because no single verb produces both. Read the corpus's declared surfaces once:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator corpus surfaces \
     --slug {slug}
   ```
 
-  A candidate is disjoint **iff** its row's `admits_disjointness_check` is `true` AND its resolved `claimed` set intersects neither a currently-launched plan's nor a candidate already selected this round. Rows key by `spec` (the spec FILE NAME), so a candidate's row is joined by the same `PLAN-NN-` prefix rule the prep-ready test uses — one join rule, stated once, for both tests.
+  …and the corpus's collision rows once, in the same round:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator corpus cross-check \
+    --slug {slug}
+  ```
+
+  A candidate is disjoint **iff** its `corpus surfaces` row carries `admits_disjointness_check: true` AND `corpus cross-check` reports no `file_overlap_matches[]` row naming that candidate's spec. Each read supplies exactly the half the other cannot: `corpus surfaces` publishes only THIS epic's own declarations — per-spec `derivation_status`, `admits_disjointness_check` and `claimed_count`, plus a flat `claimed[]` list — and carries no launched-plan surface and no intersection; `corpus cross-check` is the sole producer of the intersection, comparing each spec against the live plan set (`candidate_kind: live_plan`, whose surface is that plan's `references.json` `affected_files`), against sibling epics' specs, and against this corpus's own other specs (`candidate_kind: corpus_spec` — which is what catches a collision with a candidate already selected this round). Asking `corpus surfaces` alone for the overlap half asks it for a field it does not emit.
+
+  **Joining a candidate to its rows.** `corpus surfaces` rows carry both `plan_id` and `spec` (the spec FILE NAME) and its `claimed[]` entries key by `plan_id`; `corpus cross-check` rows key by `spec`. A candidate reaches all three by the same `PLAN-NN-` prefix rule the prep-ready test uses — one join rule, stated once, for every test.
 
   ⛔ **An absent or unresolvable declaration is `indeterminate`, never `disjoint`.** `admits_disjointness_check` is `true` only for a `declarative` surface; every other `derivation_status` (`derived`, `prose`, `absent`, `unreadable`) leaves the candidate with no comparable path set, so it contributes NO row to the overlap matcher and its clean reading is SILENCE rather than a checked negative. Such a candidate is sequenced with a surface-side shortfall reason — it is never emitted on the strength of an overlap check that had nothing to compare. Governing authority: **ADR-019** (*An audit separates what it could not evaluate from what it evaluated and found wanting*, `doc/adr/`), the same rule the payload names in its own `governing_authority` field.
 
@@ -88,7 +97,7 @@ Four rules govern the outcome, every one of them decided by the parser rather th
 A candidate failing either test is sequenced, not emitted. **Never emit a colliding, unresolvable, or unprepared plan merely to fill a slot** — when fewer than `N − R` candidates qualify, report the shortfall with the blocking reason per candidate instead. Every reason is **derived from the blocking row**, never hand-typed:
 
 - A prep-ready reason names the claim and its verdict (`claim {claim_index}: contradicted, not re-scoped`, `claim {claim_index}: indeterminate — {quoted line}`), read from the blocking `corpus verdicts` row. A `scope: section` row carries no addressable ordinal, so its reason names the section instead — its `synthesised` field distinguishes an unreadable section never settled from one whose stamped verdict blocks on its own terms, and the two do not share a reason.
-- A disjointness reason is read from the blocking `corpus surfaces` row. An OVERLAP names the intersecting paths and the plan they collide with (`overlaps {paths} with PLAN-KK`); an INDETERMINATE surface names the derivation status that made the check impossible (`surface indeterminate: {derivation_status} — no comparable path declared`). The two are separate reasons because they are separate facts: the first is a checked collision, the second is an unchecked negative, and reporting them alike would hide exactly the case this gate was rebuilt to surface.
+- A disjointness reason is read from the blocking row of whichever read established it — and the two halves of the test are established by different reads, so the two reasons have different sources. An OVERLAP names the intersecting paths and the plan they collide with (`overlaps {paths} with PLAN-KK`), read from the blocking `corpus cross-check` `file_overlap_matches[]` row: `overlapping_files` supplies the paths and `candidate` the colliding plan or spec. An INDETERMINATE surface names the derivation status that made the check impossible (`surface indeterminate: {derivation_status} — no comparable path declared`), read from the `corpus surfaces` row. The two are separate reasons because they are separate facts: the first is a checked collision, the second is an unchecked negative, and reporting them alike would hide exactly the case this gate was rebuilt to surface.
 
 ### Step 5 (verb = `next`): Emit the commands
 

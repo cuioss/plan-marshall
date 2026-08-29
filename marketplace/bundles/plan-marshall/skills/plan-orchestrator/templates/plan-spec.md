@@ -68,10 +68,19 @@ is `absent`; both are `indeterminate` at the gate, which SEQUENCES the candidate
 passing it — see `persona-plan-orchestrator/standards/orchestration-model.md` § The gate's
 reading contract.
 
-⛔ **A `HYPOTHESIS` entry is swept against the tree BEFORE the spec is staged.** An unswept
-guess here is not a neutral placeholder: it is either over-declaration, which serializes
-siblings behind files the plan never touches, or under-declaration, which admits a plan that
-genuinely collides. Sweep it, then label what the sweep found.}
+⛔ **A `HYPOTHESIS` entry is swept against the tree BEFORE the spec is staged — and nothing but
+the author enforces that.** An unswept guess here is not a neutral placeholder: it is either
+over-declaration, which serializes siblings behind files the plan never touches, or
+under-declaration, which admits a plan that genuinely collides. Sweep it, then label what the
+sweep found.
+
+This obligation is an AUTHORING rule with no machine backstop, and stating that is part of the
+rule. The reader strips `OBSERVED:` and `HYPOTHESIS:` with one and the same label prefix and
+keeps no label on the resolved entry, so a `HYPOTHESIS` path is classified as declared surface
+exactly like an `OBSERVED` one; `corpus surfaces` and `corpus cross-check` then consume it with
+no sweep record to require. No step between authoring and the disjointness gate can tell a swept
+guess from an unswept one — which is why an unswept entry reaches the gate silently rather than
+being refused there.}
 
 - {OBSERVED|HYPOTHESIS}: `{path}`:{line} — `{symbol}` (verify-at-outline when HYPOTHESIS)
 

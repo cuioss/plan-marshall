@@ -26,7 +26,7 @@ scripts/
 
 ## `epic_spec_parser` — one reader for `## Expected Surface`
 
-`epic_spec_parser.py` is the sole parser of a plan spec's `## Expected Surface` section, and its being sole is the point rather than a convenience: two readers of that section previously disagreed, and the weaker one was the one wired to the orchestrator's disjointness gate, so a spec that resolved six paths rendered as `(no expected surface)` and passed the gate as colliding with nothing. Both consumers — `plan-marshall:plan-orchestrator` (the queue renderer and `corpus` verbs) and `pm-plugin-development:tools-epic-surface-partition` (the partition/attribution report) — now call this module, so no consumer can resolve a *different* surface for the same spec.
+`epic_spec_parser.py` is the sole parser of a plan spec's `## Expected Surface` section, and its being the only one is the point rather than a convenience: two readers of that section previously disagreed, and the weaker one was the one wired to the orchestrator's disjointness gate, so a spec that resolved six paths rendered as `(no expected surface)` and passed the gate as colliding with nothing. Both consumers — `plan-marshall:plan-orchestrator` (the queue renderer and `corpus` verbs) and `pm-plugin-development:tools-epic-surface-partition` (the partition/attribution report) — now call this module, so no consumer can resolve a *different* surface for the same spec.
 
 What each consumer PROJECTS from that one resolution is its own contract and may differ — inside `plan-orchestrator` it does, for a `derived` spec that resolves entries. One reader buys one resolution, never one projection.
 

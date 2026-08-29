@@ -69,7 +69,9 @@ Two findings come out of that read, and both route to the **Wrong surface / unde
 
 **The running-row exclusion applies unchanged.** A spec whose ledger row is `running` is enumerated and reported as excluded, never re-scoped — a plan in flight owns its own scope, and re-scoping it underneath would be the ledger overwriting a live plan's declaration.
 
-**Verify by re-reading, not by inspecting the edit.** The apply-policy table's own rationale for this row is *verifiable by re-running the sweep*, so re-run `corpus surfaces` after the corrections and report the before/after `indeterminate_count` over the same `specs_total`. A correction that did not move that count did not land, whatever the diff shows.
+**Verify by re-reading, not by inspecting the edit.** The apply-policy table's own rationale for this row is *verifiable by re-running the sweep*, so re-run `corpus surfaces` after the corrections and report the before/after over the same `specs_total`. A correction that did not move its own metric did not land, whatever the diff shows.
+
+⛔ **The two finding classes above need DIFFERENT metrics, and reading both against `indeterminate_count` would reject a correct fix.** `indeterminate_count` moves only when a spec crosses between an indeterminate status and `declarative`, so it is the instrument for the **Unresolvable** class alone. An **Understated** spec is already `declarative` — that is what makes its declaration comparable and its omission invisible — so adding the missing paths leaves `indeterminate_count` unchanged, and a rule keyed on that count alone would report a landed correction as unlanded. Verify an understated correction against the **claimed surface** instead: the before/after `claimed_count` for that spec's row, or its entries in the payload's `claimed[]` list. Both metrics come out of the same single `corpus surfaces` read; no second sweep is needed.
 
 ⛔ **This reconciles the DECLARED side only, and the boundary is a disjointness rather than an overlap to resolve later.** Two surfaces describe one plan and they are reconciled by different owners on different triggers:
 
