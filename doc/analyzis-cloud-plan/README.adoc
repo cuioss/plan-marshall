@@ -2,16 +2,51 @@
 :toc: left
 :toclevels: 3
 
-Five epics were exported to `doc/plans/{epic}/` and executed as standalone cloud runs — a traditional
-Claude Code instrumentation, outside the plan-marshall lifecycle. ⚠ **Three of the five were measured
-against the local lane; two have no local comparison set at all** and are demoted accordingly below —
-so "measured against the local lane" describes the method, not every corpus in it. **The experiment is complete**; this document is the summary of what it established.
+Five epics were executed as standalone cloud runs — a traditional Claude Code instrumentation, outside
+the plan-marshall lifecycle — and then measured. **The experiment is complete**; this document is the
+summary of what it established.
 
-* The per-epic reports are linked below.
-* The method that produced them is xref:analyzis_rules.adoc[Analysis rules].
-* What a cloud run costs is xref:cost-measurement.adoc[Cost measurement].
-* Which capabilities the lane lacks, and whether the corpus can say it mattered, is
-  xref:capability-gaps.adoc[Capability gaps] — including two gaps the corpus **cannot** speak to.
+== The lane under test
+
+Two project-local skills are the cloud lane's complete contract. Every finding in this document set is
+a statement about one of them, and both are readable in the tree:
+
+[cols="2,4",options="header"]
+|===
+| Skill | What it governs
+
+| link:../../.claude/skills/cloud-plan-lane/SKILL.md[`cloud-plan-lane`]
+| The **execution** contract — loaded as the first action of every run. Skill loading, the plan
+  directory lifecycle, the build gate, the verification sub-agent, the branch/PR/review cycle, the
+  merge gate, the run report.
+
+| link:../../.claude/skills/author-cloud-plan/SKILL.md[`author-cloud-plan`]
+| The **authoring** judgement — the rules applied when writing a plan that must survive a runtime with
+  no operator, no ledger visibility and no way to ask a question.
+|===
+
+== How to read this document set
+
+[cols="2,5",options="header"]
+|===
+| Document | Read it for
+
+| This file
+| What the five reports established, and the four results that carry the verdict.
+
+| xref:analyzis_rules.adoc[Analysis rules]
+| The method that produced them — eleven steps, each naming the artifact it consumes.
+
+| xref:cost-measurement.adoc[Cost measurement]
+| What a cloud run costs, derived rather than estimated. The one finding the set closed.
+
+| xref:capability-gaps.adoc[Capability gaps]
+| Which capabilities the lane lacks, and whether the corpus can say it mattered — including three
+  gaps it **cannot** speak to.
+
+| The five per-epic reports
+| Listed in <<_the_five_reports>>. Each is self-contained and carries its own measurement instant.
+|===
 
 [IMPORTANT]
 ====
@@ -19,13 +54,13 @@ so "measured against the local lane" describes the method, not every corpus in i
 
 Against a traditional instrumentation running the same repository at a *higher* model setting,
 plan-marshall is **fully audited where the cloud lane is not** — fourteen artifacts per plan against
-two to four, reaching all the way to per-phase token usage — resolves **100%** of reviewer findings
-where the cloud lane managed 57–96%, and reaches its verification without an operator having to
+two to four, reaching all the way to per-phase token usage — **resolved 100% of reviewer findings in
+every corpus where it was measured**, and reaches its verification without an operator having to
 remember to ask for it.
 
-⛔ **And it orchestrates.** The cloud lane has no orchestration machinery at all: every dispatch,
-every sequencing decision and every concurrency judgement across all five epics was a manual operator
-call, with a hand-written `README.md` as the only epic-level state. That file drifted on **6 of 12**
+**And it orchestrates.** The cloud lane has no orchestration machinery at all: every dispatch, every
+sequencing decision and every concurrency judgement across all five epics was a manual operator call,
+with an agent-authored `README.md` as the only epic-level state. That file drifted on **6 of 12**
 checkable claims in the one corpus that checked it.
 
 **The one-sentence finding about the instrument: the cloud lane is not broken, it is *thin*.**
@@ -39,9 +74,52 @@ call**. Every corpus-level defect in these five reports traces to that one struc
 plan-marshall's overhead buys.
 ====
 
+[#_the_gaps_the_plans_left]
+== The gaps the plans left behind
+
+**This is the concrete finding the rest of the document set orbits, and it is a property of the
+*plans*, not of the audit that found them.** Each cloud run declared deliverables, reported them done,
+and merged. A separate pass then checked those claims against the tree.
+
+[cols="3,1,1,1,2",options="header"]
+|===
+| Corpus | Plans | Deliverables | Gaps recorded | Plans shipping a deliverable the tree does not support
+
+| `truthful-signals` | 45 | 245 | 299 | 26 of 45 — **58%**
+| `code-intelligence-substrate` | 37 | 188 | 479 | 28 of 37 — **75.7%**
+| `review-apparatus` | 13 | 56 | 171 | 13 of 13 — **100%**
+|===
+
+**No total is given, and none should be computed.** The three gap counts are yields of three different
+verification briefs — a repository-wide checklist sweep, a two-stage claim audit, a plan-scoped claim
+audit — so they are not one measurement three times. What is common to all three is direction and
+magnitude: a substantial minority to *all* of the plans in a corpus shipped a claim the tree does not
+support.
+
+Three properties make this the load-bearing result rather than an artefact of a harsh reviewer:
+
+. **The gaps are claim-relative.** The rightmost column is measured against what each plan *itself*
+  said it delivered, not against an external checklist, so it survives any change of verification
+  brief. The raw gap totals do not, and no verdict in this set rests on them.
+. **Nothing in the lane found them.** Every gap in the table was found by the separate third call —
+  which is optional, operator-issued, and **never ran at all for two of the five epics**. A run merges
+  without it and nothing notices.
+. **And they largely do not get closed.** `review-apparatus`: **0 of 171** closed at its measurement
+  instant, because closing them needs a second billed pass that had not run. `truthful-signals`: 30.1%
+  closed — by three later remediation plans which, running in the same lane, **filed 25 new gaps of
+  their own**. The lane does not self-correct.
+
+⇒ **A plan that ships a gap and a plan that ships cleanly are indistinguishable from inside the lane.**
+That is the same sentence as *"the deficit is in self-knowledge"*, said about a specific artifact.
+
+Two further measurements sharpen it: roughly **one gap in six corrects the run's own report** rather
+than the repository (<<_replicated_2>>), and nothing structurally refuses a merge with an open reviewer
+finding (<<_replicated_3>>).
+
+[#_why_the_cloud_lane_exists]
 == Why the cloud lane exists, and what these reports are for
 
-⛔ **Read this before the findings.** The cloud lane was not introduced as an alternative way to ship
+**Read this before the findings.** The cloud lane was not introduced as an alternative way to ship
 work. It was introduced as a **control**: a way to run the same repository through a *traditional
 Claude Code instrumentation* — an authored brief, a capable model, a branch and a PR, and none of the
 plan-marshall lifecycle — so that plan-marshall's concept and results could be checked against
@@ -52,17 +130,19 @@ something rather than asserted.
 That framing changes how every finding below should be read. A defect found in the cloud lane is not a
 complaint about the lane; it is a measurement of what the local lane's machinery is buying. The
 question these five reports answer is not *"is the cloud lane good?"* but *"does plan-marshall earn
-its overhead?"* — and the answer is the section that follows.
+its overhead?"*.
 
 == What the comparison established about plan-marshall
 
 Four results. The evidence class of each is stated, because these reports refuse an unlabelled claim —
 two are derived from the record, two are the operator's own and are labelled as such.
 
+[#_result_1_audited]
 === 1. plan-marshall is fully audited; the cloud lane is not — *derived*
 
 This is the sharpest structural difference in the set, and it is observable rather than argued. An
-archived local plan carries **fourteen** top-level audit artifacts:
+archived local plan carries **fourteen** top-level entries, enumerated here in full so the count is
+derived rather than asserted:
 
 [cols="2,4",options="header"]
 |===
@@ -71,8 +151,9 @@ archived local plan carries **fourteen** top-level audit artifacts:
 | `metrics.md` | per-phase token and billing figures — **the audit reaches all the way to token usage**
 | `quality-verification-report.md` | the in-lifecycle verification result
 | `review-retrospective.md` | per-reviewer findings and their disposition
-| `artifacts/findings/*.jsonl` | every finding, typed by domain — `qgate`, `pr-comment`, `build-error`, `test-failure`
-| `execution.toon`, `handshakes.toon`, `build-results/`, `logs/`, `tasks/` | the run's own execution record
+| `artifacts/` | every finding, typed by domain — `qgate`, `pr-comment`, `build-error`, `test-failure`
+| `execution.toon`, `handshakes.toon` | the phase record and its fingerprinted invariants
+| `build-results/`, `logs/`, `tasks/`, `work/` | the run's own execution record
 | `solution_outline.md`, `references.json`, `request.md`, `status.json` | the plan's declared scope and state
 |===
 
@@ -85,17 +166,32 @@ report its own cost, cannot show its own findings pipeline, and cannot evidence 
 not because those things went badly, but because nothing records them. It is the difference between a
 wrong number with a declared population and no number at all.
 
+[#_result_2_quality]
 === 2. plan-marshall delivers materially higher quality — *operator result, direction corroborated*
 
-⚠ **Evidence class: operator judgement**, the same class as the 2–4% cost estimate before it was
+**Evidence class: operator judgement**, the same class as the 2–4% cost estimate before it was
 derived. It is recorded as the operator's result, not presented as a figure from these reports.
 
 Two mechanisms the operator names, both structural:
 
 * **Every review is handled.** Not sampled, not triaged-by-availability — handled. The reports measure
-  the consequence from the other side: cloud resolution rates of **57.1%**, **95.7%** and *at most*
-  **76.2%** against the local lane's **100%**, on the corpora where both were measurable.
-* ⭐ **Sonar findings are handled too, through the same findings pipeline** —
+  the consequence from the other side:
++
+[cols="3,2,2",options="header"]
+|===
+| Corpus | Cloud resolution | Local
+
+| `truthful-signals` | 57.1% | 100%
+| `code-intelligence-substrate` | 95.7% | 100%
+| `review-apparatus` | 100% | 100% — *a control, not a difference*
+| `multiplattform` | 88.1% | no local set
+| `test-quality` | *at most* 76.2% | no local set
+|===
++
+**The local lane resolved 100% in every corpus where it was measured; the cloud lane's rate ranges
+from 57.1% to 100%.** The corpus where they are equal is stated rather than dropped — and every
+figure in both columns is read post-merge, so every one is an upper bound (<<_replicated_3>>).
+* **Sonar findings are handled too, through the same findings pipeline** —
   `workflow-integration-sonar` feeding `manage-findings` and the triage path. The cloud lane has **no
   equivalent surface at all**: a Sonar finding has nowhere to land in a `report-01.md`.
 
@@ -113,13 +209,14 @@ plan-marshall ahead, the real margin is wider by however much the unexercised ca
 which this document set cannot say, because it never saw it.
 ====
 
+[#_result_3_orchestration]
 === 3. There is no orchestration machinery in the cloud lane — *derived*
 
-⛔ **Every orchestration act in all five epics was a manual operator call**, and the PR record shows
+**Every orchestration act in all five epics was a manual operator call**, and the PR record shows
 it: 51 runs across five epics in the measured week, each one separately dispatched, sequenced and
-concurrency-managed by hand. The reference report records the operator correcting one run's own claim
-of a single dispatch tree — the work *"actually spanned multiple sessions at a maximum of 3 parallel
-runs"*, a limit the operator held, not a limit anything enforced.
+concurrency-managed by an operator decision. The reference report records the operator correcting one
+run's own claim of a single dispatch tree — the work *"actually spanned multiple sessions at a maximum
+of 3 parallel runs"*, a limit the operator held, not a limit anything enforced.
 
 The two lanes' epic-level state is the whole argument:
 
@@ -130,9 +227,10 @@ The two lanes' epic-level state is the whole argument:
 | `{NNN}-{slug}/plan.md` + `report-NN.md` per plan
 | `plans/` — the staged spec corpus, reconciled both ways against the queue
 
-| `README.md` — **hand-written prose**, the only epic-level state there is
+| `README.md` — **prose, authored and re-authored by the runs themselves**, the only epic-level state
+  there is
 | `status.json` — the machine authority, plus `epic.md` whose queue and resume blocks are `GENERATED`
-  from it and cannot be hand-edited
+  from it and cannot be edited in place
 
 | *(nothing)*
 | `landings/` — a verified record per landed plan
@@ -144,19 +242,21 @@ The two lanes' epic-level state is the whole argument:
 | `corpus enumerate` / `cross-check` / `verdicts`, `compact`, `restart-check` — the reconciliation verbs
 |===
 
-⭐ **The consequence was measured, not inferred.** `test-quality` hand-maintained its `README.md` as the
-substitute for a queue and an ownership table. It **drifted on 6 of 12 checkable claims** and carried
-one statement that was simply false about a fixed historical fact — one that cannot drift, only be
-wrong. That is what happens to derivable state when a human maintains it by hand across sixteen runs.
+**The consequence was measured, not inferred.** `test-quality` maintained its `README.md` in prose as
+the substitute for a queue and an ownership table, re-authoring it across sixteen runs. It **drifted on
+6 of 12 checkable claims** and carried one statement that was simply false about a fixed historical
+fact — one that cannot drift, only be wrong. **That is what happens to derivable state when it is
+carried as prose instead of generated**, whoever writes the prose.
 
 ⇒ **The supersession finding in the adjudication table below is this result restated.** Two of the
 three cross-file sets `test-quality` authored a whole plan to derive are provided *structurally* by the
 ledger — the collision matrix by `corpus cross-check`, the queue by a `GENERATED` block that cannot be
-hand-edited. The plan was not made easier by the orchestrator. **It was made unnecessary.**
+edited in place. The plan was not made easier by the orchestrator. **It was made unnecessary.**
 
+[#_result_4_manual_work]
 === 4. plan-marshall needs less manual work — *operator result, structurally substantiated*
 
-⚠ **Evidence class: operator judgement** — but unlike result 2, the mechanism is directly visible in
+**Evidence class: operator judgement** — but unlike result 2, the mechanism is directly visible in
 the artifact lists above.
 
 The cloud lane's verification is a **separate, operator-issued call**: someone must decide to
@@ -170,45 +270,51 @@ state in which they are silently absent.
 ⇒ **The manual step the cloud lane requires is precisely the step that was skipped**, which is why
 result 4 and the most-replicated finding in this document set are the same fact seen from two sides.
 
-⚠ **And verification is only the visible half.** Result 3 is the rest of it: the dispatching, the
+**And verification is only the visible half.** Result 3 is the rest of it: the dispatching, the
 sequencing, the concurrency ceiling, the queue, the ownership table and the landing record were all
 operator work in the cloud lane, and are all machinery in the local one. The five reports measured the
 *quality* consequence of that difference throughout; they never priced the operator time, and neither
 does this document.
 
+[#_the_five_reports]
 == The five reports
 
-[cols="3,1,1,4",options="header"]
+[cols="3,1,1,1,4",options="header"]
 |===
-| Epic | Plans | Weight | Report
+| Epic | Plans | Plans authored by | Weight | Report
 
 | `truthful-signals`
 | 45
+| orchestrator
 | full
 | xref:truthfull-signals.adoc[Report] — the reference corpus; largest, and the only one with a
   like-for-like local comparison
 
 | `code-intelligence-substrate`
 | 37
+| orchestrator
 | full
 | xref:code-intelligence-substrate.adoc[Report] — highest throughput; the two-stage audit that found
   37 of 37 plans sound only after correction
 
 | `review-apparatus`
 | 13
+| orchestrator
 | full
 | xref:review-apparatus.adoc[Report] — found the proposal-only deadlock, the most consequential
   structural defect in the set
 
 | `multiplattform`
 | 3
-| ⚠ demoted
+| **in-lane**
+| demoted
 | xref:multiplattform.adoc[Report] — no gap record at all; retained for the post-merge
   resolution-flag correction it produced
 
 | `test-quality`
 | 10 plans / 16 runs
-| ⚠ demoted
+| **in-lane**
+| demoted
 | xref:test-quality.adoc[Report] — no local comparison; retained for the never-commissioned
   verification finding
 |===
@@ -238,19 +344,47 @@ this summary treats them accordingly. The weakness is specific:
 cited in support of a rate. Where a convergence is claimed below, the population is the three full
 corpora.
 
+[IMPORTANT]
+====
+**The two demoted corpora differ from the other three in *provenance*, not only in data quality — and
+that is the more informative difference.**
+
+The three full corpora ran plans an **orchestrator** authored: the epic existed as a staged spec corpus
+in the ledger first, and the plan documents were exported from it. `code-intelligence-substrate`
+records this directly — *"this epic's plan directories were authored from orchestrator specs"*.
+
+`multiplattform` and `test-quality` authored their own plans **inside the cloud lane**, in runs that
+execute under `cloud-plan-lane` and produce a `report-authoring-NN.md` while running no `plan.md` at
+all. The PR record names them: **2** such runs in `multiplattform` (#1275, #1277) and **6** in
+`test-quality` (#1240, #1242, #1245, #1284, #1307, #1318). Neither epic had an orchestrator spec
+corpus behind it; both were Claude-authored end to end.
+
+**Evidence class.** The distinction is the **operator's**, and it is *corroborated* by the PR record:
+in-lane authoring runs exist for exactly these two epics and for none of the three full ones. Each
+report found the missing partition cell independently and neither was looking for this.
+
+⇒ **These two epics are therefore not merely weaker measurements — they are a different treatment.**
+The other three exercised the *execution* half of the lane on plans that had already passed through
+orchestration. These two exercised the whole thing, authoring included, and the pattern of what they
+lack follows the provenance exactly: no epic spec corpus ⇒ a prose `README.md` in its place ⇒ no
+mechanism to commission a verification pass ⇒ no `gaps.md` for either of them. **That chain is
+result 3 with a cause attached**, and it is why their weakness is itself a finding rather than only a
+caveat about their figures.
+====
+
 [NOTE]
 ====
 **They are nonetheless retained, and deleting them would have cost more than keeping them.** Each
 produced a methodological finding the strong corpora structurally could not — precisely *because* its
 weakness forced a measurement the others took for granted:
 
-* ⭐⭐ **`multiplattform` invalidated the discriminator the other three rest on.** A comment thread's
+* **`multiplattform` invalidated the discriminator the other three rest on.** A comment thread's
   `resolved` flag read *post-merge* is not resolution *before* merge. On the two PRs where an
   independent finalize-time figure exists, both moved upward afterwards — `0/3 → 3/3` and `3/6 → 6/6`.
   Every resolution rate in this document set is therefore **resolution-eventually**, an upper bound on
   merge-gate behaviour. The three strong reports could not have found this; none of them had a corpus
   where the two instruments disagreed visibly.
-* ⭐⭐ **`test-quality` established that the verification pass is optional in practice, not just in
+* **`test-quality` established that the verification pass is optional in practice, not just in
   contract** — ten plans, sixteen runs, zero verification passes, and nothing anywhere recorded the
   absence. It also found that **all four** of its refuted claims were invalidated *after* merge, by
   changes the claiming plan could not have seen, which makes that class a repository-wide gap rather
@@ -265,24 +399,11 @@ the PR record rather than on anything the lane authored about itself.
 Four findings reproduced independently, under different briefs and different instruments. These are
 the load-bearing results.
 
-=== 1. ⭐⭐ The run report is self-assessed, and roughly one gap in six corrects it
+[#_replicated_1]
+=== 1. Plans ship deliverables the tree does not support
 
-[cols="3,2,3",options="header"]
-|===
-| Corpus | Gaps correcting the run's own report | Brief
-
-| `truthful-signals` | **16.6%** | repository-wide checklist sweep
-| `code-intelligence-substrate` | **16.3%** | audit of landed plans
-| `review-apparatus` | **18.1%** | plan-scoped claim audit
-|===
-
-Three corpora, three different questions, three rates within 1.8 points of each other. **The lane's
-only account of a run is written by the agent that performed it, and nothing checks that account
-before the work merges.** This is the most tightly replicated number in the set.
-
-=== 2. Plans ship deliverables the tree does not support
-
-The instruments differ too much to average, so each is stated with its own denominator:
+The headline of <<_the_gaps_the_plans_left>>, restated with each instrument's own denominator, because
+the instruments differ too much to average:
 
 * `truthful-signals` — **20.4%** of deliverable rows fail at least one of four fidelity axes; **58%**
   of plans carry at least one such row.
@@ -291,10 +412,38 @@ The instruments differ too much to average, so each is stated with its own denom
 * `review-apparatus` — only **9 of 56 deliverables (16.1%)** came through with an unqualified verdict,
   and **13 of 13 plans** carry at least one shortfall.
 
-⚠ These are not the same measurement and must not be read as a trend. What is common to all three is
+These are not the same measurement and must not be read as a trend. What is common to all three is
 direction and magnitude: **a substantial minority to a large majority of plan claims do not survive
 contact with the tree.**
 
+[#_replicated_2]
+=== 2. The run report is self-assessed, and roughly one gap in six corrects it
+
+[cols="3,2,3",options="header"]
+|===
+| Corpus | Gaps correcting the run's own report | Brief
+
+| `truthful-signals` | **16.1%** — 48 of 299 | repository-wide checklist sweep
+| `code-intelligence-substrate` | **16.3%** — 78 of 479 | audit of landed plans
+| `review-apparatus` | **18.1%** — 31 of 171 | plan-scoped claim audit
+|===
+
+Three corpora, three different questions, three rates within 2.0 points of each other. **The lane's
+only account of a run is written by the agent that performed it, and nothing checks that account
+before the work merges.** This is the most tightly replicated number in the set.
+
+[NOTE]
+====
+**A figure corrected across this document set rather than silently applied**, per the conventions
+below. The `truthful-signals` rate was previously carried here — and in
+xref:capability-gaps.adoc[Capability gaps], xref:multiplattform.adoc[the `multiplattform` report] and
+xref:analyzis_rules.adoc[the analysis rules] — as **16.6%**, from an earlier draft population of
+51 of 308 gaps. The published corpus is **48 of 299 = 16.1%**, which is what
+xref:truthfull-signals.adoc[the report itself] and `review-apparatus` both carry. The spread across the
+three corpora is therefore 2.0 points, not 1.8.
+====
+
+[#_replicated_3]
 === 3. Nothing structurally blocks a merge with an open finding
 
 `truthful-signals` measured **57.1%** reviewer resolution against the local lane's **100%**.
@@ -304,9 +453,10 @@ statistically indistinguishable from local.
 
 ⇒ **The lane acts on external review well when it acts. It has no gate that requires it to.**
 
-⛔ Every figure in this section is subject to the `multiplattform` correction above and is an **upper
+Every figure in this section is subject to the `multiplattform` correction above and is an **upper
 bound**.
 
+[#_replicated_4]
 === 4. The lane cannot measure its own cost — *now closed*
 
 All five reports name this. It is the one finding in the set that has since been **resolved**: see
@@ -320,7 +470,7 @@ xref:cost-measurement.adoc[Cost measurement].
 | **Derived figure** | **≈4% per cloud-lane run**, all-in, from a fully-consumed budget window
 |===
 
-⭐ **Note which side had to be derived.** The cloud figure needed a budget-window reconstruction
+**Note which side had to be derived.** The cloud figure needed a budget-window reconstruction
 because the lane publishes nothing; the local lane's equivalent is simply **read out of `metrics.md`**,
 per phase, per plan. That asymmetry is result 1 above showing up in the one place it can be priced.
 
@@ -328,7 +478,7 @@ per phase, per plan. That asymmetry is result 1 above showing up in the one plac
 three-bucket split — authoring / running / verifying — remains unmeasured; the window method sidesteps
 it rather than solving it.
 
-⚠ **The cloud-plan campaign ran two weeks; the figure is derived from the one that is attributable.**
+**The cloud-plan campaign ran two weeks; the figure is derived from the one that is attributable.**
 The other week mixed cloud-plan work with unrelated work, so its budget cannot be split between lanes
 without guesswork. The headline is therefore a **one-of-two-week sample**, selected on measurability
 rather than on being typical, and the campaign's total cost is **not** this figure multiplied by two.
@@ -338,7 +488,7 @@ rather than on being typical, and the campaign's total cost is **not** this figu
 Each of these appeared in one corpus and is unique to it, but each is a property of the contract rather
 than of that epic.
 
-=== ⭐⭐ The lane contract forbids a lane run from repairing the lane contract
+=== The lane contract forbids a lane run from repairing the lane contract
 
 `review-apparatus`. A gap whose remedy is an edit to `cloud-plan-lane/SKILL.md` can only be *proposed*
 by a lane run. Three such gaps sat open for twelve days; **27 commits crossed that file; none applied
@@ -348,7 +498,7 @@ the fix; the fix rotted into a regression.**
 the run.** No amount of effort inside the lane could have. This is the clearest case in the set where
 the lane's problem is structural rather than a matter of thinking harder.
 
-=== ⭐⭐ The lane sizes plans past a reviewer's hard limit
+=== The lane sizes plans past a reviewer's hard limit
 
 `multiplattform` — and independently reproduced in `test-quality`:
 
@@ -361,7 +511,7 @@ the lane's problem is structural rather than a matter of thinking harder.
 because "reviewer coverage is environmental and shared across lanes" was the control that *removed*
 coverage as an explanation in the reference report.
 
-=== ⭐ Nothing re-checks a landed claim
+=== Nothing re-checks a landed claim
 
 `test-quality`. All four of its refuted claims were invalidated **after** merge — three by later work
 inside the epic, one by an unrelated epic two days later. **No pre-merge gate in either lane would have
@@ -390,7 +540,7 @@ from "verified" without being verified.
 | SUPPORTED
 | SUPPORTED
 | SUPPORTED
-| ⚠ not adjudicable
+| not adjudicable
 | SUPPORTED ^†^
 
 | 2. The lane contract is faulty
@@ -410,10 +560,9 @@ from "verified" without being verified.
 
 ^†^ by *supersession* rather than by comparison: two of the three cross-file sets `test-quality`
 authored a plan to derive are provided **structurally** by the orchestrator ledger. Ingestion did not
-*catch* those defects — it made them unable to occur. This is
-xref:README.adoc#_3_there_is_no_orchestration_machinery_in_the_cloud_lane_derived[result 3] arriving
-from the other direction: the defect existed because the lane had no orchestration machinery, and it
-stopped existing when a lane that has some took the epic over.
+*catch* those defects — it made them unable to occur. This is <<_result_3_orchestration,result 3>>
+arriving from the other direction: the defect existed because the lane had no orchestration machinery,
+and it stopped existing when a lane that has some took the epic over.
 
 ⇒ **Explanation 2 is the only one supported by every corpus, including the two demoted ones.** It is
 also the only one supported with *named mechanisms* in all five.
@@ -425,7 +574,7 @@ throughout — chosen deliberately to compensate for the absent guardrails — a
 figures above, while the local lane spent level-3 on a subset of phases and resolved every reviewer
 finding.
 
-⚠ On *cost* this weakens the comparison, since part of any gap is the model tier. ⭐ On *quality* it
+On *cost* this weakens the comparison, since part of any gap is the model tier. On *quality* it
 strengthens the conclusion: **if the more expensive setting still under-performs on the claim-relative
 metrics, the difference is structural.**
 ====
@@ -447,23 +596,23 @@ Measured, not inferred. The reports should not be read as a case against the lan
   a clean first-pass result into two high-severity findings.
 * **Re-entry works** (`test-quality`, the only corpus to exercise it): three later runs closed defects
   their predecessor created or missed.
-* ⭐ **Mechanically-derived figures survive; asserted ones do not.** In one plan every census figure
+* **Mechanically-derived figures survive; asserted ones do not.** In one plan every census figure
   re-derived exactly while five narrative sections had gone stale.
 
 == Recommendations
 
 Consolidated across the five reports, ordered by measured consequence.
 
-. ⭐⭐ **Make post-run verification a precondition, not an operator option.** Three corpora reached an
+. **Make post-run verification a precondition, not an operator option.** Three corpora reached an
   apparently-complete state with the pass never run. This is the highest-value change in the set and it
   is not close.
-. ⭐⭐ **Route a gap whose remedy is a lane-contract edit to a non-lane owner at the moment it is
+. **Route a gap whose remedy is a lane-contract edit to a non-lane owner at the moment it is
   found.** The proposal-only deadlock is otherwise unfixable from inside.
 . **Stop treating the run report as evidence**, or derive its factual rows mechanically. ~1 gap in 6
   corrects it, replicated across three corpora.
 . **Give the lane a blocking findings gate.** Nothing structurally prevents merging with an open
   finding.
-. ⭐ **Add a periodic re-check of landed claims.** The one recommendation that is not about the cloud
+. **Add a periodic re-check of landed claims.** The one recommendation that is not about the cloud
   lane — no pre-merge gate in either lane catches a claim invalidated after merge.
 . **Bound authored PR size against the published reviewer limits** — character and file-count both.
   A plan that cannot be reviewed by a third of the roster is mis-sized.
@@ -481,7 +630,8 @@ Consolidated across the five reports, ordered by measured consequence.
   found* is a result; *could not look* is not.
 * Refuted findings are retained with the evidence that refuted them, never deleted.
 * Where an analysis corrects a figure it inherited, the correction is recorded rather than silently
-  applied. The `multiplattform` correction above is the worked example.
+  applied. The `multiplattform` post-merge correction and the 16.6%-to-16.1% correction in
+  <<_replicated_2>> are the worked examples.
 * These reports carry their measurement instant — a deliberate, stated exception to the project's
   no-timestamps standard, because a comparative measurement without its instant is exactly the
   untruthful signal they exist to find.
