@@ -6,6 +6,12 @@
 Analysis of the `code-intelligence-substrate` plans executed as standalone cloud runs, measured
 against the plans executed locally through the full plan-marshall lifecycle.
 
+**The contract under analysis.** The cloud lane is defined by two project-local skills:
+link:../../.claude/skills/cloud-plan-lane/SKILL.md[`cloud-plan-lane`], the execution contract loaded
+as the first action of every run, and
+link:../../.claude/skills/author-cloud-plan/SKILL.md[`author-cloud-plan`], the authoring judgement
+applied when a plan is written. Every lane-contract finding below names one of them.
+
 [IMPORTANT]
 ====
 **Measured at repository HEAD `e3ef31cbb`, 2026-08-22 (UTC)** (`main` at `31211a99b`; the two differ only
@@ -17,7 +23,7 @@ This document carries a measurement instant, which the project documentation sta
 forbids. The deviation is deliberate and is the subject of the analysis: a comparative measurement
 without its instant is exactly the untruthful signal this epic exists to remove.
 
-⚠ **The zone is stated because it is load-bearing here.** The measurements were taken across a
+**The zone is stated because it is load-bearing here.** The measurements were taken across a
 local-midnight boundary (CEST, UTC+2), so the local calendar date advanced while the UTC date did
 not. The commit itself is `2026-08-22T21:28Z`. An unzoned date would have been ambiguous by one day
 — a small instance of exactly the defect class this corpus is full of.
@@ -86,7 +92,7 @@ The three top rows disagree because **15 entries carry a severity followed by pr
 loose word match over-counts them. The audit's own summary anticipated this and told readers to
 re-derive rather than trust it — **it was right to, and its own total was still one short.**
 
-⛔ **Every table below uses the 479 in-file figure**, because that is what a script reading the
+**Every table below uses the 479 in-file figure**, because that is what a script reading the
 corpus reproduces. The adjudicated 480/48 differs only in plan `500`, whose two severity promotions
 live in `adversarial-review.md` and were never written back into `gaps.md`. **That write-back is
 itself an open item**, recorded here rather than silently applied.
@@ -160,7 +166,7 @@ PR, never a zero-findings result.
 | **total** | | | **188** | **57** | **479** | **46** | **47** | **45**
 |===
 
-⭐ **`290` is the one row where `CR find` is `0` rather than `-`.** CodeRabbit reviewed that PR and
+**`290` is the one row where `CR find` is `0` rather than `-`.** CodeRabbit reviewed that PR and
 raised nothing. Every other blank is *could not look*. The two are different facts and the table
 keeps them apart.
 
@@ -223,7 +229,7 @@ never on the raw total.
 | **total** | **479** | **100%** |
 |===
 
-⚠ **This corpus uses its own `Kind` vocabulary**, not the one the sibling analysis used. The mapping
+**This corpus uses its own `Kind` vocabulary**, not the one the sibling analysis used. The mapping
 onto the three classes is stated above so the partition is auditable rather than asserted.
 
 === The three-way partition
@@ -251,7 +257,7 @@ falsely*, so a documentation defect here is frequently the defect, not a cosmeti
 | `Where:` field names the run's own `report-NN.md` | **85 / 479 = 17.7%**
 |===
 
-⭐ **Roughly one gap in six is a correction to the run's account of itself**, not to the repository.
+**Roughly one gap in six is a correction to the run's account of itself**, not to the repository.
 The two measures agree closely while being derived from different fields, which is a useful internal
 consistency check on the taxonomy.
 
@@ -288,12 +294,12 @@ independent measurement of the same quantity:
 | #1123 | 9 | **9** | exact match
 |===
 
-⚠ **The retrospective's headline "14 actionable" for #1127 is a different quantity** — it adds 2
+**The retrospective's headline "14 actionable" for #1127 is a different quantity** — it adds 2
 `review_body` summaries to the 12 `inline` findings. The method's definition counts inline comments
 carrying the `cr-comment:v1` fingerprint, so 12 is the correct figure under this definition and the
 delta is explained rather than reconciled away.
 
-⚠ **`resolved` here is the thread's `resolved` flag, not a fixed-rate.** The #1127 retrospective
+**`resolved` here is the thread's `resolved` flag, not a fixed-rate.** The #1127 retrospective
 separately reports 11 of 14 *resolved as fixed* (78.6%). Thread-resolution and fixed-rate are
 different measures; this report uses the former throughout, for both lanes, so the comparison is
 like-for-like.
@@ -346,7 +352,7 @@ order-dependent.** Had the waves run in the opposite order the numbers would lik
 
 === The resolution rate is the control that eliminates a candidate
 
-⭐ **This is the dimension where both lanes behave essentially identically**: 95.7% and 100% of what
+**This is the dimension where both lanes behave essentially identically**: 95.7% and 100% of what
 a reviewer raised was resolved before merge.
 
 ⇒ **The cloud lane does not ignore reviewer findings.** Its findings *pipeline* — receive, triage,
@@ -378,7 +384,7 @@ eliminates the most obvious candidate.
 | **total** | | **55** | **227** | **267**
 |===
 
-⛔ **The finding types are separated, as the method requires.** Defect-shaped = 134 `qgate` +
+**The finding types are separated, as the method requires.** Defect-shaped = 134 `qgate` +
 93 `pr-comment`. The 267 `test-failure` / `build-error` records are in-run build signal and would
 have inflated the count by more than double if mixed in.
 
@@ -406,10 +412,10 @@ The orchestrator contract requires every landed plan's result to be verified aga
 before it is recorded; a pasted claim is a lead, never a fact. The `landings/*.md` records are that
 verification's output.
 
-⛔ **The 37 landing records written during the 2026-08-22 ingest are excluded** — they are this
+**The 37 landing records written during the 2026-08-22 ingest are excluded** — they are this
 analysis's own output, and counting them would be self-measurement.
 
-⚠ **The remaining eligible records must also be split by lane**, because two of them describe cloud
+**The remaining eligible records must also be split by lane**, because two of them describe cloud
 runs. Mixing them would contaminate the comparison:
 
 [cols="3,2,2",options="header"]
@@ -464,7 +470,7 @@ one `metrics.md` total.
 [quote]
 ____
 **Tokens:** not available to the agent in this session — the harness surfaces no per-run count. …
-⛔ **Not comparable** to a plan-marshall `metrics.toon` total, which counts an orchestrator-plus-agent
+**Not comparable** to a plan-marshall `metrics.toon` total, which counts an orchestrator-plus-agent
 dispatch tree under a per-task billing boundary this session does not share.
 ____
 
@@ -486,7 +492,7 @@ verification rounds).
 | Sum over the 9 | 865,768,632
 |===
 
-⚠ **Two of the eleven publish no total** — the population rides with the figure rather than being
+**Two of the eleven publish no total** — the population rides with the figure rather than being
 silently dropped.
 
 == Adjudication of the three candidate explanations
@@ -592,7 +598,7 @@ The analysis should not be read as a case against the lane. Measured strengths:
 == Reproducing this analysis
 
 See xref:analyzis_rules.adoc[the analysis rules] for the instruction set. Every table above is
-generated by script from the ingested corpus; none is hand-typed.
+generated by script from the ingested corpus; none is transcribed.
 
 [cols="3,4",options="header"]
 |===
@@ -606,8 +612,8 @@ generated by script from the ingested corpus; none is hand-typed.
 | **The derivation scripts** | `cloud-runs/_audit/analyze.py` (populations, fidelity, taxonomy) · `reviewer.py` (reviewer signal, both lanes) · `tables.py` (the AsciiDoc rows above)
 |===
 
-The per-PR ledger in this document was diffed against `tables.py`'s output before publication and reproduces it exactly, so the strongest finding in the sibling report — that mechanically-derived figures survive a run in which hand-written prose goes stale — holds for this one too.
+The per-PR ledger in this document was diffed against `tables.py`'s output before publication and reproduces it exactly, so the strongest finding in the sibling report — that mechanically-derived figures survive a run in which asserted prose goes stale — holds for this one too.
 
-⚠ **Plan population = directories under `cloud-runs/` excluding `_`-prefixed ones.** The seven un-run
+**Plan population = directories under `cloud-runs/` excluding `_`-prefixed ones.** The seven un-run
 `5NN-*.md` files also live there as loose files; they are not directories and are therefore excluded
 by construction, which is why the population is 37 and not 44.

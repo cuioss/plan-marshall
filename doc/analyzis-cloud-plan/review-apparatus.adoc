@@ -6,6 +6,12 @@
 Analysis of the `review-apparatus` plans executed as standalone cloud runs, measured against the
 complete local archive of plans executed through the full plan-marshall lifecycle.
 
+**The contract under analysis.** The cloud lane is defined by two project-local skills:
+link:../../.claude/skills/cloud-plan-lane/SKILL.md[`cloud-plan-lane`], the execution contract loaded
+as the first action of every run, and
+link:../../.claude/skills/author-cloud-plan/SKILL.md[`author-cloud-plan`], the authoring judgement
+applied when a plan is written. Every lane-contract finding below names one of them.
+
 [IMPORTANT]
 ====
 **Measured at repository HEAD `c11d23b5b`, 2026-08-23.** Every figure is re-derivable by script from
@@ -64,7 +70,7 @@ Applied to every commit in the repository that touches that file, with each PR n
 them, and none of the 13 touches that file at all.* The exclusion step removed nothing from this
 corpus — not because it was skipped, but because it was run and found nothing to remove.
 
-⚠ This is a **structural fact about the epic, not luck**, and it is the seed of
+This is a **structural fact about the epic, not luck**, and it is the seed of
 xref:#_the_deadlock[§ 6.2(a)]: no `review-apparatus` plan touched the lane contract because **no
 lane-governed run is permitted to**.
 ====
@@ -97,10 +103,10 @@ precisely the class this report exists to find. The table above is read from `.p
 which is authoritative and git-tracked, and it reproduces the reference report's reading exactly.
 ====
 
-⛔ **On cost this weakens the comparison** — part of any gap is the model tier, so the cost figures
+**On cost this weakens the comparison** — part of any gap is the model tier, so the cost figures
 are *not* effort-controlled.
 
-⭐ **On quality it strengthens the conclusion** — the cloud lane had the most expensive setting
+**On quality it strengthens the conclusion** — the cloud lane had the most expensive setting
 available, explicitly as compensation for absent guardrails.
 
 == Per-PR ledger
@@ -192,7 +198,7 @@ in the reference taxonomy at all.
 | *TOTAL* | *171* | | *4* | *55* | *112*
 |===
 
-⚠ **Compound `Kind` values were normalised to their leading token** (e.g. *"bug (fail-open) +
+**Compound `Kind` values were normalised to their leading token** (e.g. *"bug (fail-open) +
 stale-doc"* → `bug`). 33 of 171 gaps carry a compound kind; normalisation is by first token and is
 therefore conservative toward the more severe class.
 
@@ -231,7 +237,7 @@ The reference corpus measured 16.1%. Two independent corpora, two different brie
 **Adjusting for both effects: 66 real defects over 56 deliverables = 1.18 real defects per
 deliverable**, of which **4** are `blocker` and 55 `major`.
 
-⛔ This is **not** comparable to the reference report's 0.31 — different brief, different denominator
+This is **not** comparable to the reference report's 0.31 — different brief, different denominator
 semantics.
 ====
 
@@ -268,7 +274,7 @@ carrying a `cr-comment:v1` fingerprint. Three states are distinguished and never
 | PRs with findings and zero resolved | **0** | **0**
 |===
 
-=== ⭐ The reference report's discriminator is a CONTROL here
+=== The reference report's discriminator is a CONTROL here
 
 [IMPORTANT]
 ====
@@ -283,7 +289,7 @@ supported one — a control that eliminates a candidate is the stronger result. 
 therefore rests on different evidence than the reference report's, and says so.
 ====
 
-⚠ **Do not read this as "the cloud lane improved".** The cloud lane still has **no blocking findings
+**Do not read this as "the cloud lane improved".** The cloud lane still has **no blocking findings
 gate** — nothing structurally refuses a merge with an open reviewer finding. With 16 findings across
 5 reviewed PRs (3.2 per PR), the corpus is small enough that a 100% rate is consistent with attentive
 authors and with luck alike. The reference corpus's 84 findings across 16 reviewed PRs is where the
@@ -297,7 +303,7 @@ carries the identical notice: *"Review limit reached — you've reached your PR 
 **account-level quota**, not a `skip-bot-review` label and not a lane decision. The local lane lost 4
 of 11 PRs to it.
 
-=== ⭐ A second control: PR-Agent's canned no-op
+=== A second control: PR-Agent's canned no-op
 
 This epic exists to fix reviewer-signal reliability, so its own PRs are first-party evidence for its
 own subject. `cuioss-review-bot` (PR-Agent) posted a Reviewer Guide on **every** PR in both lanes —
@@ -357,7 +363,7 @@ The orchestrator contract requires every landed plan's result to be verified aga
 before it is recorded; a pasted claim is explicitly a lead, never a fact. The `landings/*.md` records
 are that verification's output.
 
-⛔ **The 13 landing records generated during this ingestion are excluded** — they are this analysis's
+**The 13 landing records generated during this ingestion are excluded** — they are this analysis's
 own output and counting them would be measuring the instrument with itself. That leaves the
 **8 pre-existing orchestrator-written landing records**:
 
@@ -433,7 +439,7 @@ figures below are measured; the cloud side is *absent*, not *low*.
 | Self-measurement | none | full per-phase `metrics.md`
 |===
 
-⚠ **A fourth, unbudgeted expenditure exists in this corpus and belongs in the total**: the *ingestion*
+**A fourth, unbudgeted expenditure exists in this corpus and belongs in the total**: the *ingestion*
 — thirteen landing analyses, eight spec re-groundings, a coverage reconciliation over 171 gaps, and
 five new specs. It ran as eleven sub-agents in one local session and is the price of bringing cloud
 work back into a ledger. No cloud-lane cost model accounts for it.
@@ -461,7 +467,7 @@ control (§ 5.1):
 === 2. `cloud-plan-lane` is faulty — *SUPPORTED, with one mechanism unique to this corpus*
 
 [[_the_deadlock]]
-==== (a) ⭐⭐ The proposal-only deadlock — a contract that forbids its own repair
+==== (a) The proposal-only deadlock — a contract that forbids its own repair
 
 **This is the strongest lane-contract finding in either report, and it does not appear in the
 reference one.**
@@ -553,7 +559,7 @@ both lanes and is a control.** The verdict here rests on what remains:
 * **0 of 171 gaps are closed**, because closing them requires a second, separately-billed pass that
   has not run.
 
-⭐⭐ **The finding unique to this epic is structural and is the most consequential in either report:
+**The finding unique to this epic is structural and is the most consequential in either report:
 the lane contract forbids a lane run from repairing the lane contract.** Three gaps sat open for
 twelve days; 27 commits crossed that file; none applied the fix; the fix rotted into a regression.
 **Ingesting the plans into the local lane dissolved the deadlock by changing which rule-set governs
@@ -563,7 +569,7 @@ the run** — no amount of effort inside the lane could have.
 chosen to compensate for absent guardrails, and still landed a 16.1% clean-verdict rate and three
 live blockers, while the local lane spent level-3 on four of six phases.
 
-⚠ **The honest limit of this report:** the local landing-record population is **8**, so the
+**The honest limit of this report:** the local landing-record population is **8**, so the
 reference report's nearest like-for-like comparison could not be reproduced here. The verdict rests
 on the cloud-side claim-relative measurements and on the two controls, not on a cross-lane
 contradiction rate.
@@ -573,7 +579,7 @@ contradiction rate.
 
 * **The adversarial second pass works.** All 13 `verification.md` files carry an `## Adversarial
   review` section, and all 13 record corrections in it — verdicts moved in both directions, and one
-  pass caught a defect in the *fix being proposed*. ⚠ Measured as a keyword proxy over that section,
+  pass caught a defect in the *fix being proposed*. Measured as a keyword proxy over that section,
   not as an enumeration of corrections.
 * **Refutation is used honestly.** Plan `110` found both its target defects already fixed and said so
   rather than manufacturing work; plan `100` reported a deliverable as a genuine no-op; plan `120`
@@ -606,6 +612,6 @@ Ordered by the measured consequence each addresses.
 
 See xref:analyzis_rules.adoc[the analysis rules] for the instruction set. Every figure was derived by script from the
 ingested corpus at `.plan/local/orchestrator/review-apparatus/cloud-runs/` and from
-`.plan/local/archived-plans/`; none was transcribed by hand. Three independent validations of the
+`.plan/local/archived-plans/`; none was transcribed. Three independent validations of the
 extraction are recorded in <<_validation>>, and one measurement defect found and corrected during the
 analysis is recorded in § 2.

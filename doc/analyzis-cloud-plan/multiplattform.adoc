@@ -5,6 +5,12 @@
 
 Analysis of the `multiplattform` plans executed as standalone cloud runs.
 
+**The contract under analysis.** The cloud lane is defined by two project-local skills:
+link:../../.claude/skills/cloud-plan-lane/SKILL.md[`cloud-plan-lane`], the execution contract loaded
+as the first action of every run, and
+link:../../.claude/skills/author-cloud-plan/SKILL.md[`author-cloud-plan`], the authoring judgement
+applied when a plan is written. Every lane-contract finding below names one of them.
+
 [IMPORTANT]
 ====
 **Measured at repository HEAD `ec26306e`, 2026-08-24**, on branch `chore/ingest-multiplattform-epic`.
@@ -18,14 +24,14 @@ forbids. The deviation is deliberate and is the subject of the analysis.
 
 [WARNING]
 ====
-**This report is the weakest of the four, and the reasons are structural. Read them before reading a
+**This report is the weakest of the five, and the reasons are structural. Read them before reading a
 single figure.**
 
 . **n = 3 plans, 13 deliverables.** `truthful-signals` had 45, `code-intelligence-substrate` 37,
   `review-apparatus` 13. Every ratio here is over a denominator small enough that a single plan moves
   it by a third. No percentage in this report should be treated as an estimate of a rate.
 . **No plan in this corpus has a `verification.md` or a `gaps.md`.** The README's preconditions
-  require both. ⇒ **The gap count — the headline figure of all three sibling reports — does not exist
+  require both. ⇒ **The gap count — the headline figure of the three full corpora — does not exist
   for this epic and was not reconstructed.**
 . **The cross-lane comparison is out of scope by operator instruction**: this epic has no plans that
   ran through the local plan-marshall lifecycle. Steps 4 and 6 of the method are therefore not
@@ -34,6 +40,10 @@ single figure.**
 
 ⇒ **The three-way adjudication rests on a narrower evidence base than in the sibling reports**, and
 § 8 states which candidate explanations this corpus can and cannot speak to.
+
+**None of that is bad luck.** This epic's plans were authored **inside the cloud lane** rather than by
+an orchestrator, which is the same difference that removed every artifact listed above. See
+xref:#_a_third_pr_kind_this_corpus_forces_into_the_open[§ 3].
 ====
 
 == The instrument gap, stated before any number
@@ -65,12 +75,12 @@ every deliverable from the implementing source at `2cd1a19c`, producing
 ever run against these three plans, so there is no population to count. This is **not** "swept and
 found nothing", and it must never be read as the epic scoring zero gaps.
 
-⛔ **Consequently this report publishes no gaps-per-deliverable figure and its deliverable-fidelity
+**Consequently this report publishes no gaps-per-deliverable figure and its deliverable-fidelity
 figure must not be placed beside any sibling report's.** The claim-relative measurements in § 4 and
 § 5 are sound within this corpus and travel nowhere else.
 ====
 
-⚠ **A second divergence from the method, recorded rather than silently accepted.** The README's
+**A second divergence from the method, recorded rather than silently accepted.** The README's
 precondition names `cloud-runs/{NNN}-{slug}/` as the ingested corpus path. This epic's ingestion used
 `archive/{NNN}-{slug}/` and split the unrun specs into `archive/original-staged-specs/`. The layout
 differs because this ingestion also had five *unrun* plans to place, which the sibling ingestions did
@@ -110,13 +120,37 @@ lane-governed run is permitted to amend the contract governing it.**
 
 === A third PR kind this corpus forces into the open
 
-⭐ **`multiplattform` has two PRs that are neither plan work nor lane-fixes: epic-*authoring* runs.**
+**`multiplattform` has two PRs that are neither plan work nor lane-fixes: epic-*authoring* runs.**
 `#1275` and `#1277` ran under `cloud-plan-lane` and produced `report-authoring-0{1,2}.md`, but they
 executed no `plan.md` — they *wrote* the plans. The method's two-way partition has no cell for them.
 
 They are **excluded from every deliverable figure** (they declare no deliverables) and **reported
 separately** in the reviewer table, where they are legitimate evidence about the lane's review
 behaviour. Stating them rather than silently folding them in is the point.
+
+[IMPORTANT]
+====
+**Those two PRs are why this epic sits apart from the three reference corpora, and the difference is
+*provenance*, not data quality.**
+
+`truthful-signals`, `code-intelligence-substrate` and `review-apparatus` ran plans an **orchestrator**
+authored: the epic existed as a staged spec corpus in the ledger first, and the plan documents were
+exported from it — xref:code-intelligence-substrate.adoc[the sibling report] records this directly,
+*"this epic's plan directories were authored from orchestrator specs"*. **`multiplattform` authored its
+own plans inside the cloud lane**, in #1275 and #1277. `test-quality` did the same, in six such PRs.
+The three reference corpora carry none.
+
+**Evidence class.** The distinction is the **operator's**, and it is *corroborated* by the PR record:
+in-lane authoring runs exist for exactly the two demoted epics and for none of the three reference
+ones.
+
+⇒ **This epic is therefore not a weaker sample of the same treatment — it is a different treatment.**
+The reference corpora exercised the *execution* half of the lane, on plans that had already been
+through orchestration. This one exercised the whole thing, authoring included. The chain the rest of
+this report measures follows from that: no orchestrator spec corpus behind the epic ⇒ nothing that
+commissions the third billed bucket ⇒ no `verification.md`, no `gaps.md`, and § 1 exists because the
+measurement does not.
+====
 
 [cols="2,1,1,3",options="header"]
 |===
@@ -154,7 +188,7 @@ re-derived it from the implementing source and found it present and behaving as 
 
 [IMPORTANT]
 ====
-⛔ **This 92.3% must not be read against `review-apparatus`'s 16.1% clean-verdict rate or
+**This 92.3% must not be read against `review-apparatus`'s 16.1% clean-verdict rate or
 `truthful-signals`' 20.4% fidelity-failure rate.** Three instruments, three questions:
 
 * `truthful-signals` scored four boolean axes **plus an adjacent-surface sweep**.
@@ -191,11 +225,11 @@ independently reproduced at `2cd1a19c`, and **each was already named in its own 
 out-of-scope, deferred, or registered in the coupling inventory. The ingestion pass confirmed the
 disclosures rather than catching concealment.
 
-⭐ **That is a genuinely good result and is stated as one.** In `review-apparatus`, 18.1% of gaps were
-corrections to the runs' *own reports*; in `truthful-signals`, 16.6%. **In this corpus the ingestion
+**That is a genuinely good result and is stated as one.** In `review-apparatus`, 18.1% of gaps were
+corrections to the runs' *own reports*; in `truthful-signals`, 16.1%. **In this corpus the ingestion
 pass found no false claim in any of the three run reports about what had landed.**
 
-⚠ **With the caveat that carries it:** the sibling figure counts a *checklist sweep's* corrections,
+**With the caveat that carries it:** the sibling figure counts a *checklist sweep's* corrections,
 and no such sweep ran here. The honest statement is *"the claims the plans made were true"*, never
 *"the plans' reports contain no false statements"* — the second was not tested.
 ====
@@ -229,7 +263,7 @@ per-reviewer count is ground truth. The classifier reproduces both:
 | `2026-08-23-fix-provider-abstraction-mismatch` (#1332) | 6 inline / 6 actionable | **6** | exact
 |===
 
-⚠ These two plans appear **for calibration only**. No cloud-vs-local comparison is drawn from them,
+These two plans appear **for calibration only**. No cloud-vs-local comparison is drawn from them,
 per the scope note in the header.
 ====
 
@@ -237,23 +271,24 @@ per the scope note in the header.
 |===
 | PR | Kind | CR findings | Threads | Resolved | Unresolved | Other reviewers
 
-| `#1275` | authoring | 9 | 9 | 9 | 0 | pr-agent ✓ · sourcery ✓
-| `#1277` | authoring | 3 | 3 | 3 | 0 | pr-agent ✓ · sourcery ✓
+| `#1275` | authoring | 9 | 9 | 9 | 0 | pr-agent reviewed · sourcery reviewed
+| `#1277` | authoring | 3 | 3 | 3 | 0 | pr-agent reviewed · sourcery reviewed
 | `#1291` | plan `010` | 10 | 10 | 7 | **3** | pr-agent **absent** · sourcery **declined**
 | `#1313` | plan `020` | 12 | 12 | 11 | **1** | pr-agent **absent** · sourcery **declined**
-| `#1319` | plan `030` | 20 | 20 | 19 | **1** | pr-agent ✓ · sourcery **declined**
+| `#1319` | plan `030` | 20 | 20 | 19 | **1** | pr-agent reviewed · sourcery **declined**
 | *PLAN WORK* | *3* | *42* | *42* | *37* | *5* | **88.1% resolved**
 | *ALL FIVE* | *5* | *54* | *54* | *49* | *5* | 90.7% resolved
 |===
 
-* **14 CodeRabbit findings per plan PR** — the highest per-PR rate in any of the four corpora
-  (`review-apparatus`: 3.2; `truthful-signals`: 5.25 over reviewed PRs).
+* **14 CodeRabbit findings per plan PR** — the highest per-PR rate in any of the five corpora
+  (`truthful-signals`: 5.25; `code-intelligence-substrate`: 4.3; `test-quality`: 4.2;
+  `review-apparatus`: 3.2 — each over its reviewed PRs).
 * **5 of 42 findings merged unresolved.** `review-apparatus` merged 0 of 16; `truthful-signals`
   measured 57.1% resolution with six PRs resolving none.
 
 [WARNING]
 ====
-⭐⭐ **The resolution rate is time-dependent, and this corpus is where that became visible. It
+**The resolution rate is time-dependent, and this corpus is where that became visible. It
 qualifies the sibling reports' central discriminator.**
 
 The classifier was validated exactly on *finding counts* for #1330 and #1332 — but its **resolution**
@@ -271,7 +306,7 @@ Both moved **upward** after the retrospective ran. ⇒ **A thread's `resolved` f
 not the same measurement as resolution-before-merge**, and only the second is evidence about a
 merge gate.
 
-⛔ **`review-apparatus`'s "16 of 16, 100% in both lanes" and `truthful-signals`' "local 100%, cloud
+**`review-apparatus`'s "16 of 16, 100% in both lanes" and `truthful-signals`' "local 100%, cloud
 57.1%" were both read post-merge from the same flag.** Some unknown share of each is
 resolution-after-the-fact. This report cannot quantify that share — n = 2 for the disagreement — but
 it can state that the instrument does not measure what the discriminator needs it to, and that the
@@ -281,7 +316,7 @@ sibling verdicts inherit the defect.
 report's own 88.1%, which is likewise post-merge and therefore an upper bound.
 ====
 
-=== ⭐ Sourcery's decline is lane-caused here, not environmental
+=== Sourcery's decline is lane-caused here, not environmental
 
 The sibling reports found reviewer coverage degraded by an **account-level quota** — environmental,
 shared across lanes, and therefore a control that *removed* it as an explanation. **This corpus has a
@@ -304,7 +339,7 @@ a quota that happened to be exhausted; it is a size threshold the lane exceeds b
 every plan PR, in a corpus where the two authoring PRs — smaller — were reviewed by Sourcery without
 incident.
 
-⚠ **PR-Agent was additionally absent on two of three plan PRs** (`#1291`, `#1313`), which `010`'s own
+**PR-Agent was additionally absent on two of three plan PRs** (`#1291`, `#1313`), which `010`'s own
 report independently recorded as *"did not run on this PR — no review, no comment, no check run,
 across repeated polls."* Cause unestablished; recorded as *absent*, never as *reviewed with no
 findings*.
@@ -325,7 +360,7 @@ findings*.
 The disagreement runs in **both directions** and is largest on `030`, where the report's thread count
 is half the measured one.
 
-⚠ **This is a measurement disagreement, not a demonstrated falsehood.** The reports are most likely
+**This is a measurement disagreement, not a demonstrated falsehood.** The reports are most likely
 transcribing CodeRabbit's own *"Actionable comments posted: N"* summary line, which need not equal the
 count of inline threads carrying a `v1` fingerprint. The classifier is validated (<<_validation>>);
 what it counts is well-defined; **the two instruments are counting different things and neither report
@@ -335,23 +370,23 @@ says which it used.** That ambiguity is the finding.
 
 === A cloud plan is billed three times; this corpus measured none of them
 
-[cols="1,3,3",options="header"]
+[cols="1,3,3,1",options="header"]
 |===
 | # | Expenditure | Produces | Measured here?
 
 | 1 | **Authoring** | `plan.md` (PRs #1275, #1277) | no
 | 2 | **Running** | branch, PR, merge, `report-01.md` | no
-| 3 | **Verifying** | `verification.md` + `gaps.md` | ⛔ **never ran**
+| 3 | **Verifying** | `verification.md` + `gaps.md` | **never ran**
 |===
 
 **No run in this corpus published a token figure.** `010` and `030` both explain why at length — the
 harness exposes no counter to the running agent — and both explicitly refuse to state an estimate.
 `020` left the section as a template placeholder.
 
-⚠ **Bucket 3 was never spent for this epic**, which makes its total *lower* than a sibling epic's and
+**Bucket 3 was never spent for this epic**, which makes its total *lower* than a sibling epic's and
 its verification *absent* rather than cheap. The saving and the gap are the same fact.
 
-⚠ **A fourth expenditure, again unbudgeted:** the ingestion — five verification sub-agents, three
+**A fourth expenditure, again unbudgeted:** the ingestion — five verification sub-agents, three
 landing analyses, five spec re-groundings with 43 persisted verdicts, and nine new specs — ran as one
 local session. No cloud-lane cost model accounts for it.
 
@@ -361,7 +396,7 @@ local session. No cloud-lane cost model accounts for it.
 |===
 | | Cloud lane | Local plan-marshall
 
-| Setting | ⛔ **unrecorded** | resolved per phase
+| Setting | **unrecorded** | resolved per phase
 | Source | **no artifact in the corpus, and no operator statement** | machine-readable, `.plan/marshal.json`
 | Observed | — | outline **level-5** · plan **level-3** · execute **level-5** · finalize **level-5** (global default **level-3**)
 |===
@@ -386,9 +421,9 @@ it.
 
 [CAUTION]
 ====
-⛔ **This report cannot speak to candidate 1, and says so rather than gesturing at it.** The
+**This report cannot speak to candidate 1, and says so rather than gesturing at it.** The
 comparison requires a local set, which this epic does not have and which the operator has scoped out.
-Its deliverable-fidelity figure is produced by the narrowest of the four instruments and its gap count
+Its deliverable-fidelity figure is produced by the narrowest of the five instruments and its gap count
 does not exist.
 
 Publishing a verdict on candidate 1 from a 3-plan, no-gap-record, no-local-set corpus would be
@@ -398,7 +433,7 @@ to catch.
 
 === 2. `cloud-plan-lane` is faulty — *SUPPORTED, on three mechanisms, one of them new*
 
-==== (a) ⭐⭐ Plan sizing disqualifies a reviewer, deterministically
+==== (a) Plan sizing disqualifies a reviewer, deterministically
 
 **New to this report.** All three plan PRs exceed Sourcery's 150,000-character limit — by 1.29×,
 2.51× and 2.18×. The lane authors plans large enough to lose a third of its reviewer roster on every
@@ -423,16 +458,16 @@ does not.
 Three for three, in both directions, largest on `030` (10 threads claimed, 20 measured). Neither the
 reports nor the lane contract states which instrument produces the number. ⇒ § 5.2.
 
-⚠ **What this corpus does NOT support**, and the sibling reports did: the *self-assessed report*
+**What this corpus does NOT support**, and the sibling reports did: the *self-assessed report*
 mechanism. `review-apparatus` found 18.1% of gaps correcting the runs' own paperwork and
-`truthful-signals` 16.6%. **The ingestion pass here found no false landing claim in any of the three
+`truthful-signals` 16.1%. **The ingestion pass here found no false landing claim in any of the three
 reports.** On the narrower question this instrument asked, the reports were accurate.
 
 === 3. A general Claude Code issue — *WEAKLY SUPPORTED, and one sibling control is broken here*
 
 * **PR-Agent absent on 2 of 3 plan PRs**, with no notice published — `010` polled repeatedly and
   recorded the absence. Cause unestablished; plausibly reviewer-side.
-* ⭐ **The sibling reports' account-quota control does NOT apply to this corpus.** Sourcery declined
+* **The sibling reports' account-quota control does NOT apply to this corpus.** Sourcery declined
   here for a *size* reason that is lane-attributable (§ 8.2(a)). A control that eliminated a candidate
   in two sibling reports therefore **does not transfer** — and its absence moves evidence toward
   candidate 2, not toward candidate 3.
@@ -446,12 +481,12 @@ reports.** On the narrower question this instrument asked, the reports were accu
 
 What this corpus establishes:
 
-* ⭐⭐ **The lane sizes its plans past a reviewer's hard limit, on every plan PR** (194k / 377k / 326k
+* **The lane sizes its plans past a reviewer's hard limit, on every plan PR** (194k / 377k / 326k
   characters against a 150,000 limit). One of three reviewers was disqualified by construction, not by
   chance. **This is the finding unique to this report.**
 * **The third billed bucket — verification — never ran**, so the epic has no gap record at all. Its
   absence is not a clean result; it is a missing measurement, and it is why this report is the
-  weakest of the four.
+  weakest of the five.
 * **5 of 42 reviewer findings merged unresolved** (88.1%), against 0 of 16 in `review-apparatus`.
 * **`020`'s report shipped its Cost section as an unfilled template placeholder.**
 
@@ -462,13 +497,13 @@ What this corpus establishes in the lane's *favour*, and it is not nothing:
 * **No false landing claim was found in any run report** — the 17 residual items were all
   self-disclosed by the runs that left them.
 
-⭐⭐ **The methodological finding outranks both, and applies beyond this epic: the resolution rate
+**The methodological finding outranks both, and applies beyond this epic: the resolution rate
 every sibling report rests on is read post-merge, and the two PRs where an independent
 finalize-time measurement exists both moved upward afterwards (0/3 → 3/3, 3/6 → 6/6).** The
 discriminator measures resolution-eventually, not resolution-before-merge. This report's own 88.1% is
 subject to the same defect and is an upper bound.
 
-⚠ **The honest limit:** n = 3 plans, 13 deliverables, 0 gap records, no local set, and no record of
+**The honest limit:** n = 3 plans, 13 deliverables, 0 gap records, no local set, and no record of
 the model or effort the runs used. **Four of the method's eleven steps could not be performed.** The
 verdict rests on the reviewer measurements and the diff-size finding, both of which are derived from
 the PR record rather than from any artifact the lane authored about itself — which is precisely why
@@ -502,7 +537,7 @@ Ordered by the measured consequence each addresses.
 . **Bound plan size against the reviewer limits.** 3 of 3 plan PRs exceeded Sourcery's 150,000-character
   threshold; the two smaller authoring PRs did not. A plan that cannot be reviewed by a third of the
   roster is mis-sized, and the limit is a published number the lane can check before it opens the PR.
-. ⭐ **Measure reviewer resolution at merge time, not post-hoc — in every report including the three
+. **Measure reviewer resolution at merge time, not post-hoc — in every report including the three
   already published.** The flag moves upward after merge (0/3 → 3/3, 3/6 → 6/6 on the two PRs where
   both instruments exist). Until a finalize-time figure is captured, no resolution rate in this
   document set is evidence about a merge gate.
@@ -513,7 +548,7 @@ Ordered by the measured consequence each addresses.
   `_(filled in at close)_` as its entire Cost section.
 . **State which instrument a reviewer count came from.** Three reports, three unreproducible figures,
   no stated method.
-. **Record the model and effort setting in the run report.** This is the only corpus of the four where
+. **Record the model and effort setting in the run report.** This is the only corpus of the five where
   neither an artifact nor an operator statement exists, and it removes an entire line of argument.
 . **Budget the ingestion.** Five sub-agents, three landing analyses, 43 persisted verdicts and nine new
   specs — the recurring, unbudgeted fourth expenditure the sibling reports also name.
@@ -523,7 +558,7 @@ Ordered by the measured consequence each addresses.
 See xref:analyzis_rules.adoc[the analysis rules] for the instruction set. Every figure was derived by command or
 script from the ingested corpus at `.plan/local/orchestrator/multiplattform/archive/`, the landing
 records at `.plan/local/orchestrator/multiplattform/landings/`, and the PR record via
-`plan-marshall:tools-integration-ci:ci pr comments --pr-number N`; none was transcribed by hand.
+`plan-marshall:tools-integration-ci:ci pr comments --pr-number N`; none was transcribed.
 
 Four of the method's eleven steps were **not performed**, each for a stated reason: Step 3 (gap
 classification — no `gaps.md` exists), Step 4 and Step 6 (local comparison — out of scope by operator

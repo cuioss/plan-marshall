@@ -6,6 +6,12 @@
 Analysis of the `truthful-signals` plans executed as standalone cloud runs, measured against the 10
 most recent plans executed locally through the full plan-marshall lifecycle.
 
+**The contract under analysis.** The cloud lane is defined by two project-local skills:
+link:../../.claude/skills/cloud-plan-lane/SKILL.md[`cloud-plan-lane`], the execution contract loaded
+as the first action of every run, and
+link:../../.claude/skills/author-cloud-plan/SKILL.md[`author-cloud-plan`], the authoring judgement
+applied when a plan is written. Every lane-contract finding below names one of them.
+
 [IMPORTANT]
 ====
 **Measured at repository HEAD `3e9ce88e1`, 2026-08-22.** Every figure is re-derivable by script from
@@ -43,7 +49,7 @@ Applied to every landed commit in the repository:
 * **2 were inside it and are now removed**: `030` / #1137 and `450` / #1147. Both touch exactly one
   production file, and that file is the lane skill.
 
-⚠ **`120` / #1162 also edits that file and is deliberately NOT excluded** — it touches **64**
+**`120` / #1162 also edits that file and is deliberately NOT excluded** — it touches **64**
 production files (the `marshall-orchestrator` → `plan-orchestrator` rename) and is plan work that
 happens to include the lane skill among its targets. The criterion is *only* production file, not
 *any*.
@@ -161,7 +167,7 @@ whether documentation — Javadoc and AsciiDoc — is sensibly structured and ma
 **Read the taxonomy below against that checklist and the correspondence is close to exact.**
 ⇒ **`299` is the yield of one particular review question, not a lane-quality constant.**
 
-⛔ **Two findings are NOT prompt artifacts**, because they are measured against the plans' own
+**Two findings are NOT prompt artifacts**, because they are measured against the plans' own
 claims rather than an external checklist:
 
 * the **20.4% deliverable fidelity failure rate**;
@@ -358,7 +364,7 @@ granularity:
 | Instrument | verification pass, deliverable fidelity axes | orchestrator `analyze`, landing corroboration
 |===
 
-⚠ **Still not identical instruments.** The cloud pass checks every deliverable on four axes and sweeps
+**Still not identical instruments.** The cloud pass checks every deliverable on four axes and sweeps
 adjacent surfaces; the orchestrator checks the claims a plan actually made in its landing message and
 report. The cloud instrument is the more searching of the two, so some of the 58-vs-33 gap is
 instrument depth rather than plan quality. It is a *comparison*, not a controlled experiment — but it
@@ -514,7 +520,7 @@ and **filed 25 new ones**, two `high`. The lane does not self-correct.
 
 == What the cloud lane is genuinely good at
 
-* **Breadth under parallelism** — 44 plans verified and adversarially re-reviewed. ⚠ The audit report's
+* **Breadth under parallelism** — 44 plans verified and adversarially re-reviewed. The audit report's
   own § Cost claims "99 agents … this single Claude Code cloud session's dispatch tree"; the operator
   reports the work actually spanned **multiple sessions at a maximum of 3 parallel runs**. The
   single-session framing is **corrected here**, and it is worth noting *how* the error entered this
@@ -542,4 +548,4 @@ and **filed 25 new ones**, two `high`. The lane does not self-correct.
 == Reproducing this analysis
 
 See xref:analyzis_rules.adoc[the analysis rules] for the instruction set. Every figure was derived by script from the
-ingested corpus; none was transcribed by hand.
+ingested corpus; none was transcribed.

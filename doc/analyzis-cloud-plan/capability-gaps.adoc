@@ -6,6 +6,12 @@ The five reports measured what the cloud runs *produced*. This document works th
 each capability plan-marshall documents in `doc/concepts/` and asks whether the cloud lane has an
 equivalent, then looks for data on whether the absence mattered.
 
+**The contract under analysis.** The cloud lane is defined by two project-local skills:
+link:../../.claude/skills/cloud-plan-lane/SKILL.md[`cloud-plan-lane`], the execution contract loaded
+as the first action of every run, and
+link:../../.claude/skills/author-cloud-plan/SKILL.md[`author-cloud-plan`], the authoring judgement
+applied when a plan is written. Every lane-contract finding below names one of them.
+
 [IMPORTANT]
 ====
 **This is not a marketing sheet, and it is deliberately structured to make that checkable.**
@@ -29,7 +35,7 @@ carries an **evidence class**, and the classes are not interchangeable:
   dressed up as a near-miss.
 |===
 
-⛔ **Three of the seven gaps below are `unexercised`.** They are the honest weak half of this document
+**Three of the seven gaps below are `unexercised`.** They are the honest weak half of this document
 and they are labelled, not buried. A section on what the cloud lane does *better*, and a section on where
 plan-marshall's own machinery is measurably broken, follow the gap list — both are load-bearing, not
 balance for its own sake.
@@ -38,12 +44,12 @@ balance for its own sake.
 == Method
 
 Each of the 22 pages under `doc/concepts/` was read for the capability it claims, then checked against
-`.claude/skills/cloud-plan-lane/SKILL.md` (2,213 lines) and `author-cloud-plan/SKILL.md` (228), which
+`.claude/skills/cloud-plan-lane/SKILL.md` (2,266 lines) and `author-cloud-plan/SKILL.md` (233), which
 together are the lane's complete contract — both project-local under `.claude/skills/`, which § 6 shows
 is not incidental. Where an equivalent was absent, the five reports and the PR
 record were searched for data.
 
-⚠ **The lane's waivers are explicit, not accidental.** `CLAUDE.md` § Standalone Plan Lane names them in
+**The lane's waivers are explicit, not accidental.** `CLAUDE.md` § Standalone Plan Lane names them in
 a table: build commands bypass the architecture resolver, CI operations bypass the abstraction, `.plan/`
 is untouched, and the Bash discipline does not bind. Every gap below follows from that table or from
 the absence of `.plan/` in a fresh clone. **The lane was designed this way**, because its whole point
@@ -67,7 +73,7 @@ condition as a defect.
 
 | **Mechanical state gates** (`process-enforcement.adoc` Layer 4)
 | measured
-| The **16.6% / 16.3% / 18.1%** report-correction rate. The lane's contract concedes the point in
+| The **16.1% / 16.3% / 18.1%** report-correction rate. The lane's contract concedes the point in
   its own words.
 
 | **Findings store with a blocking gate** (`process-enforcement.adoc` Layer 3, `automatic-reviews.adoc`)
@@ -120,7 +126,7 @@ ____
 That is third-party text — bot- and human-authored — read directly into a context holding `Write`,
 `Edit` and `Bash`, with a contractual instruction to act on it. There is no reader isolation, no
 validator, no schema clamp and no allowlist. **`untrusted`, `injection`, `sanitize` and `validate_struct`
-appear zero times in the lane's 2,213 lines**; the only security-adjacent line is a table row mapping
+appear zero times in the lane's 2,266 lines**; the only security-adjacent line is a table row mapping
 *"security-relevant change"* to a persona skill.
 
 [CAUTION]
@@ -137,7 +143,7 @@ deciding to do something.
 gate is consumed raw here, and the corpus cannot say what that cost, because it never looked.
 ====
 
-⭐ **One adjacent defect *was* measured, and it is the same root without the adversary.** All three
+**One adjacent defect *was* measured, and it is the same root without the adversary.** All three
 `multiplattform` run reports published reviewer counts that do not reproduce — 11 vs 10, "9 actionable"
 vs 12, and "23 comments over 10 threads" vs 20 threads. The likely cause is that the reports
 **transcribed CodeRabbit's own `Actionable comments posted: N` summary line** and republished it as a
@@ -165,8 +171,8 @@ The consequence is measured three ways:
   than in either number — precisely the class a re-run catches and a re-read does not.
 * **The three unreproducible reviewer counts above.**
 
-⭐ **The reference report's strongest single finding is the positive control for this.** In plan `500`,
-*every* mechanically-derived census figure re-derived exactly while **five** hand-written narrative
+**The reference report's strongest single finding is the positive control for this.** In plan `500`,
+*every* mechanically-derived census figure re-derived exactly while **five** asserted narrative
 sections had gone stale. Same run, same agent, same day — **derivation held; assertion did not.** That
 is as close to a controlled comparison as this corpus offers, and it is internal to the cloud lane,
 so it is not confounded by any lane difference at all.
@@ -179,7 +185,7 @@ exactly the distinction at issue — *"the difference between **the LLM said it 
 worktree shows 5 modified files at the expected SHA**."*
 
 The lane has no equivalent, and **its own contract concedes it**. § Step 9 requires the run to re-verify
-its report's filesystem claims by hand, and explains why:
+its report's filesystem claims by re-reading them, and explains why:
 
 [quote]
 ____
@@ -192,10 +198,10 @@ The contract then records **two observed failures of that manual remedy**: a rep
 nine commits and left two documents citing SHAs *"that existed on no branch under review"*.
 
 ⇒ **The most-replicated finding in the whole document set is this gap's measured cost.** Gaps that
-correct the run's own report: **16.6%**, **16.3%**, **18.1%** — three corpora, three briefs, 1.8 points
+correct the run's own report: **16.1%**, **16.3%**, **18.1%** — three corpora, three briefs, 2.0 points
 apart.
 
-⚠ **The lane's remedy is a diligence instruction on the party being checked.** § Step 9's compliance
+**The lane's remedy is a diligence instruction on the party being checked.** § Step 9's compliance
 audit is performed by the agent whose compliance is in question, which is the self-assessment defect one
 level up. That it catches anything at all is a point in its favour; that it is the only mechanism is the
 gap.
@@ -212,7 +218,7 @@ designed* section — it requires a source, a description and a disposition from
 (`fixed` / `rejected-with-reason` / `deferred` / `survivor`), plus a stop record naming which exit ended
 the verification loop. As a contract it is better specified than most machine formats.
 
-⛔ **But nothing reads it.** It is prose, written by the agent being audited, queried by no gate. The
+**But nothing reads it.** It is prose, written by the agent being audited, queried by no gate. The
 measured consequence is a merge state that is structurally unreachable in the local lane:
 
 * `test-quality` — **5 of 21** reviewer findings merged with the thread unclosed.
@@ -237,7 +243,7 @@ Nothing governs many agents in one working tree. The audit run hit this itself �
 concurrently corrupted each other's snapshots. Fixed in-flight; the contract still carries no rule.
 ____
 
-⚠ **This has since been partly closed, and the shape of the fix is the point.** The lane contract now
+**This has since been partly closed, and the shape of the fix is the point.** The lane contract now
 requires per-agent scratch paths (`$TMPDIR/{agent}-mutsweep/…`, *"never a shared generic one"*) and a
 `git status` re-check after each sweep. That is a **naming convention plus a diligence check**, where
 plan-marshall's answer to the same hazard is an atomic filesystem primitive with crash reclamation. Both
@@ -277,7 +283,7 @@ its own plan. That is the runtime guess `skill-handling.adoc` declines to make, 
 documented procedure. Two plans touching similar surfaces can load different sets, and nothing
 reconciles them.
 
-=== (b) ⭐⭐ Tier 1 is absent
+=== (b) Tier 1 is absent
 
 `persona-plan-marshall-agent` is *the* Tier-1 skill — loaded unconditionally by the dispatcher on every
 plan-marshall dispatch, carrying the hard rules that are Layer 1 of **both** `security.adoc` and
@@ -333,7 +339,7 @@ capability measured in these five reports is therefore the **best case** for the
 because the subject under test happened to be the marketplace itself.
 ====
 
-⚠ **No corpus datum measures what any of this cost.** Nothing in the five reports attributes a defect to
+**No corpus datum measures what any of this cost.** Nothing in the five reports attributes a defect to
 a skill that did not load — which is unsurprising, since the only record of what loaded is the run's own
 sentence about it. Classified `unexercised` on consequence for that reason, while the mechanism above is
 verified line by line in both contracts.
@@ -367,7 +373,7 @@ plan-marshall does not have in the same form"* and *"the `non-converging` signal
 plan-marshall does not emit."* Both were refuted against
 `phase-6-finalize/workflow/pre-submission-self-review.md`.
 
-⛔ **The error is this document's own archetype, and the cause is stated in § Method.** That section
+**The error is this document's own archetype, and the cause is stated in § Method.** That section
 declares the analysis was drawn against `doc/concepts/` and the lane contract. The self-review loop
 appears in `doc/concepts/` only in passing — one clause in `automatic-reviews.adoc`, one table cell in
 `planning-workflow.adoc`, and `verification.adoc` does not mention it at all — so the absence was real
@@ -383,16 +389,16 @@ fixed, per the conventions.
 What the lane genuinely has that plan-marshall does not is **narrower than two mechanisms — it is two
 properties of one**:
 
-* ⭐⭐ **Verifier independence, unconditionally.** The lane dispatches a sub-agent that *"has not seen
+* **Verifier independence, unconditionally.** The lane dispatches a sub-agent that *"has not seen
   this plan or the diff."* plan-marshall dispatches its cognitive phase to a fresh
   `execution-context` leaf with `skills: []` and nothing but the candidate envelope — genuinely
   independent — **but only above a candidate-count gate**. Below the threshold the identical review runs
   *inline in the dispatcher's context*, and the contract calls that gate *"a pure dispatch-cost
-  optimization — semantics are preserved bit-for-bit."* ⚠ **The return-TOON semantics are preserved;
+  optimization — semantics are preserved bit-for-bit."* **The return-TOON semantics are preserved;
   the independence is not.** That is the sharper finding, and neither this document's original claim nor
   the refutation of it had it: the cheap branch trades away the reviewer's independence under a heading
   that says nothing is being traded.
-* ⭐⭐ **The stop question is put TO the verifier.** The lane asks it directly — *"does anything you
+* **The stop question is put TO the verifier.** The lane asks it directly — *"does anything you
   found remain that condition A or B forbids leaving open?"* — with A and B quoted, every prior-round
   survivor listed, and the contract stating it *"is asked of the verifier here rather than decided by
   the author afterwards."* plan-marshall closes on a predicate over the review's return instead: a
@@ -454,7 +460,7 @@ reports that found it did so against plan-marshall, not against the lane.
   ignore, Layer 3 depends on the LLM invoking the query, and Layer 4 depends on the orchestrator running
   the verify at the right moment. **The documents are honest about this**; a comparison that quotes the
   capability without the caveat would not be.
-* ⭐ **The self-review loop is essentially undocumented at concept level, and that produced a false
+* **The self-review loop is essentially undocumented at concept level, and that produced a false
   finding in this very document.** `pre-submission-self-review.md` is 432 lines carrying the bounded
   round loop, the delta anchor, the converged-vs-out-of-budget termination criterion, the self-seeding
   class and the cohort sweep. In `doc/concepts/` — the entry point a reader or an agent starts from —
@@ -472,13 +478,13 @@ reports that found it did so against plan-marshall, not against the lane.
 
 . **No gap here is quantified as a cost.** The five reports measure outcomes; this document traces
   outcomes to absent mechanisms. **A trace is an argument, not a measurement** — nothing establishes
-  that adding a handshake would have moved the 16.6% report-correction rate to zero.
+  that adding a handshake would have moved the 16.1% report-correction rate to zero.
 . **Three of seven gaps have no consequence data** (`unexercised`), and one of those is the security gap
   that motivated this analysis. That is the finding: **the corpus cannot speak to it**, in either direction.
 . **The lane was built to lack these things.** It is the control condition. A control that lacks the
   treatment is working correctly.
 . **No causal claim survives the effort confound.** Cloud runs used Opus at max effort; local runs use
-  per-phase resolved effort. ⭐ On quality this cuts *toward* the conclusion — the more expensive setting
+  per-phase resolved effort. On quality this cuts *toward* the conclusion — the more expensive setting
   still produced these figures — but it is a confound either way.
 
 == Related

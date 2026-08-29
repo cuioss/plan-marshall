@@ -8,6 +8,12 @@ reports, this one carries **no cross-lane comparison**: the epic contributed no 
 runs, and the local archive has since been garbage-collected to a size that cannot carry one
 (xref:#_the_local_comparison_is_unavailable[§ 8]).
 
+**The contract under analysis.** The cloud lane is defined by two project-local skills:
+link:../../.claude/skills/cloud-plan-lane/SKILL.md[`cloud-plan-lane`], the execution contract loaded
+as the first action of every run, and
+link:../../.claude/skills/author-cloud-plan/SKILL.md[`author-cloud-plan`], the authoring judgement
+applied when a plan is written. Every lane-contract finding below names one of them.
+
 [IMPORTANT]
 ====
 **Measured at repository HEAD `9c2894c6`, 2026-08-24.** Every figure is re-derivable by script from the
@@ -37,9 +43,13 @@ the same measurement** and the rates must not be placed beside them.
 
 ⇒ **There is no gap count in this corpus**, because there is no `gaps.md`. Where the reference reports
 report a gap taxonomy, this one reports what the epic used *instead* of a verification pass — a
-hand-maintained residue index — and measures how well that worked (xref:#_the_residue_index[§ 6]).
+prose residue index the runs maintained themselves — and measures how well that worked (xref:#_the_residue_index[§ 6]).
 
-⭐ **Convergent finding, arrived at independently.**
+**This corpus's plans were authored inside the cloud lane, not by an orchestrator**, which is the
+same difference that removed the instrument — see
+xref:#_four_pr_kinds[§ 2.2].
+
+**Convergent finding, arrived at independently.**
 xref:multiplattform.adoc[The `multiplattform` report] — written from a separate corpus by a separate
 analysis — opens with the identical observation under the heading *"The instrument gap, stated before
 any number"*, and reaches the same conclusion: no verification pass was run, the ingestion
@@ -77,7 +87,7 @@ Applied to every commit in the repository that touches that file, with each PR n
 **Which zero this is.** *Examined 46 commits; 40 are lane-fixes; none of the 16 corpus PRs is among
 them, and none of the 16 touches that file at all.* The exclusion step ran and found nothing to remove.
 
-⚠ This reproduces `review-apparatus`' structural finding exactly, on an independent corpus: **no
+This reproduces `review-apparatus`' structural finding exactly, on an independent corpus: **no
 lane-governed run touched the lane contract, because none is permitted to.** Two corpora, 29 plan PRs
 between them, zero contact with the file that governs them. See xref:#_the_deadlock[§ 10.2(f)].
 ====
@@ -86,7 +96,8 @@ between them, zero contact with the file that governs them. See xref:#_the_deadl
 (`105`, `110`, `120`) were authored and never run; they are excluded from every fidelity figure and
 appear only where the analysis is about the epic's planning rather than its execution.
 
-=== ⚠ The method's two-kind taxonomy is incomplete — this corpus needs four cells
+[[_four_pr_kinds]]
+=== The method's two-kind taxonomy is incomplete — this corpus needs four cells
 
 Step 0 of the method partitions an epic's PRs into **plan work** and **lane-fixes**. Classifying every
 `test-quality` PR against that partition leaves one over:
@@ -97,7 +108,7 @@ Step 0 of the method partitions an epic's PRs into **plan work** and **lane-fixe
 
 | **Plan work** — a run of an authored `plan.md` | #1247 #1248 #1250 #1258 #1259 #1261 #1263 #1265 #1266 #1270 #1272 #1290 #1294 #1302 #1306 #1314 | **16**
 | **Authoring / staging / re-scoping** — produces or edits a `plan.md`, no production file | #1240 #1242 #1245 #1284 #1307 #1318 | 6
-| ⚠ **Ad-hoc remediation** — production files, outside any plan | **#1303** | **1**
+| **Ad-hoc remediation** — production files, outside any plan | **#1303** | **1**
 | **Lane-fix** — only `cloud-plan-lane/SKILL.md` | none | 0
 |===
 
@@ -110,7 +121,7 @@ rule-set this report evaluates**, exactly as a lane-fix is.
 excluded when it changes production files outside a plan directory's rule-set*, of which "only the lane
 skill" is one case. Recorded as a correction to the method rather than applied silently.
 
-⭐ **This is a FOURTH kind, not the same third kind the sibling report found — and the two together
+**This is a FOURTH kind, not the same third kind the sibling report found — and the two together
 settle it.** xref:multiplattform.adoc[The `multiplattform` report] independently found that the
 two-way partition has no cell for **epic-authoring runs**: PRs that execute under `cloud-plan-lane`
 and produce a `report-authoring-NN.md` but run no `plan.md`. This corpus has **six** of those
@@ -124,18 +135,48 @@ change with no plan and no lane governance at all.
 | Plan work | `cloud-plan-lane`, with a `plan.md` | 16
 | Epic authoring | `cloud-plan-lane`, no `plan.md` | 6
 | Lane-fix | nothing — outside the rule-set | 0
-| ⚠ Ad-hoc remediation | nothing — outside the rule-set | 1
+| Ad-hoc remediation | nothing — outside the rule-set | 1
 |===
 
 ⇒ **The method's Step 0 needs four cells, and the discriminator is two-dimensional**: *is it governed
 by the lane?* and *does it execute a `plan.md`?* Two independent corpora each found one of the two
 missing cells.
 
-⚠ **Its existence is itself a small finding**: `080`'s residue named three stale-path defects and routed
+[IMPORTANT]
+====
+**The six epic-authoring PRs are the structural difference between this corpus and the three
+reference ones, and it is *provenance* rather than data quality.**
+
+`truthful-signals`, `code-intelligence-substrate` and `review-apparatus` ran plans an **orchestrator**
+authored — the epic existed as a staged spec corpus in the ledger first, and the plan documents were
+exported from it; xref:code-intelligence-substrate.adoc[that report] records it directly, *"this
+epic's plan directories were authored from orchestrator specs"*. **`test-quality` authored its own
+plans inside the cloud lane**, across #1240, #1242, #1245, #1284, #1307 and #1318 — including two pure
+re-scoping runs. xref:multiplattform.adoc[`multiplattform`] is the only other epic that did, with two.
+
+**Evidence class.** The distinction is the **operator's**, *corroborated* by the PR record: in-lane
+authoring runs exist for exactly these two epics and for none of the three reference ones.
+
+⇒ **This corpus is not a weaker sample of the same treatment — it is a different treatment**, and
+almost everything this report finds follows the provenance rather than the epic's subject matter:
+
+* No orchestrator spec corpus behind the epic ⇒ the **prose residue index** of § 6 exists as its
+  substitute, and drifted.
+* Nothing that commissions the third billed bucket ⇒ **zero verification passes over sixteen runs**
+  (§ 10.2(a)), the finding this report is retained for.
+* No ledger to reconcile against ⇒ the **unacknowledged residue routing** of § 10.2(c), including the
+  cycle in which two plans route the same three files to each other.
+
+That chain is xref:README.adoc#_result_3_orchestration[result 3 of the findings summary] with a cause
+attached — and it is why the supersession verdict in § 10.1 lands: the ledger does not *catch* those
+defects, it makes them unable to occur.
+====
+
+**Its existence is itself a small finding**: `080`'s residue named three stale-path defects and routed
 them to `090`; they were closed by an ad-hoc PR instead, with no plan, no report and no gates — so the
 routing in § 10.2(c) succeeded here by a path the lane does not model.
 
-=== ⭐ This corpus re-entered plans; the reference corpora did not
+=== This corpus re-entered plans; the reference corpora did not
 
 **16 runs over 10 plans.** Five plans took a second or third run against the *same* `plan.md`, with a
 new report ordinal in the same directory. The three reference corpora are one-run-per-plan throughout.
@@ -148,12 +189,12 @@ new report ordinal in the same directory. The three reference corpora are one-ru
 | `050` plan state and records | 2 | Closed seven findings, split `test_audit.py`, and **fixed a live blocking regression in a different plan's surface**
 | `060` runtime and script substrate | 3 | Closed the **B6** half; then fixed a **live order-dependent failure** *and* six `sys.modules` collisions that runs 01–02 had themselves introduced
 | `080` plugin development and generator | 2 | Closed the remaining 27 **B6** sites and took **B7** to its structural floor
-| `090` harness and rule gaps | 2 | ⚠ **Run 02 did not touch run 01's residue at all** — nine named items carried straight through
+| `090` harness and rule gaps | 2 | **Run 02 did not touch run 01's residue at all** — nine named items carried straight through
 |===
 
 ⇒ **Re-entry is this epic's genuine procedural innovation and it demonstrably works** — three of the
 five later runs closed defects the first run had *created or missed*, and one caught its own
-predecessor's measurement error. ⚠ **`090` is the counter-example**: re-entry is a capability, not a
+predecessor's measurement error. **`090` is the counter-example**: re-entry is a capability, not a
 guarantee, and nothing in the lane requires a re-entering run to consume the prior run's residue.
 
 == The comparison is not effort-controlled
@@ -168,13 +209,13 @@ guarantee, and nothing in the lane requires a re-entering run to consume the pri
 | Source | operator statement, **no artifact in the corpus** | machine-readable, `.plan/marshal.json` § `plan.phase-*.effort`
 |===
 
-⛔ **On cost this weakens any comparison** — part of any gap is the model tier.
+**On cost this weakens any comparison** — part of any gap is the model tier.
 
-⭐ **On quality it strengthens the conclusion** — the cloud lane had the most expensive setting
+**On quality it strengthens the conclusion** — the cloud lane had the most expensive setting
 available, explicitly as compensation for absent guardrails, and still produced the fidelity rate in
 xref:#_deliverable_fidelity[§ 5].
 
-⚠ **This report makes no cross-lane cost or quality comparison at all** (§ 8), so the confound bites
+**This report makes no cross-lane cost or quality comparison at all** (§ 8), so the confound bites
 only on the *within-corpus* reading: raising effort did not substitute for a verification pass,
 because no amount of effort inside a run produces an independent check of that run.
 
@@ -203,7 +244,7 @@ scored each separately:
 have had to pick one. Scoring it as one row would move `070` from 2-clean-of-7 to a single ambiguous
 verdict and hide the epic's largest open item.
 
-⚠ It does mean the rate below is **not** a per-deliverable rate and must not be described as one.
+It does mean the rate below is **not** a per-deliverable rate and must not be described as one.
 ====
 
 [cols="1,1,1,1,1,1,1,1",options="header"]
@@ -230,7 +271,7 @@ verdict and hide the epic's largest open item.
 * **9 of 10 plans have at least one non-clean row.** Only `010` came through clean.
 * **4 rows are REFUTED at HEAD** — the plan claimed done and the tree disagrees.
 * **3 are unverifiable** without running a build, and are excluded from the denominator rather than
-  counted as either outcome. ⚠ 61 scored rows − 3 unverifiable = 58 measurable; the coincidence that
+  counted as either outcome. 61 scored rows − 3 unverifiable = 58 measurable; the coincidence that
   this equals the 58 *declared* deliverables is arithmetic, not correspondence.
 
 [WARNING]
@@ -250,16 +291,16 @@ deliverable whose report says "done" and whose tree says otherwise scores `refut
 other instrument has.
 ====
 
-=== ⭐ The four refutations, and why none of them could have been caught in-run
+=== The four refutations, and why none of them could have been caught in-run
 
 [cols="1,4,2",options="header"]
 |===
 | Plan | Refuted claim | Could the run have known?
 
-| `050` D3 | *"each directory has at most one fixture module"* — false in **all ten** directories | ⛔ **No.** `100` later hoisted per source module rather than per directory, disclosed the deviation in its own report, and nothing amended D3
-| `050` D5 | `test-docstring-historical-prose` = **0** over the slice — **22** in one directory at HEAD | ⛔ **No.** `090` later widened the rule
-| `060` D4 | Same rule = **0** over the slice — **14** across fourteen directories at HEAD | ⛔ **No.** Same cause
-| `080` D3 | **B6** *"complete at 211 of 211, zero hand-built"* — **one** hand-built site at HEAD | ⛔ **No.** Added by an **unrelated epic's** PR #1321, two days after this plan merged
+| `050` D3 | *"each directory has at most one fixture module"* — false in **all ten** directories | **No.** `100` later hoisted per source module rather than per directory, disclosed the deviation in its own report, and nothing amended D3
+| `050` D5 | `test-docstring-historical-prose` = **0** over the slice — **22** in one directory at HEAD | **No.** `090` later widened the rule
+| `060` D4 | Same rule = **0** over the slice — **14** across fourteen directories at HEAD | **No.** Same cause
+| `080` D3 | **B6** *"complete at 211 of 211, zero hand-built"* — **one** hand-built site at HEAD | **No.** Added by an **unrelated epic's** PR #1321, two days after this plan merged
 |===
 
 [IMPORTANT]
@@ -275,7 +316,7 @@ outcome 3 — a general repository issue affecting both lanes identically (xref:
 No plan-marshall gate would have caught any of the four either, because all four post-date the merge
 that would have run the gate.
 
-⚠ **What the lane genuinely lacks is not detection, it is a re-check obligation**: nothing anywhere
+**What the lane genuinely lacks is not detection, it is a re-check obligation**: nothing anywhere
 re-runs a landed plan's claims after a rule change or a sibling landing. The ingestion is the first
 thing that ever did, and it found four in ten plans.
 ====
@@ -283,8 +324,8 @@ thing that ever did, and it found four in ten plans.
 [[_the_residue_index]]
 == The residue index: what this epic used instead of a verification pass
 
-With no `verification.md`, the epic tracked what its runs left open in a **hand-maintained prose index**
-in its own README — § "What the executed half left open", one row per plan, updated by two re-scoping
+With no `verification.md`, the epic tracked what its runs left open in a **prose index in its own
+README**, authored and re-authored by the runs themselves — § "What the executed half left open", one row per plan, updated by two re-scoping
 runs (PRs #1284, #1307).
 
 **This is the only corpus of the four in which the substitute instrument can itself be measured**,
@@ -305,14 +346,24 @@ because the ingestion re-derived every figure the index carries. Twelve checkabl
 | `070` "506 is the raw grep, incl. 12 `SimpleNamespace`" | claim | 12 confirmed | **exact**
 | `060` "exactly one class exceeds the budget alone" | claim | confirmed, 663-line class | **exact**
 | `080` "**B6** complete at 211 of 211" | claim | 1 hand-built site | falsified by drift
-| `080` "**Coverage was measured in neither run**" | claim | **run 01 measured 85% → 85%** | ⛔ **FALSE**
+| `080` "**Coverage was measured in neither run**" | claim | **run 01 measured 85% → 85%** | **FALSE**
 |===
 
-**4 exact · 6 drifted · 1 superseded · 1 false.**
+**3 exact · 6 drifted · 1 superseded · 1 falsified by drift · 1 false.**
+
+[NOTE]
+====
+**A correction to this tally, recorded rather than silently applied.** It previously read
+*4 exact · 6 drifted · 1 superseded · 1 false*, which sums to 12 but does not partition the table:
+only **three** rows carry `exact`, and the `080` **B6** row — *falsified by drift* — had no cell of
+its own. The corrected partition sums to 12 and every row lands in exactly one class. **No
+conclusion in this report moves**: the load-bearing counts are the six drifted and the one false,
+and both are unchanged.
+====
 
 [IMPORTANT]
 ====
-**⭐ The finding is the asymmetry between drift and falsity, and the index's own discipline is what
+**The finding is the asymmetry between drift and falsity, and the index's own discipline is what
 makes it visible.**
 
 The index labels its own figures: *"both leads, re-derive them"*, and *"Every figure here is a lead
@@ -324,13 +375,13 @@ one of them moved because the tree moved.
 whether `080`'s run 01 measured coverage. It did — its own report carries the before/after table with
 statement counts and a *Holds* verdict. **The index says it did not.**
 
-⇒ **A hand-maintained index degrades in two different ways, and only one of them is self-limiting.**
+⇒ **A prose index degrades in two different ways, and only one of them is self-limiting.**
 Numeric drift is bounded by the re-derive discipline. A wrong statement about the past is not: nothing
 re-derives it, the discipline does not apply to it, and it propagated into the epic's own follow-up
 routing, where `080`'s coverage was listed as owed work that had already been done.
 ====
 
-=== ⭐⭐ The epic diagnosed this defect, authored the fix, and never ran it
+=== The epic diagnosed this defect, authored the fix, and never ran it
 
 The index was not an oversight — the epic **knew** it was the weak point:
 
@@ -365,7 +416,7 @@ Three states are distinguished and never collapsed: `reviewed` / `declined` (a n
 
 | #1247 | `020` | declined | account-quota | - | - | 36
 | #1248 | `010` | declined | account-quota | - | - | 20
-| #1250 | `010` | declined | ⚠ **`skip-bot-review` label** | - | - | 10
+| #1250 | `010` | declined | **`skip-bot-review` label** | - | - | 10
 | #1258 | `050` | declined | account-quota | - | - | 91
 | #1259 | `040` | declined | account-quota | - | - | 41
 | #1261 | `030` | declined | account-quota | - | - | 60
@@ -376,9 +427,9 @@ Three states are distinguished and never collapsed: `reviewed` / `declined` (a n
 | #1272 | `060` | **reviewed** | n/a | 2 | 2 | 19
 | #1290 | `070` | **reviewed** | n/a | 5 | **3** | 56
 | #1294 | `090` | **reviewed** | n/a | 4 | 4 | 19
-| #1302 | `080` | declined | ⛔ **file-count ceiling** (112 > 100) | - | - | 112
+| #1302 | `080` | declined | **file-count ceiling** (112 > 100) | - | - | 112
 | #1306 | `080` | declined | account-quota | - | - | 14
-| #1314 | `100` | declined | ⛔ **file-count ceiling** (309 > 100) | - | - | 309
+| #1314 | `100` | declined | **file-count ceiling** (309 > 100) | - | - | 309
 | *TOTAL* | | *5 reviewed · 11 declined · 0 absent* | | *21* | *16* | *900*
 |===
 
@@ -388,15 +439,15 @@ Three states are distinguished and never collapsed: `reviewed` / `declined` (a n
 
 | PRs reviewed | **5 of 16 (31%)**
 | Declined — account quota | 9
-| Declined — `skip-bot-review` label (⚠ a **lane decision**, not environmental) | 1
-| Declined — file-count ceiling (⛔ a **PR-size** consequence) | 2
+| Declined — `skip-bot-review` label (a **lane decision**, not environmental) | 1
+| Declined — file-count ceiling (a **PR-size** consequence) | 2
 | Findings raised | 21
 | Findings **resolved** | **16 (76.2%)**
 | PRs with findings and zero resolved | **0**
 | Mean files per PR | 56 (range 10–309)
 |===
 
-=== ⭐ The resolution rate is a live signal here, not a control
+=== The resolution rate is a live signal here, not a control
 
 [IMPORTANT]
 ====
@@ -424,7 +475,7 @@ would need a per-thread read this measurement did not perform, and is not claime
 
 [CAUTION]
 ====
-**⭐ This figure inherits a method defect the sibling analysis found, and the correction cuts the wrong
+**This figure inherits a method defect the sibling analysis found, and the correction cuts the wrong
 way for it.** xref:multiplattform.adoc[The `multiplattform` report] established that a thread's
 `resolved` flag **read post-merge** is not the same measurement as resolution *before* merge: on the
 two PRs where an independent finalize-time figure exists, both moved upward afterwards (`0/3 → 3/3`
@@ -434,14 +485,14 @@ and `3/6 → 6/6`).
 it.** The true at-the-gate rate is **at most** 76.2% and may be materially lower — the flag can only
 have been set at or after merge, never before it.
 
-⛔ **This strengthens rather than weakens the finding.** The claim in this section is that the lane has
+**This strengthens rather than weakens the finding.** The claim in this section is that the lane has
 no blocking findings gate; an upper bound of 76.2% on a metric that can only improve after the gate is
 consistent with that claim and cannot refute it. **What it forbids is the opposite reading** — nobody
 may cite 76.2% as evidence that most findings *were* closed before merge. A report needing the gate
 claim must capture the figure at finalize time, which this corpus offers no artifact for.
 ====
 
-=== ⛔ PR size is a first-class cause of missing review in this corpus
+=== PR size is a first-class cause of missing review in this corpus
 
 Two PRs were refused on a **file-count ceiling**, and this is the corpus's own subject matter turning
 on itself:
@@ -450,24 +501,24 @@ on itself:
   **CodeRabbit refused at its 100-file limit and Sourcery at its 300-file limit.** The archived report
   claimed exactly this; the claim is confirmed rather than restated.
 * **#1302** (`080` run 1, **112 files**) — CodeRabbit refused at the same 100-file limit; Sourcery
-  declined on a *different* mechanism, a 150,000-diff-character ceiling. ⚠ A partial echo of #1314, not
+  declined on a *different* mechanism, a 150,000-diff-character ceiling. A partial echo of #1314, not
   a second instance of the dual-ceiling case.
 
 ⇒ **A plan whose deliverable is a large mechanical sweep structurally forfeits its automated review.**
 The campaign's remaining six runs are each sized to land in the same place, and the epic's own report
 records the operator decision on how to carve a slice into PRs as *still pending*.
 
-=== ⚠ One decline was a lane decision, and one was a scheduling judgement
+=== One decline was a lane decision, and one was a scheduling judgement
 
 * **#1250 carries a `skip-bot-review` label** — the only label-driven decline in the corpus. Per the
   method this is a **lane decision, not an environmental fact**, and it must not be pooled with the
   nine quota declines.
 * **#1306 could have been re-requested and deliberately was not** — the run left the shared quota slot
-  for a concurrent sibling PR. ⭐ **The converse also happened**: #1272 and #1290 obtained their reviews
+  for a concurrent sibling PR. **The converse also happened**: #1272 and #1290 obtained their reviews
   *only* because the run re-posted the trigger after the quota window cleared, rather than banking the
   first refusal as final. **Re-request discipline moved coverage from 3 of 16 to 5 of 16.**
 
-=== ⭐⭐ A second control, and it is absolute here
+=== A second control, and it is absolute here
 
 [cols="4,2,2",options="header"]
 |===
@@ -505,7 +556,7 @@ Two independent shortfalls, either of which alone would be disqualifying:
   reports drew on **11** plans from that same archive; `archived-plans` carries a dated GC, so the
   population they measured is gone.
 
-⛔ Publishing a ratio over n=2 would read as a finding when it is noise. **Nothing is published.**
+Publishing a ratio over n=2 would read as a finding when it is noise. **Nothing is published.**
 ====
 
 [NOTE]
@@ -531,7 +582,7 @@ written by this ingestion.** Excluding them, as the method requires, leaves **ze
 ⇒ *Examined 10 landing records; 10 were generated by this analysis; 0 remain.* The signal is
 unmeasurable, not absent.
 
-⚠ For completeness rather than as a comparison: over the ten records this analysis *did* write, **4 of
+For completeness rather than as a comparison: over the ten records this analysis *did* write, **4 of
 10 (40%)** record at least one refuted claim. That figure is the instrument measuring itself and
 carries no weight against the reference reports' 33% and 75%.
 
@@ -545,24 +596,24 @@ carries no weight against the reference reports' 33% and 75%.
 
 | 1 | **Authoring** — produces `plan.md` | paid: PRs #1240, #1242, #1245, #1284, #1307, #1318 — **six** authoring/re-scoping PRs for 13 plans
 | 2 | **Running** — produces `report-NN.md` | paid: 16 runs across 16 PRs
-| 3 | **Verifying** — produces `verification.md` + `gaps.md` | ⛔ **never paid, for any plan**
+| 3 | **Verifying** — produces `verification.md` + `gaps.md` | **never paid, for any plan**
 |===
 
-⭐ **The saving is visible and so is what it bought.** This epic skipped bucket 3 entirely across ten
+**The saving is visible and so is what it bought.** This epic skipped bucket 3 entirely across ten
 plans — and four of its deliverable claims are refuted at HEAD, a rate no run could have self-detected.
 **Bucket 3 is not overhead; it is the only bucket that produces an independent check**, and the
 ingestion had to supply it retroactively, as an unbudgeted fourth expenditure.
 
-⚠ Bucket 1 is unusually large here: six authoring PRs, of which **two are pure re-scoping** (#1284
+Bucket 1 is unusually large here: six authoring PRs, of which **two are pure re-scoping** (#1284
 re-scoped the epic against what its executed half measured; #1307 corrected three stale statements
-about its own landed state). Re-scoping is the hand-maintained index being maintained by hand.
+about its own landed state). Re-scoping is the prose index being re-authored.
 
 [cols="3,2,2",options="header"]
 |===
 | | Cloud plan | Local plan
 
 | Reports publishing a token figure | **1 of 16** | n/a — no comparison set (§ 8)
-| What that one figure covers | ⚠ a **dispatched sub-agent's** usage only — *"~242k tokens over 173 tool calls"* — the main agent's own usage is stated unavailable **in the same report** | full per-phase `metrics.md`
+| What that one figure covers | a **dispatched sub-agent's** usage only — *"~242k tokens over 173 tool calls"* — the main agent's own usage is stated unavailable **in the same report** | full per-phase `metrics.md`
 | Self-measurement | none | complete
 |===
 
@@ -570,12 +621,12 @@ about its own landed state). Re-scoping is the hand-maintained index being maint
 omitting it: no exposed usage counter, **no clock the run may read**, a VM container-restart that
 would over-count elapsed time as work, and a wall-clock corrupted by a concurrent measurement run.
 
-⭐ **That is a better failure than a silent omission** — the lane cannot measure its own cost and says
+**That is a better failure than a silent omission** — the lane cannot measure its own cost and says
 so, with the mechanism. But it means **no cloud cost figure exists in this corpus at all**, so the
 three-bucket split of § 9.1 is unmeasured, and the bucket-3 saving described there is *structural*
 (the pass never ran) rather than quantified.
 
-⚠ **One PR in the corpus has no run report at all.** #1250 closed `010`'s recorded residue and is
+**One PR in the corpus has no run report at all.** #1250 closed `010`'s recorded residue and is
 referenced *from* `010`'s disposition table rather than being the subject of a report. *Examined 16
 PRs; 15 map to a report; 1 does not* — a hard miss on the cost question, not a false negative.
 
@@ -584,7 +635,7 @@ PRs; 15 map to a report; 1 does not* — a hard miss on the cost question, not a
 
 === 1. plan-marshall shows its benefit — *SUPPORTED, by supersession rather than by comparison*
 
-⛔ **Not supported by a defect-rate comparison** — there is no local comparison set (§ 8). The support
+**Not supported by a defect-rate comparison** — there is no local comparison set (§ 8). The support
 is of a different and, here, stronger kind: **the epic's own top-priority fix was made redundant by
 moving the epic into the local ledger.**
 
@@ -595,8 +646,8 @@ Plan `120` existed to derive three cross-file sets and fail when a document disa
 | The set `120` was authored to derive | What the ledger does
 
 | The **collision matrix** | `orchestrator corpus cross-check` derives pairwise surface overlap from each spec's own `## Expected Surface`. Nothing hand-maintains it
-| The **queue / ownership table** | The Ordered Queue is a `GENERATED` block rendered from `status.json`; hand-editing it is prohibited by construction, and `compact` verifies it
-| The **partition** — every `test/` entry mapped to its owning plan | ⛔ **Still not provided.** Nothing walks `test/`. `120` survives, re-scoped, for exactly this
+| The **queue / ownership table** | The Ordered Queue is a `GENERATED` block rendered from `status.json`; editing it in place is prohibited by construction, and `compact` verifies it
+| The **partition** — every `test/` entry mapped to its owning plan | **Still not provided.** Nothing walks `test/`. `120` survives, re-scoped, for exactly this
 |===
 
 ⇒ **Two of the three defects that survived nine verification rounds and three failed structural
@@ -618,14 +669,14 @@ inference from a rate. That is why the verdict differs; it does **not** rest on 
 comparison, and none is offered.
 ====
 
-⭐ A second, independent instance: the ingestion's own `queue_spec_bidirectional` invariant, the
+A second, independent instance: the ingestion's own `queue_spec_bidirectional` invariant, the
 `(!) missing:` completeness marker, and `corpus verdicts`' fail-loud-on-malformed rule are all
 mechanisms whose entire purpose is to make a ledger claim unable to go quietly stale — the exact defect
 class the residue index exhibited (§ 6).
 
 === 2. `cloud-plan-lane` is faulty — *SUPPORTED, with one mechanism new to this corpus*
 
-==== (a) ⭐⭐ The verification pass is optional, and nobody noticed it was skipped ten times
+==== (a) The verification pass is optional, and nobody noticed it was skipped ten times
 
 The lane contract makes `verification.md` the product of a **separate, operator-issued** call. It is
 not a gate, not a precondition for the next plan, and not something a run reports the absence of.
@@ -657,7 +708,7 @@ the `test/` tree at all, so it *could not* have swept.
 and remediation never did — *"the rule can now see it"* is not *"it is fixed"*, and the epic's
 one-line ownership routing does not preserve the distinction.
 
-==== (c) ⭐ Residue routing has no acknowledgement, so a route can land on nobody
+==== (c) Residue routing has no acknowledgement, so a route can land on nobody
 
 `070`'s report routes three unconverted preambles to `090 § D2`. `090`'s report routes the same three
 to `070`. Both plans are closed. All three sites are still raw at HEAD.
@@ -718,7 +769,7 @@ and it is a dispatched sub-agent's, not the run's** (§ 9.2).
 bucket this epic *skipped* — verification — is therefore also unpriced. The lane cannot report what it
 spent, and it cannot report what it saved by not spending.
 
-⭐ **The reports fail honestly**, naming the mechanism (no exposed counter, no readable clock, a VM
+**The reports fail honestly**, naming the mechanism (no exposed counter, no readable clock, a VM
 restart that would over-count an outage as work). That is a materially better failure mode than a
 confident wrong number, and it is the same discipline the epic applied to its line floors.
 
@@ -726,7 +777,7 @@ confident wrong number, and it is the same discipline the epic applied to its li
 [[_general_issue]]
 === 3. A general Claude Code / repository issue — *SUPPORTED, and it supplies three controls*
 
-⭐ **`080`'s refutation is the control.** Its **B6** claim was true at merge and false two days later,
+**`080`'s refutation is the control.** Its **B6** claim was true at merge and false two days later,
 invalidated by PR #1321 from an unrelated epic landing a new module inside `080`'s declared surface
 that does not follow the norm `080` established.
 
@@ -737,7 +788,7 @@ The repository has **no mechanism in either lane** that re-checks a landed claim
 ⇒ **This eliminates the lane as the explanation for the refutation class as a whole**, and it is the
 more valuable result: a control that removes a candidate.
 
-⚠ **The elimination is about the SHAPE, and it is worth being precise about how far it reaches.** All
+**The elimination is about the SHAPE, and it is worth being precise about how far it reaches.** All
 four refutations share the shape *a claim invalidated after its merge*; a local plan-marshall run would
 have shipped each identically, because its gates run before merge. What the local lane adds is a
 landing analysis **at landing time** — which would not have caught these either, since every
@@ -748,21 +799,21 @@ one.** The ingestion was the first thing that ever performed one on this epic, s
 after the fact, and it found four in ten plans. The rules that would surface the drift run at
 `severity: warning`, so a non-conforming new module is reported and ignored.
 
-⭐ **A second control, from the reviewer side and absolute:** PR-Agent posted a Reviewer Guide on
+**A second control, from the reviewer side and absolute:** PR-Agent posted a Reviewer Guide on
 **16 of 16** PRs and named a focus area on **none** of them, across diffs from 10 to 309 files
 (§ 7.4). Coverage 100%, information zero, independent of content. That is reviewer-side and
 environmental, and it removes PR-Agent from any lane comparison.
 
-⚠ **A third, and it is the largest single cause of missing review here:** 9 of 11 declines are an
+**A third, and it is the largest single cause of missing review here:** 9 of 11 declines are an
 account-level rolling-window quota, the identical notice the sibling corpora sampled. **CodeRabbit
 reviewed 5 of 16 PRs (31%)**, and 9 of the 11 misses are environmental.
 
-⛔ **But two of the eleven are not**, and they must not be pooled with the nine: one
+**But two of the eleven are not**, and they must not be pooled with the nine: one
 `skip-bot-review` label (a lane decision) and two file-count ceilings (a consequence of PR size, which
 is a lane-authoring choice). ⇒ **Roughly a fifth of this corpus's missing review is lane-caused, not
 environmental** — a distinction the raw 31% coverage figure destroys.
 
-⚠ Two further environmental items, neither explaining the corpus: squash merges make per-commit claims
+Two further environmental items, neither explaining the corpus: squash merges make per-commit claims
 uncheckable, and the epic's own scoping brief notes that the plugin-doctor script has no `sys.path`
 bootstrap, so every measurement in the corpus rides a five-directory `PYTHONPATH` prefix stated in
 prose.
@@ -780,28 +831,28 @@ What that cost, measured:
 
 * **31 of 58 measurable rows (53.4%) carry a clean verdict**; 9 of 10 plans carry at least one
   shortfall.
-* **4 rows are refuted at HEAD** — and ⛔ **every one was invalidated AFTER its merge, by a change the
+* **4 rows are refuted at HEAD** — and **every one was invalidated AFTER its merge, by a change the
   claiming plan could not have seen**: three by later work inside this epic, one by an unrelated epic's
   PR two days later. **Not one is a plan getting its own work wrong.** That makes the class a
   repository-wide gap rather than a lane one (§ 10.3).
-* The substitute instrument — a hand-maintained residue index — **drifted on 6 of 12 checkable claims
+* The substitute instrument — a prose residue index the runs maintained themselves — **drifted on 6 of 12 checkable claims
   and carried one statement that was simply false**, about a fixed historical fact that cannot drift.
 * **The epic diagnosed this exact defect after nine verification rounds, authored plan `120` to fix
   it, called it its own highest-value follow-up, and never ran it.**
 * **CodeRabbit reviewed 5 of 16 PRs and 5 of its 21 findings merged with the thread unclosed** —
-  **at most** 76.2% resolved, an upper bound rather than a measurement (§ 7.1). ⚠ Unlike
+  **at most** 76.2% resolved, an upper bound rather than a measurement (§ 7.1). Unlike
   `review-apparatus`, the resolution rate is **not** a control here — but unlike `truthful-signals`,
   part of the shortfall is bookkeeping: zero findings were dismissed as noise.
-* ⛔ **Two PRs forfeited automated review outright on file-count ceilings** — 112 and 309 files — and
+* **Two PRs forfeited automated review outright on file-count ceilings** — 112 and 309 files — and
   one opted out by label. **A fifth of this corpus's missing review is lane-caused, not environmental.**
 
-⭐ **The strongest positive finding is a supersession rather than a comparison.** Two of the three
+**The strongest positive finding is a supersession rather than a comparison.** Two of the three
 cross-file sets `120` was authored to derive are provided structurally by the orchestrator ledger — the
 collision matrix by `corpus cross-check`, the queue by a `GENERATED` block that cannot be hand-edited.
 Ingestion did not *catch* those defects; it made them **unable to occur**. No local comparison set was
 needed to establish that, which is fortunate, because none exists (§ 8).
 
-⚠ **The honest limits of this report**, both structural:
+**The honest limits of this report**, both structural:
 
 . **No cross-lane comparison of any kind.** The epic ran no local plans and the shared archive has been
   GC'd to n=2. Every figure here is within-corpus.
@@ -815,7 +866,7 @@ needed to establish that, which is fortunate, because none exists (§ 8).
 
 == What the cloud lane is genuinely good at
 
-* ⭐ **Re-entry works.** 16 runs over 10 plans; three later runs closed defects their predecessor
+* **Re-entry works.** 16 runs over 10 plans; three later runs closed defects their predecessor
   created or missed, and `030` run 02 caught run 01's own metric error. No reference corpus exercised
   this.
 * **Honest partials are the norm, not the exception.** `040` D3 reported *"not performed at all"* after
@@ -837,7 +888,7 @@ needed to establish that, which is fortunate, because none exists (§ 8).
 
 Ordered by the measured consequence each addresses.
 
-. ⭐⭐ **Make the verification pass a precondition, not an operator option.** Ten plans, sixteen runs,
+. **Make the verification pass a precondition, not an operator option.** Ten plans, sixteen runs,
   zero verification passes, and nothing recorded the absence. Either the lane requires
   `verification.md` before the next plan in an epic may be emitted, or it stops treating the run report
   as evidence. This is the highest-value change and it is not close.
@@ -846,8 +897,8 @@ Ordered by the measured consequence each addresses.
   by nobody, for six days.
 . **Make a residue routing acknowledged, not asserted.** A route written into the sending plan's own
   report can land on a plan that has already closed, or on nobody — and in one case on each other.
-. ⭐ **Add a periodic re-check of landed claims — this is the one recommendation that is not about the
-  cloud lane.** **All four** refutations post-date their merge, so no pre-merge gate in either lane
+. **Add a periodic re-check of landed claims — this is the one recommendation that is not about the
+  cloud lane.** All four refutations post-date their merge, so no pre-merge gate in either lane
   would have caught them. Nothing anywhere re-checks a landed claim when a rule changes or a sibling
   lands, and the rules that would surface it run at `warning`. The ingestion found four in ten plans
   the first time anyone looked.
@@ -855,7 +906,7 @@ Ordered by the measured consequence each addresses.
   evidence of nine failed verification rounds and was still unrun ten plan-runs later.
 . **Feed process lessons back into the contract.** 1 of 5 reached it; the 4 that did not are the ones
   that would have prevented the false figures.
-. ⛔ **Cap authored PR size, or accept that large sweeps ship unreviewed.** Two PRs were refused
+. **Cap authored PR size, or accept that large sweeps ship unreviewed.** Two PRs were refused
   outright on file-count ceilings (112 and 309 files against a limit of 100), and the campaign's six
   remaining runs are each sized to land in the same place. The epic recorded the carve-into-PRs
   decision as *pending*; it is now the difference between a reviewed and an unreviewed campaign.
@@ -886,7 +937,7 @@ line for the PR mapping, and the plugin-doctor `test-conventions` sweep for the 
   `sort | uniq -d` over the file list returning zero duplicates — so the six slices partition the
   finding set with no residual bucket.
 
-⚠ **One correction inherited and recorded rather than silently fixed**: the epic's residue index states
+**One correction inherited and recorded rather than silently fixed**: the epic's residue index states
 the whole-tree count as **313**. It is **267**. The index labels the figure a lead and instructs the
 reader to re-derive it, so this is drift operating as designed — but every downstream document that
 quoted 313 without re-deriving was wrong by 46.
