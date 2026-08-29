@@ -16,6 +16,14 @@ Storage:
 - Q-Gate findings: .plan/local/plans/{plan_id}/artifacts/findings/qgate-{phase}.jsonl
 - Assessments: .plan/local/plans/{plan_id}/artifacts/findings/assessments.jsonl
 
+Every operation surface resolves that store through the explicit handle in
+``_findings_store_state`` and reports the resulting ``store_resolution`` /
+``store_path`` / ``findings_store_state`` / ``unresolved_store`` fields alongside
+its own payload, so a count is never published without the substrate it was
+computed from. A plan directory that is absent under the resolved root is
+REFUSED (``error: findings_store_unresolved``) by every surface — read, write and
+``add_`` alike — rather than answered with a clean zero or silently created.
+
 Stdlib-only - no external dependencies (except shared modules via PYTHONPATH).
 """
 
@@ -25,6 +33,13 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
+from _findings_store_state import (
+    FindingsStore,
+    resolve_findings_store,
+    store_state_fields,
+    store_unreached,
+    unresolved_store_error,
+)
 from bot_registry import bot_kinds as _registry_bot_kinds
 from constants import (
     FILE_FINDINGS_DIR,
@@ -46,7 +61,6 @@ from jsonl_store import (
     read_jsonl_merge,
     timestamp,
     update_jsonl,
-    update_jsonl_in_dir,
 )
 
 # --- Backward-compatible aliases (imported from constants) ---
@@ -168,6 +182,159 @@ def get_qgate_path(plan_id: str, phase: str) -> Path:
     return get_findings_dir(plan_id) / f'qgate-{phase}.jsonl'
 
 
+# --- Store-scoped path helpers ---
+#
+# The four public path helpers above compose from the CWD-resolved root. Every
+# operation surface instead composes from its own resolved
+# :class:`FindingsStore`, because the store is the thing that knows whether it
+# was reached at all — and, under ``--any-checkout``, it may legitimately be the
+# store of a DIFFERENT checkout than the one the cwd resolves to.
+
+
+def _store_findings_path(store: FindingsStore, finding_type: str) -> Path:
+    """Return ``{store}/{type}.jsonl`` for a validated finding type."""
+    if finding_type not in FINDING_TYPES:
+        raise ValueError(f'Invalid finding type: {finding_type}. Must be one of {FINDING_TYPES}')
+    return _store_dir(store) / f'{finding_type}.jsonl'
+
+
+def _store_qgate_path(store: FindingsStore, phase: str) -> Path:
+    """Return ``{store}/qgate-{phase}.jsonl`` for a validated Q-Gate phase."""
+    if phase not in QGATE_PHASES:
+        raise ValueError(f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}')
+    return _store_dir(store) / f'qgate-{phase}.jsonl'
+
+
+def _store_assessments_path(store: FindingsStore) -> Path:
+    """Return ``{store}/assessments.jsonl``."""
+    return _store_dir(store) / 'assessments.jsonl'
+
+
+def _store_dir(store: FindingsStore) -> Path:
+    """Return the store's findings directory, asserting it was actually reached.
+
+    Every caller has already refused on :func:`store_unreached`, so a ``None``
+    path here is a programming error rather than a runtime condition — raising
+    is correct, and is what keeps a composed-from-``None`` path from ever
+    reaching the filesystem.
+    """
+    if store.path is None:
+        raise ValueError(f'findings store was not reached ({store.state}): {store.detail}')
+    return store.path
+
+
+def _list_finding_files_in(store: FindingsStore) -> list[Path]:
+    """List the per-type finding JSONL files under ``store``.
+
+    This is the PLAN-FINDINGS file set: ``qgate-*.jsonl`` and
+    ``assessments.jsonl`` are deliberately excluded. It bounds BOTH the read
+    (:func:`get_finding`) and the write (:func:`_update_in_finding_files`), so
+    the two can no longer disagree about which records a verb may touch. A hash
+    that lives in one of the excluded files is REPORTED by
+    :func:`_identify_in_other_store` rather than silently missed or silently
+    written.
+    """
+    findings_dir = store.path
+    if findings_dir is None or not findings_dir.is_dir():
+        return []
+    return [
+        findings_dir / f'{t}.jsonl'
+        for t in FINDING_TYPES
+        if (findings_dir / f'{t}.jsonl').exists()
+    ]
+
+
+def _update_in_finding_files(store: FindingsStore, hash_id: str, updates: dict[str, Any]) -> bool:
+    """Update a record by ``hash_id`` across the PLAN-FINDINGS file set only.
+
+    The write set is enumerated, never globbed. A directory-wide glob over the
+    findings directory also reaches ``qgate-*.jsonl`` and ``assessments.jsonl``
+    — stores whose records carry a different field set and a different resolver
+    — so a Q-Gate or assessment hash handed to a plan-findings write verb would
+    be stamped with fields its record kind does not carry. Iterating
+    :func:`_list_finding_files_in` makes the write set identical to the read set
+    by construction. Stops at the first match and rewrites only that file;
+    returns ``False`` when no plan-findings file holds the hash.
+    """
+    for path in _list_finding_files_in(store):
+        if update_jsonl(path, hash_id, updates):
+            return True
+    return False
+
+
+def _identify_in_other_store(store: FindingsStore, hash_id: str) -> dict[str, str] | None:
+    """Identify — never resolve — a hash that lives in a sibling store.
+
+    The plan-findings verbs (``get``, ``resolve``, ``promote``,
+    ``mark_finding_responded``) are scoped to the plan-findings file set, so a
+    Q-Gate or assessment hash is legitimately not-found for them. Reporting a
+    bare ``Finding not found`` for a hash that demonstrably exists one file over
+    is the false negative this scan removes.
+
+    It is an IDENTIFICATION scan only: the sibling record is never read into a
+    return value and never written. Widening the verbs to resolve it would be
+    wrong on the merits — a Q-Gate record carries ``resolution_timestamp`` that
+    ``resolve_finding`` does not write, and its resolution is phase-scoped — so
+    the answer is the name of the store and of the verb that owns it.
+
+    Returns ``{'store', 'verb'}`` on a hit, or ``None`` when the hash is in no
+    sibling store either.
+    """
+    findings_dir = store.path
+    if findings_dir is None or not findings_dir.is_dir():
+        return None
+
+    for phase in QGATE_PHASES:
+        path = findings_dir / f'qgate-{phase}.jsonl'
+        if any(record.get('hash_id') == hash_id for record in read_jsonl(path)):
+            return {
+                'store': f'the Q-Gate store for phase {phase}',
+                'verb': f'qgate resolve --phase {phase}',
+            }
+
+    assessments = findings_dir / 'assessments.jsonl'
+    if any(record.get('hash_id') == hash_id for record in read_jsonl(assessments)):
+        return {'store': 'the assessment store', 'verb': 'assessment get'}
+    return None
+
+
+def _not_found(
+    plan_id: str,
+    store: FindingsStore,
+    hash_id: str,
+    label: str,
+) -> dict[str, Any]:
+    """Build the not-found payload for ``hash_id``, distinguishing a sibling store.
+
+    A hash absent from the plan-findings file set but present in a sibling store
+    returns ``error: finding_in_other_store`` naming that store and the verb that
+    owns it; a hash absent everywhere returns the plain not-found message. Both
+    carry the store-state fields, so the answer always states which substrate it
+    was computed against.
+    """
+    elsewhere = _identify_in_other_store(store, hash_id)
+    if elsewhere is not None:
+        return {
+            'status': 'error',
+            'error': 'finding_in_other_store',
+            'plan_id': plan_id,
+            'hash_id': hash_id,
+            'found_in': elsewhere['store'],
+            'use_verb': elsewhere['verb'],
+            'message': (
+                f'{label} not found in the plan-findings store: {hash_id} exists in '
+                f"{elsewhere['store']}, which this verb does not own — use "
+                f"`{elsewhere['verb']}` instead"
+            ),
+            **store_state_fields(store),
+        }
+    return {
+        'status': 'error',
+        'message': f'{label} not found: {hash_id}',
+        **store_state_fields(store),
+    }
+
+
 # --- Shared Query Helper ---
 
 
@@ -245,6 +412,13 @@ def add_finding(
     ``raw_input.{field}`` sub-object (per-field byte cap ``raw_input_max_bytes``);
     top-level fields stay clean-by-construction until the batched ingestion pass
     promotes validated values.
+
+    REFUSES against an absent plan directory. The terminal write is
+    ``append_jsonl``, whose ``ensure_parent_dir`` mkdirs the whole chain, so an
+    add for a ``plan_id`` with no directory under the resolved root would
+    MANUFACTURE the very phantom store the read surfaces exist to surface. The
+    guard keys on ``plans/{plan_id}/``, never on ``artifacts/findings/``, so a
+    real plan's first-ever finding still creates its findings directory.
     """
     if finding_type not in FINDING_TYPES:
         return {'status': 'error', 'message': f'Invalid finding type: {finding_type}. Must be one of {FINDING_TYPES}'}
@@ -257,6 +431,10 @@ def add_finding(
 
     if bot_kind and bot_kind not in BOT_KINDS:
         return {'status': 'error', 'message': f'Invalid bot_kind: {bot_kind}. Must be one of {BOT_KINDS}'}
+
+    store = resolve_findings_store(plan_id)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
 
     hash_id = generate_hash_id()
     record: dict[str, Any] = {
@@ -296,21 +474,25 @@ def add_finding(
     if quarantined:
         record['raw_input'] = quarantined
 
-    append_jsonl(get_findings_path(plan_id, finding_type), record)
+    append_jsonl(_store_findings_path(store, finding_type), record)
 
-    return {'status': 'success', 'hash_id': hash_id, 'type': finding_type}
+    return {
+        'status': 'success',
+        'hash_id': hash_id,
+        'type': finding_type,
+        **store_state_fields(store),
+    }
 
 
 def _list_finding_files(plan_id: str) -> list['Path']:
-    """List all per-type finding JSONL files (excluding qgate-*, assessments)."""
-    findings_dir = get_findings_dir(plan_id)
-    if not findings_dir.exists():
-        return []
-    return [
-        findings_dir / f'{t}.jsonl'
-        for t in FINDING_TYPES
-        if (findings_dir / f'{t}.jsonl').exists()
-    ]
+    """List all per-type finding JSONL files (excluding qgate-*, assessments).
+
+    Plan-id-keyed convenience wrapper over :func:`_list_finding_files_in` for
+    callers that hold no resolved store handle. The exclusion it states is the
+    same one :func:`_identify_in_other_store` reports on, so a hash in one of the
+    excluded files is named rather than silently missed.
+    """
+    return _list_finding_files_in(resolve_findings_store(plan_id))
 
 
 def query_findings(
@@ -322,6 +504,7 @@ def query_findings(
     author: str | None = None,
     kind: str | None = None,
     bot_kind: str | None = None,
+    any_checkout: bool = False,
 ) -> dict[str, Any]:
     """Query findings across all per-type files, merging results.
 
@@ -330,8 +513,19 @@ def query_findings(
     `total_count` reflects the entire store; type/resolution/file_pattern/promoted
     filters then narrow the result to `filtered_count`. This preserves the
     CLI-surface semantics from the pre-split single-file layout.
+
+    Every return states which store the counts were computed from. A plan
+    directory that is absent under the resolved root is REFUSED
+    (``error: findings_store_unresolved``) rather than reported as a clean zero;
+    a resolved plan directory holding no findings keeps returning
+    ``status: success`` / ``total_count: 0`` with ``findings_store_state:
+    missing``.
     """
-    paths = [get_findings_path(plan_id, t) for t in FINDING_TYPES]
+    store = resolve_findings_store(plan_id, any_checkout=any_checkout)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
+    paths = [_store_findings_path(store, t) for t in FINDING_TYPES]
     records = read_jsonl_merge(paths)
 
     type_filter = {t.strip() for t in finding_type.split(',')} if finding_type else None
@@ -350,6 +544,7 @@ def query_findings(
         'filtered_count': len(filtered),
         'findings': filtered,
         'file_paths': list({r.get('file_path') for r in filtered if r.get('file_path')}),
+        **store_state_fields(store),
     }
 
 
@@ -362,6 +557,7 @@ def query_findings_unified(
     author: str | None = None,
     kind: str | None = None,
     bot_kind: str | None = None,
+    any_checkout: bool = False,
 ) -> dict[str, Any]:
     """Query the per-plan findings store merged with pending per-phase Q-Gate findings.
 
@@ -379,6 +575,10 @@ def query_findings_unified(
     The result is TOON-friendly and shape-compatible with `query_findings` plus
     provenance markers: `qgate_included: true`, `plan_count`, and `qgate_count`.
     """
+    store = resolve_findings_store(plan_id, any_checkout=any_checkout)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
     plan_result = query_findings(
         plan_id,
         finding_type=finding_type,
@@ -388,6 +588,7 @@ def query_findings_unified(
         author=author,
         kind=kind,
         bot_kind=bot_kind,
+        any_checkout=any_checkout,
     )
     plan_findings = plan_result['findings']
 
@@ -396,7 +597,9 @@ def query_findings_unified(
     qgate_findings: list[dict[str, Any]] = []
     qgate_total = 0
     for phase in QGATE_PHASES:
-        records = query_qgate_findings(plan_id, phase, resolution='pending')['findings']
+        records = query_qgate_findings(
+            plan_id, phase, resolution='pending', any_checkout=any_checkout
+        )['findings']
         qgate_total += len(records)
         qgate_findings.extend(
             _filter_records(
@@ -425,16 +628,27 @@ def query_findings_unified(
         'filtered_count': len(merged),
         'findings': merged,
         'file_paths': list({r.get('file_path') for r in merged if r.get('file_path')}),
+        **store_state_fields(store),
     }
 
 
-def get_finding(plan_id: str, hash_id: str) -> dict[str, Any]:
-    """Get a single finding by hash_id, scanning all per-type files."""
-    for path in _list_finding_files(plan_id):
+def get_finding(plan_id: str, hash_id: str, any_checkout: bool = False) -> dict[str, Any]:
+    """Get a single finding by hash_id, scanning the plan-findings file set.
+
+    A hash that is absent from that file set but present in a sibling store
+    (``qgate-*.jsonl`` / ``assessments.jsonl``) returns
+    ``error: finding_in_other_store`` naming the store and the verb that owns it,
+    rather than a bare not-found for a record that demonstrably exists.
+    """
+    store = resolve_findings_store(plan_id, any_checkout=any_checkout)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
+    for path in _list_finding_files_in(store):
         for record in read_jsonl(path):
             if record.get('hash_id') == hash_id:
-                return {'status': 'success', **record}
-    return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
+                return {'status': 'success', **record, **store_state_fields(store)}
+    return _not_found(plan_id, store, hash_id, 'Finding')
 
 
 def resolve_finding(
@@ -449,15 +663,26 @@ def resolve_finding(
     is only ever written keyed to a ``hash_id`` that resolves to an existing parent
     record. The parent's existence is asserted BEFORE any write, so a mis-keyed detail
     can never be attached to — or silently create — a phantom record. The subsequent
-    ``update_jsonl_in_dir`` matches solely on ``hash_id``, so the resolution fields and
-    the detail land on the same first-class record together.
+    :func:`_update_in_finding_files` pass matches solely on ``hash_id`` within the
+    plan-findings file set, so the resolution fields and the detail land on the same
+    first-class record together — and, because that file set is the SAME one the
+    ``get_finding`` precondition scans, the write can no longer reach a record the
+    precondition never checked.
+
+    The check-then-act window across the two file reads is unchanged in width by
+    this narrowing: it neither opens nor closes it. See the TOCTOU mitigation menu
+    in ``ref-code-quality/standards/code-organization.md``.
     """
     if resolution not in RESOLUTIONS:
         return {'status': 'error', 'message': f'Invalid resolution: {resolution}. Must be one of {RESOLUTIONS}'}
 
+    store = resolve_findings_store(plan_id)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
     parent = get_finding(plan_id, hash_id)
     if not parent or parent.get('status') != 'success':
-        return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
+        return _not_found(plan_id, store, hash_id, 'Finding')
 
     updates: dict[str, Any] = {'resolution': resolution}
     if detail:
@@ -480,9 +705,14 @@ def resolve_finding(
             updates['responded'] = False
             updates['responded_at'] = None
 
-    if update_jsonl_in_dir(get_findings_dir(plan_id), hash_id, updates):
-        return {'status': 'success', 'hash_id': hash_id, 'resolution': resolution}
-    return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
+    if _update_in_finding_files(store, hash_id, updates):
+        return {
+            'status': 'success',
+            'hash_id': hash_id,
+            'resolution': resolution,
+            **store_state_fields(store),
+        }
+    return _not_found(plan_id, store, hash_id, 'Finding')
 
 
 def resolve_findings_by_type(
@@ -505,6 +735,10 @@ def resolve_findings_by_type(
     """
     if to_resolution not in RESOLUTIONS:
         return {'status': 'error', 'message': f'Invalid resolution: {to_resolution}. Must be one of {RESOLUTIONS}'}
+
+    store = resolve_findings_store(plan_id)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
 
     type_set = set(finding_types)
     records = query_findings(plan_id)['findings']
@@ -531,11 +765,16 @@ def resolve_findings_by_type(
             if resolution_changed or detail_changed:
                 updates['responded'] = False
                 updates['responded_at'] = None
-        path = get_findings_path(plan_id, record['type'])
+        path = _store_findings_path(store, record['type'])
         if update_jsonl(path, hash_id, updates):
             resolved_hash_ids.append(hash_id)
 
-    return {'status': 'success', 'resolved_count': len(resolved_hash_ids), 'hash_ids': resolved_hash_ids}
+    return {
+        'status': 'success',
+        'resolved_count': len(resolved_hash_ids),
+        'hash_ids': resolved_hash_ids,
+        **store_state_fields(store),
+    }
 
 
 def promote_finding(
@@ -543,12 +782,28 @@ def promote_finding(
     hash_id: str,
     promoted_to: str,
 ) -> dict[str, Any]:
-    """Mark a finding as promoted (locates the per-type file by hash_id)."""
+    """Mark a finding as promoted (locates the per-type file by hash_id).
+
+    Scoped to the PLAN-FINDINGS file set. It previously wrote through a
+    directory-wide glob, so a Q-Gate or assessment hash was silently stamped with
+    ``promoted`` / ``promoted_to`` — fields those record kinds do not carry — and
+    reported ``status: success``. Such a hash is now identified and refused with
+    ``error: finding_in_other_store``, leaving the target record byte-identical.
+    """
+    store = resolve_findings_store(plan_id)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
     updates = {'promoted': True, 'promoted_to': promoted_to}
 
-    if update_jsonl_in_dir(get_findings_dir(plan_id), hash_id, updates):
-        return {'status': 'success', 'hash_id': hash_id, 'promoted_to': promoted_to}
-    return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
+    if _update_in_finding_files(store, hash_id, updates):
+        return {
+            'status': 'success',
+            'hash_id': hash_id,
+            'promoted_to': promoted_to,
+            **store_state_fields(store),
+        }
+    return _not_found(plan_id, store, hash_id, 'Finding')
 
 
 def mark_finding_responded(
@@ -566,13 +821,19 @@ def mark_finding_responded(
     cleared by ``resolve_finding`` when the finding's disposition changes, so a
     re-decided disposition is transmittable again — the guard is a per-``(finding,
     disposition)`` key, not a permanent suppression. Locates the per-type file by
-    ``hash_id``.
+    ``hash_id`` within the PLAN-FINDINGS file set, so a Q-Gate or assessment hash
+    is identified and refused rather than stamped with a marker its record kind
+    does not carry.
     """
+    store = resolve_findings_store(plan_id)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
     updates: dict[str, Any] = {'responded': True, 'responded_at': timestamp()}
 
-    if update_jsonl_in_dir(get_findings_dir(plan_id), hash_id, updates):
-        return {'status': 'success', 'hash_id': hash_id}
-    return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
+    if _update_in_finding_files(store, hash_id, updates):
+        return {'status': 'success', 'hash_id': hash_id, **store_state_fields(store)}
+    return _not_found(plan_id, store, hash_id, 'Finding')
 
 
 # --- Q-Gate Findings ---
@@ -626,6 +887,13 @@ def add_qgate_finding(
     with the two benign no-op outcomes ``deduplicated`` and ``reopened``, both of
     which do leave the finding present. Callers test membership in
     :data:`QGATE_PERSIST_OK`, never ``status == 'success'``.
+
+    REFUSES against an absent plan directory, for the same reason
+    :func:`add_finding` does: the terminal ``append_jsonl`` would mkdir the whole
+    chain and manufacture a phantom store. The refusal is an ``error``, which
+    :data:`QGATE_PERSIST_OK` already excludes, so every caller that tests
+    membership in that set treats it as not-in-store with no change at the call
+    site.
     """
     if phase not in QGATE_PHASES:
         return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
@@ -639,13 +907,22 @@ def add_qgate_finding(
     if severity and severity not in SEVERITIES:
         return {'status': 'error', 'message': f'Invalid severity: {severity}. Must be one of {SEVERITIES}'}
 
+    store = resolve_findings_store(plan_id)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
     # Semantic dedup by (title, content discriminator) within phase.
     discriminator = _content_discriminator(detail, file_path, rule)
-    qgate_path = get_qgate_path(plan_id, phase)
+    qgate_path = _store_qgate_path(store, phase)
     existing = _find_by_title_and_discriminator(qgate_path, title, discriminator)
     if existing:
         if existing['resolution'] == 'pending':
-            return {'status': 'deduplicated', 'hash_id': existing['hash_id'], 'phase': phase}
+            return {
+                'status': 'deduplicated',
+                'hash_id': existing['hash_id'],
+                'phase': phase,
+                **store_state_fields(store),
+            }
         else:
             # Same title AND same content — a genuine re-detection of the resolved
             # finding — reopen. A same-title-different-content finding never lands
@@ -658,7 +935,12 @@ def add_qgate_finding(
             if iteration is not None:
                 reopen_updates['iteration'] = iteration
             update_jsonl(qgate_path, existing['hash_id'], reopen_updates)
-            return {'status': 'reopened', 'hash_id': existing['hash_id'], 'phase': phase}
+            return {
+                'status': 'reopened',
+                'hash_id': existing['hash_id'],
+                'phase': phase,
+                **store_state_fields(store),
+            }
 
     hash_id = generate_hash_id()
     record: dict[str, Any] = {
@@ -692,7 +974,7 @@ def add_qgate_finding(
 
     append_jsonl(qgate_path, record)
 
-    return {'status': 'success', 'hash_id': hash_id, 'phase': phase}
+    return {'status': 'success', 'hash_id': hash_id, 'phase': phase, **store_state_fields(store)}
 
 
 def add_qgate_finding_checked(
@@ -718,6 +1000,11 @@ def add_qgate_finding_checked(
     ``(None, failure)`` when the primitive REJECTED it, where ``failure`` is
     ``{'title', 'detail', 'message'}`` carrying the finding's own content plus
     the primitive's rejection message.
+
+    Carries no store guard of its own: it delegates to :func:`add_qgate_finding`,
+    whose absent-plan-directory refusal is an ``error`` — already outside
+    :data:`QGATE_PERSIST_OK` — so the refusal arrives here through the existing
+    rejection path with the store's own message attached.
     """
     result = add_qgate_finding(
         plan_id, phase, source, finding_type, title, detail, **kwargs
@@ -733,12 +1020,21 @@ def query_qgate_findings(
     resolution: str | None = None,
     source: str | None = None,
     iteration: int | None = None,
+    any_checkout: bool = False,
 ) -> dict[str, Any]:
-    """Query Q-Gate findings for a specific phase."""
+    """Query Q-Gate findings for a specific phase.
+
+    States which store the counts were computed from; an absent plan directory
+    is refused rather than reported as ``total_count: 0``.
+    """
     if phase not in QGATE_PHASES:
         return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
 
-    path = get_qgate_path(plan_id, phase)
+    store = resolve_findings_store(plan_id, any_checkout=any_checkout)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
+    path = _store_qgate_path(store, phase)
     records = read_jsonl(path)
 
     filtered = _filter_records(
@@ -753,6 +1049,7 @@ def query_qgate_findings(
         'total_count': len(records),
         'filtered_count': len(filtered),
         'findings': filtered,
+        **store_state_fields(store),
     }
 
 
@@ -770,7 +1067,11 @@ def resolve_qgate_finding(
     if resolution not in RESOLUTIONS:
         return {'status': 'error', 'message': f'Invalid resolution: {resolution}. Must be one of {RESOLUTIONS}'}
 
-    path = get_qgate_path(plan_id, phase)
+    store = resolve_findings_store(plan_id)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
+    path = _store_qgate_path(store, phase)
     updates: dict[str, Any] = {
         'resolution': resolution,
         'resolution_timestamp': timestamp(),
@@ -779,8 +1080,18 @@ def resolve_qgate_finding(
         updates['resolution_detail'] = detail
 
     if update_jsonl(path, hash_id, updates):
-        return {'status': 'success', 'hash_id': hash_id, 'phase': phase, 'resolution': resolution}
-    return {'status': 'error', 'message': f'Q-Gate finding not found: {hash_id}'}
+        return {
+            'status': 'success',
+            'hash_id': hash_id,
+            'phase': phase,
+            'resolution': resolution,
+            **store_state_fields(store),
+        }
+    return {
+        'status': 'error',
+        'message': f'Q-Gate finding not found: {hash_id}',
+        **store_state_fields(store),
+    }
 
 
 def resolve_qgate_findings_by_evidence(
@@ -816,8 +1127,12 @@ def resolve_qgate_findings_by_evidence(
     if phase not in QGATE_PHASES:
         return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
 
+    store = resolve_findings_store(plan_id)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
     changed = {p for p in changed_paths if p}
-    path = get_qgate_path(plan_id, phase)
+    path = _store_qgate_path(store, phase)
     records = read_jsonl(path)
     detail_sha = evidence_sha or 'HEAD'
 
@@ -854,6 +1169,7 @@ def resolve_qgate_findings_by_evidence(
         'phase': phase,
         'resolved': resolved,
         'left_pending': left_pending,
+        **store_state_fields(store),
     }
 
 
@@ -861,19 +1177,27 @@ def clear_qgate_findings(
     plan_id: str,
     phase: str,
 ) -> dict[str, Any]:
-    """Clear all Q-Gate findings for a specific phase."""
+    """Clear all Q-Gate findings for a specific phase.
+
+    A ``cleared: 0`` is only meaningful for a store that was reached, so an
+    absent plan directory is refused rather than reported as a clean zero.
+    """
     if phase not in QGATE_PHASES:
         return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
 
-    path = get_qgate_path(plan_id, phase)
+    store = resolve_findings_store(plan_id)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
+    path = _store_qgate_path(store, phase)
     if not path.exists():
-        return {'status': 'success', 'phase': phase, 'cleared': 0}
+        return {'status': 'success', 'phase': phase, 'cleared': 0, **store_state_fields(store)}
 
     records = read_jsonl(path)
     cleared = len(records)
     path.unlink()
 
-    return {'status': 'success', 'phase': phase, 'cleared': cleared}
+    return {'status': 'success', 'phase': phase, 'cleared': cleared, **store_state_fields(store)}
 
 
 # --- Assessment Path Helper ---
@@ -896,12 +1220,21 @@ def add_assessment(
     detail: str | None = None,
     evidence: str | None = None,
 ) -> dict[str, Any]:
-    """Add an assessment record."""
+    """Add an assessment record.
+
+    REFUSES against an absent plan directory, on the same guard as the other two
+    ``add_`` surfaces: ``append_jsonl`` would otherwise mkdir the whole chain for
+    a plan that exists in no checkout.
+    """
     if certainty not in CERTAINTY_VALUES:
         return {'status': 'error', 'message': f'Invalid certainty: {certainty}. Must be one of {CERTAINTY_VALUES}'}
 
     if not 0 <= confidence <= 100:
         return {'status': 'error', 'message': f'Invalid confidence: {confidence}. Must be 0-100'}
+
+    store = resolve_findings_store(plan_id)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
 
     hash_id = generate_hash_id()
     record = {
@@ -918,9 +1251,14 @@ def add_assessment(
     if evidence:
         record['evidence'] = evidence
 
-    append_jsonl(get_assessments_path(plan_id), record)
+    append_jsonl(_store_assessments_path(store), record)
 
-    return {'status': 'success', 'hash_id': hash_id, 'file_path': file_path}
+    return {
+        'status': 'success',
+        'hash_id': hash_id,
+        'file_path': file_path,
+        **store_state_fields(store),
+    }
 
 
 def query_assessments(
@@ -929,9 +1267,18 @@ def query_assessments(
     min_confidence: int | None = None,
     max_confidence: int | None = None,
     file_pattern: str | None = None,
+    any_checkout: bool = False,
 ) -> dict[str, Any]:
-    """Query assessments with filters."""
-    path = get_assessments_path(plan_id)
+    """Query assessments with filters.
+
+    States which store the counts were computed from; an absent plan directory
+    is refused rather than reported as ``total_count: 0``.
+    """
+    store = resolve_findings_store(plan_id, any_checkout=any_checkout)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
+    path = _store_assessments_path(store)
     records = read_jsonl(path)
 
     filtered = _filter_records(
@@ -949,26 +1296,43 @@ def query_assessments(
         'filtered_count': len(filtered),
         'assessments': filtered,
         'file_paths': list({r.get('file_path') for r in filtered}),
+        **store_state_fields(store),
     }
 
 
-def get_assessment(plan_id: str, hash_id: str) -> dict[str, Any]:
+def get_assessment(plan_id: str, hash_id: str, any_checkout: bool = False) -> dict[str, Any]:
     """Get a single assessment by hash_id."""
-    path = get_assessments_path(plan_id)
+    store = resolve_findings_store(plan_id, any_checkout=any_checkout)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
+    path = _store_assessments_path(store)
     for record in read_jsonl(path):
         if record.get('hash_id') == hash_id:
-            return {'status': 'success', **record}
-    return {'status': 'error', 'message': f'Assessment not found: {hash_id}'}
+            return {'status': 'success', **record, **store_state_fields(store)}
+    return {
+        'status': 'error',
+        'message': f'Assessment not found: {hash_id}',
+        **store_state_fields(store),
+    }
 
 
 def clear_assessments(
     plan_id: str,
     agent: str | None = None,
 ) -> dict[str, Any]:
-    """Clear assessment records, optionally filtered by agent."""
-    path = get_assessments_path(plan_id)
+    """Clear assessment records, optionally filtered by agent.
+
+    A ``cleared: 0`` is only meaningful for a store that was reached, so an
+    absent plan directory is refused rather than reported as a clean zero.
+    """
+    store = resolve_findings_store(plan_id)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
+    path = _store_assessments_path(store)
     if not path.exists():
-        return {'status': 'success', 'cleared': 0}
+        return {'status': 'success', 'cleared': 0, **store_state_fields(store)}
 
     records = read_jsonl(path)
     original_count = len(records)
@@ -984,4 +1348,4 @@ def clear_assessments(
         cleared = original_count
         path.unlink()
 
-    return {'status': 'success', 'cleared': cleared}
+    return {'status': 'success', 'cleared': cleared, **store_state_fields(store)}

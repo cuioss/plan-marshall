@@ -61,9 +61,53 @@ All finding-related JSONL files live under a single `findings/` subdirectory. Pl
         └── qgate-6-finalize.jsonl
 ```
 
-Per-type files are created lazily — only types that have been added produce a file. The `list` command transparently merges across all per-type files (in canonical type order); `get`/`resolve`/`promote` locate the owning file by `hash_id`. The CLI surface is unaffected by the per-type split.
+Per-type files are created lazily — only types that have been added produce a file. The `list` command transparently merges across all per-type files (in canonical type order); `get`/`resolve`/`promote` locate the owning file by `hash_id` **within the plan-findings file set only** — the per-type `{type}.jsonl` files, never `qgate-*.jsonl` and never `assessments.jsonl`. A `hash_id` that lives in one of those sibling stores is reported as `finding_in_other_store`, naming the store and the verb that owns it, rather than silently missed by the read or silently written by the resolve/promote pass. The CLI surface is unaffected by the per-type split.
 
 See [standards/jsonl-format.md](standards/jsonl-format.md) for the complete storage layout and per-type file list.
+
+## Store Resolution and the Three Store States
+
+The findings store is resolved cwd-relatively (ADR-002): `plans/{plan_id}/` MOVES into its worktree at phase-5 and back at finalize. From the main checkout the directory of a running plan is therefore genuinely absent — and a primitive that returns `[]` for a non-existent path cannot tell that apart from a plan that filed nothing.
+
+Every operation surface — read, write and `add` alike — resolves the store through one explicit handle and publishes what it found alongside its own payload:
+
+| Field | Meaning |
+|-------|---------|
+| `store_resolution` | Which anchor resolved the runtime-state root: `cwd_relative` (production), `override` (`PLAN_BASE_DIR` / `set_base_dir()`, tests), or `unresolved` (no root reached at all). |
+| `store_path` | The resolved `artifacts/findings/` directory, or `null` when `store_resolution` is `unresolved`. |
+| `findings_store_state` | `present` / `missing` / `plan_absent` / `unknown` — see below. |
+| `unresolved_store` | `true` exactly when the surface REFUSED because the store was never reached; derived from `findings_store_state`, so the two cannot drift apart. |
+
+The state values:
+
+| `findings_store_state` | Condition | Outcome |
+|------------------------|-----------|---------|
+| `present` | The plan directory and its `artifacts/findings/` both exist. | `status: success` with today's counts. |
+| `missing` | The plan directory exists but has filed nothing yet (no `artifacts/findings/`). | `status: success`, `total_count: 0` — the **benign zero**, unchanged from before this discriminator existed. |
+| `plan_absent` | `plans/{plan_id}/` is not under the resolved root. | `status: error`, `error: findings_store_unresolved`; the message names the resolved root and, when the plan can be located, the checkout that actually holds it. |
+| `unknown` | No runtime-state root could be resolved at all. | `status: error`, `error: findings_store_unresolved`. |
+
+The state is decided on the **plan directory**, never on `artifacts/findings/`. A plan's first-ever finding legitimately creates that subdirectory, so a guard keyed there would refuse every real plan's first write — and turn the benign zero into the inverse defect.
+
+### `--any-checkout` (read-only)
+
+`--any-checkout` is an explicit opt-in that reads a plan's findings from whichever checkout currently holds the plan directory, resolving through the existing `git-workflow locate-plan-checkout` verb. It is declared on exactly five verbs, and on no other:
+
+- `list`
+- `get`
+- `qgate list`
+- `assessment list`
+- `assessment get`
+
+Every one of those is a READ. No write verb carries the flag — not `resolve`, `promote`, `ingest`, `qgate add`, `qgate resolve`, `qgate resolve-evidenced`, `qgate clear`, `assessment add` or `assessment clear` — so a caller in one checkout can never obtain write authority over a plan whose directory lives in another. A write verb handed the flag is rejected by argparse (exit code 2), not silently ignored. Without the flag, a cross-checkout read returns the `plan_absent` refusal naming the checkout that holds the plan.
+
+This surface **retires the direct-path workaround**: reading `.plan/local/worktrees/*/.plan/local/plans/*/artifacts/findings/*.jsonl` by hand-constructed path is no longer the way to reach a worktree-resident plan's findings. Go through the script funnel with `--any-checkout` instead.
+
+### The `add` verbs refuse an absent plan directory
+
+`add`, `qgate add` and `assessment add` all end at an append whose parent-directory creation would materialize the whole `plans/{plan_id}/artifacts/findings/` chain. Against a `plan_id` with no directory under the resolved root that manufactures a **phantom store** — after which a subsequent `list` reports `findings_store_state: present` for a plan that never existed, defeating the guarantee the read surfaces provide.
+
+All three therefore REFUSE, returning `status: error` / `error: findings_store_unresolved` / `findings_store_state: plan_absent` and creating nothing on disk. Because `qgate add`'s refusal is an `error`, it is already outside the `QGATE_PERSIST_OK` partition (`success` / `deduplicated` / `reopened`), so every caller that tests membership in that set treats a refused add as not-in-store with no change at the call site. A real plan whose directory exists but which has no `artifacts/findings/` yet still succeeds and still creates the file.
 
 ## Finding Types
 
@@ -93,11 +137,11 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 # List findings (per-plan; add --include-qgate to merge pending Q-Gate findings)
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   list --plan-id {plan_id} [--type T] [--resolution R] \
-  [--promoted BOOL] [--file-pattern PATTERN] [--include-qgate]
+  [--promoted BOOL] [--file-pattern PATTERN] [--include-qgate] [--any-checkout]
 
 # Get single finding
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  get --plan-id {plan_id} --hash-id {hash_id}
+  get --plan-id {plan_id} --hash-id {hash_id} [--any-checkout]
 
 # Resolve finding
 # {resolution} ∈ {pending, fixed, suppressed, accepted, taken_into_account, rejected}.
@@ -139,7 +183,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 # List Q-Gate findings
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate list --plan-id {plan_id} --phase {phase} \
-  [--resolution R] [--source S] [--iteration N]
+  [--resolution R] [--source S] [--iteration N] [--any-checkout]
 
 # Resolve Q-Gate finding
 # {resolution} accepts rejected too — a refuted Q-Gate finding closes non-pending
@@ -179,11 +223,11 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 # List assessments
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   assessment list --plan-id {plan_id} [--certainty C] [--min-confidence N] \
-  [--max-confidence N] [--file-pattern PATTERN]
+  [--max-confidence N] [--file-pattern PATTERN] [--any-checkout]
 
 # Get single assessment
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  assessment get --plan-id {plan_id} --hash-id {hash_id}
+  assessment get --plan-id {plan_id} --hash-id {hash_id} [--any-checkout]
 
 # Clear assessments (all or by agent)
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
@@ -202,13 +246,17 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 ## Output Format
 
-All commands return TOON format.
+All commands return TOON format. Every payload additionally carries the four store-state fields documented in **Store Resolution and the Three Store States** above (`store_resolution`, `store_path`, `findings_store_state`, `unresolved_store`), so a count is never reported without the substrate it was computed from.
 
 **Add response**:
 ```toon
 status: success
 hash_id: a3f2c1
 type: bug
+store_resolution: cwd_relative
+store_path: /repo/.plan/local/plans/EXAMPLE-PLAN/artifacts/findings
+findings_store_state: present
+unresolved_store: false
 ```
 
 **Query response**:
@@ -217,11 +265,29 @@ status: success
 plan_id: EXAMPLE-PLAN
 total_count: 30
 filtered_count: 15
+store_resolution: cwd_relative
+store_path: /repo/.plan/local/plans/EXAMPLE-PLAN/artifacts/findings
+findings_store_state: present
+unresolved_store: false
 
 findings[15]{hash_id,type,title,resolution}:
 a3f2c1,bug,Null check missing,pending
 b4e3d2,sonar-issue,TODO comment,fixed
 ```
+
+**Unreached-store refusal** (any verb, when `plans/{plan_id}/` is absent under the resolved root):
+```toon
+status: error
+error: findings_store_unresolved
+plan_id: EXAMPLE-PLAN
+message: "plan directory /repo/.plan/local/plans/EXAMPLE-PLAN is absent under the resolved root /repo/.plan/local, so the findings store for plan 'EXAMPLE-PLAN' was never reached"
+store_resolution: cwd_relative
+store_path: /repo/.plan/local/plans/EXAMPLE-PLAN/artifacts/findings
+findings_store_state: plan_absent
+unresolved_store: true
+```
+
+⛔ **Read `findings_store_state` before reading any count.** A `total_count: 0` is trustworthy only under `present` or `missing`; it is never emitted under `plan_absent` or `unknown`, where the surface refuses instead. Branching on the count alone re-creates the defect this discriminator removes.
 
 **Unified query response** (`list --include-qgate`): same shape as the default query response, plus three provenance markers — `qgate_included`, `plan_count`, and `qgate_count`. The `findings` array is the per-plan slice followed by the merged pending Q-Gate slice. `total_count` is the full universe of both slices (the entire per-plan store plus every pending Q-Gate record across phases, before `--type`/`--file-pattern` narrowing); `filtered_count` is the post-narrowing union actually returned in `findings`.
 
@@ -314,14 +380,15 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings ad
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
   --plan-id PLAN_ID \
   [--type TYPE_CSV] [--resolution RESOLUTION] [--promoted {true|false}] \
-  [--file-pattern PATTERN] [--include-qgate] [--author AUTHOR] [--kind KIND]
+  [--file-pattern PATTERN] [--include-qgate] [--author AUTHOR] [--kind KIND] \
+  [--any-checkout]
 ```
 
 ### get
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings get \
-  --plan-id PLAN_ID --hash-id HASH_ID
+  --plan-id PLAN_ID --hash-id HASH_ID [--any-checkout]
 ```
 
 ### resolve
@@ -361,7 +428,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qg
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate list \
   --plan-id PLAN_ID --phase PHASE \
-  [--resolution RESOLUTION] [--source SOURCE] [--iteration N]
+  [--resolution RESOLUTION] [--source SOURCE] [--iteration N] [--any-checkout]
 ```
 
 ### qgate resolve
@@ -408,14 +475,14 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings as
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment list \
   --plan-id PLAN_ID \
   [--certainty CERTAINTY] [--min-confidence N] [--max-confidence N] \
-  [--file-pattern PATTERN]
+  [--file-pattern PATTERN] [--any-checkout]
 ```
 
 ### assessment get
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment get \
-  --plan-id PLAN_ID --hash-id HASH_ID
+  --plan-id PLAN_ID --hash-id HASH_ID [--any-checkout]
 ```
 
 ### assessment clear
@@ -436,6 +503,8 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings as
 | `invalid_type` | Type not in the finding types table |
 | `invalid_resolution` | Resolution not in the valid values |
 | `invalid_phase` | Phase not in 2-refine through 6-finalize |
+| `findings_store_unresolved` | `plans/{plan_id}/` is absent under the resolved root (`findings_store_state: plan_absent`), or no runtime-state root resolved at all (`unknown`). Returned by every surface — read, write and `add` — instead of a clean zero or a manufactured store. |
+| `finding_in_other_store` | The `hash_id` is absent from the plan-findings file set but present in a sibling store. The payload names the store (`found_in`) and the verb that owns it (`use_verb`); the sibling record is left byte-identical. |
 
 ## Related
 
