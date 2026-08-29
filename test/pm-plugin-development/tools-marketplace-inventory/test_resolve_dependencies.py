@@ -272,15 +272,100 @@ Use the `plan-marshall:ref-toon-format:toon_parser` script for parsing.
         assert deps[0].target.bundle == 'plan-marshall'
         assert deps[0].target.name == 'toon_parser'
 
-    def test_skip_urls(self):
-        """Test that URLs are not detected as notations."""
+    def test_url_fragments_are_recorded_with_their_exclusion_reason(self):
+        """A URL fragment is RECORDED with the shape it matched, not discarded.
+
+        This is the (c) partition: the URL/port/scheme skips used to be bare
+        ``continue`` statements in the detector, which made them fail-open — a
+        genuine reference sharing a line with a URL vanished with no trace. The
+        detector now records WHICH non-reference shape the match hit and defers
+        the keep/drop call to the index (see
+        ``test_url_fragments_produce_no_edge_in_the_index`` for the guarantee
+        this test's predecessor, ``test_skip_urls``, actually protected).
+
+        ``example.com:8080:path`` satisfies TWO shapes — it is preceded by ``.``
+        (embedded in a longer token) and its middle segment is all digits (a
+        port). The arms are ordered, and the earlier one wins, so the recorded
+        reason is ``EMBEDDED_TOKEN``. ``localhost:3000:api`` is preceded by
+        ``/``, which is not an embedding character, so it falls through to
+        ``PORT_SEGMENT``.
+        """
         content = """
 Visit https://example.com:8080:path for more info.
 Also see http://localhost:3000:api
 """
         source = ComponentId(bundle='test', component_type='skill', name='test')
         deps = detect_script_notations(content, source)
-        assert len(deps) == 0
+
+        assert [(d.target.to_notation(), d.exclusion) for d in deps] == [
+            ('com:8080:path', Exclusion.EMBEDDED_TOKEN),
+            ('localhost:3000:api', Exclusion.PORT_SEGMENT),
+        ]
+
+    def test_detector_stage_resolved_flag_is_undecided(self):
+        """``resolved`` on a detector row is the untouched default, not a verdict.
+
+        ``detect_script_notations`` never assigns ``resolved``; every row it
+        returns carries the ``Dependency`` dataclass default, and the INDEX is
+        the sole assigner. Pinned explicitly so a reader of the row above does
+        not mistake ``resolved=True`` on an excluded URL fragment for a claim
+        that the fragment resolved to something — no resolution has been
+        attempted at this stage for ANY row, excluded or not.
+        """
+        content = """
+Visit https://example.com:8080:path for more info.
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files add
+"""
+        source = ComponentId(bundle='test', component_type='skill', name='test')
+        deps = detect_script_notations(content, source)
+
+        # Both the excluded fragment and the genuine notation carry the same
+        # untouched default — which is what makes it a default and not a verdict.
+        assert len(deps) == 2
+        assert all(d.resolved is True for d in deps)
+
+    def test_url_fragment_exclusions_are_not_verb_bearing(self):
+        """Neither URL-fragment shape is eligible for the subcommand retarget.
+
+        ``VERB_BEARING_EXCLUSIONS`` is what routes an excluded row to the
+        index's drop path rather than to ``_entry_script_for_subcommand``. It is
+        the mechanism behind the end-to-end guarantee asserted below, so it is
+        pinned directly instead of being left implicit in the outcome.
+        """
+        assert Exclusion.EMBEDDED_TOKEN not in VERB_BEARING_EXCLUSIONS
+        assert Exclusion.PORT_SEGMENT not in VERB_BEARING_EXCLUSIONS
+
+    def test_url_fragments_produce_no_edge_in_the_index(self):
+        """The guarantee ``test_skip_urls`` protected, at the layer that now owns it.
+
+        The predecessor asserted ``len(deps) == 0`` against the DETECTOR, so
+        moving the drop into the index would have silently retired the
+        guarantee. It is re-asserted end-to-end instead: an excluded shape that
+        names no component is discarded by ``_index_dependencies_from``, so a
+        URL still contributes no dependency edge.
+        """
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bundles = Path(tmp) / 'marketplace' / 'bundles'
+            beta = bundles / 'beta-bundle'
+            _write(beta / '.claude-plugin' / 'plugin.json', '{\n  "name": "beta-bundle"\n}\n')
+            _write(
+                beta / 'skills' / 'only-skill' / 'SKILL.md',
+                '---\nname: only-skill\ndescription: Standalone skill\n---\n'
+                '# Only Skill\n\n'
+                'Visit https://example.com:8080:path for more info.\n'
+                'Also see http://localhost:3000:api\n',
+            )
+            index = build_dependency_index(bundles, set(DependencyType))
+
+        recorded = {
+            dep.target.to_notation()
+            for deps in index.forward_deps.values()
+            for dep in deps
+        }
+        assert 'com:8080:path' not in recorded
+        assert 'localhost:3000:api' not in recorded
 
 
 # =============================================================================

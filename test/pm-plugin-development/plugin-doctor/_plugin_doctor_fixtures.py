@@ -153,6 +153,7 @@ _atdw = _load(
 _ashm = _load('_analyze_shim_marker.py', '_ashm_fixtures')
 _aced = _load('_analyze_canonical_enum_drift.py', '_aced_fixtures')
 _arsc = _load('_analyze_readme_skill_coverage.py', '_arsc_fixtures')
+_advsd = _load('_analyze_documented_verb_set_drift.py', '_advsd_fixtures')
 
 # ---------------------------------------------------------------------------
 # Registered-rule-ID extraction (relocated verbatim from the deleted
@@ -376,6 +377,95 @@ _GOOD_SKILL_FM = (
 # scanners (they walk <root>/plan-marshall/skills/<skill>/SKILL.md).
 _PM_SKILL = 'plan-marshall/skills/fixture-skill/SKILL.md'
 _PM_STANDARD = 'plan-marshall/skills/fixture-skill/standards/x.md'
+
+
+# ---------------------------------------------------------------------------
+# documented-verb-set-drift fixture builders
+# ---------------------------------------------------------------------------
+#
+# Shared by the corpus entry below AND by
+# ``test_analyze_documented_verb_set_drift.py``, so the shape the suite-coverage
+# check fires on and the shape the rule's own unit tests assert against are ONE
+# authored artifact. Two independently written fixtures would let the corpus go
+# on firing against a shape the rule no longer produces — the fixture drifting
+# away from the rule is the same class of defect the rule itself detects.
+
+#: Default skill name. The notation's skill segment must equal the skill
+#: DIRECTORY name or ``documented_verbs_by_script`` discards the invocation as
+#: belonging to another skill, and the script filename must equal the notation's
+#: script segment or ``_script_path`` finds nothing and the rule stays silent.
+#: Both couplings are why the builders below derive every name from one value.
+_VERB_DRIFT_SKILL = 'fixture-drift'
+
+
+def documented_verb_drift_script(verbs: Sequence[str]) -> str:
+    """An entry script registering exactly ``verbs`` as top-level subcommands.
+
+    Uses the assigned-parser / assigned-handle / bare-``add_parser`` idiom
+    ``derive_registered_verbs`` models, so the derivation is trustworthy and the
+    rule compares sets rather than emitting a skip.
+    """
+    registrations = ''.join(f'    sub.add_parser({verb!r})\n' for verb in verbs)
+    return (
+        'import argparse\n\n\n'
+        'def main() -> int:\n'
+        '    parser = argparse.ArgumentParser()\n'
+        "    sub = parser.add_subparsers(dest='command')\n"
+        f'{registrations}'
+        '    parser.parse_args()\n'
+        '    return 0\n'
+    )
+
+
+def documented_verb_drift_skill_md(skill: str, documented: Sequence[str]) -> str:
+    """A SKILL.md with a canonical-invocations block per documented verb.
+
+    The ``## Canonical invocations`` heading is what puts the skill in the
+    rule's derived population; the fenced ``bash`` blocks are the documented
+    surface the rule compares against — a prose verb table would deliberately
+    NOT count.
+    """
+    blocks = ''.join(
+        '```bash\n'
+        f'python3 .plan/execute-script.py plan-marshall:{skill}:{skill} {verb} --plan-id P\n'
+        '```\n\n'
+        for verb in documented
+    )
+    return (
+        '---\n'
+        f'name: {skill}\n'
+        'description: A fixture skill\n'
+        '---\n'
+        f'# {skill}\n\n'
+        '## Canonical invocations\n\n'
+        f'{blocks}'
+    )
+
+
+def documented_verb_drift_files(
+    skill: str = _VERB_DRIFT_SKILL,
+    *,
+    documented: Sequence[str],
+    registered: Sequence[str] | None = None,
+    script_source: str | None = None,
+) -> dict[str, str]:
+    """Scratch-tree files for one skill with a chosen registered/documented split.
+
+    Supply EITHER ``registered`` (the script is generated to register exactly
+    those verbs) OR ``script_source`` (verbatim script text, for the
+    derivation-failure cases where the point is that no verb set can be read).
+    """
+    if (registered is None) == (script_source is None):
+        raise ValueError('supply exactly one of registered= / script_source=')
+    base = f'plan-marshall/skills/{skill}'
+    return {
+        f'{base}/SKILL.md': documented_verb_drift_skill_md(skill, documented),
+        f'{base}/scripts/{skill}.py': (
+            script_source
+            if script_source is not None
+            else documented_verb_drift_script(registered or ())
+        ),
+    }
 
 
 def build_fixture_corpus() -> dict[str, FixtureSpec]:
@@ -1438,6 +1528,20 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
                 '# Fixture\n'
             ),
         },
+    )
+
+    # documented-verb-set-drift: one skill whose entry script registers a verb
+    # the docs never show in a fenced block (`record-step`) and whose docs show a
+    # verb the script does not register (`classify`). Both drift directions in one
+    # fixture on purpose — a single-direction fixture would fire the rule while
+    # leaving the set comparison's other half unexercised, and the two directions
+    # are the whole reason this rule exists alongside `manage-invocation-invalid`.
+    corpus['documented-verb-set-drift'] = FixtureSpec(
+        analyzer=_advsd.analyze_documented_verb_set_drift,
+        files=documented_verb_drift_files(
+            registered=('compose', 'record-step'),
+            documented=('compose', 'classify'),
+        ),
     )
 
     return corpus
