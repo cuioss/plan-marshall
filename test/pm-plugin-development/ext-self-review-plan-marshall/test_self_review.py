@@ -24,6 +24,7 @@ from _self_review_patterns import (
 from self_review import (
     _build_parser,
     _compose_candidate_output,
+    _format_scope_statement,
     _format_structural_limit,
     _detect_advertised_form_help_strings,
     _detect_contract_sources,
@@ -3906,3 +3907,91 @@ class TestStructuralLimit:
 
         assert data['scope_statement'] != data['structural_limit']
         assert data['scope_statement'].startswith('searched full scope')
+
+
+class TestScopeStatementSentence:
+    """The COMPLETE rendered sentence, for 0, 1 and 2 files.
+
+    Every other assertion on this string in this module checks a ``startswith``
+    prefix that ends at the file count — ``'searched delta scope: 1 file'``,
+    ``'searched full scope: 2 files'``, ``'searched delta scope: 0 files'``,
+    ``'searched full scope'``. None of them reads past the count, which is how
+    the one-file delta round rendered ``covers only these file`` unnoticed: the
+    sentence computes a number-agreeing noun once and then reused it after a
+    hard-coded plural demonstrative. Those four prefix assertions stay exactly
+    as they were — they pin a different property, and the tail is what was
+    unpinned.
+
+    A one-file delta is the commonest scoped round there is, so the ungrammatical
+    rendering was also the modal one.
+    """
+
+    _ANCHOR = 'abc123'
+
+    @pytest.mark.parametrize(
+        ('files_in_scope', 'expected'),
+        [
+            pytest.param(
+                0,
+                'searched delta scope: 0 files changed since abc123 — a scoped '
+                'round, so a clean result covers only these files, NOT the full '
+                'plan surface',
+                id='delta-zero',
+            ),
+            pytest.param(
+                1,
+                'searched delta scope: 1 file changed since abc123 — a scoped '
+                'round, so a clean result covers only this file, NOT the full '
+                'plan surface',
+                id='delta-one',
+            ),
+            pytest.param(
+                2,
+                'searched delta scope: 2 files changed since abc123 — a scoped '
+                'round, so a clean result covers only these files, NOT the full '
+                'plan surface',
+                id='delta-two',
+            ),
+        ],
+    )
+    def test_delta_sentence_is_rendered_whole(self, files_in_scope, expected):
+        assert _format_scope_statement('delta', files_in_scope, self._ANCHOR) == expected
+
+    @pytest.mark.parametrize(
+        ('files_in_scope', 'expected'),
+        [
+            pytest.param(
+                0, 'searched full scope: 0 files across the whole plan diff', id='full-zero'
+            ),
+            pytest.param(
+                1, 'searched full scope: 1 file across the whole plan diff', id='full-one'
+            ),
+            pytest.param(
+                2, 'searched full scope: 2 files across the whole plan diff', id='full-two'
+            ),
+        ],
+    )
+    def test_full_sentence_is_rendered_whole(self, files_in_scope, expected):
+        assert _format_scope_statement('full', files_in_scope, None) == expected
+
+    def test_absent_since_ref_names_the_previous_round(self):
+        """A delta round with no recorded anchor still names one in prose."""
+        assert 'changed since the previous round' in _format_scope_statement(
+            'delta', 2, None
+        )
+
+    @pytest.mark.parametrize('files_in_scope', [0, 1, 2, 3, 11])
+    def test_demonstrative_and_noun_agree_in_number(self, files_in_scope):
+        """Derived agreement check over a range, not three restated literals.
+
+        The parametrized sentences above pin the three counts the contract names.
+        This pins the PROPERTY they are instances of, so a future edit that
+        reintroduces a fixed demonstrative fails here for every count rather than
+        only where a literal happens to exist.
+        """
+        sentence = _format_scope_statement('delta', files_in_scope, self._ANCHOR)
+
+        assert 'these file,' not in sentence
+        assert 'this files,' not in sentence
+        expected_pair = 'this file,' if files_in_scope == 1 else 'these files,'
+        assert f'covers only {expected_pair}' in sentence

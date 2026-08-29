@@ -126,10 +126,16 @@ def _format_scope_statement(
     noun = 'file' if files_in_scope == 1 else 'files'
     if surface_scope == 'delta':
         anchor = since_ref or 'the previous round'
+        # The demonstrative agrees with the same count the noun does. Reusing
+        # `noun` after a hard-coded plural `these` rendered "covers only these
+        # file" for a one-file delta — and a one-file delta is the commonest
+        # scoped round there is, so the sentence that exists to keep a narrow
+        # clean result from being over-read was itself misread as a typo.
+        demonstrative = 'this' if files_in_scope == 1 else 'these'
         return (
             f'searched delta scope: {files_in_scope} {noun} changed since '
-            f'{anchor} — a scoped round, so a clean result covers only these '
-            f'{noun}, NOT the full plan surface'
+            f'{anchor} — a scoped round, so a clean result covers only '
+            f'{demonstrative} {noun}, NOT the full plan surface'
         )
     return (
         f'searched full scope: {files_in_scope} {noun} across the whole plan diff'

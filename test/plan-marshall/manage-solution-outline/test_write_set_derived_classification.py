@@ -21,6 +21,8 @@ write-set-blind implementation reaches the opposite verdict on every one of them
 which is what makes them discriminating rather than merely green.
 """
 
+import sys
+
 import pytest
 
 from conftest import load_script_module
@@ -42,6 +44,7 @@ deliverable_write_set = _parsing.deliverable_write_set
 extract_declared_bucket = _parsing.extract_declared_bucket
 extract_deliverables = _parsing.extract_deliverables
 validate_deliverable_contract = _mod.validate_deliverable_contract
+DECLARED_BUCKET_VOCABULARY = _mod._DECLARED_BUCKET_VOCABULARY
 
 #: A documentation path and a code path, used as the two sides of every
 #: disagreement below.
@@ -412,4 +415,220 @@ class TestNonProvableShapesAreNotAdjudicated:
         assert not any('bucket' in e for e in errors), (
             f'the aggregator resolves {write_paths} to documentation_only, but the '
             f'outline validator rejected the matching bucket; errors={errors}'
+        )
+
+
+# =============================================================================
+# The three states the bucket check used to pass over in silence
+# =============================================================================
+
+
+def _contract_fields():
+    return {
+        'metadata': {
+            'change_type': 'feature',
+            'execution_mode': 'automated',
+            'domain': 'python',
+            'module': 'plan-marshall',
+            'depends': 'none',
+        },
+        'verification': {'command': 'verify', 'criteria': 'green'},
+    }
+
+
+class TestAbsentBucketIsReported:
+    """A deliverable that writes files and declares no bucket now says so.
+
+    The bucket comment is the audit trail that the file-type classifier was
+    applied at all, so an absent one means the classification never happened.
+    Before, ``not declared`` took the same early return as "checked and found
+    consistent" — the check was blindest exactly where the classifier had been
+    skipped outright.
+
+    Reported as a WARNING, never an error: outlines authored before the
+    required-recording rule carry no bucket comment, and failing them would
+    reject documents that are merely older than the rule rather than wrong.
+    """
+
+    def test_missing_bucket_over_a_non_empty_write_set_warns(self):
+        deliverable = _deliverable(
+            [(_CODE_PATH, 'write-replace')],
+            declared_bucket=None,
+            **_contract_fields(),
+        )
+
+        errors, warnings = validate_deliverable_contract(deliverable)
+
+        assert any('no file-type bucket declared' in w for w in warnings), (
+            f'a deliverable writing files with no declared bucket was silent; '
+            f'warnings={warnings}'
+        )
+        assert not any('bucket' in e for e in errors), (
+            f'the missing bucket must not be an error; errors={errors}'
+        )
+
+    def test_missing_bucket_over_an_empty_write_set_is_silent(self):
+        """The matched negative control: a verification-only deliverable.
+
+        It declares no writes, so there is no classification it was supposed to
+        have made. Without this control the warning above would be satisfied by
+        a check that fires on every bucket-less deliverable, which would flood
+        every read-only deliverable in every outline.
+        """
+        deliverable = _deliverable(
+            [(_CODE_PATH, 'read')],
+            profiles=['verification'],
+            declared_bucket=None,
+            **_contract_fields(),
+        )
+
+        _errors, warnings = validate_deliverable_contract(deliverable)
+
+        assert not any('no file-type bucket declared' in w for w in warnings), (
+            f'a read-only deliverable was asked for a bucket; warnings={warnings}'
+        )
+
+
+class TestBucketVocabularyIsChecked:
+    """A value that is not one of the six documented buckets is reported.
+
+    The upstream comment regex accepts any ``[a-z_]+``, and the contradiction
+    test is an equality comparison against ``documentation_only`` — so a
+    misspelling took the not-equal branch and was compared against the write-set
+    as though it were a real code bucket, or passed silently.
+    """
+
+    def test_unrecognized_bucket_warns(self):
+        deliverable = _deliverable(
+            [(_CODE_PATH, 'write-replace')],
+            declared_bucket='documentaton_only',
+            **_contract_fields(),
+        )
+
+        errors, warnings = validate_deliverable_contract(deliverable)
+
+        assert any('is not one of the documented' in w for w in warnings), (
+            f'a misspelled bucket passed unremarked; warnings={warnings}'
+        )
+        assert not any('bucket' in e for e in errors), (
+            f'an unrecognized bucket is not on its own an error; errors={errors}'
+        )
+
+    def test_misspelled_docs_bucket_also_trips_the_contradiction(self):
+        """The worked case the vocabulary check explains, rather than prevents.
+
+        ``documentaton_only`` over an all-documentation write-set is not equal to
+        ``documentation_only``, so the contradiction test treats it as a code
+        bucket and — correctly, on the value as written — reports it. Before the
+        vocabulary check that error was baffling: the author had declared the
+        docs bucket and was told it contradicted a docs-only write-set. Both
+        signals now fire together, and the warning is what makes the error
+        legible.
+        """
+        deliverable = _deliverable(
+            [(_DOC_PATH, 'write-replace')],
+            declared_bucket='documentaton_only',
+            **_contract_fields(),
+        )
+
+        errors, warnings = validate_deliverable_contract(deliverable)
+
+        assert any('is not one of the documented' in w for w in warnings), (
+            f'warnings={warnings}'
+        )
+        assert any('contradicts' in e for e in errors), f'errors={errors}'
+
+    @pytest.mark.parametrize('bucket', DECLARED_BUCKET_VOCABULARY)
+    def test_every_documented_bucket_is_accepted(self, bucket):
+        """Iterated over the vocabulary itself, not a restated list of six.
+
+        A seventh bucket added to the constant is covered here the moment it is
+        added; a hand-listed set would keep asserting completeness over whatever
+        values it was written with.
+        """
+        deliverable = _deliverable(
+            [(_CODE_PATH, 'write-replace')],
+            declared_bucket=bucket,
+            **_contract_fields(),
+        )
+
+        _errors, warnings = validate_deliverable_contract(deliverable)
+
+        assert not any('is not one of the documented' in w for w in warnings), (
+            f'documented bucket {bucket!r} was reported as unrecognized; '
+            f'warnings={warnings}'
+        )
+
+    def test_vocabulary_check_is_case_insensitive(self):
+        """The comment regex accepts any case, so membership must fold case too."""
+        deliverable = _deliverable(
+            [(_CODE_PATH, 'write-replace')],
+            declared_bucket='PRODUCTION_ONLY',
+            **_contract_fields(),
+        )
+
+        _errors, warnings = validate_deliverable_contract(deliverable)
+
+        assert not any('is not one of the documented' in w for w in warnings), (
+            f'an upper-case documented bucket was rejected; warnings={warnings}'
+        )
+
+
+class TestUnavailablePredicateIsReported:
+    """The fail-open now says it failed open instead of reading as clean.
+
+    ``_write_set_is_all_documentation`` returns ``None`` when
+    ``_manifest_core._is_documentation_path`` cannot be imported. ``not None``
+    is truthy, so the un-run comparison took the same early return as a
+    comparison that ran and found no contradiction — an ImportError and a clean
+    result were the same observable.
+
+    The two cases below are a matched pair over ONE identical deliverable: the
+    only variable is whether the predicate module can be imported.
+    """
+
+    @staticmethod
+    def _contradicting_deliverable():
+        """A code bucket over a write-set whose every write is documentation.
+
+        This is the one shape the check can PROVE contradictory, so it is the
+        shape whose verdict must visibly change when the predicate is gone.
+        """
+        return _deliverable(
+            [(_CODE_PATH, 'read'), (_DOC_PATH, 'write-replace')],
+            declared_bucket='production_only',
+            **_contract_fields(),
+        )
+
+    def test_with_the_predicate_available_the_contradiction_is_an_error(self):
+        """The control arm — the predicate imports, and the check adjudicates."""
+        errors, warnings = validate_deliverable_contract(self._contradicting_deliverable())
+
+        assert any('contradicts' in e for e in errors), f'errors={errors}'
+        assert not any('could not be imported' in w for w in warnings), (
+            f'the predicate was available, so no fail-open should be reported; '
+            f'warnings={warnings}'
+        )
+
+    def test_with_the_predicate_unimportable_the_fail_open_is_named(self, monkeypatch):
+        """The same deliverable, with the predicate module made unimportable.
+
+        Binding ``None`` into ``sys.modules`` is what CPython raises ImportError
+        on, so the deferred ``from _manifest_core import ...`` fails exactly as
+        it would where the sibling skill's module is off the path — the real
+        condition the fail-open exists for.
+        """
+        monkeypatch.setitem(sys.modules, '_manifest_core', None)
+
+        errors, warnings = validate_deliverable_contract(self._contradicting_deliverable())
+
+        assert not any('contradicts' in e for e in errors), (
+            f'a comparison that never ran reported a contradiction; errors={errors}'
+        )
+        assert any('could not be imported' in w for w in warnings), (
+            f'the un-run check was indistinguishable from a clean one; '
+            f'warnings={warnings}'
+        )
+        assert any('not a clean result' in w for w in warnings), (
+            f'the warning must say what it is NOT; warnings={warnings}'
         )
