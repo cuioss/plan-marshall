@@ -3278,7 +3278,7 @@ def test_the_own_unreadable_tally_agrees_when_no_sibling_is_registered(plan_cont
     )
 
 
-def _pre_fix_comparable(claim, record: dict) -> bool:
+def _pre_fix_comparable(claim) -> bool:
     """The pre-fix predicate: comparability from the RESOLVED set, ungated.
 
     Takes the claim directly so the resolved entries are read the way the pre-fix
@@ -3306,7 +3306,7 @@ def test_the_comparable_predicate_changed_for_a_derived_spec_that_resolves_paths
     record = _orch._spec_record(SLUG, spec, PROJECT_ROOT)
 
     assert claim is not None and claim.spec_class == SURFACE_DERIVED
-    assert _pre_fix_comparable(claim, record) is True, (
+    assert _pre_fix_comparable(claim) is True, (
         'the fixture is only load-bearing if the derived spec DOES resolve a path'
     )
     assert record['paths'] == set(), (

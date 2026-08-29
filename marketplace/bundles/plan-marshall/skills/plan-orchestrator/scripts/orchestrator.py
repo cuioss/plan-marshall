@@ -450,20 +450,22 @@ _SURFACE_JOIN = '; '
 
 # --- markdown line scanners -------------------------------------------------
 #
-# The four regexes in this block are the module's COMPLETE set of markdown
-# construct models, and every line-wise scan in the file runs through one of
-# them against the mask :func:`_fenced_mask` builds. They are grouped here, each
-# stating which CommonMark clauses it honours and which it deliberately does
-# not, because three successive review rounds found the same defect class in a
-# different clause of the same scanners: a line matcher that reads correctly in
-# isolation while parsing a document the spec author does not see rendered.
-# The module's five OTHER regexes — :data:`SPEC_POINTER_RE`,
-# :data:`_CHECKED_AT_RE`, :data:`_COUNT_CLAIM_RE`, :data:`_SCOPED_CLAIM_RE` and
-# :data:`_RATIO_CLAIM_RE` — match tokens WITHIN a line and model no markdown
-# construct, so no block-indentation clause applies to any of them. (The
-# ``^\s*`` on :data:`_SCOPED_CLAIM_RE` anchors at the start of a twelve-character
-# tail captured mid-line, not at the start of a document line, so it is not an
-# indentation rule either.)
+# The four regexes in this block are markdown construct models, and every
+# line-wise scan that runs through this block runs against the mask
+# :func:`_fenced_mask` builds. They are grouped here, each stating which
+# CommonMark clauses it honours and which it deliberately does not, because
+# three successive review rounds found the same defect class in a different
+# clause of the same scanners: a line matcher that reads correctly in isolation
+# while parsing a document the spec author does not see rendered.
+#
+# No count of the module's regexes is stated here, deliberately. Two successive
+# enumerations were wrong in the same direction — each omitted a binding added
+# after it was written — and a corrected count would go stale the same way on the
+# next one. What matters for a reader of this block is the CommonMark contract
+# below, which is a property of each scanner rather than of how many exist. A
+# regex that models a markdown construct honours it; one that matches a token
+# within a line (there are several elsewhere in this module) models no construct,
+# so no block-indentation clause applies to it.
 #
 # Honoured by EVERY scanner in this block: CommonMark bounds block-level leading
 # indentation to 0-3 SPACES (spec sections 2.2, 4.2 and 4.5); a fourth column of
