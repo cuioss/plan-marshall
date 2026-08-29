@@ -15,10 +15,20 @@ serialize.
 
 **One resolution.** The two plan-marshall consumers of that reader — the Ordered
 Queue's Surface cell (``_row_surface``) and ``corpus cross-check``'s collision
-input (``_spec_record``) — resolve the IDENTICAL surface for the same spec,
+input (``_spec_record``) — cannot resolve a DIFFERENT surface for the same spec,
 because they call the same function. A guard on the carrier set alone would not
 catch two consumers that both import the single reader and then disagree about
 what to do with it.
+
+Note the scope of that second property precisely, because the obvious stronger
+reading of it is false: one resolution does NOT mean one projection. For a
+``derived`` spec that resolves entries the two consumers legitimately differ —
+the Queue cell renders the resolved paths, while ``_spec_record`` withholds them
+behind its admits gate so an indeterminate spec contributes no row to the overlap
+matcher. That divergence is deliberate and is pinned by
+``test_the_comparable_predicate_changed_for_a_derived_spec_that_resolves_paths``
+in ``test_orchestrator_corpus.py``. What this module guards is that neither
+consumer can read a surface the other cannot.
 
 The carrier set is POPULATION-DERIVED: the marketplace Python surface is
 enumerated at test time and never listed by hand, and its size is published in

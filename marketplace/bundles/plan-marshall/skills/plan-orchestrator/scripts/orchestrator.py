@@ -2023,8 +2023,10 @@ def _spec_record(epic_slug: str, path: Path, repo_root: Path) -> dict[str, Any] 
     """Build one comparable record for a spec file, or ``None`` when unreadable.
 
     The surface is resolved through :func:`_spec_claim` — the single reader — so
-    this record and the Ordered Queue's Surface cell resolve the SAME set for the
-    same spec, because they call the same function.
+    no consumer can resolve a DIFFERENT surface for the same spec. What each
+    consumer then PROJECTS from that one resolution is its own contract, and this
+    record's is stated below: it is the comparison population, not the resolved
+    set, and the two differ for a spec the gate does not admit.
 
     ``derivation_status`` rides with the paths so a caller can tell an EMPTY
     comparison from an UNCOMPARABLE one: a spec in any
@@ -2671,7 +2673,12 @@ def _row_surface(spec: Path | None, repo_root: Path) -> str:
     The Surface column is derivable — from the FILESYSTEM, not ``status.json`` —
     so it is regenerated like the rest. Resolved through :func:`_spec_claim`, the
     single reader, so this cell and ``corpus cross-check``'s collision input
-    cannot disagree about the same spec.
+    cannot resolve a DIFFERENT surface for the same spec. They can still PROJECT
+    that one resolution differently, and for a ``derived`` spec that resolves
+    entries they do: this cell renders the resolved paths, while the collision
+    input withholds them behind :func:`_spec_record`'s admits gate. Same
+    resolution, two projections — the property the single reader buys is the
+    first, never the second.
 
     Each *which zero is this* case is a named marker rather than an empty cell,
     and the empty cases are told apart by the reader's own derivation class
