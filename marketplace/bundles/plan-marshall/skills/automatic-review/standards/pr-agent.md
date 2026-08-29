@@ -60,6 +60,7 @@ author_login: cuioss-review-bot   # CONFIRMED on #103 — the provider reports t
                                   # so this value resolves on both paths. A dedicated App, NOT
                                   # github-actions — see "Why its own identity"
 trigger_comment: "/review"        # CONFIRMED on #103 — human /review at 09:25:47 -> publish 09:27:15
+trigger_semantics: requires_explicit_trigger   # the /review command above must be posted
 completion_check_name: ""         # CONFIRMED on #103 — absent from `ci pr reviews`, no check-run;
                                   # falls back to the review_bot_buffer_seconds wait
 honors_skip_label: true           # UNVERIFIED — #103 carried no skip label, so this was not

@@ -35,6 +35,7 @@ source of truth for a fact this block already owns.
 bot_kind: coderabbit
 author_login: coderabbitai
 trigger_comment: "@coderabbitai review"
+trigger_semantics: requires_explicit_trigger   # the trigger comment above must be posted
 completion_check_name: "CodeRabbit"   # in-progress check-run polled to completion by the wait step
 honors_skip_label: true          # central cuioss/coderabbit config skips PRs labelled skip-bot-review
 participation_evidence:          # the publish shapes that prove THIS bot reviewed

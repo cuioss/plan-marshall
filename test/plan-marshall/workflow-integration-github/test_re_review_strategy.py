@@ -1012,6 +1012,52 @@ def test_matched_review_reports_no_refusal(monkeypatch):
     assert result['refusals'] == []
 
 
+def test_a_registry_recognised_size_refusal_records_its_cause_and_stated_cap():
+    """⛔ The producer's OWN unit-level pin for the two-axis keys.
+
+    Sourcery's observed #1014 refusal is a per-PR SIZE ceiling, and the ceiling it
+    states is read off the notice rather than declared anywhere. Asserted directly
+    on ``_refusal_record`` — the producer — so that removing either key fails a
+    named test in the producer's own unit module, instead of only surfacing in the
+    arming fixture that consumes it. A key that is only covered downstream is a key
+    whose removal reads as someone else's failure.
+    """
+    record = github_re_review._ReReviewStrategy._refusal_record(
+        _SOURCERY_REFUSAL, 'sourcery', 'review'
+    )
+
+    assert record is not None
+    assert record['layer'] == _github_pr.REFUSAL_LAYER_REGISTRY
+    assert record['cause'] == _github_pr.REFUSAL_CAUSE_SIZE
+    assert record['cap'] == '150000 characters'
+
+
+def test_a_refusal_stating_no_ceiling_records_an_empty_cap():
+    """The paired no-stated-ceiling case: unknown is reported, never fabricated.
+
+    The matched counterpart to the size case above. Same producer, same bot, a
+    refusal whose notice states no figure — the cap must come back empty rather
+    than defaulted, because a cap nobody observed would make an accepted coverage
+    gap look audited against a number that was invented. Without this pairing the
+    size assertion above would also pass on an implementation that returned some
+    plausible constant.
+    """
+    no_ceiling = (
+        'Sourcery was unable to review this pull request because '
+        'you have reached your weekly rate limit of reviews.'
+    )
+
+    record = github_re_review._ReReviewStrategy._refusal_record(
+        no_ceiling, 'sourcery', 'review'
+    )
+
+    assert record is not None
+    assert record['layer'] == _github_pr.REFUSAL_LAYER_REGISTRY
+    # Recognised as a refusal, but a QUOTA one — so no ceiling is claimed.
+    assert record['cause'] == _github_pr.REFUSAL_CAUSE_QUOTA
+    assert record['cap'] == ''
+
+
 def test_recorded_refusal_body_is_a_single_truncated_line():
     """The record rides a TOON envelope, whose scalars are single-line — a
     multi-line body would be silently clipped at the transport layer."""
@@ -1022,6 +1068,10 @@ def test_recorded_refusal_body_is_a_single_truncated_line():
     assert record is not None
     assert '\n' not in record['body']
     assert len(record['body']) <= github_re_review._REFUSAL_BODY_EXCERPT_CHARS + len('...')
+    # The two-axis keys ride the same record. CodeRabbit declares no size marker,
+    # so this quota refusal states no ceiling — empty, never a fabricated figure.
+    assert record['cause'] == _github_pr.REFUSAL_CAUSE_QUOTA
+    assert record['cap'] == ''
 
 
 # =============================================================================
@@ -1221,6 +1271,16 @@ def test_with_no_threshold_the_re_review_path_behaves_exactly_as_at_head(monkeyp
         is None
     )
 
+    # The two-axis keys do NOT depend on the enumerative arm: at this same shipped
+    # (inert) threshold a body an earlier arm recognises still carries both. Pinned
+    # here so the keys cannot be mistaken for something the arm introduced.
+    recognised = github_re_review._ReReviewStrategy._refusal_record(
+        _SOURCERY_REFUSAL, 'sourcery', 'review'
+    )
+    assert recognised is not None
+    assert recognised['cause'] == _github_pr.REFUSAL_CAUSE_SIZE
+    assert recognised['cap'] == '150000 characters'
+
     result = _await_with_comments(
         monkeypatch,
         [],
@@ -1263,6 +1323,10 @@ def test_a_body_an_earlier_arm_recognised_keeps_its_own_layer(body, monkeypatch)
     assert live is not None
     assert live['layer'] == inert['layer']
     assert live['layer'] != _github_pr.REFUSAL_LAYER_ENUMERATIVE
+    # Arming the third arm must not disturb the CAUSE axis either — the cause and
+    # the stated ceiling are properties of the notice, not of which arm read it.
+    assert live['cause'] == inert['cause']
+    assert live['cap'] == inert['cap']
 
 
 def test_an_armed_threshold_withholds_a_genuine_anchorless_review(monkeypatch):
@@ -1297,6 +1361,11 @@ def test_an_armed_threshold_withholds_a_genuine_anchorless_review(monkeypatch):
 
     assert record is not None
     assert record['layer'] == _github_pr.REFUSAL_LAYER_ENUMERATIVE
+    # An enumerative record read NOTHING about why the bot declined, so it claims no
+    # ceiling: the cap is empty and the cause falls to the ``quota`` default rather
+    # than asserting a size ceiling nobody observed.
+    assert record['cap'] == ''
+    assert record['cause'] == _github_pr.REFUSAL_CAUSE_QUOTA
     # The shipped (absent-threshold) behaviour for this same body is pinned by
     # ``test_with_no_threshold_the_re_review_path_behaves_exactly_as_at_head``; it is
     # deliberately not re-asserted here, where the arm is still armed.

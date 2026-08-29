@@ -5,7 +5,7 @@
 ``cmd_pr_wait_for_comments`` (in ``_github_pr.py``, dispatched via ``github_ops``)
 surfaces a ``rate_limited_bots[]`` field: after the poll settles it inspects EVERY
 REGISTERED bot's newest comment for a rate-limit status notice and returns one
-``{bot_kind, rate_limit_class, eta}`` record per detected bot. A single boolean
+``{bot_kind, rate_limit_class, eta, cause, cap}`` record per detected bot. A boolean
 cannot carry that answer: it collapses a three-bot pipeline into one
 CodeRabbit-shaped verdict, leaving a rate-limited Sourcery or PR-Agent invisible.
 
@@ -18,6 +18,11 @@ in the detection path:
   fail-closed to ``unknown`` for a bot that declares none (ADR-009);
 - ``eta`` is extracted with that bot's registry ``rate_limit_eta_patterns``, and is
   ``''`` when the bot declares none or its notice states none;
+- ``cause`` / ``cap`` are the orthogonal SIZE-vs-QUOTA axis, derived from that bot's
+  ``refusal_size_patterns`` / ``refusal_size_cap_patterns``. They are INDEPENDENT of
+  ``rate_limit_class``: one bot can refuse for both causes at one class, so the
+  class cannot answer which remedy applies. Both keys ride every record, and an
+  empty ``cap`` reads as UNKNOWN rather than as a figure;
 - body CLASSIFICATION stays the shared bot-agnostic ``_is_rate_limit_notice``,
   which requires BOTH a limit-exceeded statement AND a notice shape.
 
@@ -162,15 +167,27 @@ def test_non_coderabbit_bot_rate_limit_is_detected(monkeypatch):
     # CodeRabbit logins, so a rate-limited Sourcery scored negative — the bot's
     # non-participation was silently indistinguishable from a clean run.
     # The registry-driven detector reports it as its own record, carrying the class
-    # Sourcery's registry record declares (hard_quota: a per-PR size budget that
-    # does NOT reopen, so awaiting it would burn the full budget and still fail).
+    # Sourcery's registry record declares (hard_quota: a rate/budget allowance that
+    # does NOT reopen on a useful timescale, so awaiting it would burn the full
+    # budget and still fail). ``hard_quota`` is the AWAITABILITY axis and is
+    # deliberately NOT a per-PR size ceiling — that is the orthogonal CAUSE axis,
+    # asserted separately below.
     _wire(monkeypatch, post_comments=[_HUMAN_COMMENT, _SOURCERY_NOTICE])
 
     result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
 
     assert result['status'] == 'success'
+    # This notice matches NEITHER of Sourcery's declared refusal_patterns — it is
+    # recognised by the structural arm — so it declares no size marker and its
+    # cause is the ``quota`` default, with no ceiling stated.
     assert result['rate_limited_bots'] == [
-        {'bot_kind': 'sourcery', 'rate_limit_class': 'hard_quota', 'eta': ''}
+        {
+            'bot_kind': 'sourcery',
+            'rate_limit_class': 'hard_quota',
+            'eta': '',
+            'cause': 'quota',
+            'cap': '',
+        }
     ]
     # Pre-existing poll fields are unchanged by the discriminator.
     assert result['timed_out'] is False
@@ -193,7 +210,13 @@ def test_bot_without_declared_class_fails_closed_to_unknown(monkeypatch):
     result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
 
     assert result['rate_limited_bots'] == [
-        {'bot_kind': 'pr-agent', 'rate_limit_class': 'unknown', 'eta': ''}
+        {
+            'bot_kind': 'pr-agent',
+            'rate_limit_class': 'unknown',
+            'eta': '',
+            'cause': 'quota',
+            'cap': '',
+        }
     ]
 
 
@@ -210,6 +233,8 @@ def test_coderabbit_notice_yields_registry_extracted_eta(monkeypatch):
             'bot_kind': 'coderabbit',
             'rate_limit_class': 'awaitable_window',
             'eta': '12 minutes and 30 seconds',
+            'cause': 'quota',
+            'cap': '',
         }
     ]
 
@@ -227,7 +252,13 @@ def test_notice_stating_no_eta_yields_empty_eta(monkeypatch):
     result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
 
     assert result['rate_limited_bots'] == [
-        {'bot_kind': 'coderabbit', 'rate_limit_class': 'awaitable_window', 'eta': ''}
+        {
+            'bot_kind': 'coderabbit',
+            'rate_limit_class': 'awaitable_window',
+            'eta': '',
+            'cause': 'quota',
+            'cap': '',
+        }
     ]
 
 

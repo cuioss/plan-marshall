@@ -90,6 +90,13 @@ PLAN_IDS += tuple(f'gh-pr-preupgrade-dedup-{bot_kind}' for bot_kind in CURRENCY_
 github_pr = load_script_module('plan-marshall', 'workflow-integration-github', 'github_pr.py', 'github_pr')
 _findings_core = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core')
 
+# The refusal-layer vocabulary lives in ``_github_pr``, and ``github_pr`` re-exports
+# only the members it uses — so the shared names are read from the DEFINING module.
+# Taken from ``sys.modules`` rather than re-loaded, so it is the very object the
+# ``github_pr`` above imported: a second load would register a rival ``_github_pr``
+# and reopen the ``github_ops`` import cycle.
+_github_pr = sys.modules['_github_pr']
+
 query_findings = _findings_core.query_findings
 
 
@@ -1095,6 +1102,176 @@ def _stored_comment_id(finding):
         if detail_line.startswith('comment_id:'):
             return detail_line.split(':', 1)[1].strip()
     return ''
+
+
+#: A notice the STRUCTURAL arm recognises (alert callout + a limit-exceeded
+#: statement) while CodeRabbit's declared ``refusal_patterns`` (``Review limit
+#: reached``) do NOT match it — the drifted-wording shape.
+_DRIFTED_CODERABBIT_NOTICE = (
+    '> [!WARNING] > ## Usage limit reached > '
+    'This reviewer has reached its usage limit. Reviews will resume after the limit resets.'
+)
+
+#: The same presentation carrying CodeRabbit's DECLARED wording, so both arms match
+#: and the arms AGREE — the matched control for the drift case.
+_AGREEING_CODERABBIT_NOTICE = (
+    '> [!WARNING] > ## Review limit reached > '
+    'Review limit reached. Reviews will resume after the limit resets.'
+)
+
+
+def _drift_records(result):
+    return {(r['bot_kind'], r['layer']) for r in result['refusal_pattern_drift']}
+
+
+def test_fetch_findings_reports_drift_when_only_the_structural_arm_matched(
+    plan_context, monkeypatch
+):
+    """⛔ A refusal caught by SHAPE alone names the bot whose wording has drifted.
+
+    The notice is recognised, so the refusal itself is handled exactly as before —
+    what the drift record adds is that the catch rested on a SINGLE arm. CodeRabbit
+    declares ``Review limit reached``; this body says ``Usage limit reached``, so
+    the registry arm misses and only the structural arm fires. The boolean seam
+    returns ``True`` either way, which is precisely why the disagreement needs its
+    own channel: the next rewording may clear the structural shape too, and then
+    the refusal is filed as review feedback and the bot is credited with a review
+    it declined.
+    """
+    plan_id = 'gh-pr-refusal-drift'
+    comments = [
+        {
+            'id': 'cr-drifted',
+            'author': 'coderabbitai',
+            'thread_id': '',
+            'kind': 'review_body',
+            'body': _DRIFTED_CODERABBIT_NOTICE,
+            'resolved': False,
+        },
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(131, plan_id)
+
+    assert result['status'] == 'success'
+    # The refusal is still recognised and classified — drift changes no verdict.
+    assert result['count_skipped_refusal'] == 1
+    assert result['refused_bots'] == ['coderabbit']
+    # ...and the drift is reported, naming the arm that fired ALONE.
+    assert result['refusal_pattern_drift'] == [
+        {'bot_kind': 'coderabbit', 'layer': _github_pr.REFUSAL_LAYER_STRUCTURAL}
+    ]
+
+
+def test_fetch_findings_reports_no_drift_when_both_arms_agree(plan_context, monkeypatch):
+    """⛔ Matched control: agreement is silence, so the record means something.
+
+    Same bot, same presentation, same publish shape — the ONLY difference is that
+    this body carries CodeRabbit's declared wording, so both arms match. Without
+    this control the positive case would also pass on an implementation that
+    emitted a drift record for every refusal.
+    """
+    plan_id = 'gh-pr-refusal-no-drift'
+    comments = [
+        {
+            'id': 'cr-agreeing',
+            'author': 'coderabbitai',
+            'thread_id': '',
+            'kind': 'review_body',
+            'body': _AGREEING_CODERABBIT_NOTICE,
+            'resolved': False,
+        },
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(132, plan_id)
+
+    assert result['refused_bots'] == ['coderabbit']
+    assert result['refusal_pattern_drift'] == []
+
+
+def test_fetch_findings_reports_no_drift_for_an_unattributable_refusal(
+    plan_context, monkeypatch
+):
+    """An unregistered author has no declared wording that COULD have drifted.
+
+    The notice is still recognised structurally and still counted, but naming a
+    registry record to fix would be meaningless — there is none.
+    """
+    plan_id = 'gh-pr-refusal-drift-unknown'
+    comments = [
+        {
+            'id': 'unk-drifted',
+            'author': 'randombot[bot]',
+            'thread_id': '',
+            'kind': 'review_body',
+            'body': _DRIFTED_CODERABBIT_NOTICE,
+            'resolved': False,
+        },
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(133, plan_id)
+
+    assert result['count_skipped_refusal'] == 1
+    assert result['refused_bots'] == []
+    assert result['refusal_pattern_drift'] == []
+
+
+def test_fetch_findings_reports_no_drift_outside_a_declared_publish_shape(
+    plan_context, monkeypatch
+):
+    """Scoped to the bot's declared ``participation_evidence`` shapes.
+
+    ``issue_comment`` is not one of CodeRabbit's declared publish shapes, so a body
+    arriving in it is not evidence that the wording it uses when REVIEWING has
+    drifted. Same bot and same body as the positive case — only the shape differs.
+    """
+    plan_id = 'gh-pr-refusal-drift-shape'
+    comments = [
+        {
+            'id': 'cr-drifted-issue',
+            'author': 'coderabbitai',
+            'thread_id': '',
+            'kind': 'issue_comment',
+            'body': _DRIFTED_CODERABBIT_NOTICE,
+            'resolved': False,
+        },
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(134, plan_id)
+
+    assert 'issue_comment' not in bot_registry.participation_evidence('coderabbit')
+    # Still recognised as a refusal — only the DRIFT channel is scoped.
+    assert result['refused_bots'] == ['coderabbit']
+    assert result['refusal_pattern_drift'] == []
+
+
+def test_fetch_findings_dedupes_drift_per_bot_and_layer(plan_context, monkeypatch):
+    """Drift is a property of the declared WORDING, not of each comment carrying it.
+
+    A bot that posts the same drifted notice repeatedly has ONE stale registry
+    record to fix; five identical rows would read as five problems.
+    """
+    plan_id = 'gh-pr-refusal-drift-dedup'
+    comments = [
+        {
+            'id': f'cr-drifted-{n}',
+            'author': 'coderabbitai',
+            'thread_id': '',
+            'kind': 'review_body',
+            'body': _DRIFTED_CODERABBIT_NOTICE,
+            'resolved': False,
+        }
+        for n in range(3)
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(135, plan_id)
+
+    assert _drift_records(result) == {('coderabbit', _github_pr.REFUSAL_LAYER_STRUCTURAL)}
+    assert len(result['refusal_pattern_drift']) == 1
 
 
 def test_fetch_findings_splits_a_refusing_bot_from_a_participating_one(plan_context, monkeypatch):

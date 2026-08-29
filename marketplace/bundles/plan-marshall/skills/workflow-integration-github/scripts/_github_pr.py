@@ -228,12 +228,14 @@ def _is_refusal_notice(body: str, bot_kind: str | None = None) -> bool:
     correspondence here. Dropping the refusal is precisely what let a PR whose every
     required reviewer refused report a clean, complete review with substantively
     zero review coverage.
+
+    **DERIVED from :func:`refusal_layers`, never a parallel implementation.** That
+    function is the provenance seam reporting WHICH arms fired; this boolean is its
+    "did any of them?" projection. Deriving rather than duplicating is what stops
+    the two drifting into disagreement about what counts as a refusal — a drift
+    that would be invisible precisely because each reads correctly on its own.
     """
-    if not body:
-        return False
-    if bot_kind and any(marker in body for marker in bot_registry.refusal_patterns(bot_kind)):
-        return True
-    return _is_rate_limit_notice(body)
+    return bool(refusal_layers(body, bot_kind))
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +274,44 @@ REFUSAL_LAYERS = (
     REFUSAL_LAYER_STRUCTURAL,
     REFUSAL_LAYER_ENUMERATIVE,
 )
+
+
+def refusal_layers(body: str, bot_kind: str | None = None) -> list[str]:
+    """Return EVERY pre-noise-filter arm that recognises ``body``, in consult order.
+
+    The provenance seam beside :func:`_is_refusal_notice`. The boolean answers
+    *whether* an arm recognised the body and necessarily collapses the arms
+    together; this reports WHICH ones did, so a caller can tell a registry-declared
+    refusal from one recognised by shape alone — and, crucially, can see when the
+    two DISAGREE.
+
+    **Disagreement is the observable this seam exists to expose.** A body the
+    structural arm recognises while the acting bot's own ``refusal_patterns`` do
+    NOT is a bot whose declared wording has DRIFTED: the notice is still being
+    caught, but only by the shape-based last resort, so the registry record is
+    stale and the next rewording may fall through both arms and be filed as review
+    feedback. That is invisible to the boolean, which returns the same ``True``
+    whether one arm fired or both.
+
+    Scope matches the boolean's EXACTLY — only the arms answerable BEFORE the
+    per-bot ``ignore_patterns`` noise filter. The enumerative arm
+    (:func:`_is_unrecognised_refusal`) runs at a different pipeline position and is
+    deliberately absent here; see this module's docstring for why it cannot be
+    folded in. Its name is still part of :data:`REFUSAL_LAYERS`, so a consumer
+    validating a layer value against that vocabulary stays correct.
+
+    Returns ``[]`` when no arm here recognises the body — the same information the
+    boolean's ``False`` carries, and never a claim that the body is review
+    feedback.
+    """
+    if not body:
+        return []
+    layers: list[str] = []
+    if bot_kind and any(marker in body for marker in bot_registry.refusal_patterns(bot_kind)):
+        layers.append(REFUSAL_LAYER_REGISTRY)
+    if _is_rate_limit_notice(body):
+        layers.append(REFUSAL_LAYER_STRUCTURAL)
+    return layers
 
 
 # ---------------------------------------------------------------------------
@@ -546,14 +586,26 @@ def _extract_rate_limit_eta(body: str, bot_kind: str) -> str:
 
     The ETA phrasings are registry data — each bot's ``rate_limit_eta_patterns``
     in its ``automatic-review/standards/{bot_kind}.md`` block — so no bot-name
-    literal and no per-bot branch appears here. The first pattern that matches
-    wins; its first capturing group is the ETA when the pattern declares one,
-    otherwise the whole match is returned. A bot that declares no ETA patterns
+    literal and no per-bot branch appears here. The first pattern that yields a
+    figure wins; its first capturing group is the ETA when the pattern declares
+    one, otherwise the whole match is used. A bot that declares no ETA patterns
     (or whose notice states no ETA) yields ``''`` — the caller treats an absent
     ETA as "unknown when the window reopens", never as "reopens now".
 
     A malformed pattern in the data layer is skipped rather than raised: a bad
     registry edit must not break the poll return path.
+
+    A declared group that captured NOTHING is resolved exactly as
+    :func:`refusal_size_cap` resolves it, and for the same reason.
+    ``match.groups()`` is TRUTHY for a one-tuple holding ``None`` — a pattern whose
+    first group sits in a branch that did not participate
+    (``wait (?:[0-9]+ minutes)|(x)``) matches, reports groups, and yields ``None``;
+    calling ``.strip()`` on that raised an AttributeError out of the poll's whole
+    return path. That is precisely the failure the ``re.error`` guard does NOT
+    cover: the guard catches a pattern that will not COMPILE, not one that compiles
+    and captures nothing. Such a pattern yields NO figure and moves to the next
+    pattern — there is deliberately no fallback from an empty group to ``group(0)``,
+    which would hand back the surrounding prose as though it were an observed ETA.
     """
     for pattern in bot_registry.rate_limit_eta_patterns(bot_kind):
         try:
@@ -562,7 +614,15 @@ def _extract_rate_limit_eta(body: str, bot_kind: str) -> str:
             continue
         if match is None:
             continue
-        return (match.group(1) if match.groups() else match.group(0)).strip()
+        if match.groups():
+            captured = (match.group(1) or '').strip()
+            if not captured:
+                continue
+        else:
+            captured = match.group(0).strip()
+            if not captured:
+                continue
+        return captured
     return ''
 
 
@@ -586,13 +646,28 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
     currently defines — including the enumerative arm, which sits after the noise
     filter and so is deliberately outside this seam.
 
-    Each detected bot yields ``{bot_kind, rate_limit_class, eta}``:
+    Each detected bot yields ``{bot_kind, rate_limit_class, eta, cause, cap}``:
 
     - ``rate_limit_class`` distinguishes a window the caller can usefully await
       from a quota it cannot; it is registry data and fails closed to ``unknown``
       for a bot that declares none.
     - ``eta`` is the reset time the notice itself stated, or ``''`` when the
       notice stated none.
+    - ``cause`` is the orthogonal SIZE-vs-QUOTA axis (:func:`refusal_cause`). A
+      refusal caused by a per-PR diff ceiling is answered by a smaller diff, one
+      caused by a rate/budget quota by backoff. The axes are INDEPENDENT — a size
+      refusal and a quota refusal can share one ``rate_limit_class``, as both of
+      Sourcery's do — so a consumer cannot derive the cause from the class, and
+      carrying it explicitly is what stops the recovery path offering a wait for a
+      ceiling that waiting does not move.
+    - ``cap`` is the ceiling the size notice itself stated
+      (:func:`refusal_size_cap`), or ``''`` when it stated none. An empty cap is
+      reported as UNKNOWN and never defaulted: a figure nobody observed would make
+      the recorded coverage gap look audited when it was not.
+
+    Both fields are emitted for EVERY detected refusal rather than only a size one,
+    so every consumer reads ONE record shape whatever the cause; on a quota refusal
+    ``cause`` is ``quota`` and ``cap`` is ``''``.
 
     Bots that are NOT rate-limited are simply absent from the list, so an empty
     list means "no registered bot is rate-limited" — the same signal the removed
@@ -625,6 +700,8 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
                 'bot_kind': bot_kind,
                 'rate_limit_class': bot_registry.rate_limit_class(bot_kind),
                 'eta': _extract_rate_limit_eta(body, bot_kind),
+                'cause': refusal_cause(body, bot_kind),
+                'cap': refusal_size_cap(body, bot_kind),
             }
         )
     return detected

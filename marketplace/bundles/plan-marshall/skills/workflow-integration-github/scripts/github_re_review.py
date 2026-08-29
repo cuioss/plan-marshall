@@ -113,6 +113,8 @@ from _github_pr import (
     _extract_rate_limit_eta,
     _is_rate_limit_notice,
     _is_unrecognised_refusal,
+    refusal_cause,
+    refusal_size_cap,
 )
 from ci_base import (
     DEFAULT_CI_INTERVAL,
@@ -414,8 +416,26 @@ class _ReReviewStrategy:
         - ``eta`` — the reset time the notice itself stated, parsed through the
           bot's registry ``rate_limit_eta_patterns``, or ``''`` when the bot
           declares no patterns or the notice states no ETA;
+        - ``cause`` — the orthogonal SIZE-vs-QUOTA axis (:func:`refusal_cause`),
+          carrying the SAME discriminators the producer's ``rate_limited_bots``
+          record carries, so a consumer reads one vocabulary from both. It is
+          independent of the awaitability axis: a size refusal and a quota refusal
+          can share one ``rate_limit_class``, so the cause cannot be derived from
+          the class, and a recovery path that lacked it offered a wait for a
+          ceiling that waiting does not move;
+        - ``cap`` — the ceiling the size notice itself stated
+          (:func:`refusal_size_cap`), or ``''`` when it stated none. Empty reports
+          as UNKNOWN and is never defaulted: a figure nobody observed would make
+          the recorded gap look audited when it was not;
         - ``body`` — a whitespace-collapsed, truncated excerpt (see
           :func:`_body_excerpt`).
+
+        ``cause`` and ``cap`` are emitted on EVERY refusal record, not only a size
+        one, so the shape does not vary by cause; on a quota refusal ``cause`` is
+        ``quota`` and ``cap`` is ``''``. Both are computed from the body even when
+        ``bot_kind`` is ``None`` — the accessors are registry-keyed, so an
+        unregistered bot yields the ``quota`` default and an empty cap rather than
+        an absent key.
 
         Accepted tradeoff: a genuine review or comment whose body happens to quote
         a ``refusal_patterns`` substring is skipped as a refusal. That is
@@ -439,6 +459,8 @@ class _ReReviewStrategy:
             'bot_kind': bot_kind or '',
             'layer': layer,
             'eta': _extract_rate_limit_eta(body, bot_kind) if bot_kind else '',
+            'cause': refusal_cause(body, bot_kind),
+            'cap': refusal_size_cap(body, bot_kind),
             'body': _body_excerpt(body),
         }
 

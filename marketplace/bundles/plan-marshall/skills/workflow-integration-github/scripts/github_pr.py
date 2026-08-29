@@ -100,6 +100,7 @@ from _github_pr import (
     _is_unrecognised_refusal,
     measure_diff_size,
     refusal_cause,
+    refusal_layers,
     refusal_size_cap,
 )
 from ci_base import extract_routing_args, register_subcommands, set_default_cwd
@@ -1140,6 +1141,26 @@ def cmd_fetch_findings(args):
     an unrecognised refusal (see ``participated_bots``); a bot with any genuine review
     keeps its credit and the record stays a diagnostic.
 
+    ``refusal_pattern_drift``: one ``{bot_kind, layer}`` record per bot whose
+    recognition arms DISAGREED on a refusal — ``layer`` names the arm that fired
+    ALONE, read from the shared ``_github_pr.REFUSAL_LAYERS`` vocabulary. Derived
+    from the ``_github_pr.refusal_layers`` provenance seam at the filing pre-filter
+    only, and scoped to comments arriving in one of the bot's declared
+    ``participation_evidence`` publish shapes.
+
+    A ``structural_fallback`` value is the actionable one: the notice was caught by
+    SHAPE alone while the bot's own declared ``refusal_patterns`` missed it, so that
+    registry record has gone stale against the bot's current wording and the next
+    rewording may clear the structural shape too — at which point the refusal is
+    filed as review feedback and the bot is credited with a review it declined.
+    Emitting it is what makes that decay observable BEFORE it fails, since the
+    ``_is_refusal_notice`` boolean returns ``True`` whether one arm fired or both.
+
+    Deduped on ``(bot_kind, layer)`` — drift is a property of the bot's declared
+    wording, not of each comment carrying it. Diagnostic ONLY: it changes no
+    verdict, denies no participation credit, and gates nothing; a bot appearing here
+    was still correctly recorded as having refused.
+
     ``refused_causes``: one ``{bot_kind, cause}`` record per refusing bot, ``cause``
     in ``{size, quota}`` — the orthogonal CAUSE axis (``_github_pr.refusal_cause``),
     distinct from ``rate_limit_class``'s awaitability. It names the remedy a refusal
@@ -1405,6 +1426,13 @@ def cmd_fetch_findings(args):
     # those two answer different questions, and collapsing them would lose exactly
     # the distinction between a refusal the stack READ and one it could only detect.
     unrecognised_refusal: list[dict[str, str]] = []
+    # One record per bot whose refusal-recognition arms DISAGREED — the notice was
+    # caught, but by only one arm. Deduped on ``(bot_kind, layer)`` because drift is
+    # a property of the BOT's declared wording, not of each comment carrying it: a
+    # bot that posts the same drifted notice five times has one stale record to fix,
+    # and five identical rows would read as five problems.
+    refusal_pattern_drift: list[dict[str, str]] = []
+    _drift_seen: set[tuple[str, str]] = set()
     unclassified_set: set[str] = set()
     store_failures: list[str] = []
 
@@ -1459,6 +1487,30 @@ def cmd_fetch_findings(args):
                     cap = refusal_size_cap(body, bot_kind)
                     if cap:
                         refused_size_caps[bot_kind] = cap
+                # DRIFT: the arms disagreed — exactly one recognised this notice.
+                # The refusal was still caught, so nothing about the verdict changes;
+                # what changes is that the catch is now known to rest on a SINGLE
+                # arm. The load-bearing case is a body only the structural arm reads:
+                # the bot's declared ``refusal_patterns`` have gone stale against its
+                # current wording, and the next rewording may clear the structural
+                # shape too and be filed as review feedback. That is invisible to the
+                # boolean, which returns True either way — which is why the
+                # provenance seam exists.
+                #
+                # Scoped to a declared participation_evidence publish shape so the
+                # signal is about an artifact the bot actually publishes when it
+                # reviews; a body arriving in some other shape is not evidence its
+                # review wording drifted.
+                _drift_kind = comment.get('kind') or 'inline'
+                if _drift_kind in bot_registry.participation_evidence(bot_kind):
+                    _layers = refusal_layers(body, bot_kind)
+                    if len(_layers) == 1:
+                        _key = (bot_kind, _layers[0])
+                        if _key not in _drift_seen:
+                            _drift_seen.add(_key)
+                            refusal_pattern_drift.append(
+                                {'bot_kind': bot_kind, 'layer': _layers[0]}
+                            )
             continue
 
         # Pre-filter 3: SELF-AUTHORED RESPONSE — the batched disposition comment
@@ -1812,6 +1864,12 @@ def cmd_fetch_findings(args):
         # the gap (registry_file / registry_field / remedy), so the remedy ships
         # with the finding rather than as prose elsewhere.
         'unrecognised_refusal': unrecognised_refusal,
+        # One record per bot whose refusal-recognition arms DISAGREED on a notice —
+        # {bot_kind, layer}, where ``layer`` is the arm that fired ALONE. A
+        # ``structural_fallback`` value is the actionable one: the bot's declared
+        # refusal_patterns no longer match its own wording, so the catch now rests
+        # on shape alone. Diagnostic only — it changes no verdict and gates nothing.
+        'refusal_pattern_drift': refusal_pattern_drift,
         # The orthogonal CAUSE axis for each refusing bot — {bot_kind, cause} with
         # cause in {size, quota}. Distinct from rate_limit_class's awaitability: it
         # names the remedy (a smaller diff vs backoff). Forwarded to

@@ -1327,8 +1327,17 @@ class TestRefusalNoticeProducerFilter:
             },
         ]
 
+        # The record carries BOTH axes: the declared awaitability class and the
+        # per-refusal cause. This body is structurally shaped rather than a declared
+        # size marker, so its cause is the ``quota`` default and it states no cap.
         assert _detect_rate_limited_bots(comments) == [
-            {'bot_kind': 'sourcery', 'rate_limit_class': 'hard_quota', 'eta': ''}
+            {
+                'bot_kind': 'sourcery',
+                'rate_limit_class': 'hard_quota',
+                'eta': '',
+                'cause': 'quota',
+                'cap': '',
+            }
         ]
 
     def test_detect_rate_limited_bots_ignores_human_quoting_refusal(self):
