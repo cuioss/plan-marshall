@@ -484,17 +484,6 @@ def add_finding(
     }
 
 
-def _list_finding_files(plan_id: str) -> list['Path']:
-    """List all per-type finding JSONL files (excluding qgate-*, assessments).
-
-    Plan-id-keyed convenience wrapper over :func:`_list_finding_files_in` for
-    callers that hold no resolved store handle. The exclusion it states is the
-    same one :func:`_identify_in_other_store` reports on, so a hash in one of the
-    excluded files is named rather than silently missed.
-    """
-    return _list_finding_files_in(resolve_findings_store(plan_id))
-
-
 def query_findings(
     plan_id: str,
     finding_type: str | None = None,

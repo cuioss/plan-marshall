@@ -15,11 +15,8 @@ from _manage_findings_fixtures import SCRIPT_PATH
 
 from conftest import load_script_module, run_script
 
-# Plan ids this module's tests file findings against. The autouse
-# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py`` creates
-# ``plans/{plan_id}/`` for each, because every findings surface REFUSES a plan
-# directory that is absent under the resolved root — in production the
-# lifecycle creates that directory before anything is filed against it.
+# Plan ids this module's tests file findings against — seeded by the autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.
 PLAN_IDS = (
     'cli-ingest-rt',
     'ingest-all-fields',

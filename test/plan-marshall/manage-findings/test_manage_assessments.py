@@ -17,11 +17,8 @@ from toon_parser import parse_toon  # noqa: E402
 
 from conftest import run_script
 
-# Plan ids this module's tests file findings against. The autouse
-# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py`` creates
-# ``plans/{plan_id}/`` for each, because every findings surface REFUSES a plan
-# directory that is absent under the resolved root — in production the
-# lifecycle creates that directory before anything is filed against it.
+# Plan ids this module's tests file findings against — seeded by the autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.
 PLAN_IDS = (
     'test-plan',
 )

@@ -816,11 +816,11 @@ def cross_check_candidates(
     # on the absence of evidence — the direction this module refuses on both
     # dimensions for the same reason.
     coverable = (
-        list(range(len(candidates)))
+        set(range(len(candidates)))
         if scope['verdict'] == UNDETERMINED
-        else list(scope['covered_positions'])
+        else set(scope['covered_positions'])
     )
-    admissible = [position for position in attributable if position in set(coverable)]
+    admissible = [position for position in attributable if position in coverable]
     refused = notation_verdict == REFUTED or scope['verdict'] == NARROW
     chosen = admissible[0] if (not refused and admissible) else None
 

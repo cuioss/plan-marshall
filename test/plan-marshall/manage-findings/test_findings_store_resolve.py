@@ -26,11 +26,8 @@ from _findings_store_fixtures import (
     resolve_qgate_findings_by_evidence,
 )
 
-# Plan ids this module's tests file findings against. The autouse
-# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py`` creates
-# ``plans/{plan_id}/`` for each, because every findings surface REFUSES a plan
-# directory that is absent under the resolved root — in production the
-# lifecycle creates that directory before anything is filed against it.
+# Plan ids this module's tests file findings against — seeded by the autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.
 PLAN_IDS = (
     'ev-bad-phase',
     'ev-resolve-already',
