@@ -3208,87 +3208,155 @@ def test_the_pre_fix_regex_opened_a_fence_on_a_prose_line_quoting_inline_code():
 # The two controls in ``TestCrossCheckPublishesTheComparedPopulation`` are green
 # by construction once both fixes are in place — the same shape that let the
 # pre-existing tally invariant pass over a fixture with no sibling epic, which is
-# how the contamination survived review. These fixtures carry the pre-fix
-# EXPRESSIONS verbatim and assert they disagree with the shipped ones over the
-# same inputs, so each fix is proven to have CHANGED an answer rather than merely
-# to be present.
+# how the contamination survived review.
+#
+# Each control below reproduces a pre-fix expression verbatim and asserts it
+# disagrees with the SHIPPED PRODUCTION VALUE over the same inputs. Binding the
+# comparison to the real code rather than to a re-typed copy of it is the point:
+# a control whose "shipped" side is re-implemented locally proves only that two
+# expressions differ, and would stay green if the fix were reverted — which is
+# exactly the confident-but-inert signal this epic exists to remove. The
+# production side here comes from ``cmd_corpus_cross_check`` and ``_spec_record``
+# themselves, so reverting either fix turns these red.
 
 
-def _pre_fix_own_unreadable_count(own_paths: list, own: list, shared_unreadable: list) -> int:
+def _pre_fix_own_unreadable_count(shared_unreadable: list) -> int:
     """The pre-fix own-unreadable tally, verbatim: the length of the SHARED list.
 
-    ``own_paths`` and ``own`` are accepted but unused — that is the defect. The
-    shipped expression derives the count from exactly those two, which is why
-    this reproduction has to ignore them to reproduce the old answer.
+    The shipped expression derives the count from the OWN population instead
+    (``len(own_paths) - len(own)``), which is why this reproduction takes only the
+    shared list — taking the own population would make it the shipped rule.
     """
     return len(shared_unreadable)
 
 
-def test_the_own_unreadable_tally_changed_over_a_sibling_bearing_population():
-    # One own spec, all readable; one SIBLING spec unreadable. The shared list is
-    # what the two expressions disagree about.
-    own_paths = ['PLAN-01-alpha.md']
-    own = [{'name': 'PLAN-01-alpha.md'}]
-    shared_unreadable = [{'spec': 'fixture-sibling-epic/PLAN-77-broken.md', 'error': 'unreadable'}]
+def _own_unreadable_tally(result: dict) -> int:
+    """The shipped own-unreadable count, read off the real verb's payload."""
+    return next(
+        row['count']
+        for row in result['spec_surface_states']
+        if row['derivation_status'] == SURFACE_UNREADABLE
+    )
 
-    pre_fix = _pre_fix_own_unreadable_count(own_paths, own, shared_unreadable)
-    shipped = len(own_paths) - len(own)
+
+def test_the_own_unreadable_tally_changed_over_a_sibling_bearing_population(plan_context):
+    # One own spec, readable; one SIBLING spec unreadable. The shared list is what
+    # the two rules disagree about, and the shipped side is the real verb's own
+    # output — not a re-typed copy of its expression.
+    _write_status(plan_context, [_row('PLAN-01')])
+    _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+    broken = _epic_dir(plan_context, SIBLING_SLUG) / 'plans' / 'PLAN-77-broken.md'
+    broken.parent.mkdir(parents=True, exist_ok=True)
+    broken.write_bytes(b'\xff\xfe \xff')
+
+    result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+    pre_fix = _pre_fix_own_unreadable_count(result['unreadable'])
+    shipped = _own_unreadable_tally(result)
 
     assert pre_fix == 1, 'the negative fixture no longer reproduces the pre-fix tally'
-    assert shipped == 0, "no OWN spec was unreadable, so the own tally is zero"
+    assert shipped == 0, 'no OWN spec was unreadable, so the own tally is zero'
     assert pre_fix != shipped, (
-        'the two expressions agree, so this fixture cannot witness the contamination'
+        'the shipped verb agrees with the pre-fix expression, so the fix is not in force'
     )
 
 
-def test_the_own_unreadable_tally_agrees_when_no_sibling_is_registered():
-    # Matched partner: over the population the pre-existing invariant test uses
-    # (no sibling epic), the two expressions AGREE — which is precisely why that
-    # test could not observe the defect, and why this file needed the sibling
-    # fixture added beside it.
-    own_paths = ['PLAN-01-alpha.md', 'PLAN-02-broken.md']
-    own = [{'name': 'PLAN-01-alpha.md'}]
-    shared_unreadable = [{'spec': 'PLAN-02-broken.md', 'error': 'unreadable'}]
+def test_the_own_unreadable_tally_agrees_when_no_sibling_is_registered(plan_context):
+    # Matched partner over the population the pre-existing invariant test uses
+    # (no sibling epic): the two rules AGREE there, which is precisely why that
+    # test could not observe the defect and why the sibling fixture was added.
+    _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+    _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+    broken = _epic_dir(plan_context) / 'plans' / 'PLAN-02-broken.md'
+    broken.write_bytes(b'\xff\xfe \xff')
 
-    pre_fix = _pre_fix_own_unreadable_count(own_paths, own, shared_unreadable)
-    shipped = len(own_paths) - len(own)
+    result = cmd_corpus_cross_check(Namespace(slug=SLUG))
 
-    assert pre_fix == shipped == 1, (
-        'with no sibling contributing, both expressions return the own count — the '
-        'agreement that made the sibling-free fixture blind'
+    assert _pre_fix_own_unreadable_count(result['unreadable']) == _own_unreadable_tally(result) == 1, (
+        'with no sibling contributing, both rules return the own count — the agreement '
+        'that made the sibling-free fixture blind'
     )
 
 
-def test_the_comparable_predicate_changed_for_a_derived_spec_that_resolves_paths():
-    """The pre-fix predicate was ``bool(record['paths'])`` with paths ungated.
+def _pre_fix_comparable(claim, record: dict) -> bool:
+    """The pre-fix predicate: comparability from the RESOLVED set, ungated.
 
-    Reproduced over the one shape that separates the two rules: derived AND
-    resolving. A record that resolves nothing is excluded by both, so it cannot
-    witness the change — asserted below as the matched negative.
+    Takes the claim directly so the resolved entries are read the way the pre-fix
+    ``_spec_record`` exposed them — before the admits gate withheld them.
     """
-    derived_resolving = {'derivation_status': SURFACE_DERIVED, 'resolved': {SHARED_PATH}}
-    derived_empty = {'derivation_status': SURFACE_DERIVED, 'resolved': set()}
-    declarative_resolving = {'derivation_status': SURFACE_DECLARATIVE, 'resolved': {SHARED_PATH}}
+    return bool(_orch._claimed_paths(claim))
 
-    def pre_fix(record: dict) -> bool:
-        # paths were exposed regardless of derivation status
-        return bool(record['resolved'])
 
-    def shipped(record: dict) -> bool:
-        admits = record['derivation_status'] not in SURFACE_INDETERMINATE_STATES
-        return bool(record['resolved'] if admits else set())
+def test_the_comparable_predicate_changed_for_a_derived_spec_that_resolves_paths(tmp_path):
+    """The one shape that separates the two rules: DERIVED and resolving.
 
-    assert pre_fix(derived_resolving) is True
-    assert shipped(derived_resolving) is False, (
-        'a derived spec must not be comparable however many paths it resolves'
+    The shipped side is ``_spec_record``'s own output, so reverting the gate turns
+    this red. A spec that resolves nothing is excluded by both rules and cannot
+    witness the change — pinned below as the matched negative, alongside a
+    declarative positive so the fix cannot pass by excluding everything.
+    """
+    spec = tmp_path / 'PLAN-01-derived.md'
+    spec.write_text(
+        '# PLAN-01\n\n## Expected Surface\n\n'
+        '- DERIVED from the plans this one supersedes.\n'
+        f'- OBSERVED: `{SHARED_PATH}` — `f`\n',
+        encoding='utf-8',
     )
-    assert pre_fix(derived_empty) == shipped(derived_empty) is False, (
-        'a derived spec resolving nothing cannot witness the change — both rules exclude it'
+    claim = _orch._spec_claim(spec, PROJECT_ROOT)
+    record = _orch._spec_record(SLUG, spec, PROJECT_ROOT)
+
+    assert claim is not None and claim.spec_class == SURFACE_DERIVED
+    assert _pre_fix_comparable(claim, record) is True, (
+        'the fixture is only load-bearing if the derived spec DOES resolve a path'
     )
-    assert pre_fix(declarative_resolving) == shipped(declarative_resolving) is True, (
-        'the fix must not narrow the declarative case; without this the change could pass '
-        'by excluding everything'
+    assert record['paths'] == set(), (
+        'a derived spec must contribute no comparable path however many it resolves'
     )
+
+
+def test_the_comparable_predicate_is_unchanged_for_the_two_non_witnessing_shapes(tmp_path):
+    # Matched controls for the test above: neither shape can distinguish the two
+    # rules, so a fix that narrowed everything, or nothing, would still pass here.
+    derived_empty = tmp_path / 'empty' / 'PLAN-02-derived.md'
+    derived_empty.parent.mkdir(parents=True, exist_ok=True)
+    derived_empty.write_text(
+        '# PLAN-02\n\n## Expected Surface\n\n- DERIVED, and nothing resolvable.\n',
+        encoding='utf-8',
+    )
+    declarative = tmp_path / 'declarative' / 'PLAN-03-alpha.md'
+    declarative.parent.mkdir(parents=True, exist_ok=True)
+    declarative.write_text(
+        f'# PLAN-03\n\n## Expected Surface\n\n- OBSERVED: `{SHARED_PATH}` — `f`\n',
+        encoding='utf-8',
+    )
+
+    empty_record = _orch._spec_record(SLUG, derived_empty, PROJECT_ROOT)
+    declarative_record = _orch._spec_record(SLUG, declarative, PROJECT_ROOT)
+
+    assert empty_record['derivation_status'] == SURFACE_DERIVED
+    assert empty_record['paths'] == set(), 'both rules exclude a derived spec resolving nothing'
+    assert declarative_record['derivation_status'] == SURFACE_DECLARATIVE
+    assert declarative_record['paths'] == {SHARED_PATH}, (
+        'the gate must not narrow the declarative case — without this the fix could pass '
+        'by withholding paths from everything'
+    )
+
+
+def test_a_spec_whose_bytes_are_not_utf8_is_unreadable_in_both_verbs(tmp_path):
+    """The decode route must reach ``unreadable`` rather than escaping as an error.
+
+    ``read_text`` raises ``UnicodeDecodeError`` — a ``ValueError``, not an
+    ``OSError`` — so a reader catching only ``OSError`` let this case propagate,
+    leaving ``unreadable`` reachable through the open-failure route alone. Both
+    entry points are pinned, because only one of them re-read the file itself and
+    the two must agree about the same spec.
+    """
+    spec = tmp_path / 'PLAN-01-broken.md'
+    spec.write_bytes(b'\xff\xfe not valid utf-8 \xff')
+
+    assert _orch._spec_claim(spec, PROJECT_ROOT) is None
+    assert _orch._spec_record(SLUG, spec, PROJECT_ROOT) is None
+    assert _orch._surface_state(spec, PROJECT_ROOT) == (SURFACE_UNREADABLE, None)
 
 
 # =============================================================================

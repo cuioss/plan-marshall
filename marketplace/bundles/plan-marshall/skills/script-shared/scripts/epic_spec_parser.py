@@ -478,10 +478,19 @@ def classify_spec(spec_path: Path, repo_root: Path) -> SpecClaim:
         UnclassifiableSpecError: when the spec cannot be read, or carries no
             ``## Expected Surface`` section — the two states in which no class
             can be determined.
+
+    "Cannot be read" covers BOTH failure modes of a text read, and the decode one
+    is not incidental: ``read_text`` raises :class:`UnicodeDecodeError` — a
+    ``ValueError``, not an ``OSError`` — for a spec whose bytes are not valid
+    UTF-8, so catching ``OSError`` alone let that case escape as an unhandled
+    exception. Every caller treats this error as the readable/unreadable
+    discriminator, so an escaping decode failure did not merely crash one verb: it
+    made ``unreadable`` unreachable for the whole decode route, leaving the state
+    reportable only for a spec that failed to open.
     """
     try:
         text = spec_path.read_text(encoding='utf-8')
-    except OSError as error:
+    except (OSError, UnicodeDecodeError) as error:
         raise UnclassifiableSpecError(spec_path.name, f'unreadable: {error}') from error
 
     lines = text.splitlines()

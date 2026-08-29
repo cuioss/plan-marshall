@@ -1306,8 +1306,11 @@ def _spec_claim(path: Path, repo_root: Path) -> SpecClaim | None:
     a ``prose`` claim. Callers keep the two apart; collapsing them is the defect
     that made an undeclared surface read as a clean disjoint pass.
 
-    The caller has already established the file is readable, so the reader's
-    other :class:`UnclassifiableSpecError` cause cannot fire here.
+    A caller that has NOT already established the file is readable folds the
+    reader's other :class:`UnclassifiableSpecError` cause into this same ``None``,
+    which is why no caller may infer ``absent`` from ``None`` alone: ``absent``
+    and ``unreadable`` are told apart by re-reading the file, as
+    :func:`_surface_state` does.
     """
     try:
         return classify_spec(path, repo_root)
