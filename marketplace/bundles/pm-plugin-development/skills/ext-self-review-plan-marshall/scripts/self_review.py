@@ -42,6 +42,7 @@ from _references_core import (
     compute_plan_branch_diff,
 )
 from _self_review_detectors import (
+    _compute_delta_coverage,
     _detect_advertised_form_help_strings,
     _detect_contract_sources,
     _detect_count_prose,
@@ -413,6 +414,14 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         # from scope_statement so a caller reading either one cannot believe it has
         # both — see _format_structural_limit.
         'structural_limit': _format_structural_limit(),
+        # The third honesty field, and the only one computed FROM this round's own
+        # result: scope_statement says which files were searched and
+        # structural_limit says what the analysis can never evaluate, but neither
+        # says whether the round observed anything over the files it did search. A
+        # delta made entirely of content no detector emits for re-surfaces the
+        # previous round's candidates and returns clean; delta_coverage is what
+        # makes that round distinguishable from one that looked and found nothing.
+        'delta_coverage': _compute_delta_coverage(modified_files, detected),
         **_compose_candidate_output(detected),
     }
     output_toon(output)
