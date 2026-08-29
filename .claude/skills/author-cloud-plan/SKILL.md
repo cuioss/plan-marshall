@@ -10,8 +10,8 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task, Skill, AskUserQuestion
 
 The judgement an orchestrator applies when turning an epic's staged work into a **cloud plan** under
 `doc/plans/{epic}/`. Two different actors touch a cloud plan at two different moments: the **cloud
-session that executes** it loads [`cloud-plan-lane`](../cloud-plan-lane/SKILL.md), 750 lines of
-execution contract, as its first action. The **orchestrator that authors** it — locally, where both
+session that executes** it loads [`cloud-plan-lane`](../cloud-plan-lane/SKILL.md), the full execution
+contract, as its first action. The **orchestrator that authors** it — locally, where both
 trees are visible — is the actor this skill is for.
 
 A cloud plan is executed by a runtime with three properties an ordinary task does not have: it
