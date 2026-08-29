@@ -262,10 +262,13 @@ def resolve_findings_store(plan_id: str, any_checkout: bool = False) -> Findings
         f'store for plan {plan_id!r} was never reached'
     )
     if holder is not None:
-        detail += (
-            f'; the plan currently lives in the checkout {holder} — re-run the read verb with '
-            '--any-checkout to read it from there'
-        )
+        # Name the holding checkout and stop there. Do NOT prescribe a remedy
+        # flag: this resolver serves every surface, including the write verbs and
+        # the github / gitlab providers, none of which declare ``--any-checkout``
+        # — so a remedy naming it would tell most callers to re-run with a flag
+        # their own argparse rejects (exit 2). The holder path is the fact an
+        # operator needs; which verbs can act on it is those verbs' contract.
+        detail += f'; the plan currently lives in the checkout {holder}'
     return FindingsStore(
         plan_dir / 'artifacts' / FILE_FINDINGS_DIR,
         resolution,
