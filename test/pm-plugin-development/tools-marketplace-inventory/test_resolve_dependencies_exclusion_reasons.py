@@ -33,18 +33,35 @@ is exercised for real.
 
 from pathlib import Path
 
+import _dep_detection as _dep_detection_mod
 import pytest
 
 from conftest import load_script_module
 
-
-def _load_module(name, filename):
-    return load_script_module('pm-plugin-development', 'tools-marketplace-inventory', filename, name)
-
-
-_dep_detection_mod = _load_module('_dep_detection', '_dep_detection.py')
-_dep_index_mod = _load_module('_dep_index', '_dep_index.py')
-_resolve_mod = _load_module('resolve_dependencies', 'resolve-dependencies.py')
+# ``_dep_detection`` is imported PLAINLY rather than file-loaded. A file-load
+# publishes the module under its stem in ``sys.modules``, and sibling test modules
+# import this one plainly — so loading it here would displace their copy, which is
+# exactly the order-dependent hazard the loader-contract guard tracks. The plain
+# import shares the single copy that ``_dep_index``'s own ``from _dep_detection
+# import ...`` resolves to, which is what keeps the enum members and dataclasses
+# below identical to the objects the index compares against.
+#
+# The two file-loads state their SCRIPT and MODULE NAME as literals. An indirection
+# wrapper forwarding them as parameters cannot be resolved statically, and an
+# unresolvable loader call site is one the collision guard is blind to — see
+# test/plan-marshall/script-shared/test_conftest_loader_contract.py.
+_dep_index_mod = load_script_module(
+    'pm-plugin-development',
+    'tools-marketplace-inventory',
+    '_dep_index.py',
+    '_dep_index',
+)
+_resolve_mod = load_script_module(
+    'pm-plugin-development',
+    'tools-marketplace-inventory',
+    'resolve-dependencies.py',
+    'resolve_dependencies',
+)
 
 ComponentId = _dep_detection_mod.ComponentId
 Dependency = _dep_detection_mod.Dependency

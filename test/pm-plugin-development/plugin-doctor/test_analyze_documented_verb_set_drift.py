@@ -38,12 +38,16 @@ from _plugin_doctor_fixtures import (
 )
 
 
-def _load_module(name: str, filename: str):
-    return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
-
-
-_mod = _load_module(
-    '_analyze_documented_verb_set_drift', '_analyze_documented_verb_set_drift.py'
+# The SCRIPT and MODULE NAME are stated as literals at the call site. An indirection
+# wrapper that forwards them as parameters cannot be resolved statically, and an
+# unresolvable loader call site is one the ``sys.modules`` collision guard is blind
+# to — see test/plan-marshall/script-shared/test_conftest_loader_contract.py, which
+# holds that blind spot to a fixed, asserted size.
+_mod = load_script_module(
+    'pm-plugin-development',
+    'plugin-doctor',
+    '_analyze_documented_verb_set_drift.py',
+    '_analyze_documented_verb_set_drift',
 )
 
 analyze = _mod.analyze_documented_verb_set_drift
