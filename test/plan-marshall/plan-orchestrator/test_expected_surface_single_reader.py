@@ -218,8 +218,16 @@ def test_the_sole_reader_lives_in_the_shared_home():
 
 
 # =============================================================================
-# One resolution — the two consumers agree
+# One resolution — the two consumers over a DECLARATIVE spec
 # =============================================================================
+#
+# Every fixture in this section is `declarative`, which is the scope over which
+# the two consumers coincide. They diverge for a `derived` spec that resolves
+# entries — `_spec_record` withholds the paths behind its admits gate while the
+# Queue cell renders them — and that case is pinned by
+# `test_the_comparable_predicate_changed_for_a_derived_spec_that_resolves_paths`
+# in `test_orchestrator_corpus.py`. Read this section as "they agree HERE",
+# never as "they agree".
 
 
 #: A surface declaring the two shapes the retired reader could not resolve, so
@@ -242,13 +250,14 @@ def spec(tmp_path: Path) -> Path:
     return path
 
 
-def test_the_two_consumers_resolve_the_identical_surface(spec: Path):
-    """The Ordered Queue cell and the collision input agree, by construction.
+def test_the_two_consumers_agree_on_a_declarative_spec(spec: Path):
+    """The Ordered Queue cell and the collision input agree over THIS fixture.
 
-    They agree because they call the same function — this pins that they still
-    do. The assertion is over a non-empty set: two consumers that both resolved
-    NOTHING would agree vacuously, which is precisely the state the old reader
-    left them in.
+    The fixture is `declarative`, and that is what makes them agree — not the
+    shared function, which buys one resolution rather than one projection. The
+    assertion is over a non-empty set: two consumers that both resolved NOTHING
+    would agree vacuously, which is precisely the state the old reader left them
+    in.
     """
     rendered = _orch._row_surface(spec, PROJECT_ROOT)
     record = _orch._spec_record('fixture-epic', spec, PROJECT_ROOT)
@@ -263,8 +272,8 @@ def test_the_two_consumers_resolve_the_identical_surface(spec: Path):
     assert from_cell == record['paths']
 
 
-def test_the_two_consumers_agree_on_a_spec_that_declares_nothing_resolvable(tmp_path: Path):
-    """Matched negative control: they agree on the EMPTY case too, and say so.
+def test_the_two_consumers_agree_on_a_prose_spec_that_declares_nothing_resolvable(tmp_path: Path):
+    """Matched negative control: they agree on the EMPTY `prose` case too, and say so.
 
     The cell renders the derivation class rather than a blank, and the record
     carries an empty path set — the two agree, and the cell still states WHICH
