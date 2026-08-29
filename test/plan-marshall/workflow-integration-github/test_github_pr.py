@@ -37,7 +37,7 @@ from conftest import get_script_path, get_skill_dir, load_script_module, run_scr
 # ``plans/{plan_id}/`` for each, because every findings surface REFUSES a plan
 # directory that is absent under the resolved root — in production the
 # lifecycle creates that directory before anything is filed against it.
-PLAN_IDS = (
+PLAN_IDS: tuple[str, ...] = (
     'gh-pr-bare-flags',
     'gh-pr-bare-warn-but-ingest',
     'gh-pr-barrier-noise',

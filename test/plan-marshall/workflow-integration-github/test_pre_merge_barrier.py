@@ -56,7 +56,7 @@ from conftest import load_script_module
 # ``plans/{plan_id}/`` for each, because every findings surface REFUSES a plan
 # directory that is absent under the resolved root — in production the
 # lifecycle creates that directory before anything is filed against it.
-PLAN_IDS = (
+PLAN_IDS: tuple[str, ...] = (
     'barrier-absent-required-bot',
     'barrier-clean-path',
     'barrier-cross-kind',
