@@ -36,8 +36,12 @@ MECHANISM — which is the part that can regress.
 
 from __future__ import annotations
 
+import argparse
+import ast
+import inspect
 import re
 import sys
+import textwrap
 
 import pytest
 
@@ -762,6 +766,64 @@ class TestNoAwaitOnTheStructuralBranch:
         assert '{cap}' in block
         assert '{measured_diff_size}' in block
 
+    def test_the_cap_placeholder_has_a_stated_derivation(self):
+        """⛔ The placeholder APPEARING is not the same as the reader knowing its value.
+
+        `{cap}` is interpolated into an operator prompt and into a `--granted-over`
+        string that becomes a durable authorization record, so a reader who cannot
+        resolve it writes an unauditable record. Asserting only that the token
+        appears — which the sibling test above does, correctly, for a different
+        property — would pass on a document that interpolates a value it never says
+        how to obtain. This asserts the DERIVATION exists.
+
+        Its three load-bearing parts are checked separately because each fixes a
+        different way the block could be present but useless: the SOURCE FIELD (and
+        which of the two spellings it is), the multi-bot RENDERING, and the
+        unknown-cap fallback.
+        """
+        barrier = _BRANCH_CLEANUP.read_text(encoding='utf-8')
+        anchor = barrier.index('{structural_bots} = every bot in')
+        # The derivation sits with its sibling; bound the read so a `{cap}` mention
+        # elsewhere in the document cannot satisfy these assertions.
+        block = barrier[anchor:anchor + 2500]
+
+        assert '{cap}' in block, 'the {cap} derivation is absent from the derivation block'
+        # The SOURCE, named — and named as the CONSUMER's spelling. The producer
+        # emits refused_size_caps[]; reading that name off the check return finds
+        # nothing and renders every cap as absent.
+        assert 'refusal_causes[]' in block, (
+            'the derivation does not name the payload field it reads'
+        )
+        # The multi-bot RENDERING, decided rather than left to the renderer.
+        assert '{bot_kind}:{cap} pairs' in block, (
+            'the derivation does not state the multi-bot rendering as a pair list'
+        )
+        # The unknown fallback — a blank or a default would make an unquantified
+        # gap read as a quantified one.
+        assert 'unknown' in block, (
+            'the derivation does not say what a bot stating no ceiling renders as'
+        )
+
+    def test_the_cap_derivation_disambiguates_the_two_spellings(self):
+        """The producer's field name must be named as the WRONG one to read here.
+
+        `refused_size_caps[]` and `refusal_causes[]` carry the same information at
+        two seams. Naming only the right one leaves a reader who already knows the
+        producer's spelling with no reason to doubt it, and the failure is silent:
+        an absent field renders as an empty cap, so a quantified gap quietly becomes
+        an unquantified one rather than erroring.
+        """
+        barrier = _BRANCH_CLEANUP.read_text(encoding='utf-8')
+
+        assert 'refused_size_caps[]' in barrier and 'refusal_causes[]' in barrier
+        # The read instruction names the consumer's spelling among the fields read.
+        read_instruction = barrier[barrier.index('Read `participation_complete`'):][:1400]
+        assert '`refusal_causes`' in read_instruction, (
+            'refusal_causes is not among the fields the step is told to read from the '
+            'review_completeness check return, so the {cap} derivation reads a field '
+            'nothing instructed the reader to capture'
+        )
+
     def test_the_two_blocked_paths_declare_a_precedence(self):
         """⛔ Both blocks can hold at once, and they mandate OPPOSITE actions.
 
@@ -1373,3 +1435,281 @@ class TestDiffMeasurement:
             seam.github_ops, 'run_gh', lambda *_a, **_k: (returncode, stdout, 'err')
         )
         assert seam.measure_diff_size(7) == ''
+
+
+# ---------------------------------------------------------------------------
+# The stale-participation parse — an inadmissible evidence kind must not
+# downgrade participated_stale to absent
+# ---------------------------------------------------------------------------
+
+
+class TestStaleParticipationSurvivesAnInadmissibleEvidenceKind:
+    """A registry skew must not convert *stale* into *absent*.
+
+    ``--stale-participation-bots`` used to route through ``parse_participation``,
+    which re-applies the participation ADMISSIBILITY filter. The producer had
+    ALREADY applied that filter before emitting the pair, so re-testing it here
+    could only subtract — and when a publish shape was removed from a bot's
+    ``participation_evidence`` between the producer's read and the consumer's, it
+    did: the observation vanished and the bot fell through to ``absent``.
+
+    The two states prescribe OPPOSITE remedies — ``absent`` says nothing was
+    published, escalate; ``participated_stale`` says a review exists but predates
+    the merge candidate, re-trigger it — so the downgrade handed the operator the
+    wrong remedy with full confidence.
+    """
+
+    #: An evidence kind no bot declares, so it is inadmissible for every bot.
+    _INADMISSIBLE = 'not-a-declared-kind'
+
+    def test_the_probe_kind_really_is_inadmissible_for_pr_agent(self):
+        """⛔ Control: the case below is only meaningful if the filter WOULD drop it.
+
+        If this kind were ever added to pr-agent's declared publish shapes, the
+        assertions below would pass through the old code path too and prove
+        nothing.
+        """
+        assert self._INADMISSIBLE not in bot_registry.participation_evidence('pr-agent')
+        # And the old parse — which still applies the filter — does drop it, which
+        # is what made the downgrade reachable.
+        assert rc.parse_participation(f'pr-agent:{self._INADMISSIBLE}') == {}
+
+    def test_the_dedicated_parse_admits_the_pair(self):
+        """The new parse keeps the observation the producer emitted."""
+        assert rc.parse_stale_participation(f'pr-agent:{self._INADMISSIBLE}') == {
+            'pr-agent': self._INADMISSIBLE
+        }
+
+    def test_the_cli_resolves_it_to_participated_stale_and_never_absent(self, plan_context):
+        """End-to-end through the real parse — the case the deliverable names."""
+        plan_id = 'stale-inadmissible-kind'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(
+            SCRIPT_PATH, 'check', '--plan-id', plan_id,
+            '--required-bots', 'pr-agent',
+            '--stale-participation-bots', f'pr-agent:{self._INADMISSIBLE}',
+        )
+
+        assert result.returncode == 0
+        assert f'pr-agent,{rc.STATE_PARTICIPATED_STALE}' in result.stdout
+        assert f'pr-agent,{rc.STATE_ABSENT}' not in result.stdout
+
+    def test_the_shape_check_still_rejects_a_bare_token(self, plan_context):
+        """Dropping the admissibility filter did NOT drop the SHAPE check.
+
+        A bare ``bot_kind`` carries no evidence kind and is still a loud caller
+        error — otherwise this fix would have opened the silent-drop hole it exists
+        to close, in the other direction.
+        """
+        plan_id = 'stale-bare-token'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(
+            SCRIPT_PATH, 'check', '--plan-id', plan_id,
+            '--required-bots', 'pr-agent', '--stale-participation-bots', 'pr-agent',
+        )
+
+        assert result.returncode == 1
+        assert 'participation_complete' not in result.stdout
+
+    def test_an_admissible_pair_is_unchanged(self):
+        """Matched control: the fix widened admission, it did not alter the shape."""
+        declared = bot_registry.participation_evidence('pr-agent')
+        assert declared, 'pr-agent must declare a publish shape for this control'
+
+        assert rc.parse_stale_participation(f'pr-agent:{declared[0]}') == {
+            'pr-agent': declared[0]
+        }
+
+
+# ---------------------------------------------------------------------------
+# The flag-FORM partition — derived from the parse routing, never remembered
+# ---------------------------------------------------------------------------
+
+
+def _registered_list_flags() -> set[str]:
+    """The list flags ``_add_bot_observation_flags`` actually registers.
+
+    Derived by building a throwaway parser and reading its actions, so the
+    population is the parser's own rather than a list kept in a test.
+    """
+    parser = argparse.ArgumentParser()
+    rc._add_bot_observation_flags(parser)
+    return {
+        action.option_strings[0]
+        for action in parser._actions
+        if action.option_strings and action.nargs == '?'
+    }
+
+
+def _routing() -> dict[str, str]:
+    """Map each flag to the parse FUNCTION ``_parse_bot_observations`` routes it to.
+
+    Read out of the routing function's own AST: every parse call passes its flag
+    string as a literal argument, so the pairing is recovered from the code that
+    performs it rather than restated.
+    """
+    source = textwrap.dedent(inspect.getsource(rc._parse_bot_observations))
+    routing: dict[str, str] = {}
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+            continue
+        for arg in node.args:
+            if isinstance(arg, ast.Constant) and str(arg.value).startswith('--'):
+                routing[str(arg.value)] = node.func.id
+    return routing
+
+
+def _form_of(parse_name: str) -> str:
+    """Classify a parse function as pair-form or bare-form BY BEHAVIOUR.
+
+    Probed rather than named: the function is fed a bare token and a pair token
+    and classified by which one it rejects. A name-based mapping would itself be a
+    remembered partition — exactly the thing this sweep exists to eliminate — and
+    would go stale the moment a differently-named parse is added.
+    """
+    parse_fn = getattr(rc, parse_name)
+
+    def _rejects(token: str) -> bool:
+        try:
+            parse_fn(token, '--probe')
+        except rc.MalformedBotFlag:
+            return True
+        return False
+
+    bare_rejected = _rejects('probebot')
+    pair_rejected = _rejects('probebot:probeval')
+    if bare_rejected and not pair_rejected:
+        return 'pair'
+    if pair_rejected and not bare_rejected:
+        return 'bare'
+    raise AssertionError(
+        f'{parse_name} accepts or rejects both token shapes, so it declares no form'
+    )
+
+
+def _form_sets() -> tuple[set[str], set[str]]:
+    """The derived (pair-form, bare-form) flag sets."""
+    routing = _routing()
+    pair = {flag for flag, fn in routing.items() if _form_of(fn) == 'pair'}
+    bare = {flag for flag, fn in routing.items() if _form_of(fn) == 'bare'}
+    return pair, bare
+
+
+#: Spelled counts, so a prose sentence stating the size of a form-set can be
+#: checked against the derived size rather than trusted.
+_COUNT_WORDS = {1: 'ONE', 2: 'TWO', 3: 'THREE', 4: 'FOUR', 5: 'FIVE', 6: 'SIX'}
+
+
+class TestTheFlagFormPartitionIsDerivedNotRemembered:
+    """No passage may name a form partition the parse routing contradicts.
+
+    Every claim here is derived twice over: the flag population from the parser's
+    own actions, and each flag's FORM from how its parse function behaves on a
+    bare token versus a pair. Nothing in this class restates a partition.
+    """
+
+    def test_the_derived_population_is_non_empty_and_publishes_its_sizes(self):
+        """⛔ Vacuity guard — an empty routing would make every sweep below pass."""
+        pair, bare = _form_sets()
+
+        assert pair, 'no pair-form flag derived — the sweeps below would be vacuous'
+        assert bare, 'no bare-form flag derived — the sweeps below would be vacuous'
+        # Published: the two sizes the prose assertions are checked against.
+        assert len(pair) + len(bare) == len(_registered_list_flags())
+
+    def test_every_registered_list_flag_is_routed(self):
+        """A flag the parser accepts but nothing parses would silently do nothing."""
+        pair, bare = _form_sets()
+
+        assert pair | bare == _registered_list_flags()
+
+    def test_the_two_forms_are_disjoint(self):
+        """A flag cannot be both, and the behavioural probe must not say it is."""
+        pair, bare = _form_sets()
+
+        assert not (pair & bare)
+
+    def test_the_module_docstring_names_exactly_the_derived_pair_form_set(self):
+        """The prose partition is checked against the parser, not maintained by hand.
+
+        This is the assertion the deliverable's 'no passage names a partition the
+        sweep contradicts' criterion rests on: the docstring's pair-form paragraph
+        must mention every derived pair-form flag and no bare-form one.
+        """
+        pair, bare = _form_sets()
+        doc = rc.__doc__ or ''
+        start = doc.index('flags are pair-form')
+        end = doc.index('Every REMAINING list flag is bare-form')
+        paragraph = doc[start:end]
+
+        for flag in sorted(pair):
+            assert f'``{flag}``' in paragraph, f'{flag} is pair-form but the docstring omits it'
+        for flag in sorted(bare):
+            assert f'``{flag}``' not in paragraph, (
+                f'{flag} is BARE-form but the docstring lists it among the pair-form flags'
+            )
+
+    def test_the_module_docstring_states_the_derived_pair_form_count(self):
+        """A stale count word is the exact drift that shipped before (TWO of four)."""
+        pair, _bare = _form_sets()
+
+        assert f'{_COUNT_WORDS[len(pair)]} flags are pair-form' in (rc.__doc__ or '')
+
+    def test_the_two_usage_synopses_differ_only_by_genuinely_unique_flags(self):
+        """Any shared flag missing from one synopsis is a documentation gap.
+
+        Both subcommands build their observation flags from the same
+        ``_add_bot_observation_flags``, so every one of those flags belongs on BOTH
+        usage lines; only the per-subcommand extras may differ.
+        """
+        doc = rc.__doc__ or ''
+        check_line = next(ln for ln in doc.splitlines() if 'review_completeness.py check' in ln)
+        deficit_line = next(
+            ln for ln in doc.splitlines() if 'review_completeness.py deficit' in ln
+        )
+
+        for flag in sorted(_registered_list_flags()):
+            assert flag in check_line, f'{flag} is shared but missing from the check synopsis'
+            assert flag in deficit_line, f'{flag} is shared but missing from the deficit synopsis'
+
+        # What legitimately differs is only each subcommand's own extra flags.
+        assert '--triage-ran' in check_line and '--triage-ran' not in deficit_line
+        assert '--measured-diff-size' in check_line and '--measured-diff-size' not in deficit_line
+        assert '--min-deficit' in deficit_line and '--min-deficit' not in check_line
+
+    def test_the_rejection_message_names_the_pair_form_set_generically(self):
+        """It must not name individual flags — that copy went stale at two of four."""
+        try:
+            rc._split_bots('bot:pair', '--required-bots')
+        except rc.MalformedBotFlag as exc:
+            message = str(exc)
+        else:  # pragma: no cover - the call above must raise
+            raise AssertionError('a pair token on a bare-form flag must be rejected')
+
+        pair, _bare = _form_sets()
+        for flag in sorted(pair):
+            assert flag not in message, (
+                f'the bare-form rejection message names {flag}; naming individual '
+                f'pair-form flags is what went stale when the set grew'
+            )
+
+    def test_the_two_consuming_docs_carry_no_contradicted_partition(self):
+        """The SKILL and branch-cleanup copies are held to the derived sets.
+
+        Both sites carry their own restatement, which the deliverable permits only
+        when a parity assertion covers it — this is that assertion. A bare-form
+        flag described as pair-form at either site is the drift being blocked.
+        """
+        pair, bare = _form_sets()
+
+        for doc_path in (_AR_SKILL, _BRANCH_CLEANUP):
+            text = doc_path.read_text(encoding='utf-8')
+            assert f'{_COUNT_WORDS[len(pair)].capitalize()} take' in text or (
+                f'{_COUNT_WORDS[len(pair)]} take' in text
+            ), f'{doc_path.name} does not state the derived pair-form count'
+            for flag in sorted(pair):
+                assert f'`{flag}`' in text, f'{doc_path.name} omits pair-form {flag}'
+            for flag in sorted(bare):
+                assert f'`{flag}`' in text, f'{doc_path.name} omits bare-form {flag}'

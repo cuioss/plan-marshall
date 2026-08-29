@@ -683,30 +683,102 @@ def _barrier_projection(verdict, pending):
     }
 
 
+#: The observation that makes the shared scenario produce each widened member.
+#:
+#: This map is NOT the swept population's definition — the taxonomy's own
+#: ``_UNPROVEN_STATES`` is, and the totality assertion below holds this map to it.
+#: A hand-listed parametrisation was the previous shape and is the staleness this
+#: replaces: it swept three members while the taxonomy blocked on nine, so
+#: ``refused_structural`` was added to the classifier and went unswept here with
+#: nothing reporting the gap.
+_MEMBER_OBSERVATIONS = {
+    review_completeness.STATE_PARTICIPATED_STALE: {'stale_participation_bots': ['pr-agent']},
+    review_completeness.STATE_NOT_TRIGGERED: {'not_triggered': True},
+    review_completeness.STATE_DECLINED: {'declined_bots': ['pr-agent']},
+    review_completeness.STATE_IN_PROGRESS: {'in_progress_bots': ['pr-agent']},
+    # pr-agent's registry rate_limit_class is ``unknown``, so a bare refusal from it
+    # resolves to the declared-ignorance member.
+    review_completeness.STATE_REFUSED_UNKNOWN: {'refused_bots': ['pr-agent']},
+    # ...and the same refusal with an observed SIZE cause resolves structurally,
+    # because the cause axis dominates the class axis.
+    review_completeness.STATE_REFUSED_STRUCTURAL: {
+        'refused_bots': ['pr-agent'],
+        'refused_causes': {'pr-agent': 'size'},
+    },
+}
+
+#: Blocking members this scenario structurally CANNOT produce, each with its
+#: reason. Named rather than merely absent: the totality assertion below compares
+#: ``covered ∪ unproducible`` against the taxonomy, so a member can only be left
+#: unswept by SAYING why, and a newly added member matches neither set and fails.
+_UNPRODUCIBLE_MEMBERS = {
+    review_completeness.STATE_ABSENT: (
+        'the BASELINE every widened member is compared against, not a widened member itself'
+    ),
+    review_completeness.STATE_REFUSED_AWAITABLE: (
+        'requires a refusing bot whose registry rate_limit_class is awaitable_window; '
+        'the required bot in this scenario (pr-agent) declares unknown'
+    ),
+    review_completeness.STATE_REFUSED_HARD: (
+        'requires a refusing bot whose registry rate_limit_class is hard_quota; '
+        'the required bot in this scenario (pr-agent) declares unknown'
+    ),
+}
+
+
+def test_the_swept_members_cover_the_taxonomys_blocking_set():
+    """⛔ Totality: every blocking member is swept, or excluded WITH a reason.
+
+    This is the assertion that makes the sweep above self-maintaining. The
+    population is the classifier's own ``_UNPROVEN_STATES`` — the states that leave
+    a required bot's participation unproven — so a member added to the taxonomy
+    lands in neither the observation map nor the unproducible set and fails HERE,
+    naming itself, instead of silently going unswept.
+
+    Asserted non-empty first: an empty blocking set would make the equality below
+    compare two empty sets and pass while sweeping nothing.
+    """
+    blocking = set(review_completeness._UNPROVEN_STATES)
+    assert blocking, 'the taxonomy declares no blocking member; the sweep would be vacuous'
+    assert _MEMBER_OBSERVATIONS, 'no member is swept; the parametrisation would be empty'
+
+    covered = set(_MEMBER_OBSERVATIONS)
+    excluded = set(_UNPRODUCIBLE_MEMBERS)
+
+    assert not (covered & excluded), (
+        f'these members are both swept and excluded: {sorted(covered & excluded)}'
+    )
+    assert covered | excluded == blocking, (
+        'the swept members no longer partition the taxonomy blocking set.\n'
+        f'  blocking but neither swept nor excluded: {sorted(blocking - covered - excluded)}\n'
+        f'  swept or excluded but not blocking:      {sorted((covered | excluded) - blocking)}\n'
+        'Add an observation to _MEMBER_OBSERVATIONS, or an explicit reason to '
+        '_UNPRODUCIBLE_MEMBERS.'
+    )
+
+
+def test_the_structural_member_is_actually_swept():
+    """The member the previous hand-list omitted is in the swept set, by name.
+
+    A totality assertion alone would also pass with ``refused_structural`` sitting
+    in the unproducible set, which is precisely how the omission would survive its
+    own fix.
+    """
+    assert review_completeness.STATE_REFUSED_STRUCTURAL in _MEMBER_OBSERVATIONS
+    assert review_completeness.STATE_REFUSED_STRUCTURAL not in _UNPRODUCIBLE_MEMBERS
+
+
 #: Each case carries an EXPLICIT id naming the member under test. Left to pytest
 #: the id would be derived from both arguments — and the second is a dict, which
 #: pytest can only name positionally — yielding
 #: ``[participated_stale-observation0]``: an index into an implementation detail
 #: that also shifts if the cases are ever reordered. The member name is the one
-#: thing a reader of a failing node id needs.
+#: thing a reader of a failing node id needs. Sorted so the node ids are stable.
 @pytest.mark.parametrize(
     ('member', 'observation'),
     [
-        pytest.param(
-            review_completeness.STATE_PARTICIPATED_STALE,
-            {'stale_participation_bots': ['pr-agent']},
-            id='participated_stale',
-        ),
-        pytest.param(
-            review_completeness.STATE_NOT_TRIGGERED,
-            {'not_triggered': True},
-            id='not_triggered',
-        ),
-        pytest.param(
-            review_completeness.STATE_DECLINED,
-            {'declined_bots': ['pr-agent']},
-            id='declined',
-        ),
+        pytest.param(member, observation, id=member)
+        for member, observation in sorted(_MEMBER_OBSERVATIONS.items())
     ],
 )
 def test_widened_member_gates_byte_identically_to_absent(

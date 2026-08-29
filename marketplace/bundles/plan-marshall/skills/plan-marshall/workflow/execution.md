@@ -611,6 +611,15 @@ Both branches are capped by `phase-6-finalize.max_iterations` (default 3, counte
 - `loop_back_target == "5-execute"`: prompt the user to run `/plan-marshall action=execute` to dispatch the fix tasks, then `/plan-marshall action=finalize` to re-enter finalize.
 - `loop_back_target == "6-finalize"` (inline replay): prompt the user to run `/plan-marshall action=finalize` to replay the finalize step.
 
+**Point the prompt at the decision log.** Both branches above tell the operator HOW to resume and nothing about WHY the loop-back happened or what to change first — and for several blocking dispositions, replaying finalize unchanged reproduces the identical block. The step that looped back has already written its reason, and where a remedy exists it wrote that too: the structural-refusal barrier, for instance, records three copy-runnable remedies (split the diff, grant a merge-authorization, move the reviewer to `optional_bots`) in a single decision-log entry. So add to the prompt, whichever target it names:
+
+```text
+Why this looped back — and any remedies the step recorded:
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read --plan-id {plan_id} --type decision
+```
+
+This is dispatcher-wide rather than barrier-specific on purpose: the pointer costs one line, holds for every step that can loop back, and needs no edit when a step starts recording remedies. Without it the operator sees a replay instruction alone, and the remedies sit unread in a log nothing told them to open.
+
 The conservative default preserves the interactive shape and eliminates any chance of silent re-routing through `2-refine`. The full config-check / target-read / auto-continue routing / persisted-phase assertion / prompt procedure lives in [`../standards/execution-recovery.md`](../standards/execution-recovery.md) § "Loop-back continuation".
 
 ### Finalize Validation

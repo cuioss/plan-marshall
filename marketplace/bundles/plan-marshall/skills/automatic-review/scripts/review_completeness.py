@@ -120,7 +120,7 @@ state — the quorum is vacuously satisfied and ``participation_complete`` is
 
 Usage:
     review_completeness.py check --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--unrecognised-refusal-bots [<csv>]] [--not-triggered] [--triage-ran] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--measured-diff-size <s>]
-    review_completeness.py deficit --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--unrecognised-refusal-bots [<csv>]] [--not-triggered] [--refused-causes [<csv>]] [--min-deficit <n>]
+    review_completeness.py deficit --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--unrecognised-refusal-bots [<csv>]] [--not-triggered] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--min-deficit <n>]
     review_completeness.py size-caps
     review_completeness.py --help
 
@@ -132,18 +132,41 @@ relaxation is a parser-robustness change ONLY: an empty required-bots list is
 still the vacuously-satisfied quorum, and no empty list ever launders an
 unproven bot into a pass.
 
+**THE PAIR-FORM SET IS DECLARED HERE, ONCE.** This module's ``_parse_bot_observations``
+is the single source of the form partition; every other site cross-references this
+paragraph rather than keeping its own copy, and the sites that do carry a copy are
+covered by a parity assertion rather than hand-maintained.
+
 The list flags split into two FORMS, and a token forwarded to the wrong form is a
-loud caller error rather than a silent misparse. The two EVIDENCE-TYPED (pair-form)
-flags — ``--participated-bots`` and ``--stale-participation-bots`` — take
-``bot_kind:evidence_kind`` pairs, the exact shape ``github_pr fetch_findings`` emits
-in ``participated_bots[]`` and ``stale_participation_bots[]``, so the producer's
-output forwards to each verbatim. The remaining list flags are bare-form
-(``bot_kind`` tokens only). A bare kind on a pair-form flag, or a pair on a
+loud caller error rather than a silent misparse. FOUR flags are pair-form, taking
+``bot_kind:value`` tokens:
+
+- ``--participated-bots`` and ``--stale-participation-bots`` — EVIDENCE-TYPED, so
+  their value is an ``evidence_kind``. These are the exact shapes
+  ``github_pr fetch_findings`` emits in ``participated_bots[]`` and
+  ``stale_participation_bots[]``, forwarded verbatim.
+- ``--refused-causes`` and ``--refusal-size-caps`` — their value is a plain
+  ``value`` (a cause, a stated cap) rather than an evidence kind, from
+  ``refused_causes[]`` and ``refused_size_caps[]``.
+
+Every REMAINING list flag is bare-form (``bot_kind`` tokens only). The partition is
+not a remembered list: it is exactly the routing in ``_parse_bot_observations`` —
+pair-form is what routes through ``parse_participation`` /
+``parse_stale_participation`` / ``parse_causes``, bare-form is what routes through
+``_split_bots`` — and a test derives both sets from that routing so this paragraph
+cannot drift from the parser.
+
+A bare kind on a pair-form flag, or a pair on a
 bare-form flag, is REJECTED as a malformed caller error (``status: error``,
 non-zero exit, no ``participation_complete`` field — read as an UNKNOWN verdict):
 a dropped bare kind would resolve to ``absent`` (a blocking member) and a misread
 pair would match no configured bot, both manufacturing a confident verdict over a
 misparsed population. An empty value is the empty list, never a malformed token.
+
+The two pair-form parses differ in ONE respect, and it is deliberate:
+``parse_participation`` applies the participation admissibility filter,
+``parse_stale_participation`` does not. See that function for why re-applying it
+downgraded ``participated_stale`` to ``absent``.
 
 Subcommands:
     check      Report whether every REQUIRED bot's PARTICIPATION is proven and triaged.
@@ -330,15 +353,22 @@ _STATE_SUMMARY_BUCKETS: tuple[tuple[str, tuple[str, ...]], ...] = (
 class MalformedBotFlag(ValueError):
     """A bot-list flag received a token whose SHAPE does not match the flag's form.
 
-    The flag set is split by form. The pair-form flags (``--participated-bots`` and
-    ``--stale-participation-bots``, both fed the producer's
-    ``bot_kind:evidence_kind`` records) require every token to be a pair; a bare
-    ``bot_kind`` is malformed. The bare-form flags — every flag
-    :func:`_parse_bot_observations` routes through :func:`_split_bots`, which is where
-    the form routing actually lives — require every token to be a bare ``bot_kind``; a
-    ``bot_kind:evidence_kind`` pair is malformed. The membership is not enumerated here:
-    a copy of it goes stale the moment a flag is added, which is exactly how
-    ``--unrecognised-refusal-bots`` came to be missing from it.
+    The flag set is split by form, and BOTH sides of that split are defined by the
+    routing in :func:`_parse_bot_observations` — which is where the form partition
+    actually lives — rather than by any list written down here or elsewhere.
+
+    Pair-form is every flag that routes through :func:`parse_participation`,
+    :func:`parse_stale_participation`, or :func:`parse_causes`; each requires every
+    token to be a ``bot_kind:value`` pair, and a bare ``bot_kind`` is malformed.
+    Bare-form is every flag that routes through :func:`_split_bots`; each requires a
+    bare ``bot_kind``, and a pair is malformed.
+
+    The membership is deliberately NOT enumerated here. A copy goes stale the moment
+    a flag is added — which is exactly how ``--unrecognised-refusal-bots`` came to be
+    missing from an earlier copy, and how the pair-form side came to name two flags
+    after it had grown to four. The module docstring states the partition once, for
+    readers; a test derives both sets from the routing so neither statement can drift
+    from the parser.
 
     A malformed token is REJECTED loudly rather than silently reinterpreted. Both
     misparses are polarity-selecting: a bare kind dropped from the pair-form parse
@@ -396,6 +426,69 @@ def parse_participation(raw: str | None, flag: str = '--participated-bots') -> d
         if evidence_kind in bot_registry.participation_evidence(bot_kind):
             proven[bot_kind] = evidence_kind
     return proven
+
+
+def parse_stale_participation(
+    raw: str | None, flag: str = '--stale-participation-bots'
+) -> dict[str, str]:
+    """Parse the STALE-participation pairs: same shape as participation, no filter.
+
+    Pair-form like :func:`parse_participation`, and it enforces the pair SHAPE the
+    same way — a bare ``bot_kind`` is still a loud :class:`MalformedBotFlag`. What
+    it deliberately does NOT do is re-apply the participation ADMISSIBILITY filter.
+
+    **Why the filter must not run twice.** Admissibility answers *"is this evidence
+    that the bot reviewed?"*, and the producer already answered it: a pair only
+    reaches ``stale_participation_bots[]`` because its ``evidence_kind`` matched a
+    declared publish shape and then FAILED the currency test. Re-testing
+    admissibility here asks a question that was already settled and can only
+    subtract — and when it does subtract, the observation vanishes and the bot
+    falls through to ``absent``. That is the exact inversion this parse exists to
+    stop: ``absent`` says *nothing was published and the remedy is escalation*,
+    while ``participated_stale`` says *a review exists but predates the merge
+    candidate, and the remedy is a re-review trigger*. Silently converting the
+    second into the first prescribes the wrong remedy with full confidence.
+
+    The skew that makes this reachable is real rather than hypothetical: producer
+    and consumer read the registry at different moments, so a publish shape removed
+    from a bot's ``participation_evidence`` between the two makes every pair the
+    producer emitted inadmissible here.
+
+    **Rejected alternative — raise :class:`MalformedBotFlag` on an inadmissible
+    evidence kind.** It would surface the skew loudly instead of dropping it, which
+    is the right instinct for a SHAPE error. But this is not a shape error and not a
+    caller error: the caller forwarded the producer's own output verbatim. Raising
+    turns a producer/consumer registry skew into a HARD STOP at the merge gate —
+    the point in the lifecycle where the operator has the least room to manoeuvre,
+    and where the honest verdict (``participated_stale``, re-trigger the review) was
+    available all along. Admitting the pair keeps the gate answerable and leaves the
+    skew to be fixed where it belongs, in the registry.
+
+    Returns the ``bot_kind -> evidence_kind`` map. Callers currently read only the
+    keys; the evidence kind is carried so a consumer can report WHICH shape went
+    stale without re-parsing.
+    """
+    stale: dict[str, str] = {}
+    for entry in (raw or '').split(','):
+        entry = entry.strip()
+        if not entry:
+            continue
+        bot_kind, sep, evidence_kind = entry.partition(':')
+        bot_kind = bot_kind.strip()
+        evidence_kind = evidence_kind.strip()
+        if not sep or not bot_kind or not evidence_kind:
+            raise MalformedBotFlag(
+                f'{flag} expects bot_kind:evidence_kind pairs but received the token '
+                f'{entry!r}, which is not a pair. A bare bot_kind carries no evidence '
+                f'kind: silently dropping it would resolve the bot to absent (a '
+                f'blocking state prescribing escalation) instead of participated_stale '
+                f'(whose remedy is a re-review trigger), so it is rejected as a caller '
+                f'error.'
+            )
+        # NO admissibility filter here — see the docstring. Every well-formed pair
+        # is admitted, so a registry skew can never downgrade stale to absent.
+        stale[bot_kind] = evidence_kind
+    return stale
 
 
 def parse_causes(raw: str | None, flag: str = '--refused-causes') -> dict[str, str]:
@@ -1326,10 +1419,13 @@ def _split_bots(raw: str | None, flag: str = 'a bare-form bot flag') -> list[str
         if ':' in entry:
             raise MalformedBotFlag(
                 f'{flag} expects bare bot_kind tokens but received the pair-shaped '
-                f'token {entry!r}. A bot_kind:evidence_kind pair belongs on a pair-form '
-                f'flag (--participated-bots / --stale-participation-bots); fed to a '
-                f'bare-form flag it would be read as a bot named {entry!r} and silently '
-                f'match nothing.'
+                f'token {entry!r}. A bot_kind:value pair belongs on one of the '
+                f'pair-form flags; fed to a bare-form flag it would be read as a bot '
+                f'named {entry!r} and silently match nothing. The pair-form set is '
+                f'named generically here on purpose — an earlier message listed two '
+                f'flags by name and went stale when the set grew to four; the module '
+                f'docstring states the current partition, and _parse_bot_observations '
+                f'is what defines it.'
             )
         bots.append(entry)
     return bots
@@ -1357,9 +1453,18 @@ def _parse_bot_observations(args: argparse.Namespace) -> dict:
         'refused_bots': _split_bots(args.refused_bots, '--refused-bots'),
         # --stale-participation-bots is EVIDENCE-TYPED like --participated-bots: it is
         # fed the producer's stale_participation_bots[] pair records verbatim, so it
-        # takes the same pair form and the classifier reads only the bot_kinds.
+        # takes the same pair form and the classifier reads only the bot_kinds. It has
+        # its OWN parse rather than reusing parse_participation, because that one also
+        # applies the participation ADMISSIBILITY filter — a question the producer
+        # already answered for these pairs, and one that can only subtract here. When
+        # it did subtract, the observation vanished and the bot resolved to `absent`
+        # (escalate) instead of `participated_stale` (re-trigger). See
+        # parse_stale_participation for the full rationale and the rejected
+        # raise-instead alternative.
         'stale_participation_bots': list(
-            parse_participation(args.stale_participation_bots, '--stale-participation-bots')
+            parse_stale_participation(
+                args.stale_participation_bots, '--stale-participation-bots'
+            )
         ),
         'declined_bots': _split_bots(args.declined_bots, '--declined-bots'),
         # Shared by BOTH subcommands: the cause is state-determining for ``size``, and

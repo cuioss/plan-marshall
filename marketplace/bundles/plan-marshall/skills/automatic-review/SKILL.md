@@ -985,13 +985,22 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
 it measures the PR rather than a bot. Omit it when unmeasured — the classifier then reports no
 `measured_diff_size` line at all, which reads as unknown rather than as a zero-sized diff.
 
-**The ten list flags split by FORM, and the form is what the parser routes on.** FOUR take
-comma-separated `{bot_kind}:{value}` PAIRS: `--participated-bots` and `--stale-participation-bots`
-take `bot_kind:evidence_kind` (through `parse_participation`, which additionally drops a well-formed
-pair whose evidence kind is not one of that bot's declared publish shapes — a semantic non-match, not
-a caller error), and `--refused-causes` and `--refusal-size-caps` take `bot_kind:cause` /
-`bot_kind:cap` (through `parse_causes`, which checks the SHAPE only and carries the producer's value
-through even when it does not recognise it). The other SIX take BARE `{bot_kind}` tokens through
+**The ten list flags split by FORM, and the form is what the parser routes on.** The partition's
+single source is `review_completeness.py`'s module docstring, which states it against the routing in
+`_parse_bot_observations`; this restatement is a convenience copy held to that source by a parity
+assertion rather than by hand, so it cannot quietly drift from the parser. FOUR take
+comma-separated `{bot_kind}:{value}` PAIRS, and the two evidence-typed ones do NOT share a parse:
+`--participated-bots` takes `bot_kind:evidence_kind` through `parse_participation`, which
+additionally drops a well-formed pair whose evidence kind is not one of that bot's declared publish
+shapes (a semantic non-match, not a caller error); `--stale-participation-bots` takes the SAME
+`bot_kind:evidence_kind` shape but routes through `parse_stale_participation`, which enforces the
+pair shape and then admits EVERY well-formed pair — it deliberately does not re-apply the
+admissibility filter, because the producer already applied it before emitting the pair, so
+re-testing here could only subtract, and when it did the observation vanished and the bot fell
+through to `absent` (whose remedy is escalation) instead of `participated_stale` (whose remedy is a
+re-review trigger); and `--refused-causes` and `--refusal-size-caps` take `bot_kind:cause` /
+`bot_kind:cap` through `parse_causes`, which checks the SHAPE only and carries the producer's value
+through even when it does not recognise it. The other SIX take BARE `{bot_kind}` tokens through
 `_split_bots`: `--required-bots`, `--optional-bots`, `--in-progress-bots`, `--refused-bots`,
 `--declined-bots` and `--unrecognised-refusal-bots`. Each pair-form flag is fed a `github_pr
 fetch_findings` field verbatim, so its form is the producer's rather than a choice made here. ⛔ A
