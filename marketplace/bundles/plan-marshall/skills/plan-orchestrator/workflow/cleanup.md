@@ -53,6 +53,35 @@ This split is the Dispatch Decision Rule made operational: the dispatched leaf r
 
 **Persist every verdict, not only refutations.** A recorded `corroborated` is what lets the next reader distinguish *checked and held* from *never checked*, and that distinction is the whole point of the field.
 
+#### The declared-surface half of the same pass
+
+Re-grounding has two halves, and until now only the claim half ran. A spec's `## Expected Surface` is written once at staging and never revisited, so scope the plan or a later fold added cannot reach it — and the disjointness gate reads exactly that declaration. This step therefore CONSUMES the single reader alongside the claim parse; it never re-derives a surface of its own:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator corpus surfaces \
+  --slug {slug}
+```
+
+Two findings come out of that read, and both route to the **Wrong surface / understated surface — apply — correct the Expected Surface** row of the apply-policy table (see [§ Cleanup Contract](../../persona-plan-orchestrator/standards/orchestration-model.md#cleanup-contract)); neither is a new class:
+
+- **Unresolvable** — the row's `derivation_status` is in the indeterminate set (`derived`, `prose`, `absent`, `unreadable`), so the spec declares nothing the gate can compare and its clean gate reading is SILENCE rather than a checked negative. Correct the section in place so it resolves, or — when the surface genuinely is a function of other plans' — leave the `derived` declaration and record that the spec is deliberately unpickable until those land.
+- **Understated** — the spec's own narrative names files its `## Expected Surface` does not. The declaration is corrected to match the narrative, in place.
+
+**The running-row exclusion applies unchanged.** A spec whose ledger row is `running` is enumerated and reported as excluded, never re-scoped — a plan in flight owns its own scope, and re-scoping it underneath would be the ledger overwriting a live plan's declaration.
+
+**Verify by re-reading, not by inspecting the edit.** The apply-policy table's own rationale for this row is *verifiable by re-running the sweep*, so re-run `corpus surfaces` after the corrections and report the before/after `indeterminate_count` over the same `specs_total`. A correction that did not move that count did not land, whatever the diff shows.
+
+⛔ **This reconciles the DECLARED side only, and the boundary is a disjointness rather than an overlap to resolve later.** Two surfaces describe one plan and they are reconciled by different owners on different triggers:
+
+| | Declared side — *this step* | Realized side — the plan lifecycle's |
+|---|---|---|
+| Artifact | the spec's `## Expected Surface` | the plan's `references.affected_files` and the footprint resolver |
+| Store | the orchestrator store | the plan store |
+| Producer | the orchestrator's own fold and re-grounding acts | the plan, derived from worktree git state |
+| Trigger | a drain, or this cleanup pass | plan execution |
+
+They meet at exactly ONE point: the COMPARISON between the two, which is a read of both and is owned by neither. This step therefore never rewrites `references.affected_files`, and the plan lifecycle never rewrites a spec's `## Expected Surface`. Building one mechanism to reconcile both would put a single writer across two stores on two unrelated triggers, which is why the split is stated here rather than left to converge.
+
 ### Step 4 (A2): Applicability — an already-fixed spec needs a positive account
 
 A spec may be marked already-fixed only on a **positive account of what closed the defect** — the commit, the PR, or the named symbol that now carries the behaviour. An absent symbol is equally explained by a fix, a rename, and a file move, so absence alone never settles applicability. A spec that cannot be given a positive account is left staged and reported, not retired.
