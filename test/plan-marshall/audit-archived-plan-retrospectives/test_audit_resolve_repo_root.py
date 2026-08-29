@@ -22,7 +22,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from _audit_fixtures import audit
+from _audit_fixtures import _line, _write_log, audit, minimal_corpus
 
 
 class TestResolveRepoRoot:
@@ -202,3 +202,109 @@ class TestResolveMainRoot:
 
             assert audit._resolve_main_checkout(Path.cwd()) is None
             assert audit._resolve_main_root() == Path.cwd()
+
+
+class TestRunChecksTwoRootBinding:
+    """``run_checks`` binds the two roots SEPARATELY — the default is not a coercion.
+
+    ``run_checks(all_inputs, selected, repo_root, main_root=None)`` defaults
+    ``main_root`` to ``repo_root``, which is what a caller staging both populations
+    inside ONE sandbox wants — and that is every other test in this suite. That
+    uniformity is precisely why the defaulting line was never exercised: with
+    ``main_root == repo_root`` at every call site, a fallback that fired
+    unconditionally and one that fired only on ``None`` are indistinguishable.
+
+    These three drive the two states apart, over ONE observable — the
+    ``global-log-analysis`` summary metric, which is computed from
+    ``{main_root}/.plan/local/logs/`` and is withheld entirely when no log was
+    read. A single log file is staged under exactly one root per test, so the
+    metric's presence and value say WHICH root the main-anchored reads used.
+    """
+
+    #: One genuine failure line: elevated level plus real failure markers, the
+    #: shape ``cross_global_log_analysis`` counts as an error (a bare probe or a
+    #: DEBUG diagnostic would not).
+    _ERROR_LINE = ('2026-06-01T10:10:00Z', 'ERROR', 'pm:x:x run -> status: error exit_code=1')
+
+    @staticmethod
+    def _persisted_metrics(repo_root: Path) -> dict:
+        """Parse the summary-metric header of the report ``run_checks`` just wrote."""
+        reports = sorted((repo_root / audit.AUDIT_REPORTS_REL).glob('*.toon'))
+        assert reports, 'precondition: run_checks must have persisted a report'
+        return audit._parse_report_summary_metrics(reports[-1])
+
+    @staticmethod
+    def _two_roots(tmp_path: Path) -> tuple[Path, Path]:
+        repo_root = tmp_path / 'repo'
+        main_root = tmp_path / 'main'
+        repo_root.mkdir()
+        main_root.mkdir()
+        return repo_root, main_root
+
+    def test_an_explicit_main_root_is_not_overwritten_by_the_repo_root(
+        self, tmp_path: Path
+    ):
+        """A supplied ``main_root`` must SURVIVE — the default fires only on ``None``.
+
+        This is the branch every other caller in the suite leaves untouched, and it
+        is the one ``main()`` actually takes: it is the only caller that can run
+        from a linked worktree, where the two roots genuinely differ. A fallback
+        that assigned ``repo_root`` unconditionally would silently discard the main
+        checkout and read the machine-singular corpora out of the worktree's own
+        partial ``.plan/`` — the exact collapse ``_resolve_main_root`` exists to
+        prevent, re-introduced one layer up at the consumer.
+        """
+        repo_root, main_root = self._two_roots(tmp_path)
+        inputs = minimal_corpus(repo_root)
+        _write_log(main_root, 'work-2026-06-01.log', [_line(*self._ERROR_LINE)])
+        assert not (repo_root / '.plan' / 'local' / 'logs').exists(), (
+            'precondition: the ONLY log corpus on disk is under main_root, so a '
+            'measured result can have come from nowhere else'
+        )
+
+        audit.run_checks(inputs, ['global-log-analysis'], repo_root, main_root)
+
+        metrics = self._persisted_metrics(repo_root)
+        assert metrics['global-log-analysis_errors'] == 1, (
+            'the main-anchored read must use the supplied main_root; a 1 here is '
+            'only reachable by reading the log staged under it'
+        )
+
+    def test_the_same_corpus_is_invisible_when_main_root_is_omitted(
+        self, tmp_path: Path
+    ):
+        """The matched negative control for the guard above.
+
+        Byte-identical fixture — the same single log under the same ``main_root``
+        — with the argument simply not passed. The metric is WITHHELD, because the
+        main-anchored reads fall back to ``repo_root``, which holds no logs.
+
+        Without this control the assertion above would be equally satisfied by a
+        function that read every root it could find, and ``== 1`` would prove
+        nothing about which root was bound.
+        """
+        repo_root, main_root = self._two_roots(tmp_path)
+        inputs = minimal_corpus(repo_root)
+        _write_log(main_root, 'work-2026-06-01.log', [_line(*self._ERROR_LINE)])
+
+        audit.run_checks(inputs, ['global-log-analysis'], repo_root)
+
+        metrics = self._persisted_metrics(repo_root)
+        assert 'global-log-analysis_errors' not in metrics
+
+    def test_an_omitted_main_root_reads_the_repo_root_corpus(self, tmp_path: Path):
+        """The default itself: with no ``main_root``, the main-anchored reads use ``repo_root``.
+
+        The third leg of the partition — the same single log, now staged under
+        ``repo_root``, IS read when the argument is omitted. Together with the
+        control above this pins the default as a default: it supplies ``repo_root``
+        when nothing was given, and supplies nothing when something was.
+        """
+        repo_root, _main_root = self._two_roots(tmp_path)
+        inputs = minimal_corpus(repo_root)
+        _write_log(repo_root, 'work-2026-06-01.log', [_line(*self._ERROR_LINE)])
+
+        audit.run_checks(inputs, ['global-log-analysis'], repo_root)
+
+        metrics = self._persisted_metrics(repo_root)
+        assert metrics['global-log-analysis_errors'] == 1

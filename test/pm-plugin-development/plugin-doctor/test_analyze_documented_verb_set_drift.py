@@ -62,6 +62,7 @@ TYPE_EMPTY_POPULATION = _mod.TYPE_EMPTY_POPULATION
 
 SKIP_UNPARSEABLE = _mod.SKIP_UNPARSEABLE
 SKIP_NO_ROOT_PARSER = _mod.SKIP_NO_ROOT_PARSER
+SKIP_NO_SUBPARSERS = _mod.SKIP_NO_SUBPARSERS
 
 
 # ---------------------------------------------------------------------------
@@ -250,6 +251,69 @@ def test_underivable_root_parser_skips_instead_of_phantoming_every_verb(tmp_path
     assert _types(findings) == [TYPE_SKIPPED]
     assert _detail(findings, TYPE_SKIPPED, 'reason') == SKIP_NO_ROOT_PARSER
     assert TYPE_PHANTOM_DOCUMENTED not in _types(findings)
+
+
+def test_no_add_parser_in_this_file_skips_instead_of_phantoming_every_verb(tmp_path):
+    """The SIBLING fail-open, reached by the other route into the same refusal.
+
+    ``SKIP_NO_ROOT_PARSER`` (above) and ``SKIP_NO_SUBPARSERS`` are one fail-open
+    with two entrances: an empty derived set that is a DERIVATION FAILURE, not the
+    observation "registers nothing". The route above has ``add_parser`` calls that
+    attach to no recognised root; this one has no ``add_parser`` call in the file
+    at all, because the walk is deliberately file-local and does not follow
+    imports. The analyzer's own module docstring names ``git-workflow.py`` as the
+    worked example — a dozen registered verbs, not one argparse call of its own —
+    and reading that as an empty registered set reports every documented verb as a
+    phantom.
+
+    Guarding only the first entrance leaves the second free to regress to the
+    fail-open while the suite stays green, which is exactly the state this test
+    closes: the two are the same defect and must both be held.
+    """
+    _materialize(
+        tmp_path,
+        documented_verb_drift_files(
+            documented=('compose',),
+            script_source=(
+                'from _fixture_parser import build_parser\n\n\n'
+                'def main() -> int:\n'
+                '    parser = build_parser()\n'
+                '    parser.parse_args()\n'
+                '    return 0\n'
+            ),
+        ),
+    )
+
+    findings = analyze(tmp_path)
+
+    assert _types(findings) == [TYPE_SKIPPED]
+    assert _detail(findings, TYPE_SKIPPED, 'reason') == SKIP_NO_SUBPARSERS
+    assert TYPE_PHANTOM_DOCUMENTED not in _types(findings)
+
+
+def test_the_same_documented_verb_IS_a_phantom_once_the_set_is_derivable(tmp_path):
+    """The matched negative control for the skip above.
+
+    Same skill, same single documented verb ``compose``, same absence of that verb
+    from the registered set — the ONE thing that changes is that the set is now
+    derivable, because the script registers a verb in this file. The phantom fires.
+
+    Without this control the guard above would be satisfied by an analyzer that
+    never reports a phantom at all, and the assertion ``TYPE_PHANTOM_DOCUMENTED
+    not in _types(findings)`` would be passing for a reason unrelated to the skip.
+    """
+    _materialize(
+        tmp_path,
+        documented_verb_drift_files(
+            registered=('record-step',),
+            documented=('compose',),
+        ),
+    )
+
+    findings = analyze(tmp_path)
+
+    assert TYPE_PHANTOM_DOCUMENTED in _types(findings)
+    assert _detail(findings, TYPE_PHANTOM_DOCUMENTED, 'verb') == 'compose'
 
 
 # ---------------------------------------------------------------------------

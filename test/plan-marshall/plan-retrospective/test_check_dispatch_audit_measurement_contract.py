@@ -481,6 +481,81 @@ def test_a_hand_written_dispatch_line_reports_a_non_zero_signal(tmp_path, monkey
     )
 
 
+def test_a_dispatch_only_role_is_published_in_the_by_role_breakdown(tmp_path, monkeypatch):
+    """A role on the DISPATCH side alone must still get a ``by_role`` row.
+
+    ⛔ This is the surplus direction of the role union, and it is load-bearing
+    rather than cosmetic. ``standards/execution-context-dispatch-audit.md``
+    instructs the reader to consult ``by_role[].foreign_caller_lines`` before
+    calling a ``violations: 0`` result clean — and for a role that appears ONLY on
+    the dispatch side there is no row at all to consult, so the documented reading
+    is unusable for exactly the case the union was added to expose.
+
+    The fixture is that case, not an approximation of it: ``violations`` is ``0``
+    (the one resolved role is matched by its own seam-emitted line), so the summary
+    reads clean, and the ONLY signal that a hand-written ``[DISPATCH]`` line was
+    emitted for a role the resolve seam never resolved is this row. Restricting the
+    walk to the resolve side deletes the row and the report becomes clean with
+    nothing left to disagree with it.
+    """
+    plan_id = _write_plan(
+        tmp_path,
+        monkeypatch,
+        plan_id='role-dispatch-only',
+        work_lines=[
+            _dispatch_line('automatic-review', caller='plan-marshall:manage-config'),
+            _dispatch_line('hand-rolled-role', caller='hand-written:by-agent'),
+        ],
+        decision_lines=[_resolve_line('automatic-review')],
+    )
+    shape = _run(plan_id)['shape_violation']
+
+    assert shape['status'] == 'evaluated', 'precondition: Surface B must be non-empty'
+    assert int(shape['violations']) == 0, (
+        'precondition: the summary must read CLEAN, so the by_role row is the only '
+        'thing standing between the reader and an uncorroborated clean verdict'
+    )
+
+    rows = {row['role']: row for row in _rows(shape, 'by_role')}
+    assert 'hand-rolled-role' in rows, (
+        'a role carrying a [DISPATCH] line and no resolve record must still appear '
+        'in by_role; without the row the documented interpretation rule — consult '
+        'foreign_caller_lines before calling violations:0 clean — has nothing to read'
+    )
+    row = rows['hand-rolled-role']
+    assert int(row['resolves']) == 0
+    assert int(row['dispatch_lines']) == 1
+    assert int(row['delta']) == -1
+    assert int(row['foreign_caller_lines']) == 1
+
+
+def test_the_dispatch_only_row_appears_only_because_its_line_does(tmp_path, monkeypatch):
+    """The matched negative control for the guard above.
+
+    The SAME ``decision.log`` and the SAME seam-emitted pair, with the one
+    hand-written ``[DISPATCH]`` line removed — and no row for that role appears.
+    Without this control the assertion above would be equally satisfied by a
+    breakdown that manufactured a row for every name it ever saw, and the reader's
+    check would be reading noise rather than evidence.
+    """
+    plan_id = _write_plan(
+        tmp_path,
+        monkeypatch,
+        plan_id='role-dispatch-only-control',
+        work_lines=[
+            _dispatch_line('automatic-review', caller='plan-marshall:manage-config'),
+        ],
+        decision_lines=[_resolve_line('automatic-review')],
+    )
+    shape = _run(plan_id)['shape_violation']
+
+    rows = {row['role']: row for row in _rows(shape, 'by_role')}
+    assert 'hand-rolled-role' not in rows
+    assert 'automatic-review' in rows, 'the resolve side is published either way'
+    assert int(shape['violations']) == 0
+    assert int(rows['automatic-review']['foreign_caller_lines']) == 0
+
+
 def test_a_seam_emitted_pair_reports_no_foreign_caller_line(tmp_path, monkeypatch):
     """The matched negative control for the guard above.
 
