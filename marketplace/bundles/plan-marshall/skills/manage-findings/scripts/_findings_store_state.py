@@ -304,12 +304,19 @@ def store_unreached(store: FindingsStore) -> bool:
 def unresolved_store_error(plan_id: str, store: FindingsStore) -> dict[str, Any]:
     """Build the canonical refusal payload for a store that was never reached.
 
-    Returned verbatim by every operation surface — read, write and ``add_`` alike
-    — so one unreached store produces one error shape regardless of which verb
-    met it. ``add_qgate_finding``'s four-valued status contract is untouched by
-    this: ``error`` is already excluded from ``QGATE_PERSIST_OK``, so a caller
-    testing membership in that set treats a refused add as not-in-store with no
-    change at the call site.
+    Returned verbatim by every ``manage-findings`` operation surface — read,
+    write, ``add_`` and the batched ``ingest`` pass alike — so one unreached
+    store produces one error shape regardless of which verb met it.
+    ``add_qgate_finding``'s four-valued status contract is untouched by this:
+    ``error`` is already excluded from ``QGATE_PERSIST_OK``, so a caller testing
+    membership in that set treats a refused add as not-in-store with no change at
+    the call site.
+
+    The shape also travels OUTWARD unchanged. A downstream reader of a query
+    payload (``review_completeness``, ``review_gate_delta``,
+    ``review_commitments``) recognises it via :func:`as_unresolved_store_error`
+    and re-publishes the same ``error`` code rather than minting a second
+    vocabulary for the same fact.
     """
     return {
         'status': 'error',
@@ -318,3 +325,41 @@ def unresolved_store_error(plan_id: str, store: FindingsStore) -> dict[str, Any]
         'message': store.detail,
         **store_state_fields(store),
     }
+
+
+def as_unresolved_store_error(payload: Any) -> dict[str, Any] | None:
+    """Recognise a query payload as the store refusal, or return ``None``.
+
+    The reader half of :func:`unresolved_store_error`, for the CONSUMERS of a
+    findings query rather than for the surfaces that build it. Because the
+    refusal carries no ``findings`` key, a consumer that subscripts the payload
+    unconditionally raises ``KeyError('findings')`` — an opaque crash whose
+    message names a dict key rather than the unreached store that caused it, and
+    which no reader can tell apart from a genuine corruption. Recognising the
+    refusal first is what keeps ONE named error shape across the whole pipeline
+    instead of one per consumer.
+
+    The returned dict is a COPY carrying every field of the refusal plus
+    ``detail`` mirroring ``message``. The alias exists because these consumers
+    publish a ``detail`` field in their own error envelopes while the findings
+    surfaces publish ``message``; copying the value across means the store's own
+    provenance (which root was resolved, which plan directory was absent, which
+    checkout holds it) reaches the reader through whichever field their emitter
+    already prints, with no consumer re-deriving it.
+
+    Args:
+        payload: The return value of a findings query. Any non-mapping — or any
+            mapping that is not this refusal — yields ``None``.
+
+    Returns:
+        The consumer-facing refusal dict, or ``None`` when ``payload`` is not a
+        store refusal (including every successful query, whose ``findings`` key
+        the caller may then subscript safely).
+    """
+    if not isinstance(payload, dict):
+        return None
+    if payload.get('status') != 'error' or payload.get('error') != FINDINGS_STORE_UNRESOLVED:
+        return None
+    refusal = dict(payload)
+    refusal['detail'] = str(payload.get('message', ''))
+    return refusal

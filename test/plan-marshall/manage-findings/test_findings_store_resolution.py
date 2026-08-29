@@ -12,9 +12,18 @@ refusal) used to produce byte-identical payloads. Every test below is therefore
 paired — a positive control for the refusal and a matched negative control for
 the benign case it must NOT swallow.
 
-The surface roster is DERIVED from the module rather than hand-listed, so a
+The surface roster is DERIVED from the modules rather than hand-listed, so a
 surface added later cannot silently escape the store-state contract: it lands in
 neither declared bucket and fails the partition assertion instead.
+
+⛔ The derivation spans EVERY module that defines an operation surface, not just
+``_findings_core``. A one-module derivation is what let ``ingest`` escape: it is
+a first-class CLI verb that both reads and writes the store, but it is defined in
+``_findings_ingest``, so a roster built from ``_findings_core`` alone reported
+full coverage while never testing it — and it answered an unreached store with
+``KeyError('findings')``. The population is the union; adding a third module means
+extending :data:`_SURFACE_MODULES`, and forgetting to place a new surface in a
+bucket still fails the partition assertion.
 """
 
 import inspect
@@ -29,6 +38,16 @@ _findings_core = load_script_module(
 _store_state = load_script_module(
     'plan-marshall', 'manage-findings', '_findings_store_state.py', '_findings_store_state'
 )
+# Loaded AFTER _findings_core so its `from _findings_core import ...` resolves to
+# the instance already registered in sys.modules rather than a second copy.
+_findings_ingest = load_script_module(
+    'plan-marshall', 'manage-findings', '_findings_ingest.py', '_findings_ingest'
+)
+
+#: Every module that defines a findings operation surface. The roster below is
+#: the union over these, so a surface is covered by which MODULE it lives in
+#: rather than by anyone remembering to list it.
+_SURFACE_MODULES = (_findings_core, _findings_ingest)
 
 resolve_findings_store = _store_state.resolve_findings_store
 store_state_fields = _store_state.store_state_fields
@@ -67,22 +86,28 @@ def _is_path_helper(name: str) -> bool:
 
 
 def _operation_roster() -> dict[str, object]:
-    """Derive every public operation callable defined in ``_findings_core``.
+    """Derive every public operation callable across :data:`_SURFACE_MODULES`.
 
-    The population is the module itself: every module-level function DEFINED
-    there (``__module__`` guard drops the imported collaborators), minus the
-    private helpers (``_`` prefix) and the pure path composers. Nothing is
-    enumerated by hand, so a surface added to the module later appears here
-    automatically — and then fails the partition assertion below unless it is
-    also placed in a bucket.
+    The population is the modules themselves: every module-level function DEFINED
+    in one of them (the ``__module__`` guard drops the imported collaborators, so
+    ``_findings_ingest``'s re-import of ``query_findings`` does not double-count),
+    minus the private helpers (``_`` prefix) and the pure path composers. Nothing
+    is enumerated by hand, so a surface added later appears here automatically —
+    and then fails the partition assertion below unless it is also placed in a
+    bucket.
     """
-    return {
-        name: fn
-        for name, fn in inspect.getmembers(_findings_core, inspect.isfunction)
-        if fn.__module__ == _findings_core.__name__
-        and not name.startswith('_')
-        and not _is_path_helper(name)
-    }
+    roster: dict[str, object] = {}
+    for module in _SURFACE_MODULES:
+        roster.update(
+            {
+                name: fn
+                for name, fn in inspect.getmembers(module, inspect.isfunction)
+                if fn.__module__ == module.__name__
+                and not name.startswith('_')
+                and not _is_path_helper(name)
+            }
+        )
+    return roster
 
 
 def _shape_c_names(roster: dict[str, object]) -> set[str]:
@@ -119,6 +144,12 @@ _SHAPE_A_INVOCATIONS = {
     'query_assessments': lambda core, pid: core.query_assessments(pid),
     'get_assessment': lambda core, pid: core.get_assessment(pid, _ABSENT_HASH),
     'clear_assessments': lambda core, pid: core.clear_assessments(pid),
+    # Defined in _findings_ingest, so it is driven through that module rather than
+    # through the ``core`` argument every other row uses. It is Shape A because it
+    # carries no ``add_`` prefix, and that classification is right on the merits:
+    # ingest never CREATES a store, it reads the pending findings and writes back
+    # to records that already exist.
+    'ingest_findings': lambda _core, pid: _findings_ingest.ingest_findings(pid),
 }
 
 #: How to drive each Shape-C surface. ``add_qgate_finding_checked`` returns a
@@ -146,12 +177,12 @@ def test_the_roster_is_non_empty():
     assert len(_operation_roster()) > 0, 'the derivation found no operation surfaces at all'
 
 
-def test_the_roster_partitions_exhaustively_and_disjointly_into_14_plus_4():
-    """Shape A (14) and Shape C (4) cover the derived roster with no overlap.
+def test_the_roster_partitions_exhaustively_and_disjointly_into_15_plus_4():
+    """Shape A (15) and Shape C (4) cover the derived roster with no overlap.
 
     The two counts are asserted alongside the exhaustiveness so a function added
-    to the module later fails HERE — landing in neither bucket, or moving the
-    total — rather than silently escaping the store-state contract.
+    to either surface module later fails HERE — landing in neither bucket, or
+    moving the total — rather than silently escaping the store-state contract.
     """
     roster = _operation_roster()
     shape_a = _shape_a_names(roster)
@@ -161,9 +192,23 @@ def test_the_roster_partitions_exhaustively_and_disjointly_into_14_plus_4():
     assert shape_a | shape_c == set(roster), (
         f'buckets do not cover the roster; unbucketed: {sorted(set(roster) - shape_a - shape_c)}'
     )
-    assert len(shape_a) == 14, f'expected 14 Shape-A surfaces, got {sorted(shape_a)}'
+    assert len(shape_a) == 15, f'expected 15 Shape-A surfaces, got {sorted(shape_a)}'
     assert len(shape_c) == 4, f'expected 4 Shape-C surfaces, got {sorted(shape_c)}'
-    assert len(roster) == 18
+    assert len(roster) == 19
+
+
+def test_the_roster_spans_every_surface_module():
+    """Every declared surface module contributes at least one roster member.
+
+    Without this the union derivation is vacuously satisfiable: a module whose
+    functions all fail the filters (or that failed to import as expected) would
+    contribute nothing while the roster still looked complete — which is exactly
+    the shape of the gap that let ``ingest_findings`` go untested.
+    """
+    roster = _operation_roster()
+    for module in _SURFACE_MODULES:
+        contributed = [name for name, fn in roster.items() if fn.__module__ == module.__name__]
+        assert contributed, f'{module.__name__} contributed no operation surface to the roster'
 
 
 def test_the_invocation_table_covers_exactly_the_shape_a_roster():

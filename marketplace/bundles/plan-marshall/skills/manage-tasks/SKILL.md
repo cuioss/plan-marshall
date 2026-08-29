@@ -487,12 +487,39 @@ from inside the loop.
    `worktree_sha` equal to the current working-tree sha, in ledger file order.
    A row lacking `status` never matches (fail-closed for pre-existing rows).
 6. No candidate → `stale`, with the route derived from what the ledger holds.
-7. Candidates exist → resolve this project's build-notation set from the
-   architecture and cross-check them. First corroborated candidate → `fresh`.
-   Resolution unavailable → `fresh` on the first candidate, with
-   `notation_cross_check: unverified` and its reason in the record. Resolution
-   available and no candidate corroborated → `stale` with `notation_unrelated`
-   or `notation_absent`.
+7. Candidates exist → cross-check them on **both** dimensions and select
+   **jointly**. Per dimension, compute the set of candidates it admits — the rows
+   it endorsed, or *every* row when it could not judge:
+
+   - **Attribution.** Resolve this project's build-notation set from the
+     architecture. The *attributable* rows are those whose `notation` is in that
+     set (`notation_cross_check: corroborated`). When the set cannot be resolved
+     the dimension judges nothing and admits **every** row, recording
+     `notation_cross_check: unverified` with its reason. When the set resolved and
+     no row is in it the dimension REFUTES, and no row is citable.
+   - **Coverage.** Derive what the change needs covered (§ "The scope
+     cross-check"). The *coverable* rows are those whose canonical performs every
+     required analysis, whose scope covers the required modules, and which did not
+     measure zero tests (`scope_cross_check: covered`). When the comparison could
+     not be performed on either side the dimension judges nothing and admits
+     **every** row, recording `scope_cross_check: undetermined` with its reason.
+     When every readable row is provably narrower the dimension REFUSES
+     (`scope_cross_check: narrow`), and no row is citable.
+
+   The gate cites the **first row in file order that both dimensions admit** →
+   `fresh`. Nothing citable → `stale`, with the reason decided in this order:
+
+   | Condition | `reason` |
+   |---|---|
+   | Attribution refuted | `notation_unrelated` (some candidate carried a notation) or `notation_absent` (none did) |
+   | Coverage refused | `build_scope_narrow` |
+   | Neither refused, yet the two admissible sets are disjoint | `no_row_both_attributable_and_adequate` |
+
+   ⛔ **Selection is joint, never per-dimension.** A row endorsed by one
+   dimension is not citable unless the other also admits it. Letting attribution
+   pick on its own is precisely how the 573-test single-directory row was cited as
+   `corroborated` for a whole-tree change — perfectly attributable, and nothing
+   asked whether it covered the change. See § "Joint selection".
 
    ⚠ **Step 7 costs a live architecture crawl, and the consuming site should
    budget for it.** The resolution runs the same crawl `architecture resolve`
@@ -521,7 +548,8 @@ absence of a crash:
 | Working-tree sha uncomputable | `undecidable` / `head_unresolvable` | The primitive the whole gate compares on is undefined. |
 | Worktree unresolvable | **Not a refusal.** `WorktreeResolutionError` is caught and the root falls back to the process cwd; the sha and the ledger scan proceed against *that* tree | Preserves the pre-existing non-fatal behaviour for a plan running against the main checkout. ⚠ It means the gate can answer about a tree other than the one the caller had in mind, which is a real limitation and is recorded rather than papered over. |
 | Status metadata missing | Irrelevant | The gate does not read it — the worktree root resolves through `resolve_plan_context`, and `status.metadata.worktree_path` is a decoy the tests pin as ignored. |
-| Architecture unresolvable | **Not a refusal.** `fresh` with `notation_cross_check: unverified` and the inability named | An inability to *audit* evidence the primary predicate already accepted. Failing closed would refuse every transition in an un-crawled tree on strictly less evidence than the primary predicate supplied — see § "The notation cross-check". |
+| Architecture unresolvable | **Not a refusal on this dimension.** Attribution records `notation_cross_check: unverified` with the inability named and admits every candidate; the verdict is then whatever the coverage dimension leaves — `fresh` when a row is still citable, `build_scope_narrow` when coverage positively refutes every row | An inability to *audit* evidence the primary predicate already accepted. Failing closed would refuse every transition in an un-crawled tree on strictly less evidence than the primary predicate supplied — see § "The notation cross-check". An unjudged dimension abstains; it does not overrule the other one's refusal. |
+| Coverage underivable | **Not a refusal on this dimension.** Coverage records `scope_cross_check: undetermined` with the inability named and admits every candidate; the verdict is then whatever attribution leaves | The mirror of the row above, for the same reason and with the same abstention semantics — see § "The scope cross-check". |
 
 ⛔ "The gate never raises" must never be read as "the gate always refuses on bad
 input" — the `Outcome` column above is the authority on which inputs refuse.

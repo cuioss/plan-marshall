@@ -365,7 +365,7 @@ def reconcile(
     }
 
 
-def _read_pr_comment_findings(plan_id: str) -> list[dict]:
+def _read_pr_comment_findings(plan_id: str) -> dict:
     """Read the plan's ``pr-comment`` findings via the shared findings read path.
 
     Imported inside the function purely to keep the import graph honest about who
@@ -373,16 +373,27 @@ def _read_pr_comment_findings(plan_id: str) -> list[dict]:
     ``toon_parser`` is already a module-level import needing the same executor
     ``PYTHONPATH``, so the module does not load without it either way.
 
-    ``query_findings`` signals a read failure by RAISING (``OSError`` / ``ValueError``
-    on an unreadable or malformed store), which :func:`cmd_reconcile` catches and
-    renders as a verdict-less error TOON. It has no ``status: error`` return branch,
-    so this function deliberately does not test for one — a dead guard against a
-    shape the callee never produces reads as defence and provides none.
+    ``query_findings`` signals a read failure TWO ways, and this function returns
+    the whole payload rather than its ``findings`` key so the caller can tell them
+    apart:
+
+    * it RAISES (``OSError`` / ``ValueError``) on an unreadable or malformed
+      store, which :func:`cmd_reconcile` catches and renders as ``load_failure``;
+    * it RETURNS a refusal (``status: error`` / ``error:
+      findings_store_unresolved``) when the store was never reached at all — the
+      plan directory is not under the root it resolved, which is the ordinary
+      state of a plan whose directory has MOVED into its worktree. That payload
+      carries NO ``findings`` key, so subscripting it here produced
+      ``KeyError('findings')`` — an error naming a dict key instead of the absent
+      plan directory that caused it.
+
+    Returns the query payload verbatim; the caller checks ``status`` before
+    reading ``findings``.
     """
     from _findings_core import query_findings
 
-    findings: list[dict] = query_findings(plan_id, finding_type='pr-comment')['findings']
-    return findings
+    result: dict = query_findings(plan_id, finding_type='pr-comment')
+    return result
 
 
 def cmd_reconcile(args: argparse.Namespace) -> int:
@@ -392,6 +403,12 @@ def cmd_reconcile(args: argparse.Namespace) -> int:
     reads it as UNKNOWN rather than as a clear pass. A crashed reconciliation that
     rendered as ``clear`` would be the exact false-clean signal this seam exists to
     prevent.
+
+    A store that was never REACHED is re-emitted with ``manage-findings``' own
+    ``findings_store_unresolved`` code rather than folded into ``load_failure``:
+    the two have different remedies (repair a corrupt store versus run the verb
+    from the checkout that holds the plan), and only the store's own message names
+    which checkout that is.
     """
     try:
         diff_text = Path(args.diff_file).read_text(encoding='utf-8')
@@ -399,10 +416,14 @@ def cmd_reconcile(args: argparse.Namespace) -> int:
         print(serialize_toon({'status': 'error', 'error': 'diff_unreadable', 'detail': str(exc)}))
         return 1
     try:
-        findings = _read_pr_comment_findings(args.plan_id)
+        read = _read_pr_comment_findings(args.plan_id)
     except (OSError, ValueError, KeyError) as exc:
         print(serialize_toon({'status': 'error', 'error': 'load_failure', 'detail': str(exc)}))
         return 1
+    if read.get('status') != 'success':
+        print(serialize_toon(read))
+        return 1
+    findings = read['findings']
 
     payload = reconcile(
         parse_deletions(diff_text),

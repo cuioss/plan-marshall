@@ -6,7 +6,7 @@ Driven through the ``manage-findings.py`` CLI entry point rather than the core
 functions, so the argparse surface — including the presence set of the read-only
 ``--any-checkout`` flag — is exercised alongside the store behaviour.
 
-Six scenarios, five of which carry a matched control:
+Seven scenarios, six of which carry a matched control:
 
 1. **Non-benign zero** — a ``plan_id`` with no directory under the resolved root.
    Every one of the five CLI read verbs refuses and names the root it looked
@@ -29,6 +29,21 @@ Six scenarios, five of which carry a matched control:
    that errors *after* mkdir would pass a payload-only assertion), while the same
    verbs against a real plan with no ``artifacts/findings/`` yet still succeed
    and still create the file.
+7. **The ``ingest`` refusal** — ``ingest`` is a read-AND-write verb defined
+   outside ``_findings_core``, and it was the one operation surface the store
+   guard did not reach. Against an absent plan directory it returns the SAME named
+   refusal every other surface returns; against a resolved-but-empty store it
+   still returns a genuine success with three zero counts; and against a resolved
+   store holding a pending ``raw_input`` finding it still promotes.
+
+   ⛔ The regression is directional and both directions are pinned. BEFORE the
+   store handle existed, ``ingest`` answered an absent store with ``status:
+   success`` and ``promoted: 0 / rejected: 0 / skipped: 0`` — the clean zero this
+   suite exists to abolish. Between the handle landing and this guard it answered
+   with ``error: internal_error`` / ``message: findings``, an opaque
+   ``KeyError('findings')`` raised by subscripting a refusal payload that carries
+   no such key. The scenario asserts the refusal is neither of those: not a
+   success (the original defect) and not an unnamed crash (the regression).
 """
 
 import json
@@ -415,3 +430,136 @@ def test_a_real_plans_first_ever_finding_still_lands(verb):
     assert (findings_dir / ADD_VERB_ARTIFACT[verb]).is_file(), (
         f'{verb} reported success without creating its store file'
     )
+
+
+# =============================================================================
+# Scenario 7 — the ``ingest`` refusal (the read-AND-write surface)
+# =============================================================================
+
+
+#: The three counts ``ingest`` publishes on a successful pass. Held as a set so
+#: the assertions below name the whole triple rather than sampling one of it — a
+#: pre-guard ``ingest`` produced a zero on all three at once, so checking one
+#: would leave the other two unpinned.
+_INGEST_COUNTS = ('promoted', 'rejected', 'skipped')
+
+
+def test_ingest_refuses_a_plan_absent_from_the_resolved_root():
+    """The positive control — and it pins BOTH prior wrong answers as excluded.
+
+    ``ingest`` reads the pending findings and writes back to them, so an unreached
+    store makes its counts a three-way zero over records it never looked at. The
+    refusal must be the SAME named error every other surface returns, so a caller
+    branching on ``error`` has one vocabulary to know rather than one per verb.
+    """
+    plan_id = 'regression-ingest-absent'
+    assert not (_root() / 'plans' / plan_id).exists()
+
+    code, payload = _cli('ingest', '--plan-id', plan_id)
+
+    assert payload.get('status') == 'error', f'ingest did not refuse: {payload}'
+    assert payload.get('error') == 'findings_store_unresolved', (
+        'ingest must return the shared refusal code, not a bespoke one and not an '
+        f'unnamed crash: {payload}'
+    )
+    assert payload.get('findings_store_state') == 'plan_absent'
+    assert payload.get('unresolved_store') is True
+    assert str(_root()) in str(payload.get('message', '')), (
+        'the refusal must name the resolved root it looked under'
+    )
+    # The two answers this replaces, excluded explicitly. `internal_error` was the
+    # KeyError('findings') regression; a `success` with zero counts was the
+    # original clean-zero defect.
+    assert payload.get('error') != 'internal_error'
+    for count in _INGEST_COUNTS:
+        assert count not in payload, (
+            f'a refused ingest must publish no {count} count — a count computed '
+            'against a store nobody reached is exactly the defect under test'
+        )
+
+    # The exit code is compared against a SIBLING verb refusing the SAME plan
+    # rather than asserted as a constant. This surface reports outcomes in the
+    # TOON ``status`` and exits 0 for a structured refusal on every verb; pinning
+    # a literal here would assert a convention this scenario does not own, and
+    # would fail for the whole surface the day that convention changed. What the
+    # scenario DOES own is that ingest refuses exactly as its siblings do.
+    sibling_code, sibling = _cli('list', '--plan-id', plan_id)
+    assert code == sibling_code, (
+        f'ingest exited {code} where the sibling read verb exited {sibling_code}; '
+        'one unreached store must produce one refusal shape across every verb'
+    )
+    assert payload.get('error') == sibling.get('error')
+    assert payload.get('findings_store_state') == sibling.get('findings_store_state')
+
+
+def test_ingest_against_a_resolved_but_empty_store_is_a_genuine_success():
+    """Matched negative control: the benign zero survives the guard.
+
+    Without this direction the refusal above is equally consistent with a fix that
+    turned EVERY ingest zero into an error — the documented inverse defect, which
+    would make the finalize verification-feedback pass fail on every plan that has
+    nothing to ingest.
+    """
+    plan_id = 'regression-ingest-benign'
+    _seed_plan_dir(plan_id)
+
+    code, payload = _cli('ingest', '--plan-id', plan_id)
+
+    assert code == 0, payload
+    assert payload['status'] == 'success'
+    assert payload['findings_store_state'] == 'missing'
+    assert payload['unresolved_store'] is False
+    for count in _INGEST_COUNTS:
+        assert payload[count] == 0, f'{count} should be a genuine zero here: {payload}'
+
+
+def test_the_two_ingest_zeros_are_distinguishable_in_one_comparison():
+    """The property the whole scenario turns on, stated as a single comparison.
+
+    Asserting the refusal and the benign zero in separate tests leaves open that
+    they still agree on the field a caller branches on. Before the guard they were
+    byte-identical ``status: success`` payloads with the same three zeros.
+    """
+    _seed_plan_dir('regression-ingest-pair-resolved')
+
+    _code_a, benign = _cli('ingest', '--plan-id', 'regression-ingest-pair-resolved')
+    _code_b, absent = _cli('ingest', '--plan-id', 'regression-ingest-pair-missing')
+
+    assert benign['status'] != absent['status']
+    assert benign['findings_store_state'] != absent['findings_store_state']
+    assert benign['unresolved_store'] is not absent['unresolved_store']
+
+
+def test_ingest_still_promotes_against_a_resolved_populated_store():
+    """Matched positive control on the HAPPY path: the guard blocks nothing real.
+
+    The refusal keys on the PLAN directory, never on ``artifacts/findings/``, and
+    the write paths are composed from the same resolved handle the read used. This
+    exercises both: a real plan's pending ``raw_input`` is still validated and
+    still promoted to the top-level field.
+    """
+    plan_id = 'regression-ingest-populated'
+    _seed_plan_dir(plan_id)
+
+    code, added = _cli(
+        'add', '--plan-id', plan_id, '--type', 'pr-comment',
+        '--title', 'T', '--detail', 'placeholder',
+        '--raw-input', 'detail=promoted detail text',
+    )
+    assert code == 0 and added['status'] == 'success', added
+
+    code, payload = _cli('ingest', '--plan-id', plan_id)
+
+    assert code == 0, payload
+    assert payload['status'] == 'success', payload
+    assert payload['findings_store_state'] == 'present'
+    assert payload['promoted'] == 1, payload
+
+    _code, listed = _cli('list', '--plan-id', plan_id)
+    record_path = _root() / 'plans' / plan_id / 'artifacts' / 'findings' / 'pr-comment.jsonl'
+    record = json.loads(record_path.read_text(encoding='utf-8').splitlines()[0])
+    assert record['detail'] == 'promoted detail text', (
+        'ingest reported a promotion without writing it — the write path must '
+        'address the same store the read resolved'
+    )
+    assert listed['status'] == 'success'

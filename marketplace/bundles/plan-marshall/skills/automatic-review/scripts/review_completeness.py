@@ -192,6 +192,7 @@ import sys
 
 import bot_registry
 from _findings_core import query_findings
+from _findings_store_state import as_unresolved_store_error
 
 # The state every classified bot resolves to. Ten members are the closed
 # NON-participation taxonomy owned by
@@ -771,6 +772,45 @@ def assess_deficit(
     }
 
 
+def _read_pr_comment_findings(plan_id: str) -> dict:
+    """Read the plan's ``pr-comment`` findings, or return this module's error envelope.
+
+    Returns the successful query payload (whose ``findings`` key the caller may
+    then subscript) or an envelope in the shape :func:`_emit_toon` renders —
+    ``status: error`` plus ``error`` and ``detail``, with no verdict field, which
+    the caller reads as an UNKNOWN verdict.
+
+    TWO failure modes, kept apart because they name different faults with
+    different remedies:
+
+    * a raised ``OSError`` / ``ValueError`` — an unreadable or malformed store —
+      is this module's own ``load_failure``;
+    * a REFUSED query — ``manage-findings`` resolved no store for the plan at all,
+      because ``plans/{plan_id}/`` is not under the root it resolved — is
+      re-published with the store's own ``findings_store_unresolved`` code and its
+      own message, so one unreached store produces ONE error code across the whole
+      pipeline instead of one per consumer. The refusal payload carries no
+      ``findings`` key, so subscripting it unconditionally raised
+      ``KeyError('findings')``: a traceback naming a dict key rather than the
+      absent plan directory that caused it.
+
+    ⛔ Neither failure is ever answered with an empty finding list. An empty list
+    resolves every required bot to ``absent`` and would render a store nobody read
+    as a confident "nobody reviewed" — a verdict about reviewers derived from a
+    substrate that was never reached.
+    """
+    try:
+        result = query_findings(plan_id, finding_type='pr-comment')
+    except (OSError, ValueError) as exc:
+        return {
+            'status': 'error',
+            'error': 'load_failure',
+            'detail': f'Failed to load findings store: {exc}',
+        }
+    refusal = as_unresolved_store_error(result)
+    return refusal if refusal is not None else result
+
+
 def check_completeness(
     plan_id: str,
     required_bots: list[str],
@@ -881,19 +921,18 @@ def check_completeness(
         ``participation_complete``, and only ``pending``'s contribution
         additionally depends on ``triage_ran``.
 
-        On a findings-store load failure (corrupt or inaccessible store JSON)
-        returns the ``_emit_toon`` error-branch payload
-        ``{'status': 'error', 'error': 'load_failure', 'detail': ...}`` instead
-        of raising, so the caller renders a structured error and exits non-zero.
+        On an unreadable findings store returns the ``_emit_toon`` error-branch
+        payload ``{'status': 'error', 'error': 'load_failure', 'detail': ...}``,
+        and on a store ``manage-findings`` never reached the refusal it publishes
+        (``error: findings_store_unresolved``), instead of raising — so the caller
+        renders a structured error and exits non-zero. See
+        :func:`_read_pr_comment_findings` for why neither is answered with an
+        empty finding list.
     """
-    try:
-        findings = query_findings(plan_id, finding_type='pr-comment')['findings']
-    except (OSError, ValueError) as e:
-        return {
-            'status': 'error',
-            'error': 'load_failure',
-            'detail': f'Failed to load findings store: {e}',
-        }
+    read = _read_pr_comment_findings(plan_id)
+    if read['status'] != 'success':
+        return read
+    findings = read['findings']
 
     proven = dict(participated_bots or {})
     in_progress = set(in_progress_bots or [])
@@ -1040,18 +1079,16 @@ def check_deficit(
     reporting different states for one bot's refusal would be a disagreement no reader
     of the output could adjudicate.
 
-    On a findings-store load failure returns the ``load_failure`` error branch —
-    identical to :func:`check_completeness` — so a crashed read is an UNKNOWN verdict
-    rather than a false clean.
+    On an unreadable or unreached findings store returns the same error branches
+    :func:`check_completeness` does — ``load_failure`` and
+    ``findings_store_unresolved`` respectively — so a read that could not be
+    performed is an UNKNOWN verdict rather than a false clean, and the two commands
+    cannot name different faults for one store.
     """
-    try:
-        findings = query_findings(plan_id, finding_type='pr-comment')['findings']
-    except (OSError, ValueError) as e:
-        return {
-            'status': 'error',
-            'error': 'load_failure',
-            'detail': f'Failed to load findings store: {e}',
-        }
+    read = _read_pr_comment_findings(plan_id)
+    if read['status'] != 'success':
+        return read
+    findings = read['findings']
 
     proven = dict(participated_bots or {})
     in_progress = set(in_progress_bots or [])
@@ -1109,6 +1146,13 @@ def _emit_toon(payload: dict) -> None:
         print(f'error: {payload.get("error", "unknown")}')
         if 'detail' in payload:
             print(f'detail: {payload["detail"]}')
+        # Emitted only on the store-refusal branch, where the payload carries it.
+        # It names WHICH unreached state produced the refusal (plan_absent vs
+        # unknown), which is the difference between "this plan lives in another
+        # checkout" and "no runtime-state root was resolved at all" — two
+        # different remedies that the error code alone does not separate.
+        if 'findings_store_state' in payload:
+            print(f'findings_store_state: {payload["findings_store_state"]}')
         return
     print('participation_complete: ' + ('true' if payload['participation_complete'] else 'false'))
     print(f'proves: {payload["proves"]}')
@@ -1225,6 +1269,11 @@ def _emit_deficit_toon(payload: dict) -> None:
         print(f'error: {payload.get("error", "unknown")}')
         if 'detail' in payload:
             print(f'detail: {payload["detail"]}')
+        # Same store-refusal disclosure the ``check`` emitter makes, for the same
+        # reason: the two commands share one read and must not render one store's
+        # refusal differently.
+        if 'findings_store_state' in payload:
+            print(f'findings_store_state: {payload["findings_store_state"]}')
         return
     print(f'verdict: {payload["verdict"]}')
     print(f'proves: {payload["proves"]}')

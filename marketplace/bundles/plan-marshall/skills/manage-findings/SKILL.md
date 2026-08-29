@@ -65,11 +65,11 @@ Per-type files are created lazily — only types that have been added produce a 
 
 See [standards/jsonl-format.md](standards/jsonl-format.md) for the complete storage layout and per-type file list.
 
-## Store Resolution and the Three Store States
+## Store Resolution and the Store States
 
 The findings store is resolved cwd-relatively (ADR-002): `plans/{plan_id}/` MOVES into its worktree at phase-5 and back at finalize. From the main checkout the directory of a running plan is therefore genuinely absent — and a primitive that returns `[]` for a non-existent path cannot tell that apart from a plan that filed nothing.
 
-Every operation surface — read, write and `add` alike — resolves the store through one explicit handle and publishes what it found alongside its own payload:
+Every operation surface — read, write, `add` and the batched `ingest` pass alike — resolves the store through one explicit handle and publishes what it found alongside its own payload:
 
 | Field | Meaning |
 |-------|---------|
@@ -108,6 +108,14 @@ This surface **retires the direct-path workaround**: reading `.plan/local/worktr
 `add`, `qgate add` and `assessment add` all end at an append whose parent-directory creation would materialize the whole `plans/{plan_id}/artifacts/findings/` chain. Against a `plan_id` with no directory under the resolved root that manufactures a **phantom store** — after which a subsequent `list` reports `findings_store_state: present` for a plan that never existed, defeating the guarantee the read surfaces provide.
 
 All three therefore REFUSE, returning `status: error` / `error: findings_store_unresolved` / `findings_store_state: plan_absent` and creating nothing on disk. Because `qgate add`'s refusal is an `error`, it is already outside the `QGATE_PERSIST_OK` partition (`success` / `deduplicated` / `reopened`), so every caller that tests membership in that set treats a refused add as not-in-store with no change at the call site. A real plan whose directory exists but which has no `artifacts/findings/` yet still succeeds and still creates the file.
+
+### `ingest` refuses on the same guard
+
+`ingest` both READS the pending findings and WRITES to them (promoting validated fields, resolving rejections), so it carries the same guard and returns the same refusal. Against an unreached store its counts would be a three-way zero — `promoted: 0`, `rejected: 0`, `skipped: 0` — over records it never looked at, which is exactly the clean zero this discriminator exists to abolish. It resolves the store ONCE and composes every write path from that handle, so the read and the write can never address different stores.
+
+### The refusal shape travels to downstream consumers
+
+The refusal carries **no `findings` key**, because there is no substrate to report findings from. A consumer that subscripts a query payload unconditionally therefore raises `KeyError('findings')` — an error naming a dict key rather than the absent plan directory that caused it. The three cross-skill consumers of the `pr-comment` read (`automatic-review`'s `review_completeness` and `review_gate_delta`, and `phase-6-finalize`'s `review_commitments`) recognise the refusal via `_findings_store_state.as_unresolved_store_error` and **re-publish the same `error` code**, so one unreached store produces one error code across the whole pipeline rather than one vocabulary per consumer. None of them substitutes an empty finding list: an empty list would render a store nobody read as a confident "nobody reviewed".
 
 ## Finding Types
 
@@ -246,7 +254,9 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 ## Output Format
 
-All commands return TOON format. Every payload additionally carries the four store-state fields documented in **Store Resolution and the Three Store States** above (`store_resolution`, `store_path`, `findings_store_state`, `unresolved_store`), so a count is never reported without the substrate it was computed from.
+All commands return TOON format. Every payload **computed against the store** additionally carries the four store-state fields documented in **Store Resolution and the Store States** above (`store_resolution`, `store_path`, `findings_store_state`, `unresolved_store`), so a count is never reported without the substrate it was computed from.
+
+The one class of payload that carries none is an **argument-validation rejection** — an invalid `--type`, `--severity`, `--phase`, `--resolution` or `--certainty`. Those are refused before the store is resolved at all, so they report nothing about the store and publish nothing about it; the request never reached a substrate to describe. Every payload that reports a count, a record, a not-found verdict or a write outcome carries all four.
 
 **Add response**:
 ```toon

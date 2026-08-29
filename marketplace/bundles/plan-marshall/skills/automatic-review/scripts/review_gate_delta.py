@@ -105,6 +105,7 @@ import sys
 
 import bot_registry
 from _findings_core import query_findings
+from _findings_store_state import as_unresolved_store_error
 from toon_parser import serialize_toon
 
 VERDICT_MEASURED = 'measured'
@@ -463,12 +464,25 @@ def _emit_toon(payload: dict) -> None:
 
 
 def cmd_assess(args: argparse.Namespace) -> int:
-    """Read the plan's pr-comment findings, assess the delta, emit TOON."""
+    """Read the plan's pr-comment findings, assess the delta, emit TOON.
+
+    An unreadable store is this module's ``load_failure``; a store
+    ``manage-findings`` never REACHED is re-emitted with the store's own
+    ``findings_store_unresolved`` code and provenance message, so one unreached
+    store produces one error code across every consumer. Both exit non-zero with
+    no ``verdict`` field — an unread store is not a measurement, and reading it as
+    zero escapes would report perfect gate parity for a PR nothing was counted on.
+    """
     try:
-        findings = query_findings(args.plan_id, finding_type='pr-comment')['findings']
+        result = query_findings(args.plan_id, finding_type='pr-comment')
     except (OSError, ValueError) as exc:
         _emit_toon({'status': 'error', 'error': 'load_failure', 'detail': str(exc)})
         return 1
+    refusal = as_unresolved_store_error(result)
+    if refusal is not None:
+        _emit_toon(refusal)
+        return 1
+    findings = result['findings']
     payload = assess_delta(
         findings,
         _split_csv(args.enabled_bots),
