@@ -91,7 +91,6 @@ from typing import Any
 
 from _cmd_sibling_collision import (
     _OVERLAP_JOIN,
-    _extract_paths,
     _iter_active_plan_dirs,
     _read_affected_files,
     _read_request_source,
@@ -115,7 +114,13 @@ from _orchestrator_inbox import (
     cmd_inbox_write,
     inbox_counts,
 )
+from epic_spec_parser import (
+    SpecClaim,
+    UnclassifiableSpecError,
+    classify_spec,
+)
 from file_ops import (
+    cwd_checkout_root,
     get_archived_orchestrator_dir,
     get_store_dir,
     now_utc_iso,
@@ -397,7 +402,7 @@ _SURFACE_JOIN = '; '
 
 # --- markdown line scanners -------------------------------------------------
 #
-# The five regexes in this block are the module's COMPLETE set of markdown
+# The four regexes in this block are the module's COMPLETE set of markdown
 # construct models, and every line-wise scan in the file runs through one of
 # them against the mask :func:`_fenced_mask` builds. They are grouped here, each
 # stating which CommonMark clauses it honours and which it deliberately does
@@ -429,25 +434,32 @@ _SURFACE_JOIN = '; '
 # spec-authoring convention is column-0 ATX headings and top-level fences. The
 # failure direction is stated at each scanner it affects.
 
-#: The two section headings the corpus verbs ADDRESS, and the generic ATX
+#: The one section heading the corpus verbs ADDRESS, and the generic ATX
 #: heading that TERMINATES a section body.
+#:
+#: ``## Expected Surface`` is deliberately NOT here. Its grammar and its reader
+#: both live in ``plan-marshall:script-shared``'s :mod:`epic_spec_parser`, the
+#: marketplace's single reader of that section; this module CONSUMES that reader
+#: (see :func:`_spec_record` and :func:`_row_surface`) and carries no second
+#: model of the heading. ``CLAIM_LABELS_HEADING_RE`` stays because it parses a
+#: different section that is not relocated and retains its in-module consumer,
+#: :func:`_parse_claim_section`.
 #:
 #: Honoured: the 0-3 space indent bound; the 1-6 character ``#`` run; the rule
 #: that the run must be followed by a space, a tab, or the end of the line — so
 #: ``#hashtag`` is not a heading, a seven-``#`` run is not one, and a bare
 #: ``##`` line IS one; the optional trailing closing ``#`` sequence on the
-#: two addressed headings; and the CASE of the two addressed heading titles —
-#: both are matched case-insensitively, so ``## expected surface`` and
-#: ``## EXPECTED SURFACE`` are recognized exactly as ``## Expected Surface``
-#: is. A case variant is a spelling of the same heading, not a different
-#: section, and treating it as absent would report a confident empty section
-#: for a document that declared one.
+#: addressed heading; and the CASE of the addressed heading title — it is
+#: matched case-insensitively, so ``## claim labels`` and ``## CLAIM LABELS``
+#: are recognized exactly as ``## Claim Labels`` is. A case variant is a
+#: spelling of the same heading, not a different section, and treating it as
+#: absent would report a confident empty section for a document that declared
+#: one.
 #: NOT honoured: setext headings, per the block note above. A setext underline
 #: therefore fails to terminate a section, which OVER-extends the body rather
-#: than truncating it — the direction that admits extra paths and extra claims
-#: rather than silently dropping declared ones.
+#: than truncating it — the direction that admits extra claims rather than
+#: silently dropping declared ones.
 CLAIM_LABELS_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+Claim Labels(?:[ \t]+#+)?[ \t]*$', re.IGNORECASE)
-EXPECTED_SURFACE_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+Expected Surface(?:[ \t]+#+)?[ \t]*$', re.IGNORECASE)
 _HEADING_RE = re.compile(r'^ {0,3}#{1,6}(?:[ \t]|$)')
 
 #: A ``- `` list bullet, with its leading whitespace captured as ``indent``.
@@ -1233,24 +1245,33 @@ def _section_span(
     return (start, len(lines))
 
 
-def _expected_surface_paths(text: str) -> set[str]:
-    """Extract the file paths a spec names in its ``## Expected Surface`` section.
+def _spec_claim(path: Path, repo_root: Path) -> SpecClaim | None:
+    """Classify one spec through the single reader, or ``None`` when it declares no surface.
 
-    This is the spec-side entry point for the file-overlap collision class: a
-    staged spec carries its surface here, where a launched plan carries it in
-    ``references.json`` ``affected_files``. The extraction itself is
-    ``_cmd_sibling_collision``'s, unchanged — only the entry point differs.
+    The spec-side entry point for the file-overlap collision class and for the
+    Ordered Queue's Surface cell: a staged spec carries its surface in
+    ``## Expected Surface``, where a launched plan carries it in
+    ``references.json`` ``affected_files``.
 
-    The section body is delimited against the fence mask, so a fenced path list
-    whose first line is a ``#`` comment does not truncate the section and drop
-    every path after it. Paths INSIDE the fence still count: a fenced list is the
-    ordinary way a spec declares its surface.
+    ``None`` means the spec carries NO ``## Expected Surface`` section — a
+    distinct state from a section that resolves to no path, which comes back as
+    a ``prose`` claim. Callers keep the two apart; collapsing them is the defect
+    that made an undeclared surface read as a clean disjoint pass.
+
+    The caller has already established the file is readable, so the reader's
+    other :class:`UnclassifiableSpecError` cause cannot fire here.
     """
-    lines = text.splitlines()
-    start, end = _section_span(lines, EXPECTED_SURFACE_HEADING_RE)
-    if start < 0:
+    try:
+        return classify_spec(path, repo_root)
+    except UnclassifiableSpecError:
+        return None
+
+
+def _claimed_paths(claim: SpecClaim | None) -> set[str]:
+    """The resolved claimed entries of one classification, as a comparable set."""
+    if claim is None:
         return set()
-    return _extract_paths('\n'.join(lines[start:end]))
+    return {entry.path for entry in claim.claimed}
 
 
 def _spec_pointers(text: str) -> set[str]:
@@ -1849,15 +1870,21 @@ def _sibling_epic_roots(slug: str) -> list[Path]:
     return [roots[name] for name in sorted(roots)]
 
 
-def _spec_record(epic_slug: str, path: Path) -> dict[str, Any] | None:
-    """Build one comparable record for a spec file, or ``None`` when unreadable."""
+def _spec_record(epic_slug: str, path: Path, repo_root: Path) -> dict[str, Any] | None:
+    """Build one comparable record for a spec file, or ``None`` when unreadable.
+
+    The surface is resolved through :func:`_spec_claim` — the single reader — so
+    this record and the Ordered Queue's Surface cell resolve the SAME set for the
+    same spec, because they call the same function.
+    """
     text, _ = _read_spec(path)
     if text is None:
         return None
+    claim = _spec_claim(path, repo_root)
     return {
         'name': path.name,
         'pointers': _spec_pointers(text) | {_own_pointer(epic_slug, path.name)},
-        'paths': _expected_surface_paths(text),
+        'paths': _claimed_paths(claim),
     }
 
 
@@ -1936,11 +1963,12 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     root = _epic_root(args.slug, allow_archived=True)
     if not root.is_dir():
         return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
+    repo_root = Path(cwd_checkout_root())
     own_paths = _spec_paths(root)
     own: list[dict[str, Any]] = []
     unreadable: list[dict[str, str]] = []
     for path in own_paths:
-        record = _spec_record(args.slug, path)
+        record = _spec_record(args.slug, path, repo_root)
         if record is None:
             unreadable.append({'spec': path.name, 'error': 'unreadable'})
         else:
@@ -1949,7 +1977,7 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     candidates: list[tuple[str, dict[str, Any]]] = []
     for sibling_root in sibling_roots:
         for path in _spec_paths(sibling_root):
-            record = _spec_record(sibling_root.name, path)
+            record = _spec_record(sibling_root.name, path, repo_root)
             if record is None:
                 unreadable.append({'spec': f'{sibling_root.name}/{path.name}', 'error': 'unreadable'})
             else:
@@ -2438,22 +2466,39 @@ def _queue_cell(value: str) -> str:
     return value.replace('|', r'\|').replace('\n', ' ').strip()
 
 
-def _row_surface(spec: Path | None) -> str:
+def _row_surface(spec: Path | None, repo_root: Path) -> str:
     """Resolve one row's Surface cell from its spec's ``## Expected Surface``.
 
     The Surface column is derivable — from the FILESYSTEM, not ``status.json`` —
-    so it is regenerated like the rest. Each *which zero is this* case is a named
-    marker rather than an empty cell: a missing spec, an unreadable one, and a
-    spec with no declared surface are told apart, never collapsed to blank.
+    so it is regenerated like the rest. Resolved through :func:`_spec_claim`, the
+    single reader, so this cell and ``corpus cross-check``'s collision input
+    cannot disagree about the same spec.
+
+    Each *which zero is this* case is a named marker rather than an empty cell,
+    and the empty cases are told apart by the reader's own derivation class
+    rather than collapsed into one ``(no expected surface)`` string that read as
+    "collides with nothing":
+
+    * ``(spec missing)`` — the row names a spec that is not on disk.
+    * ``(spec unreadable)`` — the spec is present but could not be read.
+    * ``(no expected surface section)`` — the spec declares no such section at
+      all. This is the state a candidate is INDETERMINATE on, never disjoint.
+    * ``(prose)`` / ``(derived)`` — a section IS present; the reader resolved no
+      path entry from it, or the spec declares its surface a function of other
+      plans'. Both are stated, so a reader can tell an unresolvable declaration
+      from an absent one.
     """
     if spec is None:
         return '(spec missing)'
     text, _ = _read_spec(spec)
     if text is None:
         return '(spec unreadable)'
-    paths = sorted(_expected_surface_paths(text))
+    claim = _spec_claim(spec, repo_root)
+    if claim is None:
+        return '(no expected surface section)'
+    paths = sorted(_claimed_paths(claim))
     if not paths:
-        return '(no expected surface)'
+        return f'({claim.spec_class})'
     return _queue_cell(_SURFACE_JOIN.join(paths))
 
 
@@ -2476,13 +2521,14 @@ def _build_ordered_queue(status_doc: dict[str, Any], root: Path) -> str:
         lines.append('| — | (empty) | — | — | — |')
         return '\n'.join(lines)
     specs = _spec_paths(root)
+    repo_root = Path(cwd_checkout_root())
     for position, row in enumerate(live, start=1):
         plan_id = str(row.get('id', ''))
         spec = next((path for path in specs if plan_id and _spec_matches_row(path, plan_id)), None)
         plan_cell = _queue_cell(spec.stem if spec is not None else (plan_id or '?'))
         workstream = _queue_cell(str(row.get('workstream', '') or '?'))
         status_cell = _queue_cell(str(row.get('status', '') or '?'))
-        surface = _row_surface(spec)
+        surface = _row_surface(spec, repo_root)
         lines.append(f'| {position} | {plan_cell} | {workstream} | {status_cell} | {surface} |')
     return '\n'.join(lines)
 

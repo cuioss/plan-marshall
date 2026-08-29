@@ -328,15 +328,21 @@ class TestDerivableRegeneration:
         assert _regenerated(result, 'ordered-queue')['outcome'] == 'regenerated'
 
     def test_the_surface_column_is_derived_from_the_spec(self, plan_context):
+        # The declared entries are ROOTED — their first segment is a real
+        # top-level repository entry. The single reader derives rootedness from
+        # the tree rather than from a hand-listed set of roots, so an entry whose
+        # first segment does not exist is recorded as unresolved rather than
+        # claimed, and the cell would render the derivation class instead.
+        declared = ['test/alpha/a.py', 'test/alpha/b.py']
         _write_status(plan_context, [_row('PLAN-01')])
-        _write_spec(plan_context, 'PLAN-01-alpha.md', surface=['scripts/a.py', 'scripts/b.py'])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface=declared)
         _write_epic(plan_context)
 
         _run()
 
         queue = _block_body(_epic_text(plan_context), 'ordered-queue')
-        assert 'scripts/a.py' in queue
-        assert 'scripts/b.py' in queue
+        for path in declared:
+            assert path in queue
 
     def test_a_row_without_a_spec_renders_a_named_marker_not_a_blank(self, plan_context):
         _write_status(plan_context, [_row('PLAN-09')])

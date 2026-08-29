@@ -74,12 +74,36 @@ from pathlib import Path
 
 import pytest
 
-from conftest import MARKETPLACE_ROOT, get_script_path, load_script_module, run_script
+from conftest import (
+    MARKETPLACE_ROOT,
+    PROJECT_ROOT,
+    get_script_path,
+    load_script_module,
+    run_script,
+)
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-orchestrator', 'orchestrator.py')
 
 _orch = load_script_module(
     'plan-marshall', 'plan-orchestrator', 'orchestrator.py', 'orchestrator_script'
+)
+
+#: The relocated SINGLE reader of ``## Expected Surface``, which ``orchestrator.py``
+#: now consumes instead of carrying its own parse.
+#:
+#: Registered under an explicit, collision-proof name rather than its stem: the
+#: ``tools-epic-surface-partition`` suites import ``epic_spec_parser`` plainly, and
+#: publishing this load under that stem would displace theirs and trip
+#: ``test_conftest_loader_contract``'s registration-collision guard. The three
+#: addressing arguments are module-level string constants so the call stays
+#: statically resolvable to that guard's walker.
+_SURFACE_BUNDLE = 'plan-marshall'
+_SURFACE_SKILL = 'script-shared'
+_SURFACE_SCRIPT = 'epic_spec_parser.py'
+_SURFACE_MODULE_NAME = 'epic_spec_parser_orchestrator_corpus_tests'
+
+_surface_reader = load_script_module(
+    _SURFACE_BUNDLE, _SURFACE_SKILL, _SURFACE_SCRIPT, module_name=_SURFACE_MODULE_NAME
 )
 
 cmd_corpus_enumerate = _orch.cmd_corpus_enumerate
@@ -90,12 +114,38 @@ format_verdict_line = _orch._format_verdict_line
 parse_verdict_text = _orch._parse_verdict_text
 fenced_mask = _orch._fenced_mask
 section_span = _orch._section_span
-expected_surface_paths = _orch._expected_surface_paths
 parse_claim_section = _orch._parse_claim_section
 build_arg_parser = _orch._build_arg_parser
 CLAIM_LABELS_HEADING_RE = _orch.CLAIM_LABELS_HEADING_RE
-EXPECTED_SURFACE_HEADING_RE = _orch.EXPECTED_SURFACE_HEADING_RE
 HEADING_RE = _orch._HEADING_RE
+
+
+def expected_surface_paths(text: str, tmp_path: Path) -> set:
+    """Resolve a spec's declared surface through the relocated single reader.
+
+    The retired ``orchestrator._expected_surface_paths`` took the spec TEXT; the
+    single reader takes the spec PATH, because it resolves directory, recursive
+    glob and bullet-relative entries against the repository root rather than
+    matching named files by regex. The fixture text is therefore written under
+    ``tmp_path`` and classified from there, and the repo root passed in is the
+    real ``PROJECT_ROOT`` — the declared fixture paths are real repo paths, and
+    the reader only treats an entry as rooted when its first segment exists.
+
+    A spec carrying no ``## Expected Surface`` section resolves to the empty set,
+    which is what the retired reader returned for that case too; the distinct
+    third state that absence resolves to at the GATE is
+    ``orchestrator._row_surface``'s ``(no expected surface section)`` marker.
+    """
+    spec = tmp_path / 'PLAN-01-fixture.md'
+    # ``parents=True`` so a caller resolving two specs in one test can pass two
+    # distinct sub-directories of its ``tmp_path`` without creating them first.
+    spec.parent.mkdir(parents=True, exist_ok=True)
+    spec.write_text(text, encoding='utf-8')
+    try:
+        claim = _surface_reader.classify_spec(spec, PROJECT_ROOT)
+    except _surface_reader.UnclassifiableSpecError:
+        return set()
+    return {entry.path for entry in claim.claimed}
 VERDICT_KEYS = _orch.VERDICT_KEYS
 VERDICT_SEPARATOR = _orch.VERDICT_SEPARATOR
 VERDICT_VALUES = _orch.VERDICT_VALUES
@@ -1795,35 +1845,53 @@ class TestCorpusReadOnlyBoundary:
 # heading still terminates the scan (the suppression is fence-scoped, not a
 # blanket disable); the negative controls prove the fenced look-alike does not.
 
-#: A fenced Expected Surface path list whose FIRST body line is a ``#`` comment —
-#: the exact shape that truncated the section. ``OTHER_PATH`` is deliberately
-#: LAST, so an assertion that finds it proves the whole list survived.
+#: An Expected Surface whose fenced example's FIRST body line is a ``#`` comment —
+#: the exact shape that truncated the section — followed by the DECLARED bullets.
+#: ``OTHER_PATH`` is deliberately LAST, so an assertion that finds it proves the
+#: whole declaration survived.
+#:
+#: The declared entries sit AFTER the fence rather than inside it, because the
+#: single reader treats fenced content as a SAMPLE and never as a claim (its own
+#: ``test_fenced_block_entries_are_ignored`` pins that). The defect this fixture
+#: exists for is unaffected and is if anything pinned harder: if the fence is not
+#: masked, the ``#`` comment reads as a heading, the section is truncated there,
+#: and BOTH declared bullets vanish from the resolved set.
 _FENCED_SURFACE = [
     '```text',
     '# the files this spec expects to touch',
-    SHARED_PATH,
-    OTHER_PATH,
     '```',
+    *_surface(SHARED_PATH, OTHER_PATH),
 ]
 
-#: The same Expected Surface list written with a FOUR-backtick outer fence that
+#: The same Expected Surface written with a FOUR-backtick outer fence that
 #: CONTAINS a three-backtick example — the ordinary way a spec shows a fenced
 #: snippet inside a fenced block. CommonMark closes only on a run at least as
 #: long as the opener, so the inner ``` lines are body text and the outer block
 #: runs to the ```` line. A mask that compares only the delimiter CHARACTER ends
 #: the block at the first inner ```, after which the ``#`` comment on the next
-#: line reads as a heading and truncates the section. ``OTHER_PATH`` sits after
-#: the inner example, so an assertion that finds it proves the whole list
-#: survived the nesting.
-_NESTED_FENCED_SURFACE = [
+#: line reads as a heading and truncates the section — so BOTH declared bullets
+#: vanish and the spec resolves as ``prose``, a confident empty surface over a
+#: spec that declared two files. This case is the reason the relocated reader
+#: retains the opening run's LENGTH and not merely its character.
+#: The nested fenced BLOCK on its own, without the declaration that follows it.
+#:
+#: The mask cases take the block by itself, because they are about where a block
+#: BEGINS and ENDS; the surface cases take the block PLUS the declared bullets,
+#: because the single reader resolves entries only OUTSIDE a fence. Sharing one
+#: fixture between the two would make each case's expected mask length a fact
+#: about the other case's fixture.
+_NESTED_FENCE_BLOCK = [
     '````text',
     '# the files this spec expects to touch',
     '```',
     '# an inner example, not the close of the outer block',
     '```',
-    SHARED_PATH,
-    OTHER_PATH,
     '````',
+]
+
+_NESTED_FENCED_SURFACE = [
+    *_NESTED_FENCE_BLOCK,
+    *_surface(SHARED_PATH, OTHER_PATH),
 ]
 
 #: Two real claims with a fenced example between them. The fence carries both a
@@ -1876,16 +1944,16 @@ class TestFenceMask:
         # character. Reading the character alone ends the outer block at the
         # first inner ```, leaving the real fenced body — and the paths after
         # it — unmasked behind a mask that still reports one entry per line.
-        lines = ['before', *_NESTED_FENCED_SURFACE, '# a real heading']
+        lines = ['before', *_NESTED_FENCE_BLOCK, '# a real heading']
 
         mask = fenced_mask(lines)
 
         assert len(mask) == len(lines), 'the mask must carry one entry per scanned line'
-        assert sum(mask) == len(_NESTED_FENCED_SURFACE), (
+        assert sum(mask) == len(_NESTED_FENCE_BLOCK), (
             f'{sum(mask)} of {len(lines)} lines masked, expected exactly the '
-            f'{len(_NESTED_FENCED_SURFACE)}-line fenced block'
+            f'{len(_NESTED_FENCE_BLOCK)}-line fenced block'
         )
-        assert mask == [False, *[True] * len(_NESTED_FENCED_SURFACE), False]
+        assert mask == [False, *[True] * len(_NESTED_FENCE_BLOCK), False]
 
     def test_a_shorter_run_does_not_close_a_longer_opener(self):
         # No delimiter here is long enough to close, so the block runs to the
@@ -1941,12 +2009,21 @@ class TestFenceMask:
 
 
 class TestFencedSectionSpan:
+    """``orchestrator._section_span`` against its own fence mask.
+
+    Exercised through ``CLAIM_LABELS_HEADING_RE`` — the heading this module still
+    owns — now that the ``## Expected Surface`` grammar has moved to the single
+    reader in ``script-shared``. The primitive under test is unchanged; only the
+    heading it is driven with is, and the two are interchangeable here because
+    both are ordinary addressed ATX headings fed to the same scanner.
+    """
+
     def test_a_real_heading_still_ends_a_section(self):
         # Positive control: the terminator works, so the negative control below
         # is testing suppression rather than a scan that never terminates.
-        lines = ['## Expected Surface', '', SHARED_PATH, '', '## Objective', '', OTHER_PATH]
+        lines = ['## Claim Labels', '', SHARED_PATH, '', '## Objective', '', OTHER_PATH]
 
-        start, end = section_span(lines, EXPECTED_SURFACE_HEADING_RE)
+        start, end = section_span(lines, CLAIM_LABELS_HEADING_RE)
 
         body = '\n'.join(lines[start:end])
         assert (start, end) == (1, 4)
@@ -1954,35 +2031,35 @@ class TestFencedSectionSpan:
         assert OTHER_PATH not in body
 
     def test_a_hash_line_inside_a_fence_does_not_end_a_section(self):
-        lines = ['## Expected Surface', '', *_FENCED_SURFACE, '', '## Objective']
+        lines = ['## Claim Labels', '', *_FENCED_SURFACE, '', '## Objective']
 
-        start, end = section_span(lines, EXPECTED_SURFACE_HEADING_RE)
+        start, end = section_span(lines, CLAIM_LABELS_HEADING_RE)
 
         body = '\n'.join(lines[start:end])
         assert '# the files this spec expects to touch' in body
         assert OTHER_PATH in body, 'a fenced comment truncated the section body'
 
     def test_a_fenced_heading_does_not_open_a_section(self):
-        # The opening scan carries the same state: a fenced ``## Expected
-        # Surface`` line inside an earlier example is not this document's section.
-        lines = ['```text', '## Expected Surface', OTHER_PATH, '```']
+        # The opening scan carries the same state: a fenced ``## Claim Labels``
+        # line inside an earlier example is not this document's section.
+        lines = ['```text', '## Claim Labels', OTHER_PATH, '```']
 
-        assert section_span(lines, EXPECTED_SURFACE_HEADING_RE) == (-1, -1)
+        assert section_span(lines, CLAIM_LABELS_HEADING_RE) == (-1, -1)
 
 
 class TestFencedExpectedSurface:
-    def test_a_fenced_path_list_with_a_leading_comment_yields_every_path(self):
+    def test_a_fenced_path_list_with_a_leading_comment_yields_every_path(self, tmp_path):
         declared = (SHARED_PATH, OTHER_PATH)
         text = _spec_text([_DEFAULT_CLAIM], list(_FENCED_SURFACE))
 
-        paths = expected_surface_paths(text)
+        paths = expected_surface_paths(text, tmp_path)
 
         assert len(paths) == len(declared), (
-            f'{len(declared)} path(s) declared in the fenced list, {len(paths)} extracted'
+            f'{len(declared)} path(s) declared after the fenced example, {len(paths)} extracted'
         )
         assert paths == set(declared)
 
-    def test_a_nested_fenced_path_list_yields_every_path(self):
+    def test_a_nested_fenced_path_list_yields_every_path(self, tmp_path):
         # The consumer-level proof that the run-length comparison reaches the
         # defect it was filed for: with the outer block ended at the first inner
         # ```, the following ``#`` comment reads as a heading and truncates the
@@ -1990,10 +2067,10 @@ class TestFencedExpectedSurface:
         declared = (SHARED_PATH, OTHER_PATH)
         text = _spec_text([_DEFAULT_CLAIM], list(_NESTED_FENCED_SURFACE))
 
-        paths = expected_surface_paths(text)
+        paths = expected_surface_paths(text, tmp_path)
 
         assert len(paths) == len(declared), (
-            f'{len(declared)} path(s) declared in the nested fenced list, '
+            f'{len(declared)} path(s) declared after the nested fenced example, '
             f'{len(paths)} extracted'
         )
         assert paths == set(declared)
@@ -2016,7 +2093,7 @@ class TestFencedExpectedSurface:
         assert result['file_overlap_matches'][0]['overlapping_files'] == OTHER_PATH
         assert result['collision_detected'] is True
 
-    def test_a_path_outside_the_section_is_still_excluded(self):
+    def test_a_path_outside_the_section_is_still_excluded(self, tmp_path):
         # Negative control: the fix widens the body past a fenced comment, it
         # does not stop bounding the section.
         text = _spec_text(
@@ -2025,7 +2102,7 @@ class TestFencedExpectedSurface:
             objective=f'Background reading: {OUTSIDE_PATH} explains the seam.',
         )
 
-        paths = expected_surface_paths(text)
+        paths = expected_surface_paths(text, tmp_path)
 
         assert OUTSIDE_PATH not in paths
         assert paths == {SHARED_PATH, OTHER_PATH}
@@ -2130,28 +2207,33 @@ _REJECTED_INDENTS = ('    ', '     ', '\t', ' \t', '   \t')
 #: the section — and because BOTH declared paths sit after the indented
 #: delimiter, the extracted surface is EMPTIED rather than merely shortened,
 #: which is a confident no-overlap over a spec that declared two files.
-_INDENTED_DELIMITER_SURFACE = [
+#: The over-indented-delimiter BLOCK on its own — the mask-level counterpart of
+#: :data:`_INDENTED_DELIMITER_SURFACE`, kept separate for the same reason
+#: :data:`_NESTED_FENCE_BLOCK` is.
+_INDENTED_DELIMITER_BLOCK = [
     '```text',
     '# the files this spec expects to touch',
     '    ```',
     '# an indented delimiter is body text, not the close of this block',
-    SHARED_PATH,
-    OTHER_PATH,
     '```',
+]
+
+_INDENTED_DELIMITER_SURFACE = [
+    *_INDENTED_DELIMITER_BLOCK,
+    *_surface(SHARED_PATH, OTHER_PATH),
 ]
 
 #: The same shape with a TAB-indented delimiter. Kept as its own fixture rather
 #: than folded into the parametrization above because the consumer-level proof
-#: has to run end to end through ``_expected_surface_paths``, and a tab reaches
+#: has to run end to end through the relocated single reader, and a tab reaches
 #: the four-column boundary by a different mechanism than four spaces do.
 _TAB_DELIMITER_SURFACE = [
     '```text',
     '# the files this spec expects to touch',
     '\t```',
     '# a tab is four columns, so this is body text too',
-    SHARED_PATH,
-    OTHER_PATH,
     '```',
+    *_surface(SHARED_PATH, OTHER_PATH),
 ]
 
 #: Two real claims with a fenced example between them whose body carries a
@@ -2276,7 +2358,7 @@ class TestHeadingIndentationBound:
     @pytest.mark.parametrize('indent', _PERMITTED_INDENTS)
     def test_a_permitted_indent_still_opens_a_section(self, indent):
         lines = [
-            f'{indent}## Expected Surface',
+            f'{indent}## Claim Labels',
             '',
             SHARED_PATH,
             '',
@@ -2285,7 +2367,7 @@ class TestHeadingIndentationBound:
             OTHER_PATH,
         ]
 
-        start, end = section_span(lines, EXPECTED_SURFACE_HEADING_RE)
+        start, end = section_span(lines, CLAIM_LABELS_HEADING_RE)
 
         body = '\n'.join(lines[start:end])
         assert (start, end) == (1, 4)
@@ -2294,9 +2376,9 @@ class TestHeadingIndentationBound:
 
     @pytest.mark.parametrize('indent', _PERMITTED_INDENTS)
     def test_a_permitted_indent_still_terminates_a_section(self, indent):
-        lines = ['## Expected Surface', '', SHARED_PATH, f'{indent}## Objective', '', OUTSIDE_PATH]
+        lines = ['## Claim Labels', '', SHARED_PATH, f'{indent}## Objective', '', OUTSIDE_PATH]
 
-        start, end = section_span(lines, EXPECTED_SURFACE_HEADING_RE)
+        start, end = section_span(lines, CLAIM_LABELS_HEADING_RE)
 
         body = '\n'.join(lines[start:end])
         assert (start, end) == (1, 3)
@@ -2305,11 +2387,11 @@ class TestHeadingIndentationBound:
 
     @pytest.mark.parametrize('indent', _REJECTED_INDENTS)
     def test_a_rejected_indent_is_not_a_heading(self, indent):
-        lines = [f'{indent}## Expected Surface', SHARED_PATH]
+        lines = [f'{indent}## Claim Labels', SHARED_PATH]
 
         assert HEADING_RE.match(lines[0]) is None
-        assert EXPECTED_SURFACE_HEADING_RE.match(lines[0]) is None
-        assert section_span(lines, EXPECTED_SURFACE_HEADING_RE) == (-1, -1)
+        assert CLAIM_LABELS_HEADING_RE.match(lines[0]) is None
+        assert section_span(lines, CLAIM_LABELS_HEADING_RE) == (-1, -1)
 
 
 class TestAtxHeadingShape:
@@ -2327,16 +2409,16 @@ class TestAtxHeadingShape:
         assert HEADING_RE.match('##') is not None
 
     def test_a_tab_separated_heading_is_recognised(self):
-        assert EXPECTED_SURFACE_HEADING_RE.match('##\tExpected Surface') is not None
+        assert CLAIM_LABELS_HEADING_RE.match('##\tClaim Labels') is not None
 
     def test_an_optional_closing_hash_sequence_is_accepted(self):
-        assert EXPECTED_SURFACE_HEADING_RE.match('## Expected Surface ##') is not None
+        assert CLAIM_LABELS_HEADING_RE.match('## Claim Labels ##') is not None
         assert CLAIM_LABELS_HEADING_RE.match('  ## Claim Labels ###') is not None
 
     def test_a_trailing_hash_run_without_a_separator_is_not_a_closing_sequence(self):
         # The closing sequence must be preceded by whitespace, so this is a
         # heading whose TEXT differs and therefore not the addressed section.
-        assert EXPECTED_SURFACE_HEADING_RE.match('## Expected Surface##') is None
+        assert CLAIM_LABELS_HEADING_RE.match('## Claim Labels##') is None
 
 
 #: The heading-case variants a spec may legitimately use. Markdown does not make
@@ -2391,7 +2473,7 @@ class TestHeadingCaseIsNotSectionIdentity:
 
     @pytest.mark.parametrize('surface_heading', _SURFACE_HEADING_CASES)
     def test_a_case_variant_surface_heading_yields_the_same_declared_paths(
-        self, surface_heading
+        self, surface_heading, tmp_path
     ):
         declared = (SHARED_PATH, OTHER_PATH)
         template = _spec_with_headings(
@@ -2401,8 +2483,8 @@ class TestHeadingCaseIsNotSectionIdentity:
             '## Claim Labels', surface_heading, [_DEFAULT_CLAIM], _surface(*declared)
         )
 
-        template_paths = expected_surface_paths(template)
-        variant_paths = expected_surface_paths(variant)
+        template_paths = expected_surface_paths(template, tmp_path / 'template')
+        variant_paths = expected_surface_paths(variant, tmp_path / 'variant')
 
         # The population the assertion was computed over, stated beside it: a
         # two-path surface, so an empty result is a measured miss, not an
@@ -2419,7 +2501,7 @@ class TestHeadingCaseIsNotSectionIdentity:
 
     # --- Expected Surface: negative control ----------------------------------
 
-    def test_a_spec_that_declares_no_surface_section_still_resolves_to_empty(self):
+    def test_a_spec_that_declares_no_surface_section_still_resolves_to_empty(self, tmp_path):
         # Matched negative control. Case-blindness must not manufacture a
         # section: a spec with genuinely no Expected Surface heading resolves to
         # the empty set, and that zero is the CORRECT answer here.
@@ -2436,14 +2518,14 @@ class TestHeadingCaseIsNotSectionIdentity:
         ]
         text = '\n'.join(lines) + '\n'
 
-        paths = expected_surface_paths(text)
+        paths = expected_surface_paths(text, tmp_path)
 
         assert paths == set()
         # The path IS present in the document — so the empty result is the
         # section boundary holding, not the extractor failing to see anything.
         assert OUTSIDE_PATH in text
 
-    def test_a_near_miss_heading_that_is_not_a_case_variant_is_still_rejected(self):
+    def test_a_near_miss_heading_that_is_not_a_case_variant_is_still_rejected(self, tmp_path):
         # Case-blindness is not word-blindness: a DIFFERENT heading text must
         # still fail to open the section, or the widening went too far.
         text = _spec_with_headings(
@@ -2453,7 +2535,7 @@ class TestHeadingCaseIsNotSectionIdentity:
             _surface(SHARED_PATH, OTHER_PATH),
         )
 
-        assert expected_surface_paths(text) == set()
+        assert expected_surface_paths(text, tmp_path) == set()
 
     # --- Claim Labels: the symmetric peer pair -------------------------------
 
@@ -2504,10 +2586,13 @@ class TestHeadingCaseIsNotSectionIdentity:
 
     def test_the_section_span_locates_a_case_variant_heading(self):
         # The shared primitive both consumers ride, pinned directly: the span is
-        # resolved rather than the (-1, -1) "absent" pair.
-        lines = ['## expected surface', '', SHARED_PATH, '', '## Objective']
+        # resolved rather than the (-1, -1) "absent" pair. Driven through the
+        # SURVIVING peer heading, which exercises the identical primitive against
+        # a section ``orchestrator.py`` still owns; the surface heading's own
+        # case-insensitivity is now pinned in the single reader's suite.
+        lines = ['## claim labels', '', SHARED_PATH, '', '## Objective']
 
-        assert section_span(lines, EXPECTED_SURFACE_HEADING_RE) != (-1, -1)
+        assert section_span(lines, CLAIM_LABELS_HEADING_RE) != (-1, -1)
 
 
 class TestIndentedDelimiterExpectedSurface:
@@ -2518,12 +2603,12 @@ class TestIndentedDelimiterExpectedSurface:
         (('four-space', _INDENTED_DELIMITER_SURFACE), ('tab', _TAB_DELIMITER_SURFACE)),
     )
     def test_a_fenced_list_containing_an_over_indented_delimiter_yields_every_path(
-        self, label, surface
+        self, label, surface, tmp_path
     ):
         declared = (SHARED_PATH, OTHER_PATH)
         text = _spec_text([_DEFAULT_CLAIM], list(surface))
 
-        paths = expected_surface_paths(text)
+        paths = expected_surface_paths(text, tmp_path)
 
         assert len(paths) == len(declared), (
             f'{len(declared)} path(s) declared after the {label}-indented '
@@ -2531,7 +2616,7 @@ class TestIndentedDelimiterExpectedSurface:
         )
         assert paths == set(declared)
 
-    def test_a_path_outside_the_section_is_still_excluded(self):
+    def test_a_path_outside_the_section_is_still_excluded(self, tmp_path):
         # Negative control: widening the body past an over-indented delimiter
         # must not stop the section being bounded at all.
         text = _spec_text(
@@ -2540,7 +2625,7 @@ class TestIndentedDelimiterExpectedSurface:
             objective=f'Background reading: {OUTSIDE_PATH} explains the seam.',
         )
 
-        paths = expected_surface_paths(text)
+        paths = expected_surface_paths(text, tmp_path)
 
         assert OUTSIDE_PATH not in paths
         assert paths == {SHARED_PATH, OTHER_PATH}
@@ -2722,20 +2807,20 @@ def test_the_bound_changed_the_heading_match_set():
 
 def test_the_pre_fix_mask_reproduces_the_recorded_disagreement():
     """The recorded finding, line for line, against the fixed mask beside it."""
-    lines = list(_INDENTED_DELIMITER_SURFACE)
+    lines = list(_INDENTED_DELIMITER_BLOCK)
 
     pre_fix = _pre_fix_fenced_mask(lines)
     fixed = fenced_mask(lines)
 
-    assert len(pre_fix) == len(fixed) == len(lines) == 7
-    assert pre_fix == [True, True, True, False, False, False, True], (
+    assert len(pre_fix) == len(fixed) == len(lines) == 5
+    assert pre_fix == [True, True, True, False, True], (
         'the negative fixture no longer reproduces the pre-fix mask'
     )
     assert fixed == [True] * len(lines)
     assert sum(pre_fix) == 4, (
         f'{sum(pre_fix)} of {len(lines)} lines masked before the fix, {sum(fixed)} after — '
-        'the three unmasked lines carry both declared paths, which is why the extracted '
-        'surface was emptied rather than shortened'
+        'the unmasked line is the block\'s ``#`` comment, and reading it as a heading is '
+        'what truncated the enclosing section and emptied the surface declared after it'
     )
 
 

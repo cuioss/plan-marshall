@@ -2,8 +2,22 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Parse an epic's staged plan specs and classify each ``## Expected Surface``.
 
-Stage 1 of the epic-surface derivation: turn prose specs into a typed claim
-model the partition stage joins against the real ``test/`` tree.
+The SINGLE reader of the ``## Expected Surface`` grammar in the marketplace.
+It lives in ``plan-marshall:script-shared`` because both bundles consume it:
+``plan-marshall:plan-orchestrator`` reads it for the Ordered Queue's
+``Surface (expected)`` cell and for ``corpus cross-check``'s file-overlap
+collision class, and ``pm-plugin-development:tools-epic-surface-partition``
+reads it as stage 1 of the epic-surface derivation, turning prose specs into a
+typed claim model the partition stage joins against the real ``test/`` tree.
+
+⛔ There is exactly ONE reader of this grammar, and this is it. The orchestrator
+previously carried a second, weaker parse of the same section — a repo-path
+regex requiring a ``/`` and a trailing ``.ext``, which resolved named files only
+and could see neither a directory, a recursive glob, an exclusion, nor an entry
+written relative to a path named earlier in the same bullet. A spec declaring
+any of those four shapes therefore rendered as having no expected surface and
+passed the disjointness gate as if it collided with nothing. Adding a second
+reader back is that defect.
 
 The corpus is enumerated by GLOB (:data:`SPEC_GLOB`) and never by a hard-coded
 plan list — a hard-coded list here would be the same defect the derivation
@@ -19,14 +33,6 @@ verdict recorded beside it:
 
 A spec whose class cannot be determined raises :class:`UnclassifiableSpecError`
 naming the spec, rather than defaulting to a class.
-
-This is NOT a second implementation of the pairwise collision matrix, which
-``orchestrator corpus cross-check`` owns. That verb reuses
-``manage-status:_cmd_sibling_collision._extract_paths``, whose regex requires a
-``/`` and a trailing ``.ext`` — so it resolves named files only and can see
-neither a directory, a recursive glob, an exclusion, nor an entry written
-relative to a path named earlier in the same bullet. Those four shapes, and the
-three-class verdict, are what this module adds.
 """
 
 import re
@@ -46,6 +52,20 @@ KIND_RECURSIVE_GLOB = 'recursive_glob'
 KIND_DIRECTORY = 'directory'
 KIND_FILENAME_GLOB = 'filename_glob'
 KIND_FILE = 'file'
+
+#: The plan-id segment of a spec name, as an explicit three-way alternation over
+#: the settled forms — ``PLAN-{DIGITS}``, ``PLAN-{SLUG}-{DIGITS}``, and
+#: ``{SLUG}-{DIGITS}``. Writing it as an alternation rather than as one pattern
+#: with an OPTIONAL slug group is load-bearing: an optional group would also
+#: accept a bare ``01-foo.md`` that is neither ``PLAN-``-prefixed nor
+#: slug-prefixed. ``{SLUG}`` is a bounded uppercase-alphanumeric token and its
+#: trailing digits are mandatory, so the grammar is widened without drifting
+#: toward an always-matching pattern.
+#:
+#: Single-definition: ``_orchestrator_inbox._SOURCE_ID_RE`` composes its own
+#: pointer pattern from THIS binding rather than carrying a second copy, so the
+#: two cannot drift.
+PLAN_ID_SEGMENT = r'(?:PLAN-(?:[A-Z0-9]{2,8}-)?\d+|[A-Z0-9]{2,8}-\d+)'
 
 # --- markdown line scanners -------------------------------------------------
 #
@@ -71,7 +91,18 @@ KIND_FILE = 'file'
 EXPECTED_SURFACE_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+Expected Surface(?:[ \t]+#+)?[ \t]*$', re.IGNORECASE)
 OUT_OF_SCOPE_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+Out of Scope(?:[ \t]+#+)?[ \t]*$', re.IGNORECASE)
 _HEADING_RE = re.compile(r'^ {0,3}#{1,6}(?:[ \t]|$)')
-_FENCE_RE = re.compile(r'^ {0,3}(`{3,}|~{3,})')
+#: A fenced-code-block delimiter line. Group ``fence`` carries the WHOLE RUN —
+#: both the character and its length — because CommonMark closes a block only on
+#: a run of the same character that is AT LEAST AS LONG as the opener: a ``~~~``
+#: line inside a backtick fence is body text, and so is a three-backtick line
+#: inside a four-backtick block. Group ``info`` carries whatever follows the run,
+#: because only the OPENING fence may carry an info string; a delimiter with one
+#: is body text, never a close.
+_FENCE_RE = re.compile(r'^ {0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$')
+
+#: The backtick fence character, bound once so :func:`_fenced_mask` can name the
+#: info-string clause it enforces instead of repeating a bare literal.
+_BACKTICK = '`'
 #: All three CommonMark bullet-list markers. ``+`` is admitted alongside ``-``
 #: and ``*`` because a spec written with it is an ordinary list whose entries
 #: would otherwise contribute nothing, silently under-classing the spec as
@@ -112,8 +143,9 @@ _EXCLUDING_RE = re.compile(r'\bexcluding\b', re.IGNORECASE)
 #: ordinary lowercase ``re-derive`` prose several specs carry is not a match.
 _DERIVED_RE = re.compile(r'\bDERIVED\b')
 
-#: The plan identifier a spec filename opens with.
-_PLAN_ID_RE = re.compile(r'^(PLAN-[0-9]+)')
+#: The plan identifier a spec filename opens with, over the settled forms named
+#: once in :data:`PLAN_ID_SEGMENT`. Anchored at the start of the filename.
+_PLAN_ID_RE = re.compile(rf'^({PLAN_ID_SEGMENT})')
 
 #: Characters that cannot appear in a repository path. Their presence in a
 #: backticked span is what separates a path from the corpus's many other
@@ -156,19 +188,47 @@ class SpecClaim:
 
 
 def _fenced_mask(lines: list[str]) -> list[bool]:
-    """Mark every line that sits inside a fenced code block (fences included)."""
+    """Mark every line that sits inside a fenced code block (fences included).
+
+    BOTH decisions — whether a line OPENS a block and whether it CLOSES one — are
+    taken against the CommonMark clauses. A block opens only on a delimiter
+    indented at most three spaces whose info string is admissible for its fence
+    character, and closes only on a delimiter indented at most three spaces,
+    built from the SAME character as the opener, AT LEAST AS LONG as the opener,
+    and carrying no info string.
+
+    ⛔ The opening run's LENGTH is retained, not just its character. A
+    length-blind close ends a four-backtick block at the first three-backtick
+    example inside it, after which a ``#`` comment on the next line reads as a
+    heading and TRUNCATES the enclosing section — so a spec that declared its
+    surface after that example resolves to ``prose`` and the gate reads a
+    confident empty surface. That is the very failure this parser is the single
+    reader in order to prevent, so the rule is load-bearing here and not a
+    fidelity nicety. An unterminated fence runs to the end of the document.
+    """
     mask = [False] * len(lines)
-    fence: str | None = None
+    open_char = ''
+    open_length = 0
     for index, line in enumerate(lines):
         match = _FENCE_RE.match(line)
-        if fence is None:
-            if match:
-                fence = match.group(1)[0]
-                mask[index] = True
+        if match is None:
+            mask[index] = bool(open_char)
+            continue
+        run = match.group('fence')
+        info = match.group('info')
+        if open_char:
+            mask[index] = True
+            if run[0] == open_char and len(run) >= open_length and not info.strip():
+                open_char, open_length = '', 0
+            continue
+        if run[0] == _BACKTICK and _BACKTICK in info:
+            # Not an opening fence: a backtick fence's info string may not carry
+            # a backtick, so this is an ordinary paragraph line — the shape a
+            # sentence takes when it opens with the fence marker and then quotes
+            # inline code. Masking it would swallow the rest of the document.
             continue
         mask[index] = True
-        if match and match.group(1)[0] == fence:
-            fence = None
+        open_char, open_length = run[0], len(run)
     return mask
 
 
@@ -400,7 +460,13 @@ def _evidence_line(body: str, position: int) -> str:
 
 
 def plan_id_of(spec_name: str) -> str:
-    """The plan identifier a spec filename opens with, or the bare filename."""
+    """The plan identifier a spec filename opens with, or the bare filename.
+
+    Resolves all three settled forms via :data:`PLAN_ID_SEGMENT`, so a
+    code-slug spec (``PLAN-TRUTH-098-….md``) keys on ``PLAN-TRUTH-098`` rather
+    than on its whole filename — which is what makes cross-plan grouping work
+    for the code-slug half of the corpus.
+    """
     match = _PLAN_ID_RE.match(spec_name)
     return match.group(1) if match else spec_name
 

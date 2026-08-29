@@ -24,7 +24,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 import _epic_partition as partition_mod  # noqa: E402
-from _epic_spec_parser import (  # noqa: E402
+from epic_spec_parser import (  # noqa: E402
     KIND_DIRECTORY,
     KIND_FILE,
     KIND_FILENAME_GLOB,

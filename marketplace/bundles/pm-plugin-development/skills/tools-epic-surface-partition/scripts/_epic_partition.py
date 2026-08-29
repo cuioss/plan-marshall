@@ -2,10 +2,11 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Join an epic's parsed claim model against the real ``test/`` tree.
 
-Stage 2 of the epic-surface derivation. Stage 1 (:mod:`_epic_spec_parser`) turns
-prose specs into a typed claim model; this module maps every test module in the
-tree to the plan(s) claiming it, and groups the test-module line-budget findings
-by owning plan.
+Stage 2 of the epic-surface derivation. Stage 1
+(``plan-marshall:script-shared``'s :mod:`epic_spec_parser`, the marketplace's
+single reader of the ``## Expected Surface`` grammar) turns prose specs into a
+typed claim model; this module maps every test module in the tree to the plan(s)
+claiming it, and groups the test-module line-budget findings by owning plan.
 
 The partition reports four verdicts as SEPARATE populations:
 
@@ -37,7 +38,7 @@ import fnmatch
 from dataclasses import dataclass
 from pathlib import Path
 
-from _epic_spec_parser import (
+from epic_spec_parser import (
     KIND_DIRECTORY,
     KIND_RECURSIVE_GLOB,
     SpecClaim,
