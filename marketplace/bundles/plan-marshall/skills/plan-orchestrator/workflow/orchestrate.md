@@ -56,7 +56,18 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 
 Count `R`, the plans currently in `launched` status, and select up to `N − R` candidates — a block sized by the scope knob rather than a hardcoded single (at the default `N = 1` that block is exactly one). Walk `staged` plans in queue order whose dependencies (sequencing notes in their `plans/PLAN-NN-{plan_slug}.md` spec) are satisfied, and admit a candidate ONLY when both admission tests pass:
 
-- **Disjoint** — its expected surface overlaps neither any currently-launched plan nor any candidate already selected this round.
+- **Disjoint** — decided from the PARSER, not from a reader's judgement over the rendered `Surface (expected)` cell. Read the corpus's declared surfaces once:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator corpus surfaces \
+    --slug {slug}
+  ```
+
+  A candidate is disjoint **iff** its row's `admits_disjointness_check` is `true` AND its resolved `claimed` set intersects neither a currently-launched plan's nor a candidate already selected this round. Rows key by `spec` (the spec FILE NAME), so a candidate's row is joined by the same `PLAN-NN-` prefix rule the prep-ready test uses — one join rule, stated once, for both tests.
+
+  ⛔ **An absent or unresolvable declaration is `indeterminate`, never `disjoint`.** `admits_disjointness_check` is `true` only for a `declarative` surface; every other `derivation_status` (`derived`, `prose`, `absent`, `unreadable`) leaves the candidate with no comparable path set, so it contributes NO row to the overlap matcher and its clean reading is SILENCE rather than a checked negative. Such a candidate is sequenced with a surface-side shortfall reason — it is never emitted on the strength of an overlap check that had nothing to compare. Governing authority: **ADR-019** (*An audit separates what it could not evaluate from what it evaluated and found wanting*, `doc/adr/`), the same rule the payload names in its own `governing_authority` field.
+
+  This is the exact defect the gate carried: a spec declaring only directories or globs resolved to zero paths under the retired reader, so the machine reported no collision against it and the gate read that silence as disjoint. A plan the gate cannot see is a plan the gate cannot serialize.
 - **Prep-ready** — decided from the PARSER, not from a reader's judgement over the spec prose. Read the corpus's verdicts once:
 
   ```bash
@@ -74,7 +85,10 @@ Four rules govern the outcome, every one of them decided by the parser rather th
 
 **Staleness is reported, never promoted.** A row whose `stale` flag is set rides into the report alongside the admission outcome and does not change it — neither silently promoted to blocking as HEAD advances, nor silently dropped.
 
-A candidate failing either test is sequenced, not emitted. **Never emit a colliding or unprepared plan merely to fill a slot** — when fewer than `N − R` candidates qualify, report the shortfall with the blocking reason per candidate instead. A prep-ready shortfall reason is **derived from the blocking row**, naming the claim and its verdict (`claim {claim_index}: contradicted, not re-scoped`, `claim {claim_index}: indeterminate — {quoted line}`) rather than being a hand-typed sentence. A `scope: section` row carries no addressable ordinal, so its reason names the section instead, derived from that row like any other — its `synthesised` field distinguishes an unreadable section never settled from one whose stamped verdict blocks on its own terms, and the two do not share a reason.
+A candidate failing either test is sequenced, not emitted. **Never emit a colliding, unresolvable, or unprepared plan merely to fill a slot** — when fewer than `N − R` candidates qualify, report the shortfall with the blocking reason per candidate instead. Every reason is **derived from the blocking row**, never hand-typed:
+
+- A prep-ready reason names the claim and its verdict (`claim {claim_index}: contradicted, not re-scoped`, `claim {claim_index}: indeterminate — {quoted line}`), read from the blocking `corpus verdicts` row. A `scope: section` row carries no addressable ordinal, so its reason names the section instead — its `synthesised` field distinguishes an unreadable section never settled from one whose stamped verdict blocks on its own terms, and the two do not share a reason.
+- A disjointness reason is read from the blocking `corpus surfaces` row. An OVERLAP names the intersecting paths and the plan they collide with (`overlaps {paths} with PLAN-KK`); an INDETERMINATE surface names the derivation status that made the check impossible (`surface indeterminate: {derivation_status} — no comparable path declared`). The two are separate reasons because they are separate facts: the first is a checked collision, the second is an unchecked negative, and reporting them alike would hide exactly the case this gate was rebuilt to surface.
 
 ### Step 5 (verb = `next`): Emit the commands
 
@@ -157,10 +171,19 @@ claim_section_states[4]{state,count}:
   unreadable,{U}
   parsed,{Q}
 unreadable_claim_section_count: {U}
+surface_states[5]{derivation_status,count}:
+  declarative,{D}
+  derived,{V}
+  prose,{O}
+  absent,{B}
+  unreadable,{W}
+surface_admitting_count: {D}
+surface_indeterminate_count: {I}
 emitted[E]{plan,command}:
   PLAN-NN,/plan-marshall task="implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
 shortfall[S]{plan,reason}:
-  PLAN-MM,"overlaps {surface} with PLAN-KK"
+  PLAN-MM,"overlaps {paths} with PLAN-KK"
+  PLAN-LL,"surface indeterminate: prose — no comparable path declared"
   PLAN-PP,"claim 2: contradicted, not re-scoped"
   PLAN-QQ,"claim 0: indeterminate — {offending line}"
   PLAN-RR,"claim section: unreadable, not settled — {quoted first line}"
@@ -168,6 +191,8 @@ stale_verdicts[T]{plan,claim_index,sha}:
   PLAN-NN,1,9f3a1c2
 ```
 
-`display_detail` is ≤80 chars, ASCII, no trailing period. `emitted[]` is empty when no candidate qualifies; `shortfall[]` is empty when the block fills every slot, and otherwise names one blocking reason per unemittable candidate — a prep-ready reason is derived from the blocking `corpus verdicts` row (its claim index and verdict, or the section when the row is section-scoped), never hand-typed. `stale_verdicts[]` reports every row the parser flagged stale and carries no admission consequence: a candidate with stale verdicts and no blocking row is emitted normally.
+`display_detail` is ≤80 chars, ASCII, no trailing period. `emitted[]` is empty when no candidate qualifies; `shortfall[]` is empty when the block fills every slot, and otherwise names one blocking reason per unemittable candidate — every reason is derived from its blocking row (a `corpus verdicts` row for prep-readiness, a `corpus surfaces` row for disjointness), never hand-typed. `stale_verdicts[]` reports every row the parser flagged stale and carries no admission consequence: a candidate with stale verdicts and no blocking row is emitted normally.
 
 `specs_scanned`, `claim_section_states[]` and `unreadable_claim_section_count` are forwarded from the same `corpus verdicts` read, so the reader sees how much of each section the parser could read and over what population that was computed. The tally spans the whole four-member vocabulary, so a state no spec is in reports a stated zero rather than being absent — `unreadable_claim_section_count: 0` beside a non-zero `specs_scanned` is a measured "nothing unreadable", never an unasked question.
+
+`surface_states[]`, `surface_admitting_count` and `surface_indeterminate_count` are the disjointness half of the same disclosure, forwarded from the `corpus surfaces` read. The tally likewise spans its whole five-member vocabulary, so a class no spec is in reports a stated zero. Together they are what makes a `shortfall[]` of zero legible: a round that emitted every slot with `surface_indeterminate_count: 0` checked every candidate's surface, whereas the same empty shortfall beside a non-zero indeterminate count means some candidate's disjointness was never checkable — and only the published population tells those two apart.

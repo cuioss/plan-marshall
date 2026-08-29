@@ -71,6 +71,7 @@ import json
 import re
 from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -108,6 +109,14 @@ _surface_reader = load_script_module(
 
 cmd_corpus_enumerate = _orch.cmd_corpus_enumerate
 cmd_corpus_cross_check = _orch.cmd_corpus_cross_check
+cmd_corpus_surfaces = _orch.cmd_corpus_surfaces
+SURFACE_STATES = _orch.SURFACE_STATES
+SURFACE_DECLARATIVE = _orch.SURFACE_DECLARATIVE
+SURFACE_DERIVED = _orch.SURFACE_DERIVED
+SURFACE_PROSE = _orch.SURFACE_PROSE
+SURFACE_ABSENT = _orch.SURFACE_ABSENT
+SURFACE_UNREADABLE = _orch.SURFACE_UNREADABLE
+SURFACE_INDETERMINATE_STATES = _orch.SURFACE_INDETERMINATE_STATES
 cmd_corpus_verdicts = _orch.cmd_corpus_verdicts
 cmd_corpus_set_verdict = _orch.cmd_corpus_set_verdict
 format_verdict_line = _orch._format_verdict_line
@@ -285,6 +294,32 @@ def _write_spec(
     # for the default one-claim body — the exact collapse this module now pins.
     body = [_DEFAULT_CLAIM] if claim_lines is None else claim_lines
     path.write_text(_spec_text(body, surface_lines, objective), encoding='utf-8')
+    return path
+
+
+def _write_spec_without_surface_section(plan_context, name: str) -> Path:
+    """Write one spec carrying NO ``## Expected Surface`` heading at all.
+
+    ``_spec_text`` always writes the heading, which is precisely the variable the
+    ``absent`` derivation status turns on, so that section is omitted here rather
+    than emptied. The distinction is the point: a spec that declared NO surface
+    and a spec whose surface resolves to NOTHING are different facts, and only
+    the first is a spec-authoring gap.
+    """
+    lines = [
+        '# PLAN-NN: Fixture',
+        '',
+        '## Objective',
+        '',
+        'Fixture objective.',
+        '',
+        '## Claim Labels',
+        '',
+        _DEFAULT_CLAIM,
+    ]
+    path = _epic_dir(plan_context) / 'plans' / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
     return path
 
 
@@ -1803,6 +1838,259 @@ class TestCrossCheckReadOnlyBoundary:
         assert result['collision_detected'] is True, (
             'the read-only claim must be proven on a scan that actually HIT — '
             'a scan finding nothing would leave the tree untouched vacuously'
+        )
+
+
+# =============================================================================
+# corpus surfaces — the read the disjointness gate decides on
+# =============================================================================
+#
+# The gate's input used to be a RENDERED table cell read by a human. These cases
+# pin it as a parser decision with a published population, and — the part that
+# matters most — pin the THIRD STATE: a declaration the parser cannot resolve
+# must be distinguishable from one it resolved to nothing, and neither may read
+# as disjoint.
+
+#: A surface declaring a DIRECTORY and a RECURSIVE GLOB — the two shapes the
+#: retired reader resolved to ZERO paths, which is what made a spec declaring
+#: them invisible to the overlap matcher and its silence read as disjoint.
+_DIR_AND_GLOB_SURFACE = [
+    '- Adds `test/plan-marshall/plan-orchestrator/`',
+    '- Adds `marketplace/bundles/plan-marshall/skills/plan-orchestrator/**`',
+]
+
+
+def _surfaces(plan_context) -> Any:
+    """Run the verb against the fixture epic.
+
+    Returns ``Any`` rather than ``dict``: the subject is reached through
+    ``load_script_module``, so every handler is untyped at check time and a
+    narrower annotation would be a claim mypy cannot substantiate.
+    """
+    return cmd_corpus_surfaces(Namespace(slug=SLUG))
+
+
+def _row_for(result: Any, spec_name: str) -> Any:
+    """The single ``specs[]`` row for one spec, asserting it is single."""
+    match = [row for row in result['specs'] if row['spec'] == spec_name]
+    assert len(match) == 1, f'{spec_name} contributed {len(match)} rows, expected exactly 1'
+    return match[0]
+
+
+class TestCorpusSurfacesResolvesTheShapesTheOldReaderCouldNot:
+    def test_a_directory_and_a_recursive_glob_resolve_to_entries(self, plan_context):
+        # The defect, pinned at the verb: the pre-change reader required a ``/``
+        # AND a trailing ``.ext``, so BOTH of these resolved to nothing and the
+        # spec contributed no comparable path at all.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=list(_DIR_AND_GLOB_SURFACE))
+
+        row = _row_for(_surfaces(plan_context), 'PLAN-01-alpha.md')
+
+        assert row['derivation_status'] == SURFACE_DECLARATIVE
+        assert row['claimed_count'] == len(_DIR_AND_GLOB_SURFACE), (
+            f'{len(_DIR_AND_GLOB_SURFACE)} entries declared, {row["claimed_count"]} resolved'
+        )
+        assert row['admits_disjointness_check'] is True
+
+    def test_the_resolved_entries_carry_their_kinds(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=list(_DIR_AND_GLOB_SURFACE))
+
+        result = _surfaces(plan_context)
+
+        kinds = {entry['kind'] for entry in result['claimed']}
+        assert kinds == {'directory', 'recursive_glob'}, (
+            f'expected both entry shapes to be classified, got {sorted(kinds)}'
+        )
+
+
+class TestCorpusSurfacesThirdState:
+    """An unresolvable declaration is its own state, and it never reads as disjoint."""
+
+    def test_a_spec_with_no_surface_section_is_absent_not_an_empty_surface(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec_without_surface_section(plan_context, 'PLAN-01-alpha.md')
+
+        row = _row_for(_surfaces(plan_context), 'PLAN-01-alpha.md')
+
+        assert row['derivation_status'] == SURFACE_ABSENT
+        assert row['admits_disjointness_check'] is False
+        assert row['claimed_count'] == 0
+
+    def test_a_present_but_unresolvable_surface_is_prose_not_absent(self, plan_context):
+        # The matched partner of the case above. Both resolve to zero paths, and
+        # collapsing them is the defect: only ONE of them is a spec that failed
+        # to declare a surface at all.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=list(_DEFAULT_SURFACE))
+
+        row = _row_for(_surfaces(plan_context), 'PLAN-01-alpha.md')
+
+        assert row['derivation_status'] == SURFACE_PROSE
+        assert row['admits_disjointness_check'] is False
+        assert row['claimed_count'] == 0
+
+    def test_a_declarative_surface_is_the_only_state_that_admits(self, plan_context):
+        # Positive control for the two negatives above: without it, a verb that
+        # returned False for EVERY spec would pass both of them.
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_spec_without_surface_section(plan_context, 'PLAN-02-beta.md')
+
+        result = _surfaces(plan_context)
+
+        admitting = {r['spec'] for r in result['specs'] if r['admits_disjointness_check']}
+        assert admitting == {'PLAN-01-alpha.md'}
+        assert result['admitting_count'] == 1
+        assert result['indeterminate_count'] == 1
+
+    def test_every_non_declarative_state_is_in_the_indeterminate_set(self):
+        """The admission rule is derived from the vocabulary, not hand-listed.
+
+        A state added to :data:`SURFACE_STATES` later is indeterminate unless it
+        is explicitly ``declarative``, so a new class cannot default into
+        admitting the gate by being forgotten here.
+        """
+        assert SURFACE_INDETERMINATE_STATES == frozenset(SURFACE_STATES) - {SURFACE_DECLARATIVE}
+        assert SURFACE_DECLARATIVE not in SURFACE_INDETERMINATE_STATES
+        for state in (SURFACE_DERIVED, SURFACE_PROSE, SURFACE_ABSENT, SURFACE_UNREADABLE):
+            assert state in SURFACE_INDETERMINATE_STATES
+
+
+class TestCorpusSurfacesPublishesItsPopulation:
+    def test_the_class_tally_spans_the_whole_vocabulary_including_zeroes(self, plan_context):
+        # Only two of the five classes are populated by this fixture, so the
+        # other three are the ones that must still appear — as stated zeros.
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_spec(plan_context, 'PLAN-02-beta.md', surface_lines=list(_DEFAULT_SURFACE))
+
+        result = _surfaces(plan_context)
+
+        tallied = [row['derivation_status'] for row in result['class_tally']]
+        assert tallied == list(SURFACE_STATES), (
+            'the tally must span the WHOLE vocabulary in its declared order, so a '
+            'class no spec is in publishes a stated zero instead of vanishing'
+        )
+        counts = {row['derivation_status']: row['count'] for row in result['class_tally']}
+        assert counts[SURFACE_DECLARATIVE] == 1
+        assert counts[SURFACE_PROSE] == 1
+        assert counts[SURFACE_DERIVED] == 0
+        assert counts[SURFACE_ABSENT] == 0
+        assert counts[SURFACE_UNREADABLE] == 0
+
+    def test_the_tally_reconciles_with_the_population_it_was_computed_over(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_spec_without_surface_section(plan_context, 'PLAN-02-beta.md')
+
+        result = _surfaces(plan_context)
+
+        assert result['specs_total'] == 2, 'the corpus did not materialize'
+        assert sum(row['count'] for row in result['class_tally']) == result['specs_total']
+        assert len(result['specs']) == result['specs_scanned'] == result['specs_total']
+        assert result['admitting_count'] + result['indeterminate_count'] == result['specs_total']
+
+    def test_the_payload_names_its_governing_authority(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+
+        result = _surfaces(plan_context)
+
+        assert 'ADR-019' in result['governing_authority']
+        assert 'indeterminate' in result['governing_authority']
+
+
+class TestCrossCheckPublishesTheComparedPopulation:
+    """``file_overlap_match_count: 0`` must state WHICH zero it is."""
+
+    def test_an_indeterminate_spec_is_counted_apart_from_a_compared_one(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_spec_without_surface_section(plan_context, 'PLAN-02-beta.md')
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['specs_scanned'] == 2
+        assert result['specs_comparable'] == 1
+        assert result['specs_indeterminate'] == 1
+        assert result['compared_path_count'] == 1
+
+    def test_a_zero_overlap_rides_with_the_population_that_produced_it(self, plan_context):
+        # The whole point: a corpus whose every spec is unresolvable reports NO
+        # overlap — and the counts beside it say that nothing was comparable,
+        # rather than leaving the zero to read as a checked negative.
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec_without_surface_section(plan_context, 'PLAN-01-alpha.md')
+        _write_spec_without_surface_section(plan_context, 'PLAN-02-beta.md')
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['file_overlap_match_count'] == 0
+        assert result['specs_comparable'] == 0, (
+            'a zero overlap over a zero comparable population is an UNCHECKED '
+            'negative, and the payload has to say so'
+        )
+        assert result['specs_indeterminate'] == 2
+        assert result['compared_path_count'] == 0
+
+    def test_a_real_overlap_still_reports_with_a_non_empty_compared_population(self, plan_context):
+        # Matched positive control: the counts above must not be green merely
+        # because nothing ever collides.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[SHARED_PATH])
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['file_overlap_match_count'] == 1
+        assert result['specs_comparable'] == 1
+        assert result['compared_path_count'] == 1
+
+    def test_the_surface_state_tally_spans_the_whole_vocabulary(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        tallied = [row['derivation_status'] for row in result['spec_surface_states']]
+        assert tallied == list(SURFACE_STATES)
+        assert sum(row['count'] for row in result['spec_surface_states']) == result['specs_total']
+        assert result['spec_surfaces'] == [
+            {'spec': 'PLAN-01-alpha.md', 'derivation_status': SURFACE_DECLARATIVE}
+        ]
+
+
+class TestCorpusSurfacesRefusals:
+    def test_an_unsafe_slug_is_refused(self):
+        result = cmd_corpus_surfaces(Namespace(slug='../escape'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_slug'
+
+    def test_an_epic_with_no_store_tree_is_refused(self, plan_context):
+        result = cmd_corpus_surfaces(Namespace(slug='no-such-epic'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'not_found'
+
+
+class TestCorpusSurfacesReadOnlyBoundary:
+    def test_surfaces_leaves_the_tree_byte_identical(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        root = _epic_dir(plan_context)
+        before = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
+        assert before, 'fixture tree did not materialize'
+
+        result = cmd_corpus_surfaces(Namespace(slug=SLUG))
+
+        after = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
+        assert after == before
+        assert result['admitting_count'] == 1, (
+            'the read-only claim must be proven on a scan that actually RESOLVED '
+            'a surface — a scan finding nothing would leave the tree untouched vacuously'
         )
 
 
