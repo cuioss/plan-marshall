@@ -190,27 +190,56 @@ The `script` detector scans for a bare three-part colon-separated token, which i
 | Decision-log prefix | `(bundle:skill:step)` | The parenthesised prefix of a decision-log or `[STATUS]` message names the emitting step, not a script |
 | Build coordinate or task path | `de.cuioss:cui-java-tools:compile`, `:services:auth-service:build` | A three-part token preceded by `.` or `:` is a fragment of a longer token |
 | Sub-document path | `bundle:skill:references/x.md`, `bundle:skill:planning.md` | A three-part token followed by `/`, or by `.` plus a word character, addresses a document. A trailing **sentence** period is not treated this way |
+| Comment line | `# see plan-marshall:manage-files:manage-files` | The whole line is a `#`/`//` comment |
+| URL line | a line containing `https://…` | A colon-triple on a line that also carries a URL |
+| URI scheme | `https:example:path` | The bundle segment is a URI scheme (`http`, `https`, `file`, `mailto`) |
+| Version coordinate | `1.0:2.0:3.0` | The bundle segment starts with a digit |
+| Port segment | `host:8080:path` | The middle segment is all digits |
 
 **Every exclusion in the table above is conditional, so none of them can hide a real reference.** Each recognises a *shape*, and a shape is evidence rather than proof — nothing stops a genuine reference from being written parenthetically, or with a `.py` suffix. So a match on an excluded shape is not discarded at detection: the detector records **which** shape matched (`Dependency.exclusion`), and the index drops it only when it also names no component in the graph. An excluded match that *does* name a real component is kept as an ordinary resolved edge. **Shape decides where to look; existence decides.**
 
 The shape's *name* matters as well as its presence, because only one of them can still be a reference in another way. A decision-log prefix names a workflow step, and a step is very often a verb of the skill's entry script, so that shape alone is eligible for the subcommand resolution below. A placeholder names nothing, a canonical command names a build step, and a sub-document path's third segment is a **directory** — none of those can be a verb, and letting them resolve that way manufactured five false edges.
 
-**Older, non-provisional skips remain, and they are fail-open.** Predating this contract, `detect_script_notations` also drops a match unconditionally when its line is a `#`/`//` comment, when the line contains a URL, or when the bundle segment is `http`/`https`/`file`/`mailto`, starts with a digit, or the skill segment is all digits. These are *not* provisional: a real reference on a comment line is discarded outright, and 9 resolvable notations in this marketplace (mostly markdown headings) currently sit there unseen. No genuinely-broken reference hides there today, but a broken notation written on a heading would not be reported. Closing them is deferred, not overlooked.
+**The five formerly-unconditional skips now run through the same mechanism.** The comment-line skip, the URL-line skip and the three segment filters (URI scheme, digit-leading bundle, all-digit middle segment) were previously `continue` statements that discarded a match before it could be recorded — fail-open, because a genuine reference written on a comment line was dropped outright and could never be reported. They are the last five rows of the table above, and they now obey the same rule as every other exclusion: the shape is recorded, and the index decides on existence. Routing them through the mechanism surfaced **9 previously-unseen resolvable notations** (5163 → 5172 detected, 5115 → 5124 resolved), matching the count this document previously recorded as sitting unseen.
+
+Match-level shapes are tested **before** the line-level ones, so each match is labelled with the most specific reason it was excluded: a documentation placeholder is reported as a placeholder whether or not it sits inside a comment.
+
+⛔ Routing a skip through this mechanism can only ever produce a **resolved edge or a silent drop** — never an unresolved row — because an excluded shape that names no component is dropped by design. So this change cannot, on its own, add a finding; it can only stop hiding real edges.
 
 **Subcommands resolve rather than reporting unresolved.** A skill exposes one entry script named after the skill and dispatches its verbs as subcommands. Documentation names those verbs in the same three-part shape — a `compose` verb in the script segment — so the reference is real and only the segment it lands on is a verb rather than a filename. Such a reference resolves to the entry script that owns the verb.
 
 This is a **deliberate non-detection**, not a blind spot, and it is bounded on two sides. A skill with no same-named entry script cannot retarget, so its notation stays unresolved. And a script segment that is the skill's own name in the **wrong case style** — an underscored `manage_findings` where the registered script is `manage-findings` — is a misspelled script reference rather than a verb, so it also stays unresolved: the executor keys on the third segment literally, and plugin-doctor's `manage-findings-invocation-invalid` rule exists to raise exactly that defect.
 
-What this validator does **not** check is whether a verb is one the entry script actually registers; that is enforced separately by the `manage-invocation-invalid` plugin-doctor rule.
+**The retarget is only taken when the verb is actually registered.** The retarget's premise is that the third segment names a verb of the entry script, and that premise is now tested rather than assumed: the verb is checked against the script's `--help`-derived argparse surface, via the same shared `argparse_surface` module plugin-doctor's `manage-invocation-invalid` rule uses, so registered **aliases** count as registered. A notation naming a verb the script does not register resolves onto nothing and is reported as unresolved with reason `unregistered-verb`.
+
+⛔ The refusal is tested **before** the exclusion drop, and that order is load-bearing. An excluded shape that resolves to nothing is normally discarded, so a refused retarget would otherwise take the drop path and vanish — deleting precisely the finding the check exists to raise.
+
+⛔ When no surface can be derived — no executor reachable, a script whose `--help` fails, or an exhausted probe budget — the retarget is taken as before. Absence of a surface is absence of *evidence*, not evidence of absence, and manufacturing an unresolved row from a failed probe would report a broken reference that is not broken. This mirrors the established idiom in `_analyze_manage_invocation.derive_script_tree`, where a non-derivable surface means "no ground truth here".
+
+This is complementary to, not a duplicate of, the `manage-invocation-invalid` rule: that rule validates a documented **invocation** against the surface, while this validates a **dependency edge** and is what keeps the edge out of the graph.
 
 ### Precision of `validate`
 
 `validate` findings are precise enough to act on for the **marketplace-bundle namespace**: a finding whose first segment is a bundle in the index names a component that genuinely does not exist. The precision fixture in `test/pm-plugin-development/tools-marketplace-inventory/test_resolve_dependencies.py` holds one instance of each excluded class plus one genuinely-broken reference and asserts **exactly one** finding, so a regression in any single class fails the suite.
 
+**Every unresolved row states its reason.** The row set is partitioned by a `reason` field, and the `unresolved_by_reason` block is emitted on every run over the **full** reason set — including the classes that scored zero, so "no row fell in this class" stays distinguishable from "this class was not computed". The `indexed_bundle_count` accompanying it is the population the bundle-membership test was made against.
+
+| `reason` | Meaning | Actionable? |
+|----------|---------|-------------|
+| `missing-component` | The target's bundle IS indexed, so the notation names a component that genuinely does not exist. | Yes — directly. |
+| `unknown-bundle` | The target's first segment names no indexed bundle. May be an npm script name, a time literal or a Gradle coordinate. | Not yet triaged — see the first limit below. |
+| `unregistered-verb` | The entry script exists but does not register the named verb. | Yes — fix the verb, not the path. |
+
+The classification is made once per run against a single indexed-bundle population, never recomputed per row, so the comparand cannot drift between rows of the same report.
+
 Two limits bound that claim, and both are properties of the analysis rather than of its scope:
 
 - **Findings outside the bundle namespace are not yet triaged.** A three-part token whose first segment names no indexed bundle — an npm script name, a time-format literal, a Gradle inter-project coordinate — is still reported. Suppressing them by **bundle membership** would silently drop a reference into a bundle that was deleted, which is the fail-open a gate must not take. A structural discriminator does exist elsewhere in the repository — `plugin-doctor`'s `notation-bundle-skill-drift` rule anchors on the executor prefix (`execute-script.py {notation}`), which separates a deliberate invocation from an incidental colon-joined token. Whether to adopt it here is a scoped decision, not a tightening: anchoring on the executor prefix would also stop counting the many legitimate references written as prose or in a `**Script**:` field, so it narrows this class by narrowing the definition of a reference. Note that plugin-doctor's neighbouring `notation-staleness` rule is **not** the fail-closed precedent it appears to be — it skips any notation whose `skills/{skill}/scripts/` directory is absent, which is the same membership-based fail-open rejected above.
-- **Nested script modules are not components.** Component discovery globs `scripts/*.py`, so a module under `scripts/{subdir}/` (for example `script-shared/scripts/extension/extension_base.py`) can be imported but never resolved, and references to it report unresolved.
+- **Nested script modules are not components.** Component discovery globs `scripts/*.py` — **one level** — so a module under `scripts/{subdir}/` (for example `script-shared/scripts/extension/extension_base.py`) can be imported but never resolved, and references to it report unresolved.
+
+  **Measured size of this group.** It is a single target reached from many places, not a scattered class: **11 rows**, all of type `import` and all with reason `missing-component`, from **7 distinct source components**, every one naming `plan-marshall:extension-api:extension_base`. That is 23% of the 48-row unresolved set and 55% of the `missing-component` class. A second, independent defect compounds it: `PYTHON_MODULE_MAPPINGS` maps that module to `plan-marshall:extension-api`, whereas the file actually lives under `script-shared`, so even a widened glob would need the mapping corrected to resolve these rows.
+
+  **Proposal (not implemented — discovery glob depth is deliberately unchanged).** Widening the component namespace to admit nested script modules would resolve this group, but it changes the namespace that four consumers key on, so it is recorded here as an option rather than taken: `deps`, `rdeps`, `tree`, and the architecture projection would all begin returning components that do not exist today. Admitting a new component class is a namespace decision with consumers beyond this validator, and it is not made as a side effect of a precision fix.
 
 Until both are addressed, `validation_result` is a **fail-closed report**, not a zero-tolerance gate: read the findings, do not wire `validation_result` to a build step that must stay green.
 
@@ -289,10 +318,17 @@ total_components: 95
 total_dependencies: 234
 resolved: 231
 unresolved_count: 3
+unresolved_by_reason:
+  unknown-bundle: 1
+  missing-component: 2
+  unregistered-verb: 0
+indexed_bundle_count: 10
 
-unresolved[3]:
-  - source: plan-marshall:manage-files, target: nonexistent:skill, type: skill, context: frontmatter
+unresolved[3]{source,target,type,context,reason}:
+  "plan-marshall:manage-files","nonexistent:skill",skill,frontmatter,unknown-bundle
 ```
+
+`unresolved_by_reason` is emitted on every run over the full reason set, so a class that scored zero is visible as a zero rather than as an absent key.
 
 ### Options
 

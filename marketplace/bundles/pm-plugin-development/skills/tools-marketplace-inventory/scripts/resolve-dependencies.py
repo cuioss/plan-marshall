@@ -40,9 +40,12 @@ from typing import Any
 
 from _dep_detection import Dependency, DependencyType
 from _dep_index import (
+    UNRESOLVED_REASONS,
     DependencyIndex,
     build_dependency_index,
     get_base_path,
+    indexed_bundles,
+    unresolved_reason,
 )
 from file_ops import output_toon, safe_main
 
@@ -275,6 +278,12 @@ def cmd_validate(
     total_deps = 0
     resolved_count = 0
 
+    # Classified against ONE population for the whole run: the bundles this index
+    # actually discovered components for. Recomputing it per row would let the
+    # comparand drift between rows of the same report.
+    bundles = indexed_bundles(index)
+    by_reason: dict[str, int] = dict.fromkeys(UNRESOLVED_REASONS, 0)
+
     for deps in index.forward_deps.values():
         for dep in deps:
             if dep.dep_type not in dep_types:
@@ -283,12 +292,15 @@ def cmd_validate(
             if dep.resolved:
                 resolved_count += 1
             else:
+                reason = unresolved_reason(dep, bundles)
+                by_reason[reason] += 1
                 unresolved.append(
                     {
                         'source': dep.source.to_notation(),
                         'target': dep.target.to_notation(),
                         'type': dep.dep_type.value,
                         'context': dep.context,
+                        'reason': reason,
                     }
                 )
 
@@ -307,6 +319,12 @@ def cmd_validate(
         'total_dependencies': total_deps,
         'resolved': resolved_count,
         'unresolved_count': len(unresolved),
+        # Always emitted, and always over the FULL reason set — including the
+        # classes that scored zero. A breakdown assembled only from observed rows
+        # cannot tell "no row fell in this class" from "this class was not
+        # computed", so the zero rows are what make the non-zero ones readable.
+        'unresolved_by_reason': dict(by_reason),
+        'indexed_bundle_count': len(bundles),
     }
 
     if unresolved:
