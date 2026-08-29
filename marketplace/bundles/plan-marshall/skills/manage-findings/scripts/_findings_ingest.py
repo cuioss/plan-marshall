@@ -103,8 +103,6 @@ def ingest_findings(plan_id: str, schema: str = FINDING_SCHEMA) -> dict[str, Any
     stronger reason: this pass both READS and WRITES. Against a ``plan_absent`` /
     ``unknown`` store the counts would be a three-way zero for records that were
     never looked at, and the writes would address a store the read never reached.
-    The store is resolved ONCE here and every path composed from that handle, so
-    the two halves cannot diverge.
     """
     store = resolve_findings_store(plan_id)
     if store_unreached(store):
