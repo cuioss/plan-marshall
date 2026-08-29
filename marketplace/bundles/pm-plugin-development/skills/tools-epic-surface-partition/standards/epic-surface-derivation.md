@@ -15,10 +15,28 @@ disagreement is the product, not a failure.
 The tool's only sanctioned write is the escalation path in
 [The escalation path](#the-escalation-path). It edits no spec under any branch.
 
+## Where the parse lives
+
+⛔ **This skill owns the PARTITION, not the PARSE.** The `## Expected Surface`
+grammar and its reader live in **`plan-marshall:script-shared`** as
+`epic_spec_parser` — the marketplace's single reader of that section, consumed
+here as stage 1 and by `plan-marshall:plan-orchestrator`'s disjointness gate
+(`corpus surfaces`, `corpus cross-check`, and the Ordered Queue's Surface cell).
+This skill imports it; it holds no second copy.
+
+The home is `script-shared` because both bundles read the section, and two
+readers of one grammar is the defect that made a spec declaring only directories
+or globs resolve to nothing at the gate while resolving correctly here. A change
+to the grammar therefore lands in `script-shared` and reaches every consumer at
+once; adding a local parse back to this skill would re-open exactly that split.
+
+What this skill continues to own is unchanged: the four partition verdicts, the
+line-budget attribution, the CLI surface, and the output contract.
+
 ## The three-class model
 
-`classify` assigns every spec exactly one class and records the evidence for the
-verdict beside it.
+`classify` — the relocated reader's verdict, consumed here — assigns every spec
+exactly one class and records the evidence for the verdict beside it.
 
 | Class | Rule | Evidence recorded |
 |-------|------|-------------------|

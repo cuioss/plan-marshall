@@ -244,11 +244,12 @@ seven required sections in order, each with the command that reproduces it.
 
 | Standard | Contents |
 |----------|----------|
-| [standards/epic-surface-derivation.md](standards/epic-surface-derivation.md) | The three-class model and its evidence rules, the entry shapes resolved, the four partition verdicts and why `unclaimed` and `not_derivable` stay separate, the report's seven sections and what `provenance` must assert, and the never-a-gate contract |
+| [standards/epic-surface-derivation.md](standards/epic-surface-derivation.md) | Where the parse lives (`plan-marshall:script-shared`) and why this skill owns the partition rather than the parse, the three-class model and its evidence rules, the entry shapes resolved, the four partition verdicts and why `unclaimed` and `not_derivable` stay separate, the report's seven sections and what `provenance` must assert, and the never-a-gate contract |
 
 ## Related
 
-- `plan-marshall:plan-orchestrator` — owns the epic ledger and the `corpus cross-check` collision matrix this skill deliberately does not re-derive
+- `plan-marshall:script-shared` — **owns the `## Expected Surface` parse.** Its `epic_spec_parser` is the marketplace's single reader of that section, and this skill consumes it as stage 1 rather than holding a copy. This skill owns the PARTITION; the parse lives there because the orchestrator's disjointness gate reads the same section, and two readers of one grammar is the defect that split them
+- `plan-marshall:plan-orchestrator` — owns the epic ledger and the `corpus cross-check` collision matrix this skill deliberately does not re-derive. Its `corpus surfaces` verb is a sibling CONSUMER of the same shared reader, never a second one
 - `pm-plugin-development:plugin-doctor` — its `test-conventions` sweep is a read-only input, never edited here
 
 ## Canonical invocations
