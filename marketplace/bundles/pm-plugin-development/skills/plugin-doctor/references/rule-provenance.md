@@ -201,6 +201,12 @@ Seven forward-looking lint rules added by the lesson-2026-05-05-18-001 remediati
 |---------|-------|---------|--------|
 | `script-call-drift` | structural | `_analyze_script_call_drift.py` | Plan `fix-generate-executor-ast-subcommands` (2026-05-26) — replaces the deleted runtime SUBCOMMANDS pre-flight validator with a dev-time `--help`-based drift detector. Probes `python3 .plan/execute-script.py {notation} --help` per documented invocation to validate the published argparse interface. Lessons `2026-04-29-23-002`, `2026-05-25-21-001`, `2026-05-26-09-001`. Opt-in via `--rules script_call_drift` — NOT in the unconditional quality-gate set due to subprocess overhead. |
 
+### Documented-verb-set drift
+
+| Rule ID | Class | Emitter | Source |
+|---------|-------|---------|--------|
+| `documented-verb-set-drift` | structural | `_analyze_documented_verb_set_drift.py` | Plan `detector-and-auditor-integrity`, deliverable 6 — no registered rule compared a script's argparse subcommand SET against the verb set its documentation carries. The absence was re-verified against HEAD before the rule was built: a whole-tree `quality-gate` run enumerated `rules_run[37]` and none made that comparison. `manage-invocation-invalid` validates a documented *invocation* against a live `--help` walk, so it overlaps the `phantom_documented_verb` direction but structurally cannot see `verb_missing_from_docs` — an undocumented verb appears in no invocation for a per-invocation rule to inspect. AST-derives the registered set (rather than probing `--help`) so it stays cheap enough to be gate-eligible. Fail-closed: every underivable state is a reported SKIP, and an empty derived set is treated as derivation failure, never as "registers nothing" — treating it otherwise produced 60 phantom findings on the live tree during development, all spot-checked ones real verbs. Opt-in via `--rules documented_verb_set_drift`; NOT gate-registered, because `cmd_quality_gate` is severity-blind (`'fail' if all_issues else 'pass'`) and so has no registered-but-non-failing mode. Promotion proposal recorded in `rule-catalog.md`. |
+
 ### Lesson-ID prose hygiene
 
 | Rule ID | Class | Emitter | Source |

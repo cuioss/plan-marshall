@@ -59,6 +59,7 @@ from _analyze_canonical_enum_drift import (
     analyze_canonical_enum_drift_with_population,
 )
 from _analyze_declared_vs_disk import analyze_declared_vs_disk
+from _analyze_documented_verb_set_drift import analyze_documented_verb_set_drift
 from _analyze_fail_closed_gate_reads import analyze_fail_closed_gate_reads
 from _analyze_finalize_step_token import scan_finalize_step_token
 from _analyze_frontmatter import analyze_frontmatter
@@ -472,5 +473,20 @@ class RuleRunner:
             # dir. This call carried the bug too, so opting the cluster in on
             # the analyze path silently produced nothing on every run.
             issues.extend(analyze_argument_naming(root.parent))
+
+        if 'documented_verb_set_drift' in active_rules:
+            # ⛔ Opt-in and reachable ONLY here — deliberately absent from
+            # ``run_quality_gate``. That gate derives status as
+            # ``'fail' if all_issues else 'pass'``: it is severity-blind, so it
+            # has no registered-but-non-failing mode, and wiring a rule with a
+            # non-zero standing finding count into it would turn the tree red.
+            # (``cmd_test_conventions`` DOES derive status from error-severity
+            # findings only, but its scope is the test tree, not this one.)
+            # The promotion path and its two preconditions are recorded in
+            # ``references/rule-catalog.md``.
+            #
+            # ``root.parent`` for the same reason as ``argument_naming`` above:
+            # the analyzer takes the MARKETPLACE dir, not the bundles dir.
+            issues.extend(analyze_documented_verb_set_drift(root.parent))
 
         return issues

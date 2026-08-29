@@ -572,6 +572,51 @@ Sharing one derivation across the first two points is the load-bearing property 
 
 ---
 
+## Rule Pack: Documented-verb-set drift
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `documented-verb-set-drift` | Compare a script's AST-derived registered top-level verb SET against the verb set its skill's fenced bash invocations document, in both directions | Fail-closed: any derivation the AST walk cannot trust is reported as a SKIP finding naming the reason, never as a clean pass. An empty derived verb set is treated as a derivation failure, never as "registers nothing" | None — fix the documentation or the argparse declaration to converge |
+
+### documented-verb-set-drift
+
+**Rule ID**: `documented-verb-set-drift` (opt-in token: `documented_verb_set_drift`)
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_documented_verb_set_drift.py`
+
+**Scope**: Every skill whose `SKILL.md` carries a `## Canonical invocations` heading. The population is derived from the bundle tree at call time and published as `details.population_size` on every finding; an empty population over a non-empty tree emits its own finding rather than reading as a clean pass.
+
+**Intent**: Detect verb-set drift structurally, in the direction no existing rule covers. `verb_missing_from_docs` reports a registered verb carrying no fenced example invocation — a class that per-invocation analysis structurally cannot see, because an undocumented verb appears in no invocation for such a rule to inspect.
+
+**Detection logic**:
+1. Derive the population (skills with a canonical-invocations block).
+2. For each documented invocation naming a script of that same skill, collect the first verb of its chain.
+3. AST-walk the owning script for `add_parser` calls, resolving each to its owning parser, and take the ROOT parser's children as the registered set.
+4. Emit `verb_missing_from_docs` for registered − documented, and `phantom_documented_verb` for documented − registered.
+
+**Fail-closed contract**: the rule SKIPS rather than passes whenever the registered set is not trustworthy, emitting `verb_set_drift_skipped` with a `reason` of `unreadable_script`, `unparseable_script`, `dynamic_verb_registration` (a non-literal `add_parser` name), `unresolved_subparser_group`, `no_root_parser_resolved`, or `no_subparser_registration_in_file`. The skip count is the rule's own coverage gap and is reported, never absorbed.
+
+⛔ **`no_root_parser_resolved` is the fail-open this rule most needs to refuse.** `add_parser` calls exist but none attaches to a recognised root parser, so the derived set is empty through derivation failure rather than observation. Treating that emptiness as authoritative reports every documented verb as a phantom: measured during development, doing so produced **60 phantom findings** on the live tree, and the spot-checked ones were all real registered verbs. This is why the analyzer does not reuse `_analyze_verb_chains.build_subparser_tree`, whose bare `{}` return cannot distinguish unreadable, unparseable, and genuinely-subparser-free.
+
+**Relationship to `manage-invocation-invalid`**: the `phantom_documented_verb` class OVERLAPS that default-on rule, which already rejects a documented invocation naming an unregistered subcommand via a live `--help` walk. The two differ in unit of analysis — one written invocation versus two SETS — and a consumer running both should expect the phantom findings to corroborate rather than add to it. `verb_missing_from_docs` carries this rule's independent value.
+
+**Scope caveat**: the documentation side of the comparison is *fenced bash invocations*, not documentation in general. A verb described only in a prose verb table is reported, and the finding message states that narrower fact. `manage-tasks loop-exit-guard` is the worked example — a full table row and a dedicated section, and no fenced invocation.
+
+**Activation**: Opt-in via `--rules documented_verb_set_drift` on the `analyze` subcommand. **NOT registered in `quality-gate`.**
+
+⛔ **Why not gate-registered, and the promotion proposal.** `cmd_quality_gate` derives its status as `'fail' if all_issues else 'pass'` — it is **severity-blind**, so it has no registered-but-non-failing mode; any finding turns the tree red. Only `cmd_test_conventions` derives status from error-severity findings alone (`'fail' if error_count else 'pass'`), and its scope is the test tree, not the bundle tree. With a standing non-zero finding count this rule cannot be gate-registered without leaving the tree red, so it lands discoverable and opt-in instead.
+
+**Promotion requires EITHER** of the two, and is deliberately left as a proposal rather than taken here:
+
+1. Drive the drift count to zero (add the missing fenced invocations), then register it in `run_quality_gate`; or
+2. Teach `cmd_quality_gate` the severity split `cmd_test_conventions` already implements, and register the rule at `warning` severity.
+
+**Measured baseline** (current tree): population **64**, `verb_missing_from_docs` **9**, `phantom_documented_verb` **0**, skips **23** (16 `no_subparser_registration_in_file`, 4 `unresolved_subparser_group`, 3 `dynamic_verb_registration`). The whole-tree `quality-gate` remains `pass` with `total_issues: 0` and `rules_run[37]` — unchanged, because this rule is not in that set.
+
+**Suppression mechanism**: None — fix the prose or the argparse declaration to converge.
+
+---
+
 ## Rule Pack: Lesson-ID prose hygiene
 
 | Rule ID | Intent | False-positive policy | Suppression |
