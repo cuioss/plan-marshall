@@ -23,6 +23,30 @@ from _findings_storage_fixtures import (
     resolve_finding,
 )
 
+# Plan ids this module's tests file findings against. The autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py`` creates
+# ``plans/{plan_id}/`` for each, because every findings surface REFUSES a plan
+# directory that is absent under the resolved root — in production the
+# lifecycle creates that directory before anything is filed against it.
+PLAN_IDS = (
+    'storage-assess-route',
+    'storage-filter-file',
+    'storage-filter-multitype',
+    'storage-filter-promoted',
+    'storage-filter-resolution',
+    'storage-filter-type',
+    'storage-get-locate',
+    'storage-promote-locate',
+    'storage-query-hash',
+    'storage-query-isolate',
+    'storage-query-merge',
+    'storage-reject-locate',
+    'storage-resolve-locate',
+    'storage-resolve-missing',
+    'storage-responded-mark',
+    'storage-responded-missing',
+)
+
 
 def test_assessment_writes_to_assessments_file(plan_context):
     """`add_assessment` creates `findings/assessments.jsonl` only."""

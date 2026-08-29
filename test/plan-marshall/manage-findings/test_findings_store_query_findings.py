@@ -24,6 +24,36 @@ from _findings_store_fixtures import (
     resolve_finding,
 )
 
+# Plan ids this module's tests file findings against. The autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py`` creates
+# ``plans/{plan_id}/`` for each, because every findings surface REFUSES a plan
+# directory that is absent under the resolved root — in production the
+# lifecycle creates that directory before anything is filed against it.
+PLAN_IDS = (
+    'store-prc-both',
+    'store-prc-botkind-mix',
+    'store-prc-byauthor',
+    'store-prc-bybotkind',
+    'store-prc-bykind',
+    'store-prc-rcs-unified',
+    'store-prc-unified',
+    'store-prc-unified-auth',
+    'store-prc-unified-bk',
+    'store-qgate-auth-filter',
+    'store-qgate-query',
+    'store-query-all',
+    'store-query-empty',
+    'store-query-file',
+    'store-query-res',
+    'store-query-type',
+    'store-resolve',
+    'store-resolve-bad',
+    'store-resolve-nf',
+    'store-resolve-rejected',
+    'store-responded-change',
+    'store-responded-noop',
+)
+
 # =============================================================================
 # Test: query_findings
 # =============================================================================

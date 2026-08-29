@@ -11,6 +11,23 @@ from toon_parser import parse_toon  # noqa: E402
 
 from conftest import run_script
 
+# Plan ids this module's tests file findings against. The autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py`` creates
+# ``plans/{plan_id}/`` for each, because every findings surface REFUSES a plan
+# directory that is absent under the resolved root — in production the
+# lifecycle creates that directory before anything is filed against it.
+PLAN_IDS = (
+    'cli-prc-badbotkind',
+    'cli-prc-badkind',
+    'cli-prc-rcs-rt',
+    'cli-prc-rt',
+    'cli-qgate-rt',
+    'cli-rawinput-bad',
+    'cli-rawinput-rt',
+    'cli-unified-rt',
+    'test-plan',
+)
+
 
 def test_cli_pr_comment_author_kind_roundtrip(plan_context):
     """CLI plumbing: add a pr-comment with --author/--kind and read them back."""

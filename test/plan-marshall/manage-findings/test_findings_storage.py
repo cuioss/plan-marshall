@@ -13,6 +13,21 @@ from _findings_storage_fixtures import (
     query_qgate_findings,
 )
 
+# Plan ids this module's tests file findings against. The autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py`` creates
+# ``plans/{plan_id}/`` for each, because every findings surface REFUSES a plan
+# directory that is absent under the resolved root — in production the
+# lifecycle creates that directory before anything is filed against it.
+PLAN_IDS = (
+    'storage-append-bug',
+    'storage-coexist',
+    'storage-distinct-files',
+    'storage-lazy-bug',
+    'storage-qgate-phases',
+    'storage-qgate-roundtrip',
+    'storage-qgate-route',
+)
+
 # =============================================================================
 # Lazy creation: per-type file appears only after first matching write
 # =============================================================================

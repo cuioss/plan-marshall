@@ -18,6 +18,25 @@ from _findings_store_fixtures import (
     resolve_findings_by_type,
 )
 
+# Plan ids this module's tests file findings against. The autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py`` creates
+# ``plans/{plan_id}/`` for each, because every findings surface REFUSES a plan
+# directory that is absent under the resolved root — in production the
+# lifecycle creates that directory before anything is filed against it.
+PLAN_IDS = (
+    'store-bulk-badres',
+    'store-bulk-count',
+    'store-bulk-dup',
+    'store-bulk-empty',
+    'store-bulk-from',
+    'store-bulk-keepdetail',
+    'store-bulk-multi',
+    'store-bulk-other',
+    'store-bulk-rejected',
+    'store-bulk-setdetail',
+    'store-responded-bulk',
+)
+
 
 def test_resolve_findings_by_type_accepts_rejected(plan_context):
     """Bulk resolve accepts `rejected` as a valid target resolution."""

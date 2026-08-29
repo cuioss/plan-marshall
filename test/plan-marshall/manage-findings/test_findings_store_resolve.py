@@ -26,6 +26,35 @@ from _findings_store_fixtures import (
     resolve_qgate_findings_by_evidence,
 )
 
+# Plan ids this module's tests file findings against. The autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py`` creates
+# ``plans/{plan_id}/`` for each, because every findings surface REFUSES a plan
+# directory that is absent under the resolved root — in production the
+# lifecycle creates that directory before anything is filed against it.
+PLAN_IDS = (
+    'ev-bad-phase',
+    'ev-resolve-already',
+    'ev-resolve-changed',
+    'ev-resolve-mixed',
+    'ev-resolve-no-file',
+    'ev-resolve-reopen',
+    'ev-resolve-unchanged',
+    'ev-resolve-write-fail',
+    'store-promote',
+    # Passed to the shared ``_observed_qgate_statuses`` probe rather than to a
+    # store surface directly, so they reach the store one indirection out.
+    'store-qgate-partition-ok',
+    'store-qgate-partition-reject',
+    'store-qgate-partition-exact',
+    'store-qgate-clear',
+    'store-qgate-clear-empty',
+    'store-qgate-dedup',
+    'store-qgate-rejected-nonpending',
+    'store-qgate-reopen',
+    'store-qgate-resolve',
+    'store-qgate-resolve-rejected',
+)
+
 # =============================================================================
 # Test: Q-Gate findings
 # =============================================================================

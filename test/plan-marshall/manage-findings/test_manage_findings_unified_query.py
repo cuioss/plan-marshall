@@ -25,6 +25,26 @@ from _manage_findings_fixtures import (
     query_findings_unified,
 )
 
+# Plan ids this module's tests file findings against. The autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py`` creates
+# ``plans/{plan_id}/`` for each, because every findings surface REFUSES a plan
+# directory that is absent under the resolved root — in production the
+# lifecycle creates that directory before anything is filed against it.
+PLAN_IDS = (
+    'compat-list',
+    'compat-qgate-list',
+    'res-detail-integrity',
+    'res-detail-orphan',
+    'unified-all-phases',
+    'unified-core-direct',
+    'unified-empty',
+    'unified-merge',
+    'unified-only-pending',
+    'unified-rejected-nonpending',
+    'unified-res-filter',
+    'unified-type-filter',
+)
+
 # =============================================================================
 # Test: resolution_detail relational integrity
 # =============================================================================

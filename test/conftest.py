@@ -1849,6 +1849,57 @@ def plan_context(tmp_path, monkeypatch):
     yield Context()
 
 
+@pytest.fixture(autouse=True)
+def _materialize_declared_plan_dirs(request):
+    """Create ``plans/{plan_id}/`` for every id the module under test DECLARES.
+
+    In production ``phase-1-init`` creates the plan directory before any artifact
+    is filed against it, and the findings surfaces REFUSE a plan directory that
+    is absent under the resolved root — a plan that exists in no checkout is not
+    a plan that filed nothing, and answering it with a clean zero (or, on the
+    ``add`` paths, manufacturing the directory chain) is the defect that refusal
+    exists to surface. A test whose subject is the store's behaviour for a REAL
+    plan therefore has to construct the plan context, exactly as the lifecycle
+    does; this fixture is where that construction lives so it does not have to be
+    repeated in every test body.
+
+    Opt-in, and deliberately so. A module participates by declaring a
+    module-level ``PLAN_IDS`` tuple naming the plan ids ITS tests use. A module
+    that declares nothing is completely unaffected — the fixture returns before
+    it even resolves ``plan_context``, so no isolation, no monkeypatching and no
+    directory creation is imposed on a test that did not ask for it. That is what
+    keeps this from becoming a blanket neutralisation of the refusal: a test
+    whose subject IS the refusal simply keeps its plan id out of ``PLAN_IDS``
+    (or lives in a module that declares none), and the guard stays observable.
+    """
+    plan_ids = getattr(request.module, 'PLAN_IDS', ())
+    if not plan_ids:
+        return
+
+    # Resolve the base dir the test will actually resolve, rather than assuming
+    # one. Two redirects are in play — the autouse ``_plan_base_dir_sandbox``
+    # default and the explicit ``plan_context`` override, which wins when the
+    # test requests it — so both are forced into place HERE, before the resolved
+    # root is read.
+    #
+    # ⛔ The forcing is load-bearing, not defensive. Instantiation order among
+    # autouse fixtures is NOT guaranteed by declaration order in the conftest, so
+    # without it this fixture can run first, seed under whichever root is live at
+    # that moment, and then have a later-instantiated redirect replace it. That
+    # failure is SILENT: the seeding still succeeds, it just creates the
+    # directories somewhere the test never looks, and every seeded test fails as
+    # though it had never been seeded at all.
+    request.getfixturevalue('_plan_base_dir_sandbox')
+    if 'plan_context' in request.fixturenames:
+        request.getfixturevalue('plan_context')
+
+    from file_ops import get_base_dir  # noqa: PLC0415 — lazy: avoids a bootstrap import cycle
+
+    plans_root = get_base_dir() / 'plans'
+    for plan_id in plan_ids:
+        (plans_root / plan_id).mkdir(parents=True, exist_ok=True)
+
+
 @pytest.fixture
 def outside_repo_dir():
     """Yield a directory guaranteed to live OUTSIDE the repository worktree.

@@ -32,6 +32,64 @@ from _pr_agent_guide_bodies import GUIDE_WITH_FINDING, OBSERVED_CLEAN_GUIDE
 
 from conftest import get_script_path, get_skill_dir, load_script_module, run_script
 
+# Plan ids this module's tests file findings against. The autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py`` creates
+# ``plans/{plan_id}/`` for each, because every findings surface REFUSES a plan
+# directory that is absent under the resolved root — in production the
+# lifecycle creates that directory before anything is filed against it.
+PLAN_IDS = (
+    'gh-pr-bare-flags',
+    'gh-pr-bare-warn-but-ingest',
+    'gh-pr-barrier-noise',
+    'gh-pr-classification-empty',
+    'gh-pr-classification-union',
+    'gh-pr-dedup-collision',
+    'gh-pr-dedup-decoupled',
+    'gh-pr-dedup-refetch',
+    'gh-pr-persist-dedup',
+    'gh-pr-persist-reject',
+    'gh-pr-quota-only-no-measure',
+    'gh-pr-rate-limit-bot-agnostic',
+    'gh-pr-recognised-refusal-control',
+    'gh-pr-refusal-cause-sticky',
+    'gh-pr-refusal-cause-sticky-reverse',
+    'gh-pr-refusal-causes',
+    'gh-pr-refusal-vs-participation',
+    'gh-pr-respond-batch-fails',
+    'gh-pr-respond-batched',
+    'gh-pr-respond-changed',
+    'gh-pr-respond-count-contract',
+    'gh-pr-respond-round2-only-new',
+    'gh-pr-respond-skipped',
+    'gh-pr-respond-thread-fails',
+    'gh-pr-respond-thread-idempotent',
+    'gh-pr-respond-threaded',
+    'gh-pr-self-response-bound',
+    'gh-pr-self-response-boundary',
+    'gh-pr-self-response-converged-history',
+    'gh-pr-self-response-excluded',
+    'gh-pr-self-response-live-loop',
+    'gh-pr-self-response-reopened',
+    'gh-pr-self-response-trigger-interleave',
+    'gh-pr-size-refusal-no-cap',
+    'gh-pr-size-refusal-unmeasurable',
+    'gh-pr-unclassified-reported',
+    'gh-pr-unrecognised-human',
+    'gh-pr-unrecognised-inert',
+    'gh-pr-unrecognised-partial',
+    'gh-pr-unrecognised-refusal',
+    'gh-pr-unrecognised-remedy',
+    'gh-pr-unregistered-bot-classification',
+    'gh-pr-unregistered-bot-filed',
+    'p',
+)
+
+#: The per-bot cases derive their plan id from the bot under test, so the seeded
+#: ids are derived from the SAME registry-backed population the parametrisation
+#: iterates rather than transcribed — a bot added to the registry seeds its plan
+#: id too, instead of failing with an unreached store.
+PLAN_IDS += tuple(f'gh-pr-preupgrade-dedup-{bot_kind}' for bot_kind in CURRENCY_SUBJECT_BOTS)
+
 github_pr = load_script_module('plan-marshall', 'workflow-integration-github', 'github_pr.py', 'github_pr')
 _findings_core = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core')
 

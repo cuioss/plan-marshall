@@ -25,6 +25,26 @@ from toon_parser import parse_toon
 
 from conftest import load_script_module
 
+# Plan ids this module's tests file findings against. The autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py`` creates
+# ``plans/{plan_id}/`` for each, because every findings surface REFUSES a plan
+# directory that is absent under the resolved root — in production the
+# lifecycle creates that directory before anything is filed against it.
+PLAN_IDS = (
+    'mf-cli-add',
+    'mf-cli-assess',
+    'mf-cli-badtype',
+    'mf-cli-ev',
+    'mf-cli-get',
+    'mf-cli-getmiss',
+    'mf-cli-list',
+    'mf-cli-promote',
+    'mf-cli-qg',
+    'mf-cli-qgclear',
+    'mf-cli-qgres',
+    'mf-cli-resolve',
+)
+
 # Distinct sys.modules name so this in-process load never clobbers the
 # 'manage_findings' module the sibling test file registers.
 _mod = load_script_module('plan-marshall', 'manage-findings', 'manage-findings.py', 'manage_findings_maincli')

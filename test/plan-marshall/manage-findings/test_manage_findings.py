@@ -20,6 +20,25 @@ from _manage_findings_fixtures import (
     cmd_query,
 )
 
+# Plan ids this module's tests file findings against. The autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py`` creates
+# ``plans/{plan_id}/`` for each, because every findings surface REFUSES a plan
+# directory that is absent under the resolved root — in production the
+# lifecycle creates that directory before anything is filed against it.
+PLAN_IDS = (
+    'qgate-clear',
+    'qgate-clear-empty',
+    'qgate-diff-subject-noreopen',
+    'qgate-phase-iso',
+    'qgate-resolve-all-st',
+    'qgate-resolve-tia',
+    'qgate-same-disc-merge',
+    'qgate-user-review',
+    'rawinput-cap',
+    'rawinput-nocap',
+    'rawinput-status-error',
+)
+
 
 def test_qgate_per_phase_isolation(plan_context):
     """Test that Q-Gate findings are isolated per phase."""

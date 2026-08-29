@@ -22,6 +22,24 @@ from _manage_findings_fixtures import (
 
 from conftest import run_script
 
+# Plan ids this module's tests file findings against. The autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py`` creates
+# ``plans/{plan_id}/`` for each, because every findings surface REFUSES a plan
+# directory that is absent under the resolved root — in production the
+# lifecycle creates that directory before anything is filed against it.
+PLAN_IDS = (
+    'qgate-add-basic',
+    'qgate-add-opts',
+    'qgate-dedup-diff',
+    'qgate-dedup-pend',
+    'qgate-dedup-reopen',
+    'qgate-inv-phase',
+    'qgate-inv-source',
+    'qgate-query-empty',
+    'qgate-query-res',
+    'qgate-query-src',
+)
+
 # =============================================================================
 # Test: Q-Gate Add Command
 # =============================================================================
