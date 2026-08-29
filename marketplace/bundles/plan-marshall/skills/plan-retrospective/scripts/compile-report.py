@@ -187,9 +187,15 @@ def _fragment_has_payload(fragment: Any) -> bool:
     ``status`` and ``aspect`` are envelope metadata every fragment carries, so
     they never count as payload. Any other key whose value is not one of the
     empty sentinels (``None``, ``''``, ``[]``, ``{}``, ``False``) makes the
-    fragment non-empty. This is the discriminator between a benign omission
-    (the aspect genuinely produced nothing) and a loud drop (the aspect
-    produced content that ``should_emit`` nonetheless refused).
+    fragment non-empty.
+
+    ⛔ This is NOT the drop-versus-omit discriminator. It answers "does this dict
+    hold anything at all beyond its envelope?", which a clean run satisfies on
+    bookkeeping alone — the real ``script-failure-analysis`` fragment carries
+    ``plan_id`` and a ``total_failures: 0`` counter, so every plan with no script
+    failures reported a dropped section. The partition is decided by
+    :func:`_renders_usable_body`; this predicate serves the written-implies-
+    non-empty invariant via :func:`_fragment_renders_empty`.
 
     ``False`` is matched by identity, never by equality: ``False == 0`` and
     ``False == 0.0`` in Python, so an equality-based sentinel tuple would
@@ -569,6 +575,109 @@ def _fragment_renders_empty(fragment: Any) -> bool:
     return False
 
 
+def _renders_usable_body(fragment: Any) -> bool:
+    """Return True when rendering this section would put content in front of a reader.
+
+    This is THE discriminator for the non-emit partition: a fragment the gate
+    refused that would have rendered a usable body is a DROP (content the report
+    lost, and loud); one that would not is an OMISSION (nothing was lost).
+
+    It asks the RENDER path's own question rather than "does this dict hold
+    anything?" (:func:`_fragment_has_payload`), and the difference is the whole
+    fix. The two predicates agree only for the container test, so four shapes
+    were previously misfiled:
+
+    * The real clean-run ``script-failure-analysis`` fragment carries
+      ``plan_id`` and zero-valued counters beside its empty ``failures`` /
+      ``findings`` lists. Every one of those is payload, so a plan with no script
+      failures reported a dropped section and a run status of ``warning``.
+    * The skipped ``check-manifest-consistency`` and ``check-routing-decisions``
+      shapes carry a skip reason — payload again, and their shapes DIFFER
+      (routing carries no ``findings`` key at all), so neither follows from the
+      other.
+    * Symmetrically, a non-dict fragment carrying real prose reported NO payload
+      (``_fragment_has_payload`` is ``False`` for every non-dict) and vanished
+      into ``sections_omitted`` with ``dropped == []`` — a silent content loss.
+
+    ⛔ A key blocklist is NOT an alternative spelling of this. Stripping the
+    provenance keys still leaves ``total_failures: 0``, and a numeric zero is
+    deliberately payload (see :func:`_fragment_has_payload`) — so the clean-run
+    case survives every blocklist. Only asking what the renderer would produce
+    separates the two.
+
+    For a **dict** the body comes from :func:`render_section_body`, whose
+    reader-facing content is the ``summary`` prose and the ``findings`` bullets;
+    the trailing JSON dump is mechanical and is emitted for every fragment
+    whatsoever, so treating it as content would make the answer unconditionally
+    ``True`` and restore the defect. ``dispatch_boundaries`` reaches the same
+    answer through its own renderer: it is refused precisely when no phase is
+    ``present``, which is the case its renderer prints
+    ``_No dispatch-boundary artifacts present._`` for.
+
+    For a **non-dict** the reader-facing content IS the value, so emptiness is
+    judged by :func:`_fragment_renders_empty` — a bare non-empty string, int or
+    list renders a body and is therefore a drop.
+
+    ⛔ This predicate governs the NON-EMIT branch only. The emit path keeps
+    :func:`_fragment_renders_empty`, so an always-emitted clean fragment whose
+    content is a populated ``counts`` block beside an empty ``findings`` list —
+    ``direct-gh-glab-usage`` and ``execution-context-dispatch-audit`` on every
+    healthy run — still renders. Those sections are how a reader sees "evaluated,
+    and found sound", and routing them through this stricter question would
+    delete exactly that signal.
+
+    ⛔ It is the WHOLE answer for a conditional row and only HALF of it for the
+    Executive Summary, because that row is rendered by a different, single-keyed
+    renderer — see :func:`_exec_summary_is_drop`.
+    """
+    if isinstance(fragment, dict):
+        summary = fragment.get('summary')
+        if isinstance(summary, str) and summary.strip():
+            return True
+        findings = fragment.get('findings')
+        return isinstance(findings, list) and bool(findings)
+    return not _fragment_renders_empty(fragment)
+
+
+def _exec_summary_is_drop(exec_fragment: Any) -> bool:
+    """Return True when the non-emitted Executive Summary LOST content.
+
+    The same question :func:`_renders_usable_body` asks — *is there content this
+    section's renderer would have shown, or content it structurally cannot
+    show?* — instantiated against the Executive Summary's OWN renderer, which
+    differs from every other section's in the one way that makes the second half
+    of that question live.
+
+    ``build_document`` renders this section from ``summary`` ALONE (or from a
+    bare-string fragment). There is no :func:`render_section_body` fallback and
+    no trailing JSON dump, so a key OTHER than ``summary`` holds content that no
+    render path can ever put in front of a reader. On a conditional row the JSON
+    dump is TOTAL — every key the fragment carries is shown whenever the section
+    emits — so nothing there is structurally unshowable and the question collapses
+    to its reader-facing arm alone. That collapse is why
+    :func:`_renders_usable_body` is the whole answer there and only half of it
+    here; it is one question resolved against two renderers, not two rules.
+
+    The two clauses, in order:
+
+    * :func:`_renders_usable_body` — content the renderer WOULD have shown. It
+      carries the non-dict arm, which the payload predicate cannot: a bare ``0``
+      renders a value a reader can act on, and :func:`_fragment_has_payload`
+      reports ``False`` for every non-dict.
+    * :func:`_fragment_has_payload` — content the renderer CANNOT show. Reaching
+      this branch means ``exec_text`` came out empty, so ``summary`` is empty by
+      construction and any payload left is unreachable by definition. This is the
+      clause that keeps a narrative written to the wrong key LOUD instead of
+      letting it vanish into ``sections_omitted`` with ``dropped == []``.
+
+    ⛔ The payload clause is confined to THIS branch and must not be carried back
+    to the conditional one, where it is the original defect: the real clean-run
+    ``script-failure-analysis`` fragment carries ``plan_id`` and zero-valued
+    counters — all payload — and reported a dropped section on every healthy run.
+    """
+    return _renders_usable_body(exec_fragment) or _fragment_has_payload(exec_fragment)
+
+
 def _heading_from_aspect_key(aspect_key: str) -> str:
     """Derive a human-readable section heading from an aspect key.
 
@@ -632,11 +741,14 @@ def build_document(
     for heading, fragment_key, trigger in SECTION_SPEC:
         if fragment_key == '_executive-summary':
             if not exec_text:
-                # Same discriminator the conditional sections use: a fragment
-                # that carried payload the renderer nonetheless could not turn
-                # into a body is a DROP; an absent or empty one is a benign
-                # omission.
-                if _fragment_has_payload(exec_fragment):
+                # Same question the conditional sections are partitioned by,
+                # resolved against THIS section's renderer: a fragment holding
+                # content the report will not show is a DROP; one holding none is
+                # a benign omission. This row renders from ``summary`` alone with
+                # no JSON-dump fallback, so the "cannot show" half of the question
+                # is live here and collapses to nothing on a conditional row —
+                # see ``_exec_summary_is_drop``.
+                if _exec_summary_is_drop(exec_fragment):
                     dropped.append(heading)
                 else:
                     omitted.append(heading)
@@ -645,12 +757,18 @@ def build_document(
             written.append(heading)
             continue
         if not should_emit(fragment_key, trigger, fragments):
-            # Partition the non-emit path: a section whose trigger fragment is
-            # absent or genuinely empty is a benign omission; a section whose
-            # trigger fragment carries real payload is a DROP — content the
-            # aspect produced that the gate refused — and must be loud.
-            trigger_fragment = fragments.get(trigger) if trigger is not None else None
-            if _fragment_has_payload(trigger_fragment):
+            # Partition the non-emit path by the render path's own question: a
+            # section that would have rendered a usable body is a DROP — content
+            # the aspect produced that the gate refused — and must be loud;
+            # anything else is a benign omission, because nothing was lost.
+            #
+            # The SECTION fragment is the subject, since it is what the renderer
+            # would have been handed. Every conditional row in ``SECTION_SPEC``
+            # is self-triggered (``trigger == fragment_key``), so this reads the
+            # same object the old trigger-keyed lookup did; naming the rendered
+            # key keeps the question and its subject in agreement if that ever
+            # stops being true.
+            if _renders_usable_body(fragments.get(fragment_key)):
                 dropped.append(heading)
             else:
                 omitted.append(heading)

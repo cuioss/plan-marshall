@@ -1,9 +1,16 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for ``compile-report.py``.
 
-Scope: when a section is dropped loudly rather than omitted benignly — a fragment
-with no present phase, a non-success status carrying findings — and the catch-all
+Scope: when a section is dropped loudly rather than omitted benignly, observed
+end-to-end through the ``run_script`` subprocess harness — plus the catch-all
 that still renders an unregistered aspect.
+
+The partition asks the render path's own question: a refused section that WOULD
+have rendered a usable body is a drop; one that would not is an omission. The
+in-process unit cases for that predicate live in
+``test_compile_report_behavior_fragment_payload.py``; this module pins the
+same rule as it reaches the returned TOON — including that a drop, and ONLY a
+drop, raises the run status to ``warning``.
 """
 
 
@@ -17,6 +24,22 @@ from _compile_report_fixtures import (
 from _plan_retrospective_fixtures import setup_live_plan  # noqa: E402
 
 from conftest import run_script  # noqa: E402
+
+
+def _compile(plan_id, fragments):
+    """Run the compiler over ``fragments`` and return its parsed TOON."""
+    result = run_script(
+        SCRIPT_PATH,
+        'run',
+        '--plan-id',
+        plan_id,
+        '--mode',
+        'live',
+        '--fragments-file',
+        str(fragments),
+    )
+    assert result.success, result.stderr
+    return result.toon()
 
 
 class TestPhaseDispatchBoundariesSection:
@@ -36,18 +59,7 @@ class TestPhaseDispatchBoundariesSection:
                 },
             },
         )
-        result = run_script(
-            SCRIPT_PATH,
-            'run',
-            '--plan-id',
-            plan_id,
-            '--mode',
-            'live',
-            '--fragments-file',
-            str(fragments),
-        )
-        assert result.success, result.stderr
-        data = result.toon()
+        data = _compile(plan_id, fragments)
         assert 'Phase Dispatch Boundaries' in data['sections_written']
         content = (plan_dir / 'quality-verification-report.md').read_text(encoding='utf-8')
         assert '## Phase Dispatch Boundaries' in content
@@ -61,18 +73,7 @@ class TestPhaseDispatchBoundariesSection:
         """No fragment ⇒ section is omitted (gate returns false)."""
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         fragments = _write_fragments_with_dispatch_boundaries(tmp_path, phases=None)
-        result = run_script(
-            SCRIPT_PATH,
-            'run',
-            '--plan-id',
-            plan_id,
-            '--mode',
-            'live',
-            '--fragments-file',
-            str(fragments),
-        )
-        assert result.success, result.stderr
-        data = result.toon()
+        data = _compile(plan_id, fragments)
         # Absent fragment ⇒ benign omission, never a drop.
         assert data['status'] == 'success'
         assert 'Phase Dispatch Boundaries' in data['sections_omitted']
@@ -131,48 +132,12 @@ class TestPhaseDispatchBoundariesSection:
 
 
 class TestDroppedSectionIsLoud:
-    """A section whose trigger fragment carries real payload is a DROP, not an omission.
+    """A refused section that WOULD have rendered a usable body is a DROP.
 
-    The distinction the partition exists to make: an absent or genuinely empty
-    trigger fragment is a benign omission that leaves ``status: success``,
-    while a trigger fragment carrying content the gate refused is content the
-    report lost — it lands in ``sections_dropped`` and flips the TOON status to
-    ``warning`` so the caller cannot mistake the run for clean.
+    A drop is content the aspect produced and the report lost, so it lands in
+    ``sections_dropped`` and flips the TOON status to ``warning``. Anything else
+    is a benign omission that leaves ``status: success``.
     """
-
-    def test_dispatch_boundaries_without_present_phase_is_dropped(self, tmp_path, monkeypatch):
-        # Per-phase entries exist (real payload) but no phase reports
-        # present: true, so should_emit refuses — that is a drop, not an omission.
-        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
-        fragments = _write_fragments_with_dispatch_boundaries(
-            tmp_path,
-            phases={
-                '5-execute': {
-                    'present': False,
-                    'rows': [],
-                    'unknown_count': 0,
-                    'clean_exit_queue_empty_count': 0,
-                },
-            },
-        )
-
-        result = run_script(
-            SCRIPT_PATH,
-            'run',
-            '--plan-id',
-            plan_id,
-            '--mode',
-            'live',
-            '--fragments-file',
-            str(fragments),
-        )
-
-        assert result.success, result.stderr
-        data = result.toon()
-        assert data['status'] == 'warning'
-        assert 'Phase Dispatch Boundaries' in data['sections_dropped']
-        assert 'Phase Dispatch Boundaries' not in data['sections_omitted']
-        assert 'Phase Dispatch Boundaries' in data['message']
 
     def test_non_success_status_with_findings_is_dropped(self, tmp_path, monkeypatch):
         # A registered conditional aspect that produced findings but reports a
@@ -190,22 +155,35 @@ class TestDroppedSectionIsLoud:
             'fragments-non-success-findings.toon',
         )
 
-        result = run_script(
-            SCRIPT_PATH,
-            'run',
-            '--plan-id',
-            plan_id,
-            '--mode',
-            'live',
-            '--fragments-file',
-            str(fragments),
-        )
-
-        assert result.success, result.stderr
-        data = result.toon()
+        data = _compile(plan_id, fragments)
         assert data['status'] == 'warning'
         assert 'Script Failure Analysis' in data['sections_dropped']
         assert 'Script Failure Analysis' not in data['sections_omitted']
+        assert 'Script Failure Analysis' in data['message']
+
+    def test_non_dict_fragment_carrying_prose_is_dropped(self, tmp_path, monkeypatch):
+        """⛔ The silent content loss the partition used to miss entirely.
+
+        ``_fragment_has_payload`` is ``False`` for every non-dict, so a producer
+        that wrote prose instead of a fragment landed in ``sections_omitted``
+        with ``dropped == []`` — the report lost the content AND reported a
+        clean run. The render path has always been able to render this value.
+        """
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        fragments = _write_fragments_with_extra(
+            tmp_path,
+            ['script-failure-analysis: the producer wrote a sentence, not a fragment'],
+            'fragments-non-dict-prose.toon',
+        )
+
+        data = _compile(plan_id, fragments)
+        assert data['status'] == 'warning'
+        assert 'Script Failure Analysis' in data['sections_dropped']
+        assert 'Script Failure Analysis' not in data['sections_omitted']
+
+
+class TestBenignOmissionStaysClean:
+    """Shapes that render nothing: omitted, and the run stays ``success``."""
 
     def test_bookkeeping_only_fragment_is_a_benign_omission(self, tmp_path, monkeypatch):
         # Envelope keys plus an empty payload list carry nothing the report
@@ -222,23 +200,68 @@ class TestDroppedSectionIsLoud:
             'fragments-bookkeeping-only.toon',
         )
 
-        result = run_script(
-            SCRIPT_PATH,
-            'run',
-            '--plan-id',
-            plan_id,
-            '--mode',
-            'live',
-            '--fragments-file',
-            str(fragments),
-        )
-
-        assert result.success, result.stderr
-        data = result.toon()
+        data = _compile(plan_id, fragments)
         assert data['status'] == 'success'
         assert 'Permission Prompt Analysis' in data['sections_omitted']
         assert not data.get('sections_dropped')
 
+    def test_dispatch_boundaries_without_present_phase_is_omitted(self, tmp_path, monkeypatch):
+        """Per-phase entries exist, but none is ``present`` — so nothing renders.
+
+        This shape was previously a DROP, because a per-phase dict is payload to
+        the container predicate. It is an omission: the section's own renderer
+        prints ``_No dispatch-boundary artifacts present._`` for exactly this
+        input, so there is no body for the report to have lost.
+        """
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        fragments = _write_fragments_with_dispatch_boundaries(
+            tmp_path,
+            phases={
+                '5-execute': {
+                    'present': False,
+                    'rows': [],
+                    'unknown_count': 0,
+                    'clean_exit_queue_empty_count': 0,
+                },
+            },
+        )
+
+        data = _compile(plan_id, fragments)
+        assert data['status'] == 'success'
+        assert 'Phase Dispatch Boundaries' in data['sections_omitted']
+        assert not data.get('sections_dropped')
+        assert 'message' not in data
+
+    def test_clean_run_script_failure_analysis_keeps_the_run_clean(self, tmp_path, monkeypatch):
+        """⛔ The headline case: no script failures must not read as a lossy run.
+
+        The real clean-run fragment carries provenance and zero-valued counters
+        beside its empty lists, so the container predicate saw payload and every
+        such plan reported ``status: warning``.
+        """
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        fragments = _write_fragments_with_extra(
+            tmp_path,
+            [
+                'script-failure-analysis:',
+                '  status: success',
+                '  aspect: script_failure_analysis',
+                '  plan_id: demo-plan',
+                '  total_failures: 0',
+                '  unique_failures: 0',
+                '  failures[0]:',
+                '  findings[0]:',
+            ],
+            'fragments-clean-script-failure.toon',
+        )
+
+        data = _compile(plan_id, fragments)
+        assert data['status'] == 'success'
+        assert 'Script Failure Analysis' in data['sections_omitted']
+        assert not data.get('sections_dropped')
+
+
+class TestUnregisteredAspectCatchAll:
     def test_unregistered_aspect_is_rendered_by_the_catch_all(self, tmp_path, monkeypatch):
         # Regression guard for the generic fallback: a domain-contributed key
         # with no SECTION_SPEC row is rendered under a synthesized heading and
@@ -256,19 +279,7 @@ class TestDroppedSectionIsLoud:
             'fragments-unregistered-aspect.toon',
         )
 
-        result = run_script(
-            SCRIPT_PATH,
-            'run',
-            '--plan-id',
-            plan_id,
-            '--mode',
-            'live',
-            '--fragments-file',
-            str(fragments),
-        )
-
-        assert result.success, result.stderr
-        data = result.toon()
+        data = _compile(plan_id, fragments)
         assert data['status'] == 'success'
         assert 'Wrapper Tangle' in data['sections_written']
         assert 'Wrapper Tangle' not in data['sections_omitted']
