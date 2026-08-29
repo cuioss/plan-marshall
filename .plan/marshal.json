@@ -168,7 +168,7 @@
           "lane": "minimal"
         },
         "default:emit-landing": {
-          "lane": "off"
+          "lane": "minimal"
         },
         "default:archive-plan": {
           "lane": "minimal"
@@ -352,7 +352,7 @@
       "no_plan_body_days": 7,
       "build_results_days": 5
     },
-    "provisioned_version": "0.1.1527",
+    "provisioned_version": "0.1.1565",
     "config_seed_fingerprint": "58fc3cfc"
   }
 }
