@@ -53,7 +53,7 @@ a note rather than a hard mismatch.
 ## Emitted columns
 
 ```
-rows[N]{plan_id,declared_scope,actual_file_count,mismatch}
+rows[N]{plan_id,declared_scope,actual_file_count,count_basis,mismatch}
 ```
 
 | Column | Meaning |
@@ -61,7 +61,16 @@ rows[N]{plan_id,declared_scope,actual_file_count,mismatch}
 | `plan_id` | The scanned plan's directory basename. |
 | `declared_scope` | The `scope_estimate` declared in `references.json` (empty when unset). |
 | `actual_file_count` | The realized footprint's cardinality, resolved through the `realized_footprint` → `merge_commit_sha` → `modified_files` tier order; the declared `affected_files` count only when no tier resolves. |
-| `mismatch` | Empty when the actual count is inside the declared band; otherwise `declared={scope} band=[{low},{high}] actual={n}`. |
+| `count_basis` | Which source `actual_file_count` came from: the name of the tier that answered, or `declared` when no tier resolved and the count is the declared `affected_files` cardinality. |
+| `mismatch` | Empty when the actual count is inside the declared band; otherwise `declared={scope} band=[{low},{high}] actual={n} basis={basis}`. |
+
+⛔ **`actual_file_count` is never read without `count_basis`.** The count `0` is
+emitted by two different states — a tier that resolved and named no path (the plan
+changed nothing) and no tier resolving at all over a plan that declared nothing —
+and the correct reading differs between them. The basis is what tells them apart,
+so it travels with the count into both the row and the `mismatch` string. Reading
+the bare count re-introduces at the report layer exactly the ambiguity the tier
+order removes inside the resolver.
 
 ### Corpus-partition exclusion columns
 

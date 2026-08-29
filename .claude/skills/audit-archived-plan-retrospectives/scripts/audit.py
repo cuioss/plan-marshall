@@ -1556,6 +1556,29 @@ def graded_file_count(inputs: PlanInputs) -> int:
     return inputs.affected_files_count
 
 
+#: The `count_basis` value naming the declared-footprint fallback. Deliberately
+#: NOT a member of :data:`FOOTPRINT_TIERS` — it names the absence of any tier.
+COUNT_BASIS_DECLARED = "declared"
+
+
+def graded_count_basis(inputs: PlanInputs) -> str:
+    """Which source :func:`graded_file_count` actually answered from.
+
+    ⛔ Paired with `graded_file_count` and emitted ALONGSIDE it, because the count
+    alone cannot be read. A `0` is produced by two different states — a tier that
+    resolved and genuinely named no path, and no tier resolving at all with a
+    declared count of `0` — and grading, triaging or explaining the plan differs
+    between them. Publishing the count without the basis reproduces, one layer up,
+    the exact ambiguity the tier partition removed inside the resolver.
+
+    Returns the answering tier's name, or :data:`COUNT_BASIS_DECLARED` when the
+    footprint was unresolvable and the count came from declared `affected_files`.
+    """
+    if inputs.footprint_tier != FOOTPRINT_TIER_UNRESOLVED:
+        return inputs.footprint_tier
+    return COUNT_BASIS_DECLARED
+
+
 def _partition_shipping(
     all_inputs: list[PlanInputs],
 ) -> tuple[list[PlanInputs], list[PlanInputs]]:
@@ -2042,18 +2065,29 @@ def check_scope_estimate(inputs: PlanInputs) -> dict[str, Any]:
     # `affected_files`. See `graded_file_count` for why the tier — not an `or` —
     # is what makes that fallback safe.
     actual = graded_file_count(inputs)
+    # ⛔ The basis travels WITH the count, into the mismatch string and the emitted
+    # row alike. `actual=0` is otherwise unreadable: it is produced both by a tier
+    # that resolved and named no path, and by no tier resolving at all over a plan
+    # declaring nothing. Reporting the bare count would re-introduce at the emission
+    # layer the ambiguity `graded_file_count` removed at the resolution layer.
+    basis = graded_count_basis(inputs)
     band = SCOPE_FILE_BANDS.get(declared or "", None)
     mismatch = ""
     if band is not None:
         low, high = band
         if actual < low or (high is not None and actual > high):
-            mismatch = f"declared={declared} band=[{low},{high if high is not None else '∞'}] actual={actual}"
+            mismatch = (
+                f"declared={declared} "
+                f"band=[{low},{high if high is not None else '∞'}] "
+                f"actual={actual} basis={basis}"
+            )
     elif declared:
-        mismatch = f"declared={declared} (no band mapping) actual={actual}"
+        mismatch = f"declared={declared} (no band mapping) actual={actual} basis={basis}"
     return {
         "plan_id": inputs.plan_id,
         "declared_scope": declared or "",
         "actual_file_count": actual,
+        "count_basis": basis,
         "mismatch": mismatch,
     }
 
@@ -9420,7 +9454,13 @@ def run_checks(
             blocks.append(
                 emit_table_block(
                     "scope-estimate-accuracy",
-                    ["plan_id", "declared_scope", "actual_file_count", "mismatch"],
+                    [
+                        "plan_id",
+                        "declared_scope",
+                        "actual_file_count",
+                        "count_basis",
+                        "mismatch",
+                    ],
                     rows,
                     lambda r: bool(r["mismatch"]),
                 )
