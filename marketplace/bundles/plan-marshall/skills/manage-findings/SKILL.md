@@ -111,7 +111,7 @@ All three therefore REFUSE, returning `status: error` / `error: findings_store_u
 
 ### `ingest` refuses on the same guard
 
-`ingest` both READS the pending findings and WRITES to them (promoting validated fields, resolving rejections), so it carries the same guard and returns the same refusal. Against an unreached store its counts would be a three-way zero — `promoted: 0`, `rejected: 0`, `skipped: 0` — over records it never looked at, which is exactly the clean zero this discriminator exists to abolish. It resolves the store ONCE and composes every write path from that handle, so the read and the write can never address different stores.
+`ingest` both READS the pending findings and WRITES to them (promoting validated fields, resolving rejections), so it carries the same guard and returns the same refusal. Against an unreached store its counts would be a three-way zero — `promoted: 0`, `rejected: 0`, `skipped: 0` — over records it never looked at, which is exactly the clean zero this discriminator exists to abolish.
 
 ### The refusal shape travels to downstream consumers
 
@@ -256,7 +256,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 All commands return TOON format. Every payload **computed against the store** additionally carries the four store-state fields documented in **Store Resolution and the Store States** above (`store_resolution`, `store_path`, `findings_store_state`, `unresolved_store`), so a count is never reported without the substrate it was computed from.
 
-The one class of payload that carries none is an **argument-validation rejection** — an invalid `--type`, `--severity`, `--phase`, `--resolution` or `--certainty`. Those are refused before the store is resolved at all, so they report nothing about the store and publish nothing about it; the request never reached a substrate to describe. Every payload that reports a count, a record, a not-found verdict or a write outcome carries all four.
+The one class of payload that carries none is an **argument-validation rejection**. Those are refused before the store is resolved at all, so they report nothing about the store and publish nothing about it; the request never reached a substrate to describe. Every payload that reports a count, a record, a not-found verdict or a write outcome carries all four.
 
 **Add response**:
 ```toon

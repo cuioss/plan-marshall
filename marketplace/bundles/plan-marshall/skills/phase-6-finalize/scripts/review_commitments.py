@@ -87,6 +87,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from _findings_store_state import as_unresolved_store_error
 from toon_parser import serialize_toon
 
 #: Resolutions in which the run took a POSITION on the line: the reviewer's point
@@ -387,8 +388,8 @@ def _read_pr_comment_findings(plan_id: str) -> dict:
       ``KeyError('findings')`` — an error naming a dict key instead of the absent
       plan directory that caused it.
 
-    Returns the query payload verbatim; the caller checks ``status`` before
-    reading ``findings``.
+    Returns the query payload verbatim; the caller recognises the refusal via
+    ``as_unresolved_store_error`` before reading ``findings``.
     """
     from _findings_core import query_findings
 
@@ -417,11 +418,12 @@ def cmd_reconcile(args: argparse.Namespace) -> int:
         return 1
     try:
         read = _read_pr_comment_findings(args.plan_id)
-    except (OSError, ValueError, KeyError) as exc:
+    except (OSError, ValueError) as exc:
         print(serialize_toon({'status': 'error', 'error': 'load_failure', 'detail': str(exc)}))
         return 1
-    if read.get('status') != 'success':
-        print(serialize_toon(read))
+    refusal = as_unresolved_store_error(read)
+    if refusal is not None:
+        print(serialize_toon(refusal))
         return 1
     findings = read['findings']
 

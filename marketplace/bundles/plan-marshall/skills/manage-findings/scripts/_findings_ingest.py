@@ -26,9 +26,7 @@ surface triage consumes is clean-by-construction.
 ``resolve_finding`` / ``resolve_qgate_finding`` to reject — so it carries the
 same explicit store guard as the ``add_`` surfaces and refuses an unreached store
 through the shared ``unresolved_store_error`` rather than reporting a pass over
-records it never read. Its paths are composed from that resolved handle, never
-from the cwd-relative ``get_findings_path`` / ``get_qgate_path`` helpers, so the
-read and the write can no longer address different stores.
+records it never read.
 
 Stdlib-only — no external dependencies (except shared modules via PYTHONPATH).
 """
