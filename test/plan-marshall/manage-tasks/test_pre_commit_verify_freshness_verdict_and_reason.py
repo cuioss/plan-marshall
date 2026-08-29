@@ -7,6 +7,15 @@ notations and among unrelated entries. Everything else is stale: an empty or
 absent ledger, an entry for a different sha, and a build for THIS sha that
 failed, timed out, was killed, or carries no status at all. The last three tests
 hold the stated reason to the row it was actually read from.
+
+⛔ **The routes exercised here are the ``_stale_reason`` ones only, and they are
+not the whole `reason` vocabulary.** Four further routes —
+``notation_unrelated``, ``notation_absent``, ``build_scope_narrow`` and
+``no_row_both_attributable_and_adequate`` — are produced by the two cross-check
+dimensions rather than by ``_stale_reason``, and are covered in
+``test_freshness_notation_crosscheck.py``. This file's enumeration is therefore
+deliberately PARTIAL over the gate's reasons; a reader who took it for the
+complete set would conclude a cross-check refusal cannot happen.
 """
 
 
@@ -15,6 +24,7 @@ from __future__ import annotations
 from argparse import Namespace
 from pathlib import Path
 
+import _freshness_crosscheck as crosscheck
 import file_ops
 import pytest
 from _pre_commit_verify_freshness_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
@@ -75,6 +85,43 @@ def test_fresh_when_matching_build_entry_present(plan_context, monkeypatch, tmp_
     assert result['matched_notation'] == 'plan-marshall:build-pyproject:pyproject_build'
 
 
+def test_a_pass_publishes_the_coverage_dimension_at_its_honest_value(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """The scope dimension reaches the pass payload, and does NOT default to ``covered``.
+
+    This file's rows are notation-shaped: their ``args`` carries no
+    ``--command-args``, so the coverage dimension genuinely cannot read them. The
+    pass must therefore say ``undetermined`` with a named reason, not stay silent
+    and not report ``covered``.
+
+    ⛔ Both halves are the point. A missing ``scope_cross_check`` key would make
+    every existing case in this file pass while the dimension was never wired to
+    the payload at all; a ``covered`` value would be the permissive default that
+    re-opens the false-green — the check would announce it had verified coverage
+    it never looked at. Asserting the exact ``undetermined`` value is what
+    distinguishes "wired and honest" from either failure.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-scope-published')
+    _write_status(plan_dir)
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA)])
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-scope-published'))
+
+    assert result['status'] == 'fresh', result
+    assert result['scope_cross_check'] == crosscheck.UNDETERMINED, result
+    assert result['scope_cross_check_reason'] in {
+        crosscheck.REASON_SCOPE_UNREADABLE,
+        crosscheck.REASON_REQUIRED_COVERAGE_UNKNOWN,
+        crosscheck.REASON_VOCABULARY_UNIMPORTABLE,
+    }, result
+    # ``row_scopes`` is published on the pass path too, so a reader can see what
+    # each candidate recorded rather than only the aggregate verdict.
+    assert 'row_scopes' in result
+
+
 # =============================================================================
 # The ``stale`` REASON — a distinct remedy per route
 #
@@ -85,9 +132,10 @@ def test_fresh_when_matching_build_entry_present(plan_context, monkeypatch, tmp_
 # retrying" on every one of them — a cause the gate never established, and a
 # remedy that is exactly the blind retry a ``killed`` build forbids.
 #
-# The two ``notation_*`` routes are NOT exercised here: they come from the
-# cross-check rather than from ``_stale_reason``, and live in
-# ``test_freshness_notation_crosscheck.py``.
+# The two ``notation_*`` routes and the two coverage routes
+# (``build_scope_narrow``, ``no_row_both_attributable_and_adequate``) are NOT
+# exercised here: all four come from the cross-check rather than from
+# ``_stale_reason``, and live in ``test_freshness_notation_crosscheck.py``.
 # =============================================================================
 
 def test_fresh_match_is_tier_agnostic_across_resolved_notations(
@@ -293,9 +341,10 @@ def test_stale_when_only_change_entry_matches_sha(plan_context, monkeypatch, tmp
 # retrying" on every one of them — a cause the gate never established, and a
 # remedy that is exactly the blind retry a ``killed`` build forbids.
 #
-# The two ``notation_*`` routes are NOT exercised here: they come from the
-# cross-check rather than from ``_stale_reason``, and live in
-# ``test_freshness_notation_crosscheck.py``.
+# The two ``notation_*`` routes and the two coverage routes
+# (``build_scope_narrow``, ``no_row_both_attributable_and_adequate``) are NOT
+# exercised here: all four come from the cross-check rather than from
+# ``_stale_reason``, and live in ``test_freshness_notation_crosscheck.py``.
 # =============================================================================
 
 @pytest.mark.parametrize(
