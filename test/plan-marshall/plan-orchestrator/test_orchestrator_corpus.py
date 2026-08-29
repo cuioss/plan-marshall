@@ -3232,11 +3232,15 @@ def _pre_fix_own_unreadable_count(shared_unreadable: list) -> int:
 
 def _own_unreadable_tally(result: dict) -> int:
     """The shipped own-unreadable count, read off the real verb's payload."""
-    return next(
+    count = next(
         row['count']
         for row in result['spec_surface_states']
         if row['derivation_status'] == SURFACE_UNREADABLE
     )
+    # The payload is an untyped dict, so the row value arrives as Any; the
+    # int() is the narrowing this function's return type promises, not a coercion
+    # of a value that might not be one.
+    return int(count)
 
 
 def test_the_own_unreadable_tally_changed_over_a_sibling_bearing_population(plan_context):
