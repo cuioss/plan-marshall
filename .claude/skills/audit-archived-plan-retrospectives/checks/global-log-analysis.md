@@ -91,7 +91,16 @@ For each parsed line the script:
 7. **Ranks callers by time owned** (`cost_rollup`) — the **cost** complement to
    the two instruments above, and the only one that answers *"what dominates
    total time?"*. Ungated by call count and ranked by cumulative seconds, with
-   each row's `share_pct` of the published `total_script_seconds`.
+   each row's `share_pct` of the corpus total.
+   ⛔ **`share_pct` is NOT recomputable from the printed columns.** Its
+   denominator is the corpus total at **3-decimal** precision, matching the
+   3-decimal `cumulative_seconds` it divides — but the block publishes
+   `total_script_seconds` at **1 decimal**, and that published figure is not the
+   denominator. Dividing a printed `cumulative_seconds` by the printed
+   `total_script_seconds` therefore reproduces `share_pct` only by coincidence,
+   and the disagreement grows as the corpus total shrinks. Read `share_pct` as
+   given; do not re-derive it. (Aligning the two precisions is owned elsewhere —
+   this document states the difference rather than hiding it.)
    ⛔ **Read it beside the slow-call ceiling, never instead of it.** A call at a
    fraction of a percent of `slow_call_seconds`, repeated a hundred thousand
    times, is invisible to that ceiling **by construction** — a key ranked first
@@ -244,7 +253,11 @@ of the informational context (corpus size, level buckets).
   conclusion.
 - **`dominant-cost-caller`** — the cumulative cost roll-up: the keys that own
   the most recorded wall-clock, ranked by seconds owned with each row's share of
-  `total_script_seconds`. **Read it against `slow-call` and
+  the corpus total. ⛔ That share's denominator is the corpus total at
+  **3-decimal** precision, while the block publishes `total_script_seconds` at
+  **1 decimal**, so `share_pct` does **not** reconcile against the printed total
+  — see the roll-up entry under "What the check does" for the full statement.
+  **Read it against `slow-call` and
   `high-frequency-caller`, because it answers a question neither can.** A key
   ranked at the top here while `slow_call_count` is `0` is a *dominant-but-fast*
   caller — cost accumulated below the per-call ceiling, invisible to it by

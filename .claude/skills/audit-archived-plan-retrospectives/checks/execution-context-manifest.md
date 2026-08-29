@@ -20,8 +20,11 @@ emits — it does not re-implement the matrix.
 Per scanned plan, the script reads the structured inputs (never
 `solution_outline.md` prose):
 
-- `references.json` — `scope_estimate`, and the lengths of `affected_files[]` /
-  `modified_files[]`.
+- `references.json` — `scope_estimate`, the length of `affected_files[]`, and the
+  cardinality of the **realized footprint**, resolved through the
+  `realized_footprint` → `merge_commit_sha` → `modified_files` tier order rather
+  than read off the retired `modified_files` key alone (see
+  `scope-estimate-accuracy.md` § "Inputs the check reads" for the tier contract).
 - `status.json::metadata` — `change_type` and the plan-source surrogate
   (`plan_source` / `recipe_key`).
 - `execution.toon` — the persisted manifest, including
@@ -57,7 +60,7 @@ rows[N]{plan_id,verdict,severity,reason,expected_rule,actual_rule,change_type,sc
 | `scope` | `references.json::scope_estimate`. |
 | `recipe` | The plan-source / recipe-key surrogate. |
 | `affected` | `len(affected_files)`. |
-| `modified` | `len(modified_files)`. |
+| `modified` | The realized footprint's cardinality, tier-resolved (`realized_footprint` → `merge_commit_sha` → `modified_files`). ⛔ Not `len(modified_files)`: current writers no longer emit that key, so reading it raw reported a hard `0` for every recent plan — indistinguishable from a plan that genuinely changed nothing. |
 | `name_drift` | Populated when a phase-5 step ID resolves to no matrix `role:` (unresolvable role) or the resolved roles have zero intersection with `{quality-gate, module-tests}` (see below). Empty otherwise. |
 | `owner_drift` | Populated when a phase-6 built-in step ID resolves to no ownership class (orchestrator / leaf / hybrid) — the persisted manifest references a finalize step the canonical roster renamed or removed (#852 D6, see below). Empty otherwise. |
 

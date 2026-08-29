@@ -220,6 +220,7 @@ import argparse
 import json
 import re
 import shutil
+import subprocess
 import sys
 from collections import defaultdict
 from collections.abc import Callable
@@ -792,14 +793,68 @@ def percentile(values: list[float], pct: float) -> float:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_repo_root() -> Path:
-    """Resolve the project root by walking up from the working directory.
+def _resolve_main_checkout(cwd: Path) -> Path | None:
+    """Return the MAIN checkout root for `cwd`'s repository, or `None`.
 
-    Every repo-root-anchored read and write in this script — the corpus scan
-    roots, the lessons-corpus read, the global-log read, the retire-on-quiet run
-    history, and the persisted report — is derived from the returned path, so it
-    must name the project rather than whichever directory the auditor happened
-    to be invoked from.
+    Hand-mirror of the shared main-anchored store rule: `git rev-parse
+    --git-common-dir` answers with the COMMON git directory, which is the MAIN
+    checkout's `.git` whether it is asked from the main checkout or from a linked
+    worktree. Its parent is therefore the main checkout root in both cases, which
+    is precisely the property a cwd walk-up does not have.
+
+    Returns `None` — never a guess — whenever the question cannot be answered
+    here: git is unavailable, `cwd` is outside a repository, or the common
+    directory is not a conventional `.git` (a bare repo, or a `--git-dir`
+    override). The caller falls back to the cwd walk-up on `None`.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(cwd), "rev-parse", "--git-common-dir"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    raw = proc.stdout.strip()
+    if not raw:
+        return None
+    common = Path(raw)
+    if not common.is_absolute():
+        common = (cwd / common).resolve()
+    if common.name != ".git":
+        return None
+    return common.parent
+
+
+def _resolve_repo_root() -> Path:
+    """Resolve the CWD-SCOPED project root by walking up from the working directory.
+
+    This is the root for the paths that genuinely belong to the tree the auditor
+    was invoked from, and only those: the plan scan roots (`--plan-dir` and
+    `--include-active`), the persisted report under `AUDIT_REPORTS_REL`, the
+    retire-on-quiet run history read back out of that same report directory, and
+    the dormation source and destination. Invoked from a subdirectory, it must
+    still name the project rather than the directory it happened to be called
+    from — that walk-up is the whole reason this resolver exists.
+
+    ⚠ It is deliberately NOT the root for the main-anchored corpora. Those go
+    through :func:`_resolve_main_root`, because under the cwd-pinned execution
+    model (ADR-002) a plan's worktree carries its OWN `.plan/local`, so a walk-up
+    from a pinned worktree stops at the worktree root and a corpus read there sees
+    only the one plan currently executing. Reporting that partial read as a corpus
+    fact is the same could-not-see-it-all-reported-as-a-total defect these checks
+    exist to surface. See :func:`_resolve_main_root` for the partition.
+
+    **The archived-plan tree is cwd-scoped by decision, not by accident.** It is
+    the one `.plan/local` store this resolver still answers for, and that is
+    deliberate: `--plan-dir` is a caller-supplied argument that may name any
+    directory (every test passes a sandbox path), so the scan roots follow the
+    invocation while the corpora follow the machine. Auditing a worktree's own
+    archived plans is a legitimate request; reading a worktree's partial lessons
+    corpus and calling it the corpus is not.
 
     Returns:
         The nearest ancestor of the working directory (the working directory
@@ -812,6 +867,36 @@ def _resolve_repo_root() -> Path:
         if (candidate / ".plan" / "local").is_dir():
             return candidate
     return cwd
+
+
+def _resolve_main_root() -> Path:
+    """Resolve the root for the MAIN-ANCHORED reads — the shared-store resolver.
+
+    Every `.plan/`-resident store that is NOT scoped to a single plan is
+    main-anchored: the lessons corpus (`.plan/local/lessons-learned`), the global
+    log corpus (`.plan/local/logs`), the merge-lock logs, the single append-only
+    change-ledger (`.plan/work/change-ledger.jsonl`), and the project config
+    (`.plan/marshal.json`, `.plan/run-configuration.json`). One copy of each
+    exists per machine and it lives in the main checkout; a linked worktree either
+    lacks them outright or carries only the sliver belonging to the plan currently
+    executing there.
+
+    The git-tracked source tree is NOT in this set — `marketplace/bundles` is
+    present and current in every worktree, and a check that grades the live router
+    should read the router the run is actually exercising. Only the git-ignored,
+    machine-singular `.plan/` stores are re-anchored.
+
+    Returns:
+        The main checkout root when git can answer (:func:`_resolve_main_checkout`
+        — correct from both the main checkout and a linked worktree). Otherwise
+        the cwd walk-up from :func:`_resolve_repo_root`. That fallback means only
+        "no repository answered" — git is unavailable, or the invocation is
+        outside any repository — and never that the two roots are known to agree.
+    """
+    main_root = _resolve_main_checkout(Path.cwd())
+    if main_root is not None:
+        return main_root
+    return _resolve_repo_root()
 
 
 # ---------------------------------------------------------------------------
@@ -1190,6 +1275,100 @@ def parse_metrics_end_time_presence(metrics_path: Path) -> MetricsEndTimePresenc
 # Per-plan input collection
 # ---------------------------------------------------------------------------
 
+#: The auditor's mirror of the shared footprint resolver's tier order, restricted
+#: to the tiers that resolve OFFLINE. Named in resolution order; the FIRST tier
+#: that answers decides, and no later tier can change an answer already given.
+#:
+#: The shared resolver (`plan-retrospective/scripts/_footprint_resolver.py`) also
+#: carries a live-worktree tier above these and a PR-landing tier between
+#: `merge_commit_sha` and `modified_files`. Both are deliberately absent here: an
+#: archived plan has no live worktree, and the PR-landing tier resolves through
+#: the CI abstraction over the network, which this deterministic corpus auditor
+#: must not do. Their absence can only leave a footprint UNRESOLVED — neither
+#: could overturn an answer a tier below it gives — so the omission costs
+#: resolution coverage and never correctness.
+FOOTPRINT_TIERS = ("realized_footprint", "merge_commit_sha", "modified_files")
+
+#: The `footprint_tier` value meaning NO tier answered. Distinct from a tier that
+#: answered with an empty set: a resolved-empty footprint is a real observation
+#: ("this plan changed nothing"), while this sentinel is the absence of any
+#: observation, and grading them alike is the defect this partition removes.
+FOOTPRINT_TIER_UNRESOLVED = "unresolved"
+
+
+def _coerce_footprint(value: Any) -> set[str] | None:
+    """Coerce a references footprint value to a path set, or `None` if not a list.
+
+    `[]` coerces to the EMPTY SET, not to `None` — a recorded empty list is a
+    resolved, genuinely-empty footprint.
+    """
+    if not isinstance(value, list):
+        return None
+    return {str(p).strip() for p in value if p}
+
+
+def _merge_commit_footprint(plan_dir: Path, refs: dict[str, Any]) -> set[str] | None:
+    """Tier 2: the path set the recorded landing commit introduced, or `None`.
+
+    `git diff --name-only {sha}^1 {sha}` — the FIRST-PARENT range, which names
+    exactly what the landing commit added for both a squash landing (single
+    parent, the base) and a true merge (first parent, the base branch). It is not
+    a `base..HEAD` range and so carries no sibling contamination.
+
+    Any failure returns `None` so the chain falls through rather than fabricating
+    a set: no SHA recorded, git unavailable, `plan_dir` outside a repository, or a
+    SHA this clone never fetched.
+    """
+    sha = refs.get("merge_commit_sha")
+    if not isinstance(sha, str) or not sha.strip():
+        return None
+    sha = sha.strip()
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(plan_dir), "diff", "--name-only", f"{sha}^1", sha],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    return {line.strip() for line in proc.stdout.splitlines() if line.strip()}
+
+
+def resolve_realized_footprint(
+    plan_dir: Path, refs: dict[str, Any]
+) -> tuple[set[str] | None, str]:
+    """Resolve a plan's REALIZED footprint through :data:`FOOTPRINT_TIERS`.
+
+    Replaces the direct read of the retired `references.modified_files` key. That
+    key is now the LAST tier rather than the only one, so a plan carrying a
+    capture-while-true `realized_footprint` is graded on what it actually changed
+    instead of on a legacy key that current writers no longer emit at all.
+
+    Returns:
+        `(paths, tier)`. `tier` is the member of :data:`FOOTPRINT_TIERS` that
+        answered, or :data:`FOOTPRINT_TIER_UNRESOLVED` when none did — in which
+        case `paths` is `None`. An answering tier may legitimately return an
+        EMPTY set; that is a resolved empty footprint and the tier still names it.
+    """
+    captured = _coerce_footprint(refs.get("realized_footprint"))
+    if captured is not None:
+        return captured, "realized_footprint"
+
+    merge_set = _merge_commit_footprint(plan_dir, refs)
+    if merge_set is not None:
+        return merge_set, "merge_commit_sha"
+
+    # SHIM(B): the retired `references.modified_files` key, kept as the lowest tier
+    # for archived plans written before it stopped being emitted.
+    legacy = _coerce_footprint(refs.get("modified_files"))
+    if legacy is not None:
+        return legacy, "modified_files"
+
+    return None, FOOTPRINT_TIER_UNRESOLVED
+
 
 @dataclass
 class PlanInputs:
@@ -1199,7 +1378,18 @@ class PlanInputs:
     scope_estimate: str | None = None
     recipe_key: str | None = None
     affected_files_count: int = 0
+    #: Raw `references.json::modified_files` cardinality. Retained for provenance
+    #: and for the tier-3 fallback ONLY — never graded on directly. Every consumer
+    #: reads `realized_footprint_count` / :func:`graded_file_count` instead.
     modified_files_count: int = 0
+    #: Cardinality of the REALIZED footprint resolved through
+    #: :func:`resolve_realized_footprint`. `0` is ambiguous on its own — read it
+    #: together with `footprint_tier`, which says whether it was resolved.
+    realized_footprint_count: int = 0
+    #: Which tier answered: one of :data:`FOOTPRINT_TIERS`, or
+    #: :data:`FOOTPRINT_TIER_UNRESOLVED` when none did. This is the field that
+    #: separates a resolved-empty footprint from an unresolvable one.
+    footprint_tier: str = "unresolved"
     phase_5_candidates: list[str] = field(default_factory=list)
     phase_6_candidates: list[str] = field(default_factory=list)
     manifest_present: bool = False
@@ -1270,6 +1460,11 @@ def collect_inputs(plan_dir: Path) -> PlanInputs:
     inputs.scope_estimate = refs.get("scope_estimate")
     inputs.affected_files_count = len(refs.get("affected_files") or [])
     inputs.modified_files_count = len(refs.get("modified_files") or [])
+    # The REALIZED footprint, tier-resolved. `modified_files` above is retained as
+    # raw provenance and is the LAST tier of this resolution, never the first.
+    realized, tier = resolve_realized_footprint(plan_dir, refs)
+    inputs.realized_footprint_count = len(realized) if realized is not None else 0
+    inputs.footprint_tier = tier
 
     # track-selection-accuracy: the ACTUAL planning track the plan ran. The lane
     # lives in status.json::metadata.planning_lane; the coarser track in
@@ -1330,9 +1525,35 @@ def _plan_shipped(inputs: PlanInputs) -> bool:
     Two independent pieces of delivery evidence, either sufficient:
 
     - a PR record — a non-empty `pr_number` in any persisted CI-run manifest;
-    - a real footprint — a non-empty `references.json::modified_files`.
+    - a real footprint — a non-empty REALIZED footprint, resolved through
+      :func:`resolve_realized_footprint`'s tier order rather than read off the
+      retired `references.json::modified_files` key.
+
+    The PR-record criterion is independent of the footprint one, so the shipping
+    partition was never meaningfully at risk from the retired key; the tier
+    resolution is applied here anyway so every consumer of the footprint answers
+    the same question the same way.
     """
-    return bool(plan_pr_number(inputs.plan_dir)) or inputs.modified_files_count > 0
+    return bool(plan_pr_number(inputs.plan_dir)) or inputs.realized_footprint_count > 0
+
+
+def graded_file_count(inputs: PlanInputs) -> int:
+    """The file count a check GRADES the plan on: realized when resolved, else declared.
+
+    ⛔ Deliberately not `realized_footprint_count or affected_files_count`. That
+    `or` cannot tell a footprint that RESOLVED TO EMPTY from one that did not
+    resolve at all — both are `0` — so it silently substitutes the DECLARED
+    footprint for a realized one that genuinely named no path. Resolved-empty and
+    unresolved are different answers (the shared resolver says so explicitly), and
+    only the tier discriminates them, so the tier is what this reads.
+
+    The declared `affected_files` fallback survives for the genuinely unresolvable
+    case, where it is the only number there is — but it is now reached ONLY there,
+    and never as a silent stand-in for a realized answer that exists.
+    """
+    if inputs.footprint_tier != FOOTPRINT_TIER_UNRESOLVED:
+        return inputs.realized_footprint_count
+    return inputs.affected_files_count
 
 
 def _partition_shipping(
@@ -1574,7 +1795,11 @@ def check_execution_manifest(
         "scope": inputs.scope_estimate,
         "recipe": inputs.recipe_key,
         "affected": inputs.affected_files_count,
-        "modified": inputs.modified_files_count,
+        # The REALIZED footprint's cardinality, tier-resolved. Previously the raw
+        # `modified_files` count, which reported a hard `0` for every plan written
+        # after that key stopped being emitted — indistinguishable from a plan that
+        # really changed nothing.
+        "modified": inputs.realized_footprint_count,
         "name_drift": name_drift,
         "owner_drift": owner_drift,
     }
@@ -1811,9 +2036,12 @@ def check_metrics(inputs: PlanInputs) -> dict[str, Any]:
 
 def check_scope_estimate(inputs: PlanInputs) -> dict[str, Any]:
     declared = inputs.scope_estimate
-    # Actual touched-file count: prefer modified_files (post-execution truth),
-    # fall back to affected_files (planned).
-    actual = inputs.modified_files_count or inputs.affected_files_count
+    # Actual touched-file count: the REALIZED footprint, resolved through the
+    # `realized_footprint` → `merge_commit_sha` → `modified_files` tier order, and
+    # only when NO tier resolves does this fall back to the declared
+    # `affected_files`. See `graded_file_count` for why the tier — not an `or` —
+    # is what makes that fallback safe.
+    actual = graded_file_count(inputs)
     band = SCOPE_FILE_BANDS.get(declared or "", None)
     mismatch = ""
     if band is not None:
@@ -2884,9 +3112,17 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
     # duration, so neither a few-calls/high-total key nor a
     # many-calls/low-per-call key is ranked by its actual cost there.
     #
-    # `share_pct` is a share of `total_script_seconds`, the SAME denominator the
-    # block publishes, and is computed from the ROUNDED figures emitted so a
-    # reader recomputing it from the printed columns gets the printed value back.
+    # `share_pct` is a share of the corpus total at 3-decimal precision
+    # (`rollup_total` below), matching the 3-decimal `cumulative_seconds` it
+    # divides.
+    #
+    # ⛔ That denominator is NOT the `total_script_seconds` this block publishes,
+    # which is rounded to 1 decimal. `share_pct` is therefore NOT recomputable
+    # from the printed columns — dividing a printed `cumulative_seconds` by the
+    # printed `total_script_seconds` reproduces it only by coincidence, and the
+    # disagreement grows as the corpus total shrinks. Aligning the two precisions
+    # is owned elsewhere; this comment states the difference rather than claiming
+    # a reconcilability the emitted figures do not have.
     #
     # CURRENCY: every figure here is WALL-CLOCK. The log carries no per-call
     # token measurement, so no share computed here restates as a billing share.
@@ -2897,9 +3133,12 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
     # 100% share, and a lone 0.04 s call published `0.0 s` — nonzero work rendered
     # as a measured zero, in the instrument built to stop exactly that.
     #
-    # `share_pct` is still computed from the ROUNDED figures the block emits, so a
-    # reader recomputing it from the printed columns gets the printed value back;
-    # at 1 ms that rounding no longer moves the answer.
+    # `share_pct` is computed from figures rounded to this same 3-decimal
+    # precision, so numerator and denominator agree with each other — but ⛔ NOT
+    # with the 1-decimal `total_script_seconds` the block publishes. `rollup_total`
+    # is an INTERNAL denominator that never appears in the output, so a reader
+    # cannot recompute `share_pct` from the printed columns. See the block comment
+    # above; changing the published precision is out of scope here.
     rollup_total = round(total_seconds, 3)
     ranked_keys = sorted(call_seconds, key=lambda k: (-call_seconds[k], k))
     cost_rollup: list[dict[str, Any]] = []
@@ -3074,7 +3313,7 @@ def _collect_token_economics_rows(all_inputs: list[PlanInputs]) -> list[_TokenEc
         total = sum(phase_tokens.values())
         tasks_dir = inputs.plan_dir / "tasks"
         task_count = len(list(tasks_dir.glob("TASK-*.json"))) if tasks_dir.is_dir() else 0
-        files = inputs.modified_files_count or inputs.affected_files_count
+        files = graded_file_count(inputs)
         rows.append(
             _TokenEconomicsRow(
                 plan_id=inputs.plan_id,
@@ -4210,7 +4449,14 @@ def _sequence_build_minimality_plan(
     # documentation). Reuses the inputs already collected; falls back to reading
     # references for the actual file list (collect_inputs only kept counts).
     refs = read_json(plan_dir / "references.json") or {}
-    affected = refs.get("modified_files") or refs.get("affected_files") or []
+    # The realized PATH SET (not just its cardinality — this classifier needs the
+    # extensions). Tier-resolved, with the declared `affected_files` reached only
+    # when no tier resolves, mirroring `graded_file_count`.
+    realized, footprint_tier = resolve_realized_footprint(plan_dir, refs)
+    if footprint_tier != FOOTPRINT_TIER_UNRESOLVED and realized is not None:
+        affected = sorted(realized)
+    else:
+        affected = refs.get("affected_files") or []
     py_files = [f for f in affected if isinstance(f, str) and f.endswith(".py")]
     docs_only = inputs.change_type == "documentation" or (bool(affected) and not py_files)
 
@@ -4457,9 +4703,29 @@ def check_input_integrity(inputs: PlanInputs) -> dict[str, Any]:
     Per-plan deterministic predicate over the plan's canonical inputs. Returns the
     health columns, the three flags (`metrics_blind`, `incomplete_lifecycle`,
     `missing_dispatch_markers`), and a `data_confidence` bucket
-    (`fully-recorded` / `partial` / `blind`) the corpus summary tallies. The bucket
-    is `blind` exactly when the 5-execute phase recorded zero tokens — the
-    load-bearing case that floors every downstream token number for the plan.
+    (`fully-recorded` / `partial` / `blind`) the corpus summary tallies.
+
+    `blind` has TWO routes in and one carve-out, and the shipped predicate is
+    `(execute_absent or execute_recorded_zero) and not execute_marker_explained`:
+
+    * **recorded zero** — `5-execute` is present in `metrics.toon` and states zero
+      tokens. The load-bearing case that floors every downstream token number.
+    * **absent** — `metrics.toon` carries no `5-execute` section at all. This route
+      is not milder than the first: absence is strictly less recorded than a
+      recorded zero, so it can never grade below it. Naming only the recorded-zero
+      route is what let the predecessor test `... == 0` on an absent phase — vacuous
+      at exactly the value it existed to catch.
+    * **the #812 marker carve-out** — a zero-token `5-execute` listed in
+      `phases_missing_end_time` was never CLOSED by design, so its gap is explained
+      rather than accidental. It grades `partial`, not `blind`. The presence read is
+      three-state: an unreadable record explains nothing and can never buy a
+      zero-token phase out of the blind set.
+
+    Both routes and the carve-out are stated here because a docstring naming one
+    route reads as a complete specification of the bucket, and this one was wrong
+    in both directions — it excluded the absent route and omitted the carve-out.
+    `checks/input-integrity.md` states the same contract; the two must move
+    together.
     """
     plan_dir = inputs.plan_dir
 
@@ -5533,8 +5799,20 @@ _EXCLUDED_NON_SHIPPING_RE = re.compile(
 #: enumerated. A test asserts this set and the emitters agree, so a new
 #: population key is a failure rather than a silent gap.
 _EXAMINED_POPULATION_KEYS = ("plans_in_corpus", "plans_in_series", "plans_measured")
-_PLANS_IN_CORPUS_RE = re.compile(
-    rf"^(?:{'|'.join(_EXAMINED_POPULATION_KEYS)}):\s*(\d+)\s*$", re.MULTILINE
+
+#: One compiled pattern PER population key, built in the SAME order as the tuple
+#: above and searched in that order — the first key that matches wins.
+#:
+#: ⛔ A single alternation CANNOT express this precedence, and reads as though it
+#: does. `re.search` returns the earliest match in the TEXT, never the earliest
+#: alternative in the pattern, so an alternation resolves ties by print order and
+#: the documented ordering below decides nothing. That is not a latent risk: the
+#: checks that publish an alias beside the canonical key print the alias FIRST, so
+#: the alternation returned the alias in exactly the blocks where the precedence
+#: was supposed to apply. Keep this a per-key loop.
+_EXAMINED_POPULATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (key, re.compile(rf"^{re.escape(key)}:\s*(\d+)\s*$", re.MULTILINE))
+    for key in _EXAMINED_POPULATION_KEYS
 )
 
 
@@ -5549,13 +5827,22 @@ def _examined_population(block: str, corpus_size: int) -> int:
 
     Precedence, strongest evidence first:
 
-    1. `plans_in_corpus` — the check's OWN statement of what it examined. Read
-       first because a check that narrowed its population by any rule has already
-       computed the answer, and no exclusion arithmetic here can beat it.
+    1. The check's OWN declared population, read key by key in
+       `_EXAMINED_POPULATION_KEYS` order — `plans_in_corpus`, then
+       `plans_in_series`, then `plans_measured` — and the FIRST key present
+       decides. `plans_in_corpus` is canonical and outranks the two check-local
+       aliases; the aliases are read at all so a check publishing only its own
+       spelling is still understood. The declaration is read before any exclusion
+       arithmetic because a check that narrowed its population by any rule has
+       already computed the answer, and no arithmetic here can beat it.
        `exploration-share` and `billing-composition` narrow on a SECOND axis
        (`plans_excluded_no_counters`) that the shipping arithmetic below cannot
        see, so deriving from exclusions alone reported both as `disciplinary` over
        a population of zero.
+
+       ⚠ The ordering is enforced by iterating the keys, never by one alternation
+       — see `_EXAMINED_POPULATION_PATTERNS` for why an alternation silently
+       substitutes the block's print order for this list.
     2. `plans_excluded_non_shipping` — stamped by `_annotate_exclusions` on the
        `DELIVERY_COST_CHECKS`, which run over the shipping partition.
     3. The whole corpus, for a block declaring neither.
@@ -5567,9 +5854,10 @@ def _examined_population(block: str, corpus_size: int) -> int:
     the point: an enumeration of exclusion keys is one new axis away from being
     wrong, so the declaration is read instead of the axes being counted.
     """
-    declared = _PLANS_IN_CORPUS_RE.search(block)
-    if declared is not None:
-        return int(declared.group(1))
+    for _key, pattern in _EXAMINED_POPULATION_PATTERNS:
+        declared = pattern.search(block)
+        if declared is not None:
+            return int(declared.group(1))
     excluded = _EXCLUDED_NON_SHIPPING_RE.search(block)
     if excluded is None:
         return corpus_size
@@ -9016,9 +9304,32 @@ def emit_cross_check_synthesis_block(result: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Path) -> str:
-    corpus_sigs = _lessons_corpus_signatures(repo_root)
-    corpus_titles = _lessons_corpus_titles(repo_root)
+def run_checks(
+    all_inputs: list[PlanInputs],
+    selected: list[str],
+    repo_root: Path,
+    main_root: Path | None = None,
+) -> str:
+    """Run `selected` over `all_inputs` and return the concatenated TOON blocks.
+
+    Two roots, because the reads split into two populations that a single root
+    conflates (see :func:`_resolve_repo_root` and :func:`_resolve_main_root`):
+
+    * `repo_root` — CWD-SCOPED. The persisted report, the retire-on-quiet run
+      history read back out of it, and the live routing logic under
+      `marketplace/bundles`.
+    * `main_root` — MAIN-ANCHORED. The lessons corpus, the global log corpus, the
+      merge-lock logs, the change-ledger, and the project config.
+
+    `main_root` defaults to `repo_root`, which is what a caller staging BOTH
+    populations inside one sandbox wants — every test does exactly that. `main()`
+    is the caller that passes the two roots separately, because it is the only one
+    that can be run from a linked worktree.
+    """
+    if main_root is None:
+        main_root = repo_root
+    corpus_sigs = _lessons_corpus_signatures(main_root)
+    corpus_titles = _lessons_corpus_titles(main_root)
     blocks: list[str] = []
     summary_metrics: dict[str, Any] = {}
 
@@ -9117,7 +9428,7 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
 
     if "track-selection-accuracy" in selected:
         routing = _load_routing_logic(repo_root)
-        compatibility = _read_marshal_compatibility(repo_root)
+        compatibility = _read_marshal_compatibility(main_root)
         rows = [
             check_track_selection_accuracy(i, routing, compatibility)
             for i in all_inputs
@@ -9189,7 +9500,7 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
                 )
 
     if "global-log-analysis" in selected or synth_needed:
-        log_result = cross_global_log_analysis(repo_root)
+        log_result = cross_global_log_analysis(main_root)
         all_results["global-log-analysis"] = log_result
         if "global-log-analysis" in selected:
             blocks.append(emit_global_log_block(log_result))
@@ -9232,7 +9543,7 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
     if "sequence-and-build-minimality" in selected or synth_needed:
         # The build-time oracle: the single append-only change-ledger, read once
         # and indexed by plan_id (see `_load_build_ledger_index`).
-        build_ledger_index = _load_build_ledger_index(repo_root)
+        build_ledger_index = _load_build_ledger_index(main_root)
         sbm_result = cross_sequence_build_minimality(
             _check_corpus("sequence-and-build-minimality", all_inputs, shipping),
             build_ledger_index,
@@ -9342,7 +9653,7 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
             )
 
     if "merge-window-accounting" in selected or synth_needed:
-        mwa_result = cross_merge_window_accounting(all_inputs, repo_root)
+        mwa_result = cross_merge_window_accounting(all_inputs, main_root)
         all_results["merge-window-accounting"] = mwa_result
         if "merge-window-accounting" in selected:
             blocks.append(emit_merge_window_accounting_block(mwa_result))
@@ -9484,7 +9795,15 @@ def main(argv: list[str]) -> int:
     )
     args = parser.parse_args(argv)
 
+    # TWO roots, deliberately. `repo_root` is the cwd-scoped tree the auditor was
+    # invoked from — it owns the plan scan roots, the persisted report and the
+    # dormation moves. `main_root` is the main checkout — it owns every
+    # machine-singular `.plan/` store (lessons corpus, global logs, lock logs,
+    # change-ledger, project config). Run from a linked worktree the two DIFFER,
+    # and collapsing them is what made the auditor read a worktree's sliver of the
+    # lessons corpus and publish it as the corpus. See both resolvers' docstrings.
     repo_root = _resolve_repo_root()
+    main_root = _resolve_main_root()
 
     if args.dormate or args.dormate_all:
         if args.dormate_all:
@@ -9535,7 +9854,7 @@ def main(argv: list[str]) -> int:
             all_inputs.append(collect_inputs(plan_dir))
 
     selected = [args.check] if args.check else list(CHECK_NAMES)
-    sys.stdout.write(run_checks(all_inputs, selected, repo_root))
+    sys.stdout.write(run_checks(all_inputs, selected, repo_root, main_root))
     return 0
 
 

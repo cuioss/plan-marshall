@@ -126,9 +126,15 @@ class TestBranchCleanupRule:
         assert finding['severity'] == 'info'
 
     def test_skip_when_diff_base_is_unknown(self, tmp_path, monkeypatch):
-        # No --diff-file and no --base-ref → load_diff_files returns base
-        # label "unknown" with an empty file list. Rule M4 must skip rather
-        # than emit a false-positive branch_cleanup_without_changes finding.
+        # ABSENT half of the matched pair with
+        # `test_fail_when_supplied_diff_is_empty` below. No --diff-file and no
+        # --base-ref → load_diff_files returns base label "unknown" with an empty
+        # file list, so NOTHING was observed. Rule M4 must skip rather than emit a
+        # false-positive branch_cleanup_without_changes finding.
+        #
+        # The pair is what keeps the distinction honest: both cases reach the rule
+        # with zero files, and only the diff-availability signal separates them. A
+        # regression that collapsed them would have to break one of the two.
         plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_default())
         result = run_script(
             MANIFEST_SCRIPT,
@@ -146,9 +152,16 @@ class TestBranchCleanupRule:
         assert check['status'] == 'skip'
         assert _finding_by_code(data['findings'], 'branch_cleanup_without_changes') is None
 
-    def test_skip_when_diff_is_empty(self, tmp_path, monkeypatch):
-        # An empty diff file resolves a base label but zero raw files — still
-        # "no diff data", so the rule skips instead of false-positive failing.
+    def test_fail_when_supplied_diff_is_empty(self, tmp_path, monkeypatch):
+        # SUPPLIED-EMPTY half of the matched pair with
+        # `test_skip_when_diff_base_is_unknown` above. A --diff-file IS supplied and
+        # names zero paths: the footprint was observed and RESOLVED to empty, which
+        # is evidence, not an absence of it. Rule M4 must evaluate it and fail.
+        #
+        # This retires the previous skip-on-empty-diff contract, which conflated
+        # "the diff says nothing changed" with "no diff was available" and so let
+        # the one case the rule exists to catch — branch-cleanup declared over a
+        # genuinely empty footprint — pass silently through the skip bucket.
         plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_default())
         diff = _write_diff(tmp_path, [])
         result = run_script(
@@ -165,8 +178,14 @@ class TestBranchCleanupRule:
         data = result.toon()
         check = _check_by_name(data['checks'], 'branch_cleanup_changes')
         assert check is not None
-        assert check['status'] == 'skip'
-        assert _finding_by_code(data['findings'], 'branch_cleanup_without_changes') is None
+        assert check['status'] == 'fail'
+        finding = _finding_by_code(data['findings'], 'branch_cleanup_without_changes')
+        assert finding is not None
+        assert finding['severity'] == 'info'
+        # The message must name the EMPTY-footprint cause, not the
+        # every-entry-was-bookkeeping cause that shares this finding code — the two
+        # reach the same code by different routes and only the text separates them.
+        assert 'observed diff is empty' in finding['message']
 
     def test_skip_when_branch_cleanup_absent(self, tmp_path, monkeypatch):
         plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_early_terminate())
