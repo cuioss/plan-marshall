@@ -387,8 +387,8 @@ refusal the coverage check never made.
   **`reason` naming which route to `stale` was taken** — plus `observed_status`
   (the offending row's own build status) whenever a row carried a readable status
   string, and `notation_cross_check` / `scope_cross_check` /
-  `expected_notations` / `candidate_notations` / `row_scopes` on the three
-  cross-check routes. `observed_status` is absent on `worktree_mutated` (no row
+  `expected_notations` / `candidate_notations` / `row_scopes` on every
+  cross-check route. `observed_status` is absent on `worktree_mutated` (no row
   was observed), on the `build_indeterminate` sub-case where the row carried no
   readable `status` at all, and on every cross-check route (where every candidate
   was `success`, so reporting it would say nothing); supplying one where none was

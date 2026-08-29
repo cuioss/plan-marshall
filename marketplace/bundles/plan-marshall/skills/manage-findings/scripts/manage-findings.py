@@ -23,12 +23,13 @@ Usage:
 
 ``--any-checkout`` is READ-ONLY and is declared on exactly five verbs — ``list``,
 ``get``, ``qgate list``, ``assessment list`` and ``assessment get`` — the same
-set shown above. It is deliberately absent from every write verb (``resolve``,
-``promote``, ``ingest``, ``qgate add``, ``qgate resolve``,
-``qgate resolve-evidenced``, ``qgate clear``, ``assessment add``,
-``assessment clear``), so a caller in one checkout can never obtain WRITE
-authority over a plan whose directory currently lives in another. A write verb
-handed the flag is rejected by argparse (exit code 2), not silently ignored.
+set shown above, and that list is its whole presence set. EVERY verb not named
+there is without it, ``add`` and every other write verb included, so a caller in
+one checkout can never obtain WRITE authority over a plan whose directory
+currently lives in another. A write verb handed the flag is rejected by argparse
+(exit code 2), not silently ignored. The guarantee is stated as the complement of
+the five rather than as a second roster of the writes: a roster has to be
+re-derived from the argparse surface on every verb added, and that is what drifts.
 
 All commands output TOON format.
 """

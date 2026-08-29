@@ -577,8 +577,39 @@ def _comment_edit_term(comment: dict) -> str:
     return f'sha256:{digest}'
 
 
+def _read_pr_comment_findings(query_findings, plan_id: str) -> dict[str, Any]:
+    """Return the plan's ``pr-comment`` query payload, or the store's own REFUSAL.
+
+    ``manage-findings`` answers a plan whose directory is not under the root it
+    resolved with ``error: findings_store_unresolved`` and NO ``findings`` key. A
+    caller reading ``result.get('findings') or []`` therefore received an EMPTY LIST
+    for a store nobody reached, and every verdict computed downstream from it — "no
+    comment was ever filed here", "there is nothing to respond to" — was derived from
+    a substrate that was never opened. Recognising the refusal first is what carries
+    the store's own named error code out of this producer instead of a clean zero.
+
+    ⛔ A store that RESOLVED and legitimately holds no ``pr-comment`` finding is
+    untouched by this: it still returns the ordinary success payload with an empty
+    ``findings`` list. Only an UNREACHED store refuses.
+
+    Args:
+        query_findings: The ``_findings_core.query_findings`` callable.
+        plan_id: Plan identifier whose findings store is queried.
+
+    Returns:
+        The successful query payload — whose ``findings`` key the caller may then
+        read — or the refusal dict (``status: error`` plus the store's provenance)
+        for the caller to return verbatim.
+    """
+    from _findings_store_state import as_unresolved_store_error
+
+    result = query_findings(plan_id, finding_type='pr-comment')
+    refusal = as_unresolved_store_error(result)
+    return refusal if refusal is not None else result
+
+
 def _existing_pr_comment_keys(
-    query_findings, plan_id: str
+    findings: list[dict],
 ) -> tuple[set[tuple[str, str, str]], set[tuple[str, str]]]:
     """Return the dedup keys already stored as pr-comment findings, in BOTH shapes.
 
@@ -599,9 +630,14 @@ def _existing_pr_comment_keys(
     the dedup dropped the comment, so the reviewer read present-and-clean and its actual
     feedback never became a finding.
 
+    A PURE projection over an already-read finding list. The read itself lives in
+    :func:`_read_pr_comment_findings`, so the caller settles the unreached-store
+    refusal ONCE, before any key is reconstructed — this function can no longer turn
+    a store it never reached into an empty key set, which would present a PR's entire
+    comment history as unfiled and re-file all of it.
+
     Args:
-        query_findings: The ``_findings_core.query_findings`` callable.
-        plan_id: Plan identifier whose findings store is queried.
+        findings: The plan's stored ``pr-comment`` finding records.
 
     Returns:
         ``(keys, legacy_keys)`` — the three-term identities, and the two-term
@@ -611,10 +647,9 @@ def _existing_pr_comment_keys(
         instead. Without that, the upgrade would re-file a PR's entire comment history
         once, on the first fetch after it landed.
     """
-    result = query_findings(plan_id, finding_type='pr-comment')
     keys: set[tuple[str, str, str]] = set()
     legacy_keys: set[tuple[str, str]] = set()
-    for finding in result.get('findings') or []:
+    for finding in findings:
         detail = finding.get('detail')
         comment_id = _detail_field(detail, _COMMENT_ID_DETAIL)
         if not comment_id:
@@ -981,6 +1016,13 @@ def cmd_fetch_findings(args):
     read surface stays clean-by-construction until the batched
     ``manage-findings ingest`` pass promotes the validated body.
 
+    Fail-loud on an UNREACHED findings store too: the cross-iteration dedup reads
+    the plan's stored ``pr-comment`` findings, and a plan directory absent from the
+    resolved root makes that read a refusal carrying no ``findings`` key. It is
+    returned verbatim (``error: findings_store_unresolved``) rather than read as an
+    empty key set, which would present the PR's whole comment history as unfiled. A
+    resolved store that has simply filed nothing yet is unaffected and still fetches.
+
     Fail-loud: returns a typed ``unconfigured`` status (not a silent success)
     when GitHub is not authenticated. ``count_fetched`` vs ``count_stored``
     mismatches are recorded as a ``qgate`` finding with title prefix
@@ -1176,8 +1218,16 @@ def cmd_fetch_findings(args):
     # bot kind, thread-bearing or not — whose key is already present. The
     # ``legacy_comment_keys`` companion carries the two-term identities of findings
     # stored before the edit term existed; see ``_existing_pr_comment_keys``.
+    #
+    # The READ is settled first, because an unreached store and a store holding no
+    # pr-comment finding yet are the same empty key set to the dedup — and the first
+    # of the two would present a PR's whole comment history as unfiled and re-file
+    # every comment. The refusal is returned verbatim rather than reduced to a count.
+    findings_payload = _read_pr_comment_findings(query_findings, plan_id)
+    if findings_payload.get('status') == 'error':
+        return findings_payload
     existing_comment_keys, legacy_comment_keys = _existing_pr_comment_keys(
-        query_findings, plan_id
+        findings_payload.get('findings') or []
     )
 
     # The MERGE CANDIDATE SHA — the current PR HEAD — is fetched up front (before the
@@ -2036,7 +2086,11 @@ def cmd_post_responses(args):
     is a per-``(finding, disposition)`` key, not a blanket suppression.
 
     Fail-loud: returns a typed ``unconfigured`` status when GitHub is not
-    authenticated.
+    authenticated, and the store's own ``findings_store_unresolved`` refusal when
+    the plan directory is absent from the resolved root — never an empty finding
+    list, which would report a clean "nothing to transmit" for a store that was
+    never opened. A resolved store holding no ``pr-comment`` finding still returns
+    the ordinary success with zero counts.
     """
     from _findings_core import mark_finding_responded, query_findings
 
@@ -2047,7 +2101,14 @@ def cmd_post_responses(args):
     if not is_auth:
         return _unconfigured_result('post_responses', auth_err)
 
-    findings = query_findings(plan_id, finding_type='pr-comment').get('findings') or []
+    # An UNREACHED store is returned as the store's own refusal, never reduced to an
+    # empty finding list: an empty list here reports "every disposition transmitted,
+    # nothing untransmitted" for a store that was never opened. A store that resolved
+    # and simply holds no pr-comment finding still yields the genuine empty list below.
+    findings_payload = _read_pr_comment_findings(query_findings, plan_id)
+    if findings_payload.get('status') == 'error':
+        return findings_payload
+    findings = findings_payload.get('findings') or []
 
     responded: list[dict[str, str]] = []
     skipped: list[dict[str, str]] = []

@@ -263,8 +263,11 @@ REASON_SCOPE_NARROW = 'build_scope_narrow'
 #: looking for a refusal the coverage check never made.
 REASON_NO_ADMISSIBLE_ROW = 'no_row_both_attributable_and_adequate'
 
-#: Per-row refusal tokens, reported in ``row_scopes`` so a reader sees WHICH of
-#: the three narrowness routes each row took rather than only that it was narrow.
+#: Per-row refusal tokens, reported in ``row_scopes`` so a reader sees WHICH route
+#: each row took rather than only that the row was rejected. The set spans BOTH
+#: refusal classes — a row that was READ and found narrow, and a row that could not
+#: be READ at all — so it is deliberately not described as a narrowness set, and
+#: carries no cardinal that a token added below would silently falsify.
 ROW_CANONICAL_UNKNOWN = 'canonical_outside_vocabulary'
 ROW_CANONICAL_TOO_WEAK = 'canonical_performs_too_few_analyses'
 ROW_SCOPE_TOO_NARROW = 'scope_narrower_than_change'
