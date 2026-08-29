@@ -2026,16 +2026,30 @@ def _spec_record(epic_slug: str, path: Path, repo_root: Path) -> dict[str, Any] 
     :data:`SURFACE_INDETERMINATE_STATES` state contributes no rows to the overlap
     matcher, and without the status its absence from the match list is
     indistinguishable from a checked negative.
+
+    That contract is enforced HERE rather than at each consumer, so the two verbs
+    reading this record cannot disagree about one spec. ``classify_spec`` assigns
+    :data:`SURFACE_DERIVED` whenever the DERIVED token appears in the section, and
+    such a spec may still RESOLVE entries — so a consumer that decided
+    comparability from a non-empty ``paths`` set alone would count it comparable
+    while ``corpus surfaces`` reported ``admits_disjointness_check: false`` for the
+    same spec. Withholding the paths at the source makes ``paths`` mean *"the set
+    this spec contributes to the overlap matcher"* rather than *"the set it
+    resolves"*, so both verbs derive one answer from one predicate. The resolved
+    set is still reachable through ``corpus surfaces``; it is only the
+    comparison-population view that is gated.
     """
     text, _ = _read_spec(path)
     if text is None:
         return None
     claim = _spec_claim(path, repo_root)
+    status = claim.spec_class if claim is not None else SURFACE_ABSENT
+    admits = status not in SURFACE_INDETERMINATE_STATES
     return {
         'name': path.name,
         'pointers': _spec_pointers(text) | {_own_pointer(epic_slug, path.name)},
-        'paths': _claimed_paths(claim),
-        'derivation_status': claim.spec_class if claim is not None else SURFACE_ABSENT,
+        'paths': _claimed_paths(claim) if admits else set(),
+        'derivation_status': status,
     }
 
 
@@ -2156,7 +2170,14 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     own_tally = dict.fromkeys(SURFACE_STATES, 0)
     for record in own:
         own_tally[record['derivation_status']] += 1
-    own_tally[SURFACE_UNREADABLE] += len(unreadable)
+    # Derive the OWN unreadable count from the own population, never from the
+    # shared ``unreadable`` list: that list also accumulates every SIBLING epic's
+    # unreadable spec above, so reading its length here would inflate this epic's
+    # own tally — and ``spec_surface_states`` with it — by the sibling count.
+    # ``own_paths`` minus the records that parsed IS the own-unreadable count, and
+    # it is derived from the same population the rest of the tally counts.
+    own_unreadable_count = len(own_paths) - len(own)
+    own_tally[SURFACE_UNREADABLE] += own_unreadable_count
     comparable = [record for record in own if record['paths']]
     return {
         'status': 'success',
@@ -2171,7 +2192,7 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
         'candidates_scanned': len(candidates),
         # The comparison's own population, beside the counts derived from it.
         'specs_comparable': len(comparable),
-        'specs_indeterminate': len(own) + len(unreadable) - len(comparable),
+        'specs_indeterminate': len(own_paths) - len(comparable),
         'compared_path_count': sum(len(record['paths']) for record in own),
         'spec_surface_states': [
             {'derivation_status': state, 'count': own_tally[state]} for state in SURFACE_STATES

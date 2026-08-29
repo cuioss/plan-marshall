@@ -9,7 +9,7 @@ mode: knowledge
 
 Shared Python modules consumed by other plan-marshall scripts via PYTHONPATH.
 
-This skill has no user-facing workflow. It provides build utilities, extension framework helpers, workflow helpers, and query modules that are imported by executable scripts in other skills.
+This skill has no user-facing workflow. It provides build utilities, extension framework helpers, workflow helpers, query modules, and shared parsers that are imported by executable scripts in other skills — **including scripts in other bundles**. `epic_spec_parser.py` is the standing case: it is homed here precisely because `pm-plugin-development:tools-epic-surface-partition` imports it alongside `plan-marshall:plan-orchestrator`, and a module two bundles read cannot live in either consumer.
 
 ## Directory Layout
 
@@ -17,11 +17,18 @@ This skill has no user-facing workflow. It provides build utilities, extension f
 scripts/
   marketplace_paths.py    # Path/root resolution constants and helpers; defines NO_PLAN_SENTINEL
   resolve_project_dir.py  # The --plan-id / --project-dir argv routing layer
+  epic_spec_parser.py     # The marketplace's SINGLE reader of a plan spec's `## Expected Surface`
   build/        # Build system utilities (_build_*.py, _coverage_parse.py)
   extension/    # Extension framework (extension_base.py, extension_discovery.py, ...)
   workflow/     # Workflow helpers (triage_helpers.py)
   query/        # Query utilities (query-config.py, query-architecture.py)
 ```
+
+## `epic_spec_parser` — one reader for `## Expected Surface`
+
+`epic_spec_parser.py` is the sole parser of a plan spec's `## Expected Surface` section, and its being sole is the point rather than a convenience: two readers of that section previously disagreed, and the weaker one was the one wired to the orchestrator's disjointness gate, so a spec that resolved six paths rendered as `(no expected surface)` and passed the gate as colliding with nothing. Both consumers — `plan-marshall:plan-orchestrator` (the queue renderer and `corpus` verbs) and `pm-plugin-development:tools-epic-surface-partition` (the partition/attribution report) — now call this module, so a disagreement between them is not merely unlikely but unrepresentable.
+
+Do NOT add a second parser of that section in either consumer. It also owns the plan-id grammar used to group specs by plan; that grammar is the one `plan-orchestrator`'s `inbox detect` seam defines, reused rather than re-derived.
 
 ## Import Resolution
 

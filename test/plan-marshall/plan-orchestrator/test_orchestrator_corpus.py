@@ -2048,6 +2048,43 @@ class TestCrossCheckPublishesTheComparedPopulation:
         assert result['specs_comparable'] == 1
         assert result['compared_path_count'] == 1
 
+    def test_a_DERIVED_spec_that_also_resolves_paths_is_not_comparable(self, plan_context):
+        # The state where comparability-by-non-empty-paths and the published
+        # ``admits_disjointness_check`` predicate disagreed. ``classify_spec``
+        # assigns DERIVED on the token alone, BEFORE it considers resolved
+        # entries, so a spec can be derived AND resolve a real path — and only
+        # this shape separates the two rules. A spec that resolves nothing is
+        # excluded by either of them, so it cannot witness the difference.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(
+            plan_context,
+            'PLAN-01-alpha.md',
+            surface_lines=[
+                '- DERIVED from the plans this one supersedes.',
+                *_surface(SHARED_PATH),
+            ],
+        )
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[SHARED_PATH])
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        surfaces_row = _row_for(_surfaces(plan_context), 'PLAN-01-alpha.md')
+
+        assert surfaces_row['derivation_status'] == SURFACE_DERIVED
+        assert surfaces_row['claimed_count'] == 1, (
+            'the fixture is only load-bearing if the derived spec DOES resolve a path'
+        )
+        assert surfaces_row['admits_disjointness_check'] is False
+        assert result['specs_comparable'] == 0, (
+            'a spec corpus surfaces reports as not admitting the check must not be counted '
+            'comparable by cross-check: one spec, two verbs, one answer'
+        )
+        assert result['compared_path_count'] == 0
+        assert result['file_overlap_match_count'] == 0, (
+            'the record contract states an indeterminate spec contributes NO rows to the '
+            'overlap matcher; a shared path must not produce one here'
+        )
+        assert result['specs_indeterminate'] == 1
+
     def test_the_surface_state_tally_spans_the_whole_vocabulary(self, plan_context):
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
@@ -2060,6 +2097,42 @@ class TestCrossCheckPublishesTheComparedPopulation:
         assert result['spec_surfaces'] == [
             {'spec': 'PLAN-01-alpha.md', 'derivation_status': SURFACE_DECLARATIVE}
         ]
+
+    def test_the_tally_invariant_holds_when_a_SIBLING_epic_has_an_unreadable_spec(
+        self, plan_context
+    ):
+        # The population the test above cannot reach. Its fixture registers no
+        # sibling epic, so the shared ``unreadable`` list holds only OWN entries
+        # there and the sum-equals-total invariant passes whether the own tally is
+        # derived from the own population or from that shared list. The two
+        # derivations only disagree once a sibling contributes to the list — which
+        # is exactly the state this fixture creates and that one cannot.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        broken = _epic_dir(plan_context, SIBLING_SLUG) / 'plans' / 'PLAN-77-broken.md'
+        broken.parent.mkdir(parents=True, exist_ok=True)
+        broken.write_bytes(b'\xff\xfe \xff')
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['unreadable_count'] == 1, 'the sibling breakage must reach the shared list'
+        assert result['specs_total'] == 1, "the sibling's spec is not one of OUR specs"
+        assert sum(row['count'] for row in result['spec_surface_states']) == result['specs_total'], (
+            "the own-corpus tally must be derived from the own population: reading the SHARED "
+            'unreadable list here adds the sibling and breaks sum == specs_total'
+        )
+        unreadable_row = next(
+            row
+            for row in result['spec_surface_states']
+            if row['derivation_status'] == SURFACE_UNREADABLE
+        )
+        assert unreadable_row['count'] == 0, (
+            'no OWN spec was unreadable, so the own unreadable tally is zero even though '
+            'the shared list is not empty'
+        )
+        assert result['specs_indeterminate'] == 0, (
+            'specs_indeterminate is an own-corpus figure and must not absorb the sibling either'
+        )
 
 
 class TestCorpusSurfacesRefusals:
@@ -3125,6 +3198,96 @@ def test_the_pre_fix_regex_opened_a_fence_on_a_prose_line_quoting_inline_code():
     assert not any(fixed), (
         f'{sum(fixed)} of {len(lines)} lines masked — a backtick fence whose info string '
         'carries a backtick is a paragraph, not an opener'
+    )
+
+
+# =============================================================================
+# Non-vacuity guard for the own-corpus tally and the comparable population
+# =============================================================================
+#
+# The two controls in ``TestCrossCheckPublishesTheComparedPopulation`` are green
+# by construction once both fixes are in place — the same shape that let the
+# pre-existing tally invariant pass over a fixture with no sibling epic, which is
+# how the contamination survived review. These fixtures carry the pre-fix
+# EXPRESSIONS verbatim and assert they disagree with the shipped ones over the
+# same inputs, so each fix is proven to have CHANGED an answer rather than merely
+# to be present.
+
+
+def _pre_fix_own_unreadable_count(own_paths: list, own: list, shared_unreadable: list) -> int:
+    """The pre-fix own-unreadable tally, verbatim: the length of the SHARED list.
+
+    ``own_paths`` and ``own`` are accepted but unused — that is the defect. The
+    shipped expression derives the count from exactly those two, which is why
+    this reproduction has to ignore them to reproduce the old answer.
+    """
+    return len(shared_unreadable)
+
+
+def test_the_own_unreadable_tally_changed_over_a_sibling_bearing_population():
+    # One own spec, all readable; one SIBLING spec unreadable. The shared list is
+    # what the two expressions disagree about.
+    own_paths = ['PLAN-01-alpha.md']
+    own = [{'name': 'PLAN-01-alpha.md'}]
+    shared_unreadable = [{'spec': 'fixture-sibling-epic/PLAN-77-broken.md', 'error': 'unreadable'}]
+
+    pre_fix = _pre_fix_own_unreadable_count(own_paths, own, shared_unreadable)
+    shipped = len(own_paths) - len(own)
+
+    assert pre_fix == 1, 'the negative fixture no longer reproduces the pre-fix tally'
+    assert shipped == 0, "no OWN spec was unreadable, so the own tally is zero"
+    assert pre_fix != shipped, (
+        'the two expressions agree, so this fixture cannot witness the contamination'
+    )
+
+
+def test_the_own_unreadable_tally_agrees_when_no_sibling_is_registered():
+    # Matched partner: over the population the pre-existing invariant test uses
+    # (no sibling epic), the two expressions AGREE — which is precisely why that
+    # test could not observe the defect, and why this file needed the sibling
+    # fixture added beside it.
+    own_paths = ['PLAN-01-alpha.md', 'PLAN-02-broken.md']
+    own = [{'name': 'PLAN-01-alpha.md'}]
+    shared_unreadable = [{'spec': 'PLAN-02-broken.md', 'error': 'unreadable'}]
+
+    pre_fix = _pre_fix_own_unreadable_count(own_paths, own, shared_unreadable)
+    shipped = len(own_paths) - len(own)
+
+    assert pre_fix == shipped == 1, (
+        'with no sibling contributing, both expressions return the own count — the '
+        'agreement that made the sibling-free fixture blind'
+    )
+
+
+def test_the_comparable_predicate_changed_for_a_derived_spec_that_resolves_paths():
+    """The pre-fix predicate was ``bool(record['paths'])`` with paths ungated.
+
+    Reproduced over the one shape that separates the two rules: derived AND
+    resolving. A record that resolves nothing is excluded by both, so it cannot
+    witness the change — asserted below as the matched negative.
+    """
+    derived_resolving = {'derivation_status': SURFACE_DERIVED, 'resolved': {SHARED_PATH}}
+    derived_empty = {'derivation_status': SURFACE_DERIVED, 'resolved': set()}
+    declarative_resolving = {'derivation_status': SURFACE_DECLARATIVE, 'resolved': {SHARED_PATH}}
+
+    def pre_fix(record: dict) -> bool:
+        # paths were exposed regardless of derivation status
+        return bool(record['resolved'])
+
+    def shipped(record: dict) -> bool:
+        admits = record['derivation_status'] not in SURFACE_INDETERMINATE_STATES
+        return bool(record['resolved'] if admits else set())
+
+    assert pre_fix(derived_resolving) is True
+    assert shipped(derived_resolving) is False, (
+        'a derived spec must not be comparable however many paths it resolves'
+    )
+    assert pre_fix(derived_empty) == shipped(derived_empty) is False, (
+        'a derived spec resolving nothing cannot witness the change — both rules exclude it'
+    )
+    assert pre_fix(declarative_resolving) == shipped(declarative_resolving) is True, (
+        'the fix must not narrow the declarative case; without this the change could pass '
+        'by excluding everything'
     )
 
 
