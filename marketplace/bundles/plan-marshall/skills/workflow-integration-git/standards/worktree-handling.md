@@ -309,7 +309,11 @@ Three verbs — `force-push-with-lease`, `switch-and-pull`, and `prune-local-and
 
 All three verbs accept `--plan-id` as the primary resolution path and `--project-dir` as the escape hatch. They are mutually exclusive; passing both is a hard error.
 
-**Primary path (`--plan-id`)**: The verb resolves the working tree through `file_ops.resolve_plan_context`, the single plan-context resolver that owns the one `manage-status get-worktree-path` invocation. For `force-push-with-lease`, the resolved path is the **worktree** (the branch lives there until `worktree-remove` runs). For `switch-and-pull` and `prune-local-and-remote-ref`, the verb derives the **main checkout** root via the uniform cwd-relative resolution (`file_ops.get_base_dir()` / `marketplace_paths._find_plan_root_from_cwd()`) because those operations run after worktree removal, when cwd is back on main.
+**Primary path (`--plan-id`)**: The verb resolves the working tree through `file_ops.resolve_plan_context`, the single plan-context resolver that owns the one `manage-status get-worktree-path` invocation. For `force-push-with-lease`, the resolved path is the **worktree** (the branch lives there until `worktree-remove` runs).
+
+For `switch-and-pull`, the plan id is a **validity gate, not a path source**: the verb resolves the **main checkout** root by `git rev-parse --git-common-dir` (`marketplace_paths.main_checkout_root`), which names main's `.git` from anywhere in the repository — including from inside a linked worktree. Main-anchoring is required rather than merely tidy. A cwd-relative resolver only lands on main if cwd is already there, and from phase-5 onward cwd is pinned to the plan's **worktree** (ADR-002); the verb would then run `git checkout {base}` against the worktree and be refused with `main is already used by worktree`, at exactly the moment main is stale. The resolver is deliberately `main_checkout_root`, not `resolve_main_anchored_path` — the latter honours the `PLAN_BASE_DIR` / `set_base_dir()` override, and an override directory is not a git checkout, whereas this verb's `git -C` target must name a real one. When git cannot resolve the common dir the verb returns `error_type: project_dir_not_a_git_repo`.
+
+For `prune-local-and-remote-ref`, the verb derives the main checkout root via the uniform cwd-relative resolution (`file_ops.get_base_dir()` / `marketplace_paths._find_plan_root_from_cwd()`), on the premise that it runs after worktree removal with cwd back on main.
 
 **Escape hatch (`--project-dir [--branch|--head]`)**: Useful in post-worktree-removal cleanup, non-plan contexts, or fixture-driven test invocations where the caller already holds the path. All git calls use `git -C {project_dir}`.
 
@@ -335,7 +339,7 @@ remote_sha: {sha after push}
 
 Checks out `--base` on the main checkout and pulls from `origin` using `git pull origin {base_branch}` (the explicit form; never plain `git pull`). Captures `pre_sha` and `post_sha` and computes `commits_pulled` via `git rev-list --count`.
 
-Resolution: `--plan-id` → main checkout root via the uniform cwd-relative resolution (`file_ops.get_base_dir()`).
+Resolution: `--plan-id` validates the plan through `resolve_plan_context` and is a validity gate only; the target is the main checkout root from `marketplace_paths.main_checkout_root` (`git rev-parse --git-common-dir`), which resolves main from inside a linked worktree. See [Resolution Pattern](#resolution-pattern) above for why cwd-relative resolution cannot serve this verb from phase-5 onward.
 
 **Output** (success):
 ```toon
