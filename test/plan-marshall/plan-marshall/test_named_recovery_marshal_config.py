@@ -26,8 +26,8 @@ that adds such a block is covered automatically.
 Test-to-deliverable map:
 
 * ``test_named_recovery_never_instructs_unconditional_discard`` — D3(a): no
-  derived region instructs an unconditional discard, and no "always safe"
-  justification survives.
+  derived region instructs an unconditional discard, EVERY derived region is
+  inspection-first, and no "always safe" justification survives.
 * ``test_named_recovery_inspection_first_population_nonempty_and_covers_known_members``
   — D3(b): the derived population of inspection-first sites is asserted
   non-empty and covers the known members (planning.md + both
@@ -61,9 +61,31 @@ HEADING_MARKER = 'Named recovery case — `.plan/marshal.json`'
 #: "always"-flavoured justification in a cross-reference bullet is in scope too.
 _REGION_BOUNDARY = re.compile(r'^(#{2,6}\s|\*\*Metrics\*\*|\*\*Phase handshake|\*\*Step\s)')
 
-#: The pre-fix destructive form: a ``Recovery:`` directive line whose command is
-#: an unconditional discard of the operator's file.
-_UNCONDITIONAL_DISCARD = re.compile(r'Recovery:\s*git checkout -- \.plan/marshal\.json')
+#: The destructive form: any ``git checkout``/``git restore`` aimed at the
+#: operator's file, under ANY lead-in. The former pattern required a literal
+#: ``Recovery:`` prefix, so a block that issued the same command under different
+#: wording carried the identical hazard and matched nothing.
+_UNCONDITIONAL_DISCARD = re.compile(r'git (?:checkout|restore)\b[^\n`]*\.plan/marshal\.json')
+
+#: Any concrete ``git diff`` inspection command aimed at ``.plan/marshal.json``.
+#: Widened from the single literal ``git diff -- .plan/marshal.json`` so a
+#: restatement cannot evade the single-authority test merely by dropping the
+#: ``--`` separator or adding an option. ``[^\n`]*`` keeps the match inside one
+#: contiguous command span, so prose that merely names ``git diff`` in one code
+#: span and the path in another does not read as an inspection command.
+_INSPECTION_COMMAND = re.compile(r'git diff\b[^\n`]*\.plan/marshal\.json')
+
+#: The cross-reference that points at the single authority — accepted as a
+#: ``- `` bullet or as an inline ``§`` citation, since both are pointers.
+_AUTHORITY_POINTER = re.compile(
+    r'`plan-marshall:plan-marshall/workflow/planning\.md`\s*§\s*"Named recovery case'
+)
+
+#: The operator-disposition enumeration that only the authority may carry.
+#: Keyed on BOTH dispositions appearing as list items: naming the operator's two
+#: choices IS the contract, so a site carrying both has restated it.
+_DISPOSITION_KEEP = re.compile(r'^\s*[-*]\s+\**Keep\**\s*[—:-]', re.MULTILINE)
+_DISPOSITION_DISCARD = re.compile(r'^\s*[-*]\s+\**Discard\**\s*[—:-]', re.MULTILINE)
 
 
 def _derive_named_recovery_regions() -> list[tuple]:
@@ -98,31 +120,63 @@ def _has_always_safety_claim(text: str) -> bool:
 
 def _is_inspection_first(text: str) -> bool:
     """A region that mandates inspection and an explicit operator disposition
-    before any discard, and carries neither destructive signature."""
+    before any discard, and carries no "always safe" justification.
+
+    The destructive-command signature is deliberately NOT part of this test.
+    Once ``_UNCONDITIONAL_DISCARD`` was broadened to match the command under any
+    lead-in it also matches the authority's own *cautionary* mention ("...would
+    destroy those edits irrecoverably"), so folding it in here would make the
+    property unsatisfiable for the one region that states the contract. The two
+    are combined at the offender rule instead: carrying the command is an
+    offence only where the region does not also mandate inspection-then-
+    disposition.
+    """
     low = text.lower()
     return (
         ('inspect' in low or 'git diff' in low)
         and 'operator' in low
         and ('disposition' in low or 'confirm' in low or 'decide' in low)
-        and not _has_unconditional_discard_directive(text)
         and not _has_always_safety_claim(text)
     )
 
 
 def _is_authority(text: str) -> bool:
-    """Only the single authority carries the concrete inspection command that
-    surfaces the diff. The reference sites point to it rather than restate it."""
-    return 'git diff -- .plan/marshal.json' in text
+    """Only the single authority carries a concrete ``git diff`` inspection
+    command against ``marshal.json``. The reference sites point to it instead."""
+    return bool(_INSPECTION_COMMAND.search(text))
+
+
+def _restates_contract(text: str) -> bool:
+    """Whether ``text`` carries the operator-disposition enumeration.
+
+    Structural by design rather than a line or character budget: a budget needs
+    a threshold nobody can settle, and drifts as the prose is edited. Carrying
+    both ``Keep`` and ``Discard`` as list items IS the contract.
+    """
+    return bool(_DISPOSITION_KEEP.search(text)) and bool(_DISPOSITION_DISCARD.search(text))
 
 
 def _references_authority(text: str) -> bool:
-    low = text.lower()
-    return 'planning.md' in low and 'named recovery' in low
+    """Whether a non-authority region DEFERS to the authority rather than restating it.
+
+    Replaces the former ``'planning.md' in low and 'named recovery' in low``
+    heuristic, which a full restatement satisfies just as easily as a pointer:
+    the region heading makes the second term true by construction, and any
+    restatement that names its source makes the first true. Deference is now
+    two-sided — an explicit pointer to the authority section MUST be present,
+    and the operator-disposition enumeration MUST NOT.
+    """
+    return bool(_AUTHORITY_POINTER.search(text)) and not _restates_contract(text)
 
 
 def test_named_recovery_never_instructs_unconditional_discard():
-    """D3(a): no derived named-recovery region instructs an unconditional discard,
-    and no "always safe" justification survives."""
+    """No derived named-recovery region instructs an unconditional discard, EVERY
+    region is inspection-first, and no "always safe" justification survives.
+
+    The universal inspection-first assertion is what makes the population-derived
+    sweep worth deriving: the two literal signatures alone pass any reworded site
+    that avoids their exact wording, so a fourth destructive block was invisible
+    to a test that swept every region."""
     regions = _derive_named_recovery_regions()
     assert regions, (
         'assertion-shape sweep for the named `.plan/marshal.json` recovery case '
@@ -130,10 +184,25 @@ def test_named_recovery_never_instructs_unconditional_discard():
     )
     offenders: list[str] = []
     for path, block, lineno in regions:
-        if _has_unconditional_discard_directive(block):
-            offenders.append(f'{path.name}:{lineno} — unconditional `git checkout --` recovery directive')
+        # Literal-signature floor, retained as an additional check.
         if _has_always_safety_claim(block):
             offenders.append(f'{path.name}:{lineno} — "always safe"/"always a spurious" justification')
+        # UNIVERSAL assertion: every derived region — not merely the three
+        # already-known members — must mandate inspection then an explicit
+        # operator disposition. A reworded site that carries the cross-reference
+        # bullet and avoids the "always safe" phrasing clears every literal
+        # signature and is caught only here.
+        if not _is_inspection_first(block):
+            if _has_unconditional_discard_directive(block):
+                offenders.append(
+                    f'{path.name}:{lineno} — `git checkout`/`git restore` against '
+                    'marshal.json with no inspection-then-disposition mandate'
+                )
+            else:
+                offenders.append(
+                    f'{path.name}:{lineno} — not inspection-first (needs inspection '
+                    'plus an explicit operator disposition)'
+                )
     assert not offenders, (
         'destructive named-recovery text survives (a dirty `marshal.json` is most '
         'likely uncommitted operator config, and `git checkout --` destroys it '
