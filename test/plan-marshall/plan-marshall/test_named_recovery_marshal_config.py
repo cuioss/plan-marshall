@@ -43,12 +43,22 @@ Test-to-deliverable map:
   whose § "Recovery Loop" carries a ``###`` heading and so is not matched by the
   ``**Named recovery case —`` shape the sweep above derives. It publishes its own
   denominator and asserts the destructive-section set non-empty, so it cannot
-  pass over a surface it failed to read.
+  pass over a surface it failed to read. It is also the matched NEGATIVE control
+  for the qualifier: the shipped § "Recovery Loop" inspects content before it
+  discards, so it must keep passing.
+* ``test_destructive_qualifier_rejects_only_the_named_defect`` — D3(b): the
+  matched POSITIVE controls for the qualifier. A diff that surfaces only paths
+  and a discard placed ahead of the diff each satisfy every other clause, so
+  each isolates one defect; the repaired twin of each is asserted to pass, which
+  is what attributes the rejection to that defect rather than to a clause the
+  control happened to omit.
 """
 
 from __future__ import annotations
 
 import re
+
+import pytest
 
 from conftest import MARKETPLACE_ROOT
 
@@ -101,8 +111,22 @@ _INSPECTION_COMMAND = re.compile(r'git diff\b[^\n`]*\.plan/marshal\.json')
 #: above cannot see it.
 _DESTRUCTIVE_ANY_PATH = re.compile(r'git\b[^\n`]*\b(?:checkout\s+--|restore)\s')
 
-#: A concrete diff command — one that surfaces CONTENT, not merely a path list.
-_CONTENT_INSPECTION = re.compile(r'git\b[^\n`]*\bdiff\b')
+#: A ``git diff`` command span, captured to the end of its contiguous span so the
+#: flags the command carries are part of the match. ``[^\n`]*`` on both sides keeps
+#: the span inside one code span, so prose naming ``git diff`` in one span and a
+#: flag in another is never read as a single command.
+_DIFF_COMMAND_SPAN = re.compile(r'git\b[^\n`]*\bdiff\b[^\n`]*')
+
+#: Diff modes that surface only PATHS or counts, never content. A section whose
+#: sole inspection command is one of these satisfies the letter of "run a diff"
+#: while leaving the reader unable to see what they are about to destroy, so it
+#: does not count as content inspection. The lookarounds keep ``-s`` from matching
+#: inside ``--stat``/``--shortstat``/``--name-status``.
+_METADATA_ONLY_DIFF = re.compile(
+    r'(?<![\w-])'
+    r'(?:--name-only|--name-status|--numstat|--shortstat|--stat|--summary|--raw|--quiet|-s)'
+    r'(?![\w-])'
+)
 
 #: Wording that presents a destructive revert as the DEFAULT disposition rather
 #: than one an operator must choose. ``(typical case)`` was the shipped form.
@@ -230,6 +254,35 @@ def _derive_document_sections(path) -> list[tuple[str, int, str]]:
     ]
 
 
+def _content_diff_offsets(text: str) -> list[int]:
+    """Start offsets of every diff command in ``text`` that surfaces CONTENT.
+
+    A ``git diff`` whose span carries a metadata-only mode is excluded: it prints
+    paths or counts, so it cannot be the command that lets a reader see what a
+    later discard would destroy.
+    """
+    return [
+        m.start()
+        for m in _DIFF_COMMAND_SPAN.finditer(text)
+        if not _METADATA_ONLY_DIFF.search(m.group(0))
+    ]
+
+
+def _inspection_precedes_disposal(text: str) -> bool:
+    """Whether a content diff occurs BEFORE the section's first destructive command.
+
+    "Inspect, then dispose" is an ordering property, and a conjunction of
+    order-free searches cannot express it: a section that reverts the path and
+    only afterwards suggests reading it satisfies every clause while inverting
+    the contract. The comparison is by offset within the same section.
+    """
+    offsets = _content_diff_offsets(text)
+    if not offsets:
+        return False
+    destructive = _DESTRUCTIVE_ANY_PATH.search(text)
+    return destructive is None or offsets[0] < destructive.start()
+
+
 def _is_destructive_instruction_qualified(text: str) -> bool:
     """Whether a section carrying a destructive discard also properly qualifies it.
 
@@ -238,16 +291,86 @@ def _is_destructive_instruction_qualified(text: str) -> bool:
     generic predicate passed it while step 1 surfaced only PATHS and the revert
     bullet was labelled "(typical case)". A reader cannot dispose of content they
     have not seen, so the qualifier requires a concrete diff command that
-    surfaces the change, an explicit operator disposition, the irrecoverability
-    caveat, and no wording presenting the revert as the default.
+    surfaces the change *and precedes the discard*, an explicit operator
+    disposition, the irrecoverability caveat, and no wording presenting the
+    revert as the default.
     """
     low = text.lower()
     return (
-        bool(_CONTENT_INSPECTION.search(text))
+        _inspection_precedes_disposal(text)
         and 'operator' in low
         and ('disposition' in low or 'confirm' in low or 'decide' in low)
         and ('irrecoverab' in low or 'reflog' in low)
         and not _REVERT_PRESUMED_DEFAULT.search(text)
+    )
+
+
+#: Matched control pairs for :func:`_is_destructive_instruction_qualified`. Each
+#: pair differs ONLY in the defect named by its id: both members carry a
+#: destructive command, an operator disposition, and the irrecoverability caveat,
+#: and neither presents the revert as a default. That is what makes the rejection
+#: attributable to the named defect rather than to an incidentally missing clause.
+#: The matched NEGATIVE control is the shipped § "Recovery Loop" section, asserted
+#: by :func:`test_worktree_handling_destructive_instructions_are_inspection_first`.
+_CONTROL_METADATA_ONLY_DIFF = """### Recovery (control)
+
+1. **Surface every path in `newly_dirty[]`.**
+
+   ```bash
+   git -C {main_checkout} diff --name-only -- {path}
+   ```
+
+2. **Obtain an explicit operator disposition for that one path.**
+   `git -C {main_checkout} checkout -- {path}` destroys uncommitted, unstaged
+   content **irrecoverably** — no reflog covers a worktree file.
+"""
+
+_CONTROL_CONTENT_DIFF = _CONTROL_METADATA_ONLY_DIFF.replace('diff --name-only --', 'diff --')
+
+_CONTROL_DISPOSAL_BEFORE_INSPECTION = """### Recovery (control)
+
+1. **Revert the path.** `git -C {main_checkout} checkout -- {path}` drops the
+   dirty state **irrecoverably** — no reflog covers a worktree file.
+2. **Then read what was there** with `git -C {main_checkout} diff -- {path}` and
+   record the operator disposition for it.
+"""
+
+_CONTROL_INSPECTION_BEFORE_DISPOSAL = """### Recovery (control)
+
+1. **Read what is there** with `git -C {main_checkout} diff -- {path}` and
+   record the operator disposition for it.
+2. **Revert the path.** `git -C {main_checkout} checkout -- {path}` drops the
+   dirty state **irrecoverably** — no reflog covers a worktree file.
+"""
+
+
+@pytest.mark.parametrize(
+    ('defective', 'repaired'),
+    [
+        (_CONTROL_METADATA_ONLY_DIFF, _CONTROL_CONTENT_DIFF),
+        (_CONTROL_DISPOSAL_BEFORE_INSPECTION, _CONTROL_INSPECTION_BEFORE_DISPOSAL),
+    ],
+    ids=[
+        'a-name-only-diff-surfaces-paths-not-content',
+        'a-discard-ahead-of-the-diff-inverts-the-order',
+    ],
+)
+def test_destructive_qualifier_rejects_only_the_named_defect(defective, repaired):
+    """The qualifier rejects a section that runs a diff which never shows content,
+    and one that discards before it inspects — and accepts the repaired twin.
+
+    Both halves are asserted because either alone is uninformative: a rejection
+    with no matching acceptance cannot show WHICH clause fired, and an acceptance
+    with no matching rejection cannot show the clause fires at all.
+    """
+    assert _DESTRUCTIVE_ANY_PATH.search(defective), (
+        'control does not carry a destructive command, so the qualifier would '
+        'never be applied to it in production — the rejection would be vacuous'
+    )
+    assert not _is_destructive_instruction_qualified(defective)
+    assert _is_destructive_instruction_qualified(repaired), (
+        'the repaired twin must pass — otherwise the rejection above is caused by '
+        'some other missing clause, not by the defect this control isolates'
     )
 
 
