@@ -276,6 +276,8 @@ The two sections above bound a claim by the round's INPUTS — which files were 
 
 The surfacer publishes that fact as `delta_coverage`, computed from the round's own result (see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) § `delta_coverage`). Read it off the returned TOON — never re-derive it from the candidate lists, for the same reason the section above gives for `structural_limit`.
 
+Both obligations below presuppose a returned `delta_coverage` block, so both are scoped to a round that actually ran a surfacer. The **zero-generator fallback path** (Step 1 — no domain implementor resolves) invokes none, returns no such block, and records `done` directly with the nothing-to-check verdict; neither obligation applies there, and neither may be satisfied from an absent block.
+
 Two obligations follow:
 
 - **Report the coverage figures wherever the round's candidate count is reported.** Alongside the detector mix Step 1b already requires (`counts.by_family`), carry `delta_coverage.files_with_candidates` of `files_in_scope` and `classes_present_without_candidates` of `classes_present` from the same round. `{N}` is a VOLUME over the whole surface; the coverage figures say over how many of the round's own files the surfacer produced ANY candidate, so a rich-looking count drawn from a fraction of the scope is legible as such. ⛔ They are NOT `counts.total`'s provenance: `files_with_candidates` credits a file for a candidate on ANY surfaced list, including the review-anchor lists `counts.total` excludes, so a file can be counted here while contributing zero to `{N}`. The 80-character `display_detail` budget carries none of it, which is why the figures ride the returned TOON exactly as `counts.by_family` does.
@@ -374,7 +376,9 @@ Record the outcome on the live plan so the `phase_steps_complete` handshake inva
 
 **Branch A — findings list is empty**: read the `display_detail` returned by the workflow verbatim (the workflow computes the candidate count for the human-readable message).
 
-Before recording `done`, read the round's `delta_coverage` block and apply § "A clean verdict states what the round observed" — a clean pass that surfaced no observation of its own is recorded here like any other, but only after its deviation is logged.
+**Conditional on a surfacer result having been produced**: when the round ran a surfacer, read the returned `delta_coverage` block before recording `done` and apply § "A clean verdict states what the round observed" — a clean pass that surfaced nothing of its own is recorded here like any other, but only after its deviation is logged.
+
+⛔ The **zero-generator fallback path** (Step 1 — no domain implementor resolves in the current executor) never invokes a surfacer, so no `delta_coverage` block exists on that path and there is nothing to read. It records `done` directly with the nothing-to-check verdict; the read above and its WARNING deviation do NOT apply, and MUST NOT be manufactured from an absent block. Requiring the read unconditionally made this branch unsatisfiable — the instruction named an input the path structurally cannot produce.
 
 **Precondition — the clean result MUST come from a full-surface pass.** Before recording `done`, confirm the returned verdict was produced by a run that carried NO `--since-ref` (the surfacer echoes `surface_scope: full`). A `done` recorded off a delta-scoped clean result would close the step on evidence covering only the files that changed since the previous round. When the clean result came from a delta round, do NOT record `done` here — go back to Step 1, re-run the surface call at full scope, and record the outcome from that pass instead.
 

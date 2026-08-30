@@ -318,8 +318,8 @@ python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventor
 
 **Output**:
 ```toon
-status: success
-validation_result: passed
+status: error
+validation_result: failed
 total_components: 95
 total_dependencies: 234
 resolved: 231
@@ -332,7 +332,11 @@ indexed_bundle_count: 10
 
 unresolved[3]{source,target,type,context,reason}:
   "plan-marshall:manage-files","nonexistent:skill",skill,frontmatter,unknown-bundle
+  "plan-marshall:manage-files","plan-marshall:no-such-skill",skill,frontmatter,missing-component
+  "plan-marshall:manage-status","plan-marshall:manage-files:absent_script",script,import,missing-component
 ```
+
+A non-empty `unresolved` list (or any circular dependency) is an ISSUE, so `cmd_validate` returns `status: error` with `validation_result: failed` — the example above shows that state, and a run with nothing unresolved and no cycle is the one that returns `status: success` / `validation_result: passed`. The three `unresolved` rows are the same three the counters report: `unresolved_count` equals the row count, and `unresolved_by_reason` partitions those rows by reason.
 
 `unresolved_by_reason` is emitted on every run over the full reason set, so a class that scored zero is visible as a zero rather than as an absent key.
 
