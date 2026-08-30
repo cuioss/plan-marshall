@@ -497,7 +497,7 @@ from inside the loop.
      the dimension judges nothing and admits **every** row, recording
      `notation_cross_check: unverified` with its reason. When the set resolved and
      no row is in it the dimension REFUTES, and no row is citable.
-   - **Coverage.** Derive what the change needs covered (§ "The scope
+   - **Coverage.** Derive what the change needs to be covered (§ "The scope
      cross-check"). The *coverable* rows are those whose canonical performs every
      required analysis, whose scope covers the required modules, and which did not
      measure zero tests (`scope_cross_check: covered`). When the comparison could

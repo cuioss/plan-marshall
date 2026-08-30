@@ -490,6 +490,16 @@ class TestCLI:
         publishes the store's provenance under that key, so re-emitting the raw
         payload (whose findings-side key is ``message``) would print the remedy
         under a name this emitter's readers do not look at.
+
+        The ``detail`` assertion pins the PAYLOAD, not the key. A bare
+        ``'detail: ' in stdout`` passes on an empty value, on a value copied from
+        some other branch, and on any future refusal that happens to print the
+        key — none of which delivers the provenance this case exists to protect.
+        What makes the field worth publishing is that it names WHICH store went
+        unreached, so that is what is asserted: the absent plan's own id and the
+        never-reached phrasing, read off the ``detail`` line itself rather than
+        from anywhere in stdout (``plan_id`` is echoed as its own field, so a
+        whole-stdout substring test would pass with ``detail`` empty).
         """
         from conftest import run_script
 
@@ -512,5 +522,14 @@ class TestCLI:
         assert not result.success
         assert 'findings_store_unresolved' in result.stdout
         assert 'load_failure' not in result.stdout
-        assert 'detail: ' in result.stdout
         assert 'verdict:' not in result.stdout
+
+        detail_lines = [
+            line.partition('detail:')[2].strip()
+            for line in result.stdout.splitlines()
+            if line.strip().startswith('detail:')
+        ]
+        assert len(detail_lines) == 1, result.stdout
+        detail = detail_lines[0]
+        assert plan_id in detail, detail
+        assert 'never reached' in detail, detail

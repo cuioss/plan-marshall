@@ -321,7 +321,24 @@ def _resolve_required_coverage(plan_id: str) -> tuple[RequiredCoverage | None, s
             if bundles_root is not None
             else frozenset()
         )
-    except OSError:
+    except (OSError, RuntimeError):
+        # RuntimeError is NOT a redundant widening of OSError: it is the
+        # documented raise of ``file_ops.get_base_dir``, which
+        # ``_resolve_plan_footprint`` reaches through ``get_plan_dir`` ->
+        # ``resolve_plan_context`` -> ``base_path`` whenever no plan root
+        # resolves (no ``set_base_dir`` override, no ``PLAN_BASE_DIR``, no
+        # ``.plan/local`` ancestor of cwd, and cwd outside any git repo).
+        # ``RuntimeError`` is not an ``OSError`` subclass, so an OSError-only
+        # guard let that inability escape as a traceback and BREAK this
+        # function's ``(None, reason)`` contract — the very failure mode the
+        # docstring above declares impossible. An unresolvable plan root is an
+        # inability to MEASURE the requirement, which is exactly what
+        # REASON_REQUIRED_COVERAGE_UNKNOWN names.
+        #
+        # The tuple is deliberately named rather than a bare ``except
+        # Exception``: every callee above is a direct call with a known raise
+        # contract, so the broad form belongs only at the IMPORT site above
+        # (where a foreign module BODY executes and can raise anything).
         return None, REASON_REQUIRED_COVERAGE_UNKNOWN
 
     # An unresolvable footprint and an unenumerable module set are both

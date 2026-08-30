@@ -17,6 +17,7 @@ padding.
 
 from __future__ import annotations
 
+import argparse
 import sys
 from argparse import Namespace
 
@@ -60,6 +61,142 @@ def _run_main(monkeypatch, capsys, argv):
     code = exc.value.code if exc.value.code is not None else 0
     captured = capsys.readouterr()
     return code, captured.out
+
+
+# =============================================================================
+# ``--any-checkout`` write-authority contract, DERIVED from the parser tree
+# =============================================================================
+#
+# ``--any-checkout`` lets a read verb adopt the findings store of whichever
+# checkout currently holds the plan directory. Its whole safety property is a
+# SET: it is declared on five read verbs and on no write verb, so a caller in
+# one checkout can never obtain WRITE authority over a plan living in another.
+#
+# That set was asserted nowhere. It was stated in the module docstring — a
+# hand-maintained mirror of the argparse surface — and the docstring itself
+# names the failure mode ("a roster has to be re-derived from the argparse
+# surface on every verb added, and that is what drifts"). Nothing failed when a
+# future verb picked up the flag.
+#
+# The population below is therefore DERIVED from the built parser tree, which is
+# the authoritative source: the flag's presence set IS what argparse was told,
+# not what a comment says it was told. The literal roster is the EXPECTATION
+# side of the comparison only — it is never the population being measured.
+
+
+#: The read verbs permitted to adopt another checkout's findings store.
+_ANY_CHECKOUT_READ_VERBS = frozenset(
+    {
+        'list',
+        'get',
+        'qgate list',
+        'assessment list',
+        'assessment get',
+    }
+)
+
+
+def _capture_built_parser(monkeypatch) -> argparse.ArgumentParser:
+    """Return the fully-built root parser that ``main()`` constructs.
+
+    ``main`` hands its parser to the module-level ``parse_args_with_toon_errors``
+    seam, so substituting that ONE name yields the real, fully-populated tree
+    with no production change and no reliance on a parser factory that does not
+    exist. The substitute returns a namespace carrying no ``func``, which routes
+    ``main`` down its own ``print_help`` branch instead of dispatching a verb —
+    so nothing is executed and no store is touched.
+    """
+    captured: list[argparse.ArgumentParser] = []
+
+    def _capture(parser: argparse.ArgumentParser) -> Namespace:
+        captured.append(parser)
+        return Namespace()
+
+    monkeypatch.setattr(_mod, 'parse_args_with_toon_errors', _capture)
+    monkeypatch.setattr(sys, 'argv', ['manage-findings'])
+    with pytest.raises(SystemExit):
+        _mod.main()
+
+    assert len(captured) == 1, 'main() did not build exactly one root parser'
+    return captured[0]
+
+
+def _walk_verbs(parser, prefix=()):
+    """Yield ``(verb_path, parser)`` for this node and every subparser beneath it.
+
+    Intermediate group nodes (``qgate``, ``assessment``) are yielded too, not
+    only leaves: a flag declared on a group parser would be inherited by nothing
+    yet would still be a surface change, and the equality assertion should see it
+    rather than walk past it.
+    """
+    yield ' '.join(prefix), parser
+    for action in parser._actions:
+        choices = getattr(action, 'choices', None)
+        # A subparsers action's ``choices`` is the name -> parser map; an
+        # ordinary ``choices=[...]`` argument's is a plain sequence of values.
+        if not isinstance(choices, dict):
+            continue
+        for name, child in choices.items():
+            if isinstance(child, argparse.ArgumentParser):
+                yield from _walk_verbs(child, (*prefix, name))
+
+
+def _declares_any_checkout(parser) -> bool:
+    return any('--any-checkout' in action.option_strings for action in parser._actions)
+
+
+def test_the_parser_walk_reaches_the_whole_verb_surface(monkeypatch):
+    """Non-vacuity control for the derivation the next test asserts on.
+
+    A set-guarding assertion computed over an empty or truncated population
+    passes for the wrong reason: a walk that silently stopped at the root would
+    observe no ``--any-checkout`` anywhere and would then be compared against a
+    five-element expectation, failing loudly — but a walk that reached ONLY the
+    five would compare equal while having examined nothing else. This pins that
+    the walk descends both nested groups and reaches write verbs too, so the
+    equality below is a statement about the whole surface.
+    """
+    paths = {path for path, _ in _walk_verbs(_capture_built_parser(monkeypatch))}
+
+    assert 'add' in paths
+    assert 'qgate add' in paths
+    assert 'assessment add' in paths
+    assert 'ingest' in paths
+    assert len(paths) > len(_ANY_CHECKOUT_READ_VERBS)
+
+
+def test_any_checkout_is_declared_on_exactly_the_five_read_verbs(monkeypatch):
+    """The flag's presence set, read off argparse rather than off a comment.
+
+    Equality — not containment — in both directions at once: a write verb that
+    picked the flag up fails here, and a read verb that lost it fails here too.
+    The second direction matters as much as the first, because a silently
+    dropped ``--any-checkout`` turns a documented capability into an
+    ``unrecognized arguments`` exit 2 at the call site.
+    """
+    parser = _capture_built_parser(monkeypatch)
+
+    observed = {path for path, node in _walk_verbs(parser) if _declares_any_checkout(node)}
+
+    assert observed == _ANY_CHECKOUT_READ_VERBS
+
+
+def test_the_write_verbs_are_the_complement_and_the_complement_is_not_empty(monkeypatch):
+    """The safety property, stated as the complement the module docstring claims.
+
+    The docstring declines to keep a second roster of the write verbs, on the
+    grounds that the guarantee is the COMPLEMENT of the five. That is only true
+    if the complement is non-empty and contains the verbs that actually write —
+    otherwise "no write verb has it" would hold vacuously over a surface with no
+    write verbs on it.
+    """
+    parser = _capture_built_parser(monkeypatch)
+    all_paths = {path for path, _ in _walk_verbs(parser)}
+
+    complement = all_paths - _ANY_CHECKOUT_READ_VERBS
+
+    assert complement, 'every walked verb declares --any-checkout; the complement claim is vacuous'
+    assert {'add', 'resolve', 'promote', 'qgate add', 'assessment add'} <= complement
 
 
 # =============================================================================

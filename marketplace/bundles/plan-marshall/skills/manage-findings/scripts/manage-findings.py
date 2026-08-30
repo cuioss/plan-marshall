@@ -31,6 +31,16 @@ currently lives in another. A write verb handed the flag is rejected by argparse
 the five rather than as a second roster of the writes: a roster has to be
 re-derived from the argparse surface on every verb added, and that is what drifts.
 
+⛔ The five-verb list above is PROSE, and prose cannot enforce a set. The
+enforcing guard is
+``test/plan-marshall/manage-findings/test_manage_findings_cli.py`` §
+"``--any-checkout`` write-authority contract", which walks the parser tree
+``main()`` actually builds, collects every verb whose options include the flag,
+and asserts set EQUALITY against the five — so a future verb that picks the flag
+up fails there, and a read verb that loses it fails there too. Treat this
+paragraph as a description of that assertion, never as its source of truth: the
+argparse surface is the authority, and the derivation reads it directly.
+
 All commands output TOON format.
 """
 

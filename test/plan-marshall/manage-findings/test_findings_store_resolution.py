@@ -536,7 +536,34 @@ def test_shape_c_surfaces_refuse_an_absent_plan_directory(plan_context, surface)
         hash_id, failure = result
         assert hash_id is None
         assert failure is not None
-        assert FINDINGS_STORE_UNRESOLVED not in QGATE_PERSIST_OK
+        # The refusal must be carried, not merely counted. ``failure`` is the
+        # ``{title, detail, message}`` descriptor this verb's contract promises,
+        # and ``message`` is documented as "the primitive's rejection message" —
+        # so the store's own provenance has to survive into it. An empty or
+        # generic message would leave the caller reporting a rejected persist it
+        # cannot explain, which is the reporting gap this surface exists to close.
+        assert failure['title'] == 'Checked title'
+        assert plan_id in failure['message'], failure
+        assert 'never reached' in failure['message'], failure
+        # And the DELEGATION has to be what rejected it. The verb carries no
+        # store guard of its own — it relies on the refusal's ``error`` status
+        # falling outside QGATE_PERSIST_OK — so that is asserted on the
+        # primitive's own payload, in the primitive's own vocabulary.
+        #
+        # ⛔ The previous form here was ``FINDINGS_STORE_UNRESOLVED not in
+        # QGATE_PERSIST_OK``, which compares an ERROR CODE against a STATUS set.
+        # The two vocabularies are disjoint by construction, so that assertion
+        # could not fail for the reason it claimed to guard — it would have held
+        # even if ``error`` had been added to QGATE_PERSIST_OK and every rejected
+        # persist started laundering into a benign no-op. The load-bearing
+        # invariant is the same-vocabulary one below.
+        primitive = _findings_core.add_qgate_finding(
+            plan_id, '5-execute', 'qgate', 'bug', 'Checked title', 'Detail'
+        )
+        assert primitive['status'] == 'error'
+        assert primitive['status'] not in QGATE_PERSIST_OK
+        assert primitive['error'] == FINDINGS_STORE_UNRESOLVED
+        assert primitive['findings_store_state'] == 'plan_absent'
     else:
         assert result['status'] == 'error', f'{surface} did not refuse'
         assert result['error'] == FINDINGS_STORE_UNRESOLVED
