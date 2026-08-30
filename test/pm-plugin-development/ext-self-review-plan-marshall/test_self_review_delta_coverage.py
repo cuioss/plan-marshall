@@ -292,9 +292,17 @@ class TestSurfaceEmitsTheFact:
         """Wiring check: the computation reaches the emitted TOON.
 
         Asserted against the raw stdout so the emitted SHAPE is pinned — the
-        block header plus the six-row per-class table. A fact computed but never
-        emitted would leave every unit case above green while the round the
-        defect afflicts still published nothing.
+        block header plus the per-class table, whose row count is DERIVED from
+        ``CONTENT_CLASSES`` rather than written as a literal. A hardcoded ``6``
+        duplicated the registry's size, so adding or removing a content class
+        failed this end-to-end test even when the emitted output was correct.
+
+        The assertion stays live under the derivation: it still requires the
+        EMITTED table to carry one row per declared class, so an emitter that
+        writes a different number of rows than the registry declares still fails.
+
+        A fact computed but never emitted would leave every unit case above green
+        while the round the defect afflicts still published nothing.
         """
         repo = _fixture_repo(tmp_path)
         script = get_script_path(
@@ -314,7 +322,11 @@ class TestSurfaceEmitsTheFact:
 
         assert result.success, f'surface failed: stderr={result.stderr}'
         assert 'delta_coverage:' in result.stdout
-        assert (
-            'by_class[6]{content_class,files,files_with_candidates,'
-            'files_without_candidates}:' in result.stdout
+        expected_header = (
+            f'by_class[{len(CONTENT_CLASSES)}]'
+            '{content_class,files,files_with_candidates,files_without_candidates}:'
+        )
+        assert expected_header in result.stdout, (
+            f'emitted surface does not carry one per-class row per declared '
+            f'content class; expected header {expected_header!r}'
         )

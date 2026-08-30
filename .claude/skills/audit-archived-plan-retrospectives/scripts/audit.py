@@ -1389,7 +1389,15 @@ class PlanInputs:
     #: Which tier answered: one of :data:`FOOTPRINT_TIERS`, or
     #: :data:`FOOTPRINT_TIER_UNRESOLVED` when none did. This is the field that
     #: separates a resolved-empty footprint from an unresolvable one.
-    footprint_tier: str = "unresolved"
+    #:
+    #: The default REFERENCES the constant rather than restating its value. It is
+    #: a live default, not dead: test fixtures construct `PlanInputs` directly
+    #: without going through :func:`collect_inputs`, so a restated literal would
+    #: silently diverge from the tier-unresolved contract that
+    #: :func:`graded_file_count`, `graded_count_basis` and :func:`_plan_shipped`
+    #: each compare against — and those consumers still compare a runtime value
+    #: against the constant, so the assertion survives the derivation.
+    footprint_tier: str = FOOTPRINT_TIER_UNRESOLVED
     phase_5_candidates: list[str] = field(default_factory=list)
     phase_6_candidates: list[str] = field(default_factory=list)
     manifest_present: bool = False
