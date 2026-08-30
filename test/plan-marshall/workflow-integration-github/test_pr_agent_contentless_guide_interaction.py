@@ -179,6 +179,22 @@ def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_a
 
 
 def _run_fetch(pr_number, plan_id):
+    """Run the producer's FIND verb against ``plan_id``, with its plan directory present.
+
+    The directory is materialized HERE because ``phase-1-init`` materializes it in
+    production before any producer runs, and ``cmd_fetch_findings`` REFUSES a plan
+    directory absent from the resolved root — a plan that exists in no checkout is not
+    a plan that has filed nothing. The arms below derive their ids per bot and per
+    shape, so constructing it in the shared helper keeps that one line of production
+    context in one place rather than in every arm.
+
+    ⛔ It does NOT neutralize the refusal. A test whose subject IS the unreached store
+    drives ``cmd_fetch_findings`` directly — see the unreached-store section in
+    ``test_comments_stage.py``.
+    """
+    from file_ops import get_base_dir  # noqa: PLC0415 — resolved per call, after the sandbox fixture
+
+    (get_base_dir() / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)
     args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id)
     return github_pr.cmd_fetch_findings(args)
 

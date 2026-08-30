@@ -555,3 +555,110 @@ def test_deduplicated_mismatch_persist_stays_benign(plan_context, monkeypatch):
     assert 'qgate_persist_failed' not in second
     # Dedup returns the SAME record — still in the store, so still a hash id.
     assert second['producer_mismatch_hash_id'] == first['producer_mismatch_hash_id']
+
+
+# =============================================================================
+# The unreached findings store — ``post_responses`` reads it back
+# =============================================================================
+#
+# ``post_responses`` is this provider's only verb that READS the plan's stored
+# ``pr-comment`` findings. ``manage-findings`` answers a plan whose directory is
+# absent from the resolved root with ``error: findings_store_unresolved`` and NO
+# ``findings`` key, so a ``.get('findings') or []`` read turned an unreached store
+# into an EMPTY LIST and reported a confident "every disposition transmitted,
+# nothing failed" over a store that was never opened.
+#
+# ⛔ BOTH directions are pinned. A fix that turned every empty finding list into an
+# error would satisfy the refusal test and break every plan whose store legitimately
+# holds no pr-comment finding — the documented inverse defect. The matched control
+# is what excludes it.
+
+
+def test_post_responses_refuses_a_plan_absent_from_the_resolved_root(plan_context):
+    """Positive control: an unreached store is a refusal, not "nothing to transmit"."""
+    plan_id = 'gl-store-absent-respond'
+    root = plan_context.fixture_dir
+    assert not (plan_context.plans_dir / plan_id).exists(), (
+        'the plan directory must be ABSENT for this to be the unreached-store case'
+    )
+
+    with (
+        patch('gitlab_pr._gitlab.get_project_path', return_value='group/proj'),
+        patch('gitlab_pr._gitlab.run_glab', return_value=(0, '', '')) as mock_glab,
+    ):
+        result = cmd_post_responses(_make_args(500, plan_id))
+
+    assert result.get('status') == 'error', result
+    assert result.get('error') == 'findings_store_unresolved', (
+        'the provider must re-publish the store\'s own error code rather than mint a '
+        f'second vocabulary for the same fact: {result}'
+    )
+    assert result.get('findings_store_state') == 'plan_absent'
+    assert result.get('unresolved_store') is True
+    assert str(root) in str(result.get('message', '')), (
+        'the refusal must carry the store\'s provenance naming the resolved root'
+    )
+    # The pre-guard answer, excluded explicitly: a confident all-clear report.
+    assert 'count_responded' not in result
+    assert 'count_failed' not in result
+    mock_glab.assert_not_called()
+
+
+def test_post_responses_against_a_resolved_empty_store_is_a_genuine_success(plan_context):
+    """Matched negative control: a resolved store with nothing to send still succeeds."""
+    plan_id = 'gl-store-empty-respond'
+    plan_context.plan_dir_for(plan_id)
+
+    with (
+        patch('gitlab_pr._gitlab.get_project_path', return_value='group/proj'),
+        patch('gitlab_pr._gitlab.run_glab', return_value=(0, '', '')),
+    ):
+        result = cmd_post_responses(_make_args(501, plan_id))
+
+    assert result['status'] == 'success', result
+    assert result['count_responded'] == 0
+    assert result['count_skipped'] == 0
+    assert result['count_failed'] == 0
+
+
+def test_post_responses_still_transmits_against_a_resolved_populated_store(plan_context):
+    """Matched positive control on the happy path: the guard blocks nothing real."""
+    plan_id = 'gl-store-populated-respond'
+    plan_context.plan_dir_for(plan_id)
+    hash_id = _fetch_with_comment(plan_id, 503)['stored_hash_ids'][0]
+
+    from _findings_core import resolve_finding
+
+    resolve_finding(plan_id, hash_id, 'fixed', detail='Fixed in the follow-up commit.')
+
+    with (
+        patch('gitlab_pr._gitlab.get_project_path', return_value='group/proj'),
+        patch('gitlab_pr._gitlab.run_glab', return_value=(0, '', '')),
+    ):
+        result = cmd_post_responses(_make_args(503, plan_id))
+
+    assert result['status'] == 'success', result
+    assert result['count_responded'] == 1
+    assert result['responded'][0]['hash_id'] == hash_id
+
+
+def test_the_two_zeros_are_distinguishable_in_one_comparison(plan_context):
+    """The property the scenario turns on, stated as a single comparison.
+
+    Asserting the refusal and the benign zero in separate tests leaves open that they
+    still agree on the field a caller branches on. Before the guard both cases
+    answered with the SAME ``status: success`` envelope and the same zero counts.
+    """
+    resolved_id = 'gl-store-pair-resolved'
+    plan_context.plan_dir_for(resolved_id)
+
+    with (
+        patch('gitlab_pr._gitlab.get_project_path', return_value='group/proj'),
+        patch('gitlab_pr._gitlab.run_glab', return_value=(0, '', '')),
+    ):
+        benign = cmd_post_responses(_make_args(502, resolved_id))
+        absent = cmd_post_responses(_make_args(502, 'gl-store-pair-missing'))
+
+    assert benign['status'] != absent['status']
+    assert absent['findings_store_state'] == 'plan_absent'
+    assert 'findings_store_state' not in benign

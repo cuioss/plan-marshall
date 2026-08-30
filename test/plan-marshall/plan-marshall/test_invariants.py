@@ -55,6 +55,20 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 import _invariants as inv  # noqa: E402
 
+# Plan ids this module's tests file findings against — seeded by the autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.
+PLAN_IDS = (
+    'inv-pending-drift',
+    'inv-pending-still-blocks',
+    'inv-rejected-only-passes',
+    'inv-rejected-plan-zero',
+    'inv-rejected-plus-pending',
+    'inv-rejected-qgate-passes',
+    'inv-unfinished-sum',
+    'inv-unfinished-zero',
+    'p1',
+)
+
 
 # =============================================================================
 # Load manage-tasks command handlers via the shared conftest loader — gives us

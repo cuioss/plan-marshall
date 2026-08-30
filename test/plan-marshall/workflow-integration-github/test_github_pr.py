@@ -32,6 +32,61 @@ from _pr_agent_guide_bodies import GUIDE_WITH_FINDING, OBSERVED_CLEAN_GUIDE
 
 from conftest import get_script_path, get_skill_dir, load_script_module, run_script
 
+# Plan ids this module's tests file findings against — seeded by the autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.
+PLAN_IDS: tuple[str, ...] = (
+    'gh-pr-bare-flags',
+    'gh-pr-bare-warn-but-ingest',
+    'gh-pr-barrier-noise',
+    'gh-pr-classification-empty',
+    'gh-pr-classification-union',
+    'gh-pr-dedup-collision',
+    'gh-pr-dedup-decoupled',
+    'gh-pr-dedup-refetch',
+    'gh-pr-persist-dedup',
+    'gh-pr-persist-reject',
+    'gh-pr-quota-only-no-measure',
+    'gh-pr-rate-limit-bot-agnostic',
+    'gh-pr-recognised-refusal-control',
+    'gh-pr-refusal-cause-sticky',
+    'gh-pr-refusal-cause-sticky-reverse',
+    'gh-pr-refusal-causes',
+    'gh-pr-refusal-vs-participation',
+    'gh-pr-respond-batch-fails',
+    'gh-pr-respond-batched',
+    'gh-pr-respond-changed',
+    'gh-pr-respond-count-contract',
+    'gh-pr-respond-round2-only-new',
+    'gh-pr-respond-skipped',
+    'gh-pr-respond-thread-fails',
+    'gh-pr-respond-thread-idempotent',
+    'gh-pr-respond-threaded',
+    'gh-pr-self-response-bound',
+    'gh-pr-self-response-boundary',
+    'gh-pr-self-response-converged-history',
+    'gh-pr-self-response-excluded',
+    'gh-pr-self-response-live-loop',
+    'gh-pr-self-response-reopened',
+    'gh-pr-self-response-trigger-interleave',
+    'gh-pr-size-refusal-no-cap',
+    'gh-pr-size-refusal-unmeasurable',
+    'gh-pr-unclassified-reported',
+    'gh-pr-unrecognised-human',
+    'gh-pr-unrecognised-inert',
+    'gh-pr-unrecognised-partial',
+    'gh-pr-unrecognised-refusal',
+    'gh-pr-unrecognised-remedy',
+    'gh-pr-unregistered-bot-classification',
+    'gh-pr-unregistered-bot-filed',
+    'p',
+)
+
+#: The per-bot cases derive their plan id from the bot under test, so the seeded
+#: ids are derived from the SAME registry-backed population the parametrisation
+#: iterates rather than transcribed — a bot added to the registry seeds its plan
+#: id too, instead of failing with an unreached store.
+PLAN_IDS += tuple(f'gh-pr-preupgrade-dedup-{bot_kind}' for bot_kind in CURRENCY_SUBJECT_BOTS)
+
 github_pr = load_script_module('plan-marshall', 'workflow-integration-github', 'github_pr.py', 'github_pr')
 _findings_core = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core')
 
@@ -129,6 +184,25 @@ def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_a
 
 
 def _run_fetch(pr_number, plan_id):
+    """Run the producer's FIND verb against ``plan_id``, with its plan directory present.
+
+    The directory is materialized HERE because ``phase-1-init`` materializes it in
+    production before any producer runs, and ``cmd_fetch_findings`` REFUSES a plan
+    directory absent from the resolved root — a plan that exists in no checkout is not
+    a plan that has filed nothing. Constructing it in the shared helper keeps that one
+    line of production context in one place instead of obliging every case below to
+    repeat it, and it is the same construction the autouse
+    ``_materialize_declared_plan_dirs`` fixture performs for the module-level
+    ``PLAN_IDS``; the cases here derive their ids per bot, so they cannot be listed
+    there without re-deriving the registry population a second time.
+
+    ⛔ It does NOT neutralize the refusal. A test whose subject IS the unreached store
+    drives ``cmd_fetch_findings`` directly rather than coming through this helper — see
+    the unreached-store section in ``test_comments_stage.py``.
+    """
+    from file_ops import get_base_dir  # noqa: PLC0415 — resolved per call, after the sandbox fixture
+
+    (get_base_dir() / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)
     args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id)
     return github_pr.cmd_fetch_findings(args)
 

@@ -22,18 +22,30 @@ The invariant this guarantees for the downstream triage pass: NO top-level field
 is ever populated from an un-validated ``raw_input`` value — the top-level read
 surface triage consumes is clean-by-construction.
 
+``ingest`` is a WRITE surface — it calls ``update_jsonl`` to promote fields and
+``resolve_finding`` / ``resolve_qgate_finding`` to reject — so it carries the
+same explicit store guard as the ``add_`` surfaces and refuses an unreached store
+through the shared ``unresolved_store_error`` rather than reporting a pass over
+records it never read.
+
 Stdlib-only — no external dependencies (except shared modules via PYTHONPATH).
 """
 
 from typing import Any
 
 from _findings_core import (
-    get_findings_path,
-    get_qgate_path,
+    _store_findings_path,
+    _store_qgate_path,
     query_findings,
     query_qgate_findings,
     resolve_finding,
     resolve_qgate_finding,
+)
+from _findings_store_state import (
+    resolve_findings_store,
+    store_state_fields,
+    store_unreached,
+    unresolved_store_error,
 )
 from constants import QGATE_PHASES
 from jsonl_store import update_jsonl
@@ -83,8 +95,19 @@ def ingest_findings(plan_id: str, schema: str = FINDING_SCHEMA) -> dict[str, Any
     Promotes validated ``raw_input.{field}`` values to top-level fields and routes
     validator rejections to the ``rejected`` resolution. Returns a summary carrying
     the ``promoted`` / ``rejected`` / ``skipped`` counts, the accumulated ``clamped``
-    reports, and a per-finding ``outcomes`` list.
+    reports, and a per-finding ``outcomes`` list — plus the four store-state fields
+    every other surface publishes, so the counts are never reported without the
+    substrate they were computed from.
+
+    REFUSES an unreached store, exactly as the ``add_`` surfaces do and for a
+    stronger reason: this pass both READS and WRITES. Against a ``plan_absent`` /
+    ``unknown`` store the counts would be a three-way zero for records that were
+    never looked at, and the writes would address a store the read never reached.
     """
+    store = resolve_findings_store(plan_id)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
     promoted = 0
     rejected = 0
     skipped = 0
@@ -96,7 +119,9 @@ def ingest_findings(plan_id: str, schema: str = FINDING_SCHEMA) -> dict[str, Any
         outcome, payload, record_clamped = _classify(record, schema)
         if outcome == 'promoted':
             if payload:
-                update_jsonl(get_findings_path(plan_id, record['type']), record['hash_id'], payload)
+                update_jsonl(
+                    _store_findings_path(store, record['type']), record['hash_id'], payload
+                )
             promoted += 1
         elif outcome == 'rejected':
             resolve_finding(plan_id, record['hash_id'], REJECTED_RESOLUTION, payload)
@@ -112,7 +137,7 @@ def ingest_findings(plan_id: str, schema: str = FINDING_SCHEMA) -> dict[str, Any
             outcome, payload, record_clamped = _classify(record, schema)
             if outcome == 'promoted':
                 if payload:
-                    update_jsonl(get_qgate_path(plan_id, phase), record['hash_id'], payload)
+                    update_jsonl(_store_qgate_path(store, phase), record['hash_id'], payload)
                 promoted += 1
             elif outcome == 'rejected':
                 resolve_qgate_finding(plan_id, phase, record['hash_id'], REJECTED_RESOLUTION, payload)
@@ -131,4 +156,5 @@ def ingest_findings(plan_id: str, schema: str = FINDING_SCHEMA) -> dict[str, Any
         'skipped': skipped,
         'clamped': clamped,
         'outcomes': outcomes,
+        **store_state_fields(store),
     }

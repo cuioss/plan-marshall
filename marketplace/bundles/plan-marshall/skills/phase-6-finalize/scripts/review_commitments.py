@@ -87,6 +87,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from _findings_store_state import as_unresolved_store_error
 from toon_parser import serialize_toon
 
 #: Resolutions in which the run took a POSITION on the line: the reviewer's point
@@ -365,26 +366,6 @@ def reconcile(
     }
 
 
-def _read_pr_comment_findings(plan_id: str) -> list[dict]:
-    """Read the plan's ``pr-comment`` findings via the shared findings read path.
-
-    Imported inside the function purely to keep the import graph honest about who
-    needs it — the pure functions above do not. It buys no import-time isolation:
-    ``toon_parser`` is already a module-level import needing the same executor
-    ``PYTHONPATH``, so the module does not load without it either way.
-
-    ``query_findings`` signals a read failure by RAISING (``OSError`` / ``ValueError``
-    on an unreadable or malformed store), which :func:`cmd_reconcile` catches and
-    renders as a verdict-less error TOON. It has no ``status: error`` return branch,
-    so this function deliberately does not test for one — a dead guard against a
-    shape the callee never produces reads as defence and provides none.
-    """
-    from _findings_core import query_findings
-
-    findings: list[dict] = query_findings(plan_id, finding_type='pr-comment')['findings']
-    return findings
-
-
 def cmd_reconcile(args: argparse.Namespace) -> int:
     """CLI wrapper — emits TOON. Non-zero exit on an unreadable input.
 
@@ -392,17 +373,41 @@ def cmd_reconcile(args: argparse.Namespace) -> int:
     reads it as UNKNOWN rather than as a clear pass. A crashed reconciliation that
     rendered as ``clear`` would be the exact false-clean signal this seam exists to
     prevent.
+
+    ``query_findings`` signals a read failure TWO ways, and they are rendered
+    apart because their remedies differ. It RAISES (``OSError`` / ``ValueError``)
+    on an unreadable or malformed store, which becomes ``load_failure``; it
+    RETURNS a refusal (``status: error`` / ``error: findings_store_unresolved``)
+    when the store was never reached at all — the plan directory is not under the
+    root it resolved, the ordinary state of a plan whose directory has MOVED into
+    its worktree. That refusal carries NO ``findings`` key, so the whole payload
+    is held and recognised via ``as_unresolved_store_error`` BEFORE ``findings``
+    is subscripted; doing it the other way round produced ``KeyError('findings')``
+    — an error naming a dict key instead of the absent plan directory that caused
+    it. It is re-emitted with ``manage-findings``' own code rather than folded
+    into ``load_failure`` because only the store's own message names the checkout
+    that holds the plan.
+
+    ``query_findings`` is imported inside this function to keep the import graph
+    honest about who needs it — the pure functions above do not.
     """
+    from _findings_core import query_findings
+
     try:
         diff_text = Path(args.diff_file).read_text(encoding='utf-8')
     except OSError as exc:
         print(serialize_toon({'status': 'error', 'error': 'diff_unreadable', 'detail': str(exc)}))
         return 1
     try:
-        findings = _read_pr_comment_findings(args.plan_id)
-    except (OSError, ValueError, KeyError) as exc:
+        read = query_findings(args.plan_id, finding_type='pr-comment')
+    except (OSError, ValueError) as exc:
         print(serialize_toon({'status': 'error', 'error': 'load_failure', 'detail': str(exc)}))
         return 1
+    refusal = as_unresolved_store_error(read)
+    if refusal is not None:
+        print(serialize_toon(refusal))
+        return 1
+    findings = read['findings']
 
     payload = reconcile(
         parse_deletions(diff_text),

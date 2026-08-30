@@ -15,14 +15,15 @@ Usage:
         read_jsonl,
         read_jsonl_merge,
         update_jsonl,
-        update_jsonl_in_dir,
         find_by_title,
         timestamp,
     )
 
-Cross-file helpers (`read_jsonl_merge`, `update_jsonl_in_dir`) support the
-per-type findings layout where records of different types live in sibling
-JSONL files under a common directory.
+The cross-file helper `read_jsonl_merge` supports the per-type findings layout
+where records of different types live in sibling JSONL files under a common
+directory. It reads only: a caller that needs to WRITE across that layout owns
+its own enumeration of the files it may touch, because a directory-wide glob
+cannot know which sibling files belong to the caller's store.
 """
 
 import hashlib
@@ -105,22 +106,6 @@ def read_jsonl_merge(paths: list[Path]) -> list[dict[str, Any]]:
     for path in paths:
         merged.extend(read_jsonl(path))
     return merged
-
-
-def update_jsonl_in_dir(directory: Path, hash_id: str, updates: dict[str, Any]) -> bool:
-    """Update a record by hash_id, scanning every *.jsonl file under `directory`.
-
-    Used by the per-type findings layout where the caller knows the record's
-    `hash_id` but not which per-type file it lives in. Stops at the first match
-    and rewrites only that file. Returns False if no file contains the hash.
-    """
-    if not directory.exists() or not directory.is_dir():
-        return False
-
-    for path in sorted(directory.glob('*.jsonl')):
-        if update_jsonl(path, hash_id, updates):
-            return True
-    return False
 
 
 def find_by_title(path: Path, title: str) -> dict[str, Any] | None:

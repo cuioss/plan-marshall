@@ -51,6 +51,19 @@ import pytest
 
 from conftest import load_script_module
 
+# Plan ids this module's tests file findings against — seeded by the autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.
+PLAN_IDS: tuple[str, ...] = (
+    'barrier-absent-required-bot',
+    'barrier-clean-path',
+    'barrier-cross-kind',
+    'barrier-late-comment',
+    'barrier-optional-silence',
+    'barrier-self-response-bound',
+    'barrier-self-response-terminates',
+    'barrier-stale-override',
+)
+
 github_pr = load_script_module('plan-marshall', 'workflow-integration-github', 'github_pr.py', 'github_pr')
 _findings_core = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core')
 
@@ -301,6 +314,19 @@ def test_self_response_loop_bound_reports_qgate_finding(plan_context, monkeypatc
 
 review_completeness = load_script_module(
     'plan-marshall', 'automatic-review', 'review_completeness.py', 'review_completeness'
+)
+
+#: The widened-member parity cases derive their plan id from the member under
+#: test (``f'barrier-parity-{member.replace("_", "-")}'``), so the seeded ids are
+#: derived from the same constants the parametrisation uses rather than
+#: transcribed — adding a member to the parametrisation seeds its plan id too.
+PLAN_IDS += tuple(
+    f'barrier-parity-{member.replace("_", "-")}'
+    for member in (
+        review_completeness.STATE_PARTICIPATED_STALE,
+        review_completeness.STATE_NOT_TRIGGERED,
+        review_completeness.STATE_DECLINED,
+    )
 )
 
 

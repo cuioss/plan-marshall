@@ -343,6 +343,36 @@ def _thread_id_from_detail(detail: str | None) -> str:
     return match.group('id') if match else ''
 
 
+def _read_pr_comment_findings(query_findings, plan_id: str) -> dict[str, Any]:
+    """Return the plan's ``pr-comment`` query payload, or the store's own REFUSAL.
+
+    ``manage-findings`` answers a plan whose directory is not under the root it
+    resolved with ``error: findings_store_unresolved`` and NO ``findings`` key. A
+    caller reading ``result.get('findings') or []`` therefore received an EMPTY LIST
+    for a store nobody reached, and reported a confident "no disposition to
+    transmit" over a substrate that was never opened. Recognising the refusal first
+    is what carries the store's own named error code out of this provider instead.
+
+    ⛔ A store that RESOLVED and legitimately holds no ``pr-comment`` finding is
+    untouched by this: it still returns the ordinary success payload with an empty
+    ``findings`` list. Only an UNREACHED store refuses.
+
+    Args:
+        query_findings: The ``_findings_core.query_findings`` callable.
+        plan_id: Plan identifier whose findings store is queried.
+
+    Returns:
+        The successful query payload — whose ``findings`` key the caller may then
+        read — or the refusal dict (``status: error`` plus the store's provenance)
+        for the caller to return verbatim.
+    """
+    from _findings_store_state import as_unresolved_store_error
+
+    result = query_findings(plan_id, finding_type='pr-comment')
+    refusal = as_unresolved_store_error(result)
+    return refusal if refusal is not None else result
+
+
 def cmd_post_responses(args):
     """RESPOND verb: apply already-decided triage dispositions back to the MR.
 
@@ -367,8 +397,12 @@ def cmd_post_responses(args):
     is a per-``(finding, disposition)`` key, not a blanket suppression.
 
     Fail-loud: returns a typed ``unconfigured`` status when GitLab is not
-    authenticated. A finding without a ``resolution_detail`` or ``thread_id`` is
-    skipped, never guessed at.
+    authenticated, and the store's own ``findings_store_unresolved`` refusal when
+    the plan directory is absent from the resolved root — never an empty finding
+    list, which would report a clean "nothing to transmit" for a store that was
+    never opened. A resolved store holding no ``pr-comment`` finding still returns
+    the ordinary success with zero counts. A finding without a ``resolution_detail``
+    or ``thread_id`` is skipped, never guessed at.
     """
     from _findings_core import mark_finding_responded, query_findings
 
@@ -384,7 +418,14 @@ def cmd_post_responses(args):
         return make_error('Could not determine GitLab project path', code=ErrorCode.NOT_FOUND)
     encoded_path = quote(project_path, safe='')
 
-    findings = query_findings(plan_id, finding_type='pr-comment').get('findings') or []
+    # An UNREACHED store is returned as the store's own refusal, never reduced to an
+    # empty finding list: an empty list here reports "every disposition transmitted,
+    # nothing failed" for a store that was never opened. A store that resolved and
+    # simply holds no pr-comment finding still yields the genuine empty list below.
+    findings_payload = _read_pr_comment_findings(query_findings, plan_id)
+    if findings_payload.get('status') == 'error':
+        return findings_payload
+    findings = findings_payload.get('findings') or []
 
     responded: list[dict[str, str]] = []
     skipped: list[dict[str, str]] = []

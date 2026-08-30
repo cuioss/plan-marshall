@@ -11,6 +11,15 @@ from _resolve_project_dir_fixtures import worktree_query_result
 
 from conftest import get_scripts_dir
 
+# Plan ids this module's tests file findings against — seeded by the autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.
+PLAN_IDS = (
+    'a-real-plan',
+    'build-shared-persist-dedup',
+    'build-shared-persist-ok',
+    'build-shared-persist-reject',
+)
+
 # Add script path for imports
 _SCRIPT_DIR = get_scripts_dir('plan-marshall', 'script-shared') / 'build'
 sys.path.insert(0, str(_SCRIPT_DIR))

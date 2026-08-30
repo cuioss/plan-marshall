@@ -117,17 +117,29 @@ def _build_entry(
     notation: str | None = _PYPROJECT,
     plan_id: str | None = 'crosscheck-test',
     timestamp_iso: str = '2026-06-11T12:00:00Z',
+    args: str | None = 'run',
+    outcome: dict | None = None,
 ) -> dict:
     """Construct a ``kind=build`` ledger row.
 
     ``notation=None`` omits the key entirely, modelling a row no dispatch
     boundary could have written (``build_record`` requires the field), which is
     the shape a hand-appended or test-authored row most easily takes.
+
+    ``args`` defaults to the bare ``'run'`` these notation cases have always
+    used. It carries no ``--command-args``, so the SCOPE cross-check reads such a
+    row as unreadable and reports ``undetermined`` — which is exactly why the
+    notation cases below are unaffected by that second dimension. A scope case
+    passes a realistic argv through :func:`_args_for`.
+
+    ``outcome`` is the wrapper's stdout TOON, omitted by default. The scope
+    dimension reads ``tests_run`` / ``tests_population`` from it, and its ABSENCE
+    is deliberately not a refusal: an unmeasured test count says nothing.
     """
     entry: dict = {
         'kind': 'build',
         'plan_id': plan_id,
-        'args': 'run',
+        'args': args,
         'exit_code': 0,
         'worktree_sha': worktree_sha,
         'log_file': None,
@@ -137,7 +149,33 @@ def _build_entry(
         entry['notation'] = notation
     if status is not None:
         entry['status'] = status
+    if outcome is not None:
+        entry['outcome'] = outcome
     return entry
+
+
+def _args_for(command_args: str, *, plan_id: str = 'crosscheck-test') -> str:
+    """Render the executor argv a ``kind=build`` row records for ``command_args``.
+
+    Mirrors the real stamp — ``' '.join(script_args)`` over the executor argv —
+    including the fact that the join is UNQUOTED, so a module-scoped
+    ``--command-args "verify plan-marshall"`` lands as three bare tokens. Built
+    here rather than hand-written per case so every scope test exercises the same
+    shape the dispatch boundary actually writes.
+    """
+    return f'run --plan-id {plan_id} --command-args {command_args}'
+
+
+def _outcome_for(tests_run: int | None, *, population: str = 'measured') -> dict:
+    """Render the wrapper payload fragment the scope dimension reads.
+
+    ``tests_run=None`` omits the key, modelling a payload whose test summary did
+    not parse — the state that must NOT be read as zero.
+    """
+    outcome: dict = {'status': 'success', 'tests_population': population}
+    if tests_run is not None:
+        outcome['tests_run'] = tests_run
+    return outcome
 
 
 def _write_ledger(tmp_path: Path, entries: list[dict]) -> Path:
@@ -162,6 +200,45 @@ def _stub_expected(monkeypatch, notations, reason=None) -> None:
         crosscheck,
         'resolve_expected_notations',
         lambda _project_dir: (frozenset(notations), reason),
+    )
+
+
+def _required(
+    *,
+    analyses: set[str] | None = None,
+    whole_tree: bool = True,
+    modules: set[str] | None = None,
+) -> crosscheck.RequiredCoverage:
+    """Build the change-side coverage requirement a scope case is judged against.
+
+    Defaults to the whole-tree, source-bearing change — every analysis required,
+    only a whole-tree row adequate — because that is the state the observed
+    ``858061bc`` false-green occurred in. A case narrowing the requirement says so
+    explicitly.
+    """
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    if analyses is None:
+        analyses = {vocabulary.compile, vocabulary.lint, vocabulary.test}
+    return crosscheck.RequiredCoverage(
+        analyses=frozenset(analyses),
+        whole_tree=whole_tree,
+        modules=frozenset(modules or set()),
+    )
+
+
+def _stub_required(monkeypatch, required, reason=None) -> None:
+    """Pin what the CHANGE requires, without deriving a live plan footprint.
+
+    Stubs the consumer's own resolution seam rather than the git/architecture
+    calls beneath it, for the same reason ``_stub_expected`` stubs the resolver:
+    the derivation has its own coverage, and a gate-level case should not pay for
+    a footprint crawl to assert a verdict mapping.
+    """
+    monkeypatch.setattr(
+        _freshness_mod,
+        '_resolve_required_coverage',
+        lambda _plan_id: (required, reason),
     )
 
 

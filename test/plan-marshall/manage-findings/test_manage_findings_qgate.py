@@ -22,6 +22,21 @@ from _manage_findings_fixtures import (
 
 from conftest import run_script
 
+# Plan ids this module's tests file findings against — seeded by the autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.
+PLAN_IDS = (
+    'qgate-add-basic',
+    'qgate-add-opts',
+    'qgate-dedup-diff',
+    'qgate-dedup-pend',
+    'qgate-dedup-reopen',
+    'qgate-inv-phase',
+    'qgate-inv-source',
+    'qgate-query-empty',
+    'qgate-query-res',
+    'qgate-query-src',
+)
+
 # =============================================================================
 # Test: Q-Gate Add Command
 # =============================================================================

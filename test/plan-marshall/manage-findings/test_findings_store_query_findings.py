@@ -24,6 +24,33 @@ from _findings_store_fixtures import (
     resolve_finding,
 )
 
+# Plan ids this module's tests file findings against — seeded by the autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.
+PLAN_IDS = (
+    'store-prc-both',
+    'store-prc-botkind-mix',
+    'store-prc-byauthor',
+    'store-prc-bybotkind',
+    'store-prc-bykind',
+    'store-prc-rcs-unified',
+    'store-prc-unified',
+    'store-prc-unified-auth',
+    'store-prc-unified-bk',
+    'store-qgate-auth-filter',
+    'store-qgate-query',
+    'store-query-all',
+    'store-query-empty',
+    'store-query-file',
+    'store-query-res',
+    'store-query-type',
+    'store-resolve',
+    'store-resolve-bad',
+    'store-resolve-nf',
+    'store-resolve-rejected',
+    'store-responded-change',
+    'store-responded-noop',
+)
+
 # =============================================================================
 # Test: query_findings
 # =============================================================================

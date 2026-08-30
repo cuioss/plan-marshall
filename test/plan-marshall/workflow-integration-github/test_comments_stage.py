@@ -1962,3 +1962,186 @@ class TestPRTwoStateRoutingContract:
             assert 'mutually_exclusive_args' in buf.getvalue()
         finally:
             sys.argv = saved_argv
+
+
+# =============================================================================
+# The unreached findings store — both verbs that READ it back
+# =============================================================================
+#
+# Both provider verbs read the plan's own ``pr-comment`` findings: ``fetch_findings``
+# to rebuild the cross-iteration dedup keys, ``post_responses`` to find the
+# dispositions to transmit. ``manage-findings`` answers a plan whose directory is
+# absent from the resolved root with ``error: findings_store_unresolved`` and NO
+# ``findings`` key, so a ``.get('findings') or []`` read turned an unreached store
+# into an EMPTY LIST — from which ``fetch_findings`` concluded the PR's whole comment
+# history was unfiled and ``post_responses`` concluded there was nothing to transmit.
+#
+# ⛔ BOTH directions are pinned. A fix that turned every empty finding list into an
+# error would satisfy the refusal tests below and break every plan whose store has
+# legitimately filed no pr-comment finding yet — the documented inverse defect, and
+# one this epic has shipped before. The matched controls are what exclude it.
+
+
+class _StoreArgs:
+    """The two attributes both verbs read off their namespace."""
+
+    def __init__(self, pr_number, plan_id):
+        self.pr_number = pr_number
+        self.plan_id = plan_id
+
+
+def _fetch_over(comments, args):
+    """Run ``cmd_fetch_findings`` over a fixed provider comment list."""
+    with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
+        mock_fetch.return_value = {
+            'status': 'success',
+            'provider': 'github',
+            'comments': comments,
+            'total': len(comments),
+            'unresolved': len(comments),
+        }
+        return cmd_fetch_findings(args)
+
+
+_SUBSTANTIVE_COMMENT = {
+    'id': 'C-store-1',
+    'kind': 'inline',
+    'author': 'reviewer',
+    'body': 'Please guard the empty-input branch before indexing.',
+    'path': 'src/Loop.java',
+    'line': 12,
+    'thread_id': 'gh-thread-store-1',
+}
+
+
+def _assert_store_refusal(payload, root):
+    """Assert ``payload`` is the store's own refusal, naming the root it looked under."""
+    assert payload.get('status') == 'error', payload
+    assert payload.get('error') == 'findings_store_unresolved', (
+        'the provider must re-publish the store\'s own error code rather than mint a '
+        f'second vocabulary for the same fact: {payload}'
+    )
+    assert payload.get('findings_store_state') == 'plan_absent'
+    assert payload.get('unresolved_store') is True
+    assert str(root) in str(payload.get('message', '')), (
+        'the refusal must carry the store\'s provenance naming the resolved root'
+    )
+
+
+def test_fetch_findings_refuses_a_plan_absent_from_the_resolved_root(plan_context):
+    """Positive control: the dedup read refuses instead of reading an empty key set.
+
+    An empty key set is not a harmless default here — it says "none of these comments
+    has ever been filed", so the producer would re-file the PR's entire comment
+    history against a store it never reached.
+    """
+    plan_id = 'gh-store-absent-fetch'
+    root = plan_context.fixture_dir
+    assert not (plan_context.plans_dir / plan_id).exists(), (
+        'the plan directory must be ABSENT for this to be the unreached-store case'
+    )
+
+    result = _fetch_over([_SUBSTANTIVE_COMMENT], _StoreArgs(700, plan_id))
+
+    _assert_store_refusal(result, root)
+    # The pre-guard answer, excluded explicitly: a success carrying a stored count.
+    assert 'count_stored' not in result, (
+        'a refused fetch must publish no count — a count computed against a store '
+        'nobody reached is exactly the defect under test'
+    )
+
+
+def test_fetch_findings_against_a_resolved_empty_store_is_a_genuine_success(plan_context):
+    """Matched negative control: a resolved store that has filed nothing still fetches.
+
+    Without this direction the refusal above is equally consistent with a fix that
+    turned EVERY empty finding list into an error, which would break the first fetch
+    of every plan — nothing has been filed yet at that point, by construction.
+    """
+    plan_id = 'gh-store-empty-fetch'
+    plan_context.plan_dir_for(plan_id)
+
+    result = _fetch_over([_SUBSTANTIVE_COMMENT], _StoreArgs(701, plan_id))
+
+    assert result['status'] == 'success', result
+    assert result['count_fetched'] == 1
+    assert result['count_stored'] == 1, (
+        'the comment must still be filed — the guard keys on the unreached store, '
+        'never on an empty finding list'
+    )
+    assert result['count_skipped_duplicate'] == 0
+
+
+def test_fetch_findings_still_dedupes_on_a_resolved_populated_store(plan_context):
+    """Matched positive control on the happy path: the read still feeds the dedup.
+
+    A guard that refused the read outright — or a refactor that dropped it — would
+    pass both tests above while silently disabling the cross-iteration dedup, so the
+    second fetch of an unchanged comment must still skip it.
+    """
+    plan_id = 'gh-store-dedupe-fetch'
+    plan_context.plan_dir_for(plan_id)
+
+    first = _fetch_over([_SUBSTANTIVE_COMMENT], _StoreArgs(702, plan_id))
+    second = _fetch_over([_SUBSTANTIVE_COMMENT], _StoreArgs(702, plan_id))
+
+    assert first['count_stored'] == 1, first
+    assert second['count_stored'] == 0, second
+    assert second['count_skipped_duplicate'] == 1, second
+
+
+def test_post_responses_refuses_a_plan_absent_from_the_resolved_root(plan_context):
+    """Positive control: an unreached store is a refusal, not "nothing to transmit"."""
+    plan_id = 'gh-store-absent-respond'
+    root = plan_context.fixture_dir
+    assert not (plan_context.plans_dir / plan_id).exists()
+
+    result = cmd_post_responses(_StoreArgs(703, plan_id))
+
+    _assert_store_refusal(result, root)
+    # The pre-guard answer, excluded explicitly: a confident all-clear transmission
+    # report over a store that was never opened.
+    assert 'count_responded' not in result
+    assert 'count_untransmitted' not in result
+
+
+def test_post_responses_against_a_resolved_empty_store_is_a_genuine_success(plan_context):
+    """Matched negative control: a resolved store with nothing to send still succeeds."""
+    plan_id = 'gh-store-empty-respond'
+    plan_context.plan_dir_for(plan_id)
+
+    result = cmd_post_responses(_StoreArgs(704, plan_id))
+
+    assert result['status'] == 'success', result
+    assert result['count_responded'] == 0
+    assert result['count_untransmitted'] == 0
+
+
+@pytest.mark.parametrize(
+    'verb',
+    [
+        pytest.param('fetch_findings', id='fetch_findings'),
+        pytest.param('post_responses', id='post_responses'),
+    ],
+)
+def test_the_two_zeros_are_distinguishable_in_one_comparison(plan_context, verb):
+    """The property the whole scenario turns on, stated as a single comparison.
+
+    Asserting the refusal and the benign zero in separate tests leaves open that they
+    still agree on the field a caller branches on. Before the guard both verbs
+    answered the two cases with the SAME ``status: success`` envelope.
+    """
+    resolved_id = f'gh-store-pair-{verb}'
+    plan_context.plan_dir_for(resolved_id)
+    absent_id = f'gh-store-pair-missing-{verb}'
+
+    if verb == 'fetch_findings':
+        benign = _fetch_over([], _StoreArgs(705, resolved_id))
+        absent = _fetch_over([], _StoreArgs(705, absent_id))
+    else:
+        benign = cmd_post_responses(_StoreArgs(705, resolved_id))
+        absent = cmd_post_responses(_StoreArgs(705, absent_id))
+
+    assert benign['status'] != absent['status']
+    assert absent['findings_store_state'] == 'plan_absent'
+    assert 'findings_store_state' not in benign or benign['findings_store_state'] != 'plan_absent'

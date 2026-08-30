@@ -25,6 +25,23 @@ from _manage_findings_fixtures import (
     query_findings_unified,
 )
 
+# Plan ids this module's tests file findings against — seeded by the autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.
+PLAN_IDS = (
+    'compat-list',
+    'compat-qgate-list',
+    'res-detail-integrity',
+    'res-detail-orphan',
+    'unified-all-phases',
+    'unified-core-direct',
+    'unified-empty',
+    'unified-merge',
+    'unified-only-pending',
+    'unified-rejected-nonpending',
+    'unified-res-filter',
+    'unified-type-filter',
+)
+
 # =============================================================================
 # Test: resolution_detail relational integrity
 # =============================================================================

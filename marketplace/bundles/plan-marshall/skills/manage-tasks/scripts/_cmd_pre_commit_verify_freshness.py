@@ -43,16 +43,21 @@ A row lacking ``status`` never matches — the gate fails closed to ``stale``.
 The scan stays **tier-agnostic and plan-agnostic**: it never filters on
 ``plan_id``, so an orchestrator-driven global-tier build recorded under the
 ``NO_PLAN`` sentinel satisfies the gate exactly as a plan-scoped build does. It
-is **no longer notation-blind**, and that is the one deliberate narrowing.
-Matching on ``kind``/``status``/``worktree_sha`` alone asserts that a row
-EXISTS; it never asks whether the row is evidence of a build THIS project
-performs, and the gate has been satisfied by a row naming a build the project
-has no module for. Every row that clears the primary predicate is therefore
-cross-checked against the build notations the project's architecture actually
-resolves to — see :mod:`_freshness_crosscheck` for the three-valued verdict, the
-split fail-direction, and the recorded refusal of a doc-only carve-out. The
-check remains build-TOOL-agnostic: a Maven/Gradle/npm build satisfies the gate
-whenever the architecture resolves that notation for this project.
+is **neither notation-blind nor scope-blind**, and those are the two deliberate
+narrowings. Matching on ``kind``/``status``/``worktree_sha`` alone asserts that a
+row EXISTS; it never asks whether the row is evidence of a build THIS project
+performs, nor whether that build actually COVERED the change. Both gaps produced
+real false-greens — a row naming a build the project has no module for, and a
+single-directory 573-test run standing for a whole-tree change while two
+whole-tree runs against the same sha had timed out and failed. Every row that
+clears the primary predicate is therefore cross-checked on both dimensions:
+against the build notations the project's architecture resolves to, and against
+the canonical + scope the row itself records. See :mod:`_freshness_crosscheck`
+for the two three-valued verdicts, the joint selection that makes a row citable
+only when it satisfies both, the split fail-direction, and the recorded refusal
+of a doc-only carve-out. Both checks remain build-TOOL-agnostic: a
+Maven/Gradle/npm build satisfies the gate whenever the architecture resolves that
+notation and its recorded canonical and scope cover the change.
 
 The matched evidence is NAMED in the decision record — the row's ``notation``,
 its position in the ledger, its ``plan_id`` and its timestamp — so a reader can
@@ -76,23 +81,30 @@ Outcomes:
                      and none is demanded. The short-circuit fires BEFORE the
                      ledger scan and forwards the authority's own reason text.
 - ``fresh``        — a ``kind=build`` entry with ``status == 'success'`` and a
-                     matching ``worktree_sha`` exists AND the notation
-                     cross-check did not refute it; a successful build has been
-                     observed against the current on-disk state, so the gate is
-                     permitted to pass. ``notation_cross_check`` records whether
-                     the evidence was ``corroborated`` or merely ``unverified``
-                     — the two are never folded together, so a pass on
-                     unaudited evidence is legible as such.
-- ``stale``        — either the ledger has entries but none is a successful
-                     build against the current working-tree sha, or every such
-                     build names a notation this project's architecture does not
-                     resolve. The gate MUST fail closed. The verdict carries a
-                     ``reason`` naming WHY, because the routes need different
-                     remedies and this gate must not assert a cause it did not
-                     establish: ``worktree_mutated`` / ``build_error`` /
-                     ``build_timeout`` / ``build_killed`` /
+                     matching ``worktree_sha`` exists AND one such entry is
+                     citable on BOTH cross-check dimensions; a successful build
+                     that covers this change has been observed against the
+                     current on-disk state, so the gate is permitted to pass.
+                     ``notation_cross_check`` records whether the evidence was
+                     ``corroborated`` or merely ``unverified`` and
+                     ``scope_cross_check`` whether it was ``covered`` or merely
+                     ``undetermined`` — neither pair is ever folded, so a pass on
+                     unaudited evidence is legible as such, and ``row_scopes``
+                     names what each candidate row actually recorded.
+- ``stale``        — the ledger has entries but none is citable: either none is a
+                     successful build against the current working-tree sha, or
+                     every such build names a notation this project's
+                     architecture does not resolve, or every such build is
+                     narrower than the change, or the attributable rows and the
+                     covering rows are disjoint. The gate MUST fail closed. The
+                     verdict carries a ``reason`` naming WHY, because the routes
+                     need different remedies and this gate must not assert a
+                     cause it did not establish: ``worktree_mutated`` /
+                     ``build_error`` / ``build_timeout`` / ``build_killed`` /
                      ``build_indeterminate`` (see ``_stale_reason`` below), plus
-                     ``notation_unrelated`` / ``notation_absent`` from the
+                     ``notation_unrelated`` / ``notation_absent`` /
+                     ``build_scope_narrow`` /
+                     ``no_row_both_attributable_and_adequate`` from the
                      cross-check.
 - ``undecidable``  — no positive freshness proof can be established. Two
                      sub-reasons: ``no_registry`` (the ledger file is absent or
@@ -111,8 +123,12 @@ from pathlib import Path
 
 from _freshness_crosscheck import (
     CORROBORATED,
-    REFUTED,
+    COVERED,
+    REASON_REQUIRED_COVERAGE_UNKNOWN,
+    RequiredCoverage,
     cross_check_candidates,
+    load_analysis_vocabulary,
+    required_coverage,
 )
 from _ledger_core import (
     KIND_BUILD,
@@ -259,6 +275,89 @@ def _evidence_fields(index: int, entry: dict) -> dict:
     }
 
 
+def _resolve_required_coverage(plan_id: str) -> tuple[RequiredCoverage | None, str | None]:
+    """Derive what a build must have covered to be evidence for THIS change.
+
+    Assembles the three inputs the pure derivation needs — the live plan
+    footprint, the ``build.map`` globs and the registered-module set — through
+    the SAME in-process seams ``build-pyproject``'s ``resolve-test-scope`` handler
+    uses, so the coverage requirement this gate enforces and the scope a build is
+    told to run against are computed from one derivation rather than two that can
+    drift. Every import is deferred for the reason the rest of this module defers
+    its cross-skill imports: no hard top-level dependency on another skill's
+    scripts dir.
+
+    ⛔ Every inability returns ``(None, reason)``, never a permissive
+    :class:`RequiredCoverage`. An unresolvable footprint rendered as an empty one
+    would require nothing of any row and re-open the false-green this whole
+    dimension exists to close; an empty MODULE set rendered as "no modules needed"
+    would do the same for the scope half. ``None`` routes the coverage dimension
+    to ``undetermined``, which passes with the inability recorded — the gate is
+    not made stricter by an input nobody measured, and not made weaker either.
+
+    Args:
+        plan_id: The plan whose live footprint bounds the requirement.
+
+    Returns:
+        ``(required, reason)``. Exactly one side is informative.
+    """
+    vocabulary, vocabulary_reason = load_analysis_vocabulary()
+    if vocabulary is None:
+        return None, vocabulary_reason
+    try:
+        from _test_scope_divergence import resolve_test_scope
+        from extension_base import _read_build_map_globs, _resolve_plan_footprint
+        from marketplace_bundles import extract_bundle_name, find_bundles
+        from marketplace_paths import find_marketplace_path
+    except Exception:  # noqa: BLE001 — an import can fail as more than ImportError
+        return None, REASON_REQUIRED_COVERAGE_UNKNOWN
+
+    try:
+        footprint = _resolve_plan_footprint(plan_id)
+        globs = _read_build_map_globs(None)
+        bundles_root = find_marketplace_path(None)
+        registered = (
+            frozenset(extract_bundle_name(d) for d in find_bundles(bundles_root))
+            if bundles_root is not None
+            else frozenset()
+        )
+    except (OSError, RuntimeError):
+        # RuntimeError is NOT a redundant widening of OSError: it is the
+        # documented raise of ``file_ops.get_base_dir``, which
+        # ``_resolve_plan_footprint`` reaches through ``get_plan_dir`` ->
+        # ``resolve_plan_context`` -> ``base_path`` whenever no plan root
+        # resolves (no ``set_base_dir`` override, no ``PLAN_BASE_DIR``, no
+        # ``.plan/local`` ancestor of cwd, and cwd outside any git repo).
+        # ``RuntimeError`` is not an ``OSError`` subclass, so an OSError-only
+        # guard let that inability escape as a traceback and BREAK this
+        # function's ``(None, reason)`` contract — the very failure mode the
+        # docstring above declares impossible. An unresolvable plan root is an
+        # inability to MEASURE the requirement, which is exactly what
+        # REASON_REQUIRED_COVERAGE_UNKNOWN names.
+        #
+        # The tuple is deliberately named rather than a bare ``except
+        # Exception``: every callee above is a direct call with a known raise
+        # contract, so the broad form belongs only at the IMPORT site above
+        # (where a foreign module BODY executes and can raise anything).
+        return None, REASON_REQUIRED_COVERAGE_UNKNOWN
+
+    # An unresolvable footprint and an unenumerable module set are both
+    # "the requirement could not be measured", NOT "nothing is required".
+    if footprint is None or not registered:
+        return None, REASON_REQUIRED_COVERAGE_UNKNOWN
+
+    resolution = resolve_test_scope(footprint, globs, registered)
+    return (
+        required_coverage(
+            footprint,
+            resolution.scoped_modules,
+            resolution.divergence_possible,
+            vocabulary,
+        ),
+        None,
+    )
+
+
 def _verdict_for_candidates(
     candidates: list[tuple[int, dict]],
     *,
@@ -269,19 +368,26 @@ def _verdict_for_candidates(
 ) -> dict:
     """Cross-check the matching build rows and render the decision record.
 
-    ``candidates`` have already satisfied the primary predicate, so the only
-    question left is whether any of them is evidence of a build THIS project
-    performs. The three-valued answer comes from :mod:`_freshness_crosscheck`
-    and is never collapsed:
+    ``candidates`` have already satisfied the primary predicate, so two questions
+    remain, and they are answered independently and reported separately:
+    whether any row is evidence of a build THIS project performs (attribution),
+    and whether any row records a build that actually COVERED this change
+    (coverage). Both verdicts come from :mod:`_freshness_crosscheck` and neither
+    is collapsed into the other.
 
-    * ``corroborated`` → ``fresh``, citing the corroborated row.
-    * ``unverified``   → ``fresh``, citing the first row AND recording that the
-      cross-check could not run. The pass is permitted (the primary predicate
-      holds and an inability to resolve is not evidence of anything wrong) but
-      it is never silent.
-    * ``refuted``      → ``stale``. The architecture resolved a notation set and
-      no candidate is in it, so every candidate is evidence of some build other
-      than one of this project's — the false-green this gate exists to close.
+    The gate passes only on a row that is citable on BOTH — the cross-check's
+    ``chosen`` position, which is ``None`` whenever either dimension refused or
+    the two admissible sets are disjoint. That joint condition is the fix for the
+    observed false-green: a single-directory 573-test row is perfectly
+    attributable, so an attribution-only selection cited it as ``corroborated``
+    evidence for a whole-tree change.
+
+    * ``chosen`` is not ``None`` → ``fresh``, citing that row and publishing both
+      dimensions' verdicts. A dimension that could not judge is recorded as such
+      (``notation_cross_check: unverified`` / ``scope_cross_check: undetermined``
+      plus its reason), so a pass on unaudited evidence stays legible as one.
+    * ``chosen`` is ``None`` → ``stale``, carrying the cross-check's
+      ``joint_reason`` as the gate's own ``reason``.
 
     Args:
         candidates: ``(parsed_index, entry)`` pairs in ledger file order.
@@ -294,62 +400,89 @@ def _verdict_for_candidates(
         The gate's ``fresh`` or ``stale`` verdict dict.
     """
     ledger_indices = [index for index, _ in candidates]
-    outcome = cross_check_candidates([entry for _, entry in candidates], str(worktree_root))
+    required, coverage_reason = _resolve_required_coverage(plan_id)
+    outcome = cross_check_candidates(
+        [entry for _, entry in candidates],
+        str(worktree_root),
+        required,
+        coverage_unavailable_reason=coverage_reason,
+    )
     verdict = outcome['verdict']
-
-    if verdict == REFUTED:
-        return {
-            'status': 'stale',
-            'plan_id': plan_id,
-            'reason': outcome['reason'],
-            'worktree_sha': current_sha,
-            'notation_cross_check': REFUTED,
-            'expected_notations': outcome['expected_notations'],
-            'candidate_notations': outcome['candidate_notations'],
-            'worktree_root': str(worktree_root),
-            'ledger_path': str(ledger_path),
-            'message': (
-                f'A kind=build entry with status=success matches the current '
-                f'working-tree sha ({current_sha}), but no such entry names a build '
-                f'this project performs: the architecture resolves '
-                f'{", ".join(outcome["expected_notations"])} and the matching rows carry '
-                f'{", ".join(outcome["candidate_notations"]) or "no notation at all"}. The '
-                f'row is not evidence that THIS tree was built, so the gate MUST fail '
-                f'closed. Establish where the unattributable row came from before '
-                f'trusting the ledger again — a fresh build will clear the block and '
-                f'leave whatever wrote that row in place.'
-            ),
-        }
-
+    scope_verdict = outcome['scope_verdict']
     # ``chosen`` is a POSITION in the list handed to the cross-check, and that
     # list was built from ``candidates`` in order — so the same position indexes
     # both, and the row's ledger index is recovered without either side relying
     # on the identity of the dict that travelled across the boundary.
     chosen = outcome['chosen']
+
+    if chosen is None:
+        return {
+            'status': 'stale',
+            'plan_id': plan_id,
+            'reason': outcome['joint_reason'],
+            'worktree_sha': current_sha,
+            'notation_cross_check': verdict,
+            'scope_cross_check': scope_verdict,
+            'expected_notations': outcome['expected_notations'],
+            'candidate_notations': outcome['candidate_notations'],
+            'row_scopes': outcome['row_scopes'],
+            'worktree_root': str(worktree_root),
+            'ledger_path': str(ledger_path),
+            'message': (
+                f'A kind=build entry with status=success matches the current '
+                f'working-tree sha ({current_sha}), but none of them may be cited as '
+                f'evidence for this change ({outcome["joint_reason"]}). Attribution: '
+                f'the architecture resolves '
+                f'{", ".join(outcome["expected_notations"]) or "no build notation"} and the '
+                f'matching rows carry '
+                f'{", ".join(outcome["candidate_notations"]) or "no notation at all"}. '
+                f'Coverage: the matching rows recorded '
+                f'{"; ".join(outcome["row_scopes"]) or "no readable build scope"}. The gate '
+                f'MUST fail closed. Re-run a build whose canonical and scope cover this '
+                f'change; if the refusal is an attribution one, establish where the '
+                f'unattributable row came from before trusting the ledger again.'
+            ),
+        }
+
     result = {
         'status': 'fresh',
         'plan_id': plan_id,
         'worktree_sha': current_sha,
         **_evidence_fields(ledger_indices[chosen], candidates[chosen][1]),
         'notation_cross_check': verdict,
+        'scope_cross_check': scope_verdict,
         'expected_notations': outcome['expected_notations'],
+        'row_scopes': outcome['row_scopes'],
         'worktree_root': str(worktree_root),
         'ledger_path': str(ledger_path),
     }
-    if verdict == CORROBORATED:
+    if verdict != CORROBORATED:
+        result['notation_cross_check_reason'] = outcome['reason']
+    if scope_verdict != COVERED:
+        result['scope_cross_check_reason'] = outcome['scope_reason']
+
+    audited = verdict == CORROBORATED and scope_verdict == COVERED
+    if audited:
         result['message'] = (
             f'A successful kind=build entry matches the current working-tree sha '
-            f'({current_sha}), and its notation is one this project\'s architecture '
-            f'resolves. Gate permitted on corroborated evidence.'
+            f'({current_sha}); its notation is one this project\'s architecture resolves, '
+            f'and the canonical and scope it recorded cover this change. Gate permitted '
+            f'on corroborated, coverage-adequate evidence.'
         )
     else:
-        result['notation_cross_check_reason'] = outcome['reason']
+        unaudited = ', '.join(
+            part
+            for part in (
+                None if verdict == CORROBORATED else f'attribution ({outcome["reason"]})',
+                None if scope_verdict == COVERED else f'coverage ({outcome["scope_reason"]})',
+            )
+            if part
+        )
         result['message'] = (
             f'A successful kind=build entry matches the current working-tree sha '
-            f'({current_sha}), so the gate is permitted — but its notation could NOT '
-            f'be cross-checked against this project\'s resolved build commands '
-            f'({outcome["reason"]}). The evidence is unaudited: it has not been shown '
-            f'unrelated, and it has not been shown related either.'
+            f'({current_sha}), so the gate is permitted — but it could NOT be checked on: '
+            f'{unaudited}. The evidence is unaudited on those dimensions: it has not been '
+            f'shown inadequate, and it has not been shown adequate either.'
         )
     return result
 

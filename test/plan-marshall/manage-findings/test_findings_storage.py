@@ -13,6 +13,18 @@ from _findings_storage_fixtures import (
     query_qgate_findings,
 )
 
+# Plan ids this module's tests file findings against — seeded by the autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.
+PLAN_IDS = (
+    'storage-append-bug',
+    'storage-coexist',
+    'storage-distinct-files',
+    'storage-lazy-bug',
+    'storage-qgate-phases',
+    'storage-qgate-roundtrip',
+    'storage-qgate-route',
+)
+
 # =============================================================================
 # Lazy creation: per-type file appears only after first matching write
 # =============================================================================

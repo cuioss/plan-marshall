@@ -24,6 +24,14 @@ from _manage_findings_fixtures import (
     cmd_resolve,
 )
 
+# Plan ids this module's tests file findings against — seeded by the autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.
+PLAN_IDS = (
+    # The default carried by the ``_manage_findings_fixtures`` namespace builders.
+    'test-plan',
+    'finding-promote',
+)
+
 # =============================================================================
 # Test: Finding Add Command
 # =============================================================================

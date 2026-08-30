@@ -23,6 +23,27 @@ from _findings_storage_fixtures import (
     resolve_finding,
 )
 
+# Plan ids this module's tests file findings against — seeded by the autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.
+PLAN_IDS = (
+    'storage-assess-route',
+    'storage-filter-file',
+    'storage-filter-multitype',
+    'storage-filter-promoted',
+    'storage-filter-resolution',
+    'storage-filter-type',
+    'storage-get-locate',
+    'storage-promote-locate',
+    'storage-query-hash',
+    'storage-query-isolate',
+    'storage-query-merge',
+    'storage-reject-locate',
+    'storage-resolve-locate',
+    'storage-resolve-missing',
+    'storage-responded-mark',
+    'storage-responded-missing',
+)
+
 
 def test_assessment_writes_to_assessments_file(plan_context):
     """`add_assessment` creates `findings/assessments.jsonl` only."""

@@ -5,21 +5,41 @@ CLI for unified finding, Q-Gate, and assessment storage.
 
 Usage:
     python3 manage-findings.py add --plan-id <plan_id> --type <type> --title <title> --detail <detail> [options]
-    python3 manage-findings.py list --plan-id <plan_id> [options]
-    python3 manage-findings.py get --plan-id <plan_id> --hash-id <hash_id>
+    python3 manage-findings.py list --plan-id <plan_id> [--any-checkout] [options]
+    python3 manage-findings.py get --plan-id <plan_id> --hash-id <hash_id> [--any-checkout]
     python3 manage-findings.py resolve --plan-id <plan_id> --hash-id <hash_id> --resolution <resolution> [options]
     python3 manage-findings.py promote --plan-id <plan_id> --hash-id <hash_id> --promoted-to <promoted_to>
     python3 manage-findings.py ingest --plan-id <plan_id>
 
     python3 manage-findings.py qgate add --plan-id <plan_id> --phase <phase> --source <source> --type <type> --title <title> --detail <detail> [options]
-    python3 manage-findings.py qgate list --plan-id <plan_id> --phase <phase> [options]
+    python3 manage-findings.py qgate list --plan-id <plan_id> --phase <phase> [--any-checkout] [options]
     python3 manage-findings.py qgate resolve --plan-id <plan_id> --hash-id <hash_id> --resolution <resolution> --phase <phase> [options]
     python3 manage-findings.py qgate clear --plan-id <plan_id> --phase <phase>
 
     python3 manage-findings.py assessment add --plan-id <plan_id> --file-path <path> --certainty <certainty> --confidence <confidence> [options]
-    python3 manage-findings.py assessment list --plan-id <plan_id> [options]
-    python3 manage-findings.py assessment get --plan-id <plan_id> --hash-id <hash_id>
+    python3 manage-findings.py assessment list --plan-id <plan_id> [--any-checkout] [options]
+    python3 manage-findings.py assessment get --plan-id <plan_id> --hash-id <hash_id> [--any-checkout]
     python3 manage-findings.py assessment clear --plan-id <plan_id> [--agent AGENT]
+
+``--any-checkout`` is READ-ONLY and is declared on exactly five verbs — ``list``,
+``get``, ``qgate list``, ``assessment list`` and ``assessment get`` — the same
+set shown above, and that list is its whole presence set. EVERY verb not named
+there is without it, ``add`` and every other write verb included, so a caller in
+one checkout can never obtain WRITE authority over a plan whose directory
+currently lives in another. A write verb handed the flag is rejected by argparse
+(exit code 2), not silently ignored. The guarantee is stated as the complement of
+the five rather than as a second roster of the writes: a roster has to be
+re-derived from the argparse surface on every verb added, and that is what drifts.
+
+⛔ The five-verb list above is PROSE, and prose cannot enforce a set. The
+enforcing guard is
+``test/plan-marshall/manage-findings/test_manage_findings_cli.py`` §
+"``--any-checkout`` write-authority contract", which walks the parser tree
+``main()`` actually builds, collects every verb whose options include the flag,
+and asserts set EQUALITY against the five — so a future verb that picks the flag
+up fails there, and a read verb that loses it fails there too. Treat this
+paragraph as a description of that assertion, never as its source of truth: the
+argparse surface is the authority, and the derivation reads it directly.
 
 All commands output TOON format.
 """
@@ -133,6 +153,36 @@ def cmd_add(args: argparse.Namespace) -> dict:
     )
 
 
+def _add_any_checkout_arg(parser: argparse.ArgumentParser) -> None:
+    """Declare the READ-ONLY ``--any-checkout`` opt-in on a read verb's parser.
+
+    Declared on exactly the five read verbs and on no write verb, so the
+    presence set is enforced by argparse itself: a write verb handed the flag
+    exits 2. Keeping the declaration in one named helper is what makes that set
+    inspectable — and what makes copying the flag onto a write verb a visible,
+    reviewable act rather than an incidental keyword.
+    """
+    parser.add_argument(
+        '--any-checkout',
+        action='store_true',
+        dest='any_checkout',
+        help=(
+            'Read the plan findings from whichever checkout currently holds the plan '
+            'directory (read-only; resolved via git-workflow locate-plan-checkout)'
+        ),
+    )
+
+
+def _any_checkout(args: argparse.Namespace) -> bool:
+    """Read the read-only ``--any-checkout`` opt-in off a parsed namespace.
+
+    Defaults to ``False`` for a programmatic caller that builds its own
+    namespace, so a caller that never heard of the flag keeps the
+    current-checkout-only behaviour.
+    """
+    return bool(getattr(args, 'any_checkout', False))
+
+
 def cmd_query(args: argparse.Namespace) -> dict:
     """Handle: query"""
     promoted = None
@@ -149,12 +199,13 @@ def cmd_query(args: argparse.Namespace) -> dict:
         author=args.author,
         kind=args.kind,
         bot_kind=args.bot_kind,
+        any_checkout=_any_checkout(args),
     )
 
 
 def cmd_get(args: argparse.Namespace) -> dict:
     """Handle: get"""
-    return get_finding(args.plan_id, args.hash_id)
+    return get_finding(args.plan_id, args.hash_id, any_checkout=_any_checkout(args))
 
 
 def cmd_resolve(args: argparse.Namespace) -> dict:
@@ -211,6 +262,7 @@ def cmd_qgate_query(args: argparse.Namespace) -> dict:
         resolution=args.resolution,
         source=args.source,
         iteration=args.iteration,
+        any_checkout=_any_checkout(args),
     )
 
 
@@ -264,12 +316,13 @@ def cmd_assessment_query(args: argparse.Namespace) -> dict:
         min_confidence=args.min_confidence,
         max_confidence=args.max_confidence,
         file_pattern=args.file_pattern,
+        any_checkout=_any_checkout(args),
     )
 
 
 def cmd_assessment_get(args: argparse.Namespace) -> dict:
     """Handle: assessment get"""
-    return get_assessment(args.plan_id, args.hash_id)
+    return get_assessment(args.plan_id, args.hash_id, any_checkout=_any_checkout(args))
 
 
 def cmd_assessment_clear(args: argparse.Namespace) -> dict:
@@ -345,12 +398,14 @@ def main() -> int:
         dest='include_qgate',
         help='Merge pending per-phase Q-Gate findings into the result set',
     )
+    _add_any_checkout_arg(query_parser)
     query_parser.set_defaults(func=cmd_query)
 
     # get
     get_parser = subparsers.add_parser('get', help='Get single finding', allow_abbrev=False)
     add_plan_id_arg(get_parser)
     add_hash_id_arg(get_parser)
+    _add_any_checkout_arg(get_parser)
     get_parser.set_defaults(func=cmd_get)
 
     # resolve
@@ -419,6 +474,7 @@ def main() -> int:
     q_query_parser.add_argument('--resolution', choices=RESOLUTIONS, help='Filter by resolution')
     q_query_parser.add_argument('--source', choices=QGATE_SOURCES, help='Filter by source')
     q_query_parser.add_argument('--iteration', type=int, help='Filter by iteration')
+    _add_any_checkout_arg(q_query_parser)
     q_query_parser.set_defaults(func=cmd_qgate_query)
 
     # qgate resolve
@@ -482,12 +538,14 @@ def main() -> int:
     a_query_parser.add_argument('--min-confidence', type=int, help='Minimum confidence')
     a_query_parser.add_argument('--max-confidence', type=int, help='Maximum confidence')
     a_query_parser.add_argument('--file-pattern', help='Glob pattern for file_path')
+    _add_any_checkout_arg(a_query_parser)
     a_query_parser.set_defaults(func=cmd_assessment_query)
 
     # assessment get
     a_get_parser = assessment_sub.add_parser('get', help='Get single assessment', allow_abbrev=False)
     add_plan_id_arg(a_get_parser)
     add_hash_id_arg(a_get_parser)
+    _add_any_checkout_arg(a_get_parser)
     a_get_parser.set_defaults(func=cmd_assessment_get)
 
     # assessment clear

@@ -32,6 +32,38 @@ from _handshake_fixtures import (
     stub_metadata,  # noqa: F401
 )
 
+# Plan ids this module's tests file findings against — seeded by the autouse
+# ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.
+PLAN_IDS = (
+    'fc-block',
+    'fc-clean',
+    'fc-clean-no-steps',
+    'fc-no-steps',
+    'fc-parity-cap',
+    'fc-parity-chk',
+    'fc-query-fail',
+    'fc-wt',
+    'pf-accepted',
+    'pf-block-autoreview',
+    'pf-block-finalize',
+    'pf-block-qgate',
+    'pf-block-sonar',
+    'pf-by-type',
+    'pf-intra-autoreview',
+    'pf-intra-loop',
+    'pf-intra-sonar',
+    'pf-knowledge',
+    'pf-no-actionable',
+    'pf-passive',
+    'pf-persist',
+    'pf-qgate-accepted',
+    'pf-qgate-rejected',
+    'pf-qgate-route',
+    'pf-rejected-only',
+    'pf-rejected-plus-pending',
+    'pf-verify-strict',
+)
+
 
 @pytest.fixture
 def only_pending_findings_invariants(monkeypatch: pytest.MonkeyPatch) -> None:
