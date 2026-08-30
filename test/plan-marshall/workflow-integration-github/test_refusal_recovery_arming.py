@@ -236,10 +236,7 @@ def _quota_refusal_body(bot_kind: str) -> str:
     quota_markers = [m for m in bot_registry.refusal_patterns(bot_kind) if m not in size]
     if quota_markers:
         return f'This reviewer could not proceed: {quota_markers[0]} — please try again later.'
-    return (
-        '> [!WARNING] > ## Usage limit reached > '
-        'This reviewer has reached its usage limit. Reviews will resume after the limit resets.'
-    )
+    return _STRUCTURAL_NOTICE_BODY
 
 
 def _login(bot_kind: str) -> str:

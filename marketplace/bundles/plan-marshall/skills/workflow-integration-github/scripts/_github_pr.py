@@ -614,14 +614,9 @@ def _extract_rate_limit_eta(body: str, bot_kind: str) -> str:
             continue
         if match is None:
             continue
-        if match.groups():
-            captured = (match.group(1) or '').strip()
-            if not captured:
-                continue
-        else:
-            captured = match.group(0).strip()
-            if not captured:
-                continue
+        captured = (match.group(1) or '').strip() if match.groups() else match.group(0).strip()
+        if not captured:
+            continue
         return captured
     return ''
 
