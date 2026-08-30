@@ -79,7 +79,7 @@ Web pages are untrusted external content, so research runs under the **read-only
 
 Compute the dispatch level via the role resolver. Research has **no sub-key of its own** — it inherits the calling phase's `default` slot — so the lookup is the bare-group `--phase {caller_phase}` form when the research fires from inside a phase context, and `--default` outside any plan (standalone `/research`). Recommended levels: `level-5`, `level-6`, or `level-7` — research benefits from the most capable model.
 
-Both forms carry the dispatch context (`--workflow`/`--plan-id`/`--caller`), so the resolve seam emits the `[DISPATCH]` work-log line and its paired decision-log record itself, per firing — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; a resolve that omits `--workflow` is a bare level query and leaves the dispatch with no audit trail. Substitute the calling skill's own notation for `plan-marshall:{calling-skill}`:
+Both forms carry the dispatch context (`--workflow`/`--plan-id`/`--caller`), so the resolve seam emits the `[DISPATCH]` work-log line and its paired decision-log record itself, per firing — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; a resolve that omits `--workflow` is a bare-level query and leaves the dispatch with no audit trail. Substitute the calling skill's own notation for `plan-marshall:{calling-skill}`:
 
 ```bash
 # Inside a phase context (substitute the caller's phase)
@@ -97,7 +97,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   --caller plan-marshall:{calling-skill}
 ```
 
-Extract the `target` field from the TOON output. It is the plain `execution-context-{level}` name (or the canonical `execution-context` when the level is `inherit`) — `resolve-target` never returns a reader variant. **Compose** the read-only name `execution-context-reader-{level}` from that resolved level and use THAT as `{target}` in the dispatch below.
+Extract BOTH the `target` and the `level` field from the TOON output — the composition below needs the level, not the target name. `target` is the plain `execution-context-{level}` name (or the canonical `execution-context` when the level is `inherit`) — `resolve-target` never returns a reader variant. **Compose** the read-only name from the extracted `level` and use THAT as `{target}` in the dispatch below. The composition mirrors the write-capable naming exactly: when the level is `inherit` — equivalently, when `target` came back as the bare `execution-context` — the composed reader target is the bare canonical `execution-context-reader`, never a `-inherit` suffix; otherwise it is `execution-context-reader-{level}`.
 
 Dispatch:
 

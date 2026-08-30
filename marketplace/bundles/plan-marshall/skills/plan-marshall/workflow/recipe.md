@@ -169,7 +169,7 @@ Continue through the standard phases — each phase is dispatched under its
 role key per the same contract documented in [`planning.md`](planning.md)
 ("Action: init" → 2-Refine Phase) and [`planning-outline.md`](planning-outline.md)
 ("Action: outline"). The orchestrator resolves the dispatch target via
-`effort resolve-target --role phase-{N} --workflow plan-marshall:phase-{N}-{name}/SKILL.md --plan-id {plan_id} --caller plan-marshall:plan-marshall`
+`effort resolve-target --role phase-{N}-{name} --workflow plan-marshall:phase-{N}-{name}/SKILL.md --plan-id {plan_id} --caller plan-marshall:plan-marshall`
 and dispatches `Task: plan-marshall:{target}` with the same
 `workflow=plan-marshall:phase-{N}-{name}/SKILL.md`. The three context flags are
 not decoration: `--workflow` is what makes the resolve seam emit the
