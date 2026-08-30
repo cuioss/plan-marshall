@@ -272,12 +272,21 @@ This sub-block is evaluated on exactly TWO outcomes of the `github_re_review re-
 
 Leaving either unhandled means the unreviewed HEAD silently proceeds to the merge gate (the gap this contract closes). Read `re_review_on_timeout` off the same `params` object returned by the `step-params get` call above (default: `ask`) and branch on its value; the policy is applied verbatim on both entry paths, so a decline and a timeout dispose identically. **Every branch is decision-logged** — advancing an unreviewed HEAD is always an explicit, auditable decision.
 
-- **`proceed`** (explicit opt-in to advance the unreviewed HEAD): decision-log at WARNING naming the unreviewed `{head_sha}`, then fall through to "Wait for review-bot comments" below (today's silent-proceed, now an explicit, logged choice):
+**Resolve `{outcome}`, `{outcome_detail}` and `{declined_bots}` ONCE here, from the entry path that reached this sub-block.** Every branch below — decision-log line and returned envelope alike — renders these rather than restating a budget expiry, because the two entry paths are not the same observation and only one of them expired a budget:
+
+| Entry path | `{outcome}` | `{outcome_detail}` | `{declined_bots}` |
+|------------|-------------|--------------------|-------------------|
+| `timed_out: true` AND `matched: false` | `timed_out` | `no fresh review landed within the {re_review_await_timeout_seconds}s budget` | empty — nothing declined |
+| `matched: true` AND `head_sha_verified: false` | `declined` | `DECLINED by {declined_bots} — the bot answered without naming a reviewed commit, so no budget expired` | the accumulated comma-joined `bot_kind` list |
+
+⛔ **Never hard-code any of these, and derive the envelope's `timed_out` from the SAME entry-path row.** `timed_out` is `true` on the first row and `false` on the second; emitting the constant `true` asserts a budget expiry that did not occur on the decline path and leaves the consumer's discriminator unable to fire.
+
+- **`proceed`** (explicit opt-in to advance the unreviewed HEAD): decision-log at WARNING naming the unreviewed `{head_sha}` and the resolved outcome, then fall through to "Wait for review-bot comments" below (today's silent-proceed, now an explicit, logged choice). The message states what actually happened on the path taken — a decline disposed as `proceed` produces no envelope for the dispatcher to correct, so this line is the only audit record of it:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     decision --plan-id {plan_id} --level WARNING \
-    --message "(plan-marshall:automatic-review) re-review timeout (trigger B): re_review_on_timeout=proceed — advancing UNREVIEWED head_sha={head_sha} after {re_review_await_timeout_seconds}s budget expired"
+    --message "(plan-marshall:automatic-review) re-review timeout (trigger B): re_review_on_timeout=proceed — advancing UNREVIEWED head_sha={head_sha}; outcome={outcome} — {outcome_detail}"
   ```
 
 - **`defer`** (auto-skip the merge, no prompt): decision-log, then return `status: escalate_ask` with `action: defer` so the orchestrator skips the merge for this run:
@@ -288,7 +297,7 @@ Leaving either unhandled means the unreviewed HEAD silently proceeds to the merg
     --message "(plan-marshall:automatic-review) re-review timeout (trigger B): re_review_on_timeout=defer — returning escalate_ask{action: defer}; orchestrator skips the merge for head_sha={head_sha}"
   ```
 
-  Then return the `escalate_ask` TOON (see "Output" below) with `action: defer`, `reason: re_review_timeout`, `timed_out: true`, `head_sha: {head_sha}`, `timeout_seconds: {re_review_await_timeout_seconds}`, `pr_number: {pr_number}`.
+  Then return the `escalate_ask` TOON with `action: defer` and `reason: re_review_timeout`. ⛔ **Its field set is NOT restated here** — it is defined once in "Output" below (§ "`escalate_ask` return (timeout escalations)", the `reason: re_review_timeout` variant), and `outcome`, `timed_out` and `declined_bots` are rendered from the entry-path table above, never as constants. A second copy of the field set here is a second source of truth that can hard-code a constant the schema declares as derived, and drift from it silently.
 
 - **`ask`** (default — halt and ask the operator): decision-log, then return `status: escalate_ask` with `reason: re_review_timeout` and the three prompt options encoded in the TOON so the orchestrator (phase-6-finalize SKILL.md Step 3) fires the `AskUserQuestion`. The dispatched leaf does NOT fire `AskUserQuestion` itself — it returns the escalation envelope and the inline orchestrator owns the prompt:
 

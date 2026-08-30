@@ -1601,12 +1601,13 @@ def _form_sets() -> tuple[set[str], set[str]]:
 #: checked against the derived size rather than trusted.
 _COUNT_WORDS = {1: 'ONE', 2: 'TWO', 3: 'THREE', 4: 'FOUR', 5: 'FIVE', 6: 'SIX'}
 
-#: Slice markers bounding the pair-form CLAIM in each consuming doc. Both are
-#: verified unique within each document, and the parity assertion reads ONLY the
-#: text between them. Checking the whole document instead makes the assertion
-#: vacuous: every flag, of either form, is named somewhere in both docs, so a
-#: bare-form flag listed among the pair-form ones would pass unnoticed — the exact
-#: drift the assertion exists to block.
+#: Slice markers bounding the pair-form CLAIM in each consuming doc. Uniqueness is
+#: not assumed — ``_pair_form_claim`` VERIFIES each marker occurs exactly once in
+#: the document it slices — and the parity assertion reads ONLY the text between
+#: them. Checking the whole document instead makes the assertion vacuous: every
+#: flag, of either form, is named somewhere in both docs, so a bare-form flag
+#: listed among the pair-form ones would pass unnoticed — the exact drift the
+#: assertion exists to block.
 _PAIR_FORM_CLAIM_START = 'PAIRS'
 _PAIR_FORM_CLAIM_END = 'take BARE `{bot_kind}` tokens'
 
@@ -1614,23 +1615,54 @@ _PAIR_FORM_CLAIM_END = 'take BARE `{bot_kind}` tokens'
 def _pair_form_claim(text: str, doc_name: str) -> str:
     """Return ONLY the pair-form-claim slice of a consuming doc.
 
-    Fails loudly rather than returning an empty or whole-document string: a
-    missing or unterminated marker means the paragraph was restructured, and a
-    silent fallback would restore the vacuity this slicing removes.
+    Each marker is asserted to occur EXACTLY ONCE before it is used to slice:
+    ``str.find`` takes the first occurrence silently, so a second copy of either
+    marker would hand back a different paragraph than the one the parity
+    assertion means to read, with nothing saying so. Fails loudly rather than
+    returning an empty or whole-document string: a missing or unterminated marker
+    means the paragraph was restructured, and a silent fallback would restore the
+    vacuity this slicing removes.
     """
+    for marker, role in ((_PAIR_FORM_CLAIM_START, 'start'), (_PAIR_FORM_CLAIM_END, 'end')):
+        occurrences = text.count(marker)
+        assert occurrences == 1, (
+            f'{doc_name}: the pair-form claim {role} marker {marker!r} must occur '
+            f'exactly once, found {occurrences} — zero means the paragraph was '
+            f'restructured; more than one means the slice would silently take the '
+            f'first of several candidates'
+        )
+
     start = text.find(_PAIR_FORM_CLAIM_START)
-    assert start != -1, (
-        f'{doc_name}: no pair-form claim found '
-        f'(start marker {_PAIR_FORM_CLAIM_START!r} absent)'
-    )
     end = text.find(_PAIR_FORM_CLAIM_END, start)
     assert end != -1, (
         f'{doc_name}: pair-form claim is unterminated '
-        f'(end marker {_PAIR_FORM_CLAIM_END!r} absent after the start marker)'
+        f'(the single end marker {_PAIR_FORM_CLAIM_END!r} precedes the start marker)'
     )
     claim = text[start:end]
     assert claim.strip(), f'{doc_name}: the pair-form claim slice is empty'
     return claim
+
+
+def _assert_pair_form_claim_parity(
+    text: str, doc_name: str, pair: set[str], bare: set[str]
+) -> None:
+    """THE parity rule — one definition, called by the guard AND its control.
+
+    The sliced pair-form claim must name every derived pair-form flag and no
+    derived bare-form one. This lives in a helper rather than inline in the guard
+    so the negative control can execute the guard's OWN assertions against a
+    planted document instead of re-implementing a rule shaped like them: remove
+    the ``assert not offenders`` below and both the guard and the control fail.
+    """
+    claim = _pair_form_claim(text, doc_name)
+    for flag in sorted(pair):
+        assert f'`{flag}`' in claim, (
+            f'{doc_name} omits pair-form {flag} from its pair-form claim'
+        )
+    offenders = [flag for flag in sorted(bare) if f'`{flag}`' in claim]
+    assert not offenders, (
+        f'{doc_name} lists BARE-form {", ".join(offenders)} among the pair-form flags'
+    )
 
 
 class TestTheFlagFormPartitionIsDerivedNotRemembered:
@@ -1743,25 +1775,21 @@ class TestTheFlagFormPartitionIsDerivedNotRemembered:
             assert f'{_COUNT_WORDS[len(pair)].capitalize()} take' in text or (
                 f'{_COUNT_WORDS[len(pair)]} take' in text
             ), f'{doc_path.name} does not state the derived pair-form count'
-            claim = _pair_form_claim(text, doc_path.name)
-            for flag in sorted(pair):
-                assert f'`{flag}`' in claim, (
-                    f'{doc_path.name} omits pair-form {flag} from its pair-form claim'
-                )
+            _assert_pair_form_claim_parity(text, doc_path.name, pair, bare)
             for flag in sorted(bare):
-                assert f'`{flag}`' not in claim, (
-                    f'{doc_path.name} lists BARE-form {flag} among the pair-form flags'
-                )
                 assert f'`{flag}`' in text, f'{doc_path.name} omits bare-form {flag}'
 
     def test_the_parity_assertion_rejects_a_bare_form_flag_listed_as_pair_form(self):
         """⛔ Negative control: the guard above must be able to FAIL.
 
-        A parity assertion nobody watched reject is not a guard. This exercises the
-        SAME slicing helper and the SAME membership rule against a synthetic
-        document in which one bare-form flag has been moved into the pair-form
-        claim — everything else about the document is well-formed, so only the
-        planted drift can be what rejects it.
+        A parity assertion nobody watched reject is not a guard. This CALLS the
+        guard's own rule — ``_assert_pair_form_claim_parity``, the single
+        definition the guard above also calls — against a synthetic document in
+        which one bare-form flag has been moved into the pair-form claim.
+        Everything else about the document is well-formed, so only the planted
+        drift can be what rejects it, and because the rule is executed rather than
+        re-implemented, deleting the rule's membership assertion fails this control
+        too.
         """
         pair, bare = _form_sets()
         planted = sorted(bare)[0]
@@ -1773,16 +1801,21 @@ class TestTheFlagFormPartitionIsDerivedNotRemembered:
             f'The rest take BARE `{{bot_kind}}` tokens: {bare_listing}.'
         )
 
-        claim = _pair_form_claim(broken, 'synthetic')
-        assert f'`{planted}`' in claim, 'the planted flag must land inside the slice'
-
-        # The membership rule the guard applies, run against the broken document.
-        offenders = [flag for flag in sorted(bare) if f'`{flag}`' in claim]
-        assert offenders == [planted], (
-            f'the guard must reject exactly the planted bare-form flag; got {offenders}'
+        assert f'`{planted}`' in _pair_form_claim(broken, 'synthetic'), (
+            'the planted flag must land inside the slice'
         )
 
-        # And the matched NEGATIVE control: the same rule passes the real docs.
+        with pytest.raises(AssertionError) as rejection:
+            _assert_pair_form_claim_parity(broken, 'synthetic', pair, bare)
+        assert f'BARE-form {planted}' in str(rejection.value), (
+            f'the guard must reject exactly the planted bare-form flag; '
+            f'got {rejection.value}'
+        )
+
+        # And the matched POSITIVE control: the same rule ACCEPTS the real docs,
+        # so the rejection above is the planted drift and not a rule that rejects
+        # everything.
         for doc_path in (_AR_SKILL, _BRANCH_CLEANUP):
-            good_claim = _pair_form_claim(doc_path.read_text(encoding='utf-8'), doc_path.name)
-            assert not [flag for flag in sorted(bare) if f'`{flag}`' in good_claim]
+            _assert_pair_form_claim_parity(
+                doc_path.read_text(encoding='utf-8'), doc_path.name, pair, bare
+            )
