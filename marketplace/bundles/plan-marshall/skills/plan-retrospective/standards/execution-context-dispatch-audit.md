@@ -90,6 +90,8 @@ shape_violation:
   evaluated_population: N        # Surface B resolve-record count (the left-hand side)
   violations: N
   reason: "…"                    # present only when not_evaluated
+  findings[N]{severity,category,message}:
+    …                            # this block's own sub-list, aggregated into the top-level findings
   by_role[N]{role,resolves,dispatch_lines,delta,foreign_caller_lines}:
     …                            # delta is SIGNED; delta<0 is a fact, not a finding
 dispatch_coverage:
@@ -102,6 +104,8 @@ dispatch_coverage:
   no_evidence_steps[N]: […]
   missing_dispatch_emission: N
   reason: "…"                    # present only when not_evaluated
+  findings[N]{severity,category,message}:
+    …                            # this block's own sub-list, aggregated into the top-level findings
 channel_completeness:
   dispatch_line_count: N              # FINALIZE-SCOPED, distinct (role, workflow) emissions
   dispatch_line_population: finalize_dispatcher_caller
@@ -115,13 +119,17 @@ channel_completeness:
 envelope_violation:
   status: {evaluated|not_evaluated}
   evaluated_population: N        # [DISPATCH] spawn lines walked
-  violations: N
+  violations: N                  # == len(findings)
+  findings[N]{severity,category,message}:
+    …                            # this block's own sub-list, aggregated into the top-level findings
 generic_subagent_violation:
   status: {evaluated|not_evaluated}
   evaluated_population: N        # work-log lines scanned
-  violations: N
+  violations: N                  # == len(findings)
+  findings[N]{severity,category,message}:
+    …
 findings[N]{severity,category,message}:
-  …
+  …                              # every block's sub-list concatenated, in block order
 counts:
   total: N
   by_category:                   # every entry is STRUCTURED, never a bare integer

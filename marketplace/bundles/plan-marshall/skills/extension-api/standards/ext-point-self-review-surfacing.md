@@ -61,8 +61,9 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 ### Post-Conditions
 
 - TOON to stdout carrying one candidate sub-list per registry entry, as enumerated below (some MAY be empty).
-- The echo fields `since_ref`, `surface_scope`, `files_in_scope`, `scope_statement`, and `structural_limit` state which round variant produced the payload, the file set it searched, and what the analysis cannot evaluate at all, so a consumer never has to reconstruct any of it. `scope_statement` is emitted on every surface — including an empty one — so an absence/residual claim a consumer derives from the round can never be made without the scope it was drawn against.
+- The echo fields `since_ref`, `surface_scope`, `files_in_scope`, `scope_statement`, `structural_limit`, and `delta_coverage` state which round variant produced the payload, the file set it searched, what the analysis cannot evaluate at all, and what the round actually observed over that file set, so a consumer never has to reconstruct any of it. `scope_statement` is emitted on every surface — including an empty one — so an absence/residual claim a consumer derives from the round can never be made without the scope it was drawn against.
 - `structural_limit` states what this analysis CLASS cannot evaluate, on **every** surface. It is a second, orthogonal claim to `scope_statement` and MUST NOT be merged with it: `scope_statement` names the file set and is cured by widening it, whereas `structural_limit` names a defect class the analysis cannot reach however wide the sweep — the behaviour of the code under inputs the diff does not contain. An implementor emits both as distinct fields, so a consumer reading either one cannot believe it has both. A clean full-scope round is the verdict most likely to be misread as whole-diff assurance, which is why the limit is unconditional rather than reserved for degraded rounds.
+- `delta_coverage` reports, on **every** surface, what the round OBSERVED over the files it searched — per-round and per-content-class coverage counts. It is the third unconditional field and the only one computed from the round's own RESULT rather than from its inputs: `scope_statement` names the file set and `structural_limit` names the analysis class's reach, but neither says whether the round surfaced anything over the files it did search. Every declared content class is emitted, seeded to zero, so a MISSING key reads as "not measured" while a ZERO reads as "measured, none found" — only the second is true of a class the round genuinely saw no candidate in.
 - An empty intersection surfaces NOTHING. A delta round whose intersection is empty genuinely has no files to review, so the implementor MUST emit empty candidate lists rather than falling back to the unfiltered diff.
 - Non-zero exit on git-unavailable, base-branch-missing, worktree-resolution, or since-ref-resolution failure.
 
@@ -78,6 +79,16 @@ surface_scope: delta | full
 files_in_scope: N
 scope_statement: {human-readable statement of the file set this round searched — published on every surface, empty ones included, so an absence claim can never be made without it}
 structural_limit: {human-readable statement of what this analysis CLASS cannot evaluate at all — orthogonal to scope_statement and never merged with it; published on every surface, clean ones especially}
+delta_coverage:
+  files_in_scope: {the same file set files_in_scope reports, restated as this block's denominator}
+  files_with_candidates: {files in scope this round surfaced at least one candidate for}
+  files_without_candidates: {files in scope this round surfaced nothing for}
+  classes_present: {content classes holding at least one file in scope}
+  classes_present_without_candidates: {of those, how many surfaced nothing at all}
+  candidates_unattributed: {candidate entries naming neither a file nor a files path — counted, never dropped}
+  statement: {human-readable reading of this block — published on every surface, clean ones especially}
+  by_class[C]{content_class,files,files_with_candidates,files_without_candidates}:
+    ...
 counts:
   by_family:
     structural: {sum of the in_total structural lists}
@@ -192,6 +203,21 @@ Contract obligations on an implementor:
 - **Every registry entry carries exactly one family.** The field is required with no default, so the partition is total by construction rather than by convention.
 
 The mix is reported HERE, in the return TOON, rather than in `display_detail`: this block is the authoritative contract surface and is unbudgeted, while `display_detail` is capped at 80 characters and its no-check-matched verdict (`"self-review clean: {N} candidates examined, no check matched"`) already renders to 61 characters at `{N}=9999` — 19 characters of headroom, too narrow to carry a two-family mix in any readable form. Consumers read `counts.by_family` for the mix.
+
+### `delta_coverage` — what the round observed over what it searched
+
+`delta_coverage` partitions the round's OWN file set by the content class of each file and reports, per class, how many of those files this round surfaced at least one candidate for. It closes a specific fail-open: a delta whose whole content is of a kind the pass surfaces nothing for re-surfaces the previous round's candidates unchanged and returns clean, and in the input-derived fields alone that round is indistinguishable from one that looked and found nothing. Here they separate — the first reports `files_with_candidates: 0`, the second does not.
+
+Contract obligations on an implementor:
+
+- **The block is emitted on EVERY surface, empty ones included** — for the same reason `scope_statement` and `structural_limit` are: the round most likely to be over-read is the clean one. A zero-file scope reports `files_in_scope: 0` and says so in `statement`, because no search at all is not a clean result.
+- **Every declared content class is emitted, seeded to zero.** A class with no files in scope reports zeros rather than being omitted, exactly as `counts.by_family` seeds its families: a missing key reads as "not measured" and a zero reads as "measured, none found", and only the second is true of a class the round genuinely saw no candidate in.
+- **The class partition is total over the scope.** Each class's `files` count sums exactly to `files_in_scope`, and each class's `files_with_candidates` + `files_without_candidates` equals its own `files`. The class vocabulary itself is the implementor's — the plan-marshall implementor's is declared in its `CONTENT_CLASSES` registry — so a consumer reads the emitted rows rather than a name list restated here.
+- **Every path-bearing entry shape is attributed.** A candidate naming its site under the singular `file` key and one naming several declaring paths under a `; `-joined `files` key BOTH credit every path they name; an entry naming neither is counted in `candidates_unattributed` rather than absorbed, so an entry that did surface something is never filed under "produced nothing".
+
+⛔ **A zero `files_with_candidates` is NOT a verdict of soundness and NOT proof that no detector covers the class.** A covered class legitimately surfaces nothing when there is nothing to surface. The block states only what the round can support — *this round produced no candidate over those files* — and leaves both readings open deliberately: separating them would need a per-detector reach map no implementor can derive, and publishing one would be a stronger claim than the evidence carries.
+
+Like `counts.by_family`, this block rides the return TOON rather than `display_detail`, for the reason given in the section above: the 80-character verdict budget carries none of it. Its consumer contract is [`../../phase-6-finalize/workflow/pre-submission-self-review.md`](../../phase-6-finalize/workflow/pre-submission-self-review.md) § "A clean verdict states what the round observed".
 
 ### Required Candidate Sub-Lists
 

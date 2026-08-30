@@ -728,12 +728,14 @@ def evaluate_envelope_violations(
 ) -> dict[str, Any]:
     """Every ``[DISPATCH]`` line whose ``target=`` is not an execution-context envelope.
 
-    Returns ``{evaluated_population, violations, findings}`` rather than a bare
-    list. The population is the number of ``[DISPATCH]`` spawn lines the check
-    walked; ``violations`` is the length of ``findings``. Published together
+    Returns ``{status, evaluated_population, violations, findings}`` rather than a
+    bare list. The population is the number of ``[DISPATCH]`` spawn lines the check
+    walked; ``violations`` is the length of ``findings``; ``status`` is
+    ``evaluated`` only when that population was non-empty. Published together
     because the length ALONE was the whole output before, and a plan with no work
     log and a plan with a populated clean work log both rendered as ``0`` — the
-    two states this block most needs to distinguish.
+    two states this block most needs to distinguish, and ``status`` is the field
+    that separates them.
     """
     findings: list[dict[str, str]] = []
     for record in dispatches:
@@ -760,10 +762,11 @@ def evaluate_envelope_violations(
 def evaluate_generic_subagent(work_lines: list[str]) -> dict[str, Any]:
     """Every ``Task: general-purpose`` spawn observed directly in the work log.
 
-    Returns ``{evaluated_population, violations, findings}`` for the same reason
-    :func:`evaluate_envelope_violations` does: the population here is the number
-    of work-log lines scanned, and a zero over an EMPTY log is a different
-    statement from a zero over a populated one.
+    Returns ``{status, evaluated_population, violations, findings}`` for the same
+    reason :func:`evaluate_envelope_violations` does: the population here is the
+    number of work-log lines scanned, and a zero over an EMPTY log is a different
+    statement from a zero over a populated one — ``status`` is what carries that
+    difference, which is why it is named here rather than left to the caller.
     """
     findings: list[dict[str, str]] = []
     for line in work_lines:
