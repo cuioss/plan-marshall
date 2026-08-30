@@ -52,6 +52,7 @@ import re
 from pathlib import Path
 from typing import Any, NamedTuple
 
+from epic_spec_parser import PLAN_ID_SEGMENT
 from file_ops import (
     atomic_write_file,
     generate_markdown_metadata,
@@ -182,17 +183,14 @@ INBOX_STATES = frozenset({'present', 'missing'})
 _MESSAGE_NAME_RE = re.compile(r'^(?P<sender>.+?)-(?P<seq>\d{3,})\.md$')
 
 #: The orchestrator plan-spec pointer ``phase-1-init`` records as
-#: ``request.md``'s ``source_id`` for an orchestrated plan. The id segment is an
-#: explicit three-way alternation over the settled forms — ``PLAN-{DIGITS}``,
-#: ``PLAN-{SLUG}-{DIGITS}``, and ``{SLUG}-{DIGITS}``. Writing it as an
-#: alternation rather than as one pattern with an OPTIONAL slug group is
-#: load-bearing: an optional group would also accept a bare ``01-foo.md`` that
-#: is neither ``PLAN-``-prefixed nor slug-prefixed. ``{SLUG}`` is a bounded
-#: uppercase-alphanumeric token and its trailing digits are mandatory, so the
-#: grammar is widened without drifting toward an always-matching pattern.
+#: ``request.md``'s ``source_id`` for an orchestrated plan. The id segment is
+#: NOT spelled out here: it is :data:`epic_spec_parser.PLAN_ID_SEGMENT`, the
+#: single definition of the settled plan-id forms, which
+#: :func:`epic_spec_parser.plan_id_of` reads the same corpus through. Composing
+#: from that binding rather than carrying a second copy is what keeps this
+#: pointer grammar and the corpus parser from drifting apart.
 _SOURCE_ID_RE = re.compile(
-    r'^\.plan/local/orchestrator/(?P<slug>[^/]+)/plans/'
-    r'(?:PLAN-(?:[A-Z0-9]{2,8}-)?\d+|[A-Z0-9]{2,8}-\d+)[^/]*\.md$'
+    r'^\.plan/local/orchestrator/(?P<slug>[^/]+)/plans/' + PLAN_ID_SEGMENT + r'[^/]*\.md$'
 )
 
 #: Shape-only sibling of :data:`_SOURCE_ID_RE` — any markdown file directly

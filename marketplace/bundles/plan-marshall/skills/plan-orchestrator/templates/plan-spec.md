@@ -50,7 +50,37 @@ required to be re-authored into bullets.}
 
 {Files/modules this plan is expected to touch — the input to the surface-disjointness
 check before this plan may run concurrently with another. Label each entry per Claim Labels
-above, and re-verify the whole surface against HEAD at outline before scoping on it.}
+above, and re-verify the whole surface against HEAD at outline before scoping on it.
+
+This section is READ BY A PARSER, not by a human alone: `plan-marshall:script-shared`'s
+`epic_spec_parser` is the marketplace's single reader of it, and `corpus surfaces` publishes
+what it resolved. Four entry shapes resolve — a named file, a directory (`test/x/`), a
+recursive glob (`marketplace/bundles/**`), and a filename glob (`test_*.py`) — plus entries
+written relative to a rooted path named earlier in the same bullet, and exclusions introduced
+by `excluding`. An entry whose first segment is not a real top-level repository entry cannot
+be anchored and is reported as unresolved rather than silently claimed.
+
+⛔ **The section's derivation status is DERIVED by that reader, never hand-declared.** Do not
+write a status into this section: `declarative` / `derived` / `prose` is the reader's verdict
+about what the entries resolved to, and a hand-written one would be a second, unchecked
+opinion. A section that resolves to no path at all is `prose`, and a spec with no such section
+is `absent`; both are `indeterminate` at the gate, which SEQUENCES the candidate rather than
+passing it — see `persona-plan-orchestrator/standards/orchestration-model.md` § The gate's
+reading contract.
+
+⛔ **A `HYPOTHESIS` entry is swept against the tree BEFORE the spec is staged — and nothing but
+the author enforces that.** An unswept guess here is not a neutral placeholder: it is either
+over-declaration, which serializes siblings behind files the plan never touches, or
+under-declaration, which admits a plan that genuinely collides. Sweep it, then label what the
+sweep found.
+
+This obligation is an AUTHORING rule with no machine backstop, and stating that is part of the
+rule. The reader strips `OBSERVED:` and `HYPOTHESIS:` with one and the same label prefix and
+keeps no label on the resolved entry, so a `HYPOTHESIS` path is classified as declared surface
+exactly like an `OBSERVED` one; `corpus surfaces` and `corpus cross-check` then consume it with
+no sweep record to require. No step between authoring and the disjointness gate can tell a swept
+guess from an unswept one — which is why an unswept entry reaches the gate silently rather than
+being refused there.}
 
 - {OBSERVED|HYPOTHESIS}: `{path}`:{line} — `{symbol}` (verify-at-outline when HYPOTHESIS)
 

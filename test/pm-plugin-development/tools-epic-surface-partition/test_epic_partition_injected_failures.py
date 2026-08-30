@@ -26,7 +26,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 import _epic_partition as partition_mod  # noqa: E402
-from _epic_spec_parser import classify_corpus  # noqa: E402
+from epic_spec_parser import classify_corpus  # noqa: E402
 
 
 # --- the clean baseline ------------------------------------------------------

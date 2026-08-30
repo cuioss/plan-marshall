@@ -71,10 +71,17 @@ import json
 import re
 from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from conftest import MARKETPLACE_ROOT, get_script_path, load_script_module, run_script
+from conftest import (
+    MARKETPLACE_ROOT,
+    PROJECT_ROOT,
+    get_script_path,
+    load_script_module,
+    run_script,
+)
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-orchestrator', 'orchestrator.py')
 
@@ -82,20 +89,72 @@ _orch = load_script_module(
     'plan-marshall', 'plan-orchestrator', 'orchestrator.py', 'orchestrator_script'
 )
 
+#: The relocated SINGLE reader of ``## Expected Surface``, which ``orchestrator.py``
+#: now consumes instead of carrying its own parse.
+#:
+#: Registered under an explicit, collision-proof name rather than its stem: the
+#: ``tools-epic-surface-partition`` suites import ``epic_spec_parser`` plainly, and
+#: publishing this load under that stem would displace theirs and trip
+#: ``test_conftest_loader_contract``'s registration-collision guard. The three
+#: addressing arguments are module-level string constants so the call stays
+#: statically resolvable to that guard's walker.
+_SURFACE_BUNDLE = 'plan-marshall'
+_SURFACE_SKILL = 'script-shared'
+_SURFACE_SCRIPT = 'epic_spec_parser.py'
+_SURFACE_MODULE_NAME = 'epic_spec_parser_orchestrator_corpus_tests'
+
+_surface_reader = load_script_module(
+    _SURFACE_BUNDLE, _SURFACE_SKILL, _SURFACE_SCRIPT, module_name=_SURFACE_MODULE_NAME
+)
+
 cmd_corpus_enumerate = _orch.cmd_corpus_enumerate
 cmd_corpus_cross_check = _orch.cmd_corpus_cross_check
+cmd_corpus_surfaces = _orch.cmd_corpus_surfaces
+SURFACE_STATES = _orch.SURFACE_STATES
+SURFACE_DECLARATIVE = _orch.SURFACE_DECLARATIVE
+SURFACE_DERIVED = _orch.SURFACE_DERIVED
+SURFACE_PROSE = _orch.SURFACE_PROSE
+SURFACE_ABSENT = _orch.SURFACE_ABSENT
+SURFACE_UNREADABLE = _orch.SURFACE_UNREADABLE
+SURFACE_INDETERMINATE_STATES = _orch.SURFACE_INDETERMINATE_STATES
 cmd_corpus_verdicts = _orch.cmd_corpus_verdicts
 cmd_corpus_set_verdict = _orch.cmd_corpus_set_verdict
 format_verdict_line = _orch._format_verdict_line
 parse_verdict_text = _orch._parse_verdict_text
 fenced_mask = _orch._fenced_mask
 section_span = _orch._section_span
-expected_surface_paths = _orch._expected_surface_paths
 parse_claim_section = _orch._parse_claim_section
 build_arg_parser = _orch._build_arg_parser
 CLAIM_LABELS_HEADING_RE = _orch.CLAIM_LABELS_HEADING_RE
-EXPECTED_SURFACE_HEADING_RE = _orch.EXPECTED_SURFACE_HEADING_RE
 HEADING_RE = _orch._HEADING_RE
+
+
+def expected_surface_paths(text: str, tmp_path: Path) -> set:
+    """Resolve a spec's declared surface through the relocated single reader.
+
+    The retired ``orchestrator._expected_surface_paths`` took the spec TEXT; the
+    single reader takes the spec PATH, because it resolves directory, recursive
+    glob and bullet-relative entries against the repository root rather than
+    matching named files by regex. The fixture text is therefore written under
+    ``tmp_path`` and classified from there, and the repo root passed in is the
+    real ``PROJECT_ROOT`` — the declared fixture paths are real repo paths, and
+    the reader only treats an entry as rooted when its first segment exists.
+
+    A spec carrying no ``## Expected Surface`` section resolves to the empty set,
+    which is what the retired reader returned for that case too; the distinct
+    third state that absence resolves to at the GATE is
+    ``orchestrator._row_surface``'s ``(no expected surface section)`` marker.
+    """
+    spec = tmp_path / 'PLAN-01-fixture.md'
+    # ``parents=True`` so a caller resolving two specs in one test can pass two
+    # distinct sub-directories of its ``tmp_path`` without creating them first.
+    spec.parent.mkdir(parents=True, exist_ok=True)
+    spec.write_text(text, encoding='utf-8')
+    try:
+        claim = _surface_reader.classify_spec(spec, PROJECT_ROOT)
+    except _surface_reader.UnclassifiableSpecError:
+        return set()
+    return {entry.path for entry in claim.claimed}
 VERDICT_KEYS = _orch.VERDICT_KEYS
 VERDICT_SEPARATOR = _orch.VERDICT_SEPARATOR
 VERDICT_VALUES = _orch.VERDICT_VALUES
@@ -235,6 +294,32 @@ def _write_spec(
     # for the default one-claim body — the exact collapse this module now pins.
     body = [_DEFAULT_CLAIM] if claim_lines is None else claim_lines
     path.write_text(_spec_text(body, surface_lines, objective), encoding='utf-8')
+    return path
+
+
+def _write_spec_without_surface_section(plan_context, name: str) -> Path:
+    """Write one spec carrying NO ``## Expected Surface`` heading at all.
+
+    ``_spec_text`` always writes the heading, which is precisely the variable the
+    ``absent`` derivation status turns on, so that section is omitted here rather
+    than emptied. The distinction is the point: a spec that declared NO surface
+    and a spec whose surface resolves to NOTHING are different facts, and only
+    the first is a spec-authoring gap.
+    """
+    lines = [
+        '# PLAN-NN: Fixture',
+        '',
+        '## Objective',
+        '',
+        'Fixture objective.',
+        '',
+        '## Claim Labels',
+        '',
+        _DEFAULT_CLAIM,
+    ]
+    path = _epic_dir(plan_context) / 'plans' / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
     return path
 
 
@@ -1757,6 +1842,332 @@ class TestCrossCheckReadOnlyBoundary:
 
 
 # =============================================================================
+# corpus surfaces — the read the disjointness gate decides on
+# =============================================================================
+#
+# The gate's input used to be a RENDERED table cell read by a human. These cases
+# pin it as a parser decision with a published population, and — the part that
+# matters most — pin the THIRD STATE: a declaration the parser cannot resolve
+# must be distinguishable from one it resolved to nothing, and neither may read
+# as disjoint.
+
+#: A surface declaring a DIRECTORY and a RECURSIVE GLOB — the two shapes the
+#: retired reader resolved to ZERO paths, which is what made a spec declaring
+#: them invisible to the overlap matcher and its silence read as disjoint.
+_DIR_AND_GLOB_SURFACE = [
+    '- Adds `test/plan-marshall/plan-orchestrator/`',
+    '- Adds `marketplace/bundles/plan-marshall/skills/plan-orchestrator/**`',
+]
+
+
+def _surfaces(plan_context) -> Any:
+    """Run the verb against the fixture epic.
+
+    Returns ``Any`` rather than ``dict``: the subject is reached through
+    ``load_script_module``, so every handler is untyped at check time and a
+    narrower annotation would be a claim mypy cannot substantiate.
+    """
+    return cmd_corpus_surfaces(Namespace(slug=SLUG))
+
+
+def _row_for(result: Any, spec_name: str) -> Any:
+    """The single ``specs[]`` row for one spec, asserting it is single."""
+    match = [row for row in result['specs'] if row['spec'] == spec_name]
+    assert len(match) == 1, f'{spec_name} contributed {len(match)} rows, expected exactly 1'
+    return match[0]
+
+
+class TestCorpusSurfacesResolvesTheShapesTheOldReaderCouldNot:
+    def test_a_directory_and_a_recursive_glob_resolve_to_entries(self, plan_context):
+        # The defect, pinned at the verb: the pre-change reader required a ``/``
+        # AND a trailing ``.ext``, so BOTH of these resolved to nothing and the
+        # spec contributed no comparable path at all.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=list(_DIR_AND_GLOB_SURFACE))
+
+        row = _row_for(_surfaces(plan_context), 'PLAN-01-alpha.md')
+
+        assert row['derivation_status'] == SURFACE_DECLARATIVE
+        assert row['claimed_count'] == len(_DIR_AND_GLOB_SURFACE), (
+            f'{len(_DIR_AND_GLOB_SURFACE)} entries declared, {row["claimed_count"]} resolved'
+        )
+        assert row['admits_disjointness_check'] is True
+
+    def test_the_resolved_entries_carry_their_kinds(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=list(_DIR_AND_GLOB_SURFACE))
+
+        result = _surfaces(plan_context)
+
+        kinds = {entry['kind'] for entry in result['claimed']}
+        assert kinds == {'directory', 'recursive_glob'}, (
+            f'expected both entry shapes to be classified, got {sorted(kinds)}'
+        )
+
+
+class TestCorpusSurfacesThirdState:
+    """An unresolvable declaration is its own state, and it never reads as disjoint."""
+
+    def test_a_spec_with_no_surface_section_is_absent_not_an_empty_surface(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec_without_surface_section(plan_context, 'PLAN-01-alpha.md')
+
+        row = _row_for(_surfaces(plan_context), 'PLAN-01-alpha.md')
+
+        assert row['derivation_status'] == SURFACE_ABSENT
+        assert row['admits_disjointness_check'] is False
+        assert row['claimed_count'] == 0
+
+    def test_a_present_but_unresolvable_surface_is_prose_not_absent(self, plan_context):
+        # The matched partner of the case above. Both resolve to zero paths, and
+        # collapsing them is the defect: only ONE of them is a spec that failed
+        # to declare a surface at all.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=list(_DEFAULT_SURFACE))
+
+        row = _row_for(_surfaces(plan_context), 'PLAN-01-alpha.md')
+
+        assert row['derivation_status'] == SURFACE_PROSE
+        assert row['admits_disjointness_check'] is False
+        assert row['claimed_count'] == 0
+
+    def test_a_declarative_surface_is_the_only_state_that_admits(self, plan_context):
+        # Positive control for the two negatives above: without it, a verb that
+        # returned False for EVERY spec would pass both of them.
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_spec_without_surface_section(plan_context, 'PLAN-02-beta.md')
+
+        result = _surfaces(plan_context)
+
+        admitting = {r['spec'] for r in result['specs'] if r['admits_disjointness_check']}
+        assert admitting == {'PLAN-01-alpha.md'}
+        assert result['admitting_count'] == 1
+        assert result['indeterminate_count'] == 1
+
+    def test_every_non_declarative_state_is_in_the_indeterminate_set(self):
+        """The admission rule is derived from the vocabulary, not hand-listed.
+
+        A state added to :data:`SURFACE_STATES` later is indeterminate unless it
+        is explicitly ``declarative``, so a new class cannot default into
+        admitting the gate by being forgotten here.
+        """
+        assert SURFACE_INDETERMINATE_STATES == frozenset(SURFACE_STATES) - {SURFACE_DECLARATIVE}
+        assert SURFACE_DECLARATIVE not in SURFACE_INDETERMINATE_STATES
+        for state in (SURFACE_DERIVED, SURFACE_PROSE, SURFACE_ABSENT, SURFACE_UNREADABLE):
+            assert state in SURFACE_INDETERMINATE_STATES
+
+
+class TestCorpusSurfacesPublishesItsPopulation:
+    def test_the_class_tally_spans_the_whole_vocabulary_including_zeroes(self, plan_context):
+        # Only two of the five classes are populated by this fixture, so the
+        # other three are the ones that must still appear — as stated zeros.
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_spec(plan_context, 'PLAN-02-beta.md', surface_lines=list(_DEFAULT_SURFACE))
+
+        result = _surfaces(plan_context)
+
+        tallied = [row['derivation_status'] for row in result['class_tally']]
+        assert tallied == list(SURFACE_STATES), (
+            'the tally must span the WHOLE vocabulary in its declared order, so a '
+            'class no spec is in publishes a stated zero instead of vanishing'
+        )
+        counts = {row['derivation_status']: row['count'] for row in result['class_tally']}
+        assert counts[SURFACE_DECLARATIVE] == 1
+        assert counts[SURFACE_PROSE] == 1
+        assert counts[SURFACE_DERIVED] == 0
+        assert counts[SURFACE_ABSENT] == 0
+        assert counts[SURFACE_UNREADABLE] == 0
+
+    def test_the_tally_reconciles_with_the_population_it_was_computed_over(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_spec_without_surface_section(plan_context, 'PLAN-02-beta.md')
+
+        result = _surfaces(plan_context)
+
+        assert result['specs_total'] == 2, 'the corpus did not materialize'
+        assert sum(row['count'] for row in result['class_tally']) == result['specs_total']
+        assert len(result['specs']) == result['specs_scanned'] == result['specs_total']
+        assert result['admitting_count'] + result['indeterminate_count'] == result['specs_total']
+
+    def test_the_payload_names_its_governing_authority(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+
+        result = _surfaces(plan_context)
+
+        assert 'ADR-019' in result['governing_authority']
+        assert 'indeterminate' in result['governing_authority']
+
+
+class TestCrossCheckPublishesTheComparedPopulation:
+    """``file_overlap_match_count: 0`` must state WHICH zero it is."""
+
+    def test_an_indeterminate_spec_is_counted_apart_from_a_compared_one(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_spec_without_surface_section(plan_context, 'PLAN-02-beta.md')
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['specs_scanned'] == 2
+        assert result['specs_comparable'] == 1
+        assert result['specs_indeterminate'] == 1
+        assert result['compared_path_count'] == 1
+
+    def test_a_zero_overlap_rides_with_the_population_that_produced_it(self, plan_context):
+        # The whole point: a corpus whose every spec is unresolvable reports NO
+        # overlap — and the counts beside it say that nothing was comparable,
+        # rather than leaving the zero to read as a checked negative.
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec_without_surface_section(plan_context, 'PLAN-01-alpha.md')
+        _write_spec_without_surface_section(plan_context, 'PLAN-02-beta.md')
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['file_overlap_match_count'] == 0
+        assert result['specs_comparable'] == 0, (
+            'a zero overlap over a zero comparable population is an UNCHECKED '
+            'negative, and the payload has to say so'
+        )
+        assert result['specs_indeterminate'] == 2
+        assert result['compared_path_count'] == 0
+
+    def test_a_real_overlap_still_reports_with_a_non_empty_compared_population(self, plan_context):
+        # Matched positive control: the counts above must not be green merely
+        # because nothing ever collides.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[SHARED_PATH])
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['file_overlap_match_count'] == 1
+        assert result['specs_comparable'] == 1
+        assert result['compared_path_count'] == 1
+
+    def test_a_DERIVED_spec_that_also_resolves_paths_is_not_comparable(self, plan_context):
+        # The state where comparability-by-non-empty-paths and the published
+        # ``admits_disjointness_check`` predicate disagreed. ``classify_spec``
+        # assigns DERIVED on the token alone, BEFORE it considers resolved
+        # entries, so a spec can be derived AND resolve a real path — and only
+        # this shape separates the two rules. A spec that resolves nothing is
+        # excluded by either of them, so it cannot witness the difference.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(
+            plan_context,
+            'PLAN-01-alpha.md',
+            surface_lines=[
+                '- DERIVED from the plans this one supersedes.',
+                *_surface(SHARED_PATH),
+            ],
+        )
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[SHARED_PATH])
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        surfaces_row = _row_for(_surfaces(plan_context), 'PLAN-01-alpha.md')
+
+        assert surfaces_row['derivation_status'] == SURFACE_DERIVED
+        assert surfaces_row['claimed_count'] == 1, (
+            'the fixture is only load-bearing if the derived spec DOES resolve a path'
+        )
+        assert surfaces_row['admits_disjointness_check'] is False
+        assert result['specs_comparable'] == 0, (
+            'a spec corpus surfaces reports as not admitting the check must not be counted '
+            'comparable by cross-check: one spec, two verbs, one answer'
+        )
+        assert result['compared_path_count'] == 0
+        assert result['file_overlap_match_count'] == 0, (
+            'the record contract states an indeterminate spec contributes NO rows to the '
+            'overlap matcher; a shared path must not produce one here'
+        )
+        assert result['specs_indeterminate'] == 1
+
+    def test_the_surface_state_tally_spans_the_whole_vocabulary(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        tallied = [row['derivation_status'] for row in result['spec_surface_states']]
+        assert tallied == list(SURFACE_STATES)
+        assert sum(row['count'] for row in result['spec_surface_states']) == result['specs_total']
+        assert result['spec_surfaces'] == [
+            {'spec': 'PLAN-01-alpha.md', 'derivation_status': SURFACE_DECLARATIVE}
+        ]
+
+    def test_the_tally_invariant_holds_when_a_SIBLING_epic_has_an_unreadable_spec(
+        self, plan_context
+    ):
+        # The population the test above cannot reach. Its fixture registers no
+        # sibling epic, so the shared ``unreadable`` list holds only OWN entries
+        # there and the sum-equals-total invariant passes whether the own tally is
+        # derived from the own population or from that shared list. The two
+        # derivations only disagree once a sibling contributes to the list — which
+        # is exactly the state this fixture creates and that one cannot.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        broken = _epic_dir(plan_context, SIBLING_SLUG) / 'plans' / 'PLAN-77-broken.md'
+        broken.parent.mkdir(parents=True, exist_ok=True)
+        broken.write_bytes(b'\xff\xfe \xff')
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['unreadable_count'] == 1, 'the sibling breakage must reach the shared list'
+        assert result['specs_total'] == 1, "the sibling's spec is not one of OUR specs"
+        assert sum(row['count'] for row in result['spec_surface_states']) == result['specs_total'], (
+            "the own-corpus tally must be derived from the own population: reading the SHARED "
+            'unreadable list here adds the sibling and breaks sum == specs_total'
+        )
+        unreadable_row = next(
+            row
+            for row in result['spec_surface_states']
+            if row['derivation_status'] == SURFACE_UNREADABLE
+        )
+        assert unreadable_row['count'] == 0, (
+            'no OWN spec was unreadable, so the own unreadable tally is zero even though '
+            'the shared list is not empty'
+        )
+        assert result['specs_indeterminate'] == 0, (
+            'specs_indeterminate is an own-corpus figure and must not absorb the sibling either'
+        )
+
+
+class TestCorpusSurfacesRefusals:
+    def test_an_unsafe_slug_is_refused(self):
+        result = cmd_corpus_surfaces(Namespace(slug='../escape'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_slug'
+
+    def test_an_epic_with_no_store_tree_is_refused(self, plan_context):
+        result = cmd_corpus_surfaces(Namespace(slug='no-such-epic'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'not_found'
+
+
+class TestCorpusSurfacesReadOnlyBoundary:
+    def test_surfaces_leaves_the_tree_byte_identical(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        root = _epic_dir(plan_context)
+        before = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
+        assert before, 'fixture tree did not materialize'
+
+        result = cmd_corpus_surfaces(Namespace(slug=SLUG))
+
+        after = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
+        assert after == before
+        assert result['admitting_count'] == 1, (
+            'the read-only claim must be proven on a scan that actually RESOLVED '
+            'a surface — a scan finding nothing would leave the tree untouched vacuously'
+        )
+
+
+# =============================================================================
 # Read-only boundary
 # =============================================================================
 
@@ -1795,35 +2206,53 @@ class TestCorpusReadOnlyBoundary:
 # heading still terminates the scan (the suppression is fence-scoped, not a
 # blanket disable); the negative controls prove the fenced look-alike does not.
 
-#: A fenced Expected Surface path list whose FIRST body line is a ``#`` comment —
-#: the exact shape that truncated the section. ``OTHER_PATH`` is deliberately
-#: LAST, so an assertion that finds it proves the whole list survived.
+#: An Expected Surface whose fenced example's FIRST body line is a ``#`` comment —
+#: the exact shape that truncated the section — followed by the DECLARED bullets.
+#: ``OTHER_PATH`` is deliberately LAST, so an assertion that finds it proves the
+#: whole declaration survived.
+#:
+#: The declared entries sit AFTER the fence rather than inside it, because the
+#: single reader treats fenced content as a SAMPLE and never as a claim (its own
+#: ``test_fenced_block_entries_are_ignored`` pins that). The defect this fixture
+#: exists for is unaffected and is if anything pinned harder: if the fence is not
+#: masked, the ``#`` comment reads as a heading, the section is truncated there,
+#: and BOTH declared bullets vanish from the resolved set.
 _FENCED_SURFACE = [
     '```text',
     '# the files this spec expects to touch',
-    SHARED_PATH,
-    OTHER_PATH,
     '```',
+    *_surface(SHARED_PATH, OTHER_PATH),
 ]
 
-#: The same Expected Surface list written with a FOUR-backtick outer fence that
+#: The same Expected Surface written with a FOUR-backtick outer fence that
 #: CONTAINS a three-backtick example — the ordinary way a spec shows a fenced
 #: snippet inside a fenced block. CommonMark closes only on a run at least as
 #: long as the opener, so the inner ``` lines are body text and the outer block
 #: runs to the ```` line. A mask that compares only the delimiter CHARACTER ends
 #: the block at the first inner ```, after which the ``#`` comment on the next
-#: line reads as a heading and truncates the section. ``OTHER_PATH`` sits after
-#: the inner example, so an assertion that finds it proves the whole list
-#: survived the nesting.
-_NESTED_FENCED_SURFACE = [
+#: line reads as a heading and truncates the section — so BOTH declared bullets
+#: vanish and the spec resolves as ``prose``, a confident empty surface over a
+#: spec that declared two files. This case is the reason the relocated reader
+#: retains the opening run's LENGTH and not merely its character.
+#: The nested fenced BLOCK on its own, without the declaration that follows it.
+#:
+#: The mask cases take the block by itself, because they are about where a block
+#: BEGINS and ENDS; the surface cases take the block PLUS the declared bullets,
+#: because the single reader resolves entries only OUTSIDE a fence. Sharing one
+#: fixture between the two would make each case's expected mask length a fact
+#: about the other case's fixture.
+_NESTED_FENCE_BLOCK = [
     '````text',
     '# the files this spec expects to touch',
     '```',
     '# an inner example, not the close of the outer block',
     '```',
-    SHARED_PATH,
-    OTHER_PATH,
     '````',
+]
+
+_NESTED_FENCED_SURFACE = [
+    *_NESTED_FENCE_BLOCK,
+    *_surface(SHARED_PATH, OTHER_PATH),
 ]
 
 #: Two real claims with a fenced example between them. The fence carries both a
@@ -1876,16 +2305,16 @@ class TestFenceMask:
         # character. Reading the character alone ends the outer block at the
         # first inner ```, leaving the real fenced body — and the paths after
         # it — unmasked behind a mask that still reports one entry per line.
-        lines = ['before', *_NESTED_FENCED_SURFACE, '# a real heading']
+        lines = ['before', *_NESTED_FENCE_BLOCK, '# a real heading']
 
         mask = fenced_mask(lines)
 
         assert len(mask) == len(lines), 'the mask must carry one entry per scanned line'
-        assert sum(mask) == len(_NESTED_FENCED_SURFACE), (
+        assert sum(mask) == len(_NESTED_FENCE_BLOCK), (
             f'{sum(mask)} of {len(lines)} lines masked, expected exactly the '
-            f'{len(_NESTED_FENCED_SURFACE)}-line fenced block'
+            f'{len(_NESTED_FENCE_BLOCK)}-line fenced block'
         )
-        assert mask == [False, *[True] * len(_NESTED_FENCED_SURFACE), False]
+        assert mask == [False, *[True] * len(_NESTED_FENCE_BLOCK), False]
 
     def test_a_shorter_run_does_not_close_a_longer_opener(self):
         # No delimiter here is long enough to close, so the block runs to the
@@ -1941,12 +2370,21 @@ class TestFenceMask:
 
 
 class TestFencedSectionSpan:
+    """``orchestrator._section_span`` against its own fence mask.
+
+    Exercised through ``CLAIM_LABELS_HEADING_RE`` — the heading this module still
+    owns — now that the ``## Expected Surface`` grammar has moved to the single
+    reader in ``script-shared``. The primitive under test is unchanged; only the
+    heading it is driven with is, and the two are interchangeable here because
+    both are ordinary addressed ATX headings fed to the same scanner.
+    """
+
     def test_a_real_heading_still_ends_a_section(self):
         # Positive control: the terminator works, so the negative control below
         # is testing suppression rather than a scan that never terminates.
-        lines = ['## Expected Surface', '', SHARED_PATH, '', '## Objective', '', OTHER_PATH]
+        lines = ['## Claim Labels', '', SHARED_PATH, '', '## Objective', '', OTHER_PATH]
 
-        start, end = section_span(lines, EXPECTED_SURFACE_HEADING_RE)
+        start, end = section_span(lines, CLAIM_LABELS_HEADING_RE)
 
         body = '\n'.join(lines[start:end])
         assert (start, end) == (1, 4)
@@ -1954,35 +2392,35 @@ class TestFencedSectionSpan:
         assert OTHER_PATH not in body
 
     def test_a_hash_line_inside_a_fence_does_not_end_a_section(self):
-        lines = ['## Expected Surface', '', *_FENCED_SURFACE, '', '## Objective']
+        lines = ['## Claim Labels', '', *_FENCED_SURFACE, '', '## Objective']
 
-        start, end = section_span(lines, EXPECTED_SURFACE_HEADING_RE)
+        start, end = section_span(lines, CLAIM_LABELS_HEADING_RE)
 
         body = '\n'.join(lines[start:end])
         assert '# the files this spec expects to touch' in body
         assert OTHER_PATH in body, 'a fenced comment truncated the section body'
 
     def test_a_fenced_heading_does_not_open_a_section(self):
-        # The opening scan carries the same state: a fenced ``## Expected
-        # Surface`` line inside an earlier example is not this document's section.
-        lines = ['```text', '## Expected Surface', OTHER_PATH, '```']
+        # The opening scan carries the same state: a fenced ``## Claim Labels``
+        # line inside an earlier example is not this document's section.
+        lines = ['```text', '## Claim Labels', OTHER_PATH, '```']
 
-        assert section_span(lines, EXPECTED_SURFACE_HEADING_RE) == (-1, -1)
+        assert section_span(lines, CLAIM_LABELS_HEADING_RE) == (-1, -1)
 
 
 class TestFencedExpectedSurface:
-    def test_a_fenced_path_list_with_a_leading_comment_yields_every_path(self):
+    def test_a_fenced_path_list_with_a_leading_comment_yields_every_path(self, tmp_path):
         declared = (SHARED_PATH, OTHER_PATH)
         text = _spec_text([_DEFAULT_CLAIM], list(_FENCED_SURFACE))
 
-        paths = expected_surface_paths(text)
+        paths = expected_surface_paths(text, tmp_path)
 
         assert len(paths) == len(declared), (
-            f'{len(declared)} path(s) declared in the fenced list, {len(paths)} extracted'
+            f'{len(declared)} path(s) declared after the fenced example, {len(paths)} extracted'
         )
         assert paths == set(declared)
 
-    def test_a_nested_fenced_path_list_yields_every_path(self):
+    def test_a_nested_fenced_path_list_yields_every_path(self, tmp_path):
         # The consumer-level proof that the run-length comparison reaches the
         # defect it was filed for: with the outer block ended at the first inner
         # ```, the following ``#`` comment reads as a heading and truncates the
@@ -1990,10 +2428,10 @@ class TestFencedExpectedSurface:
         declared = (SHARED_PATH, OTHER_PATH)
         text = _spec_text([_DEFAULT_CLAIM], list(_NESTED_FENCED_SURFACE))
 
-        paths = expected_surface_paths(text)
+        paths = expected_surface_paths(text, tmp_path)
 
         assert len(paths) == len(declared), (
-            f'{len(declared)} path(s) declared in the nested fenced list, '
+            f'{len(declared)} path(s) declared after the nested fenced example, '
             f'{len(paths)} extracted'
         )
         assert paths == set(declared)
@@ -2016,7 +2454,7 @@ class TestFencedExpectedSurface:
         assert result['file_overlap_matches'][0]['overlapping_files'] == OTHER_PATH
         assert result['collision_detected'] is True
 
-    def test_a_path_outside_the_section_is_still_excluded(self):
+    def test_a_path_outside_the_section_is_still_excluded(self, tmp_path):
         # Negative control: the fix widens the body past a fenced comment, it
         # does not stop bounding the section.
         text = _spec_text(
@@ -2025,7 +2463,7 @@ class TestFencedExpectedSurface:
             objective=f'Background reading: {OUTSIDE_PATH} explains the seam.',
         )
 
-        paths = expected_surface_paths(text)
+        paths = expected_surface_paths(text, tmp_path)
 
         assert OUTSIDE_PATH not in paths
         assert paths == {SHARED_PATH, OTHER_PATH}
@@ -2130,28 +2568,33 @@ _REJECTED_INDENTS = ('    ', '     ', '\t', ' \t', '   \t')
 #: the section — and because BOTH declared paths sit after the indented
 #: delimiter, the extracted surface is EMPTIED rather than merely shortened,
 #: which is a confident no-overlap over a spec that declared two files.
-_INDENTED_DELIMITER_SURFACE = [
+#: The over-indented-delimiter BLOCK on its own — the mask-level counterpart of
+#: :data:`_INDENTED_DELIMITER_SURFACE`, kept separate for the same reason
+#: :data:`_NESTED_FENCE_BLOCK` is.
+_INDENTED_DELIMITER_BLOCK = [
     '```text',
     '# the files this spec expects to touch',
     '    ```',
     '# an indented delimiter is body text, not the close of this block',
-    SHARED_PATH,
-    OTHER_PATH,
     '```',
+]
+
+_INDENTED_DELIMITER_SURFACE = [
+    *_INDENTED_DELIMITER_BLOCK,
+    *_surface(SHARED_PATH, OTHER_PATH),
 ]
 
 #: The same shape with a TAB-indented delimiter. Kept as its own fixture rather
 #: than folded into the parametrization above because the consumer-level proof
-#: has to run end to end through ``_expected_surface_paths``, and a tab reaches
+#: has to run end to end through the relocated single reader, and a tab reaches
 #: the four-column boundary by a different mechanism than four spaces do.
 _TAB_DELIMITER_SURFACE = [
     '```text',
     '# the files this spec expects to touch',
     '\t```',
     '# a tab is four columns, so this is body text too',
-    SHARED_PATH,
-    OTHER_PATH,
     '```',
+    *_surface(SHARED_PATH, OTHER_PATH),
 ]
 
 #: Two real claims with a fenced example between them whose body carries a
@@ -2276,7 +2719,7 @@ class TestHeadingIndentationBound:
     @pytest.mark.parametrize('indent', _PERMITTED_INDENTS)
     def test_a_permitted_indent_still_opens_a_section(self, indent):
         lines = [
-            f'{indent}## Expected Surface',
+            f'{indent}## Claim Labels',
             '',
             SHARED_PATH,
             '',
@@ -2285,7 +2728,7 @@ class TestHeadingIndentationBound:
             OTHER_PATH,
         ]
 
-        start, end = section_span(lines, EXPECTED_SURFACE_HEADING_RE)
+        start, end = section_span(lines, CLAIM_LABELS_HEADING_RE)
 
         body = '\n'.join(lines[start:end])
         assert (start, end) == (1, 4)
@@ -2294,9 +2737,9 @@ class TestHeadingIndentationBound:
 
     @pytest.mark.parametrize('indent', _PERMITTED_INDENTS)
     def test_a_permitted_indent_still_terminates_a_section(self, indent):
-        lines = ['## Expected Surface', '', SHARED_PATH, f'{indent}## Objective', '', OUTSIDE_PATH]
+        lines = ['## Claim Labels', '', SHARED_PATH, f'{indent}## Objective', '', OUTSIDE_PATH]
 
-        start, end = section_span(lines, EXPECTED_SURFACE_HEADING_RE)
+        start, end = section_span(lines, CLAIM_LABELS_HEADING_RE)
 
         body = '\n'.join(lines[start:end])
         assert (start, end) == (1, 3)
@@ -2305,11 +2748,11 @@ class TestHeadingIndentationBound:
 
     @pytest.mark.parametrize('indent', _REJECTED_INDENTS)
     def test_a_rejected_indent_is_not_a_heading(self, indent):
-        lines = [f'{indent}## Expected Surface', SHARED_PATH]
+        lines = [f'{indent}## Claim Labels', SHARED_PATH]
 
         assert HEADING_RE.match(lines[0]) is None
-        assert EXPECTED_SURFACE_HEADING_RE.match(lines[0]) is None
-        assert section_span(lines, EXPECTED_SURFACE_HEADING_RE) == (-1, -1)
+        assert CLAIM_LABELS_HEADING_RE.match(lines[0]) is None
+        assert section_span(lines, CLAIM_LABELS_HEADING_RE) == (-1, -1)
 
 
 class TestAtxHeadingShape:
@@ -2327,16 +2770,16 @@ class TestAtxHeadingShape:
         assert HEADING_RE.match('##') is not None
 
     def test_a_tab_separated_heading_is_recognised(self):
-        assert EXPECTED_SURFACE_HEADING_RE.match('##\tExpected Surface') is not None
+        assert CLAIM_LABELS_HEADING_RE.match('##\tClaim Labels') is not None
 
     def test_an_optional_closing_hash_sequence_is_accepted(self):
-        assert EXPECTED_SURFACE_HEADING_RE.match('## Expected Surface ##') is not None
+        assert CLAIM_LABELS_HEADING_RE.match('## Claim Labels ##') is not None
         assert CLAIM_LABELS_HEADING_RE.match('  ## Claim Labels ###') is not None
 
     def test_a_trailing_hash_run_without_a_separator_is_not_a_closing_sequence(self):
         # The closing sequence must be preceded by whitespace, so this is a
         # heading whose TEXT differs and therefore not the addressed section.
-        assert EXPECTED_SURFACE_HEADING_RE.match('## Expected Surface##') is None
+        assert CLAIM_LABELS_HEADING_RE.match('## Claim Labels##') is None
 
 
 #: The heading-case variants a spec may legitimately use. Markdown does not make
@@ -2391,7 +2834,7 @@ class TestHeadingCaseIsNotSectionIdentity:
 
     @pytest.mark.parametrize('surface_heading', _SURFACE_HEADING_CASES)
     def test_a_case_variant_surface_heading_yields_the_same_declared_paths(
-        self, surface_heading
+        self, surface_heading, tmp_path
     ):
         declared = (SHARED_PATH, OTHER_PATH)
         template = _spec_with_headings(
@@ -2401,8 +2844,8 @@ class TestHeadingCaseIsNotSectionIdentity:
             '## Claim Labels', surface_heading, [_DEFAULT_CLAIM], _surface(*declared)
         )
 
-        template_paths = expected_surface_paths(template)
-        variant_paths = expected_surface_paths(variant)
+        template_paths = expected_surface_paths(template, tmp_path / 'template')
+        variant_paths = expected_surface_paths(variant, tmp_path / 'variant')
 
         # The population the assertion was computed over, stated beside it: a
         # two-path surface, so an empty result is a measured miss, not an
@@ -2419,7 +2862,7 @@ class TestHeadingCaseIsNotSectionIdentity:
 
     # --- Expected Surface: negative control ----------------------------------
 
-    def test_a_spec_that_declares_no_surface_section_still_resolves_to_empty(self):
+    def test_a_spec_that_declares_no_surface_section_still_resolves_to_empty(self, tmp_path):
         # Matched negative control. Case-blindness must not manufacture a
         # section: a spec with genuinely no Expected Surface heading resolves to
         # the empty set, and that zero is the CORRECT answer here.
@@ -2436,14 +2879,14 @@ class TestHeadingCaseIsNotSectionIdentity:
         ]
         text = '\n'.join(lines) + '\n'
 
-        paths = expected_surface_paths(text)
+        paths = expected_surface_paths(text, tmp_path)
 
         assert paths == set()
         # The path IS present in the document — so the empty result is the
         # section boundary holding, not the extractor failing to see anything.
         assert OUTSIDE_PATH in text
 
-    def test_a_near_miss_heading_that_is_not_a_case_variant_is_still_rejected(self):
+    def test_a_near_miss_heading_that_is_not_a_case_variant_is_still_rejected(self, tmp_path):
         # Case-blindness is not word-blindness: a DIFFERENT heading text must
         # still fail to open the section, or the widening went too far.
         text = _spec_with_headings(
@@ -2453,7 +2896,7 @@ class TestHeadingCaseIsNotSectionIdentity:
             _surface(SHARED_PATH, OTHER_PATH),
         )
 
-        assert expected_surface_paths(text) == set()
+        assert expected_surface_paths(text, tmp_path) == set()
 
     # --- Claim Labels: the symmetric peer pair -------------------------------
 
@@ -2504,10 +2947,13 @@ class TestHeadingCaseIsNotSectionIdentity:
 
     def test_the_section_span_locates_a_case_variant_heading(self):
         # The shared primitive both consumers ride, pinned directly: the span is
-        # resolved rather than the (-1, -1) "absent" pair.
-        lines = ['## expected surface', '', SHARED_PATH, '', '## Objective']
+        # resolved rather than the (-1, -1) "absent" pair. Driven through the
+        # SURVIVING peer heading, which exercises the identical primitive against
+        # a section ``orchestrator.py`` still owns; the surface heading's own
+        # case-insensitivity is now pinned in the single reader's suite.
+        lines = ['## claim labels', '', SHARED_PATH, '', '## Objective']
 
-        assert section_span(lines, EXPECTED_SURFACE_HEADING_RE) != (-1, -1)
+        assert section_span(lines, CLAIM_LABELS_HEADING_RE) != (-1, -1)
 
 
 class TestIndentedDelimiterExpectedSurface:
@@ -2518,12 +2964,12 @@ class TestIndentedDelimiterExpectedSurface:
         (('four-space', _INDENTED_DELIMITER_SURFACE), ('tab', _TAB_DELIMITER_SURFACE)),
     )
     def test_a_fenced_list_containing_an_over_indented_delimiter_yields_every_path(
-        self, label, surface
+        self, label, surface, tmp_path
     ):
         declared = (SHARED_PATH, OTHER_PATH)
         text = _spec_text([_DEFAULT_CLAIM], list(surface))
 
-        paths = expected_surface_paths(text)
+        paths = expected_surface_paths(text, tmp_path)
 
         assert len(paths) == len(declared), (
             f'{len(declared)} path(s) declared after the {label}-indented '
@@ -2531,7 +2977,7 @@ class TestIndentedDelimiterExpectedSurface:
         )
         assert paths == set(declared)
 
-    def test_a_path_outside_the_section_is_still_excluded(self):
+    def test_a_path_outside_the_section_is_still_excluded(self, tmp_path):
         # Negative control: widening the body past an over-indented delimiter
         # must not stop the section being bounded at all.
         text = _spec_text(
@@ -2540,7 +2986,7 @@ class TestIndentedDelimiterExpectedSurface:
             objective=f'Background reading: {OUTSIDE_PATH} explains the seam.',
         )
 
-        paths = expected_surface_paths(text)
+        paths = expected_surface_paths(text, tmp_path)
 
         assert OUTSIDE_PATH not in paths
         assert paths == {SHARED_PATH, OTHER_PATH}
@@ -2722,20 +3168,20 @@ def test_the_bound_changed_the_heading_match_set():
 
 def test_the_pre_fix_mask_reproduces_the_recorded_disagreement():
     """The recorded finding, line for line, against the fixed mask beside it."""
-    lines = list(_INDENTED_DELIMITER_SURFACE)
+    lines = list(_INDENTED_DELIMITER_BLOCK)
 
     pre_fix = _pre_fix_fenced_mask(lines)
     fixed = fenced_mask(lines)
 
-    assert len(pre_fix) == len(fixed) == len(lines) == 7
-    assert pre_fix == [True, True, True, False, False, False, True], (
+    assert len(pre_fix) == len(fixed) == len(lines) == 5
+    assert pre_fix == [True, True, True, False, True], (
         'the negative fixture no longer reproduces the pre-fix mask'
     )
     assert fixed == [True] * len(lines)
     assert sum(pre_fix) == 4, (
         f'{sum(pre_fix)} of {len(lines)} lines masked before the fix, {sum(fixed)} after — '
-        'the three unmasked lines carry both declared paths, which is why the extracted '
-        'surface was emptied rather than shortened'
+        'the unmasked line is the block\'s ``#`` comment, and reading it as a heading is '
+        'what truncated the enclosing section and emptied the surface declared after it'
     )
 
 
@@ -2753,6 +3199,168 @@ def test_the_pre_fix_regex_opened_a_fence_on_a_prose_line_quoting_inline_code():
         f'{sum(fixed)} of {len(lines)} lines masked — a backtick fence whose info string '
         'carries a backtick is a paragraph, not an opener'
     )
+
+
+# =============================================================================
+# Non-vacuity guard for the own-corpus tally and the comparable population
+# =============================================================================
+#
+# The two controls in ``TestCrossCheckPublishesTheComparedPopulation`` are green
+# by construction once both fixes are in place — the same shape that let the
+# pre-existing tally invariant pass over a fixture with no sibling epic, which is
+# how the contamination survived review.
+#
+# Each control below reproduces a pre-fix expression verbatim and asserts it
+# disagrees with the SHIPPED PRODUCTION VALUE over the same inputs. Binding the
+# comparison to the real code rather than to a re-typed copy of it is the point:
+# a control whose "shipped" side is re-implemented locally proves only that two
+# expressions differ, and would stay green if the fix were reverted — which is
+# exactly the confident-but-inert signal this epic exists to remove. The
+# production side here comes from ``cmd_corpus_cross_check`` and ``_spec_record``
+# themselves, so reverting either fix turns these red.
+
+
+def _pre_fix_own_unreadable_count(shared_unreadable: list) -> int:
+    """The pre-fix own-unreadable tally, verbatim: the length of the SHARED list.
+
+    The shipped expression derives the count from the OWN population instead
+    (``len(own_paths) - len(own)``), which is why this reproduction takes only the
+    shared list — taking the own population would make it the shipped rule.
+    """
+    return len(shared_unreadable)
+
+
+def _own_unreadable_tally(result: dict) -> int:
+    """The shipped own-unreadable count, read off the real verb's payload."""
+    count = next(
+        row['count']
+        for row in result['spec_surface_states']
+        if row['derivation_status'] == SURFACE_UNREADABLE
+    )
+    # The payload is an untyped dict, so the row value arrives as Any; the
+    # int() is the narrowing this function's return type promises, not a coercion
+    # of a value that might not be one.
+    return int(count)
+
+
+def test_the_own_unreadable_tally_changed_over_a_sibling_bearing_population(plan_context):
+    # One own spec, readable; one SIBLING spec unreadable. The shared list is what
+    # the two rules disagree about, and the shipped side is the real verb's own
+    # output — not a re-typed copy of its expression.
+    _write_status(plan_context, [_row('PLAN-01')])
+    _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+    broken = _epic_dir(plan_context, SIBLING_SLUG) / 'plans' / 'PLAN-77-broken.md'
+    broken.parent.mkdir(parents=True, exist_ok=True)
+    broken.write_bytes(b'\xff\xfe \xff')
+
+    result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+    pre_fix = _pre_fix_own_unreadable_count(result['unreadable'])
+    shipped = _own_unreadable_tally(result)
+
+    assert pre_fix == 1, 'the negative fixture no longer reproduces the pre-fix tally'
+    assert shipped == 0, 'no OWN spec was unreadable, so the own tally is zero'
+    assert pre_fix != shipped, (
+        'the shipped verb agrees with the pre-fix expression, so the fix is not in force'
+    )
+
+
+def test_the_own_unreadable_tally_agrees_when_no_sibling_is_registered(plan_context):
+    # Matched partner over the population the pre-existing invariant test uses
+    # (no sibling epic): the two rules AGREE there, which is precisely why that
+    # test could not observe the defect and why the sibling fixture was added.
+    _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+    _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+    broken = _epic_dir(plan_context) / 'plans' / 'PLAN-02-broken.md'
+    broken.write_bytes(b'\xff\xfe \xff')
+
+    result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+    assert _pre_fix_own_unreadable_count(result['unreadable']) == _own_unreadable_tally(result) == 1, (
+        'with no sibling contributing, both rules return the own count — the agreement '
+        'that made the sibling-free fixture blind'
+    )
+
+
+def _pre_fix_comparable(claim) -> bool:
+    """The pre-fix predicate: comparability from the RESOLVED set, ungated.
+
+    Takes the claim directly so the resolved entries are read the way the pre-fix
+    ``_spec_record`` exposed them — before the admits gate withheld them.
+    """
+    return bool(_orch._claimed_paths(claim))
+
+
+def test_the_comparable_predicate_changed_for_a_derived_spec_that_resolves_paths(tmp_path):
+    """The one shape that separates the two rules: DERIVED and resolving.
+
+    The shipped side is ``_spec_record``'s own output, so reverting the gate turns
+    this red. A spec that resolves nothing is excluded by both rules and cannot
+    witness the change — pinned below as the matched negative, alongside a
+    declarative positive so the fix cannot pass by excluding everything.
+    """
+    spec = tmp_path / 'PLAN-01-derived.md'
+    spec.write_text(
+        '# PLAN-01\n\n## Expected Surface\n\n'
+        '- DERIVED from the plans this one supersedes.\n'
+        f'- OBSERVED: `{SHARED_PATH}` — `f`\n',
+        encoding='utf-8',
+    )
+    claim = _orch._spec_claim(spec, PROJECT_ROOT)
+    record = _orch._spec_record(SLUG, spec, PROJECT_ROOT)
+
+    assert claim is not None and claim.spec_class == SURFACE_DERIVED
+    assert _pre_fix_comparable(claim) is True, (
+        'the fixture is only load-bearing if the derived spec DOES resolve a path'
+    )
+    assert record['paths'] == set(), (
+        'a derived spec must contribute no comparable path however many it resolves'
+    )
+
+
+def test_the_comparable_predicate_is_unchanged_for_the_two_non_witnessing_shapes(tmp_path):
+    # Matched controls for the test above: neither shape can distinguish the two
+    # rules, so a fix that narrowed everything, or nothing, would still pass here.
+    derived_empty = tmp_path / 'empty' / 'PLAN-02-derived.md'
+    derived_empty.parent.mkdir(parents=True, exist_ok=True)
+    derived_empty.write_text(
+        '# PLAN-02\n\n## Expected Surface\n\n- DERIVED, and nothing resolvable.\n',
+        encoding='utf-8',
+    )
+    declarative = tmp_path / 'declarative' / 'PLAN-03-alpha.md'
+    declarative.parent.mkdir(parents=True, exist_ok=True)
+    declarative.write_text(
+        f'# PLAN-03\n\n## Expected Surface\n\n- OBSERVED: `{SHARED_PATH}` — `f`\n',
+        encoding='utf-8',
+    )
+
+    empty_record = _orch._spec_record(SLUG, derived_empty, PROJECT_ROOT)
+    declarative_record = _orch._spec_record(SLUG, declarative, PROJECT_ROOT)
+
+    assert empty_record['derivation_status'] == SURFACE_DERIVED
+    assert empty_record['paths'] == set(), 'both rules exclude a derived spec resolving nothing'
+    assert declarative_record['derivation_status'] == SURFACE_DECLARATIVE
+    assert declarative_record['paths'] == {SHARED_PATH}, (
+        'the gate must not narrow the declarative case — without this the fix could pass '
+        'by withholding paths from everything'
+    )
+
+
+def test_a_spec_whose_bytes_are_not_utf8_is_unreadable_in_both_verbs(tmp_path):
+    """The decode route must reach ``unreadable`` rather than escaping as an error.
+
+    ``read_text`` raises ``UnicodeDecodeError`` — a ``ValueError``, not an
+    ``OSError`` — so a reader catching only ``OSError`` let this case propagate,
+    leaving ``unreadable`` reachable through the open-failure route alone. Both
+    entry points are pinned, because only one of them re-read the file itself and
+    the two must agree about the same spec.
+    """
+    spec = tmp_path / 'PLAN-01-broken.md'
+    spec.write_bytes(b'\xff\xfe not valid utf-8 \xff')
+
+    assert _orch._spec_claim(spec, PROJECT_ROOT) is None
+    assert _orch._spec_record(SLUG, spec, PROJECT_ROOT) is None
+    assert _orch._surface_state(spec, PROJECT_ROOT) == (SURFACE_UNREADABLE, None)
 
 
 # =============================================================================

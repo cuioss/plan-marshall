@@ -53,7 +53,7 @@ from _epic_partition import (
     derive_partition,
     iter_test_modules,
 )
-from _epic_spec_parser import (
+from epic_spec_parser import (
     CLASS_DECLARATIVE,
     CLASS_DERIVED,
     CLASS_PROSE,

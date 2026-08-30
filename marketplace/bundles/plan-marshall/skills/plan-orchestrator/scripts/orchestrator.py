@@ -38,8 +38,8 @@ operation groups against the main-anchored orchestrator store
   second run finds every block ``unchanged`` and writes nothing. Refuses a
   closed epic (``refused_closed``): compaction is a live-epic operation only.
   The narrative-versus-settled RELOCATION judgement is NOT here; it stays LLM.
-- ``corpus {epics,enumerate,cross-check,verdicts,set-verdict}`` — the epic
-  population and the epic's staged
+- ``corpus {epics,enumerate,cross-check,surfaces,verdicts,set-verdict}`` — the
+  epic population and the epic's staged
   spec corpus: enumerate every epic slug in the store (``epics`` — the one
   slug-free verb, partitioned into active and archived, publishing the roots it
   walked and the population size so a zero names the directory it came from),
@@ -47,7 +47,11 @@ operation groups against the main-anchored orchestrator store
   ``plans/PLAN-*.md`` spec files in BOTH directions, cross-check those specs
   against sibling epics and live plans for duplicate work (the arm a single
   ledger structurally cannot perform, scored on ``manage-status
-  sibling-collision-check``'s two classes), and read/write the re-grounding
+  sibling-collision-check``'s two classes), publish every spec's DECLARED
+  ``## Expected Surface`` with its derivation status and the population the
+  comparison was drawn from (``surfaces`` — the read verb the disjointness gate
+  decides on, so that verdict is a parser decision rather than a reader's
+  judgement over a rendered cell), and read/write the re-grounding
   verdict field defined once in
   ``persona-plan-orchestrator/standards/orchestration-model.md``
   § Re-Grounding Verdict Field. ``set-verdict`` is the group's single write
@@ -91,7 +95,6 @@ from typing import Any
 
 from _cmd_sibling_collision import (
     _OVERLAP_JOIN,
-    _extract_paths,
     _iter_active_plan_dirs,
     _read_affected_files,
     _read_request_source,
@@ -115,7 +118,13 @@ from _orchestrator_inbox import (
     cmd_inbox_write,
     inbox_counts,
 )
+from epic_spec_parser import (
+    SpecClaim,
+    UnclassifiableSpecError,
+    classify_spec,
+)
 from file_ops import (
+    cwd_checkout_root,
     get_archived_orchestrator_dir,
     get_store_dir,
     now_utc_iso,
@@ -224,6 +233,50 @@ CLAIM_SECTION_STATES = (
     CLAIM_SECTION_EMPTY,
     CLAIM_SECTION_UNREADABLE,
     CLAIM_SECTION_PARSED,
+)
+
+#: The DECLARED-SURFACE derivation vocabulary: what one spec's
+#: ``## Expected Surface`` resolved to, and therefore whether the disjointness
+#: gate may compare it at all. The first three are the single reader's own
+#: three-class verdict (``epic_spec_parser``); the last two are the states that
+#: reader signals by refusing to classify, kept apart here because they are two
+#: different zeros and collapsing them is the defect this vocabulary exists to
+#: remove — a spec whose section is ABSENT is not a spec that declared an EMPTY
+#: surface, and neither is a spec that could not be READ.
+SURFACE_DECLARATIVE = 'declarative'
+SURFACE_DERIVED = 'derived'
+SURFACE_PROSE = 'prose'
+SURFACE_ABSENT = 'absent'
+SURFACE_UNREADABLE = 'unreadable'
+
+#: The WHOLE vocabulary, ordered from most to least resolved. The class tally is
+#: derived from this tuple rather than from the states actually observed, so a
+#: state no spec is in publishes a stated zero instead of vanishing from the
+#: tally (ADR-014: an aggregation names its producers and suppresses no element
+#: silently).
+SURFACE_STATES = (
+    SURFACE_DECLARATIVE,
+    SURFACE_DERIVED,
+    SURFACE_PROSE,
+    SURFACE_ABSENT,
+    SURFACE_UNREADABLE,
+)
+
+#: The states that CANNOT substantiate a disjointness verdict. Everything except
+#: ``declarative`` is here: a ``derived`` surface is a function of other plans'
+#: and names no paths of its own, a ``prose`` one resolves to none, and
+#: ``absent`` / ``unreadable`` produce no declaration to compare. An overlap
+#: check over any of them returns ``indeterminate``, NEVER ``disjoint`` — a spec
+#: contributing no rows is INVISIBLE to the file-overlap matcher, so its clean
+#: reading is silence rather than a checked negative. Governing authority:
+#: ADR-019 (a surface that measures reports coverage alongside its result, and
+#: reserves the clean verdict for "evaluated, nothing found").
+SURFACE_INDETERMINATE_STATES = frozenset(SURFACE_STATES) - {SURFACE_DECLARATIVE}
+
+#: Named once so the payload states its governing authority rather than leaving a
+#: reader to infer the rule from the field names.
+SURFACE_GOVERNING_AUTHORITY = (
+    'ADR-019 — an absent or unresolvable declaration resolves to indeterminate, never to disjoint'
 )
 
 #: What one verdict row is ADDRESSED BY. A ``claim``-scoped row carries its real
@@ -397,20 +450,22 @@ _SURFACE_JOIN = '; '
 
 # --- markdown line scanners -------------------------------------------------
 #
-# The five regexes in this block are the module's COMPLETE set of markdown
-# construct models, and every line-wise scan in the file runs through one of
-# them against the mask :func:`_fenced_mask` builds. They are grouped here, each
-# stating which CommonMark clauses it honours and which it deliberately does
-# not, because three successive review rounds found the same defect class in a
-# different clause of the same scanners: a line matcher that reads correctly in
-# isolation while parsing a document the spec author does not see rendered.
-# The module's five OTHER regexes — :data:`SPEC_POINTER_RE`,
-# :data:`_CHECKED_AT_RE`, :data:`_COUNT_CLAIM_RE`, :data:`_SCOPED_CLAIM_RE` and
-# :data:`_RATIO_CLAIM_RE` — match tokens WITHIN a line and model no markdown
-# construct, so no block-indentation clause applies to any of them. (The
-# ``^\s*`` on :data:`_SCOPED_CLAIM_RE` anchors at the start of a twelve-character
-# tail captured mid-line, not at the start of a document line, so it is not an
-# indentation rule either.)
+# The four regexes in this block are markdown construct models, and every
+# line-wise scan that runs through this block runs against the mask
+# :func:`_fenced_mask` builds. They are grouped here, each stating which
+# CommonMark clauses it honours and which it deliberately does not, because
+# three successive review rounds found the same defect class in a different
+# clause of the same scanners: a line matcher that reads correctly in isolation
+# while parsing a document the spec author does not see rendered.
+#
+# No count of the module's regexes is stated here, deliberately. Two successive
+# enumerations were wrong in the same direction — each omitted a binding added
+# after it was written — and a corrected count would go stale the same way on the
+# next one. What matters for a reader of this block is the CommonMark contract
+# below, which is a property of each scanner rather than of how many exist. A
+# regex that models a markdown construct honours it; one that matches a token
+# within a line (there are several elsewhere in this module) models no construct,
+# so no block-indentation clause applies to it.
 #
 # Honoured by EVERY scanner in this block: CommonMark bounds block-level leading
 # indentation to 0-3 SPACES (spec sections 2.2, 4.2 and 4.5); a fourth column of
@@ -429,25 +484,32 @@ _SURFACE_JOIN = '; '
 # spec-authoring convention is column-0 ATX headings and top-level fences. The
 # failure direction is stated at each scanner it affects.
 
-#: The two section headings the corpus verbs ADDRESS, and the generic ATX
+#: The one section heading the corpus verbs ADDRESS, and the generic ATX
 #: heading that TERMINATES a section body.
+#:
+#: ``## Expected Surface`` is deliberately NOT here. Its grammar and its reader
+#: both live in ``plan-marshall:script-shared``'s :mod:`epic_spec_parser`, the
+#: marketplace's single reader of that section; this module CONSUMES that reader
+#: (see :func:`_spec_record` and :func:`_row_surface`) and carries no second
+#: model of the heading. ``CLAIM_LABELS_HEADING_RE`` stays because it parses a
+#: different section that is not relocated and retains its in-module consumer,
+#: :func:`_parse_claim_section`.
 #:
 #: Honoured: the 0-3 space indent bound; the 1-6 character ``#`` run; the rule
 #: that the run must be followed by a space, a tab, or the end of the line — so
 #: ``#hashtag`` is not a heading, a seven-``#`` run is not one, and a bare
 #: ``##`` line IS one; the optional trailing closing ``#`` sequence on the
-#: two addressed headings; and the CASE of the two addressed heading titles —
-#: both are matched case-insensitively, so ``## expected surface`` and
-#: ``## EXPECTED SURFACE`` are recognized exactly as ``## Expected Surface``
-#: is. A case variant is a spelling of the same heading, not a different
-#: section, and treating it as absent would report a confident empty section
-#: for a document that declared one.
+#: addressed heading; and the CASE of the addressed heading title — it is
+#: matched case-insensitively, so ``## claim labels`` and ``## CLAIM LABELS``
+#: are recognized exactly as ``## Claim Labels`` is. A case variant is a
+#: spelling of the same heading, not a different section, and treating it as
+#: absent would report a confident empty section for a document that declared
+#: one.
 #: NOT honoured: setext headings, per the block note above. A setext underline
 #: therefore fails to terminate a section, which OVER-extends the body rather
-#: than truncating it — the direction that admits extra paths and extra claims
-#: rather than silently dropping declared ones.
+#: than truncating it — the direction that admits extra claims rather than
+#: silently dropping declared ones.
 CLAIM_LABELS_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+Claim Labels(?:[ \t]+#+)?[ \t]*$', re.IGNORECASE)
-EXPECTED_SURFACE_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+Expected Surface(?:[ \t]+#+)?[ \t]*$', re.IGNORECASE)
 _HEADING_RE = re.compile(r'^ {0,3}#{1,6}(?:[ \t]|$)')
 
 #: A ``- `` list bullet, with its leading whitespace captured as ``indent``.
@@ -1233,24 +1295,132 @@ def _section_span(
     return (start, len(lines))
 
 
-def _expected_surface_paths(text: str) -> set[str]:
-    """Extract the file paths a spec names in its ``## Expected Surface`` section.
+def _spec_claim(path: Path, repo_root: Path) -> SpecClaim | None:
+    """Classify one spec through the single reader, or ``None`` when it declares no surface.
 
-    This is the spec-side entry point for the file-overlap collision class: a
-    staged spec carries its surface here, where a launched plan carries it in
-    ``references.json`` ``affected_files``. The extraction itself is
-    ``_cmd_sibling_collision``'s, unchanged — only the entry point differs.
+    The spec-side entry point for the file-overlap collision class and for the
+    Ordered Queue's Surface cell: a staged spec carries its surface in
+    ``## Expected Surface``, where a launched plan carries it in
+    ``references.json`` ``affected_files``.
 
-    The section body is delimited against the fence mask, so a fenced path list
-    whose first line is a ``#`` comment does not truncate the section and drop
-    every path after it. Paths INSIDE the fence still count: a fenced list is the
-    ordinary way a spec declares its surface.
+    ``None`` means the spec carries NO ``## Expected Surface`` section — a
+    distinct state from a section that resolves to no path, which comes back as
+    a ``prose`` claim. Callers keep the two apart; collapsing them is the defect
+    that made an undeclared surface read as a clean disjoint pass.
+
+    A caller that has NOT already established the file is readable folds the
+    reader's other :class:`UnclassifiableSpecError` cause into this same ``None``,
+    which is why no caller may infer ``absent`` from ``None`` alone: ``absent``
+    and ``unreadable`` are told apart by re-reading the file, as
+    :func:`_surface_state` does.
     """
-    lines = text.splitlines()
-    start, end = _section_span(lines, EXPECTED_SURFACE_HEADING_RE)
-    if start < 0:
+    try:
+        return classify_spec(path, repo_root)
+    except UnclassifiableSpecError:
+        return None
+
+
+def _claimed_paths(claim: SpecClaim | None) -> set[str]:
+    """The resolved claimed entries of one classification, as a comparable set."""
+    if claim is None:
         return set()
-    return _extract_paths('\n'.join(lines[start:end]))
+    return {entry.path for entry in claim.claimed}
+
+
+def _surface_state(path: Path, repo_root: Path) -> tuple[str, SpecClaim | None]:
+    """Classify one spec into the :data:`SURFACE_STATES` vocabulary.
+
+    Returns the state and the classification behind it, or ``None`` for the two
+    states in which the reader produced none. The two refusal causes are told
+    apart HERE — by re-reading the file — rather than folded into one, because
+    ``absent`` (a spec that declared no surface) and ``unreadable`` (a spec
+    nothing could read) are different facts about the corpus and only the first
+    is a spec-authoring gap.
+    """
+    try:
+        claim = classify_spec(path, repo_root)
+    except UnclassifiableSpecError:
+        text, _ = _read_spec(path)
+        return (SURFACE_ABSENT if text is not None else SURFACE_UNREADABLE, None)
+    return (claim.spec_class, claim)
+
+
+def cmd_corpus_surfaces(args: argparse.Namespace) -> dict[str, Any]:
+    """Publish every spec's DECLARED surface, its derivation status, and the population.
+
+    The read verb the disjointness gate decides on. It exists so that verdict is
+    a PARSER decision with a stated population rather than a reader's judgement
+    over a rendered table cell — symmetric with ``corpus verdicts``, which backs
+    the prep-ready test the same way.
+
+    Every count rides with the population it was computed over, and the class
+    tally spans the WHOLE :data:`SURFACE_STATES` vocabulary so a class no spec is
+    in publishes a stated zero (ADR-014). ``admits_disjointness_check`` is the
+    field the gate keys on: it is true ONLY for a ``declarative`` surface, so an
+    absent or unresolvable declaration is ``indeterminate`` and can never render
+    as a clean pass (ADR-019, named in the payload as
+    :data:`SURFACE_GOVERNING_AUTHORITY`).
+
+    Read-only: no spec is written, and no verdict is stamped.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug, allow_archived=True)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
+
+    repo_root = Path(cwd_checkout_root())
+    spec_paths = _spec_paths(root)
+    rows: list[dict[str, Any]] = []
+    claimed: list[dict[str, str]] = []
+    excluded: list[dict[str, str]] = []
+    unresolved: list[dict[str, str]] = []
+    tally = dict.fromkeys(SURFACE_STATES, 0)
+
+    for path in spec_paths:
+        state, claim = _surface_state(path, repo_root)
+        tally[state] += 1
+        plan_id = claim.plan_id if claim is not None else path.name
+        rows.append(
+            {
+                'plan_id': plan_id,
+                'spec': path.name,
+                'derivation_status': state,
+                'admits_disjointness_check': state not in SURFACE_INDETERMINATE_STATES,
+                'claimed_count': len(claim.claimed) if claim is not None else 0,
+                'excluded_count': len(claim.excluded) if claim is not None else 0,
+                'unresolved_count': len(claim.unresolved) if claim is not None else 0,
+                'evidence': claim.evidence if claim is not None else f'no classification: {state}',
+            }
+        )
+        if claim is None:
+            continue
+        claimed.extend({'plan_id': plan_id, 'path': e.path, 'kind': e.kind} for e in claim.claimed)
+        excluded.extend({'plan_id': plan_id, 'path': e.path, 'kind': e.kind} for e in claim.excluded)
+        unresolved.extend({'plan_id': plan_id, 'raw': raw} for raw in claim.unresolved)
+
+    indeterminate = sum(tally[state] for state in SURFACE_INDETERMINATE_STATES)
+    return {
+        'status': 'success',
+        'operation': 'corpus-surfaces',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'governing_authority': SURFACE_GOVERNING_AUTHORITY,
+        'specs_total': len(spec_paths),
+        'specs_scanned': len(rows),
+        'unreadable_count': tally[SURFACE_UNREADABLE],
+        'indeterminate_count': indeterminate,
+        'admitting_count': tally[SURFACE_DECLARATIVE],
+        'class_tally': [{'derivation_status': s, 'count': tally[s]} for s in SURFACE_STATES],
+        'specs': rows,
+        'claimed_count': len(claimed),
+        'claimed': claimed,
+        'excluded_count': len(excluded),
+        'excluded': excluded,
+        'unresolved_count': len(unresolved),
+        'unresolved': unresolved,
+    }
 
 
 def _spec_pointers(text: str) -> set[str]:
@@ -1849,15 +2019,44 @@ def _sibling_epic_roots(slug: str) -> list[Path]:
     return [roots[name] for name in sorted(roots)]
 
 
-def _spec_record(epic_slug: str, path: Path) -> dict[str, Any] | None:
-    """Build one comparable record for a spec file, or ``None`` when unreadable."""
+def _spec_record(epic_slug: str, path: Path, repo_root: Path) -> dict[str, Any] | None:
+    """Build one comparable record for a spec file, or ``None`` when unreadable.
+
+    The surface is resolved through :func:`_spec_claim` — the single reader — so
+    no consumer can resolve a DIFFERENT surface for the same spec. What each
+    consumer then PROJECTS from that one resolution is its own contract, and this
+    record's is stated below: it is the comparison population, not the resolved
+    set, and the two differ for a spec the gate does not admit.
+
+    ``derivation_status`` rides with the paths so a caller can tell an EMPTY
+    comparison from an UNCOMPARABLE one: a spec in any
+    :data:`SURFACE_INDETERMINATE_STATES` state contributes no rows to the overlap
+    matcher, and without the status its absence from the match list is
+    indistinguishable from a checked negative.
+
+    That contract is enforced HERE rather than at each consumer, so the two verbs
+    reading this record cannot disagree about one spec. ``classify_spec`` assigns
+    :data:`SURFACE_DERIVED` whenever the DERIVED token appears in the section, and
+    such a spec may still RESOLVE entries — so a consumer that decided
+    comparability from a non-empty ``paths`` set alone would count it comparable
+    while ``corpus surfaces`` reported ``admits_disjointness_check: false`` for the
+    same spec. Withholding the paths at the source makes ``paths`` mean *"the set
+    this spec contributes to the overlap matcher"* rather than *"the set it
+    resolves"*, so both verbs derive one answer from one predicate. The resolved
+    set is still reachable through ``corpus surfaces``; it is only the
+    comparison-population view that is gated.
+    """
     text, _ = _read_spec(path)
     if text is None:
         return None
+    claim = _spec_claim(path, repo_root)
+    status = claim.spec_class if claim is not None else SURFACE_ABSENT
+    admits = status not in SURFACE_INDETERMINATE_STATES
     return {
         'name': path.name,
         'pointers': _spec_pointers(text) | {_own_pointer(epic_slug, path.name)},
-        'paths': _expected_surface_paths(text),
+        'paths': _claimed_paths(claim) if admits else set(),
+        'derivation_status': status,
     }
 
 
@@ -1936,11 +2135,12 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     root = _epic_root(args.slug, allow_archived=True)
     if not root.is_dir():
         return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
+    repo_root = Path(cwd_checkout_root())
     own_paths = _spec_paths(root)
     own: list[dict[str, Any]] = []
     unreadable: list[dict[str, str]] = []
     for path in own_paths:
-        record = _spec_record(args.slug, path)
+        record = _spec_record(args.slug, path, repo_root)
         if record is None:
             unreadable.append({'spec': path.name, 'error': 'unreadable'})
         else:
@@ -1949,7 +2149,7 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     candidates: list[tuple[str, dict[str, Any]]] = []
     for sibling_root in sibling_roots:
         for path in _spec_paths(sibling_root):
-            record = _spec_record(sibling_root.name, path)
+            record = _spec_record(sibling_root.name, path, repo_root)
             if record is None:
                 unreadable.append({'spec': f'{sibling_root.name}/{path.name}', 'error': 'unreadable'})
             else:
@@ -1966,16 +2166,45 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
                 origin_matches.append(origin_row)
             if overlap_row is not None:
                 overlap_matches.append(overlap_row)
+    # The population the file-overlap class actually COMPARED. A spec in any
+    # indeterminate state declares no comparable path, so it can form no overlap
+    # row at all — and without these counts a ``file_overlap_match_count: 0``
+    # cannot state which zero it is: nothing collided, or nothing was comparable.
+    own_surfaces = [
+        {'spec': record['name'], 'derivation_status': record['derivation_status']}
+        for record in own
+    ]
+    own_tally = dict.fromkeys(SURFACE_STATES, 0)
+    for record in own:
+        own_tally[record['derivation_status']] += 1
+    # Derive the OWN unreadable count from the own population, never from the
+    # shared ``unreadable`` list: that list also accumulates every SIBLING epic's
+    # unreadable spec above, so reading its length here would inflate this epic's
+    # own tally — and ``spec_surface_states`` with it — by the sibling count.
+    # ``own_paths`` minus the records that parsed IS the own-unreadable count, and
+    # it is derived from the same population the rest of the tally counts.
+    own_unreadable_count = len(own_paths) - len(own)
+    own_tally[SURFACE_UNREADABLE] += own_unreadable_count
+    comparable = [record for record in own if record['paths']]
     return {
         'status': 'success',
         'operation': 'corpus-cross-check',
         'slug': args.slug,
         'store': ORCHESTRATOR_STORE,
+        'governing_authority': SURFACE_GOVERNING_AUTHORITY,
         'epics_scanned': len(sibling_roots),
         'plans_scanned': len(live),
         'specs_total': len(own_paths),
         'specs_scanned': len(own),
         'candidates_scanned': len(candidates),
+        # The comparison's own population, beside the counts derived from it.
+        'specs_comparable': len(comparable),
+        'specs_indeterminate': len(own_paths) - len(comparable),
+        'compared_path_count': sum(len(record['paths']) for record in own),
+        'spec_surface_states': [
+            {'derivation_status': state, 'count': own_tally[state]} for state in SURFACE_STATES
+        ],
+        'spec_surfaces': own_surfaces,
         'source_origin_match_count': len(origin_matches),
         'source_origin_matches': origin_matches,
         'file_overlap_match_count': len(overlap_matches),
@@ -2438,22 +2667,44 @@ def _queue_cell(value: str) -> str:
     return value.replace('|', r'\|').replace('\n', ' ').strip()
 
 
-def _row_surface(spec: Path | None) -> str:
+def _row_surface(spec: Path | None, repo_root: Path) -> str:
     """Resolve one row's Surface cell from its spec's ``## Expected Surface``.
 
     The Surface column is derivable — from the FILESYSTEM, not ``status.json`` —
-    so it is regenerated like the rest. Each *which zero is this* case is a named
-    marker rather than an empty cell: a missing spec, an unreadable one, and a
-    spec with no declared surface are told apart, never collapsed to blank.
+    so it is regenerated like the rest. Resolved through :func:`_spec_claim`, the
+    single reader, so this cell and ``corpus cross-check``'s collision input
+    cannot resolve a DIFFERENT surface for the same spec. They can still PROJECT
+    that one resolution differently, and for a ``derived`` spec that resolves
+    entries they do: this cell renders the resolved paths, while the collision
+    input withholds them behind :func:`_spec_record`'s admits gate. Same
+    resolution, two projections — the property the single reader buys is the
+    first, never the second.
+
+    Each *which zero is this* case is a named marker rather than an empty cell,
+    and the empty cases are told apart by the reader's own derivation class
+    rather than collapsed into one ``(no expected surface)`` string that read as
+    "collides with nothing":
+
+    * ``(spec missing)`` — the row names a spec that is not on disk.
+    * ``(spec unreadable)`` — the spec is present but could not be read.
+    * ``(no expected surface section)`` — the spec declares no such section at
+      all. This is the state a candidate is INDETERMINATE on, never disjoint.
+    * ``(prose)`` / ``(derived)`` — a section IS present; the reader resolved no
+      path entry from it, or the spec declares its surface a function of other
+      plans'. Both are stated, so a reader can tell an unresolvable declaration
+      from an absent one.
     """
     if spec is None:
         return '(spec missing)'
     text, _ = _read_spec(spec)
     if text is None:
         return '(spec unreadable)'
-    paths = sorted(_expected_surface_paths(text))
+    claim = _spec_claim(spec, repo_root)
+    if claim is None:
+        return '(no expected surface section)'
+    paths = sorted(_claimed_paths(claim))
     if not paths:
-        return '(no expected surface)'
+        return f'({claim.spec_class})'
     return _queue_cell(_SURFACE_JOIN.join(paths))
 
 
@@ -2476,13 +2727,14 @@ def _build_ordered_queue(status_doc: dict[str, Any], root: Path) -> str:
         lines.append('| — | (empty) | — | — | — |')
         return '\n'.join(lines)
     specs = _spec_paths(root)
+    repo_root = Path(cwd_checkout_root())
     for position, row in enumerate(live, start=1):
         plan_id = str(row.get('id', ''))
         spec = next((path for path in specs if plan_id and _spec_matches_row(path, plan_id)), None)
         plan_cell = _queue_cell(spec.stem if spec is not None else (plan_id or '?'))
         workstream = _queue_cell(str(row.get('workstream', '') or '?'))
         status_cell = _queue_cell(str(row.get('status', '') or '?'))
-        surface = _row_surface(spec)
+        surface = _row_surface(spec, repo_root)
         lines.append(f'| {position} | {plan_cell} | {workstream} | {status_cell} | {surface} |')
     return '\n'.join(lines)
 
@@ -2959,17 +3211,18 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 def _add_corpus_group(subparsers: Any) -> None:
     """Register the ``corpus`` verb group.
 
-    Sub-verbs: ``epics``, ``enumerate``, ``cross-check``, ``verdicts``,
-    ``set-verdict``. The first four are read-only; ``set-verdict`` is the group's
-    single write action, and the only surface in the tree that formats a
-    ``verdict:`` line. ``epics`` is the only one that takes no ``--slug``: its
-    subject is the whole store rather than one epic in it.
+    Sub-verbs: ``epics``, ``enumerate``, ``cross-check``, ``surfaces``,
+    ``verdicts``, ``set-verdict``. The first five are read-only; ``set-verdict``
+    is the group's single write action, and the only surface in the tree that
+    formats a ``verdict:`` line. ``epics`` is the only one that takes no
+    ``--slug``: its subject is the whole store rather than one epic in it.
     """
     corpus = subparsers.add_parser(
         'corpus',
         help=(
             "Epic spec corpus: enumerate the epic population, reconcile the queue "
-            'against the plans/ specs in both directions, and read or stamp the '
+            'against the plans/ specs in both directions, publish every spec\'s '
+            'declared surface and derivation status, and read or stamp the '
             're-grounding verdict field.'
         ),
         allow_abbrev=False,
@@ -3008,6 +3261,18 @@ def _add_corpus_group(subparsers: Any) -> None:
     )
     _add_slug_arg(cross_check)
     cross_check.set_defaults(handler=cmd_corpus_cross_check)
+
+    surfaces = actions.add_parser(
+        'surfaces',
+        help=(
+            "Publish every spec's declared Expected Surface, its derivation status "
+            'and the population, so the disjointness gate is a parser decision '
+            '(read-only).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(surfaces)
+    surfaces.set_defaults(handler=cmd_corpus_surfaces)
 
     verdicts = actions.add_parser(
         'verdicts',

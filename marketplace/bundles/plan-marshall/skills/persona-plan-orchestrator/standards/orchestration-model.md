@@ -214,6 +214,37 @@ An **unsettled `unreadable` section is both reported and blocking**: it contribu
 
 Plans are parallelized by **surface disjointness, never by count**: two plans may run concurrently exactly when their touched file/module surfaces do not overlap. The orchestrator records each staged plan's expected surface in its spec and checks disjointness before emitting a second command while another plan is in flight. Disjointness is necessary but not sufficient: the number of plans that may be in flight at once is bounded by `parallelization_scope`, an epic-level knob the operator sets once at orchestration start (the `init` verb) and which defaults to `1` — strictly sequential — when unset. With `N` the knob and `R` the currently-launched count, the orchestrator selects up to `N − R` disjoint, prep-ready candidates and **EMITS** their commands; it launches none of them, so the emit-only hand-off rule is unchanged by the queue-fill. Overlapping plans are sequenced, not throttled — the knob caps concurrency, disjointness decides eligibility, and a slot is left unfilled rather than filled with a colliding or unprepared plan. When a landing analysis reveals that two supposedly disjoint plans collided (rebase conflicts, re-verify signals), the reconciliation records the overlap so the next pairing decision uses it.
 
+### The gate's reading contract
+
+The gate's input is a spec's `## Expected Surface`, and it is resolved through **exactly one reader**: `plan-marshall:script-shared`'s `epic_spec_parser`. Every consumer goes through it — the Ordered Queue's `Surface (expected)` cell, `corpus cross-check`'s file-overlap class, `corpus surfaces`, and `pm-plugin-development:tools-epic-surface-partition` — so two consumers cannot resolve different surfaces for the same spec. ⛔ **A second reader of that section is the defect, not an optimisation**: the gate previously read a weaker parse that resolved named files only, so a spec declaring a directory, a recursive glob, an exclusion, or an entry relative to one named earlier in the same bullet contributed ZERO paths and the gate passed it as colliding with nothing.
+
+The reader assigns each spec exactly one **derivation status**, and only one of them can substantiate a disjointness verdict:
+
+| Derivation status | Meaning | Admits a disjointness check |
+|---|---|---|
+| `declarative` | the section resolves to at least one path entry | **yes** |
+| `derived` | the section declares its surface a function of other plans' | no |
+| `prose` | a section is present but resolves to no path entry | no |
+| `absent` | the spec carries no `## Expected Surface` section | no |
+| `unreadable` | the spec could not be read at all | no |
+
+⛔ **An absent or unresolvable declaration is `indeterminate`, never `disjoint`.** A spec in any non-`declarative` status contributes no row to the overlap matcher, so the machine reports no collision against it and that SILENCE is indistinguishable from a checked negative. Such a candidate is sequenced with a shortfall reason naming its status; it is never emitted on the strength of a comparison that had nothing to compare. **A plan the gate cannot see is a plan the gate cannot serialize.** Governing authority: **ADR-019** (*An audit separates what it could not evaluate from what it evaluated and found wanting*). `absent` and `unreadable` are reported apart because they are different facts and only the first is a spec-authoring gap.
+
+The verdict is read from `corpus surfaces`, which publishes the per-spec status, the counts, and the population each was computed over — so a `file_overlap_match_count: 0` states which zero it is.
+
+### What the gate can and cannot promise
+
+The declared surface is a **spec-authored** quantity, so the gate's precision is bounded by how well specs declare. Measured across this corpus, the residual error falls into durable classes rather than a single accuracy number, and both directions co-occur — a gate wrong in one direction is conservative or permissive, while one wrong in **both** is uninformative:
+
+| Residual class | What it costs | Magnitude measured over the corpus |
+|---|---|---|
+| **Under-declaration** — the plan touches files the spec never declared | Admits plans that genuinely collide — the failure the gate exists to prevent | The dominant class by roughly an order of magnitude: about two thirds of the files a landing touched were never declared |
+| **Over-declaration** — the spec declares paths the plan never touched | Serializes siblings behind files the plan never used — lost throughput, not unsafety | About a quarter of declared entries were never realized |
+| **Unresolvable declaration** — the section resolves to no comparable path | The candidate is `indeterminate` and sequenced; the gate reports rather than guesses | About a quarter of specs, all of them `prose` |
+| **Mechanical sweep** — version-stamp-class edits of a few lines | Excluded from the realized side, because it would swamp every other class | Excluded and counted, never silently dropped |
+
+Two consequences follow, and both are properties of the design rather than warnings about it. First, **a `disjoint` verdict is a statement about DECLARED surfaces**, not about what the plans will touch — it is sound exactly to the degree the specs are honest, which is why a fold that adds scope must update the declaration in the same act. Second, the realized side is reconciled by the plan lifecycle against worktree git state, on a different artifact in a different store; the two meet only at the comparison between them, and neither owns the other.
+
 ### `auto_emit` — opt-in autonomy for the post-landing queue-fill
 
 `orchestrator.auto_emit` (top-level marshal.json config; type `bool`, default `false`) is the orchestrator-tier analog of the plan-tier autonomy family (`finalize_without_asking` / `loop_back_without_asking` / `auto_merge_after_ci`). It governs the `launched`-recording behaviour of the `N − R` queue-fill emit above, and **nothing else about candidate selection**: the disjointness, prep-readiness, and `N − R` slot-count guards decide eligibility identically under either knob value.

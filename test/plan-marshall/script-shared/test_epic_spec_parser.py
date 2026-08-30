@@ -1,29 +1,37 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the epic-spec parser — entry-shape resolution and the three-class verdict.
+
+Subject: ``plan-marshall:script-shared``'s ``epic_spec_parser``, the marketplace's
+SINGLE reader of the ``## Expected Surface`` grammar. Both the orchestrator's
+disjointness gate and ``pm-plugin-development:tools-epic-surface-partition``
+consume it, so its coverage lives with the module rather than with either
+consumer.
 
 Markdown-notation tolerance — code-block masking, label prefixes, heading
 spelling — is the sibling cluster, in ``test_epic_spec_parser_notation.py``.
-Both drive the underscore-prefixed helper directly by inserting the scripts dir
-on ``sys.path`` (the canonical scaffolding pattern), and build every corpus
-under ``tmp_path``: the real orchestrator store is neither read nor written.
+Every corpus is built under ``tmp_path``: the real orchestrator store is neither
+read nor written.
 """
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
 
-from conftest import get_scripts_dir
+from conftest import load_script_module
 
-SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'tools-epic-surface-partition')
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
+#: The subject, addressed by three module-level string constants so the loader
+#: call stays statically resolvable to ``test_conftest_loader_contract``'s walker.
+#: ``register=False`` because only the returned module is needed here, and the
+#: stem ``epic_spec_parser`` is imported plainly by the partition suites —
+#: publishing under it would displace theirs and trip the collision guard.
+_BUNDLE = 'plan-marshall'
+_SKILL = 'script-shared'
+_SCRIPT = 'epic_spec_parser.py'
 
-import _epic_spec_parser as spec_parser  # noqa: E402
+spec_parser = load_script_module(_BUNDLE, _SKILL, _SCRIPT, register=False)
 
 
 # --- scaffolding -------------------------------------------------------------
@@ -353,19 +361,6 @@ def test_non_spec_files_are_not_enumerated(repo: Path, plans: Path) -> None:
 
 def test_empty_corpus_yields_no_claims(repo: Path, plans: Path) -> None:
     assert spec_parser.classify_corpus(plans, repo) == []
-
-
-@pytest.mark.parametrize(
-    ('name', 'expected'),
-    [
-        ('PLAN-140.md', 'PLAN-140'),
-        ('PLAN-9.md', 'PLAN-9'),
-        ('README.md', 'README.md'),
-    ],
-    ids=['numbered', 'single_digit', 'not_a_spec'],
-)
-def test_plan_id_is_read_from_the_spec_filename(name: str, expected: str) -> None:
-    assert spec_parser.plan_id_of(name) == expected
 
 
 def test_classification_writes_nothing_to_the_corpus(repo: Path, plans: Path) -> None:

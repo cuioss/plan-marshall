@@ -157,7 +157,7 @@ Read `complete` and `missing_keys` from the TOON. A `landing` message carries a 
    `queue --set-row` is THE stamping mechanism. The whole-array `manage-status update-field --field plans` rewrite is reserved for `decompose`'s bulk queue seed (see [`decompose.md`](decompose.md)) and MUST NOT be used to stamp a landing — re-serializing every row to change one cell is the lost-update path `--set-row` exists to remove. Editing `status.json` by direct file access is prohibited outright (see the skill's Enforcement block).
 
 4. Reconcile `epic.md` from status.json: the Ordered Queue table is a GENERATED block regenerated in Step 6 (⛔ **never hand-edit the rows between its markers**), so here you move the *narrative* sections the generator does not own — retire queue items the landing folded in (with a decision naming what absorbed them), move resolved Open Defects out, retire satisfied Watches, add new defects/watches the landing surfaced, and record any per-row sequencing caveat in the `### Queue annotations` zone.
-5. Check parallelization consequences: when the landing revealed that two supposedly disjoint plans collided (rebase conflicts, re-verify signals), record the overlap so the next `next`-verb pairing decision uses it.
+5. Check parallelization consequences: when the landing revealed that two supposedly disjoint plans collided (rebase conflicts, re-verify signals), record the overlap so the next `next`-verb pairing decision uses it. ⛔ **A collision the gate did not predict is evidence a DECLARED surface was wrong**, not merely a pairing to remember: correct the under-declaring spec's `## Expected Surface` under the same same-act rule the Step 5b **Fold** disposition carries (see [§ A fold that adds scope updates the declared surface in the same act](#a-fold-that-adds-scope-updates-the-declared-surface-in-the-same-act)). Recording the overlap while leaving the declaration wrong leaves the gate to mis-predict the same pair again.
 6. Regenerate both derivable blocks — the START-HERE block AND the Ordered Queue table — and paste each verbatim between its own markers (`resume-summary` and `ordered-queue`):
 
    ```bash
@@ -181,7 +181,7 @@ Applies to each `lifecycle: live` `kind: candidate-lesson` message, and to each 
 | Disposition | Action |
 |-------------|--------|
 | **Promote** (`candidate-lesson` only) | Lift the payload into the global lessons corpus via the path-allocate flow — `manage-lessons add` to allocate, then `manage-lessons set-body` with the body staged to a file by the Write tool (see `manage-lessons` Canonical invocations → `add` and → `set-body`). The `candidate-lesson` payload already carries the corpus body shape, so no transcoding is needed. A `kind: finding` payload does NOT carry that shape, so `Promote` is never a valid disposition for it. |
-| **Fold** | Fold the signal into an existing staged `plans/PLAN-NN-{plan_slug}.md` spec. |
+| **Fold** | Fold the signal into an existing staged `plans/PLAN-NN-{plan_slug}.md` spec. ⛔ **A fold that adds a file or module surface updates that spec's `## Expected Surface` in the SAME edit** — or the decision line records why the fold added no surface. See the same-act obligation below. |
 | **Stage** | Stage a NEW spec plus its queue entry, via the [`decompose.md`](decompose.md) Step 5 queue-write shape. |
 | **Discard** | The signal is already shipped, refuted, or out of the epic's scope — no corpus entry, no spec, no queue item. |
 
@@ -195,6 +195,35 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging deci
 This mirrors the per-lesson disposition obligation [`lessons-handling.md`](lessons-handling.md) Step 3 already carries — no message leaves the drain without one.
 
 **Apply the same dedup discipline.** A recurrence of an already-tracked signal FOLDS into the existing item (spec, queue entry, defect, watch, or corpus lesson) and never creates a duplicate. Recurrence is itself information: record it on the existing item rather than as a second one.
+
+#### A fold that adds scope updates the declared surface in the same act
+
+⛔ **This step is one of the TWO writers of post-staging scope, and it is the one that used to be invisible.** The other is the plan itself during execute. A fold appends narrative naming new files while leaving `## Expected Surface` untouched, so the spec's real footprint grows and its DECLARATION does not — and because the disjointness gate reads that declaration, the gate's error grows monotonically with epic age. Folds are steady-state behaviour in a maturing corpus, not an occasional event, so every drain widens real surfaces and none widens declared ones unless this obligation is honoured.
+
+The **Fold** disposition therefore carries a same-act obligation, discharged in exactly one of two ways:
+
+- **The fold adds a file or module surface** → update that spec's `## Expected Surface` in the SAME edit that appends the narrative. Not a follow-up, not a later pass: a fold whose declaration lands separately is a window in which the gate reads a surface that is already known to be wrong.
+- **The fold adds no surface** → say so in the decision line. A fold that genuinely widens nothing (a sharpened rationale, a corrected count, a recurrence note) owes no surface edit, and recording that explicitly is what separates it from a fold that simply forgot.
+
+The existing two-sided auditable-record rule carries this without a second mechanism: the decision line already names the message and the disposition, so it names the surface outcome alongside them.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging decision \
+  --plan-id {slug} --level INFO --message "inbox {message_name}: folded into PLAN-NN — {rationale}; expected surface {updated: +N entries | unchanged: adds no file surface}" --store orchestrator
+```
+
+⚠ **A collision recorded at Step 4 item 5 is evidence a declared surface was wrong.** When the parallelization-consequence reconciliation there surfaces an overlap the gate did not predict, the spec whose surface under-declared it is corrected under this same rule rather than noted and left.
+
+**Verify rather than assume.** After a fold that updated a surface, the spec's new declaration is readable from the parser, not from the edit:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator corpus surfaces \
+  --slug {slug}
+```
+
+A folded spec whose row reports a `claimed_count` that does not reflect the added surface has not discharged the obligation, whatever the narrative says.
+
+**One carve-out, and it is [`cleanup.md`](cleanup.md)'s, not a second rule.** A spec whose surface genuinely IS a function of other plans' stays `derived` — an indeterminate status — and that declaration is permitted to stand, so a `derivation_status` in the indeterminate set is NOT by itself an undischarged obligation. Requiring the fold to convert such a spec to `declarative` would demand a declaration the spec cannot honestly make, and the gate is already safe without it: an indeterminate candidate is SEQUENCED rather than passed. What the fold owes in that case is the same thing cleanup.md asks for — say so explicitly in the decision line, recording that the spec is deliberately unpickable until those plans land. An unrecorded `derived` fold is undischarged; a recorded one is not.
 
 ### Step 6: Log and set the resume anchor
 
