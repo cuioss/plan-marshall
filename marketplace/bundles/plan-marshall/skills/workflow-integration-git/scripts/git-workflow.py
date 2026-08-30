@@ -848,13 +848,35 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
 
 
 def cmd_detect_artifacts(args):
-    """Handle detect-artifacts subcommand."""
+    """Handle detect-artifacts subcommand.
+
+    An indeterminate ignore set under default flags is an ERROR, not a result.
+    The output contract tells every caller to branch on ``status``, so returning
+    ``status: 'success'`` carrying ``gitignore_resolved: False`` made a scan
+    whose ignore oracle could not be read at all indistinguishable from one that
+    genuinely resolved a clean tree. The gate is on the ignore oracle ONLY —
+    ``tracked_resolved`` keeps its existing degradation, in which ``safe`` is
+    empty by construction and every match is routed to ``uncertain``.
+
+    ``--no-gitignore`` is the supported way to scan a tree with no readable
+    ignore set, and it is safe because the plan-state exclusion
+    (:func:`_is_plan_state`) does not depend on the ignore mechanism.
+    """
     root = Path(args.root) if args.root else Path.cwd()
 
     if not root.is_dir():
         return make_error(f'Directory not found: {root}', code=ErrorCode.NOT_FOUND)
 
-    result = scan_artifacts(root, respect_gitignore=not args.no_gitignore)
+    respect_gitignore = not args.no_gitignore
+    result = scan_artifacts(root, respect_gitignore=respect_gitignore)
+    if respect_gitignore and not result['gitignore_resolved']:
+        return make_error(
+            'Ignore set could not be determined for the scan root; refusing to '
+            'report artifacts. Pass --no-gitignore to scan a tree with no '
+            'readable ignore set.',
+            code=ErrorCode.FETCH_FAILURE,
+            root=str(root),
+        )
     result['root'] = str(root)
     result['status'] = 'success'
     return result
@@ -2743,7 +2765,12 @@ Examples:
                     {
                         'flags': ['--no-gitignore'],
                         'action': 'store_true',
-                        'help': 'Include gitignored files in results',
+                        'help': (
+                            'Include gitignored files in results, and scan a tree whose '
+                            'ignore set cannot be read (under default flags that is an '
+                            'error, not a result). The nested git repository/worktree '
+                            'skip is unconditional and unaffected by this flag.'
+                        ),
                     },
                 ],
             },

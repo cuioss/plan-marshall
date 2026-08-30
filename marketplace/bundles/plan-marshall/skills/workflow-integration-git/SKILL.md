@@ -99,6 +99,10 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 
 The script returns `safe` (auto-deletable) and `uncertain` (needs confirmation) lists. Pattern definitions are in `standards/artifact-patterns.json`. The script respects `.gitignore` by default — gitignored files, and every path beneath a gitignored directory, are excluded since they cannot be accidentally committed. A **nested** git repository or worktree below the scan root (a submodule, or a running plan's worktree encountered while scanning the surrounding repository) is never traversed — its contents are a separate checkout, are not committable here, and so never appear in `safe` or `uncertain`. A path whose **first segment** is the plan-state directory (`.plan/`) is excluded **unconditionally** — before, and independent of, the ignore lookup. That exclusion is what keeps a plan's finalize from offering the run's own live artifacts (its in-flight `logs/work.log` and build caches) for deletion when the plan's worktree is itself the scan root, which is the normal phase-5-onward state. It is stated as unconditional rather than credited to `.gitignore` because each of `--no-gitignore`, a `.gitignore` carrying no `.plan` rule, and an empty-but-successful ignore set defeats an ignore-based exclusion. When that worktree is nested *beneath* the scan root the never-traversed rule above covers it instead. Tracked files never appear in `safe`; they are always routed to `uncertain` so the caller must confirm before deletion. For safe artifacts, delete them. For uncertain artifacts, ask user via `AskUserQuestion`.
 
+**An ignore set that cannot be determined is an error, not a result.** Under default flags, when the ignore oracle cannot be read at all the verb returns `status: error` (`error_code: FETCH_FAILURE`, carrying the scan `root`) and offers nothing — no `safe` list. The output contract tells every caller to branch on `status`, so a success payload carrying `gitignore_resolved: false` would be indistinguishable from a scan that genuinely resolved a clean tree. `--no-gitignore` is the supported way to scan a tree that has no readable ignore set (a non-repo root), and it is safe to do so because the plan-state exclusion above is unconditional and does not depend on the ignore mechanism. One consequence is worth stating rather than leaving to be discovered: on a `detect-artifacts` **success** payload `gitignore_resolved` can now only ever be `true`.
+
+`tracked_resolved` is different and **does still degrade**. When it is `false` the trackedness oracle could not be read, `safe` is empty by construction, and every match is routed to `uncertain`. A caller must not read that empty `safe` as "nothing to clean" — it means "nothing could be established as safe".
+
 **Step 4: Generate Commit Message**
 
 If custom message provided:
@@ -282,7 +286,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 
 **Parameters**:
 - `--root`: Root directory to scan (default: current working directory)
-- `--no-gitignore`: Include gitignored files in results (default: respect .gitignore)
+- `--no-gitignore`: Include gitignored files in results (default: respect .gitignore), and scan a tree whose ignore set cannot be read — under default flags that is an error, not a result (see § "Clean Artifacts"). The **nested git repository/worktree skip is unconditional** and is unaffected by this flag: those contents belong to a separate checkout either way.
 
 **Output** (TOON):
 ```toon

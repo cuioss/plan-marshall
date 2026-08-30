@@ -1100,6 +1100,77 @@ class TestDetectArtifactsLivePlanArtifacts:
         )
 
 
+class TestDetectArtifactsIndeterminateIgnoreSet:
+    """Under default flags, an ignore set that cannot be read is an error, not a result.
+
+    ``cmd_detect_artifacts`` used to return ``status: 'success'`` carrying
+    ``gitignore_resolved: False`` on this input. The output contract tells every
+    caller to branch on ``status``, so that payload was indistinguishable from a
+    scan that genuinely resolved a clean tree.
+
+    The failure is driven at the ``_observe_z`` seam — the lowest one that still
+    lets the real ``get_gitignored_files`` run and return its documented ``None``
+    with no exception escaping. Only the ``--ignored`` observation is failed, so
+    the trackedness oracle stays real and the error is attributable to the ignore
+    oracle alone.
+    """
+
+    @staticmethod
+    def _repo_with_one_gitignored_artifact(root: Path) -> None:
+        _git_init_with_identity(root)
+        (root / '.gitignore').write_text('*.class\n')
+        subprocess.run(['git', 'add', '.gitignore'], cwd=root, capture_output=True)
+        subprocess.run(['git', 'commit', '-m', 'init'], cwd=root, capture_output=True)
+        _create_file(root, 'src/Example.class')
+
+    @staticmethod
+    def _fail_only_the_ignore_query(monkeypatch: pytest.MonkeyPatch) -> None:
+        real_observe = git_workflow._observe_z
+
+        def _observe(tree, git_args):
+            if '--ignored' in git_args:
+                return None
+            return real_observe(tree, git_args)
+
+        monkeypatch.setattr(git_workflow, '_observe_z', _observe)
+
+    def test_default_flags_error_when_ignore_set_indeterminate(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Default flags -> ``status: error`` naming the root, and no ``safe`` list."""
+        self._repo_with_one_gitignored_artifact(tmp_path)
+        self._fail_only_the_ignore_query(monkeypatch)
+
+        result = cmd_detect_artifacts(Namespace(root=str(tmp_path), no_gitignore=False))
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == git_workflow.ErrorCode.FETCH_FAILURE
+        assert result['root'] == str(tmp_path)
+        assert 'safe' not in result, (
+            f'an errored scan still offered artifacts for deletion: {result}'
+        )
+
+    def test_no_gitignore_still_succeeds_on_the_same_tree(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """``--no-gitignore`` is the documented path for a tree with no readable ignore set.
+
+        Matched positive control for the error above: the same tree and the same
+        failed observation still produce a usable result when the caller opts out
+        of the ignore oracle, so the error is the flag's consequence rather than
+        the tree being unscannable.
+        """
+        self._repo_with_one_gitignored_artifact(tmp_path)
+        self._fail_only_the_ignore_query(monkeypatch)
+
+        result = cmd_detect_artifacts(Namespace(root=str(tmp_path), no_gitignore=True))
+
+        assert result['status'] == 'success'
+        assert any('.class' in f for f in result['safe']), (
+            f'--no-gitignore should still offer the gitignored artifact: {result["safe"]}'
+        )
+
+
 class TestScanRootPlanStateExclusion:
     """The scan ROOT's own plan state is excluded independent of every ignore mechanism.
 
