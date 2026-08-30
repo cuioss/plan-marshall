@@ -663,11 +663,19 @@ def evaluate_channel_completeness(
     by). ``confidence`` is the audit's own trust in its dispatch-discipline
     verdicts:
 
-    - ``not_evaluated`` — every input is zero. Nothing was measured, so no verdict
-      about the channel can be substantiated. This grade exists because its
-      absence let a log-less plan — no work log, no manifest, no status.json —
-      grade ``nominal``, which is an evaluated-clean verdict over an empty
-      evaluation. It carries a ``reason``.
+    - ``not_evaluated`` — every FINALIZE-SCOPED input is zero. Nothing was
+      measured, so no verdict about the channel can be substantiated. This grade
+      exists because its absence let a log-less plan — no work log, no manifest,
+      no status.json — grade ``nominal``, which is an evaluated-clean verdict over
+      an empty evaluation. It carries a ``reason``.
+      ⛔ ``all_caller_dispatch_line_count`` is deliberately NOT a term in this
+      predicate. It is taken over a SUPERSET of the population the other three are
+      taken over, so ANDing it on could only ever narrow the guard, never widen it:
+      a plan carrying phase-5 ``[DISPATCH]`` lines, no ``[STEP] Completed`` line and
+      no token-proven finalize dispatch has all three finalize inputs at zero and a
+      non-zero all-caller total, and would fall past this guard — and past ``none``
+      and both ``low`` branches, which each require a completion or a proven
+      dispatch — to ``nominal`` over an entirely empty finalize evaluation.
     - ``none``   — no finalize ``[DISPATCH]`` lines at all despite completions or
       token-proven dispatches: the audit saw zero dispatch evidence where it
       expected some, so any dispatch-discipline verdict it renders is
@@ -688,15 +696,18 @@ def evaluate_channel_completeness(
         dispatch_line_count == 0
         and completion_count == 0
         and dispatched_step_count == 0
-        and all_caller_dispatch_line_count == 0
     ):
         confidence = 'not_evaluated'
         reason = (
-            'no [DISPATCH] lines, no [STEP] Completed lines and no token-proven '
-            'dispatched finalize steps — every input to the channel grade is empty, '
-            'so nothing was evaluated. This is `not_evaluated`, NOT `nominal`: a '
-            'nominal grade over an empty evaluation is an unsubstantiated clean '
-            'verdict.'
+            'no finalize [DISPATCH] lines, no [STEP] Completed lines and no '
+            'token-proven dispatched finalize steps — every FINALIZE-SCOPED input to '
+            'the channel grade is empty, so nothing was evaluated. This is '
+            '`not_evaluated`, NOT `nominal`: a nominal grade over an empty evaluation '
+            'is an unsubstantiated clean verdict. The all-caller line total is '
+            'reported beside this grade and is deliberately NOT a term in it — it is '
+            'taken over a superset population, so requiring it to be zero could only '
+            'narrow the guard and would let a plan with phase-5 dispatch lines and an '
+            'empty finalize evaluation fall through to `nominal`.'
         )
     elif dispatch_line_count == 0 and (completion_count > 0 or dispatched_step_count > 0):
         confidence = 'none'

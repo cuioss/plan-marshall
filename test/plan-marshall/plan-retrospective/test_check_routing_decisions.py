@@ -374,6 +374,34 @@ class TestManifestAbsent:
         assert result['manifest_present'] is False
         assert result['checks'] == []
 
+    def test_skipped_summary_carries_the_whole_bucket_vocabulary(self, tmp_path):
+        """⛔ The manifest-absent summary must be DERIVED, not a restated literal.
+
+        This return path shipped a hardcoded ``{'passed', 'failed', 'skipped'}``
+        with no ``inconclusive`` key, while
+        ``references/routing-decision-verification.md`` advertises a four-bucket
+        completeness contract that invites a consumer to read
+        ``summary['inconclusive']``. Sum closure still held — ``checks`` is empty —
+        so nothing downstream failed; every archived plan predating
+        ``execution.toon`` simply handed such a consumer a missing key.
+
+        The expectation is derived from ``_STATUS_BUCKETS``, the one authoritative
+        definition, so a bucket added or renamed there moves this assertion with
+        it and the literal cannot drift back in unnoticed.
+        """
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        result = _crd.cmd_run(_run_args(plan_dir, None))
+
+        assert result['summary'] == dict.fromkeys(_crd._STATUS_BUCKETS.values(), 0), (
+            'the manifest-absent summary must seed every bucket the status map '
+            'defines; a three-key literal omits `inconclusive` and a consumer '
+            f'reading it finds no key. Got {result["summary"]!r}'
+        )
+        # The bucket this path used to omit, named explicitly so the guard states
+        # which absence it is standing against rather than only comparing dicts.
+        assert 'inconclusive' in result['summary']
+
 
 class TestExecutionLogPopulation:
     """The mirrored ledger population is held to its writer, not to prose."""

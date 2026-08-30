@@ -822,7 +822,16 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             'manifest_present': False,
             'reason': f'{MANIFEST_FILENAME} not found',
             'checks': [],
-            'summary': {'passed': 0, 'failed': 0, 'skipped': 0},
+            # DERIVED from the one bucket definition (``_STATUS_BUCKETS``, via
+            # ``summarize_checks``) rather than restated as a literal. The literal
+            # it replaces carried three keys and omitted ``inconclusive``, so every
+            # archived plan predating ``execution.toon`` handed a consumer reading
+            # ``summary['inconclusive']`` — which the four-bucket completeness
+            # contract in ``references/routing-decision-verification.md`` invites —
+            # a missing key. Sum closure held only because ``checks`` is empty.
+            # Same construction as the sibling ``check-manifest-consistency.py``
+            # skipped return, so the vocabulary here cannot drift from its source.
+            'summary': summarize_checks([]),
         }
 
     metadata = load_status_metadata(plan_dir)

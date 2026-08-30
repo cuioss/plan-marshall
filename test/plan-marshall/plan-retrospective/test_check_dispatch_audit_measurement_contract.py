@@ -18,6 +18,7 @@ per-role delta, and the ``(role, workflow)`` dispatch dedup.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -39,6 +40,18 @@ SCRIPT_PATH = (
 _TS = '2026-04-17T11:00:00Z'
 
 _FINALIZE_CALLER = 'plan-marshall:phase-6-finalize'
+
+# Every ``confidence = '<name>'`` assignment in the script, matched with an
+# UNBOUNDED name group. The group is deliberately not an alternation over the
+# grades below: a pattern that can only match names already known cannot report
+# a grade that is not among them, which is the whole failure this guard exists
+# to catch.
+_CONFIDENCE_ASSIGNMENT_RE = re.compile(r"confidence = '([a-z_]+)'")
+
+# The grades THIS module stages a fixture for. A literal is correct here because
+# the literal IS the assertion — this is the module's own coverage claim, and
+# deriving it from the script would make the comparison below `script == script`.
+_COVERED_GRADES = {'not_evaluated', 'none', 'low', 'nominal'}
 
 
 def _dispatch_line(
@@ -300,6 +313,66 @@ def test_confidence_not_evaluated_when_every_input_is_empty(tmp_path, monkeypatc
 
     assert channel['confidence'] == 'not_evaluated'
     assert channel['reason']
+    # Pins the fixture as the ALL-ZERO one, so the guard below — same three
+    # finalize inputs, non-zero all-caller total — is a genuinely different state
+    # and not a restatement of this one.
+    assert int(channel['all_caller_dispatch_line_count']) == 0
+
+
+def test_phase_5_dispatch_lines_do_not_rescue_an_empty_finalize_evaluation(
+    tmp_path, monkeypatch
+):
+    """⛔ The killing fixture: all-caller > 0 with every FINALIZE input at zero.
+
+    This is the state the fourth grade exists for, and the state a fourth
+    predicate term — ``and all_caller_dispatch_line_count == 0`` — silently
+    excluded from it. ``all_caller`` is taken over a SUPERSET of the population
+    the other three are taken over, so ANDing it on could only ever narrow the
+    guard, never widen it.
+
+    Walk the fall-through the extra term opened: the guard misses because
+    all-caller is 2; ``none`` needs a completion or a proven dispatch and has
+    neither; both ``low`` branches need a proven dispatch or a ratio, and
+    ``dispatched_step_count`` is 0 with ``ratio`` ``None``. Execution reaches the
+    ``else`` and grades ``nominal`` — an evaluated-clean verdict over an entirely
+    empty finalize evaluation.
+
+    The matched negative control is
+    ``test_confidence_none_when_finalize_lines_absent_despite_a_proven_dispatch``:
+    same non-zero all-caller total, but ONE token-proven finalize dispatch, and
+    the grade must move off ``not_evaluated``. Without it this guard would be
+    equally satisfied by a predicate that graded ``not_evaluated`` unconditionally.
+    """
+    plan_id = _write_plan(
+        tmp_path,
+        monkeypatch,
+        plan_id='grade-not-evaluated-despite-phase-5-lines',
+        work_lines=[
+            _dispatch_line('phase-5-execute', caller='plan-marshall:phase-5-execute'),
+            _dispatch_line(
+                'verification-feedback', caller='plan-marshall:phase-5-execute'
+            ),
+        ],
+        phase_steps={},
+    )
+    channel = _run(plan_id)['channel_completeness']
+
+    # The divergence that makes this fixture the one the defect needed.
+    assert int(channel['all_caller_dispatch_line_count']) == 2
+    assert int(channel['dispatch_line_count']) == 0
+    assert int(channel['completion_count']) == 0
+    assert int(channel['dispatched_step_count']) == 0
+    # ``ratio`` is None by construction here (no completions to divide by), which
+    # is why neither ``low`` branch can fire — asserted through its input rather
+    # than through the serialized null it renders as.
+
+    assert channel['confidence'] == 'not_evaluated', (
+        'every finalize-scoped input is zero, so nothing about the finalize '
+        'channel was evaluated; a non-zero all-caller total is a REPORTED figure '
+        'over a superset population and must not be a term in the guard — with it '
+        f'this fixture falls through to `nominal`. Got {channel["confidence"]!r}'
+    )
+    assert channel['reason']
 
 
 def test_confidence_none_when_finalize_lines_absent_despite_a_proven_dispatch(
@@ -400,21 +473,33 @@ def test_confidence_nominal_when_the_channel_is_covered(tmp_path, monkeypatch):
     assert 'reason' not in channel
 
 
-def test_the_four_confidence_grades_are_covered_by_this_module():
-    """Population guard: the grade vocabulary and the fixtures above agree.
+def test_the_confidence_grades_the_script_emits_are_the_ones_declared_covered():
+    """Population guard: the grades the script ASSIGNS equal the declared covered set.
 
-    Derived from the script's own branch set rather than asserted as a literal
-    count, so a fifth grade added later fails HERE — where the omission is
-    fixable — instead of silently leaving one branch untested.
+    The emitted side is DERIVED — an unbounded scan of the script for every
+    ``confidence = '<name>'`` assignment. The predecessor built it as a
+    comprehension over the literal covered set, which made it a subset of that
+    set by construction: a fifth grade in the script was invisible to it, and a
+    renamed grade read as a plain deletion. Scanning for whatever the script
+    actually assigns is what makes BOTH a new grade and a renamed one fail here.
+
+    What this proves is the vocabulary agreement only. It does NOT read the
+    fixtures above and so does not establish that each declared grade is
+    actually exercised by one; ``_COVERED_GRADES`` is a maintained declaration,
+    not a measurement of this module.
     """
     source = SCRIPT_PATH.read_text(encoding='utf-8')
-    grades = {'not_evaluated', 'none', 'low', 'nominal'}
-    emitted = {
-        grade for grade in grades if f"confidence = '{grade}'" in source
-    }
-    assert emitted == grades, (
-        'check-dispatch-audit no longer emits exactly the four grades this module '
-        f'covers; emitted={sorted(emitted)}, covered={sorted(grades)}'
+    emitted = set(_CONFIDENCE_ASSIGNMENT_RE.findall(source))
+
+    assert emitted, (
+        'no `confidence = ...` assignment matched in check-dispatch-audit.py, so '
+        'the population this guard compares against is EMPTY and the comparison '
+        'below would prove nothing — the scan, not the script, is what broke'
+    )
+    assert emitted == _COVERED_GRADES, (
+        'check-dispatch-audit no longer emits exactly the grades this module '
+        f'declares it covers; emitted={sorted(emitted)}, '
+        f'covered={sorted(_COVERED_GRADES)}'
     )
 
 
