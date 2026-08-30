@@ -33,7 +33,9 @@ from pathlib import Path
 
 from conftest import load_script_module
 from _plugin_doctor_fixtures import (
+    documented_verb_drift_entry_script,
     documented_verb_drift_files,
+    documented_verb_drift_script,
     documented_verb_drift_skill_md,
 )
 
@@ -93,6 +95,77 @@ def _detail(findings: list[dict], finding_type: str, key: str):
 # ---------------------------------------------------------------------------
 # (a) Positive — each drift direction
 # ---------------------------------------------------------------------------
+
+
+def test_a_script_with_no_fenced_invocation_at_all_still_fires(tmp_path):
+    """⛔ The killing fixture: an entry script the docs never mention.
+
+    The candidate set used to be built from the notations occurring in fenced
+    documentation, so a skill containing a CLI script with NO fenced invocation
+    created no entry, never reached ``derive_registered_verbs``, and the rule
+    returned CLEAN — a detector that could not fire, for exactly the class it
+    exists to detect, and the worst case of that class (a script documented
+    nowhere) rather than an edge of it.
+
+    The candidate set is now the UNION of the documented notations and the entry
+    scripts the skill owns on disk, so this script is compared against an EMPTY
+    documented set and every verb it registers is reported.
+    """
+    _materialize(
+        tmp_path,
+        documented_verb_drift_files(
+            documented=(),
+            script_source=documented_verb_drift_entry_script(('compose', 'record-step')),
+        ),
+    )
+
+    findings = analyze(tmp_path)
+
+    assert _types(findings) == [TYPE_MISSING_FROM_DOCS, TYPE_MISSING_FROM_DOCS], (
+        'a script with zero documented verbs must report one finding per '
+        f'registered verb, not silence; got {_types(findings)}'
+    )
+    assert {f['details']['verb'] for f in findings} == {'compose', 'record-step'}
+
+
+def test_the_same_script_fully_documented_reports_nothing(tmp_path):
+    """The matched negative control for the guard above.
+
+    The SAME entry script, with both verbs now carrying a fenced invocation. If
+    this also fired, the finding above would be produced by the script's mere
+    presence on disk rather than by the missing documentation, and the union
+    would be reporting every owned script unconditionally.
+    """
+    _materialize(
+        tmp_path,
+        documented_verb_drift_files(
+            documented=('compose', 'record-step'),
+            script_source=documented_verb_drift_entry_script(('compose', 'record-step')),
+        ),
+    )
+
+    assert analyze(tmp_path) == []
+
+
+def test_an_undocumented_helper_module_is_not_an_owned_entry_script(tmp_path):
+    """⛔ The over-correction control: the union must not sweep in helper modules.
+
+    Byte-identical to the killing fixture except that the script carries NO
+    ``if __name__ == '__main__':`` guard — the shape of an imported helper
+    module. This tree contains non-underscore helper modules that are imported
+    and never invoked, so had the entry-script discriminator been "any
+    ``scripts/*.py``", every one of them would report a derivation skip or a
+    phantom verb list it was never meant to have.
+    """
+    _materialize(
+        tmp_path,
+        documented_verb_drift_files(
+            documented=(),
+            script_source=documented_verb_drift_script(('compose', 'record-step')),
+        ),
+    )
+
+    assert analyze(tmp_path) == []
 
 
 def test_registered_verb_absent_from_docs_fires(tmp_path):

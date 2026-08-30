@@ -591,8 +591,11 @@ Sharing one derivation across the first two points is the load-bearing property 
 **Detection logic**:
 1. Derive the population (skills with a canonical-invocations block).
 2. For each documented invocation naming a script of that same skill, collect the first verb of its chain.
-3. AST-walk the owning script for `add_parser` calls, resolving each to its owning parser, and take the ROOT parser's children as the registered set.
-4. Emit `verb_missing_from_docs` for registered − documented, and `phantom_documented_verb` for documented − registered.
+3. Derive the skill's OWNED entry scripts from disk — `scripts/*.py` carrying an `if __name__ == '__main__':` guard — and take the candidate set as the **union** of those and the documented notations.
+4. AST-walk each candidate script for `add_parser` calls, resolving each to its owning parser, and take the ROOT parser's children as the registered set.
+5. Emit `verb_missing_from_docs` for registered − documented, and `phantom_documented_verb` for documented − registered.
+
+⛔ **Step 3's union is what makes `verb_missing_from_docs` reachable.** Walking only the documented notations meant a skill containing a CLI script with NO fenced invocation created no candidate entry at all: it never reached the verb derivation and the rule returned CLEAN over it — a detector that could not fire, of exactly the class it exists to detect. An owned entry script absent from the docs is now compared against an EMPTY documented set, so every verb it registers is reported. The entry-script discriminator is the `__main__` guard rather than a leading-underscore filter, because this tree carries non-underscore helper MODULES that are imported and never invoked; a file that cannot be read or parsed is admitted anyway and reported as a skip, never resolved to "not an entry script".
 
 **Fail-closed contract**: the rule SKIPS rather than passes whenever the registered set is not trustworthy, emitting `verb_set_drift_skipped` with a `reason` of `unreadable_script`, `unparseable_script`, `dynamic_verb_registration` (a non-literal `add_parser` name), `unresolved_subparser_group`, `no_root_parser_resolved`, or `no_subparser_registration_in_file`. The skip count is the rule's own coverage gap and is reported, never absorbed.
 
@@ -611,7 +614,7 @@ Sharing one derivation across the first two points is the load-bearing property 
 1. Drive the drift count to zero (add the missing fenced invocations), then register it in `run_quality_gate`; or
 2. Teach `cmd_quality_gate` the severity split `cmd_test_conventions` already implements, and register the rule at `warning` severity.
 
-**Measured baseline** (current tree): population **64**, `verb_missing_from_docs` **9**, `phantom_documented_verb` **0**, skips **23** (16 `no_subparser_registration_in_file`, 4 `unresolved_subparser_group`, 3 `dynamic_verb_registration`). The whole-tree `quality-gate` remains `pass` with `total_issues: 0` and `rules_run[37]` — unchanged, because this rule is not in that set.
+**Baseline**: no absolute population, finding or skip count is recorded here. Every one of them moves on any commit that adds a script, a verb, or a fenced invocation — so a written-down number is stale by the next commit, and a reader comparing against it would be measuring the document rather than the tree. Read the live figures from a run: each finding publishes `details.population_size`, and `analyze --rules documented_verb_set_drift` reports the finding and skip breakdown. The standing count is non-zero, which is why the rule is opt-in rather than gate-registered (above); the whole-tree `quality-gate` verdict is unaffected either way, because this rule is not in that rule set.
 
 **Suppression mechanism**: None — fix the prose or the argparse declaration to converge.
 

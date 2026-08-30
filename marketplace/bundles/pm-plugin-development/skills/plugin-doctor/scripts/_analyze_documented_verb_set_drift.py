@@ -78,18 +78,29 @@ indistinguishable from one that read it and found it clean. The skip states are:
   what was observed rather than the stronger "has no subcommands" conclusion the
   observation does not support.
 
-Measured baseline on the current tree: population 64, 9 ``verb_missing_from_docs``,
-0 ``phantom_documented_verb``, 23 skips (16 file-local-registration, 4 unresolved
-group, 3 dynamic). The skip count is the rule's own honest coverage gap and is
-reported, never absorbed.
+The skip count is the rule's own honest coverage gap and is reported, never
+absorbed. No absolute finding or skip count is recorded here: the figures move on
+any commit that adds a script or a fenced invocation, so a written-down number is
+stale by the next one. Read the live figures from a run.
 
 Population
 ----------
-The population is DERIVED, never assumed: every skill whose ``SKILL.md`` carries
-a ``## Canonical invocations`` heading. Every finding publishes
-``details.population_size``, and an empty population over a non-empty bundles
-tree emits its own finding — a rule that examined nothing must not read as a
-rule that examined everything and found it clean.
+Two derivations, and both are from the tree rather than from a list:
+
+- **Which skills are examined** — every skill whose ``SKILL.md`` carries a
+  ``## Canonical invocations`` heading. Every finding publishes
+  ``details.population_size``, and an empty population over a non-empty bundles
+  tree emits its own finding — a rule that examined nothing must not read as a
+  rule that examined everything and found it clean.
+- **Which scripts are compared within a skill** — the UNION of the notations
+  documented in fenced invocations and the entry scripts the skill OWNS on disk
+  (:func:`owned_entry_scripts`). ⛔ The second half is load-bearing. Walking only
+  the documented notations made ``verb_missing_from_docs`` unreachable for a
+  script carrying no fenced invocation at all: it created no entry, never reached
+  :func:`derive_registered_verbs`, and the rule returned clean over it — a
+  detector that could not fire, of exactly the class this rule exists to detect.
+  An owned script absent from the docs is compared against an EMPTY documented
+  set, so every verb it registers is reported.
 
 Findings have the shape::
 
@@ -384,6 +395,71 @@ def _script_path(skill_dir: Path, script_name: str) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
+def _declares_main_guard(path: Path) -> bool | None:
+    """Does this module carry an ``if __name__ == '__main__':`` guard?
+
+    ``None`` when the file could not be read or parsed — an unknown, kept
+    distinct from ``False`` so an unreadable file is admitted as a candidate and
+    reported as a skip rather than silently dropped from the population.
+    """
+    try:
+        source = path.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        return None
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If):
+            continue
+        test = node.test
+        if (
+            isinstance(test, ast.Compare)
+            and isinstance(test.left, ast.Name)
+            and test.left.id == '__name__'
+            and len(test.comparators) == 1
+            and isinstance(test.comparators[0], ast.Constant)
+            and test.comparators[0].value == '__main__'
+        ):
+            return True
+    return False
+
+
+def owned_entry_scripts(skill_dir: Path) -> dict[str, Path]:
+    """Map ``script_notation -> path`` for every entry script this skill OWNS.
+
+    ⛔ This is the authoritative candidate surface, and deriving it from the
+    filesystem rather than from the documentation is what makes
+    ``verb_missing_from_docs`` reachable at all. A candidate set built from the
+    notations appearing in fenced documentation can only ever visit scripts the
+    docs already mention — so a skill containing a CLI script with NO fenced
+    invocation created no entry, never reached :func:`derive_registered_verbs`,
+    and the rule returned CLEAN for precisely the worst case it exists to catch:
+    a script documented nowhere. A script with zero documented verbs now yields a
+    finding per registered verb, compared against an EMPTY documented set.
+
+    An entry script is discriminated structurally, by the
+    ``if __name__ == '__main__':`` guard the script-architecture standard requires
+    of every entry point. A leading-underscore filter would not do: this tree
+    carries non-underscore helper MODULES that are imported, never invoked
+    (``toon_parser.py``, ``retro_sections.py``), and admitting them would report a
+    derivation skip for every one. A file that cannot be read or parsed is
+    admitted anyway — that unknown is reported as a skip, never resolved to "not
+    an entry script".
+    """
+    scripts_dir = skill_dir / 'scripts'
+    if not scripts_dir.is_dir():
+        return {}
+    bundle_name = skill_dir.parent.parent.name
+    skill_name = skill_dir.name
+    return {
+        f'{bundle_name}:{skill_name}:{path.stem}': path
+        for path in sorted(scripts_dir.glob('*.py'))
+        if _declares_main_guard(path) is not False
+    }
+
+
 # ---------------------------------------------------------------------------
 # Finding construction
 # ---------------------------------------------------------------------------
@@ -460,11 +536,19 @@ def analyze_documented_verb_set_drift_with_population(
         return findings, 0
 
     for skill_dir in population:
-        for notation, (documented, doc_path, doc_line) in sorted(
-            documented_verbs_by_script(skill_dir).items()
-        ):
-            script_name = notation.split(':')[-1]
-            script = _script_path(skill_dir, script_name)
+        documented_by_script = documented_verbs_by_script(skill_dir)
+        owned = owned_entry_scripts(skill_dir)
+        skill_md = skill_dir / 'SKILL.md'
+
+        # The candidate set is the UNION of the two surfaces, not the documented
+        # one alone. An owned entry script absent from the docs contributes an
+        # EMPTY documented set and is compared anyway — that is the whole point of
+        # deriving candidates from the script surface (see `owned_entry_scripts`).
+        for notation in sorted(set(documented_by_script) | set(owned)):
+            documented, doc_path, doc_line = documented_by_script.get(
+                notation, (set(), skill_md, 1)
+            )
+            script = owned.get(notation) or _script_path(skill_dir, notation.split(':')[-1])
             if script is None:
                 # The notation names no script file in this skill. That is
                 # `notation-staleness` / `manage-invocation-invalid` territory,

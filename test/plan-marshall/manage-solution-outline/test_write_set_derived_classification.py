@@ -21,11 +21,12 @@ write-set-blind implementation reaches the opposite verdict on every one of them
 which is what makes them discriminating rather than merely green.
 """
 
+import re
 import sys
 
 import pytest
 
-from conftest import load_script_module
+from conftest import MARKETPLACE_ROOT, load_script_module
 
 _parsing = load_script_module(
     'plan-marshall',
@@ -44,13 +45,128 @@ deliverable_write_set = _parsing.deliverable_write_set
 extract_declared_bucket = _parsing.extract_declared_bucket
 extract_deliverables = _parsing.extract_deliverables
 validate_deliverable_contract = _mod.validate_deliverable_contract
-DECLARED_BUCKET_VOCABULARY = _mod._DECLARED_BUCKET_VOCABULARY
+
+_manifest_core = load_script_module(
+    'plan-marshall',
+    'manage-execution-manifest',
+    '_manifest_core.py',
+    module_name='_manifest_core_bucket_vocabulary',
+)
+
+#: Read from the ONE authority, not from a local mirror and not from the
+#: validator's own accessor. Taking it from ``_manifest_core`` is what keeps the
+#: parametrization below a statement about the classifier's vocabulary rather
+#: than about a copy of it that this module and the validator could drift
+#: together.
+DECLARED_BUCKET_VOCABULARY = _manifest_core.CLASSIFICATION_BUCKETS
 
 #: A documentation path and a code path, used as the two sides of every
 #: disagreement below.
 _DOC_PATH = 'doc/developer/build.adoc'
 _CODE_PATH = 'marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/manage-tasks.py'
 _TEST_PATH = 'test/plan-marshall/manage-tasks/test_manage_tasks.py'
+
+
+# =============================================================================
+# The bucket vocabulary has ONE authority, and two independent artifacts track it
+# =============================================================================
+
+
+_CLASSIFIER_SOURCE = (
+    MARKETPLACE_ROOT
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-execution-manifest'
+    / 'scripts'
+    / 'manage-execution-manifest.py'
+)
+
+_OUTLINE_STANDARD = (
+    MARKETPLACE_ROOT
+    / 'plan-marshall'
+    / 'skills'
+    / 'phase-3-outline'
+    / 'standards'
+    / 'outline-workflow-detail.md'
+)
+
+#: A bucket-SHAPED token as the standard writes it: backticked, and either an
+#: ``…_only`` or a ``mixed_…`` name. Deliberately NOT an alternation over the
+#: known members — a pattern that can only match names already in the constant
+#: could never report a documented bucket the constant lacks.
+_BUCKET_SHAPED_IN_PROSE = re.compile(r'`([a-z]+_only|mixed_[a-z_]+)`')
+
+
+def _classifier_function_source() -> str:
+    """The body of ``_classify_paths_via_extensions``, sliced from the file text.
+
+    Read as TEXT rather than imported: the classifier's module pulls in a wide
+    sibling surface, and this guard needs only the bucket literals its returns
+    name.
+    """
+    text = _CLASSIFIER_SOURCE.read_text(encoding='utf-8')
+    start = text.index('def _classify_paths_via_extensions')
+    end = text.index('\ndef ', start + 1)
+    return text[start:end]
+
+
+class TestBucketVocabularyHasOneAuthority:
+    """⛔ ``CLASSIFICATION_BUCKETS`` is the authority; two artifacts must track it.
+
+    Neither assertion is ``derived == derived``. The classifier still RETURNS
+    bare string literals, so the first compares the values it actually returns
+    against the declared tuple — a new or renamed bucket in the emitter fails
+    there. The second compares the standard's prose against the same tuple, doc
+    and code being genuinely independent artifacts.
+    """
+
+    def test_the_classifier_returns_exactly_the_declared_buckets(self):
+        returned = set(re.findall(r"return '([a-z_]+)'", _classifier_function_source()))
+
+        assert returned, (
+            'no bucket literal was found in _classify_paths_via_extensions — the '
+            'slice or the return shape moved, so this guard is comparing against '
+            'an EMPTY population and would pass vacuously'
+        )
+        assert returned == set(DECLARED_BUCKET_VOCABULARY), (
+            'the classifier and CLASSIFICATION_BUCKETS disagree; '
+            f'returned_only={sorted(returned - set(DECLARED_BUCKET_VOCABULARY))}, '
+            f'declared_only={sorted(set(DECLARED_BUCKET_VOCABULARY) - returned)}'
+        )
+
+    def test_every_declared_bucket_is_named_in_the_standard(self):
+        """A bucket the classifier can return must be documented for outline authors."""
+        text = _OUTLINE_STANDARD.read_text(encoding='utf-8')
+        undocumented = [
+            bucket for bucket in DECLARED_BUCKET_VOCABULARY if f'`{bucket}`' not in text
+        ]
+
+        assert not undocumented, (
+            f'{_OUTLINE_STANDARD.name} names no `bucket` for {undocumented} — an '
+            'outline author told to record a bucket cannot record one the standard '
+            'never shows them'
+        )
+
+    def test_the_standard_names_no_bucket_the_authority_lacks(self):
+        """The other direction — a documented bucket the classifier cannot return.
+
+        ⛔ Scoped to the ``…_only`` / ``mixed_…`` SHAPES, which is what lets the
+        pattern match a name the constant does not carry. ``unknown`` is too
+        common a word to scan prose for and is covered by the forward direction
+        above only; that asymmetry is stated rather than papered over.
+        """
+        text = _OUTLINE_STANDARD.read_text(encoding='utf-8')
+        documented = set(_BUCKET_SHAPED_IN_PROSE.findall(text))
+
+        assert documented, (
+            f'no bucket-shaped token found in {_OUTLINE_STANDARD.name} — the '
+            'standard stopped naming the vocabulary, so this guard is comparing '
+            'against an EMPTY population'
+        )
+        assert documented <= set(DECLARED_BUCKET_VOCABULARY), (
+            f'{_OUTLINE_STANDARD.name} documents bucket(s) the classifier cannot '
+            f'return: {sorted(documented - set(DECLARED_BUCKET_VOCABULARY))}'
+        )
 
 
 def _deliverable(affected: list[tuple[str, str | None]], **overrides):

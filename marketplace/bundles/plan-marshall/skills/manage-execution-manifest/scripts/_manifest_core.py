@@ -51,6 +51,42 @@ from toon_parser import parse_toon, serialize_toon
 MANIFEST_FILENAME = 'execution.toon'
 MANIFEST_VERSION = 1
 
+#: The plan-wide change-footprint bucket vocabulary — the ONE machine-readable
+#: authority for the closed set of values ``_classify_paths_via_extensions``
+#: collapses a per-path role map into.
+#:
+#: It lives here, in the shared constants module, because it has THREE consumers
+#: that were each carrying their own copy: the classifier that emits the values,
+#: the ``manage-solution-outline`` validator that checks a deliverable's declared
+#: ``<!-- bucket: X -->`` comment against them, and the normative table in
+#: ``phase-3-outline/standards/outline-workflow-detail.md``. A validator holding a
+#: hand-copied mirror warns on a VALID declaration the moment the classifier gains
+#: or renames a bucket, and its test — reading the same local copy — cannot see
+#: the drift.
+#:
+#: ⛔ Two independent live checks keep this honest, and neither is
+#: ``derived == derived``. The classifier still returns bare string literals (a
+#: collapse chain reads better than an indexed lookup), so a test scans that
+#: function's source for the values it actually returns and compares the derived
+#: set against this tuple — a NEW or RENAMED bucket in the emitter fails there. A
+#: second test compares the standard's documented table against this tuple, doc
+#: versus code being two genuinely independent artifacts.
+#:
+#: ``unknown`` is a MEMBER: it is a bucket the classifier genuinely returns (for
+#: paths no extension claimed and no owner-less rule recognized), and one that
+#: blocks the deliverable downstream in phase-4-plan. Membership says a value is
+#: spelled like a bucket, never that it is a good one to have. Infrastructure
+#: config is deliberately ABSENT — it is a per-path role that never forms a
+#: plan-wide bucket of its own.
+CLASSIFICATION_BUCKETS: tuple[str, ...] = (
+    'production_only',
+    'test_only',
+    'documentation_only',
+    'mixed_code',
+    'mixed_with_docs',
+    'unknown',
+)
+
 # Default number of phase-5 execution envelopes the orchestrator dispatches when
 # the composer is not given an explicit ``--envelope-count``. ``1`` reproduces
 # the pre-existing single-envelope behaviour: one budget-bounded

@@ -180,30 +180,35 @@ def validate_solution_structure(content: str) -> tuple[list[str], list[str], dic
 #: The bucket value asserting a deliverable changes no code.
 _DOCUMENTATION_ONLY_BUCKET = 'documentation_only'
 
-#: The six-bucket file-type vocabulary a deliverable's ``<!-- bucket: X -->``
-#: comment may name.
-#:
-#: Copied from the normative table in ``phase-3-outline/standards/
-#: outline-workflow-detail.md`` § File-type classifier, which is the source of
-#: truth for both the names and their predicates. The parser upstream accepts
-#: any ``[a-z_]+``, so a misspelling reaches this layer looking like a bucket
-#: and — before this check — was read as one: the contradiction test below
-#: compares against ``documentation_only`` by equality, so ``documentaton_only``
-#: silently took the not-equal branch and the deliverable passed.
-#:
-#: ``unknown`` is a MEMBER. It is a bucket the classifier genuinely resolves,
-#: and one that blocks the deliverable downstream in phase-4-plan. Membership
-#: here says the declared value is spelled like a bucket — never that it is a
-#: good one to have declared. Infrastructure config is deliberately absent: the
-#: standard records it as a per-path role that never forms a bucket of its own.
-_DECLARED_BUCKET_VOCABULARY: tuple[str, ...] = (
-    'production_only',
-    'test_only',
-    'documentation_only',
-    'mixed_code',
-    'mixed_with_docs',
-    'unknown',
-)
+def _declared_bucket_vocabulary() -> tuple[str, ...] | None:
+    """The file-type bucket vocabulary, READ from its one authority.
+
+    Delegates to ``_manifest_core.CLASSIFICATION_BUCKETS`` — the same shared
+    constants module this file already reaches into for
+    ``_is_documentation_path`` — rather than restating the names here. The
+    predecessor was a hand-copied mirror of the normative table in
+    ``phase-3-outline/standards/outline-workflow-detail.md``, and a mirror of a
+    set defined elsewhere warns on a VALID declaration the moment the classifier
+    gains or renames a bucket. Its test read the same local copy, so neither side
+    could see the drift.
+
+    The parser upstream accepts any ``[a-z_]+``, so a misspelling reaches this
+    layer looking like a bucket and — before the membership check — was read as
+    one: the contradiction test compares against ``documentation_only`` by
+    equality, so ``documentaton_only`` silently took the not-equal branch and the
+    deliverable passed.
+
+    Returns ``None`` when the authority cannot be imported, so the caller reports
+    the value as UNCHECKED rather than treating an unavailable vocabulary as a
+    passing membership test. The import is deferred and fail-open for the same
+    reason :func:`_write_set_is_all_documentation`'s is: outline validation must
+    not hard-fail because a sibling skill's module is off the current path.
+    """
+    try:
+        from _manifest_core import CLASSIFICATION_BUCKETS
+    except ImportError:
+        return None
+    return tuple(CLASSIFICATION_BUCKETS)
 
 
 def _write_set_is_all_documentation(write_set: list[str]) -> bool | None:
@@ -270,7 +275,7 @@ def _check_declared_bucket(
     — a verification-only deliverable declares no writes, so there is nothing
     for a bucket to contradict.
 
-    **Three states that used to return silently clean now say something.** Each
+    **The states that used to return silently clean now say something.** Each
     was indistinguishable from "checked, and the bucket is fine":
 
     - **No bucket declared at all** over a non-empty write-set. The bucket is
@@ -279,12 +284,18 @@ def _check_declared_bucket(
       catch, and the one it was blind to. A WARNING, not an error: outlines
       predating the required-recording rule carry no bucket comment, and
       failing them would reject documents that are merely older than the rule.
-    - **A declared value outside the six-bucket vocabulary.** The upstream
-      parser accepts any ``[a-z_]+``, and the contradiction test below is an
-      equality check, so a misspelling took the not-``documentation_only``
-      branch and passed. Also a warning: the value may be a bucket this
-      validator has not been taught about yet, and rejecting it outright would
-      make the vocabulary literal here a gate on the classifier's evolution.
+    - **A declared value outside the bucket vocabulary.** The upstream parser
+      accepts any ``[a-z_]+``, and the contradiction test below is an equality
+      check, so a misspelling took the not-``documentation_only`` branch and
+      passed. A warning rather than an error: the vocabulary is now READ from
+      ``_manifest_core.CLASSIFICATION_BUCKETS`` (see
+      :func:`_declared_bucket_vocabulary`) instead of mirrored here, so it tracks
+      the classifier rather than gating it, but a value this validator rejects
+      may still be one a consumer means to introduce.
+    - **The bucket vocabulary could not be imported.** Reported as an UNCHECKED
+      value with the authority named — an un-run membership test must not render
+      identically to one that ran and accepted the bucket, which is the same
+      absent-versus-measured distinction the predicate state below carries.
     - **The documentation predicate could not be imported.** The fail-open
       returns ``None``, and ``not None`` is truthy, so the un-run check took the
       same early return as a check that ran and found no contradiction. The
@@ -296,10 +307,21 @@ def _check_declared_bucket(
     normalized = declared.strip().lower() if declared else ''
 
     if normalized:
-        if normalized not in _DECLARED_BUCKET_VOCABULARY:
+        vocabulary = _declared_bucket_vocabulary()
+        if vocabulary is None:
+            # An unavailable vocabulary is an UNCHECKED value, never a valid one.
+            # Staying silent here would make an un-run membership test render
+            # identically to one that ran and accepted the bucket.
+            warnings.append(
+                f'D{num}: declared bucket {declared!r} was NOT checked — the bucket '
+                f'vocabulary (_manifest_core.CLASSIFICATION_BUCKETS) could not be '
+                f'imported, so no membership test ran against it. This says nothing '
+                f'about whether the value is a real bucket.'
+            )
+        elif normalized not in vocabulary:
             warnings.append(
                 f'D{num}: declared bucket {declared!r} is not one of the documented '
-                f'file-type buckets ({", ".join(_DECLARED_BUCKET_VOCABULARY)}). The '
+                f'file-type buckets ({", ".join(vocabulary)}). The '
                 f'bucket comment is parsed as free-form text, so an unrecognized '
                 f'value is not compared against the write-set at all.'
             )

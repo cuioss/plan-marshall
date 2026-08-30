@@ -43,6 +43,7 @@ from _manifest_core import (
     _INFRA_CONFIG_PARENT_DIR_SUFFIXES,  # noqa: F401
     _INFRA_CONFIG_PARENT_DIRS,  # noqa: F401
     _TEMPLATE_SUFFIX,  # noqa: F401
+    CLASSIFICATION_BUCKETS,  # noqa: F401
     DEFAULT_ENVELOPE_COUNT,  # noqa: F401
     DEFAULT_PHASE_5_STEPS,  # noqa: F401
     DEFAULT_PHASE_6_STEPS,  # noqa: F401

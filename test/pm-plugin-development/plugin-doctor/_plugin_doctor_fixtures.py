@@ -417,6 +417,21 @@ def documented_verb_drift_script(verbs: Sequence[str]) -> str:
     )
 
 
+def documented_verb_drift_entry_script(verbs: Sequence[str]) -> str:
+    """:func:`documented_verb_drift_script` plus the ``if __name__`` guard.
+
+    The guard is the structural discriminator ``owned_entry_scripts`` uses to
+    tell an ENTRY SCRIPT from an imported helper module, so this builder is
+    required by any fixture whose point is that the script is discovered from the
+    FILESYSTEM rather than from a notation the docs already mention. The
+    guard-less builder above stays the default precisely so the helper-module
+    control has something to be a control against.
+    """
+    return documented_verb_drift_script(verbs) + (
+        "\n\nif __name__ == '__main__':\n    main()\n"
+    )
+
+
 def documented_verb_drift_skill_md(skill: str, documented: Sequence[str]) -> str:
     """A SKILL.md with a canonical-invocations block per documented verb.
 

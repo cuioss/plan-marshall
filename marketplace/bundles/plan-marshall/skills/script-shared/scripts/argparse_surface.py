@@ -994,20 +994,73 @@ def _write_cache(cache_path: Path, surface: ScriptSurface) -> None:
 _HELP_SEMAPHORE = threading.BoundedSemaphore(DEFAULT_MAX_WORKERS)
 
 
-def _help_env(config: DerivationConfig) -> dict[str, str]:
-    """Environment for a ``--help`` probe: colors off, terminal width pinned.
+#: The ONLY environment variables forwarded to a ``--help`` probe.
+#:
+#: Deny-by-default, and that direction is the point: a denylist of known secret
+#: names is fail-open, because the next credential the environment gains is
+#: forwarded until someone remembers to add it. A variable absent from this
+#: tuple is simply not passed, so `GH_TOKEN`, `GITHUB_TOKEN`, `AWS_*`,
+#: `SONAR_TOKEN`, `SSH_AUTH_SOCK`, `NPM_TOKEN` and every future sibling never
+#: reach a scanned script's process without an edit here.
+#:
+#: Each entry earns its place by what the probe needs to START and to RENDER
+#: parseable text — never by convenience:
+_PROBE_ENV_ALLOWLIST: tuple[str, ...] = (
+    # Process start-up and OS basics.
+    'PATH',
+    'HOME',
+    'SYSTEMROOT',  # required for socket/SSL initialisation on Windows
+    'TMPDIR',
+    'TEMP',
+    'TMP',
+    # Text decoding of the captured help output.
+    'LANG',
+    'LC_ALL',
+    'LC_CTYPE',
+    # The Python import surface the executor resolves marketplace scripts through.
+    'PYTHONPATH',
+    'PYTHONHOME',
+    'VIRTUAL_ENV',
+    # Project-local resolution performed by the executor and the scripts it runs.
+    'PLAN_BASE_DIR',
+    '_MARKETPLACE_SCRIPT_DIRS',
+)
 
-    Mirrors the executor front-door color pins so the probe emits plain text
+
+def _help_env(config: DerivationConfig) -> dict[str, str]:
+    """Minimal environment for a ``--help`` probe: colors off, terminal width pinned.
+
+    ⛔ **This is a probe that EXECUTES the scanned script**, so the environment it
+    is handed is a trust boundary, not a convenience. It is built by allowlist
+    (:data:`_PROBE_ENV_ALLOWLIST`) rather than by ``os.environ.copy()``: copying
+    the full environment handed every credential the validator happened to hold —
+    CI tokens, cloud keys, an agent socket — to code inside the bundle being
+    scanned (CWE-829, inclusion of functionality from an untrusted control
+    sphere).
+
+    ⛔ **Residual exposure — this narrows the blast radius, it does not close it.**
+    The probe still runs the scanned script as a real subprocess with the
+    validator's user, filesystem access and network access, under a wall-clock
+    timeout only. A hostile bundle can still read and write anything that user
+    can, and the timeout bounds duration, not authority. Removing that would take
+    an OS-level isolation boundary (a container, a seccomp profile, a separate
+    unprivileged user), which is deliberately NOT attempted here — the
+    environment allowlist is the in-repo, proportionate half. Treat scanning an
+    untrusted bundle as running its code, because it is.
+
+    The color pins mirror the executor front door so the probe emits plain text
     even when invoked directly. Python 3.14's ``can_colorize()`` consults
     ``PYTHON_COLORS``, then ``NO_COLOR``, then ``FORCE_COLOR``; ``NO_COLOR``
     overrides ``FORCE_COLOR`` and ``PYTHON_COLORS=0`` is the explicit override.
     ``COLUMNS`` is pinned wide so argparse cannot wrap a construct across lines
     — deterministic rendering is a parse precondition.
     """
-    env = os.environ.copy()
+    env = {name: os.environ[name] for name in _PROBE_ENV_ALLOWLIST if name in os.environ}
     env['PYTHON_COLORS'] = '0'
     env['NO_COLOR'] = '1'
-    env.pop('FORCE_COLOR', None)
+    # No `FORCE_COLOR` pop: the allowlist above cannot admit it, so there is
+    # nothing inherited to remove and a pop here would be a line that can never
+    # do anything.
     env['CLICOLOR'] = '0'
     env['CLICOLOR_FORCE'] = '0'
     env['PY_COLORS'] = '0'

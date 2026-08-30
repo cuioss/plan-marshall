@@ -207,11 +207,27 @@ def _stage_emission_plan(
     done_tasks: list[int],
     artifact_task_nums: list[int],
     footprint: list[str] | None,
+    noop_tasks: list[int] | None = None,
+    record_changed_files: bool = True,
 ) -> tuple[str, Path]:
     """Stage a live plan with an exact completed-task set, artifact set and footprint.
 
     ``footprint=None`` writes no ``realized_footprint`` key at all, which is the
     unresolvable state; a list (possibly empty) is a RESOLVED footprint.
+
+    ⛔ The completed tasks are staged in two DISJOINT groups, because the finding
+    population is change-qualified and the two groups are what separate a real
+    emission gap from a compliant silence:
+
+    - ``done_tasks`` — completed AND recorded as having changed a file
+      (non-empty ``changed_files``). These are the eligible population ``M``.
+    - ``noop_tasks`` — completed with a RECORDED-EMPTY ``changed_files``. A no-op
+      task emits no ``[ARTIFACT]`` line by design, so it must raise
+      ``completed_tasks`` without raising the eligible population.
+
+    ``record_changed_files=False`` writes NO ``changed_files`` key on any task,
+    which is the attribution-unavailable state — distinct from a recorded empty
+    list, and the state in which no finding may be emitted at all.
 
     Every staged ``work.log`` opens with a ``phase-1-init`` ``[ARTIFACT]`` line.
     That is not decoration — it is the unconditional emission that makes the
@@ -223,10 +239,19 @@ def _stage_emission_plan(
     tasks_dir = plan_dir / 'tasks'
     for existing in tasks_dir.glob('TASK-*.json'):
         existing.unlink()
-    for num in done_tasks:
+
+    def _write_task(num: int, changed: list[str]) -> None:
+        record: dict = {'number': num, 'deliverable': 1, 'status': 'done'}
+        if record_changed_files:
+            record['changed_files'] = changed
         (tasks_dir / f'TASK-{num:03d}.json').write_text(
-            json.dumps({'number': num, 'deliverable': 1, 'status': 'done'}), encoding='utf-8'
+            json.dumps(record), encoding='utf-8'
         )
+
+    for num in done_tasks:
+        _write_task(num, [f'src/f{num}.py'])
+    for num in noop_tasks or []:
+        _write_task(num, [])
 
     lines = [
         '[2026-04-17T10:00:00Z] [INFO] [aaaaaa] [ARTIFACT] '
@@ -281,6 +306,11 @@ class TestTotalAbsenceOfPerTaskEmissionIsGraded:
         emission = data['artifact_emission']
         assert int(emission['completed_tasks']) == 3
         assert int(emission['tasks_with_artifacts']) == 0
+        # Every completed task here is change-qualified, so the eligible
+        # population equals the raw one and the finding below is owed.
+        assert emission['change_attribution'] == 'measured'
+        assert int(emission['eligible_tasks']) == 3
+        assert int(emission['eligible_tasks_with_artifacts']) == 0
         # The plan-level floor is SATISFIED by the phase-1-init line alone, so it
         # cannot be what fires — the whole point of grading N == 0 here.
         assert int(data['counts']['artifact_entries']) >= 1
@@ -292,8 +322,11 @@ class TestTotalAbsenceOfPerTaskEmissionIsGraded:
     def test_a_plan_with_no_completed_tasks_reports_nothing(self, tmp_path, monkeypatch):
         """The negative control named by the success criterion.
 
-        ``M == 0`` means there was no population to emit for. The widened guard is
-        ``N < M``, so an empty population cannot satisfy it and no finding is owed.
+        There was no population to emit for. With no completed task at all, no
+        task record can carry a ``changed_files`` list either, so attribution is
+        reported UNAVAILABLE rather than as a measured-empty eligible set — the
+        honest reading of "nothing to attribute", and it reaches the same
+        no-finding outcome by the same route the unavailable case does.
         """
         plan_id, _ = _stage_emission_plan(
             tmp_path,
@@ -309,6 +342,7 @@ class TestTotalAbsenceOfPerTaskEmissionIsGraded:
         data = result.toon()
 
         assert int(data['artifact_emission']['completed_tasks']) == 0
+        assert data['artifact_emission']['change_attribution'] == 'unavailable'
         assert _emission_findings(data) == []
 
     def test_an_empty_resolved_footprint_reports_nothing(self, tmp_path, monkeypatch):
@@ -354,3 +388,125 @@ class TestTotalAbsenceOfPerTaskEmissionIsGraded:
         messages = _emission_findings(data)
         assert any('ARTIFACT_EMISSION_PARTIAL' in m for m in messages), messages
         assert not any('ARTIFACT_EMISSION_ABSENT' in m for m in messages), messages
+
+
+class TestTheEmissionPopulationIsChangeQualified:
+    """⛔ A completed NO-OP task must not be charged as an emission gap.
+
+    Step 8 emits an ``[ARTIFACT]`` line per file the task changed, so a completed
+    task with an empty diff emits none BY DESIGN. Counting every completed task
+    into ``M`` charged those compliant tasks as gaps, and enough of them pushed a
+    healthy plan into ``ARTIFACT_EMISSION_PARTIAL`` — or, when every completed
+    task was a no-op, into ``ARTIFACT_EMISSION_ABSENT``.
+    """
+
+    def test_no_op_tasks_do_not_inflate_the_eligible_population(self, tmp_path, monkeypatch):
+        """The killing fixture: one changed task that emitted, two recorded no-ops.
+
+        Against the un-qualified population this is ``1 of 3`` and fires
+        ``ARTIFACT_EMISSION_PARTIAL``. Against the change-qualified one it is
+        ``1 of 1`` — complete — and nothing is owed. The raw ``completed_tasks``
+        is still published as 3, which is what makes the two populations legible
+        side by side rather than one silently replacing the other.
+        """
+        plan_id, _ = _stage_emission_plan(
+            tmp_path,
+            monkeypatch,
+            plan_id='retro-emission-noop-not-charged',
+            done_tasks=[1],
+            noop_tasks=[2, 3],
+            artifact_task_nums=[1],
+            footprint=['src/f1.py'],
+        )
+
+        result = run_script(ANALYZE_LOGS_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+        emission = data['artifact_emission']
+
+        # The two populations are staged as genuinely different numbers, which is
+        # what makes the assertion below a test of WHICH one the finding follows.
+        assert int(emission['completed_tasks']) == 3
+        assert emission['change_attribution'] == 'measured'
+        assert int(emission['eligible_tasks']) == 1
+        assert int(emission['eligible_tasks_with_artifacts']) == 1
+
+        assert _emission_findings(data) == [], (
+            'every task recorded as having changed a file emitted its [ARTIFACT] '
+            'line, so the emission is complete; the two recorded no-op tasks emit '
+            'nothing by design and must not be charged as a gap'
+        )
+
+    def test_a_no_op_task_beside_a_real_gap_still_reports_the_real_gap(
+        self, tmp_path, monkeypatch
+    ):
+        """⛔ The over-correction control: qualification must not MUTE a real gap.
+
+        Same no-op tasks, but now one change-qualified task emitted and another
+        did not. Had the fix been written as "stay silent whenever any no-op task
+        is present", this genuine shortfall would vanish. The exclusion is of
+        no-op tasks from the population, not of the finding.
+        """
+        plan_id, _ = _stage_emission_plan(
+            tmp_path,
+            monkeypatch,
+            plan_id='retro-emission-noop-plus-real-gap',
+            done_tasks=[1, 4],
+            noop_tasks=[2, 3],
+            artifact_task_nums=[1],
+            footprint=['src/f1.py', 'src/f4.py'],
+        )
+
+        result = run_script(ANALYZE_LOGS_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+        emission = data['artifact_emission']
+
+        assert int(emission['eligible_tasks']) == 2
+        assert int(emission['eligible_tasks_with_artifacts']) == 1
+
+        messages = _emission_findings(data)
+        assert any('ARTIFACT_EMISSION_PARTIAL' in m for m in messages), messages
+        # The population the message quotes is the eligible one, not the raw 4.
+        assert any('1 of 2 change-qualified' in m for m in messages), messages
+
+    def test_unavailable_attribution_emits_nothing_and_omits_the_population(
+        self, tmp_path, monkeypatch
+    ):
+        """⛔ An unrecordable population is an UNKNOWN, never a measured zero.
+
+        Byte-for-byte the fixture of
+        ``test_zero_of_many_with_a_non_empty_footprint_is_a_finding`` — three
+        completed tasks, no per-task artifact line, a non-empty footprint — with
+        the ONE difference that no task record carries a ``changed_files`` key.
+        That fixture fires ``ARTIFACT_EMISSION_ABSENT``; this one must not, because
+        nothing substantiates which of the three tasks was even eligible.
+
+        The eligible keys are ABSENT rather than zero, so a consumer that gates on
+        them finds no key instead of a false zero.
+        """
+        plan_id, _ = _stage_emission_plan(
+            tmp_path,
+            monkeypatch,
+            plan_id='retro-emission-attribution-unavailable',
+            done_tasks=[1, 2, 3],
+            artifact_task_nums=[],
+            footprint=['src/changed.py'],
+            record_changed_files=False,
+        )
+
+        result = run_script(ANALYZE_LOGS_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+        emission = data['artifact_emission']
+
+        assert int(emission['completed_tasks']) == 3
+        assert emission['change_attribution'] == 'unavailable'
+        assert emission['change_attribution_reason']
+        for key in ('eligible_tasks', 'eligible_tasks_with_artifacts'):
+            assert key not in emission, (
+                f'{key} must be ABSENT when attribution is unavailable — a zero '
+                'there is indistinguishable from a measured empty population'
+            )
+
+        assert _emission_findings(data) == []
