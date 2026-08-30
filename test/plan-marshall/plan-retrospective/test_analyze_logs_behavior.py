@@ -377,19 +377,43 @@ class TestCmdRunInProcess:
         assert not any('ARTIFACT_COVERAGE_UNMEASURABLE' in f['message'] for f in result['findings'])
         assert not any('ARTIFACT entries missing' in f['message'] for f in result['findings'])
 
-    def test_no_completed_tasks_cannot_trigger_the_emission_guard(self, tmp_path):
-        """The widened ``N < M`` guard is unreachable over an empty population.
+    def _write_tasks(self, plan_dir: Path, changed_by_num: dict[int, list[str]]) -> None:
+        """Write ``status: done`` task records carrying a RECORDED ``changed_files``.
 
-        The per-task ``[ARTIFACT]`` guard used to fire only on ``0 < N < M`` and
-        now covers the whole incomplete range, which puts ``N == 0`` inside it.
-        This plan has a non-empty footprint and zero per-task artifact lines — the
-        shape the widened guard reacts to — but no completed tasks at all, so
-        ``M == 0`` and there was nothing to emit for.
+        An empty list is a recorded no-op — "this task changed nothing", which is
+        a measurement. Omitting the key entirely is a different state (nothing
+        was recorded), and no fixture here reaches it by accident.
+        """
+        tasks_dir = plan_dir / 'tasks'
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+        for num, changed in changed_by_num.items():
+            (tasks_dir / f'TASK-{num:03d}.json').write_text(
+                json.dumps(
+                    {
+                        'number': num,
+                        'deliverable': 1,
+                        'status': 'done',
+                        'changed_files': changed,
+                    }
+                ),
+                encoding='utf-8',
+            )
 
-        It is the in-process negative control for the widening: without it, a
-        guard that dropped the population comparison and keyed on ``N == 0``
-        alone would report every task-less plan, and the end-to-end suite's
-        positive case would not notice.
+    def test_no_completed_tasks_reports_unavailable_attribution_not_a_finding(self, tmp_path):
+        """A plan with no completed task has nothing to attribute, and says so.
+
+        The per-task ``[ARTIFACT]`` guard is drawn from the CHANGE-QUALIFIED
+        population, which exists only when some completed task record carries a
+        ``changed_files`` list. With no completed tasks at all no record can carry
+        one, so attribution is reported UNAVAILABLE and the guard short-circuits
+        before any population comparison — the honest reading of "nothing to
+        attribute", never a measured empty set.
+
+        This plan has a non-empty footprint and zero per-task artifact lines, the
+        shape the guard reacts to, so what is pinned here is the attribution gate.
+        Its measured peer — a real shortfall over a qualified population, where
+        the guard must still bite — is the test beneath it; either alone would be
+        single-direction.
         """
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir()
@@ -402,10 +426,62 @@ class TestCmdRunInProcess:
         )
 
         result = _al.cmd_run(_run_args(plan_dir))
+        emission = result['artifact_emission']
 
-        assert result['artifact_emission']['completed_tasks'] == 0
-        assert result['artifact_emission']['tasks_with_artifacts'] == 0
+        assert emission['completed_tasks'] == 0
+        assert emission['tasks_with_artifacts'] == 0
+        assert emission['change_attribution'] == 'unavailable'
+        for key in ('eligible_tasks', 'eligible_tasks_with_artifacts'):
+            assert key not in emission, (
+                f'{key} must be ABSENT when attribution is unavailable — a zero '
+                'there is indistinguishable from a measured empty population'
+            )
         assert not any('ARTIFACT_EMISSION' in f['message'] for f in result['findings'])
+
+    def test_change_qualified_shortfall_emits_partial_over_the_eligible_population(
+        self, tmp_path
+    ):
+        """⛔ The measured peer: the guard still BITES, over the eligible set only.
+
+        Three completed tasks — two recorded as having changed a file (one of
+        which emitted its ``[ARTIFACT]`` line and one of which did not) and one
+        recorded NO-OP with an empty ``changed_files``. The finding is drawn from
+        the eligible two, so it reads ``1 of 2``: quoting the raw ``1 of 3`` would
+        charge the compliant no-op task as an emission gap, and staying silent
+        because a no-op is present would mute a real shortfall.
+
+        In-process because this is a ``cmd_run`` finding-emitting branch, which
+        the subprocess siblings drive but do not cover.
+        """
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        self._write_logs(
+            plan_dir,
+            [
+                _line('2026-04-17T10:00:00Z', 'INFO', '[STATUS] (plan-marshall:phase-1-init) Starting'),
+                _line('2026-04-17T10:01:00Z', 'INFO', '[ARTIFACT] (plan-marshall:phase-5-execute:1) wrote'),
+            ],
+        )
+        self._write_tasks(plan_dir, {1: ['src/a.py'], 2: ['src/b.py'], 3: []})
+        (plan_dir / 'references.json').write_text(
+            json.dumps({'modified_files': ['src/a.py', 'src/b.py']}), encoding='utf-8'
+        )
+
+        result = _al.cmd_run(_run_args(plan_dir))
+        emission = result['artifact_emission']
+
+        # The raw and eligible populations are staged as genuinely different
+        # numbers, which is what makes the message assertion a test of WHICH one
+        # the finding follows rather than a restatement of one of them.
+        assert emission['completed_tasks'] == 3
+        assert emission['change_attribution'] == 'measured'
+        assert emission['eligible_tasks'] == 2
+        assert emission['eligible_tasks_with_artifacts'] == 1
+
+        partial = [f for f in result['findings'] if 'ARTIFACT_EMISSION_PARTIAL' in f['message']]
+        assert len(partial) == 1, result['findings']
+        assert '1 of 2 change-qualified' in partial[0]['message']
+        assert '1 of 3' not in partial[0]['message']
 
     def test_voluntary_checkpoint_polling_finding(self, tmp_path):
         plan_dir = tmp_path / 'plan'
