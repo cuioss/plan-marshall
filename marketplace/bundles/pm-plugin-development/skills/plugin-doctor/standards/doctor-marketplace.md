@@ -38,14 +38,16 @@ Parse the JSON output to get:
 
 2. **Tool Coverage Analysis via Agents** (for items in `components_for_tool_analysis`):
 
-   Compute the dispatch target via the role resolver ONCE before spawning:
+   Compute the dispatch target via the role resolver, **once per component about to be dispatched** — not once for the whole batch. The resolve carries the dispatch context (`--workflow`/`--plan-id`/`--caller`), and the resolve seam emits the `[DISPATCH]` work-log line and its paired decision-log record as a side-effect of each resolve (see [`plan-marshall:ref-workflow-architecture/standards/dispatch-logging.md`](../../../../plan-marshall/skills/ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract). Resolving once and reusing the `target` across N spawns would leave N−1 of them with no audit record at all — the per-role blind spot the seam exists to close. Do NOT hand-write a separate `[DISPATCH]` line, and do NOT capture the result with a `$(...)` substitution (forbidden by the no-`$()` Bash hard rule) — run the call and read `target` from its TOON output:
 
    ```bash
-   target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-     effort resolve-target --phase phase-6-finalize --role verification-feedback)
+   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+     effort resolve-target --phase phase-6-finalize --role verification-feedback \
+     --workflow pm-plugin-development:plugin-doctor/workflow/tool-coverage.md --plan-id {plan_id} \
+     --caller pm-plugin-development:plugin-doctor
    ```
 
-   Dispatch `plan-marshall:{target}` for each component in parallel (one Task call per file in a single message):
+   Extract the `target` field from the TOON output. Then dispatch `plan-marshall:{target}` for each component in parallel (one Task call per file in a single message):
 
    ```text
    Task: plan-marshall:{target}

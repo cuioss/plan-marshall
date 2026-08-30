@@ -228,9 +228,13 @@ Extract `value` (`light` or `deep`). When the field is absent or unresolved, tre
 
 2. Resolve the dispatch target and dispatch ONE light-lane envelope. The envelope LOADS `plan-marshall:phase-3-outline/workflow/light-lane.md` as its workflow (the doc folds refine-no-loop + Simple-outline + deliverable-derivation, bounds discovery per DQ2, and evaluates the DQ3 escalation ratchet in-context). Resolve the level via the `phase-3-outline` role:
 
+   The resolve carries the dispatch context (`--workflow`/`--plan-id`/`--caller`), so the seam emits the standardized `[DISPATCH]` work-log line and its paired decision-log record itself — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; every firing re-runs the resolve, so the record is re-emitted per firing.
+
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-     effort resolve-target --role phase-3-outline
+     effort resolve-target --role phase-3-outline \
+     --workflow plan-marshall:phase-3-outline/workflow/light-lane.md --plan-id {plan_id} \
+     --caller plan-marshall:plan-marshall
    ```
 
    ```text

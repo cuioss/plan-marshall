@@ -169,8 +169,14 @@ Continue through the standard phases — each phase is dispatched under its
 role key per the same contract documented in [`planning.md`](planning.md)
 ("Action: init" → 2-Refine Phase) and [`planning-outline.md`](planning-outline.md)
 ("Action: outline"). The orchestrator resolves the dispatch target via
-`effort resolve-target --role phase-{N}` and dispatches
-`Task: plan-marshall:{target}` with `workflow=plan-marshall:phase-{N}-{name}/SKILL.md`.
+`effort resolve-target --role phase-{N} --workflow plan-marshall:phase-{N}-{name}/SKILL.md --plan-id {plan_id} --caller plan-marshall:plan-marshall`
+and dispatches `Task: plan-marshall:{target}` with the same
+`workflow=plan-marshall:phase-{N}-{name}/SKILL.md`. The three context flags are
+not decoration: `--workflow` is what makes the resolve seam emit the
+`[DISPATCH]` work-log line and its paired decision-log record for that firing,
+so a bare `--role` resolve leaves the dispatch with no audit trail at all — see
+[`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md)
+§ Emission contract.
 
 1. **2-refine** — role key `phase-2-refine`; workflow `phase-2-refine/SKILL.md`.
    Recipe plans get automatic scope selection and confidence=100.

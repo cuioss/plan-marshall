@@ -645,7 +645,10 @@ def _filter_main_dirty_paths(paths: list[str], tree: str | Path) -> list[str]:
             resolve trackedness.
 
     Returns:
-        The retained (drift-relevant) subset, sorted and de-duplicated.
+        The retained (drift-relevant) subset, sorted and de-duplicated. The
+        exempted half is not discarded — :func:`_capture_main_dirty_exempted`
+        publishes it as its own column, so a filtered zero here is readable
+        against what the filter declined to count.
     """
     retained, _exempted = partition_plan_state_exemption(paths, tree)
     return retained
@@ -687,6 +690,39 @@ def _capture_main_dirty_files(_plan_id: str, _metadata: dict[str, Any], _phase: 
     if raw is None:
         return None
     return _filter_main_dirty_paths(raw, repo)
+
+
+def _capture_main_dirty_exempted(_plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
+    """Sorted list of main-checkout dirty paths the ``.plan/`` exemption DROPPED.
+
+    The published other half of :func:`_filter_main_dirty_paths`. That filter
+    computes ``(retained, exempted)`` and the layer-D column keeps only
+    ``retained``, so a zero in ``main_dirty_files`` says nothing about whether the
+    main checkout was genuinely clean or whether every leak was exempted as
+    untracked plan state. This capture records the exempted population so the two
+    columns together answer both questions: ``main_dirty_files`` is what the guard
+    acted on, ``main_dirty_exempted`` is what it declined to count.
+
+    Registered as ``informational_only`` in :data:`INVARIANT_BLOCKING_SCOPE` and
+    deliberately absent from ``summarize-invariants._CORE_INVARIANTS``. Both are
+    required: the set legitimately changes at every boundary (plan state is
+    written on every capture), so a blocking classification would refuse every
+    transition, and a core-invariant registration would turn every historical row
+    written before the column existed into a ``missing invariant`` error finding.
+
+    Returns ``None`` — the registry's "not applicable" contract, leaving the
+    column empty — when the MAIN checkout cannot be resolved
+    (:func:`_main_repo_root`) or the dirty-file probe against it fails. An empty
+    list is a real measurement (nothing was exempted) and is distinct from that.
+    """
+    repo = _main_repo_root()
+    if repo is None:
+        return None
+    raw = git_dirty_files(repo)
+    if raw is None:
+        return None
+    _retained, exempted = partition_plan_state_exemption(raw, repo)
+    return exempted
 
 
 def _main_dirty_drift_diff(baseline: list[str], observed: list[str]) -> list[str]:
@@ -1675,6 +1711,7 @@ INVARIANTS: list[tuple[str, AppliesFn, CaptureFn]] = [
     ('main_sha', _always, _capture_main_sha),
     ('main_dirty', _always, _capture_main_dirty),
     ('main_dirty_files', _always, _capture_main_dirty_files),
+    ('main_dirty_exempted', _always, _capture_main_dirty_exempted),
     ('worktree_sha', _worktree_in_use, _capture_worktree_sha),
     ('worktree_dirty', _worktree_in_use, _capture_worktree_dirty),
     ('references_valid', _always, _capture_references_valid),
@@ -1781,6 +1818,13 @@ INVARIANT_BLOCKING_SCOPE: dict[str, BlockingScope] = {
     # leak-into-main guard is moot once the orchestrator's cwd is the worktree.
     # Retained for the phases-1-4 boundaries that still operate on main.
     'main_dirty_files': _WORKTREE_STATE_DRIFT_BLOCKING_PHASES,
+    # Never blocking: the exempted population is untracked plan state, which is
+    # rewritten by the capture itself at every boundary, so its drift carries no
+    # correctness signal. The entry is MANDATORY rather than optional —
+    # ``is_invariant_blocking_at_phase`` fail-safes an UNMAPPED invariant to
+    # ``blocking_at_every_boundary``, so omitting it would make a column that
+    # changes by construction refuse every transition.
+    'main_dirty_exempted': 'informational_only',
     # Relaxed for phase-5+: the sideways worktree-SHA / worktree-dirty
     # comparisons are subsumed by main_sha / main_dirty once cwd IS the
     # worktree. They stay blocking at the planning-phase boundaries.

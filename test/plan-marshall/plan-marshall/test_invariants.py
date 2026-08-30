@@ -53,6 +53,7 @@ SCRIPTS_DIR = SCRIPT_PATH.parent
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+import _handshake_store as store  # noqa: E402
 import _invariants as inv  # noqa: E402
 
 # Plan ids this module's tests file findings against — seeded by the autouse
@@ -91,6 +92,14 @@ cmd_finalize_step = _step.cmd_finalize_step
 # than mocking the pending count.
 _findings_core = load_script_module(
     'plan-marshall', 'manage-findings', '_findings_core.py', '_invariants_test_findings_core'
+)
+
+# The retrospective summariser, loaded for one membership assertion: the
+# informational ``main_dirty_exempted`` column must stay OUT of the core set, or
+# every historical row written before the column existed becomes a severity-error
+# ``missing invariant`` finding.
+_summarize = load_script_module(
+    'plan-marshall', 'plan-retrospective', 'summarize-invariants.py', '_invariants_test_summarize'
 )
 add_finding = _findings_core.add_finding
 add_qgate_finding = _findings_core.add_qgate_finding
@@ -1271,6 +1280,140 @@ def test_main_checkout_dirtied_during_plan_exception_carries_payload() -> None:
     # The formatted message must mention the leaked paths so unstructured
     # log readers (raw stderr) can still see what leaked.
     assert 'new.md' in str(err)
+
+
+# =============================================================================
+# main_dirty_exempted — the published other half of the layer-D filter
+# =============================================================================
+#
+# ``_filter_main_dirty_paths`` computes ``(retained, exempted)`` and the layer-D
+# column keeps only ``retained``, so a zero there cannot distinguish a genuinely
+# clean main checkout from one whose every leak was exempted as untracked plan
+# state. ``_capture_main_dirty_exempted`` publishes the dropped population.
+#
+# The population assertion below is a MATCHED POSITIVE CONTROL: it must observe a
+# NON-EMPTY exempted set, not merely a serialisable column. An informational
+# column that can only ever be empty is a dead check, not a cautious one.
+# =============================================================================
+
+#: Untracked probe for the exempted-population control. A DIRECT child of
+#: ``.plan/`` on purpose: ``git status --porcelain`` collapses a fully-untracked
+#: directory to the directory entry, so a probe nested under one (``.plan/local/
+#: status.json``) is never reported under its own name. ``.plan/`` itself cannot
+#: collapse — it holds the tracked ``marshal.json`` — so a direct child is
+#: reported individually.
+_EXEMPTED_PROBE_RELPATH = '.plan/work.log'
+
+
+def _repo_with_untracked_plan_state(tmp_path: Path) -> Path:
+    """A repo holding one TRACKED ``.plan/`` file plus one UNTRACKED sibling.
+
+    Asserts its own anti-vacuity precondition: git must report the probe under
+    its own name, or every assertion built on it passes for the wrong reason.
+    """
+    repo = _repo_with_committed_plan_file(tmp_path)
+    (repo / _EXEMPTED_PROBE_RELPATH).write_text('[STATUS] boundary\n', encoding='utf-8')
+    porcelain = _git(repo, 'status', '--porcelain').stdout
+    assert f'?? {_EXEMPTED_PROBE_RELPATH}' in porcelain, (
+        'precondition: git must report the untracked probe under its own name, or '
+        f'the positive control is vacuous. Got: {porcelain!r}'
+    )
+    return repo
+
+
+def test_capture_main_dirty_exempted_publishes_the_dropped_untracked_plan_state(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """(MATCHED POSITIVE CONTROL) The exempted column observes a NON-EMPTY population.
+
+    A dirty UNTRACKED ``.plan/`` path is dropped from ``main_dirty_files`` by the
+    exemption; this capture must report it, so an operator can tell a clean main
+    checkout from one whose leaks were all exempted.
+    """
+    repo = _repo_with_untracked_plan_state(tmp_path)
+    monkeypatch.setattr(inv, '_main_repo_root', lambda: repo)
+
+    result = inv._capture_main_dirty_exempted('any-plan', {}, '5-execute')
+
+    assert result, (
+        'the exempted column must OBSERVE a non-empty population, not merely '
+        f'serialise an empty list — an always-empty column is a dead check. Got {result!r}'
+    )
+    assert _EXEMPTED_PROBE_RELPATH in result
+
+
+def test_main_dirty_exempted_and_main_dirty_files_partition_the_dirty_set(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The two columns are disjoint halves of one partition, each non-empty here.
+
+    The dirtied TRACKED ``.plan/`` file is a real leak and belongs to
+    ``main_dirty_files``; the untracked sibling is bookkeeping and belongs to
+    ``main_dirty_exempted``. Neither may appear in the other.
+    """
+    repo = _repo_with_untracked_plan_state(tmp_path)
+    (repo / '.plan' / 'marshal.json').write_text('{"schema": 1, "dirty": true}\n', encoding='utf-8')
+    monkeypatch.setattr(inv, '_main_repo_root', lambda: repo)
+
+    retained = inv._capture_main_dirty_files('any-plan', {}, '5-execute')
+    exempted = inv._capture_main_dirty_exempted('any-plan', {}, '5-execute')
+
+    assert retained == ['.plan/marshal.json']
+    assert exempted == [_EXEMPTED_PROBE_RELPATH]
+    assert set(retained).isdisjoint(exempted), 'the two halves must not overlap'
+
+
+def test_capture_main_dirty_exempted_returns_none_when_git_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed dirty probe propagates as ``None`` — the "not applicable" contract.
+
+    ``None`` leaves the column empty; an empty LIST is a real measurement
+    ("nothing was exempted"). The two must not collapse into one value.
+    """
+    monkeypatch.setattr(inv, 'git_dirty_files', lambda _cwd: None)
+    assert inv._capture_main_dirty_exempted('any-plan', {}, '5-execute') is None
+
+
+def test_main_dirty_exempted_registered_in_invariants() -> None:
+    """The registry must wire ``main_dirty_exempted`` to its capture function."""
+    names = [name for name, _, _ in inv.INVARIANTS]
+    assert 'main_dirty_exempted' in names, f'main_dirty_exempted must be registered, got {names}'
+    _name, applies_fn, capture_fn = next(t for t in inv.INVARIANTS if t[0] == 'main_dirty_exempted')
+    assert capture_fn is inv._capture_main_dirty_exempted
+    assert applies_fn('any-plan', {}) is True
+
+
+def test_main_dirty_exempted_is_informational_only() -> None:
+    """The blocking-scope entry is MANDATORY, not an optional relaxation.
+
+    ``is_invariant_blocking_at_phase`` fail-safes an UNMAPPED invariant to
+    ``blocking_at_every_boundary``, so an omitted entry would make a column that
+    changes at every boundary by construction refuse every transition.
+    """
+    assert inv.INVARIANT_BLOCKING_SCOPE['main_dirty_exempted'] == 'informational_only'
+    for phase in ('1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-finalize'):
+        assert inv.is_invariant_blocking_at_phase('main_dirty_exempted', phase) is False
+
+
+def test_main_dirty_exempted_registered_as_a_list_typed_column() -> None:
+    """A list-typed column goes in ``HANDSHAKE_FIELDS`` AND ``HANDSHAKE_LIST_FIELDS``.
+
+    Registering it in the field list alone would persist ``''`` for a missing
+    value, which round-trips as a string and breaks the list interpretation.
+    """
+    assert 'main_dirty_exempted' in store.HANDSHAKE_FIELDS
+    assert 'main_dirty_exempted' in store.HANDSHAKE_LIST_FIELDS
+
+
+def test_main_dirty_exempted_absent_from_summarize_core_invariants() -> None:
+    """The informational column must NOT be a core invariant.
+
+    ``summarize-invariants`` emits a severity-``error`` ``missing invariant``
+    finding for every core invariant absent from a row, so adding this column to
+    the core set would retroactively fault every row captured before it existed.
+    """
+    assert 'main_dirty_exempted' not in _summarize._CORE_INVARIANTS
 
 
 # =============================================================================

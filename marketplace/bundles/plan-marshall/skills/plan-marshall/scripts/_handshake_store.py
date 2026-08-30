@@ -33,6 +33,13 @@ HANDSHAKE_FIELDS = [
     # ``main_dirty_files`` provides the path signal that drives the
     # structured ``main_checkout_dirtied_during_plan`` error payload.
     'main_dirty_files',
+    # ``main_dirty_exempted`` is the published other half of the same partition:
+    # the TOON list of dirty ``.plan/`` paths the exemption DROPPED as untracked
+    # plan state. It carries no drift check of its own — it is classified
+    # ``informational_only`` in ``_invariants.INVARIANT_BLOCKING_SCOPE`` — and
+    # exists so an empty ``main_dirty_files`` is readable: a genuinely clean main
+    # checkout and one whose every leak was exempted are otherwise identical.
+    'main_dirty_exempted',
     'worktree_sha',
     'worktree_dirty',
     'references_valid',
@@ -52,7 +59,10 @@ HANDSHAKE_FIELDS = [
 # via :func:`_handshake_commands._coerce_path_list`. New list-typed
 # columns should be added here AND to ``HANDSHAKE_FIELDS``; the order in
 # ``HANDSHAKE_FIELDS`` controls on-disk column order.
-HANDSHAKE_LIST_FIELDS: frozenset[str] = frozenset({'main_dirty_files'})
+HANDSHAKE_LIST_FIELDS: frozenset[str] = frozenset({
+    'main_dirty_files',
+    'main_dirty_exempted',
+})
 
 
 def handshake_path(plan_id: str) -> Path:
@@ -79,8 +89,8 @@ def save_rows(plan_id: str, rows: list[dict[str, Any]]) -> None:
 
     Scalar columns default to ``''`` when missing from the row dict
     (preserving the previous on-disk contract for empty / not-applicable
-    invariant captures). List-typed columns — currently only
-    ``main_dirty_files``, flagged by :data:`HANDSHAKE_LIST_FIELDS` —
+    invariant captures). List-typed columns — those flagged by
+    :data:`HANDSHAKE_LIST_FIELDS` —
     default to ``[]`` so the captured TOON list shape survives the
     round-trip; persisting ``''`` for a list field would round-trip as
     a string and break :func:`_handshake_commands._coerce_path_list`'s

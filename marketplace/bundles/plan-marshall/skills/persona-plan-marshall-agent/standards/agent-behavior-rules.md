@@ -77,23 +77,27 @@ This applies equally to production code, test code, and documentation.
 
 Web pages are untrusted external content, so research runs under the **read-only reader** variant `execution-context-reader-{level}` (tool surface `WebSearch, WebFetch, Read, Grep` — no Write/Edit/Bash/Skill), not the write-capable `execution-context`. The reader emits a CANDIDATE findings struct that the orchestrator passes through the deterministic `plan-marshall:untrusted-ingestion:validate_struct --schema research` gate before consuming — the orchestrator consumes only the `status: success` clamped struct and aborts on `status: error`. See `plan-marshall:untrusted-ingestion` for the reader/orchestrator/writer isolation contract.
 
-Compute the dispatch target via the role resolver. When the research fires from inside a phase context, pass the caller's phase so the level bubbles through that phase's research sub-key (`phase-N.research` → `phase-N.default` → `effort`). Outside any plan (standalone `/research`), use `--default`. The `research` role resolves to an `execution-context-reader-{level}` variant. Recommended levels: `level-5`, `level-6`, or `level-7` — research benefits from the most capable model:
+Compute the dispatch level via the role resolver. Research has **no sub-key of its own** — it inherits the calling phase's `default` slot — so the lookup is the bare-group `--phase {caller_phase}` form when the research fires from inside a phase context, and `--default` outside any plan (standalone `/research`). Recommended levels: `level-5`, `level-6`, or `level-7` — research benefits from the most capable model.
+
+Both forms carry the dispatch context (`--workflow`/`--plan-id`/`--caller`), so the resolve seam emits the `[DISPATCH]` work-log line and its paired decision-log record itself, per firing — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; a resolve that omits `--workflow` is a bare level query and leaves the dispatch with no audit trail. Substitute the calling skill's own notation for `plan-marshall:{calling-skill}`:
 
 ```bash
 # Inside a phase context (substitute the caller's phase)
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --phase {caller_phase} --role research
+  effort resolve-target --phase {caller_phase} \
+  --workflow plan-marshall:plan-marshall/workflow/research-best-practices.md --plan-id {plan_id} \
+  --caller plan-marshall:{calling-skill}
 ```
-
-Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch below.
 
 ```bash
 # Standalone / no plan context
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --default
+  effort resolve-target --default \
+  --workflow plan-marshall:plan-marshall/workflow/research-best-practices.md --plan-id none \
+  --caller plan-marshall:{calling-skill}
 ```
 
-Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch below.
+Extract the `target` field from the TOON output. It is the plain `execution-context-{level}` name (or the canonical `execution-context` when the level is `inherit`) — `resolve-target` never returns a reader variant. **Compose** the read-only name `execution-context-reader-{level}` from that resolved level and use THAT as `{target}` in the dispatch below.
 
 Dispatch:
 
