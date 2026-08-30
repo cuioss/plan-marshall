@@ -104,7 +104,7 @@ def _classifier_function_source() -> str:
     sibling surface, and this guard needs only the bucket literals its returns
     name.
     """
-    text = _CLASSIFIER_SOURCE.read_text(encoding='utf-8')
+    text: str = _CLASSIFIER_SOURCE.read_text(encoding='utf-8')
     start = text.index('def _classify_paths_via_extensions')
     end = text.index('\ndef ', start + 1)
     return text[start:end]
