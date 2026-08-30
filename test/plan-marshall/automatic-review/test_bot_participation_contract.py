@@ -26,8 +26,8 @@ CONTRACT the components jointly implement:
 * every DOCUMENTED call site additionally resolves to a recorded EVIDENCE CLASS —
   the ``reads`` axis of the participation-site population's own expectation record
   for the script the site's executor notation names — so a call site that invokes a
-  participation script ``test_participation_site_population.py`` holds no record for
-  fails here instead of escaping both populations;
+  participation script for which ``test_participation_site_population.py`` holds no
+  record fails here instead of escaping both populations;
 * a crashed participation gate is an UNKNOWN verdict at both families and at both
   consuming documents — never a recorded pass;
 * each advertised invocation form agrees with its live argparse surface on the
