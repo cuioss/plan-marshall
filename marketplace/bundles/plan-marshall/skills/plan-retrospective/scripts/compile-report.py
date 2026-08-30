@@ -610,9 +610,16 @@ def _renders_usable_body(fragment: Any) -> bool:
     the trailing JSON dump is mechanical and is emitted for every fragment
     whatsoever, so treating it as content would make the answer unconditionally
     ``True`` and restore the defect. ``dispatch_boundaries`` reaches the same
-    answer through its own renderer: it is refused precisely when no phase is
-    ``present``, which is the case its renderer prints
-    ``_No dispatch-boundary artifacts present._`` for.
+    answer for a different reason, stated here because the renderer does NOT
+    supply it: a fragment whose phases all report ``present: false`` carries only
+    per-phase bookkeeping, which is not reader-facing content, so "no phase
+    reports ``present: true``" is nothing to report. (The renderer's
+    ``_No dispatch-boundary artifacts present._`` line is NOT that mechanism — it
+    is printed only when the fragment is not a dict or is falsy. A non-empty
+    per-phase dict whose only phase carries ``present: false`` emits the table
+    header, skips the row at the ``present`` guard, and falls through to the JSON
+    dump of the full fragment. The classification stays as it is and is pinned by
+    ``test_no_present_phase_is_omitted``; only the premise was wrong.)
 
     For a **non-dict** the reader-facing content IS the value, so emptiness is
     judged by :func:`_fragment_renders_empty` — a bare non-empty string, int or
@@ -664,18 +671,40 @@ def _exec_summary_is_drop(exec_fragment: Any) -> bool:
       carries the non-dict arm, which the payload predicate cannot: a bare ``0``
       renders a value a reader can act on, and :func:`_fragment_has_payload`
       reports ``False`` for every non-dict.
-    * :func:`_fragment_has_payload` — content the renderer CANNOT show. Reaching
-      this branch means ``exec_text`` came out empty, so ``summary`` is empty by
-      construction and any payload left is unreachable by definition. This is the
-      clause that keeps a narrative written to the wrong key LOUD instead of
-      letting it vanish into ``sections_omitted`` with ``dropped == []``.
+    * :func:`_fragment_has_payload` — content the renderer CANNOT show, asked of
+      every key EXCEPT ``summary``. This is the clause that keeps a narrative
+      written to the WRONG key LOUD instead of letting it vanish into
+      ``sections_omitted`` with ``dropped == []``.
+
+    ⛔ ``summary`` is excluded from the payload question, and the exclusion is
+    load-bearing rather than tidy. ``summary`` is the one key this renderer
+    reads, and reaching this branch means what it held rendered to nothing — so
+    it is not unshowable content by definition of how it got here. Asking the
+    payload question of it anyway reported a fragment holding ONLY blanks as a
+    lost section: ``build_document`` tests ``exec_fragment.get('summary')``,
+    which is truthy for ``'   '``, so ``exec_text`` strips to empty and the row
+    takes this branch; :func:`_renders_usable_body` is ``False``, while
+    :func:`_fragment_has_payload` is ``True`` because ``'   '`` is none of the
+    ``None`` / ``''`` / ``[]`` / ``{}`` sentinels. The heading then landed in
+    ``sections_dropped`` and raised the run to ``warning`` with nothing lost —
+    and made ``{'summary': ''}`` a benign omission while ``{'summary': '   '}``
+    was a loud drop.
 
     ⛔ The payload clause is confined to THIS branch and must not be carried back
     to the conditional one, where it is the original defect: the real clean-run
     ``script-failure-analysis`` fragment carries ``plan_id`` and zero-valued
     counters — all payload — and reported a dropped section on every healthy run.
     """
-    return _renders_usable_body(exec_fragment) or _fragment_has_payload(exec_fragment)
+    if _renders_usable_body(exec_fragment):
+        return True
+    if not isinstance(exec_fragment, dict):
+        # ``_fragment_has_payload`` is False for every non-dict, so this is the
+        # same answer the payload clause gave — stated directly rather than
+        # routed through a call whose dict-only contract would be re-read here.
+        return False
+    return _fragment_has_payload(
+        {key: value for key, value in exec_fragment.items() if key != 'summary'}
+    )
 
 
 def _heading_from_aspect_key(aspect_key: str) -> str:

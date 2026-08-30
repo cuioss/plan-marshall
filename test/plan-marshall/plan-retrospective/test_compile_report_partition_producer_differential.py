@@ -9,9 +9,10 @@ every cell, so a partition change that fixes one shape while breaking a sibling
 fails here rather than in a report someone reads later.
 
 ⛔ The row population is DERIVED from ``retro_sections.SECTION_SPEC``, never
-listed here. A conditional row added later joins the grid automatically and, if
-this module has no shape coverage for it, fails :meth:`TestDifferentialPopulation`
-— where the omission is fixable — instead of silently going untested.
+listed here. A conditional row added later joins ``_aspect_shaped_rows()`` and is
+therefore covered automatically by the ``test_partition_cell`` parametrization,
+which is where the protection against an untested row actually lives — the
+derived parametrization, not any assertion about it.
 """
 
 
@@ -179,14 +180,32 @@ def _classify(tmp_path, fragment_key: str, fragment) -> str:
 
 
 class TestDifferentialPopulation:
-    """The grid covers every conditional row the registry declares."""
+    """The grid's population, and the one hygiene check that can actually fail."""
 
-    def test_every_conditional_row_is_covered(self):
+    def test_no_non_aspect_shaped_row_is_stale(self):
+        """``_NON_ASPECT_SHAPED_ROWS`` names only rows the registry still declares.
+
+        This is the guard's ONE reachable failure direction, stated as itself
+        rather than dressed as a coverage check. Its predecessor compared
+        ``_aspect_shaped_rows() | _NON_ASPECT_SHAPED_ROWS`` against
+        ``_conditional_rows()`` and advertised an ``uncovered=`` half — but
+        ``_aspect_shaped_rows()`` IS ``_conditional_rows()`` minus that same
+        frozenset, so ``covered`` was always ``declared | _NON_ASPECT_SHAPED_ROWS``
+        and ``declared - covered`` was empty by construction. The name that half
+        promised to print could never appear.
+
+        A conditional row added later is NOT caught here, and does not need to be:
+        it joins ``_aspect_shaped_rows()`` and is covered by the
+        ``test_partition_cell`` parametrization below. That derived parametrization
+        is the coverage mechanism; this assertion is the carve-out's own hygiene.
+        """
         declared = set(_conditional_rows())
-        covered = set(_aspect_shaped_rows()) | _NON_ASPECT_SHAPED_ROWS
-        assert covered == declared, (
-            'SECTION_SPEC conditional rows and this differential disagree; '
-            f'uncovered={sorted(declared - covered)}, stale={sorted(covered - declared)}'
+        stale = _NON_ASPECT_SHAPED_ROWS - declared
+        assert not stale, (
+            '_NON_ASPECT_SHAPED_ROWS names rows SECTION_SPEC no longer declares as '
+            f'conditional; stale={sorted(stale)}. Each is excluded from the grid '
+            'and handled by no sibling class, so the exclusion hides nothing but '
+            'itself'
         )
 
     def test_the_grid_is_not_empty(self):

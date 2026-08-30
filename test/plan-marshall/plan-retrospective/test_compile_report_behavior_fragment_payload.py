@@ -257,6 +257,65 @@ class TestExecutiveSummaryResolvesTheQuestionAgainstItsOwnRenderer:
         assert 'Script Failure Analysis' in omitted
         assert dropped == []
 
+    def test_a_whitespace_only_summary_is_a_benign_omission_not_a_drop(self, tmp_path):
+        """⛔ The blank-``summary`` false drop — nothing was lost, so nothing is loud.
+
+        ``build_document`` tests ``exec_fragment.get('summary')``, which is truthy
+        for ``'   '``, so ``exec_text`` strips to empty and the row takes the
+        non-emit branch. ``_renders_usable_body`` is ``False``, and the payload
+        clause used to answer ``True`` because ``'   '`` is none of the ``None`` /
+        ``''`` / ``[]`` / ``{}`` sentinels — so a fragment holding ONLY blanks was
+        filed as a lost section and raised the whole run to ``warning``.
+
+        Its matched control is the next test: ``{'summary': ''}`` was ALREADY a
+        benign omission. The two fragments differ by whitespace alone, and the
+        defect was precisely that they landed in opposite partitions.
+        """
+        fragments = {'_executive-summary': {'summary': '   '}}
+        _c, written, omitted, dropped = _cr.build_document(
+            'demo', 'live', tmp_path, None, fragments
+        )
+        assert 'Executive Summary' not in written
+        assert 'Executive Summary' in omitted
+        assert dropped == []
+        # The container predicate still reports payload for the blank. Pinning it
+        # here names WHERE the fix lives: the exclusion in _exec_summary_is_drop,
+        # not a redefinition of what counts as payload.
+        assert _cr._fragment_has_payload({'summary': '   '}) is True
+
+    def test_an_empty_string_summary_is_a_benign_omission(self, tmp_path):
+        """The control the case above is judged against — ``''`` was never a drop.
+
+        Without it the assertion above would read as a claim about the Executive
+        Summary row in general, rather than about the whitespace ASYMMETRY that
+        was the defect.
+        """
+        fragments = {'_executive-summary': {'summary': ''}}
+        _c, _w, omitted, dropped = _cr.build_document(
+            'demo', 'live', tmp_path, None, fragments
+        )
+        assert 'Executive Summary' in omitted
+        assert dropped == []
+
+    def test_a_blank_summary_beside_a_wrong_key_narrative_is_still_a_loud_drop(
+        self, tmp_path
+    ):
+        """⛔ The over-correction control: the exclusion must not MUTE the clause.
+
+        Same blank ``summary``, but a narrative under another key. Had the fix
+        been written as "skip the payload question whenever ``summary`` is
+        present", this content would vanish into ``sections_omitted`` with
+        ``dropped == []`` — reintroducing the silent loss the clause exists to
+        prevent, by way of the fix for the false positive. The exclusion is of the
+        ``summary`` KEY from the payload question, not of the question itself.
+        """
+        fragments = {'_executive-summary': {'summary': '   ', 'narrative': 'real prose'}}
+        _c, _w, omitted, dropped = _cr.build_document(
+            'demo', 'live', tmp_path, None, fragments
+        )
+        assert 'Executive Summary' in dropped
+        assert 'Executive Summary' not in omitted
+
     def test_an_envelope_only_executive_summary_is_a_benign_omission(self, tmp_path):
         """The matched negative bounding the drop above: no payload, nothing lost."""
         fragments = {'_executive-summary': {'status': 'success', 'aspect': 'executive_summary'}}
