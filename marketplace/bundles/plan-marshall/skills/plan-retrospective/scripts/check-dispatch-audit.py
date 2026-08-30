@@ -588,10 +588,11 @@ def evaluate_dispatch_coverage(
     no_evidence: list[str] = []
     for step in terminal_steps:
         recorded = tokens_by_step.get(step, None)
-        if step not in tokens_by_step or recorded is None:
-            # Two routes into the same honest state: no row at all, and a row
-            # whose `total_tokens` could not be read. Neither is a measurement,
-            # so neither may buy the step a `ran_inline` classification.
+        if recorded is None:
+            # Two routes into the same honest state: no row at all (the `.get`
+            # default), and a row whose `total_tokens` could not be read (a
+            # stored `None`). Neither is a measurement, so neither may buy the
+            # step a `ran_inline` classification.
             no_evidence.append(step)
         elif recorded > 0:
             dispatched.append(step)
