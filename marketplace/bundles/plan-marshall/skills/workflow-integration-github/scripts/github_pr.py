@@ -94,6 +94,8 @@ import github_ops as _github
 from _github_pr import (
     REFUSAL_CAUSE_SIZE,
     REFUSAL_LAYER_ENUMERATIVE,
+    REFUSAL_LAYER_REGISTRY,
+    REFUSAL_LAYER_STRUCTURAL,
     RESOLVE_THREAD_MUTATION,
     THREAD_REPLY_MUTATION,
     _is_refusal_notice,
@@ -1426,11 +1428,16 @@ def cmd_fetch_findings(args):
     # those two answer different questions, and collapsing them would lose exactly
     # the distinction between a refusal the stack READ and one it could only detect.
     unrecognised_refusal: list[dict[str, str]] = []
-    # One record per bot whose refusal-recognition arms DISAGREED — the notice was
-    # caught, but by only one arm. Deduped on ``(bot_kind, layer)`` because drift is
-    # a property of the BOT's declared wording, not of each comment carrying it: a
-    # bot that posts the same drifted notice five times has one stale record to fix,
-    # and five identical rows would read as five problems.
+    # One record per bot whose notice the STRUCTURAL arm read while the bot's own
+    # declared ``refusal_patterns`` did not — the one direction in which a
+    # single-arm catch means the registry record has gone stale. The mirror
+    # direction is not recorded: a registry-only match is what the registry arm is
+    # load-bearing FOR (a size notice is invisible to the structural arm by
+    # construction), so recording it would report the design as decay. Deduped on
+    # ``(bot_kind, layer)`` because drift is a property of the BOT's declared
+    # wording, not of each comment carrying it: a bot that posts the same drifted
+    # notice five times has one stale record to fix, and five identical rows would
+    # read as five problems.
     refusal_pattern_drift: list[dict[str, str]] = []
     _drift_seen: set[tuple[str, str]] = set()
     unclassified_set: set[str] = set()
@@ -1487,15 +1494,26 @@ def cmd_fetch_findings(args):
                     cap = refusal_size_cap(body, bot_kind)
                     if cap:
                         refused_size_caps[bot_kind] = cap
-                # DRIFT: the arms disagreed — exactly one recognised this notice.
-                # The refusal was still caught, so nothing about the verdict changes;
-                # what changes is that the catch is now known to rest on a SINGLE
-                # arm. The load-bearing case is a body only the structural arm reads:
-                # the bot's declared ``refusal_patterns`` have gone stale against its
-                # current wording, and the next rewording may clear the structural
-                # shape too and be filed as review feedback. That is invisible to the
-                # boolean, which returns True either way — which is why the
-                # provenance seam exists.
+                # DRIFT: the STRUCTURAL arm read this notice while the bot's own
+                # declared ``refusal_patterns`` did NOT. The refusal was still
+                # caught, so nothing about the verdict changes; what changes is that
+                # the catch is now known to rest on the shape-based last resort
+                # ALONE: the registry record has gone stale against the bot's current
+                # wording, and the next rewording may clear the structural shape too
+                # and be filed as review feedback. That is invisible to the boolean,
+                # which returns True either way — which is why the provenance seam
+                # exists.
+                #
+                # The predicate is DIRECTIONAL — deliberately not "exactly one arm
+                # fired". The mirror case, registry matched while the structural arm
+                # did not, is the DESIGNED state for a whole class of refusals and
+                # never decay: Sourcery's size notice ("your pull request is larger
+                # than the review limit of …") is a COMPARISON, not an
+                # "exceeded / reached / hit" statement, so it is invisible to the
+                # structural arm BY CONSTRUCTION and its registry-only match is the
+                # registry doing precisely the job it is load-bearing for. Reading
+                # that as drift reported the architecture working as designed, which
+                # is why the arm is named rather than counted.
                 #
                 # Scoped to a declared participation_evidence publish shape so the
                 # signal is about an artifact the bot actually publishes when it
@@ -1504,12 +1522,15 @@ def cmd_fetch_findings(args):
                 _drift_kind = comment.get('kind') or 'inline'
                 if _drift_kind in bot_registry.participation_evidence(bot_kind):
                     _layers = refusal_layers(body, bot_kind)
-                    if len(_layers) == 1:
-                        _key = (bot_kind, _layers[0])
+                    if REFUSAL_LAYER_STRUCTURAL in _layers and REFUSAL_LAYER_REGISTRY not in _layers:
+                        # The layer is named, never read positionally: the predicate
+                        # above admits exactly one arm, so the recorded value cannot
+                        # depend on the order ``refusal_layers`` happens to append in.
+                        _key = (bot_kind, REFUSAL_LAYER_STRUCTURAL)
                         if _key not in _drift_seen:
                             _drift_seen.add(_key)
                             refusal_pattern_drift.append(
-                                {'bot_kind': bot_kind, 'layer': _layers[0]}
+                                {'bot_kind': bot_kind, 'layer': REFUSAL_LAYER_STRUCTURAL}
                             )
             continue
 
@@ -1864,11 +1885,14 @@ def cmd_fetch_findings(args):
         # the gap (registry_file / registry_field / remedy), so the remedy ships
         # with the finding rather than as prose elsewhere.
         'unrecognised_refusal': unrecognised_refusal,
-        # One record per bot whose refusal-recognition arms DISAGREED on a notice —
-        # {bot_kind, layer}, where ``layer`` is the arm that fired ALONE. A
-        # ``structural_fallback`` value is the actionable one: the bot's declared
-        # refusal_patterns no longer match its own wording, so the catch now rests
-        # on shape alone. Diagnostic only — it changes no verdict and gates nothing.
+        # One record per bot whose notice the STRUCTURAL arm read while the bot's own
+        # declared refusal_patterns did NOT — {bot_kind, layer}, where ``layer`` is
+        # therefore always ``structural_fallback``. That is the actionable direction
+        # and the only one recorded: the bot's declared refusal_patterns no longer
+        # match its own wording, so the catch now rests on shape alone. A
+        # registry-only match is NOT recorded — it is the registry arm doing the job
+        # it is load-bearing for, not decay. Diagnostic only — it changes no verdict
+        # and gates nothing.
         'refusal_pattern_drift': refusal_pattern_drift,
         # The orthogonal CAUSE axis for each refusing bot — {bot_kind, cause} with
         # cause in {size, quota}. Distinct from rate_limit_class's awaitability: it

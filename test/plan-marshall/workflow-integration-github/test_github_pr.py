@@ -1119,6 +1119,19 @@ _AGREEING_CODERABBIT_NOTICE = (
     'Review limit reached. Reviews will resume after the limit resets.'
 )
 
+#: Sourcery's OBSERVED size refusal — the MIRROR direction of the drifted notice
+#: above. The bot's own declared ``refusal_patterns`` match it while the structural
+#: arm is blind to it ("larger than the review limit of" is a COMPARISON, not an
+#: "exceeded / reached / hit" statement), so the arms differ in the REGISTRY-only
+#: direction. Interpolated from the registry marker rather than hand-copied, so it
+#: tracks the declared wording; that it really is registry-only is ASSERTED in the
+#: control below rather than assumed here.
+_SOURCERY_SIZE_REFUSAL = (
+    'Sourcery was unable to review this pull request because '
+    f'{bot_registry.refusal_patterns("sourcery")[0]} 150000 characters. '
+    'Reduce the size of the pull request and request another review.'
+)
+
 
 def _drift_records(result):
     return {(r['bot_kind'], r['layer']) for r in result['refusal_pattern_drift']}
@@ -1161,6 +1174,62 @@ def test_fetch_findings_reports_drift_when_only_the_structural_arm_matched(
     assert result['refusal_pattern_drift'] == [
         {'bot_kind': 'coderabbit', 'layer': _github_pr.REFUSAL_LAYER_STRUCTURAL}
     ]
+
+
+def test_fetch_findings_reports_no_drift_when_only_the_registry_arm_matched(
+    plan_context, monkeypatch
+):
+    """⛔ MATCHED NEGATIVE CONTROL: a registry-only match is the DESIGN, not decay.
+
+    The exact mirror of the positive case above — one arm fires there too, so a
+    predicate that merely counted the matching arms (``len(layers) == 1``) reported
+    drift for BOTH. But the two directions mean opposite things. A body only the
+    STRUCTURAL arm reads means the bot's declared wording went stale. A body only
+    the REGISTRY arm reads is the registry doing precisely the job it is
+    load-bearing FOR: Sourcery's size refusal is invisible to the structural arm BY
+    CONSTRUCTION, so this state is permanent and correct, and reporting it as drift
+    named a stale record that does not exist. It fired for real on PR #1368.
+
+    Anti-vacuity: the registry-only direction is ASSERTED against the live registry
+    (not assumed of the fixture), and the publish shape is asserted to be one
+    Sourcery declares — so this cannot pass because the drift channel was never
+    reached at all, which is what the wrong-shape control below covers instead.
+    """
+    plan_id = 'gh-pr-refusal-registry-only'
+    # The arms really do differ, and in the REGISTRY direction — the mirror of the
+    # positive case. Read from the live seam so a registry rewording that made this
+    # body structurally visible fails here rather than silently neutering the test.
+    assert _github_pr.refusal_layers(_SOURCERY_SIZE_REFUSAL, 'sourcery') == [
+        _github_pr.REFUSAL_LAYER_REGISTRY
+    ]
+    # ...and the drift channel is genuinely REACHED: review_body is a shape Sourcery
+    # declares, so an empty result below is the direction, never the shape gate.
+    assert 'review_body' in bot_registry.participation_evidence('sourcery')
+
+    comments = [
+        {
+            'id': 'sr-size',
+            'author': 'sourcery-ai',
+            'thread_id': '',
+            'kind': 'review_body',
+            'body': _SOURCERY_SIZE_REFUSAL,
+            'resolved': False,
+        },
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(136, plan_id)
+
+    assert result['status'] == 'success'
+    # The refusal is recognised, attributed, and classified exactly as before —
+    # narrowing the drift predicate changes no verdict.
+    # (``refused_bots`` naming sourcery IS the proof the registry arm fired, since
+    # the structural arm was just asserted blind to this body.)
+    assert result['count_skipped_refusal'] == 1
+    assert result['refused_bots'] == ['sourcery']
+    # ...and NO drift is reported: the registry arm matching alone is the designed
+    # state for this whole class of refusal, so there is no stale record to name.
+    assert result['refusal_pattern_drift'] == []
 
 
 def test_fetch_findings_reports_no_drift_when_both_arms_agree(plan_context, monkeypatch):
