@@ -84,10 +84,10 @@ Read `re_review_on_branch_cleanup` off the returned `params` object (default: `t
 
 ### On re-review timeout (trigger A)
 
-This sub-block is evaluated on exactly TWO entrants from the `github_re_review re-review` call above, and on nothing else:
+This sub-block is evaluated on exactly TWO entrants from the `github_re_review re-review` call above, and on nothing else. The two items below state that ENTRY CONDITION — which returns reach this block — and neither is an outcome arm: they carry no disposition of their own, and every branch further down applies to both.
 
-- **`timed_out: true` AND `matched: false`** — the await budget (`re_review_await_timeout_seconds`) expired before a fresh bot review landed for the rebased HEAD.
-- **`matched: true` AND `head_sha_verified: false`** — the incremental-review decline the bullet above routes here: the bot answered, but its answer named no reviewed-commit SHA, so it did not review the rebased HEAD.
+- Entrant 1, the timeout — **`timed_out: true` AND `matched: false`**: the await budget (`re_review_await_timeout_seconds`) expired before a fresh bot review landed for the rebased HEAD.
+- Entrant 2, the decline — **`matched: true` AND `head_sha_verified: false`**: the incremental-review decline the bullet above routes here; the bot answered, but its answer named no reviewed-commit SHA, so it did not review the rebased HEAD.
 
 ⛔ **Both entrants, not the timeout alone.** An entry condition naming only the timeout is what made the decline arm's routing unreachable as written: the bullet above sends a decline into this block while a condition scoped to `timed_out: true` AND `matched: false` rejects the very case it was handed. The two share this disposition path for the reason that bullet states — re-triggering a bot that just declined produces another decline, exactly as re-triggering after a timeout produces another timeout — so every branch below applies to both unchanged.
 
