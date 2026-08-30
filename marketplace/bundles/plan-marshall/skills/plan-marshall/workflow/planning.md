@@ -385,7 +385,13 @@ dirty_files: {file_list}
 
 Do NOT call `manage-status transition` to 3-outline. Do NOT proceed with the metrics fused-call. The orchestrator stops here; recovery requires the user to inspect the offending files and either revert them or move them into `.plan/local/plans/{plan_id}/**`.
 
-**Named recovery case — `.plan/marshal.json`** (the single authority for this recovery — the outline and plan phase boundaries reference this block): When `dirty_files` contains `.plan/marshal.json`, the clean-main assertion has established only that **the dispatched phase did not write it** — no planning phase (2-refine, 3-outline, 4-plan) may mutate project configuration (`plan-marshall:phase-2-refine` § Enforcement → Prohibited actions forbids the mutating `manage-config` verbs `set`, `init`, `sync-defaults`, `sync-plan-defaults`, and confines writes to `.plan/local/plans/{plan_id}/**`), so `marshal.json` is never a planning-phase output artifact.
+**Named recovery case — `.plan/marshal.json`** (the single authority for this recovery — the outline and plan phase boundaries reference this block): When `dirty_files` contains `.plan/marshal.json`, the clean-main assertion has established only that **the dispatched phase did not write it** — no planning phase (2-refine, 3-outline, 4-plan) may mutate project configuration, and each of the three states that prohibition in its own § Enforcement → Prohibited actions:
+
+- `plan-marshall:phase-2-refine` § Enforcement → Prohibited actions forbids the mutating `manage-config` verbs `set`, `init`, `sync-defaults` and `sync-plan-defaults`, and confines writes to `.plan/local/plans/{plan_id}/**` and `.plan/local/worktrees/{plan_id}/**` (enumerated in that skill's § Enforcement → Allowed write paths).
+- `plan-marshall:phase-3-outline` § Enforcement → Prohibited actions forbids mutating any source file outside `.plan/local/plans/{plan_id}/`.
+- `plan-marshall:phase-4-plan` § Enforcement → Prohibited actions forbids the same.
+
+So `marshal.json` is never a planning-phase output artifact.
 
 It does **not** follow that the file is safe to discard. The guard cannot see *who* wrote it — only that this phase did not. The likeliest author of a dirty `marshal.json` in the main checkout is the **operator**: uncommitted, unstaged configuration edits (for example, effort-level changes staged to carry into a plan) that were never a phase output. Discarding the file with `git checkout -- .plan/marshal.json` would destroy those edits **irrecoverably** — no reflog covers an unstaged worktree file, so nothing (`git fsck` included) can bring them back.
 

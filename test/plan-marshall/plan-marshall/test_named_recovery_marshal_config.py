@@ -49,6 +49,20 @@ WORKFLOW_DIR = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 'workflow'
 )
 
+#: The layer-D recovery document lives here, NOT under the planning workflow
+#: directory. A population-derived guard whose population is drawn from the wrong
+#: directory set is the shrunk-population failure mode — the sweep looks total
+#: while the surface it never reaches carries the defect.
+WORKTREE_STANDARDS_DIR = (
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'workflow-integration-git' / 'standards'
+)
+
+#: Every directory the named-recovery heading sweep covers.
+SWEPT_DIRS = (WORKFLOW_DIR, WORKTREE_STANDARDS_DIR)
+
+#: The layer-D recovery document, swept directly by the sibling assertion.
+WORKTREE_HANDLING = WORKTREE_STANDARDS_DIR / 'worktree-handling.md'
+
 #: The stable assertion-shape identifier for a named-recovery site. Derivation
 #: keys on this heading, not on a command string — the command is exactly the
 #: thing the fix removes, so a command-string sweep would report the class
@@ -75,6 +89,21 @@ _UNCONDITIONAL_DISCARD = re.compile(r'git (?:checkout|restore)\b[^\n`]*\.plan/ma
 #: span and the path in another does not read as an inspection command.
 _INSPECTION_COMMAND = re.compile(r'git diff\b[^\n`]*\.plan/marshal\.json')
 
+#: A destructive discard aimed at ANY path, not only ``marshal.json``. The
+#: layer-D recovery loop reverts ``{path}``, so the marshal.json-keyed pattern
+#: above cannot see it.
+_DESTRUCTIVE_ANY_PATH = re.compile(r'git\b[^\n`]*\b(?:checkout\s+--|restore)\s')
+
+#: A concrete diff command — one that surfaces CONTENT, not merely a path list.
+_CONTENT_INSPECTION = re.compile(r'git\b[^\n`]*\bdiff\b')
+
+#: Wording that presents a destructive revert as the DEFAULT disposition rather
+#: than one an operator must choose. ``(typical case)`` was the shipped form.
+_REVERT_PRESUMED_DEFAULT = re.compile(r'typical case|usual case', re.IGNORECASE)
+
+#: Section boundaries in a standards document: any markdown ATX heading.
+_MD_HEADING = re.compile(r'^#{1,6}\s')
+
 #: The cross-reference that points at the single authority — accepted as a
 #: ``- `` bullet or as an inline ``§`` citation, since both are pointers.
 _AUTHORITY_POINTER = re.compile(
@@ -89,23 +118,34 @@ _DISPOSITION_DISCARD = re.compile(r'^\s*[-*]\s+\**Discard\**\s*[—:-]', re.MULT
 
 
 def _derive_named_recovery_regions() -> list[tuple]:
-    """Sweep every workflow doc for named ``.plan/marshal.json`` recovery blocks.
+    """Sweep every swept directory for named ``.plan/marshal.json`` recovery blocks.
 
     Returns a list of ``(path, region_text, heading_lineno)`` — the derived
     population. Empty return is a real signal (the class moved or vanished),
     never silently treated as "clean".
+
+    The sweep covers :data:`SWEPT_DIRS`, which includes the
+    ``workflow-integration-git/standards`` directory the layer-D recovery
+    document lives in. That widening does NOT by itself cover the layer-D
+    recovery loop: it is headed ``### Recovery Loop``, while this derivation
+    keys on the ``**Named recovery case`` marker, so the heading shapes do not
+    match. It is done so the population is correct for any future
+    ``**Named recovery case —``-marked region added under that directory;
+    :func:`test_worktree_handling_destructive_instructions_are_inspection_first`
+    is what covers the layer-D loop today.
     """
     regions: list[tuple] = []
-    for md in sorted(WORKFLOW_DIR.glob('*.md')):
-        lines = md.read_text(encoding='utf-8').splitlines()
-        for i, line in enumerate(lines):
-            if HEADING_MARKER in line and line.lstrip().startswith('**Named recovery case'):
-                block = [line]
-                for j in range(i + 1, min(i + 40, len(lines))):
-                    if _REGION_BOUNDARY.match(lines[j]):
-                        break
-                    block.append(lines[j])
-                regions.append((md, '\n'.join(block), i + 1))
+    for directory in SWEPT_DIRS:
+        for md in sorted(directory.glob('*.md')):
+            lines = md.read_text(encoding='utf-8').splitlines()
+            for i, line in enumerate(lines):
+                if HEADING_MARKER in line and line.lstrip().startswith('**Named recovery case'):
+                    block = [line]
+                    for j in range(i + 1, min(i + 40, len(lines))):
+                        if _REGION_BOUNDARY.match(lines[j]):
+                            break
+                        block.append(lines[j])
+                    regions.append((md, '\n'.join(block), i + 1))
     return regions
 
 
@@ -167,6 +207,80 @@ def _references_authority(text: str) -> bool:
     and the operator-disposition enumeration MUST NOT.
     """
     return bool(_AUTHORITY_POINTER.search(text)) and not _restates_contract(text)
+
+
+def _derive_document_sections(path) -> list[tuple[str, int, str]]:
+    """Split ``path`` into ``(heading, heading_lineno, section_text)`` by ATX heading."""
+    lines = path.read_text(encoding='utf-8').splitlines()
+    starts = [i for i, line in enumerate(lines) if _MD_HEADING.match(line)]
+    return [
+        (
+            lines[start].strip(),
+            start + 1,
+            '\n'.join(lines[start : (starts[n + 1] if n + 1 < len(starts) else len(lines))]),
+        )
+        for n, start in enumerate(starts)
+    ]
+
+
+def _is_destructive_instruction_qualified(text: str) -> bool:
+    """Whether a section carrying a destructive discard also properly qualifies it.
+
+    Deliberately stricter than :func:`_is_inspection_first`. The layer-D recovery
+    loop already said "Inspect ``newly_dirty[]``" and "Decide per-path", so the
+    generic predicate passed it while step 1 surfaced only PATHS and the revert
+    bullet was labelled "(typical case)". A reader cannot dispose of content they
+    have not seen, so the qualifier requires a concrete diff command that
+    surfaces the change, an explicit operator disposition, the irrecoverability
+    caveat, and no wording presenting the revert as the default.
+    """
+    low = text.lower()
+    return (
+        bool(_CONTENT_INSPECTION.search(text))
+        and 'operator' in low
+        and ('disposition' in low or 'confirm' in low or 'decide' in low)
+        and ('irrecoverab' in low or 'reflog' in low)
+        and not _REVERT_PRESUMED_DEFAULT.search(text)
+    )
+
+
+def test_worktree_handling_destructive_instructions_are_inspection_first():
+    """The layer-D recovery document carries no destructive discard instruction
+    without an inspection-plus-operator-disposition qualifier in the same section.
+
+    This is the sibling assertion that covers the fourth destructive site.
+    ``worktree-handling.md`` § "Recovery Loop" carries a ``### ``-shaped heading,
+    not the ``**Named recovery case`` marker the region derivation keys on, so
+    the widened directory sweep does not reach it. This assertion reaches it
+    directly, section by section.
+    """
+    sections = _derive_document_sections(WORKTREE_HANDLING)
+    assert sections, f'no sections derived from {WORKTREE_HANDLING} — the sweep is vacuous'
+
+    destructive = [
+        (heading, lineno, text)
+        for heading, lineno, text in sections
+        if _DESTRUCTIVE_ANY_PATH.search(text)
+    ]
+    # Non-vacuous control, with the population size published: the document DOES
+    # carry destructive instructions, so the qualifier assertion below examines a
+    # populated surface instead of passing on an empty one.
+    assert destructive, (
+        f'no destructive discard instruction found across {len(sections)} sections of '
+        f'{WORKTREE_HANDLING.name} — the qualifier assertion would pass vacuously; '
+        'confirm the sweep still matches the document'
+    )
+
+    offenders = [
+        f'{heading} (line {lineno})'
+        for heading, lineno, text in destructive
+        if not _is_destructive_instruction_qualified(text)
+    ]
+    assert not offenders, (
+        f'destructive discard instruction without an inspection-plus-operator-disposition '
+        f'qualifier in the same section of {WORKTREE_HANDLING.name} '
+        f'({len(destructive)} of {len(sections)} sections carry one):\n  ' + '\n  '.join(offenders)
+    )
 
 
 def test_named_recovery_never_instructs_unconditional_discard():

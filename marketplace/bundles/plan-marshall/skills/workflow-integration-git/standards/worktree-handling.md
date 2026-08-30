@@ -209,7 +209,7 @@ It catches leaks regardless of which tool produced them — the only question la
 
 Layer D operates at **per-phase-boundary** granularity rather than per-tool-call. A leak introduced mid-phase is not detected until the next boundary capture, so the agent may complete additional work on top of the polluted main checkout before the verify fires. This is an explicit trade-off:
 
-- **Recovery is identical either way** — the operator must revert the leaked main-checkout changes (or move them into the worktree branch) before the boundary advances. Per-tool-call detection would surface the leak earlier but would not change the recovery steps.
+- **Recovery is identical either way** — the operator must inspect each leaked path's diff and give an explicit disposition for it (revert that one path, or move the change into the worktree branch) before the boundary advances. Per-tool-call detection would surface the leak earlier but would not change the recovery steps.
 - **Filesystem-based detection works across hosts**, while a tool-call hook would not. Granularity is the cost; portability is the benefit.
 
 Plans that need finer-grained enforcement can run `phase_handshake capture` / `verify --strict` at intra-phase checkpoints, but the core contract remains per-phase. (The finalize blocking-findings gate is a *separate* mechanism — `phase_handshake findings-check --phase 6-finalize` in `branch-cleanup` — that gates pending findings, not the main-checkout drift this layer-D contract covers; it is not a `capture`/`verify --strict` checkpoint.)
@@ -218,11 +218,18 @@ Plans that need finer-grained enforcement can run `phase_handshake capture` / `v
 
 When `phase_handshake verify --phase {N} --strict` fails with `error: main_checkout_dirtied_during_plan`, the operator's recovery path is:
 
-1. **Inspect `newly_dirty[]`.** The payload lists the exact paths that leaked into the main checkout between captures.
-2. **Decide per-path: revert or relocate.**
-   - *Revert* — when the change was unintended (typical case): `git -C {main_checkout} checkout -- {path}` to drop the dirty state. The plan's worktree edits remain unaffected.
+1. **Surface the content of every path in `newly_dirty[]`.** The payload lists the exact paths that leaked into the main checkout between captures — but a path is not a change, and nobody can dispose of content they have not seen. Read each one before anything touches it:
+
+   ```bash
+   git -C {main_checkout} diff -- {path}
+   ```
+
+2. **Obtain an explicit operator disposition for that one path.** A revert is never automatic and never a default; it happens only on an explicit operator decision about the diff just surfaced. `git -C {main_checkout} checkout -- {path}` destroys uncommitted, unstaged content **irrecoverably** — no reflog covers a worktree file, and nothing (`git fsck` included) brings it back.
+   - *Revert* — once the operator has decided the change is unwanted: `git -C {main_checkout} checkout -- {path}` drops the dirty state, and only for that one path. The plan's worktree edits remain unaffected.
    - *Relocate* — when the change is intentional but landed in the wrong tree: stage the file in the main checkout (`git -C {main_checkout} add {path}`), copy the staged blob into the worktree branch, and revert the main-checkout staging. The most reliable mechanical form is `git -C {main_checkout} stash push -- {path}` followed by `git -C {worktree_path} stash pop` from the corresponding stash entry.
 3. **Re-run the boundary verify.** Once `git status --porcelain` against the main checkout is back to (or below) the baseline, `phase_handshake verify --phase {N} --strict` returns `status: ok` and the boundary advances.
+
+`.plan/marshal.json` is the **highest-risk member** of `newly_dirty[]`. § "Filter Rule" below retains it precisely because it is tracked, so it reaches this loop — and it is the file an operator is most likely to be carrying uncommitted configuration edits in. Its recovery has a single authority, `plan-marshall:plan-marshall/workflow/planning.md` § "Named recovery case — `.plan/marshal.json`", which this section defers to rather than restates.
 
 The proper-superset rule means the operator does not need to *clean* pre-existing dirty paths — only the **newly-dirty** paths must be addressed before the boundary will advance. This keeps the recovery loop scoped to the actual leak rather than demanding a fully-clean main checkout that may carry unrelated dirty state from before the plan started.
 
