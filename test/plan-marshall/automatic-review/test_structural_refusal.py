@@ -1819,3 +1819,231 @@ class TestTheFlagFormPartitionIsDerivedNotRemembered:
             _assert_pair_form_claim_parity(
                 doc_path.read_text(encoding='utf-8'), doc_path.name, pair, bare
             )
+
+
+# ---------------------------------------------------------------------------
+# The consumer-doc REMEDY GUARD — every member a wait cannot serve must be
+# exempted from the default await, in BOTH consuming docs
+# ---------------------------------------------------------------------------
+
+
+#: The paragraph opener both consuming docs use for the guard that tells a reader
+#: which blocking members must NOT be awaited.
+_REMEDY_GUARD_ANCHOR = 'Read `bot_states` before'
+
+
+def _remedy_guard_text(text: str, doc_name: str) -> str:
+    """The remedy-guard PARAGRAPH of a consuming doc, bounded by its own blank line.
+
+    The anchor is asserted to occur EXACTLY ONCE before it is used to slice:
+    ``str.index`` takes the first occurrence silently, so a second copy would hand
+    back a different paragraph than the one the parity assertion means to read,
+    with nothing saying so. The end is the document's own paragraph break rather
+    than a character count — a fixed window silently stops covering whatever is
+    appended past its end, which is exactly how a member added to a grown
+    paragraph would escape the sweep while it still reported clean.
+    """
+    occurrences = text.count(_REMEDY_GUARD_ANCHOR)
+    assert occurrences == 1, (
+        f'{doc_name}: the remedy-guard anchor {_REMEDY_GUARD_ANCHOR!r} must occur '
+        f'exactly once, found {occurrences} — zero means the paragraph was '
+        f'restructured; more than one means the slice would silently take the '
+        f'first of several candidates'
+    )
+    start = text.index(_REMEDY_GUARD_ANCHOR)
+    end = text.find('\n\n', start)
+    guard = text[start:end] if end != -1 else text[start:]
+    assert guard.strip(), f'{doc_name}: the remedy-guard slice is empty'
+    return guard
+
+
+def _remedy_guard_members(guard: str) -> set[str]:
+    """The terminal-state members a guard paragraph names.
+
+    Matched in backticks, so ``participated_stale`` cannot be counted as a mention
+    of ``participated``.
+    """
+    return {state for state in _TERMINAL_STATES if f'`{state}`' in guard}
+
+
+def _members_no_wait_can_serve() -> set[str]:
+    """DERIVED: the blocking members for which the default *await the bot* is futile.
+
+    Not a list kept here. It is the intersection of the classifier's own blocking
+    set with the await-can-never-succeed classification — which is itself asserted
+    TOTAL over the derived population at the top of this module. A member added to
+    the classifier therefore cannot enter the docs' obligation set unnoticed: it
+    must first be classified, and classifying it await-futile immediately obliges
+    BOTH consuming docs to exempt it from the default loop-back.
+    """
+    return {
+        state for state in rc._UNPROVEN_STATES if not _AWAIT_CAN_EVER_SUCCEED[state]
+    }
+
+
+def _assert_remedy_guard_parity(text: str, doc_name: str, required: set[str]) -> None:
+    """THE remedy-guard rule — one definition, called by the guard AND its controls.
+
+    Lives in a helper rather than inline so the negative controls can execute the
+    guard's OWN assertions against a planted document instead of re-implementing a
+    rule shaped like them: delete either assertion below and both the guard and its
+    control fail.
+    """
+    named = _remedy_guard_members(_remedy_guard_text(text, doc_name))
+    missing = sorted(required - named)
+    assert not missing, (
+        f'{doc_name} enumerates {", ".join(missing)} as blocking but never exempts '
+        f'it from the default await — a required bot in that state is awaited for '
+        f'a review that will never arrive'
+    )
+    surplus = sorted(named - required)
+    assert not surplus, (
+        f'{doc_name} exempts {", ".join(surplus)} from awaiting, but a wait CAN '
+        f'serve that member — the guard steers the reader off a remedy that works'
+    )
+
+
+def _synthetic_guard(members: list[str]) -> str:
+    """A well-formed consumer-doc excerpt exempting exactly ``members``.
+
+    Everything but the membership is correct — one anchor, a real paragraph break
+    on each side — so only the planted drift can be what a control's rejection is
+    about. The trailing paragraph deliberately names a member the guard must NOT
+    claim, which makes an over-reaching slice fail the scaffold's own positive
+    control rather than passing silently.
+    """
+    listing = '; '.join(
+        f'a required bot on `{member}` names a remedy of its own' for member in members
+    )
+    return (
+        'A preceding paragraph that the slice must not reach.\n\n'
+        f'{_REMEDY_GUARD_ANCHOR} re-entering, because some blocking members name a '
+        f'different remedy than awaiting: {listing}.\n\n'
+        f'A following paragraph, which legitimately mentions `{rc.STATE_IN_PROGRESS}`, '
+        f'and which the slice must not reach either.\n'
+    )
+
+
+class TestBothConsumerDocsExemptEveryAwaitFutileMember:
+    """⛔ The recurring class: a member added as blocking but never exempted.
+
+    ``declined`` shipped as a new blocking member: it was added to the
+    ``unproven_bots`` enumeration in ``automatic-review/SKILL.md`` and to
+    ``branch-cleanup.md``'s remedy guard — but not to the SKILL's own remedy guard,
+    which still enumerated a stale subset behind a stale count word. The SKILL's
+    default for an unproven bot is *loop back into FIND and await the bot*, so a
+    required bot on ``declined`` was enumerated as blocking, left unexempted, and
+    awaited forever — the precise outcome that guard exists to prevent.
+
+    Nothing failed, because every remedy assertion in this file read ONE of the two
+    consuming docs. These read both, and hold each to a population derived from the
+    classifier rather than to a list anybody maintains.
+    """
+
+    def test_the_obligation_set_is_non_empty(self):
+        """⛔ Vacuity guard, asserted FIRST — an empty set makes every sweep below pass."""
+        assert _members_no_wait_can_serve(), (
+            'no blocking member was derived as await-futile — the parity sweeps '
+            'below would pass over nothing'
+        )
+
+    @pytest.mark.parametrize(
+        'doc_path', [_AR_SKILL, _BRANCH_CLEANUP], ids=lambda path: str(path.name)
+    )
+    def test_the_doc_exempts_exactly_the_await_futile_members(self, doc_path):
+        """Each consuming doc, held to the derived set in both directions.
+
+        Equality rather than containment: a subset is the shipped defect, and a
+        superset would exempt a member a wait CAN serve, steering the reader off the
+        remedy that works.
+        """
+        _assert_remedy_guard_parity(
+            doc_path.read_text(encoding='utf-8'),
+            doc_path.name,
+            _members_no_wait_can_serve(),
+        )
+
+    def test_the_two_consuming_docs_name_the_same_members(self):
+        """Doc-to-doc parity, asserted directly and not only via the derived set.
+
+        The two docs consume the SAME predicate, so a member exempted in one and not
+        the other is a contradiction whichever of them the derivation agrees with.
+        Asserted separately so the divergence fails mechanically even in the window
+        where the derived obligation set is itself wrong.
+        """
+        skill = _remedy_guard_members(
+            _remedy_guard_text(_AR_SKILL.read_text(encoding='utf-8'), _AR_SKILL.name)
+        )
+        barrier = _remedy_guard_members(
+            _remedy_guard_text(
+                _BRANCH_CLEANUP.read_text(encoding='utf-8'), _BRANCH_CLEANUP.name
+            )
+        )
+        assert skill and barrier, 'a guard naming no member makes this comparison vacuous'
+        assert skill == barrier, (
+            f'the two consuming docs exempt different members; '
+            f'only in the SKILL: {sorted(skill - barrier)}; '
+            f'only in branch-cleanup: {sorted(barrier - skill)}'
+        )
+
+    def test_the_synthetic_scaffold_is_accepted_by_the_rule(self):
+        """⛔ Matched control for the two rejections below.
+
+        Without it a rejection proves nothing: a rule that rejected every synthetic
+        document would produce the same red. It doubles as the slice-boundedness
+        assertion, since the scaffold's trailing paragraph names a member the guard
+        must not be credited with.
+        """
+        required = _members_no_wait_can_serve()
+        _assert_remedy_guard_parity(_synthetic_guard(sorted(required)), 'synthetic', required)
+
+    def test_the_rule_rejects_a_doc_that_omits_an_await_futile_member(self):
+        """⛔ Negative control: the shipped defect, planted — the guard must FAIL on it.
+
+        This is one doc exempting a member the other does not, which is exactly the
+        divergence that shipped. The guard's OWN rule is executed rather than
+        re-implemented, so deleting the rule's missing-member assertion fails this
+        control too.
+        """
+        required = _members_no_wait_can_serve()
+        omitted = sorted(required)[0]
+        broken = _synthetic_guard(sorted(required - {omitted}))
+
+        with pytest.raises(AssertionError) as rejection:
+            _assert_remedy_guard_parity(broken, 'synthetic', required)
+        assert omitted in str(rejection.value), (
+            f'the guard must reject exactly the omitted member {omitted}; '
+            f'got {rejection.value}'
+        )
+
+        # And the matched POSITIVE control: the same rule ACCEPTS the real docs, so
+        # the rejection above is the planted omission and not a rule that rejects
+        # everything.
+        for doc_path in (_AR_SKILL, _BRANCH_CLEANUP):
+            _assert_remedy_guard_parity(
+                doc_path.read_text(encoding='utf-8'), doc_path.name, required
+            )
+
+    def test_the_rule_rejects_a_doc_that_exempts_a_member_a_wait_can_serve(self):
+        """⛔ Negative control, other direction: over-listing is a defect too.
+
+        A guard that exempted ``absent`` or ``in_progress`` would tell the reader not
+        to await a bot that may still answer — the same wrong-remedy failure with the
+        polarity reversed, and a containment-only assertion would pass on it.
+        """
+        required = _members_no_wait_can_serve()
+        serviceable = sorted(
+            state for state in rc._UNPROVEN_STATES if _AWAIT_CAN_EVER_SUCCEED[state]
+        )
+        assert serviceable, (
+            'no blocking member is await-serviceable — this control would plant nothing'
+        )
+        planted = serviceable[0]
+        broken = _synthetic_guard(sorted(required) + [planted])
+
+        with pytest.raises(AssertionError) as rejection:
+            _assert_remedy_guard_parity(broken, 'synthetic', required)
+        assert planted in str(rejection.value), (
+            f'the guard must reject exactly the planted awaitable member {planted}; '
+            f'got {rejection.value}'
+        )
