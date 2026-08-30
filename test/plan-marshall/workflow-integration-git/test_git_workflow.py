@@ -92,6 +92,44 @@ def _repo_with_live_worktree(
     return worktree_path
 
 
+#: A running plan's live audit trail, sited directly under the scan root.
+_PLAN_STATE_WORKLOG = '.plan/local/plans/EXAMPLE-PLAN/logs/work.log'
+
+
+def _plan_worktree_scan_root(root: Path) -> None:
+    """Model a plan worktree as the scan ROOT: live plan state plus a control artifact.
+
+    Distinct from :func:`_repo_with_live_worktree`, which sites the plan checkout
+    *beneath* the scan root where the nested-boundary pruning already covers it.
+    Here the plan state is a plain directory directly under the root, so no
+    boundary pruning applies and only the unconditional plan-state exclusion can
+    keep it out of the offered buckets.
+    """
+    _git_init_with_identity(root)
+    _create_file(root, 'README.md')
+    subprocess.run(['git', 'add', 'README.md'], cwd=root, capture_output=True)
+    subprocess.run(['git', 'commit', '-m', 'init'], cwd=root, capture_output=True)
+    _create_file(root, _PLAN_STATE_WORKLOG)
+    _create_file(root, 'scratch.temp')
+
+
+def _assert_plan_state_excluded_control_safe(result: dict) -> None:
+    """The plan's own work.log is offered nowhere, while the control still reaches ``safe``.
+
+    The control assertion is the non-vacuity guard: an empty scan would satisfy
+    the negative on its own, which is precisely the confusion this epic is named
+    for.
+    """
+    offered = result['safe'] + result['uncertain']
+    assert not any('work.log' in f for f in offered), (
+        f"the scan root's own live plan state was offered for deletion: {offered}"
+    )
+    assert 'scratch.temp' in result['safe'], (
+        f'control artifact missing from safe — the exclusion above would be '
+        f'vacuous on an empty scan: {result["safe"]}'
+    )
+
+
 class TestFormatCommit:
     """Test git_workflow.py format-commit via direct import."""
 
@@ -980,13 +1018,15 @@ class TestDetectArtifactsLivePlanArtifacts:
             f'control artifact missing from safe: {result["safe"]}'
         )
 
-    def test_gitignored_worktree_contents_excluded_per_contract(self, tmp_path: Path):
-        """D5(a): a gitignored path (the worktree tree, under gitignored .plan/)
-        is excluded per the documented contract — neither safe nor uncertain.
+    def test_nested_plan_worktree_caches_excluded_by_boundary_pruning(self, tmp_path: Path):
+        """A nested plan worktree's caches are offered nowhere — via boundary pruning.
 
-        Red pre-fix: the collapsed ``.plan/local/worktrees/EXAMPLE-PLAN/`` entry
-        does not exclude its descendants, so the worktree's ``.mypy_cache`` and
-        ``__pycache__`` files are offered.
+        Named for the mechanism it actually pins. The worktree is a nested git
+        boundary, so ``_is_nested_git_boundary`` drops the whole subtree during
+        traversal, before ``_is_ignored`` is ever consulted. This test therefore
+        stays green even if the collapsed-directory prefix arm is reverted to
+        exact-string membership, and it is NOT coverage of that arm —
+        ``TestCollapsedIgnoredDirPrefixBranch`` is.
         """
         (tmp_path / '.gitignore').write_text('.plan/\n')
         worktree = _repo_with_live_worktree(
@@ -1057,6 +1097,91 @@ class TestDetectArtifactsLivePlanArtifacts:
         )
         assert 'scratch.temp' in result['safe'], (
             f'control artifact missing from safe: {result["safe"]}'
+        )
+
+
+class TestScanRootPlanStateExclusion:
+    """The scan ROOT's own plan state is excluded independent of every ignore mechanism.
+
+    From phase-5 onward a plan's cwd is pinned to its own worktree and
+    ``cmd_detect_artifacts`` defaults ``--root`` to ``Path.cwd()``, so the run's
+    live audit trail sits directly under the scan root. That is the one case
+    ``_is_nested_git_boundary`` cannot reach — it prunes only checkouts nested
+    *below* the root.
+
+    Each case below defeats a different ignore mechanism. The exclusion must
+    hold in all three, which is exactly why the guarantee cannot be attributed
+    to ``.gitignore``.
+    """
+
+    def test_plan_state_excluded_with_gitignore_disabled(self, tmp_path: Path):
+        """``respect_gitignore=False`` leaves the reported ignore set empty."""
+        _plan_worktree_scan_root(tmp_path)
+
+        result = scan_artifacts(tmp_path, respect_gitignore=False)
+
+        _assert_plan_state_excluded_control_safe(result)
+
+    def test_plan_state_excluded_when_gitignore_lacks_plan_rule(self, tmp_path: Path):
+        """A project whose ``.gitignore`` carries no ``.plan`` rule at all."""
+        _plan_worktree_scan_root(tmp_path)
+        (tmp_path / '.gitignore').write_text('*.class\n')
+
+        result = scan_artifacts(tmp_path, respect_gitignore=True)
+
+        _assert_plan_state_excluded_control_safe(result)
+
+    def test_plan_state_excluded_when_ignore_set_empty_but_successful(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """An empty-but-successful ignore set — distinct from the ``None`` degradation.
+
+        ``set()`` asserts "nothing here is ignored" and keeps
+        ``gitignore_resolved`` true, so the degradation path that routes
+        everything to ``uncertain`` never fires and a pre-fix ``work.log``
+        reaches ``safe``.
+        """
+        _plan_worktree_scan_root(tmp_path)
+        monkeypatch.setattr(git_workflow, 'get_gitignored_files', lambda root: set())
+
+        result = scan_artifacts(tmp_path, respect_gitignore=True)
+
+        _assert_plan_state_excluded_control_safe(result)
+
+
+class TestCollapsedIgnoredDirPrefixBranch:
+    """The prefix arm of ``_is_ignored`` reached WITHOUT nested-boundary pruning.
+
+    Every other collapsed-ignored-directory test sites the directory at a nested
+    git worktree, so the boundary pruning drops the subtree before ``_is_ignored``
+    is consulted — those tests stay green when the prefix test is reverted to
+    exact-string membership, which is the gap this class closes. Here the ignored
+    directory is a plain, non-repo directory, so the prefix arm is the only thing
+    that can exclude anything beneath it.
+    """
+
+    def test_paths_under_collapsed_ignored_dir_are_excluded(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """A collapsed ``ignored-tree/`` entry excludes its descendants, not just itself."""
+        _create_file(tmp_path, 'ignored-tree/nested/output.log')
+        _create_file(tmp_path, 'scratch.temp')
+        assert not (tmp_path / 'ignored-tree' / '.git').exists(), (
+            'the ignored directory must NOT be a git boundary, or the pruning '
+            'would exclude it before _is_ignored is consulted'
+        )
+        monkeypatch.setattr(git_workflow, 'get_gitignored_files', lambda root: {'ignored-tree/'})
+        monkeypatch.setattr(git_workflow, 'get_tracked_files', lambda root: set())
+
+        result = scan_artifacts(tmp_path, respect_gitignore=True)
+        offered = result['safe'] + result['uncertain']
+
+        assert not any('ignored-tree' in f for f in offered), (
+            f'a path beneath a collapsed ignored-directory entry was offered: {offered}'
+        )
+        assert 'scratch.temp' in result['safe'], (
+            f'control artifact missing from safe — the exclusion would be vacuous: '
+            f'{result["safe"]}'
         )
 
 
