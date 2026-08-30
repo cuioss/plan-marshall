@@ -159,7 +159,6 @@ _BUNDLE_ROOT: Path = Path(MARKETPLACE_ROOT)
 _SKILLS: Path = _BUNDLE_ROOT / 'plan-marshall' / 'skills'
 _STANDARDS_DIR: Path = _SKILLS / 'phase-6-finalize' / 'standards'
 _BRANCH_CLEANUP: Path = _STANDARDS_DIR / 'branch-cleanup.md'
-_REREVIEW: Path = _STANDARDS_DIR / 'branch-cleanup-rereview.md'
 
 #: The two provider handler modules. The registry population is read from these.
 _PROVIDER_MODULES: dict[str, Path] = {
@@ -336,33 +335,244 @@ def test_derived_document_set_is_non_empty_and_reaches_the_sub_standard():
     )
 
 
-def test_rereview_consumer_honors_head_sha_verified_as_a_decline():
-    """The trigger-A consumer reads ``head_sha_verified`` and treats false as a decline — D3.
+# ---------------------------------------------------------------------------
+# The re-review DECLINE routing, asserted STRUCTURALLY over a derived consumer set
+# ---------------------------------------------------------------------------
+#
+# ``github_re_review await_fresh_review`` matches on EITHER a review that named the
+# merge candidate's SHA (``head_sha_verified: true``) OR a bare comment that merely
+# post-dates the trigger (``false``). A consumer reading ``matched`` alone credits a
+# review that never named the commit it matched.
+#
+# ⛔ Substring presence cannot express that. The previous form of this guard asserted
+# that the words ``head_sha_verified``, ``declined`` and ``{declined_bots}`` each
+# appeared SOMEWHERE in one document — which discriminates against the pre-fix text
+# and against nothing else. A document that mentioned the bit in a background note,
+# routed on ``matched`` alone, and accumulated declines on the VERIFIED arm would
+# satisfy every one of those assertions while crediting exactly the outcome the fix
+# exists to reject. What has to be asserted is the ANTECEDENT relationship: the false
+# polarity is the condition of the branch that accumulates ``{declined_bots}``, and
+# the true polarity is not.
 
-    The recorded-but-ignored bit: ``github_re_review await_fresh_review`` computes
-    ``head_sha_verified`` — true only when a REVIEW named the merge candidate's SHA,
-    false when the bot answered with a bare comment — and the pre-fix consumer read
-    ``matched`` alone, crediting a review that never named the commit it matched. The
-    fixed consumer MUST consult the bit and route a ``matched: true`` /
-    ``head_sha_verified: false`` outcome to the ``declined`` accounting, carried to the
-    pre-merge barrier as ``--declined-bots``, rather than treating it as a completed
-    re-review.
+#: An outcome ARM: a bullet whose bold lead states the condition it fires on.
+_OUTCOME_ARM_RE = re.compile(r'^[ \t]*-[ \t]+\*\*(?P<antecedent>[^*]+)\*\*', re.MULTILINE)
+
+#: Where an arm's BODY ends: the next arm, the next numbered bold list item, or the
+#: next heading. Bounding on all three keeps a trailing arm from absorbing the rest
+#: of the document — which would let any later ``{declined_bots}`` mention satisfy it.
+_ARM_BOUNDARY_RE = re.compile(r'^(?:[ \t]*(?:-|\d+\.)[ \t]+\*\*|#{1,6}[ \t])', re.MULTILINE)
+
+#: The re-review registry invocation that produces the outcome these arms consume.
+_RE_REVIEW_NOTATION = 'workflow-integration-github:github_re_review'
+
+
+def _re_review_dispatchers() -> list[Path]:
+    """Every marketplace document that DISPATCHES ``github_re_review re-review``.
+
+    The consumer set is derived, never listed: a third document that starts
+    triggering re-reviews inherits this guard instead of escaping it. Membership is
+    invocation SHAPE — an executor call against the re-review registry inside a
+    fenced block — so the canonical-invocation reference in a SKILL.md prose
+    paragraph, and every cross-reference to this walkthrough, are correctly excluded.
     """
-    doc = _read(_REREVIEW)
-    # The bit is read, not ignored.
-    assert 'head_sha_verified' in doc, (
-        'branch-cleanup-rereview.md must consult head_sha_verified — reading matched '
-        'alone credits an incremental-review decline as a completed review'
+    return sorted(
+        path
+        for path in _BUNDLE_ROOT.rglob('*.md')
+        if any(
+            _EXECUTOR_MARKER in block and _RE_REVIEW_NOTATION in block and 're-review' in block
+            for block in _fenced_blocks(_read(path))
+        )
     )
-    # The false polarity is named as a decline and carried to the barrier.
-    assert 'head_sha_verified: false' in doc
-    assert 'declined' in doc
-    assert '{declined_bots}' in doc
-    # The barrier's Predicate-2 call forwards the decline observation.
-    barrier = _read(_BRANCH_CLEANUP)
-    assert '--declined-bots "{declined_bots}"' in barrier, (
-        "the pre-merge barrier's review_completeness check must forward --declined-bots "
-        'so a decline resolves to the blocking declined state at the merge gate'
+
+
+def _outcome_arms(text: str) -> list[tuple[str, str]]:
+    """``(antecedent, body)`` for every outcome arm in ``text``.
+
+    Takes TEXT rather than a path so the negative control below drives this exact
+    parser over synthetic documents. A control that re-implemented the slicing would
+    only prove its own copy discriminates.
+    """
+    boundaries = [m.start() for m in _ARM_BOUNDARY_RE.finditer(text)]
+    arms: list[tuple[str, str]] = []
+    for match in _OUTCOME_ARM_RE.finditer(text):
+        following = [offset for offset in boundaries if offset > match.start()]
+        end = following[0] if following else len(text)
+        arms.append((match.group('antecedent'), text[match.end() : end]))
+    return arms
+
+
+def _matched_arms(text: str) -> list[tuple[str, str]]:
+    """The outcome arms whose antecedent fires on a ``matched: true`` return."""
+    return [(ante, body) for ante, body in _outcome_arms(text) if 'matched: true' in ante]
+
+
+def _decline_routing_defects(text: str) -> list[str]:
+    """Every way ``text``'s ``matched`` arms fail the decline-routing contract.
+
+    One predicate, three defect shapes, so the assertions and the negative control
+    below read the SAME rule rather than two spellings of it:
+
+    * a ``matched: true`` arm that does not state the ``head_sha_verified`` polarity;
+    * a false-polarity arm that does not accumulate ``{declined_bots}`` in its body;
+    * a verified-polarity arm that DOES accumulate it.
+    """
+    defects: list[str] = []
+    for antecedent, body in _matched_arms(text):
+        label = antecedent.strip()
+        if 'head_sha_verified' not in antecedent:
+            defects.append(f'{label!r}: branches on matched alone, with no polarity stated')
+            continue
+        if 'head_sha_verified: false' in antecedent and '{declined_bots}' not in body:
+            defects.append(f'{label!r}: the decline arm accumulates no {{declined_bots}}')
+        if 'head_sha_verified: true' in antecedent and '{declined_bots}' in body:
+            defects.append(f'{label!r}: a VERIFIED review is accumulated as a decline')
+    return defects
+
+
+#: Documents that dispatch the re-review registry AND branch on its ``matched``
+#: outcome. Derived in two independent steps — the dispatch is a fenced invocation,
+#: the consumption is a bold-lead arm — so a document that gains a `matched`-alone
+#: arm joins this population and is then held to the polarity contract below.
+_RE_REVIEW_CONSUMERS: list[Path] = [
+    doc for doc in _re_review_dispatchers() if _matched_arms(_read(doc))
+]
+
+
+def test_the_re_review_consumer_set_is_derived_and_plural():
+    """The polarity sweep below runs over a NON-EMPTY, multi-document population.
+
+    Asserted on its own and first: the sweep is parametrized over this set, and a
+    parametrize over an empty list produces a skip rather than a failure — so a
+    derivation that stopped matching would report clean while covering nothing. The
+    floor is two because the decline routing exists at two consumer families (the
+    automatic-review step body's triggers, and the branch-cleanup re-review
+    walkthrough), and the whole defect this closes was one of them consulting the bit
+    while the other did not. A single-document population cannot see that class of
+    divergence at all.
+    """
+    dispatchers = [doc.name for doc in _re_review_dispatchers()]
+    consumers = [doc.name for doc in _RE_REVIEW_CONSUMERS]
+
+    assert dispatchers, (
+        'no document was found dispatching `github_re_review re-review`. The step body '
+        'demonstrably triggers re-reviews, so an empty derivation means the '
+        'invocation-shape predicate stopped matching and every assertion below is vacuous.'
+    )
+    assert len(consumers) >= 2, (
+        f'Derived re-review consumer set = {consumers} (from dispatchers {dispatchers}). '
+        'Both the automatic-review step body and the branch-cleanup re-review walkthrough '
+        'branch on the `matched` outcome; a smaller population means one of them stopped '
+        'resolving and its decline routing is no longer covered here.'
+    )
+
+
+@pytest.mark.parametrize('doc', _RE_REVIEW_CONSUMERS, ids=lambda d: d.name)
+def test_the_false_polarity_is_the_antecedent_of_the_decline_branch(doc):
+    """``head_sha_verified: false`` CONDITIONS the branch that accumulates declines.
+
+    The structural claim a presence check cannot express, in all three directions
+    (:func:`_decline_routing_defects`): every ``matched: true`` arm states the
+    polarity; every false-polarity arm accumulates ``{declined_bots}`` in its OWN body,
+    so the decline is recorded where it is observed rather than merely mentioned
+    somewhere in the document; and no VERIFIED-polarity arm accumulates it. That last
+    direction is the one the old assertions could not see at all — a document that
+    credited a review of this HEAD as a decline, or that accumulated on both
+    polarities, satisfied "the token appears" while routing exactly backwards.
+
+    Both polarities are additionally required to be PRESENT, because the contract is a
+    discrimination: a document carrying only the false arm would pass the routing
+    checks while saying nothing about what a verified review does.
+    """
+    text = _read(doc)
+    matched = _matched_arms(text)
+    assert matched, f'{doc.name} is in the consumer set but yielded no `matched: true` arm'
+
+    polarities = {
+        polarity
+        for polarity in ('true', 'false')
+        if any(f'head_sha_verified: {polarity}' in ante for ante, _body in matched)
+    }
+    assert polarities == {'true', 'false'}, (
+        f'{doc.name} branches on only {sorted(polarities) or "neither"} of the '
+        'head_sha_verified polarities. Both arms must exist: without the false arm an '
+        'incremental-review decline falls through the completed-review path, and without '
+        'the true arm nothing shows the decline accumulation is bound to the false one.'
+    )
+
+    defects = _decline_routing_defects(text)
+    assert not defects, (
+        f'{doc.name} does not route the re-review outcome on head_sha_verified: '
+        + '; '.join(defects)
+    )
+
+
+def test_the_decline_routing_predicate_rejects_each_defect_shape():
+    """Matched negative control: the predicate really can fail, on each shape it names.
+
+    The sweep above is only ever observed against documents that route correctly,
+    which shows the parser can recognise a compliant arm — never that it can reject a
+    non-compliant one. Every defect shape is exercised against the SAME
+    :func:`_decline_routing_defects` the sweep calls, and a compliant control is run
+    through it too, so this is a discrimination rather than a predicate that rejects
+    everything.
+    """
+    matched_alone = '- **When `matched: true`**, the fresh review is now on the PR.\n'
+    unrecorded = (
+        '- **When `matched: true` AND `head_sha_verified: false`**, the bot declined.\n'
+    )
+    inverted = (
+        '- **When `matched: true` AND `head_sha_verified: true`**, add `{bot_kind}` to the '
+        'accumulating `{declined_bots}` set.\n'
+        '- **When `matched: true` AND `head_sha_verified: false`**, the review landed.\n'
+    )
+    compliant = (
+        '- **When `matched: true` AND `head_sha_verified: true`**, the fresh review is on '
+        'the PR.\n'
+        '- **When `matched: true` AND `head_sha_verified: false`**, add `{bot_kind}` to the '
+        'accumulating `{declined_bots}` set.\n'
+    )
+
+    assert _decline_routing_defects(matched_alone) == [
+        "'When `matched: true`': branches on matched alone, with no polarity stated"
+    ]
+    assert _decline_routing_defects(unrecorded) == [
+        "'When `matched: true` AND `head_sha_verified: false`': the decline arm "
+        'accumulates no {declined_bots}'
+    ]
+    assert _decline_routing_defects(inverted) == [
+        "'When `matched: true` AND `head_sha_verified: true`': a VERIFIED review is "
+        'accumulated as a decline',
+        "'When `matched: true` AND `head_sha_verified: false`': the decline arm "
+        'accumulates no {declined_bots}',
+    ]
+    assert _decline_routing_defects(compliant) == []
+
+
+def test_the_barrier_forwards_the_decline_observation_on_its_predicate_call():
+    """The accumulated set reaches the predicate as a quoted ``--declined-bots`` value.
+
+    Bound to the DISPATCH rather than to the document text: the flag has to ride the
+    ``review_completeness check`` invocation the barrier actually issues, and its
+    interpolation has to be quoted, or an empty decline set collapses the flag and
+    steals the next token. A prose mention of the flag satisfies neither.
+    """
+    invocations = [
+        block
+        for block in _fenced_blocks(_read(_BRANCH_CLEANUP))
+        if _EXECUTOR_MARKER in block
+        and 'automatic-review:review_completeness' in block
+        and re.search(r'\bcheck\b', block)
+    ]
+    assert invocations, (
+        f'{_BRANCH_CLEANUP.name} issues no `review_completeness check` invocation, so the '
+        'forwarding this test asserts has nothing to ride on.'
+    )
+    forwarding = [block for block in invocations if '--declined-bots "{declined_bots}"' in block]
+    assert forwarding, (
+        f'none of the {len(invocations)} `review_completeness check` invocation(s) in '
+        f'{_BRANCH_CLEANUP.name} forwards --declined-bots "{{declined_bots}}". Without it a '
+        'decline accumulated by the re-review walkthrough never resolves to the blocking '
+        '`declined` member at the merge gate.'
     )
 
 

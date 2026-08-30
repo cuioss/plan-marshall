@@ -12,8 +12,10 @@ Covers the three concerns of the post-merge re-review registry:
          sourcery:   posts ``@sourcery-ai review``.
          pr-agent:   posts ``/review``.
     3. Two-signal completion matching — ``await_fresh_review`` is satisfied by
-       EITHER ``_match_review`` (a review whose reviewed commit SHA matches the
-       pushed HEAD, whose ``submitted_at`` post-dates the trigger time, AND whose
+       EITHER ``_match_review`` (a review whose reviewed-commit evidence REFERENCES
+       the pushed HEAD — recognised as a bare token or embedded in a commit URL, and
+       compared for EQUALITY either way, so a differing commit still fails — whose
+       ``submitted_at`` post-dates the trigger time, AND whose
        body is not a refusal notice; reported with ``head_sha_verified: true``)
        OR ``_match_bot_comment`` (an issue comment from the awaited bot
        post-dating the trigger and likewise not a refusal notice; reported with
@@ -521,8 +523,15 @@ _PR_AGENT_LOGIN = 'cuioss-review-bot'
 _TRIGGER = '2026-01-01T00:02:00Z'
 
 
-def _await_with_comments(monkeypatch, comments, *, reviews=None, bot_kind='pr-agent'):
-    """Run ``await_fresh_review`` over a fixed comment (and review) set."""
+def _await_with_comments(
+    monkeypatch, comments, *, reviews=None, bot_kind='pr-agent', head_sha='headsha'
+):
+    """Run ``await_fresh_review`` over a fixed comment (and review) set.
+
+    ``head_sha`` is parametrized for the reviewed-commit-reference cases below, which
+    need a real 40-hex SHA to exercise the URL-embedded shape. It defaults to the
+    ``'headsha'`` token every other case uses, so those are unaffected.
+    """
     _noop_sleep(monkeypatch)
     monkeypatch.setattr(
         github_re_review._github,
@@ -532,7 +541,7 @@ def _await_with_comments(monkeypatch, comments, *, reviews=None, bot_kind='pr-ag
     _patch_comments(monkeypatch, comments)
     strategy = github_re_review.resolve_strategy(bot_kind)
     return strategy.await_fresh_review(
-        42, 'headsha', _TRIGGER, bot_kind=bot_kind, timeout=1, interval=0
+        42, head_sha, _TRIGGER, bot_kind=bot_kind, timeout=1, interval=0
     )
 
 
@@ -695,6 +704,162 @@ def test_match_bot_comment_fail_closed_on_missing_trigger_time():
     comments = [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:05:00Z')]
 
     assert _match_bot_comment(comments, 'pr-agent', None) is None
+
+
+# =============================================================================
+# The reviewed-commit REFERENCE is recognised wherever the evidence carries it
+# =============================================================================
+#
+# ⛔ This is the one predicate on this path that fails toward BLOCKING. Comparing the
+# whole ``commit_sha`` field for string equality recognised only the bare-token shape;
+# the same reviewed-commit evidence also arrives as a ``…/commit/{sha}`` permalink,
+# which then matched no review, fell through to the weaker comment discriminator, and
+# published ``head_sha_verified: false`` — an incremental-review decline the bot never
+# made. Consumed as the blocking ``declined`` taxonomy member whose documented remedy
+# is to ACCEPT the decline rather than re-trigger, so the false verdict stops a merge
+# AND steers the operator away from the retry that would have exposed it.
+#
+# The correction is therefore a WIDENING, and a widening asserted only by its positive
+# case cannot show it did not simply match everything. Every case below is paired:
+# the positive is built from the SAME ``_review()`` fixture builder as its negative,
+# differing only in WHICH commit the reference names, so an extractor that matched
+# anything SHA-shaped would fail the negative while still passing the positive.
+#
+# The widening is in LOCATION ONLY — every extracted token is still compared for
+# EQUALITY — which is what the abbreviation and longer-hex-run cases pin.
+
+#: A real 40-hex commit SHA and the permalink that carries it. A real SHA is needed
+#: here rather than the ``'headsha'`` token the fixtures elsewhere use: that token is
+#: not hex at all, so no token scan can extract it — which is precisely why the
+#: extractor keeps a whole-field equality arm AHEAD of the scan, and why the bare
+#: cases above still pass.
+_HEAD_SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
+_OTHER_SHA = '0f1e2d3c4b5a69788796a5b4c3d2e1f098765432'
+_HEAD_SHA_URL = f'https://github.com/cuioss/plan-marshall/commit/{_HEAD_SHA}'
+_OTHER_SHA_URL = f'https://github.com/cuioss/plan-marshall/commit/{_OTHER_SHA}'
+
+
+def test_match_review_verifies_a_sha_carried_only_inside_a_commit_url():
+    """POSITIVE: the reviewed commit is recognised when its SHA sits inside a URL.
+
+    The live merged-main defect, pinned directly: this review names the awaited HEAD
+    and nothing else, and whole-field string equality did not see it.
+    """
+    reviews = [_review(_HEAD_SHA_URL, '2026-01-01T00:05:00Z')]
+    trigger_dt = _parse('2026-01-01T00:00:00Z')
+
+    matched = _match_review(reviews, _HEAD_SHA, trigger_dt, 'coderabbit')
+
+    assert matched is not None
+    assert matched['commit_sha'] == _HEAD_SHA_URL
+
+
+def test_match_review_rejects_a_commit_url_naming_a_different_commit():
+    """NEGATIVE control for the case above: a different commit still does not match.
+
+    Same fixture builder, same URL shape, same timestamps — the ONLY difference is
+    which commit the permalink names. Without this the positive above would pass just
+    as happily against an extractor widened to match everything SHA-shaped, which
+    would credit any review of any commit as a review of this HEAD.
+    """
+    reviews = [_review(_OTHER_SHA_URL, '2026-01-01T00:05:00Z')]
+    trigger_dt = _parse('2026-01-01T00:00:00Z')
+
+    assert _match_review(reviews, _HEAD_SHA, trigger_dt, 'coderabbit') is None
+
+
+def test_match_review_rejects_an_abbreviated_reference_to_the_awaited_commit():
+    """Equality, never prefix — the widening moved WHERE the SHA may sit, not WHICH.
+
+    An abbreviation of the awaited SHA is SHA-shaped, extractable, and a leading run
+    of the real value, so it is the sharpest available probe of the equality boundary.
+    Admitting it would widen which commit counts, and would leave the negative control
+    above unable to tell "found the awaited commit" from "matched something
+    SHA-shaped".
+    """
+    abbreviated = f'https://github.com/cuioss/plan-marshall/commit/{_HEAD_SHA[:12]}'
+    reviews = [_review(abbreviated, '2026-01-01T00:05:00Z')]
+    trigger_dt = _parse('2026-01-01T00:00:00Z')
+
+    assert _match_review(reviews, _HEAD_SHA, trigger_dt, 'coderabbit') is None
+
+
+def test_the_bare_token_shape_still_verifies_after_the_widening():
+    """The widening is a SUPERSET: the shape that already worked still works.
+
+    Asserted at the extractor rather than only through a matcher, and paired with the
+    non-hex case, because the whole-field equality arm is what keeps a reviewed-commit
+    value that is not hex-shaped — which nothing on this path validates it to be —
+    from silently ceasing to match once a token scan was introduced.
+    """
+    assert github_re_review._references_head_sha(_HEAD_SHA, _HEAD_SHA) is True
+    assert github_re_review._references_head_sha(_HEAD_SHA_URL, _HEAD_SHA) is True
+    assert github_re_review._references_head_sha('headsha', 'headsha') is True
+    assert github_re_review._references_head_sha(_OTHER_SHA, _HEAD_SHA) is False
+
+
+def test_the_extractor_reads_no_sha_out_of_a_longer_hex_run():
+    """A 64-hex digest yields no spurious 40-character prefix match.
+
+    The surrounding-character guards are what keep the scan from reading a SLICE of a
+    longer alphanumeric run as a commit reference. Built by extending the awaited SHA
+    itself, so the digest genuinely OPENS with the 40 characters a boundary-less
+    extractor would match — a fixture that merely differed everywhere would not
+    exercise the guard.
+    """
+    digest = _HEAD_SHA + '9' * 24
+
+    assert len(digest) == 64
+    assert digest.startswith(_HEAD_SHA)
+    assert github_re_review._references_head_sha(digest, _HEAD_SHA) is False
+
+
+def test_the_extractor_fails_closed_on_an_absent_head_sha():
+    """An empty head SHA verifies nothing — answering True would verify everything."""
+    assert github_re_review._references_head_sha(_HEAD_SHA_URL, '') is False
+    assert github_re_review._references_head_sha('', _HEAD_SHA) is False
+
+
+def test_await_records_a_url_embedded_sha_as_a_verified_review(monkeypatch):
+    """POSITIVE, at the field a consumer actually reads: ``head_sha_verified: true``.
+
+    The matcher assertions above pin the extraction; this pins the ENVELOPE, because
+    ``head_sha_verified`` is the bit both re-review consumers branch on and the one
+    that manufactured the false decline. No comment is supplied, so nothing but the
+    review can satisfy the await and the weaker signal cannot mask the result.
+    """
+    result = _await_with_comments(
+        monkeypatch,
+        [],
+        reviews=[_review(_HEAD_SHA_URL, '2026-01-01T00:05:00Z')],
+        head_sha=_HEAD_SHA,
+    )
+
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'review'
+    assert result['head_sha_verified'] is True
+    assert result['timed_out'] is False
+
+
+def test_await_does_not_verify_a_review_naming_a_different_commit(monkeypatch):
+    """NEGATIVE control at the envelope: a genuinely different commit stays unverified.
+
+    Same helper, same URL shape, same absence of comments — only the named commit
+    differs. This is the arm that would flip green under an over-wide extractor, and
+    it is asserted on ``head_sha_verified`` explicitly rather than inferred from
+    ``matched``, because that field is the actual claim the consumers read.
+    """
+    result = _await_with_comments(
+        monkeypatch,
+        [],
+        reviews=[_review(_OTHER_SHA_URL, '2026-01-01T00:05:00Z')],
+        head_sha=_HEAD_SHA,
+    )
+
+    assert result['matched'] is False
+    assert result['matched_signal'] == ''
+    assert result['head_sha_verified'] is False
+    assert result['timed_out'] is True
 
 
 # =============================================================================

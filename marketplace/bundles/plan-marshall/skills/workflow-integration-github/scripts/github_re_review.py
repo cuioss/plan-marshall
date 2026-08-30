@@ -26,9 +26,14 @@ auto-fire at all for some bots.
 ``await_fresh_review`` is identical for every bot and is satisfied by EITHER of
 two completion signals, checked in that order of strength:
 
-1. A **review** whose reviewed commit SHA matches ``head_sha`` AND whose
+1. A **review** whose reviewed-commit evidence REFERENCES ``head_sha`` AND whose
    ``submittedAt > trigger_time``. Preferred, and reported as
-   ``matched_signal: review`` with ``head_sha_verified: true``.
+   ``matched_signal: review`` with ``head_sha_verified: true``. The reference is
+   recognised wherever the evidence carries the SHA — as a bare token, or embedded
+   in a commit URL — and compared for equality either way, so a differing commit
+   still fails to verify. Comparing the whole field for string equality instead
+   recognised only the bare shape, dropped a URL-shaped review onto signal 2, and
+   published ``head_sha_verified: false`` for a HEAD the bot HAD reviewed.
 2. An **issue comment** authored by the awaited ``bot_kind`` whose later of
    ``updated_at`` / ``created_at`` post-dates ``trigger_time``. Reported as
    ``matched_signal: issue_comment`` with ``head_sha_verified: false`` — a
@@ -99,6 +104,7 @@ Output: TOON format
 """
 
 import argparse
+import re
 import sys
 from datetime import UTC, datetime
 
@@ -160,6 +166,69 @@ def _parse_iso(value: str) -> datetime | None:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
     return dt
+
+
+# A reviewed-commit reference is recognised WHEREVER the evidence carries it, not
+# only when the whole field IS the bare SHA. The same reviewed-commit evidence
+# arrives in more than one shape — a bare 40-hex token, or the SHA sitting inside a
+# ``…/commit/{sha}`` permalink — and comparing the whole field for string equality
+# recognises only the first. The second then failed to match a review OF the awaited
+# HEAD, the resolver fell through to the weaker comment discriminator, and the
+# envelope published ``head_sha_verified: false`` — an incremental-review decline the
+# bot never made.
+#
+# ⛔ **This predicate fails toward BLOCKING, which is the opposite direction from the
+# rest of the refusal stack.** A manufactured decline is consumed as the ``declined``
+# taxonomy member, which is blocking and whose documented remedy is to ACCEPT the
+# decline rather than re-trigger — so the false verdict does not merely mislead, it
+# stops a merge and steers the operator away from the retry that would have exposed
+# it. The correction is therefore a WIDENING of where the SHA may sit, and a fix that
+# only tightened recognition would make the live defect strictly worse.
+#
+# The widening is in LOCATION ONLY. Every extracted token is still compared for
+# EQUALITY against the awaited head SHA, so a review naming a genuinely different
+# commit still does not match. Abbreviated / prefix matching is deliberately NOT
+# introduced: that would widen WHICH commit counts rather than merely where its SHA
+# may appear, and it would leave the negative control unable to tell "found the
+# awaited commit" from "matched something SHA-shaped".
+#
+# The surrounding-character guards are what keep the extraction from reading a SLICE
+# of a longer alphanumeric run as a SHA, so a 64-hex digest yields no spurious
+# 40-character prefix match.
+_COMMIT_SHA_TOKEN_RE = re.compile(r'(?<![0-9A-Za-z])[0-9a-fA-F]{7,40}(?![0-9A-Za-z])')
+
+
+def _references_head_sha(evidence: str, head_sha: str) -> bool:
+    """Return True when ``evidence`` names ``head_sha`` as a commit reference.
+
+    ``evidence`` is the reviewed-commit field carried on a review record. It may be
+    the bare SHA, or it may carry the SHA embedded in a commit URL; both name the
+    same commit, so both are recognised. Every SHA-shaped token in ``evidence`` is
+    extracted and compared case-insensitively for EQUALITY against ``head_sha``.
+
+    **Equality, never prefix.** A token that merely shares a leading run with
+    ``head_sha`` does not match. That boundary is what makes the widening
+    demonstrable: a matched negative control referencing a genuinely different
+    commit must still fail, and it could not if this matched abbreviations.
+
+    Fail-closed on either side being empty — an absent head SHA has nothing to
+    verify against, and answering ``True`` there would verify every review at once.
+
+    **The whole-field equality test is kept as an explicit FIRST arm, and that is
+    what makes this function a provable SUPERSET of the comparison it replaces.**
+    Extraction alone would not be: it recognises only SHA-SHAPED runs, so a
+    reviewed-commit value that is not hex-shaped — which the awaited head SHA can
+    equally be, since neither is validated as a SHA anywhere on this path — would
+    yield no token and stop matching, turning a widening into a silent narrowing on
+    exactly the predicate whose failures BLOCK a merge. Reaching the equality answer
+    without depending on the token shape closes that.
+    """
+    if not evidence or not head_sha:
+        return False
+    target = head_sha.strip().lower()
+    if evidence.strip().lower() == target:
+        return True
+    return any(token.lower() == target for token in _COMMIT_SHA_TOKEN_RE.findall(evidence))
 
 
 def _resolve_refusal_class(bot_kind: str | None, refusals: list[dict]) -> str:
@@ -474,9 +543,16 @@ class _ReReviewStrategy:
     ) -> dict | None:
         """Return the first genuine review matching ``head_sha`` and post-dating ``trigger_dt``.
 
-        A review matches when its reviewed commit SHA equals ``head_sha``, its
+        A review matches when its reviewed-commit evidence REFERENCES ``head_sha``
+        (:func:`_references_head_sha` — the SHA is recognised as a bare token or
+        embedded in a commit URL, and is compared for equality either way), its
         ``submitted_at`` is strictly after ``trigger_dt``, AND its body is not a
-        refusal notice (:meth:`_refusal_record`). A review with an unparseable
+        refusal notice (:meth:`_refusal_record`). Recognising the reference rather
+        than string-comparing the whole field is what stops a URL-shaped value
+        falling through to the comment discriminator and publishing
+        ``head_sha_verified: false`` for a review that DID name this HEAD — a
+        manufactured decline, and the one failure on this path that blocks a merge.
+        A review with an unparseable
         ``submitted_at`` never matches (fail-closed). When ``trigger_dt`` is
         ``None`` (invalid or unparseable trigger time) the comparison is
         fail-closed — no review matches, preventing stale reviews from being
@@ -490,7 +566,7 @@ class _ReReviewStrategy:
         if trigger_dt is None:
             return None
         for review in reviews:
-            if review.get('commit_sha') != head_sha:
+            if not _references_head_sha(str(review.get('commit_sha') or ''), head_sha):
                 continue
             submitted_dt = _parse_iso(review.get('submitted_at') or '')
             if submitted_dt is None:

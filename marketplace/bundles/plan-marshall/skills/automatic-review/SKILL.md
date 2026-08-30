@@ -250,11 +250,27 @@ Read `re_review_on_loopback` off the returned `params` object (default: `false`)
      --pr-number {pr_number} --bot-kind {bot_kind} --head-sha {head_sha} --push-time {push_time} --timeout {re_review_await_timeout_seconds} --plan-id {plan_id}
    ```
 
-   Read both `matched` AND `timed_out` from the returned TOON. **When `matched: true`**, the fresh review is now on the PR; proceed to "Wait for review-bot comments" and "Producer: FIND — file PR comments to the ledger" below, which re-runs `fetch_findings` — this re-stamps every finding's `reviewed_commit_sha` to the new HEAD and re-files the new comments for the dispatcher-owned unified triage to consume. The `reviewed_commit_sha` is updated implicitly by that fresh `fetch_findings` run; no separate update call is needed. **When `timed_out: true` (and `matched: false`)**, the await budget expired with no fresh bot review for the new HEAD — proceed to "On re-review timeout (trigger B)" below instead of falling through silently.
+   Read `matched`, **`head_sha_verified`**, AND `timed_out` from the returned TOON. `head_sha_verified` is load-bearing and MUST be consulted: `await_fresh_review` matches on EITHER a review whose reviewed-commit evidence references `{head_sha}` (`head_sha_verified: true`) OR an issue comment that merely post-dates the trigger (`head_sha_verified: false`). Only the first is a review of this HEAD; the second is the bot answering **without** naming the commit it reviewed. Reading `matched` alone credits a review that never happened — see [`standards/bot-participation-contract.md`](standards/bot-participation-contract.md) § "Detecting a decline — the bot answered without reviewing this commit".
+
+   - **When `matched: true` AND `head_sha_verified: true`**, the fresh review is now on the PR; proceed to "Wait for review-bot comments" and "Producer: FIND — file PR comments to the ledger" below, which re-runs `fetch_findings` — this re-stamps every finding's `reviewed_commit_sha` to the new HEAD and re-files the new comments for the dispatcher-owned unified triage to consume. The `reviewed_commit_sha` is updated implicitly by that fresh `fetch_findings` run; no separate update call is needed.
+
+   - **When `matched: true` AND `head_sha_verified: false`**, the bot answered the re-review with a comment that names **no** reviewed-commit SHA — an **incremental-review decline**. It did NOT review `{head_sha}`, so this is **not** a completed re-review and MUST NOT be treated as one. Add `{bot_kind}` to the accumulating `{declined_bots}` set (the comma-joined bot_kind list forwarded to the step-done participation guard's `--declined-bots`, where it resolves to the blocking `declined` member), log the decline, and proceed to "On re-review timeout (trigger B)" below — re-triggering a bot that just declined produces another decline, so the decline takes the same disposition path as a timeout (`proceed` / `defer` / `ask`) rather than looping the trigger. This mirrors the treatment [`../phase-6-finalize/standards/branch-cleanup-rereview.md`](../phase-6-finalize/standards/branch-cleanup-rereview.md) § "Re-review the rebased HEAD (trigger A)" applies to the same producer field, so both consumers of that field follow one shape:
+
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+       work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:automatic-review) re-review (trigger B) of head_sha={head_sha} returned a comment with no reviewed-commit SHA (head_sha_verified=false, bot_kind={bot_kind}) — recorded as declined, NOT a completed review"
+     ```
+
+   - **When `timed_out: true` (and `matched: false`)**, the await budget expired with no fresh bot review for the new HEAD — proceed to "On re-review timeout (trigger B)" below instead of falling through silently.
 
 ### On re-review timeout (trigger B)
 
-This sub-block is evaluated ONLY when the `github_re_review re-review` call above returned `timed_out: true` AND `matched: false` — the await budget (`re_review_await_timeout_seconds`) expired before a fresh bot review landed for the new HEAD. Leaving the timeout unhandled means the unreviewed HEAD silently proceeds to the merge gate (the gap this contract closes). Read `re_review_on_timeout` off the same `params` object returned by the `step-params get` call above (default: `ask`) and branch on its value. **Every branch is decision-logged** — a timeout is always an explicit, auditable decision.
+This sub-block is evaluated on exactly TWO outcomes of the `github_re_review re-review` call above, because both leave this HEAD unreviewed and both are futile to re-trigger:
+
+- `timed_out: true` AND `matched: false` — the await budget (`re_review_await_timeout_seconds`) expired before a fresh bot review landed for the new HEAD; and
+- `matched: true` AND `head_sha_verified: false` — the **incremental-review decline** routed here from the arm above. The bot answered, so no budget expired, but it named no reviewed commit and re-triggering it produces another decline rather than a review.
+
+Leaving either unhandled means the unreviewed HEAD silently proceeds to the merge gate (the gap this contract closes). Read `re_review_on_timeout` off the same `params` object returned by the `step-params get` call above (default: `ask`) and branch on its value; the policy is applied verbatim on both entry paths, so a decline and a timeout dispose identically. **Every branch is decision-logged** — advancing an unreviewed HEAD is always an explicit, auditable decision.
 
 - **`proceed`** (explicit opt-in to advance the unreviewed HEAD): decision-log at WARNING naming the unreviewed `{head_sha}`, then fall through to "Wait for review-bot comments" below (today's silent-proceed, now an explicit, logged choice):
 
@@ -651,7 +667,7 @@ Branch A (the terminal clean pass) is gated by a deterministic, **triage-state-a
 
 Read `required_bots` and `optional_bots` off the same execution-manifest step-params snapshot used above (`manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review`; both default EMPTY) and forward them as `--required-bots` / `--optional-bots`. An EMPTY `required_bots` means the quorum is vacuously satisfied — see the contract doc for why a never-asked posture is recorded distinctly rather than collapsed into answered-none.
 
-Then thread the four bot-keyed observation sets the predicate classifies from, plus the one PR-wide bool. **The four sets are threaded forward from data already gathered above — none is re-polled here.** The PR-wide bool is the single exception and is read fresh (item 5 below), because no earlier step observes it.
+Then thread the five bot-keyed observation sets the predicate classifies from, plus the one PR-wide bool. **The five sets are threaded forward from data already gathered above — none is re-polled here.** The PR-wide bool is the single exception and is read fresh (item 6 below), because no earlier step observes it.
 
 1. **`{participated_bots}`** — the EVIDENCE-TYPED participation set: the `participated_bots[]` records from the `github_pr fetch_findings` result of the "Producer: FIND" step, rendered as comma-separated `{bot_kind}:{evidence_kind}` pairs. This **replaces** the retired `responded_bots`-plus-completion-poll union: presence of *some* comment resolving to a bot's login is not evidence that the bot reviewed this diff, so the producer now credits a bot only when an observed comment's `kind` is one of the publish shapes that bot's registry record declares in `participation_evidence` (and, for a bot declaring `participation_requires_update`, only on first presence or observed `updated_at` movement). A bot that posted only noise is still credited — the evidence is computed before noise filtering — but a bot that posted only a help reply is not, and neither is a bot whose only output was a **refusal**: a refusal is published in one of the bot's declared shapes yet is positive evidence it did NOT review, so the producer excludes it from this set and reports it in `{refused_bots}` instead.
 2. **`{in_progress_bots}`** — every `{bot_kind}` whose `github_pr bot_completion` was still not terminal at the `review_completion_poll_timeout_seconds` bound, from the "Completion-aware poll" data above.
@@ -665,14 +681,15 @@ Then thread the four bot-keyed observation sets the predicate classifies from, p
 
    **`{measured_diff_size}`** — the other half of that reconciliation: the `measured_diff_size` scalar from the same return, forwarded to `--measured-diff-size`. A cap without the size that hit it is a claim the reader must take on trust, so the producer measures the diff once — and **only** when a size refusal was actually seen, so the extra provider round-trip is never paid on the common path. It is a single value rather than a per-bot list because it is a property of the PR, identical for every reviewer that refused it. Its unit rides inside the value and is deliberately **not** the reviewer's unit (counting the reviewer's own unit exactly means downloading the whole patch, which is most expensive precisely on the oversized PRs where this fires), so the pair is an order-of-magnitude comparison, never an equality check. Empty when unmeasured — reported as unknown, never as `0`, which would read as an empty diff refused for being too big.
 4. **`{stale_participation_bots}`** — the `stale_participation_bots[]` records from the `github_pr fetch_findings` return of the "Producer: FIND" step, rendered as comma-separated `{bot_kind}:{evidence_kind}` pairs. This is the SAME evidence-typed form as `{participated_bots}` (item 1) and the exact shape the producer emits, so the producer's output forwards to `--stale-participation-bots` verbatim — the consumer flag is pair-form, and the classifier reads only the `bot_kind`. Each names a bot whose observed comment matched a declared `participation_evidence` publish shape but failed the `participation_requires_update` currency test. These resolve to `participated_stale` — blocking, because the review they prove predates this HEAD, but with a **re-review trigger** as the remedy rather than the escalation `absent` calls for. The producer has already subtracted the proven set, so a bot with one stale and one fresh comment never appears here. Today only `pr-agent` can reach this set — it is the sole bot declaring `participation_requires_update`.
-5. **`{not_triggered}`** — the PR-WIDE observable: whether any `pull_request`-event workflow run exists for this PR at all. This is the one input NOT threaded forward, because no step above observes it; read it here:
+5. **`{declined_bots}`** — the DECLINE set: every `{bot_kind}` accumulated by the two re-review consumer sites above (§ "Re-review after a loop-back fix commit (trigger B)" and the `not_triggered` remediation in item 1 of the `participation_complete: false` branch below) on a `matched: true` / `head_sha_verified: false` return — the bot answered the re-review with a comment naming no reviewed-commit SHA. Rendered as a comma-separated bare-kind list and forwarded to `--declined-bots`. A required bot here resolves to the `declined` member — blocking, and excluded from the quorum exactly as `participated_stale` is, but with a **distinct remedy**: re-triggering a bot that already declined produces another decline, so the productive action is to accept the decline (move the bot to `optional_bots`, or record an operator merge-authorization), never another trigger. Distinct from `{refused_bots}` (an explicit rate-limit / quota / size notice) and from `{stale_participation_bots}` (a review that exists but predates the merge candidate): a decline leaves no reviewed SHA to compare, so the currency rule has nothing to work with and the decline must be recorded in its own right. Empty is the common case — a run where no re-review was triggered, or where every triggered re-review verified the HEAD, contributes nothing here. See [`standards/bot-participation-contract.md`](standards/bot-participation-contract.md) § "Detecting a decline — the bot answered without reviewing this commit".
+6. **`{not_triggered}`** — the PR-WIDE observable: whether any `pull_request`-event workflow run exists for this PR at all. This is the one input NOT threaded forward, because no step above observes it; read it here:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} checks pull-request-runs \
      --pr-number {pr_number}
    ```
 
-   Read `has_pull_request_run` from the returned TOON. Pass the bare `--not-triggered` flag on the predicate call below **only when `has_pull_request_run` is `false`**; omit it when it read `true`. Omit it for a run that concluded `skipped` too — a skipped run was still triggered. When the flag is passed, every required bot that would have been `absent` resolves to `not_triggered` instead: still blocking, but naming "the reviewers were never asked" rather than "a reviewer stayed silent", so the remedy is to trigger the review. Unlike the four sets above this is a bool, not a list, because the condition holds for every bot at once.
+   Read `has_pull_request_run` from the returned TOON. Pass the bare `--not-triggered` flag on the predicate call below **only when `has_pull_request_run` is `false`**; omit it when it read `true`. Omit it for a run that concluded `skipped` too — a skipped run was still triggered. When the flag is passed, every required bot that would have been `absent` resolves to `not_triggered` instead: still blocking, but naming "the reviewers were never asked" rather than "a reviewer stayed silent", so the remedy is to trigger the review. Unlike the five sets above this is a bool, not a list, because the condition holds for every bot at once.
 
    **Third branch — the read itself was unreadable.** A `status: error` return, a `status: unconfigured` return, or a return that carries no boolean `has_pull_request_run` field is an UNKNOWN **input**, NOT a licence to assume either polarity. Do NOT pass the flag, and do NOT omit it as though `true` had been read — omission is itself an assertion that a `pull_request` run exists, and it would silently resolve a required absent bot to `absent` (a reviewer stayed silent) instead of holding it open, which is the exact polarity coercion the typed `unconfigured` status exists to prevent. Take the **UNKNOWN verdict** handling below instead: the predicate is not invoked at all on this pass. The sibling call site routes the same read the same way — see [`../phase-6-finalize/standards/branch-cleanup.md`](../phase-6-finalize/standards/branch-cleanup.md) § "Predicate 2 — required-bot participation against this HEAD", which likewise names an `unconfigured` / `error` return an UNKNOWN input rather than either polarity.
 
@@ -683,15 +700,16 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
   --plan-id {plan_id} --required-bots "{required_bots}" --optional-bots "{optional_bots}" \
   --participated-bots "{participated_bots}" --in-progress-bots "{in_progress_bots}" \
   --refused-bots "{refused_bots}" --stale-participation-bots "{stale_participation_bots}" \
+  --declined-bots "{declined_bots}" \
   --unrecognised-refusal-bots "{unrecognised_refusal_bots}" \
   --refused-causes "{refused_causes}" --refusal-size-caps "{refusal_size_caps}" \
   --measured-diff-size "{measured_diff_size}"
 ```
 
-Append the bare `--not-triggered` flag to that call when and only when the item-5 read reported `has_pull_request_run: false`. It is a `store_true` bool with no value of its own, so it is never interpolated and never quoted — the quoting discipline below governs the list flags only. An item-5 read that was unreadable never reaches this call at all — it routes to the UNKNOWN verdict below before the predicate is invoked, so there is no third polarity to encode on the flag.
+Append the bare `--not-triggered` flag to that call when and only when the item-6 read reported `has_pull_request_run: false`. It is a `store_true` bool with no value of its own, so it is never interpolated and never quoted — the quoting discipline below governs the list flags only. An item-6 read that was unreadable never reaches this call at all — it routes to the UNKNOWN verdict below before the predicate is invoked, so there is no third polarity to encode on the flag.
 
 Every list set interpolated above is legitimately empty in normal operation — a plan with no optional bots, no in-progress
-bots, no refusals, no unrecognised refusals, no stale publishes, no refusal causes, and no stated caps is the common case. **The load-bearing defence is the parser, not the quoting.**
+bots, no refusals, no unrecognised refusals, no stale publishes, no declines, no refusal causes, and no stated caps is the common case. **The load-bearing defence is the parser, not the quoting.**
 The generated executor strips every empty-string argument before argparse sees it (`script_args = [a
 for a in script_args if a]` in `.plan/execute-script.py`), so through the executor `--refused-bots ""`
 arrives as a bare `--refused-bots` exactly as an unquoted empty placeholder would — the quotes do NOT
@@ -731,9 +749,9 @@ Read `participation_complete`, `pending_bots`, `unproven_bots`, `bot_states`, an
        --pr-number {pr_number} --bot-kind {bot_kind} --head-sha {head_sha} --push-time {push_time} --timeout {re_review_await_timeout_seconds} --plan-id {plan_id}
      ```
 
-     Read both `matched` AND `timed_out` from each returned TOON, and record BOTH outcomes explicitly:
+     Read `matched`, **`head_sha_verified`**, AND `timed_out` from each returned TOON, and record ALL THREE outcomes explicitly. `head_sha_verified` is load-bearing here for the same reason it is at trigger B: `matched: true` alone does not say the bot reviewed this HEAD, only that it answered, so reading it alone credits a review that never named the commit it matched.
 
-     - **`matched: true`** — that bot published a fresh review for this HEAD. Re-enter FIND, so the fresh review is surfaced through the existing "Producer: FIND — file PR comments to the ledger" call (which re-stamps every finding's `reviewed_commit_sha` to this HEAD), and re-evaluate the participation predicate on that pass. Log the outcome:
+     - **`matched: true` AND `head_sha_verified: true`** — that bot published a fresh review for this HEAD. Re-enter FIND, so the fresh review is surfaced through the existing "Producer: FIND — file PR comments to the ledger" call (which re-stamps every finding's `reviewed_commit_sha` to this HEAD), and re-evaluate the participation predicate on that pass. Log the outcome:
 
        ```bash
        python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -741,9 +759,17 @@ Read `participation_complete`, `pending_bots`, `unproven_bots`, `bot_states`, an
          --message "[STATUS] (plan-marshall:automatic-review) not_triggered remediation: re-review matched for bot_kind={bot_kind} at head_sha={head_sha} — re-entering FIND"
        ```
 
+     - **`matched: true` AND `head_sha_verified: false`** — that bot answered the trigger with a comment naming **no** reviewed-commit SHA: an **incremental-review decline**, NOT a fresh review, so it does NOT discharge the `not_triggered` remediation for that bot. Add `{bot_kind}` to the accumulating `{declined_bots}` set (item 5 of the participation guard below), and do NOT re-enter FIND on the strength of this bot — a declined bot has nothing new to surface, and re-triggering it produces another decline. Log the decline, then apply the **existing** `re_review_on_timeout` policy verbatim, exactly as the timeout arm below does:
+
+       ```bash
+       python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+         work --plan-id {plan_id} --level WARNING \
+         --message "[WARNING] (plan-marshall:automatic-review) not_triggered remediation: re-review for bot_kind={bot_kind} at head_sha={head_sha} returned a comment with no reviewed-commit SHA (head_sha_verified=false) — recorded as declined, NOT a completed review"
+       ```
+
      - **`timed_out: true` (and `matched: false`)** — the await budget expired with no fresh review for this HEAD. Apply the **existing** `re_review_on_timeout` policy verbatim — take § "On re-review timeout (trigger B)" above (`proceed` / `defer` / `ask`), which is the same operator-configured policy branch-cleanup's trigger A applies at its own gate (see [`../phase-6-finalize/standards/branch-cleanup-rereview.md`](../phase-6-finalize/standards/branch-cleanup-rereview.md) § "On re-review timeout (trigger A)"). Do NOT define a new disposition for this arm.
 
-     Generating the trigger does not itself satisfy the quorum: the step remains NOT markable done on this pass under either outcome, and the terminal Branch A mark still waits for a later pass that returns `participation_complete: true`.
+     Generating the trigger does not itself satisfy the quorum: the step remains NOT markable done on this pass under every one of the outcomes above, and the terminal Branch A mark still waits for a later pass that returns `participation_complete: true`.
   2. **Force-done with an explicit recorded reason** (escape hatch): mark the step `done` ONLY after writing a `decision`-log entry at WARNING naming the blocking bot(s), their states, and the reason. There is no silent force-done — the WARNING decision-log entry is mandatory and must precede the Branch A `mark-step-done`:
 
   ```bash
@@ -753,7 +779,7 @@ Read `participation_complete`, `pending_bots`, `unproven_bots`, `bot_states`, an
   ```
 
 - **UNKNOWN verdict** — the `review_completeness check` call exited **non-zero**, OR its return carries
-  **no `participation_complete` field at all**, OR the item-5 `checks pull-request-runs` read was itself
+  **no `participation_complete` field at all**, OR the item-6 `checks pull-request-runs` read was itself
   unreadable (`status: error`, `status: unconfigured`, or no boolean `has_pull_request_run` field) so the
   predicate was never invoked on this pass. This is an UNKNOWN verdict, explicitly **NOT `false`**
   and emphatically not `true`: the predicate never ran to a verdict, so nothing was proven and nothing
@@ -763,7 +789,7 @@ Read `participation_complete`, `pending_bots`, `unproven_bots`, `bot_states`, an
   the step MUST:
 
   1. **Log at ERROR**, naming which call failed (`{failing_call}` — `review_completeness check` or the
-     item-5 `checks pull-request-runs` read), the observed exit code, and the captured stderr verbatim:
+     item-6 `checks pull-request-runs` read), the observed exit code, and the captured stderr verbatim:
 
      ```bash
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -866,7 +892,7 @@ FIND-only producer — this step fetches and files `pr-comment` findings; the pe
 
 This step returns `status: escalate_ask` instead of `success`/`loop_back` on five distinct escalations, discriminated by the `reason` field:
 
-- **`reason: re_review_timeout`** — the "On re-review timeout (trigger B)" sub-block fired with `re_review_on_timeout` of `defer` or `ask` (the re-review await budget expired with no fresh bot review). The `proceed` policy does NOT return `escalate_ask` — the leaf falls through to "Wait for review-bot comments" and the run terminates normally (`success`/`loop_back`); `proceed` is the documented non-escalating case.
+- **`reason: re_review_timeout`** — the "On re-review timeout (trigger B)" sub-block fired with `re_review_on_timeout` of `defer` or `ask`. That sub-block has TWO entry paths and this `reason` covers both: the await budget expired with no fresh bot review (`timed_out: true`), or the bot answered with an **incremental-review decline** (`matched: true` / `head_sha_verified: false`). The envelope's `outcome` field below discriminates them, because the two are not the same observation and a decline reported as a timeout would assert a budget expiry that never happened. The `proceed` policy does NOT return `escalate_ask` on either path — the leaf falls through to "Wait for review-bot comments" and the run terminates normally (`success`/`loop_back`); `proceed` is the documented non-escalating case.
 - **`reason: rate_window_timeout`** — the "Rate-limit refusal recovery" Branch 3 poll exhausted `review_rate_window_timeout_seconds` while the claimed window was still open.
 - **`reason: rate_window_not_awaitable`** — the "Rate-limit refusal recovery" Branch 1 fired: the refusing bot's `rate_limit_class` is `hard_quota` or `unknown`, so no await and no event generation is productive. Escalates immediately without claiming a window.
 - **`reason: rate_window_exhausted`** — the "Rate-limit refusal recovery" Branch 2 claim returned `recovery_cap_exhausted`: this PR has already spent its `attempt_cap` recovery events for this bot. Cap exhaustion is an explicit escalation, never a silent give-up.
@@ -878,11 +904,13 @@ In all cases the dispatched leaf does NOT fire `AskUserQuestion` itself — it r
 
 ```toon
 status: escalate_ask
-display_detail: "re-review timeout — {action} (head {head_sha_short})"
+display_detail: "re-review {outcome} — {action} (head {head_sha_short})"
 action: defer | ask
 reason: re_review_timeout
-timed_out: true
-head_sha: {full HEAD SHA the timed-out re-review targeted}
+outcome: timed_out | declined
+timed_out: {true on the timed_out entry path, false on the decline path}
+declined_bots: {comma-joined bot_kind list — non-empty only on the decline path}
+head_sha: {full HEAD SHA the re-review targeted}
 timeout_seconds: {re_review_await_timeout_seconds}
 pr_number: {pr_number}
 prompt_options[3]:              # present only when action: ask — omitted for action: defer
@@ -890,6 +918,8 @@ prompt_options[3]:              # present only when action: ask — omitted for 
   - "Merge anyway — proceed unreviewed"
   - "Defer merge"
 ```
+
+`outcome` is the discriminator between the sub-block's two entry paths, and `timed_out` states the observed fact rather than a constant: reporting `timed_out: true` for a bot that answered would assert a budget expiry that did not occur. On the decline path the operator prompt is still the three options above — the decline disposes exactly as a timeout does — but "Wait another {timeout_seconds}s" is the weakest of the three there, because a bot that declined this HEAD produces another decline rather than a review when re-triggered.
 
 The three rate-window variants (`rate_window_timeout`, `rate_window_not_awaitable`,
 `rate_window_exhausted`) share one shape. There is no re-review `head_sha` on any of them — the
