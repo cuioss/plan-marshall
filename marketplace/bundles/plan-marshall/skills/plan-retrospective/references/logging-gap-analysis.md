@@ -124,8 +124,18 @@ deliverable. When the precondition is absent, the rule emits no finding.
   qualification needs each task's own realized change set, which the offline
   inputs carry only when a task record holds a `changed_files` LIST — the
   per-task SHA range Step 8 diffs is not persisted in a stable place. A
-  present-but-empty list is a measurement ("this task changed nothing"); the key
-  being absent on every completed task means nothing was recorded.
+  present-but-empty list is a measurement ("this task changed nothing").
+
+  ⛔ `measured` requires that list on **every** completed task, not on at least
+  one. A completed task without the key joins neither the changed set nor the
+  unchanged one, so qualifying while any record is missing draws both `M` and `N`
+  from the recorded subset alone and silently narrows the population to it — one
+  recorded task that changed files and emitted no line, beside nine unrecorded
+  ones that all emitted, reads as `M=1` / `N=0` and fires
+  `ARTIFACT_EMISSION_ABSENT`. Partial recording is not full measurement. Two
+  states therefore report `unavailable` — no completed record carries the list,
+  and a MIXED corpus where some do and some do not — and the reason names which,
+  because the remedies differ.
 
   The extractor publishes `change_attribution: measured | unavailable`, and it is
   the field to read FIRST. On `measured` it also publishes `eligible_tasks` (`M`),

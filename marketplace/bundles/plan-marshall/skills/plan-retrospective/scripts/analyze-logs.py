@@ -1002,16 +1002,33 @@ def artifact_emission_population(
     per-task SHA range is not persisted in a stable place (the same limit
     :func:`detect_outcome_for_diffed_tasks` documents). A task record supplies it
     only by carrying a ``changed_files`` LIST — present-and-empty means "recorded,
-    and this task changed nothing", which is a measurement; the key being absent
-    on every done task means nothing was recorded and no population can be
-    qualified. In that state the eligible keys are omitted rather than set to
-    zero, so a consumer that gates on them finds no key instead of a false zero,
-    and the caller emits NO finding. An unqualified count MUST NOT be substituted
-    — that is the absent-read-as-measured swap this aspect exists to prevent.
+    and this task changed nothing", which is a measurement.
+
+    ⛔ ``measured`` therefore requires that list on EVERY completed task, not on
+    at least one. A completed task lacking the key joins neither the changed set
+    nor the unchanged one, so qualifying the population while any record is
+    missing draws BOTH halves from the recorded subset alone and silently narrows
+    the population to it. That is not a hypothetical: one recorded task that
+    changed files and emitted no line, alongside nine unrecorded completed tasks
+    that all emitted one, reads as ``eligible_tasks: 1`` /
+    ``eligible_tasks_with_artifacts: 0`` and fires ``ARTIFACT_EMISSION_ABSENT`` —
+    the false ABSENT the change-qualification exists to remove, re-entering
+    through the discriminator meant to prevent it. Partial recording is not full
+    measurement.
+
+    Two distinct states therefore report ``unavailable``, and
+    ``change_attribution_reason`` names which: NO completed record carries the
+    list, and a MIXED corpus where some do and some do not. Their remedies differ
+    — the first needs recording turned on, the second needs the gap closed — so an
+    operator must be able to tell them apart. In either state the eligible keys
+    are omitted rather than set to zero, so a consumer that gates on them finds no
+    key instead of a false zero, and the caller emits NO finding. An unqualified
+    count MUST NOT be substituted — that is the absent-read-as-measured swap this
+    aspect exists to prevent.
     """
     done_task_nums: set[int] = set()
     changed_task_nums: set[int] = set()
-    attribution_available = False
+    recorded_task_nums: set[int] = set()
     tasks_dir = plan_dir / 'tasks'
     if tasks_dir.exists():
         for task_path in sorted(tasks_dir.glob('TASK-*.json')):
@@ -1030,7 +1047,7 @@ def artifact_emission_population(
             if isinstance(changed_files, list):
                 # Presence of the LIST is the measurement; its emptiness is a
                 # recorded "this task changed nothing", not an absence of record.
-                attribution_available = True
+                recorded_task_nums.add(num)
                 if changed_files:
                     changed_task_nums.add(num)
 
@@ -1048,12 +1065,31 @@ def artifact_emission_population(
         'tasks_without_artifacts': [f'TASK-{num:03d}' for num in missing],
     }
 
-    if not attribution_available:
+    recorded_count = len(recorded_task_nums)
+    completed_count = len(done_task_nums)
+
+    if recorded_count == 0:
         population['change_attribution'] = 'unavailable'
         population['change_attribution_reason'] = (
             'no completed task record carries a changed_files list, so no task '
             'diff could be attributed; the eligible-task population is omitted '
             'rather than reported as zero, and no emission finding is made'
+        )
+        return population
+
+    if recorded_count < completed_count:
+        # MIXED corpus — named separately from the no-record state above because
+        # the two have different remedies. Qualifying here would draw both halves
+        # of the eligible population from the recorded subset alone, excluding
+        # every completed task whose change set was never recorded.
+        population['change_attribution'] = 'unavailable'
+        population['change_attribution_reason'] = (
+            f'only {recorded_count} of {completed_count} completed task records '
+            f'carry a changed_files list, so the eligible population would be '
+            f'drawn from that subset alone and would silently exclude every task '
+            f'whose change set was never recorded; partial recording is not full '
+            f'measurement, so the eligible-task population is omitted rather than '
+            f'reported over a narrowed population, and no emission finding is made'
         )
         return population
 
