@@ -73,11 +73,10 @@ MANIFEST_VERSION = 1
 #: versus code being two genuinely independent artifacts.
 #:
 #: ``unknown`` is a MEMBER: it is a bucket the classifier genuinely returns (for
-#: paths no extension claimed and no owner-less rule recognized), and one that
-#: blocks the deliverable downstream in phase-4-plan. Membership says a value is
-#: spelled like a bucket, never that it is a good one to have. Infrastructure
-#: config is deliberately ABSENT — it is a per-path role that never forms a
-#: plan-wide bucket of its own.
+#: paths no extension claimed and no owner-less rule recognized). Membership says
+#: a value is spelled like a bucket, never that it is a good one to have.
+#: Infrastructure config is deliberately ABSENT — it is a per-path role that
+#: never forms a plan-wide bucket of its own.
 CLASSIFICATION_BUCKETS: tuple[str, ...] = (
     'production_only',
     'test_only',
