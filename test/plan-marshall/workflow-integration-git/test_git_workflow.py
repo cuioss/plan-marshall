@@ -803,15 +803,41 @@ class TestDetectArtifacts:
         assert 'tsbuildinfo' in safe_str
         assert len(result['safe']) >= 2
 
-    def test_detects_plan_temp_as_safe(self, tmp_path: Path):
-        """.plan/temp/ files are safe (not uncertain)."""
+    def test_excludes_plan_state_dir_from_scan(self, tmp_path: Path):
+        """A path whose FIRST SEGMENT is ``.plan/`` is excluded unconditionally.
+
+        The exclusion is keyed on the first path segment and applied BEFORE the
+        ignore lookup, so it depends on no ignore mechanism. ``respect_gitignore
+        =False`` is the load-bearing part of the arrangement: with the ignore
+        oracle never consulted, an exclusion that leaned on it would not fire,
+        and ``.plan/temp`` would reappear in ``safe``. The same independence is
+        what makes the exclusion survive a ``.gitignore`` carrying no ``.plan``
+        rule and an empty-but-successful ignore set.
+
+        This inverts an earlier assertion that ``.plan/temp`` IS offered as
+        safe. That contract is retired: ``.plan/`` is this repository's
+        scratch AND live-plan-state directory, and offering any of it for
+        deletion is what let a running plan's own audit trail be destroyed.
+        Cleanup of ``.plan/temp`` is owned by the retention machinery
+        (``system.retention.temp_on_maintenance``), not by artifact scanning.
+        """
         _create_file(tmp_path, '.plan/temp/scratch.txt')
         _create_file(tmp_path, '.plan/temp/debug.log')
+        # Positive population: a real artifact OUTSIDE .plan/ that the scan must
+        # still offer, so the two absences below are not a vacuous empty scan.
+        _create_file(tmp_path, 'scratch.temp')
 
         result = scan_artifacts(tmp_path, respect_gitignore=False)
 
-        assert '.plan/temp' in '\n'.join(result['safe'])
-        assert '.plan/temp' not in '\n'.join(result['uncertain'])
+        assert '.plan/temp' not in '\n'.join(result['safe']), (
+            f'.plan/ state offered as safe-to-delete: {result["safe"]}'
+        )
+        assert '.plan/temp' not in '\n'.join(result['uncertain']), (
+            f'.plan/ state offered for deletion at all: {result["uncertain"]}'
+        )
+        assert 'scratch.temp' in result['safe'], (
+            f'control artifact missing from safe: {result["safe"]}'
+        )
 
     def test_detects_dist_next_as_uncertain(self, tmp_path: Path):
         """dist/ and .next/ directories are uncertain."""
