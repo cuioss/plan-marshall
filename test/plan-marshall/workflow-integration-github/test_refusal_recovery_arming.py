@@ -218,7 +218,7 @@ _DECLARED_WORDING_POPULATION_SIZE = len(_DECLARED_WORDING_PAIRS)
 #: at a smaller size. Comparing against this constant converts that silent
 #: shrinkage into a named failure. When a wording is added or removed on purpose,
 #: update this number in the same commit — the mismatch message says so.
-_DECLARED_WORDING_POPULATION_BASELINE = 3
+_DECLARED_WORDING_POPULATION_BASELINE = 4
 
 
 def _quota_refusal_body(bot_kind: str) -> str:

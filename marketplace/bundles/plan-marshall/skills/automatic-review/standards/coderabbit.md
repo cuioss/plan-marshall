@@ -53,7 +53,8 @@ ignore_patterns:
 review_body_summary_patterns:
   - "Actionable comments posted:"   # its review_body STATUS line — excluded from every finding count
 refusal_patterns:
-  - "Review limit reached"                                                    # current refusal notice — posted in place of a review
+  - "Review limit reached"                                                    # review-summary notice — posted in place of an automatic review
+  - "Review rate limited"                                                     # command-invocation reply — posted in place of a commanded review
 rate_limit_class: awaitable_window   # the review limit is a rolling window that reopens on its own
 rate_limit_eta_patterns:
   - "wait ([0-9]+ minutes? and [0-9]+ seconds?) before requesting another review"
@@ -99,15 +100,41 @@ finding: the walkthrough / summary issue comment, no-op reviews (`No actionable 
 generated`), marketing / tips, learnings-only replies, and bot self-acknowledgement replies (login
 `coderabbitai` + reply-to-human + no `cr-indicator-types` marker). Do **not** ignore inline review
 comments that carry a `cr-indicator-types` marker — those are the signal.
-The refusal notice (`Review limit reached`) also files no finding, but it is **not** a noise drop and
-is declared in the separate `refusal_patterns` list rather than in `ignore_patterns`: CodeRabbit posts
-it *in place of* a review, so it carries no finding to extract AND it is positive evidence the bot
-declined. `fetch_findings` therefore branches on it — counting it in `count_skipped_refusal` and
-naming `coderabbit` in `refused_bots[]` — instead of folding it into `count_skipped_noise`. The two
-lists must stay distinct: `ignore_patterns` here lists sections of a *successful* review
-(`## Walkthrough`, `✏️ Learnings added`), so reusing it for refusal detection would classify
-CodeRabbit's ordinary successful reviews as refusals, and unioning the two collapses the distinction
-in the other direction. See [`bot-participation-contract.md`](bot-participation-contract.md) §
+CodeRabbit declines on **two distinct surfaces**, and each is registered as its own literal in
+`refusal_patterns`:
+
+- the **review-summary notice** (`Review limit reached`) — posted in place of an *automatic* review;
+- the **command-invocation reply** (`Review rate limited`) — posted in place of a review that
+  `@coderabbitai review` explicitly asked for, wrapped in the `<details>` disclosure CodeRabbit uses
+  for every auto-generated reply.
+
+Both file no finding, and neither is a noise drop: CodeRabbit posts each *in place of* a review, so
+it carries no finding to extract AND it is positive evidence the bot declined. `fetch_findings`
+therefore branches on either — counting it in `count_skipped_refusal` and naming `coderabbit` in
+`refused_bots[]` — instead of folding it into `count_skipped_noise`. Two surfaces means two data
+records: the command reply says "Review rate **limited**", which the summary notice's "Review limit
+**reached**" does not contain, so registering one never covers the other. Do NOT restate the arm
+list here — `_github_pr.REFUSAL_LAYERS` remains the single place the arms are named.
+
+The command-reply literal is deliberately the NARROW `Review rate limited` rather than the broader
+`Action not completed` wrapper the same reply carries. `rate_limit_class` is declared per-BOT and
+applied as the DEFAULT class to every refusal from that bot; this bot declares `awaitable_window`,
+which is truthful for a rate-limit window but FALSE for the other command-reply failures the broad
+wrapper would also capture — registering the wrapper would arm a wait on a window that may never
+reopen.
+
+For the same reason the reply's own HTML marker (`<!-- This is an auto-generated reply by
+CodeRabbit -->`) is deliberately **absent from `ignore_patterns`**, despite sitting one near-miss
+away from the walkthrough marker already listed there. The noise filter runs AFTER the registry and
+structural arms but BEFORE the enumerative arm, so listing the reply marker would drop every FUTURE
+command-reply refusal — a rewording no arm yet enumerates — as noise, converting the one refusal
+shape the enumerative arm exists to catch back into silence. The marker's whole treatment stays the
+consumer-stage body strip below.
+
+The two lists must stay distinct in the other direction too: `ignore_patterns` here lists sections of
+a *successful* review (`## Walkthrough`, `✏️ Learnings added`), so reusing it for refusal detection
+would classify CodeRabbit's ordinary successful reviews as refusals, and unioning the two collapses
+the distinction. See [`bot-participation-contract.md`](bot-participation-contract.md) §
 "A refusal is never noise — it is a branch".
 
 ## Participation evidence — `review_body`, `inline`

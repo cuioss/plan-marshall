@@ -1091,11 +1091,42 @@ _SOURCERY_1014_REFUSAL = (
     'Reduce the size of the pull request and request another review.'
 )
 
-# CodeRabbit's CURRENT refusal phrasing (registry marker ``Review limit reached``).
+# CodeRabbit's REVIEW-SUMMARY refusal phrasing (registry marker ``Review limit reached``).
 _CODERABBIT_REVIEW_LIMIT_REFUSAL = (
     '> [!WARNING] > ## Review limit reached > '
     'You have reached your review limit for the current billing cycle. '
     'Reviews will resume once the limit resets.'
+)
+
+# CodeRabbit's SECOND refusal surface, observed on PR #1368: the reply to a COMMAND
+# INVOCATION (``@coderabbitai review``) rather than the review-summary notice above.
+# Recognized ONLY by the registry marker ``Review rate limited`` — every other arm is
+# blind to it, which is asserted below and is why the wording had to be filed as data:
+#   - the summary notice's marker says "Review limit REACHED"; this body says "Review
+#     rate LIMITED", a different string under case-sensitive substring containment;
+#   - the structural arm needs a limit-EXCEEDED statement AND a notice shape
+#     conjunctively, and this body carries no exceeded / reached / hit verb at all;
+#   - the enumerative arm is inert as shipped AND is vetoed by ``<details`` regardless.
+# Unrecognized, it was BOTH stored as an actionable pr-comment finding and credited to
+# ``github_re_review`` as a completion signal — a refusal counted as review coverage.
+_CODERABBIT_COMMAND_REPLY_REFUSAL = (
+    '<!-- This is an auto-generated reply by CodeRabbit --> '
+    '<!-- CodeRabbit review command invocation: v2:abc --> '
+    '<details> <summary>(warning) Action not completed</summary> '
+    'Review rate limited. '
+    '> Note: CodeRabbit is an incremental review system and does not re-review '
+    'already reviewed commits. This command is applicable only when automatic '
+    'reviews are paused. </details>'
+)
+
+# The NEGATIVE CONTROL for the wording above: an ordinary CodeRabbit inline finding.
+# It carries the same auto-generated-reply provenance markers a command reply does, so
+# it is the body that would break if the new registry wording — or a widening of it to
+# the ``Action not completed`` wrapper — ever started matching real review feedback.
+_CODERABBIT_GENUINE_INLINE = (
+    '<!-- cr-indicator-types:potential_issue --> '
+    'Major: the retry loop can spin forever when the backoff cap is zero. '
+    'Guard the cap before entering the loop.'
 )
 
 # Sourcery's size-limit refusal in a NOTICE-SHAPED phrasing. The OBSERVED #1014
@@ -1168,10 +1199,79 @@ class TestRefusalNoticeProducerFilter:
         assert not _is_refusal_notice(_SOURCERY_1014_REFUSAL, None)
 
     def test_coderabbit_review_limit_refusal_recognized(self):
-        """CodeRabbit's current ``Review limit reached`` notice is a refusal."""
+        """CodeRabbit's review-summary ``Review limit reached`` notice is a refusal."""
         from _github_pr import _is_refusal_notice
 
         assert _is_refusal_notice(_CODERABBIT_REVIEW_LIMIT_REFUSAL, 'coderabbit')
+
+    def test_coderabbit_command_reply_refusal_recognized_via_registry_data_layer(self):
+        """#1368 regression: the COMMAND-INVOCATION reply refusal is seen, and only as data.
+
+        Every other arm is asserted BLIND to this body first, so a pass here cannot be
+        borrowed from a fallback: the structural recognizer sees no limit-EXCEEDED
+        statement (the body says "Review rate limited", which carries no
+        exceeded/reached/hit verb), and the enumerative arm is vetoed by the
+        ``<details>`` code anchor even once a threshold is measured. Recognition can
+        therefore only come from the registry marker resolved through
+        ``bot_kind='coderabbit'``.
+        """
+        from _github_pr import (
+            REFUSAL_LAYER_REGISTRY,
+            _has_code_anchor,
+            _is_rate_limit_notice,
+            _is_refusal_notice,
+            refusal_layers,
+        )
+
+        # The structural last-resort arm is BLIND to this phrasing...
+        assert not _is_rate_limit_notice(_CODERABBIT_COMMAND_REPLY_REFUSAL)
+        # ...and the enumerative arm is vetoed by the <details> anchor regardless of
+        # whether a threshold is ever measured, so it can never rescue this body.
+        assert _has_code_anchor(_CODERABBIT_COMMAND_REPLY_REFUSAL)
+        # ...leaving the registry data arm as the only thing that recognizes it.
+        assert refusal_layers(_CODERABBIT_COMMAND_REPLY_REFUSAL, 'coderabbit') == [
+            REFUSAL_LAYER_REGISTRY
+        ]
+        assert _is_refusal_notice(_CODERABBIT_COMMAND_REPLY_REFUSAL, 'coderabbit')
+        # And it stays bot-scoped: no other bot's record, and no human, cross-matches.
+        assert not _is_refusal_notice(_CODERABBIT_COMMAND_REPLY_REFUSAL, 'sourcery')
+        assert not _is_refusal_notice(_CODERABBIT_COMMAND_REPLY_REFUSAL, None)
+
+    def test_coderabbits_two_refusal_surfaces_are_separately_registered(self):
+        """Neither CodeRabbit marker spans the other, so registering one covers neither.
+
+        The discriminator for the wording above. "Review limit reached" (the review
+        SUMMARY notice) and "Review rate limited" (the COMMAND reply) differ by more
+        than presentation, and matching is case-sensitive substring containment — so a
+        registry holding only the first leaves the second invisible, which is exactly
+        how a refusal was credited as a completion signal.
+        """
+        import bot_registry
+
+        markers = bot_registry.refusal_patterns('coderabbit')
+        matched_by_summary = [m for m in markers if m in _CODERABBIT_REVIEW_LIMIT_REFUSAL]
+        matched_by_command_reply = [
+            m for m in markers if m in _CODERABBIT_COMMAND_REPLY_REFUSAL
+        ]
+        assert matched_by_summary, 'the review-summary refusal must stay registered'
+        assert matched_by_command_reply, 'the command-reply refusal must be registered too'
+        assert not set(matched_by_summary) & set(matched_by_command_reply)
+
+    def test_an_ordinary_coderabbit_finding_is_not_read_as_a_refusal(self):
+        """⛔ NEGATIVE CONTROL for the added wording — real feedback stays a finding.
+
+        The added marker is narrow on purpose. Widening it to the reply's
+        ``Action not completed`` wrapper, or to the auto-generated-reply HTML marker
+        this body also carries, would start matching genuine review feedback — and the
+        failure would be silent, because a finding read as a refusal is dropped from
+        the store rather than erroring.
+        """
+        from _github_pr import _is_rate_limit_notice, _is_refusal_notice, refusal_layers
+
+        assert refusal_layers(_CODERABBIT_GENUINE_INLINE, 'coderabbit') == []
+        assert not _is_refusal_notice(_CODERABBIT_GENUINE_INLINE, 'coderabbit')
+        assert not _is_rate_limit_notice(_CODERABBIT_GENUINE_INLINE)
+        assert not _is_obvious_noise(_CODERABBIT_GENUINE_INLINE, 'coderabbit')
 
     def test_sourcery_has_two_distinct_registered_refusal_modes(self):
         """Both observed Sourcery refusal phrasings are filed as registry data.
@@ -1211,6 +1311,7 @@ class TestRefusalNoticeProducerFilter:
             _SOURCERY_1014_REFUSAL,
             _SOURCERY_WEEKLY_QUOTA_REFUSAL,
             _CODERABBIT_REVIEW_LIMIT_REFUSAL,
+            _CODERABBIT_COMMAND_REPLY_REFUSAL,
             _SOURCERY_SHAPED_REFUSAL,
             _UNKNOWN_BOT_REFUSAL,
         ):
@@ -1301,6 +1402,69 @@ class TestRefusalNoticeProducerFilter:
         # The surviving finding is the genuine review (R2), never the refusal (R1) —
         # a refusal is a signal about the review, not something to triage.
         assert 'comment_id: R2' in q['findings'][0]['detail']
+
+    def test_fetch_findings_counts_the_command_reply_refusal_and_keeps_the_real_finding(
+        self, plan_context
+    ):
+        """#1368 end-to-end: the command reply is a REFUSAL, not an actionable finding.
+
+        This is the observed producer half of the defect. Unrecognized, the reply
+        survived the pre-filter and was stored as a ``pr-comment`` finding — so triage
+        was handed CodeRabbit's apology to dispose of, while ``count_skipped_refusal``
+        stayed at zero and the quorum layer saw no refusal at all.
+
+        The genuine inline finding in the same batch is the negative control: it must
+        still reach the store, or the fix would have bought refusal accounting at the
+        price of dropping real feedback.
+        """
+        comments = [
+            {
+                'id': 'C1',
+                'kind': 'issue_comment',
+                'author': 'coderabbitai',
+                'body': _CODERABBIT_COMMAND_REPLY_REFUSAL,
+                'path': '',
+                'line': 0,
+                'thread_id': '',
+            },
+            {
+                'id': 'C2',
+                'kind': 'inline',
+                'author': 'coderabbitai',
+                'body': _CODERABBIT_GENUINE_INLINE,
+                'path': 'src/Retry.java',
+                'line': 31,
+                'thread_id': 'PRRT_c2',
+            },
+        ]
+
+        plan_context.plan_dir_for('gh-pr-refusal-cr-command-reply')
+        with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
+            mock_fetch.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'comments': comments,
+                'total': len(comments),
+                'unresolved': len(comments),
+            }
+            result = cmd_fetch_findings(
+                _stage_make_args(1368, 'gh-pr-refusal-cr-command-reply')
+            )
+
+        assert result['status'] == 'success'
+        assert result['count_fetched'] == 2
+        # Accounted for as a REFUSAL, with the bot named for the quorum layer...
+        assert result['count_skipped_refusal'] == 1
+        assert result['refused_bots'] == ['coderabbit']
+        # ...never as noise, and never as something for triage to dispose of.
+        assert result['count_skipped_noise'] == 0
+        assert result['count_stored'] == 1
+
+        from _findings_core import query_findings
+
+        q = query_findings('gh-pr-refusal-cr-command-reply', finding_type='pr-comment')
+        assert q['filtered_count'] == 1
+        assert 'comment_id: C2' in q['findings'][0]['detail']
 
     def test_detect_rate_limited_bots_answers_per_registered_bot(self):
         """The wait-return discriminator answers per REGISTERED bot, not per one bot.

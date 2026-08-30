@@ -909,6 +909,115 @@ _GENUINE_REVIEW_BODY = (
     'backoff cap is zero — guard the cap before entering the loop.'
 )
 
+_CODERABBIT_LOGIN = 'coderabbitai'
+
+# CodeRabbit's reply to the COMMAND INVOCATION this very strategy posts. Observed on
+# PR #1368: the trigger comment is `@coderabbitai review`, and THIS is what came back.
+# Recognized only by the registry marker ``Review rate limited`` — the structural arm
+# sees no exceeded/reached/hit verb, and the enumerative arm is vetoed by ``<details``.
+_CODERABBIT_COMMAND_REPLY_REFUSAL = (
+    '<!-- This is an auto-generated reply by CodeRabbit --> '
+    '<!-- CodeRabbit review command invocation: v2:abc --> '
+    '<details> <summary>(warning) Action not completed</summary> '
+    'Review rate limited. '
+    '> Note: CodeRabbit is an incremental review system and does not re-review '
+    'already reviewed commits. This command is applicable only when automatic '
+    'reviews are paused. </details>'
+)
+
+_CODERABBIT_GENUINE_COMMENT = (
+    'Actionable comments posted: 1. The retry loop can spin forever when the backoff '
+    'cap is zero — guard the cap before entering the loop.'
+)
+
+
+def test_await_does_not_credit_the_coderabbit_command_reply_as_a_review(monkeypatch):
+    """⛔ #1368 regression: the reply to OUR OWN trigger is a refusal, not a completion.
+
+    The sharpest false-green on the comment path, and the one that actually fired: the
+    strategy posts ``@coderabbitai review``, CodeRabbit replies that it is rate limited,
+    and — because no arm read that reply — the envelope returned ``matched: true`` with
+    ``matched_signal: issue_comment``. A refusal was credited as the completion signal
+    for the very trigger it declined, asserting review coverage that never happened.
+
+    The correct outcome is a truthful timeout carrying a RECORDED refusal, so the
+    caller can arm the rate-limit recovery instead of believing the review landed.
+    """
+    result = _await_with_comments(
+        monkeypatch,
+        [
+            _comment(
+                _CODERABBIT_LOGIN,
+                created_at='2026-01-01T00:05:00Z',
+                body=_CODERABBIT_COMMAND_REPLY_REFUSAL,
+            )
+        ],
+        bot_kind='coderabbit',
+    )
+
+    assert result['matched'] is False
+    assert result['matched_signal'] == ''
+    assert result['head_sha_verified'] is False
+    assert result['timed_out'] is True
+    # Recorded, not swallowed — and the registry arm is named as what recognized it,
+    # which is the discriminator: this body reaches no other arm.
+    assert result['refusal_detected'] is True
+    assert result['refusals'][0]['bot_kind'] == 'coderabbit'
+    assert result['refusals'][0]['source'] == 'issue_comment'
+    assert result['refusals'][0]['layer'] == _github_pr.REFUSAL_LAYER_REGISTRY
+
+
+def test_await_does_not_credit_the_command_reply_delivered_as_a_review(monkeypatch):
+    """The same reply submitted as a REVIEW object is likewise not a completed review.
+
+    Worth its own case because the review path is strictly worse: the row satisfies the
+    commit_sha and submitted_at gates, so it would report ``head_sha_verified: true`` —
+    claiming the new HEAD was reviewed by a body that says it was not.
+    """
+    result = _await_with_comments(
+        monkeypatch,
+        [],
+        reviews=[
+            _review(
+                'headsha',
+                '2026-01-01T00:05:00Z',
+                user='coderabbitai[bot]',
+                body=_CODERABBIT_COMMAND_REPLY_REFUSAL,
+            )
+        ],
+        bot_kind='coderabbit',
+    )
+
+    assert result['matched'] is False
+    assert result['matched_signal'] == ''
+    assert result['head_sha_verified'] is False
+    assert result['refusal_detected'] is True
+    assert result['refusals'][0]['layer'] == _github_pr.REFUSAL_LAYER_REGISTRY
+
+
+def test_await_still_matches_a_genuine_coderabbit_comment(monkeypatch):
+    """⛔ NEGATIVE CONTROL: real CodeRabbit feedback still completes the await.
+
+    Asserting only that the refusal is rejected would pass on a change that rejected
+    EVERY CodeRabbit comment — which would convert a false green into a permanent false
+    timeout and stall every re-review this bot is asked for.
+    """
+    result = _await_with_comments(
+        monkeypatch,
+        [
+            _comment(
+                _CODERABBIT_LOGIN,
+                created_at='2026-01-01T00:05:00Z',
+                body=_CODERABBIT_GENUINE_COMMENT,
+            )
+        ],
+        bot_kind='coderabbit',
+    )
+
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'issue_comment'
+    assert result['refusal_detected'] is False
+
 
 def test_await_does_not_match_a_refusal_delivered_as_a_review(monkeypatch):
     """#1014 regression: a refusal submitted as a REVIEW object is not a completed review.
