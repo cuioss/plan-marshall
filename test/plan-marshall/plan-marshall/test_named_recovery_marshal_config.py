@@ -20,8 +20,9 @@ These tests assert the *derivation* of the assertion class, not a hard-coded
 enumeration of the three known sites — pinning only the known sites would
 re-create the sample-as-population error this plan exists to prevent. The
 population is derived by **assertion shape** (the named-recovery heading for
-``.plan/marshal.json``) swept across every workflow doc, so a new phase boundary
-that adds such a block is covered automatically.
+``.plan/marshal.json``) swept across the directories named in ``SWEPT_DIRS``, so
+a new phase boundary that adds such a block under one of them is covered
+automatically.
 
 Test-to-deliverable map:
 
@@ -37,6 +38,12 @@ Test-to-deliverable map:
 * ``test_named_recovery_contract_is_a_single_authority`` — D2: the contract
   exists as ONE authority the other sites reference, not as three drifting
   copies.
+* ``test_worktree_handling_destructive_instructions_are_inspection_first``
+  — D3(b): the section-wise sibling assertion over ``worktree-handling.md``,
+  whose § "Recovery Loop" carries a ``###`` heading and so is not matched by the
+  ``**Named recovery case —`` shape the sweep above derives. It publishes its own
+  denominator and asserts the destructive-section set non-empty, so it cannot
+  pass over a surface it failed to read.
 """
 
 from __future__ import annotations
