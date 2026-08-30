@@ -287,7 +287,7 @@ The invariant-applicability gate (`_worktree_in_use`) evaluates the predicate wi
 
 ### Main-scoped resolution
 
-A column named for main is read from main. The three `main_*` captures resolve their tree through `_invariants._main_repo_root()`, whose property is **worktree-invariance**: it names the same main checkout from any tree in the repository, a linked worktree included. Under a base-dir override (`PLAN_BASE_DIR` / `set_base_dir()`) it honours the override; otherwise `git rev-parse --git-common-dir` names main's `.git` even from inside a linked worktree. Precedence has the shape `marketplace_paths.resolve_main_anchored_path` uses — override first, then git — that being the single sanctioned main-anchored exception (ADR-002).
+A column named for main is read from main. The `main_*` captures resolve their tree through `_invariants._main_repo_root()`, whose property is **worktree-invariance**: it names the same main checkout from any tree in the repository, a linked worktree included. Under a base-dir override (`PLAN_BASE_DIR` / `set_base_dir()`) it honours the override; otherwise `git rev-parse --git-common-dir` names main's `.git` even from inside a linked worktree. Precedence has the shape `marketplace_paths.resolve_main_anchored_path` uses — override first, then git — that being the single sanctioned main-anchored exception (ADR-002).
 
 ⚠ Worktree-invariance is the accurate claim, not cwd-independence: `git rev-parse` runs in the process cwd, so the resolver names whichever *repository* the process is in. Within one repository it is invariant across main and every worktree, which is exactly what these columns need.
 
