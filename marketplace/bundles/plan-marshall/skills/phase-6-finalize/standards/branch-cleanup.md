@@ -1121,12 +1121,18 @@ The warning above was advisory because *"can this bot still produce evidence?"* 
                     {structural_bots}, rendered as comma-separated {bot_kind}:{cap} pairs
 ```
 
-<!-- The word "pairs" above is deliberately lower-case. The form-parity guard in
-     test_review_merge_invocation_contract.py locates the flag-form paragraph by a
-     case-sensitive upper-case marker and asserts exactly one paragraph in this
-     document carries it. Spelling it in upper case anywhere else — including in a
-     comment such as this one — makes that block a second candidate, and the guard
-     can no longer tell which paragraph enumerates the flag form sets. -->
+<!-- The word "pairs" above is deliberately lower-case. TWO guards locate the
+     flag-form paragraph in this document by the same case-sensitive upper-case
+     pair-form marker, and they bind at DIFFERENT strengths:
+     test_review_merge_invocation_contract.py (_form_paragraph) asserts that exactly
+     one PARAGRAPH of this document carries the marker, while
+     test_structural_refusal.py (_pair_form_claim) asserts that it occurs exactly
+     ONCE in the WHOLE DOCUMENT — and applies that same once-only rule to the
+     claim's end marker. The whole-document count is the binding constraint: a
+     second upper-case spelling breaks the build even when it lands inside the
+     paragraph that already carries the marker. So never write the marker in upper
+     case anywhere else in this file — including in a comment such as this one —
+     and refer to it descriptively, as this comment does. -->
 
 
 **`{cap}` is a PAIR LIST, not a scalar — decided here rather than left to the renderer.** The value

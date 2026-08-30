@@ -1156,8 +1156,6 @@ def test_structural_fallback_rejects_an_uncaptured_refusal_on_the_comment_path(m
 # ``refusal_eta`` (from its ``rate_limit_eta_patterns``), and a ``refusals[]``
 # audit record naming the detecting layer.
 
-_CODERABBIT_LOGIN = 'coderabbitai'
-
 # CodeRabbit's OBSERVED refusal, carrying a machine-readable ETA its registry
 # ``rate_limit_eta_patterns`` extract.
 _CODERABBIT_REFUSAL_WITH_ETA = (

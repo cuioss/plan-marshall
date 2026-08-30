@@ -480,6 +480,20 @@ def _barrier_structural_prompt() -> str:
     return barrier[fence_start:fence_end]
 
 
+def _to_next_heading(text: str, start: int) -> str:
+    """*text* from ``start`` to the next markdown heading, or to its end.
+
+    THE structural bound, shared by every reader here that needs one. A character
+    count is the alternative and it is the wrong one: a fixed window silently stops
+    covering whatever is appended past its end, which is exactly how content added
+    to a grown section escapes a sweep that still reports clean — the same reason
+    ``_remedy_guard_text`` below bounds on a paragraph break rather than a length.
+    """
+    rest = text[start:]
+    nxt = re.search(r'^#{1,6}\s', rest, re.MULTILINE)
+    return rest[: nxt.start()] if nxt else rest
+
+
 def _barrier_structural_section() -> str:
     """The barrier's structural-refusal SECTION, anchored on its heading.
 
@@ -496,9 +510,7 @@ def _barrier_structural_section() -> str:
         re.MULTILINE,
     )
     assert match, 'the barrier declares no structural-refusal section'
-    rest = barrier[match.end():]
-    nxt = re.search(r'^#{1,6}\s', rest, re.MULTILINE)
-    return rest[: nxt.start()] if nxt else rest
+    return _to_next_heading(barrier, match.end())
 
 
 def _barrier_structural_commands() -> str:
@@ -783,9 +795,14 @@ class TestNoAwaitOnTheStructuralBranch:
         """
         barrier = _BRANCH_CLEANUP.read_text(encoding='utf-8')
         anchor = barrier.index('{structural_bots} = every bot in')
-        # The derivation sits with its sibling; bound the read so a `{cap}` mention
-        # elsewhere in the document cannot satisfy these assertions.
-        block = barrier[anchor:anchor + 2500]
+        # The derivation sits with its sibling, so the read is bounded by the
+        # document's own next heading rather than by a character count — a fixed
+        # window silently stops covering whatever is appended past its end. The
+        # section legitimately renders `{cap}` again further down (the operator
+        # prompt and the decision message both quote it), so the assertion that
+        # actually pins the derivation is the pair-rendering one below, not the
+        # bare-placeholder one.
+        block = _to_next_heading(barrier, anchor)
 
         assert '{cap}' in block, 'the {cap} derivation is absent from the derivation block'
         # The SOURCE, named — and named as the CONSUMER's spelling. The producer
@@ -817,7 +834,12 @@ class TestNoAwaitOnTheStructuralBranch:
 
         assert 'refused_size_caps[]' in barrier and 'refusal_causes[]' in barrier
         # The read instruction names the consumer's spelling among the fields read.
-        read_instruction = barrier[barrier.index('Read `participation_complete`'):][:1400]
+        # Bounded on the document's own next heading rather than a character count,
+        # for the same reason as the sibling above: a fixed window stops covering
+        # whatever the instruction grows to carry, and says nothing when it does.
+        read_instruction = _to_next_heading(
+            barrier, barrier.index('Read `participation_complete`')
+        )
         assert '`refusal_causes`' in read_instruction, (
             'refusal_causes is not among the fields the step is told to read from the '
             'review_completeness check return, so the {cap} derivation reads a field '
