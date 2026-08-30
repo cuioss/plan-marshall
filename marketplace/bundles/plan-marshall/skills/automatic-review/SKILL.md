@@ -352,8 +352,8 @@ Once every participating bot is completed, markerless (buffer-settled), or logge
 > **GitLab provider asymmetry:** `bot_completion` is a GitHub-only read verb — the GitLab provider (`gitlab_pr`) has no completion-check-run equivalent (the same asymmetry the FIND stage's `--required-bots` / `--optional-bots` note documents). On a GitLab host, skip the completion-aware poll entirely; every bot relies on the `review_bot_buffer_seconds` settle.
 
 The `pr wait-for-comments` return carries a **`rate_limited_bots[]`** discriminator — one
-`{bot_kind, rate_limit_class, eta}` record per REGISTERED bot whose newest comment is a rate-limit
-status notice posted in place of a review. A non-empty list signals that those specific bots did not
+`{bot_kind, rate_limit_class, eta, cause, cap}` record per REGISTERED bot whose newest comment is a
+rate-limit status notice posted in place of a review. A non-empty list signals that those specific bots did not
 review because their limit was hit, rather than that a genuine review landed or the buffer timed out
 cleanly. An empty list means no registered bot is rate-limited. See
 [`../workflow-integration-github/SKILL.md`](../workflow-integration-github/SKILL.md) § Canonical
@@ -362,7 +362,10 @@ invocations → `github_ops pr wait-for-comments` for the authoritative field co
 The list is per-bot and class-bearing because the correct response differs per bot: an
 `awaitable_window` refusal reopens on its own and is worth awaiting, a `hard_quota` refusal does not
 reopen on a useful timescale so awaiting it only burns budget, and `unknown` is the fail-closed value
-for a bot whose refusal shape has never been observed. The "Rate-limit refusal recovery" subsection
+for a bot whose refusal shape has never been observed. ⛔ Each record ALSO carries the refusal's
+`cause` and the `cap` its notice stated, and the cause is read FIRST: a `size` cause makes waiting a
+non-option whatever the class declares, so a consumer that routes on `rate_limit_class` alone offers a
+wait for a ceiling waiting does not move. The "Rate-limit refusal recovery" subsection
 below acts on this discriminator when the opt-in is enabled; when the opt-in is off, a non-empty
 `rate_limited_bots[]` is treated as an ordinary settle by the table above.
 
@@ -371,8 +374,8 @@ below acts on this discriminator when the opt-in is enabled; when the opt-in is 
 A detected refusal is a **branchable signal, never a silent drop**. Two producers surface one:
 
 - **`rate_limited_bots[]`** on the "Wait for review-bot comments" return — one
-  `{bot_kind, rate_limit_class, eta}` record per registered bot whose newest comment is a rate-limit
-  notice.
+  `{bot_kind, rate_limit_class, eta, cause, cap}` record per registered bot whose newest comment is a
+  rate-limit notice.
 - **`refusal_detected` / `refusal_class` / `refusal_eta` / `refusals[]`** on the
   `github_re_review re-review` return — the re-review await recorded a refusal instead of collapsing
   it into a bare `matched: false` / `timed_out: true`.
@@ -669,7 +672,7 @@ Read `required_bots` and `optional_bots` off the same execution-manifest step-pa
 
 Then thread the five bot-keyed observation sets the predicate classifies from, plus the one PR-wide bool. **The five sets are threaded forward from data already gathered above — none is re-polled here.** The PR-wide bool is the single exception and is read fresh (item 6 below), because no earlier step observes it.
 
-1. **`{participated_bots}`** — the EVIDENCE-TYPED participation set: the `participated_bots[]` records from the `github_pr fetch_findings` result of the "Producer: FIND" step, rendered as comma-separated `{bot_kind}:{evidence_kind}` pairs. This **replaces** the retired `responded_bots`-plus-completion-poll union: presence of *some* comment resolving to a bot's login is not evidence that the bot reviewed this diff, so the producer now credits a bot only when an observed comment's `kind` is one of the publish shapes that bot's registry record declares in `participation_evidence` (and, for a bot declaring `participation_requires_update`, only on first presence or observed `updated_at` movement). A bot that posted only noise is still credited — the evidence is computed before noise filtering — but a bot that posted only a help reply is not, and neither is a bot whose only output was a **refusal**: a refusal is published in one of the bot's declared shapes yet is positive evidence it did NOT review, so the producer excludes it from this set and reports it in `{refused_bots}` instead.
+1. **`{participated_bots}`** — the EVIDENCE-TYPED participation set: the `participated_bots[]` records from the `github_pr fetch_findings` result of the "Producer: FIND" step, rendered as comma-separated `{bot_kind}:{evidence_kind}` pairs. This **replaces** the retired `responded_bots`-plus-completion-poll union: presence of *some* comment resolving to a bot's login is not evidence that the bot reviewed this diff, so the producer now credits a bot only when an observed comment's `kind` is one of the publish shapes that bot's registry record declares in `participation_evidence` (and, for a bot declaring `participation_requires_update`, only when the currency test holds). That test reads ONE source — the plan-scoped **currency ledger** beside the findings store, which records per `(bot_kind, comment_id)` the merge-candidate SHA and the `updated_at` at the fetch that last credited that comment — and it holds when the recorded SHA IS the merge candidate, when the comment is absent from the ledger and this fetch observes it at a resolvable merge candidate it does not demonstrably predate, or when its `updated_at` differs from the recorded value. An unresolvable merge-candidate SHA fails every arm closed. A bot that posted only noise is still credited — the evidence is computed before noise filtering — but a bot that posted only a help reply is not, and neither is a bot whose only output was a **refusal**: a refusal is published in one of the bot's declared shapes yet is positive evidence it did NOT review, so the producer excludes it from this set and reports it in `{refused_bots}` instead.
 2. **`{in_progress_bots}`** — every `{bot_kind}` whose `github_pr bot_completion` was still not terminal at the `review_completion_poll_timeout_seconds` bound, from the "Completion-aware poll" data above.
 3. **`{refused_bots}`** — every `{bot_kind}` observed publishing a refusal notice. Supply only the observation; the predicate assigns the member, taking the DEFAULT from that bot's three-valued registry `rate_limit_class` (`refused_awaitable` / `refused_hard` / `refused_unknown`) and applying the two per-refusal overrides that displace it — a `size` cause gives `refused_structural`, and a refusal no arm of the recognition stack could read gives `refused_unknown` (item 3c below). Take the **union of two producers**, both already gathered above: the `refused_bots[]` list on the `github_pr fetch_findings` return of the "Producer: FIND" step, and the `rate_limited_bots[]` records on the "Wait for review-bot comments" return. The producer-side list is load-bearing rather than redundant — the wait step samples each bot's *newest* comment at one instant, while `fetch_findings` classifies **every** comment on the PR, so a refusal posted outside that sample still reaches the quorum layer. A bot whose refusal reaches neither channel would be classified `absent`, which reads as "not heard from yet" rather than "declined" — the exact conflation that let a PR with two refusing required bots report a complete review.
 

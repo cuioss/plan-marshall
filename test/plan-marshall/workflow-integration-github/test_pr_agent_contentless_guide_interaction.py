@@ -35,14 +35,16 @@ Seven arms:
    SURVIVING PR-Agent record resolved ``accepted`` scores in neither quality
    bucket with ``pct_resolved_as_fixed is None`` — never ``0.0``.
 6. **Currency arm** — arm 1's surviving participation must not become UNCONDITIONAL,
-   and it must be idempotent. The credit is now an SHA comparison against the merge
+   and it must be idempotent. The credit is an SHA comparison against the merge
    candidate (``_reviewed_at_merge_candidate``): re-fetching the unchanged Guide at
-   the SAME HEAD keeps the credit (the observer-effect regression the old
+   the SAME HEAD keeps the credit (the observer-effect regression the retired
    first-presence arm failed), a force-push that advances HEAD past the reviewed
    commit turns it ``participated_stale``, and a Guide EDITED in place after the
-   advance is credited again through the edit arm. The drop removes the comment from
-   the findings store, so the reviewed SHA lives in the noise sidecar the fix extends
-   to record it — without which the currency test would be blind on the drop path.
+   advance is credited again through the edit arm. A dropped Guide files no finding,
+   so the SHA the comparison reads comes from the plan-scoped CURRENCY LEDGER — the
+   sole source the currency test consults, which records every credited comment
+   whether or not that comment produced a finding. Without the ledger the test would
+   be blind on the drop path.
 7. **Rendering-invariance arm** — the drop must not depend on which emphasis
    PR-Agent emits. The verbatim observed #1078 body (HTML ``<strong>`` inside a
    ``<table>``) and the same Guide in GitHub's markdown ``**`` rendering are both
@@ -421,9 +423,11 @@ def test_clean_guide_is_dropped_in_either_emphasis_rendering(plan_context, monke
 #
 # The drop is exactly what put those two halves in tension. The currency test
 # (``_reviewed_at_merge_candidate``) compares each comment's reviewed SHA against the
-# merge candidate, but a dropped Guide files no pr-comment finding — so its
-# ``reviewed_commit_sha`` lives only in the noise sidecar the fix extends to record it.
-# Without that record the currency test would have no SHA to compare on the drop path.
+# merge candidate, and it reads that SHA from ONE source: the plan-scoped CURRENCY
+# LEDGER, which records the merge-candidate SHA and the ``updated_at`` at each credit
+# regardless of whether the comment produced a finding. That is what keeps the test
+# answerable on the drop path, where a dropped Guide files no pr-comment finding and so
+# leaves nothing in the findings store to read a reviewed SHA from.
 # Both directions are asserted below: the same-HEAD idempotence case (fails against the
 # pre-fix observation-history predicate) and its advanced-HEAD staleness control, plus
 # the edit arm that keeps a genuine in-place re-review creditable after a loop-back.
@@ -446,9 +450,10 @@ def test_second_fetch_of_an_unchanged_guide_at_the_same_head_stays_credited(plan
     fetch and the next.
 
     The drop and the participation credit are the two halves in tension: the Guide is
-    dropped as noise on both fetches, so its reviewed SHA lives only in the noise
-    sidecar — which the fix extends to record that SHA. Without it the currency test
-    would have nothing to compare for a dropped comment.
+    dropped as noise on both fetches, so the SHA the comparison reads comes from the
+    plan-scoped currency ledger rather than from a stored finding. That ledger is the
+    currency test's sole source and records a credited comment whether or not it was
+    filed — without it the test would have nothing to compare on the drop path.
     """
     plan_id = 'pr-agent-guide-unchanged-second-fetch'
     guide = _guide_comment(OBSERVED_CLEAN_GUIDE, created_at=_CREATED_AT, updated_at=_CREATED_AT)

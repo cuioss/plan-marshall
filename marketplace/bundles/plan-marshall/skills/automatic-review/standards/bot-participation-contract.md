@@ -61,7 +61,7 @@ ten members. The taxonomy is closed: every non-participation resolves to one of 
 | `refused_unknown` | The bot posted a refusal about whose awaitability nothing is known. Reached two ways: the registry declares its class `unknown` (its refusal shape has never been observed), or **no arm of the recognition stack could read the notice at all** — which resolves here whatever class the bot declares. | A declared *we-do-not-know*, NEVER a positive hard quota. Rendering it as `refused_hard` steers an operator toward "waiting is futile, force it" for a refusal that might have been awaitable. Its own member so the ignorance reaches the reader as ignorance. |
 | `refused_structural` | The bot posted a refusal whose **cause is a ceiling on the diff itself** — the PR is over a per-PR size budget (an observed `cause: size`). Decided by the cause axis, whatever the bot's `rate_limit_class` declares. | **The only member whose refusal is not temporal.** The other three say *not now*; this one says *not this diff*, and the same request never succeeds while the diff is this size. Remedies: **split**, **accept the gap**, or **disable this reviewer for this PR** — ⛔ **never await.** The finding carries the **cap** the notice stated, so the gap is auditable against the measured diff size. |
 | `participated_but_empty` | The bot posted at least one comment, but every comment was filtered out (noise) so it stored zero findings. | **Accounted-for, not a failure.** The bot did its pass and had nothing actionable to say. |
-| `participated_stale` | The bot's comment matched a declared `participation_evidence` publish shape but failed the `participation_requires_update` currency test — the comment was reviewed against a commit that is **not** the merge candidate, and it was not edited in place since. | The bot reviewed an **earlier** commit, so nothing has reviewed the current diff. Blocking, but the remedy is a re-review trigger. |
+| `participated_stale` | The bot's comment matched a declared `participation_evidence` publish shape but failed the `participation_requires_update` currency test — the currency ledger anchors the comment to a commit that is **not** the merge candidate, and its `updated_at` is unchanged from the value recorded at that credit. | The bot reviewed an **earlier** commit, so nothing has reviewed the current diff. Blocking, but the remedy is a re-review trigger. |
 | `declined` | The bot was asked to review the merge candidate (a re-review was triggered) and answered without producing a review of it — an **incremental-review decline**: it responded with a comment carrying no reviewed-commit SHA (`head_sha_verified: false`) rather than a review of this HEAD. | The bot engaged but **declined** to review this commit. Blocking, but re-triggering is futile — the productive action is to accept the decline (move the bot to `optional`, or record a merge-authorization), not to trigger again. |
 
 `participated_but_empty` is the member most often misread. A bot that reviewed and found nothing is a
@@ -299,9 +299,11 @@ proves only that it reviewed **once, at some commit** — after a loop-back or f
 comment would silently credit it with reviewing code it never saw. Applying the currency rule, its
 evidence requires the comment to prove a review of the **merge candidate**:
 
-- the comment is recorded against the merge-candidate SHA — the `reviewed_commit_sha` stamped on the
-  stored finding, or (for a comment the pre-filter drops, so it files no finding) the merge-candidate
-  SHA the noise sidecar recorded when the comment was first observed; **or**
+- the **currency ledger** — the SOLE source this test reads — anchors the comment to the
+  merge-candidate SHA. That ledger records, per `(bot_kind, comment_id)`, the merge-candidate SHA and
+  the `updated_at` at the fetch that LAST credited that comment, and it records them whether or not the
+  comment produced a finding — so a comment the pre-filter drops is anchored exactly as one that was
+  filed, and no second set of SHAs is consulted or unioned in; **or**
 - it was **edited in place since it was last credited** — `updated_at` differs from the **recorded**
   `updated_at` the currency ledger holds for that credit, never from `created_at` — a fresh review at
   the current tree. Comparing against the recorded value is what stops the arm from becoming a
@@ -555,14 +557,22 @@ both. The partition is a computed signal, not merely a documented possibility.
 
 Every other verdict in this contract is computed from an **observed** refusal, so the gap is only ever
 discovered after a reviewer has already declined — at the merge gate, where the remaining options are
-expensive. A size ceiling is different in kind. It is a declared property of the **reviewer** rather
-than an outcome of the run, and a diff's size is measurable at PR creation, so the exclusion is
-knowable in advance.
+expensive. A size ceiling is different in kind: it is a declared property of the **reviewer** rather
+than an outcome of the run, so *that a reviewer carries one* is answerable before any review is
+requested.
 
-It also recurs **by size rather than by chance**: the ceiling is fixed, so *every* plan over it gets no
-review from that reviewer, predictably and forever. `review_completeness size-caps` is the surface a
-plan consults for this. It takes no plan and reads no PR — the answer is registry data — and reports
-per registered reviewer:
+⛔ **What is disclosed is the reviewer's ceiling, never this diff's verdict.** The surface reads the
+registry and no PR, and it emits no figure a diff could be compared against — so it cannot tell a plan
+whether its own diff exceeds a reviewer's limit, and no consumer may render it as though it had. A plan
+learns WHICH reviewers carry a ceiling and, separately, whether that ceiling's value is recoverable at
+all; it does not learn that it is over one. The figure itself exists only in a refusal notice the
+reviewer has already published.
+
+The disclosure is still worth having because a ceiling recurs **by size rather than by chance**: it is
+fixed, so a reviewer carrying one refuses over-size plans predictably and forever, and knowing at
+outline time which reviewers those are turns an unexplained merge-gate non-participation into an
+anticipated one. `review_completeness size-caps` is the surface a plan consults for this. It takes no
+plan and reads no PR — the answer is registry data — and reports per registered reviewer:
 
 - `structural_cap` — whether it declares a size-caused refusal at all, **derived** from
   `refusal_size_patterns` so the disclosure can never disagree with the classification above.
@@ -570,6 +580,15 @@ per registered reviewer:
   separately and honestly, because the two are independent: a reviewer can have a ceiling nobody has
   taught the registry to read, and collapsing them would let "declares a ceiling" be misread as "the
   ceiling's value is recoverable".
+
+**Rejected alternative — declare each reviewer's cap as a registry constant (`declared_cap`).** It
+would let this surface emit a comparable figure and so answer the *is my diff over it?* question the
+disclosure deliberately does not. It is rejected for the reason `refusal_size_cap_patterns` already
+encodes at `_github_pr.refusal_size_cap`: a declared figure is an assertion that goes stale
+**silently** the moment the provider changes its budget, and nothing in the pipeline would notice it
+had. The notice's own figure is first-party evidence captured at the moment of refusal, which is what
+makes a recorded gap auditable rather than asserted — so the disclosure stays honestly narrower rather
+than confidently wrong.
 
 ### A refusal is never noise — it is a branch
 
@@ -636,16 +655,17 @@ review — actually fits it.
 **Surviving the drop is not the same as being exempt from the currency rule.** For a bot
 declaring `participation_requires_update` the evidence that survives the drop must still prove a review
 of the **merge candidate** (§ "The currency rule"). Keeping that rule live across a drop takes an
-explicit mechanism, because the SHA a comment was reviewed against is normally read from the
-`reviewed_commit_sha` stamped on the `pr-comment` finding the comment produced — which a dropped
-comment by definition does not produce. The producer therefore records each noise-dropped comment's
-`(bot_kind, comment_id)` key **and the merge-candidate SHA at first observation** in a plan-scoped
-**observation sidecar** kept beside the findings store, and evaluates the currency rule against the
-**union** of the stored-finding SHAs and the recorded sidecar SHAs. A dropped comment's recorded SHA
-is therefore the commit it was first observed against; a later HEAD reads as stale, and a real
-`updated_at` edit credits the bot again.
+explicit mechanism, because a dropped comment by definition files no `pr-comment` finding, so nothing
+in the findings store says which commit it was read against. The producer therefore keeps the anchor
+in ONE place for every credited comment alike — the plan-scoped **currency ledger**, which records
+each comment's `(bot_kind, comment_id)` key together with the merge-candidate SHA and the `updated_at`
+at the fetch that last credited it. The currency rule is evaluated against that ledger and against
+nothing else: a dropped comment and a filed one are anchored by the same record, so there is no second
+set of SHAs to union in and no shape of comment the rule reaches only indirectly. A dropped comment's
+recorded SHA is the commit it was credited against; a later HEAD reads as stale, and an `updated_at`
+that differs from the recorded one credits the bot again.
 
-The sidecar holds **observation records, not findings**: they are never returned by a findings query,
+The ledger holds **observation records, not findings**: they are never returned by a findings query,
 never enter the pending-findings gate, and never reach operator triage, so the triage queue stays as
 clean as the drop intends. Recording them as findings in any resolution state would put routine
 clean-review boilerplate back in front of the operator, which is the defect the drop exists to

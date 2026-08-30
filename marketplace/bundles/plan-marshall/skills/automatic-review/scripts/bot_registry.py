@@ -545,13 +545,24 @@ class BotRegistry:
         """Return whether ``bot_kind``'s evidence additionally requires update movement.
 
         True for a bot that re-reviews by EDITING its single persistent comment in
-        place rather than posting a new one (PR-Agent's Guide comment). For such a
-        bot the mere continued existence of the comment proves only that it reviewed
-        ONCE, at some earlier HEAD — so evidence requires either first presence (the
-        comment is newly observed) or observed ``updated_at`` movement.
+        place rather than posting a new one (PR-Agent's Guide comment). For such a bot
+        the mere continued existence of the comment proves only that it reviewed ONCE,
+        at some earlier HEAD, so its credit has to clear the producer's CURRENCY TEST.
 
-        False (the default) for a bot whose every review appends a new comment, where
-        presence of a newly-observed comment is itself the movement.
+        That test reads ONE source — the plan-scoped currency ledger beside the
+        findings store, which records per ``(bot_kind, comment_id)`` the
+        merge-candidate SHA and the ``updated_at`` at the fetch that LAST credited the
+        comment. The credit holds when the recorded SHA is the merge candidate, when
+        the ledger holds no row for the comment and this fetch observes it at a
+        resolvable merge candidate the comment does not demonstrably predate, or when
+        its ``updated_at`` differs from the recorded value. An unresolvable
+        merge-candidate SHA withholds the credit on every arm. See
+        ``github_pr._reviewed_at_merge_candidate`` for the predicate this flag gates
+        and ``standards/bot-participation-contract.md`` § "The currency rule".
+
+        False (the default) for a bot whose every review appends a new comment. Such a
+        bot is credited on the presence of a comment in a declared publish shape and no
+        commit is compared, so the ledger holds no row for it at all.
         """
         return bool(self._by_kind.get(bot_kind, {}).get('participation_requires_update', False))
 

@@ -696,9 +696,10 @@ def classify_bot(
       merely predates this HEAD. Unproven and blocking, but the remedy is to accept the
       decline, not to re-trigger a bot that already declined this commit.
     - **``participated_stale``** — the bot published in a declared evidence shape,
-      but the currency test failed: the comment was reviewed against a commit that is
-      not the merge candidate and was not edited in place since, so the review it
-      proves predates this HEAD. Unproven and therefore blocking, but the remedy is to
+      but the currency test failed: the currency ledger — the sole source that test
+      reads — anchors the comment to a commit that is not the merge candidate, and its
+      ``updated_at`` is unchanged from the value recorded at that credit, so the review
+      it proves predates this HEAD. Unproven and therefore blocking, but the remedy is to
       re-trigger a re-review — the opposite of ``absent``, where there is no review to
       refresh.
     - **``in_progress``** — the bot's review is still running.
