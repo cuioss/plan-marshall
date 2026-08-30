@@ -21,6 +21,16 @@ Test layers:
         every finding, and an empty population over a non-empty tree is itself a
         finding rather than a clean pass. A tree with no skills at all is the
         matched negative control for that guard.
+  * (e) Entry-script discrimination — the ``if __name__ == '__main__':`` predicate
+        decides population membership, so each of its false-positive (``!=``,
+        function-local) and false-negative (reversed operand order) shapes is held
+        against a matched partner differing only in the guard.
+  * (f) ``help`` is an ordinary verb — argparse adds ``-h``/``--help`` as options
+        and never a ``help`` subcommand, so an explicitly registered one is
+        compared in both directions rather than subtracted.
+  * (g) ``add_parser(aliases=...)`` — an alias is a registered verb; a list that
+        is not fully literal makes the set partial and is refused rather than
+        compared.
 
 Every fixture is materialized under ``tmp_path``; the real marketplace tree is
 never written to. The fixture BUILDERS are imported from
@@ -65,6 +75,7 @@ TYPE_EMPTY_POPULATION = _mod.TYPE_EMPTY_POPULATION
 SKIP_UNPARSEABLE = _mod.SKIP_UNPARSEABLE
 SKIP_NO_ROOT_PARSER = _mod.SKIP_NO_ROOT_PARSER
 SKIP_NO_SUBPARSERS = _mod.SKIP_NO_SUBPARSERS
+SKIP_DYNAMIC = _mod.SKIP_DYNAMIC
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +94,56 @@ def _materialize(root: Path, files: dict[str, str]) -> Path:
 
 def _types(findings: list[dict]) -> list[str]:
     return sorted(f['type'] for f in findings)
+
+
+def _script_under_guard(guard: str) -> str:
+    """The SAME registering script body under a chosen trailing guard block.
+
+    Every entry-script discrimination test below differs from its matched partner
+    in this one string and in nothing else, so a pair that disagrees can only be
+    disagreeing about the guard shape.
+    """
+    return documented_verb_drift_script(('compose',)) + guard
+
+
+#: The canonical guard: a top-level ``==`` compare. Admits the file as an entry
+#: script, so an undocumented ``compose`` is reported.
+_GUARD_CANONICAL = "\n\nif __name__ == '__main__':\n    main()\n"
+
+#: ``!=`` — same operand shape as the canonical guard, opposite meaning.
+_GUARD_NOT_EQUAL = "\n\nif __name__ != '__main__':\n    main()\n"
+
+#: Reversed operand order. Still an entry script.
+_GUARD_REVERSED = "\n\nif '__main__' == __name__:\n    main()\n"
+
+#: A compare against a different constant — an ordinary module-level branch.
+_GUARD_UNRELATED = "\n\nif __name__ == '__not_main__':\n    main()\n"
+
+#: A guard nested inside a function body. Never executes at import, and says
+#: nothing about how the file is invoked.
+_GUARD_FUNCTION_LOCAL = (
+    "\n\ndef _run() -> None:\n    if __name__ == '__main__':\n        main()\n"
+)
+
+
+def _aliases_script(aliases_expr: str) -> str:
+    """An entry script whose ``remove`` verb carries an ``aliases=`` keyword.
+
+    ``aliases_expr`` is spliced verbatim as the keyword value, so a literal list
+    and a non-literal reference produce scripts differing only in that expression.
+    """
+    return (
+        'import argparse\n\n\n'
+        "_ALIASES = ['rm']\n\n\n"
+        'def main() -> int:\n'
+        '    parser = argparse.ArgumentParser()\n'
+        "    sub = parser.add_subparsers(dest='command')\n"
+        "    sub.add_parser('compose')\n"
+        f"    sub.add_parser('remove', aliases={aliases_expr})\n"
+        '    parser.parse_args()\n'
+        '    return 0\n'
+        "\n\nif __name__ == '__main__':\n    main()\n"
+    )
 
 
 def _detail(findings: list[dict], finding_type: str, key: str):
@@ -477,3 +538,260 @@ def test_empty_population_over_an_empty_tree_is_clean(tmp_path):
     (tmp_path / 'plan-marshall').mkdir(parents=True)
 
     assert analyze(tmp_path) == []
+
+
+# ---------------------------------------------------------------------------
+# (e) Entry-script discrimination — the guard shape decides the population
+# ---------------------------------------------------------------------------
+#
+# ``owned_entry_scripts`` admits a file to the candidate population on the
+# strength of its ``if __name__ == '__main__':`` guard, so every defect in that
+# predicate is a population defect: a false positive admits a module that is not
+# an entry script, a false negative drops a real one and the rule returns clean
+# over it. The observable used throughout this section is the same one the
+# helper-module control in (a) uses — an owned entry script with NO fenced
+# invocation reports its registered verb, and a non-entry module is silent — so
+# each pair reads the population membership directly off the finding list.
+
+
+def _entry_script_files(guard: str) -> dict[str, str]:
+    return documented_verb_drift_files(
+        documented=(), script_source=_script_under_guard(guard)
+    )
+
+
+def test_a_not_equal_main_compare_is_not_an_entry_script(tmp_path):
+    """⛔ ``__name__ != '__main__'`` must not be read as an entry-point guard.
+
+    The predicate used to inspect the operands but never ``ast.Compare.ops``, so
+    the ``!=`` form — identical in left operand, comparator count and comparator
+    value — satisfied every condition tested and was classified as an entry
+    script. That is a FALSE POSITIVE in the candidate population: a module whose
+    guard says "when I am NOT the entry point" is admitted, and every verb it
+    registers is then reported as drift against documentation it was never
+    expected to have.
+    """
+    _materialize(tmp_path, _entry_script_files(_GUARD_NOT_EQUAL))
+
+    assert analyze(tmp_path) == [], (
+        'a module guarded by __name__ != "__main__" is not an entry script and '
+        'must not enter the candidate population'
+    )
+
+
+def test_an_equal_main_compare_with_the_same_shape_still_is_one(tmp_path):
+    """The matched positive control for the ``!=`` rejection above.
+
+    Byte-identical but for the operator. Without it, the rejection above would be
+    equally satisfied by a predicate that admits nothing at all — the assertion
+    ``analyze(...) == []`` would be passing for a reason unrelated to the
+    operator.
+    """
+    _materialize(tmp_path, _entry_script_files(_GUARD_CANONICAL))
+
+    findings = analyze(tmp_path)
+
+    assert _types(findings) == [TYPE_MISSING_FROM_DOCS]
+    assert _detail(findings, TYPE_MISSING_FROM_DOCS, 'verb') == 'compose'
+
+
+def test_a_function_local_guard_is_not_an_entry_script(tmp_path):
+    """⛔ A guard nested inside a function does not make the file an entry script.
+
+    The predicate used ``ast.walk``, which descends into every scope, so a guard
+    written inside a function body counted exactly as a module-level one. Such a
+    guard never runs at import and says nothing about how the file is invoked —
+    admitting it is the same false-positive class as the ``!=`` form, reached by a
+    different route.
+    """
+    _materialize(tmp_path, _entry_script_files(_GUARD_FUNCTION_LOCAL))
+
+    assert analyze(tmp_path) == [], (
+        'a guard nested in a function body is not a module entry point'
+    )
+
+
+def test_the_reversed_operand_order_is_an_entry_script(tmp_path):
+    """⛔ ``'__main__' == __name__`` is a real entry script and was being dropped.
+
+    The predicate required ``test.left`` to be the ``__name__`` Name, so the
+    reversed — and entirely valid — operand order failed every check and resolved
+    to "not an entry script". That is a FALSE NEGATIVE, and the more damaging
+    direction: the script leaves the candidate population altogether, never
+    reaches ``derive_registered_verbs``, and the rule returns CLEAN over it. A
+    detector that cannot fire on a file it was written to examine.
+    """
+    _materialize(tmp_path, _entry_script_files(_GUARD_REVERSED))
+
+    findings = analyze(tmp_path)
+
+    assert _types(findings) == [TYPE_MISSING_FROM_DOCS], (
+        "'__main__' == __name__ is an entry-point guard and the script must be "
+        f'compared; got {_types(findings)}'
+    )
+    assert _detail(findings, TYPE_MISSING_FROM_DOCS, 'verb') == 'compose'
+
+
+def test_a_compare_against_another_constant_is_not_an_entry_script(tmp_path):
+    """The matched negative control for the reversed-order acceptance above.
+
+    Accepting either operand order must not degrade into accepting any comparison
+    involving ``__name__``. This fixture keeps the ``==`` operator and the
+    ``__name__`` operand and changes only the constant, so a predicate that
+    stopped checking the literal would be caught here.
+    """
+    _materialize(tmp_path, _entry_script_files(_GUARD_UNRELATED))
+
+    assert analyze(tmp_path) == []
+
+
+# ---------------------------------------------------------------------------
+# (f) ``help`` is not an implicit verb
+# ---------------------------------------------------------------------------
+#
+# The set comparison used to subtract a hard-coded ``{'help'}`` on the premise
+# that "argparse adds these itself". Argparse adds ``-h`` / ``--help`` as
+# OPTIONS; it never registers a ``help`` SUBCOMMAND. Subtracting it was therefore
+# wrong in both directions, and both are held below.
+
+
+def test_an_explicitly_registered_and_documented_help_verb_is_not_a_phantom(tmp_path):
+    """⛔ A real ``add_parser('help')`` that IS documented must compare clean.
+
+    Subtracting ``help`` from the registered set removed a verb the script
+    genuinely registers, so the documented invocation had nothing to match and
+    was reported as a ``phantom_documented_verb`` — an argparse-rejection claim
+    about a call that works.
+    """
+    _materialize(
+        tmp_path,
+        documented_verb_drift_files(
+            registered=('compose', 'help'),
+            documented=('compose', 'help'),
+        ),
+    )
+
+    assert analyze(tmp_path) == [], (
+        'a registered, documented help subcommand is not a phantom'
+    )
+
+
+def test_an_explicitly_registered_undocumented_help_verb_is_reported(tmp_path):
+    """The matched control — the OTHER direction the subtraction suppressed.
+
+    Same script, ``help`` now absent from the documentation. The subtraction hid
+    this case entirely: ``help`` was removed from the registered set before the
+    comparison, so it could never appear in ``registered - documented`` and the
+    undocumented verb was invisible to ``verb_missing_from_docs``.
+
+    The pair is what makes the fix's direction unambiguous — the first test alone
+    would be satisfied by a rule that still ignores ``help`` everywhere.
+    """
+    _materialize(
+        tmp_path,
+        documented_verb_drift_files(
+            registered=('compose', 'help'),
+            documented=('compose',),
+        ),
+    )
+
+    findings = analyze(tmp_path)
+
+    assert _types(findings) == [TYPE_MISSING_FROM_DOCS]
+    assert _detail(findings, TYPE_MISSING_FROM_DOCS, 'verb') == 'help'
+
+
+# ---------------------------------------------------------------------------
+# (g) ``add_parser(aliases=...)`` entries are registered verbs
+# ---------------------------------------------------------------------------
+#
+# argparse accepts every ``aliases`` entry as an independently callable
+# subcommand, but the derivation read only ``node.args[0]``. This is LIVE in this
+# tree rather than hypothetical: ``manage-lessons.py``, ``manage-status.py`` and
+# ``manage-tasks.py`` all use ``aliases=`` and all carry a canonical-invocations
+# block, so all three sit inside this analyzer's own population.
+
+
+def test_a_documented_alias_is_not_a_phantom(tmp_path):
+    """⛔ An alias is a registered verb, and a documented one must compare clean.
+
+    Collecting only the positional name under-derives the registered set, so the
+    documented ``rm`` matched nothing and was reported as an argparse rejection —
+    for a call argparse accepts.
+    """
+    _materialize(
+        tmp_path,
+        documented_verb_drift_files(
+            documented=('compose', 'remove', 'rm'),
+            script_source=_aliases_script("['rm']"),
+        ),
+    )
+
+    assert analyze(tmp_path) == [], 'a documented add_parser alias is a real verb'
+
+
+def test_an_undocumented_alias_is_reported_as_missing_from_docs(tmp_path):
+    """The matched control — the same alias, now absent from the documentation.
+
+    Without it, the test above would be satisfied by a derivation that still
+    ignores aliases: an ignored ``rm`` is absent from the registered set, so it
+    is equally absent from ``registered - documented`` and equally silent. Only
+    the pair distinguishes "collected" from "ignored".
+    """
+    _materialize(
+        tmp_path,
+        documented_verb_drift_files(
+            documented=('compose', 'remove'),
+            script_source=_aliases_script("['rm']"),
+        ),
+    )
+
+    findings = analyze(tmp_path)
+
+    assert _types(findings) == [TYPE_MISSING_FROM_DOCS]
+    assert _detail(findings, TYPE_MISSING_FROM_DOCS, 'verb') == 'rm'
+
+
+def test_a_non_literal_aliases_list_skips_rather_than_comparing_a_partial_set(tmp_path):
+    """⛔ A partially-derivable set must be refused, not compared as complete.
+
+    ``aliases=_ALIASES`` cannot be resolved statically, so the registered set is
+    knowable only in part. Comparing it anyway reports every alias it could not
+    read as a phantom — the same fail-open the non-literal VERB NAME already
+    refuses, reached through the aliases keyword instead of the positional.
+
+    The documented ``rm`` is the load-bearing part of the fixture: it is exactly
+    what a partial comparison would report as a phantom, so the assertion that
+    no phantom appears is what distinguishes the skip from a silent pass.
+    """
+    _materialize(
+        tmp_path,
+        documented_verb_drift_files(
+            documented=('compose', 'remove', 'rm'),
+            script_source=_aliases_script('_ALIASES'),
+        ),
+    )
+
+    findings = analyze(tmp_path)
+
+    assert _types(findings) == [TYPE_SKIPPED]
+    assert _detail(findings, TYPE_SKIPPED, 'reason') == SKIP_DYNAMIC
+    assert TYPE_PHANTOM_DOCUMENTED not in _types(findings)
+
+
+def test_the_same_aliases_list_written_literally_does_not_skip(tmp_path):
+    """The matched negative control for the skip above.
+
+    Identical fixture but for the keyword value, so the skip cannot be coming
+    from the presence of an ``aliases`` keyword as such — only from its being
+    underivable.
+    """
+    _materialize(
+        tmp_path,
+        documented_verb_drift_files(
+            documented=('compose', 'remove', 'rm'),
+            script_source=_aliases_script("['rm']"),
+        ),
+    )
+
+    assert TYPE_SKIPPED not in _types(analyze(tmp_path))

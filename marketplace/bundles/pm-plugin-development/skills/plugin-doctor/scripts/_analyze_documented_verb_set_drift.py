@@ -59,9 +59,13 @@ indistinguishable from one that read it and found it clean. The skip states are:
 - ``unreadable_script`` / ``unparseable_script`` — the source could not be read
   or parsed.
 - ``dynamic_verb_registration`` — an ``add_parser`` call whose verb name is not
-  a literal string (a variable, an f-string, a loop over a table). The registered
-  set is then genuinely unknowable by static analysis and any comparison against
-  it would manufacture findings.
+  a literal string (a variable, an f-string, a loop over a table), or whose
+  ``aliases=[...]`` list is not fully literal. The registered set is then
+  unknowable — or, for aliases, knowable only in part — by static analysis, and
+  any comparison against it would manufacture findings. An alias IS a registered
+  verb: argparse accepts every ``aliases`` entry as a valid subcommand, so a
+  derivation that collected only the positional name would under-derive the set
+  and report a documented alias as a phantom.
 - ``unresolved_subparser_group`` — an ``add_subparsers`` handle whose owning
   parser could not be resolved, so part of the tree is unreachable and the
   derived set is incomplete rather than empty.
@@ -163,11 +167,6 @@ _CANONICAL_BLOCK_HEADING = re.compile(
     r'^##\s+Canonical\s+invocations\s*$', re.IGNORECASE | re.MULTILINE
 )
 
-#: Skipped when comparing sets: argparse adds these itself, so they are never
-#: expected to be documented as verbs of the script.
-_IMPLICIT_VERBS: frozenset[str] = frozenset({'help'})
-
-
 # ---------------------------------------------------------------------------
 # Registered-verb derivation (AST)
 # ---------------------------------------------------------------------------
@@ -228,6 +227,10 @@ def derive_registered_verbs(script_path: Path) -> VerbSet:
     assigned and bare forms — but returns an explicit :class:`VerbSet` so an
     untrustworthy derivation is never mistaken for an empty one.
 
+    An ``add_parser`` call's ``aliases=[...]`` entries join the same set as its
+    positional name, because argparse registers each one as an independently
+    callable subcommand.
+
     Only the ROOT parser's children are returned: the rule compares top-level
     verb sets, and a nested sub-verb is documented as part of its parent's chain.
     """
@@ -273,11 +276,21 @@ def derive_registered_verbs(script_path: Path) -> VerbSet:
                 # statically at all, so nothing about it may be asserted.
                 dynamic_line = dynamic_line or getattr(node, 'lineno', 1)
                 continue
+            aliases = _literal_aliases(node)
+            if aliases is None:
+                # An ``aliases=[...]`` list that is not fully literal. argparse
+                # accepts every alias as a valid subcommand, so the derived set
+                # would be PARTIAL — and a partial set compared as a complete one
+                # reports a real alias as a phantom. Same fail-closed refusal the
+                # non-literal verb name above takes.
+                dynamic_line = dynamic_line or getattr(node, 'lineno', 1)
+                continue
             owning_parser = handle_owner.get(receiver) if receiver else None
             if owning_parser is None:
                 unresolved_group_line = unresolved_group_line or getattr(node, 'lineno', 1)
                 continue
             children.setdefault(owning_parser, set()).add(verb)
+            children[owning_parser].update(aliases)
 
     if dynamic_line is not None:
         return VerbSet(skip_reason=SKIP_DYNAMIC, skip_line=dynamic_line)
@@ -311,7 +324,7 @@ def derive_registered_verbs(script_path: Path) -> VerbSet:
         # real registered verbs.
         return VerbSet(skip_reason=SKIP_NO_ROOT_PARSER)
 
-    return VerbSet(verbs=root_verbs - _IMPLICIT_VERBS)
+    return VerbSet(verbs=root_verbs)
 
 
 def _literal_first_arg(node: ast.Call) -> str | None:
@@ -321,6 +334,37 @@ def _literal_first_arg(node: ast.Call) -> str | None:
     if isinstance(arg0, ast.Constant) and isinstance(arg0.value, str):
         return arg0.value
     return None
+
+
+def _literal_aliases(node: ast.Call) -> list[str] | None:
+    """The literal strings of an ``add_parser`` call's ``aliases=[...]`` keyword.
+
+    argparse registers every ``aliases`` entry as a further valid subcommand, so
+    an alias is part of the registered verb set exactly as the positional name is;
+    collecting only the positional under-derives the set and reports a documented
+    alias as a phantom.
+
+    Three outcomes, and the middle one is the reason this is not a plain list
+    return: ``[]`` when the call carries no ``aliases`` keyword (nothing to add),
+    the collected names when every element is a string literal, and ``None`` when
+    an ``aliases`` keyword IS present but is not fully literal-derivable — a
+    variable, a comprehension, a splat, or a list holding any non-literal element.
+    ``None`` is the fail-closed signal: the set is then partial, and a partial set
+    must not be compared as a complete one.
+    """
+    for keyword in node.keywords:
+        if keyword.arg != 'aliases':
+            continue
+        if not isinstance(keyword.value, (ast.List, ast.Tuple, ast.Set)):
+            return None
+        names: list[str] = []
+        for element in keyword.value.elts:
+            if isinstance(element, ast.Constant) and isinstance(element.value, str):
+                names.append(element.value)
+            else:
+                return None
+        return names
+    return []
 
 
 def _enclosing_assign(tree: ast.AST, target: ast.Call) -> ast.Assign | None:
@@ -395,12 +439,48 @@ def _script_path(skill_dir: Path, script_name: str) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
+def _is_dunder_name(node: ast.expr) -> bool:
+    return isinstance(node, ast.Name) and node.id == '__name__'
+
+
+def _is_main_literal(node: ast.expr) -> bool:
+    return isinstance(node, ast.Constant) and node.value == '__main__'
+
+
+def _is_main_guard_test(test: ast.expr) -> bool:
+    """Is ``test`` exactly ``__name__ == '__main__'``, in either operand order?
+
+    The comparison OPERATOR is inspected, not just the operands: ``__name__ !=
+    '__main__'`` carries the same left/comparator shape and is not an entry-point
+    guard, so admitting it would classify an ordinary module as an entry script.
+    Only a single ``==`` qualifies — a chained compare is not this idiom.
+    ``'__main__' == __name__`` is accepted because argparse-era style guides
+    permit either order and the reversed form is a real entry script.
+    """
+    if not isinstance(test, ast.Compare):
+        return False
+    if len(test.ops) != 1 or not isinstance(test.ops[0], ast.Eq):
+        return False
+    if len(test.comparators) != 1:
+        return False
+    left = test.left
+    right = test.comparators[0]
+    return (_is_dunder_name(left) and _is_main_literal(right)) or (
+        _is_main_literal(left) and _is_dunder_name(right)
+    )
+
+
 def _declares_main_guard(path: Path) -> bool | None:
-    """Does this module carry an ``if __name__ == '__main__':`` guard?
+    """Does this module carry a TOP-LEVEL ``if __name__ == '__main__':`` guard?
 
     ``None`` when the file could not be read or parsed — an unknown, kept
     distinct from ``False`` so an unreadable file is admitted as a candidate and
     reported as a skip rather than silently dropped from the population.
+
+    Only ``tree.body`` is scanned. Walking the whole tree counted a guard nested
+    inside a function, which does not make the file an entry script: an imported
+    helper module that happens to carry one in a nested scope would be admitted to
+    the candidate set on a shape that says nothing about how the file is invoked.
     """
     try:
         source = path.read_text(encoding='utf-8')
@@ -410,20 +490,9 @@ def _declares_main_guard(path: Path) -> bool | None:
         tree = ast.parse(source)
     except SyntaxError:
         return None
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.If):
-            continue
-        test = node.test
-        if (
-            isinstance(test, ast.Compare)
-            and isinstance(test.left, ast.Name)
-            and test.left.id == '__name__'
-            and len(test.comparators) == 1
-            and isinstance(test.comparators[0], ast.Constant)
-            and test.comparators[0].value == '__main__'
-        ):
-            return True
-    return False
+    return any(
+        isinstance(node, ast.If) and _is_main_guard_test(node.test) for node in tree.body
+    )
 
 
 def owned_entry_scripts(skill_dir: Path) -> dict[str, Path]:
