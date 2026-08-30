@@ -316,18 +316,9 @@ review_completeness = load_script_module(
     'plan-marshall', 'automatic-review', 'review_completeness.py', 'review_completeness'
 )
 
-#: The widened-member parity cases derive their plan id from the member under
-#: test (``f'barrier-parity-{member.replace("_", "-")}'``), so the seeded ids are
-#: derived from the same constants the parametrisation uses rather than
-#: transcribed — adding a member to the parametrisation seeds its plan id too.
-PLAN_IDS += tuple(
-    f'barrier-parity-{member.replace("_", "-")}'
-    for member in (
-        review_completeness.STATE_PARTICIPATED_STALE,
-        review_completeness.STATE_NOT_TRIGGERED,
-        review_completeness.STATE_DECLINED,
-    )
-)
+# The widened-member parity cases seed their own plan ids — the ``PLAN_IDS +=``
+# derivation lives beside ``_MEMBER_OBSERVATIONS``, the population it derives
+# from, further down this module.
 
 
 # Only CodeRabbit speaks. `pr-agent` — the required bot — never publishes: a
@@ -707,6 +698,26 @@ _MEMBER_OBSERVATIONS = {
     },
 }
 
+
+def _parity_plan_id(member):
+    """The plan id the parity case for ``member`` files its findings against."""
+    return f'barrier-parity-{member.replace("_", "-")}'
+
+
+#: Seed a plan directory for every SWEPT member, derived from the swept population
+#: itself rather than from a transcription of it, and placed HERE because that
+#: population does not exist further up the module.
+#:
+#: Both halves of the single-sourcing are load-bearing. The findings surfaces
+#: refuse a plan directory that is absent under the resolved root, so an unseeded
+#: member fails inside ``fetch_findings`` — ``status: error`` on the arrange step —
+#: rather than at anything the parity asserts, and the failure names the store
+#: instead of the missing seed. A transcribed member list goes stale the moment
+#: ``_MEMBER_OBSERVATIONS`` grows; two separately-written copies of the id
+#: EXPRESSION go stale the moment either is edited. Deriving the population from
+#: the map and the id from one shared function removes both.
+PLAN_IDS += tuple(_parity_plan_id(member) for member in _MEMBER_OBSERVATIONS)
+
 #: Blocking members this scenario structurally CANNOT produce, each with its
 #: reason. Named rather than merely absent: the totality assertion below compares
 #: ``covered ∪ unproducible`` against the taxonomy, so a member can only be left
@@ -804,7 +815,7 @@ def test_widened_member_gates_byte_identically_to_absent(
       is a property of the widened members rather than of a projection too coarse
       to distinguish any two verdicts at all.
     """
-    plan_id = f'barrier-parity-{member.replace("_", "-")}'
+    plan_id = _parity_plan_id(member)
 
     _patch_provider(monkeypatch, _CODERABBIT_ONLY)
     result = _run_fetch(210, plan_id)
