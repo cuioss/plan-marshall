@@ -1601,6 +1601,37 @@ def _form_sets() -> tuple[set[str], set[str]]:
 #: checked against the derived size rather than trusted.
 _COUNT_WORDS = {1: 'ONE', 2: 'TWO', 3: 'THREE', 4: 'FOUR', 5: 'FIVE', 6: 'SIX'}
 
+#: Slice markers bounding the pair-form CLAIM in each consuming doc. Both are
+#: verified unique within each document, and the parity assertion reads ONLY the
+#: text between them. Checking the whole document instead makes the assertion
+#: vacuous: every flag, of either form, is named somewhere in both docs, so a
+#: bare-form flag listed among the pair-form ones would pass unnoticed — the exact
+#: drift the assertion exists to block.
+_PAIR_FORM_CLAIM_START = 'PAIRS'
+_PAIR_FORM_CLAIM_END = 'take BARE `{bot_kind}` tokens'
+
+
+def _pair_form_claim(text: str, doc_name: str) -> str:
+    """Return ONLY the pair-form-claim slice of a consuming doc.
+
+    Fails loudly rather than returning an empty or whole-document string: a
+    missing or unterminated marker means the paragraph was restructured, and a
+    silent fallback would restore the vacuity this slicing removes.
+    """
+    start = text.find(_PAIR_FORM_CLAIM_START)
+    assert start != -1, (
+        f'{doc_name}: no pair-form claim found '
+        f'(start marker {_PAIR_FORM_CLAIM_START!r} absent)'
+    )
+    end = text.find(_PAIR_FORM_CLAIM_END, start)
+    assert end != -1, (
+        f'{doc_name}: pair-form claim is unterminated '
+        f'(end marker {_PAIR_FORM_CLAIM_END!r} absent after the start marker)'
+    )
+    claim = text[start:end]
+    assert claim.strip(), f'{doc_name}: the pair-form claim slice is empty'
+    return claim
+
 
 class TestTheFlagFormPartitionIsDerivedNotRemembered:
     """No passage may name a form partition the parse routing contradicts.
@@ -1700,7 +1731,10 @@ class TestTheFlagFormPartitionIsDerivedNotRemembered:
 
         Both sites carry their own restatement, which the deliverable permits only
         when a parity assertion covers it — this is that assertion. A bare-form
-        flag described as pair-form at either site is the drift being blocked.
+        flag described as pair-form at either site is the drift being blocked, so
+        the membership assertions read the sliced pair-form CLAIM, not the whole
+        document: every flag of either form is named somewhere in both docs, so a
+        whole-document sweep can never observe that drift.
         """
         pair, bare = _form_sets()
 
@@ -1709,7 +1743,46 @@ class TestTheFlagFormPartitionIsDerivedNotRemembered:
             assert f'{_COUNT_WORDS[len(pair)].capitalize()} take' in text or (
                 f'{_COUNT_WORDS[len(pair)]} take' in text
             ), f'{doc_path.name} does not state the derived pair-form count'
+            claim = _pair_form_claim(text, doc_path.name)
             for flag in sorted(pair):
-                assert f'`{flag}`' in text, f'{doc_path.name} omits pair-form {flag}'
+                assert f'`{flag}`' in claim, (
+                    f'{doc_path.name} omits pair-form {flag} from its pair-form claim'
+                )
             for flag in sorted(bare):
+                assert f'`{flag}`' not in claim, (
+                    f'{doc_path.name} lists BARE-form {flag} among the pair-form flags'
+                )
                 assert f'`{flag}`' in text, f'{doc_path.name} omits bare-form {flag}'
+
+    def test_the_parity_assertion_rejects_a_bare_form_flag_listed_as_pair_form(self):
+        """⛔ Negative control: the guard above must be able to FAIL.
+
+        A parity assertion nobody watched reject is not a guard. This exercises the
+        SAME slicing helper and the SAME membership rule against a synthetic
+        document in which one bare-form flag has been moved into the pair-form
+        claim — everything else about the document is well-formed, so only the
+        planted drift can be what rejects it.
+        """
+        pair, bare = _form_sets()
+        planted = sorted(bare)[0]
+        pair_listing = ', '.join(f'`{flag}`' for flag in sorted(pair))
+        bare_listing = ', '.join(f'`{flag}`' for flag in sorted(bare))
+        broken = (
+            f'{_COUNT_WORDS[len(pair)]} take comma-separated PAIRS: '
+            f'{pair_listing} and `{planted}`. '
+            f'The rest take BARE `{{bot_kind}}` tokens: {bare_listing}.'
+        )
+
+        claim = _pair_form_claim(broken, 'synthetic')
+        assert f'`{planted}`' in claim, 'the planted flag must land inside the slice'
+
+        # The membership rule the guard applies, run against the broken document.
+        offenders = [flag for flag in sorted(bare) if f'`{flag}`' in claim]
+        assert offenders == [planted], (
+            f'the guard must reject exactly the planted bare-form flag; got {offenders}'
+        )
+
+        # And the matched NEGATIVE control: the same rule passes the real docs.
+        for doc_path in (_AR_SKILL, _BRANCH_CLEANUP):
+            good_claim = _pair_form_claim(doc_path.read_text(encoding='utf-8'), doc_path.name)
+            assert not [flag for flag in sorted(bare) if f'`{flag}`' in good_claim]

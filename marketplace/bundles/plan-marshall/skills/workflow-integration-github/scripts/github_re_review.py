@@ -72,7 +72,9 @@ awaitability and the completeness site applies the same per-bot override; see
 :func:`_resolve_refusal_class`), ``refusal_eta`` (the reset time the notice itself stated, parsed
 through the bot's registry ``rate_limit_eta_patterns``), and ``refusals`` (one
 record per detected refusal carrying its source, detecting layer, awaited
-``bot_kind``, ETA, and a truncated body excerpt). The refusal still does NOT
+``bot_kind``, ETA, the refusal ``cause``, the stated size ``cap``, and a
+truncated body excerpt — see :meth:`_ReReviewStrategy._refusal_record` for the
+authoritative per-member contract). The refusal still does NOT
 count as a completed review — ``matched`` is unaffected — but the caller can now
 distinguish "the bot refused, and here is the recovery this arms" from "the bot
 never responded". Without the record the two were the same bare

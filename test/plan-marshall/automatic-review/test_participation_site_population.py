@@ -193,6 +193,16 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'yes',
         'Per-bot registry record. Declares participation_requires_update: false.',
     ),
+    f'{_SKILLS}/phase-6-finalize/SKILL.md': SiteExpectation(
+        'normative_text',
+        'commit_sha',
+        'not_applicable',
+        'The dispatcher hook (item 7a) that consumes the leaf’s escalate_ask envelope and fires '
+        'the operator prompt. It reads the envelope’s outcome discriminator to tell a re-review '
+        'TIMEOUT from a head_sha_verified: false DECLINE, so a decline is never rendered as a '
+        'budget expiry. It re-derives nothing — it reports the anchor the producer already '
+        'evaluated.',
+    ),
     f'{_SKILLS}/phase-6-finalize/standards/branch-cleanup-rereview.md': SiteExpectation(
         'normative_text',
         'commit_sha',

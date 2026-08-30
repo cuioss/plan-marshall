@@ -1436,10 +1436,19 @@ def _parse_bot_observations(args: argparse.Namespace) -> dict:
     """Parse the shared bot-observation flags into the classifier's input sets.
 
     Both the ``check`` and ``deficit`` subcommands classify each bot from the same
-    observation flags, so the parse-by-FORM logic lives here once. The two pair-form
-    flags — ``--participated-bots`` and ``--stale-participation-bots``, both fed the
-    producer's ``{bot_kind, evidence_kind}`` records verbatim — go through
-    :func:`parse_participation`; the bare-form flags through :func:`_split_bots`.
+    observation flags, so the parse-by-FORM logic lives here once. The routing below
+    IS the form partition the module docstring states — four pair-form flags across
+    THREE parses, and every remaining flag bare-form through :func:`_split_bots`:
+
+    - ``--participated-bots`` — ``{bot_kind, evidence_kind}`` pairs from the producer
+      verbatim, through :func:`parse_participation` (which also applies the
+      participation admissibility filter);
+    - ``--stale-participation-bots`` — the SAME evidence-typed pair shape, but through
+      :func:`parse_stale_participation`, which deliberately does NOT re-apply that
+      filter (see that function for why re-applying it downgraded
+      ``participated_stale`` to ``absent``);
+    - ``--refused-causes`` and ``--refusal-size-caps`` — ``{bot_kind, value}`` pairs
+      through :func:`parse_causes`, which checks the SHAPE only.
 
     Raises :class:`MalformedBotFlag` when a token's shape does not match its flag's
     form; each command renders that as a structured ``status: error`` UNKNOWN verdict

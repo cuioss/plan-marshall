@@ -214,9 +214,11 @@ The strategies differ **only** in the trigger comment `request_fresh_review` pos
 Every rejected refusal is **RECORDED, never a silent skip**. The envelope carries `refusal_detected`, `refusal_class`, `refusal_eta` (the reset time the notice itself stated, or `""`), a `refusals[]` record per detected refusal, and **`refusal_layers[]`** — the declared `layer` vocabulary the producer emits, published so a consumer validates a value against the producer's own population rather than a hand-copied list:
 
 ```toon
-refusals[N]{source,bot_kind,layer,eta,body}:
+refusals[N]{source,bot_kind,layer,eta,cause,cap,body}:
 refusal_layers[N]: [the declared layer vocabulary]
 ```
+
+`cause` and `cap` are on EVERY refusal record, not only a size one, so the shape does not vary by cause. `cause` names WHY the bot declined on the axis a recovery branches on — a `size` refusal is a structural ceiling that waiting does not move, so it is not derivable from `rate_limit_class` and shares the vocabulary the `pr wait-for-comments` `rate_limited_bots[]` record carries. `cap` is the ceiling the size notice itself stated, or `""` when it stated none; empty reports as UNKNOWN and is never defaulted, because a figure nobody observed would make the recorded gap look audited when it was not.
 
 `layer` names WHICH arm fired, and the value is what tells a reader how much is actually KNOWN: the registry arm means the bot's own declared phrasing matched, so the notice was READ as data; the structural arm means it was recognised by notice SHAPE alone; the enumerative arm means no arm could read it at all — the weakest, recording only that the body was not review feedback. ⛔ A consumer MUST NOT treat them as interchangeable: the last one supports no claim about *why* the bot declined, and in particular none about when it might reopen.
 
