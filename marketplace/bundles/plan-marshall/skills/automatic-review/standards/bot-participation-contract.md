@@ -364,6 +364,40 @@ or only a comment (`head_sha_verified: false`) — is **computed and must be con
 true` with `head_sha_verified: false` is a decline, never a completed re-review, and a consumer that
 reads `matched` alone credits a review that never named the commit it matched.
 
+#### The reviewed-commit reference is recognised wherever it sits, and compared for EQUALITY
+
+`head_sha_verified` is decided by whether a review's reviewed-commit evidence **references** the
+awaited HEAD — not by whether that evidence *is* the bare SHA. The same reviewed-commit value arrives
+in more than one shape: a bare hex token, or the SHA carried inside a `…/commit/{sha}` permalink. Both
+name the same commit, so both MUST verify.
+
+⛔ **This predicate fails toward BLOCKING, which is the opposite direction from the rest of this
+contract's refusal handling, and is why the recognition must be wide.** A reference the matcher does
+not recognise falls through to the weaker comment discriminator and publishes `head_sha_verified:
+false` — a `declined` verdict the bot never made, on the one member whose documented remedy is to
+ACCEPT the decline rather than re-trigger. The false verdict therefore stops a merge AND steers the
+operator away from the retry that would have exposed it, so a narrower recogniser is not merely less
+useful here, it is strictly worse.
+
+**Widen WHERE the SHA may sit, never WHICH commit counts.** Every token recovered from the evidence is
+compared for **equality** against the awaited HEAD; an abbreviation or leading run never matches.
+Widening the comparison instead of the location would credit a review of some other commit as a review
+of this one, and would leave a negative control unable to tell *found the awaited commit* from
+*matched something SHA-shaped*.
+
+Worked example — awaited HEAD `a1b2c3d4e5f60718293a4b5c6d7e8f9012345678`:
+
+| Reviewed-commit evidence | `head_sha_verified` | Why |
+|---|---|---|
+| `a1b2c3d4e5f60718293a4b5c6d7e8f9012345678` | `true` | The bare token equals the awaited HEAD. |
+| `https://github.com/{owner}/{repo}/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678` | `true` | The permalink CARRIES the awaited HEAD — the location differs, the commit does not. |
+| `https://github.com/{owner}/{repo}/commit/0f1e2d3c4b5a69788796a5b4c3d2e1f098765432` | `false` | The same shape naming a genuinely different commit: the negative control the widening must still fail. |
+| `https://github.com/{owner}/{repo}/commit/a1b2c3d4e5f6` | `false` | An abbreviation of the awaited HEAD — equality, never prefix. |
+
+A widening asserted only by its positive case cannot show it did not simply match everything, so the
+two permalink rows differ only in which commit they name, and the abbreviation row pins the equality
+boundary the location widening must not cross.
+
 ## Participation is not review quality
 
 The quorum proves that every required bot **participated**. It never proves the diff was **reviewed
