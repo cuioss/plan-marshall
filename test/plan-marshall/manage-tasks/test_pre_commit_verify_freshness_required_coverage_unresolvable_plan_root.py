@@ -16,24 +16,64 @@ function entirely — the exact failure the docstring declares impossible, and a
 instance of the very archetype this gate exists to close (an unresolvable state
 surfacing as an exception instead of the declared unknown).
 
-The cases below drive the REAL chain rather than stubbing
+The unresolvable case drives the REAL chain rather than stubbing
 ``_resolve_plan_footprint``: the ``RuntimeError`` is produced by the genuine
 ``get_base_dir`` resolution failure, so a future refactor that moved the raise
 would be visible here instead of being papered over by a stub that raises
 whatever the test wants. ``test_the_chain_really_raises`` is the matched control
 that keeps the assertion non-vacuous — it fails loudly if the premise stops
 holding, so a green outcome case can never mean "the guard was never reached".
+
+Two DIFFERENT results are asserted across the file, and that is what gives the
+pair its discriminating power. Widening an ``except`` clause can only ever route
+MORE inputs to the failure branch, so the mirror-image risk is a function that
+answers the declared unknown UNCONDITIONALLY — and no assertion that the unknown
+itself satisfies can detect that.
+``test_a_resolvable_footprint_yields_coverage_with_no_reason`` therefore supplies
+a footprint the derivation can actually measure and asserts the OTHER side of the
+``(required, reason)`` contract: a populated ``RequiredCoverage`` with ``reason is
+None``. One input must produce the unknown and the other must not, so a function
+that returned the unknown for everything fails here even while it passes above.
+
+Only the footprint seam is supplied for that case, on
+``extension_base._resolve_plan_footprint`` — the same seam the build-decision
+authority's own tests drive, and the one input whose production resolution needs
+a materialized worktree and a live git diff. Everything downstream of it is
+production code: the analysis vocabulary, the registered-module enumeration,
+``resolve_test_scope`` and ``required_coverage`` all run for real, so the
+assertions are on a coverage requirement the shipped derivation computed rather
+than on a shape the test handed it.
 """
 
 
 from __future__ import annotations
 
+import extension_base
 import file_ops
 import pytest
-from _freshness_crosscheck import REASON_REQUIRED_COVERAGE_UNKNOWN
+from _freshness_crosscheck import (
+    REASON_REQUIRED_COVERAGE_UNKNOWN,
+    RequiredCoverage,
+    load_analysis_vocabulary,
+)
 from _pre_commit_verify_freshness_fixtures import _freshness_mod
 
 _PLAN_ID = 'freshness-required-coverage-unresolvable-root'
+
+#: A footprint the coverage derivation can measure end to end: one ``.py`` file
+#: owned by a registered bundle and touching no cross-module build
+#: infrastructure. Each of ``required_coverage``'s branches is then decided by a
+#: real input rather than defaulted — the module resolves, so ``whole_tree`` is
+#: False; the path ends in ``.py``, so the compile and lint analyses join the
+#: unconditional test one.
+_RESOLVABLE_FOOTPRINT = (
+    'marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/'
+    '_cmd_pre_commit_verify_freshness.py'
+)
+
+#: The registered bundle ``_RESOLVABLE_FOOTPRINT`` resolves to (path segment 2
+#: under ``marketplace/bundles/``).
+_FOOTPRINT_MODULE = 'plan-marshall'
 
 
 @pytest.fixture
@@ -89,27 +129,37 @@ def test_unresolvable_plan_root_returns_the_declared_unknown(
     assert reason == REASON_REQUIRED_COVERAGE_UNKNOWN
 
 
-def test_resolvable_plan_root_is_not_answered_with_the_unknown_reason(
-    plan_context,
+def test_a_resolvable_footprint_yields_coverage_with_no_reason(
+    plan_context, monkeypatch
 ) -> None:
-    """Negative control: the guard is not an unconditional ``None`` return.
+    """Negative control: the declared unknown is CONDITIONAL, not the only answer.
 
-    Broadening an ``except`` clause is a change that can only ever make MORE
-    inputs take the failure branch, so the risk it carries is that the failure
-    branch swallows a case that used to succeed. With a resolvable plan root the
-    derivation reaches its own footprint logic, and whatever it concludes there
-    it must not be the plan-root inability — otherwise this file's positive case
-    would be asserting a constant.
+    Broadening an ``except`` clause can only ever make MORE inputs take the
+    failure branch, so the risk it carries is that the branch swallows a case
+    that used to succeed. Detecting that requires an input the function must
+    answer with a ``RequiredCoverage`` — an assertion the unknown result itself
+    satisfies proves nothing, because a function returning the unknown
+    unconditionally would satisfy it too.
 
-    The plan HAS no materialized worktree in this harness, so the footprint is
-    legitimately unresolvable and the function still answers ``(None, ...)``.
-    What the assertion pins is therefore the DISTINCT route, not the outcome:
-    the call must not raise, and it must be reached at all.
+    So the requirement is measured for real and BOTH sides of the contract are
+    pinned on the informative half: ``reason is None`` (no inability was
+    reported) and a ``RequiredCoverage`` whose content matches what the shipped
+    derivation computes from this footprint. The content assertions are what stop
+    a permissive constant from passing: an empty ``RequiredCoverage`` requires
+    nothing of any ledger row, which is the false-green the whole coverage
+    dimension exists to close.
     """
     plan_context.plan_dir_for(_PLAN_ID)
+    vocabulary, vocabulary_reason = load_analysis_vocabulary()
+    assert vocabulary is not None, vocabulary_reason
+    monkeypatch.setattr(
+        extension_base, '_resolve_plan_footprint', lambda _plan: [_RESOLVABLE_FOOTPRINT]
+    )
 
     required, reason = _freshness_mod._resolve_required_coverage(_PLAN_ID)
 
-    # No traceback escapes on the resolvable route either, and the contract's
-    # "exactly one side is informative" shape holds.
-    assert (required is None) != (reason is None)
+    assert reason is None
+    assert isinstance(required, RequiredCoverage)
+    assert required.modules == frozenset({_FOOTPRINT_MODULE})
+    assert required.whole_tree is False
+    assert required.analyses == frozenset({vocabulary.test, vocabulary.compile, vocabulary.lint})
