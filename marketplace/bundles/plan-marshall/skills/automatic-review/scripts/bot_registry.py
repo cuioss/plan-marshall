@@ -592,10 +592,12 @@ class BotRegistry:
         """Return the per-bot ETA-extraction regexes (``[]`` if unknown/absent).
 
         Each entry is a regex applied to a detected rate-limit notice body to
-        pull out the reset time the notice itself states. A pattern that declares
-        a capturing group yields that group as the ETA; otherwise the whole match
-        is used. An empty list means the bot states no machine-readable ETA — the
-        consumer then reports an absent ETA rather than inventing one.
+        pull out the reset time the notice itself states. How a match becomes an
+        ETA is owned and fully stated by ``_github_pr._extract_rate_limit_eta``;
+        it is deliberately NOT restated here, because a partial restatement is
+        how an author comes to write a pattern shape the extractor skips. An
+        empty list means the bot states no machine-readable ETA — the consumer
+        then reports an absent ETA rather than inventing one.
         """
         value = self._by_kind.get(bot_kind, {}).get('rate_limit_eta_patterns', [])
         return list(value) if isinstance(value, list) else []
