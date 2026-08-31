@@ -61,7 +61,7 @@ ten members. The taxonomy is closed: every non-participation resolves to one of 
 | `refused_unknown` | The bot posted a refusal about whose awaitability nothing is known. Reached two ways: the registry declares its class `unknown` (its refusal shape has never been observed), or **no arm of the recognition stack could read the notice at all** — which resolves here whatever class the bot declares. | A declared *we-do-not-know*, NEVER a positive hard quota. Rendering it as `refused_hard` steers an operator toward "waiting is futile, force it" for a refusal that might have been awaitable. Its own member so the ignorance reaches the reader as ignorance. |
 | `refused_structural` | The bot posted a refusal whose **cause is a ceiling on the diff itself** — the PR is over a per-PR size budget (an observed `cause: size`). Decided by the cause axis, whatever the bot's `rate_limit_class` declares. | **The only member whose refusal is not temporal.** The other three say *not now*; this one says *not this diff*, and the same request never succeeds while the diff is this size. Remedies: **split**, **accept the gap**, or **disable this reviewer for this PR** — ⛔ **never await.** The finding carries the **cap** the notice stated, so the gap is auditable against the measured diff size. |
 | `participated_but_empty` | The bot posted at least one comment, but every comment was filtered out (noise) so it stored zero findings. | **Accounted-for, not a failure.** The bot did its pass and had nothing actionable to say. |
-| `participated_stale` | The bot's comment matched a declared `participation_evidence` publish shape but failed the `participation_requires_update` currency test — the comment was reviewed against a commit that is **not** the merge candidate, and it was not edited in place since. | The bot reviewed an **earlier** commit, so nothing has reviewed the current diff. Blocking, but the remedy is a re-review trigger. |
+| `participated_stale` | The bot's comment matched a declared `participation_evidence` publish shape but failed the `participation_requires_update` currency test — the currency ledger anchors the comment to a commit that is **not** the merge candidate, and its `updated_at` is unchanged from the value recorded at that credit. | The bot reviewed an **earlier** commit, so nothing has reviewed the current diff. Blocking, but the remedy is a re-review trigger. |
 | `declined` | The bot was asked to review the merge candidate (a re-review was triggered) and answered without producing a review of it — an **incremental-review decline**: it responded with a comment carrying no reviewed-commit SHA (`head_sha_verified: false`) rather than a review of this HEAD. | The bot engaged but **declined** to review this commit. Blocking, but re-triggering is futile — the productive action is to accept the decline (move the bot to `optional`, or record a merge-authorization), not to trigger again. |
 
 `participated_but_empty` is the member most often misread. A bot that reviewed and found nothing is a
@@ -299,9 +299,11 @@ proves only that it reviewed **once, at some commit** — after a loop-back or f
 comment would silently credit it with reviewing code it never saw. Applying the currency rule, its
 evidence requires the comment to prove a review of the **merge candidate**:
 
-- the comment is recorded against the merge-candidate SHA — the `reviewed_commit_sha` stamped on the
-  stored finding, or (for a comment the pre-filter drops, so it files no finding) the merge-candidate
-  SHA the noise sidecar recorded when the comment was first observed; **or**
+- the **currency ledger** — the SOLE source this test reads — anchors the comment to the
+  merge-candidate SHA. That ledger records, per `(bot_kind, comment_id)`, the merge-candidate SHA and
+  the `updated_at` at the fetch that LAST credited that comment, and it records them whether or not the
+  comment produced a finding — so a comment the pre-filter drops is anchored exactly as one that was
+  filed, and no second set of SHAs is consulted or unioned in; **or**
 - it was **edited in place since it was last credited** — `updated_at` differs from the **recorded**
   `updated_at` the currency ledger holds for that credit, never from `created_at` — a fresh review at
   the current tree. Comparing against the recorded value is what stops the arm from becoming a
@@ -361,6 +363,40 @@ The deciding bit — whether the re-review produced a review of the new HEAD (`h
 or only a comment (`head_sha_verified: false`) — is **computed and must be consumed**: a `matched:
 true` with `head_sha_verified: false` is a decline, never a completed re-review, and a consumer that
 reads `matched` alone credits a review that never named the commit it matched.
+
+#### The reviewed-commit reference is recognised wherever it sits, and compared for EQUALITY
+
+`head_sha_verified` is decided by whether a review's reviewed-commit evidence **references** the
+awaited HEAD — not by whether that evidence *is* the bare SHA. The same reviewed-commit value arrives
+in more than one shape: a bare hex token, or the SHA carried inside a `…/commit/{sha}` permalink. Both
+name the same commit, so both MUST verify.
+
+⛔ **This predicate fails toward BLOCKING, which is the opposite direction from the rest of this
+contract's refusal handling, and is why the recognition must be wide.** A reference the matcher does
+not recognise falls through to the weaker comment discriminator and publishes `head_sha_verified:
+false` — a `declined` verdict the bot never made, on the one member whose documented remedy is to
+ACCEPT the decline rather than re-trigger. The false verdict therefore stops a merge AND steers the
+operator away from the retry that would have exposed it, so a narrower recogniser is not merely less
+useful here, it is strictly worse.
+
+**Widen WHERE the SHA may sit, never WHICH commit counts.** Every token recovered from the evidence is
+compared for **equality** against the awaited HEAD; an abbreviation or leading run never matches.
+Widening the comparison instead of the location would credit a review of some other commit as a review
+of this one, and would leave a negative control unable to tell *found the awaited commit* from
+*matched something SHA-shaped*.
+
+Worked example — awaited HEAD `a1b2c3d4e5f60718293a4b5c6d7e8f9012345678`:
+
+| Reviewed-commit evidence | `head_sha_verified` | Why |
+|---|---|---|
+| `a1b2c3d4e5f60718293a4b5c6d7e8f9012345678` | `true` | The bare token equals the awaited HEAD. |
+| `https://github.com/{owner}/{repo}/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678` | `true` | The permalink CARRIES the awaited HEAD — the location differs, the commit does not. |
+| `https://github.com/{owner}/{repo}/commit/0f1e2d3c4b5a69788796a5b4c3d2e1f098765432` | `false` | The same shape naming a genuinely different commit: the negative control the widening must still fail. |
+| `https://github.com/{owner}/{repo}/commit/a1b2c3d4e5f6` | `false` | An abbreviation of the awaited HEAD — equality, never prefix. |
+
+A widening asserted only by its positive case cannot show it did not simply match everything, so the
+two permalink rows differ only in which commit they name, and the abbreviation row pins the equality
+boundary the location widening must not cross.
 
 ## Participation is not review quality
 
@@ -555,14 +591,22 @@ both. The partition is a computed signal, not merely a documented possibility.
 
 Every other verdict in this contract is computed from an **observed** refusal, so the gap is only ever
 discovered after a reviewer has already declined — at the merge gate, where the remaining options are
-expensive. A size ceiling is different in kind. It is a declared property of the **reviewer** rather
-than an outcome of the run, and a diff's size is measurable at PR creation, so the exclusion is
-knowable in advance.
+expensive. A size ceiling is different in kind: it is a declared property of the **reviewer** rather
+than an outcome of the run, so *that a reviewer carries one* is answerable before any review is
+requested.
 
-It also recurs **by size rather than by chance**: the ceiling is fixed, so *every* plan over it gets no
-review from that reviewer, predictably and forever. `review_completeness size-caps` is the surface a
-plan consults for this. It takes no plan and reads no PR — the answer is registry data — and reports
-per registered reviewer:
+⛔ **What is disclosed is the reviewer's ceiling, never this diff's verdict.** The surface reads the
+registry and no PR, and it emits no figure a diff could be compared against — so it cannot tell a plan
+whether its own diff exceeds a reviewer's limit, and no consumer may render it as though it had. A plan
+learns WHICH reviewers carry a ceiling and, separately, whether that ceiling's value is recoverable at
+all; it does not learn that it is over one. The figure itself exists only in a refusal notice the
+reviewer has already published.
+
+The disclosure is still worth having because a ceiling recurs **by size rather than by chance**: it is
+fixed, so a reviewer carrying one refuses over-size plans predictably and forever, and knowing at
+outline time which reviewers those are turns an unexplained merge-gate non-participation into an
+anticipated one. `review_completeness size-caps` is the surface a plan consults for this. It takes no
+plan and reads no PR — the answer is registry data — and reports per registered reviewer:
 
 - `structural_cap` — whether it declares a size-caused refusal at all, **derived** from
   `refusal_size_patterns` so the disclosure can never disagree with the classification above.
@@ -570,6 +614,15 @@ per registered reviewer:
   separately and honestly, because the two are independent: a reviewer can have a ceiling nobody has
   taught the registry to read, and collapsing them would let "declares a ceiling" be misread as "the
   ceiling's value is recoverable".
+
+**Rejected alternative — declare each reviewer's cap as a registry constant (`declared_cap`).** It
+would let this surface emit a comparable figure and so answer the *is my diff over it?* question the
+disclosure deliberately does not. It is rejected for the reason `refusal_size_cap_patterns` already
+encodes at `_github_pr.refusal_size_cap`: a declared figure is an assertion that goes stale
+**silently** the moment the provider changes its budget, and nothing in the pipeline would notice it
+had. The notice's own figure is first-party evidence captured at the moment of refusal, which is what
+makes a recorded gap auditable rather than asserted — so the disclosure stays honestly narrower rather
+than confidently wrong.
 
 ### A refusal is never noise — it is a branch
 
@@ -636,16 +689,17 @@ review — actually fits it.
 **Surviving the drop is not the same as being exempt from the currency rule.** For a bot
 declaring `participation_requires_update` the evidence that survives the drop must still prove a review
 of the **merge candidate** (§ "The currency rule"). Keeping that rule live across a drop takes an
-explicit mechanism, because the SHA a comment was reviewed against is normally read from the
-`reviewed_commit_sha` stamped on the `pr-comment` finding the comment produced — which a dropped
-comment by definition does not produce. The producer therefore records each noise-dropped comment's
-`(bot_kind, comment_id)` key **and the merge-candidate SHA at first observation** in a plan-scoped
-**observation sidecar** kept beside the findings store, and evaluates the currency rule against the
-**union** of the stored-finding SHAs and the recorded sidecar SHAs. A dropped comment's recorded SHA
-is therefore the commit it was first observed against; a later HEAD reads as stale, and a real
-`updated_at` edit credits the bot again.
+explicit mechanism, because a dropped comment by definition files no `pr-comment` finding, so nothing
+in the findings store says which commit it was read against. The producer therefore keeps the anchor
+in ONE place for every credited comment alike — the plan-scoped **currency ledger**, which records
+each comment's `(bot_kind, comment_id)` key together with the merge-candidate SHA and the `updated_at`
+at the fetch that last credited it. The currency rule is evaluated against that ledger and against
+nothing else: a dropped comment and a filed one are anchored by the same record, so there is no second
+set of SHAs to union in and no shape of comment the rule reaches only indirectly. A dropped comment's
+recorded SHA is the commit it was credited against; a later HEAD reads as stale, and an `updated_at`
+that differs from the recorded one credits the bot again.
 
-The sidecar holds **observation records, not findings**: they are never returned by a findings query,
+The ledger holds **observation records, not findings**: they are never returned by a findings query,
 never enter the pending-findings gate, and never reach operator triage, so the triage queue stays as
 clean as the drop intends. Recording them as findings in any resolution state would put routine
 clean-review boilerplate back in front of the operator, which is the defect the drop exists to
@@ -806,6 +860,8 @@ accumulate, the verb ships as a measurement with **no parity claim attached**.
 | `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]` **and the `stale_participation_bots[]` set that carries `participated_stale`**; each bot's `refusal_patterns`, to branch a refusal into `refused_bots[]` rather than drop it, and its `refusal_size_patterns`, to attribute each refusal's CAUSE into `refused_causes[]` (size vs quota), and its `refusal_size_cap_patterns`, to read the stated ceiling into `refused_size_caps[]`; the enumerative arm, to report a refusal no earlier arm could read into `unrecognised_refusal[]` — withholding the finding, denying the participation credit, and carrying the registry file and field that close the gap; each bot's `contentless_review_markers` / `actionable_content_markers`, to drop a fully clean review comment as noise. |
 | `github_pr fetch_findings` → `merge_candidate_sha_resolved` | Nothing from this contract — it is the producer's report of whether the merge-candidate SHA could be READ at all. `fetch_pr_head_sha` returns `''` on any failure path, so a `false` is *"the head is unresolvable"*, never a verdict about a bot that an operator can act on. **Producer-side disclosure: no taxonomy member routes on it.** |
 | `github_pr fetch_findings` → `undecidable_participation_bots[]` | Each bot's `participation_evidence` / `participation_requires_update`, to name the bots whose comment matched a declared publish shape on a fetch where the merge candidate was unreadable. Reported in **neither** `participated_bots[]` (nothing anchors the credit) **nor** `stale_participation_bots[]` (stale's remedy is a re-review trigger, which cannot fix a failed read). ⚠ **Producer-side disclosure with no classifier member yet** — the failure taxonomy above has no member for this state, so no consumer reaches it. Widening the taxonomy is a separate plan, and this field is the prerequisite it needs; the gap is stated here rather than left to surface as an unreachable branch. |
+| `github_pr fetch_findings` → `refusal_pattern_drift[]` | Each bot's `refusal_patterns` and `participation_evidence`, read through the `_github_pr.refusal_layers` provenance seam at the FILING pre-filter only (never the participation loop), to emit one `{bot_kind, layer}` record per bot whose notice the STRUCTURAL arm read **while that bot's own declared `refusal_patterns` did NOT** — `layer` naming the arm that read it, and therefore always `structural_fallback`: the notice was caught by shape while the registry record missed it, so that record has drifted from the bot's current wording. ⛔ **The predicate is DIRECTIONAL, not "exactly one arm fired".** The mirror case — the registry arm matching while the structural arm does not — is the DESIGNED state for a whole class of refusals and is never emitted: a diff-size ceiling is a comparison rather than an "exceeded / reached / hit" statement, so it is invisible to the structural arm BY CONSTRUCTION (see § "Two axes"), and recording its registry-only match would report the architecture working as designed as decay. **Diagnostic only: it changes no verdict, denies no credit, and no taxonomy member routes on it** — the refusal itself was still recognised and classified normally. Deduped on `(bot_kind, layer)`, because drift is a property of the declared wording rather than of each comment carrying it. |
+| `bot_registry.trigger_semantics` (accessor) | Each bot's `trigger_semantics`, from the closed set `auto_on_push` / `requires_explicit_trigger`, whitespace-stripped and validated against `TRIGGER_SEMANTICS_VALUES`, failing closed to `requires_explicit_trigger`. Closed in that direction because the errors are asymmetric: wrongly assuming a bot auto-reviews makes the pipeline WAIT for a review nobody requested, surfacing only as an unexplained timeout at the merge gate, whereas wrongly posting a trigger costs one redundant comment. ⚠ **Registry-side disclosure with no routing consumer yet** — every registered bot declares `requires_explicit_trigger`, which is exactly what the pipeline does today (it posts each bot's `trigger_comment` unconditionally), so no caller branches on the field and no behaviour changes. Its value is that the assumption the code already embodies is now DECLARED and checkable per bot: a reviewer that reviews on push becomes a one-line data edit instead of a silent mis-wait. |
 | `github_pr pull_request_runs` / `ci checks pull-request-runs` | Nothing from this contract — it is the **observation channel for `not_triggered`**, answering the PR-wide question of whether any `pull_request`-event workflow run exists for the PR at all. Its verdict reaches the predicate as the single `--not-triggered` bool. |
 | `review_completeness check` | `required_bots` for the quorum; `optional_bots` for reporting only; `participation_evidence` to admit each evidence pair; `rate_limit_class` for the DEFAULT refusal member (`refused_awaitable` / `refused_hard` / `refused_unknown`), displaced by two per-refusal overlays: `--refused-causes` (from `refused_causes[]`) resolves a `size` cause to `refused_structural`, and `--unrecognised-refusal-bots` (from `unrecognised_refusal[]`) resolves a refusal no arm could read to `refused_unknown`. Consumes `stale_participation_bots[]` via `--stale-participation-bots` to assign `participated_stale`, the bots that answered a re-review without reviewing the merge candidate via `--declined-bots` to assign `declined`, the PR-wide `--not-triggered` bool to refine what would otherwise be `absent`, and `--refusal-size-caps` (from `refused_size_caps[]`) to carry each structural refusal's stated ceiling. Reports `refusal_causes[]` as `{bot_kind, cause, cap}`. Emits `review_state_summary` (the reviewer-state distribution) so `display_detail` can tell reviewed-clean from nobody-reviewed. |
 | `review_completeness size-caps` | Each bot's `refusal_size_patterns` and `refusal_size_cap_patterns`, to disclose IN ADVANCE which reviewers carry a structural diff-size ceiling and whether its value is recoverable. Reads no PR — the answer is registry data, so a plan can consult it before requesting a review. |

@@ -222,8 +222,9 @@ new_count: 1
 detector_answerable: true
 unanswerable_reason: ""
 
-rate_limited_bots[1]{bot_kind,rate_limit_class,eta}:
-coderabbit	awaitable_window	18 minutes
+rate_limited_bots[2]{bot_kind,rate_limit_class,eta,cause,cap}:
+coderabbit	awaitable_window	18 minutes	quota	
+sourcery	hard_quota		size	150000 diff characters
 
 movement_matched_bots[0]:
 ```
@@ -234,9 +235,9 @@ movement_matched_bots[0]:
 
 ⚠ **`detector_answerable` / `unanswerable_reason` are REPORTED, not yet consumed.** No caller currently branches on `detector_answerable`: the consumer tables in [`automated-review-lifecycle.md`](../../workflow-pr-doctor/standards/automated-review-lifecycle.md) and [`automatic-review/SKILL.md`](../../automatic-review/SKILL.md) route on `timed_out` alone, so an `escalate_ask` re-wait offer can still be presented for a wait that could never have succeeded. Wiring a consumer branch is deliberately outside this contract's scope — the fields exist so the distinction is LEGIBLE in the return and the logs, which is the precondition for acting on it, not the acting itself. A caller that does branch should treat `detector_answerable: false` as "re-waiting cannot help" and skip straight to escalation.
 
-`rate_limited_bots[]` (bot-agnostic, default empty) carries one `{bot_kind, rate_limit_class, eta}` record per REGISTERED reviewer bot whose newest comment on the PR is a rate-limit / service notice posted in place of a review, rather than an actual review. An empty list means no registered bot is rate-limited. It is an additive discriminator — the poll behaviour and every other field are unchanged; a caller that ignores it sees identical semantics. See [api-contract.md](api-contract.md) § "Provider Field Mapping" → `pr wait-for-comments` for the authoritative per-field contract, which this section does not restate.
+`rate_limited_bots[]` (bot-agnostic, default empty) carries one `{bot_kind, rate_limit_class, eta, cause, cap}` record per REGISTERED reviewer bot whose newest comment on the PR is a rate-limit / service notice posted in place of a review, rather than an actual review. `cause` and `cap` are present on every record whatever the cause; an empty `eta` or `cap` cell is the *unknown* reading, never a zero or a default. An empty list means no registered bot is rate-limited. It is an additive discriminator — the poll behaviour and every other field are unchanged; a caller that ignores it sees identical semantics. See [api-contract.md](api-contract.md) § "Provider Field Mapping" → `pr wait-for-comments` for the authoritative per-field contract, which this section does not restate.
 
-When the list is non-empty, the just-observed comment growth is a status notice from those bots, not reviewable feedback, so the caller should not triage the notice as a finding. Whether to WAIT for the limit to lift is decided per record by `rate_limit_class`, never uniformly: `awaitable_window` reopens on its own so awaiting the reset is productive, `hard_quota` does not reopen on a useful timescale so awaiting only burns budget, and `unknown` is the fail-closed value for a bot whose refusal shape has never been observed and MUST NOT be awaited. The example row above is illustrative of the shape — the bot set and every per-bot value are registry data, not literals in this contract.
+When the list is non-empty, the just-observed comment growth is a status notice from those bots, not reviewable feedback, so the caller should not triage the notice as a finding. Whether to WAIT for the limit to lift is decided per record, never uniformly, and `cause` is read BEFORE `rate_limit_class`: a `size` refusal is over a per-PR diff ceiling, so the same request never succeeds while the diff is this size and waiting is a NON-OPTION whatever the class says — the remedies are splitting the diff, accepting the gap, or disabling that reviewer for this PR. Only when `cause` is `quota` does the class decide: `awaitable_window` reopens on its own so awaiting the reset is productive, `hard_quota` does not reopen on a useful timescale so awaiting only burns budget, and `unknown` is the fail-closed value for a bot whose refusal shape has never been observed and MUST NOT be awaited. The cause outranks the class because a cause is observed per REFUSAL while a class is declared per BOT, and one bot can refuse for both causes at one class. The example rows above are illustrative of the shape — the bot set and every per-bot value are registry data, not literals in this contract.
 
 ---
 

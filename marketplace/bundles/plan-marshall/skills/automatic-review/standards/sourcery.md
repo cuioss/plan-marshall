@@ -28,6 +28,7 @@ this bot's ingest behaviour is unchanged by it.
 bot_kind: sourcery
 author_login: sourcery-ai
 trigger_comment: "@sourcery-ai review"
+trigger_semantics: requires_explicit_trigger   # the trigger comment above must be posted
 completion_check_name: ""        # no completion check-run — falls back to the review_bot_buffer_seconds wait
 honors_skip_label: false         # no central label; per-repo .sourcery.yaml github.ignore_labels only
 participation_evidence:          # the publish shapes that prove THIS bot reviewed

@@ -57,7 +57,7 @@ Read `re_review_on_branch_cleanup` off the returned `params` object (default: `t
      --pr-number {pr_number} --bot-kind {bot_kind} --head-sha {head_sha} --push-time {push_time} --timeout {re_review_await_timeout_seconds} --plan-id {plan_id}
    ```
 
-   Read `matched`, `timed_out`, **and `head_sha_verified`** from the returned TOON. The last is load-bearing and MUST be consulted: `await_fresh_review` matches on EITHER a review whose reviewed-commit SHA equals `{head_sha}` (`head_sha_verified: true`) OR an issue comment that merely post-dates the trigger (`head_sha_verified: false`). Only the first is a review of this HEAD; the second is the bot answering **without** naming the commit it reviewed. Reading `matched` alone credits a review that never happened — the incremental-review decline this step exists to catch.
+   Read `matched`, `timed_out`, **and `head_sha_verified`** from the returned TOON. The last is load-bearing and MUST be consulted: `await_fresh_review` matches on EITHER the **review** signal (`head_sha_verified: true`) OR the **issue comment** signal (`head_sha_verified: false`). The two match conditions are stated ONCE, by the producer — see [`workflow-integration-github` SKILL.md § Workflow 3](../../workflow-integration-github/SKILL.md#workflow-3-re-review-after-a-head-advancing-branch-operation) signal table; do not restate them here, because a copy left behind is a consumer acting on a predicate the producer no longer implements. Only the review signal is a review of this HEAD; the comment signal is the bot answering **without** naming the commit it reviewed. Reading `matched` alone credits a review that never happened — the incremental-review decline this step exists to catch.
 
    - **When `matched: true` AND `head_sha_verified: true`**, the fresh review of `{head_sha}` is now on the PR. Re-run the consolidated FIND → INGEST → TRIAGE → RESPOND pipeline so the rebase commit is reviewed: call the `fetch_findings` verb (which re-stamps every finding's `reviewed_commit_sha` to the new HEAD and quarantines each body under `raw_input`):
 
@@ -84,9 +84,25 @@ Read `re_review_on_branch_cleanup` off the returned `params` object (default: `t
 
 ### On re-review timeout (trigger A)
 
-This sub-block is evaluated ONLY when the `github_re_review re-review` call above returned `timed_out: true` AND `matched: false` — the await budget (`re_review_await_timeout_seconds`) expired before a fresh bot review landed for the rebased HEAD. Trigger A runs **inline in the orchestrator** (not a dispatched leaf), so the timeout branch fires `AskUserQuestion` directly here (mirroring the budget-exhaustion merge-queue and pre-merge confirmation gates in `branch-cleanup.md`) rather than returning `escalate_ask`.
+This sub-block is evaluated on exactly TWO entrants from the `github_re_review re-review` call above, and on nothing else. The two items below state that ENTRY CONDITION — which returns reach this block — and neither is an outcome arm: they carry no disposition of their own, and every branch further down applies to both.
 
-**Release-before-wait / re-acquire-after (widened hold)**: this trigger-A timeout gate is an operator-wait boundary. Under `merge_hold_window == full_window_release_at_waits`, BEFORE presenting any `AskUserQuestion` below, release the merge mutex if held and FIFO-re-enqueue (`merge_lock release --plan-id {plan_id}`), so the plan does not hold the lock across a human prompt (§ "Merge-Mutex Hold Window" invariant 1 in `branch-cleanup.md`). On the "Wait another {re_review_await_timeout_seconds}s" resume and on any path that continues toward the merge, RE-ACQUIRE via the FIFO poll loop and **re-validate** (`baseline-reconcile`; re-rebase when `origin/{base_branch}` advanced during the released window) before proceeding. The `merge_hold_budget_seconds` bound is checked here too: if the elapsed-since-`{hold_start}` already exceeds the budget, escalate rather than silently continuing to hold. Read `re_review_on_timeout` off the same `plan-marshall:automatic-review` `params` object returned by the `step-params get` call above (default: `ask`) and branch on its value. **Every branch is decision-logged** — a timeout is always an explicit, auditable decision; the `proceed`/"Merge anyway" outcomes log at WARNING naming the unreviewed HEAD SHA.
+- Entrant 1, the timeout — **`timed_out: true` AND `matched: false`**: the await budget (`re_review_await_timeout_seconds`) expired before a fresh bot review landed for the rebased HEAD.
+- Entrant 2, the decline — **`matched: true` AND `head_sha_verified: false`**: the incremental-review decline the bullet above routes here; the bot answered, but its answer named no reviewed-commit SHA, so it did not review the rebased HEAD.
+
+⛔ **Both entrants, not the timeout alone.** An entry condition naming only the timeout is what made the decline arm's routing unreachable as written: the bullet above sends a decline into this block while a condition scoped to `timed_out: true` AND `matched: false` rejects the very case it was handed. The two share this disposition path for the reason that bullet states — re-triggering a bot that just declined produces another decline, exactly as re-triggering after a timeout produces another timeout — so every branch below applies to both unchanged.
+
+**Resolve `{outcome}` and `{outcome_detail}` ONCE here, from the entrant that reached this block.** Sharing a disposition path is not sharing an observation: only one of the two entrants expired a budget. Every branch below — decision-log line, `AskUserQuestion` prompt, and persisted `--granted-over` string alike — renders these rather than restating a budget expiry:
+
+| Entrant | `{outcome}` | `{outcome_detail}` |
+|---------|-------------|--------------------|
+| 1, the timeout (`timed_out: true` AND `matched: false`) | `timed_out` | `no fresh bot review landed for this HEAD within the {re_review_await_timeout_seconds}s budget` |
+| 2, the decline (`matched: true` AND `head_sha_verified: false`) | `declined` | `DECLINED by {declined_bots} — the bot answered without naming a reviewed commit, so no budget expired` |
+
+⛔ **Never restate the timeout wording on a branch that both entrants reach.** A decline recorded as a budget expiry is a false claim in the decision log, in the operator prompt, and — worst of the three — in the persisted authorization record, which outlives the run and is what an audit reads to learn WHICH gap the operator accepted.
+
+Trigger A runs **inline in the orchestrator** (not a dispatched leaf), so this gate fires `AskUserQuestion` directly here (mirroring the budget-exhaustion merge-queue and pre-merge confirmation gates in `branch-cleanup.md`) rather than returning `escalate_ask`.
+
+**Release-before-wait / re-acquire-after (widened hold)**: this trigger-A timeout gate is an operator-wait boundary. Under `merge_hold_window == full_window_release_at_waits`, BEFORE presenting any `AskUserQuestion` below, release the merge mutex if held and FIFO-re-enqueue (`merge_lock release --plan-id {plan_id}`), so the plan does not hold the lock across a human prompt (§ "Merge-Mutex Hold Window" invariant 1 in `branch-cleanup.md`). On the "Wait another {re_review_await_timeout_seconds}s" resume and on any path that continues toward the merge, RE-ACQUIRE via the FIFO poll loop and **re-validate** (`baseline-reconcile`; re-rebase when `origin/{base_branch}` advanced during the released window) before proceeding. The `merge_hold_budget_seconds` bound is checked here too: if the elapsed-since-`{hold_start}` already exceeds the budget, escalate rather than silently continuing to hold. Read `re_review_on_timeout` off the same `plan-marshall:automatic-review` `params` object returned by the `step-params get` call above (default: `ask`) and branch on its value. **Every branch is decision-logged** — advancing an unreviewed HEAD is always an explicit, auditable decision, whichever entrant reached here; the `proceed`/"Merge anyway" outcomes log at WARNING naming the unreviewed HEAD SHA and the resolved `{outcome}`.
 
 Both branches that advance an unreviewed HEAD — the `proceed` policy branch and the `ask` → "Merge anyway — proceed unreviewed" selection — additionally **grant** a `rereview-timeout-override` bound to `{head_sha}` and to the gap class `rereview-timeout`. The decision-log line is the honest record of the ruling; it is not, and never becomes, admissible evidence at the pre-merge barrier. Neither is the grant itself: this gate runs BEFORE the pre-merge review barrier and at the same HEAD, and its `--gap-class rereview-timeout` is what keeps it from being read as authorization there — the barrier checks for `review-barrier-gap` and this ruling covers a different gap. See `branch-cleanup.md` § "Merge-Authorization Roster" for the full population, § "Gap classes — why HEAD-binding alone is not authorization" for why the class is required, and § "Authorization check — the only admissible evidence on a blocked path" for where these grants are checked.
 
@@ -95,15 +111,15 @@ Both branches that advance an unreviewed HEAD — the `proceed` policy branch an
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     decision --plan-id {plan_id} --level WARNING \
-    --message "(plan-marshall:phase-6-finalize) Branch cleanup re-review timeout (trigger A): re_review_on_timeout=proceed — advancing UNREVIEWED head_sha={head_sha} to the pre-merge gate after {re_review_await_timeout_seconds}s budget expired"
+    --message "(plan-marshall:phase-6-finalize) Branch cleanup re-review timeout (trigger A): re_review_on_timeout=proceed — advancing UNREVIEWED head_sha={head_sha} to the pre-merge gate; outcome={outcome} — {outcome_detail}"
   ```
 
-  The log line names `{head_sha}` but persists nothing, so the pre-merge barrier cannot read it as evidence. Grant the authorization against that same `{head_sha}` (see `manage-status` Canonical invocations → `merge-authorization — grant`):
+  The log line names `{head_sha}` but persists nothing, so the pre-merge barrier cannot read it as evidence. Grant the authorization against that same `{head_sha}`, and render `{outcome_detail}` into `--granted-over` so the persisted record says which gap was accepted rather than assuming the timeout one (see `manage-status` Canonical invocations → `merge-authorization — grant`):
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant \
     --plan-id {plan_id} --kind rereview-timeout-override --head {head_sha} --gap-class rereview-timeout \
-    --granted-over "no fresh bot review for this HEAD after {re_review_await_timeout_seconds}s" --reason "re_review_on_timeout=proceed policy branch"
+    --granted-over "unreviewed HEAD: {outcome_detail}" --reason "re_review_on_timeout=proceed policy branch (outcome={outcome})"
   ```
 
 - **`defer`** (auto-skip the merge, no prompt): decision-log, then take the SAME skip path as the interactive "No, skip merge" branch in the **Pre-Merge Confirmation Gate** below — set `{merge_consent} = deferred`, skip the **Merge PR**, **Wait for Merge CI**, **Remove Worktree**, and **Switch to Base Branch** sections, emit the `mark-step-done` payload using **Branch C — declined by user**, and return:
@@ -116,22 +132,23 @@ Both branches that advance an unreviewed HEAD — the `proceed` policy branch an
 
 - **`ask`** (default — fire an inline `AskUserQuestion`): present the three operator choices, mirroring the budget-exhaustion merge-queue prompt style in `branch-cleanup.md`:
 
+  ⛔ **The prompt names `{outcome_detail}`, never a hard-coded budget expiry.** Both entrants reach this prompt and the operator is choosing on the strength of what was observed: a timeout means nothing answered, a decline means the bot answered without reviewing this HEAD. Rendering the timeout wording on a decline hands the operator a claim nothing made, and the "wait" option is the WEAKEST of the three there — no budget expired, so a longer one buys nothing, and a bot that declined this HEAD answers a re-trigger with another decline rather than a review. Say so in the option's description on that entrant instead of silently offering it as equal.
+
   ```text
   AskUserQuestion:
     questions:
-      - question: "The re-review of the rebased HEAD timed out with no fresh bot review. How should branch cleanup proceed?"
-        header: "Branch Cleanup — Re-review timeout (trigger A)"
+      - question: "The re-review of the rebased HEAD did not produce a review of that HEAD ({outcome}). How should branch cleanup proceed?"
+        header: "Branch Cleanup — Re-review unresolved (trigger A)"
         description: |
           **PR**: #{pr_number}
           **Rebased HEAD**: {head_sha} (UNREVIEWED)
-          **Await budget**: {re_review_await_timeout_seconds}s (exhausted)
+          **Outcome**: {outcome} — {outcome_detail}
 
-          The bot did not post a fresh review for the rebased HEAD within
-          the configured budget. Proceeding to merge would merge an
-          unreviewed commit.
+          No bot review of the rebased HEAD is on record. Proceeding to
+          merge would merge an unreviewed commit.
         options:
           - label: "Wait another {re_review_await_timeout_seconds}s"
-            description: "Re-issue the re-review and await a fresh budget"
+            description: "Re-issue the re-review and await a fresh budget (weakest option on outcome=declined: the bot already answered)"
           - label: "Merge anyway — proceed unreviewed"
             description: "Advance the unreviewed HEAD to the pre-merge gate"
           - label: "Defer merge"
@@ -156,13 +173,13 @@ Both branches that advance an unreviewed HEAD — the `proceed` policy branch an
     ```bash
     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
       decision --plan-id {plan_id} --level WARNING \
-      --message "(plan-marshall:phase-6-finalize) Branch cleanup re-review timeout (trigger A): user chose merge-anyway — advancing UNREVIEWED head_sha={head_sha} to the pre-merge gate"
+      --message "(plan-marshall:phase-6-finalize) Branch cleanup re-review timeout (trigger A): user chose merge-anyway — advancing UNREVIEWED head_sha={head_sha} to the pre-merge gate; outcome={outcome} — {outcome_detail}"
     ```
 
     ```bash
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant \
       --plan-id {plan_id} --kind rereview-timeout-override --head {head_sha} --gap-class rereview-timeout \
-      --granted-over "no fresh bot review for this HEAD after {re_review_await_timeout_seconds}s" --reason "{operator selection: Merge anyway — proceed unreviewed}"
+      --granted-over "unreviewed HEAD: {outcome_detail}" --reason "{operator selection: Merge anyway — proceed unreviewed} (outcome={outcome})"
     ```
 
   - **"Defer merge"** → take the SAME skip path as the `defer` policy above (set `{merge_consent} = deferred`, skip Merge PR / Wait for Merge CI / Remove Worktree / Switch to Base Branch, emit `mark-step-done` Branch C, return). Log the decision:

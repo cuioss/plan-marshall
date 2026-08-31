@@ -8,11 +8,12 @@ ships one machine-readable record — a fenced-YAML data block embedded in its
 time and exposes stable accessors so the finding store, the re-review strategy
 registry, the producer pre-filter, and the rate-limit detector DERIVE what they
 need (the bot-kind set, the login->bot_kind map, each bot's re-review trigger
-comment, its completion check-run name, its skip-label-honoring flag, its ignore
-patterns, its refusal patterns, its contentless-review markers, its
-actionable-content markers, its participation-evidence publish shapes, its
-severity map, its rate-limit class, and its rate-limit ETA patterns) instead of
-hard-coding three bots across several code files.
+comment, its trigger semantics, its completion check-run name, its
+skip-label-honoring flag, its ignore patterns, its refusal patterns, its
+contentless-review markers, its actionable-content markers, its
+participation-evidence publish shapes, its severity map, its rate-limit class,
+and its rate-limit ETA patterns) instead of hard-coding three bots across
+several code files.
 
 The loader is deliberately generic — there is no per-bot branch anywhere in it.
 Adding, removing, or re-configuring a bot is a pure data edit to a
@@ -24,6 +25,7 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
     bot_kind: coderabbit
     author_login: coderabbitai
     trigger_comment: "@coderabbitai review"
+    trigger_semantics: requires_explicit_trigger   # or auto_on_push
     honors_skip_label: true
     rate_limit_class: awaitable_window
     participation_evidence:
@@ -210,6 +212,28 @@ def _extract_registry_block(md_text: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# The trigger-semantics vocabulary — ONE definition, read by every consumer
+# ---------------------------------------------------------------------------
+#
+# Whether a bot re-reviews a new HEAD on its own, or must be ASKED. The set is
+# CLOSED, and it is published as a tuple so a consumer or test derives the
+# admissible population from here rather than restating it — a hand-copied pair
+# keeps passing while the registry grows a third value it has never heard of.
+
+#: The bot re-reviews automatically when the PR head moves; no trigger is needed.
+TRIGGER_SEMANTICS_AUTO_ON_PUSH = 'auto_on_push'
+
+#: The bot reviews only when explicitly asked (its ``trigger_comment`` is posted).
+TRIGGER_SEMANTICS_REQUIRES_EXPLICIT_TRIGGER = 'requires_explicit_trigger'
+
+#: The closed admissible set. Consumers MUST derive from this tuple.
+TRIGGER_SEMANTICS_VALUES = (
+    TRIGGER_SEMANTICS_AUTO_ON_PUSH,
+    TRIGGER_SEMANTICS_REQUIRES_EXPLICIT_TRIGGER,
+)
+
+
+# ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 
@@ -260,6 +284,37 @@ class BotRegistry:
         """Return the re-review trigger comment for ``bot_kind`` (``''`` if unknown)."""
         value = self._by_kind.get(bot_kind, {}).get('trigger_comment', '')
         return value if isinstance(value, str) else ''
+
+    def trigger_semantics(self, bot_kind: str) -> str:
+        """Return whether ``bot_kind`` re-reviews on push or must be ASKED.
+
+        The companion to :meth:`trigger_comment`, which says WHAT to post; this
+        says WHETHER posting is required at all:
+
+        - ``auto_on_push`` — the bot re-reviews when the PR head moves, so a
+          trigger comment is redundant.
+        - ``requires_explicit_trigger`` — the bot answers only when asked.
+
+        ``requires_explicit_trigger`` is the FAIL-CLOSED default, returned for a
+        bot whose record omits the field, declares it empty, declares a
+        non-string, or declares a value outside :data:`TRIGGER_SEMANTICS_VALUES`.
+        Closed in that direction because the two errors are not symmetric: wrongly
+        believing a bot auto-reviews means the pipeline WAITS for a review nobody
+        asked for and that will never arrive, which surfaces only as an
+        unexplained timeout at the merge gate. Wrongly posting a trigger to a bot
+        that would have reviewed anyway costs one redundant comment.
+
+        The returned value is whitespace-stripped and validated against the closed
+        set, matching the ``github_re_review._REGISTERED_TRIGGER_COMMENTS``
+        convention of normalising every registry-sourced entry and dropping empties
+        — so both sides of any comparison against this value are normalised the
+        same way and a doc with a stray trailing space cannot silently miss.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('trigger_semantics', '')
+        normalized = value.strip() if isinstance(value, str) else ''
+        if normalized not in TRIGGER_SEMANTICS_VALUES:
+            return TRIGGER_SEMANTICS_REQUIRES_EXPLICIT_TRIGGER
+        return normalized
 
     def completion_check_name(self, bot_kind: str) -> str:
         """Return the completion check-run name for ``bot_kind`` (``''`` if unknown/absent).
@@ -490,13 +545,24 @@ class BotRegistry:
         """Return whether ``bot_kind``'s evidence additionally requires update movement.
 
         True for a bot that re-reviews by EDITING its single persistent comment in
-        place rather than posting a new one (PR-Agent's Guide comment). For such a
-        bot the mere continued existence of the comment proves only that it reviewed
-        ONCE, at some earlier HEAD — so evidence requires either first presence (the
-        comment is newly observed) or observed ``updated_at`` movement.
+        place rather than posting a new one (PR-Agent's Guide comment). For such a bot
+        the mere continued existence of the comment proves only that it reviewed ONCE,
+        at some earlier HEAD, so its credit has to clear the producer's CURRENCY TEST.
 
-        False (the default) for a bot whose every review appends a new comment, where
-        presence of a newly-observed comment is itself the movement.
+        That test reads ONE source — the plan-scoped currency ledger beside the
+        findings store, which records per ``(bot_kind, comment_id)`` the
+        merge-candidate SHA and the ``updated_at`` at the fetch that LAST credited the
+        comment. The credit holds when the recorded SHA is the merge candidate, when
+        the ledger holds no row for the comment and this fetch observes it at a
+        resolvable merge candidate the comment does not demonstrably predate, or when
+        its ``updated_at`` differs from the recorded value. An unresolvable
+        merge-candidate SHA withholds the credit on every arm. See
+        ``github_pr._reviewed_at_merge_candidate`` for the predicate this flag gates
+        and ``standards/bot-participation-contract.md`` § "The currency rule".
+
+        False (the default) for a bot whose every review appends a new comment. Such a
+        bot is credited on the presence of a comment in a declared publish shape and no
+        commit is compared, so the ledger holds no row for it at all.
         """
         return bool(self._by_kind.get(bot_kind, {}).get('participation_requires_update', False))
 
@@ -526,10 +592,12 @@ class BotRegistry:
         """Return the per-bot ETA-extraction regexes (``[]`` if unknown/absent).
 
         Each entry is a regex applied to a detected rate-limit notice body to
-        pull out the reset time the notice itself states. A pattern that declares
-        a capturing group yields that group as the ETA; otherwise the whole match
-        is used. An empty list means the bot states no machine-readable ETA — the
-        consumer then reports an absent ETA rather than inventing one.
+        pull out the reset time the notice itself states. How a match becomes an
+        ETA is owned and fully stated by ``_github_pr._extract_rate_limit_eta``;
+        it is deliberately NOT restated here, because a partial restatement is
+        how an author comes to write a pattern shape the extractor skips. An
+        empty list means the bot states no machine-readable ETA — the consumer
+        then reports an absent ETA rather than inventing one.
         """
         value = self._by_kind.get(bot_kind, {}).get('rate_limit_eta_patterns', [])
         return list(value) if isinstance(value, list) else []
@@ -564,6 +632,11 @@ def trigger_comment(bot_kind: str) -> str:
 def completion_check_name(bot_kind: str) -> str:
     """The completion check-run name for ``bot_kind`` (``''`` if unknown/absent)."""
     return REGISTRY.completion_check_name(bot_kind)
+
+
+def trigger_semantics(bot_kind: str) -> str:
+    """Whether ``bot_kind`` re-reviews on push, fail-closed to ``requires_explicit_trigger``."""
+    return REGISTRY.trigger_semantics(bot_kind)
 
 
 def honors_skip_label(bot_kind: str) -> bool:

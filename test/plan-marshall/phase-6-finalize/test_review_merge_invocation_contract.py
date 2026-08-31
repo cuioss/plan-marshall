@@ -837,11 +837,23 @@ class TestDocumentedReviewMergeInvocationsParse:
 _REVIEW_COMPLETENESS = _SKILLS / 'automatic-review' / 'scripts' / 'review_completeness.py'
 
 #: The routing call a flag passes through IS its form: `_split_bots` is the
-#: bare-form reader, `parse_participation` / `parse_causes` the pair-form ones.
-#: This is the routing `_parse_bot_observations`'s own docstring names as the place
-#: the form split "actually lives".
+#: bare-form reader, `parse_participation` / `parse_stale_participation` /
+#: `parse_causes` the pair-form ones. This is the routing
+#: `_parse_bot_observations`'s own docstring names as the place the form split
+#: "actually lives".
+#:
+#: `parse_stale_participation` is listed because the two EVIDENCE-TYPED flags share
+#: a pair SHAPE but not a parse: it enforces the shape without re-applying the
+#: participation admissibility filter, which had been downgrading a
+#: `participated_stale` observation to `absent`. An unlisted pair-form parse does
+#: not misclassify its flag — it leaves the flag UNATTRIBUTED, which the totality
+#: arm below catches rather than letting the prose omit it silently.
+#:
+#: The longer alternative is placed FIRST so the shared `parse_participation` tail
+#: cannot claim the match; the anchoring `(` makes that unambiguous either way.
 _FORM_ROUTE_RE = re.compile(
-    r"(?P<fn>_split_bots|parse_participation|parse_causes)\(\s*args\.\w+,\s*'(?P<flag>--[a-z-]+)'"
+    r"(?P<fn>_split_bots|parse_stale_participation|parse_participation|parse_causes)"
+    r"\(\s*args\.\w+,\s*'(?P<flag>--[a-z-]+)'"
 )
 #: A bot-list flag declared on the shared observation-flag adder, matched POSITIVELY
 #: by the shape every one of them carries and nothing else on that adder does:

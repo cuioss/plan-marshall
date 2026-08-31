@@ -23,6 +23,11 @@ CONTRACT the components jointly implement:
 * every DOCUMENTED call site of the two invocation families quotes its
   interpolated list-flag placeholders, over a site population derived by scanning
   the marketplace tree;
+* every DOCUMENTED call site additionally resolves to a recorded EVIDENCE CLASS —
+  the ``reads`` axis of the participation-site population's own expectation record
+  for the script the site's executor notation names — so a call site that invokes a
+  participation script for which ``test_participation_site_population.py`` holds no
+  record fails here instead of escaping both populations;
 * a crashed participation gate is an UNKNOWN verdict at both families and at both
   consuming documents — never a recorded pass;
 * each advertised invocation form agrees with its live argparse surface on the
@@ -62,6 +67,13 @@ import pytest
 from _bot_flag_derivation import derive_bot_flags, derive_declared_flags
 from conftest import PLAN_DIR_NAME, PROJECT_ROOT, get_script_path, run_script
 
+# The EVIDENCE-CLASS vocabulary and its per-script records are OWNED by the
+# participation-site population module and read from it here rather than restated.
+# A second copy of either would be the duplicate-definition failure that population
+# exists to forbid, and the call-site sweep below would then be able to report a
+# class the population itself does not recognise.
+from test_participation_site_population import READS_VOCABULARY, SITE_EXPECTATIONS
+
 _AR_SCRIPTS = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py').parent
 _GH_SCRIPTS = get_script_path(
     'plan-marshall', 'workflow-integration-github', 'github_pr.py'
@@ -97,7 +109,7 @@ _PROVENANCE_STATES = ('never_asked', 'migrated', 'answered')
 # The closed NON-participation members. ``participated`` is deliberately NOT a
 # member — it is the complement the taxonomy exists to distinguish from.
 #
-# The last two are the REFINEMENTS of ``absent``, listed after the seven mutually
+# The last two are the REFINEMENTS of ``absent``, listed after the mutually
 # independent observations because that is what they are: each says the bot
 # published nothing, and each carries a remedy opposite to ``absent``'s escalation
 # (re-trigger the stale review / trigger the review at all). ``declined`` sits among
@@ -140,8 +152,13 @@ _NON_PARTICIPATION_MEMBERS = (
 # is missing it. Asserting here makes that member fail at IMPORT, once, loudly.
 #
 # ``STATE_PARTICIPATED`` is the sole intended exclusion: it is the taxonomy's
-# COMPLEMENT (the bot delivered a usable review), not a ninth member — see the
-# module comment at ``review_completeness.py`` above ``STATE_ABSENT``. The
+# COMPLEMENT (the bot delivered a usable review), not a further member of it — see
+# the module comment at ``review_completeness.py`` above ``STATE_ABSENT``. The
+# cardinality is deliberately NOT spelled here: an ordinal written into a comment
+# is a second statement of the taxonomy's size and the one that goes stale in
+# silence, still reading as a claim about a set that has moved. The only place this
+# module states the count is the failure message of the equality assertion below,
+# which INTERPOLATES it from the tuple and therefore cannot drift from it. The
 # ``vars(rc)`` sweep cannot pick up a ``STATE_``-prefixed name imported from
 # elsewhere: ``rc`` imports only ``argparse``, ``sys``, ``bot_registry``, and
 # ``query_findings``, none of which is ``STATE_``-prefixed, and the ``str`` filter
@@ -158,9 +175,14 @@ assert _DERIVED_NON_PARTICIPATION, (
 )
 
 assert frozenset(_NON_PARTICIPATION_MEMBERS) == _DERIVED_NON_PARTICIPATION, (
-    'the _NON_PARTICIPATION_MEMBERS tuple has drifted from review_completeness: '
+    f'the _NON_PARTICIPATION_MEMBERS tuple ({len(_NON_PARTICIPATION_MEMBERS)} members '
+    f'spelled) has drifted from review_completeness ({len(_DERIVED_NON_PARTICIPATION)} '
+    f'derived): '
     f'only in the tuple={sorted(frozenset(_NON_PARTICIPATION_MEMBERS) - _DERIVED_NON_PARTICIPATION)}, '
-    f'only in the module={sorted(_DERIVED_NON_PARTICIPATION - frozenset(_NON_PARTICIPATION_MEMBERS))}'
+    f'only in the module={sorted(_DERIVED_NON_PARTICIPATION - frozenset(_NON_PARTICIPATION_MEMBERS))}. '
+    f'{rc.STATE_PARTICIPATED!r} is the sole intended exclusion — the COMPLEMENT of the '
+    f'{len(_DERIVED_NON_PARTICIPATION)}-member non-participation taxonomy, never member '
+    f'{len(_DERIVED_NON_PARTICIPATION) + 1} of it'
 )
 
 assert len(_NON_PARTICIPATION_MEMBERS) == len(_DERIVED_NON_PARTICIPATION), (
@@ -806,51 +828,68 @@ _FAMILY_A = 'review_completeness check'
 _FAMILY_B = 'github_pr fetch_findings'
 
 #: ``(family, doc-suffix, section-substring, expected list-flag count)`` for the
-#: four CONFIRMED call sites. The counts differ per site and are asserted per
-#: site: the participation guard passes seven (``--declined-bots`` is documented in the
-#: canonical block but not interpolated at the FIND-step site, while
-#: ``--unrecognised-refusal-bots`` IS — the producer emits its observation on the same
-#: ``fetch_findings`` return the guard already threads forward), the pre-merge
-#: barrier's Predicate 2 passes seven (it never observes an in-progress bot of its own,
-#: but it forwards the trigger-A ``--declined-bots`` observation AND the producer's
-#: ``--unrecognised-refusal-bots`` observation — state-determining at the one site that
-#: renders an operator prompt, so a refusal no arm could read must not resolve there by
-#: the bot's declared class), and both producer sites pass the two classification flags.
+#: four CONFIRMED call sites. Each count is stated ONCE, here, and nowhere else in
+#: this module: the comparative sentence describing how the sites differ is rendered
+#: from this tuple by :func:`_confirmed_count_summary` and asserted by
+#: :meth:`TestCallSitePopulation.test_the_confirmed_sites_do_not_share_one_flag_count`,
+#: so a count that moves cannot leave a stale restatement standing in prose.
+#:
+#: The counts differ per site because the sites genuinely interpolate different
+#: flags, and they are therefore asserted per site rather than in aggregate. Which
+#: flags each site carries is a property of what that site can observe: the
+#: pre-merge barrier's Predicate 2 never observes an in-progress bot of its own,
+#: while the step-done participation guard threads one forward from its own
+#: completion poll. Both family-A sites forward the two per-refusal overlays and
+#: the ``--declined-bots`` observation their re-review consumer accumulates;
+#: ``--unrecognised-refusal-bots`` rides the same ``fetch_findings`` return, and is
+#: state-determining at the barrier — the one site that renders an operator prompt —
+#: so a refusal no arm could read must not resolve there by the bot's declared class.
+#: Both producer sites pass the two classification flags.
 #:
 #: ``--not-triggered`` deliberately moves NEITHER count. It is a ``store_true``
 #: bool rather than a ``--*-bots`` list flag, so it carries no interpolated
 #: placeholder to quote — which is also why ``derive_bot_flags`` does not surface
 #: it and why the quoting sweep has nothing to say about it. Both family-A sites
 #: pass it bare.
-_CONFIRMED_SITES = (
-    pytest.param(
+#: ``(site id, family, doc-suffix, section-substring, expected list-flag count)``.
+#: Held as typed rows rather than as ``pytest.param`` objects so the two derivations
+#: below read the counts as integers instead of reflecting over a parametrisation.
+_CONFIRMED_SITE_ROWS: tuple[tuple[str, str, str, str, int], ...] = (
+    (
+        'family-a-step-done-participation-guard',
         _FAMILY_A,
         'automatic-review/SKILL.md',
         'Step-done participation guard',
-        7,
-        id='family-a-step-done-participation-guard',
+        8,
     ),
-    pytest.param(
+    (
+        'family-a-premerge-barrier-predicate-2',
         _FAMILY_A,
         'phase-6-finalize/standards/branch-cleanup.md',
         'Predicate 2',
         7,
-        id='family-a-premerge-barrier-predicate-2',
     ),
-    pytest.param(
+    (
+        'family-b-producer-find',
         _FAMILY_B,
         'automatic-review/SKILL.md',
         'Producer: FIND',
         2,
-        id='family-b-producer-find',
     ),
-    pytest.param(
+    (
+        'family-b-premerge-barrier-refetch',
         _FAMILY_B,
         'phase-6-finalize/standards/branch-cleanup.md',
         'Re-fetch bot comments against the current HEAD',
         2,
-        id='family-b-premerge-barrier-refetch',
     ),
+)
+
+#: The same rows as the parametrisation the per-site sweep consumes, built from them
+#: rather than spelled a second time.
+_CONFIRMED_SITES = tuple(
+    pytest.param(family, doc, section, count, id=site_id)
+    for site_id, family, doc, section, count in _CONFIRMED_SITE_ROWS
 )
 
 #: Matches a list flag and the token that follows it inside a fenced command. The
@@ -949,6 +988,91 @@ def _interpolated_flags(command: str) -> list[tuple[str, str]]:
     ]
 
 
+def _confirmed_counts_by_family() -> dict[str, dict[str, int]]:
+    """``{family: {site id: expected flag count}}``, read off ``_CONFIRMED_SITE_ROWS``."""
+    grouped: dict[str, dict[str, int]] = {}
+    for site_id, family, _doc, _section, count in _CONFIRMED_SITE_ROWS:
+        grouped.setdefault(family, {})[site_id] = count
+    return grouped
+
+
+def _confirmed_count_summary() -> str:
+    """Render the per-site flag counts as a sentence DERIVED from the tuple.
+
+    The comparative statement ("these sites carry different flag sets, so one shared
+    count would hide a site that dropped one flag and gained another") is the reason
+    the counts are per-site, and it used to be written out in prose beside the tuple
+    — where it named specific flags and specific counts, and went stale the moment a
+    site gained a flag. Rendering it instead means the only statement of any count in
+    this module is the tuple itself.
+    """
+    return '; '.join(
+        f'{site_id} interpolates {count} list flag(s)'
+        for site_id, _family, _doc, _section, count in _CONFIRMED_SITE_ROWS
+    )
+
+
+def _notation_pattern(script_name: str) -> re.Pattern:
+    """Match the ``{bundle}:{skill}:{script}`` notation naming ``script_name``.
+
+    Anchored on the SCRIPT the family already names rather than on the executor path,
+    so this cannot fail to resolve a site :func:`_classify_invocation` accepted: that
+    predicate keys on the very ``{skill}:{script}`` substring matched here, and the
+    bundle segment in front of it is what completes the notation. Anchoring on
+    ``execute-script.py`` instead would additionally require the two to be adjacent
+    after continuation folding, which is a property of how the doc happens to wrap.
+    """
+    return re.compile(
+        r'([a-z][a-z0-9-]*):([a-z][a-z0-9-]*):' + re.escape(script_name) + r'(?![0-9A-Za-z_])'
+    )
+
+
+def _invoked_script_path(family: str, command: str) -> str:
+    """The repo-relative script path the site's own notation resolves to.
+
+    Derived from the command text rather than mapped from the family by hand: the
+    family string names the SCRIPT (its first token), and the bundle and skill come
+    from the notation the site actually writes.
+    """
+    script_name = family.split()[0]
+    paths = {
+        f'marketplace/bundles/{bundle}/skills/{skill}/scripts/{script_name}.py'
+        for bundle, skill in _notation_pattern(script_name).findall(command)
+    }
+    assert len(paths) == 1, (
+        f'expected exactly one {script_name} notation in this {family} invocation; '
+        f'resolved {sorted(paths)} from: {command.strip()[:200]!r}'
+    )
+    return next(iter(paths))
+
+
+def _evidence_class(family: str, command: str) -> str:
+    """The EVIDENCE CLASS a call site consumes, from the participation-site record.
+
+    "Evidence class" is the ``reads`` axis of ``SiteExpectation`` — the closed
+    vocabulary ``READS_VOCABULARY`` declares, whose members distinguish a live
+    comment scan from the durable currency ledger from a deduped projection and the
+    rest. It is recorded per participation SITE (the script), and this resolves it
+    per documented CALL site by way of the script that site invokes.
+
+    That is the assertion the call-site sweep was missing: it derived which script
+    each site calls and never said anything about it, so a documented invocation of a
+    participation script the site population holds no record for satisfied the
+    quoting sweep here AND escaped the population there — a surface covered by
+    neither, with each one's green run reading as coverage.
+    """
+    path = _invoked_script_path(family, command)
+    record = SITE_EXPECTATIONS.get(path)
+    assert record is not None, (
+        f'{path} is invoked by a documented call site but carries no recorded evidence '
+        f'class — test_participation_site_population.py holds no SITE_EXPECTATIONS '
+        f'record for it. A participation script reachable from a documented invocation '
+        f'must be a member of that population; add its record there rather than '
+        f'exempting the call site here.'
+    )
+    return record.reads
+
+
 class TestCallSitePopulation:
     """Every documented call site quotes its interpolated list-flag placeholders."""
 
@@ -988,24 +1112,51 @@ class TestCallSitePopulation:
         WHICH site regressed, and a site that stopped being discovered at all
         would silently shrink the aggregate rather than fail. The expected flag
         count is per-site because the sites genuinely differ in WHICH flags they
-        interpolate — the pre-merge barrier observes no in-progress bot of its own,
-        while the FIND-step guard interpolates no ``--declined-bots`` — so a single
-        shared count would hide a site that dropped one flag and gained another.
-        The counts themselves live in ``_CONFIRMED_SITES`` and are deliberately not
-        restated here, where they would be a second place to go stale.
+        interpolate, so a single shared count would hide a site that dropped one
+        flag and gained another. Neither the counts nor the comparison between them
+        is restated here: the counts live in ``_CONFIRMED_SITES``, and the sentence
+        comparing them is rendered from that tuple by
+        :func:`_confirmed_count_summary` — prose beside the tuple naming particular
+        flags and particular counts is exactly the second statement that went stale
+        when a site gained ``--declined-bots``.
         """
         _family, doc, section, command = _find_confirmed(family, doc_suffix, section_substring)
 
         flags = _interpolated_flags(command)
         assert len(flags) == expected_flag_count, (
             f'{doc} / {section}: expected {expected_flag_count} interpolated list flags, '
-            f'found {[f for f, _ in flags]}'
+            f'found {[f for f, _ in flags]}. Confirmed-site counts, derived from '
+            f'_CONFIRMED_SITES: {_confirmed_count_summary()}'
         )
         for flag, value in flags:
             assert value.startswith('"') and value.endswith('"'), (
                 f'{doc} / {section}: {flag} interpolates {value} unquoted — an empty value '
                 'collapses the flag and steals the next token or trips argparse exit 2'
             )
+
+    def test_the_confirmed_sites_do_not_share_one_flag_count(self):
+        """The per-site count is justified BY the tuple, not by a sentence beside it.
+
+        The reason each confirmed site carries its own expected count — rather than
+        one shared count for all four — is that the sites interpolate different flag
+        sets. That reason was previously asserted only in prose, which named the
+        specific flags and went false the moment the participation guard gained
+        ``--declined-bots``. Here it is derived: at least one family must hold two
+        sites whose counts differ, and if that ever stops being true the per-site
+        shape is no longer buying anything and the claim beside the tuple has to be
+        re-examined rather than left standing.
+        """
+        grouped = _confirmed_counts_by_family()
+
+        assert grouped, '_CONFIRMED_SITES is empty — every per-site assertion is vacuous'
+        differing = {
+            family: sites for family, sites in grouped.items() if len(set(sites.values())) > 1
+        }
+        assert differing, (
+            'no invocation family holds two confirmed sites with different flag counts, '
+            'so the per-site count shape asserts nothing a single shared count would not. '
+            f'Derived: {_confirmed_count_summary()}'
+        )
 
     @pytest.mark.parametrize('site', _INVOCATION_SITES, ids=_site_id)
     def test_every_discovered_site_quotes_its_interpolated_flags(self, site):
@@ -1020,6 +1171,90 @@ class TestCallSitePopulation:
             assert value.startswith('"') and value.endswith('"'), (
                 f'{doc} / {section}: {flag} interpolates {value} unquoted'
             )
+
+    @pytest.mark.parametrize('site', _INVOCATION_SITES, ids=_site_id)
+    def test_every_discovered_site_records_the_evidence_class_it_consumes(self, site):
+        """Each discovered site RESOLVES to a recorded evidence class, and it is asserted.
+
+        The scan already derived which script every site invokes and then said
+        nothing about it — the derived-but-unasserted axis this closes. Resolving it
+        binds the two populations together: a documented invocation of a
+        participation script that ``test_participation_site_population.py`` holds no
+        ``SITE_EXPECTATIONS`` record for is a surface neither sweep covers, and both
+        report green over it today.
+
+        The class is additionally required to be a member of the closed
+        ``READS_VOCABULARY``, so a record answering in free text — an answer no
+        reader can compare across sites — fails here as well as there.
+        """
+        family, doc, section, command = site
+
+        evidence_class = _evidence_class(family, command)
+
+        assert evidence_class in READS_VOCABULARY, (
+            f'{doc} / {section}: the invoked script records evidence class '
+            f'{evidence_class!r}, which is outside the closed vocabulary '
+            f'{sorted(READS_VOCABULARY)}'
+        )
+
+    def test_the_two_families_resolve_to_different_evidence_classes(self):
+        """Matched positive control: the resolution DISCRIMINATES between sites.
+
+        Every per-site assertion above would pass just as happily against a
+        resolution that returned one constant for everything. The two families read
+        genuinely different evidence — the predicate classifies from the producer's
+        emitted observation sets, the producer evaluates the currency test against
+        the ledger it writes — so the resolved classes must differ. If they ever
+        legitimately converge, this control has to be re-pointed at some other
+        discriminating pair rather than deleted.
+        """
+        by_family = {
+            family: {
+                _evidence_class(family, command)
+                for site_family, _doc, _section, command in _INVOCATION_SITES
+                if site_family == family
+            }
+            for family in (_FAMILY_A, _FAMILY_B)
+        }
+
+        for family, classes in by_family.items():
+            assert classes, f'no {family} site resolved an evidence class — the control is vacuous'
+
+        assert by_family[_FAMILY_A].isdisjoint(by_family[_FAMILY_B]), (
+            f'both invocation families resolve the same evidence class(es) '
+            f'({by_family}), so the resolution is not discriminating between them and '
+            f'the per-site assertions above would pass against a constant'
+        )
+
+    def test_the_evidence_class_resolution_rejects_an_unrecorded_script(self):
+        """Matched negative control: an unrecorded participation script FAILS.
+
+        Without it the per-site assertions are only ever observed on scripts the
+        population already records, which shows the lookup can succeed — never that
+        it can fail. The synthetic notation is shaped exactly like a real one, so
+        what is being rejected is the missing RECORD and nothing else.
+        """
+        with pytest.raises(AssertionError, match='no recorded evidence class'):
+            _evidence_class(
+                'phantom_participation_script check',
+                'python3 .plan/execute-script.py '
+                'plan-marshall:automatic-review:phantom_participation_script check --plan-id p',
+            )
+
+    def test_the_evidence_class_resolution_reads_the_bundle_from_the_notation(self):
+        """Precision guard: the path is built from the notation, not from a fixed prefix.
+
+        A resolver that ignored the bundle and skill segments would map every site
+        onto one hard-coded path, and the negative control above would then be the
+        only thing that could ever fail. Driving a notation whose bundle and skill
+        differ from any real one shows both segments reach the resolved path.
+        """
+        resolved = _invoked_script_path(
+            'review_completeness check',
+            'python3 .plan/execute-script.py other-bundle:other-skill:review_completeness check',
+        )
+
+        assert resolved == 'marketplace/bundles/other-bundle/skills/other-skill/scripts/review_completeness.py'
 
 
 # =============================================================================

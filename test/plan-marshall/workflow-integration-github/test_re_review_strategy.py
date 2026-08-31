@@ -12,8 +12,10 @@ Covers the three concerns of the post-merge re-review registry:
          sourcery:   posts ``@sourcery-ai review``.
          pr-agent:   posts ``/review``.
     3. Two-signal completion matching — ``await_fresh_review`` is satisfied by
-       EITHER ``_match_review`` (a review whose reviewed commit SHA matches the
-       pushed HEAD, whose ``submitted_at`` post-dates the trigger time, AND whose
+       EITHER ``_match_review`` (a review whose reviewed-commit evidence REFERENCES
+       the pushed HEAD — recognised as a bare token or embedded in a commit URL, and
+       compared for EQUALITY either way, so a differing commit still fails — whose
+       ``submitted_at`` post-dates the trigger time, AND whose
        body is not a refusal notice; reported with ``head_sha_verified: true``)
        OR ``_match_bot_comment`` (an issue comment from the awaited bot
        post-dating the trigger and likewise not a refusal notice; reported with
@@ -521,8 +523,15 @@ _PR_AGENT_LOGIN = 'cuioss-review-bot'
 _TRIGGER = '2026-01-01T00:02:00Z'
 
 
-def _await_with_comments(monkeypatch, comments, *, reviews=None, bot_kind='pr-agent'):
-    """Run ``await_fresh_review`` over a fixed comment (and review) set."""
+def _await_with_comments(
+    monkeypatch, comments, *, reviews=None, bot_kind='pr-agent', head_sha='headsha'
+):
+    """Run ``await_fresh_review`` over a fixed comment (and review) set.
+
+    ``head_sha`` is parametrized for the reviewed-commit-reference cases below, which
+    need a real 40-hex SHA to exercise the URL-embedded shape. It defaults to the
+    ``'headsha'`` token every other case uses, so those are unaffected.
+    """
     _noop_sleep(monkeypatch)
     monkeypatch.setattr(
         github_re_review._github,
@@ -532,7 +541,7 @@ def _await_with_comments(monkeypatch, comments, *, reviews=None, bot_kind='pr-ag
     _patch_comments(monkeypatch, comments)
     strategy = github_re_review.resolve_strategy(bot_kind)
     return strategy.await_fresh_review(
-        42, 'headsha', _TRIGGER, bot_kind=bot_kind, timeout=1, interval=0
+        42, head_sha, _TRIGGER, bot_kind=bot_kind, timeout=1, interval=0
     )
 
 
@@ -698,6 +707,162 @@ def test_match_bot_comment_fail_closed_on_missing_trigger_time():
 
 
 # =============================================================================
+# The reviewed-commit REFERENCE is recognised wherever the evidence carries it
+# =============================================================================
+#
+# ⛔ This is the one predicate on this path that fails toward BLOCKING. Comparing the
+# whole ``commit_sha`` field for string equality recognised only the bare-token shape;
+# the same reviewed-commit evidence also arrives as a ``…/commit/{sha}`` permalink,
+# which then matched no review, fell through to the weaker comment discriminator, and
+# published ``head_sha_verified: false`` — an incremental-review decline the bot never
+# made. Consumed as the blocking ``declined`` taxonomy member whose documented remedy
+# is to ACCEPT the decline rather than re-trigger, so the false verdict stops a merge
+# AND steers the operator away from the retry that would have exposed it.
+#
+# The correction is therefore a WIDENING, and a widening asserted only by its positive
+# case cannot show it did not simply match everything. Every case below is paired:
+# the positive is built from the SAME ``_review()`` fixture builder as its negative,
+# differing only in WHICH commit the reference names, so an extractor that matched
+# anything SHA-shaped would fail the negative while still passing the positive.
+#
+# The widening is in LOCATION ONLY — every extracted token is still compared for
+# EQUALITY — which is what the abbreviation and longer-hex-run cases pin.
+
+#: A real 40-hex commit SHA and the permalink that carries it. A real SHA is needed
+#: here rather than the ``'headsha'`` token the fixtures elsewhere use: that token is
+#: not hex at all, so no token scan can extract it — which is precisely why the
+#: extractor keeps a whole-field equality arm AHEAD of the scan, and why the bare
+#: cases above still pass.
+_HEAD_SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
+_OTHER_SHA = '0f1e2d3c4b5a69788796a5b4c3d2e1f098765432'
+_HEAD_SHA_URL = f'https://github.com/cuioss/plan-marshall/commit/{_HEAD_SHA}'
+_OTHER_SHA_URL = f'https://github.com/cuioss/plan-marshall/commit/{_OTHER_SHA}'
+
+
+def test_match_review_verifies_a_sha_carried_only_inside_a_commit_url():
+    """POSITIVE: the reviewed commit is recognised when its SHA sits inside a URL.
+
+    The live merged-main defect, pinned directly: this review names the awaited HEAD
+    and nothing else, and whole-field string equality did not see it.
+    """
+    reviews = [_review(_HEAD_SHA_URL, '2026-01-01T00:05:00Z')]
+    trigger_dt = _parse('2026-01-01T00:00:00Z')
+
+    matched = _match_review(reviews, _HEAD_SHA, trigger_dt, 'coderabbit')
+
+    assert matched is not None
+    assert matched['commit_sha'] == _HEAD_SHA_URL
+
+
+def test_match_review_rejects_a_commit_url_naming_a_different_commit():
+    """NEGATIVE control for the case above: a different commit still does not match.
+
+    Same fixture builder, same URL shape, same timestamps — the ONLY difference is
+    which commit the permalink names. Without this the positive above would pass just
+    as happily against an extractor widened to match everything SHA-shaped, which
+    would credit any review of any commit as a review of this HEAD.
+    """
+    reviews = [_review(_OTHER_SHA_URL, '2026-01-01T00:05:00Z')]
+    trigger_dt = _parse('2026-01-01T00:00:00Z')
+
+    assert _match_review(reviews, _HEAD_SHA, trigger_dt, 'coderabbit') is None
+
+
+def test_match_review_rejects_an_abbreviated_reference_to_the_awaited_commit():
+    """Equality, never prefix — the widening moved WHERE the SHA may sit, not WHICH.
+
+    An abbreviation of the awaited SHA is SHA-shaped, extractable, and a leading run
+    of the real value, so it is the sharpest available probe of the equality boundary.
+    Admitting it would widen which commit counts, and would leave the negative control
+    above unable to tell "found the awaited commit" from "matched something
+    SHA-shaped".
+    """
+    abbreviated = f'https://github.com/cuioss/plan-marshall/commit/{_HEAD_SHA[:12]}'
+    reviews = [_review(abbreviated, '2026-01-01T00:05:00Z')]
+    trigger_dt = _parse('2026-01-01T00:00:00Z')
+
+    assert _match_review(reviews, _HEAD_SHA, trigger_dt, 'coderabbit') is None
+
+
+def test_the_bare_token_shape_still_verifies_after_the_widening():
+    """The widening is a SUPERSET: the shape that already worked still works.
+
+    Asserted at the extractor rather than only through a matcher, and paired with the
+    non-hex case, because the whole-field equality arm is what keeps a reviewed-commit
+    value that is not hex-shaped — which nothing on this path validates it to be —
+    from silently ceasing to match once a token scan was introduced.
+    """
+    assert github_re_review._references_head_sha(_HEAD_SHA, _HEAD_SHA) is True
+    assert github_re_review._references_head_sha(_HEAD_SHA_URL, _HEAD_SHA) is True
+    assert github_re_review._references_head_sha('headsha', 'headsha') is True
+    assert github_re_review._references_head_sha(_OTHER_SHA, _HEAD_SHA) is False
+
+
+def test_the_extractor_reads_no_sha_out_of_a_longer_hex_run():
+    """A 64-hex digest yields no spurious 40-character prefix match.
+
+    The surrounding-character guards are what keep the scan from reading a SLICE of a
+    longer alphanumeric run as a commit reference. Built by extending the awaited SHA
+    itself, so the digest genuinely OPENS with the 40 characters a boundary-less
+    extractor would match — a fixture that merely differed everywhere would not
+    exercise the guard.
+    """
+    digest = _HEAD_SHA + '9' * 24
+
+    assert len(digest) == 64
+    assert digest.startswith(_HEAD_SHA)
+    assert github_re_review._references_head_sha(digest, _HEAD_SHA) is False
+
+
+def test_the_extractor_fails_closed_on_an_absent_head_sha():
+    """An empty head SHA verifies nothing — answering True would verify everything."""
+    assert github_re_review._references_head_sha(_HEAD_SHA_URL, '') is False
+    assert github_re_review._references_head_sha('', _HEAD_SHA) is False
+
+
+def test_await_records_a_url_embedded_sha_as_a_verified_review(monkeypatch):
+    """POSITIVE, at the field a consumer actually reads: ``head_sha_verified: true``.
+
+    The matcher assertions above pin the extraction; this pins the ENVELOPE, because
+    ``head_sha_verified`` is the bit both re-review consumers branch on and the one
+    that manufactured the false decline. No comment is supplied, so nothing but the
+    review can satisfy the await and the weaker signal cannot mask the result.
+    """
+    result = _await_with_comments(
+        monkeypatch,
+        [],
+        reviews=[_review(_HEAD_SHA_URL, '2026-01-01T00:05:00Z')],
+        head_sha=_HEAD_SHA,
+    )
+
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'review'
+    assert result['head_sha_verified'] is True
+    assert result['timed_out'] is False
+
+
+def test_await_does_not_verify_a_review_naming_a_different_commit(monkeypatch):
+    """NEGATIVE control at the envelope: a genuinely different commit stays unverified.
+
+    Same helper, same URL shape, same absence of comments — only the named commit
+    differs. This is the arm that would flip green under an over-wide extractor, and
+    it is asserted on ``head_sha_verified`` explicitly rather than inferred from
+    ``matched``, because that field is the actual claim the consumers read.
+    """
+    result = _await_with_comments(
+        monkeypatch,
+        [],
+        reviews=[_review(_OTHER_SHA_URL, '2026-01-01T00:05:00Z')],
+        head_sha=_HEAD_SHA,
+    )
+
+    assert result['matched'] is False
+    assert result['matched_signal'] == ''
+    assert result['head_sha_verified'] is False
+    assert result['timed_out'] is True
+
+
+# =============================================================================
 # Refusal notices are NOT a completed review — on BOTH discriminator paths
 # =============================================================================
 #
@@ -743,6 +908,115 @@ _GENUINE_REVIEW_BODY = (
     'Reviewed the new HEAD. One issue: the retry loop can spin forever when the '
     'backoff cap is zero — guard the cap before entering the loop.'
 )
+
+_CODERABBIT_LOGIN = 'coderabbitai'
+
+# CodeRabbit's reply to the COMMAND INVOCATION this very strategy posts. Observed on
+# PR #1368: the trigger comment is `@coderabbitai review`, and THIS is what came back.
+# Recognized only by the registry marker ``Review rate limited`` — the structural arm
+# sees no exceeded/reached/hit verb, and the enumerative arm is vetoed by ``<details``.
+_CODERABBIT_COMMAND_REPLY_REFUSAL = (
+    '<!-- This is an auto-generated reply by CodeRabbit --> '
+    '<!-- CodeRabbit review command invocation: v2:abc --> '
+    '<details> <summary>(warning) Action not completed</summary> '
+    'Review rate limited. '
+    '> Note: CodeRabbit is an incremental review system and does not re-review '
+    'already reviewed commits. This command is applicable only when automatic '
+    'reviews are paused. </details>'
+)
+
+_CODERABBIT_GENUINE_COMMENT = (
+    'Actionable comments posted: 1. The retry loop can spin forever when the backoff '
+    'cap is zero — guard the cap before entering the loop.'
+)
+
+
+def test_await_does_not_credit_the_coderabbit_command_reply_as_a_review(monkeypatch):
+    """⛔ #1368 regression: the reply to OUR OWN trigger is a refusal, not a completion.
+
+    The sharpest false-green on the comment path, and the one that actually fired: the
+    strategy posts ``@coderabbitai review``, CodeRabbit replies that it is rate limited,
+    and — because no arm read that reply — the envelope returned ``matched: true`` with
+    ``matched_signal: issue_comment``. A refusal was credited as the completion signal
+    for the very trigger it declined, asserting review coverage that never happened.
+
+    The correct outcome is a truthful timeout carrying a RECORDED refusal, so the
+    caller can arm the rate-limit recovery instead of believing the review landed.
+    """
+    result = _await_with_comments(
+        monkeypatch,
+        [
+            _comment(
+                _CODERABBIT_LOGIN,
+                created_at='2026-01-01T00:05:00Z',
+                body=_CODERABBIT_COMMAND_REPLY_REFUSAL,
+            )
+        ],
+        bot_kind='coderabbit',
+    )
+
+    assert result['matched'] is False
+    assert result['matched_signal'] == ''
+    assert result['head_sha_verified'] is False
+    assert result['timed_out'] is True
+    # Recorded, not swallowed — and the registry arm is named as what recognized it,
+    # which is the discriminator: this body reaches no other arm.
+    assert result['refusal_detected'] is True
+    assert result['refusals'][0]['bot_kind'] == 'coderabbit'
+    assert result['refusals'][0]['source'] == 'issue_comment'
+    assert result['refusals'][0]['layer'] == _github_pr.REFUSAL_LAYER_REGISTRY
+
+
+def test_await_does_not_credit_the_command_reply_delivered_as_a_review(monkeypatch):
+    """The same reply submitted as a REVIEW object is likewise not a completed review.
+
+    Worth its own case because the review path is strictly worse: the row satisfies the
+    commit_sha and submitted_at gates, so it would report ``head_sha_verified: true`` —
+    claiming the new HEAD was reviewed by a body that says it was not.
+    """
+    result = _await_with_comments(
+        monkeypatch,
+        [],
+        reviews=[
+            _review(
+                'headsha',
+                '2026-01-01T00:05:00Z',
+                user='coderabbitai[bot]',
+                body=_CODERABBIT_COMMAND_REPLY_REFUSAL,
+            )
+        ],
+        bot_kind='coderabbit',
+    )
+
+    assert result['matched'] is False
+    assert result['matched_signal'] == ''
+    assert result['head_sha_verified'] is False
+    assert result['refusal_detected'] is True
+    assert result['refusals'][0]['layer'] == _github_pr.REFUSAL_LAYER_REGISTRY
+
+
+def test_await_still_matches_a_genuine_coderabbit_comment(monkeypatch):
+    """⛔ NEGATIVE CONTROL: real CodeRabbit feedback still completes the await.
+
+    Asserting only that the refusal is rejected would pass on a change that rejected
+    EVERY CodeRabbit comment — which would convert a false green into a permanent false
+    timeout and stall every re-review this bot is asked for.
+    """
+    result = _await_with_comments(
+        monkeypatch,
+        [
+            _comment(
+                _CODERABBIT_LOGIN,
+                created_at='2026-01-01T00:05:00Z',
+                body=_CODERABBIT_GENUINE_COMMENT,
+            )
+        ],
+        bot_kind='coderabbit',
+    )
+
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'issue_comment'
+    assert result['refusal_detected'] is False
 
 
 def test_await_does_not_match_a_refusal_delivered_as_a_review(monkeypatch):
@@ -882,8 +1156,6 @@ def test_structural_fallback_rejects_an_uncaptured_refusal_on_the_comment_path(m
 # ``refusal_eta`` (from its ``rate_limit_eta_patterns``), and a ``refusals[]``
 # audit record naming the detecting layer.
 
-_CODERABBIT_LOGIN = 'coderabbitai'
-
 # CodeRabbit's OBSERVED refusal, carrying a machine-readable ETA its registry
 # ``rate_limit_eta_patterns`` extract.
 _CODERABBIT_REFUSAL_WITH_ETA = (
@@ -1012,6 +1284,52 @@ def test_matched_review_reports_no_refusal(monkeypatch):
     assert result['refusals'] == []
 
 
+def test_a_registry_recognised_size_refusal_records_its_cause_and_stated_cap():
+    """⛔ The producer's OWN unit-level pin for the two-axis keys.
+
+    Sourcery's observed #1014 refusal is a per-PR SIZE ceiling, and the ceiling it
+    states is read off the notice rather than declared anywhere. Asserted directly
+    on ``_refusal_record`` — the producer — so that removing either key fails a
+    named test in the producer's own unit module, instead of only surfacing in the
+    arming fixture that consumes it. A key that is only covered downstream is a key
+    whose removal reads as someone else's failure.
+    """
+    record = github_re_review._ReReviewStrategy._refusal_record(
+        _SOURCERY_REFUSAL, 'sourcery', 'review'
+    )
+
+    assert record is not None
+    assert record['layer'] == _github_pr.REFUSAL_LAYER_REGISTRY
+    assert record['cause'] == _github_pr.REFUSAL_CAUSE_SIZE
+    assert record['cap'] == '150000 characters'
+
+
+def test_a_refusal_stating_no_ceiling_records_an_empty_cap():
+    """The paired no-stated-ceiling case: unknown is reported, never fabricated.
+
+    The matched counterpart to the size case above. Same producer, same bot, a
+    refusal whose notice states no figure — the cap must come back empty rather
+    than defaulted, because a cap nobody observed would make an accepted coverage
+    gap look audited against a number that was invented. Without this pairing the
+    size assertion above would also pass on an implementation that returned some
+    plausible constant.
+    """
+    no_ceiling = (
+        'Sourcery was unable to review this pull request because '
+        'you have reached your weekly rate limit of reviews.'
+    )
+
+    record = github_re_review._ReReviewStrategy._refusal_record(
+        no_ceiling, 'sourcery', 'review'
+    )
+
+    assert record is not None
+    assert record['layer'] == _github_pr.REFUSAL_LAYER_REGISTRY
+    # Recognised as a refusal, but a QUOTA one — so no ceiling is claimed.
+    assert record['cause'] == _github_pr.REFUSAL_CAUSE_QUOTA
+    assert record['cap'] == ''
+
+
 def test_recorded_refusal_body_is_a_single_truncated_line():
     """The record rides a TOON envelope, whose scalars are single-line — a
     multi-line body would be silently clipped at the transport layer."""
@@ -1022,6 +1340,10 @@ def test_recorded_refusal_body_is_a_single_truncated_line():
     assert record is not None
     assert '\n' not in record['body']
     assert len(record['body']) <= github_re_review._REFUSAL_BODY_EXCERPT_CHARS + len('...')
+    # The two-axis keys ride the same record. CodeRabbit declares no size marker,
+    # so this quota refusal states no ceiling — empty, never a fabricated figure.
+    assert record['cause'] == _github_pr.REFUSAL_CAUSE_QUOTA
+    assert record['cap'] == ''
 
 
 # =============================================================================
@@ -1221,6 +1543,16 @@ def test_with_no_threshold_the_re_review_path_behaves_exactly_as_at_head(monkeyp
         is None
     )
 
+    # The two-axis keys do NOT depend on the enumerative arm: at this same shipped
+    # (inert) threshold a body an earlier arm recognises still carries both. Pinned
+    # here so the keys cannot be mistaken for something the arm introduced.
+    recognised = github_re_review._ReReviewStrategy._refusal_record(
+        _SOURCERY_REFUSAL, 'sourcery', 'review'
+    )
+    assert recognised is not None
+    assert recognised['cause'] == _github_pr.REFUSAL_CAUSE_SIZE
+    assert recognised['cap'] == '150000 characters'
+
     result = _await_with_comments(
         monkeypatch,
         [],
@@ -1263,6 +1595,10 @@ def test_a_body_an_earlier_arm_recognised_keeps_its_own_layer(body, monkeypatch)
     assert live is not None
     assert live['layer'] == inert['layer']
     assert live['layer'] != _github_pr.REFUSAL_LAYER_ENUMERATIVE
+    # Arming the third arm must not disturb the CAUSE axis either — the cause and
+    # the stated ceiling are properties of the notice, not of which arm read it.
+    assert live['cause'] == inert['cause']
+    assert live['cap'] == inert['cap']
 
 
 def test_an_armed_threshold_withholds_a_genuine_anchorless_review(monkeypatch):
@@ -1297,6 +1633,11 @@ def test_an_armed_threshold_withholds_a_genuine_anchorless_review(monkeypatch):
 
     assert record is not None
     assert record['layer'] == _github_pr.REFUSAL_LAYER_ENUMERATIVE
+    # An enumerative record read NOTHING about why the bot declined, so it claims no
+    # ceiling: the cap is empty and the cause falls to the ``quota`` default rather
+    # than asserting a size ceiling nobody observed.
+    assert record['cap'] == ''
+    assert record['cause'] == _github_pr.REFUSAL_CAUSE_QUOTA
     # The shipped (absent-threshold) behaviour for this same body is pinned by
     # ``test_with_no_threshold_the_re_review_path_behaves_exactly_as_at_head``; it is
     # deliberately not re-asserted here, where the arm is still armed.

@@ -207,22 +207,21 @@ empty heading. Fix the draft and re-invoke; do not proceed with a body carrying 
 > `participated_but_empty` is one member of a **closed ten-member** non-participation taxonomy —
 > `absent`, `not_triggered`, `in_progress`, `refused_awaitable`, `refused_hard`, `refused_unknown`,
 > `refused_structural`, `participated_but_empty`, `participated_stale`, `declined` — whose complement
-> is `participated`. It
-> is the ONLY member that is accounted-for rather than blocking, which is exactly why an intent-echo lands there
-> rather than on a blocking member: the bot did run and did say something. The enumeration is recorded
-> here so the parity requirement above reads against the real member set rather than an implied
-> smaller one. See
+> is `participated`. It is the ONLY member that is accounted-for rather than blocking, which is
+> exactly why an intent-echo lands there rather than on a blocking member: the bot did run and did
+> say something. The enumeration is recorded here so the parity requirement above reads against the
+> real member set rather than an implied smaller one. See
 > [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md)
 > § "Participation is not review quality" for the parity obligation and § "Failure taxonomy" for the
 > members themselves.
 
-> ⭐ **Advance disclosure — a size-capped reviewer is knowable HERE, not at the merge gate.** One
-> member of that taxonomy, `refused_structural`, is the only one predictable before any review is
-> requested: it fires when the diff exceeds a ceiling the reviewer DECLARES, and a diff's size is
-> first measurable at exactly this step. The exclusion also recurs **by size rather than by chance** —
-> the ceiling is fixed, so every PR over it gets no review from that reviewer, predictably and
-> forever. A run whose footprint is large MAY consult the disclosure surface here and note the
-> expected gap in the PR body, rather than meeting it as an unexplained non-participation at the
+> ⭐ **Advance disclosure — WHICH reviewers carry a size ceiling is knowable HERE, not at the merge
+> gate.** One member of that taxonomy, `refused_structural`, rests on a property the reviewer
+> DECLARES rather than on an outcome of the run, so *that a reviewer carries a ceiling at all* is
+> answerable before any review is requested. The exclusion also recurs **by size rather than by
+> chance** — the ceiling is fixed, so a reviewer carrying one refuses over-size PRs predictably and
+> forever. A run whose footprint is large MAY consult the disclosure surface here and note in the PR
+> body which reviewers carry a ceiling, rather than meeting an unexplained non-participation at the
 > pre-merge barrier, where the remaining options (split the PR, accept a coverage gap, disable the
 > reviewer) are all far more expensive:
 >
@@ -232,7 +231,9 @@ empty heading. Fix the draft and re-invoke; do not proceed with a body carrying 
 >
 > ⚠ **This is a DISCLOSURE, never a gate.** It takes no plan and reads no PR — the answer is registry
 > data — so it neither blocks PR creation nor predicts a refusal for this particular diff; it reports
-> only which reviewers carry a ceiling at all, and whether that ceiling's value is recoverable. See
+> only which reviewers carry a ceiling at all, and whether that ceiling's value is recoverable. It
+> emits no figure this diff could be compared against, so the note the body carries names reviewers,
+> never a verdict about this diff. See
 > [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md)
 > § "Advance disclosure — a size ceiling is knowable before the review is requested".
 

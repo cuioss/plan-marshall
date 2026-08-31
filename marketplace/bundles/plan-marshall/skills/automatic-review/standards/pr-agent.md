@@ -60,6 +60,7 @@ author_login: cuioss-review-bot   # CONFIRMED on #103 — the provider reports t
                                   # so this value resolves on both paths. A dedicated App, NOT
                                   # github-actions — see "Why its own identity"
 trigger_comment: "/review"        # CONFIRMED on #103 — human /review at 09:25:47 -> publish 09:27:15
+trigger_semantics: requires_explicit_trigger   # the /review command above must be posted
 completion_check_name: ""         # CONFIRMED on #103 — absent from `ci pr reviews`, no check-run;
                                   # falls back to the review_bot_buffer_seconds wait
 honors_skip_label: true           # UNVERIFIED — #103 carried no skip label, so this was not
@@ -98,7 +99,11 @@ participation_evidence:
                                   # the `pr-agent-improve` label gates them on
 participation_requires_update: true   # a re-review EDITS that same comment in place, so continued
                                   # presence proves only that it reviewed once, at some earlier HEAD.
-                                  # Evidence therefore requires first presence OR updated_at movement.
+                                  # Evidence therefore has to clear the currency test, which reads the
+                                  # plan-scoped currency ledger and nothing else: the SHA that ledger
+                                  # recorded for this comment is the merge candidate, or the ledger
+                                  # holds no row for it and the merge candidate resolves, or its
+                                  # updated_at no longer matches the value recorded at that credit.
 # ignore_patterns: CONFIRMED on #103 — the first two did not fire, and neither
 # wrongly dropped the review. The fourth is CONFIRMED on #1334, the /improve pilot's own PR.
 ignore_patterns:
@@ -284,11 +289,29 @@ evidence, not as a claim that this bot never refuses.
 it, or generate a recovery event for a bot whose refusal shape has never been seen — awaiting a quota
 that does not reopen burns the full budget and still times out, and re-triggering a bot that cannot
 answer spends a capped recovery attempt for nothing. The recovery sequence therefore escalates
-immediately for this class (`escalate_ask{reason: rate_window_not_awaitable}`); see `../SKILL.md`
-§ "Rate-limit refusal recovery (opt-in)". Should a refusal ever be observed, record its OBSERVED text in
+immediately for a refusal of this class **whose cause is a quota** — `escalate_ask{reason:
+rate_window_not_awaitable}`; see `../SKILL.md` § "Rate-limit refusal recovery (opt-in)".
+
+⛔ **The class is not the only discriminator, and it is not the one read first.** A refusal whose
+observed CAUSE is `size` is routed by **Branch 0** instead, whatever this field declares: it resolves
+`refused_structural` and escalates with **`reason: refusal_structural`**, carrying the cap the notice
+stated and the measured diff size. Both paths escalate rather than await — so `unknown` buys no wait
+on either — but they escalate with **different reasons and different remedies**: a quota refusal's
+remedies are wait-or-accept, a size refusal's are split / accept the gap / disable this reviewer for
+this PR, and ⛔ never wait. A consumer reading `rate_limit_class` alone offers the wrong set.
+
+Should a refusal ever be observed, record its OBSERVED text in
 `refusal_patterns` — **never** in `ignore_patterns`, which is the noise-drop list and would suppress the
 refusal instead of branching on it — and reclassify this field against that evidence; do not promote it
 to `awaitable_window` on the assumption that it behaves like CodeRabbit's window.
+
+**And when that observed refusal names a ceiling on the DIFF, file it on BOTH lists.**
+`refusal_size_patterns` is a subset overlay on `refusal_patterns`, not an alternative to it: an entry
+present only in the overlay is dropped by the subset guard and marks the cause of nothing, while an
+entry present only in `refusal_patterns` is detected but classified `quota` — which routes the bot
+back into the wait-or-accept branch for a ceiling waiting does not move. Add the notice's
+cap-extraction regex to `refusal_size_cap_patterns` in the same edit, so the stated ceiling travels
+with the refusal instead of being reported `unknown`.
 
 The `ignore_patterns` entry `**[Persistent review]` is NOT a refusal: it is a contentless
 "updated to latest commit" notice, which is a different class of non-finding.
@@ -395,8 +418,12 @@ Getting this bot's evidence wrong is consequential in both directions:
   place** rather than posting a new one. Its continued existence therefore proves only that PR-Agent
   reviewed *once*, at some earlier HEAD; after a force-push the stale Guide would silently credit
   the bot with reviewing code it never saw. That is the false-positive direction, and
-  `participation_requires_update: true` closes it: evidence requires either **first presence** (the
-  comment is newly observed) or observed **`updated_at` movement**.
+  `participation_requires_update: true` closes it: the credit must clear the currency test, which
+  anchors it to the merge candidate through the plan-scoped **currency ledger** — the sole source that
+  test reads. The credit holds when the SHA the ledger recorded for this comment IS the merge
+  candidate, when the ledger holds no row for it and this fetch observes it at a resolvable merge
+  candidate the comment does not demonstrably predate, or when its `updated_at` differs from the value
+  recorded at the last credit. An unresolvable merge-candidate SHA withholds it on every arm.
 
 **`participation_requires_update: true` makes PR-Agent today the ONLY bot that can reach
 `participated_stale`.** Every registry record declares the field; PR-Agent is the only one that
