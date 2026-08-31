@@ -14,7 +14,7 @@ helpers and capture functions that had no direct test reference:
 * ``_capture_main_sha`` / ``_capture_main_dirty`` — git-probe captures.
 * ``_capture_worktree_sha`` / ``_capture_worktree_dirty`` — worktree-gated
   captures including the no-path ``None`` contract.
-* ``_capture_config_hash`` — the absent / unreadable / non-dict / plan-section
+* ``_capture_config_hash`` — the absent / unparseable / non-dict / plan-section
   branches of the phase-independent ``marshal.json`` read.
 * ``_query_pending_count_for_type`` — the ``count`` fallback key and the
   unparseable / unreachable ``None`` contract.
@@ -200,12 +200,17 @@ def test_capture_worktree_dirty_uses_path_when_present(monkeypatch) -> None:
 #
 # The capture reads the ``plan`` section of ``marshal.json`` directly (via
 # ``get_marshal_path``), NOT the phase-scoped ``manage-config plan phase-{phase}
-# get`` subprocess it used before. The old path (a) passed ``--audit-plan-id``,
-# which the ``plan`` noun rejects (exit 2 -> silent ``None`` every boundary), and
-# (b) keyed the hash on ``phase-{phase}`` so it changed at every boundary by
-# construction, which the cross-phase drift scan then flagged as a spurious drift
-# every time. The tests below pin the phase-independent, genuine-change-sensitive
-# contract.
+# get`` subprocess it used before. The old path keyed the hash on
+# ``phase-{phase}`` — a different config subtree at every phase — so it changed
+# at every boundary by construction, which the cross-phase drift scan then
+# flagged as a spurious drift every time. The tests below pin the
+# phase-independent, genuine-change-sensitive contract.
+#
+# ``None`` is NOT one uniform direction. It is read three ways: at capture
+# the invariant is not-applicable and the boundary is not blocked; at verify a
+# captured value against an observed empty raises a blocking diff; and
+# retrospectively ``summarize-invariants`` emits a severity-``error`` ``missing
+# invariant config_hash`` finding for the blank column.
 # =============================================================================
 
 
@@ -228,10 +233,30 @@ def test_capture_config_hash_none_when_marshal_absent(monkeypatch, tmp_path) -> 
     assert inv._capture_config_hash('p', {}, '5-execute') is None
 
 
-def test_capture_config_hash_none_when_marshal_unreadable(monkeypatch, tmp_path) -> None:
-    """Corrupt ``marshal.json`` -> ``None`` (fail-closed; never a false empty hash)."""
+def test_capture_config_hash_none_when_marshal_unparseable(monkeypatch, tmp_path) -> None:
+    """Unparseable ``marshal.json`` -> ``None``, never a false empty hash.
+
+    Named for what the fixture actually builds: the file is readable, its
+    CONTENT is not valid JSON. "Unreadable" would describe an I/O failure, a
+    different branch of the same guard.
+    """
     marshal = tmp_path / 'marshal.json'
     marshal.write_text('{ this is not valid json', encoding='utf-8')
+    monkeypatch.setattr(inv, 'get_marshal_path', lambda: marshal, raising=False)
+    monkeypatch.setattr(inv, '_run_script', lambda _args: 'status: success\nmax_iterations: 5\n')
+    assert inv._capture_config_hash('p', {}, '5-execute') is None
+
+
+def test_capture_config_hash_none_when_marshal_not_a_dict(monkeypatch, tmp_path) -> None:
+    """Valid JSON that is not an object -> ``None``.
+
+    A top-level array parses cleanly, so it reaches the ``isinstance(config,
+    dict)`` guard rather than the ``JSONDecodeError`` branch above. Without that
+    guard the capture calls ``.get('plan', {})`` on a list and raises
+    ``AttributeError`` instead of returning the not-applicable sentinel.
+    """
+    marshal = tmp_path / 'marshal.json'
+    marshal.write_text('[]', encoding='utf-8')
     monkeypatch.setattr(inv, 'get_marshal_path', lambda: marshal, raising=False)
     monkeypatch.setattr(inv, '_run_script', lambda _args: 'status: success\nmax_iterations: 5\n')
     assert inv._capture_config_hash('p', {}, '5-execute') is None

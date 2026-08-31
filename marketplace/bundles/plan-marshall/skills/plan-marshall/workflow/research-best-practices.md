@@ -4,7 +4,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 # Research Best-Practices Workflow
 
-Comprehensive web-based research workflow that gathers best practices, recommendations, and information about a specified topic from multiple online sources. Dispatched under the phase-scoped `research` sub-key (resolved via `--phase phase-N --role research` where N is the calling phase; outside any plan, resolved via `--default`).
+Comprehensive web-based research workflow that gathers best practices, recommendations, and information about a specified topic from multiple online sources. Research has **no sub-key of its own** — it inherits the calling phase's `default` slot, so the lookup is the bare-group form `--phase phase-N` where N is the calling phase (outside any plan, `--default`). See [`plan-marshall/standards/effort-roles.md`](../standards/effort-roles.md) § Workflow → resolver-key mapping.
 
 ## Untrusted-content isolation (reader + deterministic validator gate)
 
@@ -12,7 +12,16 @@ Web pages are **untrusted external content** — a fetched page can carry a prom
 
 The end-to-end pipeline the orchestrator drives:
 
-1. **Dispatch this workflow to the reader.** Resolve the target via `manage-config effort resolve-target --phase phase-N --role research` (or `--default`), which returns an `execution-context-reader-{level}` variant. The reader runs Steps 1–6 below and emits a CANDIDATE findings struct (the `research` schema — see `plan-marshall:untrusted-ingestion/standards/output-schema-rules.md`).
+1. **Dispatch this workflow to the reader.** Resolve the level, carrying the dispatch context so the resolve seam emits the `[DISPATCH]` work-log line and its paired decision-log record for this firing (a bare resolve is a level query and leaves the dispatch with no audit trail — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+     effort resolve-target --phase phase-N \
+     --workflow plan-marshall:plan-marshall/workflow/research-best-practices.md --plan-id {plan_id} \
+     --caller plan-marshall:plan-marshall
+   ```
+
+   Substitute `--default` for `--phase phase-N` when `/research` runs standalone outside any plan (and pass `--plan-id none`, which routes the seam emission to the global log). The call returns the plain `execution-context-{level}` target — or the canonical `execution-context` when the resolved level is `inherit`. It does **not** return a reader variant: `resolve-target` only ever names the write-capable variant, and this dispatch site **composes** the read-only name from the `level` the call emits alongside `target` (the same composition rule the orchestrator's reader surface follows — see [`plan-marshall/standards/effort-roles.md`](../standards/effort-roles.md) § Orchestrator role group). The composition mirrors the write-capable naming exactly: when the resolved level is `inherit` — equivalently, when the call returned the bare `execution-context` — the composed reader target is the bare canonical `execution-context-reader`, never a `-inherit` suffix; otherwise it is `execution-context-reader-{level}`. The reader runs Steps 1–6 below and emits a CANDIDATE findings struct (the `research` schema — see `plan-marshall:untrusted-ingestion/standards/output-schema-rules.md`).
 2. **Deterministic validation gate (orchestrator-side, BEFORE consuming).** The orchestrator runs the canonical validator on the reader's candidate:
 
    ```bash

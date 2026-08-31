@@ -645,7 +645,10 @@ def _filter_main_dirty_paths(paths: list[str], tree: str | Path) -> list[str]:
             resolve trackedness.
 
     Returns:
-        The retained (drift-relevant) subset, sorted and de-duplicated.
+        The retained (drift-relevant) subset, sorted and de-duplicated. The
+        exempted half is not discarded — :func:`_capture_main_dirty_exempted`
+        publishes it as its own column, so a filtered zero here is readable
+        against what the filter declined to count.
     """
     retained, _exempted = partition_plan_state_exemption(paths, tree)
     return retained
@@ -687,6 +690,39 @@ def _capture_main_dirty_files(_plan_id: str, _metadata: dict[str, Any], _phase: 
     if raw is None:
         return None
     return _filter_main_dirty_paths(raw, repo)
+
+
+def _capture_main_dirty_exempted(_plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
+    """Sorted list of main-checkout dirty paths the ``.plan/`` exemption DROPPED.
+
+    The published other half of :func:`_filter_main_dirty_paths`. That filter
+    computes ``(retained, exempted)`` and the layer-D column keeps only
+    ``retained``, so a zero in ``main_dirty_files`` says nothing about whether the
+    main checkout was genuinely clean or whether every leak was exempted as
+    untracked plan state. This capture records the exempted population so the two
+    columns together answer both questions: ``main_dirty_files`` is what the guard
+    acted on, ``main_dirty_exempted`` is what it declined to count.
+
+    Registered as ``informational_only`` in :data:`INVARIANT_BLOCKING_SCOPE` and
+    deliberately absent from ``summarize-invariants._CORE_INVARIANTS``. Both are
+    required: the set legitimately changes at every boundary (plan state is
+    written on every capture), so a blocking classification would refuse every
+    transition, and a core-invariant registration would turn every historical row
+    written before the column existed into a ``missing invariant`` error finding.
+
+    Returns ``None`` — the registry's "not applicable" contract, leaving the
+    column empty — when the MAIN checkout cannot be resolved
+    (:func:`_main_repo_root`) or the dirty-file probe against it fails. An empty
+    list is a real measurement (nothing was exempted) and is distinct from that.
+    """
+    repo = _main_repo_root()
+    if repo is None:
+        return None
+    raw = git_dirty_files(repo)
+    if raw is None:
+        return None
+    _retained, exempted = partition_plan_state_exemption(raw, repo)
+    return exempted
 
 
 def _main_dirty_drift_diff(baseline: list[str], observed: list[str]) -> list[str]:
@@ -754,10 +790,14 @@ def _is_truthy_metadata(value: Any) -> bool:
 # missing ``modified_files`` as valid rather than as drift. This keeps the
 # blocking ``references_valid`` handshake hash stable for in-flight plans whose
 # references.json predates the change.
-# SHIM(B): references.json written before the modified_files key was retired (excluded from the required-keys intersection).
-# shim-owner: plan-marshall
-# shim-floor: the change that dropped modified_files from the references required-key contract (_REFERENCES_REQUIRED_KEYS); the tolerant read treats a missing modified_files as valid rather than as drift. Predates this shallow clone's root (dcd3c00 / #1105), so not PR-pinnable here.
-# shim-remove-when: no in-flight plan's references.json predates the key retirement.
+#
+# This tolerance is STRUCTURAL, not a code branch: it is the key's absence from
+# the tuple below. No reader tests for a pre-retirement references.json —
+# _capture_references_valid computes present_required directly from the tuple,
+# and manage-references' require_references handles only file-not-found and
+# non-object corruption. There is consequently no branch a migration marker's
+# removal trigger could ever delete, which is why this declaration carries no
+# such marker.
 _REFERENCES_REQUIRED_KEYS: tuple[str, ...] = ('base_branch', 'branch')
 
 
@@ -1518,22 +1558,26 @@ def _capture_config_hash(_plan_id: str, _metadata: dict[str, Any], _phase: str) 
       retained).
 
     This replaces the earlier ``manage-config plan phase-{phase} get`` capture,
-    which had two defects. (1) It keyed the hash on ``phase-{phase}`` — a different
-    config subtree at every phase — so the value changed at every boundary *by
-    construction* and the cross-phase scan flagged a spurious drift every time (it
-    could not tell a real config change from the phase simply advancing). (2) It
-    passed ``--audit-plan-id``, which the ``plan`` noun does not accept, so the
-    subprocess exited non-zero and the capture was silently ``None`` at every
-    boundary — a signal that never fired at all. Reading the phase-independent
-    ``plan`` section fixes both.
+    whose defect was the phase scoping: it keyed the hash on ``phase-{phase}`` — a
+    different config subtree at every phase — so the value changed at every
+    boundary *by construction* and the cross-phase scan flagged a spurious drift
+    every time, unable to tell a real config change from the phase simply
+    advancing. Reading the phase-independent ``plan`` section fixes that.
 
     The whole-checkout stability of ``marshal.json`` (worktree vs. main resolution
     when a plan edits ``marshal.json`` on its branch) is out of scope here — that
     is the repository-root resolver owned by the main-scoped-field plan.
 
-    Returns ``None`` (not-applicable) when ``marshal.json`` is absent or
-    unreadable, fail-closed, so a transient read failure never surfaces as a false
-    "config emptied" drift.
+    Returns ``None`` (not-applicable) when ``marshal.json`` is absent, unreadable,
+    unparseable, or does not parse to a JSON object. ``None`` is not one uniform
+    direction — each of the three consumers reads it differently:
+
+    - at **capture**, the invariant is recorded as not-applicable: the column is
+      left empty and the boundary is **not** blocked;
+    - at **verify**, a previously captured value against an observed empty raises
+      a blocking diff;
+    - **retrospectively**, ``summarize-invariants`` emits a severity-``error``
+      ``missing invariant config_hash`` finding for the blank column.
     """
     marshal_path = get_marshal_path()
     if not marshal_path.exists():
@@ -1667,6 +1711,7 @@ INVARIANTS: list[tuple[str, AppliesFn, CaptureFn]] = [
     ('main_sha', _always, _capture_main_sha),
     ('main_dirty', _always, _capture_main_dirty),
     ('main_dirty_files', _always, _capture_main_dirty_files),
+    ('main_dirty_exempted', _always, _capture_main_dirty_exempted),
     ('worktree_sha', _worktree_in_use, _capture_worktree_sha),
     ('worktree_dirty', _worktree_in_use, _capture_worktree_dirty),
     ('references_valid', _always, _capture_references_valid),
@@ -1773,6 +1818,13 @@ INVARIANT_BLOCKING_SCOPE: dict[str, BlockingScope] = {
     # leak-into-main guard is moot once the orchestrator's cwd is the worktree.
     # Retained for the phases-1-4 boundaries that still operate on main.
     'main_dirty_files': _WORKTREE_STATE_DRIFT_BLOCKING_PHASES,
+    # Never blocking: the exempted population is untracked plan state, which is
+    # rewritten by the capture itself at every boundary, so its drift carries no
+    # correctness signal. The entry is MANDATORY rather than optional —
+    # ``is_invariant_blocking_at_phase`` fail-safes an UNMAPPED invariant to
+    # ``blocking_at_every_boundary``, so omitting it would make a column that
+    # changes by construction refuse every transition.
+    'main_dirty_exempted': 'informational_only',
     # Relaxed for phase-5+: the sideways worktree-SHA / worktree-dirty
     # comparisons are subsumed by main_sha / main_dirty once cwd IS the
     # worktree. They stay blocking at the planning-phase boundaries.

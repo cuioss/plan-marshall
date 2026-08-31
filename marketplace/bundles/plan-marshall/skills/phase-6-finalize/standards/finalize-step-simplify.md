@@ -107,11 +107,13 @@ Capture `{cov_scope}` and `{cov_instruction}` (absent → treat as `inherit`). *
 
 ### Step 2: Resolve the dispatch target
 
-The cognitive review dispatches under `--phase phase-6-finalize` (no `--role`; finalize-step-simplify tracks `phase-6-finalize.default`):
+The cognitive review dispatches under `--phase phase-6-finalize` (no `--role`; finalize-step-simplify tracks `phase-6-finalize.default`). The resolve carries the dispatch context (`--workflow`/`--plan-id`/`--caller`), so the resolve seam emits the `[DISPATCH]` work-log line and its paired decision-log record itself, per firing — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; a resolve that omits `--workflow` is a bare level query and leaves this dispatch with no audit trail. Step 3's prompt body carries `instructions:` rather than `workflow:` (the execution-context contract takes exactly one of the two), so the `--workflow` value names **this** document — the body that owns the dispatch and supplies those instructions:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --phase phase-6-finalize
+  effort resolve-target --phase phase-6-finalize \
+  --workflow plan-marshall:phase-6-finalize/standards/finalize-step-simplify.md --plan-id {plan_id} \
+  --caller plan-marshall:phase-6-finalize
 ```
 
 Extract the `target` field from the TOON output and use it as `{target}` below.

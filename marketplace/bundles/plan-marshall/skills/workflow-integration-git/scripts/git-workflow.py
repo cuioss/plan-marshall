@@ -658,6 +658,12 @@ _UNCERTAIN_REGEXES = _compile_patterns(UNCERTAIN_ARTIFACT_PATTERNS)
 _SKIP_DIRS = set(_ARTIFACT_CONFIG.get('skip_dirs', ['.git', 'node_modules']))
 
 
+#: Name of the plan-state directory. Defined HERE, above :func:`scan_artifacts`,
+#: because that scan's unconditional plan-state exclusion is its first reader;
+#: the worktree subcommands further down are later readers of the same constant.
+_PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
+
+
 def _is_nested_git_boundary(dir_path: str) -> bool:
     """Whether ``dir_path`` is a nested git repository, worktree, or submodule.
 
@@ -697,6 +703,25 @@ def _is_ignored(rel_posix: str, ignored_files: set[str], ignored_dirs: tuple[str
     return rel_posix in ignored_files or rel_posix.startswith(ignored_dirs)
 
 
+def _is_plan_state(rel_posix: str) -> bool:
+    """Whether ``rel_posix`` lives inside the scan ROOT's own plan-state directory.
+
+    Keyed on the first path segment, so it holds for the scan root itself — the
+    case :func:`_is_nested_git_boundary` cannot cover, since that prunes only
+    checkouts nested *below* the root. From phase-5 onward a plan's cwd is
+    pinned to its own worktree and ``cmd_detect_artifacts`` defaults ``--root``
+    to ``Path.cwd()``, so the run's live audit trail sits directly under the
+    scan root.
+
+    The test is deliberately independent of every ignore mechanism: it must hold
+    under ``--no-gitignore``, under a ``.gitignore`` carrying no ``.plan`` rule,
+    and under a :func:`get_gitignored_files` that returns ``None`` or an
+    empty-but-successful set. Each of those defeats an ignore-based exclusion,
+    which is why the guarantee cannot be attributed to ``.gitignore``.
+    """
+    return rel_posix.split('/', 1)[0] == _PLAN_DIR_NAME
+
+
 def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
     """Scan directory for committable artifacts.
 
@@ -709,12 +734,18 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
 
     A nested git repository or worktree (submodule, linked worktree) below the
     scan root is never traversed: its contents are a separate checkout and are
-    not committable to the scanned repository. A running plan runs in such a
-    worktree, so this — together with the .gitignore exclusion above — keeps a
-    plan's finalize from offering the run's own live artifacts (its in-flight
-    ``logs/work.log`` and build caches) for deletion, whether that worktree is
-    itself the scan root (excluded via .gitignore) or nested beneath it (never
-    traversed).
+    not committable to the scanned repository.
+
+    A path whose first segment is the plan-state directory is excluded
+    UNCONDITIONALLY (:func:`_is_plan_state`) — before, and independent of, the
+    ignore oracle. That exclusion is what keeps a plan's finalize from offering
+    the run's own live artifacts (its in-flight ``logs/work.log`` and build
+    caches) for deletion when the plan's own worktree IS the scan root, which is
+    the normal phase-5-onward state. It is stated as unconditional because each
+    of ``--no-gitignore``, a ``.gitignore`` carrying no ``.plan`` rule, and an
+    empty-but-successful ignore set defeats an ignore-based exclusion. A plan
+    worktree nested *beneath* the scan root is covered by the never-traversed
+    rule above instead.
 
     Uses a single directory traversal with compiled regex patterns instead
     of multiple Path.glob() calls, improving performance on large repos.
@@ -785,6 +816,10 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
             rel = os.path.relpath(os.path.join(dirpath_str, filename), root_str).replace(
                 os.sep, '/'
             )
+            # The scan root's OWN plan state is dropped first and
+            # unconditionally, so no ignore-mechanism outcome can admit it.
+            if _is_plan_state(rel):
+                continue
             if _is_ignored(rel, ignored_files, ignored_dirs):
                 continue
 
@@ -813,13 +848,35 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
 
 
 def cmd_detect_artifacts(args):
-    """Handle detect-artifacts subcommand."""
+    """Handle detect-artifacts subcommand.
+
+    An indeterminate ignore set under default flags is an ERROR, not a result.
+    The output contract tells every caller to branch on ``status``, so returning
+    ``status: 'success'`` carrying ``gitignore_resolved: False`` made a scan
+    whose ignore oracle could not be read at all indistinguishable from one that
+    genuinely resolved a clean tree. The gate is on the ignore oracle ONLY —
+    ``tracked_resolved`` keeps its existing degradation, in which ``safe`` is
+    empty by construction and every match is routed to ``uncertain``.
+
+    ``--no-gitignore`` is the supported way to scan a tree with no readable
+    ignore set, and it is safe because the plan-state exclusion
+    (:func:`_is_plan_state`) does not depend on the ignore mechanism.
+    """
     root = Path(args.root) if args.root else Path.cwd()
 
     if not root.is_dir():
         return make_error(f'Directory not found: {root}', code=ErrorCode.NOT_FOUND)
 
-    result = scan_artifacts(root, respect_gitignore=not args.no_gitignore)
+    respect_gitignore = not args.no_gitignore
+    result = scan_artifacts(root, respect_gitignore=respect_gitignore)
+    if respect_gitignore and not result['gitignore_resolved']:
+        return make_error(
+            'Ignore set could not be determined for the scan root; refusing to '
+            'report artifacts. Pass --no-gitignore to scan a tree with no '
+            'readable ignore set.',
+            code=ErrorCode.FETCH_FAILURE,
+            root=str(root),
+        )
     result['root'] = str(root)
     result['status'] = 'success'
     return result
@@ -841,8 +898,6 @@ def cmd_detect_artifacts(args):
 #     ``metadata.worktree_path`` / ``worktree_branch`` / ``use_worktree``
 #     via ``manage-status metadata --set`` so subsequent verbs can
 #     resolve the path through the canonical channel.
-
-_PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 
 _BOOTSTRAP_TIMEOUT_SECONDS = 120
 
@@ -2710,7 +2765,12 @@ Examples:
                     {
                         'flags': ['--no-gitignore'],
                         'action': 'store_true',
-                        'help': 'Include gitignored files in results',
+                        'help': (
+                            'Include gitignored files in results, and scan a tree whose '
+                            'ignore set cannot be read (under default flags that is an '
+                            'error, not a result). The nested git repository/worktree '
+                            'skip is unconditional and unaffected by this flag.'
+                        ),
                     },
                 ],
             },

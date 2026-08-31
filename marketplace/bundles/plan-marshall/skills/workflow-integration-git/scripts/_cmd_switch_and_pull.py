@@ -9,12 +9,29 @@ Design contract: §3.2 and §5.2 of design.md.
 
 Primary path  (``--plan-id``): validates the plan through
               ``file_ops.resolve_plan_context`` — the single plan-context
-              resolver — then targets the cwd-relative checkout root, since this
-              verb switches the checkout the working directory is in, not the
-              plan's worktree.
-Escape hatch  (``--project-dir``): uses the supplied path directly. Useful
-              in post-cleanup scenarios or non-plan contexts where the
-              caller already knows the main checkout path.
+              resolver — then targets the MAIN checkout root, resolved by
+              ``marketplace_paths.main_checkout_root`` (pure ``git rev-parse
+              --git-common-dir``, ADR-002's single sanctioned main-anchored
+              exception). The plan id is a validity gate, not a path source.
+
+              Main-anchored is the only resolution that satisfies this verb's
+              purpose. It runs ``git checkout`` and ``git pull`` to bring the
+              main checkout current, and from phase-5 onward the caller's cwd is
+              pinned to the plan's WORKTREE — so a cwd-relative resolver aims the
+              verb at the worktree and it refuses with ``main is already used by
+              worktree``, at exactly the moment main is stale. ``git rev-parse
+              --git-common-dir`` names main's ``.git`` from inside a linked
+              worktree, so its parent is the main checkout from anywhere in the
+              repository.
+
+              ⛔ NOT ``resolve_main_anchored_path``: that honours the
+              ``PLAN_BASE_DIR`` / ``set_base_dir()`` override, and an override
+              directory is not a git checkout. This verb's ``git -C`` target must
+              name a real one.
+Escape hatch  (``--project-dir``): uses the supplied path directly, and remains
+              available as an explicit override — it is no longer the only way to
+              reach main from a worktree. Useful in post-cleanup scenarios or
+              non-plan contexts where the caller already knows the path.
 """
 
 from __future__ import annotations
@@ -22,6 +39,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from git_provider import run_git
+from marketplace_paths import main_checkout_root
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -47,7 +65,6 @@ def _resolve_project_dir(args) -> tuple[Path | None, dict | None]:
         try:
             from file_ops import (
                 WorktreeResolutionError,
-                cwd_checkout_root,
                 resolve_plan_context,
             )
         except ImportError as exc:
@@ -58,11 +75,11 @@ def _resolve_project_dir(args) -> tuple[Path | None, dict | None]:
                 'message': f'file_ops module unavailable: {exc}',
             }
 
-        # The plan id is a validity gate here, not a path source: switch-and-pull
-        # operates on the checkout the working directory is in, never on the
-        # plan's worktree. Resolving the plan's worktree face is what fails loudly
-        # for an unresolvable plan id (and for a cwd outside any checkout, since
-        # the resolver locates the executor by the same cwd walk-up).
+        # The plan id is a validity gate here, not a path source: this verb
+        # targets the MAIN checkout (resolved below), never the plan's worktree.
+        # Resolving the plan's worktree face is what fails loudly for an
+        # unresolvable plan id (and for a cwd outside any checkout, since the
+        # resolver locates the executor by the same cwd walk-up).
         try:
             _ = resolve_plan_context(plan_id, ensure=False).worktree_path
         except WorktreeResolutionError as exc:
@@ -73,12 +90,25 @@ def _resolve_project_dir(args) -> tuple[Path | None, dict | None]:
                 'message': str(exc),
             }
 
-        # The caller of this verb (branch-cleanup.md §7.1) supplies
-        # ``--project-dir {main_checkout}`` explicitly when it knows the path.
-        # When invoked via ``--plan-id`` it does not, so the checkout root comes
-        # from the uniform cwd rule (ADR-002): the nearest ancestor of cwd
-        # containing ``.plan/local``.
-        return Path(cwd_checkout_root()), None
+        # Target the MAIN checkout, which is what this verb's documentation
+        # promises and the only target that satisfies its purpose: it brings main
+        # current, and from phase-5 onward cwd is pinned to the plan's worktree,
+        # so a cwd-relative root would aim ``git checkout`` at the worktree and
+        # refuse with ``main is already used by worktree`` at exactly the moment
+        # main is stale. ``main_checkout_root`` is pure git-common-dir resolution
+        # — deliberately NOT ``resolve_main_anchored_path``, which honours the
+        # ``PLAN_BASE_DIR`` override, and an override directory is not a git
+        # checkout. It raises when git cannot resolve the common dir; that maps
+        # onto the existing not-a-git-repo error so the error set stays closed.
+        try:
+            return main_checkout_root(), None
+        except RuntimeError as exc:
+            return None, {
+                **envelope,
+                'status': 'error',
+                'error_type': 'project_dir_not_a_git_repo',
+                'message': f'cannot resolve the main checkout: {exc}',
+            }
 
     elif project_dir_arg:
         return Path(project_dir_arg), None

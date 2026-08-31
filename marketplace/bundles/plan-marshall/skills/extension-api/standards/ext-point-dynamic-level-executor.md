@@ -158,10 +158,14 @@ target/claude/plan-marshall/agents/
 
 Every dispatch site computes the target via the role resolver and dispatches the matching `execution-context` variant. The prompt body carries the generic contract fields — `name`, `plan_id`, `skills[]`, exactly one of `workflow`/`instructions`, `WORKTREE` — plus any workflow-specific runtime inputs the workflow declares in its own input table (the example below adds `producer` and `caller_phase`):
 
+The resolve carries the dispatch context (`--workflow`/`--plan-id`/`--caller`), so the resolve seam emits the `[DISPATCH]` work-log line and its paired decision-log record itself, per firing — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. `--workflow` takes the same notation the prompt body's `workflow:` field carries, so a resolve and the dispatch it backs name one doc; a resolve that omits it is a bare level query and leaves the dispatch with no audit trail. Do NOT hand-write a separate `[DISPATCH]` line.
+
 ```bash
 # Resolve the dispatch target for the verification-feedback workflow under phase-6-finalize
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --phase phase-6-finalize --role verification-feedback
+  effort resolve-target --phase phase-6-finalize --role verification-feedback \
+  --workflow plan-marshall:plan-marshall/workflow/verification-feedback.md --plan-id {plan_id} \
+  --caller plan-marshall:phase-6-finalize
 ```
 
 Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch below.

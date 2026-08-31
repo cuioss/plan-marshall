@@ -209,7 +209,7 @@ It catches leaks regardless of which tool produced them — the only question la
 
 Layer D operates at **per-phase-boundary** granularity rather than per-tool-call. A leak introduced mid-phase is not detected until the next boundary capture, so the agent may complete additional work on top of the polluted main checkout before the verify fires. This is an explicit trade-off:
 
-- **Recovery is identical either way** — the operator must revert the leaked main-checkout changes (or move them into the worktree branch) before the boundary advances. Per-tool-call detection would surface the leak earlier but would not change the recovery steps.
+- **Recovery is identical either way** — the operator must inspect each leaked path's diff and give an explicit disposition for it (revert that one path, or move the change into the worktree branch) before the boundary advances. Per-tool-call detection would surface the leak earlier but would not change the recovery steps.
 - **Filesystem-based detection works across hosts**, while a tool-call hook would not. Granularity is the cost; portability is the benefit.
 
 Plans that need finer-grained enforcement can run `phase_handshake capture` / `verify --strict` at intra-phase checkpoints, but the core contract remains per-phase. (The finalize blocking-findings gate is a *separate* mechanism — `phase_handshake findings-check --phase 6-finalize` in `branch-cleanup` — that gates pending findings, not the main-checkout drift this layer-D contract covers; it is not a `capture`/`verify --strict` checkpoint.)
@@ -218,11 +218,18 @@ Plans that need finer-grained enforcement can run `phase_handshake capture` / `v
 
 When `phase_handshake verify --phase {N} --strict` fails with `error: main_checkout_dirtied_during_plan`, the operator's recovery path is:
 
-1. **Inspect `newly_dirty[]`.** The payload lists the exact paths that leaked into the main checkout between captures.
-2. **Decide per-path: revert or relocate.**
-   - *Revert* — when the change was unintended (typical case): `git -C {main_checkout} checkout -- {path}` to drop the dirty state. The plan's worktree edits remain unaffected.
+1. **Surface the content of every path in `newly_dirty[]`.** The payload lists the exact paths that leaked into the main checkout between captures — but a path is not a change, and nobody can dispose of content they have not seen. Read each one before anything touches it:
+
+   ```bash
+   git -C {main_checkout} diff -- {path}
+   ```
+
+2. **Obtain an explicit operator disposition for that one path.** A revert is never automatic and never a default; it happens only on an explicit operator decision about the diff just surfaced. `git -C {main_checkout} checkout -- {path}` destroys uncommitted, unstaged content **irrecoverably** — no reflog covers a worktree file, and nothing (`git fsck` included) brings it back.
+   - *Revert* — once the operator has decided the change is unwanted: `git -C {main_checkout} checkout -- {path}` drops the dirty state, and only for that one path. The plan's worktree edits remain unaffected.
    - *Relocate* — when the change is intentional but landed in the wrong tree: stage the file in the main checkout (`git -C {main_checkout} add {path}`), copy the staged blob into the worktree branch, and revert the main-checkout staging. The most reliable mechanical form is `git -C {main_checkout} stash push -- {path}` followed by `git -C {worktree_path} stash pop` from the corresponding stash entry.
 3. **Re-run the boundary verify.** Once `git status --porcelain` against the main checkout is back to (or below) the baseline, `phase_handshake verify --phase {N} --strict` returns `status: ok` and the boundary advances.
+
+`.plan/marshal.json` is the **highest-risk member** of `newly_dirty[]`. § "Filter Rule" below retains it precisely because it is tracked, so it reaches this loop — and it is the file an operator is most likely to be carrying uncommitted configuration edits in. Its recovery has a single authority, `plan-marshall:plan-marshall/workflow/planning.md` § "Named recovery case — `.plan/marshal.json`", which this section defers to rather than restates.
 
 The proper-superset rule means the operator does not need to *clean* pre-existing dirty paths — only the **newly-dirty** paths must be addressed before the boundary will advance. This keeps the recovery loop scoped to the actual leak rather than demanding a fully-clean main checkout that may carry unrelated dirty state from before the plan started.
 
@@ -302,7 +309,11 @@ Three verbs — `force-push-with-lease`, `switch-and-pull`, and `prune-local-and
 
 All three verbs accept `--plan-id` as the primary resolution path and `--project-dir` as the escape hatch. They are mutually exclusive; passing both is a hard error.
 
-**Primary path (`--plan-id`)**: The verb resolves the working tree through `file_ops.resolve_plan_context`, the single plan-context resolver that owns the one `manage-status get-worktree-path` invocation. For `force-push-with-lease`, the resolved path is the **worktree** (the branch lives there until `worktree-remove` runs). For `switch-and-pull` and `prune-local-and-remote-ref`, the verb derives the **main checkout** root via the uniform cwd-relative resolution (`file_ops.get_base_dir()` / `marketplace_paths._find_plan_root_from_cwd()`) because those operations run after worktree removal, when cwd is back on main.
+**Primary path (`--plan-id`)**: The verb resolves the working tree through `file_ops.resolve_plan_context`, the single plan-context resolver that owns the one `manage-status get-worktree-path` invocation. For `force-push-with-lease`, the resolved path is the **worktree** (the branch lives there until `worktree-remove` runs).
+
+For `switch-and-pull`, the plan id is a **validity gate, not a path source**: the verb resolves the **main checkout** root by `git rev-parse --git-common-dir` (`marketplace_paths.main_checkout_root`), which names main's `.git` from anywhere in the repository — including from inside a linked worktree. Main-anchoring is required rather than merely tidy. A cwd-relative resolver only lands on main if cwd is already there, and from phase-5 onward cwd is pinned to the plan's **worktree** (ADR-002); the verb would then run `git checkout {base}` against the worktree and be refused with `main is already used by worktree`, at exactly the moment main is stale. The resolver is deliberately `main_checkout_root`, not `resolve_main_anchored_path` — the latter honours the `PLAN_BASE_DIR` / `set_base_dir()` override, and an override directory is not a git checkout, whereas this verb's `git -C` target must name a real one. When git cannot resolve the common dir the verb returns `error_type: project_dir_not_a_git_repo`.
+
+For `prune-local-and-remote-ref`, the verb derives the main checkout root via the uniform cwd-relative resolution (`file_ops.get_base_dir()` / `marketplace_paths._find_plan_root_from_cwd()`), on the premise that it runs after worktree removal with cwd back on main.
 
 **Escape hatch (`--project-dir [--branch|--head]`)**: Useful in post-worktree-removal cleanup, non-plan contexts, or fixture-driven test invocations where the caller already holds the path. All git calls use `git -C {project_dir}`.
 
@@ -328,7 +339,7 @@ remote_sha: {sha after push}
 
 Checks out `--base` on the main checkout and pulls from `origin` using `git pull origin {base_branch}` (the explicit form; never plain `git pull`). Captures `pre_sha` and `post_sha` and computes `commits_pulled` via `git rev-list --count`.
 
-Resolution: `--plan-id` → main checkout root via the uniform cwd-relative resolution (`file_ops.get_base_dir()`).
+Resolution: `--plan-id` validates the plan through `resolve_plan_context` and is a validity gate only; the target is the main checkout root from `marketplace_paths.main_checkout_root` (`git rev-parse --git-common-dir`), which resolves main from inside a linked worktree. See [Resolution Pattern](#resolution-pattern) above for why cwd-relative resolution cannot serve this verb from phase-5 onward.
 
 **Output** (success):
 ```toon
