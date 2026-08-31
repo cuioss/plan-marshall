@@ -4,7 +4,7 @@ Guidelines for AI assistants working in the plan-marshall repository.
 
 ## What This Repository Is
 
-A **Claude Code Marketplace** of bundled skills, agents, and commands for CUI (Common User Interface) Open Source projects — the bundle set is whatever `marketplace/.claude-plugin/marketplace.json` registers. Source format IS Claude Code native; every other target is an export derived from it. Multi-target distribution is implemented via `marketplace/targets/`, and the set of targets is whatever is registered in `TARGET_REGISTRY` (`marketplace/targets/__init__.py`) — the registry is the source of truth and is deliberately not restated here. Open multi-target work is tracked in the `multiplattform` orchestrator epic under `.plan/local/orchestrator/` (git-ignored, machine-local); the cross-cutting constraints live in that epic's archived `reference/principles.md`.
+A **Claude Code Marketplace** of bundled skills, agents, and commands for CUI (Common User Interface) Open Source projects — the bundle set is whatever `marketplace/.claude-plugin/marketplace.json` registers. Source format IS Claude Code native; every other target is an export derived from it. Multi-target distribution is implemented via `marketplace/targets/`, and the set of targets is whatever is registered in `TARGET_REGISTRY` (`marketplace/targets/__init__.py`) — the registry is the source of truth and is deliberately not restated here. Open multi-target work is tracked in the `multiplattform` orchestrator epic; the cross-cutting constraints are stated in that epic's planning documents (machine-local, not version-controlled).
 
 ## Quick Commands
 

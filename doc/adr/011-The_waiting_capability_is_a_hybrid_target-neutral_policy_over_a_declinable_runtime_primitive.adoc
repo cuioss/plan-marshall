@@ -381,12 +381,11 @@ may decline.
 * ADR-009 (`Status reporting fails closed with an explicit unknown state`) — the
   fail-closed posture the budget-exhaustion and decline outcomes inherit: an
   unsubstantiated positive is never emitted in place of an explicit unknown.
-* `doc/plans/multiplattform/reference/principles.md` — §1 (goal-based API, semantic in /
-  normalized out), §3 (No-Op Policy), §5 (no platform-specific behaviour in body text), and §6
-  (open to further targets; the differs-per-target vs exists-only-on-some-targets rule, the four
-  placement homes, and the three-condition admission test for the gated fourth home) are the
-  cross-cutting constraints this decision applies.
-* `doc/plans/multiplattform/020-target-scoped-components.md` — the `targets:` frontmatter-filter
+* Cross-cutting constraints applied by this decision: goal-based API (semantic in, normalized
+  out); No-Op Policy; no platform-specific behaviour in body text; open to further targets (the
+  differs-per-target vs exists-only-on-some-targets rule, the four placement homes, and the
+  three-condition admission test for the gated fourth home).
+* `marketplace/targets/component_targets.py` — the `targets:` frontmatter-filter
   mechanism, which remains without a consumer from this decision.
 * `plan-marshall` `standards/waiting.md` — the target-neutral waiting policy this decision
   places, covering the wait-class signal set, the main-loop-owns-waiting rule, the
