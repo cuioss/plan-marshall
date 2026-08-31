@@ -13,7 +13,7 @@ Deploys the generated OpenCode output at
 (default `~/.config/opencode/`) with the singular→plural directory
 rename that OpenCode expects. The pipeline is:
 
-```
+```text
 marketplace/bundles/  →  target/opencode/  →  ~/.config/opencode/{skills,agents,commands}/
 ```
 

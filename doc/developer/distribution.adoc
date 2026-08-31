@@ -105,9 +105,11 @@ pending (see `marketplace-build.adoc` → _OpenCode inner loop_ → deploy optio
 against these refs as unconfirmed, not as a supported install route.
 
 The single source `v{x.y.z}` tag drives all targets; versioning stays unified
-across the marketplace. Adding another future target is a config-only change —
-one line appended to the matrix list — which adds its own `dist-{target_name}`
-branch and `{target_name}/v*` dist tags.
+across the marketplace. Adding another future target is not a config-only
+change: it first needs generator support (a target registered in
+`TARGET_REGISTRY` — `marketplace/targets/__init__.py`) before its workflow
+matrix entry is appended. The matrix list is the final distribution step, not
+the whole change.
 
 == See also
 

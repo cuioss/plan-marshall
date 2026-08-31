@@ -37,7 +37,7 @@ the named bundle's managed entries are eligible for pruning.
 
 Outputs a TOON document on stdout:
 
-    status: success | partial | error
+    status: success | error
     deployed_count: N
     removed_count: M
     summary_message: "<human-readable summary>"
@@ -50,7 +50,7 @@ Outputs a TOON document on stdout:
 
 Exit codes:
 
-    0 on ``status: success`` or ``status: partial``.
+    0 on ``status: success``.
     1 on ``status: error`` (source missing, source empty, etc.).
 
 Flags:
@@ -173,12 +173,34 @@ def _derive_synced_bundles(skills: list[Path], commands: list[Path], only_bundle
     Each skill directory is named ``{bundle}-{skill}`` and each command
     wrapper file ``{bundle}-{skill}.md``. Deriving from BOTH keeps the
     managed set populated when a run's source carries commands but no
-    skills (for example after every skill was removed). The bundle token
-    is the first hyphen-delimited segment of each name. With
+    skills (for example after every skill was removed). With
     ``--bundles NAME``, the set is just ``{NAME}``.
+
+    Bundle names may themselves contain hyphens (``plan-marshall``), so the
+    raw ``{bundle}-{skill}`` filename cannot unambiguously recover the bundle
+    namespace by splitting on the first hyphen. When ``marketplace/bundles``
+    is present, match entry prefixes against the exact bundle directory names
+    so the managed namespace is not truncated to a short prefix (which would
+    misclassify unrelated user entries as managed and delete them on prune).
+    Fall back to the first-hyphen token only when the bundles directory is
+    unavailable.
     """
     if only_bundle is not None:
         return {only_bundle}
+
+    bundles_dir = Path.cwd() / 'marketplace' / 'bundles'
+    if bundles_dir.is_dir():
+        known_bundles = {p.name for p in bundles_dir.iterdir() if p.is_dir()}
+        if known_bundles:
+            matched: set[str] = set()
+            for path in list(skills) + list(commands):
+                name = path.name.removesuffix('.md')
+                for kb in known_bundles:
+                    if name == kb or name.startswith(f'{kb}-'):
+                        matched.add(kb)
+            if matched:
+                return matched
+
     bundles: set[str] = set()
     for path in list(skills) + list(commands):
         name = path.name.removesuffix('.md')
@@ -331,7 +353,7 @@ def main(argv: list[str] | None = None) -> int:
     agents = _enumerate_source_agents(source)
     commands = _enumerate_source_commands(source, only_bundle)
 
-    if not skills and not agents and not commands:
+    if not skills and not agents and not commands and not (source / 'opencode.json').is_file():
         msg = f'source contains no emit output: {source}'
         sys.stdout.write(_emit_toon(status='error', deployed=[], removed=[], summary_message=msg, dry_run=dry_run))
         return 1

@@ -227,6 +227,20 @@ def test_sync_opencode_preserves_unmanaged_skill_matching_other_bundle(tmp_path:
     assert (dest / 'skills' / 'other-bundle-stuff' / 'SKILL.md').is_file()
 
 
+def test_sync_opencode_preserves_user_entry_that_shares_bundle_prefix(tmp_path: Path):
+    source = tmp_path / 'src' / 'opencode'
+    dest = tmp_path / 'dest'
+    _make_source(source)
+    # An unrelated user entry whose name starts with the truncated first-hyphen
+    # token of a synced bundle (e.g. "plan-" from "plan-marshall"). Exact bundle
+    # name resolution must NOT treat it as managed, so it survives pruning.
+    _write(dest / 'skills' / 'plan-my-personal-tool' / 'SKILL.md', '# mine\n')
+
+    result = _run('--source', str(source), '--target-dir', str(dest))
+    assert result.returncode == 0, result.stderr
+    assert (dest / 'skills' / 'plan-my-personal-tool' / 'SKILL.md').is_file()
+
+
 # ---------------------------------------------------------------------------
 # --bundles subsetting
 # ---------------------------------------------------------------------------

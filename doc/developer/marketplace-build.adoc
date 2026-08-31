@@ -225,8 +225,11 @@ from a distribution ref exercises the distribution path, not the inner loop. It
 is **validation-gated**: the OpenCode consumption path against the distribution
 refs is unverified on a live client (see `distribution.adoc`).
 
-Each option is exercised without a live OpenCode session: generate, sync into a
-temp `--target-dir`, and diff the resulting plural tree against expectations.
+Options (a) and (b) are each exercised without a live OpenCode session:
+generate, sync into a temp `--target-dir`, and diff the resulting plural tree
+against expectations. Option (c) is different — it installs from a distribution
+ref, which only a live client can exercise — so it stays explicitly pending
+live-client validation.
 
 == Registered marketplace path
 
