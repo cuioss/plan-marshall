@@ -337,6 +337,7 @@ exclude = [
     "test/finalize-step-deploy-target/",
     "test/finalize-step-sync-plugin-cache/",
     "test/sync-plugin-cache/",
+    "test/sync-opencode/",
     "test/pm-documents/ref-ascii-diagrams/",
     "test/plan-marshall/audit-archived-plan-retrospectives/",
     "test/plan-marshall/execute-task/",

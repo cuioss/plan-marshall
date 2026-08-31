@@ -170,6 +170,67 @@ For plan-marshall itself, the cache-deploy steps — `project:finalize-step-depl
 
 This is meta-project-only: a consumer project has no derived-state finalize steps, so its `minimal` floor carries none. For the execution-profile lane mechanism the postures act on, see xref:../user/configuration.adoc#execution-profile-lane-selection[User Guide → Configuration → Execution-profile lane selection].
 
+== OpenCode inner loop (meta-project only)
+
+The Claude inner loop is one command: edit `marketplace/bundles/`, run
+`/sync-plugin-cache`, done. The OpenCode inner loop is the same shape,
+via the project-local `/sync-opencode` skill:
+
+```bash
+uv run python marketplace/targets/generate.py --target opencode --output target/opencode
+/sync-opencode
+```
+
+The middle hop (`target/opencode/`) is produced by the OpenCode generator
+(see _Adapter System_ above — the emitter and its singular
+`skill/`/`agent`/`command/` layout are documented next to the code under
+`marketplace/targets/opencode/`, and are not restated here). `/sync-opencode`
+deploys that tree into an OpenCode config directory with the singular→plural
+directory rename OpenCode expects, removes stale **managed** entries (those in
+the `{bundle}-{skill}` namespace of the bundles being synced) while never
+touching unmanaged user entries or agents, and reports its actions as a TOON
+document. It is the exact counterpart of `/sync-plugin-cache` for the OpenCode
+target, and like that skill it is project-local — consumer projects never
+generate OpenCode output. See `.claude/skills/sync-opencode/SKILL.md` for the
+source-of-truth statement and parameters table.
+
+The reopen-closed loop is then the same as Claude's: edit source, regenerate,
+`/sync-opencode`, verify against a temp target (`--target-dir`) to avoid
+perturbing a live config dir.
+
+=== Deploy options and precedence
+
+The destination of a sync is one of three:
+
+*(a) Sync into the global config dir (daily work).* The default
+`~/.config/opencode/` is where OpenCode reads user-level configuration, and
+`/sync-opencode` writes there by default. Suitable for day-to-day iteration.
+
+*(b) Point `OPENCODE_CONFIG_DIR` at a plural-renamed staging copy.* `sync-opencode`
+accepts `--target-dir`, so a staging copy can be produced and validated before
+the global dir is touched. Two properties of this path must be stated:
+
+- A **committed project-local `.opencode/` shadows the env-var directory.** When
+  a project root carries its own `.opencode/`, OpenCode resolves that over
+  `OPENCODE_CONFIG_DIR`, so the env var only takes effect for a target directory
+  outside such a project — or a project with no `.opencode/`.
+- The env var **cannot** point at the singular `target/opencode/` directly. The
+  generated tree is singular-layout (`skill/`/`agent`/`command/`), and the
+  singular→plural rename is exactly what `/sync-opencode` performs. Pointing the
+  var at `target/opencode/` yields a directory OpenCode does not discover
+  components from.
+
+*(c) A marketplace-install path.* Installing the distributed OpenCode bundle
+from a distribution ref exercises the distribution path, not the inner loop. It
+is **validation-gated**: the OpenCode consumption path against the distribution
+refs is unverified on a live client (see `distribution.adoc`).
+
+Options (a) and (b) are each exercised without a live OpenCode session:
+generate, sync into a temp `--target-dir`, and diff the resulting plural tree
+against expectations. Option (c) is different — it installs from a distribution
+ref, which only a live client can exercise — so it stays explicitly pending
+live-client validation.
+
 == Registered marketplace path
 
 The Claude Code marketplace registration MUST point at `target/claude/`, not at the source `marketplace/` directory. The source `marketplace/bundles/<bundle>/.claude-plugin/plugin.json` declares only the canonical agent files; the build target expands each role-eligible agent into per-level variants (`{name}-level-1.md` through `{name}-level-7.md` — seven suffix variants, with `-level-6` and `-level-7` alias-capability-gated) under `target/claude/<bundle>/agents/` and emits a variant-aware `plugin.json` plus a top-level `target/claude/.claude-plugin/marketplace.json`. Registering the source path makes Claude Code's plugin loader install only the canonicals, so every dispatch site that resolves to `execution-context-{level}` fails with `Agent type not found`.
