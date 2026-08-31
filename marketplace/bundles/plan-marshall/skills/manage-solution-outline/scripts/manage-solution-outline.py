@@ -180,6 +180,36 @@ def validate_solution_structure(content: str) -> tuple[list[str], list[str], dic
 #: The bucket value asserting a deliverable changes no code.
 _DOCUMENTATION_ONLY_BUCKET = 'documentation_only'
 
+def _declared_bucket_vocabulary() -> tuple[str, ...] | None:
+    """The file-type bucket vocabulary, READ from its one authority.
+
+    Delegates to ``_manifest_core.CLASSIFICATION_BUCKETS`` — the same shared
+    constants module this file already reaches into for
+    ``_is_documentation_path`` — rather than restating the names here. The
+    predecessor was a hand-copied mirror of the normative table in
+    ``phase-3-outline/standards/outline-workflow-detail.md``, and a mirror of a
+    set defined elsewhere warns on a VALID declaration the moment the classifier
+    gains or renames a bucket. Its test read the same local copy, so neither side
+    could see the drift.
+
+    The parser upstream accepts any ``[a-z_]+``, so a misspelling reaches this
+    layer looking like a bucket and — before the membership check — was read as
+    one: the contradiction test compares against ``documentation_only`` by
+    equality, so ``documentaton_only`` silently took the not-equal branch and the
+    deliverable passed.
+
+    Returns ``None`` when the authority cannot be imported, so the caller reports
+    the value as UNCHECKED rather than treating an unavailable vocabulary as a
+    passing membership test. The import is deferred and fail-open for the same
+    reason :func:`_write_set_is_all_documentation`'s is: outline validation must
+    not hard-fail because a sibling skill's module is off the current path.
+    """
+    try:
+        from _manifest_core import CLASSIFICATION_BUCKETS
+    except ImportError:
+        return None
+    return tuple(CLASSIFICATION_BUCKETS)
+
 
 def _write_set_is_all_documentation(write_set: list[str]) -> bool | None:
     """Whether EVERY declared write is documentation by the owner-less rule.
@@ -205,8 +235,13 @@ def _write_set_is_all_documentation(write_set: list[str]) -> bool | None:
 
 def _check_declared_bucket(
     num: int, deliverable: dict[str, Any], write_set: list[str]
-) -> list[str]:
+) -> tuple[list[str], list[str]]:
     """Check the recorded ``<!-- bucket: X -->`` against the declared write-set.
+
+    Returns ``(errors, warnings)``. Only the one PROVABLE contradiction below is
+    an error; everything else this function can observe about the bucket is a
+    warning, because an error would reject outlines that are merely
+    under-declared rather than wrong.
 
     The bucket is the audit trail for the deliverable's profile assignment, and
     it was authored by hand and read back by nobody — so a bucket that
@@ -236,22 +271,91 @@ def _check_declared_bucket(
     approximated. Approximating it is the second-weaker-classifier defect this
     check exists to catch, and building one here would be committing it.
 
-    A deliverable with an empty write-set is skipped — a verification-only
-    deliverable declares no writes, so there is nothing for a bucket to
-    contradict.
+    A deliverable with an empty write-set is skipped for the contradiction test
+    — a verification-only deliverable declares no writes, so there is nothing
+    for a bucket to contradict.
+
+    **The states that used to return silently clean now say something.** Each
+    was indistinguishable from "checked, and the bucket is fine":
+
+    - **No bucket declared at all** over a non-empty write-set. The bucket is
+      the audit trail for the profile assignment, so an absent one means the
+      classifier was never applied — the exact condition this check exists to
+      catch, and the one it was blind to. A WARNING, not an error: outlines
+      predating the required-recording rule carry no bucket comment, and
+      failing them would reject documents that are merely older than the rule.
+    - **A declared value outside the bucket vocabulary.** The upstream parser
+      accepts any ``[a-z_]+``, and the contradiction test below is an equality
+      check, so a misspelling took the not-``documentation_only`` branch and
+      passed. A warning rather than an error: the vocabulary is now READ from
+      ``_manifest_core.CLASSIFICATION_BUCKETS`` (see
+      :func:`_declared_bucket_vocabulary`) instead of mirrored here, so it tracks
+      the classifier rather than gating it, but a value this validator rejects
+      may still be one a consumer means to introduce.
+    - **The bucket vocabulary could not be imported.** Reported as an UNCHECKED
+      value with the authority named — an un-run membership test must not render
+      identically to one that ran and accepted the bucket, which is the same
+      absent-versus-measured distinction the predicate state below carries.
+    - **The documentation predicate could not be imported.** The fail-open
+      returns ``None``, and ``not None`` is truthy, so the un-run check took the
+      same early return as a check that ran and found no contradiction. The
+      warning names the unavailable predicate so an ImportError is legible as
+      itself rather than as a clean result.
     """
     declared = deliverable.get('declared_bucket')
-    if not declared or not write_set:
-        return []
-    if declared.strip().lower() == _DOCUMENTATION_ONLY_BUCKET:
-        return []
-    if not _write_set_is_all_documentation(write_set):
-        return []
+    warnings: list[str] = []
+    normalized = declared.strip().lower() if declared else ''
+
+    if normalized:
+        vocabulary = _declared_bucket_vocabulary()
+        if vocabulary is None:
+            # An unavailable vocabulary is an UNCHECKED value, never a valid one.
+            # Staying silent here would make an un-run membership test render
+            # identically to one that ran and accepted the bucket.
+            warnings.append(
+                f'D{num}: declared bucket {declared!r} was NOT checked — the bucket '
+                f'vocabulary (_manifest_core.CLASSIFICATION_BUCKETS) could not be '
+                f'imported, so no membership test ran against it. This says nothing '
+                f'about whether the value is a real bucket.'
+            )
+        elif normalized not in vocabulary:
+            warnings.append(
+                f'D{num}: declared bucket {declared!r} is not one of the documented '
+                f'file-type buckets ({", ".join(vocabulary)}). The '
+                f'bucket comment is parsed as free-form text, so an unrecognized '
+                f'value is not compared against the write-set at all.'
+            )
+    elif write_set:
+        warnings.append(
+            f'D{num}: no file-type bucket declared, but the deliverable writes '
+            f'{len(write_set)} file(s). Record the resolved bucket as '
+            f'`**Profiles:** <!-- bucket: X -->` — without it there is no audit '
+            f'trail that the file-type classifier was applied to this deliverable.'
+        )
+
+    # Everything below is the write-set contradiction test, which needs both a
+    # declared bucket to test and a write-set to test it against.
+    if not normalized or not write_set:
+        return [], warnings
+    if normalized == _DOCUMENTATION_ONLY_BUCKET:
+        return [], warnings
+
+    all_documentation = _write_set_is_all_documentation(write_set)
+    if all_documentation is None:
+        warnings.append(
+            f'D{num}: bucket/write-set agreement was NOT checked — the '
+            f'`_manifest_core._is_documentation_path` predicate could not be '
+            f'imported, so the declared bucket {declared!r} stands unverified. '
+            f'This is the fail-open path, not a clean result.'
+        )
+        return [], warnings
+    if not all_documentation:
+        return [], warnings
     return [
         f'D{num}: declared bucket {declared!r} contradicts the write-set, in which '
         f'every changed file is documentation: {write_set}. A file declared '
         f'(read) is consulted, not changed, and must not decide the bucket.'
-    ]
+    ], warnings
 
 
 def validate_deliverable_contract(deliverable: dict[str, Any]) -> tuple[list[str], list[str]]:
@@ -336,8 +440,12 @@ def validate_deliverable_contract(deliverable: dict[str, Any]) -> tuple[list[str
                 f'write-set (expected paths containing: test/, Test., _test., test_, .test., spec/)'
             )
 
-    # Check 2c: the declared file-type bucket must agree with the write-set.
-    errors.extend(_check_declared_bucket(num, deliverable, write_set))
+    # Check 2c: the declared file-type bucket must agree with the write-set —
+    # and must be present and spelled like a bucket in the first place. Only the
+    # provable contradiction is an error; the rest is reported as warnings.
+    bucket_errors, bucket_warnings = _check_declared_bucket(num, deliverable, write_set)
+    errors.extend(bucket_errors)
+    warnings.extend(bucket_warnings)
 
     # Check 3: Affected files section
     #

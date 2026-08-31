@@ -73,7 +73,7 @@ For every scanned plan the script joins these structured inputs:
 | `work/metrics.toon` | per-phase `duration_seconds` | plan wall-clock denominator (build-vs-wall-clock share + the invariant) |
 | `logs/script-execution.log` | per-call `notation subcommand (N.NNs)` lines (timestamp-ordered) | call timeline, per-phase call counts, arch-call count, consecutive-dup, **and the OLD log-derived build seconds kept only as the delta baseline** |
 | `logs/work.log` | `[DISPATCH] role=phase-N` markers; `module-tests`/`quality-gate`/`verify`/`coverage`/`compile` verb mentions | phase segmentation, per-role dispatch counts (phase-reentry), build-verb scope mining |
-| `references.json` | `modified_files` / `affected_files` list | docs-only footprint (`.py` presence) |
+| `references.json` | the realized footprint path set, tier-resolved (`realized_footprint` → `merge_commit_sha` → `modified_files`); the declared `affected_files` list only when no tier resolves | docs-only footprint (`.py` presence) |
 | `status.json::metadata` | `change_type` | docs-only classification |
 | `artifacts/ci-runs/` | directory count | `ci_runs` (CI re-run signal) |
 

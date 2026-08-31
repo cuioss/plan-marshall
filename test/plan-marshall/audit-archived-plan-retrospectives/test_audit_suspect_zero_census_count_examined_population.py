@@ -245,3 +245,41 @@ class TestPopulationKeyCoverage:
         for key in _EXAMINED_POPULATION_KEYS:
             block = f"check: x\nstatus: success\n{key}: 0\n"
             assert audit._examined_population(block, 7) == 0, key
+
+
+class TestPopulationReaderIsPerKeyNotAnAlternation:
+    """The reader's STRUCTURE, pinned separately from its behaviour.
+
+    `test_audit_examined_population_precedence.py` pins what the reader ANSWERS.
+    This class pins how it is BUILT, because the two failure modes are different:
+    a single alternation returns the earliest match in the TEXT rather than the
+    earliest alternative in the PATTERN, so it silently substitutes the block's
+    print order for the documented key order while still answering correctly on
+    every block that happens to print the canonical key first.
+
+    A structural pin is what makes the regression visible on such a block too.
+    """
+
+    def test_one_pattern_per_key_in_the_same_order(self):
+        # Derived from the key tuple, never restated: a key added to
+        # `_EXAMINED_POPULATION_KEYS` without a pattern (or in a different order)
+        # fails here rather than degrading precedence silently.
+        assert [key for key, _ in audit._EXAMINED_POPULATION_PATTERNS] == list(
+            audit._EXAMINED_POPULATION_KEYS
+        )
+
+    def test_no_pattern_matches_a_foreign_key(self):
+        """Each compiled pattern is anchored to its OWN key.
+
+        The negative control for the loop: were any pattern still an alternation,
+        it would match a sibling key's line and the per-key iteration would return
+        the wrong key's value while looking correct.
+        """
+        for key, pattern in audit._EXAMINED_POPULATION_PATTERNS:
+            for other in audit._EXAMINED_POPULATION_KEYS:
+                block = f"check: x\nstatus: success\n{other}: 4\n"
+                matched = pattern.search(block) is not None
+                assert matched == (other == key), (
+                    f"pattern for {key!r} {'matched' if matched else 'missed'} "
+                    f"a block declaring only {other!r}"
+                )

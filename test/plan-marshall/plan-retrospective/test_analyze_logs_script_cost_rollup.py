@@ -33,16 +33,50 @@ class TestArtifactEmissionPopulation:
     emission defect: it is satisfied by any single artifact even when most
     completed tasks emitted none. These tests pin the population statement that
     makes that partiality legible.
+
+    ⛔ The FINDING population is change-qualified, and ``change_attribution`` is
+    the field that decides whether it exists at all. ``completed_tasks`` /
+    ``tasks_with_artifacts`` are raw provenance over every ``status: done`` task;
+    ``eligible_tasks`` / ``eligible_tasks_with_artifacts`` — done AND recorded as
+    having changed a file — are what a finding may be drawn from, and those keys
+    are ABSENT when no task record carries a ``changed_files`` list. Every test
+    below therefore asserts which state its own fixture is in — ``measured``
+    where it stages a qualified population, ``unavailable`` where it stages none
+    — because a silence earned by the dormant state is a different fact from a
+    silence earned by complete emission, and a test that could not tell them
+    apart would read the dormancy as a clean pass. Whether a recorded NO-OP task
+    inflates the eligible population is the neighbouring contract, pinned in
+    ``test_retrospective_checks_input_availability.py``.
     """
 
-    def _setup(self, tmp_path, monkeypatch, *, done_tasks, artifact_task_nums, plan_id):
+    def _setup(
+        self,
+        tmp_path,
+        monkeypatch,
+        *,
+        done_tasks,
+        artifact_task_nums,
+        plan_id,
+        record_changed_files=True,
+    ):
+        """Stage a live plan whose completed tasks are all change-qualified.
+
+        Each completed task records a NON-EMPTY ``changed_files`` list, so the
+        eligible population equals the raw one and every finding below is drawn
+        from a measured attribution. ``record_changed_files=False`` writes no
+        ``changed_files`` key on any task at all — the attribution-unavailable
+        state, in which no emission finding may be made.
+        """
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch, plan_id=plan_id)
         tasks_dir = plan_dir / 'tasks'
         for existing in tasks_dir.glob('TASK-*.json'):
             existing.unlink()
         for num in done_tasks:
+            record = {'number': num, 'deliverable': 1, 'status': 'done'}
+            if record_changed_files:
+                record['changed_files'] = [f'src/f{num}.py']
             (tasks_dir / f'TASK-{num:03d}.json').write_text(
-                json.dumps({'number': num, 'deliverable': 1, 'status': 'done'}),
+                json.dumps(record),
                 encoding='utf-8',
             )
         lines = [
@@ -58,7 +92,9 @@ class TestArtifactEmissionPopulation:
         return plan_id, plan_dir
 
     def test_partial_emission_reported_as_population(self, tmp_path, monkeypatch):
-        # 3 completed tasks, only task 1 emitted a per-task [ARTIFACT] line.
+        # 3 change-qualified completed tasks, only task 1 emitted a per-task
+        # [ARTIFACT] line — every task in the population is recorded as having
+        # changed a file, so the shortfall is real and the guard must BITE.
         plan_id, _ = self._setup(
             tmp_path, monkeypatch, done_tasks=[1, 2, 3], artifact_task_nums=[1],
             plan_id='retro-artifact-partial',
@@ -70,11 +106,54 @@ class TestArtifactEmissionPopulation:
         emission = data['artifact_emission']
         assert int(emission['completed_tasks']) == 3
         assert int(emission['tasks_with_artifacts']) == 1
+        assert emission['change_attribution'] == 'measured'
+        assert int(emission['eligible_tasks']) == 3
+        assert int(emission['eligible_tasks_with_artifacts']) == 1
         # The bare non-zero floor is SATISFIED (>= 1 artifact), yet partiality is
         # surfaced — the exact defect D4 closes.
         assert int(data['counts']['artifact_entries']) >= 1
         findings = data.get('findings') or []
         assert any('ARTIFACT_EMISSION_PARTIAL' in f.get('message', '') for f in findings), findings
+
+    def test_the_same_shortfall_without_attribution_is_dormant_not_a_finding(
+        self, tmp_path, monkeypatch
+    ):
+        """⛔ The matched negative: one variable flipped, and the guard goes quiet.
+
+        The fixture of the test above with the ONE difference that no task record
+        carries a ``changed_files`` key. Nothing substantiates which of the three
+        completed tasks was even eligible to emit, so the shortfall is an UNKNOWN
+        and PARTIAL must not fire — while the dormancy itself is PUBLISHED, so a
+        consumer reads "not attributable" rather than nothing at all. The sibling
+        module pins this gate on the ABSENT branch; this pins it on PARTIAL, the
+        branch the un-qualified population used to fire from.
+
+        The eligible keys are ABSENT rather than zero: a zero there is
+        indistinguishable from a measured empty population.
+        """
+        plan_id, _ = self._setup(
+            tmp_path, monkeypatch, done_tasks=[1, 2, 3], artifact_task_nums=[1],
+            plan_id='retro-artifact-partial-unattributed',
+            record_changed_files=False,
+        )
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+
+        emission = data['artifact_emission']
+        # The RAW provenance is published unchanged from the measured case, which
+        # is what makes the two fixtures comparable rather than one going blank.
+        assert int(emission['completed_tasks']) == 3
+        assert int(emission['tasks_with_artifacts']) == 1
+        assert emission['change_attribution'] == 'unavailable'
+        assert emission['change_attribution_reason']
+        for key in ('eligible_tasks', 'eligible_tasks_with_artifacts'):
+            assert key not in emission, (
+                f'{key} must be ABSENT when attribution is unavailable — a zero '
+                'there is indistinguishable from a measured empty population'
+            )
+        findings = data.get('findings') or []
+        assert not any('ARTIFACT_EMISSION' in f.get('message', '') for f in findings), findings
 
     def test_complete_emission_raises_no_partial_finding(self, tmp_path, monkeypatch):
         plan_id, _ = self._setup(
@@ -88,12 +167,20 @@ class TestArtifactEmissionPopulation:
         emission = data['artifact_emission']
         assert int(emission['completed_tasks']) == 2
         assert int(emission['tasks_with_artifacts']) == 2
+        # The silence below is a MEASURED one — earned by complete emission over a
+        # qualified population, not by the dormant unavailable state.
+        assert emission['change_attribution'] == 'measured'
+        assert int(emission['eligible_tasks']) == 2
+        assert int(emission['eligible_tasks_with_artifacts']) == 2
         findings = data.get('findings') or []
         assert not any('ARTIFACT_EMISSION_PARTIAL' in f.get('message', '') for f in findings), findings
 
     def test_population_always_published_even_with_no_per_task_emission(self, tmp_path, monkeypatch):
-        # Population is published even at N == 0 so a consumer reads N-of-M
-        # rather than inferring a total from a floor; no partiality finding at 0.
+        # Population is published even at N == 0 so a consumer reads N-of-M rather
+        # than inferring a total from a floor. PARTIAL is the interior-range
+        # finding and is not owed here; the N == 0 case has its own finding
+        # (ARTIFACT_EMISSION_ABSENT), gated on the plan's footprint and pinned with
+        # both its controls in test_retrospective_checks_input_availability.py.
         plan_id, _ = self._setup(
             tmp_path, monkeypatch, done_tasks=[1, 2], artifact_task_nums=[],
             plan_id='retro-artifact-none',
@@ -105,6 +192,11 @@ class TestArtifactEmissionPopulation:
         emission = data['artifact_emission']
         assert int(emission['completed_tasks']) == 2
         assert int(emission['tasks_with_artifacts']) == 0
+        # Measured-and-empty, never unavailable: both tasks are recorded as having
+        # changed a file, so this zero is a MEASUREMENT of the eligible set.
+        assert emission['change_attribution'] == 'measured'
+        assert int(emission['eligible_tasks']) == 2
+        assert int(emission['eligible_tasks_with_artifacts']) == 0
         findings = data.get('findings') or []
         assert not any('ARTIFACT_EMISSION_PARTIAL' in f.get('message', '') for f in findings), findings
 

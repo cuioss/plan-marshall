@@ -83,7 +83,7 @@ structured inputs:
 | Input | Field(s) read | Used for |
 |-------|---------------|----------|
 | `work/metrics.toon` | per-phase `total_tokens` (sections `1-init` … `6-finalize`), top-level `session_message_count` | total tokens, per-phase shares, execute-blindness, long-session |
-| `references.json` | `scope_estimate`, `modified_files` / `affected_files` count | footprint (`files`), scope aggregate |
+| `references.json` | `scope_estimate`; the realized footprint's cardinality, tier-resolved (`realized_footprint` → `merge_commit_sha` → `modified_files`), falling back to the declared `affected_files` count only when no tier resolves | footprint (`files`), scope aggregate |
 | `status.json::metadata` | `change_type` | change_type aggregate |
 | `tasks/TASK-*.json` | file count | `tasks`, `tokens_per_task` |
 
@@ -113,7 +113,7 @@ For each plan the script computes:
 |----------|------------|
 | `total_tokens` | Sum of every phase's `total_tokens` (gross — this check measures the whole 6-phase workflow tax, so it does NOT exclude retrospective spend the way the `metrics` / `token-efficiency-trend` checks do). |
 | per-phase share | Each phase's `total_tokens` / `total_tokens`. |
-| `tokens_per_file` | `total_tokens // files` (files = `modified_files` count, falling back to `affected_files`). |
+| `tokens_per_file` | `total_tokens // files` (files = the realized footprint's cardinality, tier-resolved `realized_footprint` → `merge_commit_sha` → `modified_files`; the declared `affected_files` count only when NO tier resolves — a tier answering with an empty set is a resolved `0`, not a fall-through). |
 | `tokens_per_task` | `total_tokens // tasks` (task count = `tasks/TASK-*.json`). |
 | `session_message_count` | The top-level `metrics.toon` scalar. |
 | `change_type`, `scope` | Joined from `status.json::metadata` and `references.json`. |

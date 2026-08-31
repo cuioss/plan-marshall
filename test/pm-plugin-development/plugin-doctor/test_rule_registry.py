@@ -16,10 +16,9 @@ The HARD acceptance contract these tests pin:
    ``default_on`` / ``has_fixer`` flags.
 2. No duplicate ``rule_id`` across the registry; the collector raises
    ``ValueError`` on a collision rather than silently shadowing.
-3. The descriptor-derived opt-in set equals
-   ``frozenset({'argument_naming', 'verb_chain', 'script_call_drift'})``, and
-   the value ``doctor-marketplace.py`` consumes (``_OPTIN_RULE_NAMES``) is the
-   same derived set.
+3. The descriptor-derived opt-in set equals :data:`EXPECTED_OPTIN_RULE_NAMES`,
+   and the value ``doctor-marketplace.py`` consumes (``_OPTIN_RULE_NAMES``) is
+   the same derived set.
 4. The derived opt-in set drives byte-identical active-rule gating through
    ``doctor-marketplace.py``'s ``_parse_rules_flag`` / ``_resolve_active_rules``.
 5. Every module in ``_DESCRIPTOR_MODULES`` contributes at least one descriptor
@@ -56,7 +55,28 @@ sys.path.insert(0, str(_FILE_OPS_DIR))
 
 # The canonical opt-in rule token set; the regression target the registry
 # derivation must reproduce.
-PRIOR_OPTIN_RULE_NAMES = frozenset({'argument_naming', 'verb_chain', 'script_call_drift'})
+#
+# Hand-maintained ON PURPOSE. Deriving it from the registry would make the
+# assertions below tautological — the derivation would be compared against
+# itself, and a rule that silently flipped its ``opt_in`` flag would sail
+# through. Adding a member here is therefore a deliberate act that must be
+# justified, which is the whole value of the literal.
+#
+# ``documented_verb_set_drift`` is opt-in by construction, not by oversight: the
+# ``quality-gate`` status is severity-blind (``'fail' if all_issues else
+# 'pass'``), so it has no registered-but-non-failing mode and any default-on
+# finding turns the tree red. The rule ships discoverable via
+# ``analyze --rules documented_verb_set_drift`` until either its drift count is
+# driven to zero or the gate learns the severity split ``test-conventions``
+# already has. See ``_analyze_documented_verb_set_drift.RULE_DESCRIPTOR``.
+EXPECTED_OPTIN_RULE_NAMES = frozenset(
+    {
+        'argument_naming',
+        'verb_chain',
+        'script_call_drift',
+        'documented_verb_set_drift',
+    }
+)
 
 VALID_SCOPES = frozenset({'file-local', 'corpus-relational'})
 VALID_SEVERITIES = frozenset({'error', 'warning', 'info', 'tip'})
@@ -246,10 +266,10 @@ def test_askuserquestion_reachability_rule_registered_non_gating():
 # =============================================================================
 
 
-def test_optin_rule_names_matches_prior_literal():
-    """The descriptor-derived opt-in set equals the pre-D4 hand-maintained literal."""
+def test_optin_rule_names_matches_expected_literal():
+    """The descriptor-derived opt-in set equals the hand-maintained literal."""
     reg = _load_registry()
-    assert reg.optin_rule_names() == PRIOR_OPTIN_RULE_NAMES
+    assert reg.optin_rule_names() == EXPECTED_OPTIN_RULE_NAMES
 
 
 def test_optin_rule_names_returns_frozenset():
@@ -258,11 +278,11 @@ def test_optin_rule_names_returns_frozenset():
     assert isinstance(reg.optin_rule_names(), frozenset)
 
 
-def test_opt_in_descriptors_are_exactly_the_prior_set():
-    """The set of descriptors flagged ``opt_in`` equals the prior opt-in literal."""
+def test_opt_in_descriptors_are_exactly_the_expected_set():
+    """The set of descriptors flagged ``opt_in`` equals the expected opt-in literal."""
     reg = _load_registry()
     opt_in_ids = {descriptor.rule_id for descriptor in reg.get_registry() if descriptor.opt_in}
-    assert opt_in_ids == PRIOR_OPTIN_RULE_NAMES
+    assert opt_in_ids == EXPECTED_OPTIN_RULE_NAMES
 
 
 def test_non_opt_in_descriptors_are_excluded_from_the_optin_set():
@@ -284,14 +304,23 @@ def test_non_opt_in_descriptors_are_excluded_from_the_optin_set():
 def test_doctor_marketplace_optin_names_are_the_derived_set():
     """``doctor-marketplace.py`` consumes the registry-derived opt-in set."""
     doctor = _load_doctor_marketplace()
-    assert doctor._OPTIN_RULE_NAMES == PRIOR_OPTIN_RULE_NAMES
+    assert doctor._OPTIN_RULE_NAMES == EXPECTED_OPTIN_RULE_NAMES
 
 
 def test_parse_rules_flag_accepts_every_opt_in_token():
-    """Every derived opt-in token survives ``_parse_rules_flag`` selection."""
+    """Every derived opt-in token survives ``_parse_rules_flag`` selection.
+
+    The ``--rules`` string is BUILT from the derived set rather than hand-listed.
+    A literal token list would make the name's "every" claim vacuous: it would
+    keep asserting completeness over whatever three tokens it was written with,
+    so a newly-registered opt-in rule that ``_parse_rules_flag`` silently
+    rejected would leave this test green. The population it iterates is the
+    population it claims to cover.
+    """
     doctor = _load_doctor_marketplace()
-    selected = doctor._parse_rules_flag('argument_naming,verb_chain,script_call_drift')
-    assert selected == PRIOR_OPTIN_RULE_NAMES
+    every_token = ','.join(sorted(doctor._OPTIN_RULE_NAMES))
+    selected = doctor._parse_rules_flag(every_token)
+    assert selected == EXPECTED_OPTIN_RULE_NAMES
 
 
 def test_parse_rules_flag_selects_a_single_token():

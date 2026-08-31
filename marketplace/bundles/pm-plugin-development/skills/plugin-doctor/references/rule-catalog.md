@@ -250,7 +250,7 @@ The `ARGUMENT_NAMING_*` rule cluster cross-checks marketplace prose against the 
 - **Rationale**: A shim left unmarked carries no owner, no record of *what* old shape it tolerates, and no record of *since when* — so nobody can prove it is safe to delete, and shims accumulate silently. Two finding kinds: `shim_marker_malformed` (a `# SHIM` anchor missing a required field — zero false positives by construction) and `shim_unmarked` (a high-precision shim indicator in a comment not covered by a marker in its enclosing function).
 - **Discovery approach**: Pure static analysis, stdlib-only, no subprocess, no file mutation. Comments are read via `tokenize` (COMMENT tokens only — never docstrings or string literals, so the analyzer's own regex phrases and doc examples never self-trigger) and function spans via `ast`. The population is derived from the script tree (never a hardcoded path list). Implemented in `_analyze_shim_marker.py::analyze_shim_marker`; wired into `cmd_quality_gate` (build-failing) and `cmd_analyze`.
 - **False-positive boundary (the load-bearing part)**: prose vocabulary cannot cleanly separate a shim from defensive code — "legacy", "written before", "backward compatibility", and "pre-dating" all appear in BOTH real shims and non-shims (defensive `None`-handling, CLI/env-var compatibility, external-system variance, and deliberate breaking *refusals* of the old shape). So the indicator set is deliberately NARROW — it favours a false negative over a false positive (a detector that fires on defensive code is a regression). The negative test cases (ordinary `None`-handling; a write-side guard that *rejects* a retired key; a caller that merely *triggers* a migration) are as load-bearing as the positive ones.
-- **Measured recall (what the narrowness costs)**: the trade is published as a number rather than described. Each conforming marker in the real tree is stripped from a copy of its file and the site re-scanned: of **24** conforming marker anchors, **4** still produce a finding once the marker is gone. The other 20 are invisible to the indicator set, because the only shim vocabulary in the file is inside the marker block itself. So the rule's real-tree zero-findings anchor is evidence that *the indicator set fires on nothing in the current tree* — never that every shim is marked, and never that a new unmarked shim would turn it red. The harness is `test_analyze_shim_marker.py::test_measured_recall_over_the_real_marked_population`; re-derive both figures there and here together, since a change to the indicator set is meant to move them visibly.
+- **Measured recall (what the narrowness costs)**: the trade is published as a number rather than described. Each conforming marker in the real tree is stripped from a copy of its file and the site re-scanned: of **25** conforming marker anchors, **4** still produce a finding once the marker is gone. The other 21 are invisible to the indicator set, because the only shim vocabulary in the file is inside the marker block itself. So the rule's real-tree zero-findings anchor is evidence that *the indicator set fires on nothing in the current tree* — never that every shim is marked, and never that a new unmarked shim would turn it red. The harness is `test_analyze_shim_marker.py::test_measured_recall_over_the_real_marked_population`; re-derive both figures there and here together, since a change to the indicator set is meant to move them visibly.
 - **Anti-vacuity guard**: every finding publishes the `population_size` it examined, and an EMPTY script population over a non-empty bundles tree emits its own finding — so a clean result can never read as a vacuous pass over an unread population. The finding is anchored at the marketplace root, and `cmd_quality_gate` keeps a root-anchored finding unfiltered (`_finding_is_tree_wide`), so the guard survives a `--paths`-scoped run rather than being dropped by the scope filter.
 - **Fix**: Add a conforming `# SHIM(A|B):` marker (owner + version floor + removal trigger) at the shim's definition site, or — if the flagged code is ordinary defensive / CLI / external handling rather than a version shim — reword the comment so it does not read as a shim.
 - **Exemptions**: None at the rule level; the precision-first indicator set is the boundary. Re-export shims are out of scope (governed by `SIMPLICITY_BACKWARD_COMPAT_REEXPORT`).
@@ -567,6 +567,54 @@ This analyzer scopes its scan to `bash`/`sh` fences and therefore carries NO mar
 - **Post hoc (the plan-retrospective `script-failure-analysis` pass)** — mines `script-execution.log` and `work.log` for argparse rejections, catching drift that reached a real dispatch.
 
 Sharing one derivation across the first two points is the load-bearing property for `manage-invocation-invalid` and `ARGUMENT_NAMING_*`: those rules and the dispatch-time rejection read the same accept-set, so they cannot disagree about what a script accepts. `script-call-drift` does not share it. This rule keeps its own independent probe — a separate `--help` subprocess call, its own usage-line choices parser, its own options-block flag parser, and its own per-process cache — and that probe reads flags from argparse's `options:` block only (see **Detection logic** step 3). `argparse_surface` instead deliberately harvests every long token anywhere in the `--help` output, because a section-scoped scan omits a flag declared inside a custom argument group and would reject a valid call. Such a flag is `flag_not_in_options` under this rule at edit time while the executor accepts it at dispatch — the two checks CAN disagree about what a script accepts, unlike the `manage-invocation-invalid`/`ARGUMENT_NAMING_*` pair.
+
+**Suppression mechanism**: None — fix the prose or the argparse declaration to converge.
+
+---
+
+## Rule Pack: Documented-verb-set drift
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `documented-verb-set-drift` | Compare a script's AST-derived registered top-level verb SET against the verb set its skill's fenced bash invocations document, in both directions | Fail-closed: any derivation the AST walk cannot trust is reported as a SKIP finding naming the reason, never as a clean pass. An empty derived verb set is treated as a derivation failure, never as "registers nothing" | None — fix the documentation or the argparse declaration to converge |
+
+### documented-verb-set-drift
+
+**Rule ID**: `documented-verb-set-drift` (opt-in token: `documented_verb_set_drift`)
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_documented_verb_set_drift.py`
+
+**Scope**: Every skill whose `SKILL.md` carries a `## Canonical invocations` heading. The population is derived from the bundle tree at call time and published as `details.population_size` on every finding; an empty population over a non-empty tree emits its own finding rather than reading as a clean pass.
+
+**Intent**: Detect verb-set drift structurally, in the direction no existing rule covers. `verb_missing_from_docs` reports a registered verb carrying no fenced example invocation — a class that per-invocation analysis structurally cannot see, because an undocumented verb appears in no invocation for such a rule to inspect.
+
+**Detection logic**:
+1. Derive the population (skills with a canonical-invocations block).
+2. For each documented invocation naming a script of that same skill, collect the first verb of its chain.
+3. Derive the skill's OWNED entry scripts from disk — `scripts/*.py` carrying an `if __name__ == '__main__':` guard — and take the candidate set as the **union** of those and the documented notations.
+4. AST-walk each candidate script for `add_parser` calls, resolving each to its owning parser, and take the ROOT parser's children — each call's verb name together with any `aliases=[...]` it declares — as the registered set.
+5. Emit `verb_missing_from_docs` for registered − documented, and `phantom_documented_verb` for documented − registered.
+
+⛔ **Step 3's union is what makes `verb_missing_from_docs` reachable.** Walking only the documented notations meant a skill containing a CLI script with NO fenced invocation created no candidate entry at all: it never reached the verb derivation and the rule returned CLEAN over it — a detector that could not fire, of exactly the class it exists to detect. An owned entry script absent from the docs is now compared against an EMPTY documented set, so every verb it registers is reported. The entry-script discriminator is the `__main__` guard rather than a leading-underscore filter, because this tree carries non-underscore helper MODULES that are imported and never invoked; a file that cannot be read or parsed is admitted anyway and reported as a skip, never resolved to "not an entry script".
+
+**Fail-closed contract**: the rule SKIPS rather than passes whenever the registered set is not trustworthy, emitting `verb_set_drift_skipped` with a `reason` of `unreadable_script`, `unparseable_script`, `dynamic_verb_registration`, `unresolved_subparser_group`, `no_root_parser_resolved`, or `no_subparser_registration_in_file`. The skip count is the rule's own coverage gap and is reported, never absorbed.
+
+⛔ **`no_root_parser_resolved` is the fail-open this rule most needs to refuse.** `add_parser` calls exist but none attaches to a recognised root parser, so the derived set is empty through derivation failure rather than observation. Treating that emptiness as authoritative reports every documented verb as a phantom: measured during development, doing so produced **60 phantom findings** on the live tree, and the spot-checked ones were all real registered verbs. This is why the analyzer does not reuse `_analyze_verb_chains.build_subparser_tree`, whose bare `{}` return cannot distinguish unreadable, unparseable, and genuinely-subparser-free.
+
+**Relationship to `manage-invocation-invalid`**: the `phantom_documented_verb` class OVERLAPS that default-on rule, which already rejects a documented invocation naming an unregistered subcommand via a live `--help` walk. The two differ in unit of analysis — one written invocation versus two SETS — and a consumer running both should expect the phantom findings to corroborate rather than add to it. `verb_missing_from_docs` carries this rule's independent value.
+
+**Scope caveat**: the documentation side of the comparison is *fenced bash invocations*, not documentation in general. A verb described only in a prose verb table is reported, and the finding message states that narrower fact. `manage-tasks loop-exit-guard` is the worked example — a full table row and a dedicated section, and no fenced invocation.
+
+**Activation**: Opt-in via `--rules documented_verb_set_drift` on the `analyze` subcommand. **NOT registered in `quality-gate`.**
+
+⛔ **Why not gate-registered, and the promotion proposal.** `cmd_quality_gate` derives its status as `'fail' if all_issues else 'pass'` — it is **severity-blind**, so it has no registered-but-non-failing mode; any finding turns the tree red. Only `cmd_test_conventions` derives status from error-severity findings alone (`'fail' if error_count else 'pass'`), and its scope is the test tree, not the bundle tree. With a standing non-zero finding count this rule cannot be gate-registered without leaving the tree red, so it lands discoverable and opt-in instead.
+
+**Promotion requires EITHER** of the two, and is deliberately left as a proposal rather than taken here:
+
+1. Drive the drift count to zero (add the missing fenced invocations), then register it in `run_quality_gate`; or
+2. Teach `cmd_quality_gate` the severity split `cmd_test_conventions` already implements, and register the rule at `warning` severity.
+
+**Baseline**: no absolute population, finding or skip count is recorded here. Every one of them moves on any commit that adds a script, a verb, or a fenced invocation — so a written-down number is stale by the next commit, and a reader comparing against it would be measuring the document rather than the tree. Read the live figures from a run: each finding publishes `details.population_size`, and `analyze --rules documented_verb_set_drift` reports the finding and skip breakdown. The standing count is non-zero, which is why the rule is opt-in rather than gate-registered (above); the whole-tree `quality-gate` verdict is unaffected either way, because this rule is not in that rule set.
 
 **Suppression mechanism**: None — fix the prose or the argparse declaration to converge.
 

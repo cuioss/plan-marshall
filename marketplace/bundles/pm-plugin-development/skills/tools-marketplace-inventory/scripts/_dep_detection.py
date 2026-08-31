@@ -45,6 +45,18 @@ class Exclusion(Enum):
     CANONICAL_COMMAND = 'canonical-command'
     DECISION_LOG = 'decision-log'
     EMBEDDED_TOKEN = 'embedded-token'
+    # The five formerly-unconditional skips. They were `continue` statements that
+    # discarded a match before it could be recorded, which made them FAIL-OPEN: a
+    # genuine reference written on a comment line, on a line that happens to also
+    # carry a URL, or inside a token whose segments look scheme-like or numeric was
+    # dropped outright and could never be reported. Recorded as shapes instead, they
+    # obey the same rule as every other exclusion — the shape says where to look,
+    # and the index decides on existence.
+    COMMENT_LINE = 'comment-line'
+    URL_LINE = 'url-line'
+    URI_SCHEME = 'uri-scheme'
+    VERSION_COORDINATE = 'version-coordinate'
+    PORT_SEGMENT = 'port-segment'
 
 
 # The only excluded shape whose third segment can still name a verb.
@@ -105,6 +117,12 @@ class Dependency:
     context: str  # Location (line number, field name)
     resolved: bool = True  # False if target doesn't exist
     exclusion: Exclusion | None = None  # Non-reference shape matched; see below
+    #: Set by the INDEX (never the detector) when the notation named a real entry
+    #: script but a verb that script does not register. It is what keeps such a row
+    #: DISCLOSED: an excluded shape that resolves to nothing is normally dropped, and
+    #: without this flag a refused retarget would take that drop path and vanish —
+    #: turning a newly-detectable broken reference into a silent deletion.
+    verb_unregistered: bool = False
 
 
 # ``exclusion`` is how the non-reference exclusions below stay FAIL-CLOSED.
@@ -312,28 +330,28 @@ def detect_script_notations(content: str, source: ComponentId) -> list[Dependenc
     pattern_3part = r'\b([\w-]+):([\w-]+):([\w-]+)\b'
 
     for line_num, line in enumerate(content.split('\n'), 1):
-        # Skip comments in code
+        # Line-level shapes, evaluated once per line. These are recorded as
+        # exclusions rather than skipping the line, so a genuine reference sitting
+        # on a comment line or beside a URL still reaches the index.
         stripped = line.strip()
         if stripped.startswith('#') or stripped.startswith('//'):
-            continue
-
-        # Skip lines that look like URLs
-        if re.search(r'https?://', line):
-            continue
+            line_exclusion: Exclusion | None = Exclusion.COMMENT_LINE
+        elif re.search(r'https?://', line):
+            line_exclusion = Exclusion.URL_LINE
+        else:
+            line_exclusion = None
 
         for match in re.finditer(pattern_3part, line):
             bundle, skill, script = match.groups()
-            # Filter out common false positives
-            if bundle in ('http', 'https', 'file', 'mailto'):
-                continue
-            # Avoid version numbers like 1.0:2.0:3.0
-            if bundle[0].isdigit():
-                continue
-            # Skip if skill looks like a port number (all digits)
-            if skill.isdigit():
-                continue
             # Non-reference shapes. The ARM is recorded, never dropped here —
             # the index keeps any that turn out to name a real component.
+            #
+            # Match-level shapes are tested BEFORE the line-level one because they
+            # are the more specific statement about the token: a documentation
+            # placeholder is a placeholder whether or not it sits in a comment. The
+            # line-level shape is the fallback, so every arm still names the most
+            # precise reason the match was excluded.
+            exclusion: Exclusion | None
             if _has_placeholder_segment(bundle, skill, script):
                 exclusion = Exclusion.PLACEHOLDER
             elif _is_canonical_command(match.group(0)):
@@ -342,8 +360,16 @@ def detect_script_notations(content: str, source: ComponentId) -> list[Dependenc
                 exclusion = Exclusion.DECISION_LOG
             elif _is_embedded_in_longer_token(line, match.start(), match.end()):
                 exclusion = Exclusion.EMBEDDED_TOKEN
+            elif bundle in ('http', 'https', 'file', 'mailto'):
+                exclusion = Exclusion.URI_SCHEME
+            elif bundle[0].isdigit():
+                # A version coordinate such as `1.0:2.0:3.0`.
+                exclusion = Exclusion.VERSION_COORDINATE
+            elif skill.isdigit():
+                # An all-digit middle segment is a port, as in `host:8080:path`.
+                exclusion = Exclusion.PORT_SEGMENT
             else:
-                exclusion = None
+                exclusion = line_exclusion
 
             target = ComponentId(
                 bundle=bundle,

@@ -969,14 +969,66 @@ def artifact_emission_population(
     artifacts produced" when the real signal may be "emission was bypassed" — a
     count-based detector cannot guard a per-item emission defect.
 
-    This states BOTH numbers instead — ``N of M completed tasks emitted >= 1
-    [ARTIFACT] line`` — so a consumer cannot read a partial count as a total.
-    ``M`` (``completed_tasks``) is the completed-task population (task files with
-    ``status: done``); ``N`` (``tasks_with_artifacts``) is the subset carrying at
-    least one per-task artifact line. Tasks are keyed by their numeric id so the
-    ``TASK-007`` file matches an ``…:7)`` caller regardless of zero-padding.
+    ⛔ That floor is not merely weak, it is DEAD: ``artifact_entries`` counts
+    ``[ARTIFACT]`` lines from EVERY caller, and ``phase-1-init`` emits its own
+    unconditionally, so no real plan can reach zero. Nothing may be deferred to
+    it. The per-task population below is the only detector of this class that can
+    fire, which is why its consumer grades ``N == 0`` itself rather than leaving
+    it to the plan-level count.
+
+    This states BOTH numbers instead — ``N of M`` — so a consumer cannot read a
+    partial count as a total. ``completed_tasks`` and ``tasks_with_artifacts``
+    are the RAW figures over every ``status: done`` task file; tasks are keyed by
+    their numeric id so the ``TASK-007`` file matches an ``…:7)`` caller
+    regardless of zero-padding.
+
+    ⛔ **The raw figures are provenance, NOT the finding population.** A completed
+    task with an empty diff emits no ``[ARTIFACT]`` line BY DESIGN, so counting
+    every completed task into ``M`` charged compliant no-op tasks — a
+    verification task, a task whose file another task had already written — as
+    emission gaps, and enough of them pushed a healthy plan into
+    ``ARTIFACT_EMISSION_PARTIAL`` or ``ARTIFACT_EMISSION_ABSENT``. The plan-level
+    footprint does not repair that: it is a property of the plan, not evidence
+    that any particular task changed a file.
+
+    The finding population is therefore CHANGE-QUALIFIED, and both halves come
+    from the same eligible set: ``eligible_tasks`` (done AND recorded as having
+    changed at least one file) and ``eligible_tasks_with_artifacts`` (the subset
+    of THOSE carrying a per-task artifact line).
+
+    ⛔ **``change_attribution`` is the field to read FIRST, and the eligible keys
+    are ABSENT when it is ``unavailable``.** Per-task change attribution is not
+    recoverable from the offline inputs unless a task record carries it: the
+    per-task SHA range is not persisted in a stable place (the same limit
+    :func:`detect_outcome_for_diffed_tasks` documents). A task record supplies it
+    only by carrying a ``changed_files`` LIST — present-and-empty means "recorded,
+    and this task changed nothing", which is a measurement.
+
+    ⛔ ``measured`` therefore requires that list on EVERY completed task, not on
+    at least one. A completed task lacking the key joins neither the changed set
+    nor the unchanged one, so qualifying the population while any record is
+    missing draws BOTH halves from the recorded subset alone and silently narrows
+    the population to it. That is not a hypothetical: one recorded task that
+    changed files and emitted no line, alongside nine unrecorded completed tasks
+    that all emitted one, reads as ``eligible_tasks: 1`` /
+    ``eligible_tasks_with_artifacts: 0`` and fires ``ARTIFACT_EMISSION_ABSENT`` —
+    the false ABSENT the change-qualification exists to remove, re-entering
+    through the discriminator meant to prevent it. Partial recording is not full
+    measurement.
+
+    Two distinct states therefore report ``unavailable``, and
+    ``change_attribution_reason`` names which: NO completed record carries the
+    list, and a MIXED corpus where some do and some do not. Their remedies differ
+    — the first needs recording turned on, the second needs the gap closed — so an
+    operator must be able to tell them apart. In either state the eligible keys
+    are omitted rather than set to zero, so a consumer that gates on them finds no
+    key instead of a false zero, and the caller emits NO finding. An unqualified
+    count MUST NOT be substituted — that is the absent-read-as-measured swap this
+    aspect exists to prevent.
     """
     done_task_nums: set[int] = set()
+    changed_task_nums: set[int] = set()
+    recorded_task_nums: set[int] = set()
     tasks_dir = plan_dir / 'tasks'
     if tasks_dir.exists():
         for task_path in sorted(tasks_dir.glob('TASK-*.json')):
@@ -987,8 +1039,17 @@ def artifact_emission_population(
             if task_data.get('status') != 'done':
                 continue
             num_match = re.search(r'TASK-(\d+)', task_path.stem)
-            if num_match:
-                done_task_nums.add(int(num_match.group(1)))
+            if not num_match:
+                continue
+            num = int(num_match.group(1))
+            done_task_nums.add(num)
+            changed_files = task_data.get('changed_files')
+            if isinstance(changed_files, list):
+                # Presence of the LIST is the measurement; its emptiness is a
+                # recorded "this task changed nothing", not an absence of record.
+                recorded_task_nums.add(num)
+                if changed_files:
+                    changed_task_nums.add(num)
 
     artifact_task_nums: set[int] = set()
     for line in work_log_lines:
@@ -998,11 +1059,48 @@ def artifact_emission_population(
 
     emitted = done_task_nums & artifact_task_nums
     missing = sorted(done_task_nums - artifact_task_nums)
-    return {
+    population: dict[str, Any] = {
         'completed_tasks': len(done_task_nums),
         'tasks_with_artifacts': len(emitted),
         'tasks_without_artifacts': [f'TASK-{num:03d}' for num in missing],
     }
+
+    recorded_count = len(recorded_task_nums)
+    completed_count = len(done_task_nums)
+
+    if recorded_count == 0:
+        population['change_attribution'] = 'unavailable'
+        population['change_attribution_reason'] = (
+            'no completed task record carries a changed_files list, so no task '
+            'diff could be attributed; the eligible-task population is omitted '
+            'rather than reported as zero, and no emission finding is made'
+        )
+        return population
+
+    if recorded_count < completed_count:
+        # MIXED corpus — named separately from the no-record state above because
+        # the two have different remedies. Qualifying here would draw both halves
+        # of the eligible population from the recorded subset alone, excluding
+        # every completed task whose change set was never recorded.
+        population['change_attribution'] = 'unavailable'
+        population['change_attribution_reason'] = (
+            f'only {recorded_count} of {completed_count} completed task records '
+            f'carry a changed_files list, so the eligible population would be '
+            f'drawn from that subset alone and would silently exclude every task '
+            f'whose change set was never recorded; partial recording is not full '
+            f'measurement, so the eligible-task population is omitted rather than '
+            f'reported over a narrowed population, and no emission finding is made'
+        )
+        return population
+
+    eligible_missing = sorted(changed_task_nums - artifact_task_nums)
+    population['change_attribution'] = 'measured'
+    population['eligible_tasks'] = len(changed_task_nums)
+    population['eligible_tasks_with_artifacts'] = len(changed_task_nums & artifact_task_nums)
+    population['eligible_tasks_without_artifacts'] = [
+        f'TASK-{num:03d}' for num in eligible_missing
+    ]
+    return population
 
 
 # Dispatch-boundary row schema, consumed from the producer's declared contract.
@@ -1720,29 +1818,75 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     # satisfied by a single artifact even when most completed tasks emitted none.
     # Stating ``N of M completed tasks emitted`` makes that partiality legible so a
     # consumer cannot read a partial count as a total. The population is ALWAYS
-    # published (below); the WARNING fires only for unambiguous partiality —
-    # ``0 < N < M`` — where the per-task emitting path is demonstrably in use yet
-    # incomplete. ``N == 0`` is left to the plan-level floor and the published
-    # population (a plan may simply not use per-task emission), and ``N == M`` is
-    # complete. The finding always carries both numbers, never a bare non-zero
-    # assertion.
+    # published (below); the guard fires across the whole incomplete range
+    # ``N < M``, not just the ``0 < N < M`` interior. ``N == 0`` USED to be
+    # deferred to the plan-level floor, and that deferral was to a check that can
+    # never fire: the floor counts ``[ARTIFACT]`` lines from every caller and
+    # ``phase-1-init`` emits one unconditionally, so the total-absence case was
+    # guarded by nothing at all.
+    #
+    # ``N == 0`` therefore gets its own message here, and the discriminator
+    # between its two causes is the plan's own footprint, already resolved above:
+    #   * footprint resolved and NON-EMPTY — the plan changed files and completed
+    #     tasks, yet not one task emitted. The emitting path was bypassed.
+    #   * footprint empty, or the ``FOOTPRINT_UNRESOLVED`` sentinel — "this plan
+    #     uses no per-task emission" and "emission was bypassed" are
+    #     indistinguishable, so NO finding is made. This is what keeps archived
+    #     plans predating per-task emission from suddenly reporting one; the
+    #     published population still states ``0 of M`` either way.
+    # ``N == M`` is complete. Every finding carries both numbers, never a bare
+    # non-zero assertion.
     artifact_emission = artifact_emission_population(work, plan_dir)
-    if 0 < artifact_emission['tasks_with_artifacts'] < artifact_emission['completed_tasks']:
-        missing_count = (
-            artifact_emission['completed_tasks'] - artifact_emission['tasks_with_artifacts']
-        )
-        findings.append(
-            {
-                'severity': 'warning',
-                'message': (
-                    f'ARTIFACT_EMISSION_PARTIAL: {artifact_emission["tasks_with_artifacts"]} of '
-                    f'{artifact_emission["completed_tasks"]} completed task(s) emitted >= 1 '
-                    f'[ARTIFACT] line ({missing_count} emitted none). A completed task with an '
-                    'empty diff legitimately emits nothing; a broad gap indicates the emitting '
-                    'path was bypassed. See logging-gap-analysis.md § ARTIFACT_EMISSION.'
-                ),
-            }
-        )
+    # ⛔ Read `change_attribution` FIRST. The finding population is the
+    # CHANGE-QUALIFIED one — a completed task with an empty diff emits nothing by
+    # design, so charging it as a gap fired on compliant no-op tasks. When no task
+    # record carries a `changed_files` list the eligible keys are ABSENT, and an
+    # absent population is an unknown: publish it and emit nothing, never
+    # substitute the unqualified completed-task count.
+    tasks_with_artifacts = artifact_emission.get('eligible_tasks_with_artifacts', 0)
+    completed_tasks = artifact_emission.get('eligible_tasks', 0)
+    # Read by the sentinel's NAME first: `FOOTPRINT_UNRESOLVED` is "could not
+    # look", an empty footprint is a resolved "nothing changed", and neither
+    # substantiates a bypass claim. The size is taken once here, inside the one
+    # place both states are excluded, so the message below cannot re-measure a
+    # footprint that may be the sentinel.
+    footprint_path_count = (
+        len(footprint) if footprint is not FOOTPRINT_UNRESOLVED and footprint else 0
+    )
+    footprint_non_empty = footprint_path_count > 0
+    attribution_measured = artifact_emission.get('change_attribution') == 'measured'
+    if attribution_measured and tasks_with_artifacts < completed_tasks:
+        missing_count = completed_tasks - tasks_with_artifacts
+        if tasks_with_artifacts > 0:
+            findings.append(
+                {
+                    'severity': 'warning',
+                    'message': (
+                        f'ARTIFACT_EMISSION_PARTIAL: {tasks_with_artifacts} of '
+                        f'{completed_tasks} change-qualified completed task(s) emitted >= 1 '
+                        f'[ARTIFACT] line ({missing_count} emitted none). Every task in this '
+                        'population is recorded as having changed at least one file, so a task '
+                        'with an empty diff cannot contribute to the gap and the shortfall is '
+                        'real. See logging-gap-analysis.md § ARTIFACT_EMISSION.'
+                    ),
+                }
+            )
+        elif footprint_non_empty:
+            findings.append(
+                {
+                    'severity': 'warning',
+                    'message': (
+                        f'ARTIFACT_EMISSION_ABSENT: 0 of {completed_tasks} change-qualified '
+                        'completed task(s) emitted a per-task [ARTIFACT] line, while the plan '
+                        f'footprint is non-empty ({footprint_path_count} path(s)) — so the '
+                        'emitting path was bypassed rather than the plan simply not using '
+                        'per-task emission. The plan-level artifact_entries floor cannot see '
+                        'this: it counts [ARTIFACT] lines from every caller, including the '
+                        'unconditional phase-1-init emission, so it never reaches zero on a '
+                        'real plan. See logging-gap-analysis.md § ARTIFACT_EMISSION.'
+                    ),
+                }
+            )
 
     # Phase-5 logging-gap fact extractors (lesson 2026-05-08-14-001).
     # Pure counting/pairing — judgement lives in the LLM rules.

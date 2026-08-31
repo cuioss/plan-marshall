@@ -375,6 +375,74 @@ class TestZeroReportingSectionNamesItsCheckedSet:
         assert written, 'precondition: the section must render'
         assert flagged == []
 
+    def test_an_all_unmeasured_counts_block_does_not_name_a_checked_set(self):
+        """A fully-populated, entirely self-declared-unmeasured ``counts`` is not attribution.
+
+        ⛔ D2's own headline scenario. ``counts`` is in the attribution vocabulary
+        because a populated count block usually names what was counted — but a
+        fragment that evaluated NOTHING publishes a fully-populated all-zero block
+        too, and its envelope is still ``status: success``, so route 1 of
+        ``_names_checked_set`` does not fire either. The log-less
+        ``check-dispatch-audit`` fragment is exactly this shape: every category
+        present, every count ``0``, every status ``not_evaluated``, nothing named.
+        It cleared the probe on the strength of a block that names nothing, which
+        is precisely the ambiguity the probe exists to report.
+
+        Asserted at BOTH levels — the narrowing predicate itself and the section
+        partition it decides — because a reader consults the section list, not the
+        helper.
+        """
+        counts = {
+            'total': 0,
+            'by_category': {
+                'shape_violation': {'count': 0, 'status': 'not_evaluated'},
+                'missing_dispatch_emission': {'count': 0, 'status': 'not_evaluated'},
+                'envelope_violation': {'count': 0, 'status': 'not_evaluated'},
+                'generic_subagent_violation': {'count': 0, 'status': 'not_evaluated'},
+            },
+        }
+        assert _cr._counts_names_population(counts) is False
+
+        fragments = {
+            'direct-gh-glab-usage': {
+                'status': 'success',
+                'plan_id': 'p',
+                'findings': [],
+                'counts': counts,
+            },
+        }
+        written, flagged = self._doc(fragments)
+        assert 'Direct gh/glab Usage' in written, 'precondition: the section must render'
+        assert 'Direct gh/glab Usage' in flagged
+
+    def test_a_counts_block_of_bare_integers_still_names_a_checked_set(self):
+        """The matched negative control — the narrowing is a READ, not a new rule.
+
+        The ``direct-gh-glab-usage`` shape: a ``counts`` block whose entries are
+        BARE integers declares nothing either way, and its producer really did
+        examine the population it counted over. Reading that silence as "named
+        nothing" would flag it on every healthy run — the cry-wolf failure
+        ``ZERO_ATTRIBUTION_FIELDS`` warns this probe against.
+
+        Without this control the guard above would be equally satisfied by a
+        narrowing that rejected every ``counts`` block, and the flag would carry no
+        information at all.
+        """
+        counts = {'total': 0, 'by_surface': {'log_leak': 0, 'diff_leak': 0}}
+        assert _cr._counts_names_population(counts) is True
+
+        fragments = {
+            'direct-gh-glab-usage': {
+                'status': 'success',
+                'plan_id': 'p',
+                'findings': [],
+                'counts': counts,
+            },
+        }
+        written, flagged = self._doc(fragments)
+        assert 'Direct gh/glab Usage' in written
+        assert 'Direct gh/glab Usage' not in flagged
+
     def test_probe_bites_only_on_the_defect_it_names(self):
         # Mutation check: the SAME fragment with its attribution restored must
         # stop being flagged. A probe that flagged both (or neither) would be

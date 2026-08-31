@@ -107,6 +107,24 @@ def _categories(data: dict) -> list[str]:
     return [f.get('category') for f in findings if isinstance(f, dict)]
 
 
+def _category(data: dict, name: str) -> dict:
+    """Return one ``counts.by_category`` entry — a STRUCTURED value, not an int.
+
+    Every entry carries ``count``, ``status`` and ``evaluated_population``. The
+    predecessor published a bare integer, which made ``count: 0`` under a
+    never-evaluated check and ``count: 0`` under an evaluated-clean one the same
+    bytes; a consumer reading the summary alone could not tell the two apart.
+    This accessor exists so every assertion below reads the count THROUGH the
+    structure and cannot silently go back to comparing a bare number.
+    """
+    entry = data['counts']['by_category'][name]
+    assert isinstance(entry, dict), (
+        f'counts.by_category.{name} must be a structured value carrying its own '
+        f'population and status, never a bare count; got {entry!r}'
+    )
+    return entry
+
+
 # ---------------------------------------------------------------------------
 # D1 — shape_violation: able to fail, population-derived, never a bare 0
 # ---------------------------------------------------------------------------
@@ -128,7 +146,13 @@ def test_shape_violation_not_evaluated_when_surface_b_empty(tmp_path, monkeypatc
     assert shape['status'] == 'not_evaluated'
     assert int(shape['evaluated_population']) == 0
     assert 'Surface B' in shape['reason']
-    assert int(data['counts']['by_category']['shape_violation']) == 0
+    # The summary entry must carry the same not_evaluated verdict the block does.
+    # A bare `0` here is the exact ambiguity the block above removed, reinstated
+    # one level up where most readers stop.
+    entry = _category(data, 'shape_violation')
+    assert int(entry['count']) == 0
+    assert entry['status'] == 'not_evaluated'
+    assert int(entry['evaluated_population']) == 0
 
 
 def test_shape_violation_fires_on_divergent_site(tmp_path, monkeypatch):
@@ -146,7 +170,9 @@ def test_shape_violation_fires_on_divergent_site(tmp_path, monkeypatch):
     assert shape['status'] == 'evaluated'
     assert int(shape['evaluated_population']) == 1
     assert int(shape['violations']) == 1
-    assert int(data['counts']['by_category']['shape_violation']) == 1
+    entry = _category(data, 'shape_violation')
+    assert int(entry['count']) == 1
+    assert entry['status'] == 'evaluated'
     assert 'shape_violation' in _categories(data)
 
 
@@ -413,7 +439,12 @@ def test_envelope_violation_on_non_execution_context_target(tmp_path, monkeypatc
         ],
     )
     data = _run(plan_id)
-    assert int(data['counts']['by_category']['envelope_violation']) == 1
+    entry = _category(data, 'envelope_violation')
+    assert int(entry['count']) == 1
+    assert entry['status'] == 'evaluated'
+    # The population is the [DISPATCH] spawn lines walked — published so a zero
+    # from an empty work log is not the same bytes as a zero from a clean one.
+    assert int(entry['evaluated_population']) == 1
     assert 'envelope_violation' in _categories(data)
 
 
@@ -427,7 +458,10 @@ def test_generic_subagent_violation_on_raw_task(tmp_path, monkeypatch):
         ],
     )
     data = _run(plan_id)
-    assert int(data['counts']['by_category']['generic_subagent_violation']) == 1
+    entry = _category(data, 'generic_subagent_violation')
+    assert int(entry['count']) == 1
+    assert entry['status'] == 'evaluated'
+    assert int(entry['evaluated_population']) == 1
     assert 'generic_subagent_violation' in _categories(data)
 
 
@@ -437,10 +471,36 @@ def test_generic_subagent_violation_on_raw_task(tmp_path, monkeypatch):
 
 
 def test_absent_inputs_degrade_cleanly(tmp_path, monkeypatch):
+    """Every input empty ⇒ every block says so. NOTHING grades as healthy here.
+
+    ⛔ The channel grade is ``not_evaluated``, NOT ``nominal``. A ``nominal``
+    grade is the audit stating it evaluated the channel and found it sound, and
+    over an all-empty input set there is nothing it could have evaluated. This
+    assertion is the inversion of the one it replaces: the predecessor pinned
+    ``nominal`` here, so the defect had a test defending it.
+    """
     plan_id = _write_plan(tmp_path, monkeypatch, work_lines=[], decision_lines=[])
     data = _run(plan_id)
 
     assert data['status'] == 'success'
     assert data['shape_violation']['status'] == 'not_evaluated'
     assert int(data['dispatch_coverage']['evaluated_population']) == 0
-    assert data['channel_completeness']['confidence'] == 'nominal'
+    channel = data['channel_completeness']
+    assert channel['confidence'] == 'not_evaluated'
+    assert channel['reason']
+    # The three checks whose own input surface is empty must say so in the summary.
+    for name in ('shape_violation', 'envelope_violation', 'generic_subagent_violation'):
+        entry = _category(data, name)
+        assert int(entry['count']) == 0
+        assert entry['status'] == 'not_evaluated', (
+            f'{name} reported a count of 0 under status {entry["status"]!r} over an '
+            'empty input surface — an evaluated-clean verdict over an empty evaluation'
+        )
+    # Coverage is DIFFERENT here, and the difference is the point: this fixture
+    # writes a status.json carrying a real (empty) metadata mapping, so the
+    # population WAS read and genuinely holds zero terminal finalize steps. That
+    # is a measured zero, and it must not be reported as "could not look".
+    coverage_entry = _category(data, 'missing_dispatch_emission')
+    assert int(coverage_entry['count']) == 0
+    assert coverage_entry['status'] == 'evaluated'
+    assert int(coverage_entry['evaluated_population']) == 0

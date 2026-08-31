@@ -187,9 +187,15 @@ def _fragment_has_payload(fragment: Any) -> bool:
     ``status`` and ``aspect`` are envelope metadata every fragment carries, so
     they never count as payload. Any other key whose value is not one of the
     empty sentinels (``None``, ``''``, ``[]``, ``{}``, ``False``) makes the
-    fragment non-empty. This is the discriminator between a benign omission
-    (the aspect genuinely produced nothing) and a loud drop (the aspect
-    produced content that ``should_emit`` nonetheless refused).
+    fragment non-empty.
+
+    ⛔ This is NOT the drop-versus-omit discriminator. It answers "does this dict
+    hold anything at all beyond its envelope?", which a clean run satisfies on
+    bookkeeping alone — the real ``script-failure-analysis`` fragment carries
+    ``plan_id`` and a ``total_failures: 0`` counter, so every plan with no script
+    failures reported a dropped section. The partition is decided by
+    :func:`_renders_usable_body`; this predicate serves the written-implies-
+    non-empty invariant via :func:`_fragment_renders_empty`.
 
     ``False`` is matched by identity, never by equality: ``False == 0`` and
     ``False == 0.0`` in Python, so an equality-based sentinel tuple would
@@ -234,6 +240,16 @@ def _names_checked_set(fragment: Any) -> bool:
     2. It publishes the population it examined, under one of
        :data:`retro_sections.ZERO_ATTRIBUTION_FIELDS`.
 
+    ⛔ **A non-empty ``counts`` dict alone is NOT route 2.** ``counts`` is a
+    member of that vocabulary because a populated count block usually names what
+    was counted — but a fragment that evaluated NOTHING publishes an
+    all-zero ``counts`` block too, and it is fully populated. The log-less
+    ``check-dispatch-audit`` fragment is exactly that: every category present,
+    every value ``0``, nothing named. It passed this probe on the strength of a
+    block that names nothing, which is the ambiguity the probe exists to report.
+    :func:`_counts_names_population` is the narrowing — see its docstring for the
+    two admissible shapes.
+
     The empty-sentinel tuple below deliberately EXCLUDES ``False``, which is
     filtered by a separate identity check — the same split ``_fragment_has_payload``
     makes, for the same reason. ``False == 0`` in Python, so folding ``False`` into
@@ -268,6 +284,17 @@ def _has_attribution_field(candidate: Any) -> bool:
 
     ``False`` is matched by identity for the reason spelled out in
     :func:`_names_checked_set` — a published population of ``0`` must survive.
+
+    ⛔ ``counts`` is admitted ONLY when it names a population, never on the
+    strength of being a non-empty dict. It is the one member of
+    :data:`retro_sections.ZERO_ATTRIBUTION_FIELDS` whose VALUE is itself a
+    container rather than a number or a roster, and a fragment that evaluated
+    nothing still publishes a fully-populated all-zero ``counts`` block — so
+    "``counts`` is non-empty" was satisfied by a block that names nothing. The
+    probe therefore descends one level into ``counts`` and asks the same question
+    of what it finds: a ``counts`` whose entries are themselves population-bearing
+    (or which carries a population field of its own) attributes the zero; a
+    ``counts`` of bare integers does not.
     """
     if not isinstance(candidate, dict):
         return False
@@ -275,9 +302,72 @@ def _has_attribution_field(candidate: Any) -> bool:
         value = candidate.get(field)
         if value is False:
             continue
-        if value not in (None, '', [], {}):
-            return True
+        if value in (None, '', [], {}):
+            continue
+        if field == 'counts':
+            if _counts_names_population(value):
+                return True
+            continue
+        return True
     return False
+
+
+def _counts_names_population(counts: Any) -> bool:
+    """Return True unless the ``counts`` block itself declares it evaluated nothing.
+
+    The narrowing is a READ of what the block already says, not a new vocabulary.
+    A producer whose count entries are STRUCTURED — each carrying its own
+    ``status`` alongside its number, the shape ``check-dispatch-audit`` emits for
+    every ``by_category`` member — is stating per entry whether that count came
+    from an evaluation. When EVERY such entry declares one of
+    :data:`retro_sections.ZERO_DECLARED_UNMEASURED_STATUSES`, the block has said
+    in its own output that nothing was evaluated, and a fragment whose only
+    attribution is that block has not named a checked set. That is precisely the
+    log-less case: all four categories present, every count ``0``, every status
+    ``not_evaluated``, and the fragment envelope nonetheless ``status: success``
+    so route 1 of :func:`_names_checked_set` does not fire.
+
+    Everything else attributes, and the breadth is deliberate. A ``counts`` block
+    of BARE integers declares nothing either way, and the producers that publish
+    one — ``direct-gh-glab-usage`` emits ``{total, by_surface: {...}}`` on every
+    clean run — are counting over a population they really did examine. Reading
+    silence as "named nothing" would flag them on every healthy run, which is the
+    cry-wolf failure ``retro_sections.ZERO_ATTRIBUTION_FIELDS`` warns this probe
+    against. Only an explicit self-declaration narrows the answer.
+    """
+    if not isinstance(counts, dict):
+        return False
+    declared_unmeasured = 0
+    declared_total = 0
+    for value in counts.values():
+        for entry in _iter_count_entries(value):
+            status = entry.get('status')
+            if not isinstance(status, str):
+                continue
+            declared_total += 1
+            if status in ZERO_DECLARED_UNMEASURED_STATUSES:
+                declared_unmeasured += 1
+    if declared_total > 0 and declared_unmeasured == declared_total:
+        return False
+    return True
+
+
+def _iter_count_entries(value: Any):
+    """Yield the dict entries of a ``counts`` value, one nesting level deep.
+
+    A count block publishes its structured entries either directly
+    (``counts[name] = {...}``) or under one grouping key
+    (``counts['by_category'][name] = {...}``). Both shapes are walked; the depth
+    stops there for the same reason :func:`_names_checked_set` bounds its own
+    probe — an unbounded walk would let any incidental nested dict decide the
+    answer.
+    """
+    if not isinstance(value, dict):
+        return
+    yield value
+    for nested in value.values():
+        if isinstance(nested, dict):
+            yield nested
 
 
 def _heading_to_fragment_key(fragments: dict[str, Any]) -> dict[str, str]:
@@ -485,6 +575,138 @@ def _fragment_renders_empty(fragment: Any) -> bool:
     return False
 
 
+def _renders_usable_body(fragment: Any) -> bool:
+    """Return True when rendering this section would put content in front of a reader.
+
+    This is THE discriminator for the non-emit partition: a fragment the gate
+    refused that would have rendered a usable body is a DROP (content the report
+    lost, and loud); one that would not is an OMISSION (nothing was lost).
+
+    It asks the RENDER path's own question rather than "does this dict hold
+    anything?" (:func:`_fragment_has_payload`), and the difference is the whole
+    fix. The two predicates agree only for the container test, so four shapes
+    were previously misfiled:
+
+    * The real clean-run ``script-failure-analysis`` fragment carries
+      ``plan_id`` and zero-valued counters beside its empty ``failures`` /
+      ``findings`` lists. Every one of those is payload, so a plan with no script
+      failures reported a dropped section and a run status of ``warning``.
+    * The skipped ``check-manifest-consistency`` and ``check-routing-decisions``
+      shapes carry a skip reason — payload again, and their shapes DIFFER
+      (routing carries no ``findings`` key at all), so neither follows from the
+      other.
+    * Symmetrically, a non-dict fragment carrying real prose reported NO payload
+      (``_fragment_has_payload`` is ``False`` for every non-dict) and vanished
+      into ``sections_omitted`` with ``dropped == []`` — a silent content loss.
+
+    ⛔ A key blocklist is NOT an alternative spelling of this. Stripping the
+    provenance keys still leaves ``total_failures: 0``, and a numeric zero is
+    deliberately payload (see :func:`_fragment_has_payload`) — so the clean-run
+    case survives every blocklist. Only asking what the renderer would produce
+    separates the two.
+
+    For a **dict** the body comes from :func:`render_section_body`, whose
+    reader-facing content is the ``summary`` prose and the ``findings`` bullets;
+    the trailing JSON dump is mechanical and is emitted for every fragment
+    whatsoever, so treating it as content would make the answer unconditionally
+    ``True`` and restore the defect. ``dispatch_boundaries`` reaches the same
+    answer for a different reason, stated here because the renderer does NOT
+    supply it: a fragment whose phases all report ``present: false`` carries only
+    per-phase bookkeeping, which is not reader-facing content, so "no phase
+    reports ``present: true``" is nothing to report. (The renderer's
+    ``_No dispatch-boundary artifacts present._`` line is NOT that mechanism — it
+    is printed only when the fragment is not a dict or is falsy. A non-empty
+    per-phase dict whose only phase carries ``present: false`` emits the table
+    header, skips the row at the ``present`` guard, and falls through to the JSON
+    dump of the full fragment. The classification stays as it is and is pinned by
+    ``test_no_present_phase_is_omitted``; only the premise was wrong.)
+
+    For a **non-dict** the reader-facing content IS the value, so emptiness is
+    judged by :func:`_fragment_renders_empty` — a bare non-empty string, int or
+    list renders a body and is therefore a drop.
+
+    ⛔ This predicate governs the NON-EMIT branch only. The emit path keeps
+    :func:`_fragment_renders_empty`, so an always-emitted clean fragment whose
+    content is a populated ``counts`` block beside an empty ``findings`` list —
+    ``direct-gh-glab-usage`` and ``execution-context-dispatch-audit`` on every
+    healthy run — still renders. Those sections are how a reader sees "evaluated,
+    and found sound", and routing them through this stricter question would
+    delete exactly that signal.
+
+    ⛔ It is the WHOLE answer for a conditional row and only HALF of it for the
+    Executive Summary, because that row is rendered by a different, single-keyed
+    renderer — see :func:`_exec_summary_is_drop`.
+    """
+    if isinstance(fragment, dict):
+        summary = fragment.get('summary')
+        if isinstance(summary, str) and summary.strip():
+            return True
+        findings = fragment.get('findings')
+        return isinstance(findings, list) and bool(findings)
+    return not _fragment_renders_empty(fragment)
+
+
+def _exec_summary_is_drop(exec_fragment: Any) -> bool:
+    """Return True when the non-emitted Executive Summary LOST content.
+
+    The same question :func:`_renders_usable_body` asks — *is there content this
+    section's renderer would have shown, or content it structurally cannot
+    show?* — instantiated against the Executive Summary's OWN renderer, which
+    differs from every other section's in the one way that makes the second half
+    of that question live.
+
+    ``build_document`` renders this section from ``summary`` ALONE (or from a
+    bare-string fragment). There is no :func:`render_section_body` fallback and
+    no trailing JSON dump, so a key OTHER than ``summary`` holds content that no
+    render path can ever put in front of a reader. On a conditional row the JSON
+    dump is TOTAL — every key the fragment carries is shown whenever the section
+    emits — so nothing there is structurally unshowable and the question collapses
+    to its reader-facing arm alone. That collapse is why
+    :func:`_renders_usable_body` is the whole answer there and only half of it
+    here; it is one question resolved against two renderers, not two rules.
+
+    The two clauses, in order:
+
+    * :func:`_renders_usable_body` — content the renderer WOULD have shown. It
+      carries the non-dict arm, which the payload predicate cannot: a bare ``0``
+      renders a value a reader can act on, and :func:`_fragment_has_payload`
+      reports ``False`` for every non-dict.
+    * :func:`_fragment_has_payload` — content the renderer CANNOT show, asked of
+      every key EXCEPT ``summary``. This is the clause that keeps a narrative
+      written to the WRONG key LOUD instead of letting it vanish into
+      ``sections_omitted`` with ``dropped == []``.
+
+    ⛔ ``summary`` is excluded from the payload question, and the exclusion is
+    load-bearing rather than tidy. ``summary`` is the one key this renderer
+    reads, and reaching this branch means what it held rendered to nothing — so
+    it is not unshowable content by definition of how it got here. Asking the
+    payload question of it anyway reported a fragment holding ONLY blanks as a
+    lost section: ``build_document`` tests ``exec_fragment.get('summary')``,
+    which is truthy for ``'   '``, so ``exec_text`` strips to empty and the row
+    takes this branch; :func:`_renders_usable_body` is ``False``, while
+    :func:`_fragment_has_payload` is ``True`` because ``'   '`` is none of the
+    ``None`` / ``''`` / ``[]`` / ``{}`` sentinels. The heading then landed in
+    ``sections_dropped`` and raised the run to ``warning`` with nothing lost —
+    and made ``{'summary': ''}`` a benign omission while ``{'summary': '   '}``
+    was a loud drop.
+
+    ⛔ The payload clause is confined to THIS branch and must not be carried back
+    to the conditional one, where it is the original defect: the real clean-run
+    ``script-failure-analysis`` fragment carries ``plan_id`` and zero-valued
+    counters — all payload — and reported a dropped section on every healthy run.
+    """
+    if _renders_usable_body(exec_fragment):
+        return True
+    if not isinstance(exec_fragment, dict):
+        # ``_fragment_has_payload`` is False for every non-dict, so this is the
+        # same answer the payload clause gave — stated directly rather than
+        # routed through a call whose dict-only contract would be re-read here.
+        return False
+    return _fragment_has_payload(
+        {key: value for key, value in exec_fragment.items() if key != 'summary'}
+    )
+
+
 def _heading_from_aspect_key(aspect_key: str) -> str:
     """Derive a human-readable section heading from an aspect key.
 
@@ -548,11 +770,14 @@ def build_document(
     for heading, fragment_key, trigger in SECTION_SPEC:
         if fragment_key == '_executive-summary':
             if not exec_text:
-                # Same discriminator the conditional sections use: a fragment
-                # that carried payload the renderer nonetheless could not turn
-                # into a body is a DROP; an absent or empty one is a benign
-                # omission.
-                if _fragment_has_payload(exec_fragment):
+                # Same question the conditional sections are partitioned by,
+                # resolved against THIS section's renderer: a fragment holding
+                # content the report will not show is a DROP; one holding none is
+                # a benign omission. This row renders from ``summary`` alone with
+                # no JSON-dump fallback, so the "cannot show" half of the question
+                # is live here and collapses to nothing on a conditional row —
+                # see ``_exec_summary_is_drop``.
+                if _exec_summary_is_drop(exec_fragment):
                     dropped.append(heading)
                 else:
                     omitted.append(heading)
@@ -561,12 +786,18 @@ def build_document(
             written.append(heading)
             continue
         if not should_emit(fragment_key, trigger, fragments):
-            # Partition the non-emit path: a section whose trigger fragment is
-            # absent or genuinely empty is a benign omission; a section whose
-            # trigger fragment carries real payload is a DROP — content the
-            # aspect produced that the gate refused — and must be loud.
-            trigger_fragment = fragments.get(trigger) if trigger is not None else None
-            if _fragment_has_payload(trigger_fragment):
+            # Partition the non-emit path by the render path's own question: a
+            # section that would have rendered a usable body is a DROP — content
+            # the aspect produced that the gate refused — and must be loud;
+            # anything else is a benign omission, because nothing was lost.
+            #
+            # The SECTION fragment is the subject, since it is what the renderer
+            # would have been handed. Every conditional row in ``SECTION_SPEC``
+            # is self-triggered (``trigger == fragment_key``), so this reads the
+            # same object the old trigger-keyed lookup did; naming the rendered
+            # key keeps the question and its subject in agreement if that ever
+            # stops being true.
+            if _renders_usable_body(fragments.get(fragment_key)):
                 dropped.append(heading)
             else:
                 omitted.append(heading)

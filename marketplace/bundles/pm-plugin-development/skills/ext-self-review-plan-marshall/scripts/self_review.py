@@ -42,6 +42,7 @@ from _references_core import (
     compute_plan_branch_diff,
 )
 from _self_review_detectors import (
+    _compute_delta_coverage,
     _detect_advertised_form_help_strings,
     _detect_contract_sources,
     _detect_count_prose,
@@ -126,10 +127,16 @@ def _format_scope_statement(
     noun = 'file' if files_in_scope == 1 else 'files'
     if surface_scope == 'delta':
         anchor = since_ref or 'the previous round'
+        # The demonstrative agrees with the same count the noun does. Reusing
+        # `noun` after a hard-coded plural `these` rendered "covers only these
+        # file" for a one-file delta — and a one-file delta is the commonest
+        # scoped round there is, so the sentence that exists to keep a narrow
+        # clean result from being over-read was itself misread as a typo.
+        demonstrative = 'this' if files_in_scope == 1 else 'these'
         return (
             f'searched delta scope: {files_in_scope} {noun} changed since '
-            f'{anchor} — a scoped round, so a clean result covers only these '
-            f'{noun}, NOT the full plan surface'
+            f'{anchor} — a scoped round, so a clean result covers only '
+            f'{demonstrative} {noun}, NOT the full plan surface'
         )
     return (
         f'searched full scope: {files_in_scope} {noun} across the whole plan diff'
@@ -407,6 +414,14 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         # from scope_statement so a caller reading either one cannot believe it has
         # both — see _format_structural_limit.
         'structural_limit': _format_structural_limit(),
+        # The third honesty field, and the only one computed FROM this round's own
+        # result: scope_statement says which files were searched and
+        # structural_limit says what the analysis can never evaluate, but neither
+        # says whether the round observed anything over the files it did search. A
+        # delta made entirely of content no detector emits for re-surfaces the
+        # previous round's candidates and returns clean; delta_coverage is what
+        # makes that round distinguishable from one that looked and found nothing.
+        'delta_coverage': _compute_delta_coverage(modified_files, detected),
         **_compose_candidate_output(detected),
     }
     output_toon(output)

@@ -15,7 +15,7 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from _dep_detection import (
     VERB_BEARING_EXCLUSIONS,
@@ -25,6 +25,7 @@ from _dep_detection import (
     detect_all_dependencies,
     extract_frontmatter,
 )
+from argparse_surface import derive_surface, is_derivable, resolve_executor
 from marketplace_bundles import resolve_bundles_root
 from marketplace_paths import get_bundle_cache_roots
 
@@ -478,9 +479,55 @@ def _entry_script_candidates(skill: str) -> tuple[str, ...]:
     return (skill, skill.replace('-', '_'), skill.replace('_', '-'))
 
 
+def _verb_is_registered(entry: ComponentId, verb: str, executor: Path | None) -> bool:
+    """Whether ``verb`` is a subcommand the entry script actually registers.
+
+    The retarget's premise is that the notation's third segment names a VERB of
+    the entry script. That premise was previously never tested, so a notation
+    naming a verb the script does not register resolved clean — the reference was
+    broken and the validator said nothing.
+
+    Ground truth is the script's own ``--help``-derived argparse surface, via the
+    shared ``argparse_surface`` module plugin-doctor's ``manage-invocation-invalid``
+    rule already uses; the accept-set therefore includes registered ALIASES, not
+    just canonical spellings.
+
+    ⛔ Returns True when no surface can be derived — no executor, a script whose
+    ``--help`` fails, or a probe budget exhausted. Absence of a surface is absence
+    of EVIDENCE, not evidence of absence, and manufacturing an unresolved row from
+    a failed probe would report a broken reference that is not broken. This
+    mirrors the established idiom in `_analyze_manage_invocation.derive_script_tree`,
+    where a non-derivable surface means "no ground truth here, emit nothing".
+    """
+    if executor is None:
+        return True
+    surface = derive_surface(entry.to_notation(), executor)
+    if not is_derivable(surface):
+        return True
+    return verb in surface.known_subcommands()
+
+
+class Retarget(NamedTuple):
+    """The outcome of attempting to resolve a notation onto an entry script.
+
+    Three distinct outcomes, which a bare ``ComponentId | None`` collapsed into
+    two: ``entry`` set (retargeted), and — both previously ``None`` — no entry
+    script to retarget onto versus an entry script that exists but does not
+    register the verb. The second of those is a BROKEN REFERENCE that must be
+    reported, while the first is merely a notation this resolver has nothing to
+    say about, so the caller has to tell them apart.
+    """
+
+    entry: ComponentId | None
+    verb_unregistered: bool = False
+
+
 def _entry_script_for_subcommand(
-    index: DependencyIndex, target: ComponentId, dep_type: DependencyType
-) -> ComponentId | None:
+    index: DependencyIndex,
+    target: ComponentId,
+    dep_type: DependencyType,
+    executor: Path | None = None,
+) -> Retarget:
     """Return the skill's entry script when ``target``'s final segment is a subcommand.
 
     A skill exposes ONE entry script named after the skill itself
@@ -498,6 +545,10 @@ def _entry_script_for_subcommand(
     unresolved — plugin-doctor is that case, since a `validate` verb in the
     script segment names neither a script nor a dispatchable verb of its entry
     script ``doctor-marketplace``.
+
+    Returns a :class:`Retarget`. ``verb_unregistered`` is set only on the one
+    outcome where the entry script EXISTS but does not register the verb — the
+    caller uses it to keep that row disclosed rather than dropped.
     """
     if dep_type is not DependencyType.SCRIPT_NOTATION:
         # Only a written notation can carry a verb in its script segment. A
@@ -505,9 +556,9 @@ def _entry_script_for_subcommand(
         # file from `extension_api`, not a verb of it — so retargeting an import
         # onto a same-named entry script would silently resolve a stale module
         # mapping that ought to be reported.
-        return None
+        return Retarget(None)
     if target.component_type != 'script' or not target.parent_skill:
-        return None
+        return Retarget(None)
     # A script segment that is the skill's own name in the WRONG CASE STYLE is a
     # misspelled script reference, not a verb. `plugin-doctor`'s
     # `manage-findings-invocation-invalid` rule names this exact defect — the
@@ -516,7 +567,7 @@ def _entry_script_for_subcommand(
     # retargeting it onto the entry script would suppress a finding the
     # repository deliberately raises.
     if _is_misspelled_script_segment(target):
-        return None
+        return Retarget(None)
     for entry_name in _entry_script_candidates(target.parent_skill):
         entry = ComponentId(
             bundle=target.bundle,
@@ -525,8 +576,68 @@ def _entry_script_for_subcommand(
             parent_skill=target.parent_skill,
         )
         if entry.to_notation() in index.components:
-            return entry
-    return None
+            # The entry script exists; the retarget is only sound if it actually
+            # registers the verb. When it does not, the notation names neither a
+            # script nor a dispatchable verb, so it stays unresolved rather than
+            # resolving onto a script that would reject the call.
+            if not _verb_is_registered(entry, target.name, executor):
+                return Retarget(None, verb_unregistered=True)
+            return Retarget(entry)
+    return Retarget(None)
+
+
+#: Why a dependency stayed unresolved. Every unresolved row carries exactly one.
+#:
+#: The partition is the one the SKILL's "Precision of `validate`" section already
+#: draws in prose: a target whose bundle IS indexed names a component that
+#: genuinely does not exist and is directly actionable, while a target whose
+#: bundle is not indexed at all may be an npm script name, a time literal or a
+#: Gradle coordinate and is not yet triaged. Reporting both under one undifferentiated
+#: `unresolved` list forced every reader to re-derive that split by hand, and a
+#: count over the union measured neither class.
+UNRESOLVED_REASON_UNKNOWN_BUNDLE = 'unknown-bundle'
+UNRESOLVED_REASON_MISSING_COMPONENT = 'missing-component'
+#: The entry script exists and was found, but does not register the named verb.
+#: Distinct from `missing-component`: the component IS there, so a reader chasing
+#: this row must look at the script's verb set rather than at whether it exists.
+UNRESOLVED_REASON_UNREGISTERED_VERB = 'unregistered-verb'
+
+#: Every reason a row can carry — published so a consumer can render a complete
+#: per-reason breakdown including the classes that scored zero. A breakdown built
+#: only from observed rows cannot distinguish "no row fell in this class" from
+#: "this class is not computed", which is the ambiguity this constant removes.
+UNRESOLVED_REASONS: tuple[str, ...] = (
+    UNRESOLVED_REASON_UNKNOWN_BUNDLE,
+    UNRESOLVED_REASON_MISSING_COMPONENT,
+    UNRESOLVED_REASON_UNREGISTERED_VERB,
+)
+
+
+def indexed_bundles(index: DependencyIndex) -> set[str]:
+    """The set of bundle names the index actually discovered components for.
+
+    Derived from the discovered components rather than from a directory listing,
+    so it names the bundles this run INDEXED — the only population against which
+    "the bundle is unknown" is a meaningful statement.
+    """
+    return {info.component_id.bundle for info in index.components.values()}
+
+
+def unresolved_reason(dep: Dependency, bundles: set[str]) -> str:
+    """Classify an unresolved dependency into :data:`UNRESOLVED_REASONS`.
+
+    `bundles` is the indexed-bundle set from :func:`indexed_bundles`, passed in
+    rather than recomputed per row so the classification of every row in a run is
+    made against one and the same population.
+    """
+    if dep.verb_unregistered:
+        # Tested first: the target component EXISTS, so the bundle-membership
+        # test below would label it `missing-component` and send the reader to
+        # look for a script that is there.
+        return UNRESOLVED_REASON_UNREGISTERED_VERB
+    if dep.target.bundle in bundles:
+        return UNRESOLVED_REASON_MISSING_COMPONENT
+    return UNRESOLVED_REASON_UNKNOWN_BUNDLE
 
 
 def _index_dependencies_from(
@@ -534,6 +645,7 @@ def _index_dependencies_from(
     file_path: Path,
     component_id: ComponentId,
     dep_types: set[DependencyType] | None,
+    executor: Path | None = None,
 ) -> None:
     """Detect dependencies in ``file_path`` and record them under ``component_id``.
 
@@ -554,18 +666,26 @@ def _index_dependencies_from(
             # or a meta-variable, and letting those retarget manufactured five false
             # edges onto `manage-lessons`.
             may_be_verb = not dep.exclusion or dep.exclusion in VERB_BEARING_EXCLUSIONS
-            entry = (
-                _entry_script_for_subcommand(index, dep.target, dep.dep_type)
+            retarget = (
+                _entry_script_for_subcommand(index, dep.target, dep.dep_type, executor)
                 if may_be_verb
-                else None
+                else Retarget(None)
             )
-            if entry is not None:
-                if entry.to_notation() == component_id.to_notation():
+            if retarget.entry is not None:
+                if retarget.entry.to_notation() == component_id.to_notation():
                     # An entry script documenting its OWN verbs. Retargeting that
                     # onto itself would manufacture a self-loop and report it as a
                     # circular dependency; a script is not dependent on itself.
                     continue
-                dep.target = entry
+                dep.target = retarget.entry
+            elif retarget.verb_unregistered:
+                # ⛔ Tested BEFORE the exclusion drop, and that order is the whole
+                # point. The entry script exists and the verb does not — a broken
+                # reference this validator can now prove. Falling through to the
+                # drop below would delete exactly the finding the check was added
+                # to surface, so the row is disclosed as unresolved instead.
+                dep.verb_unregistered = True
+                dep.resolved = False
             elif dep.exclusion:
                 # An excluded SHAPE that names no component and no verb — the
                 # only case in which a match is discarded.
@@ -590,6 +710,14 @@ def build_dependency_index(
     """
     index = DependencyIndex()
 
+    # Resolved ONCE per index build, not per retarget: the executor is what makes
+    # the entry script's argparse surface probeable, and re-resolving it per row
+    # would let the ground truth differ between rows of the same run. `None` means
+    # no executor is reachable, in which case verb validation abstains entirely.
+    # `base_path` is `marketplace/bundles`, so its parent is the `marketplace`
+    # directory `resolve_executor` documents as an accepted root.
+    executor = resolve_executor(base_path.parent)
+
     # Discover all components
     components = discover_components(base_path)
 
@@ -599,14 +727,16 @@ def build_dependency_index(
 
     # Detect dependencies for each component
     for component in components:
-        _index_dependencies_from(index, component.file_path, component.component_id, dep_types)
+        _index_dependencies_from(
+            index, component.file_path, component.component_id, dep_types, executor
+        )
 
     # Sub-documents are EDGE SOURCES, never components: an edge cited in
     # ``workflow/light-lane.md`` is attributed to the skill that owns the file.
     # ``ComponentId`` has no sub-document type, and inventing one would change
     # the component namespace that deps / rdeps / tree / validate all key on.
     for owner_id, subdoc_path in iter_skill_subdoc_edge_sources(base_path):
-        _index_dependencies_from(index, subdoc_path, owner_id, dep_types)
+        _index_dependencies_from(index, subdoc_path, owner_id, dep_types, executor)
 
     return index
 

@@ -52,6 +52,7 @@ findings[*]{severity,message}:
 - The ratio `observed / expected_min < 0.5` is a `warning`.
 - Zero `DECISION` entries in phases that made visible choices (outline packaging, plan task ordering) is always a `warning`.
 - Zero `ARTIFACT` entries is an `error` — artifacts were produced but not announced. `phase-5-execute` is expected to emit one `[ARTIFACT]` entry per file operation at task completion, so the canonical check is `counts.artifact_entries > 0` whenever the plan footprint is non-empty (recovered through the shared footprint resolver, whose declared `RESOLVING_TIERS` list is authoritative); this is enforced programmatically by the retrospective pipeline rather than being treated as a known offender.
+- ⛔ **That plan-level floor cannot fire on a real plan, and nothing may be deferred to it.** `artifact_entries` counts `[ARTIFACT]` lines from EVERY caller, and `phase-1-init` emits one unconditionally, so the count is never zero however completely per-task emission was bypassed. The per-task population rule below is the only detector of this class that can actually fire; read the floor as a structural backstop for a plan with no logs at all, never as the guard against missing per-task emission.
 - The floor is a **three-way** read of that footprint, not a truthiness test. A footprint no tier resolved is `None`, and it emits `ARTIFACT_COVERAGE_UNMEASURABLE` at `severity: warning` instead of the `error` above: nothing was measured, so nothing failed — but the check did not run, and an un-run check must not present as a clean one. A resolved-but-**empty** footprint is a genuine measurement (the plan touched nothing, so no `[ARTIFACT]` entry is expected) and emits no finding at all. Reading the unresolvable state as an empty footprint silently disables this floor, which is the defect the sentinel removes.
 - `ERROR` entries are expected to be zero; count them but do not flag count itself — the errors surface via log-analysis / script-failure-analysis.
 
@@ -101,6 +102,69 @@ deliverable. When the precondition is absent, the rule emits no finding.
   (`artifacts_after_outcome`), emit an `error`-severity finding. Plans
   without any `[OUTCOME]` line skip the new branch (the existing branch
   still applies).
+
+  The rule is stated as a POPULATION, `N of M change-qualified completed tasks
+  emitted >= 1 [ARTIFACT] line`, and both numbers are published on every run — a
+  partial count read as a total is the defect a bare non-zero assertion
+  produces.
+
+  ⛔ **`M` is CHANGE-QUALIFIED, and `N` is drawn from that same eligible set.**
+  `M` = task files with `status: done` **whose own task diff is non-empty**;
+  `N` = the subset of those carrying at least one per-task artifact line.
+  Counting every completed task into `M` was wrong in the one direction that
+  matters: Step 8 emits nothing when a task's diff is empty, so a compliant
+  no-op task — a verification task, a task whose edit another task already made
+  — lowered `N/M` while behaving exactly as specified, and enough of them pushed
+  a healthy plan into `ARTIFACT_EMISSION_PARTIAL` or, when every completed task
+  was a no-op, into `ARTIFACT_EMISSION_ABSENT`. A non-empty PLAN footprint does
+  not repair this: it is a property of the plan, not evidence that any
+  particular task changed a file.
+
+  ⛔ **When per-task change attribution is unavailable, emit NO finding.** The
+  qualification needs each task's own realized change set, which the offline
+  inputs carry only when a task record holds a `changed_files` LIST — the
+  per-task SHA range Step 8 diffs is not persisted in a stable place. A
+  present-but-empty list is a measurement ("this task changed nothing").
+
+  ⛔ `measured` requires that list on **every** completed task, not on at least
+  one. A completed task without the key joins neither the changed set nor the
+  unchanged one, so qualifying while any record is missing draws both `M` and `N`
+  from the recorded subset alone and silently narrows the population to it — one
+  recorded task that changed files and emitted no line, beside nine unrecorded
+  ones that all emitted, reads as `M=1` / `N=0` and fires
+  `ARTIFACT_EMISSION_ABSENT`. Partial recording is not full measurement. Two
+  states therefore report `unavailable` — no completed record carries the list,
+  and a MIXED corpus where some do and some do not — and the reason names which,
+  because the remedies differ.
+
+  The extractor publishes `change_attribution: measured | unavailable`, and it is
+  the field to read FIRST. On `measured` it also publishes `eligible_tasks` (`M`),
+  `eligible_tasks_with_artifacts` (`N`) and `eligible_tasks_without_artifacts`. On
+  `unavailable` those three keys are **ABSENT**, not zero — a consumer that gates
+  on them finds no key rather than a false zero — and a
+  `change_attribution_reason` names why. The un-qualified `completed_tasks` count
+  is published throughout as provenance and MUST NOT be substituted for `M`: that
+  is the absent-read-as-measured swap this whole aspect exists to prevent, and it
+  would reinstate exactly the false positive above.
+
+  Two findings come off the eligible set, and the whole incomplete range
+  `N < M` is covered rather than only its interior:
+
+  - `ARTIFACT_EMISSION_PARTIAL` (`warning`) — `0 < N < M`. The per-task emitting
+    path is demonstrably in use yet incomplete over the tasks that DID change
+    files. A no-op task can no longer contribute to this gap, so a residual one
+    is a real shortfall rather than a compliant silence.
+  - `ARTIFACT_EMISSION_ABSENT` (`warning`) — `N == 0` with `M >= 1`, **and the
+    plan footprint resolved non-empty**. That footprint condition is the
+    discriminator between the two causes of a total absence: with files changed
+    and change-qualified tasks completed, not one of them emitting means the
+    path was bypassed, whereas an empty or unresolvable footprint leaves "this
+    plan uses no per-task emission" and "emission was bypassed"
+    indistinguishable. In that indistinguishable case NO finding is emitted —
+    which is also what keeps archived plans predating per-task emission from
+    reporting one — and the published `0 of M` population still states what was
+    measured. `M >= 1` is now a statement about eligible tasks, so a plan whose
+    completed tasks were all no-ops has `M == 0` and reaches neither finding.
 
 - **DISPATCH_TERMINATION_CAUSE** (category: `DISPATCH_TERMINATION_CAUSE`) —
   **Precondition**: at least one `work/metrics-dispatch-boundaries-{phase}.toon`

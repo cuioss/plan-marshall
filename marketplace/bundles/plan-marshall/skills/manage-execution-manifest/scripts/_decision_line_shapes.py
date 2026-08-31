@@ -33,6 +33,13 @@ import re
 #: The caller prefix every compose decision-log line carries.
 COMPOSE_CALLER = '(plan-marshall:manage-execution-manifest:compose)'
 
+#: The caller prefix the ``reconcile`` verb's decision-log lines carry. The verb
+#: reports its own subtractions through :func:`format_dropped_record`, but it is
+#: NOT the composer, and consumers that filter the log by caller tag
+#: (``check-manifest-consistency`` surfaces the compose tag alone) must keep
+#: seeing the two apart. The shape is shared; the attribution is not.
+RECONCILE_CALLER = '(plan-marshall:manage-execution-manifest:reconcile)'
+
 #: The literal segments of the subtraction-record line. Named separately so the
 #: formatter and the parser below are built from the SAME tokens rather than from
 #: two independently-maintained spellings of them.
@@ -41,22 +48,34 @@ _DASH = '—'
 _DROP_VERB = 'dropped'
 
 
-def format_dropped_record(gate_name: str, step: str, reason: str, target: str = '') -> str:
+def format_dropped_record(
+    gate_name: str, step: str, reason: str, target: str = '', caller: str = COMPOSE_CALLER
+) -> str:
     """Render the subtraction-record line for one removed candidate.
 
     Args:
         gate_name: The gate the drop is attributed to (e.g. ``lane_resolution``).
         step: The removed step reference, verbatim as the candidate list held it.
+            Rendered BARE — no backticks, no quoting. The reader's capture is
+            bounded by whitespace, so any decoration around the id is part of the
+            captured token and the resolved step name stops matching the
+            manifest's.
         reason: The gate's own reason for this step's removal.
         target: An optional suffix naming the list the step left, and any
             gate-scoped qualifier — e.g.
             ``' from phase_6.steps (execution_profile=minimal)'``. Empty when the
             gate spans more than one list and no single name applies.
+        caller: The caller prefix the line is attributed to. Defaults to
+            :data:`COMPOSE_CALLER`; the ``reconcile`` verb passes
+            :data:`RECONCILE_CALLER` so it can share this shape without borrowing
+            the composer's attribution. The parser is anchored on the ``[STATUS]``
+            tag and never on the prefix, so every caller's line is read back
+            identically.
 
     Returns:
         The full decision-log message, caller prefix included.
     """
-    return f'{COMPOSE_CALLER} {_STATUS_TAG} {gate_name} {_DASH} {_DROP_VERB} {step}{target}: {reason}'
+    return f'{caller} {_STATUS_TAG} {gate_name} {_DASH} {_DROP_VERB} {step}{target}: {reason}'
 
 
 def dropped_record_pattern() -> re.Pattern[str]:

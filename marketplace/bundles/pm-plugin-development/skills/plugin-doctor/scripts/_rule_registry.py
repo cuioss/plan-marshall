@@ -90,6 +90,7 @@ _DESCRIPTOR_MODULES: tuple[str, ...] = (
     '_analyze_coverage',
     '_analyze_crossfile',
     '_analyze_declared_vs_disk',
+    '_analyze_documented_verb_set_drift',
     '_analyze_executor_path_in_production',
     '_analyze_fail_closed_gate_reads',
     '_analyze_finalize_step_token',

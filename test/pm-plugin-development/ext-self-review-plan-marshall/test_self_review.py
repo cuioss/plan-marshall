@@ -3,9 +3,11 @@
 """Tests for self_review.py — pre-submission self-review candidate surfacing."""
 
 import subprocess  # noqa: I001
+import re
 from pathlib import Path
 
 import pytest
+from conftest import MARKETPLACE_ROOT
 # The shared resolver-contract fixtures live under ``test/_shared/``, the
 # bundle-neutral home for cross-bundle test helpers (also on mypy_path), so
 # the helper is imported here rather than duplicated per bundle.
@@ -14,6 +16,7 @@ from _resolve_project_dir_fixtures import (
     assert_worktree_face_routes_through_resolver,
 )
 from _self_review_detectors import (
+    CONTENT_CLASSES,
     _collect_skill_contract_sources,
 )
 from _self_review_patterns import (
@@ -24,6 +27,7 @@ from _self_review_patterns import (
 from self_review import (
     _build_parser,
     _compose_candidate_output,
+    _format_scope_statement,
     _format_structural_limit,
     _detect_advertised_form_help_strings,
     _detect_contract_sources,
@@ -3906,3 +3910,175 @@ class TestStructuralLimit:
 
         assert data['scope_statement'] != data['structural_limit']
         assert data['scope_statement'].startswith('searched full scope')
+
+
+class TestScopeStatementSentence:
+    """The COMPLETE rendered sentence, for 0, 1 and 2 files.
+
+    Every other assertion on this string in this module checks a ``startswith``
+    prefix that ends at the file count — ``'searched delta scope: 1 file'``,
+    ``'searched full scope: 2 files'``, ``'searched delta scope: 0 files'``,
+    ``'searched full scope'``. None of them reads past the count, which is how
+    the one-file delta round rendered ``covers only these file`` unnoticed: the
+    sentence computes a number-agreeing noun once and then reused it after a
+    hard-coded plural demonstrative. Those four prefix assertions stay exactly
+    as they were — they pin a different property, and the tail is what was
+    unpinned.
+
+    A one-file delta is the commonest scoped round there is, so the ungrammatical
+    rendering was also the modal one.
+    """
+
+    _ANCHOR = 'abc123'
+
+    @pytest.mark.parametrize(
+        ('files_in_scope', 'expected'),
+        [
+            pytest.param(
+                0,
+                'searched delta scope: 0 files changed since abc123 — a scoped '
+                'round, so a clean result covers only these files, NOT the full '
+                'plan surface',
+                id='delta-zero',
+            ),
+            pytest.param(
+                1,
+                'searched delta scope: 1 file changed since abc123 — a scoped '
+                'round, so a clean result covers only this file, NOT the full '
+                'plan surface',
+                id='delta-one',
+            ),
+            pytest.param(
+                2,
+                'searched delta scope: 2 files changed since abc123 — a scoped '
+                'round, so a clean result covers only these files, NOT the full '
+                'plan surface',
+                id='delta-two',
+            ),
+        ],
+    )
+    def test_delta_sentence_is_rendered_whole(self, files_in_scope, expected):
+        assert _format_scope_statement('delta', files_in_scope, self._ANCHOR) == expected
+
+    @pytest.mark.parametrize(
+        ('files_in_scope', 'expected'),
+        [
+            pytest.param(
+                0, 'searched full scope: 0 files across the whole plan diff', id='full-zero'
+            ),
+            pytest.param(
+                1, 'searched full scope: 1 file across the whole plan diff', id='full-one'
+            ),
+            pytest.param(
+                2, 'searched full scope: 2 files across the whole plan diff', id='full-two'
+            ),
+        ],
+    )
+    def test_full_sentence_is_rendered_whole(self, files_in_scope, expected):
+        assert _format_scope_statement('full', files_in_scope, None) == expected
+
+    def test_absent_since_ref_names_the_previous_round(self):
+        """A delta round with no recorded anchor still names one in prose."""
+        assert 'changed since the previous round' in _format_scope_statement(
+            'delta', 2, None
+        )
+
+    @pytest.mark.parametrize('files_in_scope', [0, 1, 2, 3, 11])
+    def test_demonstrative_and_noun_agree_in_number(self, files_in_scope):
+        """Derived agreement check over a range, not three restated literals.
+
+        The parametrized sentences above pin the three counts the contract names.
+        This pins the PROPERTY they are instances of, so a future edit that
+        reintroduces a fixed demonstrative fails here for every count rather than
+        only where a literal happens to exist.
+        """
+        sentence = _format_scope_statement('delta', files_in_scope, self._ANCHOR)
+
+        assert 'these file,' not in sentence
+        assert 'this files,' not in sentence
+        expected_pair = 'this file,' if files_in_scope == 1 else 'these files,'
+        assert f'covers only {expected_pair}' in sentence
+
+
+# =============================================================================
+# Test: the SKILL.md delta_coverage schema mirrors CONTENT_CLASSES
+# =============================================================================
+
+
+_SKILL_DOC = (
+    MARKETPLACE_ROOT
+    / 'pm-plugin-development'
+    / 'skills'
+    / 'ext-self-review-plan-marshall'
+    / 'SKILL.md'
+)
+
+#: The documented ``by_class`` block header, capturing its declared row count.
+_BY_CLASS_HEADER_RE = re.compile(r'by_class\[(\d+)\]\{[^}]*\}:')
+
+#: The first ``{a|b|c}`` alternation on the sample row beneath that header — the
+#: documented class vocabulary.
+_ALTERNATION_RE = re.compile(r'\{([a-z_]+(?:\|[a-z_]+)+)\}')
+
+
+class TestSkillDocDeltaCoverageSchemaMatchesTheRegistry:
+    """⛔ The doc pins ``by_class[6]`` and six class names; the registry owns them.
+
+    A markdown contract cannot derive at runtime, so this drift check IS the
+    derivation: it reads the schema block the doc publishes and compares it
+    against ``CONTENT_CLASSES``. Doc and registry are two INDEPENDENT artifacts,
+    so the assertion stays live under the comparison — this is not the
+    ``registry == registry`` tautology that would follow from deriving a literal
+    out of the very set it exists to pin.
+
+    It fails in BOTH directions: a class added to ``CONTENT_CLASSES`` and not to
+    the doc, and a class removed from the registry while the doc still advertises
+    it.
+    """
+
+    def _header_and_row(self) -> tuple[str, str]:
+        """Return the documented ``by_class`` header line and its sample row."""
+        lines = _SKILL_DOC.read_text(encoding='utf-8').splitlines()
+        headers = [i for i, line in enumerate(lines) if _BY_CLASS_HEADER_RE.search(line)]
+        assert len(headers) == 1, (
+            f'expected exactly one by_class schema block in {_SKILL_DOC.name}, '
+            f'found {len(headers)} — the drift check reads one block, so a second '
+            'one would go unchecked'
+        )
+        index = headers[0]
+        assert index + 1 < len(lines), 'the by_class header carries no sample row'
+        return lines[index], lines[index + 1]
+
+    def test_the_documented_row_count_matches_the_registry_size(self):
+        header, _row = self._header_and_row()
+        documented = int(_BY_CLASS_HEADER_RE.search(header).group(1))
+
+        assert documented == len(CONTENT_CLASSES), (
+            f'{_SKILL_DOC.name} documents by_class[{documented}] while '
+            f'CONTENT_CLASSES declares {len(CONTENT_CLASSES)} classes '
+            f'({sorted(CONTENT_CLASSES)})'
+        )
+
+    def test_the_documented_class_names_match_the_registry(self):
+        _header, row = self._header_and_row()
+        match = _ALTERNATION_RE.search(row)
+        assert match is not None, (
+            f'the by_class sample row in {_SKILL_DOC.name} carries no '
+            f'{{a|b|c}} class alternation to compare against the registry; row={row!r}'
+        )
+        documented = set(match.group(1).split('|'))
+
+        assert documented == set(CONTENT_CLASSES), (
+            f'{_SKILL_DOC.name} and CONTENT_CLASSES disagree; '
+            f'documented_only={sorted(documented - set(CONTENT_CLASSES))}, '
+            f'registry_only={sorted(set(CONTENT_CLASSES) - documented)}'
+        )
+
+    def test_the_registry_is_not_empty(self):
+        """The population guard: an empty registry would make both checks vacuous.
+
+        With ``CONTENT_CLASSES`` empty, the name comparison would reduce to
+        ``documented == set()`` and pass only by coincidence of also being empty —
+        a zero over an unread population rather than a measured agreement.
+        """
+        assert len(CONTENT_CLASSES) >= 1

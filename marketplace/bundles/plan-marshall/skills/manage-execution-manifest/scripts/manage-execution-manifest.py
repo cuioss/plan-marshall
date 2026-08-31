@@ -33,7 +33,7 @@ from typing import Any
 # the filter's domain-seeded membership check and the resolution gate's universe
 # in lock-step.
 import _manifest_validation
-from _decision_line_shapes import format_dropped_record
+from _decision_line_shapes import RECONCILE_CALLER, format_dropped_record
 from _manifest_core import (
     _CANONICAL_TO_ROLE,  # noqa: F401
     _CANONICAL_VERIFY_PREFIX,  # noqa: F401
@@ -43,6 +43,7 @@ from _manifest_core import (
     _INFRA_CONFIG_PARENT_DIR_SUFFIXES,  # noqa: F401
     _INFRA_CONFIG_PARENT_DIRS,  # noqa: F401
     _TEMPLATE_SUFFIX,  # noqa: F401
+    CLASSIFICATION_BUCKETS,  # noqa: F401
     DEFAULT_ENVELOPE_COUNT,  # noqa: F401
     DEFAULT_PHASE_5_STEPS,  # noqa: F401
     DEFAULT_PHASE_6_STEPS,  # noqa: F401
@@ -3026,19 +3027,36 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
         # one from a dry run would both mutate a file the verb promises not to
         # touch and assert a change that was never made — a false audit trail is
         # worse than none.
+        # Rendered by the SHARED subtraction-record formatter, not by a private
+        # f-string. The hand-rolled shape this replaces carried no `[STATUS]` tag
+        # and wrapped the step id in backticks, and the reader
+        # (`_decision_line_shapes.dropped_record_pattern`) anchors on that tag and
+        # captures a whitespace-bounded id — two independent mismatches, either of
+        # which alone left every reconcile-dropped step resolving NO removal cause
+        # in the retrospective's routing-decisions aspect and falling through to
+        # predicate re-evaluation as a false mis-prune.
         for step in stale:
             _emit_decision_log(
                 plan_id,
-                '(plan-marshall:manage-execution-manifest:reconcile) frozen_manifest_stale — '
-                f'dropped `{step}` from phase_6.steps: its standards doc is absent AND '
-                'live marshal.json no longer lists it, so the frozen manifest is behind '
-                'a change this plan already made',
+                format_dropped_record(
+                    'frozen_manifest_stale',
+                    step,
+                    'its standards doc is absent AND live marshal.json no longer lists it, '
+                    'so the frozen manifest is behind a change this plan already made',
+                    target=' from phase_6.steps',
+                    caller=RECONCILE_CALLER,
+                ),
             )
+        # An ADDITION, so it renders its own shape: the shared formatter is a
+        # subtraction record, and rendering a backfill through it would publish a
+        # step this verb ADDED as one it dropped — a cause the routing-decisions
+        # reader would resolve in the wrong direction. Only the backticks are
+        # dropped here, for the same id-decoration reason as above.
         for step in backfill:
             _emit_decision_log(
                 plan_id,
-                '(plan-marshall:manage-execution-manifest:reconcile) frozen_manifest_backfill — '
-                f'added `{step}` to phase_6.steps: it entered live marshal.json after this '
+                f'{RECONCILE_CALLER} frozen_manifest_backfill — '
+                f'added {step} to phase_6.steps: it entered live marshal.json after this '
                 'manifest was composed, so the decision matrix never considered it',
             )
 

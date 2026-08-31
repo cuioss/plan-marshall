@@ -27,7 +27,8 @@ Facts emitted:
     line (recognised gate-agnostically, so the set follows the composer), plus the
     individually-shaped ones: ``unresolved_ask_provider_drop``,
     ``simplify_inactive``, a ``ceremony_finalize_selection`` resolving ``never``,
-    and ``posture_cutoff_legacy_aggregate`` for archived logs.
+    and — for archived logs alone — ``posture_cutoff_legacy_aggregate`` and
+    ``frozen_manifest_stale_legacy_backticked``.
     Only a step whose removal no recorded mechanism explains, in a decision log
     that was actually readable, has its predicate re-evaluated: a predicate that
     is now FALSE (e.g. ``sonar-roundtrip`` skipped as "no code delta" but the
@@ -202,6 +203,40 @@ _REMOVAL_CAUSE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(
             r'lane_resolution\s+—\s+execution_profile=[^,]+,\s+dropped\s+(?P<steps>.+?)'
             r'\s+from\s+phase_6\.steps\s+\(tier above posture cutoff\)'
+        ),
+    ),
+    (
+        # Retained for the same reason as the aggregate pattern above: an archived
+        # decision.log is immutable history, and this reader is the only thing that
+        # can still read it. Without this pattern every pre-change archive resolves
+        # NO cause for its reconcile-dropped steps and falls through to predicate
+        # re-evaluation — the false `mis_prune` the fix was meant to end, reappearing
+        # on the corpus the fix was meant to make readable.
+        #
+        # The backticks are REQUIRED by this pattern, which is what keeps it
+        # disjoint from the live shape: the current emitter renders the step bare
+        # and through the shared `[STATUS]` subtraction-record formatter, so a live
+        # line is matched by `_DROPPED_RECORD_RE` and can never also match here.
+        #
+        # SHIM(B): the RETIRED `reconcile` dropped-step decision-log line — no
+        # `[STATUS]` tag, and the step id wrapped in backticks.
+        # shim-owner: plan-retrospective
+        # shim-floor: the `manage-execution-manifest` reconcile change that routed
+        #   the `frozen_manifest_stale` emission through
+        #   `_decision_line_shapes.format_dropped_record`, adding the `[STATUS]` tag
+        #   and dropping the backticks around the step id.
+        # shim-remove-when: no archived plan this reader can open still retains a
+        #   decision.log carrying a line this pattern matches. Establish that by
+        #   scanning the retained archive corpus for lines the EMITTER actually
+        #   produced — never by reading
+        #   `manage-execution-manifest/standards/decision-rules.md`; doc → regex and
+        #   doc → test-literal is a closed loop the emitter never enters. The honest
+        #   expectation is that this trigger does not fire while pre-change archives
+        #   are retained.
+        'frozen_manifest_stale_legacy_backticked',
+        re.compile(
+            r'frozen_manifest_stale\s+—\s+dropped\s+`(?P<steps>[^`]+)`'
+            r'\s+from\s+phase_6\.steps'
         ),
     ),
     (
@@ -636,6 +671,44 @@ def evaluate_mis_prunes(
     return checks
 
 
+#: Emitted check status → its ``summary`` bucket name. The map is total over the
+#: set :func:`evaluate_mis_prunes` emits — ``pass`` / ``fail`` / ``skip`` /
+#: ``inconclusive`` — rather than a table of exceptions, which is what lets
+#: :func:`summarize_checks` report an explicit zero for each so an absent key is
+#: never mistaken for a measured zero. ``inconclusive``'s bucket name is the
+#: status itself. A status with no row here is still counted, under its own name.
+_STATUS_BUCKETS: dict[str, str] = {
+    'pass': 'passed',
+    'fail': 'failed',
+    'skip': 'skipped',
+    'inconclusive': 'inconclusive',
+}
+
+
+def summarize_checks(checks: list[dict[str, Any]]) -> dict[str, int]:
+    """Return the per-status counts for ``checks``, total over what was emitted.
+
+    Every known status gets an explicit zero, and an UNKNOWN status is counted
+    under its own name rather than dropped, so ``sum(result.values()) ==
+    len(checks)`` holds unconditionally.
+
+    That second half is the point, and it is the sibling
+    ``check-manifest-consistency.summarize_checks``'s rule rather than a variation
+    on it. The three hard-coded ``pass``/``fail``/``skip`` comprehensions this
+    replaces counted only the statuses the literal happened to name, so every
+    ``inconclusive`` verdict — a status this very module emits, and the honest one
+    for an unreadable decision log — landed in no bucket at all and read to a
+    summary consumer as a check that does not exist. Silently dropping an
+    unrecognised verdict is the absent-reads-as-nothing defect this aspect exists
+    to surface, so it must not be reproduced in the aspect's own summary.
+    """
+    summary = dict.fromkeys(_STATUS_BUCKETS.values(), 0)
+    for check in checks:
+        bucket = _STATUS_BUCKETS.get(check['status'], check['status'])
+        summary[bucket] = summary.get(bucket, 0) + 1
+    return summary
+
+
 def evaluate_cost_preview(manifest: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
     """Place the init cost preview beside the ``execution_log`` sum, population-matched.
 
@@ -749,7 +822,16 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             'manifest_present': False,
             'reason': f'{MANIFEST_FILENAME} not found',
             'checks': [],
-            'summary': {'passed': 0, 'failed': 0, 'skipped': 0},
+            # DERIVED from the one bucket definition (``_STATUS_BUCKETS``, via
+            # ``summarize_checks``) rather than restated as a literal. The literal
+            # it replaces carried three keys and omitted ``inconclusive``, so every
+            # archived plan predating ``execution.toon`` handed a consumer reading
+            # ``summary['inconclusive']`` — which the four-bucket completeness
+            # contract in ``references/routing-decision-verification.md`` invites —
+            # a missing key. Sum closure held only because ``checks`` is empty.
+            # Same construction as the sibling ``check-manifest-consistency.py``
+            # skipped return, so the vocabulary here cannot drift from its source.
+            'summary': summarize_checks([]),
         }
 
     metadata = load_status_metadata(plan_dir)
@@ -788,11 +870,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     )
     cost_preview = evaluate_cost_preview(manifest, metadata)
 
-    summary = {
-        'passed': sum(1 for c in mis_prune_checks if c['status'] == 'pass'),
-        'failed': sum(1 for c in mis_prune_checks if c['status'] == 'fail'),
-        'skipped': sum(1 for c in mis_prune_checks if c['status'] == 'skip'),
-    }
+    summary = summarize_checks(mis_prune_checks)
 
     return {
         'status': 'success',

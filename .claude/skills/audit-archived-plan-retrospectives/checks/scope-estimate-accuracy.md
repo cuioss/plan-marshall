@@ -1,7 +1,7 @@
 # Check: scope-estimate-accuracy
 
 Compares each archived plan's declared `references.json::scope_estimate` against
-the actual affected/modified file count and flags mismatches. The deterministic
+the realized footprint's file count and flags mismatches. The deterministic
 comparison lives in `scripts/audit.py`; this sub-document is the interpretation
 guide.
 
@@ -11,9 +11,25 @@ Per scanned plan, the script reads `references.json`:
 
 - `scope_estimate` — the declared scope band (`surgical`, `single_module`,
   `multi_module`).
-- The actual touched-file count, preferring `modified_files` (post-execution
-  truth) and falling back to `affected_files` (planned) when `modified_files` is
-  empty.
+- The actual touched-file count — the cardinality of the **realized footprint**,
+  resolved through the shared resolver's tier order rather than read off any
+  single key. The first tier that answers decides:
+
+  1. `realized_footprint` — the capture-while-true set written by
+     `default:branch-cleanup` while the worktree still existed.
+  2. `merge_commit_sha` — the landing commit's own first-parent range
+     (`{sha}^1..{sha}`), which names exactly what that commit introduced for both
+     a squash landing and a true merge.
+  3. `modified_files` — the retired legacy key, kept as the LAST tier for
+     archived plans written before it stopped being emitted.
+
+  ⛔ A tier that answers with an **empty** set has resolved the footprint: the
+  plan changed nothing, and the count is a real `0`. That is a different answer
+  from **no tier resolving at all**, and only in the latter case does the check
+  fall back to the declared `affected_files` (planned). The distinction is
+  load-bearing — reading the raw `modified_files` key first, or treating a
+  resolved-empty footprint as absent, silently grades a plan on what it *planned*
+  to touch instead of on what it *did*.
 
 **Corpus partition (delivery-cost check).** This check runs over the SHIPPING
 partition of the corpus, not every scanned plan: a plan carrying no delivery
@@ -37,15 +53,24 @@ a note rather than a hard mismatch.
 ## Emitted columns
 
 ```
-rows[N]{plan_id,declared_scope,actual_file_count,mismatch}
+rows[N]{plan_id,declared_scope,actual_file_count,count_basis,mismatch}
 ```
 
 | Column | Meaning |
 |--------|---------|
 | `plan_id` | The scanned plan's directory basename. |
 | `declared_scope` | The `scope_estimate` declared in `references.json` (empty when unset). |
-| `actual_file_count` | The actual touched-file count (modified, else affected). |
-| `mismatch` | Empty when the actual count is inside the declared band; otherwise `declared={scope} band=[{low},{high}] actual={n}`. |
+| `actual_file_count` | The realized footprint's cardinality, resolved through the `realized_footprint` → `merge_commit_sha` → `modified_files` tier order; the declared `affected_files` count only when no tier resolves. |
+| `count_basis` | Which source `actual_file_count` came from: the name of the tier that answered, or `declared` when no tier resolved and the count is the declared `affected_files` cardinality. |
+| `mismatch` | Empty when the actual count is inside the declared band; otherwise `declared={scope} band=[{low},{high}] actual={n} basis={basis}`. |
+
+⛔ **`actual_file_count` is never read without `count_basis`.** The count `0` is
+emitted by two different states — a tier that resolved and named no path (the plan
+changed nothing) and no tier resolving at all over a plan that declared nothing —
+and the correct reading differs between them. The basis is what tells them apart,
+so it travels with the count into both the row and the `mismatch` string. Reading
+the bare count re-introduces at the report layer exactly the ambiguity the tier
+order removes inside the resolver.
 
 ### Corpus-partition exclusion columns
 

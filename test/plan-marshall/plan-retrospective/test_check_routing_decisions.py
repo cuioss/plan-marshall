@@ -229,9 +229,13 @@ class TestMisPruneVerdictDiscriminators:
         assert row['status'] == 'inconclusive'
         assert row['removal_cause'] == 'unestablishable'
         assert 'unestablishable' in row['detail']
-        # An inconclusive row contributes to none of the summary counters.
+        # An inconclusive row lands in its OWN bucket. It previously landed in no
+        # bucket at all — the three hard-coded pass/fail/skip comprehensions did
+        # not count it — so a status this module emits read to a summary consumer
+        # as a check that does not exist.
         assert result['summary']['failed'] == 0
         assert result['summary']['skipped'] == 0
+        assert result['summary']['inconclusive'] == 1
 
     def test_unreadable_decision_log_is_inconclusive(self, tmp_path):
         plan_dir = _build_plan(
@@ -291,6 +295,56 @@ class TestMisPruneVerdictDiscriminators:
         assert all(row.get('removal_cause') for row in result['mis_prune_checks'])
 
 
+class TestSummaryIsTotalOverEveryEmittedStatus:
+    """``sum(summary.values()) == len(mis_prune_checks)``, unconditionally.
+
+    The summary was three hard-coded comprehensions over ``pass`` / ``fail`` /
+    ``skip`` while the check also emits ``inconclusive``, so every inconclusive
+    verdict was silently dropped from the totals — an absent-reads-as-nothing
+    defect in the very aspect that exists to surface that shape.
+    """
+
+    def test_two_inconclusive_checks_are_counted_as_two(self, tmp_path):
+        """Both prunable steps absent with no readable decision log."""
+        plan_dir = _build_plan(
+            tmp_path / 'plan',
+            steps=['lessons-capture', 'archive-plan'],
+            write_decision_log=False,
+        )
+        result = _crd.cmd_run(_run_args(plan_dir, _diff_file(tmp_path, [PRODUCTION_PATH])))
+
+        assert len(result['mis_prune_checks']) == 2
+        assert all(row['status'] == 'inconclusive' for row in result['mis_prune_checks'])
+        assert result['summary']['inconclusive'] == 2
+        assert sum(result['summary'].values()) == len(result['mis_prune_checks'])
+
+    def test_every_emitted_status_plus_an_unknown_one_is_counted(self):
+        """Totality over the emitted set AND over a status no bucket names.
+
+        The list carries every status the script emits plus one it does not. A
+        summary that counts only the statuses it knows lets the unknown land in no
+        bucket, which is the same silent drop under a different name — so the
+        unknown is counted under its own name and the sum still closes.
+        """
+        emitted = sorted(_crd._STATUS_BUCKETS)
+        checks = [{'check': f'mis_prune:{status}', 'status': status} for status in emitted]
+        checks.append({'check': 'mis_prune:future', 'status': 'a_status_no_bucket_names'})
+
+        summary = _crd.summarize_checks(checks)
+
+        assert sum(summary.values()) == len(checks)
+        assert summary['a_status_no_bucket_names'] == 1
+        for status in emitted:
+            assert summary[_crd._STATUS_BUCKETS[status]] == 1
+
+    def test_every_known_bucket_is_present_at_zero(self):
+        """An explicit zero, never an absent key a consumer must guess about."""
+        summary = _crd.summarize_checks([])
+
+        assert summary == dict.fromkeys(_crd._STATUS_BUCKETS.values(), 0)
+        assert set(summary) == {'passed', 'failed', 'skipped', 'inconclusive'}
+
+
 class TestReportFacingFieldsUnchanged:
     """Widening the loader must not change the lane-only report fields."""
 
@@ -319,6 +373,34 @@ class TestManifestAbsent:
         assert result['status'] == 'skipped'
         assert result['manifest_present'] is False
         assert result['checks'] == []
+
+    def test_skipped_summary_carries_the_whole_bucket_vocabulary(self, tmp_path):
+        """⛔ The manifest-absent summary must be DERIVED, not a restated literal.
+
+        This return path shipped a hardcoded ``{'passed', 'failed', 'skipped'}``
+        with no ``inconclusive`` key, while
+        ``references/routing-decision-verification.md`` advertises a four-bucket
+        completeness contract that invites a consumer to read
+        ``summary['inconclusive']``. Sum closure still held — ``checks`` is empty —
+        so nothing downstream failed; every archived plan predating
+        ``execution.toon`` simply handed such a consumer a missing key.
+
+        The expectation is derived from ``_STATUS_BUCKETS``, the one authoritative
+        definition, so a bucket added or renamed there moves this assertion with
+        it and the literal cannot drift back in unnoticed.
+        """
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        result = _crd.cmd_run(_run_args(plan_dir, None))
+
+        assert result['summary'] == dict.fromkeys(_crd._STATUS_BUCKETS.values(), 0), (
+            'the manifest-absent summary must seed every bucket the status map '
+            'defines; a three-key literal omits `inconclusive` and a consumer '
+            f'reading it finds no key. Got {result["summary"]!r}'
+        )
+        # The bucket this path used to omit, named explicitly so the guard states
+        # which absence it is standing against rather than only comparing dicts.
+        assert 'inconclusive' in result['summary']
 
 
 class TestExecutionLogPopulation:

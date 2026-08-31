@@ -377,6 +377,252 @@ class TestCmdRunInProcess:
         assert not any('ARTIFACT_COVERAGE_UNMEASURABLE' in f['message'] for f in result['findings'])
         assert not any('ARTIFACT entries missing' in f['message'] for f in result['findings'])
 
+    def _write_tasks(self, plan_dir: Path, changed_by_num: dict[int, list[str]]) -> None:
+        """Write ``status: done`` task records carrying a RECORDED ``changed_files``.
+
+        An empty list is a recorded no-op — "this task changed nothing", which is
+        a measurement. Omitting the key entirely is a different state (nothing
+        was recorded), and no fixture here reaches it by accident.
+        """
+        tasks_dir = plan_dir / 'tasks'
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+        for num, changed in changed_by_num.items():
+            (tasks_dir / f'TASK-{num:03d}.json').write_text(
+                json.dumps(
+                    {
+                        'number': num,
+                        'deliverable': 1,
+                        'status': 'done',
+                        'changed_files': changed,
+                    }
+                ),
+                encoding='utf-8',
+            )
+
+    def test_no_completed_tasks_reports_unavailable_attribution_not_a_finding(self, tmp_path):
+        """A plan with no completed task has nothing to attribute, and says so.
+
+        The per-task ``[ARTIFACT]`` guard is drawn from the CHANGE-QUALIFIED
+        population, which exists only when some completed task record carries a
+        ``changed_files`` list. With no completed tasks at all no record can carry
+        one, so attribution is reported UNAVAILABLE and the guard short-circuits
+        before any population comparison — the honest reading of "nothing to
+        attribute", never a measured empty set.
+
+        This plan has a non-empty footprint and zero per-task artifact lines, the
+        shape the guard reacts to, so what is pinned here is the attribution gate.
+        Its measured peer — a real shortfall over a qualified population, where
+        the guard must still bite — is the test beneath it; either alone would be
+        single-direction.
+        """
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        self._write_logs(
+            plan_dir,
+            [_line('2026-04-17T10:00:00Z', 'INFO', '[STATUS] (plan-marshall:phase-1-init) Starting')],
+        )
+        (plan_dir / 'references.json').write_text(
+            json.dumps({'modified_files': ['src/a.py']}), encoding='utf-8'
+        )
+
+        result = _al.cmd_run(_run_args(plan_dir))
+        emission = result['artifact_emission']
+
+        assert emission['completed_tasks'] == 0
+        assert emission['tasks_with_artifacts'] == 0
+        assert emission['change_attribution'] == 'unavailable'
+        for key in ('eligible_tasks', 'eligible_tasks_with_artifacts'):
+            assert key not in emission, (
+                f'{key} must be ABSENT when attribution is unavailable — a zero '
+                'there is indistinguishable from a measured empty population'
+            )
+        assert not any('ARTIFACT_EMISSION' in f['message'] for f in result['findings'])
+
+    def test_change_qualified_shortfall_emits_partial_over_the_eligible_population(
+        self, tmp_path
+    ):
+        """⛔ The measured peer: the guard still BITES, over the eligible set only.
+
+        Three completed tasks — two recorded as having changed a file (one of
+        which emitted its ``[ARTIFACT]`` line and one of which did not) and one
+        recorded NO-OP with an empty ``changed_files``. The finding is drawn from
+        the eligible two, so it reads ``1 of 2``: quoting the raw ``1 of 3`` would
+        charge the compliant no-op task as an emission gap, and staying silent
+        because a no-op is present would mute a real shortfall.
+
+        In-process because this is a ``cmd_run`` finding-emitting branch, which
+        the subprocess siblings drive but do not cover.
+        """
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        self._write_logs(
+            plan_dir,
+            [
+                _line('2026-04-17T10:00:00Z', 'INFO', '[STATUS] (plan-marshall:phase-1-init) Starting'),
+                _line('2026-04-17T10:01:00Z', 'INFO', '[ARTIFACT] (plan-marshall:phase-5-execute:1) wrote'),
+            ],
+        )
+        self._write_tasks(plan_dir, {1: ['src/a.py'], 2: ['src/b.py'], 3: []})
+        (plan_dir / 'references.json').write_text(
+            json.dumps({'modified_files': ['src/a.py', 'src/b.py']}), encoding='utf-8'
+        )
+
+        result = _al.cmd_run(_run_args(plan_dir))
+        emission = result['artifact_emission']
+
+        # The raw and eligible populations are staged as genuinely different
+        # numbers, which is what makes the message assertion a test of WHICH one
+        # the finding follows rather than a restatement of one of them.
+        assert emission['completed_tasks'] == 3
+        assert emission['change_attribution'] == 'measured'
+        assert emission['eligible_tasks'] == 2
+        assert emission['eligible_tasks_with_artifacts'] == 1
+
+        partial = [f for f in result['findings'] if 'ARTIFACT_EMISSION_PARTIAL' in f['message']]
+        assert len(partial) == 1, result['findings']
+        assert '1 of 2 change-qualified' in partial[0]['message']
+        assert '1 of 3' not in partial[0]['message']
+
+    def _write_unrecorded_tasks(self, plan_dir: Path, nums: list[int]) -> None:
+        """Write ``status: done`` task records that OMIT ``changed_files`` entirely.
+
+        The third state, distinct from both a populated list and a recorded empty
+        one: nothing was recorded about what this task changed. The partition
+        below stages this shape against :meth:`_write_tasks` in the same fixture.
+        """
+        tasks_dir = plan_dir / 'tasks'
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+        for num in nums:
+            (tasks_dir / f'TASK-{num:03d}.json').write_text(
+                json.dumps({'number': num, 'deliverable': 1, 'status': 'done'}),
+                encoding='utf-8',
+            )
+
+    def _mixed_record_plan(self, tmp_path: Path) -> Path:
+        """The fixture the three legs below share, minus the task records.
+
+        TASK-001 is the only task with no ``[ARTIFACT]`` line; TASK-002 and
+        TASK-003 both emit one. The footprint is non-empty, so the emission guard
+        is armed. Each leg supplies a different recording state over these same
+        three completed tasks, which is what makes the legs comparable.
+        """
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir(parents=True)
+        self._write_logs(
+            plan_dir,
+            [
+                _line('2026-04-17T10:00:00Z', 'INFO', '[STATUS] (plan-marshall:phase-1-init) Starting'),
+                _line('2026-04-17T10:01:00Z', 'INFO', '[ARTIFACT] (plan-marshall:phase-5-execute:2) wrote'),
+                _line('2026-04-17T10:02:00Z', 'INFO', '[ARTIFACT] (plan-marshall:phase-5-execute:3) wrote'),
+            ],
+        )
+        (plan_dir / 'references.json').write_text(
+            json.dumps({'modified_files': ['src/a.py', 'src/b.py']}), encoding='utf-8'
+        )
+        return plan_dir
+
+    def test_a_mixed_record_corpus_reports_unavailable_not_measured(self, tmp_path):
+        """⛔ Partial recording is not full measurement.
+
+        ``attribution_available`` used to be set by the FIRST completed task
+        carrying a ``changed_files`` list, so a corpus where only some records
+        carry one still reported ``measured`` — over a population silently
+        narrowed to the recorded subset, because a task without the key joins
+        neither the changed set nor the unchanged one.
+
+        This fixture is that defect in the direction that manufactures a FALSE
+        finding. TASK-001 is recorded as having changed a file and emitted no
+        ``[ARTIFACT]`` line; TASK-002 and TASK-003 are unrecorded and both DID
+        emit one. Qualifying over the recorded subset alone reads ``M=1`` /
+        ``N=0`` and fires ``ARTIFACT_EMISSION_ABSENT`` — the exact false ABSENT the
+        change-qualification was introduced to remove, re-entering through the
+        discriminator meant to prevent it.
+        """
+        plan_dir = self._mixed_record_plan(tmp_path)
+        self._write_tasks(plan_dir, {1: ['src/a.py']})
+        self._write_unrecorded_tasks(plan_dir, [2, 3])
+
+        result = _al.cmd_run(_run_args(plan_dir))
+        emission = result['artifact_emission']
+
+        assert emission['change_attribution'] == 'unavailable', (
+            'a corpus where only some completed records carry changed_files is '
+            'not measured — qualifying it narrows the population to the recorded '
+            'subset'
+        )
+        for key in (
+            'eligible_tasks',
+            'eligible_tasks_with_artifacts',
+            'eligible_tasks_without_artifacts',
+        ):
+            assert key not in emission, (
+                f'{key} must be ABSENT on unavailable — a zero there is '
+                'indistinguishable from a measured empty population'
+            )
+        assert not any('ARTIFACT_EMISSION' in f['message'] for f in result['findings']), (
+            'no emission finding may be made over a population that excluded '
+            'members it could not classify'
+        )
+        # The raw provenance figures stay published, unchanged.
+        assert emission['completed_tasks'] == 3
+        assert emission['tasks_with_artifacts'] == 2
+
+    def test_the_mixed_state_names_itself_apart_from_the_no_record_state(self, tmp_path):
+        """The two ``unavailable`` states have different remedies, so they differ.
+
+        Reusing the no-record-at-all wording for a MIXED corpus would tell an
+        operator to turn recording on when it is already on and merely incomplete.
+        The reason therefore names how many of how many records carried a list.
+
+        The second leg is the matched control: the SAME three completed tasks with
+        NO record at all must still report the original wording, so the assertion
+        above is testing which state was detected rather than the mere presence of
+        a reason string.
+        """
+        mixed_dir = self._mixed_record_plan(tmp_path / 'mixed')
+        self._write_tasks(mixed_dir, {1: ['src/a.py']})
+        self._write_unrecorded_tasks(mixed_dir, [2, 3])
+        mixed_reason = _al.cmd_run(_run_args(mixed_dir))['artifact_emission'][
+            'change_attribution_reason'
+        ]
+
+        none_dir = self._mixed_record_plan(tmp_path / 'none')
+        self._write_unrecorded_tasks(none_dir, [1, 2, 3])
+        none_result = _al.cmd_run(_run_args(none_dir))
+        none_emission = none_result['artifact_emission']
+
+        assert '1 of 3' in mixed_reason, mixed_reason
+        assert 'no completed task record carries' not in mixed_reason
+
+        assert none_emission['change_attribution'] == 'unavailable'
+        assert 'no completed task record carries' in (
+            none_emission['change_attribution_reason']
+        )
+        assert mixed_reason != none_emission['change_attribution_reason']
+
+    def test_the_same_three_tasks_fully_recorded_are_still_measured(self, tmp_path):
+        """The matched positive control — the third leg of the partition.
+
+        The SAME three completed tasks and the SAME emission log, with every
+        record now carrying a ``changed_files`` list. Without this leg the two
+        ``unavailable`` legs above would be equally satisfied by a function that
+        never reports ``measured`` at all, and the guard would be silently dead
+        rather than correctly scoped.
+
+        TASK-001 changed a file and emitted nothing, so the emission guard must
+        still BITE here over the fully-recorded population.
+        """
+        plan_dir = self._mixed_record_plan(tmp_path)
+        self._write_tasks(plan_dir, {1: ['src/a.py'], 2: ['src/b.py'], 3: ['src/c.py']})
+
+        result = _al.cmd_run(_run_args(plan_dir))
+        emission = result['artifact_emission']
+
+        assert emission['change_attribution'] == 'measured'
+        assert emission['eligible_tasks'] == 3
+        assert emission['eligible_tasks_with_artifacts'] == 2
+        assert any('ARTIFACT_EMISSION_PARTIAL' in f['message'] for f in result['findings'])
+
     def test_voluntary_checkpoint_polling_finding(self, tmp_path):
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir()

@@ -11,7 +11,7 @@ detectors live alongside them. Importers pull these by flat name (e.g.
 
 import os
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from _self_review_diff import (
@@ -2366,3 +2366,205 @@ def _detect_discard_without_report(
                 seen.add(key)
                 out.append({'file': path, **hit})
     return out
+
+
+# =============================================================================
+# Delta-coverage fact
+# =============================================================================
+
+
+#: The closed content-class vocabulary every in-scope file is placed in.
+#:
+#: The partition is over the FILE's shape — its extension, and for markdown its
+#: role inside a skill — because that is a property of the path, checkable by
+#: reading the path alone. It is deliberately NOT a partition by "which detector
+#: reads this", which would be a claim about detector reach that nothing here can
+#: verify; publishing an unverifiable reach map is the same fail-open this fact
+#: exists to close.
+CONTENT_CLASSES: tuple[str, ...] = (
+    'python',
+    'skill_doc',
+    'standards_doc',
+    'markdown_other',
+    'structured_config',
+    'other',
+)
+
+#: Extensions grouped into the ``structured_config`` class.
+_STRUCTURED_CONFIG_SUFFIXES = ('.json', '.toml', '.yaml', '.yml')
+
+
+def _classify_content(rel_path: str) -> str:
+    """Return the :data:`CONTENT_CLASSES` member describing ``rel_path``'s shape.
+
+    ``rel_path`` is a repo-relative, forward-slash path as git reports it, so it
+    is read through :class:`PurePosixPath` rather than the platform flavour —
+    otherwise a Windows-flavoured parse would fail to split the directory
+    segments the markdown roles are decided on.
+
+    Every path lands in exactly one class, and ``other`` is the catch-all that
+    makes the partition total: a file shape nobody anticipated is REPORTED as
+    unclassified-but-present, never dropped from the denominator.
+    """
+    parts = PurePosixPath(rel_path).parts
+    name = parts[-1] if parts else rel_path
+    if name.endswith('.py'):
+        return 'python'
+    if name.endswith('.md'):
+        if name == 'SKILL.md':
+            return 'skill_doc'
+        if 'standards' in parts[:-1]:
+            return 'standards_doc'
+        return 'markdown_other'
+    if name.endswith(_STRUCTURED_CONFIG_SUFFIXES):
+        return 'structured_config'
+    return 'other'
+
+
+def _candidate_files(detected: dict[str, list]) -> tuple[set[str], int]:
+    """Return the files this round produced a candidate for, and the unattributed count.
+
+    Two entry shapes carry a path, and BOTH are read. Most candidates name a
+    single site under ``file``; the cross-file lists (``source_of_truth``) name
+    every declaring path under a ``; ``-joined ``files`` instead, and reading
+    only the singular key would file each of those under "produced no candidate"
+    while it plainly did produce one. Attributing a candidate to the wrong side
+    of this partition is the same class of error the coverage fact exists to
+    expose, so the plural key is resolved rather than approximated.
+
+    An entry carrying NEITHER — a derived index whose members are bare strings
+    rather than dicts — cannot be attributed to any file, so it is counted and
+    returned rather than silently skipped: absorbing it would understate the
+    population that did surface something.
+    """
+    files: set[str] = set()
+    unattributed = 0
+    for entries in detected.values():
+        for entry in entries:
+            if not isinstance(entry, dict):
+                unattributed += 1
+                continue
+            found = False
+            single = entry.get('file')
+            if isinstance(single, str) and single:
+                files.add(single)
+                found = True
+            joined = entry.get('files')
+            if isinstance(joined, str) and joined:
+                for part in joined.split(';'):
+                    stripped = part.strip()
+                    if stripped:
+                        files.add(stripped)
+                        found = True
+            if not found:
+                unattributed += 1
+    return files, unattributed
+
+
+def _compute_delta_coverage(
+    modified_files: list[str], detected: dict[str, list]
+) -> dict[str, Any]:
+    """Report what this round's scope HELD against what this round actually REACHED.
+
+    The surface's clean verdict is an absence claim, and an absence claim needs
+    the population it was computed over. ``scope_statement`` already names how
+    many files were searched and ``structural_limit`` names what the analysis can
+    never evaluate; both are about the round as a whole. This is the third,
+    per-class fact: of the files in scope, which CONTENT CLASSES were present,
+    and for how many of them did this round surface anything at all.
+
+    The motivating failure is a scoped round whose whole delta is content no
+    detector emits for. Such a round re-surfaces the previous round's candidates
+    unchanged and returns clean — a verdict indistinguishable, in the output as
+    it stood, from "looked and found nothing". Here the two separate: a class
+    with files in scope and ``files_with_candidates == 0`` is a class this round
+    produced NO observation for, and ``files_without_candidates`` counts those
+    files directly.
+
+    ⛔ ``files_with_candidates == 0`` for a class is NOT a verdict that the class
+    is sound, and it is NOT by itself proof that no detector covers the class —
+    a covered class legitimately surfaces nothing when there is nothing to
+    surface. It is the weaker, honest statement the round can actually support:
+    this round produced no candidate over those files. Both readings are left
+    open deliberately, because distinguishing them needs a per-detector reach map
+    that nothing in this module can derive, and asserting one would be a stronger
+    claim than the evidence carries.
+
+    Every declared class is emitted, seeded to zero, for the same reason
+    ``counts.by_family`` seeds its families: a missing key reads as "not
+    measured", a zero reads as "measured, none found", and only the second is
+    true of a class this round genuinely saw nothing in.
+    """
+    reached, unattributed = _candidate_files(detected)
+
+    files_by_class: dict[str, set[str]] = {name: set() for name in CONTENT_CLASSES}
+    for rel in modified_files:
+        files_by_class[_classify_content(rel)].add(rel)
+
+    by_class: list[dict[str, Any]] = []
+    for name in CONTENT_CLASSES:
+        in_scope = files_by_class[name]
+        with_candidates = in_scope & reached
+        by_class.append(
+            {
+                'content_class': name,
+                'files': len(in_scope),
+                'files_with_candidates': len(with_candidates),
+                'files_without_candidates': len(in_scope) - len(with_candidates),
+            }
+        )
+
+    files_in_scope = len(modified_files)
+    files_with_candidates = len(set(modified_files) & reached)
+    classes_present = sum(1 for row in by_class if row['files'])
+    silent_classes = sum(
+        1 for row in by_class if row['files'] and not row['files_with_candidates']
+    )
+
+    return {
+        'files_in_scope': files_in_scope,
+        'files_with_candidates': files_with_candidates,
+        'files_without_candidates': files_in_scope - files_with_candidates,
+        'classes_present': classes_present,
+        'classes_present_without_candidates': silent_classes,
+        'candidates_unattributed': unattributed,
+        'statement': _format_coverage_statement(
+            files_in_scope, files_with_candidates, classes_present, silent_classes
+        ),
+        'by_class': by_class,
+    }
+
+
+def _format_coverage_statement(
+    files_in_scope: int,
+    files_with_candidates: int,
+    classes_present: int,
+    silent_classes: int,
+) -> str:
+    """Render the one-line reading of the coverage block.
+
+    Emitted UNCONDITIONALLY, including for a round that reached everything, for
+    the same reason the scope and structural-limit statements are: the round most
+    likely to be over-read is the clean one.
+    """
+    if files_in_scope == 0:
+        return (
+            'delta coverage: 0 files in scope — this round observed nothing at '
+            'all, so a clean result is the absence of a search, not the result '
+            'of one'
+        )
+    silent_files = files_in_scope - files_with_candidates
+    if files_with_candidates == 0:
+        return (
+            f'delta coverage: none of the {files_in_scope} files in scope '
+            f'produced a candidate, across all {classes_present} content '
+            f'class(es) present — this round surfaced NO observation of its own, '
+            f'so a clean verdict here rests on no evidence drawn from this delta'
+        )
+    return (
+        f'delta coverage: {files_with_candidates} of {files_in_scope} files in '
+        f'scope produced at least one candidate; {silent_files} produced none, '
+        f'and {silent_classes} of the {classes_present} content class(es) '
+        f'present produced none at all — a class that produced nothing was not '
+        f'thereby judged sound'
+    )
