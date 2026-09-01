@@ -15,10 +15,10 @@ three legs:
   the real affected_files), else path-like tokens extracted from the narrative
   the detector already reads (init, pre-module-mapping).
 
-``ambiguous`` is ``true`` only when the detector multi-matches, plus the one
-bounded escape where a zero match leaves nothing to resolve at all — no
-narrative match, no always_on / glob leg, and no offerable domain to
-over-provision (``reason='no_narrative_match'``). Every other zero match
+``ambiguous`` is ``true`` when the detector multi-matches, and on every result
+that leaves the caller nothing to offer: the bounded escape where a zero match
+has no offerable domain to over-provision (``reason='no_narrative_match'``), and
+the early returns made before a usable domain set exists at all. Every other zero match
 resolves silently (``ambiguous=false``): the always_on / glob legs alone give
 ``reason='inclusion_only_resolve'``, and an otherwise-unresolved zero match
 over-provisions the whole offerable domain set under
