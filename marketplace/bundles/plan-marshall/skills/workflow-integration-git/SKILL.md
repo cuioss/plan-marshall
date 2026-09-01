@@ -132,13 +132,27 @@ Stage specific files relevant to the logical change (use `git -C {worktree_path}
 git -C {worktree_path} add <specific-files>
 ```
 
-Author the commit message via the `Write` tool to a `.plan/temp/` file (the path is permission-pre-approved via `Edit(.plan/**)` and lives inside the workspace — never `/tmp/`). The message MUST end with the `Co-Authored-By` trailer for the **active assistant** — the trailer identity is target-aware, not hardcoded: on Claude it is `Co-Authored-By: Claude <noreply@anthropic.com>`; on another target it is that target's assistant co-author identity. BOTH the `Write` and the `git commit -F` MUST use the worktree-absolute `{worktree_path}/.plan/temp/...` path: the harness `Write` tool resolves a relative path against the main checkout while `git -C {worktree_path}` resolves it against the worktree, so a relative-path round-trip would reference two different files and the commit could read a stale message. `{worktree_path}` is already resolved in Step 0, so no new resolution step is required.
+Author the commit message via the `Write` tool to a `.plan/temp/` file (the path is permission-pre-approved via `Edit(.plan/**)` and lives inside the workspace — never `/tmp/`). The message MUST end with the project's `Co-Authored-By` trailer. The identity is **fixed**, not target-aware: it names the system that produced the commit, never the assistant or vendor behind it, and it is the same on every target. BOTH the `Write` and the `git commit -F` MUST use the worktree-absolute `{worktree_path}/.plan/temp/...` path: the harness `Write` tool resolves a relative path against the main checkout while `git -C {worktree_path}` resolves it against the worktree, so a relative-path round-trip would reference two different files and the commit could read a stale message. `{worktree_path}` is already resolved in Step 0, so no new resolution step is required.
 
 ```text
 Write(file_path="{worktree_path}/.plan/temp/{plan_id}-commit-msg.txt", content="{commit_message}\n\n{coauthor_trailer}\n")
 ```
 
-`{coauthor_trailer}` is the active target's assistant co-author trailer — `Co-Authored-By: Claude <noreply@anthropic.com>` on Claude.
+`{coauthor_trailer}` is resolved, not hardcoded — one Bash call, before the `Write`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config commit-trailer get
+```
+
+Use the returned `trailer` field verbatim. The `name_source` / `email_source` fields say whether each half came from the project's configuration or from the default; neither changes what you write, both are what makes an unexpected identity diagnosable.
+
+When the executor is unavailable — a fresh clone, or a cloud session, where the git-ignored run-configuration.json does not exist — the resolver's own default stands, and it is written directly:
+
+```text
+Co-Authored-By: plan-marshall <noreply@cuioss.de>
+```
+
+Append no other attribution — in particular no `Generated with …` footer. See `plan-marshall:manage-run-config` § "commit-trailer get / set" for the schema and the per-half fallback.
 
 Then commit using `-F` to read the message from the file — this is one Bash call with no `&&`, no heredoc, no `$(...)` substitution:
 

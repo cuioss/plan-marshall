@@ -83,7 +83,7 @@ This copies to `~/.claude/plugins/cache/plan-marshall/` via rsync `--delete`.
 
 ## Git Commit Guidelines
 
-- Git commit `Co-Authored-By` trailer: use the **active assistant's** co-author identity — target-aware, not hardcoded to one assistant. On Claude it is `Co-Authored-By: Claude <noreply@anthropic.com>`; on another target it is that target's assistant co-author identity. This is the convention `plan-marshall:workflow-integration-git` applies at commit time. No marketing claims.
+- Git commit `Co-Authored-By` trailer: `Co-Authored-By: plan-marshall <noreply@cuioss.de>`. The identity names the system that produced the commit, never the assistant or vendor behind it, and it does not vary by target. This is the convention `plan-marshall:workflow-integration-git` applies at commit time, resolved through `manage-run-config commit-trailer get`. No `Generated with …` footer, no marketing claims. The value shown is the default; a project overrides it in the git-ignored run-configuration.json. See `CLAUDE.md` § "Commit Trailer".
 
 ## Temporary Files
 

@@ -7,6 +7,7 @@ Tier 2 (direct import) tests with subprocess tests for CLI plumbing.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from argparse import Namespace
 from pathlib import Path
@@ -1935,3 +1936,151 @@ class TestMain:
 
         assert code != 0
         assert '--type' in stderr
+
+
+# The identity an unconfigured checkout commits under. Owned by
+# manage-run-config (COMMIT_TRAILER_*_DEFAULT) and documented in CLAUDE.md
+# § "Commit Trailer"; restated here as the executable form of it.
+DEFAULT_COAUTHOR_TRAILER = 'Co-Authored-By: plan-marshall <noreply@cuioss.de>'
+
+# Assistant and vendor names that must never appear in a trailer, whatever the
+# configured identity is. The trailer names the system that produced the commit,
+# so any of these in one means the convention has been reverted somewhere.
+FORBIDDEN_COAUTHOR_TOKENS = (
+    'anthropic',
+    'claude',
+    'openai',
+    'chatgpt',
+    'gpt-',
+    'copilot',
+    'gemini',
+    'codex',
+    'cursor',
+)
+
+# Matches a trailer wherever it appears — in a commit template, a skill's worked
+# example, or a test fixture's expected output — and captures the identity ONLY,
+# not the line around it. Matching the whole line would flag prose that merely
+# names a file (CLAUDE.md) beside a perfectly canonical trailer. Assembled from
+# concatenated pieces so this pattern does not itself match the sweep.
+_TRAILER_PATTERN = re.compile('Co-Authored' + r'-By:\s*[^<>\n]*<[^<>\n]*>')
+
+
+def _repo_root() -> Path:
+    """Repository root, resolved from git rather than from __file__ depth."""
+    result = subprocess.run(
+        ['git', 'rev-parse', '--show-toplevel'],
+        cwd=Path(__file__).resolve().parent,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return Path(result.stdout.strip())
+
+
+def _tracked_trailer_lines() -> tuple[list[tuple[str, str]], int]:
+    """Every stated co-author trailer in tracked files, with the files scanned.
+
+    Returns ``(occurrences, files_scanned)`` where each occurrence is
+    ``(repo-relative path, the trailer text)`` — the trailer alone, so
+    surrounding prose cannot be mistaken for part of the identity.
+    ``files_scanned`` is published so an empty or truncated sweep cannot pass as
+    a clean result.
+
+    A trailer carrying a ``{placeholder}`` is a composition template rather than
+    a stated identity, and is excluded: the value it renders is decided at
+    runtime, so judging the template against a literal identity would be a
+    category error.
+    """
+    root = _repo_root()
+    listing = subprocess.run(
+        ['git', 'ls-files', '-z'],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    occurrences: list[tuple[str, str]] = []
+    scanned = 0
+    for rel in listing.stdout.split('\0'):
+        if not rel:
+            continue
+        path = root / rel
+        try:
+            content = path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            continue  # binary or unreadable — carries no trailer
+        scanned += 1
+        for match in _TRAILER_PATTERN.finditer(content):
+            trailer = match.group(0)
+            if '{' in trailer:
+                continue
+            occurrences.append((rel, trailer))
+    return occurrences, scanned
+
+
+class TestCoAuthorTrailerConvention:
+    """The co-author trailer names the system, not an assistant or its vendor.
+
+    Both sweeps are population-derived: they enumerate tracked files rather than
+    a hand-maintained list of "the places that state the trailer", so a site
+    added later is covered without editing this test. The two invariants have
+    genuinely different populations, which is why they are separate:
+
+    * No tracked file anywhere may name a vendor or assistant in a trailer.
+    * Every trailer OUTSIDE ``test/`` states the default identity. Test code is
+      excluded by a derived partition, not by a file list, because exercising a
+      configured override is exactly what the run-config knob's tests do.
+    """
+
+    def test_sweep_covers_a_non_empty_population(self):
+        """A clean result is only meaningful if files were actually read."""
+        occurrences, scanned = _tracked_trailer_lines()
+
+        assert scanned > 100, f'implausibly small sweep: {scanned} files read'
+        assert occurrences, (
+            f'no trailer line found in {scanned} tracked files — the probe no '
+            'longer matches anything, so a passing sweep proves nothing'
+        )
+
+    def test_no_tracked_trailer_names_an_assistant_or_vendor(self):
+        """The trailer identifies the producing system, never who powered it."""
+        occurrences, scanned = _tracked_trailer_lines()
+
+        deviations = [
+            (rel, line)
+            for rel, line in occurrences
+            if any(token in line.lower() for token in FORBIDDEN_COAUTHOR_TOKENS)
+        ]
+
+        assert not deviations, (
+            f'assistant/vendor identity in {len(deviations)} of '
+            f'{len(occurrences)} trailer occurrences across {scanned} tracked '
+            'files: ' + '; '.join(f'{rel}: {line}' for rel, line in deviations)
+        )
+
+    def test_every_non_test_trailer_is_the_default_identity(self):
+        """Documentation and workflow sites state the resolver's default.
+
+        The default, not a configured override: run-configuration.json is
+        git-ignored, so a fresh clone resolves to the default and that is what
+        the documentation must show.
+        """
+        occurrences, scanned = _tracked_trailer_lines()
+        non_test = [
+            (rel, line) for rel, line in occurrences if not rel.startswith('test/')
+        ]
+
+        assert non_test, (
+            f'no trailer found outside test/ in {scanned} tracked files — the '
+            'documented convention has no stated site left to check'
+        )
+        deviations = [
+            (rel, line) for rel, line in non_test if line != DEFAULT_COAUTHOR_TRAILER
+        ]
+
+        assert not deviations, (
+            f'non-default co-author trailer in {len(deviations)} of '
+            f'{len(non_test)} non-test occurrences across {scanned} tracked '
+            'files: ' + '; '.join(f'{rel}: {line}' for rel, line in deviations)
+        )

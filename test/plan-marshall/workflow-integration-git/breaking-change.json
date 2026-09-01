@@ -20,6 +20,6 @@
     "subject": "migrate HttpClient to builder pattern",
     "body": "Replace direct constructor with builder pattern for HttpClient.\n\nThis provides better configuration flexibility and follows\nthe established pattern in the codebase.",
     "footer": "BREAKING CHANGE: HttpClient constructor is removed. Use HttpClient.builder() instead.\n\nMigration:\n- Old: new HttpClient(url, timeout)\n- New: HttpClient.builder().url(url).timeout(timeout).build()",
-    "formatted_message": "refactor(http)!: migrate HttpClient to builder pattern\n\nReplace direct constructor with builder pattern for HttpClient.\n\nThis provides better configuration flexibility and follows\nthe established pattern in the codebase.\n\nBREAKING CHANGE: HttpClient constructor is removed. Use HttpClient.builder() instead.\n\nMigration:\n- Old: new HttpClient(url, timeout)\n- New: HttpClient.builder().url(url).timeout(timeout).build()\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
+    "formatted_message": "refactor(http)!: migrate HttpClient to builder pattern\n\nReplace direct constructor with builder pattern for HttpClient.\n\nThis provides better configuration flexibility and follows\nthe established pattern in the codebase.\n\nBREAKING CHANGE: HttpClient constructor is removed. Use HttpClient.builder() instead.\n\nMigration:\n- Old: new HttpClient(url, timeout)\n- New: HttpClient.builder().url(url).timeout(timeout).build()"
   }
 }

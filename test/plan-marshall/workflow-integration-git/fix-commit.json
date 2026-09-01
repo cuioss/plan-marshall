@@ -17,6 +17,6 @@
     "subject": "handle non-existent user in findById gracefully",
     "body": "Return Optional.empty() instead of throwing NPE when user not found.\n\nPreviously, findById() would throw NullPointerException when the\nuser ID did not exist in the database.",
     "footer": "Fixes #3",
-    "formatted_message": "fix(service): handle non-existent user in findById gracefully\n\nReturn Optional.empty() instead of throwing NPE when user not found.\n\nPreviously, findById() would throw NullPointerException when the\nuser ID did not exist in the database.\n\nFixes #3\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
+    "formatted_message": "fix(service): handle non-existent user in findById gracefully\n\nReturn Optional.empty() instead of throwing NPE when user not found.\n\nPreviously, findById() would throw NullPointerException when the\nuser ID did not exist in the database.\n\nFixes #3"
   }
 }
