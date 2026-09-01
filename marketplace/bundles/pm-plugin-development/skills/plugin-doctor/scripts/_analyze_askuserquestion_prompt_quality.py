@@ -22,9 +22,9 @@ obligation **4** (the question names what the system already knows and why it
 still needs the user) are **NOT evaluated** by this analyzer, and no attempt is
 made to approximate them. Both require judging whether a recommendation is
 *correct* and whether context is *sufficient* — neither is a token-level
-property. A silent run therefore means "no obligation-1, -2 or -5 violation was
-found in the invocation blocks examined"; it is **not** a verdict that a prompt
-is conformant. Every finding publishes ``population_size`` — the number of
+property. A silent run is **not** a verdict that a prompt is conformant: checks A
+and B match closed literal token sets, so obligations 1, 2 and 5 are themselves
+only partly reached. Every finding publishes ``population_size`` — the number of
 invocation blocks the run examined — so a finding is never reported without the
 population it was drawn against.
 

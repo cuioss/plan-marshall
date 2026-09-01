@@ -127,7 +127,7 @@ The rewrite is the same decision: the reader still picks the standards. It carri
 
 Obligations **3** (recommended option marked and ordered first) and **4** (the question names what the system already knows) are author judgement. The `askuserquestion-prompt-quality` rule does not evaluate them, and deliberately does not try: both require deciding whether a recommendation is *correct* and whether context is *sufficient*, which no token check can answer.
 
-A clean `plugin-doctor` run therefore means "no obligation-1, -2, or -5 violation was found in the invocation blocks examined". It does **not** certify a conformant prompt. Obligations 3 and 4 remain the author's and the reviewer's to check by reading.
+A clean `plugin-doctor` run does **not** certify a conformant prompt.
 
 ## Tool mechanics you cannot infer
 
