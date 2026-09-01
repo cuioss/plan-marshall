@@ -57,6 +57,17 @@ CI_DURATION_WINDOW_SIZE = 5
 # pre-knob rendering, which is what makes the knob safe to land opt-in.
 DISPLAY_TIMEZONE_DEFAULT = 'UTC'
 
+# Commit co-author identity. The trailer every assistant-authored commit ends
+# with names the SYSTEM that produced the commit, never the assistant or vendor
+# behind it, and it does not vary by target. These defaults are what an
+# unconfigured project commits under; a project overrides them through the
+# ``commit-trailer set`` verb, which persists into the git-ignored
+# run-configuration.json. Because that file is git-ignored, a fresh clone (and
+# every cloud session) resolves to exactly these values — which is why the
+# default, not the override, is what the repository's own documentation states.
+COMMIT_TRAILER_NAME_DEFAULT = 'plan-marshall'
+COMMIT_TRAILER_EMAIL_DEFAULT = 'noreply@cuioss.de'
+
 DEFAULT_STRUCTURE = {
     'version': 1,
     'commands': {},
@@ -1060,6 +1071,120 @@ def cmd_display_timezone_set(args: argparse.Namespace) -> dict:
 
 
 # =============================================================================
+# Commit-Trailer Knob
+# =============================================================================
+
+
+def compose_commit_trailer(name: str, email: str) -> str:
+    """Compose the ``Co-Authored-By`` line from an identity pair.
+
+    The single place the trailer string is assembled, so every caller — the
+    getter, the setter's echo, and the steward's confirmation — renders one
+    identity in exactly one form.
+    """
+    return f'Co-Authored-By: {name} <{email}>'
+
+
+def _clean_identity_part(value: Any) -> str | None:
+    """Return ``value`` if it is a usable identity fragment, else ``None``.
+
+    A fragment is usable when it is a non-empty string carrying none of the
+    characters that would break the trailer's own grammar (angle brackets,
+    which delimit the address, and any line break, which would end the trailer
+    line early and silently truncate the identity).
+    """
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    if not stripped:
+        return None
+    if any(ch in stripped for ch in '<>\r\n'):
+        return None
+    return stripped
+
+
+def read_commit_trailer() -> dict[str, str]:
+    """Resolve the co-author identity, per field, against the stored config.
+
+    Each half falls back independently, and the source of each half is reported
+    rather than inferred: a config carrying only a ``name`` yields a configured
+    name beside a default email, and says so. An unusable stored value (wrong
+    type, empty, or carrying trailer-breaking characters) is treated as absent,
+    so a malformed config degrades to the default identity instead of emitting a
+    broken trailer line.
+
+    Returns:
+        A mapping with ``name``, ``email``, ``trailer``, ``name_source`` and
+        ``email_source``; each source is ``'configured'`` or ``'default'``.
+    """
+    config = read_run_config(get_run_config_path())
+    stored = config.get('commit_trailer')
+    stored = stored if isinstance(stored, dict) else {}
+
+    name = _clean_identity_part(stored.get('name'))
+    email = _clean_identity_part(stored.get('email'))
+    return {
+        'name': name or COMMIT_TRAILER_NAME_DEFAULT,
+        'email': email or COMMIT_TRAILER_EMAIL_DEFAULT,
+        'trailer': compose_commit_trailer(
+            name or COMMIT_TRAILER_NAME_DEFAULT, email or COMMIT_TRAILER_EMAIL_DEFAULT
+        ),
+        'name_source': 'configured' if name else 'default',
+        'email_source': 'configured' if email else 'default',
+    }
+
+
+def cmd_commit_trailer_get(args: argparse.Namespace) -> dict:
+    """Report the resolved co-author trailer and where each half came from."""
+    del args  # unused — fixed-shape verb
+    try:
+        return {'status': 'success', **read_commit_trailer()}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_commit_trailer_set(args: argparse.Namespace) -> dict:
+    """Persist a co-author identity; each half is optional and set independently."""
+    try:
+        if args.name is None and args.email is None:
+            return {
+                'status': 'error',
+                'error': 'invalid_value',
+                'message': 'Provide at least one of --name or --email.',
+            }
+        updates: dict[str, str] = {}
+        for field, raw in (('name', args.name), ('email', args.email)):
+            if raw is None:
+                continue
+            cleaned = _clean_identity_part(raw)
+            if cleaned is None:
+                return {
+                    'status': 'error',
+                    'error': 'invalid_value',
+                    'message': (
+                        f"Invalid --{field} '{raw}'. Expected a non-empty value carrying "
+                        'no angle bracket and no line break.'
+                    ),
+                }
+            updates[field] = cleaned
+        if 'email' in updates and '@' not in updates['email']:
+            return {
+                'status': 'error',
+                'error': 'invalid_value',
+                'message': f"Invalid --email '{args.email}'. Expected an address of the form user@host.",
+            }
+
+        config_path = get_run_config_path()
+        config = read_run_config(config_path)
+        section = config.get('commit_trailer')
+        config['commit_trailer'] = {**(section if isinstance(section, dict) else {}), **updates}
+        _write_json_file(config_path, config)
+        return {'status': 'success', **read_commit_trailer()}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+# =============================================================================
 # Cleanup Subcommands (delegates to cleanup.py functions)
 # =============================================================================
 
@@ -1152,6 +1277,12 @@ Examples:
 
   # Set the display-only render timezone (IANA zone name)
   %(prog)s display-timezone set --value America/New_York
+
+  # Get the commit co-author trailer (default: plan-marshall)
+  %(prog)s commit-trailer get
+
+  # Set the commit co-author identity (either half, or both)
+  %(prog)s commit-trailer set --name my-system --email noreply@example.org
 
   # Report whether a derivation resolver is active (unconfigured => enabled)
   %(prog)s derivation-resolver get --resolver markdown
@@ -1436,6 +1567,28 @@ Examples:
     )
     p_dtz_set.set_defaults(func=cmd_display_timezone_set)
 
+    # commit-trailer command with subcommands
+    p_ct = subparsers.add_parser(
+        'commit-trailer',
+        help='Manage the commit co-author identity (default: plan-marshall)',
+        allow_abbrev=False,
+    )
+    ct_subparsers = p_ct.add_subparsers(
+        dest='commit_trailer_command', required=True, help='Commit-trailer operation'
+    )
+
+    p_ct_get = ct_subparsers.add_parser(
+        'get', help='Resolve the co-author trailer and the source of each half', allow_abbrev=False
+    )
+    p_ct_get.set_defaults(func=cmd_commit_trailer_get)
+
+    p_ct_set = ct_subparsers.add_parser(
+        'set', help='Set the co-author name and/or email', allow_abbrev=False
+    )
+    p_ct_set.add_argument('--name', help=f'Co-author name (default: {COMMIT_TRAILER_NAME_DEFAULT})')
+    p_ct_set.add_argument('--email', help=f'Co-author email (default: {COMMIT_TRAILER_EMAIL_DEFAULT})')
+    p_ct_set.set_defaults(func=cmd_commit_trailer_set)
+
     # cleanup command
     p_cleanup = subparsers.add_parser(
         'cleanup', help='Clean .plan directories based on retention settings', allow_abbrev=False
@@ -1501,6 +1654,12 @@ Examples:
     if args.command == 'display-timezone':
         if not args.display_timezone_command:
             p_dtz.print_help()
+            return 1
+
+    # Handle commit-trailer subcommand
+    if args.command == 'commit-trailer':
+        if not args.commit_trailer_command:
+            p_ct.print_help()
             return 1
 
     result = args.func(args)

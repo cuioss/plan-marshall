@@ -20,6 +20,27 @@ The set is the convention because `.github/workflows/python-verify.yml` restrict
 
 `python-verify.yml` opts in to a footprint gate (`skip-on-docs-only: true`): a docs-only change (no buildable source) skips the heavy pyprojectx build while the required `verify / conclusion` check still reports green, so the merge queue admits it without stalling. See `.github/workflows/python-verify.yml` for the non-building path set and the exact skip mechanics.
 
+## Commit Trailer
+
+Every commit authored by an assistant in this repository ends with exactly this trailer, and nothing else by way of attribution:
+
+```text
+Co-Authored-By: plan-marshall <noreply@cuioss.de>
+```
+
+The identity names the system that produced the commit, never the assistant or vendor behind it, and it does not vary by target. No `Generated with …` footer, and no marketing claims. The `format-commit` script deliberately does not append the trailer — the caller adds it at `git commit` time so it is never duplicated.
+
+The value above is the **default**, not a hardcode. A project overrides either half through `plan-marshall:manage-run-config`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config commit-trailer get
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config commit-trailer set --name NAME --email EMAIL
+```
+
+The override lives in the git-ignored `.plan/local/run-configuration.json`, so it is per-checkout: a fresh clone and every cloud session resolve to the default, which is why this file — and every other doc — states the default rather than an override. `marshall-steward` → Configuration surfaces the same knob.
+
+PR bodies carry no attribution footer at all.
+
 ## Script Execution Convention
 
 All marketplace scripts run through the generated executor — never by direct path:

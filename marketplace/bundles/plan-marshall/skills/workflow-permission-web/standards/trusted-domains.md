@@ -30,6 +30,9 @@ Pre-approved domains for WebFetch operations that have passed security assessmen
 | raw.githubusercontent.com | GitHub raw content CDN |
 | developer.mozilla.org | MDN Web Docs (HTML/CSS/JS reference) |
 | www.w3.org | W3C web standards and specs |
+| rfc-editor.org | IETF RFC series canonical publisher |
+| datatracker.ietf.org | IETF Datatracker (RFCs and Internet-Drafts) |
+| openid.net | OpenID Foundation specifications (OIDC, FAPI) |
 
 ## High-Reach Domains (Developer Platforms)
 

@@ -115,7 +115,7 @@ fix(build): resolve verification errors
 - Applied linting fixes (ruff)
 - Resolved test failures
 
-Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+Co-Authored-By: plan-marshall <noreply@cuioss.de>
 EOF
 )"
 ```
