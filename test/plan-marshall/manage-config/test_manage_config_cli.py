@@ -626,6 +626,39 @@ def test_main_resolve_outline_skill_generic_fallback(plan_context, monkeypatch, 
     assert data['skill'] == 'none'
 
 
+def test_main_resolve_outline_skill_accepts_the_repeated_domain_flag(plan_context, monkeypatch, capsys):
+    """`--domain` is repeatable at the CLI boundary — no argparse rejection."""
+    create_nested_marshal_json(plan_context.fixture_dir)
+
+    code, out, err = _drive(
+        monkeypatch, capsys, 'resolve-outline-skill', '--domain', 'java', '--domain', 'javascript'
+    )
+
+    assert code == 0, f'the repeated --domain form must parse, got exit {code}: {err!r}'
+    assert 'unrecognized arguments' not in err
+    data = parse_toon(out)
+    assert data['status'] == 'success'
+    assert data['domain_count'] == 2
+
+
+def test_main_resolve_outline_skill_rejects_a_malformed_domain(plan_context, monkeypatch, capsys):
+    """A malformed domain value is still refused on the `error: invalid_domain` channel.
+
+    The repeatable declaration keeps the canonical `validate_domain_name` type, so
+    each supplied element is validated independently and one bad element fails the
+    whole invocation.
+    """
+    create_nested_marshal_json(plan_context.fixture_dir)
+
+    _code, out, _err = _drive(
+        monkeypatch, capsys, 'resolve-outline-skill', '--domain', 'java', '--domain', 'Bad!!Domain'
+    )
+
+    data = parse_toon(out)
+    assert data['status'] == 'error'
+    assert data['error'] == 'invalid_domain'
+
+
 # =============================================================================
 # skill-domains active-profiles + flat set (covers cmd_skill_domains branches via main)
 # =============================================================================

@@ -1349,8 +1349,18 @@ breakdown:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config resolve-outline-skill \
-  --domain DOMAIN
+  --domain DOMAIN [--domain DOMAIN ...]
 ```
+
+`--domain` is **repeatable** — the verb is an N-to-1 selector over the plan's whole domain roster, not a single-domain lookup. Each supplied domain is an independent producer of at most one `outline_skill`; a domain key the project does not configure contributes nothing and is not an error. Every response carries the roster: `domains` (the caller-supplied list, order preserved) and `domain_count` (its length). Three branches, discriminated by `source`:
+
+| Branch | `source` | `skill` | Extra fields |
+|--------|----------|---------|--------------|
+| Exactly one DISTINCT skill resolves | `domain_specific` | the resolved skill | `resolved_from` — the first domain that declared it |
+| No domain resolves a skill | `generic` | `none` | `reason: no_domain_skill` |
+| More than one distinct skill competes | `generic` | `none` | `reason: multiple_domain_skills`, `competing_skills` — the distinct candidates, in first-declaring-domain order |
+
+`reason` is present on the two `generic` branches only, and is diagnostic: a consumer branches on `source`, then reads `reason` to tell an unconfigured roster from a contended one. The contention branch reports `competing_skills` rather than silently collapsing into the generic fallback, so a suppressed candidate is visible to the caller.
 
 ### list-finalize-steps
 

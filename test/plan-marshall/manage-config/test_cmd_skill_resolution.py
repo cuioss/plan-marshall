@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for skill-resolution commands in manage-config.
 
-Tests resolve-domain-skills, resolve-workflow-skill-extension, get-skills-by-profile,
-list-finalize-steps commands defined in _cmd_skill_resolution.py.
+Tests resolve-domain-skills, resolve-workflow-skill-extension, resolve-outline-skill,
+get-skills-by-profile, list-finalize-steps commands defined in _cmd_skill_resolution.py.
 
 Tier 2 (direct import) tests with 1 subprocess test for CLI plumbing.
 """
@@ -31,6 +31,7 @@ _config_defaults = load_script_module(
 cmd_get_skills_by_profile = _cmd_skill_resolution.cmd_get_skills_by_profile
 cmd_list_finalize_steps = _cmd_skill_resolution.cmd_list_finalize_steps
 cmd_resolve_domain_skills = _cmd_skill_resolution.cmd_resolve_domain_skills
+cmd_resolve_outline_skill = _cmd_skill_resolution.cmd_resolve_outline_skill
 cmd_resolve_workflow_skill_extension = _cmd_skill_resolution.cmd_resolve_workflow_skill_extension
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
@@ -222,6 +223,102 @@ def test_resolve_workflow_skill_extension_plugin_dev(plan_context, monkeypatch):
 
     assert result['status'] == 'success'
     assert result['extension'] == 'pm-plugin-development:ext-outline-workflow'
+
+
+# =============================================================================
+# resolve-outline-skill Tests (Tier 2) — the N-to-1 domain selector
+# =============================================================================
+
+_PLUGIN_OUTLINE = 'pm-plugin-development:ext-outline-workflow'
+_JAVA_OUTLINE = 'pm-dev-java:ext-outline-java'
+
+
+def _config_with_outline_skills(outline_skills: dict[str, str | None]) -> dict:
+    """Build a marshal config declaring each named domain's ``outline_skill``.
+
+    A ``None`` value declares the domain with no ``outline_skill`` key, so it is
+    configured but contributes no candidate. Built inline rather than extended
+    onto the shared nested fixture so the fixture's other consumers are untouched.
+    """
+    skill_domains: dict = {'system': {'defaults': []}}
+    for domain, skill in outline_skills.items():
+        entry: dict = {'bundle': f'bundle-for-{domain}'}
+        if skill is not None:
+            entry['outline_skill'] = skill
+        skill_domains[domain] = entry
+    return {'skill_domains': skill_domains}
+
+
+def test_resolve_outline_skill_single_resolving_domain(plan_context):
+    """Exactly one distinct skill across the roster is returned as domain_specific."""
+    create_marshal_json(
+        plan_context.fixture_dir,
+        _config_with_outline_skills({'python': None, 'plan-marshall-plugin-dev': _PLUGIN_OUTLINE}),
+    )
+
+    result = cmd_resolve_outline_skill(Namespace(domain=['python', 'plan-marshall-plugin-dev']))
+
+    assert result['status'] == 'success'
+    assert result['source'] == 'domain_specific'
+    assert result['skill'] == _PLUGIN_OUTLINE
+    assert result['resolved_from'] == 'plan-marshall-plugin-dev'
+
+
+def test_resolve_outline_skill_no_resolving_domain(plan_context):
+    """No domain declaring an outline_skill falls back to generic with no_domain_skill."""
+    create_nested_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_resolve_outline_skill(Namespace(domain=['java', 'javascript']))
+
+    assert result['status'] == 'success'
+    assert result['source'] == 'generic'
+    assert result['skill'] == 'none'
+    assert result['reason'] == 'no_domain_skill'
+
+
+def test_resolve_outline_skill_competing_domains(plan_context):
+    """Two domains declaring DIFFERENT skills suppress both and name the contention."""
+    create_marshal_json(
+        plan_context.fixture_dir,
+        _config_with_outline_skills(
+            {'plan-marshall-plugin-dev': _PLUGIN_OUTLINE, 'java': _JAVA_OUTLINE}
+        ),
+    )
+
+    result = cmd_resolve_outline_skill(Namespace(domain=['plan-marshall-plugin-dev', 'java']))
+
+    assert result['status'] == 'success'
+    assert result['source'] == 'generic'
+    assert result['skill'] == 'none'
+    assert result['reason'] == 'multiple_domain_skills'
+    assert set(result['competing_skills']) == {_PLUGIN_OUTLINE, _JAVA_OUTLINE}
+
+
+def test_resolve_outline_skill_echoes_the_caller_roster(plan_context):
+    """``domains`` preserves the caller's order and ``domain_count`` is its length."""
+    create_nested_marshal_json(plan_context.fixture_dir)
+    roster = ['javascript', 'java', 'plan-marshall-plugin-dev']
+
+    result = cmd_resolve_outline_skill(Namespace(domain=list(roster)))
+
+    assert result['domains'] == roster
+    assert result['domain_count'] == len(roster)
+
+
+def test_resolve_outline_skill_unknown_domain_contributes_nothing(plan_context):
+    """An unconfigured domain key is skipped rather than erroring the whole resolve."""
+    create_marshal_json(
+        plan_context.fixture_dir,
+        _config_with_outline_skills({'plan-marshall-plugin-dev': _PLUGIN_OUTLINE}),
+    )
+
+    result = cmd_resolve_outline_skill(Namespace(domain=['cobol', 'plan-marshall-plugin-dev']))
+
+    assert result['status'] == 'success'
+    assert result['source'] == 'domain_specific'
+    assert result['skill'] == _PLUGIN_OUTLINE
+    assert result['resolved_from'] == 'plan-marshall-plugin-dev'
+    assert result['domains'] == ['cobol', 'plan-marshall-plugin-dev']
 
 
 # =============================================================================

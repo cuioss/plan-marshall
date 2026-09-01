@@ -64,6 +64,7 @@ from input_validation import (
     add_domain_arg,
     add_field_arg,
     parse_args_with_toon_errors,
+    validate_domain_name,
 )
 
 
@@ -829,8 +830,21 @@ def main() -> int:
     )
 
     # --- resolve-outline-skill ---
-    p_ros = subparsers.add_parser('resolve-outline-skill', help='Resolve outline skill for domain', allow_abbrev=False)
-    add_domain_arg(p_ros)
+    p_ros = subparsers.add_parser(
+        'resolve-outline-skill',
+        help='Resolve the outline skill across every domain a plan carries',
+        allow_abbrev=False,
+    )
+    # Repeatable, unlike the single-valued `add_domain_arg` helper every other
+    # `--domain` subparser in this file uses: this verb aggregates over the plan's
+    # whole domain roster. The shared helper stays single-valued for those sites.
+    p_ros.add_argument(
+        '--domain',
+        action='append',
+        required=True,
+        type=validate_domain_name,
+        help='Domain name (kebab-case); repeat the flag once per domain',
+    )
 
     # --- list-finalize-steps ---
     subparsers.add_parser('list-finalize-steps', help='List all available finalize steps', allow_abbrev=False)

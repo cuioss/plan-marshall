@@ -397,23 +397,61 @@ def cmd_list_finalize_steps(args) -> dict:
 
 
 def cmd_resolve_outline_skill(args) -> dict:
-    """Resolve outline skill for a domain."""
+    """Resolve the one outline skill across every domain a plan carries.
+
+    An aggregation over N independent producers: each supplied domain declares
+    at most one ``outline_skill``. The domain-specific skill is returned only
+    when exactly one DISTINCT skill resolves across the roster, so the response
+    carries the producer roster (``domains`` / ``domain_count``) and names the
+    producer whose skill won (``resolved_from``). Zero and more-than-one both
+    fall back to the generic instructions, and ``reason`` distinguishes them —
+    contention additionally reports the suppressed candidates in
+    ``competing_skills`` rather than collapsing quietly into the fallback.
+
+    A domain key absent from ``skill_domains``, or present with a non-dict
+    value, contributes nothing and is not an error.
+    """
     try:
         require_initialized()
     except MarshalNotInitializedError as e:
         return error_exit(str(e))
 
-    domain = args.domain
+    domains: list[str] = list(args.domain)
 
     config = load_config()
     skill_domains = config.get('skill_domains', {})
 
-    # Check for domain-specific outline skill
-    if domain in skill_domains:
-        domain_config = skill_domains[domain]
+    # Keyed by skill so each distinct candidate records the FIRST domain that
+    # declared it — insertion order is roster order, which is what
+    # `resolved_from` and `competing_skills` report.
+    declared_by: dict[str, str] = {}
+    for domain in domains:
+        domain_config = skill_domains.get(domain)
+        if not isinstance(domain_config, dict):
+            continue
         outline_skill = domain_config.get('outline_skill')
-        if outline_skill:
-            return success_exit({'domain': domain, 'skill': outline_skill, 'source': 'domain_specific'})
+        if outline_skill and outline_skill not in declared_by:
+            declared_by[outline_skill] = domain
 
-    # No domain override — generic instructions will be used
-    return success_exit({'domain': domain, 'skill': 'none', 'source': 'generic'})
+    roster = {'domains': domains, 'domain_count': len(domains)}
+
+    if len(declared_by) == 1:
+        skill, first_domain = next(iter(declared_by.items()))
+        return success_exit(
+            {**roster, 'skill': skill, 'source': 'domain_specific', 'resolved_from': first_domain}
+        )
+
+    if not declared_by:
+        return success_exit(
+            {**roster, 'skill': 'none', 'source': 'generic', 'reason': 'no_domain_skill'}
+        )
+
+    return success_exit(
+        {
+            **roster,
+            'skill': 'none',
+            'source': 'generic',
+            'reason': 'multiple_domain_skills',
+            'competing_skills': list(declared_by),
+        }
+    )
