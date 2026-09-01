@@ -16,6 +16,7 @@ import pytest
 
 from conftest import PROJECT_ROOT
 from marketplace.targets.body_transform_engine import (
+    READ_DIRECTIVE_RE,
     SKILL_DIRECTIVE_RE,
     TransformRules,
     UnmappedIdiomError,
@@ -25,6 +26,7 @@ from marketplace.targets.body_transform_engine import (
     build_user_invocable_lookup,
     load_transform_rules,
     make_body_transformer,
+    rewrite_read_directives,
     rewrite_registered_idioms,
     rewrite_skill_directives,
     rewrite_slash_commands,
@@ -35,6 +37,7 @@ from marketplace.targets.body_transform_engine import (
 OPENCODE_DIRECTIVE_TEMPLATE = (
     'Call the `skill` tool with `{ name: "{bundle}-{skill}" }` before continuing.'
 )
+OPENCODE_READ_TEMPLATE = 'Call the `read` tool with `{ filePath: "{path}" }` before continuing.'
 OPENCODE_SLASH_TEMPLATE = '/{name}'
 
 
@@ -129,6 +132,124 @@ def test_skill_directive_re_anchored_to_full_line():
     pattern = SKILL_DIRECTIVE_RE.pattern
     assert pattern.startswith('^Skill:')
     assert pattern.endswith(r'\s*$')
+
+
+# ---------------------------------------------------------------------------
+# Transform 1 — Read: directive rewrite (template-driven)
+# ---------------------------------------------------------------------------
+
+
+def test_rewrite_read_directives_full_line_match():
+    """A full-line ``Read:`` directive is rewritten per the OpenCode template.
+
+    Unlike the ``Skill:`` matcher's ``\\s*$`` tail, ``READ_DIRECTIVE_RE`` ends
+    in ``[ \\t]*\\r?$``: the line's terminating newline is preserved, so the
+    rewrite replaces the directive line in place and never reaches across a line
+    break."""
+    body = 'Read: standards/code-organization.md\n'
+    result = rewrite_read_directives(body, OPENCODE_READ_TEMPLATE)
+    assert result == (
+        'Call the `read` tool with `{ filePath: "standards/code-organization.md" }` '
+        'before continuing.\n'
+    )
+
+
+def test_rewrite_read_directives_full_line_with_extra_spacing():
+    body = 'Read:   references/core-principles.md\n'
+    result = rewrite_read_directives(body, OPENCODE_READ_TEMPLATE)
+    assert result == (
+        'Call the `read` tool with `{ filePath: "references/core-principles.md" }` '
+        'before continuing.\n'
+    )
+
+
+def test_rewrite_read_directives_preserves_relative_and_placeholder_paths():
+    """``../``/``~/``-relative paths and ``{placeholder}`` values pass through whole."""
+    body = (
+        'Read: ../python-core/standards/python-core.md\n'
+        'Read: references/{knowledge-name}.md\n'
+    )
+    result = rewrite_read_directives(body, OPENCODE_READ_TEMPLATE)
+    assert '{ filePath: "../python-core/standards/python-core.md" }' in result
+    assert '{ filePath: "references/{knowledge-name}.md" }' in result
+
+
+def test_rewrite_read_directives_preserves_trailing_annotation():
+    """A trailing annotation (``(always)``) is part of the line capture and survives."""
+    body = 'Read: standards/quality-standards.md (always)\n'
+    result = rewrite_read_directives(body, OPENCODE_READ_TEMPLATE)
+    assert '{ filePath: "standards/quality-standards.md (always)" }' in result
+
+
+def test_rewrite_read_directives_inline_backtick_left_alone():
+    """Inline backtick references must NOT be rewritten — they are prose."""
+    body = 'Some text `Read: standards/foo.md` more text\n'
+    assert rewrite_read_directives(body, OPENCODE_READ_TEMPLATE) == body
+
+
+def test_rewrite_read_directives_mid_line_left_alone():
+    """A Read: token in the middle of a sentence is not a full-line directive."""
+    body = 'See the Read: standards/foo.md reference for details\n'
+    assert rewrite_read_directives(body, OPENCODE_READ_TEMPLATE) == body
+
+
+def test_rewrite_read_directives_bare_directive_does_not_swallow_next_line():
+    """A ``Read:`` with no path on its own line is no directive.
+
+    The separator is ``[ \\t]+``, not ``\\s+``: a newline-bridging match would
+    capture the NEXT line as the path and rewrite two lines into one."""
+    body = 'Read:\nstandards/foo.md\n'
+    assert rewrite_read_directives(body, OPENCODE_READ_TEMPLATE) == body
+
+
+def test_rewrite_read_directives_crlf_ending_keeps_carriage_return_out_of_path():
+    """A CRLF-terminated directive matches, and the ``\\r`` does not leak into
+    the path capture."""
+    body = 'Read: standards/foo.md\r\n'
+    result = rewrite_read_directives(body, OPENCODE_READ_TEMPLATE)
+    assert result == (
+        'Call the `read` tool with `{ filePath: "standards/foo.md" }` '
+        'before continuing.\n'
+    )
+
+
+def test_rewrite_read_directives_idempotent():
+    """Running the transform on already-rewritten text is a no-op."""
+    body = 'Read: standards/foo.md\n'
+    once = rewrite_read_directives(body, OPENCODE_READ_TEMPLATE)
+    twice = rewrite_read_directives(once, OPENCODE_READ_TEMPLATE)
+    assert once == twice
+
+
+def test_rewrite_read_directives_multiple_directives():
+    body = (
+        'Read: standards/one.md\n'
+        'middle prose\n'
+        'Read: templates/two.java.tmpl\n'
+    )
+    result = rewrite_read_directives(body, OPENCODE_READ_TEMPLATE)
+    assert '{ filePath: "standards/one.md" }' in result
+    assert '{ filePath: "templates/two.java.tmpl" }' in result
+    assert 'middle prose' in result
+
+
+def test_rewrite_read_directives_no_match_returns_unchanged():
+    body = '# Heading\n\nSome prose without a directive.\n'
+    assert rewrite_read_directives(body, OPENCODE_READ_TEMPLATE) == body
+
+
+def test_rewrite_read_directives_honours_custom_template():
+    """The template is data — a different target's template drives the rewrite."""
+    body = 'Read: standards/foo.md\n'
+    result = rewrite_read_directives(body, 'load file {path} now')
+    assert result == 'load file standards/foo.md now\n'
+
+
+def test_read_directive_re_anchored_to_full_line():
+    """The compiled regex MUST be anchored — guards against accidental relaxation."""
+    pattern = READ_DIRECTIVE_RE.pattern
+    assert pattern.startswith('^Read:')
+    assert pattern.endswith(r'[ \t]*\r?$')
 
 
 # ---------------------------------------------------------------------------
@@ -348,6 +469,8 @@ def test_integration_fixture_skill_body_both_transforms(tmp_path: Path):
         '\n'
         'Skill: demo:helper\n'
         '\n'
+        'Read: standards/demo-rules.md\n'
+        '\n'
         'Then invoke /runner action=go here.\n'
         '\n'
         'Inline `/runner` mention in code-fences should be left alone... '
@@ -360,6 +483,8 @@ def test_integration_fixture_skill_body_both_transforms(tmp_path: Path):
 
     # Transform 1: full-line directive rewritten
     assert 'Call the `skill` tool with `{ name: "demo-helper" }`' in result
+    # Transform 1: full-line Read: directive rewritten
+    assert 'Call the `read` tool with `{ filePath: "standards/demo-rules.md" }`' in result
     # Transform 2: standalone slash-command rewritten
     assert '/demo-runner action=go' in result
     # NOT transformed: inline backtick mention preserved verbatim
@@ -535,6 +660,18 @@ def test_make_body_transformer_transform_3_preserves_task():
     assert result == body
 
 
+def test_make_body_transformer_applies_read_directive_from_real_mapping():
+    """The composed transformer rewrites a ``Read:`` line per the real mapping.json."""
+    transform = make_body_transformer({}, _opencode_rules())
+    body = 'Read: standards/demo-rules.md\n'
+    result = transform(body, 'demo', 'skill')
+    assert (
+        result
+        == 'Call the `read` tool with `{ filePath: "standards/demo-rules.md" }` before continuing.\n'
+    )
+    assert 'Read: standards/demo-rules.md' not in result
+
+
 # ---------------------------------------------------------------------------
 # load_transform_rules + source-vocabulary fail-closed guard
 # ---------------------------------------------------------------------------
@@ -545,6 +682,8 @@ def test_load_transform_rules_reads_real_mapping_json():
     rules = _opencode_rules()
     assert not rules.is_verbatim
     assert rules.directive_rewrites['skill_directive']['template']
+    assert rules.directive_rewrites['read_directive']['template']
+    assert '{path}' in rules.directive_rewrites['read_directive']['template']
     assert rules.slash_rewrites['slash_command']['template'] == '/{name}'
     assert rules.body_idiom_rewrites['AskUserQuestion']['disposition'] == 'rewrite_inline_code'
     assert rules.body_idiom_rewrites['AskUserQuestion']['opencode_tool'] == 'question'
@@ -588,7 +727,10 @@ def test_assert_source_vocabulary_mapped_exempts_verbatim_target():
 def test_assert_source_vocabulary_mapped_requires_slash_when_directive_present():
     """A non-verbatim target missing the slash template fails closed."""
     rules = TransformRules(
-        directive_rewrites={'skill_directive': {'template': 'x {bundle}-{skill}'}},
+        directive_rewrites={
+            'skill_directive': {'template': 'x {bundle}-{skill}'},
+            'read_directive': {'template': 'x {path}'},
+        },
     )
     with pytest.raises(UnmappedIdiomError, match='slash_command'):
         assert_source_vocabulary_mapped(rules)
@@ -607,3 +749,31 @@ def test_assert_source_vocabulary_mapped_rejects_empty_template():
 def test_assert_source_vocabulary_mapped_accepts_full_opencode_rules():
     """The real OpenCode rules map every structural source idiom — no raise."""
     assert_source_vocabulary_mapped(_opencode_rules())
+
+
+def test_assert_source_vocabulary_mapped_requires_read_directive():
+    """A non-verbatim target missing the ``Read:`` template fails closed.
+
+    The ``Read: {path}`` full-line load directive is a structural source idiom
+    exactly like ``Skill:`` — a target that rewrites one but not the other
+    would emit the ``Read:`` line verbatim, so the build refuses the partial
+    mapping."""
+    rules = TransformRules(
+        directive_rewrites={'skill_directive': {'template': 'x {bundle}-{skill}'}},
+        slash_rewrites={'slash_command': {'template': '/{name}'}},
+    )
+    with pytest.raises(UnmappedIdiomError, match='read_directive'):
+        assert_source_vocabulary_mapped(rules)
+
+
+def test_load_transform_rules_fails_closed_on_unmapped_read_directive(tmp_path: Path):
+    """A mapping.json that maps ``skill_directive`` and ``slash_command`` but omits
+    ``read_directive`` fails closed at load time."""
+    mapping = tmp_path / 'mapping.json'
+    _write(
+        mapping,
+        '{"directive_rewrites": {"skill_directive": {"template": "x {bundle}-{skill}"}},'
+        ' "slash_rewrites": {"slash_command": {"template": "/{name}"}}}',
+    )
+    with pytest.raises(UnmappedIdiomError, match='read_directive'):
+        load_transform_rules(mapping)
