@@ -2,13 +2,13 @@
 """Operator-provenance classification tests (``_chat_provenance``).
 
 The predicate decides whether a `user` turn is operator-authored, and every
-operator-signal counter downstream rests on it. It is positive and structural:
-a turn survives only when prose remains after every harness envelope is
-stripped, so an envelope shape nobody enumerated classifies as synthetic
-rather than inflating the count.
+operator-signal counter in the ``chat extract-signal`` runtime operation rests
+on it. It is positive and structural: a turn survives only when prose remains
+after every harness envelope is stripped, so an envelope shape nobody
+enumerated classifies as synthetic rather than inflating the count.
 
-These tests hold both directions — harness injections must not read as
-operator signal, and genuine operator prose must not be refused.
+These tests hold both directions — harness injections must not read as operator
+signal, and genuine operator prose must not be refused.
 """
 
 from __future__ import annotations
@@ -18,7 +18,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _plan_retrospective_fixtures import (  # noqa: E402
+import _chat_provenance as _mod  # noqa: I001
+
+from _chat_signal_fixtures import (  # noqa: I001, E402
     OPERATOR_TEXT,
     REENTRY_NOTICE,
     SKILL_LOAD_TEXT,
@@ -28,10 +30,6 @@ from _plan_retrospective_fixtures import (  # noqa: E402
     TASK_NOTIFICATION,
     WAKE_ENVELOPE,
 )
-
-from conftest import load_script_module  # noqa: E402
-
-_mod = load_script_module('plan-marshall', 'plan-retrospective', '_chat_provenance.py')
 
 
 class TestSyntheticClasses:
@@ -187,8 +185,8 @@ class TestOperatorProseSurvives:
         """More closes than opens must not abort the reduction.
 
         An unbalanced turn is ordinary malformed input; raising here would take
-        the whole transcript down through `safe_main` as `internal_error`,
-        losing every operator turn in it.
+        the whole transcript down through the op's error handling, losing every
+        operator turn in it.
         """
         text = '<a></a></a> please revert that change'
         assert _mod.is_operator_authored(text) is True

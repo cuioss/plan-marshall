@@ -7,7 +7,7 @@ mode: script-executor
 
 # Platform Runtime Skill
 
-Script-based platform abstraction that routes 24 goal-based operations to the correct target implementation. Follows the `tools-integration-ci` pattern: one router script, target-specific provider classes, static routing via `marshal.json`.
+Script-based platform abstraction that routes 25 goal-based operations to the correct target implementation. Follows the `tools-integration-ci` pattern: one router script, target-specific provider classes, static routing via `marshal.json`.
 
 ## Enforcement
 
@@ -27,7 +27,7 @@ Script-based platform abstraction that routes 24 goal-based operations to the co
 
 ## What This Skill Provides
 
-Twenty-four operations covering the full platform lifecycle:
+Twenty-five operations covering the full platform lifecycle:
 
 | Operation | Purpose |
 |-----------|---------|
@@ -52,6 +52,7 @@ Twenty-four operations covering the full platform lifecycle:
 | `session reload-directive` | Resolve + surface the harness-appropriate post-upgrade reload directive (Claude: `/reload-plugins` plus the monitor caveat); no-op (full-restart alternative) on OpenCode. RESOLVES + SURFACES only — a script cannot type a harness slash command |
 | `metrics capture` | Record token consumption for a planning phase |
 | `metrics normalized-tokens` | Resolve normalized transcript token totals for the active target |
+| `chat extract-signal` | Reduce a platform session transcript to its signal-bearing turns; the platform-owned owner of transcript-format knowledge, so a consumer gets conversational signal from a `session_id` without touching a session JSONL. Returns the record with `no_signal`, or `transcript_not_found` no-op on a target that exposes no transcript |
 | `subagent dispatch` | Return platform-specific subagent invocation parameters |
 | `wait for` | Hold a bounded wait until a concrete, pollable observable (`--observable` names a kind from a closed set; `build-job` today) reaches a terminal state, and return a normalized `succeeded`/`failed`/`timed_out`/`killed`/`pending` outcome. The observable is never an opaque condition descriptor — a runtime subprocess cannot evaluate one. Bound exhaustion yields `outcome: pending` with `terminal: false`, never an implicit pass; no-op on OpenCode, whose runtime holds no wait channel |
 | `health-check` | Verify platform integration |

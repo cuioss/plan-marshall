@@ -3,7 +3,7 @@
 """
 Abstract base class and shared TOON helpers for platform-runtime.
 
-Defines the Runtime ABC with all 24 platform operations. Each concrete subclass
+Defines the Runtime ABC with all 25 platform operations. Each concrete subclass
 implements every operation for one target, or declines it via the no-op policy.
 
 TOON helpers delegate to the canonical toon_parser from ref-toon-format — no
@@ -878,6 +878,73 @@ class Runtime(ABC):
             extending). The no-op carries ``transcript_not_found`` as its
             ``reason`` — a no-op never carries an ``error`` field, and
             ``toon_noop`` cannot emit one.
+        """
+
+    # ------------------------------------------------------------------
+    # Chat signal extraction
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    def chat_extract_signal(self, session_id: str) -> str:
+        """Reduce a platform session transcript to its signal-bearing turns.
+
+        This is the platform-owned transcript engine for conversational-signal
+        extraction: the runtime locates the platform session transcript for
+        *session_id*, reduces it to the turns that carry operator-authored
+        signal or decision markers, renders them as a plain-text reduced
+        transcript, and returns the normalized record. The target's transcript
+        FORMAT knowledge lives inside this operation; a consumer that needs
+        signal from a session transcript invokes it and never touches a
+        session JSONL itself.
+
+        The success payload is the normalized record (always the same seven
+        fields, whether the reduction kept one turn or none):
+
+        ``{reduced_transcript, raw_turn_count, kept_raw_count,
+        operator_turn_count, gate_decision_count, reduced_bytes, no_signal}``
+
+        - ``reduced_transcript`` — ``"role: text"`` blocks for the kept turns
+          in document order, ``\n\n``-separated (rendered under the
+          ``operator-decision`` role for gate decisions recovered from the
+          tool-result channel).
+        - ``raw_turn_count`` / ``kept_raw_count`` — parseable turns before
+          reduction and the raw turns kept, so the caller can see how much was
+          boilerplate. Recovered gate decisions were never raw turns, so they
+          appear as extra entries in ``reduced_transcript`` and are counted by
+          ``gate_decision_count`` alone.
+        - ``operator_turn_count`` / ``gate_decision_count`` — the two
+          operator-signal classes, counted separately so a caller can
+          distinguish surviving VOLUME from operator SIGNAL.
+        - ``reduced_bytes`` — the reduced transcript's UTF-8 byte length. The
+          runtime reports it and does NOT decide whether it fits a budget:
+          read-budget policy is consumer-side, so a caller maps
+          ``reduced_bytes`` against its own threshold and derives
+          ``over_budget`` itself.
+        - ``no_signal`` — ``true`` when the transcript carried no operator
+          signal of either kind (``operator_turn_count == 0`` AND
+          ``gate_decision_count == 0``). Deliberately NOT a survivor count:
+          it is keyed on operator-authored counts so retained framework
+          boilerplate can never move the verdict.
+
+        A target that exposes a session transcript walks it — resolving
+        *session_id* to the session JSONL exactly the way its other transcript
+        operations do — and returns the success record. When such a target
+        cannot locate a transcript for *session_id* it returns ``no-op``
+        carrying ``transcript_not_found`` as its ``reason``.
+
+        A target that exposes no transcript at all returns that same
+        ``transcript_not_found`` no-op: it performs no reduction and carries no
+        signal fields, which are ABSENT rather than zero — an unmeasured target
+        must not be indistinguishable from a target whose transcript genuinely
+        carried no operator signal.
+
+        Args:
+            session_id: Platform session identifier whose transcript is reduced.
+
+        Returns:
+            Serialized TOON string (success, error, or no-op). The no-op
+            carries ``transcript_not_found`` as its ``reason`` — a no-op never
+            carries an ``error`` field, and ``toon_noop`` cannot emit one.
         """
 
     # ------------------------------------------------------------------

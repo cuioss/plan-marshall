@@ -5,8 +5,9 @@
 On a gated run the operator's decisions arrive as ``tool_result`` blocks, not
 as ``user`` prose, so a reducer that reads only free-form turns measures only
 the channel the operator did not use. This module recognises those results for
-``extract-chat-signal.py``; the contract it implements is specified in
-``references/chat-history-analysis.md`` § "The gated-decision channel".
+the ``chat extract-signal`` runtime operation; the contract it implements is
+specified in the ``chat extract-signal`` operation contract
+(``standards/contract.md``) § "The gated-decision channel".
 
 Both tests are deliberately narrow — the answering tool-use id, or a verbatim
 refusal notice anchored at the start of the payload — because a counter of
@@ -105,4 +106,3 @@ def extract_gate_decisions(content: Any, decision_ids: set[str]) -> list[str]:
         if answered_prompt or refused:
             decisions.append(text)
     return decisions
-

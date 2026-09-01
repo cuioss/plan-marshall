@@ -1,6 +1,6 @@
 # Platform Runtime TOON Contract
 
-Per-operation TOON schemas for all 24 `platform-runtime` operations. Almost every operation returns one of three status variants: `success`, `error`, or `no-op`. The single exception is `session render-title` on a target that renders the title itself — it owns stdout and returns the empty string, documented in its own section below. Parser: `from toon_parser import parse_toon, serialize_toon` from `plan-marshall:ref-toon-format`.
+Per-operation TOON schemas for all 25 `platform-runtime` operations. Almost every operation returns one of three status variants: `success`, `error`, or `no-op`. The single exception is `session render-title` on a target that renders the title itself — it owns stdout and returns the empty string, documented in its own section below. Parser: `from toon_parser import parse_toon, serialize_toon` from `plan-marshall:ref-toon-format`.
 
 **Invocation pattern**:
 ```bash
@@ -1054,6 +1054,78 @@ operation: metrics normalized-tokens
 error: io_error
 message: "Failed to write normalized-token result to <path>: <reason>"
 ```
+
+---
+
+### `chat extract-signal`
+
+Reduce a platform session transcript to its signal-bearing turns and return a normalized record, so a consumer with a `session_id` gets the conversational signal without touching a session JSONL itself. This operation holds the target's transcript-FORMAT knowledge; a consumer that needs signal from a session transcript invokes it and never parses a transcript.
+
+**Arguments**: `--session-id <id>` (required)
+
+The success payload is always the same seven-field record, whether the reduction kept one turn or none:
+
+```toon
+status: success
+operation: chat extract-signal
+session_id: 21df86b6-731d-4b88-8ad0-507e05a872fa
+transcript_path: /home/user/.claude/projects/-home-user-repo/21df86b6-731d-4b88-8ad0-507e05a872fa.jsonl
+reduced_transcript: "user: <operator prose>. Another operator turn carries [STATUS]."
+raw_turn_count: 120
+kept_raw_count: 18
+operator_turn_count: 9
+gate_decision_count: 2
+reduced_bytes: 14832
+no_signal: false
+```
+
+- `reduced_transcript` — the kept turns as `role: text` blocks in document order, joined by a blank line. Recovered gate decisions are rendered under the `operator-decision` role.
+- `raw_turn_count` / `kept_raw_count` — parseable turns before reduction and the raw turns kept. `raw_turn_count - kept_raw_count` is how much was boilerplate. Recovered gate decisions were never raw turns, so they appear as extra entries in `reduced_transcript` and are counted by `gate_decision_count` alone.
+- `operator_turn_count` / `gate_decision_count` — the two operator-signal classes, counted separately so a caller can distinguish surviving VOLUME from operator SIGNAL.
+- `reduced_bytes` — the reduced transcript's UTF-8 byte length. The runtime reports it and does NOT decide whether it fits a budget: read-budget policy is consumer-side, so the caller compares `reduced_bytes` against its own budget and derives `over_budget` itself. The reduction is never truncated by the runtime.
+- `no_signal` — `true` when the transcript carried no operator signal of either kind (`operator_turn_count == 0` AND `gate_decision_count == 0`). Deliberately NOT a survivor count: a survivor count rises with every class of injected instruction text the filter fails to recognise, so keying the verdict on it made reported health strengthen as measured signal degraded. The verdict is keyed on operator-authored counts.
+
+A transcript with no operator signal can still retain marker-bearing `assistant` turns, so a success with `no_signal: true` may carry a non-empty `reduced_transcript`. `no_signal` decides the caller's tier — never the emptiness of `reduced_transcript`.
+
+**No-op (no transcript located / no transcript supported)**:
+```toon
+status: no-op
+operation: chat extract-signal
+reason: transcript_not_found
+alternative: "run on a target that exposes a session transcript, or record the session with session capture first"
+```
+
+A target that exposes no transcript at all (OpenCode) declines the primitive: it performs no reduction and carries none of the record's signal fields, which are ABSENT rather than zero — an unmeasured target must not be indistinguishable from a target whose transcript genuinely carried no operator signal. This is the declinable-primitive posture of ADR-011 and the explicit-unknown rule of ADR-009.
+
+**Error (transcript read failed)**:
+```toon
+status: error
+operation: chat extract-signal
+error: io_error
+message: "Failed to read session transcript <transcript_path>: <reason>"
+```
+
+### The operator-provenance predicate
+
+The reduction keeps only OPERATOR-AUTHORED `user` turns; the harness injects synthetic turns under the `user` role that carry no operator signal, and a role-only filter cannot tell them apart from a real utterance. The predicate does **not** enumerate the synthetic shapes it knows about. It asks the opposite question: **does operator prose remain once every harness envelope is stripped?** A turn is dropped when the residue is empty.
+
+- an **empty or whitespace-only** turn (a tool-result placeholder with no text block) — no residue;
+- a turn that is **wholly a harness envelope** — one or more XML-ish tag blocks with nothing outside them. The match is generic over the tag *name*, so an envelope introduced later is recognised without editing anything;
+- a **synthetic skill-load** turn — a loaded skill's body injected into the conversation, recognized by a `Base directory for this skill:` line followed by a markdown heading — or an **envelope-less harness notice** (session re-entry, the local-command caveat, stop-hook feedback), matched as a literal prefix because it carries no tag to key on. The notice is matched against the **residue**, not the raw turn, so an envelope attached ahead of it does not hide it. That prefix list (`_chat_provenance.HARNESS_NOTICE_PREFIXES`) is a sample, not a closed set.
+
+Three rules keep the residue trustworthy:
+
+- **Only a matched open/close pair is an envelope.** Stray markup in operator prose stays in the residue rather than swallowing the rest of the turn.
+- **Only the outermost pair is stripped**, so an unmatched tag earlier in a turn cannot suppress stripping of a well-formed envelope that follows it.
+- **Some envelopes carry the operator's own words.** A slash command's `<command-args>` wrapper contains the operator's instruction (the primary channel this project drives runs through); its inner text is kept as residue, and this allow-list (`_chat_provenance.OPERATOR_BEARING_TAGS`) is safe in the direction an allow-list can be — an unlisted operator-bearing envelope reads as synthetic, never the reverse.
+
+The direction of failure is the design. An enumeration fails toward *operator* for any wrapper nobody listed — the direction that inflates the survivor count and manufactures a falsely healthy verdict. Residue-based classification fails toward *synthetic* for any injection that carries an envelope; an envelope-less notice is outside that guarantee and covered only by the literal-prefix backstop. The residual gap is published rather than papered over: a new envelope-less notice is a false *operator* and the only part of the mechanism that needs updating when the harness adds a shape.
+
+### The gated-decision channel
+
+On a gated run the operator's decisions arrive as **tool results, not user turns** — a permission grant or refusal, or an `AskUserQuestion` selection. A reducer that keeps only free-form turns measures only the channel the operator did not use. Such results are recovered into the reduced transcript under the `operator-decision` role and counted in `gate_decision_count`. Both tests are deliberately narrow — the answering tool-use id, or a verbatim operator-refusal notice anchored at the payload start — so a counter of operator signal fails toward *not* counting and ordinary tool output is never mistaken for a decision.
+
+**The generalizable rule**: when a channel's producer injects synthetic entries under the same structural label real entries use, a filter keyed on that label measures the label, not the content. Identify provenance positively, so an unrecognised producer shape fails toward *synthetic*; and derive any downstream sufficiency flag from what the surviving set **is**, never from how much of it there is.
 
 ---
 

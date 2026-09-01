@@ -1,218 +1,171 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Parsing, reduction and output-contract tests for ``extract-chat-signal.py``."""
+"""Consumer routing and field-mapping tests for ``extract-chat-signal.py``.
 
+The consumer no longer parses a transcript: it hands the platform-runtime
+``chat extract-signal`` operation a ``session_id`` (via :func:`_run_chat_signal_op`)
+and translates the runtime's normalized record into the aspect's Tier-1/Tier-2
+contract. These tests drive ``cmd_run`` through a monkeypatched
+``_run_chat_signal_op`` and pin that translation — the field-name mapping, the
+consumer-owned ``over_budget`` decision, and the skip-token routing for a
+runtime no-op / uninvokable op.
+
+Where a runtime test already pins a behaviour (the reducer, the counters, the
+gate channel), this module does NOT restate it — it pins only what the consumer
+owns: the hop semantics and the translation.
+"""
 
 from __future__ import annotations
 
-import json
+from _extract_chat_signal_fixtures import (
+    SESSION_ID,
+    _runtime_record,
+)
+from _extract_chat_signal_fixtures import (
+    run_consumer as _run,
+)
 
-from _extract_chat_signal_fixtures import SKILL_LOAD_TEXT, _mod, _prov, _text_blocks, _turn
-
-# ---------------------------------------------------------------------------
-# Unit tests: extract_text
-# ---------------------------------------------------------------------------
-
-
-class TestExtractText:
-    def test_plain_string_content_returned_verbatim(self):
-        assert _mod.extract_text('hello world') == 'hello world'
-
-    def test_text_blocks_joined_by_newline(self):
-        content = _text_blocks('first', 'second')
-        assert _mod.extract_text(content) == 'first\nsecond'
-
-    def test_non_text_blocks_skipped(self):
-        content = [
-            {'type': 'tool_use', 'name': 'Bash'},
-            {'type': 'text', 'text': 'kept'},
-            {'type': 'tool_result', 'content': 'ignored'},
-        ]
-        assert _mod.extract_text(content) == 'kept'
-
-    def test_typeless_block_with_text_treated_as_text(self):
-        # Defensive shape drift: a block missing ``type`` but carrying ``text``.
-        content = [{'text': 'recovered'}]
-        assert _mod.extract_text(content) == 'recovered'
-
-    def test_unknown_shape_yields_empty_string(self):
-        assert _mod.extract_text(42) == ''
-        assert _mod.extract_text(None) == ''
-        assert _mod.extract_text({'role': 'user'}) == ''
-
-    def test_block_with_non_string_text_ignored(self):
-        content = [{'type': 'text', 'text': 123}]
-        assert _mod.extract_text(content) == ''
+# (run_consumer lives in the shared fixture module; the _run alias keeps every
+# call site reading naturally while the one authoritative copy stays singular.)
 
 
-# ---------------------------------------------------------------------------
-# Unit tests: is_signal_bearing
-# ---------------------------------------------------------------------------
+class TestRouting:
+    def test_success_record_maps_the_seven_fields(self, monkeypatch):
+        record = _runtime_record(
+            raw_turn_count=25,
+            kept_raw_count=7,
+            operator_turn_count=3,
+            gate_decision_count=2,
+            reduced_bytes=4096,
+            no_signal=False,
+            reduced_transcript='user: please revert that change',
+            transcript_path='/transcripts/p/session.jsonl',
+        )
+        result = _run(monkeypatch, record, 'success')
+
+        assert result['status'] == 'success'
+        assert result['aspect'] == 'chat-signal-extraction'
+        assert result['session_id'] == SESSION_ID
+        # Field-name mapping: runtime ``kept_raw_count`` → consumer
+        # ``reduced_turn_count``, so existing aggregations keep their vocabulary.
+        assert result['reduced_turn_count'] == 7
+        assert result['dropped_turn_count'] == 25 - 7
+        assert result['raw_turn_count'] == 25
+        assert result['operator_turn_count'] == 3
+        assert result['gate_decision_count'] == 2
+        assert result['reduced_bytes'] == 4096
+        assert result['no_signal'] is False
+        assert result['reduced_transcript'] == 'user: please revert that change'
+        assert result['transcript_path'] == '/transcripts/p/session.jsonl'
+
+    def test_no_signal_is_forwarded_from_the_runtime(self, monkeypatch):
+        """The consumer forwards ``no_signal``; the runtime derives it."""
+        result = _run(monkeypatch, _runtime_record(no_signal=True), 'success')
+        assert result['status'] == 'success'
+        assert result['no_signal'] is True
+
+    def test_noop_routes_to_skipped_not_success(self, monkeypatch):
+        """A runtime no-op (no transcript) is the canonical data-absence token."""
+        result = _run(monkeypatch, None, 'no-op')
+        assert result['status'] == 'skipped'
+        assert result['reason'] == 'transcript_unavailable'
+        assert result['no_signal'] is True
+        assert result['over_budget'] is False
+
+    def test_error_status_routes_to_skipped_too(self, monkeypatch):
+        """The skip token contract keys on the absence, not the runtime status."""
+        result = _run(monkeypatch, None, 'error')
+        assert result['status'] == 'skipped'
+        assert result['reason'] == 'transcript_unavailable'
+
+    def test_uninvokable_op_routes_to_skipped(self, monkeypatch):
+        """``_run_chat_signal_op`` returning ``(None, None)`` still degrades."""
+        result = _run(monkeypatch, None, None)
+        assert result['status'] == 'skipped'
+        assert result['reason'] == 'transcript_unavailable'
+
+    def test_skipped_branch_zeroes_the_counters(self, monkeypatch):
+        result = _run(monkeypatch, None, 'no-op')
+        for key in (
+            'raw_turn_count',
+            'reduced_turn_count',
+            'dropped_turn_count',
+            'operator_turn_count',
+            'gate_decision_count',
+            'reduced_bytes',
+        ):
+            assert result[key] == 0
+        assert result['reduced_transcript'] == ''
+
+    def test_skipped_branch_reports_session_id_and_budget(self, monkeypatch):
+        result = _run(monkeypatch, None, 'no-op', read_budget=12345)
+        assert result['session_id'] == SESSION_ID
+        assert result['read_budget_bytes'] == 12345
 
 
-class TestIsSignalBearing:
-    def test_operator_authored_user_turn_kept(self):
-        """A genuine operator utterance is kept — the predicate filters by
-        provenance and content, not by role alone."""
-        assert _mod.is_signal_bearing('user', 'please rename the module') is True
+class TestBudgetOwnership:
+    def test_over_budget_derived_by_consumer_not_runtime(self, monkeypatch):
+        """The runtime never reports ``over_budget``; the consumer derives it.
 
-    def test_user_turn_dropped_when_empty_or_whitespace(self):
-        """Empty and whitespace-only user turns are tool-result placeholders
-        carrying no operator signal, and are dropped."""
-        assert _mod.is_signal_bearing('user', '') is False
-        assert _mod.is_signal_bearing('user', '   \n\t  ') is False
-
-    def test_synthetic_skill_load_user_turn_dropped(self):
-        assert _mod.is_signal_bearing('user', SKILL_LOAD_TEXT) is False
-
-    def test_operator_quoting_the_marker_line_is_kept(self):
-        """The predicate is structural — the marker line alone is not enough.
-
-        An operator who merely mentions the base-directory line, with no
-        markdown heading following it, is real signal and must survive.
+        The record carries no ``over_budget`` field — the runtime made no
+        decision. The consumer compares ``reduced_bytes`` against its own
+        ``read_budget_bytes``.
         """
-        text = 'why does the log say Base directory for this skill: /tmp/x ?'
-        assert _prov.is_synthetic_skill_load(text) is False
-        assert _mod.is_signal_bearing('user', text) is True
+        record = _runtime_record(reduced_bytes=1500)
+        assert 'over_budget' not in record
+        result = _run(monkeypatch, record, 'success', read_budget=1000)
+        assert result['over_budget'] is True
 
-    def test_assistant_turn_kept_with_decision_marker(self):
-        assert _mod.is_signal_bearing('assistant', 'now [STATUS] running phase') is True
+    def test_over_budget_strictly_greater_than(self, monkeypatch):
+        """An exact fit still routes: ``over_budget`` is ``>`` not ``>=``."""
+        result = _run(monkeypatch, _runtime_record(reduced_bytes=100), 'success', read_budget=100)
+        assert result['over_budget'] is False
+        result = _run(monkeypatch, _runtime_record(reduced_bytes=101), 'success', read_budget=100)
+        assert result['over_budget'] is True
 
-    def test_assistant_turn_dropped_without_marker(self):
-        assert _mod.is_signal_bearing('assistant', 'just some prose') is False
+    def test_default_budget_is_two_mib(self):
+        from _extract_chat_signal_fixtures import _mod
 
-    def test_each_marker_triggers_retention(self):
-        """Markers are named as literals, never read back from the constant.
+        assert _mod.DEFAULT_READ_BUDGET_BYTES == 2 * 1024 * 1024
 
-        Iterating ``DECISION_MARKERS`` makes the test shrink with the tuple:
-        deleting an entry leaves it green while marker-bearing context stops
-        reaching the Tier-1 prompt.
+    def test_default_budget_used_when_flag_omitted(self, monkeypatch):
+        result = _run(monkeypatch, _runtime_record(reduced_bytes=50), 'success')
+        from _extract_chat_signal_fixtures import _mod
+
+        assert result['read_budget_bytes'] == _mod.DEFAULT_READ_BUDGET_BYTES
+
+
+class TestRecordDrift:
+    def test_missing_reduced_bytes_treated_as_zero(self, monkeypatch):
+        record = dict(_runtime_record())
+        del record['reduced_bytes']
+        result = _run(monkeypatch, record, 'success')
+        assert result['reduced_bytes'] == 0
+        assert result['over_budget'] is False
+
+    def test_non_integer_counts_coerced_for_consumer_fields(self, monkeypatch):
+        """The mapped fields the consumer derives are coerced via ``int``.
+
+        ``raw_turn_count`` is the runtime's own counter and is passed through
+        verbatim; only the fields the consumer computes or remaps
+        (``reduced_turn_count``, ``dropped_turn_count``, ``operator_turn_count``,
+        ``gate_decision_count``, ``reduced_bytes``) go through ``int()``.
         """
-        expected = ('[STATUS]', '[ERROR]', 'AskUserQuestion', '[DECISION]', '[DISPATCH]', '[SKILL]')
-        assert _mod.DECISION_MARKERS == expected
-        for marker in expected:
-            assert _mod.is_signal_bearing('assistant', f'prefix {marker} suffix') is True
+        record = _runtime_record(raw_turn_count='4', kept_raw_count='2')
+        result = _run(monkeypatch, record, 'success')
+        assert result['reduced_turn_count'] == 2
+        assert result['reduced_bytes'] == 0
+        assert result['dropped_turn_count'] == 2
 
-    def test_other_roles_dropped(self):
-        assert _mod.is_signal_bearing('tool', '[STATUS] still dropped') is False
-        assert _mod.is_signal_bearing('system', 'whatever') is False
+    def test_missing_transcript_path_yields_none(self, monkeypatch):
+        record = dict(_runtime_record())
+        del record['transcript_path']
+        distinct = '33333333-3333-3333-3333-333333333333'
+        result = _run(monkeypatch, record, 'success', session_id=distinct)
+        assert result['status'] == 'success'
+        assert result['transcript_path'] is None
 
-
-# ---------------------------------------------------------------------------
-# Unit tests: parse_turn
-# ---------------------------------------------------------------------------
-
-
-class TestParseTurn:
-    def test_parses_valid_user_turn(self):
-        line = _turn('user', 'hello')
-        assert _mod.parse_turn(line) == ('user', 'hello')
-
-    def test_parses_assistant_text_blocks(self):
-        line = _turn('assistant', _text_blocks('[STATUS] up'))
-        assert _mod.parse_turn(line) == ('assistant', '[STATUS] up')
-
-    def test_blank_line_returns_none(self):
-        assert _mod.parse_turn('') is None
-        assert _mod.parse_turn('   \t  ') is None
-
-    def test_non_json_line_returns_none(self):
-        assert _mod.parse_turn('this is not json') is None
-        assert _mod.parse_turn('{ broken json') is None
-
-    def test_non_object_payload_returns_none(self):
-        assert _mod.parse_turn(json.dumps([1, 2, 3])) is None
-        assert _mod.parse_turn(json.dumps('a bare string')) is None
-
-    def test_event_without_message_returns_none(self):
-        assert _mod.parse_turn(json.dumps({'type': 'summary'})) is None
-
-    def test_message_not_object_returns_none(self):
-        assert _mod.parse_turn(json.dumps({'message': 'not-a-dict'})) is None
-
-    def test_missing_role_returns_none(self):
-        assert _mod.parse_turn(json.dumps({'message': {'content': 'x'}})) is None
-
-    def test_empty_role_returns_none(self):
-        assert _mod.parse_turn(json.dumps({'message': {'role': '', 'content': 'x'}})) is None
-
-    def test_turn_with_only_non_text_blocks_yields_empty_text(self):
-        """``parse_turn`` still surfaces the empty text — the DROP happens one
-        layer later, in ``is_signal_bearing``, so the two concerns stay
-        separable (parsing reports what the turn carried; reduction decides
-        whether it is signal)."""
-        line = _turn('user', [{'type': 'tool_result', 'content': 'r'}])
-        assert _mod.parse_turn(line) == ('user', '')
-        assert _mod.is_signal_bearing('user', '') is False
-
-
-# ---------------------------------------------------------------------------
-# Unit tests: reduce_transcript
-# ---------------------------------------------------------------------------
-
-
-class TestReduceTranscript:
-    def test_keeps_operator_and_marked_assistant_drops_rest(self):
-        lines = [
-            _turn('user', 'do the thing'),
-            _turn('assistant', 'thinking out loud with no marker'),
-            _turn('assistant', _text_blocks('[DISPATCH] launching agent')),
-            _turn('tool', 'tool output that must be dropped'),
-        ]
-        reduction = _mod.reduce_transcript(lines)
-        kept, raw = reduction.turns, reduction.raw_turn_count
-        assert kept == [
-            {'role': 'user', 'text': 'do the thing'},
-            {'role': 'assistant', 'text': '[DISPATCH] launching agent'},
-        ]
-        assert raw == 4
-
-    def test_drops_empty_and_synthetic_user_turns(self):
-        """The reduction keeps only the operator turn out of four user turns."""
-        lines = [
-            _turn('user', 'rename the module please'),
-            _turn('user', SKILL_LOAD_TEXT),
-            _turn('user', ''),
-            _turn('user', '   \n  '),
-        ]
-        reduction = _mod.reduce_transcript(lines)
-        kept, raw = reduction.turns, reduction.raw_turn_count
-        assert kept == [{'role': 'user', 'text': 'rename the module please'}]
-        assert raw == 4
-
-    def test_preserves_document_order(self):
-        lines = [
-            _turn('assistant', '[STATUS] a'),
-            _turn('user', 'b'),
-            _turn('assistant', '[ERROR] c'),
-        ]
-        kept = _mod.reduce_transcript(lines).turns
-        assert [t['text'] for t in kept] == ['[STATUS] a', 'b', '[ERROR] c']
-
-    def test_malformed_lines_dropped_silently(self):
-        lines = [
-            'not json at all',
-            '{ truncated',
-            _turn('user', 'survives'),
-            json.dumps({'type': 'summary'}),
-        ]
-        reduction = _mod.reduce_transcript(lines)
-        kept, raw = reduction.turns, reduction.raw_turn_count
-        assert kept == [{'role': 'user', 'text': 'survives'}]
-        # Malformed and non-turn lines never parse, so they are not raw turns.
-        assert raw == 1
-
-    def test_empty_history_keeps_nothing(self):
-        reduction = _mod.reduce_transcript([])
-        assert reduction.turns == []
-        assert reduction.raw_turn_count == 0
-
-    def test_all_unmarked_assistant_keeps_nothing(self):
-        lines = [
-            _turn('assistant', 'prose one'),
-            _turn('assistant', 'prose two'),
-            _turn('tool', 'output'),
-        ]
-        reduction = _mod.reduce_transcript(lines)
-        kept, raw = reduction.turns, reduction.raw_turn_count
-        assert kept == []
-        assert raw == 3
+    def test_missing_kept_raw_count_defaults_zero(self, monkeypatch):
+        record = dict(_runtime_record())
+        del record['kept_raw_count']
+        result = _run(monkeypatch, record, 'success')
+        assert result['reduced_turn_count'] == 0

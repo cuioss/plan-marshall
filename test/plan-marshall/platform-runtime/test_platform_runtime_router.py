@@ -8,7 +8,7 @@ Covers:
   - _resolve_target: runtime.target extraction from marshal data
   - _make_runtime: registry lookup and unknown target handling
   - _parse_json_list / _parse_context: JSON helpers
-  - _dispatch: correct routing and argparse for all 24 operations
+  - _dispatch: correct routing and argparse for all 25 operations
   - main: full integration — no args, missing marshal, unknown target, dispatch
 """
 from __future__ import annotations  # noqa: I001
@@ -81,6 +81,8 @@ def _mock_runtime() -> MagicMock:
     rt.permission_web_analyze.return_value = toon_success("permission web-analyze")
     rt.permission_web_apply.return_value = toon_success("permission web-apply")
     rt.metrics_capture.return_value = toon_success("metrics capture")
+    rt.metrics_normalized_tokens.return_value = toon_success("metrics normalized-tokens")
+    rt.chat_extract_signal.return_value = toon_success("chat extract-signal")
     rt.subagent_dispatch.return_value = toon_success("subagent dispatch")
     rt.wait_for.return_value = toon_success("wait for")
     rt.health_check.return_value = toon_success("health-check")
@@ -780,6 +782,19 @@ class TestDispatch:
         """metrics capture without --total-tokens passes None."""
         _dispatch(rt, "metrics capture", ["--plan-id", "p", "--phase", "ph"])
         rt.metrics_capture.assert_called_once_with("p", "ph", None)
+
+    # ---- chat extract-signal ----------------------------------------------------
+
+    def test_dispatch_chat_extract_signal(self, rt):
+        """chat extract-signal forwards --session-id to the runtime op."""
+        _dispatch(rt, "chat extract-signal", ["--session-id", "22222222-2222-2222-2222-222222222299"])
+        rt.chat_extract_signal.assert_called_once_with("22222222-2222-2222-2222-222222222299")
+
+    def test_dispatch_chat_extract_signal_required_session_id(self, rt):
+        """chat extract-signal without --session-id is rejected by argparse."""
+        with pytest.raises(SystemExit):
+            _dispatch(rt, "chat extract-signal", [])
+        rt.chat_extract_signal.assert_not_called()
 
     # ---- subagent dispatch ----------------------------------------------------
 

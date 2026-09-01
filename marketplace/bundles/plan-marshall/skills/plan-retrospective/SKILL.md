@@ -282,13 +282,13 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
 
 Skip the aspect entirely when the manifest file is absent.
 
-**Aspect 14 (chat-history, conditional)** — the session-transcript channel is target-dependent: only a target that exposes a session transcript can supply the chat history this aspect analyzes. On the Claude target, resolve the absolute transcript path from the canonical Claude Code path pattern `~/.claude/projects/{cwd-slug}/{session_id}.jsonl` (where `{cwd-slug}` is the absolute project cwd with each `/` replaced by `-`); read the file directly, and if absent try a parent-directory glob under `~/.claude/projects/` for cross-cwd recovery. Never substitute Bash file discovery (`ls`, `find`, Glob) for this resolution — the canonical path derivation is the only sanctioned lookup mechanism for the session JSONL. On a target that exposes no session transcript (e.g. OpenCode, where the metrics enrichment op itself returns `transcript_not_found`), there is no transcript to resolve: skip the aspect and emit a `status: skipped` fragment carrying the `transcript_unavailable` skip-reason token (the same data-absence path Tier 2 below takes).
+**Aspect 14 (chat-history, conditional)** — the session-transcript channel is target-dependent: only a target that exposes a session transcript can supply the chat history this aspect analyzes. This skill does NOT resolve or read a transcript itself, and never touches a session JSONL — transcript discovery, reduction, and format knowledge are owned by the platform-runtime `chat extract-signal` operation. The orchestrator passes the recorded `session_id` to the pre-pass and lets the runtime resolve it on the active target. On a target that exposes no session transcript (e.g. OpenCode, where the op itself returns `transcript_not_found`), there is no transcript to resolve: skip the aspect and emit a `status: skipped` fragment carrying the `transcript_unavailable` skip-reason token (the same data-absence path Tier 2 below takes).
 
-Run the `extract-chat-signal.py` signal-extraction pre-pass against the resolved `transcript_path` to obtain the tier decision and the reduced transcript:
+Run the `extract-chat-signal.py` signal-extraction pre-pass against the recorded `session_id` to obtain the tier decision and the reduced transcript:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:extract-chat-signal run \
-  --transcript-path {abs_transcript_path}
+  --session-id {session_id}
 ```
 
 The pre-pass output drives the two-tier degradation path: when `no_signal == false` AND `over_budget == false` (Tier 1), feed `reduced_transcript` to the LLM analysis prompt and synthesize the `status: success` fragment; otherwise (Tier 2 — transcript absent, no signal, or still over the 2 MiB read budget), emit a `status: skipped` fragment carrying the canonical skip-reason token. The two-tier path and the normative skip-reason token contract (`transcript_too_large` for a size-driven skip vs `transcript_unavailable` for a genuine data absence, and how downstream aggregation MUST distinguish them) are specified in `references/chat-history-analysis.md` — see [`references/chat-history-analysis.md`](references/chat-history-analysis.md) §§ "Two-Tier Degradation Path" and "Skip-Reason Token Contract". Do not restate the token semantics here.
@@ -474,7 +474,7 @@ The canonical argparse surface for the thirteen entry-point scripts this skill r
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:extract-chat-signal run \
-  --transcript-path TRANSCRIPT_PATH [--read-budget-bytes READ_BUDGET_BYTES]
+  --session-id SESSION_ID [--read-budget-bytes READ_BUDGET_BYTES]
 ```
 
 ### check-manifest-consistency — run

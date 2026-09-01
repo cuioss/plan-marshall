@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-OpenCode implementation of all 24 platform-runtime operations.
+OpenCode implementation of all 25 platform-runtime operations.
 
 OpenCode-specific behaviour:
 - Operations requiring a platform session id (session capture, session
@@ -541,6 +541,32 @@ class OpenCodeRuntime(Runtime):
             "metrics normalized-tokens",
             "transcript_not_found",
             "pass --total-tokens manually to metrics capture",
+        )
+
+    def chat_extract_signal(self, session_id: str) -> str:
+        """Honest no-op: OpenCode exposes no session transcript to reduce.
+
+        OpenCode does not provide a session transcript, so there is nothing to
+        locate or reduce. Returns ``transcript_not_found`` so the
+        chat-history aspect degrades gracefully (skip enrichment).
+
+        **Signal fields are ABSENT here, never zero.** This method performs no
+        reduction and returns no ``operator_turn_count`` / ``gate_decision_count``
+        / ``no_signal`` fields, which is exactly the required shape: OpenCode
+        declines the primitive rather than reporting a measurement it never
+        took. Do NOT "helpfully" add a zero-initialized ``no_signal: true`` and
+        empty ``reduced_transcript`` — a zero asserts "measured, and there was
+        none", which would make an unmeasured target indistinguishable from a
+        target whose transcript genuinely carried no operator signal and would
+        silently pollute the corpus that reads those fields. This is the
+        declinable-primitive posture of ADR-011 and the explicit-unknown rule
+        of ADR-009.
+        """
+        return toon_noop(
+            "chat extract-signal",
+            "transcript_not_found",
+            "run on a target that exposes a session transcript, or "
+            "record the session with session capture first",
         )
 
     # ------------------------------------------------------------------

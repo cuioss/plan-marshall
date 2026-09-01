@@ -7,19 +7,12 @@ prefixes. Each decides whether a real operator turn survives, and each is a
 place where a one-character change flips the classification without failing
 anything else.
 
-The predicate's own behaviour is covered by ``test_chat_provenance.py``.
+The predicate's own behaviour is covered in ``test_platform_runtime_chat_provenance.py``.
 """
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent))
-
-from conftest import load_script_module  # noqa: E402
-
-_mod = load_script_module('plan-marshall', 'plan-retrospective', '_chat_provenance.py')
+import _chat_provenance as _mod  # noqa: I001
 
 
 class TestPublishedConstants:
@@ -33,9 +26,9 @@ class TestPublishedConstants:
     The module's other constants are pinned where their behaviour is exercised:
     ``_SKILL_LOAD_MARKER`` and ``_MARKDOWN_HEADING_RE`` in
     :class:`TestRecogniserBoundaries` below, and ``OPERATOR_BEARING_TAGS`` and
-    ``_TAG_RE``'s attribute class in ``test_chat_provenance.py``. Nothing
-    enforces that this list stays complete — it is maintained by hand, so a
-    constant added later is covered only if someone adds a case for it.
+    ``_TAG_RE``'s attribute class in ``test_platform_runtime_chat_provenance.py``.
+    Nothing enforces that this list stays complete — it is maintained by hand, so
+    a constant added later is covered only if someone adds a case for it.
     """
 
     def test_harness_notice_prefixes_are_the_observed_literals(self):

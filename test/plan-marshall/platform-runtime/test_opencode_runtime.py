@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for opencode_runtime.py — OpenCode implementation of all 24 operations.
+"""Tests for opencode_runtime.py — OpenCode implementation of all 25 operations.
 
 Asserts the no-op contract for session/display operations that OpenCode does not
 support, the honest no-op contract for the permission operations (OpenCode has no
 validated permission backend) and for the ``wait for`` waiting op (OpenCode holds
 no wait channel), the success/no-op paths for metrics operations, and error paths
-for invalid arguments across all 24 operations defined in the Runtime ABC.
+for invalid arguments across all 25 operations defined in the Runtime ABC.
 """
 
 import json  # noqa: I001

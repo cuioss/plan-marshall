@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-Platform router for plan-marshall — dispatches 24 operations to the correct
+Platform router for plan-marshall — dispatches 25 operations to the correct
 target implementation based on ``runtime.target`` in ``.plan/marshal.json``.
 
 Usage:
@@ -30,6 +30,7 @@ Operations:
     permission web-apply    --scope project|global  [--add <json>]  [--remove <json>]  [--dry-run]
     metrics capture         --plan-id <id>  --phase <phase>  [--total-tokens <n>]
     metrics normalized-tokens  --session-id <id>  --windows-file <path>  --output-file <path>
+    chat extract-signal     --session-id <id>
     subagent dispatch       --agent <name>  [--prompt-file <path>]  [--context <json>]
     wait for                --observable <kind>  --reference <id>  --bound-seconds <n>
     health-check            --checks all|permissions|display|mcp-diagnostics
@@ -557,6 +558,16 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         return runtime.metrics_normalized_tokens(ns.session_id, windows, ns.output_file)
 
     # ------------------------------------------------------------------
+    # chat extract-signal
+    # ------------------------------------------------------------------
+    if operation == "chat extract-signal":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime chat extract-signal")
+        p.add_argument("--session-id", required=True,
+                       help="Platform session identifier whose transcript is reduced to its signal-bearing turns")
+        ns = p.parse_args(remaining)
+        return runtime.chat_extract_signal(ns.session_id)
+
+    # ------------------------------------------------------------------
     # subagent dispatch
     # ------------------------------------------------------------------
     if operation == "subagent dispatch":
@@ -618,7 +629,8 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         "permission configure, permission analyze, permission fix, "
         "permission ensure-wildcards, permission ensure-steps, "
         "permission web-analyze, permission web-apply, "
-        "metrics capture, metrics normalized-tokens, subagent dispatch, "
+        "metrics capture, metrics normalized-tokens, chat extract-signal, "
+        "subagent dispatch, "
         "wait for, health-check",
     )
 
@@ -634,7 +646,7 @@ def _build_operation(argv: list[str]) -> tuple[str, list[str]]:
     Operations are two-word identifiers (e.g. ``project initial-setup``).
     Some are single-hyphenated second words (``health-check``).
 
-    Supported prefix tokens: project, layout, session, permission, metrics, subagent, wait, health-check.
+    Supported prefix tokens: project, layout, session, permission, metrics, chat, subagent, wait, health-check.
     """
     if not argv:
         return ("", [])

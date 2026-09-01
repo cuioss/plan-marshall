@@ -28,6 +28,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import _chat_signal_reducer
 import claude_runtime
 import session_binding
 from manage_terminal_title import _compose_body, compose
@@ -63,8 +64,24 @@ def _write_failed(settings_path: Any) -> str:
     )
 
 
+def _chat_signal_transcript_not_found() -> str:
+    """The single ``transcript_not_found`` no-op for ``chat extract-signal``.
+
+    Discovery returning nothing and the transcript vanishing mid-read are the
+    same honest answer (no transcript can be located); both emit this no-op so
+    the retrospective's ``transcript_unavailable`` skip token stays consistent
+    with the runtime contract.
+    """
+    return toon_noop(
+        "chat extract-signal",
+        "transcript_not_found",
+        "run on a target that exposes a session transcript, or "
+        "record the session with session capture first",
+    )
+
+
 class ClaudeRuntime(Runtime):
-    """Claude Code implementation of all 24 platform-runtime operations."""
+    """Claude Code implementation of all 25 platform-runtime operations."""
 
     # ------------------------------------------------------------------
     # Project lifecycle
@@ -1726,6 +1743,43 @@ class ClaudeRuntime(Runtime):
                 "phases_attributed": len(per_phase),
                 **counters,
             },
+        )
+
+    def chat_extract_signal(self, session_id: str) -> str:
+        """Reduce the Claude session transcript to its signal-bearing turns.
+
+        Resolves *session_id* to the session JSONL exactly the way
+        ``metrics normalized-tokens`` does (:func:`claude_runtime._find_transcript`),
+        then reduces it via :func:`_chat_signal_reducer.reduce_chat_signal`,
+        which owns the transcript-format knowledge. Returns the operation's
+        seven-field normalized record on success; returns a
+        ``transcript_not_found`` no-op when no transcript can be located, and
+        a structured error when the resolved transcript could not be read.
+
+        Read-budget policy is deliberately NOT applied here: the record's
+        ``reduced_bytes`` is the raw reduced size for the caller to compare
+        against its own budget.
+        """
+        transcript_path = claude_runtime._find_transcript(session_id)
+        if transcript_path is None:
+            return _chat_signal_transcript_not_found()
+        try:
+            record = _chat_signal_reducer.reduce_chat_signal(transcript_path)
+        except FileNotFoundError:
+            # The transcript vanished between discovery and read — it can no
+            # longer be located, which is the same honest answer as discovery
+            # returning nothing: a transcript_not_found no-op, NOT the io_error
+            # OSError would otherwise swallow.
+            return _chat_signal_transcript_not_found()
+        except OSError as exc:
+            return toon_error(
+                "chat extract-signal",
+                "io_error",
+                f"Failed to read session transcript {transcript_path}: {exc}",
+            )
+        return toon_success(
+            "chat extract-signal",
+            {"session_id": session_id, "transcript_path": str(transcript_path), **record},
         )
 
     # ------------------------------------------------------------------
