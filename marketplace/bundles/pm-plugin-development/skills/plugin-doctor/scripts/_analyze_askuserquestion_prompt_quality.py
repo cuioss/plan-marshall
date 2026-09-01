@@ -23,9 +23,6 @@ still needs the user) are **NOT evaluated** by this analyzer, and no attempt is
 made to approximate them. Both require judging whether a recommendation is
 *correct* and whether context is *sufficient* — neither is a token-level
 property. A silent run is **not** a verdict that a prompt is conformant.
-Every finding publishes ``population_size`` — the number of
-invocation blocks the run examined — so a finding is never reported without the
-population it was drawn against.
 
 Invocation-shape matching (NOT prose)
 -------------------------------------
@@ -441,8 +438,7 @@ def analyze_askuserquestion_prompt_quality(marketplace_root: Path) -> list[dict]
     Returns
     -------
     list[dict]
-        List of finding dicts (empty for a clean tree). Every finding carries
-        ``population_size``: the number of invocation blocks the run examined.
+        List of finding dicts (empty for a clean tree).
     """
     per_file: list[tuple[Path, list[_Violation]]] = []
     findings: list[dict] = []
