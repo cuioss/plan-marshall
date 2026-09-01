@@ -36,13 +36,13 @@ follows is only what a reader of this module needs to follow the code:
 from __future__ import annotations
 
 import argparse
-import json
 import subprocess
 import sys
 from typing import Any
 
 from file_ops import output_toon, safe_main
 from input_validation import parse_args_with_toon_errors
+from toon_parser import parse_toon
 
 # Default read budget for the reduced transcript: 2 MiB. When the reduced text
 # still exceeds this, the orchestrator falls back to the Tier-2 WARNING finding.
@@ -89,7 +89,7 @@ def _run_chat_signal_op(
         return None, None
 
     try:
-        parsed = json.loads(result.stdout)
+        parsed = parse_toon(result.stdout)
     except (ValueError, KeyError):
         parsed = {}
     status = parsed.get('status') if isinstance(parsed, dict) else None
