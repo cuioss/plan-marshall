@@ -8,7 +8,7 @@ Decision criteria for disposing of automated PR review comments (CodeRabbit, Sou
 |---------|---------|-----------------|
 | **FIX** | Apply the suggested change in a follow-up commit | Plugin change + thread reply linking commit |
 | **REPLY-AND-RESOLVE** | Decline the suggestion; explain rationale; mark thread resolved | Reply with template; resolve thread |
-| **ESCALATE** | Ambiguous; ask the user via AskUserQuestion before acting | AskUserQuestion call; record decision in lessons |
+| **ESCALATE** | Ambiguous; escalate to the operator before acting | Escalate to the operator; record decision in lessons |
 
 ## FIX-Eligible Categories
 
@@ -115,7 +115,7 @@ Match REPLY-AND-RESOLVE category?
   Yes → reply with template, mark resolved
   ↓
 Match Escalation Trigger?
-  Yes → AskUserQuestion, record decision in lessons
+  Yes → escalate to the operator, record decision in lessons
   ↓
 Default → ESCALATE (do not silently fix or resolve unknown categories)
 ```
