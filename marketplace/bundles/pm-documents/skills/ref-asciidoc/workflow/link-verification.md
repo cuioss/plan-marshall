@@ -8,7 +8,7 @@ This standard defines the protocol for verifying links in AsciiDoc documentation
 
 ## Core Principle
 
-**NEVER blindly trust automated link verification tools.** Always perform manual verification with the Read tool before removing any link.
+**NEVER blindly trust automated link verification tools.** Always perform manual verification by reading the target file before removing any link.
 
 ## Link Types
 
@@ -89,10 +89,10 @@ realpath {relative_target_path}
 - Link target: `../../requirements/spec.adoc`
 - Resolved: `/project/requirements/spec.adoc`
 
-#### Verify with Read Tool
+#### Verify by Reading the File
 
 ```text
-Read(file_path="/project/requirements/spec.adoc")
+Read the resolved file: /project/requirements/spec.adoc
 ```
 
 **Decision Matrix:**
@@ -106,10 +106,10 @@ Read(file_path="/project/requirements/spec.adoc")
 
 #### Search for Similar Files (Optional)
 
-If file not found, search for similar names using Glob:
+If file not found, search for similar names by pattern:
 
 ```text
-Glob(pattern="project/requirements/**/*spec*")
+Search pattern: project/requirements/**/*spec*
 ```
 
 Suggest alternatives to user before removal.
@@ -133,20 +133,12 @@ Alternatives found:
 - /project/requirements/specifications.adoc (similar name)
 - /project/docs/requirements.adoc (similar path)
 
-Present using AskUserQuestion:
+Present to the operator with this question and option set (single-select):
 
-AskUserQuestion:
-  questions:
-    - question: "How should this broken link be handled?"
-      header: "Link"
-      options:
-        - label: "Remove link"
-          description: "Remove the broken cross-reference"
-        - label: "Update to alternative"
-          description: "Update link to an alternative path"
-        - label: "Keep link"
-          description: "Keep link for manual review"
-      multiSelect: false
+Question: "How should this broken link be handled?"
+- Remove link — Remove the broken cross-reference
+- Update to alternative — Update link to an alternative path
+- Keep link — Keep link for manual review
 ```
 
 ## False Positive Patterns
@@ -239,20 +231,12 @@ Searched for sections:
 - "OWASP Top 10" (not found)
 - "Security Standards" (found at line 45)
 
-Present using AskUserQuestion:
+Present to the operator with this question and option set (single-select):
 
-AskUserQuestion:
-  questions:
-    - question: "How should this missing anchor be handled?"
-      header: "Anchor"
-      options:
-        - label: "Add section"
-          description: "Create a new section for the anchor"
-        - label: "Update reference"
-          description: "Point to an existing matching section"
-        - label: "Remove reference"
-          description: "Delete the broken anchor reference"
-      multiSelect: false
+Question: "How should this missing anchor be handled?"
+- Add section — Create a new section for the anchor
+- Update reference — Point to an existing matching section
+- Remove reference — Delete the broken anchor reference
 ```
 
 ## Path Resolution
@@ -318,7 +302,7 @@ target = "../../requirements/spec.adoc"
 
 **ALWAYS:**
 
-1. Use Read tool to verify
+1. Verify by reading the target file
 2. Check for typos in script output
 3. Look for alternative valid paths
 4. Document discrepancies
