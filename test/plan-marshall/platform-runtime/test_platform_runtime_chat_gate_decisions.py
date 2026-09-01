@@ -1,5 +1,6 @@
+#!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Gated-decision recovery tests (``_chat_gate_decisions``).
+"""Gated-decision recovery tests (``_chat_gate_decisions``, platform-runtime).
 
 On a gated run the operator's decisions arrive as ``tool_result`` blocks rather
 than as prose, so this module is the only thing that can see that channel. Both
@@ -15,14 +16,8 @@ notice.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent))
-
-from conftest import load_script_module  # noqa: E402
-
-_mod = load_script_module('plan-marshall', 'plan-retrospective', '_chat_gate_decisions.py')
+import _chat_gate_decisions as _mod  # noqa: I001
+import _chat_signal_reducer as _reducer  # noqa: I001
 
 REFUSAL = "The user doesn't want to proceed with this tool use. The tool use was rejected."
 
@@ -112,7 +107,7 @@ class TestDecisionToolUseIds:
 
 class TestPublishedConstants:
     def test_the_decision_role_label_is_pinned(self):
-        """The label is published in the aspect contract and read by the LLM.
+        """The label is published in the operation contract and read by the LLM.
 
         Every other reference is symbolic, so mutating it — to `user` above
         all — would destroy the very distinction the constant exists to make,
@@ -225,7 +220,4 @@ class TestExtractGateDecisions:
         drift apart.
         """
         assert _mod.OPERATOR_DECISION_TOOL == 'AskUserQuestion'
-        reducer = load_script_module(
-            'plan-marshall', 'plan-retrospective', 'extract-chat-signal.py', 'extract_chat_signal'
-        )
-        assert _mod.OPERATOR_DECISION_TOOL in reducer.DECISION_MARKERS
+        assert _mod.OPERATOR_DECISION_TOOL in _reducer.DECISION_MARKERS
