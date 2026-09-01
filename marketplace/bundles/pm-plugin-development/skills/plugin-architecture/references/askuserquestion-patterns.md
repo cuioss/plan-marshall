@@ -15,8 +15,8 @@ An option's description says **what happens when it is chosen**, not what the op
 ```text
 # BAD — the description restates the label; the reader learns nothing
 Options:
-1. Squash — Squash merge
-2. Rebase — Rebase merge
+1. Squash — squash
+2. Rebase — rebase
 ```
 
 ```text
