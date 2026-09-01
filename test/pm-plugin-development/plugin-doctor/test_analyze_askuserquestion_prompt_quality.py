@@ -24,13 +24,14 @@ from conftest import PROJECT_ROOT, load_script_module
 from _plugin_doctor_fixtures import assert_analyzer_findings
 
 
-def _load_module(name: str, filename: str):
-    return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
-
-
-_aapq = _load_module(
-    '_analyze_askuserquestion_prompt_quality',
+# Called with literals rather than through a wrapper so the loader-collision
+# guard in test_conftest_loader_contract.py can resolve this call site
+# statically — a wrapped call is invisible to it.
+_aapq = load_script_module(
+    'pm-plugin-development',
+    'plugin-doctor',
     '_analyze_askuserquestion_prompt_quality.py',
+    '_analyze_askuserquestion_prompt_quality',
 )
 analyze_askuserquestion_prompt_quality = _aapq.analyze_askuserquestion_prompt_quality
 RULE_ID = _aapq.RULE_ID
