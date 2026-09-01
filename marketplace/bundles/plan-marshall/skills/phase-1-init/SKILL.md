@@ -743,17 +743,17 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 7: Detect Domain(s)
 
-Run the deterministic detector; it returns the matched-domain SET `domains` — the unconditional union of the narrative/override/single-domain detector leg, the `always_on` leg, and the `file_globs` leg. On the ambiguous branch fire a native **multiSelect** `AskUserQuestion` inline. There is no LLM dispatch on this code path — multi-match cases are genuinely human-input territory, resolved in-context.
+Run the deterministic detector; it returns the matched-domain SET `domains` — the unconditional union of the narrative/override/single-domain detector leg, the `always_on` leg, and the `file_globs` leg. A detector multi-match is the branch that prompts; a zero narrative match resolves silently by over-provisioning every offerable domain. On the ambiguous branch fire a native **multiSelect** `AskUserQuestion` inline. There is no LLM dispatch on this code path — multi-match cases are genuinely human-input territory, resolved in-context.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   domain-detect --plan-id {plan_id} [--domain-override {domain}]
 ```
 
-The script reads `request.md` (clarified_request → original_input fallback; lesson-{id}.md takes precedence when present), scans every configured non-system domain in `marshal.json` plus its bundle / skill aliases, computes the three merge legs, and returns `domains` (the SET), `candidates` (the detector's narrative matches, offered first in the multiSelect), `additional_candidates` (the remaining configured non-system domains — neither a narrative match nor already supplied by the `always_on` / `file_globs` legs — offered as a second prompt group), `always_on`, `glob_matched`, `ambiguous`, `source`, and `reason`. Two branches:
+The script reads `request.md` (clarified_request → original_input fallback; lesson-{id}.md takes precedence when present), scans every configured non-system domain in `marshal.json` plus its bundle / skill aliases, computes the three merge legs, and returns `domains` (the SET), `candidates` (the detector's narrative matches, offered first in the multiSelect), `additional_candidates` (the remaining configured non-system domains — neither a narrative match nor already supplied by the `always_on` / `file_globs` legs — offered as a second prompt group), `always_on`, `glob_matched`, `ambiguous`, `source`, and `reason` — the branch discriminator, which names which of the resolutions below produced the SET. Two branches:
 
-- **Non-ambiguous** (`ambiguous: false`): the returned `domains` SET is authoritative — persist it directly via Step 9. This covers single-domain auto-select (`source=single_domain_configured`), unambiguous narrative match, explicit override (`source=cli_override`), and the zero-narrative-match case that the `always_on` / `file_globs` legs resolved silently (`reason=inclusion_only_resolve`).
-- **Ambiguous** (`ambiguous: true`): a detector multi-match, OR a zero-match with an empty always_on / glob union. Do NOT auto-select. Fire a native **multiSelect** `AskUserQuestion` at this site (allowing several selections). The option set is the same on both ambiguous sub-branches: offer every entry of `candidates` first, then every entry of `additional_candidates`. Offering the second group is what keeps a domain the project configured but the narrative never mentioned reachable through the prompt — without it the operator has to notice the omission and inject the domain by hand. Distinguish the two groups by the per-option `description`:
+- **Non-ambiguous** (`ambiguous: false`): the returned `domains` SET is authoritative — persist it directly via Step 9. This covers single-domain auto-select (`source=single_domain_configured`), unambiguous narrative match, explicit override (`source=cli_override`), the zero-narrative-match case that the `always_on` / `file_globs` legs resolved silently (`reason=inclusion_only_resolve`), and the zero-narrative-match case that resolved by over-provisioning every offerable domain (`reason=over_provisioned_resolve`).
+- **Ambiguous** (`ambiguous: true`): a detector multi-match (`reason=multiple_narrative_matches`). Do NOT auto-select. Fire a native **multiSelect** `AskUserQuestion` at this site (allowing several selections): offer every entry of `candidates` first, then every entry of `additional_candidates`. Offering the second group is what keeps a domain the project configured but the narrative never mentioned reachable through the prompt — without it the operator has to notice the omission and inject the domain by hand. Distinguish the two groups by the per-option `description`:
 
   ```text
   AskUserQuestion (multiSelect):
@@ -767,6 +767,8 @@ The script reads `request.md` (clarified_request → original_input fallback; le
   ```
 
   Union the operator's selections with the returned `always_on` and `glob_matched` sets, then persist ALL of them in-context via Step 9's `manage-references set-list --field domains --values {comma_separated}`. Carry the resulting union forward as `{domains}` for the rest of the phase. On this branch the resolved domains come from the operator's multiSelect selections plus the always_on / glob legs, never a single detector winner.
+
+**Retained bounded escape** (`reason=no_narrative_match`): a zero narrative match whose offerable domain set is empty — every non-`system` `skill_domains` entry is a non-dict bookkeeping sibling — has nothing to over-provision, so it still returns `ambiguous: true` with `domains`, `candidates`, and `additional_candidates` all empty. The multiSelect above therefore has no options to offer: surface the empty configured-domain set to the operator, who resolves it by configuring `skill_domains` (`marshall-steward`, or `manage-config skill-domains add`), not by choosing from a list.
 
 **After resolving the domain(s)** (any branch), log the decision:
 
@@ -1014,7 +1016,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --values {comma_separated_domains}
 ```
 
-**Ambiguous-domain case**: when Step 7 resolved `ambiguous: true`, the value stored here is the union of the operator's multiSelect selections with the returned `always_on` and `glob_matched` sets — this write is the persistence point for that choice. Every non-ambiguous branch stores the returned `domains` SET here as normal.
+**Ambiguous-domain case**: when Step 7 resolved `ambiguous: true` on a detector multi-match, the value stored here is the union of the operator's multiSelect selections with the returned `always_on` and `glob_matched` sets — this write is the persistence point for that choice. Every non-ambiguous branch stores the returned `domains` SET here as normal, including the over-provisioned zero-narrative-match set (`reason=over_provisioned_resolve`), which needs no prompt.
 
 Project-level settings (compatibility, commit_and_push, branch_strategy, verification steps, finalize steps) are read directly from `marshal.json` by each phase skill at runtime.
 
@@ -1075,7 +1077,7 @@ artifacts:
   references: references.json
 ```
 
-`domains` is the multi-valued domain SET persisted at Step 9 (the union of the detector, `always_on`, and `file_globs` legs — plus the operator's multiSelect selections on the ambiguous branch — never empty on a resolved plan, since the prompt resolves it in-context). `planning_lane` is the value resolved by Step 8b's `manage-status planning-lane route`; the orchestrator dispatches the planning pipeline by this lane. The `recipe_key`, `request_aspect`, and `execution_profile` metadata resolved inline are already persisted to `status.metadata`, so no return block re-carries them.
+`domains` is the multi-valued domain SET persisted at Step 9 (the union of the detector, `always_on`, and `file_globs` legs — plus the operator's multiSelect selections on the multi-match branch, or every offerable domain when a zero narrative match over-provisions). It is empty only in Step 7's bounded escape, where the project configures no offerable domain at all. `planning_lane` is the value resolved by Step 8b's `manage-status planning-lane route`; the orchestrator dispatches the planning pipeline by this lane. The `recipe_key`, `request_aspect`, and `execution_profile` metadata resolved inline are already persisted to `status.metadata`, so no return block re-carries them.
 
 **Current-checkout cwd directive.** Phases 2-4 run on the current working tree because worktree materialization is deferred to phase-5-execute Step 2.5. Carry the Step 6 point 4 directive forward so the orchestrating LLM decides, per call, whether a `.plan/execute-script.py` invocation is Bucket A (cwd-agnostic, no routing flags) or Bucket B (pass `--plan-id {plan_id}`, which auto-resolves the current working tree now and the materialized worktree once phase-5 creates it).
 
