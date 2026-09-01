@@ -97,8 +97,8 @@ clean = "uv run python build.py clean"
 # resolve from PATH, i.e. from the pyprojectx venv, which no longer carries it.
 lint = "uv run ruff check marketplace/bundles/ marketplace/targets/ test/ .claude/"
 lint-fix = "uv run ruff check marketplace/bundles/ marketplace/targets/ test/ .claude/ --fix"
-fmt = "uv run ruff format marketplace/bundles/ marketplace/targets/ test/ .claude/"
-format = "uv run ruff format marketplace/bundles/ marketplace/targets/ test/ .claude/"
+fmt = "uv run ruff format marketplace/bundles/ test/ .claude/"
+format = "uv run ruff format marketplace/bundles/ test/ .claude/"
 
 # Multi-target generator (Claude Code, OpenCode, …) — see marketplace/targets/.
 generate = "uv run python marketplace/targets/generate.py"

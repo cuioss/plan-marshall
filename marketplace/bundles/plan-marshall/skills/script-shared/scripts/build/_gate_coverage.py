@@ -637,7 +637,7 @@ def parity_population() -> tuple[ParityCell, ...]:
     return (
         ParityCell('mypy-production', 'equal', 'whole-tree quality-gate arm == cmd_compile(None)'),
         ParityCell('ruff-rules', 'equal', 'single [tool.ruff.lint] select shared by both'),
-        ParityCell('ruff-paths', 'equal', 'ruff check [bundles, test, .claude] on both'),
+        ParityCell('ruff-paths', 'equal', 'ruff check [bundles, targets, test, .claude] on both'),
         ParityCell('mypy-test', 'equal', 'unconditional whole-tree test-compile == cmd_test_compile(None)'),
         ParityCell('spdx-paths', 'equal', 'SPDX over [bundles, test, .claude, targets, build.py] on both'),
         ParityCell('plugin-doctor', 'equal', 'whole-tree quality-gate arm runs the marketplace-wide pass'),

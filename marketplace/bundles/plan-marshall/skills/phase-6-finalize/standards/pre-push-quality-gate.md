@@ -24,7 +24,7 @@ The three-guard order — quality-gate (per-bundle, then whole-tree) → test-co
 **Why guard 1 carries a whole-tree arm.** Three `quality-gate` dimensions exist ONLY at whole-tree scope, so a purely bundle-scoped sweep can never reach them and they surface first at remote CI:
 
 1. **The marketplace-wide plugin-doctor static-analysis pass** — it analyses the marketplace as a whole; no per-bundle invocation runs it.
-2. **The `.claude/` ruff coverage** — whole-tree scope widens the linted path set to include `.claude/` alongside `marketplace/bundles` and `test`; a bundle-scoped run never lints `.claude/`.
+2. **The `.claude/` and `marketplace/targets` ruff coverage** — whole-tree scope widens the linted path set to include `.claude/` and `marketplace/targets` alongside `marketplace/bundles` and `test`; a bundle-scoped run never lints `.claude/` or `marketplace/targets`.
 3. **The `marketplace/targets` SPDX-header coverage** — whole-tree scope widens the SPDX-enforced path set to include `marketplace/targets`; a bundle-scoped run never enforces headers there.
 
 The per-bundle loop remains the precise, footprint-proportional pass that attributes a failure to its bundle; the whole-tree arm exists solely to make those three dimensions reachable.
