@@ -159,7 +159,8 @@ class TestRecordDrift:
     def test_missing_transcript_path_yields_none(self, monkeypatch):
         record = dict(_runtime_record())
         del record['transcript_path']
-        result = _run(monkeypatch, record, 'success', session_id=SESSION_ID)
+        distinct = '33333333-3333-3333-3333-333333333333'
+        result = _run(monkeypatch, record, 'success', session_id=distinct)
         assert result['status'] == 'success'
         assert result['transcript_path'] is None
 

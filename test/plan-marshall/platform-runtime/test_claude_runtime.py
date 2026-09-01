@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for claude_runtime.py — ClaudeRuntime implementation of all 24 operations.
+"""Tests for claude_runtime.py — ClaudeRuntime implementation of all 25 operations.
 
 Covers every method defined by the Runtime ABC:
   1.  project_initial_setup       — creates dirs, writes marshal.json, installs hook
