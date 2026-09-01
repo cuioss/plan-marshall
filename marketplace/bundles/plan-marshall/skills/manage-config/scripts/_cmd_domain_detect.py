@@ -15,12 +15,14 @@ three legs:
   the real affected_files), else path-like tokens extracted from the narrative
   the detector already reads (init, pre-module-mapping).
 
-``ambiguous`` is ``true`` only when the detector multi-matches, OR when the
-detector zero-matches AND both the always_on and glob legs are empty (there is
-genuinely nothing to select — the configured non-system domains are then
-surfaced as the multiSelect candidate set). A zero narrative match resolved by
-the always_on / glob legs is silent (``ambiguous=false``). There is no LLM
-dispatch on this path.
+``ambiguous`` is ``true`` only when the detector multi-matches, plus the one
+bounded escape where a zero match leaves nothing to resolve at all — no
+narrative match, no always_on / glob leg, and no offerable domain to
+over-provision (``reason='no_narrative_match'``). Every other zero match
+resolves silently (``ambiguous=false``): the always_on / glob legs alone give
+``reason='inclusion_only_resolve'``, and an otherwise-unresolved zero match
+over-provisions the whole offerable domain set under
+``reason='over_provisioned_resolve'``. There is no LLM dispatch on this path.
 
 The offerable set the caller prompts over is split across two sibling fields:
 ``candidates`` is the detector's narrative matches, and ``additional_candidates``
@@ -442,8 +444,9 @@ def cmd_domain_detect(args) -> dict[str, Any]:
         )
 
     # Zero narrative match. When the always_on / glob legs contribute any domain
-    # the plan resolves silently; otherwise it is genuinely ambiguous and the
-    # configured non-system domains are surfaced as the multiSelect candidate set.
+    # the plan resolves on those legs alone; otherwise the whole offerable set is
+    # over-provisioned. Only an empty union — no offerable domain at all — stays
+    # ambiguous and surfaces the multiSelect prompt.
     if inclusion_union:
         return _result(
             plan_id,
@@ -457,16 +460,29 @@ def cmd_domain_detect(args) -> dict[str, Any]:
             reason='inclusion_only_resolve',
         )
 
-    prompt_candidates = [
-        {'domain': d, 'matched_aliases': []} for d in sorted(_offerable_domains(user_domains))
-    ]
+    offerable = sorted(_offerable_domains(user_domains))
+    prompt_candidates = [{'domain': d, 'matched_aliases': []} for d in offerable]
+    prompt_additional = _additional_candidates(user_domains, prompt_candidates, inclusion_union)
+    over_provisioned = set(offerable) | set(prompt_additional) | inclusion_union
+
+    if over_provisioned:
+        return _result(
+            plan_id,
+            domains=over_provisioned,
+            candidates=prompt_candidates,
+            additional_candidates=prompt_additional,
+            always_on=always_on_set,
+            glob_matched=glob_matched_set,
+            ambiguous=False,
+            source=narrative_source,
+            reason='over_provisioned_resolve',
+        )
+
     return _result(
         plan_id,
         domains=set(),
         candidates=prompt_candidates,
-        additional_candidates=_additional_candidates(
-            user_domains, prompt_candidates, inclusion_union
-        ),
+        additional_candidates=prompt_additional,
         always_on=always_on_set,
         glob_matched=glob_matched_set,
         ambiguous=True,

@@ -5,9 +5,10 @@
 Deterministic domain detector for phase-1-init Step 7 and phase-2-refine. Walks
 the clarified-request narrative for explicit bundle / skill mentions and returns
 the SET of matching domains — the unconditional union of the detector, always_on,
-and file_globs merge legs. Multi-match, or a zero-match with an empty always_on /
-glob union, returns ambiguous=true so the caller raises a multiSelect
-AskUserQuestion; there is no LLM dispatch fallback on this path.
+and file_globs merge legs. A multi-match returns ambiguous=true so the caller
+raises a multiSelect AskUserQuestion; a zero-match over-provisions the whole
+offerable domain set instead, and stays ambiguous only in the bounded escape
+where that set is empty. There is no LLM dispatch fallback on this path.
 """
 
 from __future__ import annotations
@@ -129,15 +130,16 @@ def test_multi_match_returns_ambiguous(plan_context):
 
 
 # =============================================================================
-# Zero-match → ambiguous (empty always_on / glob union)
+# Zero-match → over-provisioning resolve (and its bounded ambiguous escape)
 # =============================================================================
 
 
-def test_no_match_returns_ambiguous(plan_context):
-    """No domain mentioned and nothing to include → ambiguous=true.
+def test_no_match_over_provisions_configured_domains(plan_context):
+    """No domain mentioned and nothing to include → the offerable set resolves.
 
-    On the empty-union zero-match path the configured non-system domains are
-    surfaced as the multiSelect candidate set, and the domains SET is empty.
+    The zero-match branch over-provisions instead of prompting: ``domains`` is
+    the union of the offered candidates, the additional candidates, and the
+    inclusion legs, returned under its own ``reason`` with ``ambiguous`` false.
     """
     plan_dir = _make_plan_dir(plan_context, 'dd-zero')
     create_nested_marshal_json(plan_context.fixture_dir)
@@ -146,12 +148,38 @@ def test_no_match_returns_ambiguous(plan_context):
         'Update the deployment configuration to fix the release pipeline.',
     )
     result = cmd_domain_detect(_ns('dd-zero'))
+    assert result['ambiguous'] is False
+    assert result['reason'] == 'over_provisioned_resolve'
+    assert set(result['domains']) == {'java', 'javascript', 'plan-marshall-plugin-dev'}
+    # The configured non-system domains stay the offered candidate set.
+    candidate_domains = {c['domain'] for c in result['candidates']}
+    assert candidate_domains == {'java', 'javascript', 'plan-marshall-plugin-dev'}
+
+
+def test_zero_match_without_offerable_domain_stays_ambiguous(plan_context):
+    """The bounded escape: nothing offerable at all still prompts.
+
+    Every non-``system`` ``skill_domains`` entry is a non-dict bookkeeping
+    sibling, so ``_offerable_domains`` yields nothing and there is no set to
+    over-provision.
+    """
+    plan_dir = _make_plan_dir(plan_context, 'dd-zero-no-offerable')
+    config = {
+        'skill_domains': {
+            'system': {'defaults': []},
+            'active_profiles': ['implementation', 'module_testing'],
+            'detected_build_systems': ['pyproject'],
+        }
+    }
+    create_marshal_json(plan_context.fixture_dir, config)
+    _write_request(
+        plan_dir,
+        'Update the deployment configuration to fix the release pipeline.',
+    )
+    result = cmd_domain_detect(_ns('dd-zero-no-offerable'))
     assert result['ambiguous'] is True
     assert result['reason'] == 'no_narrative_match'
     assert result['domains'] == []
-    # The configured non-system domains are surfaced for the multiSelect prompt.
-    candidate_domains = {c['domain'] for c in result['candidates']}
-    assert {'java', 'javascript', 'plan-marshall-plugin-dev'}.issubset(candidate_domains)
 
 
 # =============================================================================
@@ -320,8 +348,8 @@ def test_zero_match_leaves_additional_candidates_empty(plan_context):
     """Zero-match invariance: candidates already carries the full configured set.
 
     The zero-match branch widens ``candidates`` itself, so the additive
-    ``additional_candidates`` computes to empty — both ambiguous branches present
-    the identical offerable union.
+    ``additional_candidates`` computes to empty — the offerable union is carried
+    by ``candidates`` alone, on the over-provisioning leg as on the escape.
     """
     plan_dir = _make_plan_dir(plan_context, 'dd-zero-additional')
     create_nested_marshal_json(plan_context.fixture_dir)
@@ -330,7 +358,7 @@ def test_zero_match_leaves_additional_candidates_empty(plan_context):
         'Update the deployment configuration to fix the release pipeline.',
     )
     result = cmd_domain_detect(_ns('dd-zero-additional'))
-    assert result['reason'] == 'no_narrative_match'
+    assert result['reason'] == 'over_provisioned_resolve'
     candidate_domains = {c['domain'] for c in result['candidates']}
     assert {'java', 'javascript', 'plan-marshall-plugin-dev'}.issubset(candidate_domains)
     assert result['additional_candidates'] == []

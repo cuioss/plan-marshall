@@ -844,9 +844,10 @@ def main() -> int:
         help='Deterministic domain detector for phase-1-init Step 7 (no LLM dispatch)',
         description=(
             "Walk the plan's clarified-request narrative for explicit mentions of "
-            "configured skill_domains and return the matching domain. Single-domain "
-            "projects auto-select. Multi-match or no-match returns ambiguous=true so "
-            "the caller raises an AskUserQuestion — no LLM fallback applies."
+            "configured skill_domains and return the matching domains. Single-domain "
+            "projects auto-select. Only a multi-match returns ambiguous=true so the "
+            "caller raises an AskUserQuestion; a no-match resolves silently by "
+            "over-provisioning every offerable domain — no LLM fallback applies."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
