@@ -349,6 +349,8 @@ Both keys are **absent by default** — no seed into `DEFAULT_SYSTEM_DOMAIN` / `
 
 The domain detector (`manage-config domain-detect`) composes the plan's domain set as the unconditional union `{detector/prompt selections} ∪ always_on_set ∪ glob_matched_set`: the narrative/override/multiSelect detector leg, the `always_on` leg, and the `file_globs` leg (evaluated against the request narrative's path tokens at init, and the real `affected_files` at refine).
 
+When all three legs come up empty — no narrative match, no `always_on` domain, no glob hit — a fourth and terminal leg supplies the set: the detector over-provisions the whole offerable domain set (`reason=over_provisioned_resolve`) and returns `ambiguous: false`, rather than prompting over a candidate list that already holds every offerable domain. That leg is bounded by the offerable set itself, so a project whose `skill_domains` carries no dict-valued non-`system` entry has nothing to over-provision and still returns the empty set with `ambiguous: true` and `reason=no_narrative_match`.
+
 Set the keys via the `skill-domains set-inclusion` verb (each key is written independently; an omitted flag leaves the persisted value untouched):
 
 ```bash

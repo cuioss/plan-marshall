@@ -103,7 +103,7 @@ Each dispatched phase envelope (phases 2–6) runs the workflow doc inside the s
 │                                                                                    │
 │    /manage-config domain-detect/         (script)                                  │
 │      │                                                                             │
-│      │  ambiguous (multi-domain or zero match)                                     │
+│      │  ambiguous (multi-domain match only)                                        │
 │      ╵┄┄►  ?AskUserQuestion?            (human-input territory)                    │
 │                                                                                    │
 │    LLM judgement inline in the orchestrator: pre-flight reference verification     │
