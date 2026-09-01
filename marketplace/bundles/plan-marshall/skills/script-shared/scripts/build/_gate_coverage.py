@@ -657,7 +657,8 @@ def parity_population() -> tuple[ParityCell, ...]:
         ),
         ParityCell(
             'ruff-mypy-targets', 'equal',
-            'marketplace/targets is in no ruff path list and in no mypy scope on '
-            'either side (SPDX headers do cover it) — coverage is equal and zero',
+            'marketplace/targets is in a ruff path list but in no mypy scope on '
+            'either side (SPDX headers do cover it) — ruff coverage is no longer '
+            'zero, mypy coverage is equal and zero',
         ),
     )
