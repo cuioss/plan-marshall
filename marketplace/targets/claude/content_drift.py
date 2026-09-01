@@ -41,7 +41,8 @@ edited to satisfy the gate — only the build artifact under
 from __future__ import annotations
 
 import tempfile
-from dataclasses import dataclass, field as _dc_field
+from dataclasses import dataclass
+from dataclasses import field as _dc_field
 from pathlib import Path
 
 from marketplace.targets.claude.emitter import iter_bundle_dirs

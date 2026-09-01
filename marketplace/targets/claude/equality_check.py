@@ -52,7 +52,8 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
-from dataclasses import dataclass, field as _dc_field
+from dataclasses import dataclass
+from dataclasses import field as _dc_field
 from pathlib import Path
 
 from marketplace.targets.claude.emitter import CLAUDE_TARGET_NAME

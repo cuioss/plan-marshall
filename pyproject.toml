@@ -95,8 +95,8 @@ clean = "uv run python build.py clean"
 # Shortcuts for common operations (no module filtering).
 # Routed through `uv run` like every other tool invocation: a bare `ruff` would
 # resolve from PATH, i.e. from the pyprojectx venv, which no longer carries it.
-lint = "uv run ruff check marketplace/bundles/ test/ .claude/"
-lint-fix = "uv run ruff check marketplace/bundles/ test/ .claude/ --fix"
+lint = "uv run ruff check marketplace/bundles/ marketplace/targets/ test/ .claude/"
+lint-fix = "uv run ruff check marketplace/bundles/ marketplace/targets/ test/ .claude/ --fix"
 fmt = "uv run ruff format marketplace/bundles/ test/ .claude/"
 format = "uv run ruff format marketplace/bundles/ test/ .claude/"
 
@@ -263,7 +263,7 @@ exclude_lines = [
 [tool.ruff]
 target-version = "py312"
 line-length = 120
-src = ["marketplace/bundles", "test", ".claude"]
+src = ["marketplace/bundles", "marketplace/targets", "test", ".claude"]
 # Parallel worktrees under ``.claude/worktrees/`` are isolated working copies
 # of other in-flight branches. They contribute neither to this branch's tree
 # nor to its lint scope; mirror the mypy exclude here so ruff doesn't flag

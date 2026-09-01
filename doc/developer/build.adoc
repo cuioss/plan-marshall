@@ -62,7 +62,7 @@ The `quality-gate` build target (root `build.py:cmd_quality_gate`) is the fast-f
 
 | Lint
 | `ruff check`
-| `marketplace/bundles`, `test`, `.claude` (full tree) or scoped paths (module run)
+| `marketplace/bundles`, `marketplace/targets`, `test`, `.claude` (full tree) or scoped paths (module run)
 
 | Static-analysis invariants
 | `pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate`
