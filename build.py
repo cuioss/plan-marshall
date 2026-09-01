@@ -650,7 +650,7 @@ def cmd_quality_gate(module: str | None, boundary: CoverageBoundary | None = Non
             paths.append(test_path)
     else:
         # Include .claude/ scripts when running full quality-gate
-        paths = [str(BUNDLES_DIR), str(TEST_DIR), str(CLAUDE_DIR)]
+        paths = [str(BUNDLES_DIR), str(TARGETS_DIR), str(TEST_DIR), str(CLAUDE_DIR)]
 
     exit_code = run(['uv', 'run', 'ruff', 'check'] + paths, f'quality-gate: ruff check {" ".join(paths)}')
     if exit_code != 0:

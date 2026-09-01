@@ -52,11 +52,12 @@ _toon_scripts = (
 if str(_toon_scripts) not in sys.path:
     sys.path.insert(0, str(_toon_scripts))
 
+from toon_parser import serialize_toon  # noqa: E402
+
 from marketplace.targets.claude.content_drift import (  # noqa: E402
     ContentDriftResult,
     run_content_drift_check,
 )
-from toon_parser import serialize_toon  # noqa: E402
 
 DEFAULT_TARGET_DIR = 'target/claude'
 DEFAULT_MARKETPLACE_DIR = 'marketplace/bundles'

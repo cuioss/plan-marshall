@@ -38,7 +38,7 @@ The TOON return contains ``status``, ``emitted_count``,
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from marketplace.targets.base import TargetBase
@@ -351,7 +351,7 @@ class ClaudeTarget(TargetBase):
             file_hashes = {}
 
         marker_payload: dict[str, object] = {
-            'emit_completed_at': datetime.now(timezone.utc).isoformat(),
+            'emit_completed_at': datetime.now(UTC).isoformat(),
             'source_tree_fingerprint': fingerprint,
             'file_hashes': file_hashes,
         }
