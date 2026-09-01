@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from conftest import load_script_module  # noqa: E402
+from conftest import load_script_module, parse_ns  # noqa: E402
 
 # Direct module load so unit tests can poke the consumer seam.
 _mod = load_script_module(
@@ -56,3 +56,42 @@ def _runtime_record(
         'reduced_bytes': reduced_bytes,
         'no_signal': no_signal,
     }
+
+
+def run_consumer(
+    monkeypatch,
+    record,
+    status='success',
+    *,
+    read_budget=None,
+    session_id: str = SESSION_ID,
+) -> dict:
+    """Drive ``cmd_run`` through the mocked hop seam, pinning the forwarded id.
+
+    ``_fake`` records the session id the consumer hands to
+    :func:`_run_chat_signal_op`; the returned result asserts it equals
+    ``session_id``. A consumer that forwards a wrong or hardcoded id (instead
+    of the CLI ``--session-id`` value) fails here — that is the hop semantics
+    these modules exist to pin, and the single shared copy stops the local
+    ``_run`` duplicates from drifting apart again.
+    """
+    seen: list[str] = []
+
+    def _fake(sid):
+        seen.append(sid)
+        return record, status
+
+    monkeypatch.setattr(_mod, '_run_chat_signal_op', _fake)
+    args = parse_ns(
+        'plan-marshall',
+        'plan-retrospective',
+        'extract-chat-signal.py',
+        'run',
+        '--session-id',
+        session_id,
+    )
+    if read_budget is not None:
+        args.read_budget_bytes = read_budget
+    result = _mod.cmd_run(args)
+    assert seen == [session_id], f"forwarded id {seen!r} != requested {session_id!r}"
+    return result

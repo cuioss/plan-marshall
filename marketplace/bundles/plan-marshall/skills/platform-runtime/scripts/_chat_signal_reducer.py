@@ -61,17 +61,20 @@ from typing import Any
 
 from _chat_gate_decisions import (
     OPERATOR_DECISION_ROLE,
+    OPERATOR_DECISION_TOOL,
     decision_tool_use_ids,
     extract_gate_decisions,
 )
 from _chat_provenance import is_operator_authored
 
 # The established plan-marshall decision-marker set. An assistant turn is
-# signal-bearing when its text contains at least one of these substrings.
+# signal-bearing when its text contains at least one of these substrings. The
+# decision-tool marker is derived from the authoritative constant so a rename
+# in the recovery vocabulary cannot silently diverge from this tuple.
 DECISION_MARKERS: tuple[str, ...] = (
     '[STATUS]',
     '[ERROR]',
-    'AskUserQuestion',
+    OPERATOR_DECISION_TOOL,
     '[DECISION]',
     '[DISPATCH]',
     '[SKILL]',

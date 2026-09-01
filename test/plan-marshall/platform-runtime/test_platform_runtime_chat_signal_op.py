@@ -136,6 +136,30 @@ class TestClaudeGetExtractSignal:
         assert result["error"] == "io_error"
         assert "Failed to read session transcript" in result["message"]
 
+    def test_claude_transcript_removed_after_discovery_is_absent(self, projects_at_tmp, monkeypatch):
+        """A transcript that vanishes mid-read maps to transcript_not_found, not io_error.
+
+        Discovery succeeded (the transcript existed at ``_find_transcript`` time)
+        but the file is gone by the time ``reduce_chat_signal`` reads it. That is
+        an honest \u201cno transcript can be located\u201d, the same no-op discovery's
+        ``None`` path emits — NOT the read-failure the general ``OSError`` clause
+        describes. ``FileNotFoundError`` must be caught before ``OSError``.
+        """
+        _write_transcript(
+            projects_at_tmp,
+            _turn("user", "please revert that change"),
+        )
+
+        def _vanish(_path):
+            raise FileNotFoundError("transcript removed")
+
+        monkeypatch.setattr(_chat_signal_reducer, "reduce_chat_signal", _vanish)
+        result = _parse(
+            ClaudeRuntime().chat_extract_signal("22222222-2222-2222-2222-222222222222")
+        )
+        assert result["status"] == "no-op"
+        assert result["reason"] == "transcript_not_found"
+
     def test_claude_reaches_the_reducer_via_attribute_access(self, projects_at_tmp, monkeypatch):
         """The impl resolves ``reduce_chat_signal`` at call time, so it is patchable.
 
@@ -182,7 +206,9 @@ class TestOpenCodeExtractSignal:
 
 
 class TestRouterExtractSignalIntegration:
-    def test_main_routes_chat_extract_signal_noop_end_to_end(self, tmp_path, monkeypatch, projects_at_tmp):
+    def test_main_routes_chat_extract_signal_noop_end_to_end(
+        self, tmp_path, monkeypatch, projects_at_tmp, capsys
+    ):
         """The router dispatches the op; a missing transcript yields a no-op TOON."""
         marshal_dir = tmp_path / ".plan"
         marshal_dir.mkdir(parents=True, exist_ok=True)
@@ -200,6 +226,10 @@ class TestRouterExtractSignalIntegration:
             ]
         )
         assert rc == 0
+        emitted = _parse(capsys.readouterr().out)
+        assert emitted["status"] == "no-op"
+        assert emitted["operation"] == "chat extract-signal"
+        assert emitted["reason"] == "transcript_not_found"
 
     def test_main_rejects_abbreviated_session_flag(self, tmp_path, monkeypatch, projects_at_tmp):
         """``allow_abbrev=False``: a prefix of --session-id is not accepted.

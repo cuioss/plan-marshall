@@ -18,29 +18,8 @@ passthrough.
 
 from __future__ import annotations
 
-from _extract_chat_signal_fixtures import SESSION_ID, _runtime_record
-
-from conftest import parse_ns  # noqa: E402
-
-
-def _run(monkeypatch, record, status='success', *, read_budget=None, session_id=None):
-    import _extract_chat_signal_fixtures as fx
-
-    def _fake(_sid):
-        return record, status
-
-    monkeypatch.setattr(fx._mod, '_run_chat_signal_op', _fake)
-    args = parse_ns(
-        'plan-marshall',
-        'plan-retrospective',
-        'extract-chat-signal.py',
-        'run',
-        '--session-id',
-        session_id or SESSION_ID,
-    )
-    if read_budget is not None:
-        args.read_budget_bytes = read_budget
-    return fx._mod.cmd_run(args)
+from _extract_chat_signal_fixtures import _runtime_record
+from _extract_chat_signal_fixtures import run_consumer as _run
 
 
 class TestSkipToken:

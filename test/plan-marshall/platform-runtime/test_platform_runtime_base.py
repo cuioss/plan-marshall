@@ -244,8 +244,8 @@ ALL_ABSTRACT_METHODS = [
 ]
 
 
-def test_runtime_has_24_abstract_methods():
-    """Runtime ABC exposes exactly 24 abstract methods."""
+def test_runtime_has_25_abstract_methods():
+    """Runtime ABC exposes exactly 25 abstract methods."""
     abstract_methods = getattr(Runtime, "__abstractmethods__", frozenset())
     assert len(abstract_methods) == 25, (
         f"Expected 25 abstract methods, found {len(abstract_methods)}: {sorted(abstract_methods)}"
