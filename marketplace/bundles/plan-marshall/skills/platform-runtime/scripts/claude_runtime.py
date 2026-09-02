@@ -356,8 +356,8 @@ _STATUSLINE_COMMAND = (
 # matcher-less ``hooks.PreToolUse`` entry, ORTHOGONAL to the terminal-title
 # render wiring: it invokes the enforcement leaf that blocks the four hard-rule
 # violation families inside a plan-marshall plan context (fail-open everywhere
-# else). Keyed on its own command string so its present/MISSING detection is
-# independent of the render-entry detection.
+# else). Keyed on its own command string so its present/divergence/MISSING
+# detection is independent of the render-entry detection.
 _ENFORCEMENT_HOOK_COMMAND = (
     f"{_EXECUTOR_GUARD_PREFIX}"
     "python3 .plan/execute-script.py "

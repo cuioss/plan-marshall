@@ -2112,7 +2112,10 @@ class TestCaptureEntryOutcomeIsReported:
 
 
 class TestDisplayEnforcementLabel:
-    """Tests for the dedicated ``PreToolUse:enforcement`` display present/MISSING label."""
+    """Tests for the dedicated ``PreToolUse:enforcement`` display label.
+
+    The label is three-valued: ``present`` / ``divergence`` / ``MISSING``.
+    """
 
     @pytest.fixture()
     def in_tmp_cwd(self, tmp_path, monkeypatch):
