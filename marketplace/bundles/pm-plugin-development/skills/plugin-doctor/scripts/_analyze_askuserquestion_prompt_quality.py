@@ -217,10 +217,20 @@ def _block_body(lines: list[str], header_idx: int) -> list[int]:
 
 
 def _is_invocation_block(lines: list[str], header_idx: int) -> bool:
-    """Confirm the header at ``header_idx`` introduces a structured call."""
+    """Confirm the header at ``header_idx`` introduces a structured call.
+
+    The confirming sub-key MUST be indented further than the header, i.e. inside
+    the block ``_block_body`` will extract. A sibling ``question:`` at header
+    indentation confirms nothing: ``_block_body`` stops before it, so accepting
+    it would count the header into ``population_size`` while scanning an empty
+    body — a block reported as examined that no check ever saw.
+    """
+    header_indent = _indent(lines[header_idx])
     for follow in lines[header_idx + 1:]:
         if not follow.strip():
             continue
+        if _indent(follow) <= header_indent:
+            return False
         return bool(_ASKUSER_SUBKEY_RE.match(follow))
     return False
 

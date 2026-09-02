@@ -265,6 +265,31 @@ class TestInvocationShape:
         )
         assert_analyzer_findings(analyze_askuserquestion_prompt_quality, tmp_path, [])
 
+    def test_sibling_subkey_at_header_indent_not_flagged(self, tmp_path):
+        # The sub-key sits at the header's own indentation, so it is OUTSIDE the
+        # block _block_body extracts. Carries violating vocabulary on purpose:
+        # the indent boundary, not the vocabulary, is what keeps it out of scope.
+        _make_skill_doc(
+            tmp_path,
+            '# Fixture\n\nAskUserQuestion:\nquestion: "Per Step 7, pick a multiSelect"\n',
+        )
+        assert_analyzer_findings(analyze_askuserquestion_prompt_quality, tmp_path, [])
+
+    def test_sibling_subkey_block_does_not_inflate_population(self, tmp_path):
+        # The regression this pins: a sibling sub-key once CONFIRMED the header
+        # while _block_body excluded it, so the header counted into
+        # population_size with an empty body — a block reported as examined that
+        # no check ever saw.
+        _make_skill_doc(tmp_path, '# Fixture\n\n' + _API_SHERIFF_BLOCK, skill='offender')
+        _make_skill_doc(
+            tmp_path,
+            '# Fixture\n\nAskUserQuestion:\nquestion: "Per Step 7, pick a multiSelect"\n',
+            skill='sibling',
+        )
+        findings = analyze_askuserquestion_prompt_quality(tmp_path)
+        assert findings
+        assert {f['population_size'] for f in findings} == {1}
+
     def test_empty_tree_is_clean(self, tmp_path):
         assert_analyzer_findings(analyze_askuserquestion_prompt_quality, tmp_path, [])
 
