@@ -367,14 +367,16 @@ def test_the_sweep_marker_does_not_fire_on_a_spec_quoting_anothers_declaration()
     assert not partition_mod.is_sweep_declaration(_QUOTING_BODY)
 
 
-# --- rule 1, per alternative: the quotation guard is UNIFORM ------------------
+# --- rule 1, per alternative AND per form: the reproduction guard is UNIFORM ---
 #
-# The near-miss above exercises ONE phrasing. Every alternative is equally
-# quotable, so a guard fitted to one of them leaves the other three carrying the
-# identical exposure while that control still passes green — a control that
-# passes while its siblings are open is the defect, not merely a coverage gap.
-# Each alternative therefore carries a matched pair below: the phrasing DECLARED,
-# which must sweep, and the same phrasing QUOTED, which must not.
+# The near-miss above exercises ONE phrasing in ONE form. Every alternative is
+# equally reproducible, and every alternative is reproducible in every form this
+# corpus writes, so a guard fitted to one alternative — or to one form — leaves
+# the rest carrying the identical exposure while that control still passes green.
+# A control that passes while its siblings are open is the defect, not merely a
+# coverage gap. Each alternative therefore carries a matched pair below: the
+# phrasing DECLARED, which must sweep, and the same phrasing REPRODUCED in every
+# form, which must not.
 
 #: One phrasing per ``_SWEEP_ALTERNATIVES`` entry, each the sentence a spec
 #: writes about ITSELF. The enumeration control below fails if an alternative is
@@ -405,6 +407,72 @@ def quoting_body(phrasing: str) -> str:
         '\nThe table below records why each row was read as it was. One row reads '
         f'"{phrasing}" and is a **genuine claim**.\n'
     )
+
+
+def wrapped_quoting_body(phrasing: str) -> str:
+    """The same quotation HARD-WRAPPED, so its marks land on DIFFERENT lines.
+
+    The dominant real form in a corpus whose prose is wrapped by convention. A
+    guard pairing marks only within one line sees no quotation here at all, so
+    every hard-wrapped reproduction escapes it.
+    """
+    head, _, tail = phrasing.partition(' ')
+    return (
+        '# PLAN-242\n\n## Expected Surface\n\n'
+        "- OBSERVED: `test/beta/` — this plan's own mirror\n"
+        '\nThe table below records why each row was read as it was. One row\n'
+        f'reads "{head}\n{tail}" and is a **genuine claim**.\n'
+    )
+
+
+def code_span_quoting_body(phrasing: str) -> str:
+    """The same reproduction as an inline markdown CODE SPAN.
+
+    Wrapped in DOUBLED backticks, because a phrasing may itself carry a path in
+    single ones — which is the case a span closed by a run of its own length
+    exists to handle.
+    """
+    return (
+        '# PLAN-243\n\n## Expected Surface\n\n'
+        "- OBSERVED: `test/beta/` — this plan's own mirror\n"
+        f'\nOne row reads ``{phrasing}`` and is a **genuine claim**.\n'
+    )
+
+
+def fenced_quoting_body(phrasing: str) -> str:
+    """The same reproduction inside a FENCED code block."""
+    return (
+        '# PLAN-244\n\n## Expected Surface\n\n'
+        "- OBSERVED: `test/beta/` — this plan's own mirror\n"
+        '\nPLAN-240 declares:\n\n'
+        f'```text\n{phrasing}\n```\n'
+    )
+
+
+def blockquote_quoting_body(phrasing: str) -> str:
+    """The same reproduction as a BLOCKQUOTE — markdown's own quoted material."""
+    return (
+        '# PLAN-245\n\n## Expected Surface\n\n'
+        "- OBSERVED: `test/beta/` — this plan's own mirror\n"
+        '\nPLAN-240 declares:\n\n'
+        f'> {phrasing}\n'
+        '\nand this plan claims an ordinary slice of its own.\n'
+    )
+
+
+#: One builder per REPRODUCTION FORM this corpus writes. Parametrized TOGETHER
+#: with the phrasings below, so the guard is exercised over the CROSS-PRODUCT
+#: rather than its diagonal: a form recognised for one phrasing but not another,
+#: and a phrasing guarded in one form but not another, both fail here.
+_REPRODUCTION_FORMS = {
+    'blockquote': blockquote_quoting_body,
+    'fenced_code_block': fenced_quoting_body,
+    'hard_wrapped_quotation': wrapped_quoting_body,
+    'inline_code_span': code_span_quoting_body,
+    'inline_quotation': quoting_body,
+}
+
+_FORM_IDS = sorted(_REPRODUCTION_FORMS)
 
 
 def test_the_quotation_controls_exercise_every_sweep_alternative() -> None:
@@ -442,31 +510,100 @@ def test_every_sweep_phrasing_declares_a_sweep_on_its_own(phrasing_id: str) -> N
     assert partition_mod.is_sweep_declaration(declaring_body(_SWEEP_PHRASINGS[phrasing_id]))
 
 
+@pytest.mark.parametrize('form_id', _FORM_IDS)
 @pytest.mark.parametrize('phrasing_id', _PHRASING_IDS)
-def test_no_sweep_phrasing_fires_when_the_spec_is_quoting_it(phrasing_id: str) -> None:
-    """Near-miss control per alternative: reproducing a sentence is not declaring it.
+def test_no_sweep_phrasing_fires_when_the_spec_reproduces_it(
+    phrasing_id: str, form_id: str
+) -> None:
+    """Near-miss control per alternative AND per form: reproducing is not declaring.
 
-    The analysing plan claims an ordinary slice and quotes a sibling's
-    declaration to discuss it. Reading the quotation as its own would sweep it
-    and hand its tests to a neighbour.
+    The analysing plan claims an ordinary slice and reproduces a sibling's
+    declaration to discuss it. Reading the reproduction as its own would sweep it
+    and hand its tests to a neighbour. A guard recognising only ONE form is
+    escaped by every other form the corpus writes — hard-wrapped prose, a
+    backticked phrase, a fenced block, a blockquote — which is the fitted-guard
+    defect one level down from a narrowing written into a single alternative.
     """
-    assert not partition_mod.is_sweep_declaration(quoting_body(_SWEEP_PHRASINGS[phrasing_id]))
+    body = _REPRODUCTION_FORMS[form_id](_SWEEP_PHRASINGS[phrasing_id])
+
+    assert not partition_mod.is_sweep_declaration(body)
+
+
+# --- rule 1: the guard's own matched negatives -------------------------------
+#
+# Widening the guard is only half the contract: it must not suppress a real
+# declaration. Each decision that keeps it from doing so carries a fixture that
+# DISCRIMINATES — one a guard without that decision fails. A fixture carrying a
+# single stray mark discriminates neither total containment nor the pairing
+# bound, because a guard with neither still finds no span in it.
 
 
 @pytest.mark.parametrize('phrasing_id', _PHRASING_IDS)
 def test_an_unbalanced_quotation_mark_cannot_suppress_a_declaration(phrasing_id: str) -> None:
-    """Containment is TOTAL — the guard's own matched negative.
+    """A lone opening mark delimits nothing, so it suppresses nothing.
 
-    A stray opening quote earlier in the spec must not turn the declaration that
-    follows into a quotation. A guard testing mere overlap, or pairing marks
-    across lines, would silently convert a real sweep into an ordinary slice —
-    the failure in the direction opposite to the one the guard exists to stop.
+    Exactly one quote mark, which is exactly what this control claims: an
+    unpaired mark must not turn the declaration that follows into a quotation.
+    The two further decisions the guard rests on — TOTAL containment, and the
+    paragraph bound on pairing — are exercised by the two controls below, since
+    a body with no second mark passes under a guard carrying neither.
     """
     body = declaring_body(_SWEEP_PHRASINGS[phrasing_id]).replace(
         '## Expected Surface', '## Expected Surface\n\nThe sibling row opens "'
     )
 
+    assert body.count('"') == 1
     assert partition_mod.is_sweep_declaration(body)
+
+
+#: A declaration a quotation OVERLAPS without containing: the quoted phrase opens
+#: inside the marker occurrence and closes after it.
+_OVERLAPPING_QUOTATION_BODY = (
+    '# PLAN-246\n\n## Expected Surface\n\n'
+    '- OBSERVED: `test/beta/` — this surface crosses several reduction "slices '
+    'deliberately", as PLAN-240 puts it\n'
+)
+
+#: A declaration standing between two stray marks in DIFFERENT paragraphs.
+_STRAY_MARKS_ACROSS_PARAGRAPHS_BODY = (
+    '# PLAN-247\n\n## Expected Surface\n\n'
+    'The sibling row opens "\n'
+    '\n'
+    "- OBSERVED: `test/beta/` — ⛔ **the whole tree.** this plan's surface is the "
+    'test tree entire\n'
+    '\n'
+    'and a later row closes "\n'
+)
+
+
+def test_a_quotation_overlapping_a_declaration_does_not_suppress_it() -> None:
+    """Containment is TOTAL — a mere overlap is not a reproduction.
+
+    The quotation opens partway through the marker occurrence, so the spec is
+    still asserting the words the marker matched. A guard testing overlap
+    discards the match and silently converts a real sweep into an ordinary
+    slice — the failure in the direction opposite to the one the guard stops.
+    The first assertion pins the fixture as a genuine overlap, so it cannot decay
+    into the containment case it exists to be distinguished from.
+    """
+    match = next(partition_mod._SWEEP_RE.finditer(_OVERLAPPING_QUOTATION_BODY))
+    spans = partition_mod._reproduction_spans(_OVERLAPPING_QUOTATION_BODY)
+
+    assert any(match.start() < start <= match.end() < end for start, end in spans)
+    assert partition_mod.is_sweep_declaration(_OVERLAPPING_QUOTATION_BODY)
+
+
+def test_stray_marks_in_two_paragraphs_do_not_pair_across_a_declaration() -> None:
+    """Pairing is bounded by the blank line, so a stray mark costs one paragraph.
+
+    Two unpaired marks a paragraph apart with a declaration between them. A guard
+    pairing marks across the whole document reads the span between them as one
+    quotation and swallows the declaration — the same direction of failure as an
+    overlap test, reached the other way. The mark count pins that the fixture
+    really carries the second mark such a guard would pair with.
+    """
+    assert _STRAY_MARKS_ACROSS_PARAGRAPHS_BODY.count('"') == 2
+    assert partition_mod.is_sweep_declaration(_STRAY_MARKS_ACROSS_PARAGRAPHS_BODY)
 
 
 def test_an_own_words_sweep_does_not_contest_a_slices_ownership(

@@ -186,10 +186,13 @@ _LABEL_PREFIX_RE = re.compile(r'^(?P<label>OBSERVED|HYPOTHESIS)\b[^:]*:[ \t]*')
 # ALONE, and that narrowing is load-bearing rather than incidental: a possessive
 # citation in the head says the named span IS the other plan's surface, while
 # the same citation in the commentary annotates a claim the bullet makes in its
-# own right — "`_analyze_test_conventions.py` — D3 ⛔ WS-03's surface" claims
+# own right — "`_analyze_test_conventions.py` — D3 ⛔ PLAN-040's surface" claims
 # that file and merely notes whose tree it sits in. Reading rule (c) over the
 # whole bullet would demote most of the corpus, since a spec routinely names its
-# neighbours when it explains a claim.
+# neighbours when it explains a claim. The example is written with a PLAN--
+# prefixed identifier deliberately: a bare code-slug sibling is invisible to the
+# rule since it was keyed on the prefix, so illustrating the narrowing with one
+# would show a bullet the whole-bullet reading demotes no differently.
 
 #: Rule (a), the label half — the label that marks a bullet a LEAD. A
 #: ``HYPOTHESIS:`` bullet names a candidate path for outline-time verification,

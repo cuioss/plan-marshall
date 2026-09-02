@@ -437,12 +437,21 @@ def test_a_citation_in_the_trailing_commentary_leaves_the_claim_intact(
     sits in. A rule reading the whole bullet would demote it — and with it most
     of the corpus, since a spec routinely names its neighbours when it explains
     a claim.
+
+    The commentary cites a ``PLAN-``-prefixed sibling, because that is the only
+    citation form the rule can SEE. A bare code-slug sibling matches nothing
+    since the rule was keyed on the prefix, so a fixture citing one would leave
+    this control passing identically whether rule (c) reads the head or the whole
+    bullet — a near-miss that no longer misses. The first assertion pins the
+    citation as visible, so the control cannot decay back into that state.
     """
     body = (
         '# PLAN-222\n\n## Expected Surface\n\n'
         '- OBSERVED: `test/omega/test_one.py` — D3 ⛔ '
-        "**WS-03's surface; see D3 for why it is taken here**\n"
+        "**PLAN-040's surface; see D3 for why it is taken here**\n"
     )
+
+    assert spec_parser._CROSS_PLAN_REFERENCE_RE.search(body)
 
     claim = claim_for(plans, repo, 'PLAN-222.md', body)
     entry = next(entry for entry in claim.claimed if entry.path == 'test/omega/test_one.py')

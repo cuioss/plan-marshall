@@ -155,15 +155,18 @@ OWNER_NOT_DERIVABLE = '<not-derivable>'
 #: crossed. The crossing and partition-disregard alternatives are what make this
 #: a reading of what a spec SAYS rather than a fingerprint of who wrote it.
 #:
-#: ⛔ A QUOTATION IS NOT A DECLARATION, and the guard against reading one as the
-#: other is applied UNIFORMLY to all four alternatives by
+#: ⛔ A REPRODUCTION IS NOT A DECLARATION, and the guard against reading one as
+#: the other is applied UNIFORMLY to all four alternatives by
 #: :func:`is_sweep_declaration`, never per-alternative. A spec ANALYSING the
 #: corpus reproduces a sibling's declaration in order to discuss it, and every
-#: one of these four phrasings is quotable: reading any of them as the analysing
-#: spec's OWN declaration sweeps that plan and hands its tests to a neighbour.
-#: A guard fitted to one alternative leaves the other three carrying the identical
-#: exposure while every control still passes green, which is why the narrowing
-#: lives at the single point all four pass through rather than inside the pattern.
+#: one of these four phrasings is reproducible: reading any of them as the
+#: analysing spec's OWN declaration sweeps that plan and hands its tests to a
+#: neighbour. A guard fitted to one alternative leaves the other three carrying
+#: the identical exposure while every control still passes green, which is why
+#: the narrowing lives at the single point all four pass through rather than
+#: inside the pattern. The FORMS a reproduction takes are enumerated at
+#: :func:`_reproduction_spans`, and the same reasoning applies there: a guard
+#: recognising one form is escaped by every other form the corpus uses.
 #:
 #: The crossing alternative additionally requires the plural ``slices`` — the
 #: epic's reduction slices — and does not admit "crosses the whole partition".
@@ -188,21 +191,127 @@ _SWEEP_ALTERNATIVES = (
 
 _SWEEP_RE = re.compile('|'.join(_SWEEP_ALTERNATIVES), re.IGNORECASE)
 
-#: A QUOTATION span — text a spec REPRODUCES rather than asserts. Both straight
+#: A QUOTATION span — text a spec sets off with quotation marks. Both straight
 #: and typographic double quotes, and the typographic single pair.
 #:
 #: ⛔ The straight single quote is deliberately NOT admitted. The corpus writes
 #: the possessive apostrophe with it, so admitting it would pair two unrelated
 #: possessives and swallow whole sentences of genuine declaration between them —
 #: silently converting a real sweep into an ordinary slice, the failure in the
-#: other direction. Each span is bounded to a single line for the same reason:
-#: an unpaired mark then costs nothing beyond its own line.
-_QUOTATION_RE = re.compile(r'"[^"\n]*"|“[^”\n]*”|‘[^’\n]*’')
+#: other direction.
+#:
+#: ⛔ A quotation spans LINES but never a PARAGRAPH. Prose in this corpus is
+#: hard-wrapped, so the dominant real reproduction has its opening and closing
+#: mark on DIFFERENT lines: a line-bounded span sees none of them and every
+#: hard-wrapped quotation escapes the guard entirely. The bound that survives is
+#: the blank line — an unpaired mark then costs nothing beyond its own paragraph,
+#: which is the containment the line bound was reaching for without the overfit
+#: to prose that happens not to wrap.
+#: The blank line that ends a paragraph, and with it the reach of any unpaired
+#: mark inside one.
+_PARAGRAPH_BREAK_RE = re.compile(r'\n[ \t]*\n')
+
+_QUOTATION_RE = re.compile(
+    r'"(?:[^"\n]|\n(?![ \t]*\n))*"'
+    r'|“(?:[^”\n]|\n(?![ \t]*\n))*”'
+    r'|‘(?:[^’\n]|\n(?![ \t]*\n))*’'
+)
+
+#: A BLOCKQUOTE span — the run of consecutive ``>``-prefixed lines that markdown
+#: defines as quoted material.
+#:
+#: ⛔ LAZY CONTINUATION is deliberately out of scope: markdown lets a blockquote
+#: run on into following lines that carry no ``>``, and this pattern stops at the
+#: last prefixed line. Admitting it would need this module to decide which
+#: unprefixed line starts a new block, and guessing wrong SUPPRESSES a real
+#: declaration. Stopping short only ever leaves a marker uncontained, which makes
+#: it fire — the conservative direction, and the one a reader can see.
+_BLOCKQUOTE_RE = re.compile(r'^[ \t]{0,3}>.*(?:\n[ \t]{0,3}>.*)*', re.MULTILINE)
+
+#: The longest backtick run that opens an INLINE code span; anything longer opens
+#: a fenced block. The two differ in REACH, which is the only reason the
+#: distinction is drawn here: markdown forbids a blank line inside an inline span,
+#: so its closing run must sit in the same paragraph, while a fence closes
+#: wherever its matching fence sits however many paragraphs later.
+_INLINE_CODE_MAX_RUN = 2
 
 
-def _quotation_spans(text: str) -> list[tuple[int, int]]:
-    """The ``[start, end)`` span of every quotation in ``text``."""
-    return [(match.start(), match.end()) for match in _QUOTATION_RE.finditer(text)]
+def _backtick_run(text: str, index: int) -> int:
+    """The length of the unbroken backtick run beginning at ``index``."""
+    end = index
+    while end < len(text) and text[end] == '`':
+        end += 1
+    return end - index
+
+
+def _closing_backtick_run(text: str, start: int, run: int, limit: int) -> int | None:
+    """Where the next backtick run of EXACTLY ``run`` begins, searching to ``limit``.
+
+    Exactly, because a code span is closed only by a run of its own length — a
+    longer or shorter run is content, which is how a nested backtick survives
+    inside a doubled span and how an inline span survives inside a fence.
+    """
+    index = start
+    while index < limit:
+        if text[index] != '`':
+            index += 1
+            continue
+        length = _backtick_run(text, index)
+        if length == run and index + length <= limit:
+            return index
+        index += length
+    return None
+
+
+def _code_spans(text: str) -> list[tuple[int, int]]:
+    """The ``[start, end)`` span of every markdown code span, inline or fenced.
+
+    Scanned rather than pattern-matched: a code span is opened by a RUN of
+    backticks and closed only by a run of the SAME length, which a single regex
+    states as a backreference thicket while the scan reads as the rule itself.
+    An unclosed run delimits nothing and is skipped, so a stray backtick costs no
+    more than a stray quotation mark does.
+    """
+    spans: list[tuple[int, int]] = []
+    index = 0
+    while index < len(text):
+        if text[index] != '`':
+            index += 1
+            continue
+        run = _backtick_run(text, index)
+        limit = len(text)
+        if run <= _INLINE_CODE_MAX_RUN:
+            paragraph_break = _PARAGRAPH_BREAK_RE.search(text, index + run)
+            limit = paragraph_break.start() if paragraph_break else len(text)
+        closing = _closing_backtick_run(text, index + run, run, limit)
+        if closing is None:
+            index += run
+            continue
+        spans.append((index, closing + run))
+        index = closing + run
+    return spans
+
+
+def _reproduction_spans(text: str) -> list[tuple[int, int]]:
+    """The ``[start, end)`` span of every region ``text`` REPRODUCES.
+
+    ⛔ Three FORMS, because this corpus reproduces a sibling's sentence in three
+    ways and a guard recognising only one of them is escaped by the other two —
+    the same defect as a guard fitted to one sweep alternative, one level down:
+
+    - a QUOTATION, in the marks :data:`_QUOTATION_RE` admits;
+    - a markdown CODE SPAN, inline or fenced, which is this corpus's most common
+      way of setting off a phrase it is discussing rather than asserting;
+    - a BLOCKQUOTE, which markdown defines as quoted material outright.
+
+    They are collected into ONE list because the containment test that consumes
+    it asks a single question — is this occurrence inside text the spec
+    reproduces — and answering it per form would restore the fitted guard.
+    """
+    spans = [(match.start(), match.end()) for match in _QUOTATION_RE.finditer(text)]
+    spans.extend(_code_spans(text))
+    spans.extend((match.start(), match.end()) for match in _BLOCKQUOTE_RE.finditer(text))
+    return spans
 
 #: The test-module line budget the campaign's findings are derived against.
 DEFAULT_LINE_BUDGET = 400
@@ -489,15 +598,16 @@ def is_sweep_declaration(spec_text: str) -> bool:
     isolation from the rest of the partition, because a marker that silently
     stopped matching would quietly restore the single-bucket collapse.
 
-    ⛔ A marker occurrence lying WHOLLY inside a quotation is a reproduction of
-    someone else's declaration and is discarded. The test is applied here, to
-    every match of every alternative, which is what makes the guard uniform: a
-    narrowing written into one alternative's pattern leaves its siblings open.
-    Containment must be TOTAL — a match merely overlapping a quotation still
-    counts, so a partial or mismatched quotation cannot suppress a real
-    declaration.
+    ⛔ A marker occurrence lying WHOLLY inside a reproduction span — a quotation,
+    a code span or a blockquote, per :func:`_reproduction_spans` — is a
+    reproduction of someone else's declaration and is discarded. The test is
+    applied here, to every match of every alternative, which is what makes the
+    guard uniform: a narrowing written into one alternative's pattern leaves its
+    siblings open. Containment must be TOTAL — a match merely OVERLAPPING a
+    reproduction span still counts, so a partial or mismatched delimiter cannot
+    suppress a real declaration.
     """
-    spans = _quotation_spans(spec_text)
+    spans = _reproduction_spans(spec_text)
     return any(
         not any(start <= match.start() and match.end() <= end for start, end in spans)
         for match in _SWEEP_RE.finditer(spec_text)

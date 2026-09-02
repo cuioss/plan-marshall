@@ -228,18 +228,38 @@ boundaries — because a marker narrow enough to match only the specs sharing on
 boilerplate sentence is that hard-coded list wearing a regex, and stops matching
 the moment a plan declares its crossing in its own words.
 
-⛔ A spec that QUOTES a sibling's declaration while claiming an ordinary slice is
-not itself a sweep. Every one of the settled phrasings above is quotable, so the
-guard is applied UNIFORMLY: a marker occurrence lying wholly inside a quotation is
-discarded, whichever phrasing it matched. The test sits at the single point all
-the phrasings pass through rather than inside any one of them — a guard fitted to
-one phrasing leaves the others carrying the identical exposure while its own
-control still passes.
+⛔ A spec that REPRODUCES a sibling's declaration while claiming an ordinary slice
+is not itself a sweep. Every one of the settled phrasings above is reproducible,
+so the guard is applied UNIFORMLY: a marker occurrence lying wholly inside a
+reproduction span is discarded, whichever phrasing it matched. The test sits at
+the single point all the phrasings pass through rather than inside any one of
+them — a guard fitted to one phrasing leaves the others carrying the identical
+exposure while its own control still passes.
 
-Containment must be total: a marker merely overlapping a quotation still counts,
-so a partial or mismatched quotation can never suppress a real declaration. The
-straight single quote is not read as a quotation mark at all, because specs write
-the possessive apostrophe with it.
+A **reproduction span** takes one of three forms, because a spec here reproduces
+a sentence in three ways and a guard recognising one of them is escaped by the
+other two — the same fitted-guard defect as a narrowing written into a single
+phrasing, one level down:
+
+- a **quotation** — straight or typographic double quotes, or the typographic
+  single pair. It spans lines but never a paragraph: prose in this corpus is
+  hard-wrapped, so a quotation's marks routinely land on different lines and a
+  line-bounded span would miss the dominant real form outright, while the blank
+  line still keeps an unpaired mark from reaching beyond its own paragraph.
+- a **code span** — inline or fenced, closed only by a backtick run of the same
+  length as the one that opened it. This is the corpus's most common way of
+  setting off a phrase it discusses rather than asserts.
+- a **blockquote** — a run of consecutive `>`-prefixed lines. Markdown's lazy
+  continuation, where a blockquote runs on into following lines carrying no
+  marker, is deliberately OUT OF SCOPE: which unprefixed line starts a new block
+  can only be guessed, and a wrong guess SUPPRESSES a real declaration, whereas
+  stopping at the last prefixed line merely leaves a marker uncontained and
+  therefore firing.
+
+Containment must be total: a marker merely overlapping a reproduction span still
+counts, so a partial or mismatched delimiter can never suppress a real
+declaration. The straight single quote is not read as a quotation mark at all,
+because specs write the possessive apostrophe with it.
 
 ⛔ A sweep plan is a property of the PLAN; a **root span** is a property of an
 ENTRY. The two are independent and neither implies the other.
