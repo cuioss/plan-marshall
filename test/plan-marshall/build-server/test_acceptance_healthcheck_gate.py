@@ -12,10 +12,9 @@ gate names its reason so the operator sees WHY the daemon is unreachable.
 from __future__ import annotations
 
 import sys
-from argparse import Namespace
 
 import pytest
-from conftest import get_script_path
+from conftest import get_script_path, parse_ns
 
 _DAEMON_DIR = get_script_path('plan-marshall', 'manage-build-server', 'marshalld.py').parent
 if str(_DAEMON_DIR) not in sys.path:
@@ -23,6 +22,14 @@ if str(_DAEMON_DIR) not in sys.path:
 
 import manage_build_server as control  # noqa: E402
 import marshalld  # noqa: E402
+
+#: The ``status`` namespace ``manage_build_server.py``'s OWN parser yields, hoisted
+#: to module scope because ``parse_ns`` re-executes the script module on every
+#: call. ``register=False`` so it never publishes a second ``manage_build_server``
+#: in ``sys.modules`` alongside the one imported above.
+_STATUS_ARGS = parse_ns(
+    'plan-marshall', 'manage-build-server', 'manage_build_server.py', 'status', register=False
+)
 
 
 @pytest.fixture
@@ -75,7 +82,7 @@ def test_status_gate_names_its_reason_when_down(home, monkeypatch):
     monkeypatch.setattr(control, '_ping', lambda *a, **k: None)
     monkeypatch.setattr(control, '_running_pid', lambda: None)
 
-    result = control.run_status(Namespace())
+    result = control.run_status(_STATUS_ARGS)
 
     assert result['running'] is False
     assert result['reason'] == 'no_pidfile'  # the gate names WHY it is down

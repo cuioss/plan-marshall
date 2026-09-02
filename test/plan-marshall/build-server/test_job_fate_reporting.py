@@ -35,13 +35,13 @@ subprocess transport hangs at loop close on some asyncio versions.
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import sys
-from argparse import Namespace
 from pathlib import Path
 
 import pytest
-from conftest import get_script_path
+from conftest import get_script_path, parse_ns
 
 _DAEMON_DIR = get_script_path('plan-marshall', 'manage-build-server', 'marshalld.py').parent
 if str(_DAEMON_DIR) not in sys.path:
@@ -53,6 +53,15 @@ import marshalld  # noqa: E402
 from _build_server_protocol import JobSpec, status_payload  # noqa: E402
 from _marshalld_journal import Journal  # noqa: E402
 from _marshalld_scheduler import Scheduler  # noqa: E402
+
+#: The ``logs`` namespace ``manage_build_server.py``'s OWN parser yields, hoisted
+#: to module scope because ``parse_ns`` re-executes the script module on every
+#: call. Only ``--root`` varies per test, so the parser supplies ``--limit``'s real
+#: default rather than a value repeated at the call site. ``register=False`` so it
+#: never publishes a second ``manage_build_server`` in ``sys.modules``.
+_LOGS_ARGS = parse_ns(
+    'plan-marshall', 'manage-build-server', 'manage_build_server.py', 'logs', register=False
+)
 
 
 @pytest.fixture
@@ -142,7 +151,9 @@ def _serve_until_bind(daemon, monkeypatch) -> None:
 
 
 def _logs(project_root: Path) -> list[dict]:
-    records: list[dict] = mbs.run_logs(Namespace(root=str(project_root), limit=None))['records']
+    args = copy.copy(_LOGS_ARGS)
+    args.root = str(project_root)
+    records: list[dict] = mbs.run_logs(args)['records']
     return records
 
 

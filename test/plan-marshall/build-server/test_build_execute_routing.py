@@ -22,16 +22,17 @@ the single-shared-file and contention behaviour is asserted on real state.
 
 from __future__ import annotations
 
+import argparse
+import copy
 import json
 import sys
-from argparse import Namespace
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 import pytest
 from _build_extension_fixtures import build_scripts_dir, execute_config
-from conftest import get_script_path
+from conftest import get_script_path, parse_ns
 
 # --- sys.path: the script-shared build library + its sibling deps ------------
 # The build directory comes from the shared bootstrap; this module additionally
@@ -51,6 +52,41 @@ import _build_queue_slot as slot_mod  # noqa: E402
 import build_queue as bq  # noqa: E402
 from _build_execute import CaptureStrategy  # noqa: E402
 from _build_server_protocol import MARSHALLD_JOB_ENV  # noqa: E402
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because the values are the
+    parser's own scalars, and the base must stay unmutated for the other callers
+    sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: The ``run`` namespace ``pyproject_build.py``'s OWN parser yields — the shared
+#: build CLI whose ``cmd_run`` the routing tests below drive. Parser-derived, so it
+#: carries ``--env`` and ``--working-dir`` alongside the flags this module names;
+#: the hand-built namespace it replaces had neither, which is exactly the gap that
+#: lets a newly-added build flag break production while the tests stay green.
+#: Hoisted because ``parse_ns`` re-executes the script module on every call.
+_RUN_ARGS = parse_ns(
+    'plan-marshall', 'build-pyproject', 'pyproject_build.py',
+    'run', '--command-args', 'verify core', '--project-dir', '/tree', '--plan-id', 'plan-x',
+    register=False,
+)
+
+#: The ``acquire`` namespace ``build_queue.py``'s OWN parser yields.
+#: ``register=False`` so it never displaces the ``build_queue`` imported above.
+_ACQUIRE_ARGS = parse_ns(
+    'plan-marshall', 'manage-locks', 'build_queue.py',
+    'acquire', '--plan-id', 'plan-x',
+    register=False,
+)
 
 
 # =============================================================================
@@ -390,8 +426,8 @@ def test_registered_and_unregistered_contend_on_one_file(isolated_queue, monkeyp
     _make_live_plan(isolated_queue['main_repo'], 'registered-build')
     _make_live_plan(isolated_queue['main_repo'], 'unregistered-build')
 
-    first = bq.run_acquire(Namespace(plan_id='registered-build'))
-    second = bq.run_acquire(Namespace(plan_id='unregistered-build'))
+    first = bq.run_acquire(_variant(_ACQUIRE_ARGS, plan_id='registered-build'))
+    second = bq.run_acquire(_variant(_ACQUIRE_ARGS, plan_id='unregistered-build'))
 
     assert first['admission'] == 'admitted'
     assert second['admission'] == 'blocked'  # one budget, shared across both paths
@@ -403,11 +439,9 @@ def test_registered_and_unregistered_contend_on_one_file(isolated_queue, monkeyp
 # =============================================================================
 
 
-def _run_args(**overrides) -> Namespace:
-    base = {'command_args': 'verify core', 'project_dir': '/tree', 'plan_id': 'plan-x',
-            'format': 'toon', 'mode': 'actionable', 'timeout': None, 'execution_mode': 'auto'}
-    base.update(overrides)
-    return Namespace(**base)
+def _run_args(**overrides) -> argparse.Namespace:
+    """The hoisted parser-derived ``run`` namespace, with per-test overrides."""
+    return _variant(_RUN_ARGS, **overrides)
 
 
 def _recording_slot_stub(entered: dict):

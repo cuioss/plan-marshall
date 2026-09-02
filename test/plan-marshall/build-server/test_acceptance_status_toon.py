@@ -12,10 +12,9 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from argparse import Namespace
 
 import pytest
-from conftest import get_script_path
+from conftest import get_script_path, parse_ns
 
 _DAEMON_DIR = get_script_path('plan-marshall', 'manage-build-server', 'marshalld.py').parent
 _CLIENT_DIR = get_script_path('plan-marshall', 'build-server-client', 'build_server.py').parent
@@ -28,6 +27,17 @@ import marshalld  # noqa: E402
 from _build_server_protocol import STATUS_KILLED, STATUS_RUNNING, JobSpec  # noqa: E402
 from _marshalld_journal import Journal  # noqa: E402
 from _marshalld_scheduler import Scheduler  # noqa: E402
+
+#: The one ``wait`` command line this module drives, parsed by ``build_server.py``'s
+#: OWN parser. Every value is fixed, so no per-test derivation is needed. Hoisted
+#: because ``parse_ns`` re-executes the script module on every call, and
+#: ``register=False`` so it never publishes a second ``build_server`` in
+#: ``sys.modules`` alongside the one imported above.
+_WAIT_ARGS = parse_ns(
+    'plan-marshall', 'build-server-client', 'build_server.py',
+    'wait', '--job-id', 'J', '--plan-id', '', '--bound', '1',
+    register=False,
+)
 
 
 @pytest.fixture
@@ -74,7 +84,7 @@ def test_client_renders_killed_with_no_blind_retry_message(home, monkeypatch):
         lambda _req, timeout: {'status': STATUS_KILLED, 'job_id': 'J', 'exit_code': -9},
     )
 
-    result = client.run_wait(Namespace(job_id='J', plan_id='', bound=1))
+    result = client.run_wait(_WAIT_ARGS)
 
     assert result['job_status'] == STATUS_KILLED
     assert 'do not blind-retry' in result['message']

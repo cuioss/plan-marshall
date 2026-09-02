@@ -25,13 +25,15 @@ tests, not this correlation test).
 
 from __future__ import annotations
 
+import argparse
+import copy
 import json
 import sys
-from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
 import pytest
-from conftest import get_script_path
+from conftest import get_script_path, parse_ns
 
 _DAEMON_DIR = get_script_path('plan-marshall', 'manage-build-server', 'marshalld.py').parent
 _CLIENT_DIR = get_script_path('plan-marshall', 'build-server-client', 'build_server.py').parent
@@ -46,6 +48,18 @@ import marshalld  # noqa: E402
 from _build_server_protocol import JobSpec  # noqa: E402
 from _marshalld_journal import Journal  # noqa: E402
 from _marshalld_scheduler import Scheduler  # noqa: E402
+
+#: The ``submit`` namespace ``build_server.py``'s OWN parser yields, hoisted to
+#: module scope because ``parse_ns`` re-executes the script module on every call.
+#: ``--command`` is required and shares the sub-command discriminator's ``dest``,
+#: so the base takes an inert empty argv payload that ``_submit_args`` replaces
+#: with the tmp-path-bound command line under test. ``register=False`` so it never
+#: publishes a second ``build_server`` in ``sys.modules``.
+_SUBMIT_ARGS = parse_ns(
+    'plan-marshall', 'build-server-client', 'build_server.py',
+    'submit', '--command', '[]', '--plan-id', 'p1',
+    register=False,
+)
 
 
 class _Accepted:
@@ -93,15 +107,29 @@ def _job_rows() -> list[dict]:
     return [entry for entry in ledger_core.read_entries() if entry.get('kind') == ledger_core.KIND_JOB]
 
 
-def _submit_args(tmp_path) -> Namespace:
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from the hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because the values are the
+    parser's own scalars, and the base must stay unmutated for the other callers
+    sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+def _submit_args(tmp_path) -> argparse.Namespace:
     command = json.dumps(
         [sys.executable, str(tmp_path / '.plan' / 'execute-script.py'), 'a:b:c', 'run']
     )
-    return Namespace(
+    return _variant(
+        _SUBMIT_ARGS,
         command=command,
         exec_path=str(tmp_path),
         project_path=str(tmp_path),
-        plan_id='p1',
     )
 
 

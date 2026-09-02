@@ -19,14 +19,20 @@ Every test isolates the machine-global home root by pointing
 
 from __future__ import annotations
 
+import argparse
+import copy
 import sys
-from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
 import pytest
-from conftest import get_script_path
+from conftest import get_script_path, parse_ns
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-build-server', 'manage_build_server.py')
+_BUNDLE = 'plan-marshall'
+_SKILL = 'manage-build-server'
+_SCRIPT = 'manage_build_server.py'
+
+SCRIPT_PATH = get_script_path(_BUNDLE, _SKILL, _SCRIPT)
 SCRIPTS_DIR = SCRIPT_PATH.parent
 
 if str(SCRIPTS_DIR) not in sys.path:
@@ -35,6 +41,40 @@ if str(SCRIPTS_DIR) not in sys.path:
 import _build_execute_factory as factory  # noqa: E402
 import _build_server_registry as registry  # noqa: E402
 import manage_build_server as mbs  # noqa: E402
+
+
+def _verb_args(*argv: str) -> argparse.Namespace:
+    """The namespace ``manage_build_server.py``'s OWN parser yields for ``argv``.
+
+    ``register=False`` so building one never publishes a second
+    ``manage_build_server`` in ``sys.modules`` alongside the one imported above.
+    """
+    args: argparse.Namespace = parse_ns(_BUNDLE, _SKILL, _SCRIPT, *argv, register=False)
+    return args
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from the hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because the values are the
+    parser's own scalars, and the base must stay unmutated for the other callers
+    sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: The ``register`` namespace the production parser yields for a bare invocation,
+#: hoisted to module scope because ``parse_ns`` re-executes the script module on
+#: every call. This module is the sharpest case for the parser-derived base: it
+#: tests what ``register`` does when ``--container`` / ``--notation`` are OMITTED,
+#: and a hand-built namespace asserting that would have been asserting against its
+#: own author's idea of the omitted value rather than against the parser's real
+#: default. Every test below that omits a flag inherits it from HERE.
+_REGISTER_ARGS = _verb_args('register')
 
 
 @pytest.fixture
@@ -58,7 +98,7 @@ def test_fresh_register_no_flags_populates_default_scope(home):
     root = home / 'proj'
     root.mkdir()
 
-    result = mbs.run_register(Namespace(root=str(root), container=None, notation=None))
+    result = mbs.run_register(_variant(_REGISTER_ARGS, root=str(root)))
 
     canonical = registry.canonicalize_root(root)
     # The default allowlist is the routable build notations (single source of
@@ -97,7 +137,7 @@ def test_reregister_empty_entry_backfills_and_preserves_registered_at(home):
     original_registered_at = seeded['registered_at']
 
     # Re-register with no flags → the repair path backfills the defaults.
-    result = mbs.run_register(Namespace(root=str(root), container=None, notation=None))
+    result = mbs.run_register(_variant(_REGISTER_ARGS, root=str(root)))
 
     assert result['notation_allowlist'] == list(factory.routable_notations())
     assert result['worktree_containers'] == [_expected_container(canonical)]
@@ -121,7 +161,7 @@ def test_reregister_preserves_nonempty_stored_values(home):
     )
 
     # Re-register with no CLI args must NOT wipe deliberately-customised values.
-    result = mbs.run_register(Namespace(root=str(root), container=None, notation=None))
+    result = mbs.run_register(_variant(_REGISTER_ARGS, root=str(root)))
 
     assert result['worktree_containers'] == [str(home / 'custom-wts')]
     assert result['notation_allowlist'] == ['custom:only:notation']
@@ -142,11 +182,16 @@ def test_explicit_flags_override_stored_and_default(home):
         notation_allowlist=['old:stored:notation'],
     )
 
+    # Parsed from a real command line rather than derived from the base: this is
+    # the one test whose subject IS the explicit flags, so the repeatable
+    # ``--container`` / ``--notation`` are driven through the production parser
+    # that turns them into lists.
     result = mbs.run_register(
-        Namespace(
-            root=str(root),
-            container=[str(home / 'explicit-wts')],
-            notation=['explicit:cli:notation'],
+        _verb_args(
+            'register',
+            '--root', str(root),
+            '--container', str(home / 'explicit-wts'),
+            '--notation', 'explicit:cli:notation',
         )
     )
 
