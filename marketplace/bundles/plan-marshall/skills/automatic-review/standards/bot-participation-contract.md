@@ -49,12 +49,21 @@ await — and that is a legitimate configured state, not a misconfiguration to w
 ## Failure taxonomy
 
 When a bot does not deliver a usable review, the non-participation is classified into exactly one of
-ten members. The taxonomy is closed: every non-participation resolves to one of these.
+eleven members. The taxonomy is closed: every non-participation resolves to one of these.
+
+This count is stated here on purpose, and it is the ONE place in prose that states it. It is not a
+hand-maintained restatement: `test_bot_participation_contract.py` reads this sentence back, converts
+the cardinal word to an integer, and asserts it equals the member count derived from
+`review_completeness`'s own `STATE_` constants — so a member added to the classifier without
+updating this word fails the suite. A count with that mechanical link to its source is a checked
+fact; a count written anywhere else is an unguarded duplicate, which is why no other document
+restates it.
 
 | Member | Condition | Interpretation |
 |--------|-----------|----------------|
 | `absent` | No comment posted and no completion check-run observed; the review window closed with nothing. | The bot never engaged at all. |
 | `not_triggered` | No `pull_request`-event workflow run exists for the PR at all, so nothing could have been published — a PR-wide condition, not a per-bot one. | The reviewers were never asked. The remedy is to trigger the review, not to escalate a reviewer that stayed silent. |
+| `unregistered_kind` | The configured token matches **no member of the live registry kind set** (`bot_registry.bot_kinds()`). Decided from the configuration, not from an observation, and evaluated only after every observation branch has declined. | **No reviewer answers to this name**, and none ever could — participation is keyed by a `bot_kind` derived from the author login, so a token outside that codomain can never enter `participated_bots`. The remedy is to **fix the name**, never to chase the reviewer. The payload names the live kind set the token was checked against, which is also the set the corrected token must come from. |
 | `in_progress` | The bot's completion check-run is still running when the poll budget expires. | The bot engaged but did not finish in time; left to the pre-merge comment barrier. |
 | `refused_awaitable` | The bot posted a refusal whose limit reopens on its own (`rate_limit_class: awaitable_window`). | Worth awaiting — the window resets. |
 | `refused_hard` | The bot posted a refusal that does not reopen on a useful timescale (`rate_limit_class: hard_quota`) and whose cause is a rate/budget **quota** — an account- or plan-level allowance. | Not worth awaiting; whether the absence is tolerable is a required-vs-optional question, not a waiting question. |
@@ -68,11 +77,11 @@ ten members. The taxonomy is closed: every non-participation resolves to one of 
 *successful* review, not a silent one — it must never be treated as an incompleteness, or a clean PR
 would hold the step open forever.
 
-### Three members are refinements, not siblings — and their remedies are opposite
+### Some members are refinements, not siblings — and their remedies are opposite
 
-Seven of the ten members are mutually independent observations. The remaining three exist because
-another member was doing a second job badly, and each carries a remedy that member's does not. Two
-of them refine `absent`; the third refines the refusal branch.
+Most members are mutually independent observations. The rest exist because another member was doing
+a second job badly, and each carries a remedy that member's does not. Three of them refine `absent`;
+the fourth refines the refusal branch.
 
 - **`participated_stale` is the opposite of `absent`.** `absent` means there is no review to refresh,
   so the remedy is to escalate a reviewer that was asked and did not answer. `participated_stale`
@@ -83,6 +92,26 @@ of them refine `absent`; the third refines the refusal branch.
   condition holds for every bot on the PR at once, which is why its input is a single bool rather
   than an observation set keyed by bot. Its remedy is also the opposite of `absent`'s: no reviewer
   was asked, so escalating one names the wrong failure.
+- **`unregistered_kind` refines `absent` at the CONFIGURATION boundary rather than the observation
+  boundary,** and it is the only member decided without an observation at all. `absent` says a
+  reviewer we know was asked and did not answer, so its remedy is to chase the reviewer.
+  `unregistered_kind` says the configured **name matches no reviewer we know**, so there was never a
+  reviewer to chase and the remedy is to **fix the name** — a disjoint remedy, and one an operator
+  cannot even guess at from `absent`. Collapsing the two is what makes a barrier report a true
+  statement about the observed set beside a false steer about its cause: the review exists and is
+  plainly visible (the warn-but-ingest rule above still files it), while the quorum reports it
+  missing, so the cost lands as **diagnosis** rather than detection.
+
+  Its position in the classifier is load-bearing in both directions. It is evaluated **after** every
+  observation branch, because a membership test is a fact about the name and must never displace
+  something the run actually observed — an unregistered token observed participating reports that.
+  It is evaluated **before** `not_triggered` and `absent`, because when nothing was observed it says
+  strictly more than either.
+
+  ⛔ **Not a silent drop.** An unknown token stays in the roster and stays blocking — it is in the
+  unproven set exactly as `absent` is, so the barrier still fails closed. Dropping it instead would
+  replace a confusing block with a **silent pass**, satisfying the quorum through a reviewer nobody
+  configured, which is strictly worse than the defect it would be fixing.
 - **`refused_structural` refines the REFUSAL branch, and its remedy set is disjoint from the other
   three's.** The three temporal refusal members all describe a limit that moves — the same request
   succeeds once it does — so their remedy set is *wait, or accept the gap*. A diff-size ceiling does
@@ -95,10 +124,15 @@ of them refine `absent`; the third refines the refusal branch.
   consumer routing on the member, so the wrong remedy is still the one offered; only a distinct
   member changes what the consumer does.
 
-The `absent` refinements narrow differently, and only one of them is strictly `absent`-narrowing.
-`not_triggered` is evaluated as the **last** branch before the `absent` fall-through, so it can never
-override a positive observation about a specific bot — only what would otherwise have been `absent`
-is refined. `participated_stale` is narrower in origin but not in effect: it is evaluated after the
+The `absent` refinements narrow differently, and only two of the three are strictly
+`absent`-narrowing. `unregistered_kind` and `not_triggered` are evaluated as the **last two** branches
+before the `absent` fall-through, in that order, so neither can override a positive observation about
+a specific bot — only what would otherwise have been `absent` is refined. Their order between
+themselves is deliberate: `unregistered_kind` is per-bot and decisive about the NAME, while
+`not_triggered` is PR-wide and decisive only about the RUN, so a token that answers to no reviewer is
+reported as such rather than being absorbed into a PR-wide "nothing ran" that would send the operator
+to trigger a review no configured name could ever credit. `participated_stale` is narrower in origin
+but not in effect: it is evaluated after the
 refusal branches but **before** `in_progress`, so a bot observed in both sets is classified
 `participated_stale` rather than `in_progress`. That precedence is deliberate — a review that exists
 but predates this HEAD is a more actionable signal than an in-flight run of unknown outcome, and it
@@ -111,10 +145,10 @@ will not review now, whereas a stale publish only says the last review predates 
 The taxonomy member describes *what happened*; the required/optional classification decides *whether
 it matters*:
 
-- A **required** bot resolving to `absent`, `not_triggered`, `in_progress`, `refused_awaitable`,
-  `refused_hard`, `refused_unknown`, `refused_structural`, `participated_stale`, or `declined` is a
-  completeness failure — the step is not markable done without an explicitly recorded force-done
-  reason.
+- A **required** bot resolving to `absent`, `not_triggered`, `unregistered_kind`, `in_progress`,
+  `refused_awaitable`, `refused_hard`, `refused_unknown`, `refused_structural`, `participated_stale`,
+  or `declined` is a completeness failure — the step is not markable done without an explicitly
+  recorded force-done reason.
 - An **optional** bot resolving to any member never blocks.
 - Any bot resolving to `participated_but_empty` is accounted-for regardless of classification.
 

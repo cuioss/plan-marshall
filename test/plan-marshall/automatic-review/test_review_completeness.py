@@ -25,6 +25,13 @@ reports whether every REQUIRED bot's participation is proven:
                               blocking, yet remedied by accepting the decline rather
                               than re-triggering a bot that already declined)
     in_progress             — review still running at the poll bound
+    unregistered_kind       — the configured token matches no member of the live
+                              registry kind set, so no reviewer answers to this name
+                              and none ever could. A refinement of absent decided from
+                              the CONFIGURATION rather than from an observation, and
+                              checked after every observation branch; blocking exactly
+                              as absent is, but remedied by fixing the NAME rather
+                              than by chasing the reviewer
     absent                  — no evidence of any kind (the fail-closed default)
 
 Participation is **evidence-typed, not presence-typed**: a bot counts only when an
@@ -81,6 +88,28 @@ assert _REGISTERED_BOTS, (
     'the bot registry declared no bot — every sweep over this population would '
     'generate zero parametrized cases, which pytest reports as SKIPPED rather '
     'than failed, so the swept properties would be covered by nothing'
+)
+
+# The two tokens the unregistered-kind cases turn on, both DERIVED against the live
+# registry rather than written as independent literals.
+#
+# ``_VALID_TOKEN`` is taken FROM the registry, never spelled. That is what keeps the
+# matched negative control honest across a bot_kind RENAME: a hardcoded name would
+# silently become an unregistered token the moment the registry renamed it, at which
+# point the control would assert ``absent`` for a token that no longer resolves —
+# passing before the rename and failing after it for a reason that has nothing to do
+# with the property under test.
+_VALID_TOKEN = _REGISTERED_BOTS[0]
+
+# ...and its counterpart, asserted OUT of the registry rather than assumed to be. A
+# fixture whose unregistered-ness is merely believed is one a future registry can
+# quietly adopt, and every case below would then classify it ``absent`` and still
+# report green while covering nothing.
+_UNREGISTERED_TOKEN = 'not-a-registered-reviewer'
+assert _UNREGISTERED_TOKEN not in _REGISTERED_BOTS, (
+    f'{_UNREGISTERED_TOKEN!r} is a REGISTERED bot kind, so it cannot stand for a '
+    f'configured name that matches no reviewer — every unregistered-kind case would '
+    f'silently degrade into an absent case. Live kind set: {_REGISTERED_BOTS}'
 )
 
 # Evidence pairs that match each bot's DECLARED participation_evidence. Derived by
@@ -2249,6 +2278,184 @@ class TestReviewStateSummary:
         plan_context.plan_dir_for(plan_id)
         result = rc.check_completeness(plan_id, [])
         assert result['review_state_summary'] == ''
+
+
+# =============================================================================
+# A configured name that matches no registered reviewer is its own state
+# =============================================================================
+
+
+class TestUnregisteredKind:
+    """A token outside ``bot_registry.bot_kinds()`` resolves to ``unregistered_kind``.
+
+    The defect this closes is a COLLAPSE: a configured token that names no
+    registered reviewer could only ever fall through to ``absent``, which is the
+    state reserved for *"this bot did not review"*. The barrier then reported a true
+    statement about the observed set beside a false steer about its cause — the
+    review existed and was plainly visible, while the operator was sent to chase a
+    reviewer that was never the problem.
+
+    Every case here is paired with a MATCHED NEGATIVE CONTROL: a correctly-named
+    required bot that genuinely did not review must still resolve to ``absent``.
+    Without that control the new member is indistinguishable from a blanket
+    reclassification of every silent bot, which would destroy the distinction the
+    member exists to draw rather than sharpen it.
+    """
+
+    def test_an_unregistered_required_token_gets_its_own_state(self, plan_context):
+        """The new member, pinned. FAILS pre-change, where this resolved ``absent``."""
+        plan_id = 'rc-unregistered-kind'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(plan_id, [_UNREGISTERED_TOKEN])
+
+        assert _state_of(result, _UNREGISTERED_TOKEN) == rc.STATE_UNREGISTERED_KIND
+        # The load-bearing half: it is NOT the state that means "did not review".
+        assert _state_of(result, _UNREGISTERED_TOKEN) != rc.STATE_ABSENT
+
+    def test_matched_negative_control_a_valid_silent_bot_is_still_absent(self, plan_context):
+        """The control, which passes in BOTH the pre- and post-change forms.
+
+        This is what proves the suite DISCRIMINATES rather than merely asserting: a
+        refinement that also moved this case would be a blanket reclassification, and
+        the case above alone could not tell the two apart.
+        """
+        plan_id = 'rc-unregistered-control'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(plan_id, [_VALID_TOKEN])
+
+        assert _state_of(result, _VALID_TOKEN) == rc.STATE_ABSENT
+        assert _state_of(result, _VALID_TOKEN) != rc.STATE_UNREGISTERED_KIND
+
+    def test_the_two_tokens_are_separated_within_one_run(self, plan_context):
+        """Both tokens, one call, identical (empty) observations.
+
+        Registry membership is then the ONLY difference between them, so the split
+        cannot be attributed to anything else about the two invocations.
+        """
+        plan_id = 'rc-unregistered-both'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(plan_id, [_VALID_TOKEN, _UNREGISTERED_TOKEN])
+
+        assert _state_of(result, _VALID_TOKEN) == rc.STATE_ABSENT
+        assert _state_of(result, _UNREGISTERED_TOKEN) == rc.STATE_UNREGISTERED_KIND
+
+    def test_the_new_state_blocks_and_the_token_stays_in_the_roster(self, plan_context):
+        """Fail-CLOSED: an unknown name blocks exactly as ``absent`` does.
+
+        A silent drop would replace a confusing block with a silent PASS — the quorum
+        satisfied through a reviewer nobody configured — which is strictly worse than
+        the defect being fixed. So the token is still classified, still reported, and
+        still holds the step open.
+        """
+        plan_id = 'rc-unregistered-blocks'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(plan_id, [_UNREGISTERED_TOKEN])
+
+        assert result['participation_complete'] is False
+        assert result['unproven_bots'] == [_UNREGISTERED_TOKEN]
+        assert rc.STATE_UNREGISTERED_KIND in rc._UNPROVEN_STATES
+
+    def test_an_observation_outranks_the_membership_test(self, plan_context):
+        """Ordering: a fact about the NAME never displaces something observed.
+
+        The membership test is checked AFTER every observation branch, so an
+        unregistered token that was nonetheless observed reports what was observed.
+        Hoisting the test above the observations would erase real evidence on the
+        strength of a config lookup.
+        """
+        plan_id = 'rc-unregistered-observed'
+        plan_context.plan_dir_for(plan_id)
+
+        in_progress = rc.check_completeness(
+            plan_id, [_UNREGISTERED_TOKEN], in_progress_bots=[_UNREGISTERED_TOKEN]
+        )
+        assert _state_of(in_progress, _UNREGISTERED_TOKEN) == rc.STATE_IN_PROGRESS
+
+        # Passed as a dict directly: ``parse_participation`` admits a pair only when
+        # the evidence kind is one the bot's registry record declares, and an
+        # unregistered token has no record and therefore no admissible shape. Going
+        # through the parser here would assert the fall-through rather than the
+        # branch ordering this case exists to pin.
+        participating = rc.check_completeness(
+            plan_id, [_UNREGISTERED_TOKEN], participated_bots={_UNREGISTERED_TOKEN: 'inline'}
+        )
+        assert (
+            _state_of(participating, _UNREGISTERED_TOKEN) == rc.STATE_PARTICIPATED_BUT_EMPTY
+        )
+
+    def test_the_payload_names_the_live_kind_set_it_checked_against(self, plan_context):
+        """ADR-019: the verdict carries the POPULATION the token was checked against.
+
+        "This name matches no reviewer we know" is only actionable beside the set of
+        names we DO know — which is also the set the corrected token must come from.
+        Derived from the registry here rather than spelled, so the assertion tracks a
+        rename instead of pinning a stale roster.
+        """
+        plan_id = 'rc-unregistered-kind-set'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(plan_id, [_UNREGISTERED_TOKEN])
+
+        assert result['known_bot_kinds'] == _REGISTERED_BOTS
+
+    def test_the_summary_gives_the_new_member_its_own_bucket(self):
+        """``unregistered`` never renders as ``absent`` in the compact distribution.
+
+        Collapsing it there would undo, at the summary line a reader actually sees,
+        exactly the distinction the member was added to carry.
+        """
+        summary = rc.compose_review_state_summary([
+            {'bot_kind': _UNREGISTERED_TOKEN, 'state': rc.STATE_UNREGISTERED_KIND},
+            {'bot_kind': _VALID_TOKEN, 'state': rc.STATE_ABSENT},
+        ])
+
+        assert summary == '1 unregistered, 1 absent'
+
+    def test_cli_publishes_the_kind_set_and_its_population_size(self, plan_context):
+        """Through the REAL parser: the emitted TOON names the set AND its size.
+
+        The size is PUBLISHED in the row header rather than left for the reader to
+        count — a population whose size is implied is one a consumer cannot check it
+        read completely.
+        """
+        plan_id = 'rc-cli-unregistered'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(
+            SCRIPT_PATH, 'check', '--plan-id', plan_id, '--required-bots', _UNREGISTERED_TOKEN
+        )
+
+        assert result.success, result.stderr
+        assert result.returncode != 2, result.stderr
+        assert f'{_UNREGISTERED_TOKEN},unregistered_kind' in result.stdout
+        assert f'known_bot_kinds[{len(_REGISTERED_BOTS)}]:' in result.stdout
+        for kind in _REGISTERED_BOTS:
+            assert f'  - {kind}' in result.stdout
+
+    def test_cli_omits_the_kind_set_when_every_token_is_registered(self, plan_context):
+        """The paired emission control: the remedy line is gated, not unconditional.
+
+        When no token failed the membership test the same list is noise on every run
+        — a population nobody is being asked to choose from, printed beside a verdict
+        it did not shape. Isolating the token as the only difference between this
+        invocation and the one above is what shows the gate keys on the FAILURE
+        rather than on something else in the command line.
+        """
+        plan_id = 'rc-cli-unregistered-omitted'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(
+            SCRIPT_PATH, 'check', '--plan-id', plan_id, '--required-bots', _VALID_TOKEN
+        )
+
+        assert result.success, result.stderr
+        assert f'{_VALID_TOKEN},absent' in result.stdout
+        assert 'known_bot_kinds' not in result.stdout
+        assert 'unregistered_kind' not in result.stdout
 
 
 # =============================================================================
