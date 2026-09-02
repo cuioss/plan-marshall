@@ -26,9 +26,9 @@ scanned count is asserted alongside it — a detector that scanned nothing would
 otherwise report the same clean zero as one that scanned and found nothing.
 """
 
-import json
 import argparse
 import copy
+import json
 from pathlib import Path
 from typing import Any
 
