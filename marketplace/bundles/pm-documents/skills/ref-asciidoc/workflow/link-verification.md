@@ -65,7 +65,7 @@ python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc classify-link
 **Categories:**
 
 - `likely-false-positive`: Anchors, localhost, file:// URLs
-- `must-verify-manual`: External links requiring Read verification
+- `must-verify-manual`: External links requiring manual verification
 - `definitely-broken`: Non-existent files (verified by script)
 
 ### Step 3: Manual Verification (CRITICAL)
@@ -74,7 +74,11 @@ For each link classified as `must-verify-manual` or `definitely-broken`:
 
 #### Extract Target Path
 
-From xref: `xref:../../doc/spec.adoc[Label]` → extract `../../doc/spec.adoc`
+From xref: `xref:../../doc/spec.adoc[Label]` → extract `../../doc/spec.adoc`.
+
+For external URLs (`http://`/`https://` links), there is no local path to
+extract — skip the resolution steps below and open the URL in a browser to
+confirm it resolves and serves the referenced content.
 
 #### Resolve Absolute Path
 
@@ -89,10 +93,10 @@ realpath {relative_target_path}
 - Link target: `../../requirements/spec.adoc`
 - Resolved: `/project/requirements/spec.adoc`
 
-#### Verify by Reading the File
+#### Verify the Target File
 
 ```text
-Read the resolved file: /project/requirements/spec.adoc
+Check the resolved file: /project/requirements/spec.adoc
 ```
 
 **Decision Matrix:**

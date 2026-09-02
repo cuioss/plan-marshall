@@ -74,8 +74,10 @@ the directive line (trimmed of surrounding blanks): relative paths
 (`standards/foo.md`, `../sibling/...`), `~/`-rooted examples,
 `{placeholder}` values, and trailing annotations (`(always)`) all
 occur in the source corpus, so the matcher constrains the line shape,
-not the path grammar. Relative paths resolve against the skill's own
-directory, which the skill load makes known.
+not the path grammar. The capture is emitted verbatim — the engine
+preserves the line ending and does not reinterpret the path; resolving
+a relative capture to a concrete file is the host runtime's
+responsibility.
 
 **Idempotence:** The rewritten line does not match the source pattern,
 so re-running the transform on already-transformed text is a no-op.

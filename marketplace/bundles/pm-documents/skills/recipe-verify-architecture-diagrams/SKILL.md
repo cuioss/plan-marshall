@@ -178,7 +178,7 @@ For each diagram:
 
 1. **Read the `.puml` file** — identify what it represents (architecture, sequence, class hierarchy)
 2. **Identify codebase components** — determine which classes, flows, or structures the diagram should show
-3. **Search codebase** — use Grep and Read to find the actual classes, methods, relationships
+3. **Search codebase** — find the actual classes, methods, relationships
 4. **Compare** — document mismatches:
    - Missing components/classes/methods
    - Renamed or removed elements

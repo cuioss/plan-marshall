@@ -54,10 +54,11 @@ un-dispositioned idiom:
 * :func:`assert_source_vocabulary_mapped` — a *non-verbatim* target (one that
   declares any rewrite category) that leaves a structural source idiom
   (``skill_directive`` / ``read_directive`` / ``slash_command``) without a
-  template raises :class:`UnmappedIdiomError`. A *verbatim* target (the
-  canonical Claude target, which declares no rewrites) skips every transform,
-  so its output stays byte-identical to source and independently
-  equality-validatable.
+  template, or with a template missing one of its required placeholders
+  (``{bundle}``/``{skill}``, ``{path}``, ``{name}`` respectively), raises
+  :class:`UnmappedIdiomError`. A *verbatim* target (the canonical Claude target,
+  which declares no rewrites) skips every transform, so its output stays
+  byte-identical to source and independently equality-validatable.
 
 All transforms are idempotent — running them on already-transformed text is a
 no-op.
@@ -97,6 +98,18 @@ STRUCTURAL_VOCABULARY: dict[str, str] = {
     'slash_command': 'slash_rewrites',
 }
 
+# The placeholders a structural idiom's rewrite template MUST carry, keyed by
+# idiom name. A template that omits the required placeholder would pass the
+# non-empty check yet emit a broken or context-dropping instruction at rewrite
+# time (e.g. a ``read_directive`` template without ``{path}`` discards the
+# directive's whole path capture), so the load-time validation treats it as an
+# unmapped idiom — fail-closed, not fail-loud.
+REQUIRED_PLACEHOLDERS: dict[str, frozenset[str]] = {
+    'skill_directive': frozenset({'{bundle}', '{skill}'}),
+    'read_directive': frozenset({'{path}'}),
+    'slash_command': frozenset({'{name}'}),
+}
+
 
 class UnmappedIdiomError(ValueError):
     """A registered Claude source idiom is left unmapped (fail-closed build).
@@ -123,11 +136,13 @@ SKILL_DIRECTIVE_RE = re.compile(
 # matcher deliberately constrains only the line shape, not the path grammar.
 # The separator is ``[ \t]+`` rather than ``\\s+`` so a bare ``Read:`` line
 # cannot swallow the NEXT line through the newline — the directive is one line.
-# The tail is ``[ \t]*\r?$`` rather than ``\s*$``: the line's terminating
-# newline stays in the body (the rewrite replaces the line in place), while a
-# CRLF ending still matches without leaking the ``\r`` into the path capture.
+# The tail is ``[ \t]*(?P<cr>\r?)$`` rather than ``\s*$``: the line's
+# terminating newline stays in the body (the rewrite replaces the line in
+# place), while a CRLF ending still matches without leaking the ``\r`` into the
+# path capture. The ``cr`` group is restored by the rewrite so CRLF line
+# endings survive the substitution.
 READ_DIRECTIVE_RE = re.compile(
-    r'^Read:[ \t]+(?P<path>\S.*?)[ \t]*\r?$',
+    r'^Read:[ \t]+(?P<path>\S.*?)[ \t]*(?P<cr>\r?)$',
     re.MULTILINE,
 )
 
@@ -226,7 +241,10 @@ def assert_source_vocabulary_mapped(rules: TransformRules) -> None:
     bytes unchanged. A non-verbatim target must supply a non-empty ``template``
     for each idiom in :data:`STRUCTURAL_VOCABULARY`; a missing template raises
     :class:`UnmappedIdiomError`, so a target cannot partially opt into rewriting
-    and silently leave a known Claude source idiom un-rewritten.
+    and silently leave a known Claude source idiom un-rewritten. Each template
+    must also carry every placeholder in :data:`REQUIRED_PLACEHOLDERS` for that
+    idiom — without it the rewrite would emit an instruction that drops the
+    matched content, so the absence fails closed too.
     """
     if rules.is_verbatim:
         return
@@ -239,6 +257,12 @@ def assert_source_vocabulary_mapped(rules: TransformRules) -> None:
                 f'Non-verbatim target leaves source idiom {idiom!r} unmapped; '
                 f'expected a non-empty {category_key}[{idiom!r}].template'
             )
+        for placeholder in REQUIRED_PLACEHOLDERS[idiom]:
+            if placeholder not in template:
+                raise UnmappedIdiomError(
+                    f'{category_key}[{idiom!r}].template is missing required '
+                    f'placeholder {placeholder!r}'
+                )
 
 
 def rewrite_skill_directives(body: str, template: str) -> str:
@@ -275,7 +299,7 @@ def rewrite_read_directives(body: str, template: str) -> str:
     """
 
     def replace(match: re.Match[str]) -> str:
-        return template.replace('{path}', match.group('path'))
+        return template.replace('{path}', match.group('path')) + match.group('cr')
 
     return READ_DIRECTIVE_RE.sub(replace, body)
 

@@ -24,7 +24,7 @@
     },
     "read_directive": {
       "template": "Call the `read` tool with `{ filePath: \"{path}\" }` before continuing.",
-      "note": "Transform 1: a full-line `Read: {path}` load directive rewrites to an OpenCode `read`-tool call. `{path}` is substituted with the directive's whole remainder-of-line capture — relative paths resolve against the skill's own directory, which the skill load makes known. The full-line matcher (READ_DIRECTIVE_RE) is owned by the shared engine, so only this template is target data."
+      "note": "Transform 1: a full-line `Read: {path}` load directive rewrites to an OpenCode `read`-tool call. `{path}` is substituted verbatim with the directive's whole remainder-of-line capture — the engine preserves the line ending and does not reinterpret the path; resolving a relative capture to a concrete file is the host runtime's responsibility. The full-line matcher (READ_DIRECTIVE_RE) is owned by the shared engine, so only this template is target data."
     }
   },
   "slash_rewrites": {

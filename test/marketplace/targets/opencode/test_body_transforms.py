@@ -203,13 +203,13 @@ def test_rewrite_read_directives_bare_directive_does_not_swallow_next_line():
 
 
 def test_rewrite_read_directives_crlf_ending_keeps_carriage_return_out_of_path():
-    """A CRLF-terminated directive matches, and the ``\\r`` does not leak into
-    the path capture."""
+    """A CRLF-terminated directive matches, the ``\\r`` does not leak into
+    the path capture, and the line's CRLF ending survives the rewrite."""
     body = 'Read: standards/foo.md\r\n'
     result = rewrite_read_directives(body, OPENCODE_READ_TEMPLATE)
     assert result == (
         'Call the `read` tool with `{ filePath: "standards/foo.md" }` '
-        'before continuing.\n'
+        'before continuing.\r\n'
     )
 
 
@@ -249,7 +249,7 @@ def test_read_directive_re_anchored_to_full_line():
     """The compiled regex MUST be anchored — guards against accidental relaxation."""
     pattern = READ_DIRECTIVE_RE.pattern
     assert pattern.startswith('^Read:')
-    assert pattern.endswith(r'[ \t]*\r?$')
+    assert pattern.endswith(r'[ \t]*(?P<cr>\r?)$')
 
 
 # ---------------------------------------------------------------------------
@@ -764,6 +764,48 @@ def test_assert_source_vocabulary_mapped_requires_read_directive():
     )
     with pytest.raises(UnmappedIdiomError, match='read_directive'):
         assert_source_vocabulary_mapped(rules)
+
+
+def test_assert_source_vocabulary_mapped_rejects_read_directive_template_without_path():
+    """A ``read_directive`` template that omits the ``{path}`` placeholder
+    fails closed — it would swallow the directive's path capture at rewrite
+    time."""
+    rules = TransformRules(
+        directive_rewrites={
+            'skill_directive': {'template': 'x {bundle}-{skill}'},
+            'read_directive': {'template': 'x'},
+        },
+        slash_rewrites={'slash_command': {'template': '/{name}'}},
+    )
+    with pytest.raises(UnmappedIdiomError, match=r'\{path\}'):
+        assert_source_vocabulary_mapped(rules)
+
+
+def test_assert_source_vocabulary_mapped_requires_every_required_placeholder():
+    """Each structural idiom demands all of its required placeholders — even a
+    template carrying the idiom's name but dropping a placeholder is refused."""
+    rules = TransformRules(
+        directive_rewrites={'skill_directive': {'template': 'x {bundle}'}},
+        slash_rewrites={'slash_command': {'template': '/{name}'}},
+    )
+    with pytest.raises(UnmappedIdiomError, match=r'\{skill\}'):
+        assert_source_vocabulary_mapped(rules)
+
+
+def test_load_transform_rules_fails_closed_on_read_directive_template_without_path(
+    tmp_path: Path,
+):
+    """A mapping.json whose ``read_directive`` template omits ``{path}`` fails
+    closed at load time."""
+    mapping = tmp_path / 'mapping.json'
+    _write(
+        mapping,
+        '{"directive_rewrites": {"skill_directive": {"template": "x {bundle}-{skill}"},'
+        ' "read_directive": {"template": "x"}},'
+        ' "slash_rewrites": {"slash_command": {"template": "/{name}"}}}',
+    )
+    with pytest.raises(UnmappedIdiomError, match=r'\{path\}'):
+        load_transform_rules(mapping)
 
 
 def test_load_transform_rules_fails_closed_on_unmapped_read_directive(tmp_path: Path):

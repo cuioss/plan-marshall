@@ -96,7 +96,7 @@ rsvg-convert -b "#ffffff" -w 1200 -o /tmp/diagram-light.png path/to/diagram.svg
 rsvg-convert -b "#0d1117" -w 1200 -o /tmp/diagram-dark.png  path/to/diagram.svg
 ```
 
-Then **read back both PNGs**. In Claude Code, use the `Read` tool on each PNG path so the rasterised result enters the agent's working set — do not rely on having authored the markup correctly. In a local editor, open both files in a viewer.
+Then **inspect both rendered PNGs** — open each PNG in an image-capable viewer so the rasterised result is reviewed directly, and do not rely on having authored the markup correctly.
 
 Verification checklist — every item must be visually confirmed against the rendered PNGs (not the SVG source):
 
