@@ -122,7 +122,7 @@ For each issue from script, apply LLM judgment:
 If apply_fixes=true:
 - For Priority 1 and 2 issues
 - Read file context
-- Use Edit tool for fixes
+- Apply the fix
 - Ask user before major changes
 
 **Step 8: Generate Report**
@@ -325,7 +325,7 @@ Recommendations:
 
 For each drift item:
 - Ask user for confirmation
-- Use Edit tool to update documentation
+- Update the documentation
 - Re-validate after changes
 
 ---
