@@ -104,14 +104,40 @@ OWNER_NOT_DERIVABLE = '<not-derivable>'
 
 #: A spec's self-declaration that it crosses the whole partition by construction
 #: rather than claiming a slice of it, as a keyword-marker regex over the spec's
-#: OWN prose — the same style as the parser's ``_DERIVED_RE``. Both settled
-#: phrasings are admitted: the plan states either that its surface is the tree
-#: ENTIRE, or that it deliberately PAIRS WITH NO OTHER plan over that tree.
+#: OWN prose — the same style as the parser's ``_DERIVED_RE``. Four settled
+#: phrasings of the ONE declaration, each a sentence a spec writes about itself:
+#:
+#: - its surface is the test tree ENTIRE;
+#: - it PAIRS WITH NO OTHER plan over that tree;
+#: - it CROSSES the epic's reduction SLICES;
+#: - its sites DO NOT RESPECT the slice boundaries, or the epic's partition.
+#:
+#: ⛔ The alternation is deliberately wider than the narrowest set reproducing
+#: today's sweep list, and that width is the point. A marker matching only the
+#: specs that share ONE boilerplate sentence is the hard-coded plan list this
+#: module's docstring forbids, wearing a regex: it happens to name today's
+#: sweeps and stops matching the moment a plan declares its crossing in its own
+#: words instead of copying that sentence — which is exactly how a self-declared
+#: sweep was read as a competing slice owner and contested every slice it
+#: crossed. The crossing and partition-disregard alternatives are what make this
+#: a reading of what a spec SAYS rather than a fingerprint of who wrote it.
+#:
+#: ⛔ The crossing alternative requires the plural ``slices`` — the epic's
+#: reduction slices — and deliberately does NOT admit "crosses the whole
+#: partition". A spec ANALYSING the corpus quotes that phrase when it cites
+#: another spec's declaration, and a quotation is not a declaration: keying on
+#: it would sweep the analysing plan and hand its own tests to a neighbour.
 #:
 #: ⛔ Corpus-independent by construction: it matches what a spec SAYS ABOUT
 #: ITSELF, so a sweep added to the corpus is detected with no edit here, and no
 #: plan identifier appears in the mechanism.
-_SWEEP_RE = re.compile(r'\bpairs with no other\b|\btree entire\b', re.IGNORECASE)
+_SWEEP_RE = re.compile(
+    r'\bpairs with no other\b'
+    r'|\btree entire\b'
+    r'|\bcrosses\b[^.]{0,60}\bslices\b'
+    r'|\bdo(?:es)? not respect\b[^.]{0,60}\b(?:slice boundaries|partition)\b',
+    re.IGNORECASE,
+)
 
 #: The test-module line budget the campaign's findings are derived against.
 DEFAULT_LINE_BUDGET = 400

@@ -9,9 +9,10 @@ consume it, so its coverage lives with the module rather than with either
 consumer.
 
 Entry SHAPE — whether an entry is an ownership claim or a lead the spec has not
-settled — is resolved per ENTRY by two marker rules, and the shape cluster below
-covers each rule independently: a positive control, a negative control over the
-whole-tree wording that must NOT fire, a matched negative that no spec-level
+settled — is resolved per ENTRY by the marker rules named (a) to (d) in the
+subject, and the shape clusters below cover each rule independently: a positive
+control, a negative control over wording that must NOT fire, a near-miss whose
+marker sits where the rule does not read, a matched negative that no spec-level
 resolution could produce, and an additivity control pinning that a marked entry
 keeps its membership of ``claimed``.
 
@@ -354,7 +355,7 @@ def test_one_declarative_spec_carries_both_a_claim_and_a_collection_constraint(
     }
 
 
-def test_the_two_rules_fire_independently_of_each_other(repo: Path, plans: Path) -> None:
+def test_the_label_and_constraint_rules_fire_independently(repo: Path, plans: Path) -> None:
     """Neither rule needs the other's marker present to fire.
 
     Guards against a collapsed implementation that required both signals, which
@@ -379,19 +380,287 @@ def test_the_two_rules_fire_independently_of_each_other(repo: Path, plans: Path)
     assert [entry.shape for entry in constraint_only.claimed] == [spec_parser.SHAPE_LEAD]
 
 
+# --- entry shape: rule (c), the cross-plan reference -------------------------
+#
+# A bullet whose CLAIM cites ANOTHER plan's surface possessively is quoting that
+# plan's ownership, not asserting its own. Reading such a citation as a claim
+# makes the citing plan a co-owner of the cited plan's whole slice. Every fixture
+# in this section is free of the other rules' markers, so each assertion is about
+# rule (c) alone.
+#
+# The scope narrowing is the rule's near-miss risk and is controlled for below: a
+# citation in the CLAIM HEAD is a reference, while the same citation in the
+# trailing commentary annotates a claim the bullet makes in its own right.
+
+
+def test_a_cross_plan_citation_in_the_claim_head_resolves_its_entries_to_a_lead(
+    repo: Path, plans: Path
+) -> None:
+    """Rule (c) — positive control, the full-identifier citation form."""
+    body = (
+        '# PLAN-220\n\n## Expected Surface\n\n'
+        "- OBSERVED: run 2 → PLAN-040's sixteen entries under `test/omega/`\n"
+    )
+
+    claim = claim_for(plans, repo, 'PLAN-220.md', body)
+    entry = next(entry for entry in claim.claimed if entry.path == 'test/omega/')
+
+    assert entry.shape == spec_parser.SHAPE_LEAD
+
+
+def test_a_slice_ordinal_citation_resolves_its_entries_to_a_lead(
+    repo: Path, plans: Path
+) -> None:
+    """Rule (c) — positive control, the slice-ordinal citation form.
+
+    The corpus cites a sibling either by full identifier or by the ordinal of the
+    slice it holds. Both are references to another plan's surface, so a rule
+    reading only the identifier form would leave this one owning that slice.
+    """
+    body = (
+        '# PLAN-221\n\n## Expected Surface\n\n'
+        "- OBSERVED: slice `050`'s ten directories under `test/omega/`\n"
+    )
+
+    claim = claim_for(plans, repo, 'PLAN-221.md', body)
+    entry = next(entry for entry in claim.claimed if entry.path == 'test/omega/')
+
+    assert entry.shape == spec_parser.SHAPE_LEAD
+
+
+def test_a_citation_in_the_trailing_commentary_leaves_the_claim_intact(
+    repo: Path, plans: Path
+) -> None:
+    """Rule (c) — near-miss control, and the reason the rule reads the head alone.
+
+    This bullet claims the named file outright and merely notes whose tree it
+    sits in. A rule reading the whole bullet would demote it — and with it most
+    of the corpus, since a spec routinely names its neighbours when it explains
+    a claim.
+    """
+    body = (
+        '# PLAN-222\n\n## Expected Surface\n\n'
+        '- OBSERVED: `test/omega/test_one.py` — D3 ⛔ '
+        "**WS-03's surface; see D3 for why it is taken here**\n"
+    )
+
+    claim = claim_for(plans, repo, 'PLAN-222.md', body)
+    entry = next(entry for entry in claim.claimed if entry.path == 'test/omega/test_one.py')
+
+    assert entry.shape == spec_parser.SHAPE_CLAIM
+
+
+def test_a_head_naming_a_plan_without_the_possessive_stays_a_claim(
+    repo: Path, plans: Path
+) -> None:
+    """Rule (c) — negative control: the identifier alone is not a citation.
+
+    Same head, same identifier, no possessive. Naming a sibling is how a spec
+    records an overlap it is taking knowingly; only the possessive says the span
+    belongs to the sibling.
+    """
+    body = (
+        '# PLAN-223\n\n## Expected Surface\n\n'
+        '- OBSERVED: `test/omega/` alongside PLAN-040\n'
+    )
+
+    claim = claim_for(plans, repo, 'PLAN-223.md', body)
+    entry = next(entry for entry in claim.claimed if entry.path == 'test/omega/')
+
+    assert entry.shape == spec_parser.SHAPE_CLAIM
+
+
+def test_a_citation_of_an_identifier_form_absent_from_the_corpus_is_read(
+    repo: Path, plans: Path
+) -> None:
+    """Rule (c) is keyed on the GRAMMAR, not on any list of plans.
+
+    A code-slug identifier no spec in the live corpus carries is still read as a
+    citation, because the pattern carries the published plan-id grammar. A rule
+    that had degenerated into a list of the identifiers it was written against
+    would leave this entry owning the span.
+    """
+    body = (
+        '# PLAN-224\n\n## Expected Surface\n\n'
+        "- OBSERVED: PLAN-ZETA-777's four directories under `test/omega/`\n"
+    )
+
+    claim = claim_for(plans, repo, 'PLAN-224.md', body)
+    entry = next(entry for entry in claim.claimed if entry.path == 'test/omega/')
+
+    assert entry.shape == spec_parser.SHAPE_LEAD
+
+
+def test_a_cross_plan_reference_entry_keeps_its_membership_of_claimed(
+    repo: Path, plans: Path
+) -> None:
+    """Additivity control for rule (c), matching rules (a) and (b)."""
+    body = (
+        '# PLAN-225\n\n## Expected Surface\n\n'
+        "- OBSERVED: PLAN-040's sixteen entries under `test/omega/`\n"
+    )
+
+    claim = claim_for(plans, repo, 'PLAN-225.md', body)
+
+    assert paths(claim.claimed) == {'test/omega/'}
+    assert claim.excluded == ()
+    assert [entry.shape for entry in claim.claimed] == [spec_parser.SHAPE_LEAD]
+
+
+# --- entry shape: rule (d), the hedged conditional claim ---------------------
+#
+# A bullet that names a span and then WITHDRAWS it in its own words is not
+# claiming that span. The withdrawal routinely sits in the trailing commentary,
+# so this rule reads the whole bullet — the opposite scope to rule (c), and the
+# reason the two are covered apart.
+
+
+def test_a_withdrawn_span_resolves_its_entries_to_a_lead(repo: Path, plans: Path) -> None:
+    """Rule (d) — positive control, in the corpus's own wording.
+
+    The bullet names a whole subtree and states in the same breath that the plan
+    touches almost none of it. Reading the span as ownership contests every
+    module beneath it.
+    """
+    body = (
+        '# PLAN-230\n\n## Expected Surface\n\n'
+        "- OBSERVED: the tests for this plan's **own** production changes, under "
+        '`test/omega/` in the directory mirroring each changed skill. ⚠️ **Only where a '
+        'D2 seam requires its own test** — this plan does not otherwise edit `test/**`\n'
+    )
+
+    claim = claim_for(plans, repo, 'PLAN-230.md', body)
+    entry = next(entry for entry in claim.claimed if entry.path == 'test/omega/')
+
+    assert entry.shape == spec_parser.SHAPE_LEAD
+
+
+@pytest.mark.parametrize(
+    ('name', 'bullet'),
+    [
+        (
+            'PLAN-231.md',
+            "- OBSERVED: the tests for this plan's **own** production changes, under "
+            '`test/omega/` in the directory mirroring each changed skill\n',
+        ),
+        ('PLAN-232.md', '- OBSERVED: `test/omega/` — D6 only ⛔ (re-scoped; see D6)\n'),
+    ],
+    ids=['no_withdrawal_clause', 'only_as_emphasis'],
+)
+def test_a_span_without_a_withdrawal_stays_a_claim(
+    repo: Path, plans: Path, name: str, bullet: str
+) -> None:
+    """Rule (d) — negative and near-miss controls.
+
+    The first is the same whole-subtree span with the withdrawal removed: breadth
+    alone is not a withdrawal, and demoting on breadth would exempt every wide
+    claim from ownership. The second carries the word the rule reads used as
+    ordinary emphasis rather than as a restriction on the claim.
+    """
+    body = f'# {name[:-3]}\n\n## Expected Surface\n\n{bullet}'
+
+    claim = claim_for(plans, repo, name, body)
+    entry = next(entry for entry in claim.claimed if entry.path == 'test/omega/')
+
+    assert entry.shape == spec_parser.SHAPE_CLAIM
+
+
+def test_either_withdrawal_phrasing_marks_the_bullet_on_its_own(
+    repo: Path, plans: Path
+) -> None:
+    """Rule (d)'s two phrasings are independent signals.
+
+    A restriction on the claim and a denial of further coverage each say the same
+    thing about the span; requiring both would leave a bullet carrying one of
+    them owning what it withdrew.
+    """
+    restriction = claim_for(
+        plans,
+        repo,
+        'PLAN-233.md',
+        '# PLAN-233\n\n## Expected Surface\n\n'
+        '- OBSERVED: `test/omega/`, only where a seam requires its own test\n',
+    )
+    denial = claim_for(
+        plans,
+        repo,
+        'PLAN-234.md',
+        '# PLAN-234\n\n## Expected Surface\n\n'
+        '- OBSERVED: `test/omega/` — this plan does not otherwise edit that tree\n',
+    )
+
+    assert [entry.shape for entry in restriction.claimed] == [spec_parser.SHAPE_LEAD]
+    assert [entry.shape for entry in denial.claimed] == [spec_parser.SHAPE_LEAD]
+
+
+def test_a_hedged_claim_entry_keeps_its_membership_of_claimed(
+    repo: Path, plans: Path
+) -> None:
+    """Additivity control for rule (d), matching the other three."""
+    body = (
+        '# PLAN-235\n\n## Expected Surface\n\n'
+        '- OBSERVED: `test/omega/` — this plan does not otherwise edit that tree\n'
+    )
+
+    claim = claim_for(plans, repo, 'PLAN-235.md', body)
+
+    assert paths(claim.claimed) == {'test/omega/'}
+    assert claim.excluded == ()
+    assert [entry.shape for entry in claim.claimed] == [spec_parser.SHAPE_LEAD]
+
+
+def test_the_residual_rules_fire_independently_of_each_other(
+    repo: Path, plans: Path
+) -> None:
+    """Rules (c) and (d) each fire with the other's marker absent.
+
+    Guards against a collapsed implementation that demanded both signals, which
+    would pass each positive control above only because the live driver bullets
+    happen to carry a citation and a hedge in close company.
+    """
+    citation_only = claim_for(
+        plans,
+        repo,
+        'PLAN-236.md',
+        "# PLAN-236\n\n## Expected Surface\n\n- OBSERVED: PLAN-040's entries under "
+        '`test/omega/`\n',
+    )
+    hedge_only = claim_for(
+        plans,
+        repo,
+        'PLAN-237.md',
+        '# PLAN-237\n\n## Expected Surface\n\n- OBSERVED: `test/omega/`, only where a '
+        'seam requires it\n',
+    )
+
+    assert [entry.shape for entry in citation_only.claimed] == [spec_parser.SHAPE_LEAD]
+    assert [entry.shape for entry in hedge_only.claimed] == [spec_parser.SHAPE_LEAD]
+
+
 # --- the corpus oracle rows --------------------------------------------------
 #
-# The five live-corpus entries the two rules must resolve to leads, each named by
-# its spec, together with the two whole-tree claims that must SURVIVE. The
-# corpus's own wording is reproduced here rather than read from the orchestrator
-# store, so the assertions are about the RULES and this suite stays hermetic.
+# The live-corpus entries the four rules must resolve to leads, each named by its
+# spec, together with the whole-tree claims that must SURVIVE. The corpus's own
+# wording is reproduced here rather than read from the orchestrator store, so the
+# assertions are about the RULES and this suite stays hermetic.
 
 _ORACLE_CORPUS = {
     'PLAN-105.md': (
         '# PLAN-105\n\n## Expected Surface\n\n'
         '- OBSERVED: `test/pm-plugin-development/plugin-doctor/` — D3\'s tests\n'
+        "- OBSERVED: slice `050`'s ten directories under `test/plan-marshall/` — D5, and "
+        "D2's fidelity check\n"
         '- HYPOTHESIS: **~391 files across `test/` and `marketplace/bundles/`** — '
         "D7's final sweep (verify-at-outline). ⛔ **The widest surface in the plan**\n"
+    ),
+    'PLAN-145.md': (
+        '# PLAN-145\n\n## Expected Surface\n\n'
+        '- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/'
+        'effort_presets.py` — D2\n'
+        "- OBSERVED: the tests for this plan's **own** production changes, under "
+        '`test/plan-marshall/` in the directory mirroring each changed skill. '
+        '⚠️ **Only where a D2 seam requires its own test** — this plan does not '
+        'otherwise edit `test/**`\n'
     ),
     'PLAN-120.md': (
         '# PLAN-120\n\n## Expected Surface\n\n'
@@ -433,8 +702,15 @@ def oracle(repo: Path, plans: Path):
 
 
 def test_the_oracle_corpus_is_fully_enumerated(oracle) -> None:
-    """Guards the five rows below against a vacuous pass over a corpus that lost a spec."""
-    assert sorted(oracle) == ['PLAN-105', 'PLAN-120', 'PLAN-130', 'PLAN-135', 'PLAN-160']
+    """Guards the rows below against a vacuous pass over a corpus that lost a spec."""
+    assert sorted(oracle) == [
+        'PLAN-105',
+        'PLAN-120',
+        'PLAN-130',
+        'PLAN-135',
+        'PLAN-145',
+        'PLAN-160',
+    ]
 
 
 @pytest.mark.parametrize(
@@ -443,13 +719,21 @@ def test_the_oracle_corpus_is_fully_enumerated(oracle) -> None:
         ('PLAN-105', 'test/', 1),
         ('PLAN-160', 'test/**', 3),
         ('PLAN-120', 'test/', 1),
+        ('PLAN-105', 'test/plan-marshall/', 1),
+        ('PLAN-145', 'test/plan-marshall/', 1),
     ],
-    ids=['plan_105_lead_marker', 'plan_160_lead_marker', 'plan_120_collection_constraint'],
+    ids=[
+        'plan_105_lead_marker',
+        'plan_160_lead_marker',
+        'plan_120_collection_constraint',
+        'plan_105_cross_plan_reference',
+        'plan_145_hedged_claim',
+    ],
 )
 def test_the_oracle_rows_resolve_to_leads(
     oracle, plan_id: str, path: str, occurrences: int
 ) -> None:
-    """The five rows, by name: four by rule (a) and one by rule (b)."""
+    """Each live-corpus row, by name, with the rule that resolves it in the id."""
     rows = [entry for entry in oracle[plan_id].claimed if entry.path == path]
 
     assert len(rows) == occurrences, f'{plan_id} resolved {len(rows)} {path!r} entries'
@@ -476,11 +760,16 @@ def test_no_oracle_spec_loses_an_entry_to_its_shape(oracle) -> None:
 
     assert resolved['PLAN-105'] == {
         'test/pm-plugin-development/plugin-doctor/',
+        'test/plan-marshall/',
         'test/',
         'marketplace/bundles/',
     }
     assert resolved['PLAN-120'] == {'test/pm-plugin-development/', 'test/'}
     assert resolved['PLAN-130'] == {'test/'}
+    assert resolved['PLAN-145'] == {
+        'marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/effort_presets.py',
+        'test/plan-marshall/',
+    }
     assert resolved['PLAN-160'] == {'test/**'}
 
 

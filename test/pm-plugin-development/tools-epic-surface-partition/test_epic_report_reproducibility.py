@@ -69,14 +69,21 @@ TEST_COUNT_METHOD = 'static "def test_" count over the enumerated test modules'
 #: halves of ``not_derivable`` — the modules and the specs — are populated.
 #: PLAN-330 declares itself a sweep, so the ``swept`` section has a crossing to
 #: reproduce; without it that population would be empty and reproduce trivially.
+#:
+#: ⛔ PLAN-330 declares its crossing in its OWN words rather than in the settled
+#: sentence a sweep may copy. The report-level ``swept`` population therefore
+#: depends on the marker reading a declaration rather than recognising a phrase,
+#: so a marker that narrowed back to the copied sentence empties this section
+#: here as well as failing the marker's own anti-degeneration control.
 SPECS = {
     'PLAN-300.md': '# PLAN-300\n\n## Expected Surface\n\n'
     '- Adds `test/alpha/**`\n- Touches `marketplace/bundles/demo/**`\n',
     'PLAN-310.md': '# PLAN-310\n\n## Expected Surface\n\n- Also adds `test/alpha/**`\n',
     'PLAN-320.md': '# PLAN-320\n\n## Expected Surface\n\n- Touches `test_two_*.py`\n',
     'PLAN-330.md': '# PLAN-330\n\n## Expected Surface\n\n'
-    '- Adds `test/alpha/**` — this plan crosses every slice, so its surface is the test '
-    'tree entire, and it pairs with no other plan\n',
+    '- Adds `test/alpha/**` — the sites this plan converts\n'
+    '\nThis surface crosses several reduction slices deliberately; the sites it visits '
+    "do not respect the epic's partition.\n",
 }
 MODULES = ('test/alpha/test_one.py', 'test/orphan/test_two_a.py')
 

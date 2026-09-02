@@ -36,7 +36,7 @@ naming the spec, rather than defaulting to a class.
 
 Independently of that spec-level class, EACH resolved entry carries its own
 shape — :data:`SHAPE_CLAIM` or :data:`SHAPE_LEAD` — decided from its own
-bullet's label and text by the two marker rules. A spec routinely mixes the
+bullet's label and text by the entry-shape marker rules. A spec routinely mixes the
 two: the same ``declarative`` spec may claim one directory outright and merely
 point at another pending outline-time verification, and reading the second as
 an ownership claim is what collapses a downstream attribution into a single
@@ -154,13 +154,25 @@ _TAB_STOP = 4
 #: the strip for rule (a) below to fire on it.
 _LABEL_PREFIX_RE = re.compile(r'^(?P<label>OBSERVED|HYPOTHESIS)\b[^:]*:[ \t]*')
 
-# --- entry-shape markers (rules (a) and (b)) ---------------------------------
+# --- entry-shape markers ------------------------------------------------------
 #
-# Both rules resolve a matched entry to SHAPE_LEAD, both are keyword/label
-# marker matches over the bullet's OWN text in the same style as _DERIVED_RE,
-# and neither references any plan identifier — a spec added to the corpus is
-# shaped by the same two rules with no edit here. They are independent: either
-# fires on its own, and each is testable without the other.
+# Every rule resolves a matched entry to SHAPE_LEAD, every one is a
+# keyword/label/grammar marker match over the bullet's OWN text in the same
+# style as _DERIVED_RE, and none of them names a plan — rule (c) keys on the
+# PUBLISHED PLAN_ID_SEGMENT grammar, which is the shape ANY plan identifier
+# takes and never a particular one. A spec added to the corpus is shaped by the
+# same rules with no edit here. They are independent: each fires on its own, and
+# each is testable without the others.
+#
+# Rules (a), (b) and (d) read the WHOLE bullet, because the text that settles
+# them routinely sits in the trailing commentary. Rule (c) reads the CLAIM HEAD
+# ALONE, and that narrowing is load-bearing rather than incidental: a possessive
+# citation in the head says the named span IS the other plan's surface, while
+# the same citation in the commentary annotates a claim the bullet makes in its
+# own right — "`_analyze_test_conventions.py` — D3 ⛔ WS-03's surface" claims
+# that file and merely notes whose tree it sits in. Reading rule (c) over the
+# whole bullet would demote most of the corpus, since a spec routinely names its
+# neighbours when it explains a claim.
 
 #: Rule (a), the label half — the label that marks a bullet a LEAD. A
 #: ``HYPOTHESIS:`` bullet names a candidate path for outline-time verification,
@@ -178,6 +190,43 @@ _LEAD_PHRASE_RE = re.compile(r'\bverify-at-outline\b', re.IGNORECASE)
 #: case-sensitively on the settings key itself, which is what keeps the rule
 #: corpus-independent.
 _COLLECTION_CONSTRAINT_RE = re.compile(r'\btestpaths\b')
+
+#: Rule (c) — a CROSS-PLAN REFERENCE. A bullet whose CLAIM cites ANOTHER plan's
+#: surface possessively is quoting that plan's ownership rather than asserting
+#: its own: ``slice `050`'s ten directories under `test/plan-marshall/``` names
+#: the tree slice 050 owns, and ``run 2 → PLAN-040's sixteen entries under
+#: `test/plan-marshall/``` names PLAN-040's. Honouring either as a claim makes
+#: the CITING plan a co-owner of the CITED plan's whole slice, which contests
+#: that slice in full — the single largest residual driver in the corpus.
+#:
+#: Keyed on the published :data:`PLAN_ID_SEGMENT` grammar — the shape every plan
+#: identifier takes — plus the possessive marker, so no particular plan is named
+#: and a citation of a plan added later is read the same way. The ``slice N``
+#: alternative covers the corpus's other citation form, where the reference is
+#: by slice ordinal rather than by full identifier and the ordinal may be
+#: backticked; its digits are equally unbound to any one plan. Both the straight
+#: and the typographic apostrophe are admitted, because a spec written with
+#: either is making the same citation. The two citations above are quoted from
+#: the corpus to show the SHAPE the rule reads; neither identifier appears in
+#: the pattern, which carries the grammar and nothing drawn from any one spec.
+_CROSS_PLAN_REFERENCE_RE = re.compile(
+    rf"(?:{PLAN_ID_SEGMENT}|\bslice[ \t]+`?\d+`?)['’]s\b"
+)
+
+#: Rule (d) — a HEDGED CONDITIONAL CLAIM. A bullet that names a span and then
+#: WITHDRAWS it in its own words is not claiming that span: ``the tests for this
+#: plan's own production changes, under `test/plan-marshall/` … Only where a D2
+#: seam requires its own test — this plan does not otherwise edit `test/**` ``
+#: names a whole subtree while stating the plan touches almost none of it.
+#: Reading the span as ownership contests every module beneath it.
+#:
+#: Two settled withdrawal phrasings, each an ordinary English hedge rather than
+#: any one spec's boilerplate: a conditional restriction on the claim (``only
+#: where``), and an explicit denial of further coverage (``does not
+#: otherwise``). Either alone marks the bullet. The rule reads the whole bullet
+#: because the denial half routinely sits after the em dash, in the same
+#: commentary the claim's paths are deliberately not taken from.
+_HEDGED_CLAIM_RE = re.compile(r'\bonly where\b|\bdoes not otherwise\b', re.IGNORECASE)
 
 #: A ``` `span` ``` of backticked text — the corpus's path notation.
 _BACKTICK_RE = re.compile(r'`([^`\n]+)`')
@@ -228,8 +277,8 @@ class PathEntry:
     """One path a spec names, resolved against the repository root.
 
     ``shape`` records whether the spec CLAIMS the path or merely LEADS to it,
-    decided per entry by the two marker rules and never inherited from the
-    spec's class. It is an ADDED fact: an entry keeps its membership of
+    decided per entry by the entry-shape marker rules and never inherited from
+    the spec's class. It is an ADDED fact: an entry keeps its membership of
     ``claimed`` / ``excluded`` whatever its shape, so a consumer that ignores
     ``shape`` reads exactly the surface it read before the field existed.
     """
@@ -468,14 +517,26 @@ def _bullet_segments(body: str) -> list[str]:
     return [head]
 
 
-def _entry_shape(label: str, body: str) -> str:
+def _entry_shape(label: str, body: str, head: str) -> str:
     """Resolve one bullet's entry shape from its own label and text.
 
-    Rule (a) — a ``HYPOTHESIS`` label, or the ``verify-at-outline`` deferral
-    phrase — marks a lead the spec has not settled. Rule (b) — a ``testpaths``
-    collection constraint — marks a statement about where the runner collects
-    from. Either resolves the bullet's entries to :data:`SHAPE_LEAD`; anything
-    else is an ordinary claim.
+    Four independent marker rules, each resolving the bullet's entries to
+    :data:`SHAPE_LEAD` on its own:
+
+    (a) a ``HYPOTHESIS`` label, or the ``verify-at-outline`` deferral phrase —
+        a candidate path named for outline-time verification;
+    (b) a ``testpaths`` collection constraint — a statement about where the test
+        runner collects from, not a claim over that tree;
+    (c) a possessive citation of ANOTHER plan's surface in the claim head — a
+        reference to that plan's ownership, not an assertion of this one's;
+    (d) a withdrawal of the bullet's own span — a conditional restriction on the
+        claim, or an explicit denial of further coverage.
+
+    Anything else is an ordinary claim.
+
+    ``head`` is the claim segment alone and ``body`` the whole bullet: rule (c)
+    reads the first and the other three read the second, for the reason given in
+    the marker block above.
 
     The spec's class is deliberately not an input: shape is decided per entry,
     so one spec's bullets may resolve to different shapes.
@@ -483,6 +544,10 @@ def _entry_shape(label: str, body: str) -> str:
     if label == _LEAD_LABEL or _LEAD_PHRASE_RE.search(body):
         return SHAPE_LEAD
     if _COLLECTION_CONSTRAINT_RE.search(body):
+        return SHAPE_LEAD
+    if _CROSS_PLAN_REFERENCE_RE.search(head):
+        return SHAPE_LEAD
+    if _HEDGED_CLAIM_RE.search(body):
         return SHAPE_LEAD
     return SHAPE_CLAIM
 
@@ -506,10 +571,11 @@ def _collect_bullet(
     label = label_match.group('label') if label_match else ''
     body = bullet[label_match.end():] if label_match else bullet
     negative = bool(_NEGATIVE_CLAIM_RE.match(body))
-    shape = _entry_shape(label, body)
+    segments = _bullet_segments(body)
+    shape = _entry_shape(label, body, segments[0])
 
     spans: list[tuple[str, bool]] = []
-    for segment in _bullet_segments(body):
+    for segment in segments:
         spans.extend(_spans_with_exclusion(segment))
 
     # The ``./`` prefix is normalised away HERE, before the base loop, because

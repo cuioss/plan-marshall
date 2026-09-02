@@ -338,6 +338,12 @@ _INJECTED_CONTROLS = (
         'test_epic_partition_injected_failures.py::'
         'test_container_span_marks_the_module_beneath_it_not_derivable',
     ),
+    (
+        'injected_cross_plan_citation',
+        "a bullet citing another plan's surface does not contest the slice it cites",
+        'test_epic_partition_injected_failures.py::'
+        'test_injected_cross_plan_citation_does_not_contest_the_cited_slice',
+    ),
 )
 
 #: The line prefix that makes a declaration a test. Named once so the counter,

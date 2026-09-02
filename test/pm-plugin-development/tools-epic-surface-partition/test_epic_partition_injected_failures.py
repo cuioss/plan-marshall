@@ -260,3 +260,48 @@ def test_container_span_does_not_disturb_the_claimed_set(container_span) -> None
     result = partition_of(repo, plans)
 
     assert named(result, partition_mod.VERDICT_CLAIMED) == set(CLEAN_MODULES)
+
+
+# --- negative control 5: a cited slice is not contested by the citing plan ----
+#
+# A spec whose claim CITES a sibling's surface possessively is quoting that
+# sibling's ownership, not competing for it. Left unread, one such bullet makes
+# the citing plan a co-owner of the cited plan's whole slice and contests it in
+# full — the shape that kept the attribution collapsed into a single bucket. The
+# matched positive on the same corpus is the identical span claimed outright,
+# which is a real contest and must still be reported by name.
+
+#: The two forms of the injected bullet: a citation of PLAN-200's subtree, and
+#: the same span claimed outright. They differ only in the possessive citation.
+CITING_BODY = (
+    '# PLAN-250\n\n## Expected Surface\n\n'
+    "- OBSERVED: slice `200`'s modules under `test/alpha/**` — the fidelity check\n"
+)
+UNCITED_BODY = (
+    '# PLAN-250\n\n## Expected Surface\n\n'
+    '- OBSERVED: the modules under `test/alpha/**` — the fidelity check\n'
+)
+
+
+def test_injected_cross_plan_citation_does_not_contest_the_cited_slice(clean) -> None:
+    repo, plans = clean
+    (plans / 'PLAN-250.md').write_text(CITING_BODY, encoding='utf-8')
+
+    result = partition_of(repo, plans)
+
+    assert named(result, partition_mod.VERDICT_CONTESTED) == set()
+    assert named(result, partition_mod.VERDICT_CLAIMED) == set(CLEAN_MODULES)
+
+
+def test_injected_uncited_claim_over_the_cited_slice_is_reported_by_name(clean) -> None:
+    """Matched positive: the same span, the same corpus, no citation."""
+    repo, plans = clean
+    (plans / 'PLAN-250.md').write_text(UNCITED_BODY, encoding='utf-8')
+
+    result = partition_of(repo, plans)
+
+    owners = next(
+        module.plans for module in result.modules if module.path == 'test/alpha/test_one.py'
+    )
+    assert named(result, partition_mod.VERDICT_CONTESTED) == {'test/alpha/test_one.py'}
+    assert owners == ('PLAN-200', 'PLAN-250')
