@@ -4276,15 +4276,19 @@ class TestHealthCheck:
         entry and can be dual-homed for exactly the same reason the render
         entries can, so excluding it would be an unexplained hole in a report
         whose purpose is to stop hiding this state.
+
+        Both install modes run against both files: ``--enforcement`` writes ONLY
+        the matcher-less PreToolUse entry (no render wiring, no ``statusLine``,
+        no ``env``), so an enforcement-only install would leave the display
+        legitimately unhealthy and the non-fatal assertions below would be
+        asserting the wrong thing.
         """
         import claude_runtime as _cr
 
-        rt.project_install_hook(
-            str(tmp_path / ".claude" / "settings.json"), enforcement=True
-        )
-        rt.project_install_hook(
-            str(tmp_path / ".claude" / "settings.local.json"), enforcement=True
-        )
+        for name in ("settings.json", "settings.local.json"):
+            target = str(tmp_path / ".claude" / name)
+            rt.project_install_hook(target)
+            rt.project_install_hook(target, enforcement=True)
 
         result = _parsed(rt.health_check("display"))
         assert result["status"] == "success"
@@ -4294,6 +4298,7 @@ class TestHealthCheck:
             f"PreToolUse:enforcement: {_cr._DIVERGENCE_TOKEN}"
             in display_result["detail"]
         )
+        assert "PreToolUse:enforcement: present" not in display_result["detail"]
 
     def test_dual_homed_labels_detector_pairs_positive_and_negative(self):
         """The detector itself, as a matched pair on the same input.
