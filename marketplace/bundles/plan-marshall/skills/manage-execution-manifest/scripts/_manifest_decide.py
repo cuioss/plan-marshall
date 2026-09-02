@@ -18,7 +18,7 @@ or the shape of the candidate step list.
 import json
 from typing import Any
 
-from _manifest_core import _role_of
+from _manifest_core import VALID_CHANGE_TYPES, _role_of
 from constants import FILE_STATUS
 from file_ops import get_plan_dir, read_json
 
@@ -337,6 +337,38 @@ def _read_recipe_source(plan_id: str) -> str | None:
     return None
 
 
+def _read_raw_settled_change_type(plan_id: str) -> str | None:
+    """Return ``status.metadata.change_type`` verbatim, WITHOUT validating it.
+
+    The unvalidated half of :func:`_read_settled_change_type`. It exists so the
+    composer can NAME a discarded non-canonical value: the validated read collapses
+    "no settled classification" and "a settled classification that is unusable" into
+    the same ``None``, so a caller holding only that result cannot tell the two apart
+    and the discard would be unauditable. This function stays pure and log-free — the
+    decision-log line is the entry's to emit.
+
+    Returns the trimmed classification string exactly as ``status.json`` carries it,
+    or ``None`` when the file is absent, malformed, or its metadata carries no
+    ``change_type``.
+    """
+    status_path = get_plan_dir(plan_id) / FILE_STATUS
+    if not status_path.exists():
+        return None
+    try:
+        status = read_json(status_path, default={})
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(status, dict):
+        return None
+    metadata = status.get('metadata', {})
+    if not isinstance(metadata, dict):
+        return None
+    value = metadata.get('change_type')
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
 def _read_settled_change_type(plan_id: str) -> str | None:
     """Resolve the plan's SETTLED change-type classification from status metadata.
 
@@ -355,24 +387,27 @@ def _read_settled_change_type(plan_id: str) -> str | None:
     unreadable settled classification is treated as "no settled classification",
     which composes with the supplied value alone (the no-settled control path).
 
+    A settled value that is PRESENT but not a member of :data:`VALID_CHANGE_TYPES`
+    is UNUSABLE, and degrades to ``None`` exactly as a missing or malformed
+    ``status.json`` does. Folding such a value into the conflict-detection path
+    instead made compose UNESCAPABLE — no supplied value can ever equal a
+    non-canonical settled one, so every re-run refused — which is a defect in the
+    classification, not a conflict between two scopes. Degrading here lets compose
+    fall through to the caller-supplied value on the existing no-settled path,
+    adding no new branch to the reconciliation block.
+
+    Because the degrade makes "no settled classification" and "an unusable settled
+    classification" indistinguishable in the return, the composer names the
+    discarded value in its decision log via :func:`_read_raw_settled_change_type`;
+    the discard is never silent.
+
     Returns the trimmed classification string, or ``None`` when ``status.json`` is
-    absent, malformed, or its metadata carries no ``change_type``.
+    absent, malformed, its metadata carries no ``change_type``, or the value it
+    carries is not a canonical change type.
     """
-    status_path = get_plan_dir(plan_id) / FILE_STATUS
-    if not status_path.exists():
+    value = _read_raw_settled_change_type(plan_id)
+    if value is None or value not in VALID_CHANGE_TYPES:
         return None
-    try:
-        status = read_json(status_path, default={})
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(status, dict):
-        return None
-    metadata = status.get('metadata', {})
-    if not isinstance(metadata, dict):
-        return None
-    value = metadata.get('change_type')
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-    return None
+    return value
 
 

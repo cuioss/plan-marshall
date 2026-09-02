@@ -16,6 +16,8 @@ Covers deliverables D1-D4 of
 import json
 from argparse import Namespace
 
+import pytest
+
 from conftest import get_script_path, load_script_module, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py')
@@ -208,6 +210,71 @@ def test_new_plan_change_type_flag_is_accepted(plan_context):
     assert result.returncode == 0, f'compose failed: stderr={result.stderr!r}'
     data = result.toon()
     assert data['status'] == 'success'
+
+
+# =============================================================================
+# A settled classification OUTSIDE VALID_CHANGE_TYPES is UNUSABLE, not a
+# conflicting scope. It degrades to "no settled classification", so compose falls
+# through to the supplied value, and the discard is named in the decision log.
+# =============================================================================
+
+#: The non-canonical settled value the cases below seed — a plausible near-miss
+#: rather than nonsense, because the defect being pinned was a real settled value
+#: that no supplied value could ever equal.
+_UNUSABLE_SETTLED = 'feature_breaking'
+
+
+def test_unusable_settled_sweep_population_is_non_empty():
+    """Guard the parametrized sweep below against a vacuous population.
+
+    The sweep derives its cases from ``VALID_CHANGE_TYPES`` rather than a hand-listed
+    copy, so an empty or renamed constant would silently reduce it to zero cases and
+    still report green. Publishing the population here is what makes that visible.
+    """
+    assert _mem.VALID_CHANGE_TYPES, 'VALID_CHANGE_TYPES is empty — the sweep below is vacuous'
+    assert _UNUSABLE_SETTLED not in _mem.VALID_CHANGE_TYPES
+
+
+@pytest.mark.parametrize('supplied', _mem.VALID_CHANGE_TYPES)
+def test_non_canonical_settled_never_conflicts_with_any_canonical_supplied(plan_context, supplied):
+    """A non-canonical settled value composes against EVERY canonical supplied value.
+
+    Reading the settled value verbatim fed it to the equality test in the
+    reconciliation block, which then refused for every member of the vocabulary — so
+    compose could not be satisfied by any argument the caller could pass. That is a
+    defective classification, not a conflict between two scopes, and it must degrade
+    to the supplied value instead of refusing.
+    """
+    slug = supplied.replace('_', '-')
+    plan_id = f'reconcile-unusable-{slug}'
+    _seed_settled(plan_context, plan_id, _UNUSABLE_SETTLED)
+    result = cmd_compose(_compose_ns(plan_id, supplied))
+    assert result is not None
+    assert result.get('error') != 'change_type_scope_conflict'
+    assert result['status'] == 'success'
+    assert result['change_type_scope'] == 'supplied'
+    assert result['effective_change_type'] == supplied
+
+
+def test_unusable_settled_discard_is_named_in_the_decision_log(plan_context):
+    """The discard is auditable: the log line names the value that was thrown away.
+
+    Degrading to ``None`` makes "absent" and "unusable" indistinguishable in the
+    read's return, so without this line a settled classification could be rejected
+    with no record that it ever existed.
+    """
+    plan_id = 'reconcile-unusable-log'
+    _seed_settled(plan_context, plan_id, _UNUSABLE_SETTLED)
+    captured: list[tuple[str, str]] = []
+    original = _mem._emit_decision_log
+    _mem._emit_decision_log = lambda pid, msg: captured.append((pid, msg))
+    try:
+        cmd_compose(_compose_ns(plan_id, 'bug_fix'))
+    finally:
+        _mem._emit_decision_log = original
+    discards = [msg for _pid, msg in captured if 'discarded unusable settled' in msg]
+    assert discards, 'no discard decision-log line emitted for the unusable settled value'
+    assert _UNUSABLE_SETTLED in discards[0]
 
 
 def test_old_change_type_flag_is_rejected(plan_context):
