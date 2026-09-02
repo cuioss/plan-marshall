@@ -6,7 +6,8 @@
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 
 # Import the module under test (PYTHONPATH set by conftest)
-from toon_parser import parse_toon, parse_toon_table, serialize_toon
+import pytest
+from toon_parser import parse_toon, parse_toon_table, serialize_toon, value_needs_quoting
 
 # =============================================================================
 # Test: Basic Key-Value Parsing
@@ -493,3 +494,97 @@ def test_parse_toon_table_non_list_key():
     toon = 'status: success\n'
     result = parse_toon_table(toon, 'status')
     assert result == []
+
+
+# =============================================================================
+# Test: value_needs_quoting — the serializer's exported quoting decision
+# =============================================================================
+#
+# The predicate is the serializer's own rule, exported so consumers can tell a
+# quote serialize_toon was OBLIGED to add from one a human added by hand. Each
+# disjunct it decides gets a case here, because a consumer that mis-reads any
+# one of them mis-classifies a legitimate quote as an anti-pattern (or the
+# reverse).
+
+
+@pytest.mark.parametrize(
+    'value,reason',
+    [
+        ('a,b', 'comma would split a CSV row'),
+        ('bundle:skill', 'colon would read as a key/value separator'),
+        ('line one\nline two', 'newline would break the record'),
+        ('say "hi"', 'embedded double-quote needs escaping'),
+        ('#leading-hash', 'leading # would read as a comment'),
+        ('- leading dash', 'leading "- " would read as a list item'),
+        ('true', 'reserved literal would parse as a boolean'),
+        ('false', 'reserved literal would parse as a boolean'),
+        ('null', 'reserved literal would parse as None'),
+        ('', 'empty string is indistinguishable from an absent value'),
+        ('42', 'bare integer would parse as int'),
+        ('-42', 'negative integer would parse as int'),
+        ('3.14', 'bare float would parse as float'),
+        ('95%', 'percentage would parse as int'),
+    ],
+)
+def test_value_needs_quoting_true_for_each_disjunct(value, reason):
+    """Every disjunct the predicate decides reports True."""
+    assert value_needs_quoting(value) is True, f'expected quoting because {reason}'
+
+
+@pytest.mark.parametrize(
+    'value',
+    [
+        'plain',
+        'hello world',
+        'write-replace',
+        'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md',
+        'a-b_c',
+        'not#leading',
+        '-notalistitem',
+        '3.x',
+    ],
+)
+def test_value_needs_quoting_false_for_plain_values(value):
+    """A value with no special character or reserved shape is emitted bare.
+
+    This is the matched negative side of the parametrization above: without it a
+    predicate that simply returned True would pass every case there.
+    """
+    assert value_needs_quoting(value) is False
+
+
+def test_value_needs_quoting_honours_the_active_table_separator():
+    """The separator argument is what makes the decision table-aware.
+
+    A tab is unremarkable in a comma-separated table and fatal in a
+    tab-separated one; the predicate must answer differently for the same value.
+    """
+    assert value_needs_quoting('a\tb', table_separator='\t') is True
+    assert value_needs_quoting('a\tb', table_separator=',') is False
+
+
+def test_serialize_toon_output_is_byte_exact_for_every_quoting_disjunct():
+    """Pin the serializer's exact bytes for a record exercising the quoting rule.
+
+    ``value_needs_quoting`` was extracted out of ``_serialize_value`` as a pure
+    move, so the emitted bytes must not shift. This golden literal is what makes
+    a future edit to the predicate observable here rather than only in a
+    consumer: any change to which values get quoted changes this string.
+    """
+    data = {
+        'plain': 'hello world',
+        'notation': 'bundle:skill',
+        'listy': ['a,b', 'plain', '42'],
+        'rows': [{'target': 'src/a.py', 'intent': 'write-replace'}],
+    }
+
+    assert serialize_toon(data) == (
+        'plain: hello world\n'
+        'notation: "bundle:skill"\n'
+        'listy[3]:\n'
+        '  - "a,b"\n'
+        '  - plain\n'
+        '  - "42"\n'
+        'rows[1]{target,intent}:\n'
+        '  src/a.py,write-replace'
+    )

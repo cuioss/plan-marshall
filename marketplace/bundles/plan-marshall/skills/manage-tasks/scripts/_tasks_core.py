@@ -13,7 +13,7 @@ Contains:
 import json
 import re
 from pathlib import Path
-from typing import Any, NotRequired, TypedDict
+from typing import Any, NamedTuple, NotRequired, TypedDict
 
 from constants import (
     DIR_TASKS,
@@ -27,6 +27,7 @@ from file_ops import (  # noqa: F401 - re-exported
     now_utc_iso,
 )
 from input_validation import require_valid_plan_id  # noqa: F401 - re-exported
+from toon_parser import ToonParseError, parse_toon, value_needs_quoting
 
 # =============================================================================
 # Type definitions
@@ -349,207 +350,292 @@ def calculate_progress(task: dict) -> tuple[int, int]:
 # =============================================================================
 
 
-_STEPS_BARE_BLOCK_PREFIX = 'steps:'
-_STEPS_BRACKETED_RE = re.compile(r'^steps\[(\d+)\]:\s*$')
 # A TOON step item carries its required intent as a trailing parenthesized
 # suffix: ``path/to/file.ext (write-new)``. The path group is non-greedy up to
 # the final ``(intent)`` marker; the intent group is validated separately
 # against VALID_STEP_INTENTS by validate_step_intent.
 _STEP_INTENT_SUFFIX_RE = re.compile(r'^(?P<target>.+?)\s*\((?P<intent>[a-z-]+)\)\s*$')
-_SKILLS_BRACKETED_RE = re.compile(r'^skills\[(\d+)\]:\s*$')
-_COMMANDS_BRACKETED_RE = re.compile(r'^commands\[(\d+)\]:\s*$')
 
+#: List fields a task definition may carry. ``serialize_toon`` emits these in
+#: the canonical length-declared form (``skills[2]:``), but a hand-written
+#: definition commonly uses the bare YAML-style block header (``skills:``),
+#: which the canonical parser reads as a nested object rather than a list.
+#: ``_normalize_list_headers`` rewrites the bare form so one parser reads both.
+_BARE_LIST_HEADER_RE = re.compile(r'^(?P<indent> *)(?P<key>steps|skills|commands):[ \t]*$')
+_DECLARED_LIST_HEADER_RE = re.compile(r'^(?P<indent> *)(?P<key>steps|skills|commands)\[\d+\]:[ \t]*$')
+_LIST_ITEM_RE = re.compile(r'^(?P<indent> *)- (?P<value>.*)$')
 
-def _matches_steps_header(line: str) -> bool:
-    """True when ``line`` opens a steps list — bare or bracketed form."""
-    if line == _STEPS_BARE_BLOCK_PREFIX or line.startswith(_STEPS_BARE_BLOCK_PREFIX + ' '):
-        return True
-    return bool(_STEPS_BRACKETED_RE.match(line))
-
-
-def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
-    """Parse task definition from stdin TOON format.
-
-    Accepts both the bare-block form (``steps:`` followed by indented ``- ``
-    items) and the bracketed form (``steps[N]:`` followed by the same indented
-    ``- `` items). Both shapes normalise to the same internal step list. The
-    same dual-form acceptance applies to ``skills`` and ``verification.commands``
-    so callers that emit the canonical TOON length-declared list shape
-    (``skills[2]:``, ``commands[1]:``) round-trip cleanly.
-
-    When neither shape parses for a given list field, raises a schema-level
-    error that names both expected forms explicitly (see ``ValueError`` paths
-    below) so fixture authors get a clear "wrong serialisation form" message
-    instead of a generic structural error.
-    """
-    # Create typed local variables for mutable fields
-    skills: list[str] = []
-    steps: list[dict[str, str]] = []
-    depends_on: list[str] = []
-    verification_commands: list[str] = []
-
-    verification: dict[str, Any] = {'commands': verification_commands, 'criteria': '', 'manual': False}
-
-    result: dict[str, Any] = {
-        'title': '',
-        'deliverable': 0,  # Single integer (1:1 constraint)
-        'domain': '',
-        'profile': 'implementation',
-        'skills': skills,
-        'origin': 'plan',
-        'description': '',
-        'steps': steps,
-        'depends_on': depends_on,
-        'verification': verification,
+#: Top-level keys the task schema recognises. Anything else the canonical
+#: parser returns is named on a validation failure rather than silently
+#: discarded, so a mis-serialised field is attributable.
+_KNOWN_TASK_KEYS = frozenset(
+    {
+        'title',
+        'deliverable',
+        'domain',
+        'profile',
+        'origin',
+        'skills',
+        'description',
+        'steps',
+        'depends_on',
+        'verification',
     }
+)
 
-    lines = stdin_content.split('\n')
+
+class _RawListItem(NamedTuple):
+    """One raw list-item text plus the provenance of the header that opened it.
+
+    The outer-quote guard cannot decide from an item's CONTENT alone whether its
+    outer quote was the serializer's or a human's: an item the guard must accept
+    (a real ``serialize_toon`` command, quoted because it embeds ``"``) and one it
+    must reject are byte-for-byte the same SHAPE. The header form is the
+    discriminator that content cannot supply, so it rides with each item.
+
+    Provenance is per ITEM rather than per key because one document may open the
+    same field name in both forms (a bare ``steps:`` block and a nested
+    ``commands[1]:`` block), and collapsing them would let one header's form
+    speak for the other's items.
+
+    Attributes:
+        text: The raw, still-quoted item text exactly as written.
+        bare_header: True when the item was introduced by the bare YAML-style
+            header ``key:``; False for the length-declared ``key[N]:`` form.
+    """
+
+    text: str
+    bare_header: bool
+
+
+def _normalize_list_headers(content: str) -> tuple[str, dict[str, list[_RawListItem]]]:
+    """Rewrite bare list-block headers to the canonical length-declared form.
+
+    ``serialize_toon`` emits a list field as ``key[N]:`` followed by ``  - item``
+    rows, and ``toon_parser.parse_toon`` reads exactly that shape. A hand-written
+    task definition may instead open the list with the bare YAML-style header
+    ``key:``, which the canonical parser reads as a nested object and yields no
+    items for. Rewriting the bare header to ``key[N]:`` lets the one canonical
+    parser read both shapes, so this module keeps no list reader of its own.
+
+    Args:
+        content: The raw TOON task definition.
+
+    Returns:
+        A tuple of the normalized content and a mapping from list-field key to
+        the ``_RawListItem`` records found beneath it — each the RAW, still-quoted
+        item text paired with whether its header was written in the bare form.
+        Those raw texts are what the outer-quote guards inspect: ``parse_toon``
+        unquotes values, so the quoting a caller actually wrote is observable only
+        before parsing. The header form travels with them because it is the only
+        signal that distinguishes serializer-produced quoting from hand-added
+        quoting once the two have identical content — this function is where that
+        distinction is observable, so discarding it here would lose it for good.
+    """
+    lines = content.split('\n')
+    raw_items: dict[str, list[_RawListItem]] = {}
+    out: list[str] = []
     i = 0
 
     while i < len(lines):
         line = lines[i]
-
-        if not line.strip():
+        bare = _BARE_LIST_HEADER_RE.match(line)
+        header = bare or _DECLARED_LIST_HEADER_RE.match(line)
+        if not header:
+            out.append(line)
             i += 1
             continue
 
-        if line.startswith('title:'):
-            result['title'] = line[6:].strip()
-            i += 1
+        key = header.group('key')
+        header_indent = len(header.group('indent'))
+        is_bare = bare is not None
 
-        elif line.startswith('deliverable:'):
-            value = line[12:].strip()
-            result['deliverable'] = int(value)
-            i += 1
+        # Collect the contiguous run of ``- `` items indented deeper than the header.
+        items: list[_RawListItem] = []
+        j = i + 1
+        while j < len(lines):
+            item = _LIST_ITEM_RE.match(lines[j])
+            if not item or len(item.group('indent')) <= header_indent:
+                break
+            items.append(_RawListItem(item.group('value').strip(), is_bare))
+            j += 1
 
-        elif line.startswith('domain:'):
-            result['domain'] = line[7:].strip()
-            i += 1
+        raw_items.setdefault(key, []).extend(items)
+        out.append(f'{header.group("indent")}{key}[{len(items)}]:' if bare and items else line)
+        out.extend(lines[i + 1 : j])
+        i = j
 
-        elif line.startswith('profile:'):
-            result['profile'] = line[8:].strip()
-            i += 1
+    return '\n'.join(out), raw_items
 
-        elif line.startswith('origin:'):
-            result['origin'] = line[7:].strip()
-            i += 1
 
-        elif line.startswith('skills:') or _SKILLS_BRACKETED_RE.match(line):
-            # Both bare-block (`skills:`) and bracketed (`skills[N]:`) headers
-            # open the same indented list body.
-            i += 1
-            while i < len(lines) and lines[i].startswith('  - '):
-                skill = lines[i][4:].strip()
-                if skill:
-                    skills.append(skill)
-                i += 1
+def _reject_hand_quoted_items(raw_items: list[_RawListItem], field_label: str) -> None:
+    """Raise when a list item carries an outer double-quote a human added.
 
-        elif line.startswith('description:'):
-            rest = line[12:].strip()
-            if rest == '|':
-                desc_lines = []
-                i += 1
-                while i < len(lines):
-                    if lines[i].startswith('  '):
-                        desc_lines.append(lines[i][2:])
-                    elif lines[i].strip() == '':
-                        desc_lines.append('')
-                    else:
-                        break
-                    i += 1
-                result['description'] = '\n'.join(desc_lines).strip()
-            else:
-                result['description'] = rest
-                i += 1
+    An outer-quoted item is accepted ONLY when ``serialize_toon`` could have
+    produced it — which takes two agreeing signals, because content alone cannot
+    decide it. The item this guard must accept (a real serialized command, quoted
+    because it embeds ``"``) and the item it must reject are structurally
+    identical: outer-quoted, colon-bearing, escaped inner quotes. So the guard
+    reads both the item and its header:
 
-        elif _matches_steps_header(line):
-            # Both bare-block (`steps:`) and bracketed (`steps[N]:`) headers
-            # open the same indented list body. The bracketed length declaration
-            # is intentionally not validated against the actual row count —
-            # the parser normalises by walking the body, matching TOON's
-            # documented "[N] is advisory" semantics.
-            i += 1
-            while i < len(lines) and lines[i].startswith('  - '):
-                raw_step = lines[i][4:].strip()
-                if len(raw_step) >= 2 and raw_step.startswith('"') and raw_step.endswith('"'):
-                    raise ValueError(
-                        f'Task contract violation - steps items must not be '
-                        f'wrapped in outer double-quotes: {raw_step!r}. Write list items without '
-                        f'outer quotes (inner double-quotes are allowed). See plan-marshall:phase-4-plan SKILL.md.'
-                    )
-                if raw_step:
-                    match = _STEP_INTENT_SUFFIX_RE.match(raw_step)
-                    if not match:
-                        raise ValueError(
-                            f"Task contract violation - step item '{raw_step}' is missing its "
-                            f'required intent marker. Each step MUST be written as '
-                            f"'path (intent)' where intent is one of: "
-                            + ', '.join(VALID_STEP_INTENTS)
-                            + '. See plan-marshall:manage-tasks/standards/task-contract.md.'
-                        )
-                    step_target = normalize_step_path(match.group('target').strip())
-                    step_intent = validate_step_intent(match.group('intent'))
-                    if step_target:
-                        steps.append({'target': step_target, 'intent': step_intent})
-                i += 1
-            # Empty steps body is allowed at parse time — the required-fields
-            # check below catches it with a more specific error message.
+    - **Header provenance.** ``serialize_toon`` never emits a bare ``key:`` list
+      header; it always writes the length-declared ``key[N]:`` form. An outer
+      quote under a bare header therefore cannot be the serializer's, whatever
+      the value contains, and is rejected outright.
+    - **Value provenance.** Under a length-declared header the serializer is
+      OBLIGED to wrap any value ``value_needs_quoting`` reports on — a skill
+      notation containing ``:``, a command containing an embedded ``"``. Such a
+      quote round-trips correctly and is accepted. A quote on a value that needed
+      none is the hand-written anti-pattern, and is rejected. Consulting the
+      serializer's own exported predicate keeps both sides of that decision in
+      one place instead of re-deriving the rule here.
 
-        elif line.startswith('depends_on:'):
-            value = line[11:].strip()
-            result['depends_on'] = parse_depends_on(value)
-            i += 1
+    The guard runs ahead of ``_coerce_steps`` so an illegal outer quote is named
+    as an outer-quote violation, not misreported downstream as a missing intent
+    marker — a rejection naming the wrong cause sends a caller to fix something
+    already correct.
 
-        elif line.startswith('verification:'):
-            i += 1
-            while i < len(lines) and lines[i].startswith('  '):
-                stripped = lines[i].strip()
-                if stripped.startswith('commands:') or _COMMANDS_BRACKETED_RE.match(stripped):
-                    # Both bare-block (`commands:`) and bracketed (`commands[N]:`)
-                    # forms open the same deeper-indented list body.
-                    i += 1
-                    while i < len(lines) and lines[i].startswith('    - '):
-                        cmd = lines[i][6:].strip()
-                        if len(cmd) >= 2 and cmd.startswith('"') and cmd.endswith('"'):
-                            raise ValueError(
-                                f'Task contract violation - verification.commands items must not be '
-                                f'wrapped in outer double-quotes: {cmd!r}. Write list items without '
-                                f'outer quotes (inner double-quotes are allowed). See plan-marshall:phase-4-plan SKILL.md.'
-                            )
-                        if cmd:
-                            verification_commands.append(cmd)
-                        i += 1
-                    continue
-                elif stripped.startswith('criteria:'):
-                    verification['criteria'] = stripped[9:].strip()
-                elif stripped.startswith('manual:'):
-                    val = stripped[7:].strip().lower()
-                    verification['manual'] = val == 'true'
-                i += 1
+    Args:
+        raw_items: The raw, still-quoted items for one list field, each paired
+            with its header's form.
+        field_label: Field name used in the message (``steps`` /
+            ``verification.commands``).
 
+    Raises:
+        ValueError: When an item is wrapped in outer double-quotes that
+            ``serialize_toon`` would not have produced.
+    """
+    for raw, bare_header in raw_items:
+        if len(raw) < 2 or not (raw.startswith('"') and raw.endswith('"')):
+            continue
+        if not bare_header and value_needs_quoting(raw[1:-1].replace('\\"', '"')):
+            continue
+        raise ValueError(
+            f'Task contract violation - {field_label} items must not be '
+            f'wrapped in outer double-quotes: {raw!r}. Write list items without '
+            f'outer quotes (inner double-quotes are allowed). See plan-marshall:phase-4-plan SKILL.md.'
+        )
+
+
+def _coerce_steps(raw_steps: Any) -> list[dict[str, str]]:
+    """Normalize the parsed ``steps`` value to ``[{target, intent}, ...]``.
+
+    Accepts both shapes the canonical parser produces: the simple-list form
+    (``steps[N]:`` with ``path (intent)`` rows), where the intent rides as a
+    parenthesized suffix, and the uniform-array form
+    (``steps[N]{target,intent}:``) that ``serialize_toon`` emits for a stored
+    task record, where target and intent are already separate columns.
+
+    Args:
+        raw_steps: The ``steps`` value as returned by ``parse_toon``.
+
+    Returns:
+        The normalized step list; empty when the field carried no rows.
+
+    Raises:
+        ValueError: When a simple-list row omits its required ``(intent)``
+            marker, or an intent is outside the closed vocabulary.
+    """
+    if not isinstance(raw_steps, list):
+        return []
+
+    steps: list[dict[str, str]] = []
+    for raw_step in raw_steps:
+        if isinstance(raw_step, dict):
+            target = str(raw_step.get('target') or '').strip()
+            intent = validate_step_intent(raw_step.get('intent'))
         else:
-            i += 1
+            text = str(raw_step).strip()
+            if not text:
+                continue
+            match = _STEP_INTENT_SUFFIX_RE.match(text)
+            if not match:
+                raise ValueError(
+                    f"Task contract violation - step item '{text}' is missing its "
+                    f'required intent marker. Each step MUST be written as '
+                    f"'path (intent)' where intent is one of: "
+                    + ', '.join(VALID_STEP_INTENTS)
+                    + '. See plan-marshall:manage-tasks/standards/task-contract.md.'
+                )
+            target = match.group('target').strip()
+            intent = validate_step_intent(match.group('intent'))
+        normalized_target = normalize_step_path(target)
+        if normalized_target:
+            steps.append({'target': normalized_target, 'intent': intent})
+    return steps
 
-    # Validate required fields
-    if not result['title']:
+
+def _build_task_record(parsed: dict[str, Any], raw_items: dict[str, list[_RawListItem]]) -> dict[str, Any]:
+    """Apply the task schema to a parsed TOON document.
+
+    Structural parsing has already happened in the canonical parser; everything
+    here is task-schema validation — the two outer-quote guards, the required
+    fields, and the per-field validators.
+
+    Args:
+        parsed: The document as returned by ``parse_toon``.
+        raw_items: Raw, still-quoted list items keyed by list field — each
+            carrying its header's form — as collected by
+            ``_normalize_list_headers``. The outer-quote guards run FIRST, ahead
+            of ``_coerce_steps``, so an illegal quote is named as such rather
+            than surfacing later as a missing intent marker.
+
+    Returns:
+        The normalized task record.
+
+    Raises:
+        ValueError: On any schema violation.
+    """
+    _reject_hand_quoted_items(raw_items.get('steps', []), 'steps')
+    _reject_hand_quoted_items(raw_items.get('commands', []), 'verification.commands')
+
+    title = str(parsed.get('title') or '').strip()
+    domain_raw = str(parsed.get('domain') or '').strip()
+    profile_raw = str(parsed.get('profile') or 'implementation').strip() or 'implementation'
+    origin_raw = str(parsed.get('origin') or 'plan').strip() or 'plan'
+
+    raw_verification = parsed.get('verification')
+    if not isinstance(raw_verification, dict):
+        raw_verification = {}
+    manual_raw = raw_verification.get('manual', False)
+    verification: dict[str, Any] = {
+        'commands': [str(c) for c in (raw_verification.get('commands') or []) if str(c).strip()],
+        'criteria': str(raw_verification.get('criteria') or ''),
+        'manual': manual_raw is True or str(manual_raw).strip().lower() == 'true',
+    }
+
+    steps = _coerce_steps(parsed.get('steps'))
+
+    depends_raw = parsed.get('depends_on') or ''
+    depends_on = parse_depends_on(
+        ', '.join(str(d) for d in depends_raw) if isinstance(depends_raw, list) else str(depends_raw)
+    )
+
+    raw_skills = parsed.get('skills')
+    skills = [str(s).strip() for s in raw_skills if str(s).strip()] if isinstance(raw_skills, list) else []
+
+    if not title:
         raise ValueError('Missing required field: title')
-    if result['deliverable'] == 0 and result.get('origin') != 'holistic':  # 0 is valid for holistic tasks only
+
+    deliverable_raw = parsed.get('deliverable', 0)
+    if deliverable_raw is None or (isinstance(deliverable_raw, str) and not deliverable_raw.strip()):
+        deliverable_raw = 0
+    deliverable = validate_deliverable(deliverable_raw)
+    if deliverable == 0 and origin_raw != 'holistic':
         raise ValueError('Missing required field: deliverable')
-    if not result['domain']:
+    if not domain_raw:
         raise ValueError('Missing required field: domain')
-    if not result['steps']:
+    if not steps:
         raise ValueError('Missing required field: steps (at least one step required)')
 
-    validate_domain(result['domain'])
-    validate_profile(result['profile'])
-    result['deliverable'] = validate_deliverable(result['deliverable'])
-    result['skills'] = validate_skills(result['skills'])
-    if result['origin']:
-        validate_origin(result['origin'])
+    domain = validate_domain(domain_raw)
+    profile = validate_profile(profile_raw)
+    validated_skills = validate_skills(skills)
+    if origin_raw:
+        validate_origin(origin_raw)
 
-    if result['profile'] != 'verification':
-        step_targets = [s['target'] for s in result['steps']]
-        step_errors, step_warnings = validate_steps_are_file_paths(step_targets)
+    if profile != 'verification':
+        step_errors, _ = validate_steps_are_file_paths([s['target'] for s in steps])
         if step_errors:
             raise ValueError(
                 'Task contract violation - steps must be file paths:\n'
@@ -557,7 +643,61 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
                 + '\n\nContract reference: plan-marshall:manage-tasks/standards/task-contract.md'
             )
 
-    return result
+    return {
+        'title': title,
+        'deliverable': deliverable,
+        'domain': domain,
+        'profile': profile,
+        'skills': validated_skills,
+        'origin': origin_raw,
+        'description': str(parsed.get('description') or ''),
+        'steps': steps,
+        'depends_on': depends_on,
+        'verification': verification,
+    }
+
+
+def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
+    """Parse a task definition from its TOON representation.
+
+    Structural parsing is delegated wholly to the canonical
+    ``plan-marshall:ref-toon-format`` parser, so every shape that parser reads is
+    accepted: the length-declared list ``skills[2]:``, the uniform array
+    ``steps[2]{target,intent}:`` that ``serialize_toon`` emits for a stored task
+    record, and — after header normalization — the bare block ``steps:``. A task
+    therefore round-trips through ``parse_stdin_task(serialize_toon(task))``
+    without loss, and this module keeps no TOON reader of its own.
+
+    Task-schema validation stays here: the required ``(intent)`` marker, the
+    step file-path contract, the required-field checks, and the two deliberate
+    outer-double-quote guards.
+
+    Args:
+        stdin_content: The TOON task definition.
+
+    Returns:
+        The normalized task record.
+
+    Raises:
+        ValueError: On any schema violation. When the input also carried keys
+            the schema does not recognize, the message names them, so a
+            mis-serialized field is reported instead of silently discarded. A
+            successful parse stays silent about them.
+    """
+    normalized, raw_items = _normalize_list_headers(stdin_content)
+
+    try:
+        parsed = parse_toon(normalized)
+    except ToonParseError as e:
+        raise ValueError(f'Malformed TOON task definition: {e}') from e
+
+    try:
+        return _build_task_record(parsed, raw_items)
+    except ValueError as e:
+        unrecognized = sorted(k for k in parsed if k not in _KNOWN_TASK_KEYS)
+        if unrecognized:
+            raise ValueError(f'{e} Unrecognized field(s) in input: {", ".join(unrecognized)}.') from e
+        raise
 
 
 def output_error(message: str, error_code: str = 'error') -> dict:

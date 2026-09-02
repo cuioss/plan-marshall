@@ -637,17 +637,16 @@ skills:
   - pm-plugin-development:plugin-architecture
 
 steps:
-  - First step to execute
-  - Second step to execute
-  - Third step to execute
+  - marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md (write-replace)
+  - marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_tasks_core.py (write-replace)
+  - test/plan-marshall/manage-tasks/test_manage_tasks_crud.py (write-new)
 
 depends_on: none
 
 verification:
   commands:
-    - grep -l '```json' marketplace/bundles/*.md | wc -l
-    - mvn verify
-  criteria: All grep commands return 0 (no JSON blocks remain)
+    - python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate plan-marshall"
+  criteria: Quality gate passes with no findings
   manual: false
 ```
 
@@ -660,8 +659,28 @@ verification:
 - `domain`: Domain from references.json (e.g., `java`, `javascript`, `plan-marshall-plugin-dev`)
 - `profile`: Profile key from marshal.json. Standard profiles: `implementation`, `module_testing`, `integration_testing`, `quality`, `verification`, `standalone`
 - `skills`: Array of `bundle:skill` format strings
+- `steps`: Array of repo-relative file paths, each carrying a required trailing `(intent)` marker — `path/to/file.ext (intent)`, where intent is one of `read`, `write-new`, `write-replace`, `delete`. A step without the marker, or one that is not a file path, is rejected.
 - `depends_on`: `none` or task references like `TASK-1, TASK-2`
 - `origin`: `plan` (from task-plan), `fix` (from verify), `sonar`, `pr`, `lint`, `security`, or `documentation`
+
+**List field forms**: structural parsing is delegated to the canonical
+`plan-marshall:ref-toon-format` parser, so `steps`, `skills` and
+`verification.commands` each accept three interchangeable shapes:
+
+| Form | Shape |
+|------|-------|
+| Bare block | `steps:` followed by `  - path (intent)` rows |
+| Length-declared | `steps[2]:` followed by the same `  - path (intent)` rows |
+| Uniform array | `steps[2]{target,intent}:` followed by CSV rows `path,intent` — the shape `serialize_toon` emits for a stored task record |
+
+Because the uniform-array form is accepted, a task record round-trips:
+`parse_stdin_task(serialize_toon(task))` reproduces `steps`, `skills` and
+`verification.commands` without loss.
+
+**Outer quotes**: do not hand-quote list items. A value the serializer must
+quote (one containing `:`, `,` or an embedded `"`) is accepted and unquoted
+automatically; an outer quote on a value that needed none is rejected as an
+anti-pattern.
 
 ### List/Next Filters
 
@@ -685,16 +704,18 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
 # Step 2: Write tool writes TOON content to the returned path, e.g.:
 #   title: Update misc agents to TOON
 #   deliverable: 1
-#   domain: java
+#   domain: plan-marshall-plugin-dev
+#   profile: implementation
+#   skills:
+#     - pm-plugin-development:plugin-maintain
 #   description: Migrate miscellaneous agents from JSON to TOON output format.
 #   steps:
-#     - file1.md
-#     - file2.md
-#     - file3.md
+#     - marketplace/bundles/plan-marshall/agents/execution-context.md (write-replace)
+#     - marketplace/bundles/plan-marshall/skills/ref-toon-format/SKILL.md (write-replace)
 #   verification:
 #     commands:
-#       - mvn verify
-#     criteria: Build passes
+#       - python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate plan-marshall"
+#     criteria: Quality gate passes with no findings
 
 # Step 3: commit
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
@@ -756,7 +777,7 @@ form used by `phase-4-plan`:
 # Step 1: stage the JSON array as a plan-relative file under work/
 python3 .plan/execute-script.py plan-marshall:manage-files:manage-files \
   write --plan-id my-feature --file work/tasks-batch.json \
-  --content '[{"title":"Task A","deliverable":1,"domain":"java","profile":"implementation","skills":[],"steps":["src/main/java/A.java"]},{"title":"Task B","deliverable":1,"domain":"java","profile":"module_testing","skills":[],"steps":["src/test/java/ATest.java"],"depends_on":["TASK-1"]}]'
+  --content '[{"title":"Task A","deliverable":1,"domain":"java","profile":"implementation","skills":[],"steps":[{"target":"src/main/java/A.java","intent":"write-replace"}]},{"title":"Task B","deliverable":1,"domain":"java","profile":"module_testing","skills":[],"steps":[{"target":"src/test/java/ATest.java","intent":"write-new"}],"depends_on":["TASK-1"]}]'
 
 # Step 2: persist the batch atomically by pointing batch-add at the staged file
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks batch-add \
@@ -772,7 +793,7 @@ shell escaping cost is negligible. Phase-4-plan does NOT use this form.
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks batch-add \
   --plan-id my-feature \
-  --tasks-json '[{"title":"Task A","deliverable":1,"domain":"java","profile":"implementation","skills":[],"steps":["src/main/java/A.java"]}]'
+  --tasks-json '[{"title":"Task A","deliverable":1,"domain":"java","profile":"implementation","skills":[],"steps":[{"target":"src/main/java/A.java","intent":"write-replace"}]}]'
 ```
 
 The batch path replaces the per-task `prepare-add` + Write + `commit-add`
@@ -878,10 +899,14 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
 #   title: {task_title}
 #   deliverable: {deliverable_number}
 #   domain: {domain}
+#   profile: {profile}
 #   steps:
-#     - {step1}
-#     - {step2}
+#     - {step1_path} ({step1_intent})
+#     - {step2_path} ({step2_intent})
 #   depends_on: none
+#
+# Each {stepN_path} is a repo-relative file path and each {stepN_intent} is one
+# of read / write-new / write-replace / delete — the trailing marker is required.
 
 # Step 3
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \

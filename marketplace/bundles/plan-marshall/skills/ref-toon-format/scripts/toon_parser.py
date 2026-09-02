@@ -35,6 +35,7 @@ __all__ = [
     'parse_toon',
     'parse_toon_table',
     'serialize_toon',
+    'value_needs_quoting',
 ]
 
 
@@ -453,6 +454,41 @@ def parse_toon_table(content: str, key: str, *, null_markers: set[str] | None = 
     return rows
 
 
+def value_needs_quoting(value: str, table_separator: str = ',') -> bool:
+    """Report whether ``serialize_toon`` would wrap ``value`` in outer double-quotes.
+
+    This is the serializer's own quoting decision, exposed as a named predicate so
+    consumers can discriminate a quote the serializer was OBLIGED to add from a
+    quote a human added by hand. Re-deriving the rule at a call site would
+    duplicate the decision and let the two copies drift; consult this function
+    instead.
+
+    Args:
+        value: The raw (unquoted) string the serializer is about to emit.
+        table_separator: The separator in force for the current uniform-array
+            table (``','`` for CSV rows, ``'\\t'`` for TSV rows). A value
+            containing the active separator must be quoted or it would split the
+            row.
+
+    Returns:
+        ``True`` when the value must be quoted, ``False`` when it may be emitted
+        bare.
+    """
+    return bool(
+        table_separator in value
+        or ',' in value
+        or ':' in value
+        or '\n' in value
+        or '"' in value
+        or value.startswith('#')
+        or value.startswith('- ')
+        or value in ('true', 'false', 'null', '')
+        or re.match(r'^-?\d+$', value)
+        or re.match(r'^-?\d+\.\d+$', value)
+        or re.match(r'^\d+%$', value)
+    )
+
+
 def _serialize_value(value: Any, table_separator: str = ',') -> str:
     """Serialize a Python value to TOON format.
 
@@ -471,20 +507,7 @@ def _serialize_value(value: Any, table_separator: str = ',') -> str:
         return str(value)
     if isinstance(value, str):
         # Quote if contains separator, special characters, or would be misinterpreted
-        needs_quoting = (
-            table_separator in value
-            or ',' in value
-            or ':' in value
-            or '\n' in value
-            or '"' in value
-            or value.startswith('#')
-            or value.startswith('- ')
-            or value in ('true', 'false', 'null', '')
-            or re.match(r'^-?\d+$', value)
-            or re.match(r'^-?\d+\.\d+$', value)
-            or re.match(r'^\d+%$', value)
-        )
-        if needs_quoting:
+        if value_needs_quoting(value, table_separator):
             escaped = value.replace('"', '\\"')
             return f'"{escaped}"'
         return value

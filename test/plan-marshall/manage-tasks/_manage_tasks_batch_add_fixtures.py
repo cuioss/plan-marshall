@@ -128,3 +128,47 @@ _BRACKETED_TASK_TOON = (
     '    - python3 .plan/execute-script.py x:y:z run --command-args "module-tests"\n'
     '  criteria: green\n'
 )
+
+
+#: The third accepted shape: exactly what ``serialize_toon`` emits for a stored
+#: task record. It is pinned as real serializer output rather than hand-typed
+#: prose, because the defect this fixture guards was precisely that the reader
+#: could not read its own serializer: the uniform-array ``steps`` header with
+#: CSV rows, the ``skills`` item the serializer had to quote (it contains ``:``),
+#: and the ``verification.commands`` item it had to quote AND escape (it contains
+#: an embedded ``"``). ``_TABULAR_TASK_TOON_SOURCE`` is the record those bytes
+#: come from, so a test can re-derive them instead of trusting the literal.
+_TABULAR_TASK_TOON_SOURCE = {
+    'title': 'Tabular form',
+    'deliverable': 1,
+    'domain': 'plan-marshall-plugin-dev',
+    'description': 'Tabular steps + quoted skills + quoted commands',
+    'skills': ['pm-plugin-development:plugin-architecture'],
+    'steps': [
+        {'target': 'test/plan-marshall/manage-tasks/test_a.py', 'intent': 'write-replace'},
+        {'target': 'test/plan-marshall/manage-tasks/test_b.py', 'intent': 'write-replace'},
+    ],
+    'depends_on': 'none',
+    'verification': {
+        'commands': ['python3 .plan/execute-script.py x:y:z run --command-args "module-tests"'],
+        'criteria': 'green',
+    },
+}
+
+
+_TABULAR_TASK_TOON = (
+    'title: Tabular form\n'
+    'deliverable: 1\n'
+    'domain: plan-marshall-plugin-dev\n'
+    'description: Tabular steps + quoted skills + quoted commands\n'
+    'skills[1]:\n'
+    '  - "pm-plugin-development:plugin-architecture"\n'
+    'steps[2]{target,intent}:\n'
+    '  test/plan-marshall/manage-tasks/test_a.py,write-replace\n'
+    '  test/plan-marshall/manage-tasks/test_b.py,write-replace\n'
+    'depends_on: none\n'
+    'verification:\n'
+    '  commands[1]:\n'
+    '    - "python3 .plan/execute-script.py x:y:z run --command-args \\"module-tests\\""\n'
+    '  criteria: green\n'
+)
