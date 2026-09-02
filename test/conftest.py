@@ -936,6 +936,15 @@ def pytest_collection_modifyitems(items):
     unmarked, so the backstop skipped exactly the tests it exists for. Every other
     (pure-logic) test still skips the snapshot, which is the cost this scoping was
     introduced to remove.
+
+    **Collection order (``PM_TEST_ORDER``).** Setting ``PM_TEST_ORDER=reverse``
+    reverses ``items`` in place as this hook's LAST action, so a suite can be run
+    in the opposite collection order to expose order-dependent state leaking
+    between tests. Any other value — and the variable's absence — leaves the
+    order untouched, so the default run is byte-for-byte unchanged. Pair it with
+    ``--no-parallel``: the default ``-n auto --dist=loadgroup`` run distributes a
+    module's items across workers, so it neither establishes nor tests a fixed
+    order.
     """
     opted_out = [item.nodeid for item in items if item.get_closest_marker('allow_pollution')]
     if opted_out:
@@ -954,6 +963,9 @@ def pytest_collection_modifyitems(items):
         module_path = getattr(item, 'path', None)
         if module_path is not None and _module_drives_real_state(module_path):
             item.add_marker('touches_real_state')
+
+    if os.environ.get('PM_TEST_ORDER') == 'reverse':
+        items.reverse()
 
 
 # =============================================================================
