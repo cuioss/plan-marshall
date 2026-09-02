@@ -39,14 +39,42 @@ Covers, under ``PLAN_BASE_DIR`` isolation (via ``plan_context``):
   forcing the interleaving requires an in-process seam; a real concurrent race
   reproduces the same states only sporadically and would make the assertion
   flaky.
+
+Three groups here are tabular and are driven as one parametrize each, with the
+``ids`` list carrying the prose the per-case test names held: the validator's
+rejection classes, and the accepting and rejecting halves of the
+``classify_source_id`` grammar. The two grammar halves stay SEPARATE tables
+because they are each other's matched controls.
+
+Three further groups were read and judged NOT to be families:
+
+- ``test_should_return_a_distinct_code_for_each_rejection_class`` and
+  ``test_should_only_report_tokens_from_the_module_vocabulary`` are
+  population-derived: each compares an observed SET against the module's own
+  declaration. Their subject is the set, not a row, so there is no table to make.
+- ``TestInboxWrite``'s seven refusals share an assertion shape but not a setup:
+  two of them (unsafe slug, absent epic tree) deliberately skip ``cmd_scaffold``,
+  and three differ in whether the payload file is materialised, absent, or blank.
+  The varying element is the per-case SETUP rather than a value, so a table would
+  carry callables instead of data and would bury the scaffold-or-not distinction
+  the two non-scaffolded cases exist to make.
+- ``TestInboxListState``'s three zeros (``present`` with ``count: 0``,
+  ``missing``, and ``epic_not_found``) exist precisely to be non-interchangeable,
+  and ``test_should_not_answer_the_two_zeros_with_equal_payloads`` is the matched
+  control over that pair. Collapsing them would assert the sameness the group
+  exists to refute.
 """
 
+import argparse
+import copy
 import os
 import shutil
-from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
-from conftest import load_script_module
+import pytest
+
+from conftest import load_script_module, parse_ns
 
 _inbox = load_script_module(
     'plan-marshall', 'plan-orchestrator', '_orchestrator_inbox.py', 'orchestrator_inbox'
@@ -78,6 +106,52 @@ cmd_scaffold = _orch.cmd_scaffold
 
 EPIC = 'demo-epic'
 SENDER = 'demo-plan'
+
+_ORCH_BUNDLE = 'plan-marshall'
+_ORCH_SKILL = 'plan-orchestrator'
+_ORCH_SCRIPT = 'orchestrator.py'
+
+
+def _verb_args(*argv: str) -> argparse.Namespace:
+    """The namespace ``orchestrator.py``'s OWN parser yields for ``argv``.
+
+    ``register=False`` so building one never publishes a second ``orchestrator``
+    in ``sys.modules`` beside the copy loaded above as ``orchestrator_script``.
+    """
+    args: argparse.Namespace = parse_ns(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, *argv, register=False)
+    return args
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because the values are the
+    parser's own scalars, and the base must stay unmutated for the other callers
+    sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: One parser-derived namespace per orchestrator verb this module drives, hoisted
+#: to module scope because ``parse_ns`` re-executes the script module on every
+#: call. Each carries the two routing discriminators the two-level CLI produces
+#: (``command`` and ``inbox_action``) plus the verb's real flag defaults —
+#: ``write``'s ``--target-plan`` and ``archive``'s ``--as-name`` among them —
+#: none of which the hand-built namespaces they replace had.
+_SCAFFOLD_ARGS = _verb_args('scaffold', '--slug', EPIC)
+_WRITE_ARGS = _verb_args(
+    'inbox', 'write',
+    '--slug', EPIC, '--sender-type', 'plan', '--sender-id', SENDER,
+    '--kind', 'landing', '--payload-file', 'placeholder',
+)
+_VALIDATE_ARGS = _verb_args('inbox', 'validate', '--slug', EPIC, '--message', 'placeholder-001.md')
+_LIST_ARGS = _verb_args('inbox', 'list', '--slug', EPIC)
+_ARCHIVE_ARGS = _verb_args('inbox', 'archive', '--slug', EPIC, '--message', 'placeholder-001.md')
+_DETECT_ARGS = _verb_args('inbox', 'detect', '--source-id', 'placeholder')
 
 
 def _epic_dir(plan_context, slug: str = EPIC) -> Path:
@@ -112,8 +186,9 @@ def _write_args(
     sender_id: str = SENDER,
     kind: str = 'landing',
     payload_file: str = '',
-) -> Namespace:
-    return Namespace(
+) -> argparse.Namespace:
+    return _variant(
+        _WRITE_ARGS,
         slug=slug,
         sender_type=sender_type,
         sender_id=sender_id,
@@ -122,9 +197,9 @@ def _write_args(
     )
 
 
-def _archive_args(message: str, as_name: str | None = None, slug: str = EPIC) -> Namespace:
+def _archive_args(message: str, as_name: str | None = None, slug: str = EPIC) -> argparse.Namespace:
     """Build the ``inbox archive`` argument namespace, override included."""
-    return Namespace(slug=slug, message=message, as_name=as_name)
+    return _variant(_ARCHIVE_ARGS, slug=slug, message=message, as_name=as_name)
 
 
 def _payload(tmp_path: Path, body: str = 'the landing narrative') -> str:
@@ -193,69 +268,62 @@ class TestEnvelopeRoundTrip:
 # =============================================================================
 
 
+def _header_without(field: str) -> str:
+    """The standard header block with ``field``'s line deleted outright.
+
+    Distinct from ``_header_text(field='')``, which keeps the line and blanks its
+    value — the two reach ``missing_header_field`` by different routes, which is
+    why both are rows in the sweep below.
+    """
+    return '\n'.join(
+        line for line in _header_text().split('\n') if not line.startswith(f'{field}=')
+    )
+
+
+#: The exhaustive rejection sweep, as one table: ``(text, expected_epic, filename,
+#: expected_code)``. Every row is a message the validator must refuse, and the
+#: ``ids`` list below carries the prose each row's own test name held.
+_REJECTION_CASES: tuple[tuple[str, str | None, str | None, str], ...] = (
+    (f'{_header_text(kind="")}\n\nbody', None, None, 'missing_header_field'),
+    (f'{_header_without("epic")}\n\nbody', None, None, 'missing_header_field'),
+    (_message(envelope_version=str(ENVELOPE_VERSION + 1)), None, None, 'unknown_envelope_version'),
+    (_message(envelope_version='latest'), None, None, 'unknown_envelope_version'),
+    (_message(sender_type='robot'), None, None, 'invalid_sender_type'),
+    (_message(kind='gossip'), None, None, 'invalid_kind'),
+    (f'{_header_text()}\n\n   \n', None, None, 'empty_payload'),
+    (_header_text(), None, None, 'empty_payload'),
+    (_message(), 'other-epic', None, 'epic_mismatch'),
+    (_message(), None, 'someone-else-001.md', 'filename_sender_mismatch'),
+    (_message(), None, 'notes.md', 'filename_sender_mismatch'),
+)
+
+_REJECTION_IDS = [
+    'missing header field',
+    'absent header line',
+    'unknown envelope version',
+    'non-numeric envelope version',
+    'invalid sender type',
+    'invalid kind',
+    'empty payload',
+    'message with no body at all',
+    'epic mismatch',
+    'filename sender mismatch',
+    'filename outside the message shape',
+]
+
+
 class TestEnvelopeRejections:
-    def test_should_reject_missing_header_field(self):
-        text = f'{_header_text(kind="")}\n\nbody'
-
-        ok, error_code, _ = validate_envelope(text)
-
-        assert (ok, error_code) == (False, 'missing_header_field')
-
-    def test_should_reject_absent_header_line(self):
-        header = '\n'.join(
-            line for line in _header_text().split('\n') if not line.startswith('epic=')
-        )
-
-        ok, error_code, _ = validate_envelope(f'{header}\n\nbody')
-
-        assert (ok, error_code) == (False, 'missing_header_field')
-
-    def test_should_reject_unknown_envelope_version(self):
+    @pytest.mark.parametrize(
+        ('text', 'expected_epic', 'filename', 'expected_code'),
+        _REJECTION_CASES,
+        ids=_REJECTION_IDS,
+    )
+    def test_should_reject(self, text, expected_epic, filename, expected_code):
         ok, error_code, _ = validate_envelope(
-            _message(envelope_version=str(ENVELOPE_VERSION + 1))
+            text, expected_epic=expected_epic, filename=filename
         )
 
-        assert (ok, error_code) == (False, 'unknown_envelope_version')
-
-    def test_should_reject_non_numeric_envelope_version(self):
-        ok, error_code, _ = validate_envelope(_message(envelope_version='latest'))
-
-        assert (ok, error_code) == (False, 'unknown_envelope_version')
-
-    def test_should_reject_invalid_sender_type(self):
-        ok, error_code, _ = validate_envelope(_message(sender_type='robot'))
-
-        assert (ok, error_code) == (False, 'invalid_sender_type')
-
-    def test_should_reject_invalid_kind(self):
-        ok, error_code, _ = validate_envelope(_message(kind='gossip'))
-
-        assert (ok, error_code) == (False, 'invalid_kind')
-
-    def test_should_reject_empty_payload(self):
-        ok, error_code, _ = validate_envelope(f'{_header_text()}\n\n   \n')
-
-        assert (ok, error_code) == (False, 'empty_payload')
-
-    def test_should_reject_message_with_no_body_at_all(self):
-        ok, error_code, _ = validate_envelope(_header_text())
-
-        assert (ok, error_code) == (False, 'empty_payload')
-
-    def test_should_reject_epic_mismatch(self):
-        ok, error_code, _ = validate_envelope(_message(), expected_epic='other-epic')
-
-        assert (ok, error_code) == (False, 'epic_mismatch')
-
-    def test_should_reject_filename_sender_mismatch(self):
-        ok, error_code, _ = validate_envelope(_message(), filename='someone-else-001.md')
-
-        assert (ok, error_code) == (False, 'filename_sender_mismatch')
-
-    def test_should_reject_filename_outside_the_message_shape(self):
-        ok, error_code, _ = validate_envelope(_message(), filename='notes.md')
-
-        assert (ok, error_code) == (False, 'filename_sender_mismatch')
+        assert (ok, error_code) == (False, expected_code)
 
     def test_should_return_a_distinct_code_for_each_rejection_class(self):
         codes = {
@@ -348,117 +416,102 @@ class TestSequenceAllocation:
 # =============================================================================
 
 
+#: The pointer form ``test_should_tolerate_surrounding_whitespace`` wraps — named
+#: once so the padded input and the un-padded expected id cannot drift apart.
+_BARE_NUMBERED_POINTER = '.plan/local/orchestrator/my-epic/plans/PLAN-7.md'
+
+#: The ACCEPTING grammar sweep, as one table: ``(source_id, expected_epic,
+#: expected_id)``. Every row is a settled pointer form the classifier must accept.
+_ACCEPTED_SOURCE_IDS = (
+    (
+        '.plan/local/orchestrator/truthful-signals/plans/PLAN-55-inbox.md',
+        'truthful-signals',
+        '.plan/local/orchestrator/truthful-signals/plans/PLAN-55-inbox.md',
+    ),
+    (_BARE_NUMBERED_POINTER, 'my-epic', _BARE_NUMBERED_POINTER),
+    (f'  {_BARE_NUMBERED_POINTER}\n', 'my-epic', _BARE_NUMBERED_POINTER),
+    (
+        '.plan/local/orchestrator/my-epic/plans/PLAN-03-content-search-seam.md',
+        'my-epic',
+        '.plan/local/orchestrator/my-epic/plans/PLAN-03-content-search-seam.md',
+    ),
+    (
+        '.plan/local/orchestrator/my-epic/plans/PLAN-CIS-01-content-search-seam.md',
+        'my-epic',
+        '.plan/local/orchestrator/my-epic/plans/PLAN-CIS-01-content-search-seam.md',
+    ),
+    (
+        '.plan/local/orchestrator/my-epic/plans/CIS-01-content-search-seam.md',
+        'my-epic',
+        '.plan/local/orchestrator/my-epic/plans/CIS-01-content-search-seam.md',
+    ),
+)
+
+_ACCEPTED_SOURCE_ID_IDS = [
+    'orchestrator plan spec pointer',
+    'bare numbered spec',
+    'surrounding whitespace tolerated',
+    'plan-prefixed numbered form',
+    'plan-prefixed slug-scoped form',
+    'bare slug-scoped form',
+]
+
+#: The REJECTING grammar sweep, as one table: ``(source_id, expected_detection)``.
+#: Kept a separate table from the accepting one on purpose — the accept and reject
+#: halves are the matched controls for each other, and collapsing them into one
+#: parametrize would erase that pairing.
+_REJECTED_SOURCE_IDS = (
+    ('a request typed by the operator', 'not_orchestrator_pointer'),
+    ('doc/developer/build.adoc', 'not_orchestrator_pointer'),
+    ('', 'not_orchestrator_pointer'),
+    ('.plan/local/orchestrator/../../etc/plans/PLAN-1.md', 'not_orchestrator_pointer'),
+    ('.plan/local/orchestrator/..evil/plans/PLAN-1.md', 'unsafe_slug'),
+    # Orchestrator-SHAPED, id segment unrecognised — the case whose
+    # reclassification was previously silent.
+    ('.plan/local/orchestrator/my-epic/plans/README.md', 'unrecognised_id'),
+    # Over-acceptance guard: an optional-slug-group regex would accept a bare
+    # ``01-foo.md`` that is neither PLAN-prefixed nor slug-prefixed.
+    ('.plan/local/orchestrator/my-epic/plans/01-foo.md', 'unrecognised_id'),
+    ('.plan/local/orchestrator/my-epic/plans/cis-01-foo.md', 'unrecognised_id'),
+    # Bound guard: the slug token caps at eight characters, so a nine-character
+    # token is outside the widened grammar.
+    ('.plan/local/orchestrator/my-epic/plans/ABCDEFGHI-01-foo.md', 'unrecognised_id'),
+)
+
+_REJECTED_SOURCE_ID_IDS = [
+    'prose description',
+    'unrelated path',
+    'empty source id',
+    'traversal-bearing pointer',
+    'unsafe slug',
+    'non-plan file in the plans dir',
+    'id segment carrying no form prefix',
+    'lowercase slug token',
+    'over-long slug token',
+]
+
+
 class TestClassifySourceId:
-    def test_should_classify_an_orchestrator_plan_spec_pointer(self):
-        pointer = '.plan/local/orchestrator/truthful-signals/plans/PLAN-55-inbox.md'
-
-        assert classify_source_id(pointer) == (
+    @pytest.mark.parametrize(
+        ('source_id', 'expected_epic', 'expected_id'),
+        _ACCEPTED_SOURCE_IDS,
+        ids=_ACCEPTED_SOURCE_ID_IDS,
+    )
+    def test_should_classify(self, source_id, expected_epic, expected_id):
+        assert classify_source_id(source_id) == (
             True,
-            'truthful-signals',
-            pointer,
+            expected_epic,
+            expected_id,
             'orchestrated',
         )
 
-    def test_should_classify_a_bare_numbered_spec(self):
-        pointer = '.plan/local/orchestrator/my-epic/plans/PLAN-7.md'
-
-        assert classify_source_id(pointer) == (True, 'my-epic', pointer, 'orchestrated')
-
-    def test_should_tolerate_surrounding_whitespace(self):
-        pointer = '.plan/local/orchestrator/my-epic/plans/PLAN-7.md'
-
-        assert classify_source_id(f'  {pointer}\n') == (
-            True,
-            'my-epic',
-            pointer,
-            'orchestrated',
-        )
-
-    def test_should_classify_a_plan_prefixed_numbered_form(self):
-        pointer = (
-            '.plan/local/orchestrator/my-epic/plans/PLAN-03-content-search-seam.md'
-        )
-
-        assert classify_source_id(pointer) == (True, 'my-epic', pointer, 'orchestrated')
-
-    def test_should_classify_a_plan_prefixed_slug_scoped_form(self):
-        pointer = (
-            '.plan/local/orchestrator/my-epic/plans/PLAN-CIS-01-content-search-seam.md'
-        )
-
-        assert classify_source_id(pointer) == (True, 'my-epic', pointer, 'orchestrated')
-
-    def test_should_classify_a_bare_slug_scoped_form(self):
-        pointer = (
-            '.plan/local/orchestrator/my-epic/plans/CIS-01-content-search-seam.md'
-        )
-
-        assert classify_source_id(pointer) == (True, 'my-epic', pointer, 'orchestrated')
-
-    def test_should_reject_a_prose_description(self):
-        assert classify_source_id('a request typed by the operator') == (
-            False,
-            None,
-            None,
-            'not_orchestrator_pointer',
-        )
-
-    def test_should_reject_an_unrelated_path(self):
-        assert classify_source_id('doc/developer/build.adoc') == (
-            False,
-            None,
-            None,
-            'not_orchestrator_pointer',
-        )
-
-    def test_should_reject_an_empty_source_id(self):
-        assert classify_source_id('') == (
-            False,
-            None,
-            None,
-            'not_orchestrator_pointer',
-        )
-
-    def test_should_reject_a_traversal_bearing_pointer(self):
-        pointer = '.plan/local/orchestrator/../../etc/plans/PLAN-1.md'
-
-        assert classify_source_id(pointer) == (
-            False,
-            None,
-            None,
-            'not_orchestrator_pointer',
-        )
-
-    def test_should_reject_an_unsafe_slug(self):
-        pointer = '.plan/local/orchestrator/..evil/plans/PLAN-1.md'
-
-        assert classify_source_id(pointer) == (False, None, None, 'unsafe_slug')
-
-    def test_should_reject_a_non_plan_file_in_the_plans_dir(self):
-        # Orchestrator-SHAPED, id segment unrecognised — the case whose
-        # reclassification was previously silent.
-        pointer = '.plan/local/orchestrator/my-epic/plans/README.md'
-
-        assert classify_source_id(pointer) == (False, None, None, 'unrecognised_id')
-
-    def test_should_reject_an_id_segment_carrying_no_form_prefix(self):
-        # Over-acceptance guard: an optional-slug-group regex would accept a
-        # bare ``01-foo.md`` that is neither PLAN-prefixed nor slug-prefixed.
-        pointer = '.plan/local/orchestrator/my-epic/plans/01-foo.md'
-
-        assert classify_source_id(pointer) == (False, None, None, 'unrecognised_id')
-
-    def test_should_reject_a_lowercase_slug_token(self):
-        pointer = '.plan/local/orchestrator/my-epic/plans/cis-01-foo.md'
-
-        assert classify_source_id(pointer) == (False, None, None, 'unrecognised_id')
-
-    def test_should_reject_an_over_long_slug_token(self):
-        # Bound guard: the slug token caps at eight characters, so a
-        # nine-character token is outside the widened grammar.
-        pointer = '.plan/local/orchestrator/my-epic/plans/ABCDEFGHI-01-foo.md'
-
-        assert classify_source_id(pointer) == (False, None, None, 'unrecognised_id')
+    @pytest.mark.parametrize(
+        ('source_id', 'expected_detection'),
+        _REJECTED_SOURCE_IDS,
+        ids=_REJECTED_SOURCE_ID_IDS,
+    )
+    def test_should_reject(self, source_id, expected_detection):
+        assert classify_source_id(source_id) == (False, None, None, expected_detection)
 
     def test_should_only_report_tokens_from_the_module_vocabulary(self):
         # Population-derived: the observed tokens are compared against the
@@ -485,7 +538,7 @@ class TestClassifySourceId:
 
 class TestInboxWrite:
     def test_should_write_a_validating_message(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
 
         result = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
 
@@ -502,7 +555,7 @@ class TestInboxWrite:
     def test_should_stamp_the_supplied_sender_and_epic_in_the_header(
         self, plan_context, tmp_path
     ):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         cmd_inbox_write(
             _write_args(kind='candidate-lesson', payload_file=_payload(tmp_path))
         )
@@ -517,7 +570,7 @@ class TestInboxWrite:
     def test_should_append_a_second_message_without_clobbering(
         self, plan_context, tmp_path
     ):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         cmd_inbox_write(_write_args(payload_file=_payload(tmp_path, 'first body')))
 
         result = cmd_inbox_write(
@@ -529,7 +582,7 @@ class TestInboxWrite:
         assert 'first body' in first
 
     def test_should_carry_the_payload_body_verbatim(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         body = '## What landed\n\n- one thing\n- another thing'
         cmd_inbox_write(_write_args(payload_file=_payload(tmp_path, body)))
 
@@ -546,7 +599,7 @@ class TestInboxWrite:
         assert result['error'] == 'invalid_slug'
 
     def test_should_reject_an_unsafe_sender_id(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
 
         result = cmd_inbox_write(
             _write_args(sender_id='../escape', payload_file=_payload(tmp_path))
@@ -556,7 +609,7 @@ class TestInboxWrite:
         assert result['error'] == 'invalid_sender_id'
 
     def test_should_reject_an_unknown_sender_type(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
 
         result = cmd_inbox_write(
             _write_args(sender_type='robot', payload_file=_payload(tmp_path))
@@ -566,7 +619,7 @@ class TestInboxWrite:
         assert result['error'] == 'invalid_sender_type'
 
     def test_should_reject_an_unknown_kind(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
 
         result = cmd_inbox_write(
             _write_args(kind='gossip', payload_file=_payload(tmp_path))
@@ -584,7 +637,7 @@ class TestInboxWrite:
         assert result['error'] == 'epic_not_found'
 
     def test_should_reject_a_missing_payload_file(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
 
         result = cmd_inbox_write(
             _write_args(payload_file=str(tmp_path / 'absent.md'))
@@ -594,7 +647,7 @@ class TestInboxWrite:
         assert result['error'] == 'payload_not_found'
 
     def test_should_reject_an_empty_payload_file(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
 
         result = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path, '   \n')))
 
@@ -602,7 +655,7 @@ class TestInboxWrite:
         assert result['error'] == 'empty_payload'
 
     def test_should_leave_every_non_inbox_path_untouched(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         status_path = _epic_dir(plan_context) / 'status.json'
         status_path.write_text('{"kind": "orchestrator"}', encoding='utf-8')
 
@@ -623,10 +676,10 @@ class TestInboxValidate:
     def test_should_accept_a_message_written_by_the_write_verb(
         self, plan_context, tmp_path
     ):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         written = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
 
-        result = cmd_inbox_validate(Namespace(slug=EPIC, message=written['message']))
+        result = cmd_inbox_validate(_variant(_VALIDATE_ARGS, message=written['message']))
 
         assert result['status'] == 'success'
         assert result['operation'] == 'inbox-validate'
@@ -634,20 +687,20 @@ class TestInboxValidate:
         assert result['kind'] == 'landing'
 
     def test_should_surface_the_validator_error_code(self, plan_context):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         path = _inbox_dir(plan_context) / f'{SENDER}-001.md'
         path.write_text(_message(envelope_version='99'), encoding='utf-8')
 
-        result = cmd_inbox_validate(Namespace(slug=EPIC, message=path.name))
+        result = cmd_inbox_validate(_variant(_VALIDATE_ARGS, message=path.name))
 
         assert result['status'] == 'error'
         assert result['error'] == 'unknown_envelope_version'
 
     def test_should_reject_a_message_name_carrying_a_path(self, plan_context):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
 
         result = cmd_inbox_validate(
-            Namespace(slug=EPIC, message='../status.json')
+            _variant(_VALIDATE_ARGS, message='../status.json')
         )
 
         assert result['status'] == 'error'
@@ -657,18 +710,22 @@ class TestInboxValidate:
         # ``file_not_found`` stays reachable, and now means present at NEITHER
         # inbox/ nor inbox/archive/ — the assertion pins both absences so the
         # narrowed meaning cannot be read as "the archive probe swallowed it".
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         inbox = _inbox_dir(plan_context)
         assert not (inbox / 'absent-001.md').exists()
         assert not (inbox / 'archive' / 'absent-001.md').exists()
 
-        result = cmd_inbox_validate(Namespace(slug=EPIC, message='absent-001.md'))
+        result = cmd_inbox_validate(_variant(_VALIDATE_ARGS, message='absent-001.md'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'file_not_found'
 
     def test_should_reject_an_unsafe_slug(self, plan_context):
-        result = cmd_inbox_validate(Namespace(slug='../evil', message='x-001.md'))
+        # The traversal slug is injected onto the derived namespace rather than
+        # parsed: ``--slug`` carries a validating ``type=``, so the CLI rejects
+        # ``../evil`` before the handler ever sees it. The handler's own guard is
+        # defence in depth, and injecting the value is what still reaches it.
+        result = cmd_inbox_validate(_variant(_VALIDATE_ARGS, slug='../evil', message='x-001.md'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_slug'
@@ -676,10 +733,10 @@ class TestInboxValidate:
     def test_should_report_the_queued_location_for_a_live_message(
         self, plan_context, tmp_path
     ):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         written = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
 
-        result = cmd_inbox_validate(Namespace(slug=EPIC, message=written['message']))
+        result = cmd_inbox_validate(_variant(_VALIDATE_ARGS, message=written['message']))
 
         assert result['status'] == 'success'
         assert result['location'] == 'queued'
@@ -690,12 +747,12 @@ class TestInboxValidate:
     ):
         # The defect this fixes: a drained message was indistinguishable from a
         # never-written one, because both answered ``file_not_found``.
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         written = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
         cmd_inbox_archive(_archive_args(written['message']))
         assert not (_inbox_dir(plan_context) / written['message']).exists()
 
-        result = cmd_inbox_validate(Namespace(slug=EPIC, message=written['message']))
+        result = cmd_inbox_validate(_variant(_VALIDATE_ARGS, message=written['message']))
 
         assert result['status'] == 'success'
         assert result['location'] == 'archived'
@@ -707,12 +764,12 @@ class TestInboxValidate:
         # Success-payload field symmetry: the archived branch is not a reduced
         # payload — it carries every field the queued branch carries, so a
         # consumer never has to special-case where the message was found.
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         written = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
-        queued = cmd_inbox_validate(Namespace(slug=EPIC, message=written['message']))
+        queued = cmd_inbox_validate(_variant(_VALIDATE_ARGS, message=written['message']))
         cmd_inbox_archive(_archive_args(written['message']))
 
-        archived = cmd_inbox_validate(Namespace(slug=EPIC, message=written['message']))
+        archived = cmd_inbox_validate(_variant(_VALIDATE_ARGS, message=written['message']))
 
         # The header fields the success payload surfaces; ``epic`` rides the
         # payload as ``slug``, so the reported set is HEADER_FIELDS minus it.
@@ -728,21 +785,21 @@ class TestInboxValidate:
     ):
         # An archived message is not trusted on account of being archived: the
         # identical rejection codes still fire against it.
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         archive = _inbox_dir(plan_context) / 'archive'
         archive.mkdir(parents=True, exist_ok=True)
         (archive / f'{SENDER}-001.md').write_text(
             _message(envelope_version='99'), encoding='utf-8'
         )
 
-        result = cmd_inbox_validate(Namespace(slug=EPIC, message=f'{SENDER}-001.md'))
+        result = cmd_inbox_validate(_variant(_VALIDATE_ARGS, message=f'{SENDER}-001.md'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'unknown_envelope_version'
 
     def test_should_prefer_the_live_queue_over_the_archive(self, plan_context):
         # Probe ORDER: with the name present at both paths, the live queue wins.
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         inbox = _inbox_dir(plan_context)
         (inbox / f'{SENDER}-001.md').write_text(_message(kind='landing'), encoding='utf-8')
         archive = inbox / 'archive'
@@ -751,7 +808,7 @@ class TestInboxValidate:
             _message(kind='finding'), encoding='utf-8'
         )
 
-        result = cmd_inbox_validate(Namespace(slug=EPIC, message=f'{SENDER}-001.md'))
+        result = cmd_inbox_validate(_variant(_VALIDATE_ARGS, message=f'{SENDER}-001.md'))
 
         assert result['location'] == 'queued'
         assert result['kind'] == 'landing'
@@ -774,10 +831,10 @@ class TestInboxListState:
     def test_should_report_present_state_and_the_scanned_directory(
         self, plan_context, tmp_path
     ):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
 
-        result = cmd_inbox_list(Namespace(slug=EPIC))
+        result = cmd_inbox_list(_LIST_ARGS)
 
         assert result['status'] == 'success'
         assert result['inbox_state'] == 'present'
@@ -788,10 +845,10 @@ class TestInboxListState:
         self, plan_context
     ):
         # Zero #3: it looked at a real directory and found nothing.
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         assert _inbox_dir(plan_context).is_dir()
 
-        result = cmd_inbox_list(Namespace(slug=EPIC))
+        result = cmd_inbox_list(_LIST_ARGS)
 
         assert result['status'] == 'success'
         assert result['count'] == 0
@@ -801,10 +858,10 @@ class TestInboxListState:
         self, plan_context
     ):
         # Zero #2: the epic tree is there but the enumeration could not look.
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         _inbox_dir(plan_context).rmdir()
 
-        result = cmd_inbox_list(Namespace(slug=EPIC))
+        result = cmd_inbox_list(_LIST_ARGS)
 
         assert result['count'] == 0
         assert result['inbox_state'] == 'missing'
@@ -817,11 +874,11 @@ class TestInboxListState:
         # not look" and a zero meaning "looked, found nothing" agree on `count`
         # and on `status`, so they MUST differ somewhere in the payload — the
         # discriminator is what makes them separately representable.
-        cmd_scaffold(Namespace(slug=EPIC))
-        looked = cmd_inbox_list(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        looked = cmd_inbox_list(_LIST_ARGS)
         _inbox_dir(plan_context).rmdir()
 
-        could_not_look = cmd_inbox_list(Namespace(slug=EPIC))
+        could_not_look = cmd_inbox_list(_LIST_ARGS)
 
         assert looked['count'] == could_not_look['count'] == 0
         assert looked['status'] == could_not_look['status'] == 'success'
@@ -833,17 +890,17 @@ class TestInboxListState:
     ):
         # The discriminator rides the PAYLOAD, never the status — an absent
         # inbox/ must not abort a drain.
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         _inbox_dir(plan_context).rmdir()
 
-        result = cmd_inbox_list(Namespace(slug=EPIC))
+        result = cmd_inbox_list(_LIST_ARGS)
 
         assert result['status'] == 'success'
         assert 'error' not in result
 
     def test_should_keep_epic_not_found_as_the_third_zero(self, plan_context):
         # Zero #1: no epic tree at all, retained unchanged as an error branch.
-        result = cmd_inbox_list(Namespace(slug='never-scaffolded'))
+        result = cmd_inbox_list(_variant(_LIST_ARGS, slug='never-scaffolded'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'epic_not_found'
@@ -852,10 +909,10 @@ class TestInboxListState:
     def test_should_only_report_states_from_the_module_vocabulary(self, plan_context):
         # Population-derived and two-sided: every declared state is reachable
         # and no case reports one outside the module's own frozenset.
-        cmd_scaffold(Namespace(slug=EPIC))
-        present = cmd_inbox_list(Namespace(slug=EPIC))['inbox_state']
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        present = cmd_inbox_list(_LIST_ARGS)['inbox_state']
         _inbox_dir(plan_context).rmdir()
-        absent = cmd_inbox_list(Namespace(slug=EPIC))['inbox_state']
+        absent = cmd_inbox_list(_LIST_ARGS)['inbox_state']
 
         assert {present, absent} == INBOX_STATES
 
@@ -876,7 +933,7 @@ class TestInboxListStateUnderConcurrentDrain:
     def test_should_not_pair_a_non_zero_count_with_the_missing_state(
         self, plan_context, tmp_path, monkeypatch
     ):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
         inbox = _inbox_dir(plan_context)
         real_list_messages = _inbox.list_messages
@@ -891,7 +948,7 @@ class TestInboxListStateUnderConcurrentDrain:
 
         monkeypatch.setattr(_inbox, 'list_messages', draining_list_messages)
 
-        result = cmd_inbox_list(Namespace(slug=EPIC))
+        result = cmd_inbox_list(_LIST_ARGS)
 
         assert not inbox.exists(), (
             'the seam did not fire — the assertion below would pass vacuously '
@@ -988,7 +1045,7 @@ def _open_race_window(monkeypatch, trigger_dir: Path, side_effect) -> None:
 
 class TestInboxArchiveRace:
     def _seed(self, plan_context, tmp_path) -> tuple[Path, Path, Path]:
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         cmd_inbox_write(_write_args(payload_file=_payload(tmp_path, 'my body')))
         inbox = _inbox_dir(plan_context)
         archive_dir = inbox / 'archive'
@@ -1008,7 +1065,7 @@ class TestInboxArchiveRace:
             lambda: dest.write_text('the winner audit record\n', encoding='utf-8'),
         )
 
-        result = cmd_inbox_archive(Namespace(slug=EPIC, message=source.name))
+        result = cmd_inbox_archive(_variant(_ARCHIVE_ARGS, message=source.name))
 
         assert result['status'] == 'error'
         assert result['error'] == 'archive_conflict'
@@ -1028,7 +1085,7 @@ class TestInboxArchiveRace:
         # idempotent success, not ``archive_conflict``.
         _open_race_window(monkeypatch, dest.parent, lambda: os.link(source, dest))
 
-        result = cmd_inbox_archive(Namespace(slug=EPIC, message=source.name))
+        result = cmd_inbox_archive(_variant(_ARCHIVE_ARGS, message=source.name))
 
         assert result['status'] == 'success'
         assert result['already_archived'] is True
@@ -1045,7 +1102,7 @@ class TestInboxArchiveRace:
         # letting the OSError escape.
         self._seed(plan_context, tmp_path)
 
-        result = cmd_inbox_archive(Namespace(slug=EPIC, message='archive'))
+        result = cmd_inbox_archive(_variant(_ARCHIVE_ARGS, message='archive'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_message_name'
@@ -1062,7 +1119,7 @@ class TestInboxArchiveRace:
 
         _open_race_window(monkeypatch, dest.parent, concurrent_winner)
 
-        result = cmd_inbox_archive(Namespace(slug=EPIC, message=source.name))
+        result = cmd_inbox_archive(_variant(_ARCHIVE_ARGS, message=source.name))
 
         assert result['status'] == 'success'
         assert result['already_archived'] is True
@@ -1075,7 +1132,7 @@ class TestInboxArchiveRace:
         source, _archive_dir, dest = self._seed(plan_context, tmp_path)
         _open_race_window(monkeypatch, dest.parent, source.unlink)
 
-        result = cmd_inbox_archive(Namespace(slug=EPIC, message=source.name))
+        result = cmd_inbox_archive(_variant(_ARCHIVE_ARGS, message=source.name))
 
         assert result['status'] == 'error'
         assert result['error'] == 'file_not_found'
@@ -1153,7 +1210,7 @@ class TestArchiveAwareAllocation:
         # (b) The full write -> drain -> write -> drain cycle: the second write
         # lands at -002 and its archival succeeds instead of colliding with the
         # retired -001 record.
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         first = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path, 'first')))
         cmd_inbox_archive(_archive_args(first['message']))
 
@@ -1178,7 +1235,7 @@ class TestArchiveAwareAllocation:
 
 class TestInboxArchiveClaimPins:
     def _seed(self, plan_context, tmp_path) -> tuple[Path, Path]:
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         cmd_inbox_write(_write_args(payload_file=_payload(tmp_path, 'my body')))
         inbox = _inbox_dir(plan_context)
         source = inbox / f'{SENDER}-001.md'
@@ -1233,7 +1290,7 @@ class TestInboxArchiveAsName:
         subdirectory, where both the twin and any sender-preserving recovery
         name land.
         """
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         cmd_inbox_write(_write_args(payload_file=_payload(tmp_path, 'stranded body')))
         inbox = _inbox_dir(plan_context)
         source = inbox / f'{SENDER}-001.md'
@@ -1298,7 +1355,7 @@ class TestInboxArchiveAsName:
     def test_should_refuse_an_override_when_no_sender_is_derivable(
         self, plan_context, tmp_path
     ):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         inbox = _inbox_dir(plan_context)
         off_shape = inbox / 'notes.md'
         off_shape.write_text('not a message\n', encoding='utf-8')
@@ -1314,7 +1371,7 @@ class TestInboxArchiveAsName:
     def test_should_leave_the_default_destination_path_unchanged(
         self, plan_context, tmp_path
     ):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         written = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
 
         result = cmd_inbox_archive(_archive_args(written['message'], as_name=None))
@@ -1333,7 +1390,7 @@ class TestInboxDetect:
     def test_should_report_the_epic_for_an_orchestrated_pointer(self):
         pointer = '.plan/local/orchestrator/my-epic/plans/PLAN-3-thing.md'
 
-        result = cmd_inbox_detect(Namespace(source_id=pointer))
+        result = cmd_inbox_detect(_variant(_DETECT_ARGS, source_id=pointer))
 
         assert result['status'] == 'success'
         assert result['orchestrated'] is True
@@ -1342,7 +1399,7 @@ class TestInboxDetect:
         assert result['detection'] == 'orchestrated'
 
     def test_should_report_not_orchestrated_for_a_plain_description(self):
-        result = cmd_inbox_detect(Namespace(source_id='fix the flaky test'))
+        result = cmd_inbox_detect(_variant(_DETECT_ARGS, source_id='fix the flaky test'))
 
         assert result['orchestrated'] is False
         assert result['epic'] == ''
@@ -1355,7 +1412,7 @@ class TestInboxDetect:
         # from a plain non-pointer.
         pointer = '.plan/local/orchestrator/my-epic/plans/PLAN-CIS-alpha.md'
 
-        result = cmd_inbox_detect(Namespace(source_id=pointer))
+        result = cmd_inbox_detect(_variant(_DETECT_ARGS, source_id=pointer))
 
         assert result['orchestrated'] is False
         assert result['epic'] == ''
