@@ -7,7 +7,7 @@ data block ONCE and exposes stable accessors so the finding store, the re-review
 strategy registry, the producer pre-filter, and the rate-limit detector DERIVE
 what they need instead of hard-coding the shipped bot set across several code
 files. Three bots ship today
-(``coderabbit``, ``pr-agent``, ``sourcery``), and that count is asserted from
+(``coderabbit``, ``cuioss-review-bot``, ``sourcery``), and that count is asserted from
 :data:`_SHIPPED_BOTS` rather than restated per test.
 
 Coverage:
@@ -32,7 +32,7 @@ import re
 import bot_registry
 
 # The bots shipped as standards docs in this skill.
-_SHIPPED_BOTS = ['coderabbit', 'pr-agent', 'sourcery']
+_SHIPPED_BOTS = ['coderabbit', 'cuioss-review-bot', 'sourcery']
 
 
 # =============================================================================
@@ -53,27 +53,58 @@ def test_bot_kinds_is_deterministically_sorted():
 
 
 def test_login_to_bot_kind_maps_every_shipped_author():
-    """Each shipped bot's ``author_login`` resolves to its ``bot_kind``."""
+    """Each shipped bot's ``author_login`` resolves to its ``bot_kind``.
+
+    The ``cuioss-review-bot`` entry maps a key to an IDENTICAL value, and that is
+    the deliberate contract rather than a copy-paste slip: this reviewer's config
+    token and its GitHub author login are ONE name, so the map sends it to itself.
+    Collapsing the two was the point of the rename — a config naming the bot by a
+    token its reviews are not authored under reads as a bot that never reviewed.
+    The dedicated assertion below states the identity explicitly so a future reader
+    cannot "fix" it back into a spurious second name.
+    """
     mapping = bot_registry.login_to_bot_kind()
     assert mapping == {
         'coderabbitai': 'coderabbit',
-        'cuioss-review-bot': 'pr-agent',
+        'cuioss-review-bot': 'cuioss-review-bot',
         'sourcery-ai': 'sourcery',
     }
+
+
+def test_cuioss_review_bot_login_and_kind_are_the_same_name():
+    """The login and the bot_kind are deliberately the same string — pinned here.
+
+    The regression guard for the rename: any future edit that reintroduces a
+    distinct ``bot_kind`` for this reviewer (so that its config token and its
+    review-author login diverge again) turns this red. Derived from the registry
+    on both sides rather than restating the literal twice, so the assertion is
+    about the IDENTITY holding, not about one hard-coded spelling.
+    """
+    mapping = bot_registry.login_to_bot_kind()
+
+    assert 'cuioss-review-bot' in mapping, (
+        'the cuioss-review-bot record is absent from the registry — the identity '
+        'assertion below would be vacuous'
+    )
+    assert mapping['cuioss-review-bot'] == 'cuioss-review-bot'
+    # ...and the round trip holds through the normalising lookup real callers use,
+    # including the ``[bot]``-suffixed form the provider reports on some paths.
+    assert bot_registry.bot_kind_for_login('cuioss-review-bot') == 'cuioss-review-bot'
+    assert bot_registry.bot_kind_for_login('cuioss-review-bot[bot]') == 'cuioss-review-bot'
 
 
 def test_trigger_comment_per_bot():
     """Each bot's re-review trigger comment is read from its data block."""
     assert bot_registry.trigger_comment('coderabbit') == '@coderabbitai review'
     assert bot_registry.trigger_comment('sourcery') == '@sourcery-ai review'
-    assert bot_registry.trigger_comment('pr-agent') == '/review'
+    assert bot_registry.trigger_comment('cuioss-review-bot') == '/review'
 
 
 def test_completion_check_name_per_bot():
     """CodeRabbit publishes an in-progress completion check-run; the others do not."""
     assert bot_registry.completion_check_name('coderabbit') == 'CodeRabbit'
     assert bot_registry.completion_check_name('sourcery') == ''
-    assert bot_registry.completion_check_name('pr-agent') == ''
+    assert bot_registry.completion_check_name('cuioss-review-bot') == ''
 
 
 def test_honors_skip_label_per_bot():
@@ -85,7 +116,7 @@ def test_honors_skip_label_per_bot():
     The registry records the observable behaviour, not the mechanism.
     """
     assert bot_registry.honors_skip_label('coderabbit') is True
-    assert bot_registry.honors_skip_label('pr-agent') is True
+    assert bot_registry.honors_skip_label('cuioss-review-bot') is True
     assert bot_registry.honors_skip_label('sourcery') is False
 
 
@@ -98,7 +129,7 @@ def test_ignore_patterns_are_nonempty_literal_markers():
     sourcery = bot_registry.ignore_patterns('sourcery')
     assert 'found 0 issues' in sourcery
 
-    pr_agent = bot_registry.ignore_patterns('pr-agent')
+    pr_agent = bot_registry.ignore_patterns('cuioss-review-bot')
     assert '## PR Agent Walkthrough' in pr_agent
     # The persistent-review update notice carries no review content, and is authored by the
     # reviewer identity, so without this marker it reaches triage as a candidate finding.
@@ -129,7 +160,7 @@ def test_contentless_review_markers_only_declared_by_pr_agent():
     a membership check — a re-wrapped value must turn it red here, at the data
     boundary, and not only in the producer's behavioural suite.
     """
-    assert bot_registry.contentless_review_markers('pr-agent') == [
+    assert bot_registry.contentless_review_markers('cuioss-review-bot') == [
         '## PR Reviewer Guide',
         'No security concerns identified',
         'PR contains tests',
@@ -140,7 +171,7 @@ def test_contentless_review_markers_only_declared_by_pr_agent():
 
 def test_actionable_content_markers_only_declared_by_pr_agent():
     """``<details>`` is PR-Agent's disqualifying marker; the other two declare none."""
-    assert bot_registry.actionable_content_markers('pr-agent') == ['<details>']
+    assert bot_registry.actionable_content_markers('cuioss-review-bot') == ['<details>']
     assert bot_registry.actionable_content_markers('coderabbit') == []
     assert bot_registry.actionable_content_markers('sourcery') == []
 
@@ -155,14 +186,14 @@ def test_contentless_markers_survive_inline_comment_stripping():
     heading marker to the empty string — which the producer's fail-closed
     short-circuit would then read as "this bot declared nothing".
     """
-    markers = bot_registry.contentless_review_markers('pr-agent')
+    markers = bot_registry.contentless_review_markers('cuioss-review-bot')
     for marker in markers:
         assert marker
         assert 'CONFIRMED' not in marker
         assert marker == marker.strip()
     # The quoted-``#`` case specifically: the heading keeps its markdown prefix.
     assert '## PR Reviewer Guide' in markers
-    assert bot_registry.actionable_content_markers('pr-agent') == ['<details>']
+    assert bot_registry.actionable_content_markers('cuioss-review-bot') == ['<details>']
 
 
 def test_severity_map_per_bot():
@@ -177,7 +208,7 @@ def test_severity_map_per_bot():
     # PR-Agent's map is an ASSIGNMENT map keyed on the review-table row a finding
     # came from — the observed review emits no severity vocabulary to parse. All
     # three keys are asserted so a dropped row is caught, not just the first.
-    pr_agent = bot_registry.severity_map('pr-agent')
+    pr_agent = bot_registry.severity_map('cuioss-review-bot')
     assert pr_agent == {'security_concern': 'high', 'focus_area': 'medium', 'missing_tests': 'low'}
 
 
@@ -191,7 +222,7 @@ def test_rate_limit_class_per_bot():
     """
     assert bot_registry.rate_limit_class('coderabbit') == 'awaitable_window'
     assert bot_registry.rate_limit_class('sourcery') == 'hard_quota'
-    assert bot_registry.rate_limit_class('pr-agent') == 'unknown'
+    assert bot_registry.rate_limit_class('cuioss-review-bot') == 'unknown'
 
 
 def test_rate_limit_class_fails_closed_for_absent_field(tmp_path):
@@ -231,7 +262,7 @@ def test_refusal_size_patterns_mark_the_diff_size_cause():
         assert quota_marker not in sourcery_size
 
     assert bot_registry.refusal_size_patterns('coderabbit') == []
-    assert bot_registry.refusal_size_patterns('pr-agent') == []
+    assert bot_registry.refusal_size_patterns('cuioss-review-bot') == []
 
 
 def test_refusal_size_patterns_absent_is_empty():
@@ -302,7 +333,7 @@ def test_rate_limit_eta_patterns_per_bot():
         m.group(1) for p in sourcery if (m := re.search(p, observed))
     ) == '3 days and 17 hours'
 
-    assert bot_registry.rate_limit_eta_patterns('pr-agent') == []
+    assert bot_registry.rate_limit_eta_patterns('cuioss-review-bot') == []
 
 
 def test_rate_limit_eta_patterns_are_valid_regexes():
@@ -523,7 +554,7 @@ def test_review_body_summary_patterns_default_empty_and_fail_closed():
     every review_body counted.
     """
     assert bot_registry.review_body_summary_patterns('sourcery') == []
-    assert bot_registry.review_body_summary_patterns('pr-agent') == []
+    assert bot_registry.review_body_summary_patterns('cuioss-review-bot') == []
     assert bot_registry.review_body_summary_patterns('no-such-bot') == []
 
 

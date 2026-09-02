@@ -757,7 +757,7 @@ class TestCommentsStageReviewedShaAndBotKind:
     (so re-review matching can tell whether HEAD has advanced past the reviewed
     commit), and ``bot_kind`` is derived from each comment's author login via the
     registry's ``bot_kind_for_author`` (coderabbitai -> coderabbit,
-    cuioss-review-bot -> pr-agent; a human author leaves ``bot_kind`` unset).
+    cuioss-review-bot -> cuioss-review-bot; a human author leaves ``bot_kind`` unset).
     """
 
     def test_reviewed_commit_sha_stamped_from_pr_head(self, plan_context):
@@ -804,7 +804,7 @@ class TestCommentsStageReviewedShaAndBotKind:
         ('author', 'expected_bot_kind'),
         [
             pytest.param('coderabbitai', 'coderabbit', id='coderabbit'),
-            pytest.param('cuioss-review-bot', 'pr-agent', id='pr-agent'),
+            pytest.param('cuioss-review-bot', 'cuioss-review-bot', id='cuioss-review-bot'),
             pytest.param('sourcery-ai', 'sourcery', id='sourcery'),
         ],
     )
@@ -926,11 +926,11 @@ class TestPerBotIgnoreFilter:
         # Dropped for the owning bot.
         assert _is_obvious_noise(body, 'coderabbit')
         # NOT dropped for a different bot or a human — the marker is bot-scoped.
-        assert not _is_obvious_noise(body, 'pr-agent')
+        assert not _is_obvious_noise(body, 'cuioss-review-bot')
         assert not _is_obvious_noise(body, None)
 
     def test_pr_agent_walkthrough_marker_drops_only_pr_agent(self):
-        """PR-Agent's ``## PR Agent Walkthrough`` marker drops a pr-agent comment only.
+        """PR-Agent's ``## PR Agent Walkthrough`` marker drops a cuioss-review-bot comment only.
 
         The two bots' markers are deliberately near-identical in shape
         (``## Walkthrough`` vs ``## PR Agent Walkthrough``), which makes this the
@@ -938,7 +938,7 @@ class TestPerBotIgnoreFilter:
         filter would cross-drop.
         """
         body = '## PR Agent Walkthrough\n\nAvailable commands: /review, /ask, /help.'
-        assert _is_obvious_noise(body, 'pr-agent')
+        assert _is_obvious_noise(body, 'cuioss-review-bot')
         assert not _is_obvious_noise(body, 'coderabbit')
         assert not _is_obvious_noise(body, None)
 
@@ -1009,10 +1009,10 @@ class TestPerBotIgnoreFilter:
         assert 'comment_id: W2' in q['findings'][0]['detail']
 
     def test_fetch_findings_does_not_apply_one_bots_marker_to_another(self, plan_context):
-        """A pr-agent comment carrying CodeRabbit's ``## Walkthrough`` text is NOT dropped.
+        """A cuioss-review-bot comment carrying CodeRabbit's ``## Walkthrough`` text is NOT dropped.
 
         Proves the per-bot layer is scoped to the authoring bot: the walkthrough
-        marker belongs to coderabbit's registry entry, so a pr-agent-authored
+        marker belongs to coderabbit's registry entry, so a cuioss-review-bot-authored
         comment with the same heading survives and becomes a finding.
         """
         comments = [
@@ -1296,7 +1296,7 @@ class TestRefusalNoticeProducerFilter:
         assert not set(matched_by_size_ceiling) & set(matched_by_weekly_quota)
 
     @pytest.mark.parametrize(
-        'bot_kind', [None, 'coderabbit', 'sourcery', 'pr-agent'], ids=['human', 'cr', 'sr', 'pra']
+        'bot_kind', [None, 'coderabbit', 'sourcery', 'cuioss-review-bot'], ids=['human', 'cr', 'sr', 'pra']
     )
     def test_a_refusal_is_never_classified_as_noise(self, bot_kind):
         """``_is_obvious_noise`` must not recognize ANY refusal, for ANY bot.
@@ -1634,7 +1634,7 @@ class TestUnrecognisedRefusalPredicate:
             _GENUINE_REVIEW_MENTIONING_A_LIMIT,
             _SOURCERY_1014_REFUSAL,
         ):
-            for bot_kind in ('coderabbit', 'sourcery', 'pr-agent', None):
+            for bot_kind in ('coderabbit', 'sourcery', 'cuioss-review-bot', None):
                 assert not _github_pr._is_unrecognised_refusal(body, bot_kind), (bot_kind, body[:40])
 
     def test_fires_on_a_short_anchorless_body_from_a_registered_bot(self, monkeypatch):
@@ -1644,8 +1644,8 @@ class TestUnrecognisedRefusalPredicate:
         monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 200)
 
         # Neither earlier arm sees it — that is what makes it "unrecognised".
-        assert not _github_pr._is_refusal_notice(_REWORDED_REFUSAL, 'pr-agent')
-        assert _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'pr-agent')
+        assert not _github_pr._is_refusal_notice(_REWORDED_REFUSAL, 'cuioss-review-bot')
+        assert _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'cuioss-review-bot')
 
     def test_declines_a_body_carrying_a_code_anchor_however_short(self, monkeypatch):
         """Matched negative control for the positive case above: an anchor vetoes the arm.
@@ -1659,7 +1659,7 @@ class TestUnrecognisedRefusalPredicate:
         monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 200)
 
         assert len(_SHORT_REVIEW_WITH_ANCHOR) < 200
-        assert not _github_pr._is_unrecognised_refusal(_SHORT_REVIEW_WITH_ANCHOR, 'pr-agent')
+        assert not _github_pr._is_unrecognised_refusal(_SHORT_REVIEW_WITH_ANCHOR, 'cuioss-review-bot')
 
     def test_declines_a_human_authored_body(self, monkeypatch):
         """An unresolvable / unregistered author is never an unrecognised refusal.
@@ -1671,7 +1671,7 @@ class TestUnrecognisedRefusalPredicate:
 
         monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 200)
 
-        assert _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'pr-agent')
+        assert _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'cuioss-review-bot')
         assert not _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, None)
         assert not _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'not-a-registered-bot')
 
@@ -1715,7 +1715,7 @@ class TestUnrecognisedRefusalPredicate:
 
         monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 200)
 
-        assert not _github_pr._is_unrecognised_refusal('', 'pr-agent')
+        assert not _github_pr._is_unrecognised_refusal('', 'cuioss-review-bot')
 
     def test_declines_a_body_at_or_over_the_threshold(self, monkeypatch):
         """The bound is exclusive, and a long anchor-less body is a genuine review."""
@@ -1724,11 +1724,11 @@ class TestUnrecognisedRefusalPredicate:
         monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', len(_REWORDED_REFUSAL))
 
         # At exactly the threshold the arm does NOT fire...
-        assert not _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'pr-agent')
+        assert not _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'cuioss-review-bot')
         # ...and one character of headroom is what makes it fire — the matched
         # control proving the boundary is the only thing being tested here.
         monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', len(_REWORDED_REFUSAL) + 1)
-        assert _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'pr-agent')
+        assert _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'cuioss-review-bot')
 
     @pytest.mark.parametrize(
         'body',
@@ -1750,7 +1750,7 @@ class TestUnrecognisedRefusalPredicate:
         """
         import _github_pr
 
-        for bot_kind in ('coderabbit', 'sourcery', 'pr-agent', None):
+        for bot_kind in ('coderabbit', 'sourcery', 'cuioss-review-bot', None):
             monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', None)
             inert = _github_pr._is_refusal_notice(body, bot_kind)
             monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 500)

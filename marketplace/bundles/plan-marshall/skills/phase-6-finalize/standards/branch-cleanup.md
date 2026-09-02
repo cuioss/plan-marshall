@@ -748,7 +748,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review
 ```
 
-Extract `required_bots` and `optional_bots` from the returned `params` object as `{required_bots}` (e.g. `coderabbit,pr-agent`) and `{optional_bots}` (e.g. `sourcery`). Both default EMPTY. The two lists classify rather than admit — see [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md).
+Extract `required_bots` and `optional_bots` from the returned `params` object as `{required_bots}` (e.g. `coderabbit,cuioss-review-bot`) and `{optional_bots}` (e.g. `sourcery`). Both default EMPTY. The two lists classify rather than admit — see [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md).
 
 #### Re-fetch bot comments against the current HEAD
 
@@ -1109,7 +1109,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-6-finalize) Pre-merge review barrier: required-bot participation incomplete — unproven_bots={unproven_bots}, pending pr-comment findings={count} — pre_merge_comment_barrier={barrier_mode} (merge blocked)"
 ```
 
-⚠ **A loop-back here is only productive if the unproven bot can still produce evidence.** Whether it can is a per-bot, per-repository property: a bot with no auto-review-on-push trigger in this repository's caller workflow will never re-review a loop-back fix commit on its own, and `re_review_on_loopback` (default `false`) governs whether an explicit trigger comment is posted for it. If neither holds, the loop-back re-enters this barrier with the same verdict. Fix the trigger, or move the bot to `optional_bots` — do not answer a structurally-unprovable bot with repeated loop-backs. See [`../../automatic-review/standards/pr-agent.md`](../../automatic-review/standards/pr-agent.md) § "Signal calibration" for how to read a given repository's caller.
+⚠ **A loop-back here is only productive if the unproven bot can still produce evidence.** Whether it can is a per-bot, per-repository property: a bot with no auto-review-on-push trigger in this repository's caller workflow will never re-review a loop-back fix commit on its own, and `re_review_on_loopback` (default `false`) governs whether an explicit trigger comment is posted for it. If neither holds, the loop-back re-enters this barrier with the same verdict. Fix the trigger, or move the bot to `optional_bots` — do not answer a structurally-unprovable bot with repeated loop-backs. See [`../../automatic-review/standards/cuioss-review-bot.md`](../../automatic-review/standards/cuioss-review-bot.md) § "Signal calibration" for how to read a given repository's caller.
 
 ##### ⛔ Structural refusal — RE-TRIAGE is not a remedy, under BOTH barrier modes
 

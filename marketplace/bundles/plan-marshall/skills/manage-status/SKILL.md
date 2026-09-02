@@ -620,7 +620,7 @@ plan_id: my-feature
 kind: barrier-ask-override
 head: 76c7200b6
 gap_class: review-barrier-gap
-granted_over: 2 unhandled, unproven_bots=pr-agent
+granted_over: 2 unhandled, unproven_bots=cuioss-review-bot
 reason: operator accepted the gap
 granted_at: "2026-01-15T14:30:00Z"
 ```
@@ -663,7 +663,7 @@ admissible_kinds[0]:
 inadmissible_kinds[1]:
   - pre-merge-consent
 records[2]{kind,head,verdict,gap_class,admissible,granted_over,reason,granted_at}:
-  barrier-ask-override,d4f1a02c9,lapsed,review-barrier-gap,false,2 unhandled unproven_bots=pr-agent,operator accepted the gap,2026-01-15T14:30:00Z
+  barrier-ask-override,d4f1a02c9,lapsed,review-barrier-gap,false,2 unhandled unproven_bots=cuioss-review-bot,operator accepted the gap,2026-01-15T14:30:00Z
   pre-merge-consent,76c7200b6,valid,merge-action,false,operator confirmed merge of PR #42 at this HEAD,operator selected 'Yes merge',2026-01-15T14:41:00Z
 ```
 

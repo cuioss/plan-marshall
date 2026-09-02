@@ -388,7 +388,7 @@ def test_migrate_bot_lists_operator_answer_wins_over_legacy():
     """
     params = {
         'enabled_bots': 'coderabbit,sourcery',
-        'required_bots': 'pr-agent',
+        'required_bots': 'cuioss-review-bot',
         'optional_bots': 'sourcery',
         'bot_lists_provenance': 'answered',
     }
@@ -397,7 +397,7 @@ def test_migrate_bot_lists_operator_answer_wins_over_legacy():
 
     assert report['state'] == 'operator_answer_kept'
     assert report['discarded_legacy'] == 'coderabbit,sourcery'
-    assert params['required_bots'] == 'pr-agent'
+    assert params['required_bots'] == 'cuioss-review-bot'
     assert params['optional_bots'] == 'sourcery'
     assert params['bot_lists_provenance'] == 'answered'
     assert 'enabled_bots' not in params

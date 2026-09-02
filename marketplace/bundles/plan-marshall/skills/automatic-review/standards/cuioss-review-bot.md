@@ -3,8 +3,8 @@
 PR-Agent-specific triage rule for the plan-marshall `pr-comment` findings pipeline. Companion to
 [`coderabbit.md`](coderabbit.md); read that first for the shared pipeline mechanics — this file
 only carries what differs for PR-Agent (`cuioss-review-bot[bot]`). The machine-readable registry
-block below is the single per-bot data record the `automatic-review` step consumes when `pr-agent`
-is classified in the step's `required_bots` or `optional_bots`. Classification decides whether
+block below is the single per-bot data record the `automatic-review` step consumes when
+`cuioss-review-bot` is classified in the step's `required_bots` or `optional_bots`. Classification decides whether
 PR-Agent's silence is a failure (required) or tolerable (optional); it does NOT decide admission — a
 PR-Agent comment is ingested even when the bot appears in neither list, with a warning recorded. See
 [`bot-participation-contract.md`](bot-participation-contract.md).
@@ -12,8 +12,8 @@ PR-Agent comment is ingested even when the bot appears in neither list, with a w
 PR-Agent is the third reviewer beside CodeRabbit and Sourcery, deliberately narrowed to a
 **security-weighted** charter. It is opt-in per repository (the repo must carry the
 `reusable-pr-agent-review.yml` caller workflow). Both `required_bots` and `optional_bots` ship
-EMPTY, so `pr-agent` — like every other bot — is classified per project rather than by a shipped
-default.
+EMPTY, so `cuioss-review-bot` — like every other bot — is classified per project rather than by a
+shipped default.
 
 ## Grounding source
 
@@ -54,11 +54,14 @@ from it; the prose sections carry the rationale. This bot declares no
 comments COUNTED, which is the fail-closed direction for a finding count.
 
 ```yaml
-bot_kind: pr-agent
+bot_kind: cuioss-review-bot
 author_login: cuioss-review-bot   # CONFIRMED on #103 — the provider reports the author without the
                                   # [bot] suffix, and bot_kind_for_author strips the suffix anyway,
                                   # so this value resolves on both paths. A dedicated App, NOT
-                                  # github-actions — see "Why its own identity"
+                                  # github-actions — see "Why its own identity". Deliberately the
+                                  # SAME string as bot_kind above: the kind and the login are one
+                                  # name for this reviewer, so login_to_bot_kind() maps it to
+                                  # itself — see "Why its own identity" for why that is the point
 trigger_comment: "/review"        # CONFIRMED on #103 — human /review at 09:25:47 -> publish 09:27:15
 trigger_semantics: requires_explicit_trigger   # the /review command above must be posted
 completion_check_name: ""         # CONFIRMED on #103 — absent from `ci pr reviews`, no check-run;
@@ -224,15 +227,25 @@ unrelated workflow comments as `pr-comment` findings. The reviewer therefore run
 dedicated `cuioss-review-bot` GitHub App. Keep `author_login` in step with that App — this
 registry block is the only place the pipeline learns it.
 
+**The `bot_kind` IS that App's login, and the coincidence is deliberate.** Every other registered
+bot carries two different strings — `coderabbit` / `coderabbitai`, `sourcery` / `sourcery-ai` — so
+`login_to_bot_kind()` is a genuine translation for them. For this reviewer the two are one name, and
+the map entry is the identity pair `'cuioss-review-bot': 'cuioss-review-bot'`. That is not a
+copy-paste slip to be "fixed": the identity is what makes the configured token in `required_bots`,
+the `standards/{bot_kind}.md` filename, and the login a reader sees on the pull request all read as
+the same reviewer. A rename of either half must move BOTH, or the coincidence — and the readability
+it buys — is lost.
+
 ## Pipeline wiring
 
 Wired entirely from the data block above via `automatic-review/scripts/bot_registry.py` — no
 PR-Agent-specific code anywhere:
 
-- `_findings_core.BOT_KINDS` derives from `bot_registry.bot_kinds()`, so `pr-agent` is a member
-  because this doc declares `bot_kind: pr-agent`.
-- `github_re_review.py` derives its login→bot_kind map (`cuioss-review-bot` → `pr-agent`) and its
-  generic re-review strategy (posting `/review`) from the registry.
+- `_findings_core.BOT_KINDS` derives from `bot_registry.bot_kinds()`, so `cuioss-review-bot` is a
+  member because this doc declares `bot_kind: cuioss-review-bot`.
+- `github_re_review.py` derives its login→bot_kind map — for this reviewer the identity pair
+  `cuioss-review-bot` → `cuioss-review-bot`, since its login and its kind are the same name — and
+  its generic re-review strategy (posting `/review`) from the registry.
 - `github_pr.py` applies this doc's `ignore_patterns` as the per-bot producer filter, and its
   `contentless_review_markers` / `actionable_content_markers` pair as the content-aware layer
   beneath it.

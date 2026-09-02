@@ -180,7 +180,7 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'Per-bot registry record. Declares participation_requires_update: false, so this bot '
         'appends a new comment per review and never reaches the currency test.',
     ),
-    f'{_SKILLS}/automatic-review/standards/pr-agent.md': SiteExpectation(
+    f'{_SKILLS}/automatic-review/standards/cuioss-review-bot.md': SiteExpectation(
         'registry_data',
         'none',
         'yes',

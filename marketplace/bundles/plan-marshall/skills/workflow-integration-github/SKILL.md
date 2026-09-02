@@ -198,7 +198,7 @@ The strategies differ **only** in the trigger comment `request_fresh_review` pos
 |------------|------------------------|--------------|
 | `coderabbit` | Posts `@coderabbitai review`. CodeRabbit's incremental auto-review on push is not a reliable trigger for the new HEAD (it can be debounced or skipped on a force-push), so the explicit comment is the trigger that guarantees a fresh review lands. | The comment-post time. |
 | `sourcery` | Posts `@sourcery-ai review`. | The comment-post time. |
-| `pr-agent` | Posts `/review` (PR-Agent does **not** auto-review on push). | The comment-post time. |
+| `cuioss-review-bot` | Posts `/review` (PR-Agent does **not** auto-review on push). | The comment-post time. |
 
 `await_fresh_review` is **identical** for every bot and is satisfied by **either** of two completion signals, checked in order of evidential strength:
 
@@ -231,7 +231,7 @@ refusal_layers[N]: [the declared layer vocabulary]
 1. **Invoke the registry** for the new HEAD:
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review --pr-number {pr} --bot-kind {coderabbit|sourcery|pr-agent} --head-sha {new HEAD} --push-time {ISO8601 push time} [--timeout {seconds}] --plan-id {plan_id}
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review --pr-number {pr} --bot-kind {coderabbit|sourcery|cuioss-review-bot} --head-sha {new HEAD} --push-time {ISO8601 push time} [--timeout {seconds}] --plan-id {plan_id}
    ```
 
    The subcommand resolves the strategy by `bot_kind`, runs `request_fresh_review` (posts each bot's registry `trigger_comment` — `@coderabbitai review`, `@sourcery-ai review`, `/review` — each using the comment-post time as the trigger time), then awaits either completion signal. The await budget is configurable via `--timeout` (default `DEFAULT_CI_TIMEOUT`); the phase-6-finalize trigger sites pass their `re_review_await_timeout_seconds` step-param value. It emits a TOON envelope with `matched: true|false`, `timed_out: true|false`, `matched_signal` (`review` | `issue_comment`, empty when unmatched), the matched `matched_review` / `matched_comment` record, and `head_sha_verified`.
@@ -711,7 +711,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr bot_completion \
-  --pr-number N --bot-kind {coderabbit|sourcery|pr-agent}
+  --pr-number N --bot-kind {coderabbit|sourcery|cuioss-review-bot}
 ```
 
 Pure provider read — reports the bot's registry `completion_check_name` check-run state as `{status, in_progress, completed}` for the PR HEAD. A bot with an empty `completion_check_name` reports status `no_check_name` (the caller falls back to the `review_bot_buffer_seconds` wait); the `automatic-review` completion-aware poll consumes this verb.
@@ -783,7 +783,7 @@ invocations → `ci checks pull-request-runs` for the abstraction-layer entry po
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review \
-  --pr-number N --bot-kind {coderabbit|sourcery|pr-agent} --head-sha SHA --push-time ISO8601 \
+  --pr-number N --bot-kind {coderabbit|sourcery|cuioss-review-bot} --head-sha SHA --push-time ISO8601 \
   [--timeout SECONDS] [--plan-id PLAN_ID]
 ```
 

@@ -89,7 +89,7 @@ def _grant_args(
     kind: str,
     head: str,
     gap_class: str = BARRIER_GAP,
-    granted_over: str = '2 unhandled, unproven_bots=pr-agent',
+    granted_over: str = '2 unhandled, unproven_bots=cuioss-review-bot',
     reason: str = 'operator accepted the gap',
 ) -> Namespace:
     return Namespace(

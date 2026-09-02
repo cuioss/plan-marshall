@@ -111,7 +111,7 @@ _findings_core = load_script_module('plan-marshall', 'manage-findings', '_findin
 query_findings = _findings_core.query_findings
 
 _PR_AGENT_LOGIN = 'cuioss-review-bot'
-_PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('pr-agent')
+_PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('cuioss-review-bot')
 
 
 # ---------------------------------------------------------------------------
@@ -229,7 +229,7 @@ def test_guide_fixtures_track_the_declared_marker_set():
 
     Each arm below is meaningful only relative to the DECLARED required-marker
     set: arm 1 needs every marker present, arm 4 needs exactly one absent. Were a
-    marker added to ``pr-agent.md`` without the fixtures moving, arm 1 would stop
+    marker added to ``cuioss-review-bot.md`` without the fixtures moving, arm 1 would stop
     exercising the drop while still passing for the wrong reason.
     """
     assert _PR_AGENT_REQUIRED_MARKERS
@@ -263,7 +263,7 @@ def test_clean_guide_is_dropped_but_still_credits_participation(plan_context, mo
     that also erased participation would turn a clean review into a completeness
     failure and hold the finalize step open forever.
     """
-    plan_id = 'pr-agent-clean-guide-dropped'
+    plan_id = 'cuioss-review-bot-clean-guide-dropped'
     _patch_provider(monkeypatch, [_guide_comment(OBSERVED_CLEAN_GUIDE)])
 
     result = _run_fetch(1201, plan_id)
@@ -280,7 +280,7 @@ def test_clean_guide_is_dropped_but_still_credits_participation(plan_context, mo
     # (producer-mismatch) Q-Gate false-positive.
     assert result['producer_mismatch_hash_id'] is None
     # The load-bearing assertion: participation is untouched by the drop.
-    assert {'bot_kind': 'pr-agent', 'evidence_kind': 'issue_comment'} in result['participated_bots']
+    assert {'bot_kind': 'cuioss-review-bot', 'evidence_kind': 'issue_comment'} in result['participated_bots']
     assert result['refused_bots'] == []
 
     assert _stored(plan_id) == []
@@ -300,7 +300,7 @@ def test_guide_with_a_finding_is_stored_byte_identical(plan_context, monkeypatch
     boilerplate rows out of a Guide that also carries real content — an operator
     triaging the finding sees exactly what the reviewer wrote.
     """
-    plan_id = 'pr-agent-guide-with-finding-stored'
+    plan_id = 'cuioss-review-bot-guide-with-finding-stored'
     _patch_provider(monkeypatch, [_guide_comment(GUIDE_WITH_FINDING)])
 
     result = _run_fetch(1202, plan_id)
@@ -349,7 +349,7 @@ def test_guide_missing_or_changing_a_required_marker_is_stored(plan_context, mon
       declared marker, and this arm turns red if the registry list is ever
       weakened to the 🔒 row alone.
     """
-    plan_id = f'pr-agent-guide-{arm}'
+    plan_id = f'cuioss-review-bot-guide-{arm}'
     _patch_provider(monkeypatch, [_guide_comment(body)])
 
     result = _run_fetch(1203, plan_id)
@@ -400,7 +400,7 @@ def test_clean_guide_is_dropped_in_either_emphasis_rendering(plan_context, monke
       substring of both renderings, so the drop cannot be re-broken by an
       upstream change of emphasis.
     """
-    plan_id = f'pr-agent-guide-rendering-{rendering}'
+    plan_id = f'cuioss-review-bot-guide-rendering-{rendering}'
     _patch_provider(monkeypatch, [_guide_comment(body)])
 
     result = _run_fetch(1207, plan_id)
@@ -455,7 +455,7 @@ def test_second_fetch_of_an_unchanged_guide_at_the_same_head_stays_credited(plan
     currency test's sole source and records a credited comment whether or not it was
     filed — without it the test would have nothing to compare on the drop path.
     """
-    plan_id = 'pr-agent-guide-unchanged-second-fetch'
+    plan_id = 'cuioss-review-bot-guide-unchanged-second-fetch'
     guide = _guide_comment(OBSERVED_CLEAN_GUIDE, created_at=_CREATED_AT, updated_at=_CREATED_AT)
     _patch_provider(monkeypatch, [guide], head_sha=_HEAD_A)
 
@@ -472,7 +472,7 @@ def test_second_fetch_of_an_unchanged_guide_at_the_same_head_stays_credited(plan
     assert first['producer_mismatch_hash_id'] is None
     assert second['producer_mismatch_hash_id'] is None
 
-    credited = [{'bot_kind': 'pr-agent', 'evidence_kind': 'issue_comment'}]
+    credited = [{'bot_kind': 'cuioss-review-bot', 'evidence_kind': 'issue_comment'}]
     # Idempotent: the second evaluation at the same HEAD matches the first exactly.
     assert first['participated_bots'] == credited
     assert first['stale_participation_bots'] == []
@@ -491,18 +491,18 @@ def test_dropped_guide_goes_stale_once_head_advances(plan_context, monkeypatch):
     nothing reviewed. Paired with the same-HEAD case above, this is the discrimination
     the pre-fix observation-history test could not make.
     """
-    plan_id = 'pr-agent-guide-stale-after-advance'
+    plan_id = 'cuioss-review-bot-guide-stale-after-advance'
     guide = _guide_comment(OBSERVED_CLEAN_GUIDE, created_at=_CREATED_AT, updated_at=_CREATED_AT)
     _patch_provider(monkeypatch, [guide], head_sha=_HEAD_A)
     first = _run_fetch(1207, plan_id)
-    assert {'bot_kind': 'pr-agent', 'evidence_kind': 'issue_comment'} in first['participated_bots']
+    assert {'bot_kind': 'cuioss-review-bot', 'evidence_kind': 'issue_comment'} in first['participated_bots']
     assert first['stale_participation_bots'] == []
 
     _patch_provider(monkeypatch, [guide], head_sha=_HEAD_B)
     second = _run_fetch(1207, plan_id)
     assert second['participated_bots'] == []
     assert second['stale_participation_bots'] == [
-        {'bot_kind': 'pr-agent', 'evidence_kind': 'issue_comment'}
+        {'bot_kind': 'cuioss-review-bot', 'evidence_kind': 'issue_comment'}
     ]
 
 
@@ -518,11 +518,11 @@ def test_guide_edited_after_head_advance_credits_participation_again(plan_contex
     The edited Guide is still fully clean, so it is still dropped — this asserts the
     edit arm on the drop path specifically, not on the stored-finding path.
     """
-    plan_id = 'pr-agent-guide-edited-between-fetches'
+    plan_id = 'cuioss-review-bot-guide-edited-between-fetches'
     unchanged = _guide_comment(OBSERVED_CLEAN_GUIDE, created_at=_CREATED_AT, updated_at=_CREATED_AT)
     _patch_provider(monkeypatch, [unchanged], head_sha=_HEAD_A)
     first = _run_fetch(1206, plan_id)
-    assert {'bot_kind': 'pr-agent', 'evidence_kind': 'issue_comment'} in first['participated_bots']
+    assert {'bot_kind': 'cuioss-review-bot', 'evidence_kind': 'issue_comment'} in first['participated_bots']
 
     # Same comment_id — the bot edited the Guide in place rather than posting anew —
     # and HEAD has advanced, so only the edit movement can credit it.
@@ -533,7 +533,7 @@ def test_guide_edited_after_head_advance_credits_participation_again(plan_contex
     assert second['count_stored'] == 0
     assert second['count_skipped_noise'] == 1
     assert second['producer_mismatch_hash_id'] is None
-    assert {'bot_kind': 'pr-agent', 'evidence_kind': 'issue_comment'} in second['participated_bots']
+    assert {'bot_kind': 'cuioss-review-bot', 'evidence_kind': 'issue_comment'} in second['participated_bots']
 
 
 # ---------------------------------------------------------------------------
@@ -550,7 +550,7 @@ def test_suppressed_guide_produces_no_reviewer_row_at_all(plan_context, monkeypa
     misread. This is fed the REAL post-fetch store rather than a hand-built record
     list, which is what makes it an interaction test.
     """
-    plan_id = 'pr-agent-suppressed-guide-no-row'
+    plan_id = 'cuioss-review-bot-suppressed-guide-no-row'
     _patch_provider(monkeypatch, [_guide_comment(OBSERVED_CLEAN_GUIDE)])
 
     fetch_result = _run_fetch(1204, plan_id)

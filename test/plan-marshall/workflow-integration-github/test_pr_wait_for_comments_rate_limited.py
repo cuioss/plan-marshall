@@ -211,7 +211,7 @@ def test_bot_without_declared_class_fails_closed_to_unknown(monkeypatch):
 
     assert result['rate_limited_bots'] == [
         {
-            'bot_kind': 'pr-agent',
+            'bot_kind': 'cuioss-review-bot',
             'rate_limit_class': 'unknown',
             'eta': '',
             'cause': 'quota',
@@ -274,10 +274,10 @@ def test_several_rate_limited_bots_each_yield_their_own_record(monkeypatch):
     result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
 
     records = _records_by_kind(result)
-    assert set(records) == {'coderabbit', 'sourcery', 'pr-agent'}
+    assert set(records) == {'coderabbit', 'sourcery', 'cuioss-review-bot'}
     assert records['coderabbit']['rate_limit_class'] == 'awaitable_window'
     assert records['sourcery']['rate_limit_class'] == 'hard_quota'
-    assert records['pr-agent']['rate_limit_class'] == 'unknown'
+    assert records['cuioss-review-bot']['rate_limit_class'] == 'unknown'
 
 
 def test_no_rate_limited_bot_yields_empty_list(monkeypatch):

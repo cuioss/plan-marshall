@@ -386,7 +386,7 @@ class TestThisRepositorysSettledConfiguration:
     def test_required_and_optional_lists_are_the_settled_two_list_split(self):
         """PR-Agent is the SOLE required bot; CodeRabbit and Sourcery are optional.
 
-        Operator decision, on **reliability**: pr-agent is the only reviewer with
+        Operator decision, on **reliability**: cuioss-review-bot is the only reviewer with
         neither a per-account review quota nor a diff-size refusal. CodeRabbit
         carries a rolling per-developer quota and Sourcery a weekly diff-character
         cap, so requiring either makes routine review-coverage gaps gate the merge
@@ -405,7 +405,7 @@ class TestThisRepositorysSettledConfiguration:
         """
         params = _live_step_params()
 
-        assert params['required_bots'] == 'pr-agent'
+        assert params['required_bots'] == 'cuioss-review-bot'
         assert params['optional_bots'] == 'coderabbit,sourcery'
 
     def test_the_retired_single_list_key_does_not_survive(self):
@@ -1317,7 +1317,7 @@ class TestCrashedGateNeverRecordsAPass:
             '--plan-id',
             plan_id,
             '--required-bots',
-            'coderabbit,pr-agent',
+            'coderabbit,cuioss-review-bot',
             '--optional-bots',
             '--participated-bots',
             '--in-progress-bots',

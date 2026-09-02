@@ -10,7 +10,7 @@ Covers the three concerns of the post-merge re-review registry:
        comment per strategy and returns the comment-post time:
          coderabbit: posts ``@coderabbitai review``.
          sourcery:   posts ``@sourcery-ai review``.
-         pr-agent:   posts ``/review``.
+         cuioss-review-bot:   posts ``/review``.
     3. Two-signal completion matching — ``await_fresh_review`` is satisfied by
        EITHER ``_match_review`` (a review whose reviewed-commit evidence REFERENCES
        the pushed HEAD — recognised as a bare token or embedded in a commit URL, and
@@ -134,8 +134,8 @@ def test_resolve_strategy_coderabbit_is_generic_with_coderabbit_trigger():
 
 
 def test_resolve_strategy_pr_agent_is_generic_with_pr_agent_trigger():
-    """pr-agent resolves to the same generic strategy class, carrying its own trigger."""
-    strategy = github_re_review.resolve_strategy('pr-agent')
+    """cuioss-review-bot resolves to the same generic strategy class, carrying its own trigger."""
+    strategy = github_re_review.resolve_strategy('cuioss-review-bot')
 
     assert strategy is not None
     assert isinstance(strategy, github_re_review._ReReviewStrategy)
@@ -206,9 +206,9 @@ def test_resolve_strategy_covers_every_bot_kind():
 
 
 def test_strategies_are_distinct_objects():
-    """coderabbit and pr-agent must not collapse onto the same strategy object."""
+    """coderabbit and cuioss-review-bot must not collapse onto the same strategy object."""
     coderabbit = github_re_review.resolve_strategy('coderabbit')
-    pr_agent = github_re_review.resolve_strategy('pr-agent')
+    pr_agent = github_re_review.resolve_strategy('cuioss-review-bot')
 
     assert coderabbit is not pr_agent
 
@@ -280,7 +280,7 @@ def test_pr_agent_request_fresh_review_posts_trigger_comment(monkeypatch):
 
     monkeypatch.setattr(github_re_review._github, 'post_pr_comment', fake_post)
 
-    strategy = github_re_review.resolve_strategy('pr-agent')
+    strategy = github_re_review.resolve_strategy('cuioss-review-bot')
     result = strategy.request_fresh_review(99, '2026-01-01T00:00:00Z')
 
     assert result['status'] == 'success'
@@ -298,7 +298,7 @@ def test_pr_agent_request_fresh_review_trigger_time_is_post_time_not_push_time(m
     )
     monkeypatch.setattr(github_re_review, '_now_iso', lambda: '2026-06-01T12:00:00+00:00')
 
-    strategy = github_re_review.resolve_strategy('pr-agent')
+    strategy = github_re_review.resolve_strategy('cuioss-review-bot')
     result = strategy.request_fresh_review(99, '2020-01-01T00:00:00Z')
 
     assert result['trigger_time'] == '2026-06-01T12:00:00+00:00'
@@ -314,7 +314,7 @@ def test_pr_agent_request_fresh_review_propagates_post_failure(monkeypatch):
         lambda *_a, **_kw: {'status': 'error', 'error': 'comment failed'},
     )
 
-    strategy = github_re_review.resolve_strategy('pr-agent')
+    strategy = github_re_review.resolve_strategy('cuioss-review-bot')
     result = strategy.request_fresh_review(99, '2026-01-01T00:00:00Z')
 
     assert result['status'] == 'error'
@@ -524,7 +524,7 @@ _TRIGGER = '2026-01-01T00:02:00Z'
 
 
 def _await_with_comments(
-    monkeypatch, comments, *, reviews=None, bot_kind='pr-agent', head_sha='headsha'
+    monkeypatch, comments, *, reviews=None, bot_kind='cuioss-review-bot', head_sha='headsha'
 ):
     """Run ``await_fresh_review`` over a fixed comment (and review) set.
 
@@ -684,7 +684,7 @@ def test_await_without_bot_kind_never_matches_a_comment(monkeypatch):
 
     monkeypatch.setattr(github_re_review._github, 'fetch_pr_comments_data', exploding_fetch)
 
-    strategy = github_re_review.resolve_strategy('pr-agent')
+    strategy = github_re_review.resolve_strategy('cuioss-review-bot')
     result = strategy.await_fresh_review(42, 'headsha', _TRIGGER, timeout=1, interval=0)
 
     assert result['matched'] is False
@@ -696,14 +696,14 @@ def test_match_bot_comment_fail_closed_on_unparseable_timestamps():
     trigger_dt = _parse(_TRIGGER)
     comments = [_comment(_PR_AGENT_LOGIN, created_at='not-a-timestamp', updated_at='')]
 
-    assert _match_bot_comment(comments, 'pr-agent', trigger_dt) is None
+    assert _match_bot_comment(comments, 'cuioss-review-bot', trigger_dt) is None
 
 
 def test_match_bot_comment_fail_closed_on_missing_trigger_time():
     """An unparseable trigger time yields no comment match (fail-closed)."""
     comments = [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:05:00Z')]
 
-    assert _match_bot_comment(comments, 'pr-agent', None) is None
+    assert _match_bot_comment(comments, 'cuioss-review-bot', None) is None
 
 
 # =============================================================================
@@ -1722,7 +1722,7 @@ def test_cmd_re_review_coderabbit_posts_then_awaits(monkeypatch):
 
 
 def test_cmd_re_review_pr_agent_posts_then_awaits(monkeypatch):
-    """pr-agent: posts /review, then awaits a fresh review for HEAD."""
+    """cuioss-review-bot: posts /review, then awaits a fresh review for HEAD."""
     _noop_sleep(monkeypatch)
     post_calls = {'args': []}
 
@@ -1738,11 +1738,11 @@ def test_cmd_re_review_pr_agent_posts_then_awaits(monkeypatch):
         lambda pr_number: {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:05:00Z')]},
     )
 
-    result = github_re_review.cmd_re_review(_re_review_args(bot_kind='pr-agent'))
+    result = github_re_review.cmd_re_review(_re_review_args(bot_kind='cuioss-review-bot'))
 
     assert result['status'] == 'success'
     assert result['matched'] is True
-    assert result['bot_kind'] == 'pr-agent'
+    assert result['bot_kind'] == 'cuioss-review-bot'
     assert post_calls['args'] == [(42, '/review')]
 
 
@@ -1766,10 +1766,10 @@ def test_cmd_re_review_threads_bot_kind_into_await(monkeypatch):
     )
     monkeypatch.setattr(github_re_review._ReReviewStrategy, 'await_fresh_review', fake_await)
 
-    result = github_re_review.cmd_re_review(_re_review_args(bot_kind='pr-agent'))
+    result = github_re_review.cmd_re_review(_re_review_args(bot_kind='cuioss-review-bot'))
 
     assert result['status'] == 'success'
-    assert captured['bot_kind'] == 'pr-agent'
+    assert captured['bot_kind'] == 'cuioss-review-bot'
 
 
 def test_cmd_re_review_sourcery_posts_then_awaits(monkeypatch):
@@ -1798,7 +1798,7 @@ def test_cmd_re_review_sourcery_posts_then_awaits(monkeypatch):
 
 
 def test_cmd_re_review_short_circuits_on_request_failure(monkeypatch):
-    """A failed pr-agent trigger post aborts before await is ever called."""
+    """A failed cuioss-review-bot trigger post aborts before await is ever called."""
     _noop_sleep(monkeypatch)
     monkeypatch.setattr(
         github_re_review._github,
@@ -1811,7 +1811,7 @@ def test_cmd_re_review_short_circuits_on_request_failure(monkeypatch):
 
     monkeypatch.setattr(github_re_review._github, 'fetch_pr_reviews_with_commits', exploding_fetch)
 
-    result = github_re_review.cmd_re_review(_re_review_args(bot_kind='pr-agent'))
+    result = github_re_review.cmd_re_review(_re_review_args(bot_kind='cuioss-review-bot'))
 
     assert result['status'] == 'error'
 
@@ -1957,8 +1957,8 @@ def test_bot_kind_for_author_is_case_insensitive():
 
 
 def test_bot_kind_for_author_known_pr_agent_login():
-    """The PR-Agent bot account login maps to the pr-agent bot_kind."""
-    assert github_re_review.bot_kind_for_author('cuioss-review-bot') == 'pr-agent'
+    """The PR-Agent bot account login maps to the cuioss-review-bot bot_kind."""
+    assert github_re_review.bot_kind_for_author('cuioss-review-bot') == 'cuioss-review-bot'
 
 
 def test_bot_kind_for_author_unregistered_bot_returns_none():

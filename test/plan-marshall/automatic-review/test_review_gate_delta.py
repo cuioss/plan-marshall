@@ -47,7 +47,7 @@ from review_gate_delta import (
     assess_delta,
 )
 
-_ROSTER = ['coderabbit', 'pr-agent', 'sourcery']
+_ROSTER = ['coderabbit', 'cuioss-review-bot', 'sourcery']
 
 #: The tree the gates certified and the tree review reviewed — equal in the
 #: measurable case, and the whole subject of the post-gate-mutation exclusion.
@@ -153,9 +153,9 @@ def test_collapsing_coverage_withholds_the_share_it_never_improves_it():
     # The reviewer that filed the gate-addressable escape refuses. Its findings
     # never arrive, so the surviving escapes are ALL structural.
     collapsed = assess_delta(
-        findings=[_finding('f2', bot_kind='pr-agent'), _finding('f3', bot_kind='pr-agent')],
+        findings=[_finding('f2', bot_kind='cuioss-review-bot'), _finding('f3', bot_kind='cuioss-review-bot')],
         enabled_bots=_ROSTER,
-        reviewed_bots=['pr-agent'],
+        reviewed_bots=['cuioss-review-bot'],
         gates_green=True,
         gate_head_sha=_SHA,
         reviewed_head_sha=_SHA,
@@ -175,9 +175,9 @@ def test_partial_coverage_still_reports_the_escapes_it_saw():
     ratio — the thing a shrinking denominator corrupts — is withheld.
     """
     result = assess_delta(
-        findings=[_finding('f2', bot_kind='pr-agent')],
+        findings=[_finding('f2', bot_kind='cuioss-review-bot')],
         enabled_bots=_ROSTER,
-        reviewed_bots=['pr-agent'],
+        reviewed_bots=['cuioss-review-bot'],
         gates_green=True,
         gate_head_sha=_SHA,
         reviewed_head_sha=_SHA,
