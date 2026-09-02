@@ -91,21 +91,12 @@ unmatched_profiles = {profile-id-1, profile-id-2, ...}
 
 ### Step 2: Ask User About Each Unmatched Profile
 
-For each NO-MATCH-FOUND profile:
+For each NO-MATCH-FOUND profile, escalate to the operator via `AskUserQuestion` with this question and option set (single-select):
 
-```yaml
-AskUserQuestion:
-  question: "Maven profile '{profile-id}' is unmatched. What should it do?"
-  header: "Profile"
-  options:
-    - label: "Ignore"
-      description: "Leave as NO-MATCH-FOUND, no command generated"
-    - label: "Skip"
-      description: "Add to skip list, exclude from all processing"
-    - label: "Map to canonical"
-      description: "Map to integration-tests, coverage, benchmark, or quality-gate"
-  multiSelect: false
-```
+- **Question**: "Maven profile '{profile-id}' is unmatched. What should it do?"
+- **Ignore** — Leave as NO-MATCH-FOUND, no command generated
+- **Skip** — Add to skip list, exclude from all processing
+- **Map to canonical** — Map to integration-tests, coverage, benchmark, or quality-gate
 
 ### Step 3: Apply User Decision
 

@@ -406,7 +406,7 @@ A test docstring states the invariant in the present tense. It does not narrate 
 produced the test, and does not cite a plan id, a deliverable id, a PR number, a lesson id, or a
 superseded behaviour ("used to", "no longer", "previously").
 
-This is `CLAUDE.md` § Documentation Standards ("No version history", "Current state only") applied to
+This is the Documentation Standards ("No version history", "Current state only") applied to
 the test tree — the same rule plugin-doctor already enforces over `marketplace/bundles/**` via
 `no-historical-prose-in-skills`, `no-incident-references`, and `no-lesson-id-in-skill-prose`. Over
 `test/` it is enforced by

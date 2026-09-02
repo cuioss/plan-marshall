@@ -165,6 +165,15 @@ class TestStructuralRewriteSchema:
         assert '{bundle}' in template
         assert '{skill}' in template
 
+    def test_directive_rewrites_present_with_read_directive_template(self, opencode_config_dir: Path):
+        data = load_mapping(opencode_config_dir)
+        assert 'directive_rewrites' in data
+        record = data['directive_rewrites']['read_directive']
+        template = record['template']
+        assert isinstance(template, str) and template
+        # The template carries the source-capture path placeholder.
+        assert '{path}' in template
+
     def test_slash_rewrites_present_with_slash_command_template(self, opencode_config_dir: Path):
         data = load_mapping(opencode_config_dir)
         assert 'slash_rewrites' in data

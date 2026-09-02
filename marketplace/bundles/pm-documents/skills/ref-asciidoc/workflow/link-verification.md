@@ -8,7 +8,7 @@ This standard defines the protocol for verifying links in AsciiDoc documentation
 
 ## Core Principle
 
-**NEVER blindly trust automated link verification tools.** Always perform manual verification with the Read tool before removing any link.
+**NEVER blindly trust automated link verification tools.** Always perform manual verification by reading the target file before removing any link.
 
 ## Link Types
 
@@ -65,7 +65,7 @@ python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc classify-link
 **Categories:**
 
 - `likely-false-positive`: Anchors, localhost, file:// URLs
-- `must-verify-manual`: External links requiring Read verification
+- `must-verify-manual`: External links requiring manual verification
 - `definitely-broken`: Non-existent files (verified by script)
 
 ### Step 3: Manual Verification (CRITICAL)
@@ -74,7 +74,11 @@ For each link classified as `must-verify-manual` or `definitely-broken`:
 
 #### Extract Target Path
 
-From xref: `xref:../../doc/spec.adoc[Label]` → extract `../../doc/spec.adoc`
+From xref: `xref:../../doc/spec.adoc[Label]` → extract `../../doc/spec.adoc`.
+
+For external URLs (`http://`/`https://` links), there is no local path to
+extract — skip the resolution steps below and open the URL in a browser to
+confirm it resolves and serves the referenced content.
 
 #### Resolve Absolute Path
 
@@ -89,10 +93,10 @@ realpath {relative_target_path}
 - Link target: `../../requirements/spec.adoc`
 - Resolved: `/project/requirements/spec.adoc`
 
-#### Verify with Read Tool
+#### Verify the Target File
 
 ```text
-Read(file_path="/project/requirements/spec.adoc")
+Check the resolved file: /project/requirements/spec.adoc
 ```
 
 **Decision Matrix:**
@@ -106,10 +110,10 @@ Read(file_path="/project/requirements/spec.adoc")
 
 #### Search for Similar Files (Optional)
 
-If file not found, search for similar names using Glob:
+If file not found, search for similar names by pattern:
 
 ```text
-Glob(pattern="project/requirements/**/*spec*")
+Search pattern: project/requirements/**/*spec*
 ```
 
 Suggest alternatives to user before removal.
@@ -133,20 +137,12 @@ Alternatives found:
 - /project/requirements/specifications.adoc (similar name)
 - /project/docs/requirements.adoc (similar path)
 
-Present using AskUserQuestion:
+Present to the operator with this question and option set (single-select):
 
-AskUserQuestion:
-  questions:
-    - question: "How should this broken link be handled?"
-      header: "Link"
-      options:
-        - label: "Remove link"
-          description: "Remove the broken cross-reference"
-        - label: "Update to alternative"
-          description: "Update link to an alternative path"
-        - label: "Keep link"
-          description: "Keep link for manual review"
-      multiSelect: false
+Question: "How should this broken link be handled?"
+- Remove link — Remove the broken cross-reference
+- Update to alternative — Update link to an alternative path
+- Keep link — Keep link for manual review
 ```
 
 ## False Positive Patterns
@@ -239,20 +235,12 @@ Searched for sections:
 - "OWASP Top 10" (not found)
 - "Security Standards" (found at line 45)
 
-Present using AskUserQuestion:
+Present to the operator with this question and option set (single-select):
 
-AskUserQuestion:
-  questions:
-    - question: "How should this missing anchor be handled?"
-      header: "Anchor"
-      options:
-        - label: "Add section"
-          description: "Create a new section for the anchor"
-        - label: "Update reference"
-          description: "Point to an existing matching section"
-        - label: "Remove reference"
-          description: "Delete the broken anchor reference"
-      multiSelect: false
+Question: "How should this missing anchor be handled?"
+- Add section — Create a new section for the anchor
+- Update reference — Point to an existing matching section
+- Remove reference — Delete the broken anchor reference
 ```
 
 ## Path Resolution
@@ -318,7 +306,7 @@ target = "../../requirements/spec.adoc"
 
 **ALWAYS:**
 
-1. Use Read tool to verify
+1. Verify by reading the target file
 2. Check for typos in script output
 3. Look for alternative valid paths
 4. Document discrepancies
@@ -337,7 +325,7 @@ target = "../../requirements/spec.adoc"
 Link may be removed ONLY if ALL conditions met:
 
 1. **Script reports broken** — Automated detection flagged issue
-2. **Manual verification confirms** — Read tool confirms file not found
+2. **Manual verification confirms** — reading the file confirms it does not exist
 3. **No alternatives found** — No similar files or updated paths exist
 4. **User approves** — Explicit user confirmation received
 5. **Documented** — Removal reason recorded in commit/report
@@ -354,19 +342,18 @@ Removed broken link:
 - Line: 125
 - Link: xref:../../archive/old-spec.adoc[Old Specification]
 - Target: /project/archive/old-spec.adoc
-- Reason: File not found, confirmed with Read tool
+- Reason: File not found, confirmed by reading the target
 - Alternatives searched: /project/archive/*.adoc (none found)
 - User approval: Yes (timestamp)
 ```
 
-#### Use Edit Tool
+#### Apply the Fix
 
 ```text
-Edit(
-  file_path="standards/security/guide.adoc",
-  old_string="See xref:../../archive/old-spec.adoc[Old Specification] for details.",
-  new_string="See archived specification (no longer available) for details."
-)
+In standards/security/guide.adoc, replace:
+  "See xref:../../archive/old-spec.adoc[Old Specification] for details."
+with:
+  "See archived specification (no longer available) for details."
 ```
 
 **Preserve Context:** Don't remove entire sentence, just update reference.
@@ -477,11 +464,11 @@ steps:
 
 **Output:** JSON with categorized issues (likely-false-positive, must-verify-manual, definitely-broken)
 
-### Manual Verification with Read Tool
+### Manual Verification by Reading the Target
 
 **Purpose:** Definitive verification of link target existence
 
-**Usage:** `Read(file_path="absolute/path/to/target.adoc")`
+**Usage:** read the target file by its absolute path
 
 **Advantage:** Direct file system access, no parsing errors
 

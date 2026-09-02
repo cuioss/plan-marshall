@@ -165,7 +165,7 @@ Extract warnings matching `Line [0-9]+`:
 
 If apply_fixes=true:
 - For each issue, read file context (±5 lines)
-- Use Edit tool to fix the issue
+- Edit the file to fix the issue
 - Track fixes applied
 
 **Step 6: Re-Validate (if fixes applied)**
@@ -267,7 +267,7 @@ Read `target/asciidoc-link-verifier/links.md` and extract:
 For each "broken" link reported:
 1. Extract target path
 2. Resolve absolute path: `realpath {relative_target_path}`
-3. Verify with Read tool
+3. Verify by reading the target file
 4. If file EXISTS but script reported broken: Report false positive
 5. If file NOT FOUND: Confirm broken
 
@@ -276,7 +276,7 @@ For each "broken" link reported:
 For missing anchors:
 1. Search for matching section header
 2. Add anchor ID: `[#anchor-id]` before header
-3. Use Edit tool
+3. Apply the edit
 
 **Step 8: Generate Report**
 
@@ -357,7 +357,7 @@ Replace template placeholders:
 
 **Step 5: Write File**
 
-Use Write tool to create file at output path.
+Create the file at the output path.
 
 **Step 6: Validate Created File**
 
@@ -428,7 +428,7 @@ For each broken reference:
 
 **Step 5: Update Metadata**
 
-Using Edit tool:
+Apply the edits:
 - Ensure standard header attributes present
 - Fix attribute formatting
 

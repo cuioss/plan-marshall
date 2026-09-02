@@ -408,7 +408,7 @@ The `docs analyze-tone` subcommand implements automated detection of:
 
 **Script output:** JSON with flagged sections requiring careful analysis.
 
-**Claude's role:** Apply careful analysis decision framework to script findings.
+**Reviewer's role:** Apply careful analysis decision framework to script findings.
 
 ### `review-content` Workflow
 
@@ -420,7 +420,7 @@ parameters:
 
 steps:
   1. Run docs analyze-tone (automated detection)
-  2. Apply careful analysis (Claude)
+  2. Apply careful analysis decision framework
   3. Generate findings report
   4. If apply_fixes: Suggest improvements
   5. User confirmation for changes

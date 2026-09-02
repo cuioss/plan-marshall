@@ -12,13 +12,14 @@ declare.
 ## The shared engine and its data
 
 The engine owns the **matchers** — the "Claude source vocabulary": how
-each source idiom is found (`SKILL_DIRECTIVE_RE`, the slash-command
-regex, the inline-backtick registered-idiom form). Each target's
-`mapping.json` supplies only the replacement *data*:
+each source idiom is found (`SKILL_DIRECTIVE_RE`, `READ_DIRECTIVE_RE`,
+the slash-command regex, the inline-backtick registered-idiom form).
+Each target's `mapping.json` supplies only the replacement *data*:
 
 | `mapping.json` key | Transform | Data supplied |
 |--------------------|-----------|---------------|
 | `directive_rewrites.skill_directive.template` | 1 | `Skill:`-directive rewrite string (`{bundle}` / `{skill}` placeholders) |
+| `directive_rewrites.read_directive.template` | 1 | `Read:`-directive rewrite string (`{path}` placeholder) |
 | `slash_rewrites.slash_command.template` | 2 | slash-command rewrite string (`{name}` placeholder) |
 | `body_idiom_rewrites` | 3 | registered-idiom dispositions |
 
@@ -31,12 +32,18 @@ transform code. See the multi-target principles
 § 4 (single source of truth) and § 6 (open to further targets). ⚠ That reference document left the tree
 with the `multiplattform` epic's ingestion; recover it from git history if needed.
 
-## Transform 1 — `Skill:` directive rewrite
+## Transform 1 — Structural directive rewrites
 
-Claude Code's runtime intercepts `Skill: {bundle}:{skill}` directives
-and loads the named skill into context. OpenCode does not — its `skill`
-tool is LLM-driven, not runtime-parsed. Without rewriting, the `Skill:`
-line is just text the LLM may or may not act on.
+Claude Code's runtime intercepts full-line load directives — `Skill:
+{bundle}:{skill}` for skills and `Read: {path}` for referenced files —
+and loads the named content into context. OpenCode does not — its
+`skill` and `read` tools are LLM-driven, not runtime-parsed. Without
+rewriting, each such line is just text the LLM may or may not act on.
+Both directives are registered structural source idioms: a non-verbatim
+target must supply a template for each or the build fails closed (§
+Fail-closed below).
+
+### `Skill:` directive
 
 | Match in source body (engine-owned matcher) | Rewrite template (`mapping.json::directive_rewrites`) |
 |----------------------------------------------|-------------------------------------------------------|
@@ -48,6 +55,29 @@ unaffected. The template's `{bundle}` / `{skill}` placeholders are
 substituted from the matched directive; the `{bundle}-{skill}`
 namespacing matches the skill directories the emitter produces so the
 load target always resolves.
+
+**Idempotence:** The rewritten line does not match the source pattern,
+so re-running the transform on already-transformed text is a no-op.
+
+### `Read:` directive
+
+| Match in source body (engine-owned matcher) | Rewrite template (`mapping.json::directive_rewrites`) |
+|----------------------------------------------|-------------------------------------------------------|
+| `^Read:[ \t]+{path}[ \t]*$` (full line) | `` Call the `read` tool with `{ filePath: "{path}" }` before continuing. `` |
+
+The regex is anchored to the same full-line shape as the `Skill:`
+matcher, so inline backtick references like `` `Read: standards/foo.md` ``
+in prose are unaffected. The separator is `[ \t]+` rather than `\s+`
+so a bare `Read:` line cannot match across the newline and capture the
+NEXT line as its path. The `{path}` capture is the whole remainder of
+the directive line (trimmed of surrounding blanks): relative paths
+(`standards/foo.md`, `../sibling/...`), `~/`-rooted examples,
+`{placeholder}` values, and trailing annotations (`(always)`) all
+occur in the source corpus, so the matcher constrains the line shape,
+not the path grammar. The capture is emitted verbatim — the engine
+preserves the line ending and does not reinterpret the path; resolving
+a relative capture to a concrete file is the host runtime's
+responsibility.
 
 **Idempotence:** The rewritten line does not match the source pattern,
 so re-running the transform on already-transformed text is a no-op.
@@ -159,10 +189,10 @@ by itself. Everything else is either source-cleaned or left alone.
 
 ## Fail-closed on an unmapped structural source idiom
 
-Transforms 1 and 2 rewrite the two *structural* source idioms
-(`skill_directive`, `slash_command`). The engine registers these as its
-Claude source vocabulary and, for any **non-verbatim** target (one that
-declares at least one rewrite category), requires a non-empty template
+Transforms 1 and 2 rewrite the three *structural* source idioms
+(`skill_directive`, `read_directive`, `slash_command`). The engine registers
+these as its Claude source vocabulary and, for any **non-verbatim** target (one
+that declares at least one rewrite category), requires a non-empty template
 for each — `assert_source_vocabulary_mapped` raises `UnmappedIdiomError`
 when one is missing. This is the same fail-closed discipline as
 `UnmappedToolError` for frontmatter tools and `assert_dispositions_known`
@@ -178,7 +208,8 @@ exposes:
 
 | Symbol | Purpose |
 |--------|---------|
-| `rewrite_skill_directives(body, template)` | Apply Transform 1 with the supplied `directive_rewrites` template. |
+| `rewrite_skill_directives(body, template)` | Apply Transform 1's `Skill:`-directive rewrite with the supplied `directive_rewrites` template. |
+| `rewrite_read_directives(body, template)` | Apply Transform 1's `Read:`-directive rewrite with the supplied `directive_rewrites` template. |
 | `rewrite_slash_commands(body, lookup, template)` | Apply Transform 2 with the supplied lookup and `slash_rewrites` template. |
 | `rewrite_registered_idioms(body, registry)` | Apply Transform 3 with the supplied idiom registry. |
 | `load_transform_rules(mapping_path)` | Load + fail-closed-validate all three rule categories into a `TransformRules`. |

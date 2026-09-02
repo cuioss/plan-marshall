@@ -21,6 +21,10 @@
     "skill_directive": {
       "template": "Call the `skill` tool with `{ name: \"{bundle}-{skill}\" }` before continuing.",
       "note": "Transform 1: a full-line `Skill: {bundle}:{skill}` directive rewrites to an OpenCode `skill`-tool call. `{bundle}` / `{skill}` are substituted from the source directive; the emitter's `{bundle}-{skill}` namespacing makes the load target resolve. The full-line matcher (SKILL_DIRECTIVE_RE) is owned by the shared engine, so only this template is target data."
+    },
+    "read_directive": {
+      "template": "Call the `read` tool with `{ filePath: \"{path}\" }` before continuing.",
+      "note": "Transform 1: a full-line `Read: {path}` load directive rewrites to an OpenCode `read`-tool call. `{path}` is substituted verbatim with the directive's whole remainder-of-line capture — the engine preserves the line ending and does not reinterpret the path; resolving a relative capture to a concrete file is the host runtime's responsibility. The full-line matcher (READ_DIRECTIVE_RE) is owned by the shared engine, so only this template is target data."
     }
   },
   "slash_rewrites": {

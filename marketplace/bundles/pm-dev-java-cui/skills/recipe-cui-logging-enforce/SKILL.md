@@ -146,7 +146,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   resolve --command module-tests --module {module} --audit-plan-id {plan_id}
 ```
 
-**4e. Write the solution outline** using the Write tool to `{resolved_path}`. The document MUST include these sections in order:
+**4e. Prepare the solution outline** to be written to `{resolved_path}`. The document MUST include these sections in order:
 - `# Solution: Enforce CUI Logging Standards` header with `plan_id`, `created`, `compatibility` metadata
 - `## Summary` — scope description ({N} modules)
 - `## Overview` — resolved skills list and module breakdown

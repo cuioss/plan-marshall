@@ -22,7 +22,7 @@ Reference standards for authoring SVG technical diagrams with a uniform plan-mar
 
 **Constraints:**
 
-- **Mandatory visual confirmation before presenting or committing.** Every new or modified SVG MUST be rasterised against both the GitHub light (`#ffffff`) and dark (`#0d1117`) backgrounds (recipe in Step 4 of the Workflow) and **the rendered PNG MUST be read back by the author** (Read tool on the PNG, or open in an external viewer) before the SVG is shown to the user or committed. Authoring an SVG and trusting that "the markup looks right" is forbidden — coordinate math, font fallback, alignment, marker placement, and theme contrast can only be evaluated on the rendered output. Skipping this step has shipped misaligned diagrams to users in the past and is the most common defect class for hand-authored SVGs.
+- **Mandatory visual confirmation before presenting or committing.** Every new or modified SVG MUST be rasterised against both the GitHub light (`#ffffff`) and dark (`#0d1117`) backgrounds (recipe in Step 4 of the Workflow) and **the rendered PNG MUST be inspected by the author** (view the PNG directly, or open it in an external viewer) before the SVG is shown to the user or committed. Authoring an SVG and trusting that "the markup looks right" is forbidden — coordinate math, font fallback, alignment, marker placement, and theme contrast can only be evaluated on the rendered output. Skipping this step has shipped misaligned diagrams to users in the past and is the most common defect class for hand-authored SVGs.
 - Every SVG declares `viewBox` (not fixed width/height) so it scales.
 - Every SVG includes `role="img"` plus `<title>` and `<desc>` elements for accessibility.
 - Theme handling follows one of the three strategies in [`standards/theme-handling.md`](standards/theme-handling.md). Strategy is chosen at author time and recorded in a comment at the top of the SVG.
@@ -96,7 +96,7 @@ rsvg-convert -b "#ffffff" -w 1200 -o /tmp/diagram-light.png path/to/diagram.svg
 rsvg-convert -b "#0d1117" -w 1200 -o /tmp/diagram-dark.png  path/to/diagram.svg
 ```
 
-Then **read back both PNGs**. In Claude Code, use the `Read` tool on each PNG path so the rasterised result enters the agent's working set — do not rely on having authored the markup correctly. In a local editor, open both files in a viewer.
+Then **inspect both rendered PNGs** — open each PNG in an image-capable viewer so the rasterised result is reviewed directly, and do not rely on having authored the markup correctly.
 
 Verification checklist — every item must be visually confirmed against the rendered PNGs (not the SVG source):
 

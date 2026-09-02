@@ -11,13 +11,20 @@ contract.
 
 The three transforms, all rule-data-driven:
 
-* **Transform 1: ``Skill:`` directive rewrite** — Claude Code intercepts a
-  full-line ``Skill: {bundle}:{skill}`` directive at runtime; a non-verbatim
-  target rewrites it into its own skill-load form. The rewrite *template* lives
-  in ``mapping.json::directive_rewrites['skill_directive'].template`` with
-  ``{bundle}`` / ``{skill}`` placeholders. The engine owns the full-line
-  matcher (:data:`SKILL_DIRECTIVE_RE`), anchored so inline backtick references
-  like `` `Skill: foo:bar` `` in prose are unaffected.
+* **Transform 1: structural directive rewrites** — Claude Code intercepts
+  full-line load directives at runtime; a non-verbatim target rewrites each
+  into its own load form. Two directives are registered:
+
+    - ``Skill: {bundle}:{skill}`` — the rewrite *template* lives in
+      ``mapping.json::directive_rewrites['skill_directive'].template`` with
+      ``{bundle}`` / ``{skill}`` placeholders. The engine owns the full-line
+      matcher (:data:`SKILL_DIRECTIVE_RE`), anchored so inline backtick
+      references like `` `Skill: foo:bar` `` in prose are unaffected.
+    - ``Read: {path}`` — the rewrite *template* lives in
+      ``mapping.json::directive_rewrites['read_directive'].template`` with a
+      ``{path}`` placeholder substituted with the whole remainder of the
+      directive line. The engine owns the full-line matcher
+      (:data:`READ_DIRECTIVE_RE`), anchored the same way.
 
 * **Transform 2: Slash-command rewrite** — Claude Code skills with
   ``user-invocable: true`` are invoked as ``/skill-name``; a dual-emit target
@@ -46,7 +53,9 @@ un-dispositioned idiom:
   an *unknown* disposition raises :class:`UnmappedIdiomError`.
 * :func:`assert_source_vocabulary_mapped` — a *non-verbatim* target (one that
   declares any rewrite category) that leaves a structural source idiom
-  (``skill_directive`` / ``slash_command``) without a template raises
+  (``skill_directive`` / ``read_directive`` / ``slash_command``) without a
+  template, or with a template missing one of its required placeholders
+  (``{bundle}``/``{skill}``, ``{path}``, ``{name}`` respectively), raises
   :class:`UnmappedIdiomError`. A *verbatim* target (the canonical Claude target,
   which declares no rewrites) skips every transform, so its output stays
   byte-identical to source and independently equality-validatable.
@@ -85,7 +94,20 @@ _KNOWN_DISPOSITIONS = frozenset({'rewrite_inline_code', 'preserve', 'source_fix'
 # as ``UnmappedToolError`` for frontmatter tools.
 STRUCTURAL_VOCABULARY: dict[str, str] = {
     'skill_directive': 'directive_rewrites',
+    'read_directive': 'directive_rewrites',
     'slash_command': 'slash_rewrites',
+}
+
+# The placeholders a structural idiom's rewrite template MUST carry, keyed by
+# idiom name. A template that omits the required placeholder would pass the
+# non-empty check yet emit a broken or context-dropping instruction at rewrite
+# time (e.g. a ``read_directive`` template without ``{path}`` discards the
+# directive's whole path capture), so the load-time validation treats it as an
+# unmapped idiom — fail-closed, not fail-loud.
+REQUIRED_PLACEHOLDERS: dict[str, frozenset[str]] = {
+    'skill_directive': frozenset({'{bundle}', '{skill}'}),
+    'read_directive': frozenset({'{path}'}),
+    'slash_command': frozenset({'{name}'}),
 }
 
 
@@ -107,6 +129,23 @@ SKILL_DIRECTIVE_RE = re.compile(
     re.MULTILINE,
 )
 
+# Match a full-line ``Read: {path}`` load directive. The path capture is the
+# whole remainder of the line (trimmed of surrounding blanks): relative paths
+# (``standards/foo.md``), ``../``/``~/`` forms, ``{placeholder}`` values, and
+# trailing annotations (``(always)``) all occur in the source corpus, so the
+# matcher deliberately constrains only the line shape, not the path grammar.
+# The separator is ``[ \t]+`` rather than ``\\s+`` so a bare ``Read:`` line
+# cannot swallow the NEXT line through the newline — the directive is one line.
+# The tail is ``[ \t]*(?P<cr>\r?)$`` rather than ``\s*$``: the line's
+# terminating newline stays in the body (the rewrite replaces the line in
+# place), while a CRLF ending still matches without leaking the ``\r`` into the
+# path capture. The ``cr`` group is restored by the rewrite so CRLF line
+# endings survive the substitution.
+READ_DIRECTIVE_RE = re.compile(
+    r'^Read:[ \t]+(?P<path>\S.*?)[ \t]*(?P<cr>\r?)$',
+    re.MULTILINE,
+)
+
 
 BodyTransformer = Callable[[str, str, str], str]
 """Signature: ``(body, bundle, kind) -> rewritten body``. ``kind`` is one of
@@ -120,8 +159,9 @@ class TransformRules:
     Each field mirrors a ``mapping.json`` top-level category:
 
     * ``directive_rewrites`` — Transform 1 templates, keyed by structural idiom
-      name (``skill_directive``). Each record carries a ``template`` with
-      ``{bundle}`` / ``{skill}`` placeholders.
+      name (``skill_directive``, ``read_directive``). Each record carries a
+      ``template`` — ``{bundle}`` / ``{skill}`` placeholders for the skill
+      directive, a ``{path}`` placeholder for the read directive.
     * ``slash_rewrites`` — Transform 2 templates, keyed by structural idiom name
       (``slash_command``). Each record carries a ``template`` with a ``{name}``
       placeholder.
@@ -201,7 +241,10 @@ def assert_source_vocabulary_mapped(rules: TransformRules) -> None:
     bytes unchanged. A non-verbatim target must supply a non-empty ``template``
     for each idiom in :data:`STRUCTURAL_VOCABULARY`; a missing template raises
     :class:`UnmappedIdiomError`, so a target cannot partially opt into rewriting
-    and silently leave a known Claude source idiom un-rewritten.
+    and silently leave a known Claude source idiom un-rewritten. Each template
+    must also carry every placeholder in :data:`REQUIRED_PLACEHOLDERS` for that
+    idiom — without it the rewrite would emit an instruction that drops the
+    matched content, so the absence fails closed too.
     """
     if rules.is_verbatim:
         return
@@ -214,6 +257,12 @@ def assert_source_vocabulary_mapped(rules: TransformRules) -> None:
                 f'Non-verbatim target leaves source idiom {idiom!r} unmapped; '
                 f'expected a non-empty {category_key}[{idiom!r}].template'
             )
+        for placeholder in REQUIRED_PLACEHOLDERS[idiom]:
+            if placeholder not in template:
+                raise UnmappedIdiomError(
+                    f'{category_key}[{idiom!r}].template is missing required '
+                    f'placeholder {placeholder!r}'
+                )
 
 
 def rewrite_skill_directives(body: str, template: str) -> str:
@@ -234,6 +283,25 @@ def rewrite_skill_directives(body: str, template: str) -> str:
         return template.replace('{bundle}', bundle).replace('{skill}', skill)
 
     return SKILL_DIRECTIVE_RE.sub(replace, body)
+
+
+def rewrite_read_directives(body: str, template: str) -> str:
+    """Apply Transform 1: full-line ``Read:`` directive rewrite.
+
+    ``template`` is the target's rewrite string with a ``{path}`` placeholder
+    (from ``mapping.json::directive_rewrites['read_directive']``). The
+    placeholder is substituted with the directive's whole path capture — the
+    remainder of the line as written — so trailing annotations and
+    ``{placeholder}`` values are preserved in the emitted instruction.
+
+    Idempotent: the rewritten line no longer matches :data:`READ_DIRECTIVE_RE`,
+    so re-running is a no-op.
+    """
+
+    def replace(match: re.Match[str]) -> str:
+        return template.replace('{path}', match.group('path')) + match.group('cr')
+
+    return READ_DIRECTIVE_RE.sub(replace, body)
 
 
 def build_slash_command_re(known_names: list[str]) -> re.Pattern[str] | None:
@@ -319,16 +387,22 @@ def make_body_transformer(
     reserved for future per-context behavior; the current transforms apply
     uniformly to skill, agent, and command bodies.
 
-    Each transform runs only when ``rules`` declares its category, so a verbatim
-    target (empty ``rules``) returns bodies unchanged. ``rules`` is expected to
-    have passed the fail-closed validation in :func:`load_transform_rules`.
+    Transform 1 covers both registered structural directives (``Skill:`` and
+    ``Read:``); each runs only when ``rules`` supplies its template. The
+    remaining transforms run only when ``rules`` declares their category, so a
+    verbatim target (empty ``rules``) returns bodies unchanged. ``rules`` is
+    expected to have passed the fail-closed validation in
+    :func:`load_transform_rules`.
     """
     directive_template = _structural_template(rules.directive_rewrites, 'skill_directive')
+    read_template = _structural_template(rules.directive_rewrites, 'read_directive')
     slash_template = _structural_template(rules.slash_rewrites, 'slash_command')
 
     def transform(body: str, _bundle: str, _kind: str) -> str:
         if directive_template:
             body = rewrite_skill_directives(body, directive_template)
+        if read_template:
+            body = rewrite_read_directives(body, read_template)
         if slash_template:
             body = rewrite_slash_commands(body, lookup, slash_template)
         if rules.body_idiom_rewrites:
@@ -420,6 +494,7 @@ def build_user_invocable_lookup(marketplace_dir: Path) -> dict[str, str]:
 
 __all__ = [
     'BodyTransformer',
+    'READ_DIRECTIVE_RE',
     'STRUCTURAL_VOCABULARY',
     'SKILL_DIRECTIVE_RE',
     'TransformRules',
@@ -430,6 +505,7 @@ __all__ = [
     'build_user_invocable_lookup',
     'load_transform_rules',
     'make_body_transformer',
+    'rewrite_read_directives',
     'rewrite_registered_idioms',
     'rewrite_skill_directives',
     'rewrite_slash_commands',

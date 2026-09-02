@@ -457,7 +457,7 @@ The comprehensive-review workflow can be invoked from any skill or agent that lo
 **Process:**
 
 1. Use `asciidoc classify-links` for link classification
-2. Manual verification with Read tool
+2. Verify manually by reading the target
 3. Document false positives in report
 4. Consider updating script patterns
 
