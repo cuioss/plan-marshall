@@ -14,7 +14,10 @@ which lines of a spec are surface, and which are only page furniture:
   nested-list-item control that distinguishes an indented continuation from
   indented code, and the fence-close clauses that decide where a block ENDS.
 - **Corpus notation tolerances** — bullet markers, label prefixes, heading
-  spelling, and where a section body ends.
+  spelling, and where a section body ends. The label prefix carries two
+  obligations that are tested as a pair: it is STRIPPED from the body before
+  paths resolve, and WHICH label it was survives that strip as the entry's
+  shape.
 - **Plan-id notation** — the three settled spec-name forms
   :data:`epic_spec_parser.PLAN_ID_SEGMENT` admits, and the fallback for a name
   matching none of them.
@@ -282,6 +285,39 @@ def test_label_prefix_is_stripped_before_resolution(repo: Path, plans: Path, bul
     claim = claim_for(plans, repo, 'PLAN-120.md', body)
 
     assert paths(claim.claimed) == {'test/eta/test_x.py'}
+
+
+@pytest.mark.parametrize(
+    ('bullet', 'shape'),
+    [
+        ('- OBSERVED: adds `test/eta/test_x.py`', spec_parser.SHAPE_CLAIM),
+        ('- HYPOTHESIS: adds `test/eta/test_x.py`', spec_parser.SHAPE_LEAD),
+        (
+            '- OBSERVED — **re-derive; narrow scope**: adds `test/eta/test_x.py`',
+            spec_parser.SHAPE_CLAIM,
+        ),
+        ('- adds `test/eta/test_x.py`', spec_parser.SHAPE_CLAIM),
+    ],
+    ids=['observed', 'hypothesis', 'observed_qualified', 'unlabelled'],
+)
+def test_the_label_survives_the_strip_as_the_entrys_shape(
+    repo: Path, plans: Path, bullet: str, shape: str
+) -> None:
+    """Stripping the prefix from the BODY must not destroy WHICH label it was.
+
+    The parametrisation is the same fixture set as the strip test above, read for
+    the other half of the contract: the path resolves identically for all four,
+    while only ``HYPOTHESIS`` marks the entry a lead. Discarding the matched
+    label is what previously made a lead indistinguishable from a claim, and the
+    qualified and unlabelled rows are the matched negatives that keep the rule
+    from widening into "any label at all".
+    """
+    body = f'# PLAN-126\n\n## Expected Surface\n\n{bullet}\n'
+
+    claim = claim_for(plans, repo, 'PLAN-126.md', body)
+
+    assert paths(claim.claimed) == {'test/eta/test_x.py'}
+    assert [entry.shape for entry in claim.claimed] == [shape]
 
 
 @pytest.mark.parametrize(

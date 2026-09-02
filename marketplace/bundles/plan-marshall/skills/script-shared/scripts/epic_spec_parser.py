@@ -33,6 +33,23 @@ verdict recorded beside it:
 
 A spec whose class cannot be determined raises :class:`UnclassifiableSpecError`
 naming the spec, rather than defaulting to a class.
+
+Independently of that spec-level class, EACH resolved entry carries its own
+shape — :data:`SHAPE_CLAIM` or :data:`SHAPE_LEAD` — decided from its own
+bullet's label and text by the two marker rules. A spec routinely mixes the
+two: the same ``declarative`` spec may claim one directory outright and merely
+point at another pending outline-time verification, and reading the second as
+an ownership claim is what collapses a downstream attribution into a single
+contested bucket.
+
+⛔ The shape is ADDITIVE. It is recorded on the entry and changes no
+accumulator: ``claimed`` and ``excluded`` hold exactly the entries they would
+hold without it. This is deliberate, because the two consumers of this reader
+want different things from the same resolution — the orchestrator's queue cell
+and its disjointness gate need the surface whole, while the epic-surface
+partition demotes leads on its OWN side. Moving a lead out of ``claimed`` here
+would shrink the disjointness gate's input and make a colliding plan read as
+disjoint, so this module states the shape and demotes nothing.
 """
 
 import re
@@ -52,6 +69,15 @@ KIND_RECURSIVE_GLOB = 'recursive_glob'
 KIND_DIRECTORY = 'directory'
 KIND_FILENAME_GLOB = 'filename_glob'
 KIND_FILE = 'file'
+
+#: The two SHAPES a resolved entry takes, decided per ENTRY and independently of
+#: the spec's class. ``claim`` is an ownership claim over the path; ``lead`` is a
+#: pointer the spec has not settled — a hypothesis to verify at outline time, or
+#: a statement of where the test runner collects from. A lead names a path
+#: without claiming it, so a consumer deciding ownership must not read one as a
+#: claim.
+SHAPE_CLAIM = 'claim'
+SHAPE_LEAD = 'lead'
 
 #: The plan-id segment of a spec name, as an explicit three-way alternation over
 #: the settled forms — ``PLAN-{DIGITS}``, ``PLAN-{SLUG}-{DIGITS}``, and
@@ -120,7 +146,38 @@ _TAB_STOP = 4
 #: ``OBSERVED:`` / ``HYPOTHESIS:`` label prefixes, including the corpus's
 #: qualified forms (``OBSERVED — **re-derive; ...**:``). Everything up to the
 #: first colon is the label.
-_LABEL_PREFIX_RE = re.compile(r'^(?:OBSERVED|HYPOTHESIS)\b[^:]*:[ \t]*')
+#:
+#: Group ``label`` RETAINS which of the two matched. The prefix is still stripped
+#: from the body, but discarding which label it was is what previously made a
+#: lead indistinguishable from a claim: ``HYPOTHESIS`` is precisely the corpus's
+#: marker for a path the spec has NOT settled, so the distinction has to survive
+#: the strip for rule (a) below to fire on it.
+_LABEL_PREFIX_RE = re.compile(r'^(?P<label>OBSERVED|HYPOTHESIS)\b[^:]*:[ \t]*')
+
+# --- entry-shape markers (rules (a) and (b)) ---------------------------------
+#
+# Both rules resolve a matched entry to SHAPE_LEAD, both are keyword/label
+# marker matches over the bullet's OWN text in the same style as _DERIVED_RE,
+# and neither references any plan identifier — a spec added to the corpus is
+# shaped by the same two rules with no edit here. They are independent: either
+# fires on its own, and each is testable without the other.
+
+#: Rule (a), the label half — the label that marks a bullet a LEAD. A
+#: ``HYPOTHESIS:`` bullet names a candidate path for outline-time verification,
+#: not a surface the plan claims.
+_LEAD_LABEL = 'HYPOTHESIS'
+
+#: Rule (a), the phrase half — the corpus's explicit deferral phrase. Carries the
+#: same meaning as the label and appears in the bullet's commentary, so a lead
+#: written without the label is still resolved as one.
+_LEAD_PHRASE_RE = re.compile(r'\bverify-at-outline\b', re.IGNORECASE)
+
+#: Rule (b) — a collection constraint. ``testpaths`` is the pytest key naming
+#: where the runner COLLECTS from; a bullet citing it is stating a constraint the
+#: plan's own test location must satisfy, not claiming that tree. Matched
+#: case-sensitively on the settings key itself, which is what keeps the rule
+#: corpus-independent.
+_COLLECTION_CONSTRAINT_RE = re.compile(r'\btestpaths\b')
 
 #: A ``` `span` ``` of backticked text — the corpus's path notation.
 _BACKTICK_RE = re.compile(r'`([^`\n]+)`')
@@ -168,10 +225,18 @@ class UnclassifiableSpecError(Exception):
 
 @dataclass(frozen=True)
 class PathEntry:
-    """One path a spec names, resolved against the repository root."""
+    """One path a spec names, resolved against the repository root.
+
+    ``shape`` records whether the spec CLAIMS the path or merely LEADS to it,
+    decided per entry by the two marker rules and never inherited from the
+    spec's class. It is an ADDED fact: an entry keeps its membership of
+    ``claimed`` / ``excluded`` whatever its shape, so a consumer that ignores
+    ``shape`` reads exactly the surface it read before the field existed.
+    """
 
     path: str
     kind: str
+    shape: str = SHAPE_CLAIM
 
 
 @dataclass(frozen=True)
@@ -403,6 +468,25 @@ def _bullet_segments(body: str) -> list[str]:
     return [head]
 
 
+def _entry_shape(label: str, body: str) -> str:
+    """Resolve one bullet's entry shape from its own label and text.
+
+    Rule (a) — a ``HYPOTHESIS`` label, or the ``verify-at-outline`` deferral
+    phrase — marks a lead the spec has not settled. Rule (b) — a ``testpaths``
+    collection constraint — marks a statement about where the runner collects
+    from. Either resolves the bullet's entries to :data:`SHAPE_LEAD`; anything
+    else is an ordinary claim.
+
+    The spec's class is deliberately not an input: shape is decided per entry,
+    so one spec's bullets may resolve to different shapes.
+    """
+    if label == _LEAD_LABEL or _LEAD_PHRASE_RE.search(body):
+        return SHAPE_LEAD
+    if _COLLECTION_CONSTRAINT_RE.search(body):
+        return SHAPE_LEAD
+    return SHAPE_CLAIM
+
+
 def _collect_bullet(
     bullet: str,
     repo_root: Path,
@@ -411,9 +495,18 @@ def _collect_bullet(
     excluded: list[PathEntry],
     unresolved: list[str],
 ) -> None:
-    """Resolve one bullet's entries into the caller's three accumulators."""
-    body = _LABEL_PREFIX_RE.sub('', bullet, count=1)
+    """Resolve one bullet's entries into the caller's three accumulators.
+
+    Every entry the bullet yields carries the bullet's resolved shape. The shape
+    steers no accumulator: it is recorded ON the entry, never used to route one
+    away from ``claimed``, so the membership the other consumer of this reader
+    compares is unchanged by it.
+    """
+    label_match = _LABEL_PREFIX_RE.match(bullet)
+    label = label_match.group('label') if label_match else ''
+    body = bullet[label_match.end():] if label_match else bullet
     negative = bool(_NEGATIVE_CLAIM_RE.match(body))
+    shape = _entry_shape(label, body)
 
     spans: list[tuple[str, bool]] = []
     for segment in _bullet_segments(body):
@@ -445,7 +538,7 @@ def _collect_bullet(
                 unresolved.append(span)
                 continue
             path = base + relative
-        entry = PathEntry(path=path, kind=_entry_kind(path))
+        entry = PathEntry(path=path, kind=_entry_kind(path), shape=shape)
         is_exclusion = force_excluded or negative or after_excluding
         (excluded if is_exclusion else claimed).append(entry)
 

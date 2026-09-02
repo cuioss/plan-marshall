@@ -8,10 +8,18 @@ disjointness gate and ``pm-plugin-development:tools-epic-surface-partition``
 consume it, so its coverage lives with the module rather than with either
 consumer.
 
+Entry SHAPE — whether an entry is an ownership claim or a lead the spec has not
+settled — is resolved per ENTRY by two marker rules, and the shape cluster below
+covers each rule independently: a positive control, a negative control over the
+whole-tree wording that must NOT fire, a matched negative that no spec-level
+resolution could produce, and an additivity control pinning that a marked entry
+keeps its membership of ``claimed``.
+
 Markdown-notation tolerance — code-block masking, label prefixes, heading
 spelling — is the sibling cluster, in ``test_epic_spec_parser_notation.py``.
 Every corpus is built under ``tmp_path``: the real orchestrator store is neither
-read nor written.
+read nor written, including by the corpus-oracle cluster, which reproduces the
+live corpus's wording rather than reading it.
 """
 
 from __future__ import annotations
@@ -158,6 +166,322 @@ def test_relative_entry_without_a_base_is_recorded_unresolved(repo: Path, plans:
 
     assert claim.unresolved == ('test_orphan_*.py',)
     assert paths(claim.claimed) == {'test/alpha/test_one.py'}
+
+
+# --- entry shape: rule (a), the lead marker ----------------------------------
+#
+# A HYPOTHESIS label or the verify-at-outline deferral phrase marks a path the
+# spec POINTS AT rather than claims. Every fixture in this section is free of
+# rule (b)'s marker, so each assertion is about rule (a) alone.
+
+
+def test_a_hypothesis_label_resolves_its_entries_to_a_lead(repo: Path, plans: Path) -> None:
+    """Rule (a), the label half — positive control."""
+    body = (
+        '# PLAN-200\n\n## Expected Surface\n\n'
+        "- HYPOTHESIS: guards across `test/omega/**` carrying a path literal — R1's output\n"
+    )
+
+    claim = claim_for(plans, repo, 'PLAN-200.md', body)
+    entry = next(entry for entry in claim.claimed if entry.path == 'test/omega/**')
+
+    assert entry.shape == spec_parser.SHAPE_LEAD
+
+
+def test_the_verify_at_outline_phrase_resolves_its_entries_to_a_lead(
+    repo: Path, plans: Path
+) -> None:
+    """Rule (a), the phrase half — positive control, and the label is OBSERVED.
+
+    The two halves are independent signals: this bullet carries no HYPOTHESIS
+    label, so a rule reading only the label would leave the entry a claim.
+    """
+    body = (
+        '# PLAN-201\n\n## Expected Surface\n\n'
+        '- OBSERVED: `test/omega/` or a sibling the tree indicates (verify-at-outline)\n'
+    )
+
+    claim = claim_for(plans, repo, 'PLAN-201.md', body)
+    entry = next(entry for entry in claim.claimed if entry.path == 'test/omega/')
+
+    assert entry.shape == spec_parser.SHAPE_LEAD
+
+
+def test_an_observed_whole_tree_declaration_stays_a_claim(repo: Path, plans: Path) -> None:
+    """Negative control, in the corpus's own whole-tree wording.
+
+    A plan that deliberately crosses the entire tree declares exactly this shape.
+    Marking it a lead would demote a real ownership claim and hand the whole
+    tree back to the contested set — the opposite of the defect the rules exist
+    to fix.
+    """
+    body = (
+        '# PLAN-202\n\n## Expected Surface\n\n'
+        "- OBSERVED: `test/` — ⛔ **the whole tree.** The rule's findings do not respect "
+        "slice boundaries, so this plan's surface is the test tree entire\n"
+    )
+
+    claim = claim_for(plans, repo, 'PLAN-202.md', body)
+    entry = next(entry for entry in claim.claimed if entry.path == 'test/')
+
+    assert entry.shape == spec_parser.SHAPE_CLAIM
+
+
+def test_a_lead_entry_keeps_its_membership_of_claimed(repo: Path, plans: Path) -> None:
+    """Additivity control for rule (a).
+
+    The shape is an ADDED field, never a re-partition. Were a lead routed into a
+    third accumulator instead, the orchestrator's queue cell and its disjointness
+    input would silently shrink, and a colliding plan would read as disjoint.
+    """
+    body = (
+        '# PLAN-203\n\n## Expected Surface\n\n'
+        '- HYPOTHESIS: sweeps across `test/omega/**` (verify-at-outline)\n'
+    )
+
+    claim = claim_for(plans, repo, 'PLAN-203.md', body)
+
+    assert paths(claim.claimed) == {'test/omega/**'}
+    assert claim.excluded == ()
+    assert [entry.shape for entry in claim.claimed] == [spec_parser.SHAPE_LEAD]
+
+
+def test_one_declarative_spec_carries_both_a_claim_and_a_lead(repo: Path, plans: Path) -> None:
+    """Matched negative control: the OLD per-spec-class resolution cannot pass this.
+
+    Both entries live in ONE spec, so they share one ``spec_class``. Any
+    resolution that read entry shape off that class must give them the SAME
+    shape and fail here; only a per-entry rule can give them different ones.
+    """
+    body = (
+        '# PLAN-204\n\n## Expected Surface\n\n'
+        '- OBSERVED: `test/alpha/test_one.py` — the module this plan rewrites\n'
+        "- HYPOTHESIS: further instances across `test/omega/**` — R1's output "
+        '(verify-at-outline)\n'
+    )
+
+    claim = claim_for(plans, repo, 'PLAN-204.md', body)
+    shapes = {entry.path: entry.shape for entry in claim.claimed}
+
+    assert claim.spec_class == spec_parser.CLASS_DECLARATIVE
+    assert shapes == {
+        'test/alpha/test_one.py': spec_parser.SHAPE_CLAIM,
+        'test/omega/**': spec_parser.SHAPE_LEAD,
+    }
+
+
+# --- entry shape: rule (b), the collection constraint ------------------------
+#
+# A bullet citing pytest's ``testpaths`` key states where the runner COLLECTS
+# from — a constraint the plan's own test location must satisfy, not a claim on
+# that tree. Every fixture in this section is free of rule (a)'s markers, so each
+# assertion is about rule (b) alone.
+
+
+def test_a_testpaths_collection_constraint_resolves_its_entry_to_a_lead(
+    repo: Path, plans: Path
+) -> None:
+    """Rule (b) — positive control, in the corpus's own wording.
+
+    The marker sits in the bullet's trailing commentary, which contributes no
+    entry of its own; the shape is still resolved from the whole bullet, so the
+    head's ``test/`` is marked by it.
+    """
+    body = (
+        '# PLAN-210\n\n## Expected Surface\n\n'
+        "- OBSERVED: that script's tests, under `test/` — `pyproject.toml` sets "
+        '`testpaths = ["test"]`, so a module outside that tree is never collected\n'
+    )
+
+    claim = claim_for(plans, repo, 'PLAN-210.md', body)
+    entry = next(entry for entry in claim.claimed if entry.path == 'test/')
+
+    assert entry.shape == spec_parser.SHAPE_LEAD
+
+
+def test_an_observed_bullet_without_the_constraint_stays_a_claim(
+    repo: Path, plans: Path
+) -> None:
+    """Negative control: the same entry, the same label, no collection constraint."""
+    body = (
+        '# PLAN-211\n\n## Expected Surface\n\n'
+        "- OBSERVED: that script's tests, under `test/` — the home this plan adds them to\n"
+    )
+
+    claim = claim_for(plans, repo, 'PLAN-211.md', body)
+    entry = next(entry for entry in claim.claimed if entry.path == 'test/')
+
+    assert entry.shape == spec_parser.SHAPE_CLAIM
+
+
+def test_a_collection_constraint_entry_keeps_its_membership_of_claimed(
+    repo: Path, plans: Path
+) -> None:
+    """Additivity control for rule (b), matching rule (a)'s."""
+    body = (
+        '# PLAN-212\n\n## Expected Surface\n\n'
+        '- OBSERVED: tests under `test/` — `testpaths` decides where they are collected\n'
+    )
+
+    claim = claim_for(plans, repo, 'PLAN-212.md', body)
+
+    assert paths(claim.claimed) == {'test/'}
+    assert claim.excluded == ()
+    assert [entry.shape for entry in claim.claimed] == [spec_parser.SHAPE_LEAD]
+
+
+def test_one_declarative_spec_carries_both_a_claim_and_a_collection_constraint(
+    repo: Path, plans: Path
+) -> None:
+    """Matched negative control for rule (b), matching rule (a)'s.
+
+    One spec, one ``spec_class``, two different entry shapes — unreachable for
+    any resolution taken at spec level.
+    """
+    body = (
+        '# PLAN-213\n\n## Expected Surface\n\n'
+        '- OBSERVED: `test/alpha/test_one.py` — the module this plan adds\n'
+        '- OBSERVED: it must sit under `test/` — `testpaths` decides what is collected\n'
+    )
+
+    claim = claim_for(plans, repo, 'PLAN-213.md', body)
+    shapes = {entry.path: entry.shape for entry in claim.claimed}
+
+    assert claim.spec_class == spec_parser.CLASS_DECLARATIVE
+    assert shapes == {
+        'test/alpha/test_one.py': spec_parser.SHAPE_CLAIM,
+        'test/': spec_parser.SHAPE_LEAD,
+    }
+
+
+def test_the_two_rules_fire_independently_of_each_other(repo: Path, plans: Path) -> None:
+    """Neither rule needs the other's marker present to fire.
+
+    Guards against a collapsed implementation that required both signals, which
+    would pass every positive control above only if each fixture happened to
+    carry both markers.
+    """
+    lead_only = claim_for(
+        plans,
+        repo,
+        'PLAN-214.md',
+        '# PLAN-214\n\n## Expected Surface\n\n- HYPOTHESIS: `test/omega/**`\n',
+    )
+    constraint_only = claim_for(
+        plans,
+        repo,
+        'PLAN-215.md',
+        '# PLAN-215\n\n## Expected Surface\n\n'
+        '- OBSERVED: `test/omega/` — `testpaths` decides collection\n',
+    )
+
+    assert [entry.shape for entry in lead_only.claimed] == [spec_parser.SHAPE_LEAD]
+    assert [entry.shape for entry in constraint_only.claimed] == [spec_parser.SHAPE_LEAD]
+
+
+# --- the corpus oracle rows --------------------------------------------------
+#
+# The five live-corpus entries the two rules must resolve to leads, each named by
+# its spec, together with the two whole-tree claims that must SURVIVE. The
+# corpus's own wording is reproduced here rather than read from the orchestrator
+# store, so the assertions are about the RULES and this suite stays hermetic.
+
+_ORACLE_CORPUS = {
+    'PLAN-105.md': (
+        '# PLAN-105\n\n## Expected Surface\n\n'
+        '- OBSERVED: `test/pm-plugin-development/plugin-doctor/` — D3\'s tests\n'
+        '- HYPOTHESIS: **~391 files across `test/` and `marketplace/bundles/`** — '
+        "D7's final sweep (verify-at-outline). ⛔ **The widest surface in the plan**\n"
+    ),
+    'PLAN-120.md': (
+        '# PLAN-120\n\n## Expected Surface\n\n'
+        '- OBSERVED: `test/pm-plugin-development/` — the most likely home for this '
+        "checker's tests. ⚠️ **A lead, not a decision**\n"
+        "- OBSERVED: that script's tests, under `test/` — `pyproject.toml` sets "
+        '`testpaths = ["test"]` and `python_files = ["test_*.py"]`, so a module '
+        'outside that tree is never collected\n'
+    ),
+    'PLAN-130.md': (
+        '# PLAN-130\n\n## Expected Surface\n\n'
+        "- OBSERVED: `test/` — ⛔ **the whole tree.** The rule's 205 findings do not "
+        "respect slice boundaries, so this plan's surface is the test tree entire, and "
+        'it pairs with no other `test/`-editing plan\n'
+    ),
+    'PLAN-135.md': (
+        '# PLAN-135\n\n## Expected Surface\n\n'
+        "- OBSERVED: `test/` — ⛔ **the whole tree.** The rule's 110 findings do not "
+        "respect slice boundaries, so this plan's surface is the test tree entire, and "
+        'it pairs with no other `test/`-editing plan\n'
+    ),
+    'PLAN-160.md': (
+        '# PLAN-160\n\n## Expected Surface\n\n'
+        '- HYPOTHESIS: guards and controls across `test/**` carrying a cross-slice path '
+        "literal — **R1's output** (verify-at-outline)\n"
+        '- HYPOTHESIS: constant name/path lists across `test/**` mirroring a live '
+        "source — **R3's output** (verify-at-outline)\n"
+        '- HYPOTHESIS: `monkeypatch.delitem` / `delenv` sites with conditional teardown '
+        "across `test/**` — **R4's output** (verify-at-outline)\n"
+    ),
+}
+
+
+@pytest.fixture
+def oracle(repo: Path, plans: Path):
+    for name, body in _ORACLE_CORPUS.items():
+        write_spec(plans, name, body)
+    return {claim.plan_id: claim for claim in spec_parser.classify_corpus(plans, repo)}
+
+
+def test_the_oracle_corpus_is_fully_enumerated(oracle) -> None:
+    """Guards the five rows below against a vacuous pass over a corpus that lost a spec."""
+    assert sorted(oracle) == ['PLAN-105', 'PLAN-120', 'PLAN-130', 'PLAN-135', 'PLAN-160']
+
+
+@pytest.mark.parametrize(
+    ('plan_id', 'path', 'occurrences'),
+    [
+        ('PLAN-105', 'test/', 1),
+        ('PLAN-160', 'test/**', 3),
+        ('PLAN-120', 'test/', 1),
+    ],
+    ids=['plan_105_lead_marker', 'plan_160_lead_marker', 'plan_120_collection_constraint'],
+)
+def test_the_oracle_rows_resolve_to_leads(
+    oracle, plan_id: str, path: str, occurrences: int
+) -> None:
+    """The five rows, by name: four by rule (a) and one by rule (b)."""
+    rows = [entry for entry in oracle[plan_id].claimed if entry.path == path]
+
+    assert len(rows) == occurrences, f'{plan_id} resolved {len(rows)} {path!r} entries'
+    assert [entry.shape for entry in rows] == [spec_parser.SHAPE_LEAD] * occurrences
+
+
+@pytest.mark.parametrize('plan_id', ['PLAN-130', 'PLAN-135'], ids=['plan_130', 'plan_135'])
+def test_the_whole_tree_declarations_survive_as_claims(oracle, plan_id: str) -> None:
+    """The negative control both rules are measured against.
+
+    These two plans cross the whole partition by construction. Neither marker
+    matches their wording, so their ``test/`` entries stay claims and the specs
+    stay ``declarative``.
+    """
+    rows = [entry for entry in oracle[plan_id].claimed if entry.path == 'test/']
+
+    assert [entry.shape for entry in rows] == [spec_parser.SHAPE_CLAIM]
+    assert oracle[plan_id].spec_class == spec_parser.CLASS_DECLARATIVE
+
+
+def test_no_oracle_spec_loses_an_entry_to_its_shape(oracle) -> None:
+    """Additivity across the whole oracle corpus, not just one fixture."""
+    resolved = {plan_id: paths(claim.claimed) for plan_id, claim in oracle.items()}
+
+    assert resolved['PLAN-105'] == {
+        'test/pm-plugin-development/plugin-doctor/',
+        'test/',
+        'marketplace/bundles/',
+    }
+    assert resolved['PLAN-120'] == {'test/pm-plugin-development/', 'test/'}
+    assert resolved['PLAN-130'] == {'test/'}
+    assert resolved['PLAN-160'] == {'test/**'}
 
 
 # --- exclusions --------------------------------------------------------------
