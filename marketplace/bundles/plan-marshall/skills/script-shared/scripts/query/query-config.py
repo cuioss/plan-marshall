@@ -13,7 +13,7 @@ Usage:
     query-config.py get-skills-by-profile --domain java
     query-config.py list-recipes
     query-config.py resolve-recipe --recipe refactor-to-standards
-    query-config.py resolve-outline-skill --domain java
+    query-config.py resolve-outline-skill --domain java --domain plan-marshall-plugin-dev
     query-config.py list-finalize-steps
     query-config.py list-verify-steps
 """
@@ -80,8 +80,19 @@ def main() -> int:
     p_rr.add_argument('--recipe', required=True, help='Recipe key (e.g., refactor-to-standards)')
 
     # --- resolve-outline-skill ---
-    p_ros = subparsers.add_parser('resolve-outline-skill', help='Resolve outline skill for domain', allow_abbrev=False)
-    p_ros.add_argument('--domain', required=True, help='Domain key (e.g., plan-marshall-plugin-dev, java)')
+    p_ros = subparsers.add_parser(
+        'resolve-outline-skill',
+        help='Resolve the outline skill across every domain a plan carries',
+        allow_abbrev=False,
+    )
+    # Repeatable — this is the second read-only argparse surface over the same
+    # cmd_resolve_outline_skill handler, which aggregates over the whole roster.
+    p_ros.add_argument(
+        '--domain',
+        action='append',
+        required=True,
+        help='Domain key (e.g., plan-marshall-plugin-dev, java); repeat once per domain',
+    )
 
     # --- list-finalize-steps ---
     subparsers.add_parser('list-finalize-steps', help='List all available finalize steps', allow_abbrev=False)

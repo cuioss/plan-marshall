@@ -395,6 +395,40 @@ The default `UTC` makes the unset behaviour byte-identical to the pre-knob rende
 
 A `--value` that is not a loadable IANA zone produces the standard `invalid_value` error response and persists nothing.
 
+## Commit-Trailer Section
+
+The `commit_trailer` object holds the co-author identity every assistant-authored commit ends with. The identity names the **system** that produced the commit — never the assistant or the vendor behind it — and it does not vary by target, so one project commits under one name regardless of which assistant ran the work.
+
+Because run-configuration.json is git-ignored, this knob is per-checkout: a fresh clone and every cloud session resolve to the defaults below. Repository documentation therefore states the default identity, not a configured override, and the trailer stays resolvable in a checkout that has no run-configuration.json at all.
+
+### Schema
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `commit_trailer.name` | string | `plan-marshall` | Co-author name. |
+| `commit_trailer.email` | string | `noreply@cuioss.de` | Co-author address. |
+
+The two halves resolve **independently**: a config carrying only `name` yields a configured name beside a default email. A stored value that is empty, not a string, or carries an angle bracket or a line break is treated as absent, because each of those would break the trailer line's own grammar — so a malformed config degrades to the default identity rather than emitting a corrupt trailer.
+
+### Operations
+
+| Subcommand | Purpose |
+|------------|---------|
+| `commit-trailer get` | Resolve `name`, `email`, the composed `trailer`, and `name_source` / `email_source` |
+| `commit-trailer set [--name NAME] [--email EMAIL]` | Persist either half, or both |
+
+`get` reports the source of each half (`configured` or `default`) rather than leaving the caller to infer it from the value.
+
+`set` requires at least one of `--name` / `--email`, applies the fragment validation above, and additionally requires `--email` to contain `@`. A rejected value produces the standard `invalid_value` error response and persists nothing.
+
+The composed line has the form:
+
+```text
+Co-Authored-By: {name} <{email}>
+```
+
+`compose_commit_trailer` is the single place that form is assembled, so the getter, the setter's echo, and every operator-facing confirmation render one identity in exactly one way.
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config display-timezone get
 ```

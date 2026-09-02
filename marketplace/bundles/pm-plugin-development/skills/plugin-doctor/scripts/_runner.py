@@ -47,6 +47,9 @@ from _analyze_argument_naming import (
     analyze_argument_naming,
     analyze_argument_naming_with_population,
 )
+from _analyze_askuserquestion_prompt_quality import (
+    analyze_askuserquestion_prompt_quality,
+)
 from _analyze_askuserquestion_reachability import (
     analyze_askuserquestion_reachability,
 )
@@ -441,6 +444,12 @@ class RuleRunner:
         issues.extend(analyze_skill_relative_temp_path(root))
         issues.extend(analyze_workflow_doc_toon_error_field(root))
         issues.extend(analyze_askuserquestion_reachability(root))
+        # ⛔ Default-on and reachable ONLY here — deliberately absent from
+        # ``run_quality_gate``, for the same reason recorded on
+        # ``documented_verb_set_drift`` below. This rule's corpus is every
+        # ``AskUserQuestion:`` invocation block in the marketplace, so it
+        # belongs on the authoring-time analyze surface.
+        issues.extend(analyze_askuserquestion_prompt_quality(root))
         issues.extend(analyze_bash_fence_inline_code_exemption(root))
         issues.extend(analyze_lesson_id_in_skill_prose(root))
         issues.extend(analyze_allowed_tools_drift(root))

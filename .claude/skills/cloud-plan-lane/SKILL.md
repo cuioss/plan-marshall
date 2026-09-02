@@ -403,10 +403,13 @@ diff before the PR — that one stays.
 
 ### Commit and push
 
-Every commit message ends with exactly this trailer, and **no** "Generated with Claude Code" footer:
+Every commit message ends with exactly this trailer, and **no** "Generated with …" footer. The
+identity names the system that produced the commit, never the assistant or vendor behind it. A local
+run resolves it through `manage-run-config commit-trailer get`; this lane has no executor and no
+`.plan/`, so it writes that resolver's default directly:
 
 ```text
-Co-Authored-By: Claude <noreply@anthropic.com>
+Co-Authored-By: plan-marshall <noreply@cuioss.de>
 ```
 
 **Stage the deliverable paths explicitly — never `git add -A`.** A `./pw` build (§ Step 5) run under a

@@ -17,6 +17,6 @@
     "subject": "add retry configuration record with builder pattern",
     "body": "Add RetryConfig record for configuring HTTP retry behavior:\n- maxAttempts: Maximum retry attempts\n- initialDelay: Initial delay before first retry\n- multiplier: Backoff multiplier for subsequent retries\n\nIncludes comprehensive unit tests.",
     "footer": null,
-    "formatted_message": "feat(http): add retry configuration record with builder pattern\n\nAdd RetryConfig record for configuring HTTP retry behavior:\n- maxAttempts: Maximum retry attempts\n- initialDelay: Initial delay before first retry\n- multiplier: Backoff multiplier for subsequent retries\n\nIncludes comprehensive unit tests.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
+    "formatted_message": "feat(http): add retry configuration record with builder pattern\n\nAdd RetryConfig record for configuring HTTP retry behavior:\n- maxAttempts: Maximum retry attempts\n- initialDelay: Initial delay before first retry\n- multiplier: Backoff multiplier for subsequent retries\n\nIncludes comprehensive unit tests."
   }
 }

@@ -16,13 +16,14 @@ Sub-menu for skill domains and project structure configuration.
 - [Configuration: Derivation Resolvers](#configuration-derivation-resolvers)
 - [Configuration: Display Timezone](#configuration-display-timezone)
 - [Configuration: Merge Queue](#configuration-merge-queue)
+- [Configuration: Commit Trailer](#configuration-commit-trailer)
 - [Configuration: Recipes](#configuration-recipes)
 
 ---
 
 ## Configuration Submenu
 
-The Configuration submenu has 13 options, which exceeds the `AskUserQuestion` 4-option cap. It is presented as a multi-page paginated menu following the "More actions..." pattern documented in `plan-marshall/workflow/planning.md` (§ Action: list): options are chunked into pages of ≤4, every non-final page reserves its 4th slot for a "More..." continuation that triggers the next page's `AskUserQuestion`, and the final page exposes a "Back" element returning to the Main Menu without quitting.
+The Configuration submenu has 14 options, which exceeds the `AskUserQuestion` 4-option cap. It is presented as a multi-page paginated menu following the "More actions..." pattern documented in `plan-marshall/workflow/planning.md` (§ Action: list): options are chunked into pages of ≤4, every non-final page reserves its 4th slot for a "More..." continuation that triggers the next page's `AskUserQuestion`, and the final page exposes a "Back" element returning to the Main Menu without quitting.
 
 **Page 1** — first 3 options plus the "More..." continuation:
 
@@ -108,13 +109,16 @@ AskUserQuestion:
       value: "more-4"
 ```
 
-**Page 5** — shown only when the user selects "More..." on Page 4 — the final option plus the "Back" element:
+**Page 5** — shown only when the user selects "More..." on Page 4 — the final options plus the "Back" element:
 
 ```text
 AskUserQuestion:
   question: "What would you like to configure?"
   header: "Configuration (continued)"
   options:
+    - label: "Commit Trailer"
+      description: "Co-author identity commits are recorded under (machine-local; default plan-marshall)"
+      value: "commit-trailer"
     - label: "Full Reconfigure"
       description: "Re-run setup wizard from Step 5 onwards (skips bootstrap steps 1-4)"
       value: "wizard"
@@ -143,6 +147,7 @@ AskUserQuestion:
 | display-timezone | Load `Read references/menu-display-timezone.md` → Execute |
 | merge-queue | Load `Read references/merge-queue-setup.md` → Execute the provisioning flow |
 | more-4 | Present Configuration Page 5 `AskUserQuestion` |
+| commit-trailer | Load `Read references/menu-commit-trailer.md` → Execute |
 | wizard | Load `Read references/wizard-flow.md` — skip to Step 5 (bootstrap already done) |
 | back | Do nothing → Return to the Main Menu |
 
@@ -875,6 +880,20 @@ Load and execute the dedicated reference:
 
 ```text
 Read references/merge-queue-setup.md
+```
+
+After completion, return to Main Menu.
+
+---
+
+## Configuration: Commit Trailer
+
+Inspect and change the co-author identity every assistant-authored commit is recorded under. The identity names the SYSTEM that produced the commit, not the assistant or the vendor behind it, and it does not vary by target. The binding is machine-local — it persists to the git-ignored run-configuration store beside the other machine-local bindings — so a fresh clone and every cloud session resolve to the `plan-marshall` default. Changing it governs the next commit onwards; history is untouched.
+
+Load and execute the dedicated reference:
+
+```text
+Read references/menu-commit-trailer.md
 ```
 
 After completion, return to Main Menu.

@@ -70,7 +70,7 @@ class Extension(ExtensionBase):
 
 ```text
 1. phase-3-outline detects change type
-2. resolve-outline-skill --domain {domain}
+2. resolve-outline-skill --domain {domain_1} --domain {domain_2} ...  (one per plan domain)
 3. If domain_specific: load domain skill, read change-type instructions
 4. If generic: read plan-marshall:phase-3-outline/standards/change-{type}.md
 5. Execute discovery, analysis, deliverable creation
@@ -124,10 +124,10 @@ Returns a skill reference string (`bundle:skill`) or `None`.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  resolve-outline-skill --domain {domain}
+  resolve-outline-skill --domain {domain_1} --domain {domain_2}
 ```
 
-Returns `source: domain_specific` when a custom skill exists, or `source: generic_fallback` when using defaults.
+`--domain` is repeatable: the verb selects over the plan's whole domain roster and returns `source: domain_specific` only when exactly one DISTINCT custom skill resolves across it (with `resolved_from` naming the first domain that declared it). Both other branches return `source: generic` — `reason: no_domain_skill` when no domain declares one, and `reason: multiple_domain_skills` (plus `competing_skills`) when several distinct skills compete. See `manage-config` Canonical invocations → `resolve-outline-skill` for the full field contract.
 
 ## Current Implementations
 

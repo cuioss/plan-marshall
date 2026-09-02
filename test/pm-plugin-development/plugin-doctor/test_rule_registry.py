@@ -233,6 +233,36 @@ def test_descriptor_modules_are_unique_and_sorted():
     assert modules == sorted(modules), '_DESCRIPTOR_MODULES must stay in sorted order'
 
 
+def test_askuserquestion_prompt_quality_rule_registered_non_gating():
+    """The AskUserQuestion prompt-quality rule is registered as analyze-only / non-gating.
+
+    Symmetric peer of the reachability descriptor pin below: the two rules are
+    peers in the same registry, so the same registration-completeness contract
+    applies. Advisory (``warning``) severity, ``content`` category (it validates
+    prompt prose, not file structure), file-local scope, and — as an
+    analyze-surfaced NON-gating rule — ``opt_in=False`` / ``default_on=True`` /
+    ``has_fixer=False``. The rule is NOT opt-in, so
+    :data:`EXPECTED_OPTIN_RULE_NAMES` is unchanged.
+    """
+    reg = _load_registry()
+    matches = [
+        descriptor
+        for descriptor in reg.get_registry()
+        if descriptor.rule_id == 'askuserquestion-prompt-quality'
+    ]
+    assert len(matches) == 1, (
+        'askuserquestion-prompt-quality must be registered exactly once '
+        f'in the rule registry; found {len(matches)}'
+    )
+    descriptor = matches[0]
+    assert descriptor.severity == 'warning'
+    assert descriptor.category == 'content'
+    assert descriptor.scope == 'file-local'
+    assert descriptor.opt_in is False
+    assert descriptor.default_on is True
+    assert descriptor.has_fixer is False
+
+
 def test_askuserquestion_reachability_rule_registered_non_gating():
     """The AskUserQuestion-reachability rule is registered as analyze-only / non-gating.
 

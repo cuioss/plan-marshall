@@ -22,7 +22,10 @@
     {"domain": "gist.github.com", "purpose": "GitHub Gist code snippets", "trust_level": "full"},
     {"domain": "raw.githubusercontent.com", "purpose": "GitHub raw content CDN", "trust_level": "full"},
     {"domain": "developer.mozilla.org", "purpose": "MDN Web Docs (HTML/CSS/JS reference)", "trust_level": "full"},
-    {"domain": "www.w3.org", "purpose": "W3C web standards and specs", "trust_level": "full"}
+    {"domain": "www.w3.org", "purpose": "W3C web standards and specs", "trust_level": "full"},
+    {"domain": "rfc-editor.org", "purpose": "IETF RFC series canonical publisher", "trust_level": "full"},
+    {"domain": "datatracker.ietf.org", "purpose": "IETF Datatracker (RFCs and Internet-Drafts)", "trust_level": "full"},
+    {"domain": "openid.net", "purpose": "OpenID Foundation specifications (OIDC, FAPI)", "trust_level": "full"}
   ],
   "high_reach_domains": [
     {"domain": "github.com", "purpose": "Code hosting and collaboration", "trust_level": "full"},

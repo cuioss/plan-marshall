@@ -21,6 +21,7 @@ Run configuration handling for persistent command configuration storage.
 - Architecture-refresh operations use the noun-verb pattern (`architecture-refresh get-tier-0`, `architecture-refresh set-tier-0`, etc.)
 - Build-queue-limit operations use the noun-verb pattern (`build-queue-limit get`, `build-queue-limit set`)
 - CI-duration operations use the noun-verb pattern (`ci-duration record`, `ci-duration p50`)
+- Commit-trailer operations use the noun-verb pattern (`commit-trailer get`, `commit-trailer set`)
 
 ## Run Configuration Structure
 
@@ -52,6 +53,10 @@ Run configuration handling for persistent command configuration storage.
   },
   "ci_durations": {
     "<command-name>": [420, 380, 455]
+  },
+  "commit_trailer": {
+    "name": "plan-marshall",
+    "email": "noreply@cuioss.de"
   },
   "ci": {
     "authenticated_tools": [],
@@ -87,6 +92,8 @@ See [standards/run-config-standard.md](standards/run-config-standard.md) for com
 | build-queue-limit set | `plan-marshall:manage-run-config:run_config build-queue-limit set` |
 | ci-duration record | `plan-marshall:manage-run-config:run_config ci-duration record` |
 | ci-duration p50 | `plan-marshall:manage-run-config:run_config ci-duration p50` |
+| commit-trailer get | `plan-marshall:manage-run-config:run_config commit-trailer get` |
+| commit-trailer set | `plan-marshall:manage-run-config:run_config commit-trailer set` |
 | cleanup | `plan-marshall:manage-run-config:run_config cleanup` |
 | cleanup-status | `plan-marshall:manage-run-config:run_config cleanup-status` |
 
@@ -280,6 +287,25 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config displ
 
 `set` rejects a value that is not a loadable IANA zone with an `invalid_value` error and persists nothing.
 
+### commit-trailer get / set
+
+Resolve the `Co-Authored-By` identity every assistant-authored commit ends with — a `commit_trailer` object holding `name` and `email` (defaults `plan-marshall` / `noreply@cuioss.de`). The identity names the **system** that produced the commit, never the assistant or vendor behind it, and it does not vary by target. See [run-config-standard.md](standards/run-config-standard.md) § "Commit-Trailer Section".
+
+```bash
+# Resolve the trailer and the source of each half
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config commit-trailer get
+
+# Override either half, or both
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config commit-trailer set \
+  --name my-system --email noreply@example.org
+```
+
+`get` returns `name`, `email`, the composed `trailer`, and `name_source` / `email_source` (`configured` or `default`). The two halves fall back independently, so a config carrying only a `name` yields a configured name beside a default email and reports exactly that. A stored value that is empty, not a string, or carries an angle bracket or line break is treated as absent — a malformed config degrades to the default identity rather than emitting a broken trailer line.
+
+`set` requires at least one of `--name` / `--email`, applies the same fragment validation, additionally requires `--email` to contain `@`, and persists nothing on rejection.
+
+Because run-configuration.json is git-ignored, a fresh clone and every cloud session resolve to the defaults. That is why repository documentation states the **default** identity rather than a configured override.
+
 ### cleanup / cleanup-status
 
 Directory cleanup using retention settings from marshal.json.
@@ -350,6 +376,7 @@ See [`manage-config` data-model.md](../manage-config/standards/data-model.md) §
 | `phase-6-finalize` architecture-refresh step | architecture-refresh get-tier-0/1 | Read tier knobs to decide deterministic refresh / LLM re-enrichment behaviour |
 | `manage-locks` `build_queue` acquire/release | build-queue-limit get | Read the adaptive upper limit to compute the `2 ×` stale-reclaim threshold |
 | CI-wait handlers (`_github_ci`, `gitlab_ops`) | ci-duration p50 | Read the p50 seed for the adaptive CI-wait first-sleep (skip on a null window) |
+| `workflow-integration-git` commit workflow | commit-trailer get | Resolve the `Co-Authored-By` line appended at `git commit` time |
 
 ---
 
@@ -485,6 +512,17 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config displ
 
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config display-timezone set \
   --value VALUE
+```
+
+### commit-trailer
+
+`commit-trailer` carries the nested sub-verbs `get` and `set`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config commit-trailer get
+
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config commit-trailer set \
+  [--name NAME] [--email EMAIL]
 ```
 
 ### cleanup

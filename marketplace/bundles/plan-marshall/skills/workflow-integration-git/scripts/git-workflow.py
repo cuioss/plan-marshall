@@ -270,9 +270,10 @@ def format_message(
         if footer:
             parts.append(footer)
 
-    # Co-Authored-By is NOT appended here — the caller (workflow Step 5
-    # or git commit command) adds it so the footer matches the project's
-    # configured format (see CLAUDE.md) and isn't duplicated.
+    # The co-author trailer is NOT appended here — the caller (workflow Step 5
+    # or git commit command) adds it, resolved through
+    # `manage-run-config commit-trailer get`, so the identity matches the
+    # project's configuration and isn't duplicated.
 
     return '\n'.join(parts)
 
