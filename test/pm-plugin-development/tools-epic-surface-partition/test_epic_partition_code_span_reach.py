@@ -299,22 +299,35 @@ def test_an_indented_delimiter_past_the_third_column_opens_no_block() -> None:
 def test_an_inline_run_inside_a_fence_does_not_pair_with_one_outside_it() -> None:
     """Fenced blocks are resolved FIRST, and the inline scan runs over the gaps.
 
-    A lone backtick inside a fenced block and another in a later paragraph. If
-    the inline scan ran over the whole document it would pair the two into a span
-    covering the declaration between them, which is the straddle the ordering
-    exists to prevent.
+    KILLS the mutant that drops the ordering and runs the inline scan over the
+    whole document. The block here carries a BLANK LINE, so its own delimiters
+    cannot self-pair inline and the whole-document scan walks straight past both;
+    the lone mark left inside the block then pairs with the lone mark in the
+    running prose after it, and the span between them swallows the declaration.
+    Under the shipped ordering the block is taken as a fenced span first and its
+    inner mark is never offered to the inline scan at all.
+
+    ⛔ A block WITHOUT that blank line does not discriminate: the whole-document
+    scan reaches the opening delimiter run first, pairs it with the closing run,
+    and skips the index past the inner mark, so both readings agree and the
+    control passes green against the very mutant it names. The two assertions pin
+    what makes the fixture diverge — the blank line the fence straddles, and the
+    two lone marks left for the mutant to pair across once the delimiters are
+    discounted.
     """
     body = (
         '# PLAN-266\n\n## Expected Surface\n\n'
         f'{CLAIM_LINE}'
         '\nPLAN-240 declares:\n\n'
         '```text\n'
+        'the first line of the quoted block\n'
+        '\n'
         'a lone ` inside the block\n'
         '```\n'
-        '\n'
         f'- OBSERVED: test/beta/ — ⛔ **the whole tree.** {DECLARATION}\n'
-        '\n'
         'and a later row closes `\n'
     )
 
+    assert '\n\n' in body.split('```text\n')[1].split('\n```')[0]
+    assert body.replace('```', '').count('`') == 2
     assert partition_mod.is_sweep_declaration(body)
