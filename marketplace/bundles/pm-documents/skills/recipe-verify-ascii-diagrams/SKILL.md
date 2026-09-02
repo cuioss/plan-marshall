@@ -128,7 +128,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
   resolve-path --plan-id {plan_id}
 ```
 
-**4c. Write the solution outline** using the Write tool to `{resolved_path}`:
+**4c. Prepare the solution outline** to be written to `{resolved_path}`:
 
 - `# Solution: Verify ASCII Diagrams` header with `plan_id`, `created`,
   `compatibility` metadata.

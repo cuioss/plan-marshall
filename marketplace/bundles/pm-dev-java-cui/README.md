@@ -67,7 +67,7 @@ Recipe for enforcing CUI logging standards across all modules. Discovers modules
 - LogAssert test coverage in business logic tests
 - Identifier renumbering and documentation update
 
-**Invoked via:** `/plan-marshall action=recipe` → select "Enforce CUI Logging Standards"
+**Pulled in via the `action=recipe` command** → select "Enforce CUI Logging Standards"
 
 ### parse-rewrite-log
 Domain-owned OpenRewrite log-line finding parser for the java-cui domain. Parses the structured WARN lines from the Maven build log, extracting path/line/column/recipe/message per finding and classifying each as newly-detected vs pre-existing.

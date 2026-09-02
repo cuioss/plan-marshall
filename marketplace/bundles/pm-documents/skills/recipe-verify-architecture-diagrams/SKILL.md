@@ -153,7 +153,7 @@ plantuml {plantuml_dir}/{diagram}.puml
 
 Verify `plantuml` is available: `which plantuml`. If not installed, note in the outline that installation is required (`brew install plantuml` on macOS, `apt-get install plantuml` on Linux).
 
-**4d. Write the solution outline** using the Write tool to `{resolved_path}`:
+**4d. Prepare the solution outline** to be written to `{resolved_path}`:
 - `# Solution: Verify Architecture Diagrams` header with `plan_id`, `created`, `compatibility` metadata
 - `## Summary` — scope description ({N} diagrams, {M} orphaned, {K} splits)
 - `## Overview` — resolved skills, PlantUML directory, diagram inventory
@@ -187,7 +187,7 @@ For each diagram:
 
 ### Update Phase
 
-1. **Edit `.puml`** — reflect current architecture using Edit tool
+1. **Edit `.puml`** — update the file to reflect the current architecture
    - Maintain consistent styling (use `!include plantuml.skin` if present)
    - Ensure correct PlantUML syntax
 2. **Generate PNG** — run `plantuml {file}.puml`

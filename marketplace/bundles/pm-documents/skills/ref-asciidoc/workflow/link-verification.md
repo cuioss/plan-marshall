@@ -321,7 +321,7 @@ target = "../../requirements/spec.adoc"
 Link may be removed ONLY if ALL conditions met:
 
 1. **Script reports broken** — Automated detection flagged issue
-2. **Manual verification confirms** — Read tool confirms file not found
+2. **Manual verification confirms** — reading the file confirms it does not exist
 3. **No alternatives found** — No similar files or updated paths exist
 4. **User approves** — Explicit user confirmation received
 5. **Documented** — Removal reason recorded in commit/report
@@ -338,19 +338,18 @@ Removed broken link:
 - Line: 125
 - Link: xref:../../archive/old-spec.adoc[Old Specification]
 - Target: /project/archive/old-spec.adoc
-- Reason: File not found, confirmed with Read tool
+- Reason: File not found, confirmed by reading the target
 - Alternatives searched: /project/archive/*.adoc (none found)
 - User approval: Yes (timestamp)
 ```
 
-#### Use Edit Tool
+#### Apply the Fix
 
 ```text
-Edit(
-  file_path="standards/security/guide.adoc",
-  old_string="See xref:../../archive/old-spec.adoc[Old Specification] for details.",
-  new_string="See archived specification (no longer available) for details."
-)
+In standards/security/guide.adoc, replace:
+  "See xref:../../archive/old-spec.adoc[Old Specification] for details."
+with:
+  "See archived specification (no longer available) for details."
 ```
 
 **Preserve Context:** Don't remove entire sentence, just update reference.
@@ -461,11 +460,11 @@ steps:
 
 **Output:** JSON with categorized issues (likely-false-positive, must-verify-manual, definitely-broken)
 
-### Manual Verification with Read Tool
+### Manual Verification by Reading the Target
 
 **Purpose:** Definitive verification of link target existence
 
-**Usage:** `Read(file_path="absolute/path/to/target.adoc")`
+**Usage:** read the target file by its absolute path
 
 **Advantage:** Direct file system access, no parsing errors
 

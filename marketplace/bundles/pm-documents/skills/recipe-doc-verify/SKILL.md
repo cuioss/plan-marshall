@@ -58,7 +58,7 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover
   --include-files
 ```
 
-Then check for `README.adoc` and the project's agent-instructions file at project root (drift checking) using the Read tool — these are well-known top-level paths that do not need a discovery resolver. The agent-instructions filename is target-aware: `CLAUDE.md` on Claude, `AGENTS.md` on OpenCode (read whichever is present).
+Then check for `README.adoc` and the project's agent-instructions file at project root (drift checking) by reading those well-known top-level paths — they do not need a discovery resolver. The agent-instructions filename is target-aware: `CLAUDE.md` on Claude, `AGENTS.md` on OpenCode (read whichever is present).
 
 Present discovered documentation scope to user for confirmation. Skip if `paths` is empty.
 
@@ -146,7 +146,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
   resolve-path --plan-id {plan_id}
 ```
 
-**4c. Write the solution outline** using the Write tool to `{resolved_path}`. The document MUST include these sections in order:
+**4c. Prepare the solution outline** to be written to `{resolved_path}`. The document MUST include these sections in order:
 - `# Solution: Verify Documentation Quality` header with `plan_id`, `created`, `compatibility` metadata
 - `## Summary` — scope description ({N} documentation files across {M} directories)
 - `## Overview` — resolved skills list and documentation scope
@@ -197,7 +197,7 @@ python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc verify-links 
 For each reported broken link:
 1. Extract target path
 2. Resolve absolute path
-3. Verify with Read tool — if file exists, report as false positive
+3. Verify by reading the file — if file exists, report as false positive
 4. Only confirmed broken links become findings with `severity: error`
 
 ### Drift Detection
