@@ -30,6 +30,10 @@ scripts/
 
 What each consumer PROJECTS from that one resolution is its own contract and may differ — inside `plan-orchestrator` it does, for a `derived` spec that resolves entries. One reader buys one resolution, never one projection.
 
+Alongside the spec's class, the reader resolves each entry's own **shape** — whether the spec CLAIMS the path or merely LEADS to it — from that entry's own bullet, by marker rules keyed on published grammar and on the spec's own words rather than on any plan identifier. The rule table lives with the consumer that acts on it, in `pm-plugin-development:tools-epic-surface-partition`'s `standards/epic-surface-derivation.md`; it is not restated here, because a second copy is what lets the two statements drift.
+
+⛔ The shape is an **added field, not a re-partition**. An entry keeps its membership of `claimed` and of `excluded` whatever its shape, and the spec's class is unaffected, so a consumer that ignores the shape reads exactly the surface it read before the field existed. Demoting a lead-shaped entry to a non-owning verdict is a consumer's PROJECTION and is performed by the partition, never here: moving a lead out of `claimed` in the reader would shrink the orchestrator's disjointness input and make a colliding plan read as disjoint.
+
 Do NOT add a second parser of that section in either consumer. It also defines `PLAN_ID_SEGMENT`, the plan-id grammar used to group specs by plan, which `plan-orchestrator`'s inbox seam imports from here rather than restating.
 
 ## Import Resolution

@@ -30,8 +30,26 @@ or globs resolve to nothing at the gate while resolving correctly here. A change
 to the grammar therefore lands in `script-shared` and reaches every consumer at
 once; adding a local parse back to this skill would re-open exactly that split.
 
-What this skill continues to own is unchanged: the four partition verdicts, the
-line-budget attribution, the CLI surface, and the output contract.
+What this skill continues to own is unchanged in kind: the partition verdicts,
+the line-budget attribution, the CLI surface, and the output contract.
+
+### The split the entry-shape rules run along
+
+The marker rules that decide an entry's SHAPE are a grammar change, so they land
+in `script-shared` with the rest of the grammar. The two halves of that fact are
+stated in different places and neither is duplicated into the other:
+
+- **The shape a marker resolves an entry to** is the reader's output. It is
+  stated beside the entry-shape table below, because it is a property of the
+  grammar and every consumer of the reader sees it.
+- **The demotion of a lead-shaped entry to a partition verdict** is THIS skill's
+  projection, stated with the verdicts. The reader publishes the shape and
+  demotes nothing; a consumer decides what the shape means for its own question.
+
+One reader buys one *resolution*; each consumer keeps its own *projection*. The
+orchestrator's disjointness gate reads the same entries and deliberately does not
+demote them, because a lead removed from its surface would make a colliding plan
+read as disjoint.
 
 ## The three-class model
 
@@ -94,20 +112,95 @@ and the corpus's many other backticked tokens out while admitting `pyproject.tom
 A span the parser recognises as a path but cannot anchor is recorded in
 `unresolved[]` — a first-class result, never a silent drop.
 
-## The four partition verdicts
+## Entry shape: claim or lead
+
+Independently of the spec's class, each resolved entry carries its own **shape**,
+decided from its own bullet by the marker rules below. A spec routinely mixes the
+two: the same `declarative` spec may claim one directory outright and merely
+point at another.
+
+| Shape | Means |
+|-------|-------|
+| `claim` | The spec asserts ownership of the path |
+| `lead` | The spec names the path without claiming it |
+
+| Rule | Marker | Why it is not a claim |
+|------|--------|-----------------------|
+| Deferred hypothesis | A `HYPOTHESIS` label, or the `verify-at-outline` deferral phrase | A candidate path named for outline-time verification |
+| Collection constraint | The `testpaths` settings key | States where the runner collects from, not what the plan owns |
+| Cross-plan reference | Another plan's or another slice's identifier in the possessive, in the bullet's CLAIM HEAD | Quotes the cited plan's ownership rather than asserting the citing plan's |
+| Hedged conditional claim | A conditional restriction on the claim, or an explicit denial of further coverage | The bullet withdraws the span it just named |
+
+Each rule fires on its own and each is keyed on published grammar or on the
+spec's own words — never on any plan identifier, so a spec added to the corpus is
+shaped by the same rules with no edit to the reader.
+
+⛔ The cross-plan-reference rule reads the bullet's **claim head alone**, and the
+narrowing is load-bearing. A possessive citation in the head says the named span
+IS the other plan's surface; the same citation in the trailing commentary
+annotates a claim the bullet makes in its own right, and reading it there would
+demote most of the corpus.
+
+⛔ The shape is **additive**. It is recorded on the entry and moves nothing: an
+entry keeps its membership of `claimed` or `excluded` whatever its shape, and the
+spec's class is unchanged by it. What a lead MEANS is the consuming stage's
+decision — see [The partition verdicts](#the-partition-verdicts).
+
+## The partition verdicts
 
 `partition` assigns every test module under `test/` exactly one verdict.
 
 | Verdict | Rule |
 |---------|------|
-| `claimed` | Exactly one plan's resolved entries cover it |
-| `multiply_claimed` | More than one plan covers it |
-| `not_derivable` | No plan's resolved entries cover it, but a spec names it in an unresolved span |
+| `claimed` | Exactly one SLICE plan's owning entries cover it |
+| `contested` | Two or more slice plans cover it — the residual genuine disagreement |
+| `swept` | No slice plan covers it, but one or more SWEEP plans do |
+| `not_derivable` | No plan's owning entries cover it, but a spec names it in an unresolved span or in a lead-shaped entry |
 | `unclaimed` | No plan covers it and no spec names it |
+
+An entry carries OWNERSHIP unless one of three independent rules removes it: the
+spec declares itself a sweep, the entry is lead-shaped, or the spec's class is
+`derived`.
+
+⛔ **A lead-shaped entry is demoted HERE, not by the shared reader.** Stage 1
+states the shape and moves nothing, because its other consumer needs the surface
+whole; this stage performs the demotion, which is the projection half of that
+reader's contract. A lead names a path without claiming it, so honouring it as
+ownership collapses the attribution into one contested bucket.
+
+⛔ **A spec whose class is `derived` owns nothing.** It declares its surface the
+union of OTHER plans' surfaces, so its entries restate their claims rather than
+competing with them; its coverage is reported as `not_derivable` when no slice
+claims the module, never as an ownership contest.
 
 Exclusions subtract from the claiming plan's **own** set only. A plan that claims
 a recursive glob while excluding a sub-directory does not claim the modules under
 it; another plan's claim over those same modules is unaffected.
+
+### Sweep plans
+
+A **sweep plan** is one whose spec DECLARES ITSELF to cross the whole partition by
+construction rather than claiming a slice of it. Such a plan pairs with every
+other plan by design, so counting it as a competing owner marks the whole tree
+contested and destroys the partition's signal. A slice that shares a module with
+any number of sweeps therefore OWNS that module, and the sweeps crossing it are
+recorded beside the verdict as a separate fact rather than as competing
+ownership.
+
+Sweep-ness is detected from the spec's own self-declaration and never from a
+hard-coded plan list. The marker admits every settled phrasing of the one
+declaration — the surface is the tree entire, it pairs with no other plan, it
+crosses the epic's reduction slices, its sites do not respect the slice
+boundaries — because a marker narrow enough to match only the specs sharing one
+boilerplate sentence is that hard-coded list wearing a regex, and stops matching
+the moment a plan declares its crossing in its own words.
+
+⛔ A spec that QUOTES a sibling's crossing declaration while claiming an ordinary
+slice is not itself a sweep. The marker deliberately does not read the phrasing an
+analysing spec quotes when it cites another plan.
+
+⛔ A sweep plan is a property of the PLAN; a **root span** is a property of an
+ENTRY. The two are independent and neither implies the other.
 
 An unresolved span *names* a module by shape. A file-shaped span names it by its
 trailing segments, filename included. A **container**-shaped span — one written
@@ -118,18 +211,21 @@ the filename. Matching a container span on the filename would make it name
 nothing, and every module it covers would fall through to `unclaimed` — the merge
 the next section forbids.
 
-### Why `unclaimed` and `not_derivable` must stay separate
+### Why `unclaimed`, `swept` and `not_derivable` must stay separate
 
-⛔ These two are **never merged**. They answer different questions:
+⛔ These three are **never merged**. They answer different questions:
 
 - `unclaimed` is a **partition defect** — a real gap in epic ownership that some
   plan must be made to cover.
+- `swept` is a **deliberate crossing** — a plan that declared itself to cross the
+  partition covers the module, and no owner is manufactured for it.
 - `not_derivable` is a **limit of the derivation** — a spec does name the module,
-  in prose the parser cannot resolve to a path. Ownership may well exist; the
-  tool simply cannot see it.
+  in prose the parser cannot resolve to a path or in an entry it named without
+  claiming. Ownership may well exist; the tool simply cannot see it.
 
-Folding `not_derivable` into `unclaimed` would report a parser limitation as a
-partition defect, manufacturing a disagreement the corpus does not contain. The
+Folding either into `unclaimed` would report a deliberate crossing or a parser
+limitation as a partition defect, manufacturing a disagreement the corpus does
+not contain. The
 size of the `not_derivable` population is the measure of how much epic ownership
 still rests on prose no tool can check — which is why it is reported as a
 first-class section, emitted even when empty.
@@ -139,7 +235,7 @@ first-class section, emitted even when empty.
 An entry covering the whole population root — bare `test/`, or `test/**` —
 discriminates nothing: it names every module. Several specs carry such a span as
 passing prose rather than as an ownership claim, and honouring it as a claim
-marks the entire tree `multiply_claimed`, destroying the partition's signal.
+marks the entire tree `contested`, destroying the partition's signal.
 
 Root spans are therefore excluded from claim matching and reported in
 `root_claims[]`. The fact is **stated, not silently dropped** — the same
@@ -151,32 +247,41 @@ discipline `unresolved[]` follows.
 
 The findings are **re-derived from the current tree**. A published baseline is
 only ever a post-hoc comparison, never an input; any delta between the two is
-reported rather than silenced.
+reported **per instance** as drift, never as a failure. An absent baseline is
+reported as unsupplied rather than as an empty one, so "no baseline given" can
+never be read as "nothing drifted".
 
-Every file is attributed exactly once. Modules with no single owning plan land in
-three explicit buckets rather than being folded into any plan's total, mirroring
-the partition's refusal to merge the populations:
+Every file is attributed exactly once. A `claimed` module is attributed to its
+owning slice however many sweeps also cross it. Modules with no single owning
+slice land in explicit ownerless buckets rather than being folded into any plan's
+total, mirroring the partition's refusal to merge the populations:
 
 | Bucket | Holds |
 |--------|-------|
 | `<unclaimed>` | Over-budget modules no plan claims |
-| `<multiply-claimed>` | Over-budget modules more than one plan claims |
-| `<not-derivable>` | Over-budget modules named only in unresolved spans |
+| `<contested>` | Over-budget modules two or more slice plans claim |
+| `<swept>` | Over-budget modules only self-declared sweeps cover |
+| `<not-derivable>` | Over-budget modules named only in unresolved spans or lead-shaped entries |
 
-## The report's seven sections
+## The report's sections
 
-`report` renders all seven, in this order. Each carries the command that produced
-it, so every figure can be independently reproduced.
+`report` renders the sections below, in this order. Each carries the command that
+produced it, so every figure can be independently reproduced. The table is the
+single statement of what is rendered: no count of it is asserted anywhere, so
+adding a section leaves no stale number behind.
 
 | # | Section | Asserts |
 |---|---------|---------|
-| 1 | `partition` | The four verdicts with their population sizes |
+| 1 | `partition` | Every verdict with its population size |
 | 2 | `attribution` | Budget findings grouped by owning plan |
-| 3 | `disagreements` | Every unclaimed and multiply-claimed entry **per instance**, not merely counted |
-| 4 | `not_derivable` | The modules and the specs the derivation cannot resolve — emitted even when empty |
-| 5 | `injected_controls` | The injected-failure demonstrations, each naming the control that demonstrates it |
-| 6 | `test_count` | The declared-test count before and after, both by the one static method the section names |
-| 7 | `provenance` | The placement claims and the overlap verdict below |
+| 3 | `disagreements` | Every unclaimed and contested entry **per instance**, not merely counted |
+| 4 | `contested` | The residual genuine disagreement, isolated from the rest of `disagreements` |
+| 5 | `swept` | The self-declared sweep plans and the modules they cross |
+| 6 | `not_derivable` | The modules and the specs the derivation cannot resolve — emitted even when empty |
+| 7 | `injected_controls` | The injected-failure demonstrations, each naming the control that demonstrates it |
+| 8 | `test_count` | The declared-test count before and after, both by the one static method the section names |
+| 9 | `baseline_drift` | The per-instance delta against a supplied baseline, or that nothing was compared |
+| 10 | `provenance` | The placement claims and the overlap verdict below |
 
 ### What `provenance` must assert
 

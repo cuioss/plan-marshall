@@ -26,8 +26,9 @@ entries does no plan claim at all.
 
 An entry under `test/` that no plan claims looks exactly like a clean run. This
 skill makes an unclaimed entry a reported fact rather than something each run
-rediscovers by hand, and keeps *"unclaimed"* and *"claimed only by a spec the
-parser cannot resolve"* as two verdicts that are never merged.
+rediscovers by hand, and keeps *"unclaimed"*, *"crossed only by a plan that
+declared itself a sweep"* and *"named only where the derivation cannot resolve
+it"* as separate verdicts that are never merged.
 
 The corpus is enumerated by glob, so a spec added to the epic is picked up with
 no edit to any script.
@@ -41,27 +42,31 @@ Activate when you need to:
 
 ## The Model
 
-Three tables define the derivation: the **three-class model** `classify`
-assigns, the **four partition verdicts** `partition` assigns, and the **entry
-shapes** the parser resolves. Each is stated exactly once, in
-[standards/epic-surface-derivation.md](standards/epic-surface-derivation.md) —
-deliberately not restated here, because a second copy of a table is what lets
-the two statements drift apart.
+The derivation's model tables — the spec classes `classify` assigns, the entry
+kinds and the entry shapes the parser resolves, the verdicts `partition` assigns,
+the attribution buckets, and the report's sections — are stated exactly once, in
+[standards/epic-surface-derivation.md](standards/epic-surface-derivation.md).
+None is restated here, because a second copy of a table is what lets the two
+statements drift apart.
 
-Three invariants govern how a caller reads the result:
+These invariants govern how a caller reads the result:
 
 ⛔ A spec whose class cannot be determined — unreadable, or carrying no
 `## Expected Surface` section — **halts the run with the spec named** rather than
 defaulting to a class.
 
-⛔ `unclaimed` and `not_derivable` are **never merged**. Merging them would report
-a limit of the derivation as a partition defect, manufacturing a disagreement the
-corpus does not contain.
+⛔ `unclaimed`, `swept` and `not_derivable` are **never merged**. Merging them
+would report a deliberate crossing or a limit of the derivation as a partition
+defect, manufacturing a disagreement the corpus does not contain.
 
 ⛔ A **root span** — bare `test/`, or `test/**` — names every module and so
 discriminates nothing. Root spans are excluded from claim matching and reported
 in `root_claims[]`, so a dropped root span is **stated rather than silently
 dropped**. A plan whose only claim is a root span therefore receives no module.
+Breadth alone never exempts a plan from ownership: a wide claim still competes,
+and only a plan whose spec DECLARES ITSELF a whole-partition sweep stops counting
+as a competing owner — its crossings are then reported beside the verdict rather
+than folded into the attribution.
 
 ## Workflow
 
@@ -85,23 +90,26 @@ python3 .plan/execute-script.py pm-plugin-development:tools-epic-surface-partiti
 ```
 
 `attribution` re-derives the over-budget modules from the **current** tree; a
-published baseline is only ever a post-hoc comparison, never an input. Modules
-with no single owning plan land in the explicit `<unclaimed>`,
-`<multiply-claimed>` and `<not-derivable>` buckets rather than being folded into
-any plan's total, so every file is attributed exactly once.
+published baseline is only ever a post-hoc comparison, never an input. A module
+one slice claims is attributed to that slice however many sweeps also cross it;
+modules with no single owning slice land in the explicit ownerless buckets rather
+than being folded into any plan's total, so every file is attributed exactly
+once. The bucket set is stated in
+[standards/epic-surface-derivation.md](standards/epic-surface-derivation.md).
 
-### Step 1c: Render the seven-section report
+### Step 1c: Render the report
 
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:tools-epic-surface-partition:epic-surface-partition \
   report --epic test-quality
 ```
 
-The report renders the partition, the attribution, every unclaimed and
-multiply-claimed entry **per instance**, the not-derivable set, the
-injected-failure demonstrations, the test count before and after, and
-provenance — each carrying the command that produced it. It exits 0 even when it
-renders disagreements: a rendered disagreement is the product, not a failure.
+Every rendered section carries the command that produced it. The set and its
+order are stated once, in the report-sections table of
+[standards/epic-surface-derivation.md](standards/epic-surface-derivation.md), and
+are deliberately not enumerated here — an enumeration in two places is what goes
+stale the next time a section is added. `report` exits 0 even when it renders
+disagreements: a rendered disagreement is the product, not a failure.
 
 ### Step 2: Route on the TOON status
 
@@ -143,19 +151,26 @@ class_tally[3]{spec_class,count}:
   declarative,19
   derived,1
   prose,1
-specs[21]{plan_id,spec,spec_class,claimed_count,excluded_count,unresolved_count,evidence}:
+sweep_plans[N]:
   ...
-claimed[N]{plan_id,path,kind}:
+specs[21]{plan_id,spec,spec_class,is_sweep,claimed_count,excluded_count,unresolved_count,evidence}:
   ...
-excluded[N]{plan_id,path,kind}:
+claimed[N]{plan_id,path,kind,shape}:
+  ...
+excluded[N]{plan_id,path,kind,shape}:
   ...
 unresolved[N]{plan_id,raw}:
   ...
 ```
 
-`kind` is one of `directory`, `recursive_glob`, `filename_glob`, `file`.
-`unresolved[]` carries every entry the parser recognised as a path but could not
-anchor — a first-class result, not a silent drop.
+`kind` is one of `directory`, `recursive_glob`, `filename_glob`, `file`, and
+`shape` is `claim` or `lead`. `unresolved[]` carries every entry the parser
+recognised as a path but could not anchor — a first-class result, not a silent
+drop.
+
+`sweep_plans[]` names the plans whose specs declare themselves whole-partition
+sweeps, and `is_sweep` is that verdict projected onto each spec row. Both are
+emitted even when no spec declares one, so "no sweep" reads as measured.
 
 Every class carries a `class_tally` row even at zero, so an empty class reads as
 measured rather than as absent.
@@ -168,18 +183,29 @@ epic: test-quality
 plans_dir: /abs/path/to/orchestrator/test-quality/plans
 test_root: /abs/path/to/checkout/test
 modules_total: 214
-verdict_tally[4]{verdict,count}:
+verdict_tally[N]{verdict,count}:
+  ...
+sweep_plans[N]:
   ...
 root_claims[N]{plan_id,path}:
   ...
-modules[214]{path,verdict,plans}:
+contested[N]{path,plans}:
+  ...
+sweep_crossings[N]{path,verdict,sweeps}:
+  ...
+modules[214]{path,verdict,plans,sweeps}:
   ...
 ```
 
-`plans` is a comma-joined plan-id list — empty for `unclaimed`, one id for
-`claimed`, several for `multiply_claimed`. `root_claims[]` carries every span
-excluded from claim matching by the root-span rule above; it is emitted even
-when empty, so an absent root claim reads as measured.
+`plans` is a comma-joined list of the SLICE plans the verdict rests on — empty
+for `unclaimed` and `swept`, one id for `claimed`, several for `contested`.
+`sweeps` is the separate, comma-joined list of self-declared sweep plans that
+also cross the module: a crossing is reported beside the verdict, never as
+competing ownership. `contested` and `sweep_crossings` isolate the two
+populations a caller reads for different reasons, and `verdict_tally` carries a
+row for every verdict even at zero. `root_claims[]` carries every span excluded
+from claim matching by the root-span rule above; it too is emitted even when
+empty, so an absent root claim reads as measured.
 
 ### `attribution`
 
@@ -191,15 +217,23 @@ test_root: /abs/path/to/checkout/test
 budget: 400
 modules_total: 214
 findings_total: 12
+sweep_plans[N]:
+  ...
+contested[N]{path,plans}:
+  ...
+sweep_crossings[N]{path,verdict,sweeps}:
+  ...
 buckets[N]{owner,count}:
   ...
 findings[12]{owner,path,line_count}:
   ...
 ```
 
-`owner` is a plan id, or one of the three ownerless buckets `<unclaimed>`,
-`<multiply-claimed>` and `<not-derivable>`, so every over-budget module is
-attributed exactly once and none is folded into a plan's total.
+`owner` is a plan id, or one of the ownerless buckets the derivation standard
+names, so every over-budget module is attributed exactly once and none is folded
+into a plan's total. `contested` and `sweep_crossings` carry the same two
+populations `partition` emits, so the disagreement behind a bucket can be read
+without a second call.
 
 ### `report`
 
@@ -210,13 +244,23 @@ plans_dir: /abs/path/to/orchestrator/test-quality/plans
 test_root: /abs/path/to/checkout/test
 report_only: true
 gates_build: false
-sections[7]{section,command,summary}:
+sections[N]{section,command,summary}:
   ...
-partition_tally[4]{verdict,count}:
+partition_tally[N]{verdict,count}:
   ...
 attribution_buckets[N]{owner,count}:
   ...
 disagreements[N]{path,verdict,plans}:
+  ...
+sweep_plans[N]:
+  ...
+contested[N]{path,plans}:
+  ...
+sweep_crossings[N]{path,verdict,sweeps}:
+  ...
+baseline_drift{baseline_supplied,baseline_count,observed_count,added_count,removed_count}:
+  ...
+baseline_drift_instances[N]{path,drift}:
   ...
 not_derivable_modules[N]{path,plans}:
   ...
@@ -237,14 +281,20 @@ root_claims[N]{plan_id,path}:
 ```
 
 `gates_build: false` is asserted in the payload rather than only in prose: this
-subcommand renders disagreements and still exits 0. `sections[]` carries the
-seven required sections in order, each with the command that reproduces it.
+subcommand renders disagreements and still exits 0. `sections[]` carries every
+section the derivation standard's report-sections table names, in that order,
+each with the command that reproduces it.
+
+⛔ Read `baseline_drift.baseline_supplied` before either drift count. With no
+`--baseline-findings` the run compared nothing, and `added_count: 0` there means
+"nothing was compared" rather than "nothing drifted". Drift is reported per
+instance in `baseline_drift_instances[]` and never changes the exit status.
 
 ## Standards
 
 | Standard | Contents |
 |----------|----------|
-| [standards/epic-surface-derivation.md](standards/epic-surface-derivation.md) | Where the parse lives (`plan-marshall:script-shared`) and why this skill owns the partition rather than the parse, the three-class model and its evidence rules, the entry shapes resolved, the four partition verdicts and why `unclaimed` and `not_derivable` stay separate, the report's seven sections and what `provenance` must assert, and the never-a-gate contract |
+| [standards/epic-surface-derivation.md](standards/epic-surface-derivation.md) | Where the parse lives (`plan-marshall:script-shared`) and why this skill owns the partition rather than the parse, the split the entry-shape rules run along, the three-class model and its evidence rules, the entry kinds and the claim-or-lead shape with its marker rules, the partition verdicts, sweep plans and why `unclaimed`, `swept` and `not_derivable` stay separate, the attribution buckets, the report's sections and what `provenance` must assert, and the never-a-gate contract |
 
 ## Related
 
@@ -287,5 +337,6 @@ python3 .plan/execute-script.py pm-plugin-development:tools-epic-surface-partiti
 
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:tools-epic-surface-partition:epic-surface-partition \
-  report --epic EPIC [--budget BUDGET] [--tests-before TESTS_BEFORE]
+  report --epic EPIC [--budget BUDGET] [--tests-before TESTS_BEFORE] \
+  [--baseline-findings BASELINE_FINDINGS]
 ```

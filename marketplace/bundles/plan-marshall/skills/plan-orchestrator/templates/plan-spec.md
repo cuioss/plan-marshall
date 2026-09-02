@@ -75,12 +75,14 @@ under-declaration, which admits a plan that genuinely collides. Sweep it, then l
 sweep found.
 
 This obligation is an AUTHORING rule with no machine backstop, and stating that is part of the
-rule. The reader strips `OBSERVED:` and `HYPOTHESIS:` with one and the same label prefix and
-keeps no label on the resolved entry, so a `HYPOTHESIS` path is classified as declared surface
-exactly like an `OBSERVED` one; `corpus surfaces` and `corpus cross-check` then consume it with
-no sweep record to require. No step between authoring and the disjointness gate can tell a swept
-guess from an unswept one — which is why an unswept entry reaches the gate silently rather than
-being refused there.}
+rule. The reader strips the `OBSERVED:` and `HYPOTHESIS:` prefixes alike, but it KEEPS which
+label it matched and publishes an entry SHAPE derived from it: a `HYPOTHESIS` entry resolves to
+a lead. That shape changes no membership — a `HYPOTHESIS` path is still classified as declared
+surface exactly like an `OBSERVED` one, and `corpus surfaces` and `corpus cross-check` still
+consume it with no sweep record to require. No step the disjointness gate consults can tell a
+swept guess from an unswept one: the consumer that reads the shape is the epic-surface
+PARTITION, and no admission decision consults it. An unswept entry therefore still reaches the
+gate silently rather than being refused there.}
 
 - {OBSERVED|HYPOTHESIS}: `{path}`:{line} — `{symbol}` (verify-at-outline when HYPOTHESIS)
 
