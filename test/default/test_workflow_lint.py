@@ -264,8 +264,8 @@ def _write_scopes(scopes: dict[str, str]) -> set[str]:
 
 #: TOP-LEVEL write scopes that are deliberate, keyed ``(filename, scope)`` so the
 #: population is countable and each entry carries its own justification. Derived
-#: at execute time from a walk of .github/workflows/: seven workflows, of which
-#: six declare a top-level block that is entirely read (python-verify.yml carries
+#: at execute time from a walk of .github/workflows/: eight workflows, of which
+#: seven declare a top-level block that is entirely read (python-verify.yml carries
 #: `pull-requests: read` beside `contents: read`, still a read scope).
 #: pr-agent.yml is the sole top-level write-bearing workflow, with these three.
 _TOP_LEVEL_WRITE_ALLOWLIST = {
@@ -419,8 +419,8 @@ def test_a_top_level_read_only_block_is_not_a_whole_workflow_claim() -> None:
     """The top-level verdict's scope limit is asserted, not assumed.
 
     Reading only the top-level block finds ONE write-bearing workflow in this
-    tree; three more grant a write at job level. A guard that reported "six of
-    seven are read-only" would be describing its own reach as if it were the
+    tree; three more grant a write at job level. A guard that reported "seven of
+    eight are read-only" would be describing its own reach as if it were the
     repository's state — the overstatement this module exists to refuse. Pinning
     the strict subset keeps the two counts from ever being read as one.
     """
