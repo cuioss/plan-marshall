@@ -1,16 +1,26 @@
 # Epic Surface Derivation
 
 The model behind `tools-epic-surface-partition`: how a spec's `## Expected
-Surface` becomes a typed claim, how those claims partition the real `test/`
-tree, and what the report must assert.
+Surface` becomes a typed claim, how those claims — narrowed by the epic ledger's
+record of which plans are still working — partition the real `test/` tree, and
+what the report must assert.
+
+The derivation reads **two** sources, and keeps them apart. The staged spec
+corpus states what each plan CLAIMS; the epic ledger states whether that plan is
+still working. Each is read by its own loader, and neither is consulted by the
+other's — see [The plan-lifecycle input](#the-plan-lifecycle-input).
 
 ## Never a gate
 
 ⛔ This tool is a **derivation and report tool, never a CI gate**. The epic specs
-live under `.plan/local/orchestrator/`, which is git-ignored and therefore absent
-from a fresh clone — no CI check can read them, so no CI check can depend on
-them. `report` exits 0 even when it renders disagreements: a rendered
-disagreement is the product, not a failure.
+and the epic ledger both live under `.plan/local/orchestrator/`, which is
+git-ignored and therefore absent from a fresh clone — no CI check can read them,
+so no CI check can depend on them. `report` exits 0 even when it renders
+disagreements: a rendered disagreement is the product, not a failure.
+
+The ledger's absence from a fresh clone is also why the degraded lifecycle read
+is a first-class, reported state rather than an error — see
+[The degradation path](#the-degradation-path).
 
 The tool's only sanctioned write is the escalation path in
 [The escalation path](#the-escalation-path). It edits no spec under any branch.
@@ -31,7 +41,10 @@ to the grammar therefore lands in `script-shared` and reaches every consumer at
 once; adding a local parse back to this skill would re-open exactly that split.
 
 What this skill continues to own is unchanged in kind: the partition verdicts,
-the line-budget attribution, the CLI surface, and the output contract.
+the plan-lifecycle read that narrows them, the line-budget attribution, the CLI
+surface, and the output contract. The lifecycle read is this skill's own because
+it is a PROJECTION question — whether a plan's claim still competes for ownership
+— and not a reading of the `## Expected Surface` grammar at all.
 
 ### The split the entry-shape rules run along
 
@@ -152,15 +165,17 @@ decision — see [The partition verdicts](#the-partition-verdicts).
 
 | Verdict | Rule |
 |---------|------|
-| `claimed` | Exactly one SLICE plan's owning entries cover it |
-| `contested` | Two or more slice plans cover it — the residual genuine disagreement |
+| `claimed` | Exactly one SLICE plan's owning entries cover it, once the lifecycle narrowing below has run |
+| `contested` | Two or more slice plans still competing cover it — the residual genuine disagreement |
 | `swept` | No slice plan covers it, but one or more SWEEP plans do |
 | `not_derivable` | No plan's owning entries cover it, but a spec names it in an unresolved span or in a lead-shaped entry |
 | `unclaimed` | No plan covers it and no spec names it |
 
-An entry carries OWNERSHIP unless one of three independent rules removes it: the
-spec declares itself a sweep, the entry is lead-shaped, or the spec's class is
-`derived`.
+An entry carries OWNERSHIP unless one of three independent ENTRY-level rules
+removes it: the spec declares itself a sweep, the entry is lead-shaped, or the
+spec's class is `derived`. A fourth rule operates on the PLAN rather than the
+entry, and only where a contest already exists — see
+[The plan-lifecycle input](#the-plan-lifecycle-input).
 
 ⛔ **A lead-shaped entry is demoted HERE, not by the shared reader.** Stage 1
 states the shape and moves nothing, because its other consumer needs the surface
@@ -241,6 +256,93 @@ Root spans are therefore excluded from claim matching and reported in
 `root_claims[]`. The fact is **stated, not silently dropped** — the same
 discipline `unresolved[]` follows.
 
+## The plan-lifecycle input
+
+Every rule above reads what a spec SAYS. This one reads whether the plan saying
+it is still working — a fact no spec can state about itself, and the **only input
+to this derivation that is not the spec corpus**.
+
+**Where the authority comes from.** The epic ledger — `status.json`, beside the
+`plans/` corpus in the same epic directory — is the orchestrator's record of the
+plan queue, and its per-plan `status` field is authoritative there. This skill
+reads it and never writes it, exactly as it reads and never writes the specs.
+The ledger read is a **separate loader** from the corpus read: it opens one file,
+consults no spec, and resolves no path, so a ledger fact cannot reach the join
+dressed as a corpus fact. `classify` — the one verb that answers a
+purely-about-the-spec question — does not read the ledger at all.
+
+**What the partition means.** A plan whose work is FINISHED no longer competes
+for ownership: its declared surface is a historical record, not a live claim. The
+ledger's own status vocabulary is therefore partitioned in two:
+
+| Lifecycle | Statuses | Means |
+|-----------|----------|-------|
+| `terminal` | `landed`, `shipped` | The work is finished; the surface is a record |
+| `active` | `staged`, `running`, `parked` | The work is outstanding; the claim is live |
+
+`parked` is ACTIVE because paused work is unfinished work: a parked plan resumes
+onto the surface it declared, so retiring its claim would hand that surface away
+while it waits.
+
+⛔ The partition is over the ledger's **own status vocabulary** — never a
+hard-coded plan-id list, and never the presence of a landing file. A status the
+vocabulary does not cover raises `UnknownPlanStatusError` naming the plan and the
+offending value, and the run halts. Bucketing an unrecognised status by guess is
+how this input degenerates into the plan list the derivation exists to close, one
+level down: defaulting to ACTIVE keeps a finished plan competing, defaulting to
+TERMINAL retires a live one, and neither guess is derivable from the vocabulary.
+
+**What the narrowing does.** It narrows a CONTEST and nothing else:
+
+| Claimants | Outcome |
+|-----------|---------|
+| One, whatever its lifecycle | Untouched — `claimed` by that plan |
+| Two or more, exactly one still active | `claimed` by the active plan; the finished plans are recorded in `retired` |
+| Two or more, two or more still active | `contested` among the active plans, finished ones recorded in `retired` |
+| Two or more, none still active | `contested`, unnarrowed, with nothing retired |
+
+⛔ **An overlap between two ACTIVE plans is deliberately NOT adjudicated.**
+Lifecycle narrows the competing set; it never picks a winner among live plans.
+Two plans both still working over one module is a real disagreement about future
+work that the corpus does not resolve and this tool has no basis to resolve
+either — and a rule that quietly picked one would look exactly like a correct
+attribution while inventing an ownership no plan has earned. That overlap is the
+residual the derivation exists to surface, so it survives every rule.
+
+⛔ **A module every one of whose claimants is finished is not narrowed either.**
+This is the same refusal read in the other direction: with no live claimant left
+standing there is no one to narrow to, and narrowing to nothing would manufacture
+an ownerless module out of one that several plans really did claim.
+
+The retired claims are recorded beside the verdict as a separate fact, in the
+same way a sweep crossing is — a claim lifecycle set aside is **stated, never
+silently dropped**.
+
+### The degradation path
+
+⛔ A missing or unusable ledger degrades to treating **every plan as active**,
+which is the behaviour that held before this input existed, and the degradation
+is REPORTED rather than absorbed:
+
+| `degradation` | Cause |
+|---------------|-------|
+| `ledger_absent` | No `status.json` beside the corpus |
+| `ledger_unreadable` | Present, but not readable as JSON |
+| `ledger_malformed` | Read, but carrying no usable plan queue — the document is not an object, the queue is not a list, or a row carries no plan id |
+
+Read `available` FIRST. When it is `false` the terminal set is empty because
+nothing was read, NOT because every plan is live — the two readings produce the
+same partition and claim entirely different things, which is why the reason is
+published beside it. A run reporting all-plans-active with a `degradation` set is
+in a **declared state, not a defect**; the same output with no reason attached
+would be a partition that quietly attributed nothing on no evidence.
+
+An EMPTY plan queue is a read ledger, not a degraded one: an epic with nothing
+queued was measured, and reports `available: true` with no degradation.
+
+A plan whose spec is in the corpus but whose row is absent from the ledger keeps
+competing — the conservative direction, and the same one the degraded read takes.
+
 ## The attribution
 
 `attribution` groups the test-module line-budget findings by owning plan.
@@ -259,7 +361,7 @@ total, mirroring the partition's refusal to merge the populations:
 | Bucket | Holds |
 |--------|-------|
 | `<unclaimed>` | Over-budget modules no plan claims |
-| `<contested>` | Over-budget modules two or more slice plans claim |
+| `<contested>` | Over-budget modules two or more still-competing slice plans claim |
 | `<swept>` | Over-budget modules only self-declared sweeps cover |
 | `<not-derivable>` | Over-budget modules named only in unresolved spans or lead-shaped entries |
 
@@ -276,12 +378,13 @@ adding a section leaves no stale number behind.
 | 2 | `attribution` | Budget findings grouped by owning plan |
 | 3 | `disagreements` | Every unclaimed and contested entry **per instance**, not merely counted |
 | 4 | `contested` | The residual genuine disagreement, isolated from the rest of `disagreements` |
-| 5 | `swept` | The self-declared sweep plans and the modules they cross |
-| 6 | `not_derivable` | The modules and the specs the derivation cannot resolve — emitted even when empty |
-| 7 | `injected_controls` | The injected-failure demonstrations, each naming the control that demonstrates it |
-| 8 | `test_count` | The declared-test count before and after, both by the one static method the section names |
-| 9 | `baseline_drift` | The per-instance delta against a supplied baseline, or that nothing was compared |
-| 10 | `provenance` | The placement claims and the overlap verdict below |
+| 5 | `lifecycle` | The ledger's terminal/active partition, the modules its narrowing attributed, and — when no ledger could be read — the stated degradation |
+| 6 | `swept` | The self-declared sweep plans and the modules they cross |
+| 7 | `not_derivable` | The modules and the specs the derivation cannot resolve — emitted even when empty |
+| 8 | `injected_controls` | The injected-failure demonstrations, each naming the control that demonstrates it |
+| 9 | `test_count` | The declared-test count before and after, both by the one static method the section names |
+| 10 | `baseline_drift` | The per-instance delta against a supplied baseline, or that nothing was compared |
+| 11 | `provenance` | The placement claims and the overlap verdict below |
 
 ### What `provenance` must assert
 

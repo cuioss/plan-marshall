@@ -44,16 +44,35 @@ Activate when you need to:
 
 The derivation's model tables — the spec classes `classify` assigns, the entry
 kinds and the entry shapes the parser resolves, the verdicts `partition` assigns,
-the attribution buckets, and the report's sections — are stated exactly once, in
+the plan-lifecycle partition that narrows them, the attribution buckets, and the
+report's sections — are stated exactly once, in
 [standards/epic-surface-derivation.md](standards/epic-surface-derivation.md).
 None is restated here, because a second copy of a table is what lets the two
 statements drift apart.
+
+The derivation reads **two** sources: the staged spec corpus, for what each plan
+claims, and the epic ledger, for whether that plan is still working. Each has its
+own loader and neither consults the other's, so a ledger fact cannot reach the
+join dressed as a corpus fact. `classify` reads the corpus alone.
 
 These invariants govern how a caller reads the result:
 
 ⛔ A spec whose class cannot be determined — unreadable, or carrying no
 `## Expected Surface` section — **halts the run with the spec named** rather than
-defaulting to a class.
+defaulting to a class. A ledger row carrying a status the terminal/active
+partition does not cover halts the same way, naming the plan and the value.
+
+⛔ **An overlap between two plans that are both still working is deliberately not
+adjudicated.** Plan lifecycle narrows the set of plans competing for a module; it
+never picks a winner among live ones. A caller reading a `contested` module is
+reading a real disagreement about future work, not a gap the tool declined to
+close.
+
+⛔ **A missing or unusable ledger is a declared state, not a bug.** The run then
+treats every plan as still working — the behaviour that held before this input
+existed — and says so in `lifecycle.degradation`. Read `lifecycle.available`
+before either lifecycle count: a zero terminal count under `available: false`
+means nothing was read, never that no plan has finished.
 
 ⛔ `unclaimed`, `swept` and `not_derivable` are **never merged**. Merging them
 would report a deliberate crossing or a limit of the derivation as a partition
@@ -89,6 +108,11 @@ python3 .plan/execute-script.py pm-plugin-development:tools-epic-surface-partiti
   attribution --epic test-quality
 ```
 
+Both verbs read the epic ledger alongside the corpus and retire the claims of
+plans whose work is finished, so a module contested only between a finished and a
+live plan is attributed to the live one; the retired claims ride beside the
+verdict in `retired`. Two live plans over one module stay contested.
+
 `attribution` re-derives the over-budget modules from the **current** tree; a
 published baseline is only ever a post-hoc comparison, never an input. A module
 one slice claims is attributed to that slice however many sweeps also cross it;
@@ -119,9 +143,16 @@ disagreements: a rendered disagreement is the product, not a failure.
 | `error` | `unclassifiable_spec` | The run halted; the offending spec is in `spec`, the cause in `reason` |
 | `error` | `epic_corpus_not_found` | No `plans/` directory under the named epic |
 | `error` | `invalid_epic_slug` | The slug carries a path separator or traversal component |
+| `error` | `unknown_plan_status` | A ledger row carries a status the terminal/active partition does not cover; the plan is in `plan_id`, the value in `plan_status`, and the covered vocabulary in `known_terminal` / `known_active` |
 
-All four subcommands share those three error shapes; only the `success` payload
-is subcommand-specific.
+The first three are CORPUS-load failures and every subcommand emits them. The
+fourth is a LEDGER failure, so only the three subcommands that read the ledger —
+`partition`, `attribution` and `report` — can emit it; `classify` reads the
+corpus alone and never does. Only the `success` payload is subcommand-specific.
+
+⛔ `unknown_plan_status` is the one error the tool raises about ITS OWN model
+rather than about the input's availability. A ledger that cannot be read at all
+is not an error — it degrades, and says so on the `lifecycle` block.
 
 ## Output Contract
 
@@ -132,7 +163,9 @@ A **success** payload additionally carries `plans_dir` and the keys of the
 subcommand that produced it, documented per subcommand below. An **error**
 payload instead carries `error` plus the keys that error names: `reason` for
 `invalid_epic_slug` and `unclassifiable_spec` (the latter also naming the
-offending `spec`), and `plans_dir` for `epic_corpus_not_found`.
+offending `spec`), `plans_dir` for `epic_corpus_not_found`, and
+`plan_id` / `plan_status` / `known_terminal` / `known_active` for
+`unknown_plan_status`.
 
 ⛔ Do not read `plans_dir` off an error payload unconditionally. Only
 `epic_corpus_not_found` carries it, because only that error resolved a directory
@@ -187,13 +220,19 @@ verdict_tally[N]{verdict,count}:
   ...
 sweep_plans[N]:
   ...
+lifecycle{ledger_path,available,degradation,terminal_count,active_count}:
+  ...
+lifecycle_plans[N]{plan_id,status,lifecycle}:
+  ...
+lifecycle_resolved[N]{path,owner,retired}:
+  ...
 root_claims[N]{plan_id,path}:
   ...
-contested[N]{path,plans}:
+contested[N]{path,plans,retired}:
   ...
 sweep_crossings[N]{path,verdict,sweeps}:
   ...
-modules[214]{path,verdict,plans,sweeps}:
+modules[214]{path,verdict,plans,sweeps,retired}:
   ...
 ```
 
@@ -201,11 +240,23 @@ modules[214]{path,verdict,plans,sweeps}:
 for `unclaimed` and `swept`, one id for `claimed`, several for `contested`.
 `sweeps` is the separate, comma-joined list of self-declared sweep plans that
 also cross the module: a crossing is reported beside the verdict, never as
-competing ownership. `contested` and `sweep_crossings` isolate the two
+competing ownership. `retired` is the third such list — the plans whose claim on
+that module the lifecycle narrowing set aside — and is populated only where the
+narrowing applied, so an empty `retired` means no claim was retired there rather
+than that no ledger was read. `contested` and `sweep_crossings` isolate the two
 populations a caller reads for different reasons, and `verdict_tally` carries a
 row for every verdict even at zero. `root_claims[]` carries every span excluded
 from claim matching by the root-span rule above; it too is emitted even when
 empty, so an absent root claim reads as measured.
+
+`lifecycle` is the ledger read as its own block, `lifecycle_plans[]` is every
+queue row with the bucket it fell in, and `lifecycle_resolved[]` names each
+module the narrowing attributed together with the claims it retired. All three
+are emitted even when the ledger was unavailable, so a degraded read is a
+rendered state rather than a set of missing keys. ⛔ Read `lifecycle.available`
+before `terminal_count` or `active_count`: both are zero under a degraded read
+because nothing was read, not because the ledger said so, and
+`lifecycle.degradation` names which.
 
 ### `attribution`
 
@@ -219,7 +270,9 @@ modules_total: 214
 findings_total: 12
 sweep_plans[N]:
   ...
-contested[N]{path,plans}:
+lifecycle{ledger_path,available,degradation,terminal_count,active_count}:
+  ...
+contested[N]{path,plans,retired}:
   ...
 sweep_crossings[N]{path,verdict,sweeps}:
   ...
@@ -233,7 +286,9 @@ findings[12]{owner,path,line_count}:
 names, so every over-budget module is attributed exactly once and none is folded
 into a plan's total. `contested` and `sweep_crossings` carry the same two
 populations `partition` emits, so the disagreement behind a bucket can be read
-without a second call.
+without a second call. `lifecycle` states whether the ledger narrowed the
+attribution at all, so a `<contested>` bucket read here can be told apart from
+one that is large only because no ledger was available.
 
 ### `report`
 
@@ -250,11 +305,17 @@ partition_tally[N]{verdict,count}:
   ...
 attribution_buckets[N]{owner,count}:
   ...
-disagreements[N]{path,verdict,plans}:
+disagreements[N]{path,verdict,plans,retired}:
   ...
 sweep_plans[N]:
   ...
-contested[N]{path,plans}:
+lifecycle{ledger_path,available,degradation,terminal_count,active_count}:
+  ...
+lifecycle_plans[N]{plan_id,status,lifecycle}:
+  ...
+lifecycle_resolved[N]{path,owner,retired}:
+  ...
+contested[N]{path,plans,retired}:
   ...
 sweep_crossings[N]{path,verdict,sweeps}:
   ...
@@ -294,12 +355,12 @@ instance in `baseline_drift_instances[]` and never changes the exit status.
 
 | Standard | Contents |
 |----------|----------|
-| [standards/epic-surface-derivation.md](standards/epic-surface-derivation.md) | Where the parse lives (`plan-marshall:script-shared`) and why this skill owns the partition rather than the parse, the split the entry-shape rules run along, the three-class model and its evidence rules, the entry kinds and the claim-or-lead shape with its marker rules, the partition verdicts, sweep plans and why `unclaimed`, `swept` and `not_derivable` stay separate, the attribution buckets, the report's sections and what `provenance` must assert, and the never-a-gate contract |
+| [standards/epic-surface-derivation.md](standards/epic-surface-derivation.md) | Where the parse lives (`plan-marshall:script-shared`) and why this skill owns the partition rather than the parse, the split the entry-shape rules run along, the three-class model and its evidence rules, the entry kinds and the claim-or-lead shape with its marker rules, the partition verdicts, sweep plans and why `unclaimed`, `swept` and `not_derivable` stay separate, the plan-lifecycle input with its terminal/active partition, its refusal to adjudicate between live plans and its degradation path, the attribution buckets, the report's sections and what `provenance` must assert, and the never-a-gate contract |
 
 ## Related
 
 - `plan-marshall:script-shared` — **owns the `## Expected Surface` parse.** Its `epic_spec_parser` is the marketplace's single reader of that section, and this skill consumes it as stage 1 rather than holding a copy. This skill owns the PARTITION; the parse lives there because the orchestrator's disjointness gate reads the same section, and two readers of one grammar is the defect that split them
-- `plan-marshall:plan-orchestrator` — owns the epic ledger and the `corpus cross-check` collision matrix this skill deliberately does not re-derive. Its `corpus surfaces` verb is a sibling CONSUMER of the same shared reader, never a second one
+- `plan-marshall:plan-orchestrator` — owns the epic ledger and the `corpus cross-check` collision matrix this skill deliberately does not re-derive. This skill READS the ledger's per-plan `status` as its lifecycle input and never writes it, exactly as it reads and never writes the specs. Its `corpus surfaces` verb is a sibling CONSUMER of the same shared reader, never a second one
 - `pm-plugin-development:plugin-doctor` — its `test-conventions` sweep is a read-only input, never edited here
 
 ## Canonical invocations
