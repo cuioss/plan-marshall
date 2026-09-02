@@ -1,6 +1,6 @@
 ---
 name: tools-epic-surface-partition
-description: Derives an epic's test-tree surface partition and per-plan budget attribution from its staged spec corpus, read-only and never a build gate
+description: Derives an epic's test-tree surface partition and per-plan budget attribution from two separately loaded sources, the staged spec corpus for what each plan claims and the epic ledger for whether that plan is still working, read-only and never a build gate
 user-invocable: false
 mode: script-executor
 ---

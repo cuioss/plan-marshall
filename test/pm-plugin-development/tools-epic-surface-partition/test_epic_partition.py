@@ -34,6 +34,7 @@ real orchestrator store and the real ``test/`` tree are neither read nor written
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -364,6 +365,108 @@ def test_the_sweep_marker_does_not_fire_on_a_spec_quoting_anothers_declaration()
     SLICES rather than the phrase an analysis quotes.
     """
     assert not partition_mod.is_sweep_declaration(_QUOTING_BODY)
+
+
+# --- rule 1, per alternative: the quotation guard is UNIFORM ------------------
+#
+# The near-miss above exercises ONE phrasing. Every alternative is equally
+# quotable, so a guard fitted to one of them leaves the other three carrying the
+# identical exposure while that control still passes green — a control that
+# passes while its siblings are open is the defect, not merely a coverage gap.
+# Each alternative therefore carries a matched pair below: the phrasing DECLARED,
+# which must sweep, and the same phrasing QUOTED, which must not.
+
+#: One phrasing per ``_SWEEP_ALTERNATIVES`` entry, each the sentence a spec
+#: writes about ITSELF. The enumeration control below fails if an alternative is
+#: added without a row here.
+_SWEEP_PHRASINGS = {
+    'no_pairing': 'it pairs with no other `test/`-editing plan',
+    'tree_entire': "this plan's surface is the test tree entire",
+    'crossing': 'this surface crosses several reduction slices deliberately',
+    'partition_disregard': "its sites do not respect the epic's partition",
+}
+
+_PHRASING_IDS = sorted(_SWEEP_PHRASINGS)
+
+
+def declaring_body(phrasing: str) -> str:
+    """A spec DECLARING ``phrasing`` about itself."""
+    return (
+        '# PLAN-240\n\n## Expected Surface\n\n'
+        f'- OBSERVED: `test/beta/` — ⛔ **the whole tree.** {phrasing}\n'
+    )
+
+
+def quoting_body(phrasing: str) -> str:
+    """A spec ANALYSING the corpus, REPRODUCING ``phrasing`` as a quotation."""
+    return (
+        '# PLAN-241\n\n## Expected Surface\n\n'
+        "- OBSERVED: `test/beta/` — this plan's own mirror\n"
+        '\nThe table below records why each row was read as it was. One row reads '
+        f'"{phrasing}" and is a **genuine claim**.\n'
+    )
+
+
+def test_the_quotation_controls_exercise_every_sweep_alternative() -> None:
+    """Guards the matched pairs below against covering only some alternatives.
+
+    Each phrasing must match exactly one alternative and the rows together must
+    reach all of them, so the pairs below are per-alternative by construction
+    rather than by the author's belief. Without this, three alternatives could
+    sit unexercised behind a green suite — the shape of the defect the uniform
+    guard was written to remove.
+    """
+    per_phrasing = {
+        name: [
+            alternative
+            for alternative in partition_mod._SWEEP_ALTERNATIVES
+            if re.search(alternative, phrasing, re.IGNORECASE)
+        ]
+        for name, phrasing in _SWEEP_PHRASINGS.items()
+    }
+
+    assert {name: len(hit) for name, hit in per_phrasing.items()} == dict.fromkeys(
+        _SWEEP_PHRASINGS, 1
+    )
+    assert {hit[0] for hit in per_phrasing.values()} == set(partition_mod._SWEEP_ALTERNATIVES)
+
+
+@pytest.mark.parametrize('phrasing_id', _PHRASING_IDS)
+def test_every_sweep_phrasing_declares_a_sweep_on_its_own(phrasing_id: str) -> None:
+    """Positive control per alternative: the uniform guard did not over-apply.
+
+    The matched partner of the quotation row below. Without it, a guard that
+    discarded every match would pass all four quotation rows while detecting no
+    sweep at all.
+    """
+    assert partition_mod.is_sweep_declaration(declaring_body(_SWEEP_PHRASINGS[phrasing_id]))
+
+
+@pytest.mark.parametrize('phrasing_id', _PHRASING_IDS)
+def test_no_sweep_phrasing_fires_when_the_spec_is_quoting_it(phrasing_id: str) -> None:
+    """Near-miss control per alternative: reproducing a sentence is not declaring it.
+
+    The analysing plan claims an ordinary slice and quotes a sibling's
+    declaration to discuss it. Reading the quotation as its own would sweep it
+    and hand its tests to a neighbour.
+    """
+    assert not partition_mod.is_sweep_declaration(quoting_body(_SWEEP_PHRASINGS[phrasing_id]))
+
+
+@pytest.mark.parametrize('phrasing_id', _PHRASING_IDS)
+def test_an_unbalanced_quotation_mark_cannot_suppress_a_declaration(phrasing_id: str) -> None:
+    """Containment is TOTAL — the guard's own matched negative.
+
+    A stray opening quote earlier in the spec must not turn the declaration that
+    follows into a quotation. A guard testing mere overlap, or pairing marks
+    across lines, would silently convert a real sweep into an ordinary slice —
+    the failure in the direction opposite to the one the guard exists to stop.
+    """
+    body = declaring_body(_SWEEP_PHRASINGS[phrasing_id]).replace(
+        '## Expected Surface', '## Expected Surface\n\nThe sibling row opens "'
+    )
+
+    assert partition_mod.is_sweep_declaration(body)
 
 
 def test_an_own_words_sweep_does_not_contest_a_slices_ownership(

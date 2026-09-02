@@ -79,19 +79,34 @@ KIND_FILE = 'file'
 SHAPE_CLAIM = 'claim'
 SHAPE_LEAD = 'lead'
 
-#: The plan-id segment of a spec name, as an explicit three-way alternation over
-#: the settled forms — ``PLAN-{DIGITS}``, ``PLAN-{SLUG}-{DIGITS}``, and
-#: ``{SLUG}-{DIGITS}``. Writing it as an alternation rather than as one pattern
-#: with an OPTIONAL slug group is load-bearing: an optional group would also
-#: accept a bare ``01-foo.md`` that is neither ``PLAN-``-prefixed nor
-#: slug-prefixed. ``{SLUG}`` is a bounded uppercase-alphanumeric token and its
-#: trailing digits are mandatory, so the grammar is widened without drifting
-#: toward an always-matching pattern.
+#: The ``PLAN-``-prefixed half of the plan-id grammar — ``PLAN-{DIGITS}`` and
+#: ``PLAN-{SLUG}-{DIGITS}``. Published in its own right because the prefix is the
+#: corpus's own marker for a plan: a token wearing it denotes a plan WHEREVER it
+#: appears, a spec's running prose included, which is what makes it the half a
+#: prose-reading rule can key on.
+PLAN_ID_PREFIXED_SEGMENT = r'PLAN-(?:[A-Z0-9]{2,8}-)?\d+'
+
+#: The bare half — ``{SLUG}-{DIGITS}``, the form a code-slug spec name opens
+#: with. Unambiguous only in a FILENAME, where the anchored leading position is
+#: itself the statement that the token is a plan id. In PROSE the identical shape
+#: is worn by the external references the corpus routinely cites — ``CWE-1333``,
+#: ``CVE-2021-1234``, ``RFC-8259`` — so a prose rule keyed on this half reads a
+#: standards citation as a plan citation.
+PLAN_ID_BARE_SEGMENT = r'[A-Z0-9]{2,8}-\d+'
+
+#: The plan-id segment of a spec name, as an explicit alternation over the two
+#: halves above — together the settled forms ``PLAN-{DIGITS}``,
+#: ``PLAN-{SLUG}-{DIGITS}`` and ``{SLUG}-{DIGITS}``. Writing it as an alternation
+#: rather than as one pattern with an OPTIONAL slug group is load-bearing: an
+#: optional group would also accept a bare ``01-foo.md`` that is neither
+#: ``PLAN-``-prefixed nor slug-prefixed. ``{SLUG}`` is a bounded
+#: uppercase-alphanumeric token and its trailing digits are mandatory, so the
+#: grammar is widened without drifting toward an always-matching pattern.
 #:
 #: Single-definition: ``_orchestrator_inbox._SOURCE_ID_RE`` composes its own
 #: pointer pattern from THIS binding rather than carrying a second copy, so the
 #: two cannot drift.
-PLAN_ID_SEGMENT = r'(?:PLAN-(?:[A-Z0-9]{2,8}-)?\d+|[A-Z0-9]{2,8}-\d+)'
+PLAN_ID_SEGMENT = rf'(?:{PLAN_ID_PREFIXED_SEGMENT}|{PLAN_ID_BARE_SEGMENT})'
 
 # --- markdown line scanners -------------------------------------------------
 #
@@ -159,10 +174,12 @@ _LABEL_PREFIX_RE = re.compile(r'^(?P<label>OBSERVED|HYPOTHESIS)\b[^:]*:[ \t]*')
 # Every rule resolves a matched entry to SHAPE_LEAD, every one is a
 # keyword/label/grammar marker match over the bullet's OWN text in the same
 # style as _DERIVED_RE, and none of them names a plan — rule (c) keys on the
-# PUBLISHED PLAN_ID_SEGMENT grammar, which is the shape ANY plan identifier
-# takes and never a particular one. A spec added to the corpus is shaped by the
-# same rules with no edit here. They are independent: each fires on its own, and
-# each is testable without the others.
+# PUBLISHED PLAN_ID_PREFIXED_SEGMENT grammar, which is the shape ANY
+# PLAN--prefixed identifier takes and never a particular one, and compares the
+# one it matched against the CITING spec's own id rather than against any list.
+# A spec added to the corpus is shaped by the same rules with no edit here. They
+# are independent: each fires on its own, and each is testable without the
+# others.
 #
 # Rules (a), (b) and (d) read the WHOLE bullet, because the text that settles
 # them routinely sits in the trailing commentary. Rule (c) reads the CLAIM HEAD
@@ -199,18 +216,38 @@ _COLLECTION_CONSTRAINT_RE = re.compile(r'\btestpaths\b')
 #: the CITING plan a co-owner of the CITED plan's whole slice, which contests
 #: that slice in full — the single largest residual driver in the corpus.
 #:
-#: Keyed on the published :data:`PLAN_ID_SEGMENT` grammar — the shape every plan
-#: identifier takes — plus the possessive marker, so no particular plan is named
-#: and a citation of a plan added later is read the same way. The ``slice N``
-#: alternative covers the corpus's other citation form, where the reference is
-#: by slice ordinal rather than by full identifier and the ordinal may be
-#: backticked; its digits are equally unbound to any one plan. Both the straight
-#: and the typographic apostrophe are admitted, because a spec written with
-#: either is making the same citation. The two citations above are quoted from
-#: the corpus to show the SHAPE the rule reads; neither identifier appears in
-#: the pattern, which carries the grammar and nothing drawn from any one spec.
+#: ⛔ ANOTHER plan's, and the pattern alone cannot say that. A possessive-shape
+#: match says only "SOME plan's", so the cited identifier is compared against the
+#: CITING spec's own plan id by :func:`_cites_another_plan`, and a match on its
+#: own id is NOT a cross-plan reference. A spec writing ``PLAN-170's own tests
+#: under `test/x/``` is asserting ownership in the most direct words the corpus
+#: offers; demoting it drops the module from ``claimed`` to ``not_derivable`` —
+#: the exact INVERSE of the co-ownership defect this rule was added to close.
+#:
+#: ⛔ Keyed on :data:`PLAN_ID_PREFIXED_SEGMENT`, deliberately NOT on the whole
+#: :data:`PLAN_ID_SEGMENT`. The bare ``{SLUG}-{DIGITS}`` half is a plan id only
+#: in a filename's anchored leading position; in prose it equally matches the
+#: external references the corpus cites, so ``bounded by CWE-1333's total
+#: budget`` read as a plan citation and demoted the claim beside it. The
+#: ``PLAN-`` prefix is the corpus's own plan marker and no standards reference
+#: wears it. The residual is stated rather than hidden: a possessive citation of
+#: a BARE code-slug sibling in a claim head stays a claim, which is the
+#: conservative direction — the rule never invents a demotion it cannot
+#: substantiate.
+#:
+#: Keyed on published grammar plus the possessive marker, so no particular plan
+#: is named and a citation of a plan added later is read the same way. The
+#: ``slice N`` alternative covers the corpus's other citation form, where the
+#: reference is by slice ordinal rather than by full identifier and the ordinal
+#: may be backticked; its digits are equally unbound to any one plan, and a slice
+#: ordinal is never a spec's own plan id, so it always reads as another's. Both
+#: the straight and the typographic apostrophe are admitted, because a spec
+#: written with either is making the same citation. The two citations above are
+#: quoted from the corpus to show the SHAPE the rule reads; neither identifier
+#: appears in the pattern, which carries the grammar and nothing drawn from any
+#: one spec.
 _CROSS_PLAN_REFERENCE_RE = re.compile(
-    rf"(?:{PLAN_ID_SEGMENT}|\bslice[ \t]+`?\d+`?)['’]s\b"
+    rf"(?P<cited>\b{PLAN_ID_PREFIXED_SEGMENT}|\bslice[ \t]+`?\d+`?)['’]s\b"
 )
 
 #: Rule (d) — a HEDGED CONDITIONAL CLAIM. A bullet that names a span and then
@@ -517,7 +554,23 @@ def _bullet_segments(body: str) -> list[str]:
     return [head]
 
 
-def _entry_shape(label: str, body: str, head: str) -> str:
+def _cites_another_plan(head: str, plan_id: str) -> bool:
+    """Whether the claim head possessively cites a plan OTHER than the citing one.
+
+    Rule (c)'s decision, and the whole of what separates it from a possessive
+    SHAPE match. Every citation in the head is examined and its cited identifier
+    compared against ``plan_id``; a head whose citations are all the spec's OWN
+    identifier cites no other plan, so its entries keep their claim. A slice
+    ordinal is never a plan id, so it never compares equal and always reads as
+    another's.
+    """
+    return any(
+        match.group('cited') != plan_id
+        for match in _CROSS_PLAN_REFERENCE_RE.finditer(head)
+    )
+
+
+def _entry_shape(label: str, body: str, head: str, plan_id: str) -> str:
     """Resolve one bullet's entry shape from its own label and text.
 
     Four independent marker rules, each resolving the bullet's entries to
@@ -536,7 +589,9 @@ def _entry_shape(label: str, body: str, head: str) -> str:
 
     ``head`` is the claim segment alone and ``body`` the whole bullet: rule (c)
     reads the first and the other three read the second, for the reason given in
-    the marker block above.
+    the marker block above. ``plan_id`` is the CITING spec's own identifier, and
+    rule (c) is the only rule that reads it — a possessive citation is a
+    cross-plan reference only relative to who is doing the citing.
 
     The spec's class is deliberately not an input: shape is decided per entry,
     so one spec's bullets may resolve to different shapes.
@@ -545,7 +600,7 @@ def _entry_shape(label: str, body: str, head: str) -> str:
         return SHAPE_LEAD
     if _COLLECTION_CONSTRAINT_RE.search(body):
         return SHAPE_LEAD
-    if _CROSS_PLAN_REFERENCE_RE.search(head):
+    if _cites_another_plan(head, plan_id):
         return SHAPE_LEAD
     if _HEDGED_CLAIM_RE.search(body):
         return SHAPE_LEAD
@@ -555,6 +610,7 @@ def _entry_shape(label: str, body: str, head: str) -> str:
 def _collect_bullet(
     bullet: str,
     repo_root: Path,
+    plan_id: str,
     force_excluded: bool,
     claimed: list[PathEntry],
     excluded: list[PathEntry],
@@ -566,13 +622,16 @@ def _collect_bullet(
     steers no accumulator: it is recorded ON the entry, never used to route one
     away from ``claimed``, so the membership the other consumer of this reader
     compares is unchanged by it.
+
+    ``plan_id`` is the citing spec's own identifier, forwarded for rule (c) so a
+    spec naming ITSELF possessively is not read as citing a neighbour.
     """
     label_match = _LABEL_PREFIX_RE.match(bullet)
     label = label_match.group('label') if label_match else ''
     body = bullet[label_match.end():] if label_match else bullet
     negative = bool(_NEGATIVE_CLAIM_RE.match(body))
     segments = _bullet_segments(body)
-    shape = _entry_shape(label, body, segments[0])
+    shape = _entry_shape(label, body, segments[0], plan_id)
 
     spans: list[tuple[str, bool]] = []
     for segment in segments:
@@ -659,17 +718,18 @@ def classify_spec(spec_path: Path, repo_root: Path) -> SpecClaim:
     if start < 0:
         raise UnclassifiableSpecError(spec_path.name, 'no "## Expected Surface" section')
 
+    plan_id = plan_id_of(spec_path.name)
     claimed: list[PathEntry] = []
     excluded: list[PathEntry] = []
     unresolved: list[str] = []
 
     for bullet in _iter_bullets(lines, masked, start, end):
-        _collect_bullet(bullet, repo_root, False, claimed, excluded, unresolved)
+        _collect_bullet(bullet, repo_root, plan_id, False, claimed, excluded, unresolved)
 
     scope_start, scope_end = _section_span(lines, OUT_OF_SCOPE_HEADING_RE, masked)
     if scope_start >= 0:
         for bullet in _iter_bullets(lines, masked, scope_start, scope_end):
-            _collect_bullet(bullet, repo_root, True, claimed, excluded, unresolved)
+            _collect_bullet(bullet, repo_root, plan_id, True, claimed, excluded, unresolved)
 
     # The marker is searched over the SAME masked lines the two scans above
     # honour: a code sample carrying the token is a sample, not a declaration.
@@ -688,7 +748,7 @@ def classify_spec(spec_path: Path, repo_root: Path) -> SpecClaim:
         evidence = 'Expected Surface present; no entry the parser resolves to a path'
 
     return SpecClaim(
-        plan_id=plan_id_of(spec_path.name),
+        plan_id=plan_id,
         spec=spec_path.name,
         spec_class=spec_class,
         evidence=evidence,

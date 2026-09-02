@@ -89,10 +89,14 @@ The corpus is enumerated by the `PLAN-*.md` glob and never by a hard-coded plan
 list. A hard-coded list would reproduce, one level down, the very defect the
 derivation exists to close.
 
-## Entry shapes the parser resolves
+## Entry kinds the parser resolves
 
-| Shape | Example | `kind` |
-|-------|---------|--------|
+An entry's `kind` is the GEOMETRY of the span it names. It is a different field
+from its `shape`, which records whether the spec claims that span or merely
+leads to it — see [Entry shape: claim or lead](#entry-shape-claim-or-lead).
+
+| Kind | Example | Emitted `kind` |
+|------|---------|----------------|
 | Directory | `test/plan-marshall/manage-config/` | `directory` |
 | Recursive glob | `test/pm-plugin-development/**` | `recursive_glob` |
 | Filename glob | `plugin-doctor/test_test_conventions_rule*.py` | `filename_glob` |
@@ -102,7 +106,7 @@ derivation exists to close.
 
 A relative continuation resolves against the base the bullet's first **rooted**
 entry establishes — the directory a recursive glob names, or the parent of any
-other shape. Both notations are supported: the explicit `.../` prefix, whose
+other kind. Both notations are supported: the explicit `.../` prefix, whose
 leading token is stripped before the base is applied, and the bare sibling. A
 continuation in a bullet that established no base is recorded in `unresolved[]`
 rather than guessed at.
@@ -141,7 +145,7 @@ point at another.
 |------|--------|-----------------------|
 | Deferred hypothesis | A `HYPOTHESIS` label, or the `verify-at-outline` deferral phrase | A candidate path named for outline-time verification |
 | Collection constraint | The `testpaths` settings key | States where the runner collects from, not what the plan owns |
-| Cross-plan reference | Another plan's or another slice's identifier in the possessive, in the bullet's CLAIM HEAD | Quotes the cited plan's ownership rather than asserting the citing plan's |
+| Cross-plan reference | A `PLAN-`-prefixed identifier OTHER than the citing spec's own, or a slice ordinal, in the possessive, in the bullet's CLAIM HEAD | Quotes the cited plan's ownership rather than asserting the citing plan's |
 | Hedged conditional claim | A conditional restriction on the claim, or an explicit denial of further coverage | The bullet withdraws the span it just named |
 
 Each rule fires on its own and each is keyed on published grammar or on the
@@ -153,6 +157,20 @@ narrowing is load-bearing. A possessive citation in the head says the named span
 IS the other plan's surface; the same citation in the trailing commentary
 annotates a claim the bullet makes in its own right, and reading it there would
 demote most of the corpus.
+
+⛔ **ANOTHER plan's.** The cited identifier is compared against the citing spec's
+own plan id, and a spec naming ITSELF possessively — `PLAN-170's own tests under
+test/x/` — keeps its claim. A rule that fired on any possessive of plan shape
+would drop the module from `claimed` to `not_derivable`, the exact inverse of the
+co-ownership defect the rule closes.
+
+⛔ The rule keys on the `PLAN-`-prefixed half of the plan-id grammar, not on the
+bare `{SLUG}-{DIGITS}` half. That half is a plan id only in a spec FILENAME's
+anchored leading position; in prose the identical shape belongs to the external
+references specs cite — `CWE-1333`, `CVE-2021-1234`, `RFC-8259` — and reading one
+of those as a plan citation demotes the claim beside it. The residual is stated
+rather than hidden: a possessive citation of a bare code-slug sibling stays a
+claim, the direction that never invents a demotion it cannot substantiate.
 
 ⛔ The shape is **additive**. It is recorded on the entry and moves nothing: an
 entry keeps its membership of `claimed` or `excluded` whatever its shape, and the
@@ -210,9 +228,18 @@ boundaries — because a marker narrow enough to match only the specs sharing on
 boilerplate sentence is that hard-coded list wearing a regex, and stops matching
 the moment a plan declares its crossing in its own words.
 
-⛔ A spec that QUOTES a sibling's crossing declaration while claiming an ordinary
-slice is not itself a sweep. The marker deliberately does not read the phrasing an
-analysing spec quotes when it cites another plan.
+⛔ A spec that QUOTES a sibling's declaration while claiming an ordinary slice is
+not itself a sweep. Every one of the settled phrasings above is quotable, so the
+guard is applied UNIFORMLY: a marker occurrence lying wholly inside a quotation is
+discarded, whichever phrasing it matched. The test sits at the single point all
+the phrasings pass through rather than inside any one of them — a guard fitted to
+one phrasing leaves the others carrying the identical exposure while its own
+control still passes.
+
+Containment must be total: a marker merely overlapping a quotation still counts,
+so a partial or mismatched quotation can never suppress a real declaration. The
+straight single quote is not read as a quotation mark at all, because specs write
+the possessive apostrophe with it.
 
 ⛔ A sweep plan is a property of the PLAN; a **root span** is a property of an
 ENTRY. The two are independent and neither implies the other.

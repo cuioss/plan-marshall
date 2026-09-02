@@ -155,22 +155,54 @@ OWNER_NOT_DERIVABLE = '<not-derivable>'
 #: crossed. The crossing and partition-disregard alternatives are what make this
 #: a reading of what a spec SAYS rather than a fingerprint of who wrote it.
 #:
-#: ⛔ The crossing alternative requires the plural ``slices`` — the epic's
-#: reduction slices — and deliberately does NOT admit "crosses the whole
-#: partition". A spec ANALYSING the corpus quotes that phrase when it cites
-#: another spec's declaration, and a quotation is not a declaration: keying on
-#: it would sweep the analysing plan and hand its own tests to a neighbour.
+#: ⛔ A QUOTATION IS NOT A DECLARATION, and the guard against reading one as the
+#: other is applied UNIFORMLY to all four alternatives by
+#: :func:`is_sweep_declaration`, never per-alternative. A spec ANALYSING the
+#: corpus reproduces a sibling's declaration in order to discuss it, and every
+#: one of these four phrasings is quotable: reading any of them as the analysing
+#: spec's OWN declaration sweeps that plan and hands its tests to a neighbour.
+#: A guard fitted to one alternative leaves the other three carrying the identical
+#: exposure while every control still passes green, which is why the narrowing
+#: lives at the single point all four pass through rather than inside the pattern.
+#:
+#: The crossing alternative additionally requires the plural ``slices`` — the
+#: epic's reduction slices — and does not admit "crosses the whole partition".
+#: That restriction is RETAINED beside the uniform guard, not replaced by it:
+#: it narrows the alternative on its own terms, and a phrase can be reproduced
+#: without quotation marks.
 #:
 #: ⛔ Corpus-independent by construction: it matches what a spec SAYS ABOUT
 #: ITSELF, so a sweep added to the corpus is detected with no edit here, and no
 #: plan identifier appears in the mechanism.
-_SWEEP_RE = re.compile(
-    r'\bpairs with no other\b'
-    r'|\btree entire\b'
-    r'|\bcrosses\b[^.]{0,60}\bslices\b'
-    r'|\bdo(?:es)? not respect\b[^.]{0,60}\b(?:slice boundaries|partition)\b',
-    re.IGNORECASE,
+#: The four alternatives, published SEPARATELY rather than only as one joined
+#: pattern. A control can then assert it carries a row for EVERY alternative, so
+#: a fifth phrasing added here without its own matched declaration/quotation pair
+#: fails that assertion instead of shipping unexercised beside three siblings
+#: whose controls still pass green.
+_SWEEP_ALTERNATIVES = (
+    r'\bpairs with no other\b',
+    r'\btree entire\b',
+    r'\bcrosses\b[^.]{0,60}\bslices\b',
+    r'\bdo(?:es)? not respect\b[^.]{0,60}\b(?:slice boundaries|partition)\b',
 )
+
+_SWEEP_RE = re.compile('|'.join(_SWEEP_ALTERNATIVES), re.IGNORECASE)
+
+#: A QUOTATION span — text a spec REPRODUCES rather than asserts. Both straight
+#: and typographic double quotes, and the typographic single pair.
+#:
+#: ⛔ The straight single quote is deliberately NOT admitted. The corpus writes
+#: the possessive apostrophe with it, so admitting it would pair two unrelated
+#: possessives and swallow whole sentences of genuine declaration between them —
+#: silently converting a real sweep into an ordinary slice, the failure in the
+#: other direction. Each span is bounded to a single line for the same reason:
+#: an unpaired mark then costs nothing beyond its own line.
+_QUOTATION_RE = re.compile(r'"[^"\n]*"|“[^”\n]*”|‘[^’\n]*’')
+
+
+def _quotation_spans(text: str) -> list[tuple[int, int]]:
+    """The ``[start, end)`` span of every quotation in ``text``."""
+    return [(match.start(), match.end()) for match in _QUOTATION_RE.finditer(text)]
 
 #: The test-module line budget the campaign's findings are derived against.
 DEFAULT_LINE_BUDGET = 400
@@ -456,8 +488,20 @@ def is_sweep_declaration(spec_text: str) -> bool:
     what the plan says about itself rather than on any list held here. Tested in
     isolation from the rest of the partition, because a marker that silently
     stopped matching would quietly restore the single-bucket collapse.
+
+    ⛔ A marker occurrence lying WHOLLY inside a quotation is a reproduction of
+    someone else's declaration and is discarded. The test is applied here, to
+    every match of every alternative, which is what makes the guard uniform: a
+    narrowing written into one alternative's pattern leaves its siblings open.
+    Containment must be TOTAL — a match merely overlapping a quotation still
+    counts, so a partial or mismatched quotation cannot suppress a real
+    declaration.
     """
-    return _SWEEP_RE.search(spec_text) is not None
+    spans = _quotation_spans(spec_text)
+    return any(
+        not any(start <= match.start() and match.end() <= end for start, end in spans)
+        for match in _SWEEP_RE.finditer(spec_text)
+    )
 
 
 def derive_sweep_plans(claims: list[SpecClaim], plans_dir: Path) -> frozenset[str]:

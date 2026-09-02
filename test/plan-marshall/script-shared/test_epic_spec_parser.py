@@ -491,6 +491,61 @@ def test_a_citation_of_an_identifier_form_absent_from_the_corpus_is_read(
     assert entry.shape == spec_parser.SHAPE_LEAD
 
 
+@pytest.mark.parametrize(
+    ('name', 'head', 'shape'),
+    [
+        (
+            'PLAN-226.md',
+            "PLAN-226's own tests under `test/omega/`",
+            spec_parser.SHAPE_CLAIM,
+        ),
+        (
+            'PLAN-226.md',
+            "PLAN-040's sixteen entries under `test/omega/`",
+            spec_parser.SHAPE_LEAD,
+        ),
+    ],
+    ids=['own_identifier', 'another_plans_identifier'],
+)
+def test_the_possessive_is_read_relative_to_who_is_citing(
+    repo: Path, plans: Path, name: str, head: str, shape: str
+) -> None:
+    """Rule (c) means ANOTHER plan's — the matched pair that pins both directions.
+
+    One spec, one claim head, one possessive; only the identifier differs. Its
+    OWN identifier is the most direct wording available for asserting ownership,
+    so demoting it drops the module from ``claimed`` to ``not_derivable`` — the
+    inverse of the co-ownership defect the rule closes. A rule keyed on the
+    possessive SHAPE alone gives both rows the same shape and fails one of them
+    whichever way it is written.
+    """
+    body = f'# {name[:-3]}\n\n## Expected Surface\n\n- OBSERVED: {head}\n'
+
+    claim = claim_for(plans, repo, name, body)
+    entry = next(entry for entry in claim.claimed if entry.path == 'test/omega/')
+
+    assert entry.shape == shape
+
+
+def test_a_possessive_over_a_non_plan_token_stays_a_claim(repo: Path, plans: Path) -> None:
+    """Rule (c) — negative control over the bare code-slug shape in prose.
+
+    ``CWE-1333`` wears the bare ``{SLUG}-{DIGITS}`` shape a code-slug plan id
+    takes, which is a plan id only in a spec filename's anchored leading
+    position. Reading a standards citation as a plan citation demotes the claim
+    standing beside it, so the rule keys on the ``PLAN-`` prefix instead.
+    """
+    body = (
+        '# PLAN-227\n\n## Expected Surface\n\n'
+        "- OBSERVED: `test/omega/` bounded by CWE-1333's total budget\n"
+    )
+
+    claim = claim_for(plans, repo, 'PLAN-227.md', body)
+    entry = next(entry for entry in claim.claimed if entry.path == 'test/omega/')
+
+    assert entry.shape == spec_parser.SHAPE_CLAIM
+
+
 def test_a_cross_plan_reference_entry_keeps_its_membership_of_claimed(
     repo: Path, plans: Path
 ) -> None:
