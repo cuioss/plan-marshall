@@ -27,12 +27,11 @@ The main-anchored resolution these columns depend on is pinned by the sibling
 from __future__ import annotations
 
 import sys
-from argparse import Namespace
 from pathlib import Path
 
 import pytest
 
-from conftest import get_script_path, load_script_module
+from conftest import get_script_path, load_script_module, parse_ns
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall', 'phase_handshake.py')
 SCRIPTS_DIR = SCRIPT_PATH.parent
@@ -41,6 +40,25 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 import _handshake_commands as hc
 import _invariants as inv
+
+#: The two command lines these tests drive, parsed by ``phase_handshake.py``'s
+#: OWN parser and hoisted to module scope because ``parse_ns`` re-executes the
+#: script module on every call. Every value is fixed, so no per-test derivation is
+#: needed. The parser is corrective here: ``capture`` declares no ``--strict`` and
+#: ``verify`` declares neither ``--override`` nor ``--reason``, so each namespace
+#: now carries exactly the fields its own verb can receive. ``register=False`` so
+#: neither publishes ``phase_handshake`` in ``sys.modules`` beside the handler
+#: modules imported above.
+_CAPTURE_ARGS = parse_ns(
+    'plan-marshall', 'plan-marshall', 'phase_handshake.py',
+    'capture', '--plan-id', 'p', '--phase', '5-execute', '--reason', '',
+    register=False,
+)
+_VERIFY_ARGS = parse_ns(
+    'plan-marshall', 'plan-marshall', 'phase_handshake.py',
+    'verify', '--plan-id', 'p', '--phase', '5-execute', '--strict',
+    register=False,
+)
 
 
 _SHA_COLUMNS = ('main_sha', 'worktree_sha')
@@ -182,9 +200,7 @@ def test_cmd_capture_returns_structured_refusal_and_writes_no_row(
     written: list[object] = []
     monkeypatch.setattr(hc, 'upsert_row', lambda *a, **k: written.append(a))
 
-    result = hc.cmd_capture(
-        Namespace(plan_id='p', phase='5-execute', override=False, reason='')
-    )
+    result = hc.cmd_capture(_CAPTURE_ARGS)
 
     assert result['status'] == 'error'
     assert result['error'] == 'main_capture_read_the_worktree'
@@ -209,14 +225,14 @@ def test_cmd_verify_returns_the_same_refusal_rather_than_raising(
         hc, 'get_row', lambda _plan_id, _phase: {'phase': '5-execute', 'override': False}
     )
 
-    result = hc.cmd_verify(Namespace(plan_id='p', phase='5-execute', strict=True))
+    result = hc.cmd_verify(_VERIFY_ARGS)
 
     assert result['status'] == 'error'
     assert result['error'] == 'main_capture_read_the_worktree'
     assert result['main_root'] == worktree_shadowing_main
-    assert result['message'] == hc.cmd_capture(
-        Namespace(plan_id='p', phase='5-execute', override=False, reason='')
-    )['message'], 'capture and verify must present one envelope'
+    assert result['message'] == hc.cmd_capture(_CAPTURE_ARGS)['message'], (
+        'capture and verify must present one envelope'
+    )
 
 
 def test_refusal_error_code_is_a_verify_refusal_that_blocks_transition() -> None:
