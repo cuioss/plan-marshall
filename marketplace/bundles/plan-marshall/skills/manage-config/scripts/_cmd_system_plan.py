@@ -101,8 +101,8 @@ def cmd_system(args) -> dict:
 def cmd_project(args) -> dict:
     """Handle project noun.
 
-    Exposes the project-level `project.*` block in marshal.json
-    (currently `default_base_branch`). On a fresh marshal.json that lacks
+    Exposes the project-level `project.*` block in marshal.json — the admitted
+    field set is exactly the :data:`DEFAULT_PROJECT` keys. On a fresh marshal.json that lacks
     the `project` block, `get` returns the value from
     :data:`DEFAULT_PROJECT` so consumers always observe the canonical
     default — mirroring the implicit-default semantics of the other
@@ -125,8 +125,24 @@ def cmd_project(args) -> dict:
     if args.verb == 'get':
         field = args.field
         if field in project_config:
-            return success_exit({'field': field, 'value': project_config[field]})
+            value = project_config[field]
+            # Re-validate the persisted value at this read boundary — mirroring
+            # the sibling `set` arm and the `pr-decision` verb below. marshal.json
+            # is operator-editable and `sync-defaults` preserves an already-present
+            # key without inspecting its value, so a hand-edited or migrated
+            # non-string survives indefinitely. The language rule resolves anything
+            # other than `auto` as a pinned language, so an unguarded `true` or `42`
+            # would read as a pin; failing loud here is what keeps that off the
+            # rule's input.
+            if field == 'user_language':
+                try:
+                    validate_user_language(value)
+                except ValueError as e:
+                    return error_exit(str(e), error_type='invalid_value')
+            return success_exit({'field': field, 'value': value})
         if field in DEFAULT_PROJECT:
+            # The DEFAULT_PROJECT fallback needs no guard — `get_default_config`
+            # already self-validates the seed.
             return success_exit({'field': field, 'value': DEFAULT_PROJECT[field]})
         return error_exit(f"Field '{field}' not found in project config", error_type='field_not_found')
 

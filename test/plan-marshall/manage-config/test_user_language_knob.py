@@ -7,12 +7,19 @@ drives ``manage-config.py`` ``main()`` in-process with a patched ``sys.argv``, s
 the real argparse surface, the noun -> handler routing, and the TOON output are
 all on the path. The unit-level seed and validator assertions live beside their
 siblings in ``test_config_defaults.py``; what is covered here is the operator's
-own sequence — seed, read, pin, back-fill, and the coercion rejection.
+own sequence — seed, read, pin, back-fill, and the rejection on both halves of
+the boundary.
 
-The bool-coercion case is the load-bearing one: ``cmd_project``'s ``set`` branch
-routes ``--value`` through ``_coerce_value``, which turns ``false`` into a Python
-``bool`` and a digit string into an ``int``. Every reader of the knob expects a
-string, so the guard is what keeps a coerced non-string off disk.
+The bool-coercion case is the load-bearing one on the write half: ``cmd_project``'s
+``set`` branch routes ``--value`` through ``_coerce_value``, which turns ``false``
+into a Python ``bool`` and a digit string into an ``int``. Every reader of the knob
+expects a string, so the guard is what keeps a coerced non-string off disk.
+
+The read half is guarded for a different reason: ``marshal.json`` is operator-editable
+and ``sync-defaults`` preserves an already-present key without inspecting its value,
+so a value the ``set`` guard never saw survives indefinitely. ``get`` is the only
+surface between the file and the language rule, which resolves anything other than
+``auto`` as a pin — an unguarded ``true`` or ``42`` would read as a pinned language.
 
 Isolation: the autouse ``_plan_base_dir_sandbox`` plus the explicit
 ``plan_context`` fixture redirect ``_config_core.MARSHAL_PATH`` into a per-test
@@ -185,6 +192,76 @@ def test_project_set_user_language_rejects_a_non_string_or_empty_value(
     persisted = _read_marshal(plan_context)['project']['user_language']
     assert isinstance(persisted, str), f'a non-string reached disk: {persisted!r}'
     assert persisted == _AUTO
+
+
+#: Values a hand-edit or a migration can leave in marshal.json that the `set`
+#: guard never saw. Each must be refused on the read path too — the file is
+#: operator-editable and `sync-defaults` preserves an already-present key without
+#: inspecting its value, so nothing else stands between them and the language rule.
+_PERSISTED_INVALID_VALUES = [True, 42, 3.5, None, [], {}, '', '   ']
+
+
+@pytest.mark.parametrize(
+    'value',
+    _PERSISTED_INVALID_VALUES,
+    ids=[f'persisted={v!r}' for v in _PERSISTED_INVALID_VALUES],
+)
+def test_project_get_user_language_refuses_a_persisted_invalid_value(
+    plan_context, monkeypatch, capsys, value
+):
+    """A persisted non-string or empty user_language is refused by `get`, not returned.
+
+    Refusing is the point: the rule treats anything other than `auto` as a pin, so
+    returning the raw value would let `true` or `42` resolve as a pinned language.
+    """
+    _init(plan_context, monkeypatch, capsys)
+    config = _read_marshal(plan_context)
+    config['project']['user_language'] = value
+    _write_marshal(plan_context, config)
+
+    code, data = _drive(monkeypatch, capsys, 'project', 'get', '--field', 'user_language')
+
+    assert code == 0
+    assert data['status'] == 'error'
+    assert data['error_type'] == 'invalid_value'
+
+
+def test_project_get_returns_a_valid_persisted_language(plan_context, monkeypatch, capsys):
+    """A well-formed persisted pin is still returned unchanged.
+
+    The positive control for the read guard: it refuses an invalid value, it never
+    rewrites or suppresses a valid one.
+    """
+    _init(plan_context, monkeypatch, capsys)
+    config = _read_marshal(plan_context)
+    config['project']['user_language'] = _PIN
+    _write_marshal(plan_context, config)
+
+    code, data = _drive(monkeypatch, capsys, 'project', 'get', '--field', 'user_language')
+
+    assert code == 0
+    assert data['status'] == 'success'
+    assert data['value'] == _PIN
+
+
+def test_project_get_does_not_validate_unrelated_fields(plan_context, monkeypatch, capsys):
+    """The read guard is scoped to user_language and does not police its siblings.
+
+    The negative control for the read guard: widening it to every project field
+    would turn unrelated reads into refusals. Only the refusal is asserted against,
+    not the returned value's type, so the check stays independent of how the TOON
+    writer renders a non-string.
+    """
+    _init(plan_context, monkeypatch, capsys)
+    config = _read_marshal(plan_context)
+    config['project']['default_base_branch'] = 42
+    _write_marshal(plan_context, config)
+
+    code, data = _drive(monkeypatch, capsys, 'project', 'get', '--field', 'default_base_branch')
+
+    assert code == 0
+    assert data['status'] == 'success'
+    assert data['field'] == 'default_base_branch'
 
 
 def test_project_set_unknown_field_is_still_rejected(plan_context, monkeypatch, capsys):

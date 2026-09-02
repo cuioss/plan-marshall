@@ -121,7 +121,7 @@ absent or unreadable.
 
 | Verb | Parameters | Description |
 |------|-----------|-------------|
-| `get` | `--field` | Get a project field. Falls back to the canonical default (from `DEFAULT_PROJECT`) when the key is absent from the live `project` block. |
+| `get` | `--field` | Get a project field. Falls back to the canonical default (from `DEFAULT_PROJECT`) when the key is absent from the live `project` block. A `user_language` read from the live block is re-validated at this read boundary and refused with `error_type: invalid_value` when it is not a non-empty string — `marshal.json` is operator-editable and `sync-defaults` preserves an already-present key without inspecting its value, so the guard is what keeps a hand-edited or migrated non-string from reaching the language rule, which resolves anything other than `auto` as a pin. The `DEFAULT_PROJECT` fallback carries no such guard: the seed is self-validated by `get_default_config`. |
 | `set` | `--field`, `--value` | Set a project field. Rejects any `--field` outside the known project field set (`default_base_branch`, `working_prefixes`, `pr_strategy`, `pr_compact_max_changed_files`, `merge_queue_managed_externally`, `user_language`) with `error_type: unknown_field` before any write — an unknown field name never persists a dead key. Scalar fields are coerced (bool/int/str); the list-valued JSON field `working_prefixes` takes a JSON array value that round-trips through `get`. |
 
 ### Fields
@@ -131,7 +131,7 @@ absent or unreadable.
 | `default_base_branch` | string | `main` | Project's canonical base branch; seeds `references.base_branch` at plan init. |
 | `merge_queue_managed_externally` | bool | `false` | Declares that the org — not plan-marshall — owns the platform merge queue. When `true`, the probe-backed set-time validation of `use_merge_queue` defers entirely (see below). |
 | `working_prefixes` | list[string] | `["feature/", "fix/", "chore/"]` | The closed set of allowed working-branch prefixes for plan feature branches (e.g. `feature/`), enforced by the branch-prefix validation in `marshall-steward`. A structural test (`test_branch_prefix_allowlist.py`) asserts every prefix is covered by a `.github/workflows/python-verify.yml` push trigger, so a dropped prefix that would make a PR unmergeable fails CI. The `docs/` prefix is explicitly retired and absent. |
-| `user_language` | string | `auto` | The language plan-marshall answers the user in. `auto` follows the language the user is writing in; any other value pins it (e.g. `--value de`). Rejected with `error_type: invalid_value` when not a non-empty string. See [`data-model.md`](data-model.md) § Section: project for the canonical per-key reference, and [`persona-plan-marshall-agent/standards/user-communication.md`](../../persona-plan-marshall-agent/standards/user-communication.md) for the rule that consumes it. |
+| `user_language` | string | `auto` | The language plan-marshall answers the user in. `auto` follows the language the user is writing in; any other value pins it (e.g. `--value de`). Rejected with `error_type: invalid_value` when not a non-empty string — on `set` before the write, and again on `get` when read from the live block, so both halves of the boundary are guarded. See [`data-model.md`](data-model.md) § Section: project for the canonical per-key reference, and [`persona-plan-marshall-agent/standards/user-communication.md`](../../persona-plan-marshall-agent/standards/user-communication.md) for the rule that consumes it. |
 
 ### Example: get working_prefixes
 
