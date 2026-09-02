@@ -188,8 +188,9 @@ in exactly the same way a `MISSING` scan misroutes an enforcement-free one.
 
 **Presence is not correctness**: the `display` check keys on the hook command
 string alone and never inspects an entry's `timeout`, so a present entry can
-still carry a stale one. A re-run of the install converges any such entry, so
-this branch offers the re-run rather than returning silently:
+still carry a stale one. This branch therefore offers the re-run rather than
+returning silently; what the re-run does and does not converge is stated in the
+report text below:
 
 ```text
 Terminal title is already configured.
@@ -213,7 +214,7 @@ everything "is present", which is not what the check observed. When any label in
 the report, naming those labels. This is a **report addition only** — it changes
 nothing about the branch, which still routes on `status` alone (see "Branch on
 the status, never on a `MISSING` text scan" above), and it does not suppress the
-re-run offer, which still converges a stale timeout on every non-divergent label:
+re-run offer:
 
 ```text
 Installed in both settings files: <divergent labels>. Each of these is present
