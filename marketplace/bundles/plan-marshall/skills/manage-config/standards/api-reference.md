@@ -709,4 +709,4 @@ Common errors:
 - `marshal.json not found. Run command /marshall-steward first`
 - `skill_domains not configured. Run command /marshall-steward first`
 - `Unknown domain: {name}`
-- `unknown_field` — `project set` was given a `--field` outside the known project field set, which is exactly the keys of `DEFAULT_PROJECT` in `scripts/_config_defaults.py` (see the `set` verb row above and § Fields). The write is refused before any key is persisted, so an unknown field never masks an operator/doc typo behind a green `status: success`.
+- `unknown_field` — `project get` or `project set` was given a `--field` outside the known project field set, which is exactly the keys of `DEFAULT_PROJECT` in `scripts/_config_defaults.py` (see both verb rows above). Both verbs route the same seam, so neither admits a name the other refuses: `set` refuses before any key is persisted, and `get` refuses before the live block is consulted. An unknown field therefore never masks an operator/doc typo behind a green `status: success`, in either direction.

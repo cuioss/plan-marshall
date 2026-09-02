@@ -208,10 +208,11 @@ def cmd_project(args) -> dict:
                 return error_exit(str(e), error_type='invalid_value')
 
         # Reject any field not in the project schema before persisting it, via
-        # the shared fail-closed provisioning-write seam (ADR-009). This makes
-        # `set` symmetric with the `get` branch's field_not_found handling: a
-        # typo'd or retired key (e.g. a dead lane knob) is rejected rather than
-        # silently written to marshal.json where no reader would ever consult it.
+        # the shared fail-closed provisioning-write seam (ADR-009). `get` routes
+        # the same seam before it consults the live block, so both verbs answer
+        # "what is a project field?" identically: a typo'd or retired key (e.g. a
+        # dead lane knob) is rejected rather than silently written to marshal.json
+        # where no reader would ever consult it.
         # DEFAULT_PROJECT is the canonical field whitelist. Routing through the
         # single seam (rather than an inline check) is what encodes the invariant
         # once — the same guard `cmd_system retention set` now uses.
