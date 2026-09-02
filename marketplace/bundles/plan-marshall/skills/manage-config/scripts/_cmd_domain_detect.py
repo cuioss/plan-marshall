@@ -4,23 +4,14 @@
 
 Walks the plan's clarified-request narrative for explicit mentions of
 configured skill_domains (or their bundle aliases) and returns the SET of
-matching domains. The returned ``domains`` list is the unconditional union of
-three legs:
+matching domains. The composition contract — the merge legs and the exception to
+them — is documented in ``standards/skill-domains.md`` § Domain Inclusion.
 
-- ``detector_set``    — narrative / override / single-domain resolution (ALL
-  narrative matches are kept, not just a single winner).
-- ``always_on_set``   — domains flagged ``always_on: true`` in skill_domains.
-- ``glob_matched_set`` — domains whose ``file_globs`` match any path in the file
-  signal. The file signal is ``--affected-files`` when supplied (refine passes
-  the real affected_files), else path-like tokens extracted from the narrative
-  the detector already reads (init, pre-module-mapping).
+The file signal feeding the ``file_globs`` leg is ``--affected-files`` when
+supplied (refine passes the real affected_files), else path-like tokens extracted
+from the narrative the detector already reads (init, pre-module-mapping).
 
-``ambiguous`` is ``true`` only when the detector multi-matches, OR when the
-detector zero-matches AND both the always_on and glob legs are empty (there is
-genuinely nothing to select — the configured non-system domains are then
-surfaced as the multiSelect candidate set). A zero narrative match resolved by
-the always_on / glob legs is silent (``ambiguous=false``). There is no LLM
-dispatch on this path.
+There is no LLM dispatch on this path.
 
 The offerable set the caller prompts over is split across two sibling fields:
 ``candidates`` is the detector's narrative matches, and ``additional_candidates``
@@ -442,8 +433,9 @@ def cmd_domain_detect(args) -> dict[str, Any]:
         )
 
     # Zero narrative match. When the always_on / glob legs contribute any domain
-    # the plan resolves silently; otherwise it is genuinely ambiguous and the
-    # configured non-system domains are surfaced as the multiSelect candidate set.
+    # the plan resolves on those legs alone; otherwise the whole offerable set is
+    # over-provisioned. Only an empty union — no offerable domain at all — stays
+    # ambiguous and surfaces the multiSelect prompt.
     if inclusion_union:
         return _result(
             plan_id,
@@ -457,16 +449,29 @@ def cmd_domain_detect(args) -> dict[str, Any]:
             reason='inclusion_only_resolve',
         )
 
-    prompt_candidates = [
-        {'domain': d, 'matched_aliases': []} for d in sorted(_offerable_domains(user_domains))
-    ]
+    offerable = sorted(_offerable_domains(user_domains))
+    prompt_candidates = [{'domain': d, 'matched_aliases': []} for d in offerable]
+    prompt_additional = _additional_candidates(user_domains, prompt_candidates, inclusion_union)
+    over_provisioned = set(offerable)
+
+    if over_provisioned:
+        return _result(
+            plan_id,
+            domains=over_provisioned,
+            candidates=prompt_candidates,
+            additional_candidates=prompt_additional,
+            always_on=always_on_set,
+            glob_matched=glob_matched_set,
+            ambiguous=False,
+            source=narrative_source,
+            reason='over_provisioned_resolve',
+        )
+
     return _result(
         plan_id,
         domains=set(),
         candidates=prompt_candidates,
-        additional_candidates=_additional_candidates(
-            user_domains, prompt_candidates, inclusion_union
-        ),
+        additional_candidates=prompt_additional,
         always_on=always_on_set,
         glob_matched=glob_matched_set,
         ambiguous=True,

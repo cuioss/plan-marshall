@@ -536,31 +536,62 @@ For codebase-wide changes requiring discovery and analysis.
 
 #### 9a: Resolve Domain Outline Skill
 
+Pass EVERY entry of `references.domains` as a repeated `--domain` flag — the verb aggregates over the plan's whole domain roster rather than one representative domain:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  resolve-outline-skill --domain {domain} --audit-plan-id {plan_id}
+  resolve-outline-skill --domain {domain_1} --domain {domain_2} --audit-plan-id {plan_id}
 ```
 
-**Output** (TOON):
+**Selector rule**: each supplied domain declares at most one `outline_skill`, and the verb returns a domain-specific skill only when exactly ONE distinct skill resolves across the roster. Zero resolving domains and more than one both fall back to the generic change-type instructions, and `reason` distinguishes them (`no_domain_skill` vs `multiple_domain_skills`) — contention additionally lists the suppressed candidates in `competing_skills` rather than collapsing silently into the fallback. `domains` echoes the caller-supplied roster in order, `domain_count` is its length, and `resolved_from` names the first domain that declared the winning skill. A domain key the project does not configure contributes nothing and is not an error.
+
+**Output** (TOON) — exactly one distinct skill resolves:
+
 ```toon
 status: success
-domain: {domain}
-skill: pm-plugin-development:ext-outline-workflow
+domains[2]:
+  - plan-marshall-plugin-dev
+  - python
+domain_count: 2
+skill: "pm-plugin-development:ext-outline-workflow"
 source: domain_specific
+resolved_from: plan-marshall-plugin-dev
 ```
 
-or:
+no domain resolves a skill:
 
 ```toon
 status: success
-domain: {domain}
+domains[2]:
+  - python
+  - documentation
+domain_count: 2
 skill: none
 source: generic
+reason: no_domain_skill
+```
+
+more than one distinct skill competes:
+
+```toon
+status: success
+domains[2]:
+  - plan-marshall-plugin-dev
+  - java
+domain_count: 2
+skill: none
+source: generic
+reason: multiple_domain_skills
+competing_skills[2]:
+  - "pm-plugin-development:ext-outline-workflow"
+  - "pm-dev-java:ext-outline-java"
 ```
 
 #### 9b: Load Change-Type Instructions
 
-**IF source == domain_specific** (domain has registered outline_skill):
+The two branches below are unchanged by the roster widening: the `source == domain_specific` branch fires exactly as before (on the single distinct skill the selector resolved), and BOTH fallback reasons — `no_domain_skill` and `multiple_domain_skills` — route to the `source == generic` branch. Branch on `source`; `reason` is diagnostic, not a third route.
+
+**IF source == domain_specific** (exactly one distinct outline_skill resolved across the roster):
 1. Load the domain skill: `Skill: {resolved_skill}` (e.g., `Skill: pm-plugin-development:ext-outline-workflow`)
 2. Log the loaded skill:
 ```bash
@@ -570,7 +601,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 3. Read the domain-specific change-type instructions from the skill's standards directory. The file path is: `marketplace/bundles/{bundle}/skills/{skill_name}/standards/change-{change_type}.md`
 4. Follow the instructions from that file for discovery, analysis, and deliverable creation
 
-**IF source == generic** (no domain override):
+**IF source == generic** (no domain resolved a skill, or several competed):
 1. Read the generic change-type instructions from this skill's own standards directory: read `standards/change-{change_type}.md` (relative to this skill)
 2. Follow the instructions from that file for discovery, analysis, and deliverable creation
 

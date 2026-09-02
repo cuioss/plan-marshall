@@ -55,7 +55,7 @@ The repo already does this well in most places — `manage-tasks`, `manage-refer
 
 ### 2.1 Hybrid script + LLM fallback
 
-When the deterministic check resolves the majority case but a small ambiguous tail needs LLM judgement, build a **hybrid**: the script does the work it can; only the residue escalates to a dispatch resolved against `effort` (no role key — the fallback uses the plan-wide default level). Examples shipped under this pattern: `manage-status:change-type-heuristic`, `manage-lessons:lesson-auto-suggest`, `manage-config:domain-detect`. The pattern is:
+When the deterministic check resolves the majority case but a small ambiguous tail needs LLM judgement, build a **hybrid**: the script does the work it can; only the residue escalates to a dispatch resolved against `effort` (no role key — the fallback uses the plan-wide default level). Examples shipped under this pattern: `manage-status:change-type-heuristic`, `manage-lessons:lesson-auto-suggest`. The pattern is:
 
 1. Script computes its deterministic answer.
 2. If `ambiguous=true`, the script computes `(workflow, skills, plan_id, payload)`, resolves the level via `manage-config effort read --default`, and issues `Task: plan-marshall:execution-context-{level}` with the prompt body.
