@@ -26,12 +26,15 @@ Usage:
 import json
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NamedTuple
 
 __version__ = '3.0'
 
 __all__ = [
+    'SimpleArrayLine',
     'ToonParseError',
+    'classify_simple_array_line',
+    'list_item_min_indent',
     'parse_toon',
     'parse_toon_table',
     'serialize_toon',
@@ -220,6 +223,72 @@ def _parse_uniform_array(ctx: ParseContext, count: int, fields: list[str], min_i
     return result
 
 
+def list_item_min_indent(header_indent: int) -> int:
+    """Report the minimum indent a row must carry to belong to an array header.
+
+    A top-level header (indent 0) admits rows at column 0 as well as indented
+    ones: a document whose whole body sits at column 0 has no shallower level
+    for a row to fall out of, so requiring a deeper row would reject the shape
+    ``parse_toon_table``'s own documented example writes. A nested header admits
+    rows at its own indent or deeper.
+
+    Exported because it is a BOUNDARY, and any second reader that must agree
+    with ``parse_toon`` about which rows belong to a list has to derive it from
+    here rather than restate it — two readers deriving one boundary two ways is
+    how a row becomes visible to one and invisible to the other.
+
+    Args:
+        header_indent: Leading-space count of the ``key[N]:`` header line.
+
+    Returns:
+        The minimum leading-space count an item row may carry.
+    """
+    return 0 if header_indent == 0 else header_indent
+
+
+class SimpleArrayLine(NamedTuple):
+    """One line's role while walking a simple-array body.
+
+    Attributes:
+        kind: ``item`` when the line is a list row, ``skip`` when it belongs to
+            the body but carries no value (blank line, comment, malformed
+            marker), ``end`` when the array has closed before this line.
+        value: The raw row text after the ``- `` marker, still quoted exactly as
+            written; empty unless ``kind`` is ``item``.
+    """
+
+    kind: str
+    value: str
+
+
+def classify_simple_array_line(line: str, min_indent: int) -> SimpleArrayLine:
+    """Decide whether a line is a simple-array row, ignorable, or past the array's end.
+
+    This is the single membership rule for a ``key[N]:`` list body. It is
+    exported alongside ``list_item_min_indent`` so that a caller which has to
+    walk the same body for its own purposes — collecting the raw, still-quoted
+    row texts before ``parse_toon`` unquotes them, say — reads the identical
+    boundary instead of approximating it.
+
+    Args:
+        line: The raw line, indentation included.
+        min_indent: The array's minimum row indent, from ``list_item_min_indent``.
+
+    Returns:
+        The line's role, with the raw row text when it is an item.
+    """
+    content = line.strip()
+    if not content or content.startswith('#'):
+        return SimpleArrayLine('skip', '')
+    if _get_indent(line) < min_indent:
+        return SimpleArrayLine('end', '')
+    if content.startswith('- '):
+        return SimpleArrayLine('item', content[2:])
+    if not content.startswith('-'):
+        return SimpleArrayLine('end', '')
+    return SimpleArrayLine('skip', '')
+
+
 def _parse_simple_array(ctx: ParseContext, min_indent: int) -> list[Any]:
     """Parse a simple list with - markers.
 
@@ -230,34 +299,12 @@ def _parse_simple_array(ctx: ParseContext, min_indent: int) -> list[Any]:
     result = []
 
     while ctx.index < len(ctx.lines):
-        line = ctx.lines[ctx.index]
-
-        # Skip empty lines
-        if not line.strip():
-            ctx.index += 1
-            continue
-
-        # Skip comments
-        if line.strip().startswith('#'):
-            ctx.index += 1
-            continue
-
-        indent = _get_indent(line)
-        content = line.strip()
-
-        # Check if we've exited the array (less indentation)
-        if indent < min_indent and content:
+        classified = classify_simple_array_line(ctx.lines[ctx.index], min_indent)
+        if classified.kind == 'end':
             break
-
-        # Check for list item marker
-        if content.startswith('- '):
-            result.append(_parse_value(content[2:]))
-            ctx.index += 1
-        elif indent >= min_indent and not content.startswith('-'):
-            # Non-list-item at same or greater indent = end of array
-            break
-        else:
-            ctx.index += 1
+        if classified.kind == 'item':
+            result.append(_parse_value(classified.value))
+        ctx.index += 1
 
     return result
 
@@ -325,9 +372,7 @@ def _parse_object(ctx: ParseContext, base_indent: int) -> dict[str, Any]:
                 count = int(array_match.group(2))
                 fields = [f.strip() for f in array_match.group(3).split(',')]
                 ctx.index += 1
-                # Array items should be at current indent level (for top-level) or indented
-                min_array_indent = 0 if indent == 0 else indent
-                result[key] = _parse_uniform_array(ctx, count, fields, min_array_indent)
+                result[key] = _parse_uniform_array(ctx, count, fields, list_item_min_indent(indent))
                 continue
 
             # Check for simple array pattern: key[N]:
@@ -336,9 +381,7 @@ def _parse_object(ctx: ParseContext, base_indent: int) -> dict[str, Any]:
             if simple_array_match:
                 key = simple_array_match.group(1)
                 ctx.index += 1
-                # Array items should be at current indent level (for top-level) or indented
-                min_array_indent = 0 if indent == 0 else indent
-                result[key] = _parse_simple_array(ctx, min_array_indent)
+                result[key] = _parse_simple_array(ctx, list_item_min_indent(indent))
                 continue
 
             # Regular key: value

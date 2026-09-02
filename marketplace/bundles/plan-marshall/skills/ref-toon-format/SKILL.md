@@ -33,12 +33,24 @@ mode: knowledge
 
 | Module | Purpose |
 |--------|---------|
-| `scripts/toon_parser.py` | TOON parsing and serialization. The public surface is the module's `__all__` — `ToonParseError`, `parse_toon`, `parse_toon_table`, `serialize_toon`, `value_needs_quoting` — and `__all__` is the authority when this list and the module disagree. |
+| `scripts/toon_parser.py` | TOON parsing and serialization. The public surface is the module's `__all__` — `SimpleArrayLine`, `ToonParseError`, `classify_simple_array_line`, `list_item_min_indent`, `parse_toon`, `parse_toon_table`, `serialize_toon`, `value_needs_quoting` — and `__all__` is the authority when this list and the module disagree. |
 
-`value_needs_quoting` reports whether the serializer is OBLIGED to wrap a value in
-outer double quotes. A consumer that must decide whether a quote it is looking at
-could have come from `serialize_toon` consults this predicate rather than
-re-deriving the rule, so both sides of that decision stay in one place.
+Three of those exports exist so a consumer never has to re-derive a decision this
+module already makes:
+
+- `value_needs_quoting` reports whether the serializer is OBLIGED to wrap a value
+  in outer double quotes. A consumer deciding whether a quote it is looking at
+  could have come from `serialize_toon` consults this predicate.
+- `list_item_min_indent` reports the minimum indent a row may carry to belong to
+  a `key[N]:` header — column 0 for a top-level header, the header's own indent
+  for a nested one.
+- `classify_simple_array_line` reports one line's role in a list body: an item
+  (with its raw, still-quoted text), an ignorable line, or the array's end.
+
+The last two are the array-membership boundary. A caller that walks a list body
+for its own purposes — collecting raw row texts before `parse_toon` unquotes
+them, say — reads it from here, because two readers deriving one boundary two
+ways is how a row becomes visible to one and invisible to the other.
 
 ### Known Limitations
 

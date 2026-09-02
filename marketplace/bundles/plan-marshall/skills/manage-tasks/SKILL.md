@@ -686,8 +686,10 @@ Round-tripping is unaffected: `parse_stdin_task(serialize_toon(task))`
 reproduces `steps`, `skills` and `verification.commands` without loss, because
 the serializer writes each field in the shape that field accepts.
 
-**Outer quotes**: do not hand-quote list items. An outer-quoted item is accepted
-only when `serialize_toon` could have produced that quote, which takes BOTH of:
+**Outer quotes**: do not hand-quote `steps` or `verification.commands` items.
+Those two fields are guarded; `skills` is not, for the reason below. Under a
+guarded field an outer-quoted item is accepted only when `serialize_toon` could
+have produced that quote, which takes BOTH of:
 
 - **Header provenance** — the item sits under the length-declared `key[N]:`
   header. The serializer never writes a bare `key:` header, so a quote under one
@@ -698,11 +700,19 @@ only when `serialize_toon` could have produced that quote, which takes BOTH of:
   (a value containing `:` or the table separator, an embedded `"`, a leading
   `#`, a bare `true` / `false` / `null`, and others).
 
-An accepted item is unquoted automatically. Everything else is rejected: an
-outer quote on a value that needed none, and — regardless of the value — any
-outer quote under a bare `key:` header. Note the consequence of the two
-conjuncts together: an item accepted verbatim under `steps[1]:` is rejected
-byte-for-byte identical under `steps:`.
+An accepted item is unquoted automatically. Under a guarded field everything
+else is rejected: an outer quote on a value that needed none, and — regardless
+of the value — any outer quote under a bare `key:` header. Note the consequence
+of the two conjuncts together: an item accepted verbatim under `steps[1]:` is
+rejected byte-for-byte identical under `steps:`.
+
+`skills` carries no such guard because the value conjunct cannot discriminate
+there: every valid skill is `bundle:skill`, so every valid value contains `:`
+and is one `value_needs_quoting` reports on. The rule would reduce to its header
+conjunct and reject `skills:` + `- "bundle:skill"` — a hand-written form that
+quotes precisely because the notation carries a colon. A quoted `skills` item is
+unquoted in either header form; the unquoted form shown above is still the one
+to write.
 
 ### List/Next Filters
 

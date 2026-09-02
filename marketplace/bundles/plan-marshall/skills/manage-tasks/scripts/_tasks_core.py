@@ -27,7 +27,13 @@ from file_ops import (  # noqa: F401 - re-exported
     now_utc_iso,
 )
 from input_validation import require_valid_plan_id  # noqa: F401 - re-exported
-from toon_parser import ToonParseError, parse_toon, value_needs_quoting
+from toon_parser import (
+    ToonParseError,
+    classify_simple_array_line,
+    list_item_min_indent,
+    parse_toon,
+    value_needs_quoting,
+)
 
 # =============================================================================
 # Type definitions
@@ -361,9 +367,13 @@ _STEP_INTENT_SUFFIX_RE = re.compile(r'^(?P<target>.+?)\s*\((?P<intent>[a-z-]+)\)
 #: definition commonly uses the bare YAML-style block header (``skills:``),
 #: which the canonical parser reads as a nested object rather than a list.
 #: ``_normalize_list_headers`` rewrites the bare form so one parser reads both.
+#: Only the HEADER patterns live here. Which rows belong to a header once it is
+#: found is not restated in this module — ``classify_simple_array_line`` in
+#: ``plan-marshall:ref-toon-format`` is the one authority, so the rows this
+#: module sees and the rows ``parse_toon`` reads are the same rows by
+#: construction rather than by two rules agreeing.
 _BARE_LIST_HEADER_RE = re.compile(r'^(?P<indent> *)(?P<key>steps|skills|commands):[ \t]*$')
 _DECLARED_LIST_HEADER_RE = re.compile(r'^(?P<indent> *)(?P<key>steps|skills|commands)\[\d+\]:[ \t]*$')
-_LIST_ITEM_RE = re.compile(r'^(?P<indent> *)- (?P<value>.*)$')
 
 #: Opens a TOON block scalar — a key whose whole value is the ``|`` marker, as in
 #: ``description: |``. Everything indented beneath it is opaque PROSE that
@@ -463,6 +473,17 @@ def _normalize_list_headers(content: str) -> tuple[str, dict[str, list[_RawListI
     be rewritten to ``steps[N]:`` inside the user's own text. Block bodies are
     therefore copied through verbatim by ``_copy_block_scalar_body``.
 
+    Which rows belong to a header is likewise NOT decided here: the body walk
+    calls the canonical parser's own ``classify_simple_array_line`` under the
+    boundary ``list_item_min_indent`` reports. A second, stricter rule here —
+    "strictly deeper than the header" — silently disabled the outer-quote guard
+    for every row the canonical parser admits at the header's own indent: a
+    column-0 row under a top-level ``steps[1]:``, or an indent-2 row under a
+    nested ``commands[1]:``. Those rows parsed, so the item reached the task
+    record, but were never collected, so the guard never saw them. Deriving one
+    boundary two ways is precisely what makes such a row visible to one reader
+    and invisible to the other.
+
     Args:
         content: The raw TOON task definition.
 
@@ -476,6 +497,13 @@ def _normalize_list_headers(content: str) -> tuple[str, dict[str, list[_RawListI
         signal that distinguishes serializer-produced quoting from hand-added
         quoting once the two have identical content — this function is where that
         distinction is observable, so discarding it here would lose it for good.
+
+        The mapping carries every list key the header patterns match, ``skills``
+        included, while ``_build_task_record`` guards only ``steps`` and
+        ``verification.commands``. That is deliberate, not a dropped consumer:
+        the items are collected for the ``key[N]:`` length rewrite regardless,
+        and the guard is inapplicable to ``skills`` for the reason given at the
+        guard call site.
     """
     lines = content.split('\n')
     raw_items: dict[str, list[_RawListItem]] = {}
@@ -502,14 +530,16 @@ def _normalize_list_headers(content: str) -> tuple[str, dict[str, list[_RawListI
         header_indent = len(header.group('indent'))
         is_bare = bare is not None
 
-        # Collect the contiguous run of ``- `` items indented deeper than the header.
+        # Walk the header's body under the canonical parser's own membership rule.
+        min_item_indent = list_item_min_indent(header_indent)
         items: list[_RawListItem] = []
         j = i + 1
         while j < len(lines):
-            item = _LIST_ITEM_RE.match(lines[j])
-            if not item or len(item.group('indent')) <= header_indent:
+            classified = classify_simple_array_line(lines[j], min_item_indent)
+            if classified.kind == 'end':
                 break
-            items.append(_RawListItem(item.group('value').strip(), is_bare))
+            if classified.kind == 'item':
+                items.append(_RawListItem(classified.value.strip(), is_bare))
             j += 1
 
         raw_items.setdefault(key, []).extend(items)
@@ -638,6 +668,16 @@ def _build_task_record(parsed: dict[str, Any], raw_items: dict[str, list[_RawLis
     Raises:
         ValueError: On any schema violation.
     """
+    # ``skills`` is the third list field and is deliberately NOT guarded. The
+    # guard's two conjuncts only discriminate where the value conjunct can come
+    # out either way, and on ``skills`` it cannot: ``validate_skills`` requires a
+    # ``:`` in every entry, and ``value_needs_quoting`` is True on ``:``, so every
+    # legal skill is a value the serializer WOULD quote. The guard would collapse
+    # to its header conjunct alone and reject ``skills:`` + ``- "bundle:skill"`` —
+    # a hand-written form that quotes precisely because the notation carries a
+    # colon, which is reasonable rather than an anti-pattern. On ``steps`` and
+    # ``verification.commands`` the value conjunct does discriminate, so the guard
+    # names an actual anti-pattern there.
     _reject_hand_quoted_items(raw_items.get('steps', []), 'steps')
     _reject_hand_quoted_items(raw_items.get('commands', []), 'verification.commands')
 
@@ -716,9 +756,16 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
     ``plan-marshall:ref-toon-format`` parser, so every shape that parser reads is
     accepted: the length-declared list ``skills[2]:``, the uniform array
     ``steps[2]{target,intent}:`` that ``serialize_toon`` emits for a stored task
-    record, and — after header normalization — the bare block ``steps:``. A task
-    therefore round-trips through ``parse_stdin_task(serialize_toon(task))``
-    without loss, and this module keeps no TOON reader of its own.
+    record, and — after header normalization — the bare block ``steps:``. So
+    ``parse_stdin_task(serialize_toon(task))`` reproduces ``steps``, ``skills``
+    and ``verification.commands`` without loss, and this module keeps no TOON
+    reader of its own.
+
+    The round trip is stated over those three fields, not over the whole record,
+    because ``serialize_toon`` has no block-scalar emitter: a multi-line
+    ``description`` is written as a quoted value containing a raw newline, which
+    re-parses truncated. The scope here matches ``manage-tasks`` SKILL.md and
+    ``test_parse_stdin_task_round_trips_serialize_toon_output`` exactly.
 
     Task-schema validation stays here: the required ``(intent)`` marker, the
     step file-path contract, the required-field checks, and the two deliberate

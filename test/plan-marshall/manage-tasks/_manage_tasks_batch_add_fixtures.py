@@ -36,6 +36,13 @@ cmd_batch_add = _crud.cmd_batch_add
 parse_stdin_task = _core.parse_stdin_task
 
 
+#: Exposed so a test can compare the raw-item walk against ``parse_toon`` on the
+#: same document. The two readers must agree about which rows belong to a list;
+#: the walk's output is otherwise observable only through a guard's verdict,
+#: which cannot distinguish "row absent" from "row present and legitimate".
+normalize_list_headers = _core._normalize_list_headers
+
+
 def _ns(plan_id, tasks_json=None, tasks_file=None):
     """Build a Namespace for cmd_batch_add."""
     return Namespace(plan_id=plan_id, tasks_json=tasks_json, tasks_file=tasks_file)
