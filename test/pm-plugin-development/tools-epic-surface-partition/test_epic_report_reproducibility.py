@@ -3,11 +3,16 @@
 """Every report section's cited command reproduces the figures that section renders.
 
 The reproducibility claim is made in two places — SKILL.md's ``report`` section
-and ``standards/epic-surface-derivation.md`` § "The report's seven sections" —
-and it is a claim about all seven sections, not most of them. A section whose
-cited command emits a different population, or measures by a different method,
-is the confident-signal-hides-a-caveat defect this derivation exists to surface,
-so every section is pinned against the output of the command it names.
+and the section of ``standards/epic-surface-derivation.md`` that documents the
+report's rendered sections — and it is a claim about ALL of them, not most of
+them. A section whose cited command emits a different population, or measures by
+a different method, is the confident-signal-hides-a-caveat defect this derivation
+exists to surface, so every section is pinned against the output of the command
+it names.
+
+⛔ :data:`FIGURES` is a HAND-WRITTEN mirror of the shipped section set. Deriving
+it from ``_SECTION_ORDER`` would make the completeness guard below vacuous — the
+map could then never disagree with the implementation it checks.
 
 The corpus and the tree are built under ``tmp_path`` and reached by patching the
 entry point's own store and checkout resolvers, so the real orchestrator store is
@@ -55,20 +60,29 @@ _GROUP_BANNER = '# --- '
 _TEST_DEF = 'def test_'
 
 #: The verdicts the ``disagreements`` section selects out of a partition.
-DISAGREEING_VERDICTS = ('unclaimed', 'multiply_claimed')
+DISAGREEING_VERDICTS = ('unclaimed', 'contested')
 
 #: The one method BOTH test-count figures declare.
 TEST_COUNT_METHOD = 'static "def test_" count over the enumerated test modules'
 
 #: A corpus that disagrees with itself AND leaves one span unresolvable, so both
 #: halves of ``not_derivable`` — the modules and the specs — are populated.
+#: PLAN-330 declares itself a sweep, so the ``swept`` section has a crossing to
+#: reproduce; without it that population would be empty and reproduce trivially.
 SPECS = {
     'PLAN-300.md': '# PLAN-300\n\n## Expected Surface\n\n'
     '- Adds `test/alpha/**`\n- Touches `marketplace/bundles/demo/**`\n',
     'PLAN-310.md': '# PLAN-310\n\n## Expected Surface\n\n- Also adds `test/alpha/**`\n',
     'PLAN-320.md': '# PLAN-320\n\n## Expected Surface\n\n- Touches `test_two_*.py`\n',
+    'PLAN-330.md': '# PLAN-330\n\n## Expected Surface\n\n'
+    '- Adds `test/alpha/**` — this plan crosses every slice, so its surface is the test '
+    'tree entire, and it pairs with no other plan\n',
 }
 MODULES = ('test/alpha/test_one.py', 'test/orphan/test_two_a.py')
+
+#: A recorded baseline naming a module the current tree no longer reports, so the
+#: drift section has a non-empty population to reproduce.
+BASELINE_FINDINGS = ('test/alpha/test_departed.py',)
 
 
 # --- scaffolding -------------------------------------------------------------
@@ -100,12 +114,16 @@ def bind(monkeypatch, epic_dir: Path, repo: Path) -> None:
 
 @pytest.fixture
 def run_verb(tmp_path: Path, monkeypatch) -> Callable[[str], dict[str, Any]]:
-    """Run any entry-point verb against one shared corpus and tree."""
+    """Run any entry-point verb against one shared corpus, tree and baseline."""
     epic_dir, repo = build_world(tmp_path)
     bind(monkeypatch, epic_dir, repo)
+    baseline = tmp_path / 'baseline.txt'
+    baseline.write_text('\n'.join(BASELINE_FINDINGS) + '\n', encoding='utf-8')
 
     def run(verb: str) -> dict[str, Any]:
-        args = argparse.Namespace(epic=EPIC, budget=BUDGET, tests_before=None)
+        args = argparse.Namespace(
+            epic=EPIC, budget=BUDGET, tests_before=None, baseline_findings=str(baseline)
+        )
         handler: Any = getattr(entry, f'cmd_{verb}')
         payload: dict[str, Any] = handler(args)
         return payload
@@ -162,7 +180,20 @@ FIGURES: dict[str, Callable[[dict[str, Any], dict[str, Any]], tuple[Any, Any]]] 
     'attribution': lambda rep, out: (rep['attribution_buckets'], out['buckets']),
     'disagreements': lambda rep, out: (
         rep['disagreements'],
-        [row for row in out['modules'] if row['verdict'] in DISAGREEING_VERDICTS],
+        [
+            {'path': row['path'], 'verdict': row['verdict'], 'plans': row['plans']}
+            for row in out['modules']
+            if row['verdict'] in DISAGREEING_VERDICTS
+        ],
+    ),
+    'contested': lambda rep, out: (rep['contested'], out['contested']),
+    'swept': lambda rep, out: (
+        (rep['sweep_plans'], rep['sweep_crossings']),
+        (out['sweep_plans'], out['sweep_crossings']),
+    ),
+    'baseline_drift': lambda rep, out: (
+        (rep['baseline_drift'], rep['baseline_drift_instances']),
+        (out['baseline_drift'], out['baseline_drift_instances']),
     ),
     'not_derivable': lambda rep, out: (
         (rep['not_derivable_modules'], rep['not_derivable_specs']),
@@ -191,6 +222,9 @@ def test_the_fixture_corpus_populates_every_reproduced_section(run_verb) -> None
 
     assert report['partition_tally'] and report['attribution_buckets']
     assert report['disagreements']
+    assert report['contested']
+    assert report['sweep_plans'] and report['sweep_crossings']
+    assert report['baseline_drift_instances']
     assert report['not_derivable_modules'] and report['not_derivable_specs']
 
 
@@ -276,7 +310,11 @@ def test_the_after_figure_is_the_static_count_its_method_names(tmp_path: Path, m
     )
     bind(monkeypatch, epic_dir, repo)
 
-    report = entry.cmd_report(argparse.Namespace(epic=EPIC, budget=BUDGET, tests_before=None))
+    report = entry.cmd_report(
+        argparse.Namespace(
+            epic=EPIC, budget=BUDGET, tests_before=None, baseline_findings=None
+        )
+    )
 
     assert report['test_count']['after'] == 3
     assert report['test_count']['method'] == TEST_COUNT_METHOD

@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001, E402
-"""Tests for the surface partition — the four verdicts and the budget attribution.
+"""Tests for the surface partition — every verdict and the budget attribution.
 
 Drives the underscore-prefixed helpers directly by inserting the scripts dir on
 ``sys.path`` (the canonical scaffolding pattern).
+
+Three independent rules decide whether a spec's entry carries OWNERSHIP, and
+each is covered here with a matched positive and negative control, in isolation
+from the others: the sweep-plan self-declaration, the lead-shaped entry stage 1
+publishes, and the ``derived`` spec class. A rule that silently stopped firing
+would restore the single-bucket collapse the partition exists to break, so each
+is pinned on its own rather than only through their combined effect.
 
 Every corpus and every test tree used here is built under ``tmp_path``; the real
 orchestrator store and the real ``test/`` tree are neither read nor written.
@@ -157,7 +164,7 @@ def test_entry_matching(entry: str, kind: str, module: str, expected: bool) -> N
     assert partition_mod.entry_matches(entry, kind, module) is expected
 
 
-# --- the four verdicts -------------------------------------------------------
+# --- the verdicts ------------------------------------------------------------
 
 
 def test_single_claimant_module_is_claimed(partition) -> None:
@@ -170,11 +177,9 @@ def test_module_no_spec_claims_is_unclaimed(partition) -> None:
     assert plans_of(partition, 'test/delta/test_five.py') == ()
 
 
-def test_module_two_specs_claim_is_multiply_claimed(partition) -> None:
-    assert (
-        verdict_of(partition, 'test/beta/test_three.py')
-        == partition_mod.VERDICT_MULTIPLY_CLAIMED
-    )
+def test_module_two_slice_specs_claim_is_contested(partition) -> None:
+    """Two SLICE plans over one module is the residual genuine disagreement."""
+    assert verdict_of(partition, 'test/beta/test_three.py') == partition_mod.VERDICT_CONTESTED
     assert plans_of(partition, 'test/beta/test_three.py') == ('PLAN-110', 'PLAN-120')
 
 
@@ -272,6 +277,266 @@ def test_corpus_without_root_spans_reports_none(repo: Path, tmp_path: Path) -> N
     assert result.root_claims == ()
 
 
+# --- rule 1: the sweep-plan marker, in isolation -----------------------------
+#
+# The marker is exercised on its own text first, then through the partition, so
+# a marker that stopped firing is distinguishable from a partition that stopped
+# consuming it.
+
+#: A spec that declares itself a whole-partition sweep, in the corpus's wording.
+_SWEEP_BODY = (
+    '# PLAN-200\n\n## Expected Surface\n\n'
+    '- OBSERVED: `test/beta/` — ⛔ **the whole tree.** This plan crosses every slice, '
+    "so this plan's surface is the test tree entire, and it pairs with no other "
+    '`test/`-editing plan\n'
+)
+
+#: The matched negative: an equally BROAD claim with no self-declaration.
+_BROAD_BODY = (
+    '# PLAN-210\n\n## Expected Surface\n\n'
+    '- OBSERVED: `test/beta/` — the directory this plan reduces\n'
+)
+
+
+def test_the_sweep_marker_fires_on_a_self_declaring_spec() -> None:
+    """Positive control for the marker alone."""
+    assert partition_mod.is_sweep_declaration(_SWEEP_BODY)
+
+
+def test_the_sweep_marker_does_not_fire_on_an_equally_broad_claim() -> None:
+    """Matched negative: breadth is not a self-declaration.
+
+    A plan claiming the same directory without declaring itself a sweep is an
+    ordinary slice, and must keep contesting. A marker that keyed on breadth
+    would silently hand every wide claim an exemption from ownership.
+    """
+    assert not partition_mod.is_sweep_declaration(_BROAD_BODY)
+
+
+def test_the_sweep_marker_names_no_plan_identifier() -> None:
+    """The mechanism is corpus-independent by construction.
+
+    A hard-coded plan list here would be the same defect the derivation exists
+    to close, one level down.
+    """
+    assert 'PLAN' not in partition_mod._SWEEP_RE.pattern.upper()
+
+
+def test_a_sweep_does_not_contest_a_slices_ownership(repo: Path, tmp_path: Path) -> None:
+    """One slice plus any number of sweeps: the SLICE owns the module."""
+    plans = tmp_path / 'sweeps'
+    plans.mkdir()
+    build_corpus(plans, {'PLAN-110.md': SPECS['PLAN-110.md'], 'PLAN-200.md': _SWEEP_BODY})
+    claims = classify_corpus(plans, repo)
+    modules = partition_mod.iter_test_modules(repo / 'test', repo)
+    sweeps = partition_mod.derive_sweep_plans(claims, plans)
+
+    result = partition_mod.derive_partition(claims, modules, sweeps)
+
+    assert sweeps == frozenset({'PLAN-200'})
+    assert verdict_of(result, 'test/beta/test_three.py') == partition_mod.VERDICT_CLAIMED
+    assert plans_of(result, 'test/beta/test_three.py') == ('PLAN-110',)
+
+
+def test_the_crossing_sweep_is_recorded_as_a_separate_fact(repo: Path, tmp_path: Path) -> None:
+    """The crossing is REPORTED, never silently dropped — it is just not ownership."""
+    plans = tmp_path / 'sweeps'
+    plans.mkdir()
+    build_corpus(plans, {'PLAN-110.md': SPECS['PLAN-110.md'], 'PLAN-200.md': _SWEEP_BODY})
+    claims = classify_corpus(plans, repo)
+    modules = partition_mod.iter_test_modules(repo / 'test', repo)
+    sweeps = partition_mod.derive_sweep_plans(claims, plans)
+
+    result = partition_mod.derive_partition(claims, modules, sweeps)
+    module = next(m for m in result.modules if m.path == 'test/beta/test_three.py')
+
+    assert module.sweeps == ('PLAN-200',)
+
+
+def test_a_non_declaring_broad_plan_still_contests(repo: Path, tmp_path: Path) -> None:
+    """Matched negative at the PARTITION level, mirroring the marker-level one."""
+    plans = tmp_path / 'broad'
+    plans.mkdir()
+    build_corpus(plans, {'PLAN-110.md': SPECS['PLAN-110.md'], 'PLAN-210.md': _BROAD_BODY})
+    claims = classify_corpus(plans, repo)
+    modules = partition_mod.iter_test_modules(repo / 'test', repo)
+    sweeps = partition_mod.derive_sweep_plans(claims, plans)
+
+    result = partition_mod.derive_partition(claims, modules, sweeps)
+
+    assert sweeps == frozenset()
+    assert verdict_of(result, 'test/beta/test_three.py') == partition_mod.VERDICT_CONTESTED
+
+
+def test_a_module_only_sweeps_cover_is_swept_with_no_owner_invented(
+    repo: Path, tmp_path: Path
+) -> None:
+    """Zero slices and one sweep: the crossing is reported, no owner manufactured."""
+    plans = tmp_path / 'sweep_only'
+    plans.mkdir()
+    build_corpus(plans, {'PLAN-200.md': _SWEEP_BODY})
+    claims = classify_corpus(plans, repo)
+    modules = partition_mod.iter_test_modules(repo / 'test', repo)
+    sweeps = partition_mod.derive_sweep_plans(claims, plans)
+
+    result = partition_mod.derive_partition(claims, modules, sweeps)
+    module = next(m for m in result.modules if m.path == 'test/beta/test_three.py')
+
+    assert module.verdict == partition_mod.VERDICT_SWEPT
+    assert module.plans == ()
+    assert module.sweeps == ('PLAN-200',)
+
+
+# --- rule 2: the lead-shaped entry stage 1 publishes -------------------------
+
+#: The same path, claimed once as a LEAD and once as an ordinary claim. The two
+#: bodies differ only in the marker, so the control pair isolates the shape.
+_LEAD_BODY = (
+    '# PLAN-220\n\n## Expected Surface\n\n'
+    '- HYPOTHESIS: `test/beta/` — R1\'s output (verify-at-outline)\n'
+)
+_UNMARKED_BODY = '# PLAN-230\n\n## Expected Surface\n\n- OBSERVED: `test/beta/`\n'
+
+
+def test_a_lead_shaped_entry_lands_in_not_derivable(repo: Path, tmp_path: Path) -> None:
+    """A lead names a path without claiming it, so it cannot own the module.
+
+    It is coverage the derivation cannot attribute — ``not_derivable`` — and
+    never ``unclaimed``, which would report the parser's own limit as a
+    partition defect.
+    """
+    plans = tmp_path / 'lead'
+    plans.mkdir()
+    build_corpus(plans, {'PLAN-220.md': _LEAD_BODY})
+    claims = classify_corpus(plans, repo)
+    modules = partition_mod.iter_test_modules(repo / 'test', repo)
+
+    result = partition_mod.derive_partition(claims, modules)
+
+    assert verdict_of(result, 'test/beta/test_three.py') == partition_mod.VERDICT_NOT_DERIVABLE
+    assert plans_of(result, 'test/beta/test_three.py') == ('PLAN-220',)
+
+
+def test_an_unmarked_entry_with_the_same_path_still_claims(repo: Path, tmp_path: Path) -> None:
+    """Matched negative for the demotion: only the SHAPE differs between the two."""
+    plans = tmp_path / 'unmarked'
+    plans.mkdir()
+    build_corpus(plans, {'PLAN-230.md': _UNMARKED_BODY})
+    claims = classify_corpus(plans, repo)
+    modules = partition_mod.iter_test_modules(repo / 'test', repo)
+
+    result = partition_mod.derive_partition(claims, modules)
+
+    assert verdict_of(result, 'test/beta/test_three.py') == partition_mod.VERDICT_CLAIMED
+    assert plans_of(result, 'test/beta/test_three.py') == ('PLAN-230',)
+
+
+def test_the_demotion_happens_here_and_not_in_the_shared_reader(
+    repo: Path, tmp_path: Path
+) -> None:
+    """Stage 1 states the shape and demotes nothing; THIS stage demotes.
+
+    Pins the projection half of the shared reader's contract: the lead entry is
+    still a member of ``claimed`` as the reader published it, so the other
+    consumer's surface is untouched, and only the partition treats it as
+    non-owning.
+    """
+    plans = tmp_path / 'lead'
+    plans.mkdir()
+    build_corpus(plans, {'PLAN-220.md': _LEAD_BODY})
+    claims = classify_corpus(plans, repo)
+
+    assert [entry.path for entry in claims[0].claimed] == ['test/beta/']
+
+
+# --- rule 3: a derived spec owns nothing -------------------------------------
+
+#: A spec declaring its surface the union of other plans' — the same shape the
+#: corpus's campaign-roll-up spec carries.
+_DERIVED_BODY = (
+    '# PLAN-240\n\n## Expected Surface\n\n'
+    "- **DERIVED** — this plan's surface is the union of the slice plans' surfaces\n"
+    '- OBSERVED: `test/beta/` — restating the slice that owns it\n'
+)
+
+
+def test_a_derived_spec_does_not_contest_a_slices_ownership(
+    repo: Path, tmp_path: Path
+) -> None:
+    """A union of other plans' surfaces restates their claims, never competes."""
+    plans = tmp_path / 'derived'
+    plans.mkdir()
+    build_corpus(plans, {'PLAN-110.md': SPECS['PLAN-110.md'], 'PLAN-240.md': _DERIVED_BODY})
+    claims = classify_corpus(plans, repo)
+    modules = partition_mod.iter_test_modules(repo / 'test', repo)
+
+    result = partition_mod.derive_partition(claims, modules)
+
+    assert verdict_of(result, 'test/beta/test_three.py') == partition_mod.VERDICT_CLAIMED
+    assert plans_of(result, 'test/beta/test_three.py') == ('PLAN-110',)
+
+
+def test_a_derived_specs_own_coverage_is_reported_not_derivable(
+    repo: Path, tmp_path: Path
+) -> None:
+    """Its coverage is real but unattributable, so it is stated rather than dropped."""
+    plans = tmp_path / 'derived_only'
+    plans.mkdir()
+    build_corpus(plans, {'PLAN-240.md': _DERIVED_BODY})
+    claims = classify_corpus(plans, repo)
+    modules = partition_mod.iter_test_modules(repo / 'test', repo)
+
+    result = partition_mod.derive_partition(claims, modules)
+
+    assert verdict_of(result, 'test/beta/test_three.py') == partition_mod.VERDICT_NOT_DERIVABLE
+    assert plans_of(result, 'test/beta/test_three.py') == ('PLAN-240',)
+
+
+def test_a_declarative_spec_with_the_same_entry_still_claims(
+    repo: Path, tmp_path: Path
+) -> None:
+    """Matched negative for rule 3: only the spec CLASS differs between the two."""
+    plans = tmp_path / 'declarative'
+    plans.mkdir()
+    build_corpus(plans, {'PLAN-230.md': _UNMARKED_BODY})
+    claims = classify_corpus(plans, repo)
+    modules = partition_mod.iter_test_modules(repo / 'test', repo)
+
+    result = partition_mod.derive_partition(claims, modules)
+
+    assert claims[0].spec_class != 'derived'
+    assert verdict_of(result, 'test/beta/test_three.py') == partition_mod.VERDICT_CLAIMED
+
+
+def test_the_three_non_owning_rules_are_independent(repo: Path, tmp_path: Path) -> None:
+    """Each rule fires with the other two absent.
+
+    Guards against a collapsed implementation that demanded more than one signal
+    before treating an entry as non-owning — which would pass each combined
+    fixture above while leaving single-signal specs owning what they only name.
+    """
+    outcomes = {}
+    for name, body in (
+        ('sweep', _SWEEP_BODY),
+        ('lead', _LEAD_BODY),
+        ('derived', _DERIVED_BODY),
+    ):
+        plans = tmp_path / f'solo_{name}'
+        plans.mkdir()
+        build_corpus(plans, {'PLAN-300.md': body})
+        claims = classify_corpus(plans, repo)
+        modules = partition_mod.iter_test_modules(repo / 'test', repo)
+        sweeps = partition_mod.derive_sweep_plans(claims, plans)
+        result = partition_mod.derive_partition(claims, modules, sweeps)
+        outcomes[name] = verdict_of(result, 'test/beta/test_three.py')
+
+    assert outcomes == {
+        'sweep': partition_mod.VERDICT_SWEPT,
+        'lead': partition_mod.VERDICT_NOT_DERIVABLE,
+        'derived': partition_mod.VERDICT_NOT_DERIVABLE,
+    }
+
+
 # --- budget findings and attribution -----------------------------------------
 
 
@@ -318,10 +583,10 @@ def test_each_file_is_attributed_at_most_once(repo: Path, partition) -> None:
     ('module_path', 'owner'),
     [
         ('test/delta/test_five.py', partition_mod.OWNER_UNCLAIMED),
-        ('test/beta/test_three.py', partition_mod.OWNER_MULTIPLY_CLAIMED),
+        ('test/beta/test_three.py', partition_mod.OWNER_CONTESTED),
         ('test/gamma/test_four_x.py', partition_mod.OWNER_NOT_DERIVABLE),
     ],
-    ids=['unclaimed', 'multiply_claimed', 'not_derivable'],
+    ids=['unclaimed', 'contested', 'not_derivable'],
 )
 def test_ownerless_populations_get_their_own_buckets(
     repo: Path, partition, module_path: str, owner: str

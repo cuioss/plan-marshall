@@ -91,12 +91,12 @@ def test_clean_corpus_reports_nothing_unclaimed(clean) -> None:
     assert named(result, partition_mod.VERDICT_UNCLAIMED) == set()
 
 
-def test_clean_corpus_reports_nothing_multiply_claimed(clean) -> None:
+def test_clean_corpus_reports_nothing_contested(clean) -> None:
     repo, plans = clean
 
     result = partition_of(repo, plans)
 
-    assert named(result, partition_mod.VERDICT_MULTIPLY_CLAIMED) == set()
+    assert named(result, partition_mod.VERDICT_CONTESTED) == set()
 
 
 def test_clean_corpus_claims_every_module_exactly_once(clean) -> None:
@@ -131,6 +131,11 @@ def test_injected_unclaimed_directory_does_not_disturb_the_claimed_set(clean) ->
 
 
 # --- negative control 2: a doubly-claimed path is reported BY NAME ------------
+#
+# Both claimants here are ordinary SLICE plans — neither declares itself a sweep
+# — so this is the genuine contest the partition must still surface. The
+# sweep-plan exemption is deliberately not in play; its own matched pair lives in
+# ``test_epic_partition.py``.
 
 
 def test_injected_double_claim_is_reported_by_name(clean) -> None:
@@ -141,7 +146,7 @@ def test_injected_double_claim_is_reported_by_name(clean) -> None:
 
     result = partition_of(repo, plans)
 
-    assert named(result, partition_mod.VERDICT_MULTIPLY_CLAIMED) == {'test/alpha/test_one.py'}
+    assert named(result, partition_mod.VERDICT_CONTESTED) == {'test/alpha/test_one.py'}
 
 
 def test_injected_double_claim_names_both_claiming_plans(clean) -> None:

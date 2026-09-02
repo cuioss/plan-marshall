@@ -15,21 +15,24 @@ Subcommands:
   run with the spec named, rather than defaulting to a class.
 
 - ``partition --epic {slug}`` — join that claim model against the real ``test/``
-  tree and assign every test module exactly one of ``claimed`` / ``unclaimed`` /
-  ``multiply_claimed`` / ``not_derivable``. The last two populations are
-  reported per instance, and ``unclaimed`` is never merged with
-  ``not_derivable``.
+  tree and assign every test module exactly one verdict. A module claimed by one
+  SLICE plan is owned by it however many self-declared SWEEP plans also cross
+  it; the crossings are reported beside the verdict as a separate fact. Two or
+  more slice plans make the module ``contested`` — the residual, enumerable
+  disagreement — and ``unclaimed``, ``swept`` and ``not_derivable`` are each
+  reported per instance and never merged.
 
 - ``attribution --epic {slug}`` — group the test-module line-budget findings,
   re-derived from the current tree, by owning plan. Modules with no single
-  owning plan land in the three explicit ownerless buckets rather than being
-  folded into a plan's total.
+  owning slice land in the explicit ownerless buckets rather than being folded
+  into a plan's total.
 
-- ``report --epic {slug}`` — render all seven sections: the partition, the
-  attribution, every unclaimed and multiply-claimed entry per instance, every
-  spec whose spans the parser could not resolve, the injected-failure
-  demonstrations, the declared-test count before and after, and provenance.
-  Each section carries the command that produced it.
+- ``report --epic {slug}`` — render every section of the derivation: the
+  partition, the attribution, the entries awaiting a decision, the contested
+  set, the sweep crossings, every spec whose spans the parser could not resolve,
+  the injected-failure demonstrations, the declared-test count before and after,
+  the baseline drift, and provenance. Each section carries the command that
+  produced it, and the rendered set is exactly ``_SECTION_ORDER``.
 
 The derivation is a report, never a build gate: the specs live under a
 git-ignored path and are absent from a fresh clone, so no CI check can read
@@ -44,13 +47,14 @@ from typing import Any
 
 from _epic_partition import (
     DEFAULT_LINE_BUDGET,
-    VERDICT_MULTIPLY_CLAIMED,
+    VERDICT_CONTESTED,
     VERDICT_NOT_DERIVABLE,
     VERDICT_ORDER,
     VERDICT_UNCLAIMED,
     derive_attribution,
     derive_budget_findings,
     derive_partition,
+    derive_sweep_plans,
     iter_test_modules,
 )
 from epic_spec_parser import (
@@ -126,6 +130,7 @@ def cmd_classify(args: argparse.Namespace) -> dict[str, Any]:
         return error.payload
 
     tally = Counter(claim.spec_class for claim in claims)
+    sweeps = derive_sweep_plans(claims, plans_dir)
     return {
         'status': 'success',
         'epic': args.epic,
@@ -133,11 +138,13 @@ def cmd_classify(args: argparse.Namespace) -> dict[str, Any]:
         'repo_root': str(repo_root),
         'specs_total': len(claims),
         'class_tally': [{'spec_class': name, 'count': tally.get(name, 0)} for name in _TALLY_ORDER],
+        'sweep_plans': sorted(sweeps),
         'specs': [
             {
                 'plan_id': claim.plan_id,
                 'spec': claim.spec,
                 'spec_class': claim.spec_class,
+                'is_sweep': claim.plan_id in sweeps,
                 'claimed_count': len(claim.claimed),
                 'excluded_count': len(claim.excluded),
                 'unresolved_count': len(claim.unresolved),
@@ -146,12 +153,22 @@ def cmd_classify(args: argparse.Namespace) -> dict[str, Any]:
             for claim in claims
         ],
         'claimed': [
-            {'plan_id': claim.plan_id, 'path': entry.path, 'kind': entry.kind}
+            {
+                'plan_id': claim.plan_id,
+                'path': entry.path,
+                'kind': entry.kind,
+                'shape': entry.shape,
+            }
             for claim in claims
             for entry in claim.claimed
         ],
         'excluded': [
-            {'plan_id': claim.plan_id, 'path': entry.path, 'kind': entry.kind}
+            {
+                'plan_id': claim.plan_id,
+                'path': entry.path,
+                'kind': entry.kind,
+                'shape': entry.shape,
+            }
             for claim in claims
             for entry in claim.excluded
         ],
@@ -170,7 +187,8 @@ def cmd_partition(args: argparse.Namespace) -> dict[str, Any]:
 
     test_root = repo_root / 'test'
     modules = iter_test_modules(test_root, repo_root)
-    partition = derive_partition(claims, modules)
+    sweeps = derive_sweep_plans(claims, plans_dir)
+    partition = derive_partition(claims, modules, sweeps)
     tally = partition.tally()
 
     return {
@@ -182,14 +200,25 @@ def cmd_partition(args: argparse.Namespace) -> dict[str, Any]:
         'verdict_tally': [
             {'verdict': verdict, 'count': tally[verdict]} for verdict in VERDICT_ORDER
         ],
+        'sweep_plans': sorted(sweeps),
         'root_claims': [
             {'plan_id': root.plan_id, 'path': root.path} for root in partition.root_claims
+        ],
+        'contested': [
+            {'path': module.path, 'plans': ','.join(module.plans)}
+            for module in partition.with_verdict(VERDICT_CONTESTED)
+        ],
+        'sweep_crossings': [
+            {'path': module.path, 'verdict': module.verdict, 'sweeps': ','.join(module.sweeps)}
+            for module in partition.modules
+            if module.sweeps
         ],
         'modules': [
             {
                 'path': module.path,
                 'verdict': module.verdict,
                 'plans': ','.join(module.plans),
+                'sweeps': ','.join(module.sweeps),
             }
             for module in partition.modules
         ],
@@ -205,7 +234,8 @@ def cmd_attribution(args: argparse.Namespace) -> dict[str, Any]:
 
     test_root = repo_root / 'test'
     modules = iter_test_modules(test_root, repo_root)
-    partition = derive_partition(claims, modules)
+    sweeps = derive_sweep_plans(claims, plans_dir)
+    partition = derive_partition(claims, modules, sweeps)
     findings = derive_budget_findings(modules, repo_root, args.budget)
     attribution = derive_attribution(partition, findings, args.budget)
 
@@ -217,6 +247,16 @@ def cmd_attribution(args: argparse.Namespace) -> dict[str, Any]:
         'budget': attribution.budget,
         'modules_total': len(modules),
         'findings_total': attribution.total_findings(),
+        'sweep_plans': sorted(sweeps),
+        'contested': [
+            {'path': module.path, 'plans': ','.join(module.plans)}
+            for module in partition.with_verdict(VERDICT_CONTESTED)
+        ],
+        'sweep_crossings': [
+            {'path': module.path, 'verdict': module.verdict, 'sweeps': ','.join(module.sweeps)}
+            for module in partition.modules
+            if module.sweeps
+        ],
         'buckets': [
             {'owner': bucket.owner, 'count': len(bucket.findings)}
             for bucket in attribution.buckets
@@ -278,12 +318,12 @@ _INJECTED_CONTROLS = (
     ),
     (
         'injected_double_claim',
-        'a path added to two specs is reported by name as multiply_claimed',
+        'a path added to two slice specs is reported by name as contested',
         'test_epic_partition_injected_failures.py::test_injected_double_claim_is_reported_by_name',
     ),
     (
         'clean_corpus_control',
-        'the clean fixture corpus reports neither unclaimed nor multiply_claimed',
+        'the clean fixture corpus reports neither unclaimed nor contested',
         'test_epic_partition_injected_failures.py::test_clean_corpus_reports_nothing_unclaimed',
     ),
     (
@@ -309,20 +349,43 @@ _TEST_DEF_PREFIX = 'def test_'
 #: this same count taken before the campaign, so before and after are comparable.
 _TEST_COUNT_METHOD = f'static "{_TEST_DEF_PREFIX}" count over the enumerated test modules'
 
-#: The seven sections the report is required to render, in order.
+#: The sections the report renders, in order. This tuple is the SOLE authority
+#: for that set: every count claim about it is derived from it at render time, or
+#: written count-free, so adding a section here cannot leave a stale number
+#: behind. ``disagreements`` is the actionable list — everything awaiting a
+#: decision — while ``contested`` and ``swept`` isolate the two populations
+#: inside it that are read for different reasons.
 _SECTION_ORDER = (
     'partition',
     'attribution',
     'disagreements',
+    'contested',
+    'swept',
     'not_derivable',
     'injected_controls',
     'test_count',
+    'baseline_drift',
     'provenance',
 )
 
 
 def _verb_command(verb: str, epic: str) -> str:
     return f'python3 .plan/execute-script.py {_NOTATION} {verb} --epic {epic}'
+
+
+def _read_baseline(path: str | None) -> tuple[bool, frozenset[str]]:
+    """The recorded baseline finding set, and whether one was supplied at all.
+
+    ⛔ The baseline is a POST-HOC comparison, never an input to the derivation:
+    the findings are re-derived from the current tree either way, and the
+    baseline only decides what the drift section reports. An absent baseline is
+    reported as unsupplied rather than as an empty one, so "no baseline given"
+    can never be read as "nothing drifted".
+    """
+    if path is None:
+        return False, frozenset()
+    text = Path(path).read_text(encoding='utf-8')
+    return True, frozenset(line.strip() for line in text.splitlines() if line.strip())
 
 
 def _static_test_count(modules: tuple[str, ...], repo_root: Path) -> int:
@@ -335,11 +398,13 @@ def _static_test_count(modules: tuple[str, ...], repo_root: Path) -> int:
 
 
 def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
-    """Handle ``report --epic EPIC`` — render all seven sections.
+    """Handle ``report --epic EPIC`` — render every section in ``_SECTION_ORDER``.
 
     Report-only by contract: a disagreement is rendered, never raised, and the
-    subcommand exits 0 regardless. The specs are git-ignored and absent from a
-    fresh clone, so no CI check could read them and this must never gate a build.
+    subcommand exits 0 regardless — baseline drift included, which is a
+    comparison result and not a failure. The specs are git-ignored and absent
+    from a fresh clone, so no CI check could read them and this must never gate
+    a build.
     """
     try:
         claims, plans_dir, repo_root = _load_corpus(args.epic)
@@ -348,7 +413,8 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
 
     test_root = repo_root / 'test'
     modules = iter_test_modules(test_root, repo_root)
-    partition = derive_partition(claims, modules)
+    sweeps = derive_sweep_plans(claims, plans_dir)
+    partition = derive_partition(claims, modules, sweeps)
     findings = derive_budget_findings(modules, repo_root, args.budget)
     attribution = derive_attribution(partition, findings, args.budget)
     tally = partition.tally()
@@ -356,9 +422,16 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
     disagreements = [
         module
         for module in partition.modules
-        if module.verdict in (VERDICT_UNCLAIMED, VERDICT_MULTIPLY_CLAIMED)
+        if module.verdict in (VERDICT_UNCLAIMED, VERDICT_CONTESTED)
     ]
+    contested = partition.with_verdict(VERDICT_CONTESTED)
+    crossings = [module for module in partition.modules if module.sweeps]
     not_derivable = partition.with_verdict(VERDICT_NOT_DERIVABLE)
+
+    baseline_supplied, baseline = _read_baseline(args.baseline_findings)
+    observed = frozenset(finding.path for finding in findings)
+    drift_added = sorted(observed - baseline) if baseline_supplied else []
+    drift_removed = sorted(baseline - observed) if baseline_supplied else []
     unresolvable_specs = [claim for claim in claims if claim.unresolved]
     overlaps = [
         {'plan_id': claim.plan_id, 'path': entry.path}
@@ -371,9 +444,18 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
         'partition': f'{len(modules)} modules across {len(VERDICT_ORDER)} verdicts',
         'attribution': f'{attribution.total_findings()} findings over budget {attribution.budget}',
         'disagreements': f'{len(disagreements)} entries listed per instance',
+        'contested': f'{len(contested)} modules claimed by more than one slice plan',
+        'swept': (
+            f'{len(crossings)} modules crossed by {len(sweeps)} self-declared sweep plan(s)'
+        ),
         'not_derivable': f'{len(not_derivable)} modules, {len(unresolvable_specs)} specs',
         'injected_controls': f'{len(_INJECTED_CONTROLS)} demonstrations',
         'test_count': f'before and after, both as a {_TEST_COUNT_METHOD}',
+        'baseline_drift': (
+            f'{len(drift_added)} added, {len(drift_removed)} removed against a supplied baseline'
+            if baseline_supplied
+            else 'no baseline supplied; nothing compared'
+        ),
         'provenance': (
             f'{len(_PLACEMENT_CLAIMS)} placement claims, {len(overlaps)} overlapping entries'
         ),
@@ -382,6 +464,13 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
         'partition': _verb_command('partition', args.epic),
         'attribution': _verb_command('attribution', args.epic),
         'disagreements': _verb_command('partition', args.epic),
+        'contested': _verb_command('partition', args.epic),
+        'swept': _verb_command('partition', args.epic),
+        # The drift comparison needs BOTH the re-derived findings and the
+        # supplied baseline, and ``report`` is the only verb that takes a
+        # baseline at all — ``attribution`` re-derives the findings but has
+        # nothing to compare them against.
+        'baseline_drift': _verb_command('report', args.epic),
         # Both halves, or neither: the modules half comes from ``derive_partition``
         # and the specs half from ``classify_corpus``, and ``report`` is the only
         # verb whose payload carries both. ``classify`` emits no module verdict at
@@ -417,6 +506,25 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
             {'path': module.path, 'verdict': module.verdict, 'plans': ','.join(module.plans)}
             for module in disagreements
         ],
+        'sweep_plans': sorted(sweeps),
+        'contested': [
+            {'path': module.path, 'plans': ','.join(module.plans)} for module in contested
+        ],
+        'sweep_crossings': [
+            {'path': module.path, 'verdict': module.verdict, 'sweeps': ','.join(module.sweeps)}
+            for module in crossings
+        ],
+        'baseline_drift': {
+            'baseline_supplied': baseline_supplied,
+            'baseline_count': len(baseline),
+            'observed_count': len(observed),
+            'added_count': len(drift_added),
+            'removed_count': len(drift_removed),
+        },
+        'baseline_drift_instances': (
+            [{'path': path, 'drift': 'added'} for path in drift_added]
+            + [{'path': path, 'drift': 'removed'} for path in drift_removed]
+        ),
         'not_derivable_modules': [
             {'path': module.path, 'plans': ','.join(module.plans)} for module in not_derivable
         ],
@@ -497,7 +605,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     report = subparsers.add_parser(
         'report',
-        help='Render the seven-section derivation report',
+        help='Render the full derivation report, every section carrying its producing command',
         allow_abbrev=False,
     )
     report.add_argument(
@@ -517,6 +625,16 @@ def build_parser() -> argparse.ArgumentParser:
             'Declared-test count before the campaign, for the before/after section. '
             'Measured by the same method as the emitted after figure — the static '
             f'"{_TEST_DEF_PREFIX}" count this report renders — so the two are comparable'
+        ),
+    )
+    report.add_argument(
+        '--baseline-findings',
+        default=None,
+        help=(
+            'Path to a file listing the over-budget modules recorded at the baseline, one '
+            'per line. Compared POST-HOC against the findings re-derived from the current '
+            'tree: drift is reported per instance and never changes the exit status. '
+            'Omit it and the drift section reports that nothing was compared'
         ),
     )
     report.set_defaults(handler=cmd_report)

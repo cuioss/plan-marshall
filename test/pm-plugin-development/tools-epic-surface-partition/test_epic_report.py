@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the seven-section report — its sections, provenance, and report-only contract.
+"""Tests for the rendered report — its sections, provenance, and report-only contract.
 
 The corpus and the tree are built under ``tmp_path`` and reached by patching the
 entry point's own store and checkout resolvers, so the real orchestrator store is
 never read and never written.
+
+⛔ :data:`EXPECTED_SECTIONS` is a HAND-WRITTEN mirror of the shipped
+``_SECTION_ORDER`` and must stay one. Deriving it from the tuple it checks would
+make every assertion below vacuous: the test could then never disagree with the
+implementation, which is the entire reason it exists.
 """
 
 from __future__ import annotations
@@ -23,14 +28,18 @@ SKILL = 'tools-epic-surface-partition'
 add_skill_scripts_to_path(BUNDLE, SKILL)
 entry = load_script_module(BUNDLE, SKILL, 'epic-surface-partition.py', register=False)
 
-#: Every section the report is required to render, in order.
+#: Every section the report is required to render, in order. Hand-written on
+#: purpose — see the module docstring.
 EXPECTED_SECTIONS = (
     'partition',
     'attribution',
     'disagreements',
+    'contested',
+    'swept',
     'not_derivable',
     'injected_controls',
     'test_count',
+    'baseline_drift',
     'provenance',
 )
 
@@ -58,11 +67,20 @@ def build_world(root: Path, specs: dict[str, str], modules: tuple[str, ...]) -> 
 
 
 def render(
-    monkeypatch, epic_dir: Path, repo: Path, tests_before: int | None = None
+    monkeypatch,
+    epic_dir: Path,
+    repo: Path,
+    tests_before: int | None = None,
+    baseline_findings: str | None = None,
 ) -> dict[str, Any]:
     monkeypatch.setattr(entry, 'get_store_dir', lambda *a, **k: epic_dir)
     monkeypatch.setattr(entry, 'cwd_checkout_root', lambda: str(repo))
-    args = argparse.Namespace(epic='fixture-epic', budget=400, tests_before=tests_before)
+    args = argparse.Namespace(
+        epic='fixture-epic',
+        budget=400,
+        tests_before=tests_before,
+        baseline_findings=baseline_findings,
+    )
     report: dict[str, Any] = entry.cmd_report(args)
     return report
 
@@ -98,10 +116,11 @@ def section(report: dict[str, Any], name: str) -> dict[str, Any]:
     return next(row for row in rows if row['section'] == name)
 
 
-# --- the seven sections ------------------------------------------------------
+# --- the rendered sections ---------------------------------------------------
 
 
-def test_all_seven_sections_are_rendered(disagreeing) -> None:
+def test_every_expected_section_is_rendered_in_order(disagreeing) -> None:
+    """A claim about ALL the sections, not most of them, and about their order."""
     assert [row['section'] for row in disagreeing['sections']] == list(EXPECTED_SECTIONS)
 
 
@@ -118,13 +137,14 @@ def test_every_section_carries_a_summary(disagreeing, name: str) -> None:
     assert section(disagreeing, name)['summary'].strip()
 
 
-def test_partition_tally_reports_all_four_verdicts(disagreeing) -> None:
+def test_partition_tally_reports_every_verdict(disagreeing) -> None:
     verdicts = [row['verdict'] for row in disagreeing['partition_tally']]
 
     assert verdicts == [
         'claimed',
         'unclaimed',
-        'multiply_claimed',
+        'contested',
+        'swept',
         'not_derivable',
     ]
 
@@ -141,11 +161,11 @@ def test_disagreements_are_listed_per_instance_not_merely_counted(disagreeing) -
 def test_each_disagreement_names_its_verdict(disagreeing) -> None:
     by_path = {row['path']: row['verdict'] for row in disagreeing['disagreements']}
 
-    assert by_path['test/alpha/test_one.py'] == 'multiply_claimed'
+    assert by_path['test/alpha/test_one.py'] == 'contested'
     assert by_path['test/orphan/test_two.py'] == 'unclaimed'
 
 
-def test_multiply_claimed_disagreement_names_every_claiming_plan(disagreeing) -> None:
+def test_contested_disagreement_names_every_claiming_plan(disagreeing) -> None:
     row = next(r for r in disagreeing['disagreements'] if r['path'] == 'test/alpha/test_one.py')
 
     assert row['plans'] == 'PLAN-300,PLAN-310'
@@ -153,6 +173,91 @@ def test_multiply_claimed_disagreement_names_every_claiming_plan(disagreeing) ->
 
 def test_clean_corpus_lists_no_disagreements(clean) -> None:
     assert clean['disagreements'] == []
+
+
+# --- the contested, swept and drift populations ------------------------------
+#
+# Each is emitted even when EMPTY, so an absent population reads as measured
+# rather than as missing — the same discipline the verdict tally already follows.
+
+
+def test_the_contested_set_is_a_population_of_its_own(disagreeing) -> None:
+    """Separate from the merged disagreement list, and enumerated per instance."""
+    assert [row['path'] for row in disagreeing['contested']] == ['test/alpha/test_one.py']
+    assert disagreeing['contested'][0]['plans'] == 'PLAN-300,PLAN-310'
+
+
+def test_the_contested_set_is_emitted_even_when_empty(clean) -> None:
+    assert section(clean, 'contested') is not None
+    assert clean['contested'] == []
+
+
+def test_the_sweep_populations_are_emitted_even_when_empty(clean) -> None:
+    """No spec here declares itself a sweep, and the sections still render."""
+    assert section(clean, 'swept') is not None
+    assert clean['sweep_plans'] == []
+    assert clean['sweep_crossings'] == []
+
+
+def test_a_declared_sweep_is_reported_as_crossing_rather_than_owning(
+    tmp_path: Path, monkeypatch
+) -> None:
+    specs = dict(CLEAN_SPECS)
+    specs['PLAN-420.md'] = (
+        '# PLAN-420\n\n## Expected Surface\n\n'
+        '- Adds `test/alpha/**` — this plan crosses every slice, so its surface is the '
+        'test tree entire, and it pairs with no other plan\n'
+    )
+    epic_dir, repo = build_world(tmp_path, specs, CLEAN_MODULES)
+
+    report = render(monkeypatch, epic_dir, repo)
+
+    assert report['sweep_plans'] == ['PLAN-420']
+    assert [row['path'] for row in report['sweep_crossings']] == ['test/alpha/test_one.py']
+    assert report['contested'] == []
+
+
+def test_baseline_drift_reports_that_nothing_was_compared_without_a_baseline(clean) -> None:
+    """An absent baseline is stated as unsupplied, never rendered as an empty one.
+
+    A zero drift count published by a run that compared nothing is
+    indistinguishable from a run that compared and found no drift.
+    """
+    drift = clean['baseline_drift']
+
+    assert drift['baseline_supplied'] is False
+    assert clean['baseline_drift_instances'] == []
+    assert section(clean, 'baseline_drift')['summary']
+
+
+def test_baseline_drift_is_attributed_per_instance(tmp_path: Path, monkeypatch) -> None:
+    """Drift names the modules that entered and left the population."""
+    epic_dir, repo = build_world(tmp_path, dict(CLEAN_SPECS), CLEAN_MODULES)
+    write(repo / 'test/alpha/test_one.py', ''.join(f'# {i}\n' for i in range(500)))
+    baseline = tmp_path / 'baseline.txt'
+    baseline.write_text('test/alpha/test_gone.py\n', encoding='utf-8')
+
+    report = render(monkeypatch, epic_dir, repo, baseline_findings=str(baseline))
+
+    drift = report['baseline_drift']
+    instances = {row['path']: row['drift'] for row in report['baseline_drift_instances']}
+    assert drift['baseline_supplied'] is True
+    assert instances == {
+        'test/alpha/test_one.py': 'added',
+        'test/alpha/test_gone.py': 'removed',
+    }
+
+
+def test_baseline_drift_does_not_make_the_report_fail(tmp_path: Path, monkeypatch) -> None:
+    """Drift is a comparison result, never a failure."""
+    epic_dir, repo = build_world(tmp_path, dict(CLEAN_SPECS), CLEAN_MODULES)
+    baseline = tmp_path / 'baseline.txt'
+    baseline.write_text('test/alpha/test_gone.py\n', encoding='utf-8')
+
+    report = render(monkeypatch, epic_dir, repo, baseline_findings=str(baseline))
+
+    assert report['status'] == 'success'
+    assert report['baseline_drift']['removed_count'] == 1
 
 
 # --- not-derivable is first-class --------------------------------------------
