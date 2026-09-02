@@ -38,9 +38,16 @@ _MAVEN_NOTATION = 'plan-marshall:build-maven:maven'
 #: because ``parse_ns`` re-executes the script module on every call.
 _RUN_ARGS: argparse.Namespace = parse_ns(
     'plan-marshall', 'build-pyproject', 'pyproject_build.py',
-    'run', '--command-args', 'verify core', '--project-dir', '/tree', '--plan-id', 'plan-x',
+    'run', '--command-args', 'verify core', '--plan-id', 'plan-x',
     register=False,
 )
+#: ``--plan-id`` and ``--project-dir`` are mutually exclusive on the shared build
+#: CLI, so no argv carrying both ever reaches ``cmd_run``: ``build_main`` refuses
+#: the pair outright and otherwise DERIVES ``project_dir`` from the plan before
+#: dispatching. The assignment below models that derivation, keeping the base a
+#: namespace the CLI can actually deliver rather than one the parser accepts and
+#: ``build_main`` then rejects.
+_RUN_ARGS.project_dir = '/tree'
 
 
 def _config(**overrides: Any):
@@ -54,11 +61,12 @@ def _config(**overrides: Any):
 
 
 def _run_args(**overrides: Any) -> argparse.Namespace:
-    """The cmd_run argv namespace, defaulting to a plan-bound auto-mode build.
+    """The cmd_run argv namespace for a plan-bound auto-mode build.
 
     Derived from the hoisted parser-derived base, which supplies every flag
-    default; ``overrides`` names only the fields a given test differs in. The
-    shallow copy keeps the shared base unmutated.
+    default and carries the ``project_dir`` ``build_main`` resolves from
+    ``--plan-id``; ``overrides`` names only the fields a given test differs in.
+    The shallow copy keeps the shared base unmutated.
     """
     derived = copy.copy(_RUN_ARGS)
     for field, value in overrides.items():

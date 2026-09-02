@@ -599,8 +599,6 @@ def test_impact_deterministic_sorted_output():
 # any graph-query handler runs. The four-state contract applies to every
 # subcommand (path, neighbors, impact, files, etc.).
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-architecture', 'architecture.py')
-
 
 def test_architecture_help_declares_routing_flags():
     """architecture.py top-level --help MUST declare --plan-id and --project-dir."""

@@ -379,8 +379,6 @@ def test_module_markdown_unknown_module_raises():
 # Two-state ``--plan-id`` / ``--project-dir`` routing for overview subcommand
 # =============================================================================
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-architecture', 'architecture.py')
-
 
 def test_overview_subcommand_inherits_routing_flags():
     """The top-level argparse declares the routing flags; ``overview`` inherits them.

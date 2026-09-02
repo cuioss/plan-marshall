@@ -76,9 +76,16 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 #: Hoisted because ``parse_ns`` re-executes the script module on every call.
 _RUN_ARGS = parse_ns(
     'plan-marshall', 'build-pyproject', 'pyproject_build.py',
-    'run', '--command-args', 'verify core', '--project-dir', '/tree', '--plan-id', 'plan-x',
+    'run', '--command-args', 'verify core', '--plan-id', 'plan-x',
     register=False,
 )
+#: ``--plan-id`` and ``--project-dir`` are mutually exclusive on the shared build
+#: CLI, so no argv carrying both ever reaches ``cmd_run``: ``build_main`` refuses
+#: the pair outright and otherwise DERIVES ``project_dir`` from the plan before
+#: dispatching. The assignment below models that derivation, so the base stays a
+#: namespace production can actually deliver — which is what makes the
+#: production-fidelity claim above true rather than merely asserted.
+_RUN_ARGS.project_dir = '/tree'
 
 #: The ``acquire`` namespace ``build_queue.py``'s OWN parser yields.
 #: ``register=False`` so it never displaces the ``build_queue`` imported above.
@@ -440,7 +447,12 @@ def test_registered_and_unregistered_contend_on_one_file(isolated_queue, monkeyp
 
 
 def _run_args(**overrides) -> argparse.Namespace:
-    """The hoisted parser-derived ``run`` namespace, with per-test overrides."""
+    """The hoisted ``run`` namespace, with per-test overrides.
+
+    The base is parser-derived and then carries the ``project_dir`` that
+    ``build_main`` resolves from ``--plan-id``, so it models an argv the CLI
+    can actually deliver to ``cmd_run``.
+    """
     return _variant(_RUN_ARGS, **overrides)
 
 
