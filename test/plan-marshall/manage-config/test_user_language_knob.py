@@ -198,7 +198,7 @@ def test_project_set_user_language_rejects_a_non_string_or_empty_value(
 #: guard never saw. Each must be refused on the read path too — the file is
 #: operator-editable and `sync-defaults` preserves an already-present key without
 #: inspecting its value, so nothing else stands between them and the language rule.
-_PERSISTED_INVALID_VALUES = [True, 42, 3.5, None, [], {}, '', '   ']
+_PERSISTED_INVALID_VALUES: list[object] = [True, 42, 3.5, None, [], {}, '', '   ']
 
 
 @pytest.mark.parametrize(
