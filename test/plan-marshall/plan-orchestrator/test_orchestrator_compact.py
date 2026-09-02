@@ -27,16 +27,24 @@ Everything runs against a SCAFFOLDED FIXTURE EPIC under ``PLAN_BASE_DIR``
 isolation — never the live ``truthful-signals`` tree.
 """
 
+import argparse
+import copy
 import json
-from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import get_script_path, load_script_module, parse_ns, run_script
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'plan-orchestrator', 'orchestrator.py')
+#: The orchestrator script's address, as module-level string constants so the
+#: ``parse_ns`` call below stays statically resolvable.
+_ORCH_BUNDLE = 'plan-marshall'
+_ORCH_SKILL = 'plan-orchestrator'
+_ORCH_SCRIPT = 'orchestrator.py'
+
+SCRIPT_PATH = get_script_path(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT)
 
 _orch = load_script_module(
-    'plan-marshall', 'plan-orchestrator', 'orchestrator.py', 'orchestrator_compact_script'
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_compact_script'
 )
 
 cmd_compact = _orch.cmd_compact
@@ -57,6 +65,39 @@ QUEUE_ANNOTATION = '- PLAN-01 — sequencing caveat the generator cannot derive.
 VISION_TEXT = 'A fixture epic exercising the compact stage.'
 OPEN_DEFECT = '- a known defect not yet owned by a plan — source: observation'
 WATCH = '- a mid-flight watch — re-check at the next landing'
+
+
+# =============================================================================
+# Parser-derived argument namespaces
+# =============================================================================
+#
+# The ``compact`` namespace is built by the orchestrator's OWN parser, so it
+# carries every default the production CLI applies rather than only the fields a
+# test author remembered. ``parse_ns`` re-executes the script module on every
+# call, so it is hoisted to module scope and the two rejection cases derive their
+# slug through :func:`_variant` instead of parsing again. ``register=False`` so
+# it cannot displace the explicitly-named registration above.
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because a namespace's values
+    are the parser's own scalars, and the base must stay unmutated for the other
+    callers sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+_COMPACT_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'compact', '--slug', SLUG,
+    register=False,
+)
 
 
 # =============================================================================
@@ -211,7 +252,7 @@ def _live_epic(plan_context, rows: list | None = None, **epic_kwargs) -> Path:
 
 
 def _run() -> dict:
-    result: dict = cmd_compact(Namespace(slug=SLUG))
+    result: dict = cmd_compact(_COMPACT_ARGS)
     return result
 
 
@@ -456,13 +497,13 @@ class TestRefusals:
         assert epic_path.read_bytes() == before
 
     def test_rejects_an_invalid_slug(self, plan_context):
-        result = cmd_compact(Namespace(slug='../evil'))
+        result = cmd_compact(_variant(_COMPACT_ARGS, slug='../evil'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_slug'
 
     def test_errors_when_the_epic_has_no_store_tree(self, plan_context):
-        result = cmd_compact(Namespace(slug='absent-compact-epic'))
+        result = cmd_compact(_variant(_COMPACT_ARGS, slug='absent-compact-epic'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'not_found'

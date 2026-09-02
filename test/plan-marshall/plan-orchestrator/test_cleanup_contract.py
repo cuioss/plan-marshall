@@ -58,16 +58,22 @@ therefore reads "1 of the marketplace population", never "1 in the repository".
 """
 
 import argparse
+import copy
 import json
 import re
-from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
-from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module
+from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module, parse_ns
+
+#: The orchestrator script's address, as module-level string constants so every
+#: ``parse_ns`` call below stays statically resolvable.
+_ORCH_BUNDLE = 'plan-marshall'
+_ORCH_SKILL = 'plan-orchestrator'
+_ORCH_SCRIPT = 'orchestrator.py'
 
 _orch = load_script_module(
-    'plan-marshall', 'plan-orchestrator', 'orchestrator.py', 'orchestrator_script'
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script'
 )
 
 cmd_corpus_set_verdict = _orch.cmd_corpus_set_verdict
@@ -485,6 +491,48 @@ SHA = '9f3a1c2'
 PRODUCER = 'fixture-contract-epic/cleanup'
 
 
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because a namespace's values
+    are the parser's own scalars, and the base must stay unmutated for the other
+    callers sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: Both namespaces are built by the orchestrator's OWN parser, so each carries
+#: every default the production CLI applies — ``section_scope`` among them, which
+#: the emitter reads and a hand-built namespace had to remember. ``parse_ns``
+#: re-executes the script module on every call, so they are hoisted here and
+#: :func:`_stamp` derives from the base rather than parsing again.
+#: ``register=False`` so neither displaces the explicitly-named registration
+#: above.
+_SET_VERDICT_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'corpus', 'set-verdict',
+    '--slug', SLUG,
+    '--plan', 'PLAN-01',
+    '--claim-index', '0',
+    '--verdict', 'corroborated',
+    '--checked-at', SHA,
+    '--by', PRODUCER,
+    '--rescoped', 'n/a',
+    '--evidence', 'holds at this sha',
+    register=False,
+)
+
+_VERDICTS_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'corpus', 'verdicts', '--slug', SLUG,
+    register=False,
+)
+
+
 def _epic_dir(plan_context) -> Path:
     return Path(plan_context.fixture_dir) / 'orchestrator' / SLUG
 
@@ -513,22 +561,12 @@ def _write_fixture_spec(plan_context) -> Path:
     return spec
 
 
-def _stamp(evidence: str = 'holds at this sha') -> Namespace:
+def _stamp(evidence: str = 'holds at this sha') -> argparse.Namespace:
     # ``section_scope`` is the second member of the REQUIRED mutually exclusive
-    # addressing pair argparse declares, so the attribute exists on every real
-    # parse. A hand-built Namespace must carry it too, or the emitter reads an
-    # attribute the parser would always have supplied.
-    return Namespace(
-        slug=SLUG,
-        plan='PLAN-01',
-        claim_index=0,
-        section_scope=False,
-        verdict='corroborated',
-        checked_at=SHA,
-        by=PRODUCER,
-        rescoped='n/a',
-        evidence=evidence,
-    )
+    # addressing pair argparse declares. Deriving from the parser-built base is
+    # what guarantees it — and every other flag the emitter reads — is present
+    # without this builder having to remember any of them.
+    return _variant(_SET_VERDICT_ARGS, evidence=evidence)
 
 
 class TestApplyIdempotence:
@@ -626,7 +664,7 @@ class TestVerdictFieldSingleDefinition:
         _write_fixture_spec(plan_context)
 
         cmd_corpus_set_verdict(_stamp(evidence=evidence))
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         assert result['claims_scanned'] == 1, 'the claim population did not materialize'
         row = result['claims'][0]
