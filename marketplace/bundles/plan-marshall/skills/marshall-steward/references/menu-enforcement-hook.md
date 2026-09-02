@@ -38,9 +38,11 @@ duplicates an entry and brings an already-present one onto the current shape.
 
 ### Step 1: Detect
 
-Probe the current `.claude/settings.local.json` for the enforcement entry's
-`present` / `divergence` / `MISSING` state via the platform-runtime health-check
-`display` surface:
+Probe the enforcement entry's `present` / `divergence` / `MISSING` state via the
+platform-runtime health-check `display` surface. That surface reads BOTH
+`.claude/settings.json` and `.claude/settings.local.json`: an entry in either
+file alone counts as `present`, and an entry in both reads `divergence`, so the
+probe scope is the pair rather than the local file the install writes:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
