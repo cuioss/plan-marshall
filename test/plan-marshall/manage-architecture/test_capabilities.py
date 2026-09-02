@@ -24,13 +24,15 @@ The properties pinned here:
 * **content-search availability** tracks whether the crawl produced an inventory.
 """
 
+import argparse
+import copy
 import tempfile
-from argparse import Namespace
+from typing import Any
 
 import extension_discovery
 import pytest
 
-from conftest import load_script_module
+from conftest import load_script_module, parse_ns
 
 _architecture_core = load_script_module(
     'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
@@ -40,6 +42,39 @@ _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_c
 save_project_meta = _architecture_core.save_project_meta
 save_module_derived = _architecture_core.save_module_derived
 cmd_capabilities = _cmd_client.cmd_capabilities
+
+#: The architecture script's address, as module-level string constants so the
+#: ``parse_ns`` call below stays statically resolvable.
+_ARCH_BUNDLE = 'plan-marshall'
+_ARCH_SKILL = 'manage-architecture'
+_ARCH_SCRIPT = 'architecture.py'
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from the hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because a namespace's values
+    are the parser's own scalars, and the base must stay unmutated for the other
+    callers sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: The ``capabilities`` namespace, built by ``architecture.py``'s OWN parser so
+#: it carries every default the production CLI applies — the ``command``
+#: discriminator and the ``plan_id`` half of the ``--plan-id``/``--project-dir``
+#: pair, neither of which the hand-built namespace carried. Hoisted to module
+#: scope because ``parse_ns`` re-executes the script module on every call, and
+#: ``register=False`` because only the namespace is wanted here.
+_CAPABILITIES_ARGS = parse_ns(
+    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
+    '--project-dir', '.', 'capabilities',
+    register=False,
+)
 
 
 class _StubResolver:
@@ -109,7 +144,7 @@ def _module(name: str, **extra) -> dict:
 
 
 def _capabilities(tmpdir: str) -> dict:
-    result: dict = cmd_capabilities(Namespace(project_dir=tmpdir))
+    result: dict = cmd_capabilities(_variant(_CAPABILITIES_ARGS, project_dir=tmpdir))
     return result
 
 

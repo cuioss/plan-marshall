@@ -64,15 +64,17 @@ fields survive, which an index-arithmetic anchor cannot do and
 ``resolve_bundle_path`` can.
 """
 
+import argparse
+import copy
 import shutil
 import sys
 import tempfile
-from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from conftest import get_scripts_dir, load_script_module
+from conftest import get_scripts_dir, load_script_module, parse_ns
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -106,6 +108,39 @@ def _registered_maven_cmd_discover():
 
 cmd_resolve = _cmd_client.cmd_resolve
 resolve_command = _cmd_client.resolve_command
+
+#: The architecture script's address, as module-level string constants so the
+#: ``parse_ns`` call below stays statically resolvable.
+_ARCH_BUNDLE = 'plan-marshall'
+_ARCH_SKILL = 'manage-architecture'
+_ARCH_SCRIPT = 'architecture.py'
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from the hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because a namespace's values
+    are the parser's own scalars, and the base must stay unmutated for the other
+    callers sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: The ``resolve`` namespace, built by ``architecture.py``'s OWN parser so it
+#: carries every default the production CLI applies — the ``command``
+#: discriminator and the ``plan_id`` half of the ``--plan-id``/``--project-dir``
+#: pair among them, neither of which the hand-built namespaces carried. Hoisted
+#: to module scope because ``parse_ns`` re-executes the script module on every
+#: call, and ``register=False`` because only the namespace is wanted here.
+_RESOLVE_ARGS = parse_ns(
+    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
+    '--project-dir', '.', 'resolve', '--command', 'verify',
+    register=False,
+)
 
 # The three pinned public recognition tokens, reached through the module's
 # historical public surface (``_cmd_client.<name>``) exactly as a consumer would.
@@ -229,7 +264,7 @@ def test_cmd_resolve_bucket_b_short_learned_value_is_raised_by_the_engine_floor(
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_single_module(tmpdir, 'verify', _PYPROJECT_VERIFY_EXECUTABLE)
 
-        args = Namespace(project_dir=tmpdir, resolve_command='verify', module=None)
+        args = _variant(_RESOLVE_ARGS, project_dir=tmpdir)
         result = cmd_resolve(args)
 
     assert result['status'] == 'success'
@@ -257,7 +292,7 @@ def test_cmd_resolve_bucket_b_long_duration_returns_orchestrator(isolated_run_co
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_single_module(tmpdir, 'verify', _PYPROJECT_VERIFY_EXECUTABLE)
 
-        args = Namespace(project_dir=tmpdir, resolve_command='verify', module=None)
+        args = _variant(_RESOLVE_ARGS, project_dir=tmpdir)
         result = cmd_resolve(args)
 
     assert result['status'] == 'success'
@@ -294,7 +329,7 @@ def test_cmd_resolve_bucket_b_no_measurement_fails_closed_to_orchestrator(isolat
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_single_module(tmpdir, 'verify', _PYPROJECT_VERIFY_EXECUTABLE)
 
-        args = Namespace(project_dir=tmpdir, resolve_command='verify', module=None)
+        args = _variant(_RESOLVE_ARGS, project_dir=tmpdir)
         result = cmd_resolve(args)
 
     assert result['status'] == 'success'
@@ -323,7 +358,7 @@ def test_cmd_resolve_maven_measured_low_value_stays_per_task(isolated_run_config
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_single_module(tmpdir, 'verify', _MAVEN_TEST_EXECUTABLE)
 
-        args = Namespace(project_dir=tmpdir, resolve_command='verify', module=None)
+        args = _variant(_RESOLVE_ARGS, project_dir=tmpdir)
         result = cmd_resolve(args)
 
     assert result['status'] == 'success'
@@ -345,7 +380,7 @@ def test_cmd_resolve_maven_no_measurement_fails_closed_to_orchestrator(isolated_
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_single_module(tmpdir, 'verify', _MAVEN_TEST_EXECUTABLE)
 
-        args = Namespace(project_dir=tmpdir, resolve_command='verify', module=None)
+        args = _variant(_RESOLVE_ARGS, project_dir=tmpdir)
         result = cmd_resolve(args)
 
     assert result['status'] == 'success'
@@ -369,7 +404,7 @@ def test_cmd_resolve_bucket_a_manage_notation_returns_legacy_toon(isolated_run_c
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_single_module(tmpdir, 'status', _BUCKET_A_MANAGE_EXECUTABLE)
 
-        args = Namespace(project_dir=tmpdir, resolve_command='status', module=None)
+        args = _variant(_RESOLVE_ARGS, project_dir=tmpdir, resolve_command='status')
         result = cmd_resolve(args)
 
     assert result['status'] == 'success'
@@ -435,7 +470,7 @@ def test_cmd_resolve_hint_pins_recognition_token(
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_single_module(tmpdir, 'verify', executable)
 
-        args = Namespace(project_dir=tmpdir, resolve_command='verify', module=None)
+        args = _variant(_RESOLVE_ARGS, project_dir=tmpdir)
         result = cmd_resolve(args)
 
     assert result['bash_timeout_seconds'] == expected_bash_timeout
@@ -515,7 +550,7 @@ def test_cmd_resolve_cache_tree_layout_emits_augmentation(isolated_run_config, m
             with tempfile.TemporaryDirectory() as project_dir:
                 _seed_single_module(project_dir, 'verify', _PYPROJECT_VERIFY_EXECUTABLE)
 
-                args = Namespace(project_dir=project_dir, resolve_command='verify', module=None)
+                args = _variant(_RESOLVE_ARGS, project_dir=project_dir)
                 result = cmd_resolve(args)
     finally:
         sys.path[:] = original_path

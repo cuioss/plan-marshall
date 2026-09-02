@@ -31,13 +31,16 @@ Resolvers are injected by monkeypatching ``extension_discovery``, matching
 attribute lookup at every call.
 """
 
+import argparse
+import copy
 import importlib
 import tempfile
+from typing import Any
 
 import pytest
 import run_config
 
-from conftest import load_script_module
+from conftest import load_script_module, parse_ns
 
 
 def _live(module_name: str):
@@ -64,6 +67,51 @@ _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_c
 save_project_meta = _architecture_core.save_project_meta
 save_module_derived = _architecture_core.save_module_derived
 get_module_graph = _cmd_client.get_module_graph
+
+#: The two scripts whose handlers this module drives, addressed by module-level
+#: string constants so every ``parse_ns`` call below stays statically resolvable.
+_ARCH_BUNDLE = 'plan-marshall'
+_ARCH_SKILL = 'manage-architecture'
+_ARCH_SCRIPT = 'architecture.py'
+_RUN_CONFIG_BUNDLE = 'plan-marshall'
+_RUN_CONFIG_SKILL = 'manage-run-config'
+_RUN_CONFIG_SCRIPT = 'run_config.py'
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because a namespace's values
+    are the parser's own scalars, and the base must stay unmutated for the other
+    callers sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: The two handlers driven here belong to DIFFERENT scripts, so each gets a base
+#: from its own parser. Both carry defaults the shared hand-built factory they
+#: replace could not supply — the ``derivation-resolver set`` base its
+#: ``command`` / ``derivation_resolver_command`` discriminators and the resolved
+#: ``func``, the ``capabilities`` base its ``command`` and the ``plan_id`` half
+#: of the ``--plan-id``/``--project-dir`` pair. Hoisted to module scope because
+#: ``parse_ns`` re-executes the script module on every call; ``register=False``
+#: because only the namespace is wanted, and because publishing ``run_config``
+#: would displace the plain import above.
+_RESOLVER_SET_ARGS = parse_ns(
+    _RUN_CONFIG_BUNDLE, _RUN_CONFIG_SKILL, _RUN_CONFIG_SCRIPT,
+    'derivation-resolver', 'set', '--resolver', 'resolver', '--disabled',
+    register=False,
+)
+
+_CAPABILITIES_ARGS = parse_ns(
+    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
+    '--project-dir', '.', 'capabilities',
+    register=False,
+)
 
 
 # =============================================================================
@@ -180,7 +228,7 @@ def test_configuring_one_resolver_does_not_deactivate_the_others(plan_context, t
     runs". Disabling ``alpha`` must leave ``beta`` deriving.
     """
     run_config.cmd_derivation_resolver_set(
-        _ns(resolver='alpha', enabled=False, disabled=True)
+        _variant(_RESOLVER_SET_ARGS, resolver='alpha')
     )
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -196,7 +244,7 @@ def test_configuring_one_resolver_does_not_deactivate_the_others(plan_context, t
 
 
 def test_disabled_resolver_contributes_no_edges(plan_context, two_resolvers):
-    run_config.cmd_derivation_resolver_set(_ns(resolver='beta', enabled=False, disabled=True))
+    run_config.cmd_derivation_resolver_set(_variant(_RESOLVER_SET_ARGS, resolver='beta'))
 
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_triple(tmpdir)
@@ -216,7 +264,7 @@ def test_disabling_every_resolver_yields_no_edges_and_a_zero_run_count(plan_cont
     this distinguishable from "no resolver was ever registered".
     """
     for resolver_id in ('alpha', 'beta'):
-        run_config.cmd_derivation_resolver_set(_ns(resolver=resolver_id, enabled=False, disabled=True))
+        run_config.cmd_derivation_resolver_set(_variant(_RESOLVER_SET_ARGS, resolver=resolver_id))
 
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_triple(tmpdir)
@@ -233,7 +281,7 @@ def test_disabling_every_resolver_yields_no_edges_and_a_zero_run_count(plan_cont
 
 def test_resolver_count_excludes_only_the_disabled_ones(plan_context, two_resolvers):
     """One disabled, one dispatched: the count is 1 while the roster stays 2."""
-    run_config.cmd_derivation_resolver_set(_ns(resolver='beta', enabled=False, disabled=True))
+    run_config.cmd_derivation_resolver_set(_variant(_RESOLVER_SET_ARGS, resolver='beta'))
 
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_triple(tmpdir)
@@ -257,11 +305,11 @@ def test_capabilities_reports_not_derivable_when_every_resolver_is_disabled(
     states for this report.
     """
     for resolver_id in ('alpha', 'beta'):
-        run_config.cmd_derivation_resolver_set(_ns(resolver=resolver_id, enabled=False, disabled=True))
+        run_config.cmd_derivation_resolver_set(_variant(_RESOLVER_SET_ARGS, resolver=resolver_id))
 
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_triple(tmpdir)
-        report = _cmd_client.cmd_capabilities(_ns(project_dir=tmpdir))
+        report = _cmd_client.cmd_capabilities(_variant(_CAPABILITIES_ARGS, project_dir=tmpdir))
 
     edges = next(c for c in report['capabilities'] if c['capability'] == 'module_edges')
     assert edges['status'] == 'not_derivable'
@@ -271,11 +319,11 @@ def test_capabilities_reports_not_derivable_when_every_resolver_is_disabled(
 
 def test_capabilities_reports_only_dispatched_producers(plan_context, two_resolvers):
     """A disabled resolver is not named as a producer of a capability it never ran for."""
-    run_config.cmd_derivation_resolver_set(_ns(resolver='beta', enabled=False, disabled=True))
+    run_config.cmd_derivation_resolver_set(_variant(_RESOLVER_SET_ARGS, resolver='beta'))
 
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_triple(tmpdir)
-        report = _cmd_client.cmd_capabilities(_ns(project_dir=tmpdir))
+        report = _cmd_client.cmd_capabilities(_variant(_CAPABILITIES_ARGS, project_dir=tmpdir))
 
     edges = next(c for c in report['capabilities'] if c['capability'] == 'module_edges')
     assert edges['status'] == 'derivable'
@@ -289,7 +337,7 @@ def test_capabilities_reports_only_dispatched_producers(plan_context, two_resolv
 
 
 def test_disabled_resolver_stays_on_the_report(plan_context, two_resolvers):
-    run_config.cmd_derivation_resolver_set(_ns(resolver='beta', enabled=False, disabled=True))
+    run_config.cmd_derivation_resolver_set(_variant(_RESOLVER_SET_ARGS, resolver='beta'))
 
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_triple(tmpdir)
@@ -307,7 +355,7 @@ def test_disabled_report_carries_a_configuration_note(plan_context, two_resolver
     Without it, a reader cannot tell an operator's decision from a resolver that
     ran and legitimately found nothing.
     """
-    run_config.cmd_derivation_resolver_set(_ns(resolver='beta', enabled=False, disabled=True))
+    run_config.cmd_derivation_resolver_set(_variant(_RESOLVER_SET_ARGS, resolver='beta'))
 
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_triple(tmpdir)
@@ -325,7 +373,7 @@ def test_report_order_is_stable_when_a_resolver_is_disabled(plan_context, two_re
         _seed_triple(tmpdir)
         baseline = [report['id'] for report in get_module_graph(tmpdir)['resolvers']]
 
-    run_config.cmd_derivation_resolver_set(_ns(resolver='alpha', enabled=False, disabled=True))
+    run_config.cmd_derivation_resolver_set(_variant(_RESOLVER_SET_ARGS, resolver='alpha'))
 
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_triple(tmpdir)
@@ -346,7 +394,7 @@ def test_every_report_carries_the_same_key_set(plan_context, two_resolvers):
     the mechanism exists to carry. It would also float the column's position,
     since the header takes first-occurrence key order over an id-sorted list.
     """
-    run_config.cmd_derivation_resolver_set(_ns(resolver='beta', enabled=False, disabled=True))
+    run_config.cmd_derivation_resolver_set(_variant(_RESOLVER_SET_ARGS, resolver='beta'))
 
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_triple(tmpdir)
@@ -389,7 +437,7 @@ def test_overview_footer_does_not_credit_a_disabled_resolver(plan_context, two_r
     Crediting it would be the rendered form of the same false claim
     ``resolver_count`` excludes it to avoid.
     """
-    run_config.cmd_derivation_resolver_set(_ns(resolver='beta', enabled=False, disabled=True))
+    run_config.cmd_derivation_resolver_set(_variant(_RESOLVER_SET_ARGS, resolver='beta'))
 
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_triple(tmpdir)
@@ -404,7 +452,7 @@ def test_overview_footer_states_the_cause_when_every_resolver_is_disabled(
 ):
     """A sparse graph explains itself rather than reading as "nothing depends on anything"."""
     for resolver_id in ('alpha', 'beta'):
-        run_config.cmd_derivation_resolver_set(_ns(resolver=resolver_id, enabled=False, disabled=True))
+        run_config.cmd_derivation_resolver_set(_variant(_RESOLVER_SET_ARGS, resolver=resolver_id))
 
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_triple(tmpdir)
@@ -438,7 +486,7 @@ def test_mixed_roster_serializes_as_a_uniform_toon_table(plan_context, two_resol
     """
     from toon_parser import serialize_toon
 
-    run_config.cmd_derivation_resolver_set(_ns(resolver='beta', enabled=False, disabled=True))
+    run_config.cmd_derivation_resolver_set(_variant(_RESOLVER_SET_ARGS, resolver='beta'))
 
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_triple(tmpdir)
@@ -469,7 +517,7 @@ def test_toon_header_is_identical_configured_or_not(plan_context, two_resolvers)
         return next(line for line in rendered.splitlines() if line.startswith('resolvers['))
 
     unconfigured = _header()
-    run_config.cmd_derivation_resolver_set(_ns(resolver='alpha', enabled=False, disabled=True))
+    run_config.cmd_derivation_resolver_set(_variant(_RESOLVER_SET_ARGS, resolver='alpha'))
     configured = _header()
 
     assert unconfigured == configured
@@ -509,13 +557,3 @@ def test_raising_enabled_check_treats_the_resolver_as_active(plan_context, two_r
 
     assert result['graph']['edge_count'] == 2
 
-
-# =============================================================================
-# Helper
-# =============================================================================
-
-
-def _ns(**kwargs):
-    from argparse import Namespace
-
-    return Namespace(**kwargs)

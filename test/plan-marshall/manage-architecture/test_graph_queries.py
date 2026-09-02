@@ -7,12 +7,14 @@ Uses the per-module on-disk layout: ``_project.json`` index plus per-module
 ``save_module_derived``.
 """
 
+import argparse
+import copy
 import tempfile
-from argparse import Namespace
+from typing import Any
 
 import pytest
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import get_script_path, load_script_module, parse_ns, run_script
 
 _architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
@@ -28,7 +30,53 @@ cmd_neighbors = _cmd_client.cmd_neighbors
 cmd_impact = _cmd_client.cmd_impact
 NEIGHBORS_DEPTH_CAP = _cmd_client.NEIGHBORS_DEPTH_CAP
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-architecture', 'architecture.py')
+#: The architecture script's address, as module-level string constants so every
+#: ``parse_ns`` call below stays statically resolvable.
+_ARCH_BUNDLE = 'plan-marshall'
+_ARCH_SKILL = 'manage-architecture'
+_ARCH_SCRIPT = 'architecture.py'
+
+SCRIPT_PATH = get_script_path(_ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT)
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because a namespace's values
+    are the parser's own scalars, and the base must stay unmutated for the other
+    callers sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: One hoisted namespace per graph verb, built by ``architecture.py``'s OWN
+#: parser so each carries every default the production CLI applies — the
+#: ``command`` discriminator, the ``plan_id`` half of the
+#: ``--plan-id``/``--project-dir`` pair, and ``neighbors``' ``--depth`` default
+#: among them. Hoisted to module scope because ``parse_ns`` re-executes the
+#: script module on every call, and ``register=False`` because only the
+#: namespace is wanted here.
+_PATH_ARGS = parse_ns(
+    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
+    '--project-dir', '.', 'path', 'source', 'target',
+    register=False,
+)
+
+_NEIGHBORS_ARGS = parse_ns(
+    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
+    '--project-dir', '.', 'neighbors', '--module', 'module',
+    register=False,
+)
+
+_IMPACT_ARGS = parse_ns(
+    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
+    '--project-dir', '.', 'impact', '--module', 'module',
+    register=False,
+)
 
 
 # =============================================================================
@@ -388,7 +436,7 @@ def _assert_provenance_self_consistent(resolvers: list, resolver_count: int) -> 
 def test_cmd_path_returns_toon_shape():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_chain_graph(tmpdir)
-        args = Namespace(project_dir=tmpdir, source='alpha', target='gamma')
+        args = _variant(_PATH_ARGS, project_dir=tmpdir, source='alpha', target='gamma')
         result = cmd_path(args)
         payload, resolvers, resolver_count = _split_provenance(result)
         assert payload == {
@@ -403,7 +451,7 @@ def test_cmd_path_returns_toon_shape():
 def test_cmd_path_unreachable_returns_null_path():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_disconnected_graph(tmpdir)
-        args = Namespace(project_dir=tmpdir, source='lefty', target='righty')
+        args = _variant(_PATH_ARGS, project_dir=tmpdir, source='lefty', target='righty')
         result = cmd_path(args)
         payload, resolvers, resolver_count = _split_provenance(result)
         assert payload == {
@@ -420,7 +468,7 @@ def test_cmd_path_unreachable_returns_null_path():
 def test_cmd_path_unknown_module_returns_error():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_chain_graph(tmpdir)
-        args = Namespace(project_dir=tmpdir, source='alpha', target='zzz')
+        args = _variant(_PATH_ARGS, project_dir=tmpdir, source='alpha', target='zzz')
         result = cmd_path(args)
         assert result['status'] == 'error'
         assert result['module'] == 'zzz'
@@ -430,7 +478,7 @@ def test_cmd_path_unknown_module_returns_error():
 def test_cmd_neighbors_returns_shape():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_fan_out_graph(tmpdir)
-        args = Namespace(project_dir=tmpdir, module='hub', depth=1)
+        args = _variant(_NEIGHBORS_ARGS, project_dir=tmpdir, module='hub', depth=1)
         result = cmd_neighbors(args)
         payload, resolvers, resolver_count = _split_provenance(result)
         assert payload == {
@@ -445,7 +493,7 @@ def test_cmd_neighbors_returns_shape():
 def test_cmd_neighbors_clamps_depth_in_response():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_fan_out_graph(tmpdir)
-        args = Namespace(project_dir=tmpdir, module='hub', depth=42)
+        args = _variant(_NEIGHBORS_ARGS, project_dir=tmpdir, module='hub', depth=42)
         result = cmd_neighbors(args)
         assert result['depth'] == NEIGHBORS_DEPTH_CAP
 
@@ -453,7 +501,7 @@ def test_cmd_neighbors_clamps_depth_in_response():
 def test_cmd_impact_returns_shape():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_diamond_graph(tmpdir)
-        args = Namespace(project_dir=tmpdir, module='api')
+        args = _variant(_IMPACT_ARGS, project_dir=tmpdir, module='api')
         result = cmd_impact(args)
         payload, resolvers, resolver_count = _split_provenance(result)
         assert payload == {

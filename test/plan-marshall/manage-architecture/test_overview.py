@@ -2,12 +2,14 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for overview renderer + module --full --budget option."""
 
+import argparse
+import copy
 import tempfile
-from argparse import Namespace
+from typing import Any
 
 import pytest
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import get_script_path, load_script_module, parse_ns, run_script
 
 _architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
@@ -22,7 +24,46 @@ cmd_overview = _cmd_client.cmd_overview
 cmd_module = _cmd_client.cmd_module
 DEFAULT_OVERVIEW_BUDGET = _cmd_client.DEFAULT_OVERVIEW_BUDGET
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-architecture', 'architecture.py')
+#: The architecture script's address, as module-level string constants so every
+#: ``parse_ns`` call below stays statically resolvable.
+_ARCH_BUNDLE = 'plan-marshall'
+_ARCH_SKILL = 'manage-architecture'
+_ARCH_SCRIPT = 'architecture.py'
+
+SCRIPT_PATH = get_script_path(_ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT)
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because a namespace's values
+    are the parser's own scalars, and the base must stay unmutated for the other
+    callers sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: One hoisted namespace per verb under test, built by ``architecture.py``'s OWN
+#: parser. ``overview`` declares only ``--budget`` — its 200 default is the
+#: parser's, not a value repeated here — while ``module`` is the verb that
+#: declares ``--full`` and ``--budget`` together. Hoisted to module scope because
+#: ``parse_ns`` re-executes the script module on every call, and
+#: ``register=False`` because only the namespace is wanted here.
+_OVERVIEW_ARGS = parse_ns(
+    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
+    '--project-dir', '.', 'overview',
+    register=False,
+)
+
+_MODULE_ARGS = parse_ns(
+    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
+    '--project-dir', '.', 'module', '--module', 'module',
+    register=False,
+)
 
 
 # =============================================================================
@@ -225,7 +266,7 @@ def test_module_markdown_truncates_with_marker_when_tight():
 def test_cmd_overview_returns_markdown_string():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_three_module_project(tmpdir)
-        args = Namespace(project_dir=tmpdir, budget=200)
+        args = _variant(_OVERVIEW_ARGS, project_dir=tmpdir)
         result = cmd_overview(args)
         assert isinstance(result, str)
         assert result.startswith('# demo')
@@ -234,7 +275,7 @@ def test_cmd_overview_returns_markdown_string():
 def test_cmd_module_full_with_budget_returns_markdown_string():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_three_module_project(tmpdir)
-        args = Namespace(project_dir=tmpdir, module='service', full=True, budget=80)
+        args = _variant(_MODULE_ARGS, project_dir=tmpdir, module='service', full=True, budget=80)
         result = cmd_module(args)
         assert isinstance(result, str)
         assert '# service' in result
@@ -243,7 +284,7 @@ def test_cmd_module_full_with_budget_returns_markdown_string():
 def test_cmd_module_full_without_budget_returns_dict():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_three_module_project(tmpdir)
-        args = Namespace(project_dir=tmpdir, module='service', full=True, budget=None)
+        args = _variant(_MODULE_ARGS, project_dir=tmpdir, module='service', full=True, budget=None)
         result = cmd_module(args)
         assert isinstance(result, dict)
         assert result['status'] == 'success'
@@ -253,7 +294,7 @@ def test_cmd_module_budget_without_full_is_noop():
     """--budget without --full keeps TOON output (no markdown rendering)."""
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_three_module_project(tmpdir)
-        args = Namespace(project_dir=tmpdir, module='service', full=False, budget=80)
+        args = _variant(_MODULE_ARGS, project_dir=tmpdir, module='service', full=False, budget=80)
         result = cmd_module(args)
         assert isinstance(result, dict)
         assert result['status'] == 'success'

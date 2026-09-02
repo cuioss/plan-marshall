@@ -33,12 +33,14 @@ Covered:
 See ``extension-api/standards/ext-point-path-attribution.md`` for the contract.
 """
 
+import argparse
+import copy
 import sys
 import tempfile
-from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
-from conftest import load_script_module
+from conftest import load_script_module, parse_ns
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -56,6 +58,39 @@ project_local_module_for_path = _architecture_core.project_local_module_for_path
 _PLAN_ROOT_SCRIPT = '.plan/execute-script.py'
 _PLAN_NESTED_SCRIPT = '.plan/local/plans/some-plan/work/scope-creep.toon'
 _PLAN_SIBLING_PATH = '.plans/execute-script.py'
+
+#: The architecture script's address, as module-level string constants so the
+#: ``parse_ns`` call below stays statically resolvable.
+_ARCH_BUNDLE = 'plan-marshall'
+_ARCH_SKILL = 'manage-architecture'
+_ARCH_SCRIPT = 'architecture.py'
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from the hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because a namespace's values
+    are the parser's own scalars, and the base must stay unmutated for the other
+    callers sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: The ``which-module`` namespace, built by ``architecture.py``'s OWN parser so
+#: it carries every default the production CLI applies — the ``command``
+#: discriminator and the ``plan_id`` half of the ``--plan-id``/``--project-dir``
+#: pair among them, neither of which the hand-built namespaces carried. Hoisted
+#: to module scope because ``parse_ns`` re-executes the script module on every
+#: call, and ``register=False`` because only the namespace is wanted here.
+_WHICH_MODULE_ARGS = parse_ns(
+    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
+    '--project-dir', '.', 'which-module', '--path', '.',
+    register=False,
+)
 
 
 def _seed_plan_marshall_project(tmpdir: str) -> None:
@@ -138,7 +173,7 @@ def test_which_module_resolves_plan_executor_path_to_plan_marshall():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_plan_marshall_project(tmpdir)
 
-        result = cmd_which_module(Namespace(project_dir=tmpdir, path=_PLAN_ROOT_SCRIPT))
+        result = cmd_which_module(_variant(_WHICH_MODULE_ARGS, project_dir=tmpdir, path=_PLAN_ROOT_SCRIPT))
 
         assert result['status'] == 'success'
         assert result['module'] == 'plan-marshall'
@@ -148,7 +183,7 @@ def test_which_module_resolves_a_nested_plan_path_to_plan_marshall():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_plan_marshall_project(tmpdir)
 
-        result = cmd_which_module(Namespace(project_dir=tmpdir, path=_PLAN_NESTED_SCRIPT))
+        result = cmd_which_module(_variant(_WHICH_MODULE_ARGS, project_dir=tmpdir, path=_PLAN_NESTED_SCRIPT))
 
         assert result['status'] == 'success'
         assert result['module'] == 'plan-marshall'
@@ -175,7 +210,7 @@ def test_triage_consumer_receives_plan_marshall_for_a_plan_scoped_finding():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_plan_marshall_project(tmpdir)
 
-        result = cmd_which_module(Namespace(project_dir=tmpdir, path='.plan/marshal.json'))
+        result = cmd_which_module(_variant(_WHICH_MODULE_ARGS, project_dir=tmpdir, path='.plan/marshal.json'))
 
         assert result['module'] is not None
         assert result['module'] == 'plan-marshall'
@@ -191,7 +226,7 @@ def test_plan_claim_does_not_match_a_sibling_sharing_the_string_prefix():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_plan_marshall_project(tmpdir)
 
-        result = cmd_which_module(Namespace(project_dir=tmpdir, path=_PLAN_SIBLING_PATH))
+        result = cmd_which_module(_variant(_WHICH_MODULE_ARGS, project_dir=tmpdir, path=_PLAN_SIBLING_PATH))
 
         assert result['module'] is None
 
@@ -212,7 +247,7 @@ def test_project_without_plan_marshall_module_still_answers_null():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_project_without_plan_marshall(tmpdir)
 
-        result = cmd_which_module(Namespace(project_dir=tmpdir, path=_PLAN_ROOT_SCRIPT))
+        result = cmd_which_module(_variant(_WHICH_MODULE_ARGS, project_dir=tmpdir, path=_PLAN_ROOT_SCRIPT))
 
         assert result['module'] is None
 
@@ -238,7 +273,7 @@ def test_which_module_resolves_every_claude_subtree_to_pm_plugin_development():
             '.claude/commands/some-command.md',
             '.claude/settings.json',
         ):
-            result = cmd_which_module(Namespace(project_dir=tmpdir, path=path))
+            result = cmd_which_module(_variant(_WHICH_MODULE_ARGS, project_dir=tmpdir, path=path))
             assert result['status'] == 'success'
             assert result['module'] == 'pm-plugin-development', path
 
@@ -254,7 +289,7 @@ def test_which_module_null_on_uncovered_path_carries_attributor_count():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_meta_project(tmpdir)
 
-        result = cmd_which_module(Namespace(project_dir=tmpdir, path='.github/workflows/verify.yml'))
+        result = cmd_which_module(_variant(_WHICH_MODULE_ARGS, project_dir=tmpdir, path='.github/workflows/verify.yml'))
 
         assert result['status'] == 'success'
         assert result['module'] is None
