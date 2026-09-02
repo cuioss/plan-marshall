@@ -734,6 +734,18 @@ _UNPRODUCIBLE_MEMBERS = {
         'requires a refusing bot whose registry rate_limit_class is hard_quota; '
         'the required bot in this scenario (pr-agent) declares unknown'
     ),
+    review_completeness.STATE_UNREGISTERED_KIND: (
+        'decided from the CONFIGURATION, not from an observation: it requires the '
+        'required token to be absent from bot_registry.bot_kinds(), which no entry in '
+        '_MEMBER_OBSERVATIONS can produce because those are predicate observations and '
+        'this is a registry fact. Producing it would mean swapping the scenario\'s '
+        'required bot for an unregistered token — and that changes the bot whose state '
+        'the parity compares, so the absent baseline and the widened run would name '
+        'DIFFERENT bots in unproven_bots and the projection could never be equal. The '
+        'parity this sweep asserts is therefore not statable for this member here; the '
+        'barrier-relevant property (it blocks exactly as absent does) is covered by its '
+        'membership in _UNPROVEN_STATES, asserted in test_structural_refusal.py'
+    ),
 }
 
 

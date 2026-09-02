@@ -15,13 +15,16 @@ nested gates.
 pytest collection; the canonical ``sys.path.insert`` prologue (see
 ``pm-plugin-development:plugin-script-architecture`` test-scaffolding.md) makes
 it and the shared libraries it imports at module scope importable — the TOON
-parser, ``file_ops`` (for the ``safe_main`` wrapper) and the ``script-shared``
-tree ``file_ops`` itself imports from. Under the executor these all arrive on
-one injected ``PYTHONPATH``; here each dir is named.
+parser, ``file_ops`` (for the ``safe_main`` wrapper), ``bot_registry`` (the live
+reviewer-kind registry ``validate_bot_lists`` checks tokens against) and the
+``script-shared`` tree ``file_ops`` itself imports from. Under the executor these
+all arrive on one injected ``PYTHONPATH``; here each dir is named.
 """
 
 from __future__ import annotations
 
+import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -34,10 +37,18 @@ _SCRIPTS_DIR = _SKILLS_ROOT / 'marshall-steward' / 'scripts'
 _TOON_SCRIPTS = _SKILLS_ROOT / 'ref-toon-format' / 'scripts'
 _FILE_OPS_SCRIPTS = _SKILLS_ROOT / 'tools-file-ops' / 'scripts'
 _SHARED_SCRIPTS = _SKILLS_ROOT / 'script-shared' / 'scripts'
-for _dir in (_SCRIPTS_DIR, _TOON_SCRIPTS, _FILE_OPS_SCRIPTS, _SHARED_SCRIPTS):
+_AUTOMATIC_REVIEW_SCRIPTS = _SKILLS_ROOT / 'automatic-review' / 'scripts'
+for _dir in (
+    _SCRIPTS_DIR,
+    _TOON_SCRIPTS,
+    _FILE_OPS_SCRIPTS,
+    _SHARED_SCRIPTS,
+    _AUTOMATIC_REVIEW_SCRIPTS,
+):
     if str(_dir) not in sys.path:
         sys.path.insert(0, str(_dir))
 
+import bot_registry  # noqa: E402
 import upgrade  # noqa: E402
 from toon_parser import parse_toon  # noqa: E402
 
@@ -59,13 +70,13 @@ _STAGE_ROW_KEYS = {'order', 'key', 'name', 'mutating', 'top_level_gate', 'nested
 _EXPECTED_SUB_STEPS = {
     'meta': {
         'regenerate-targets': ['regenerate-target-tree', 'regenerate-executor', 'cache-retention-sweep'],
-        'reconcile-config': ['reconcile-marshal-json', 'migrate-bot-lists'],
+        'reconcile-config': ['reconcile-marshal-json', 'migrate-bot-lists', 'validate-bot-lists'],
         'verify': ['executor-preflight', 'content-drift-report'],
         'land': ['run-landing-cycle'],
     },
     'consumer': {
         'regenerate-targets': ['cache-freshness-check', 'regenerate-executor', 'cache-retention-sweep'],
-        'reconcile-config': ['reconcile-marshal-json', 'migrate-bot-lists'],
+        'reconcile-config': ['reconcile-marshal-json', 'migrate-bot-lists', 'validate-bot-lists'],
         'verify': ['executor-preflight'],
         'land': ['run-landing-cycle'],
     },
@@ -426,3 +437,348 @@ def test_migrate_bot_lists_is_self_disarming_on_second_run():
     assert params == after_first
     assert second['required_bots'] == 'coderabbit,sourcery'
     assert second['optional_bots'] == ''
+
+
+# =============================================================================
+# validate-bot-lists — the read-only unknown-token report, over its four input
+# states plus the matched negative control
+# =============================================================================
+#
+# The four states mirror the shape the ``migrate_bot_lists`` suite above already
+# establishes for this file: every configured token valid, one token unknown, an
+# empty list, and an absent step.
+#
+# The load-bearing addition is the CONTROL. Asserting only that a valid list
+# produced no unknown tokens would pass just as happily for a check that examined
+# nothing at all, and those are different claims: "none of the three configured
+# names is unknown" is a clean bill of health, "no names were configured" is not.
+# Every clean assertion below therefore pins the population the verdict was
+# computed over (ADR-019's coverage discriminator), and the two no-op states are
+# pinned to carry NO count at all.
+
+#: The step whose params both bot-list verbs operate on. Read off the module
+#: rather than restated, so a rename of the step id cannot leave this suite
+#: staging a config the verb no longer looks at.
+_STEP_ID = upgrade._AUTOMATIC_REVIEW_STEP_ID
+
+#: A token deliberately outside the registry — the misspelling shape this verb
+#: exists to catch (one letter dropped from a real reviewer name). Its
+#: outside-ness is ASSERTED by a test below rather than assumed: a registry that
+#: ever adopted this name would otherwise turn every unknown-token case here into
+#: a silently-valid one, and the whole section would keep passing.
+_UNREGISTERED_TOKEN = 'codrabbit'
+
+
+def _live_kinds() -> list[str]:
+    """The live registry kind set — DERIVED, never a literal reviewer name.
+
+    Deriving is what keeps the negative control honest across a registry rename:
+    a hard-coded "valid" token starts reporting unknown the moment its bot is
+    renamed, which would make the control a false positive for the very defect it
+    exists to rule out.
+
+    The emptiness guard is not defensive noise — it is the anti-vacuity check.
+    Every clean-verdict assertion below is computed over this set, so a registry
+    that resolved nothing would make them all trivially true.
+    """
+    kinds = bot_registry.bot_kinds()
+    assert kinds, 'registry resolved no bot kinds — every check in this section would be vacuous'
+    return kinds
+
+
+def _valid_params() -> dict:
+    """A step param object whose every configured token is registered."""
+    kinds = _live_kinds()
+    return {'required_bots': kinds[0], 'optional_bots': ','.join(kinds[1:])}
+
+
+def _configured_tokens(params: dict) -> list[str]:
+    """The tokens a param object actually configures across both lists."""
+    return [
+        token.strip()
+        for key in ('required_bots', 'optional_bots')
+        for token in str(params.get(key) or '').split(',')
+        if token.strip()
+    ]
+
+
+def test_the_unregistered_fixture_token_is_genuinely_outside_the_registry():
+    """The premise every unknown-token case below rests on, asserted not assumed.
+
+    Without this, a registry that grew a bot by this name would turn each
+    "reports the unknown token" test into a test of nothing, and they would all
+    still pass.
+    """
+    assert _UNREGISTERED_TOKEN not in bot_registry.bot_kinds()
+
+
+def test_validate_bot_lists_reports_clean_over_a_stated_population():
+    """State 1 and the MATCHED NEGATIVE CONTROL: valid tokens report clean AND
+    publish how many were checked.
+
+    The count is asserted against the tokens the fixture actually configured — a
+    derived number — so a validation that silently examined zero tokens cannot
+    pass here as a clean one.
+    """
+    params = _valid_params()
+    configured = _configured_tokens(params)
+
+    report = upgrade.validate_bot_lists(params)
+
+    assert report['state'] == 'clean'
+    assert report['unknown_tokens'] == []
+    assert report['checked_count'] == len(configured)
+    assert report['checked_count'] > 0
+
+
+def test_a_clean_verdict_over_nothing_is_distinguishable_from_one_over_tokens():
+    """State 3 — empty lists. Same ``state``, same empty ``unknown_tokens``.
+
+    The ONLY thing separating "checked three, found none" from "checked nothing"
+    is ``checked_count``, which is why that field is the contract rather than a
+    convenience: drop it and the two collapse into one reassuring answer.
+    """
+    empty = upgrade.validate_bot_lists({'required_bots': '', 'optional_bots': ''})
+    populated = upgrade.validate_bot_lists(_valid_params())
+
+    assert empty['state'] == populated['state'] == 'clean'
+    assert empty['unknown_tokens'] == populated['unknown_tokens'] == []
+    assert empty['checked_count'] == 0
+    assert populated['checked_count'] > empty['checked_count']
+
+
+def test_validate_bot_lists_names_the_unknown_token_and_the_live_kind_set():
+    """State 2 — one unknown token, reported beside the set it was checked against.
+
+    The kind set is the REMEDY, not decoration: an operator told a name is wrong
+    still has to be told which names are right, and that set is where the
+    correction is chosen from.
+    """
+    report = upgrade.validate_bot_lists({'required_bots': _UNREGISTERED_TOKEN, 'optional_bots': ''})
+
+    assert report['state'] == 'unknown_tokens'
+    assert report['unknown_tokens'] == [_UNREGISTERED_TOKEN]
+    assert report['known_bot_kinds'] == bot_registry.bot_kinds()
+    assert report['checked_count'] == 1
+
+
+def test_validate_bot_lists_checks_the_optional_list_too():
+    """A misspelled OPTIONAL name is still a name no reviewer answers to.
+
+    Checking only ``required_bots`` would leave the optional list — where a stale
+    token is likelier, because its silence never blocks and so never surfaces —
+    permanently unexamined.
+    """
+    params = {'required_bots': _live_kinds()[0], 'optional_bots': _UNREGISTERED_TOKEN}
+
+    report = upgrade.validate_bot_lists(params)
+
+    assert report['state'] == 'unknown_tokens'
+    assert report['unknown_tokens'] == [_UNREGISTERED_TOKEN]
+    assert report['checked_count'] == 2
+
+
+def test_an_unknown_token_configured_in_both_lists_is_reported_once():
+    """De-duplication is a property of the reported NAMES, not of the population.
+
+    The operator has one name to fix, so it is named once; the count still
+    records both occurrences, because it reports what was examined.
+    """
+    params = {'required_bots': _UNREGISTERED_TOKEN, 'optional_bots': _UNREGISTERED_TOKEN}
+
+    report = upgrade.validate_bot_lists(params)
+
+    assert report['unknown_tokens'] == [_UNREGISTERED_TOKEN]
+    assert report['checked_count'] == 2
+
+
+def test_validate_bot_lists_drops_no_token_and_rejects_no_list():
+    """Report-only, asserted on the input rather than on intent.
+
+    A silent drop is the collapse this plan exists to remove, and a blanket
+    rejection would turn a one-token typo into an unstartable finalize. One
+    assertion rules out both: the param object is unchanged afterwards, unknown
+    token still in place.
+    """
+    kinds = _live_kinds()
+    params = {
+        'required_bots': f'{kinds[0]},{_UNREGISTERED_TOKEN}',
+        'optional_bots': '',
+        'review_bot_buffer_seconds': 180,
+    }
+    before = dict(params)
+
+    report = upgrade.validate_bot_lists(params)
+
+    assert report['state'] == 'unknown_tokens'
+    assert params == before
+
+
+def test_tokens_are_stripped_and_empty_segments_are_not_counted():
+    """A padded token is the same token, and a trailing comma configures nothing.
+
+    Both halves matter: an unstripped token would read as unknown (a false
+    positive on a correct config), and counting empty segments would inflate the
+    population a clean verdict claims to cover.
+    """
+    params = {'required_bots': f'  {_live_kinds()[0]} , ,', 'optional_bots': None}
+
+    report = upgrade.validate_bot_lists(params)
+
+    assert report['state'] == 'clean'
+    assert report['checked_count'] == 1
+
+
+class TestValidateBotListsVerb:
+    """The CLI verb against a real marshal.json on disk — and it must never write."""
+
+    @staticmethod
+    def _stage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, config: dict) -> Path:
+        """Write ``config`` to a sandbox marshal.json and point the loader at it.
+
+        ``_config_core.MARSHAL_PATH`` is resolved ONCE at import time, so a bare
+        ``chdir`` into a staged project does not redirect the loader — the verb
+        would keep reading whatever path the process started with, which for this
+        suite is the repository's own config. Re-binding the module attribute is
+        what makes the no-write assertion below a statement about the staged file.
+        """
+        import _config_core
+
+        marshal = tmp_path / '.plan' / 'marshal.json'
+        marshal.parent.mkdir(parents=True, exist_ok=True)
+        marshal.write_text(json.dumps(config), encoding='utf-8')
+        monkeypatch.setattr(_config_core, 'MARSHAL_PATH', marshal)
+        return marshal
+
+    @staticmethod
+    def _config(params: dict) -> dict:
+        """A marshal.json carrying ``params`` on the automatic-review step."""
+        return {'plan': {'phase-6-finalize': {'steps': {_STEP_ID: params}}}}
+
+    def test_verb_reports_the_unknown_token_read_from_disk(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """End to end from the staged file, not from a hand-built param dict."""
+        self._stage(tmp_path, monkeypatch, self._config({'required_bots': _UNREGISTERED_TOKEN}))
+
+        result = upgrade.cmd_validate_bot_lists(argparse.Namespace())
+
+        assert result['status'] == 'success'
+        assert result['operation'] == 'validate-bot-lists'
+        assert result['state'] == 'unknown_tokens'
+        assert result['unknown_tokens'] == [_UNREGISTERED_TOKEN]
+        assert result['known_bot_kinds'] == bot_registry.bot_kinds()
+
+    def test_verb_never_rewrites_marshal_json(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Reports and never rewrites — asserted on the FILE.
+
+        Run against the state most likely to tempt a fix-up — a config carrying an
+        unknown token — so a verb that "helpfully" dropped or corrected it would
+        fail here rather than on a case with nothing to change.
+        """
+        marshal = self._stage(
+            tmp_path, monkeypatch, self._config({'required_bots': _UNREGISTERED_TOKEN})
+        )
+        before = marshal.read_bytes()
+
+        upgrade.cmd_validate_bot_lists(argparse.Namespace())
+
+        assert marshal.read_bytes() == before
+
+    def test_verb_reports_clean_over_a_stated_population(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """The negative control at the verb layer, not just the pure function."""
+        params = _valid_params()
+        self._stage(tmp_path, monkeypatch, self._config(params))
+
+        result = upgrade.cmd_validate_bot_lists(argparse.Namespace())
+
+        assert result['state'] == 'clean'
+        assert result['unknown_tokens'] == []
+        assert result['checked_count'] == len(_configured_tokens(params))
+        assert result['checked_count'] > 0
+
+    def test_verb_is_a_noop_on_a_project_without_the_step(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """State 4 — an absent step is a typed no-op, never a traceback."""
+        self._stage(tmp_path, monkeypatch, {'plan': {}})
+
+        result = upgrade.cmd_validate_bot_lists(argparse.Namespace())
+
+        assert result['status'] == 'success'
+        assert result['state'] == 'noop'
+        assert _STEP_ID in result['detail']
+
+    def test_verb_is_a_noop_on_an_uninitialized_project(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """No marshal.json at all — the verb runs as an upgrade sub-step, which can
+        be pointed at a project that was never initialized."""
+        import _config_core
+
+        monkeypatch.setattr(_config_core, 'MARSHAL_PATH', tmp_path / '.plan' / 'marshal.json')
+
+        result = upgrade.cmd_validate_bot_lists(argparse.Namespace())
+
+        assert result['status'] == 'success'
+        assert result['state'] == 'noop'
+        assert 'marshal.json' in result['detail']
+
+    def test_neither_noop_publishes_a_count_that_could_read_as_a_check(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """The three "nothing was found" answers are kept apart by the COUNT KEY.
+
+        Two of them examined nothing (no config, no step) and carry no
+        ``checked_count`` at all; the third genuinely examined an empty
+        configuration and publishes ``0``. A ``0`` on the first two would be
+        indistinguishable from the third, which is the exact conflation the
+        omission prevents — so the assertion is on the key's ABSENCE, not on its
+        value.
+        """
+        import _config_core
+
+        monkeypatch.setattr(_config_core, 'MARSHAL_PATH', tmp_path / 'absent' / 'marshal.json')
+        uninitialized = upgrade.cmd_validate_bot_lists(argparse.Namespace())
+
+        self._stage(tmp_path, monkeypatch, {'plan': {}})
+        absent_step = upgrade.cmd_validate_bot_lists(argparse.Namespace())
+
+        self._stage(
+            tmp_path, monkeypatch, self._config({'required_bots': '', 'optional_bots': ''})
+        )
+        configured_but_empty = upgrade.cmd_validate_bot_lists(argparse.Namespace())
+
+        assert uninitialized['state'] == 'noop'
+        assert 'checked_count' not in uninitialized
+        assert absent_step['state'] == 'noop'
+        assert 'checked_count' not in absent_step
+        assert configured_but_empty['state'] == 'clean'
+        assert configured_but_empty['checked_count'] == 0
+
+    def test_verb_is_reachable_from_the_constructed_argv(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ):
+        """The CLI entry point routes ``validate-bot-lists`` to the verb.
+
+        Driven through the same ``_run`` seam every other argv case in this module
+        uses, so the subcommand is pinned as reachable rather than only as
+        callable — a handler wired into ``main``'s dispatch chain but never
+        registered as a subparser would be an argparse rejection here.
+        """
+        self._stage(tmp_path, monkeypatch, self._config({'required_bots': _UNREGISTERED_TOKEN}))
+
+        exit_code, parsed = _run(['validate-bot-lists'], capsys, monkeypatch)
+
+        assert exit_code == 0
+        assert parsed['status'] == 'success'
+        assert parsed['operation'] == 'validate-bot-lists'
+        assert parsed['state'] == 'unknown_tokens'
+        assert parsed['unknown_tokens'] == [_UNREGISTERED_TOKEN]

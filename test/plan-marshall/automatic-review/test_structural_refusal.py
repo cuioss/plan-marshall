@@ -111,6 +111,11 @@ _PASSABLE_BY_PLAN_ACTION = {
     rc.STATE_REFUSED_HARD: False,            # a budget the plan cannot restore
     rc.STATE_DECLINED: False,                # re-triggering yields another decline
     rc.STATE_REFUSED_STRUCTURAL: False,      # the ceiling is on the diff, not on time
+    # The remedy is an edit to the reviewer CONFIGURATION — the third case this
+    # classification's own docstring names as outside the plan's reach. No plan-side
+    # move exists at all: the token names no reviewer, so there is nothing to
+    # re-trigger, generate an event for, or await.
+    rc.STATE_UNREGISTERED_KIND: False,
 }
 
 #: Per member: could WAITING, in principle, ever produce the review? This is the axis
@@ -138,6 +143,12 @@ _AWAIT_CAN_EVER_SUCCEED = {
     rc.STATE_REFUSED_HARD: False,            # does not reopen on a useful timescale
     rc.STATE_DECLINED: False,                # the bot answered and will answer the same
     rc.STATE_REFUSED_STRUCTURAL: False,      # ⭐ the diff is the limit; time is not
+    # No reviewer answers to this NAME, and none ever could — participation is keyed
+    # by a bot_kind derived from an author login, so a token outside that codomain
+    # can never be credited however long the wait. This is the strongest ``False`` on
+    # the axis: the others describe a reviewer that will not answer NOW, this one a
+    # reviewer that does not exist.
+    rc.STATE_UNREGISTERED_KIND: False,
 }
 
 

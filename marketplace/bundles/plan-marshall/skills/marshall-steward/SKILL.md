@@ -63,7 +63,7 @@ configure · verify · maintain
 |--------|----------|---------|
 | determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode; also exposes `check-working-prefixes` (project.working_prefixes presence/drift) and `check-staleness` (health-menu executor/config staleness preflight) |
 | gitignore_setup | `plan-marshall:marshall-steward:gitignore_setup` | Configure .gitignore for .plan/ |
-| upgrade | `plan-marshall:marshall-steward:upgrade` | Emit the four-stage `upgrade` verb plan (pure function of `(integrate, project_kind)`); also exposes `migrate-bot-lists`, the idempotent one-shot auto-map of the retired `enabled_bots` knob onto `required_bots` / `optional_bots` driven as the Stage-2 `migrate-bot-lists` sub-step |
+| upgrade | `plan-marshall:marshall-steward:upgrade` | Emit the four-stage `upgrade` verb plan (pure function of `(integrate, project_kind)`); also exposes `migrate-bot-lists`, the idempotent one-shot auto-map of the retired `enabled_bots` knob onto `required_bots` / `optional_bots` driven as the Stage-2 `migrate-bot-lists` sub-step, and `validate-bot-lists`, the read-only report of configured reviewer tokens matching no registered bot kind driven as the Stage-2 `validate-bot-lists` sub-step |
 | cache_freshness | `plan-marshall:marshall-steward:cache_freshness` | Fail-closed three-valued plugin-cache freshness verdict (`fresh\|stale\|unknown`) driving the consumer Stage-1 `cache-freshness-check` sub-step |
 | cache_retention | `plan-marshall:marshall-steward:cache_retention` | Union-keep plugin-cache retention sweep (dry run unless `--apply`) driving the Stage-1 `cache-retention-sweep` sub-step behind the `cache-retention-prune` nested gate |
 | bootstrap_plugin | _(direct Python call)_ | Detect plugin root, cache in `.plan/local/marshall-state.toon` |
@@ -415,6 +415,25 @@ than re-deriving it. Read the current value first:
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan phase-6-finalize step get \
   --step-id plan-marshall:automatic-review
 ```
+
+**`validate-bot-lists` (upgrade Stage 2).** A configured token that matches no registered reviewer
+is its own failure — distinct from a registered reviewer that stayed silent, and fixed by editing
+the name rather than by chasing the reviewer. The `validate-bot-lists` sub_step of Stage 2
+(`reconcile-config`) reaches that token at config-read time, before any pull request exists:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade validate-bot-lists
+```
+
+It **reports and never rewrites**. No token is dropped and no list is rejected — the fail-closed
+participation barrier already blocks on an unregistered name (see
+[`../automatic-review/standards/bot-participation-contract.md`](../automatic-review/standards/bot-participation-contract.md)
+for that taxonomy, which this skill does not restate), so refusing here would turn a one-token typo
+into an unstartable finalize while catching nothing the barrier misses. Its output names the live
+kind set the tokens were checked against — the set the corrected token must be chosen from — and the
+size of the population it actually checked, so a clean verdict over three configured tokens stays
+distinguishable from a clean verdict over none. See the Canonical invocations
+(`upgrade validate-bot-lists`) for the emitted fields and the `noop` states.
 
 ## Blocking-Finding Classification (fixed rule — no wizard seed)
 
@@ -925,6 +944,26 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade migrate-b
 Takes no arguments and operates on the live `marshal.json`. Driven as the
 `migrate-bot-lists` sub-step of upgrade Stage 2; idempotent and self-disarming,
 so a re-run after the legacy `enabled_bots` key is gone is a no-op success.
+
+### upgrade — validate-bot-lists
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade validate-bot-lists
+```
+
+Takes no arguments and READS the live `marshal.json` — it reports and never
+rewrites, so it is safe to run at any point. Driven as the `validate-bot-lists`
+sub-step of upgrade Stage 2. Emits `state` (`clean` | `unknown_tokens` | `noop`),
+`unknown_tokens` (the configured names no registered reviewer answers to,
+de-duplicated across both lists), `known_bot_kinds` (the live registry kind set
+the tokens were checked against — the remedy for an unknown token, not
+decoration) and `checked_count` (the size of the population actually checked).
+
+⛔ **Read `state` first.** The two `noop` states — no `marshal.json`, and no
+`plan-marshall:automatic-review` step — carry NO `checked_count`, and that
+absence is the contract: a `0` published by a run that never looked is
+indistinguishable from a genuine "checked, nothing configured", so a caller
+branching on the count finds no key rather than a false zero.
 
 ### cache_freshness — check
 
