@@ -58,6 +58,7 @@ from _epic_partition import (
     VERDICT_NOT_DERIVABLE,
     VERDICT_ORDER,
     VERDICT_UNCLAIMED,
+    Partition,
     PlanLifecycle,
     UnknownPlanStatusError,
     derive_attribution,
@@ -205,6 +206,48 @@ def _lifecycle_rows(lifecycle: PlanLifecycle) -> list[dict[str, Any]]:
     ]
 
 
+def _contested_rows(partition: Partition) -> list[dict[str, Any]]:
+    """The residual contest, with the claims lifecycle retired beside each row.
+
+    Emitted by three verbs, so both the selection and the row shape are bound
+    here once: a copy per verb is how ``retired`` ends up rendered by some of
+    them and dropped by the rest.
+    """
+    return [
+        {
+            'path': module.path,
+            'plans': ','.join(module.plans),
+            'retired': ','.join(module.retired),
+        }
+        for module in partition.with_verdict(VERDICT_CONTESTED)
+    ]
+
+
+def _sweep_crossing_rows(partition: Partition) -> list[dict[str, Any]]:
+    """Every module a sweep crosses, with the verdict the crossing did NOT change.
+
+    The verdict rides along deliberately: a crossing is a fact recorded BESIDE
+    the verdict, and a row carrying only the sweeps would read as one.
+    """
+    return [
+        {'path': module.path, 'verdict': module.verdict, 'sweeps': ','.join(module.sweeps)}
+        for module in partition.modules
+        if module.sweeps
+    ]
+
+
+def _lifecycle_resolved_rows(partition: Partition) -> list[dict[str, Any]]:
+    """The modules an owner was found for by retiring a finished plan's claim."""
+    return [
+        {
+            'path': module.path,
+            'owner': module.plans[0],
+            'retired': ','.join(module.retired),
+        }
+        for module in partition.lifecycle_resolved()
+    ]
+
+
 def cmd_classify(args: argparse.Namespace) -> dict[str, Any]:
     """Handle ``classify --epic EPIC``.
 
@@ -296,30 +339,12 @@ def cmd_partition(args: argparse.Namespace) -> dict[str, Any]:
         'sweep_plans': sorted(sweeps),
         'lifecycle': _lifecycle_payload(lifecycle),
         'lifecycle_plans': _lifecycle_rows(lifecycle),
-        'lifecycle_resolved': [
-            {
-                'path': module.path,
-                'owner': module.plans[0],
-                'retired': ','.join(module.retired),
-            }
-            for module in partition.lifecycle_resolved()
-        ],
+        'lifecycle_resolved': _lifecycle_resolved_rows(partition),
         'root_claims': [
             {'plan_id': root.plan_id, 'path': root.path} for root in partition.root_claims
         ],
-        'contested': [
-            {
-                'path': module.path,
-                'plans': ','.join(module.plans),
-                'retired': ','.join(module.retired),
-            }
-            for module in partition.with_verdict(VERDICT_CONTESTED)
-        ],
-        'sweep_crossings': [
-            {'path': module.path, 'verdict': module.verdict, 'sweeps': ','.join(module.sweeps)}
-            for module in partition.modules
-            if module.sweeps
-        ],
+        'contested': _contested_rows(partition),
+        'sweep_crossings': _sweep_crossing_rows(partition),
         'modules': [
             {
                 'path': module.path,
@@ -358,19 +383,8 @@ def cmd_attribution(args: argparse.Namespace) -> dict[str, Any]:
         'findings_total': attribution.total_findings(),
         'sweep_plans': sorted(sweeps),
         'lifecycle': _lifecycle_payload(lifecycle),
-        'contested': [
-            {
-                'path': module.path,
-                'plans': ','.join(module.plans),
-                'retired': ','.join(module.retired),
-            }
-            for module in partition.with_verdict(VERDICT_CONTESTED)
-        ],
-        'sweep_crossings': [
-            {'path': module.path, 'verdict': module.verdict, 'sweeps': ','.join(module.sweeps)}
-            for module in partition.modules
-            if module.sweeps
-        ],
+        'contested': _contested_rows(partition),
+        'sweep_crossings': _sweep_crossing_rows(partition),
         'buckets': [
             {'owner': bucket.owner, 'count': len(bucket.findings)}
             for bucket in attribution.buckets
@@ -665,26 +679,9 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
         'sweep_plans': sorted(sweeps),
         'lifecycle': _lifecycle_payload(lifecycle),
         'lifecycle_plans': _lifecycle_rows(lifecycle),
-        'lifecycle_resolved': [
-            {
-                'path': module.path,
-                'owner': module.plans[0],
-                'retired': ','.join(module.retired),
-            }
-            for module in lifecycle_resolved
-        ],
-        'contested': [
-            {
-                'path': module.path,
-                'plans': ','.join(module.plans),
-                'retired': ','.join(module.retired),
-            }
-            for module in contested
-        ],
-        'sweep_crossings': [
-            {'path': module.path, 'verdict': module.verdict, 'sweeps': ','.join(module.sweeps)}
-            for module in crossings
-        ],
+        'lifecycle_resolved': _lifecycle_resolved_rows(partition),
+        'contested': _contested_rows(partition),
+        'sweep_crossings': _sweep_crossing_rows(partition),
         'baseline_drift': {
             'baseline_supplied': baseline_supplied,
             'baseline_count': len(baseline),
