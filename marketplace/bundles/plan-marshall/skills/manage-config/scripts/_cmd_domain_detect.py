@@ -15,11 +15,7 @@ three legs:
   the real affected_files), else path-like tokens extracted from the narrative
   the detector already reads (init, pre-module-mapping).
 
-``ambiguous`` is ``true`` when the detector multi-matches. Every other zero match
-resolves silently (``ambiguous=false``): the always_on / glob legs alone give
-``reason='inclusion_only_resolve'``, and an otherwise-unresolved zero match
-over-provisions the whole offerable domain set under
-``reason='over_provisioned_resolve'``. There is no LLM dispatch on this path.
+There is no LLM dispatch on this path.
 
 The offerable set the caller prompts over is split across two sibling fields:
 ``candidates`` is the detector's narrative matches, and ``additional_candidates``
