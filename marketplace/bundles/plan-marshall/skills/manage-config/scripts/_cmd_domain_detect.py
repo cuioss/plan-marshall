@@ -4,16 +4,12 @@
 
 Walks the plan's clarified-request narrative for explicit mentions of
 configured skill_domains (or their bundle aliases) and returns the SET of
-matching domains. The returned ``domains`` list is the unconditional union of
-three legs:
+matching domains. The composition contract — the merge legs and the exception to
+them — is documented in ``standards/skill-domains.md`` § Domain Inclusion.
 
-- ``detector_set``    — narrative / override / single-domain resolution (ALL
-  narrative matches are kept, not just a single winner).
-- ``always_on_set``   — domains flagged ``always_on: true`` in skill_domains.
-- ``glob_matched_set`` — domains whose ``file_globs`` match any path in the file
-  signal. The file signal is ``--affected-files`` when supplied (refine passes
-  the real affected_files), else path-like tokens extracted from the narrative
-  the detector already reads (init, pre-module-mapping).
+The file signal feeding the ``file_globs`` leg is ``--affected-files`` when
+supplied (refine passes the real affected_files), else path-like tokens extracted
+from the narrative the detector already reads (init, pre-module-mapping).
 
 There is no LLM dispatch on this path.
 

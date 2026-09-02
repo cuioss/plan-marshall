@@ -4,8 +4,7 @@
 
 Deterministic domain detector for phase-1-init Step 7 and phase-2-refine. Walks
 the clarified-request narrative for explicit bundle / skill mentions and returns
-the SET of matching domains — the unconditional union of the detector, always_on,
-and file_globs merge legs. There is no LLM dispatch fallback on this path.
+the SET of matching domains. There is no LLM dispatch fallback on this path.
 """
 
 from __future__ import annotations
