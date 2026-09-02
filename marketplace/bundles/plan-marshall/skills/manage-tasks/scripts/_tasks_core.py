@@ -365,6 +365,13 @@ _BARE_LIST_HEADER_RE = re.compile(r'^(?P<indent> *)(?P<key>steps|skills|commands
 _DECLARED_LIST_HEADER_RE = re.compile(r'^(?P<indent> *)(?P<key>steps|skills|commands)\[\d+\]:[ \t]*$')
 _LIST_ITEM_RE = re.compile(r'^(?P<indent> *)- (?P<value>.*)$')
 
+#: Opens a TOON block scalar — a key whose whole value is the ``|`` marker, as in
+#: ``description: |``. Everything indented beneath it is opaque PROSE that
+#: ``toon_parser._parse_multiline_value`` consumes verbatim, never document
+#: structure. A line inside such a body that happens to read ``steps:`` is a
+#: sentence, so the list-header patterns above must not be tested against it.
+_BLOCK_SCALAR_HEADER_RE = re.compile(r'^(?P<indent> *)[\w_-]+:[ \t]*\|[ \t]*$')
+
 #: Top-level keys the task schema recognises. Anything else the canonical
 #: parser returns is named on a validation failure rather than silently
 #: discarded, so a mis-serialised field is attributable.
@@ -408,6 +415,35 @@ class _RawListItem(NamedTuple):
     bare_header: bool
 
 
+def _copy_block_scalar_body(lines: list[str], start: int, header_indent: int, out: list[str]) -> int:
+    """Copy a block scalar's body through untouched and report where it ends.
+
+    The extent rule mirrors ``toon_parser._parse_multiline_value`` exactly, because
+    a body this function walks past must be the same body the canonical parser
+    later reads: the block runs while lines are blank or indented deeper than the
+    ``key: |`` header, and closes at the first non-blank line indented at or
+    outside it. Deriving the boundary a second way would let the two disagree
+    about which lines are prose.
+
+    Args:
+        lines: The document's lines.
+        start: Index of the first line after the block-scalar header.
+        header_indent: Leading-space count of the ``key: |`` header line.
+        out: Output accumulator; body lines are appended verbatim.
+
+    Returns:
+        Index of the first line past the block body.
+    """
+    i = start
+    while i < len(lines):
+        line = lines[i]
+        if line.strip() and len(line) - len(line.lstrip()) <= header_indent:
+            break
+        out.append(line)
+        i += 1
+    return i
+
+
 def _normalize_list_headers(content: str) -> tuple[str, dict[str, list[_RawListItem]]]:
     """Rewrite bare list-block headers to the canonical length-declared form.
 
@@ -417,6 +453,15 @@ def _normalize_list_headers(content: str) -> tuple[str, dict[str, list[_RawListI
     ``key:``, which the canonical parser reads as a nested object and yields no
     items for. Rewriting the bare header to ``key[N]:`` lets the one canonical
     parser read both shapes, so this module keeps no list reader of its own.
+
+    The scan carries block-scalar state, so it only ever tests lines the canonical
+    parser reads as document STRUCTURE. A ``description: |`` block's body is
+    free-form prose, and a documented task description may legitimately contain an
+    indented ``steps:`` line with ``- `` rows beneath it. Without that state such a
+    line matches the bare-header pattern: its prose rows would be harvested into
+    ``raw_items`` and put before the outer-quote guard, and the header itself would
+    be rewritten to ``steps[N]:`` inside the user's own text. Block bodies are
+    therefore copied through verbatim by ``_copy_block_scalar_body``.
 
     Args:
         content: The raw TOON task definition.
@@ -439,6 +484,13 @@ def _normalize_list_headers(content: str) -> tuple[str, dict[str, list[_RawListI
 
     while i < len(lines):
         line = lines[i]
+
+        block = _BLOCK_SCALAR_HEADER_RE.match(line)
+        if block:
+            out.append(line)
+            i = _copy_block_scalar_body(lines, i + 1, len(block.group('indent')), out)
+            continue
+
         bare = _BARE_LIST_HEADER_RE.match(line)
         header = bare or _DECLARED_LIST_HEADER_RE.match(line)
         if not header:

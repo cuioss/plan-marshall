@@ -664,23 +664,45 @@ verification:
 - `origin`: `plan` (from task-plan), `fix` (from verify), `sonar`, `pr`, `lint`, `security`, or `documentation`
 
 **List field forms**: structural parsing is delegated to the canonical
-`plan-marshall:ref-toon-format` parser, so `steps`, `skills` and
-`verification.commands` each accept three interchangeable shapes:
+`plan-marshall:ref-toon-format` parser. The two row-based shapes are
+interchangeable on every list field; the uniform-array shape is `steps` only:
 
-| Form | Shape |
-|------|-------|
-| Bare block | `steps:` followed by `  - path (intent)` rows |
-| Length-declared | `steps[2]:` followed by the same `  - path (intent)` rows |
-| Uniform array | `steps[2]{target,intent}:` followed by CSV rows `path,intent` — the shape `serialize_toon` emits for a stored task record |
+| Form | Shape | Accepted for |
+|------|-------|--------------|
+| Bare block | `key:` followed by `  - item` rows | `steps`, `skills`, `verification.commands` |
+| Length-declared | `key[2]:` followed by the same `  - item` rows | `steps`, `skills`, `verification.commands` |
+| Uniform array | `steps[2]{target,intent}:` followed by CSV rows `path,intent` | `steps` only |
 
-Because the uniform-array form is accepted, a task record round-trips:
-`parse_stdin_task(serialize_toon(task))` reproduces `steps`, `skills` and
-`verification.commands` without loss.
+The uniform-array shape is scoped to `steps` because it is a shape for rows of
+FIELDS: `serialize_toon` emits it only for a list of dicts, and `steps` is the
+only list field whose items are dicts (`{target, intent}`). `skills` and
+`verification.commands` are lists of plain strings, so the serializer never
+writes them that way and the reader coerces each of their rows with `str()`.
+A hand-written `skills[2]{name}:` block is therefore **not** rejected — each row
+is stringified into a value like `"{'name': 'x'}"`, which is silent corruption
+rather than an error. Write those two fields in one of the row-based forms.
 
-**Outer quotes**: do not hand-quote list items. A value the serializer must
-quote (one containing `:`, `,` or an embedded `"`) is accepted and unquoted
-automatically; an outer quote on a value that needed none is rejected as an
-anti-pattern.
+Round-tripping is unaffected: `parse_stdin_task(serialize_toon(task))`
+reproduces `steps`, `skills` and `verification.commands` without loss, because
+the serializer writes each field in the shape that field accepts.
+
+**Outer quotes**: do not hand-quote list items. An outer-quoted item is accepted
+only when `serialize_toon` could have produced that quote, which takes BOTH of:
+
+- **Header provenance** — the item sits under the length-declared `key[N]:`
+  header. The serializer never writes a bare `key:` header, so a quote under one
+  cannot be its, whatever the value contains.
+- **Value provenance** — the value is one the serializer is obliged to quote.
+  `value_needs_quoting` in `plan-marshall:ref-toon-format` is the authority on
+  that; it is not re-derived here, and it covers more than the obvious cases
+  (a value containing `:` or the table separator, an embedded `"`, a leading
+  `#`, a bare `true` / `false` / `null`, and others).
+
+An accepted item is unquoted automatically. Everything else is rejected: an
+outer quote on a value that needed none, and — regardless of the value — any
+outer quote under a bare `key:` header. Note the consequence of the two
+conjuncts together: an item accepted verbatim under `steps[1]:` is rejected
+byte-for-byte identical under `steps:`.
 
 ### List/Next Filters
 

@@ -21,7 +21,7 @@ mode: knowledge
 - TOON is only for internal plan-marshall marketplace operations
 - Length declarations `[N]` must match actual row counts
 - Field headers `{fields}` must match all rows
-- Import parser via `from toon_parser import parse_toon, serialize_toon`
+- Import what you need from `toon_parser` (e.g. `from toon_parser import parse_toon, serialize_toon`); never re-implement a reader or a quoting rule locally
 
 ## Reference
 
@@ -33,7 +33,12 @@ mode: knowledge
 
 | Module | Purpose |
 |--------|---------|
-| `scripts/toon_parser.py` | TOON parsing and serialization (`parse_toon`, `serialize_toon`, `parse_toon_table`) |
+| `scripts/toon_parser.py` | TOON parsing and serialization. The public surface is the module's `__all__` — `ToonParseError`, `parse_toon`, `parse_toon_table`, `serialize_toon`, `value_needs_quoting` — and `__all__` is the authority when this list and the module disagree. |
+
+`value_needs_quoting` reports whether the serializer is OBLIGED to wrap a value in
+outer double quotes. A consumer that must decide whether a quote it is looking at
+could have come from `serialize_toon` consults this predicate rather than
+re-deriving the rule, so both sides of that decision stay in one place.
 
 ### Known Limitations
 

@@ -41,13 +41,14 @@ from dataclasses import dataclass
 #: not help — a bare ``python3`` form fails on the project's ``PyYAML``
 #: dependency instead.
 #:
-#: ⛔ **Defined here ONCE, and deliberately nowhere else.** A guard cannot forbid
-#: a string it must itself spell: a repository-wide sweep for this literal would
-#: report every guard that names it as a prescriber of it. Centralising the
-#: spelling means exactly one file in the tree contains it, so that sweep needs
-#: exactly one path exemption instead of a growing list of guard modules — and
-#: the exemption is a definition site, the same kind of exemption the pyprojectx
-#: alias table takes.
+#: ⛔ **Defined here ONCE, and deliberately nowhere else among the guards.** A
+#: guard cannot forbid a string it must itself spell: a repository-wide sweep for
+#: this literal would report every guard that names it as a prescriber of it.
+#: Centralising the spelling keeps the guard modules out of that sweep's results,
+#: so the sibling sweep exempts DEFINITION sites only — this module, and the
+#: pyprojectx alias table where the wrapper aliases are declared. That sweep's
+#: own ``_EXCLUDED_PATHS`` tuple is the authority on which sites those are; do
+#: not restate its membership here.
 DEFECTIVE_GENERATOR_CALL = 'uv run python marketplace/targets/generate.py'
 
 #: The wrapper form every prescription uses instead. ``generate`` forwards

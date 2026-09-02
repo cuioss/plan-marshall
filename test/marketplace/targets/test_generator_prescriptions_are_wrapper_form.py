@@ -3,13 +3,18 @@
 # ruff: noqa: I001
 """No file in the tree prescribes the generator invocation that exits 127.
 
-The generator was documented across four modules, two developer guides, two
-READMEs, two repository-root instruction files and a project-local skill — every
-one of them naming a command that fails from a normal shell, because ``uv`` is
-installed only into the project-local ``.pyprojectx/`` tree. Repairing the sites
-that happened to be discovered would leave the rest live, so this guard makes the
-repair durable: reintroducing the broken form anywhere in the scanned roots fails
-the suite.
+The generator was prescribed throughout the tree — bundle sources, developer
+guides, READMEs, repository-root instruction files and project-local skills alike
+— every occurrence naming a command that fails from a normal shell, because
+``uv`` is installed only into the project-local ``.pyprojectx/`` tree. Repairing
+the sites that happened to be discovered would leave the rest live, so this guard
+makes the repair durable: reintroducing the broken form anywhere in the scanned
+roots fails the suite.
+
+**The repaired population is not enumerated here.** This guard derives its scope
+by walking :data:`_SCAN_ROOTS`, and a list of sites copied into prose is a second,
+unmaintained count that drifts from that walk the moment a site is added. What the
+guard covers is what it publishes at runtime, below.
 
 **The guard publishes the roots it walked and the number of files it read.** A
 walk that resolves nothing reports no offenders, which is indistinguishable from
@@ -67,9 +72,9 @@ _SKIPPED_DIRS = frozenset({'__pycache__', '.git', 'node_modules', 'target', 'wor
 _ALIAS_DEFINITION = 'pyproject.toml'
 
 #: EXCLUSION 2 — the shared module that DEFINES the forbidden literal. A guard
-#: cannot forbid a string it must itself name; centralising the spelling in one
-#: module means this sweep needs one path exemption rather than a growing list of
-#: guard modules, each of which would otherwise have to be exempted by name.
+#: cannot forbid a string it must itself name; centralising the spelling in that
+#: one module lets this sweep exempt the definition site instead of exempting
+#: every guard module by name as guards are added.
 _LITERAL_DEFINITION = 'test/_shared/_documented_example_scan.py'
 
 #: Both exclusions, each a DEFINITION SITE rather than an unfixed defect. Stated
