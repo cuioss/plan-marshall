@@ -68,6 +68,7 @@ from _manifest_core import (
 )
 from _manifest_decide import (
     _decide,  # noqa: F401
+    _read_raw_settled_change_type,  # noqa: F401
     _read_recipe_source,  # noqa: F401
     _read_settled_change_type,  # noqa: F401
     _read_task_queue_active,  # noqa: F401
@@ -1848,7 +1849,24 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # § "change_type scope reconciliation".
     supplied_change_type = args.change_type
     settled_change_type = _read_settled_change_type(plan_id)
-    if settled_change_type is not None and settled_change_type != supplied_change_type:
+    if settled_change_type is None:
+        # A settled value that is PRESENT but non-canonical reads as ``None`` above —
+        # it is unusable, not a conflicting scope, so it must not reach the refusal
+        # below (no supplied value can equal it, so every re-run would refuse and the
+        # plan could never compose). The fall-through is to the supplied value on the
+        # existing no-settled path; naming the discarded value here is what keeps that
+        # fall-through auditable, since the return alone cannot distinguish "absent"
+        # from "unusable".
+        discarded_settled_change_type = _read_raw_settled_change_type(plan_id)
+        if discarded_settled_change_type is not None:
+            _emit_decision_log(
+                plan_id,
+                '(plan-marshall:manage-execution-manifest:compose) change_type reconciliation — '
+                f'discarded unusable settled status.metadata.change_type='
+                f'{discarded_settled_change_type!r} (not one of {list(VALID_CHANGE_TYPES)}); '
+                f'composing on the supplied --plan-change-type={supplied_change_type!r}',
+            )
+    elif settled_change_type != supplied_change_type:
         return {
             'status': 'error',
             'plan_id': plan_id,
