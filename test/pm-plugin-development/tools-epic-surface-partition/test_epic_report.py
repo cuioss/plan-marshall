@@ -497,7 +497,8 @@ def test_injected_controls_are_reported_with_their_demonstrating_control(disagre
     assert {row['control'] for row in controls} == {
         'injected_unclaimed_directory',
         'injected_double_claim',
-        'clean_corpus_control',
+        'clean_corpus_unclaimed_control',
+        'clean_corpus_contested_control',
         'injected_root_span',
         'injected_container_span',
         'injected_cross_plan_citation',

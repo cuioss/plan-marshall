@@ -15,6 +15,13 @@ The four subcommands share the seam, so every case runs against all four: the
 SKILL.md claim that they share the three error shapes is the thing under test,
 not an assumption.
 
+The BASELINE branch is the one exception, and deliberately so: ``report`` is the
+only subcommand that takes ``--baseline-findings``, so its ``baseline_unreadable``
+cases run against ``report`` alone. It is also the tool's only OPERATOR-supplied
+path, which makes it the one input that could leave the structured-payload path
+altogether — so it is pinned here beside the three seam errors, with a matched
+positive control asserting a readable baseline still succeeds.
+
 Namespaces are built by the script's OWN parser via ``parse_ns`` and dispatched
 through the handler the parser wired, so no default is hand-supplied. Every
 corpus is built under ``tmp_path``; the real orchestrator store is neither read
@@ -47,6 +54,11 @@ ERROR_INVALID_SLUG = 'invalid_epic_slug'
 ERROR_CORPUS_NOT_FOUND = 'epic_corpus_not_found'
 ERROR_UNCLASSIFIABLE = 'unclassifiable_spec'
 
+#: The BASELINE error code, and the one subcommand that can emit it. Written as
+#: literals for the same reason as the three above.
+ERROR_BASELINE_UNREADABLE = 'baseline_unreadable'
+BASELINE_VERB = 'report'
+
 #: A slug carrying traversal and separator components — rejected by the real
 #: store resolver, so this branch runs against the production validator.
 UNSAFE_SLUG = 'test-quality/../escape'
@@ -55,9 +67,9 @@ UNSAFE_SLUG = 'test-quality/../escape'
 # --- scaffolding -------------------------------------------------------------
 
 
-def invoke(verb: str, epic: str) -> dict[str, Any]:
+def invoke(verb: str, epic: str, *extra: str) -> dict[str, Any]:
     """Run one subcommand through the real parser and the module under test."""
-    namespace = parse_ns(BUNDLE, SKILL, SCRIPT, verb, '--epic', epic, register=False)
+    namespace = parse_ns(BUNDLE, SKILL, SCRIPT, verb, '--epic', epic, *extra, register=False)
     handler = getattr(entry, namespace.handler.__name__)
     payload: dict[str, Any] = handler(namespace)
     return payload
@@ -82,6 +94,22 @@ def unclassifiable(epic_dir: Path) -> Path:
     plans.mkdir()
     (plans / 'PLAN-900.md').write_text(
         '# PLAN-900\n\n## Notes\n\nNo surface section here.\n', encoding='utf-8'
+    )
+    return plans
+
+
+@pytest.fixture
+def loadable(epic_dir: Path) -> Path:
+    """The same store root, carrying one spec the classifier accepts.
+
+    The baseline cases need the corpus load to SUCCEED, so the run reaches the
+    baseline read at all; against an unloadable corpus they would pass on the
+    corpus error and never exercise the guard under test.
+    """
+    plans = epic_dir / 'plans'
+    plans.mkdir()
+    (plans / 'PLAN-900.md').write_text(
+        '# PLAN-900\n\n## Expected Surface\n\n- Adds `test/alpha/**`\n', encoding='utf-8'
     )
     return plans
 
@@ -149,11 +177,72 @@ def test_unclassifiable_spec_names_the_offending_spec_and_the_cause(
     assert 'Expected Surface' in payload['reason']
 
 
+# --- baseline_unreadable ------------------------------------------------------
+
+
+def test_absent_baseline_file_reports_baseline_unreadable(loadable: Path, tmp_path: Path) -> None:
+    payload = invoke(
+        BASELINE_VERB, 'fixture-epic', '--baseline-findings', str(tmp_path / 'nowhere.txt')
+    )
+
+    assert payload['status'] == 'error'
+    assert payload['error'] == ERROR_BASELINE_UNREADABLE
+
+
+def test_undecodable_baseline_file_reports_baseline_unreadable(
+    loadable: Path, tmp_path: Path
+) -> None:
+    """The decode arm, which the absent-file case alone would leave unexercised.
+
+    Two different exception types reach the same guard, and a guard catching only
+    ``OSError`` would still crash on a byte sequence that is not UTF-8 — so the
+    arm is demonstrated rather than assumed to be covered by its sibling.
+    """
+    undecodable = tmp_path / 'baseline.bin'
+    undecodable.write_bytes(b'\xff\xfe not utf-8 \xff')
+
+    payload = invoke(BASELINE_VERB, 'fixture-epic', '--baseline-findings', str(undecodable))
+
+    assert payload['status'] == 'error'
+    assert payload['error'] == ERROR_BASELINE_UNREADABLE
+
+
+def test_baseline_unreadable_names_the_path_and_the_cause(loadable: Path, tmp_path: Path) -> None:
+    missing = tmp_path / 'nowhere.txt'
+
+    payload = invoke(BASELINE_VERB, 'fixture-epic', '--baseline-findings', str(missing))
+
+    assert payload['epic'] == 'fixture-epic'
+    assert payload['baseline_findings'] == str(missing)
+    assert payload['reason'].strip()
+
+
+def test_a_readable_baseline_still_reports_success(loadable: Path, tmp_path: Path) -> None:
+    """The matched positive control: the guard refuses a bad path, not every path.
+
+    Without it the two refusals above would pass identically against a guard that
+    had broken the readable case as well.
+    """
+    baseline = tmp_path / 'baseline.txt'
+    baseline.write_text('test/alpha/test_departed.py\n', encoding='utf-8')
+
+    payload = invoke(BASELINE_VERB, 'fixture-epic', '--baseline-findings', str(baseline))
+
+    assert payload['status'] == 'success'
+    assert payload['baseline_drift']['baseline_supplied'] is True
+
+
 # --- the emitted codes are the ones the routing table publishes ---------------
 
 
 @pytest.mark.parametrize(
-    'code', [ERROR_INVALID_SLUG, ERROR_CORPUS_NOT_FOUND, ERROR_UNCLASSIFIABLE]
+    'code',
+    [
+        ERROR_INVALID_SLUG,
+        ERROR_CORPUS_NOT_FOUND,
+        ERROR_UNCLASSIFIABLE,
+        ERROR_BASELINE_UNREADABLE,
+    ],
 )
 def test_emitted_error_code_appears_in_the_documented_routing_table(code: str) -> None:
     documented = (get_skill_dir(BUNDLE, SKILL) / 'SKILL.md').read_text(encoding='utf-8')

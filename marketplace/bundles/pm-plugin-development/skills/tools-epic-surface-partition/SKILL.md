@@ -144,11 +144,20 @@ disagreements: a rendered disagreement is the product, not a failure.
 | `error` | `epic_corpus_not_found` | No `plans/` directory under the named epic |
 | `error` | `invalid_epic_slug` | The slug carries a path separator or traversal component |
 | `error` | `unknown_plan_status` | A ledger row carries a status the terminal/active partition does not cover; the plan is in `plan_id`, the value in `plan_status`, and the covered vocabulary in `known_terminal` / `known_active` |
+| `error` | `baseline_unreadable` | The `--baseline-findings` path could not be read or decoded; the path is in `baseline_findings`, the cause in `reason` |
 
 The first three are CORPUS-load failures and every subcommand emits them. The
 fourth is a LEDGER failure, so only the three subcommands that read the ledger —
 `partition`, `attribution` and `report` — can emit it; `classify` reads the
-corpus alone and never does. Only the `success` payload is subcommand-specific.
+corpus alone and never does. The fifth is a BASELINE failure, so only `report`
+can emit it — it is the one subcommand that takes `--baseline-findings` at all.
+Only the `success` payload is subcommand-specific.
+
+⛔ `baseline_unreadable` is what keeps `report`'s exits-0-regardless contract
+true for its one OPERATOR-supplied path. Drift itself never changes the exit
+status, but a baseline file that cannot be read is a different fact from a
+baseline that disagrees — so it is reported as a structured error naming the
+path, not folded into a zero-drift comparison and not left to crash.
 
 ⛔ `unknown_plan_status` is the one error the tool raises about ITS OWN model
 rather than about the input's availability. A ledger that cannot be read at all
@@ -162,8 +171,9 @@ are the only keys common to all four emitted shapes.
 A **success** payload additionally carries `plans_dir` and the keys of the
 subcommand that produced it, documented per subcommand below. An **error**
 payload instead carries `error` plus the keys that error names: `reason` for
-`invalid_epic_slug` and `unclassifiable_spec` (the latter also naming the
-offending `spec`), `plans_dir` for `epic_corpus_not_found`, and
+`invalid_epic_slug`, `unclassifiable_spec` and `baseline_unreadable` (the second
+of those also naming the offending `spec`, the third the offending
+`baseline_findings` path), `plans_dir` for `epic_corpus_not_found`, and
 `plan_id` / `plan_status` / `known_terminal` / `known_active` for
 `unknown_plan_status`.
 

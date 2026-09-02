@@ -105,6 +105,18 @@ class _LedgerError(_PayloadError):
     """
 
 
+class _BaselineError(_PayloadError):
+    """A supplied BASELINE file the report cannot read.
+
+    ⛔ A third class for the same reason the ledger has a second one: the
+    baseline is a third input source, and reporting an unreadable operator file
+    under a corpus- or ledger-shaped code would name the wrong input. It is also
+    the only one of the three raised by an OPERATOR-supplied path, which is why
+    the read that raises it is guarded rather than left to the generic crash
+    handler — see :func:`_read_baseline`.
+    """
+
+
 def _load_corpus(epic: str) -> tuple[list[Any], Path, Path, Path]:
     """Resolve the epic's spec corpus and classify it.
 
@@ -433,10 +445,21 @@ _OVERLAP_PREFIX = 'marketplace/bundles/'
 #: checker, so these are rendered as a first-class report section.
 #:
 #: The set is COMPLETE — every control group shipped in the demonstrations module
-#: appears here. Both directions are pinned in
+#: is named here. Both directions are pinned in
 #: ``test_epic_report_reproducibility.py``: one guard walks this tuple to the
 #: tests, the other walks the shipped groups back to this tuple, so neither a
 #: removal here nor an addition there can drift the claim unnoticed.
+#:
+#: ⛔ Each ``expectation`` states ONE property, demonstrated in FULL by the ONE
+#: test it cites. ``demonstrated_by`` is a single ``module::function``, so a
+#: conjunctive expectation would cite evidence for only part of what it claims —
+#: exactly the confident-signal-hides-a-caveat defect this report exists to
+#: surface, and one neither reproducibility guard can see: the forward guard only
+#: asks whether the cited test EXISTS and the reverse guard only asks whether the
+#: shipped GROUP is named, and neither compares an expectation against what its
+#: citation actually demonstrates. The positive control is therefore two entries
+#: rather than one two-sided entry, so the group→entry mapping is deliberately
+#: not one-to-one.
 _INJECTED_CONTROLS = (
     (
         'injected_unclaimed_directory',
@@ -450,9 +473,14 @@ _INJECTED_CONTROLS = (
         'test_epic_partition_injected_failures.py::test_injected_double_claim_is_reported_by_name',
     ),
     (
-        'clean_corpus_control',
-        'the clean fixture corpus reports neither unclaimed nor contested',
+        'clean_corpus_unclaimed_control',
+        'the clean fixture corpus reports nothing unclaimed',
         'test_epic_partition_injected_failures.py::test_clean_corpus_reports_nothing_unclaimed',
+    ),
+    (
+        'clean_corpus_contested_control',
+        'the clean fixture corpus reports nothing contested',
+        'test_epic_partition_injected_failures.py::test_clean_corpus_reports_nothing_contested',
     ),
     (
         'injected_root_span',
@@ -521,7 +549,7 @@ def _verb_command(verb: str, epic: str) -> str:
     return f'python3 .plan/execute-script.py {_NOTATION} {verb} --epic {epic}'
 
 
-def _read_baseline(path: str | None) -> tuple[bool, frozenset[str]]:
+def _read_baseline(path: str | None, epic: str) -> tuple[bool, frozenset[str]]:
     """The recorded baseline finding set, and whether one was supplied at all.
 
     ⛔ The baseline is a POST-HOC comparison, never an input to the derivation:
@@ -529,10 +557,32 @@ def _read_baseline(path: str | None) -> tuple[bool, frozenset[str]]:
     baseline only decides what the drift section reports. An absent baseline is
     reported as unsupplied rather than as an empty one, so "no baseline given"
     can never be read as "nothing drifted".
+
+    ⛔ The read is GUARDED, and the guard is what makes ``cmd_report``'s exit-0
+    contract true rather than merely stated. ``--baseline-findings`` is the only
+    operator-supplied PATH the verb takes; unguarded it was also the only input
+    whose failure left the structured-payload path altogether, reaching the
+    generic ``safe_main`` crash handler and exiting 1 with an ``internal_error``
+    payload that names neither the flag nor the file.
+
+    Raises:
+        _BaselineError: when a supplied path cannot be read or decoded, carrying
+            the offending path and the underlying reason.
     """
     if path is None:
         return False, frozenset()
-    text = Path(path).read_text(encoding='utf-8')
+    try:
+        text = Path(path).read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError) as error:
+        raise _BaselineError(
+            {
+                'status': 'error',
+                'error': 'baseline_unreadable',
+                'epic': epic,
+                'baseline_findings': path,
+                'reason': str(error),
+            }
+        ) from error
     return True, frozenset(line.strip() for line in text.splitlines() if line.strip())
 
 
@@ -553,6 +603,13 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
     comparison result and not a failure. The specs are git-ignored and absent
     from a fresh clone, so no CI check could read them and this must never gate
     a build.
+
+    The MECHANISM behind "exits 0 regardless" is that every input failure is
+    raised as a :class:`_PayloadError` and returned as a structured payload from
+    this function, so the process still exits 0 through ``safe_main``. That
+    holds for all three input sources — the corpus, the ledger and the supplied
+    baseline — so no input this verb takes can reach the crash handler and turn
+    the stated contract into a wrong one.
     """
     try:
         claims, epic_dir, plans_dir, repo_root = _load_corpus(args.epic)
@@ -578,7 +635,10 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
     not_derivable = partition.with_verdict(VERDICT_NOT_DERIVABLE)
     lifecycle_resolved = partition.lifecycle_resolved()
 
-    baseline_supplied, baseline = _read_baseline(args.baseline_findings)
+    try:
+        baseline_supplied, baseline = _read_baseline(args.baseline_findings, args.epic)
+    except _PayloadError as error:
+        return error.payload
     observed = frozenset(finding.path for finding in findings)
     drift_added = sorted(observed - baseline) if baseline_supplied else []
     drift_removed = sorted(baseline - observed) if baseline_supplied else []
