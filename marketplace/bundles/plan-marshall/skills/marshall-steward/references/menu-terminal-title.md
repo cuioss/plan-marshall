@@ -107,8 +107,11 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
 ```
 
 Inspect the `display` entry in the `results` array. Its `detail` field reports
-every piece on its own line, each ending in `present`, `divergence`, or
-`MISSING`. Once the overall `status` has routed the flow (see the branch rule
+every piece on its own line, each ending in that piece's state value — the
+per-label value domain is `platform-runtime`'s `standards/contract.md`
+§ "The per-label value domain of `detail`", which is also where the labels that
+can never read `divergence` are named. Once the overall `status` has routed the
+flow (see the branch rule
 below), the `detail` lines are how a PARTIAL install is diagnosed — each
 `MISSING` line names one render entry, statusLine, or env value still to be
 installed. Read them as a diagnosis, never as the branch condition: this list
