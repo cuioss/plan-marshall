@@ -101,6 +101,7 @@ _assub = _load('_analyze_shell_substitution_in_skills.py', '_assub_fixtures')
 _abcs = _load('_analyze_bash_chain_shapes_in_skills.py', '_abcs_fixtures')
 _awdtef = _load('_analyze_workflow_doc_toon_error_field.py', '_awdtef_fixtures')
 _aar = _load('_analyze_askuserquestion_reachability.py', '_aar_fixtures')
+_aapq = _load('_analyze_askuserquestion_prompt_quality.py', '_aapq_fixtures')
 _ahps = _load('_analyze_historical_prose_in_skills.py', '_ahps_fixtures')
 _airid = _load('_analyze_incident_reference_in_docs.py', '_airid_fixtures')
 _alis = _load('_analyze_lesson_id_in_skill_prose.py', '_alis_fixtures')
@@ -548,6 +549,23 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
                 'AskUserQuestion:\n'
                 '  questions:\n'
                 '    - question: "pick one"\n'
+            )
+        },
+    )
+    # askuserquestion-prompt-quality: an ``AskUserQuestion:`` invocation block
+    # whose preamble names a workflow step number (check A / obligation 5) and
+    # whose option declares a label with no description (check B / obligation 1).
+    # No ``implements:`` frontmatter is needed — this rule scans every skill
+    # markdown, not only dispatched-leaf workflow docs.
+    corpus['askuserquestion-prompt-quality'] = FixtureSpec(
+        analyzer=_aapq.analyze_askuserquestion_prompt_quality,
+        files={
+            _PM_SKILL: (
+                '# F\n\n'
+                'AskUserQuestion:\n'
+                '  question: "Per Step 7 this needs an operator decision"\n'
+                '  options:\n'
+                '    - label: "Proceed"\n'
             )
         },
     )

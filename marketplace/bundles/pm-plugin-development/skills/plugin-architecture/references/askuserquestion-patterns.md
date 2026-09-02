@@ -1,269 +1,140 @@
-# AskUserQuestion Patterns
+# AskUserQuestion Authoring Obligations
 
-Guide for using the `AskUserQuestion` tool effectively in marketplace components.
+Five obligations every `AskUserQuestion` prompt in this marketplace must meet. Each one is stated as a rule a prompt can be tested against — not as advice — and each carries an **enforced by** marker naming what actually checks it.
 
-## Concept
+Three obligations (1, 2, 5) are mechanically checked by the `askuserquestion-prompt-quality` rule in [`plugin-doctor`](../../plugin-doctor/references/rule-catalog.md). Two (3, 4) are author judgement only. Read [What this document does not enforce](#what-this-document-does-not-enforce) before treating a clean doctor run as a verdict.
 
-The `AskUserQuestion` tool provides structured user interaction with predefined options. It automatically adds an "Other" option for free-text input.
+The reader answering the prompt knows their own problem. They do not know this system. Every obligation below follows from that one asymmetry.
 
-### Tool Characteristics
+## Obligation 1 — Every option states its consequence
 
-| Aspect | Behavior |
-|--------|----------|
-| Options | 2-4 predefined options required |
-| "Other" option | Automatically added by UI (not customizable) |
-| "Other" label | Fixed as "Type something." (hardcoded) |
-| Multi-select | Supported via `multiSelect: true` |
-| Header | Max 12 characters |
+An option's description says **what happens when it is chosen**, not what the option is called. An option carrying a label and no description, or a description that only restates the label, fails.
 
-### Schema
+**Enforced by**: `askuserquestion-prompt-quality`, check B.
 
-```typescript
-interface AskUserQuestionTool {
-  questions: Question[];      // 1-4 questions (required)
-}
-
-interface Question {
-  question: string;           // Complete question text (required)
-  header: string;             // Max 12 characters (required)
-  multiSelect: boolean;       // Allow multiple selections (required)
-  options: Option[];          // 2-4 options (required)
-}
-
-interface Option {
-  label: string;              // 1-5 words, concise (required)
-  description: string;        // Explanation of choice (required)
-}
-```
-
-## Patterns
-
-### Pattern 1: Selection with Free-Text Alternative
-
-When you need users to either select from options OR provide custom input.
-
-**Use Case**: Plan selection where user can also create new plan.
-
-**Question Design**: Make it clear that "Type something" is for custom input.
-
-```markdown
-Question: "Select a plan, or use 'Type something' to enter a new task description:"
+```text
+# BAD — the description restates the label; the reader learns nothing
 Options:
-1. existing-plan-1 - [5-execute] in_progress
-2. existing-plan-2 - [3-outline] pending
-3. Cleanup completed plans - Remove finished plans
-[Auto-added: Type something.]
+1. Squash — squash
+2. Rebase — rebase
 ```
 
-**Handling Response**:
-- If option selected: Execute corresponding action
-- If "Type something" used: Treat input as task_description
-
-### Pattern 2: Confirmation with Customization
-
-When confirming a configuration but allowing modifications.
-
-**Use Case**: Confirm detected settings before proceeding.
-
-```markdown
-Question: "Proceed with this configuration? Use 'Type something' to specify changes:"
+```text
+# GOOD — each description names the outcome
 Options:
-1. Yes - Create plan with shown configuration
-2. No - Cancel plan creation
-[Auto-added: Type something.]
+1. Squash — The branch lands on main as one commit; the individual commit messages are discarded.
+2. Rebase — Each commit lands on main separately; the branch history is preserved.
 ```
 
-**Handling Response**:
-- "Yes": Proceed with defaults
-- "No": Exit workflow
-- "Type something": Parse input for specific change requests
+## Obligation 2 — No option is describable only in system-internal mechanics
 
-### Pattern 3: Type Selection
+An option a reader can evaluate only by reasoning about skill loading, dispatch envelopes, frontmatter, phases, or a tool API is not a choice they can make. Describe the option by its effect on **their** work.
 
-When user must choose between distinct types/modes.
+**Enforced by**: `askuserquestion-prompt-quality`, check A.
 
-**Use Case**: Select domain or execution mode.
+```text
+# BAD — answering requires knowing what "loading a standard set" does
+Options:
+4. pick this only if you want the plan to avoid loading the Java/CUI standard sets
+```
 
-```markdown
+```text
+# GOOD — the same option, described by what the reader gets
+Options:
+3. Neither — Your code is reviewed against language-neutral standards only; no Java- or Python-specific findings are raised.
+```
+
+## Obligation 3 — The recommended option is marked and ordered first
+
+When one option is the right answer in the common case, say so and put it first. A prompt with a hidden default makes the reader re-derive a judgement the author already made.
+
+**Enforced by**: author judgement (not mechanically checked).
+
+```text
+# BAD — the author's recommendation exists but is buried and unmarked
+Options:
+1. Abort — Stop and discard the run.
+2. Retry once — Re-run the failing step a single time.
+3. Retry with a longer timeout — Re-run with the timeout raised to 10 minutes.
+```
+
+```text
+# GOOD — recommendation first and marked
+Options:
+1. Retry with a longer timeout (recommended) — Re-runs with the timeout raised to 10 minutes; this clears the usual cause.
+2. Retry once — Re-runs the step unchanged; use this when you expect the failure was transient.
+3. Abort — Stops the run and discards the partial result.
+```
+
+## Obligation 4 — The question names what the system already knows and why it still needs the user
+
+State the finding that produced the question, then the gap the reader has to close. A bare question makes the reader guess what was already established.
+
+**Enforced by**: author judgement (not mechanically checked).
+
+```text
+# BAD — no context; the reader cannot tell what is being decided or why
 Question: "What type of plan for this task?"
+```
+
+```text
+# GOOD — what is known, then what is missing
+Question: "Your request changes both the build configuration and the test tree, so this reads as either a fix or a refactor. Which is it?"
+```
+
+## Obligation 5 — The preamble carries no workflow step number, tool-API type, or internal noun
+
+The preamble is the reader's first sentence. A step number, a tool-API type name, or an internal noun in it tells the reader they are watching a machine's log rather than being asked a question.
+
+**Enforced by**: `askuserquestion-prompt-quality`, check A.
+
+```text
+# BAD — a step number and a tool-API type name in the reader's first sentence
+Question: "Domain detection returned ambiguous (no narrative match). Per Step 7 this requires an operator multiSelect"
+```
+
+```text
+# GOOD — the same situation, in the reader's terms
+Question: "Your files match no single language clearly, so the review standards cannot be picked automatically. Which should this plan apply?"
+```
+
+## Worked example: the api-sheriff prompt
+
+This is the prompt that motivated the obligations. It fails 5 (a step number and a tool-API type in the preamble) and 2 (option 4 is answerable only by reasoning about which standard sets get loaded). Options 1–3 are elided — they are not part of the recorded example.
+
+```text
+# BAD — as it shipped
+Question: "Domain detection returned ambiguous (no narrative match). Per Step 7 this requires an operator multiSelect"
 Options:
-1. Simple - 3-phase workflow (init, execute, finalize)
-2. Implementation - 6-phase workflow with verification
-[Auto-added: Type something.]
+1. (elided)
+2. (elided)
+3. (elided)
+4. pick this only if you want the plan to avoid loading the Java/CUI standard sets
 ```
 
-**Handling Response**:
-- Map selection directly to domain
-- "Type something" rarely used but could specify hybrid needs
-
-### Pattern 4: Multi-Select Features
-
-When users can enable multiple options simultaneously.
-
-**Use Case**: Select which checks to run.
-
-```markdown
-Question: "Which validations should be performed?"
-multiSelect: true
+```text
+# GOOD — conformant rewrite
+Question: "Your files match no single language clearly, so the review standards cannot be picked automatically. Which should this plan apply?"
 Options:
-1. Syntax - Check file syntax
-2. Links - Verify cross-references
-3. Structure - Validate document structure
-4. Completeness - Check for missing sections
-[Auto-added: Type something.]
+1. Java (recommended) — Reviews your code against the Java standards: naming, null-safety, and test conventions.
+2. Python — Reviews your code against the Python standards: typing, packaging, and pytest conventions.
+3. Neither — Reviews your code against language-neutral standards only; no language-specific findings are raised.
 ```
 
-**Handling Response**:
-- Collect all selected options
-- Execute each validation type
+The rewrite is the same decision: the reader still picks the standards. It carries no step number, no tool-API type, and no option that requires knowing what the system does internally. The `askuserquestion-prompt-quality` test suite pins this pair — the shipped form must produce findings, the rewrite must produce none.
 
-## Anti-Patterns
+## What this document does not enforce
 
-### Anti-Pattern 1: Redundant "Create New" Option
+Obligations **3** (recommended option marked and ordered first) and **4** (the question names what the system already knows) are author judgement. The `askuserquestion-prompt-quality` rule does not evaluate them, and deliberately does not try: both require deciding whether a recommendation is *correct* and whether context is *sufficient*, which no token check can answer.
 
-**Problem**: Adding explicit "Create new" option when "Type something" serves that purpose.
+A clean `plugin-doctor` run does **not** certify a conformant prompt.
 
-```markdown
-# BAD - Redundant options
-Question: "Select a plan or action:"
-Options:
-1. existing-plan - Current plan
-2. Create new plan - Start a new plan    <- Redundant!
-3. Cleanup - Remove plans
-[Auto-added: Type something.]
-```
+## Tool mechanics you cannot infer
 
-**Why It's Wrong**: "Create new plan" and "Type something" serve the same purpose, confusing users.
+Three facts about the tool that no amount of care will let an author guess. Everything else about a prompt is governed by the obligations above.
 
-**Solution**: Remove "Create new plan", let "Type something" handle new task input.
-
-```markdown
-# GOOD - Clear purpose for each option
-Question: "Select a plan, or use 'Type something' to enter a new task description:"
-Options:
-1. existing-plan - Current plan
-2. Cleanup completed plans - Remove plans
-[Auto-added: Type something.]
-```
-
-### Anti-Pattern 2: Follow-Up Questions After Selection
-
-**Problem**: Asking redundant follow-up questions that contradict user's choice.
-
-```markdown
-# User selects "Create new plan"
-# BAD - Contradicts their choice
-Question: "How would you like to define the new plan?"
-Options:
-1. Continue existing - Resume existing plan   <- Contradicts!
-2. Enter task description - Type description
-```
-
-**Why It's Wrong**: User already chose to create new, offering "Continue existing" is confusing.
-
-**Solution**: Execute the action directly or ask only relevant follow-up.
-
-### Anti-Pattern 3: Expecting Customizable "Other" Label
-
-**Problem**: Documenting that "Other" label can be changed.
-
-```markdown
-# BAD - This doesn't work
-- The automatic "Other" option becomes "Enter task description" contextually
-```
-
-**Why It's Wrong**: The "Type something." label is hardcoded in the UI and cannot be changed via the tool.
-
-**Solution**: Acknowledge the fixed label and design questions to provide context.
-
-```markdown
-# GOOD - Acknowledge limitation
-- Note: The "Type something" option is auto-added by AskUserQuestion for free-text input
-```
-
-### Anti-Pattern 4: Single Option Questions
-
-**Problem**: Trying to use AskUserQuestion with only one meaningful option.
-
-```markdown
-# BAD - Doesn't meet minimum options requirement
-Question: "Enter task description:"
-Options:
-1. Enter custom task - Type your description
-```
-
-**Why It's Wrong**: Tool requires 2-4 options minimum. Single option defeats purpose.
-
-**Solution**: Use plain text prompt for pure free-text input, or add meaningful alternatives.
-
-## Best Practices
-
-### 1. Question Text Provides Context
-
-Since "Type something." cannot be customized, make the question text explain what free-text input is for:
-
-```markdown
-# GOOD - Question explains purpose of "Type something"
-"Select a plan, or use 'Type something' to enter a new task description:"
-```
-
-### 2. Direct Flow After Selection
-
-Execute actions directly based on selection. Avoid intermediate confirmation questions.
-
-```markdown
-# User selects option → Execute immediately
-# User types in "Other" → Use input directly
-```
-
-### 3. Options Should Be Mutually Exclusive
-
-Each option should represent a distinct, non-overlapping choice.
-
-```markdown
-# GOOD - Each option is distinct
-Options:
-1. Java project - Uses Maven/Gradle
-2. JavaScript project - Uses npm/npx
-3. Mixed project - Both Java and JavaScript
-```
-
-### 4. Descriptions Should Clarify Consequences
-
-Help users understand what happens when they select each option.
-
-```markdown
-Options:
-1. Simple - 3-phase workflow (init, execute, finalize) - for quick tasks
-2. Implementation - 6-phase workflow with build verification - for code changes
-```
-
-### 5. Handle "Type something" Gracefully
-
-Always implement handling for free-text input, even if unexpected.
-
-```python
-if response == "Type something":
-    # User provided custom input
-    custom_text = get_custom_input()
-    # Route to appropriate workflow based on content
-else:
-    # User selected predefined option
-    execute_option(response)
-```
-
-## Known Limitations
-
-| Limitation | Status | Workaround |
-|------------|--------|------------|
-| "Type something." label fixed | Cannot change | Use question text to provide context |
-| No placeholder customization | Not supported | Document expected input in question |
-| Multi-line input display issues | Known bug | First line only visible during input |
-| Cannot remove "Other" option | By design | Always handle "Other" in workflow |
-| Documentation missing | Acknowledged | Use community resources |
-
-## References
-
-- GitHub Issue #10346: Missing AskUserQuestion documentation
-- GitHub Issue #10258: Cannot disable interactive question tool
-- GitHub Issue #10848: Multi-line text input display issues
+| Fact | Consequence for the author |
+|------|----------------------------|
+| An option list holds 2–4 options | A one-option prompt is invalid — use plain text for pure free-text input |
+| `header` is capped at 12 characters | Longer headers are truncated; write the header as a short noun, not a sentence |
+| A free-text option is added automatically, labelled `Type something.` | The label is fixed and not customisable — if free text is meant for a specific purpose, the question text has to say so |
