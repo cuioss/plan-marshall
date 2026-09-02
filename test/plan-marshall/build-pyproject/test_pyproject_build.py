@@ -19,7 +19,7 @@ from _resolve_project_dir_fixtures import (
     patch_query_worktree_path,
 )
 
-from conftest import PROJECT_ROOT, BuildContext, load_script_module
+from conftest import PROJECT_ROOT, BuildContext, load_script_module, parse_ns
 
 BUILD_SCRIPT = (
     PROJECT_ROOT
@@ -530,6 +530,7 @@ def test_resolve_project_dir_neither_flag_uses_main_checkout():
 # repository's ``marketplace/bundles`` tree unless a case patches it explicitly.
 
 import argparse  # noqa: E402
+import copy  # noqa: E402
 
 import pytest  # noqa: E402
 from toon_parser import parse_toon  # noqa: E402
@@ -538,11 +539,31 @@ from toon_parser import parse_toon  # noqa: E402
 # under ``marketplace/bundles/`` and ``test/`` is build-relevant.
 _SCOPE_BUILD_MAP_GLOBS = ['marketplace/bundles/**', 'test/**']
 
+#: The ``resolve-test-scope`` namespace ``pyproject_build.py``'s OWN parser
+#: yields, hoisted to module scope because ``parse_ns`` re-executes the script
+#: module on every call. ``register=False`` so it never publishes
+#: ``pyproject_build`` in ``sys.modules`` beside the copy ``_load_pyproject_build``
+#: installs.
+_RESOLVE_SCOPE_ARGS: argparse.Namespace = parse_ns(
+    'plan-marshall', 'build-pyproject', 'pyproject_build.py',
+    'resolve-test-scope', '--changed-paths', 'placeholder',
+    register=False,
+)
 
-def _resolve_scope_args(*, changed_paths=None, plan_id=None, project_dir=None):
-    """Build the ``resolve-test-scope`` args Namespace (``project_dir`` None so
-    ``whole_tree_available`` short-circuits to False without a filesystem walk)."""
-    return argparse.Namespace(changed_paths=changed_paths, plan_id=plan_id, project_dir=project_dir)
+
+def _resolve_scope_args(*, changed_paths=None, plan_id=None, project_dir=None) -> argparse.Namespace:
+    """Derive the ``resolve-test-scope`` args from the parser-derived base.
+
+    ``project_dir`` is overridden to ``None`` rather than left at the parser's
+    ``'.'`` default: that is what makes ``whole_tree_available`` short-circuit to
+    False without a filesystem walk, and it is a deliberate departure from the
+    production default rather than an omission.
+    """
+    derived = copy.copy(_RESOLVE_SCOPE_ARGS)
+    derived.changed_paths = changed_paths
+    derived.plan_id = plan_id
+    derived.project_dir = project_dir
+    return derived
 
 
 def _run_resolve_scope(capsys, *, changed_paths):
