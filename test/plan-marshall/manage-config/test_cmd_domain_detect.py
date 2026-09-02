@@ -134,8 +134,8 @@ def test_no_match_over_provisions_configured_domains(plan_context):
     """No domain mentioned and nothing to include → the offerable set resolves.
 
     The zero-match branch over-provisions instead of prompting: ``domains`` is
-    the union of the offered candidates, the additional candidates, and the
-    inclusion legs, returned under its own ``reason`` with ``ambiguous`` false.
+    the whole offerable set, returned under its own ``reason`` with
+    ``ambiguous`` false.
     """
     plan_dir = _make_plan_dir(plan_context, 'dd-zero')
     create_nested_marshal_json(plan_context.fixture_dir)

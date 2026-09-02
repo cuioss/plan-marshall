@@ -452,7 +452,7 @@ def cmd_domain_detect(args) -> dict[str, Any]:
     offerable = sorted(_offerable_domains(user_domains))
     prompt_candidates = [{'domain': d, 'matched_aliases': []} for d in offerable]
     prompt_additional = _additional_candidates(user_domains, prompt_candidates, inclusion_union)
-    over_provisioned = set(offerable) | set(prompt_additional) | inclusion_union
+    over_provisioned = set(offerable)
 
     if over_provisioned:
         return _result(
