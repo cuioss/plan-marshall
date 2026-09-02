@@ -428,11 +428,18 @@ def run_submit(args: Namespace) -> dict[str, Any]:
     # absent, so the plan-less no-op it always had is preserved.
     plan_id = args.plan_id or NO_PLAN_SENTINEL
     notation = _notation_from_command(command)
+    # The caller's EXPLICIT build bound, forwarded onto the wire. ``None`` means
+    # "this submit stated no bound" and leaves the daemon on its own default;
+    # anything else is a real override the daemon must honour, because a
+    # ``--timeout`` the routed leg cannot transmit is a bound the client asked
+    # for and never got.
+    explicit_timeout = getattr(args, 'timeout', None)
     spec = make_job_spec(
         command=command,
         exec_path=exec_path,
         project_path=project_path,
         plan_id=plan_id,
+        timeout=explicit_timeout,
     )
 
     _, reason = _handshake(_socket_path())
@@ -628,6 +635,15 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     submit.add_argument('--exec-path', help='Submitted tree root (default: --project-path).')
     submit.add_argument('--project-path', help='Build working directory (default: cwd).')
     submit.add_argument('--plan-id', help='Submitting plan id (empty for a plan-less build).')
+    # ``default=None`` is the same load-bearing sentinel the build wrapper's own
+    # ``--timeout`` carries: it is the only way the spec can distinguish "the
+    # caller named a bound" from "the caller named none, use the daemon default".
+    submit.add_argument(
+        '--timeout',
+        type=int,
+        default=None,
+        help='Explicit wall-clock bound in seconds for this job (default: the daemon default).',
+    )
     submit.set_defaults(func=run_submit)
 
     wait = sub.add_parser('wait', help='One bounded long-poll for a job result.', allow_abbrev=False)

@@ -433,6 +433,37 @@ def send_frame(sock: socket.socket, payload: dict[str, Any]) -> None:
 # =============================================================================
 
 _JOB_SPEC_REQUIRED = ('command', 'exec_path', 'project_path', 'plan_id')
+"""Fields a wire job spec MUST carry. ``timeout`` is deliberately NOT here — it
+is optional, so a client that never sets it (and an older client that does not
+know the field) still submits a valid spec."""
+
+
+def _coerce_wire_timeout(raw: Any) -> int | None:
+    """Coerce the optional wire ``timeout`` to a positive int, or ``None``.
+
+    Absent reads as ``None`` ("this submit stated no bound"), which is what
+    makes the field optional on the wire. A PRESENT value is validated rather
+    than best-effort coerced: the daemon feeds it straight into the supervisor's
+    wall-clock bound, so a string, a float, a bool, or a non-positive number is
+    a malformed spec — the submit is refused with ``invalid_job`` instead of
+    silently degrading to the daemon default, which would reproduce the very
+    dropped-override this field exists to fix.
+
+    Args:
+        raw: The decoded ``timeout`` value, or ``None`` when absent.
+
+    Returns:
+        The positive integer bound in seconds, or ``None`` when absent.
+
+    Raises:
+        ValueError: when present but not a positive integer.
+    """
+    if raw is None:
+        return None
+    # bool is an int subclass — `True` would otherwise coerce to a 1-second bound.
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw <= 0:
+        raise ValueError(f'job spec timeout must be a positive integer, got {raw!r}')
+    return raw
 
 
 @dataclass
@@ -451,6 +482,11 @@ class JobSpec:
             spec, so the wire value is never the empty string).
         fingerprint: The idempotent-submit fingerprint; empty until derived via
             :func:`compute_fingerprint` (see :func:`make_job_spec`).
+        timeout: The client's EXPLICIT wall-clock bound (seconds) for this job,
+            or ``None`` when the submit stated none. Optional by construction —
+            the daemon falls back to its own default when it is absent — because
+            an explicit ``--timeout`` that cannot cross the socket is an
+            override the routed leg silently drops.
     """
 
     command: list[str]
@@ -458,16 +494,24 @@ class JobSpec:
     project_path: str
     plan_id: str
     fingerprint: str = ''
+    timeout: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        """Return the JSON-serialisable wire form of this job spec."""
-        return {
+        """Return the JSON-serialisable wire form of this job spec.
+
+        ``timeout`` is emitted only when the submit carried one, so a spec that
+        stated no bound has the exact wire shape it always had.
+        """
+        payload: dict[str, Any] = {
             'command': list(self.command),
             'exec_path': self.exec_path,
             'project_path': self.project_path,
             'plan_id': self.plan_id,
             'fingerprint': self.fingerprint,
         }
+        if self.timeout is not None:
+            payload['timeout'] = self.timeout
+        return payload
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> JobSpec:
@@ -480,8 +524,9 @@ class JobSpec:
             The reconstructed job spec.
 
         Raises:
-            ValueError: when a required field is missing, or ``command`` is not
-                a list of strings.
+            ValueError: when a required field is missing, ``command`` is not a
+                list of strings, or a PRESENT ``timeout`` is not a positive
+                integer. An ABSENT ``timeout`` is valid and reads as ``None``.
         """
         missing = [key for key in _JOB_SPEC_REQUIRED if key not in data]
         if missing:
@@ -499,6 +544,7 @@ class JobSpec:
             project_path=str(data['project_path']),
             plan_id=str(data['plan_id']),
             fingerprint=str(data.get('fingerprint', '')),
+            timeout=_coerce_wire_timeout(data.get('timeout')),
         )
 
 
@@ -512,6 +558,14 @@ def compute_fingerprint(
     attaches an identical concurrent submit to one in-flight job rather than
     double-running it. The digest is order-stable (``sort_keys``) and
     independent of dict insertion order.
+
+    ``JobSpec.timeout`` is deliberately NOT part of the material, and that does
+    NOT let two differently-bounded submits collapse onto one job: the routing
+    client reconstructs ``command`` from its own argv tail, so an explicit
+    ``--timeout N`` is already a token INSIDE ``command`` and two submits with
+    different bounds therefore already digest differently. Adding the field
+    would re-hash the same distinction a second time while changing every
+    existing fingerprint.
 
     Args:
         plan_id: The submitting plan id.
@@ -541,6 +595,7 @@ def make_job_spec(
     project_path: str,
     plan_id: str,
     fingerprint: str = '',
+    timeout: int | None = None,
 ) -> JobSpec:
     """Construct a :class:`JobSpec`, deriving the fingerprint when absent.
 
@@ -551,6 +606,9 @@ def make_job_spec(
         plan_id: The submitting plan id.
         fingerprint: An explicit fingerprint; when empty it is derived via
             :func:`compute_fingerprint`.
+        timeout: The submit's explicit wall-clock bound in seconds, or ``None``
+            when it stated none (see :class:`JobSpec`). Not part of the
+            fingerprint material — see :func:`compute_fingerprint`.
 
     Returns:
         A fully-populated job spec with a non-empty fingerprint.
@@ -564,6 +622,7 @@ def make_job_spec(
         project_path=project_path,
         plan_id=plan_id,
         fingerprint=resolved,
+        timeout=timeout,
     )
 
 

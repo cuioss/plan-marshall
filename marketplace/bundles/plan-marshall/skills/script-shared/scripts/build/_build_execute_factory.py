@@ -591,7 +591,10 @@ def _result_for_log_verdict(
 
 
 def _route_to_daemon(
-    config: ExecuteConfig, project_dir: str, plan_id: str | None
+    config: ExecuteConfig,
+    project_dir: str,
+    plan_id: str | None,
+    explicit_timeout: int | None = None,
 ) -> tuple[DirectCommandResult | None, str]:
     """Route a build to marshalld when registered AND ready; else signal fallback.
 
@@ -602,6 +605,14 @@ def _route_to_daemon(
     ``no_notation`` (unroutable tool), or a preflight / submit / wait degradation
     reason (``disabled``, ``socket_absent``, ``not_registered``, …) that the
     caller records so the fallback is never silent.
+
+    ``explicit_timeout`` is the caller's ``--timeout`` (``None`` when unsupplied)
+    and is forwarded onto the job spec. It travels on BOTH legs by construction:
+    the daemon child re-runs this same argv (so the in-process resolution inside
+    the child sees the flag), and the spec field raises the daemon's OWN
+    supervisory bound so that outer bound cannot fire before the child's. Not
+    forwarding it is what made ``--timeout`` a no-op on this leg while the
+    in-process leg honoured it.
     """
     # Re-entrancy guard: a build already running INSIDE a marshalld job child
     # never routes back to the daemon (that would recurse without bound).
@@ -635,6 +646,7 @@ def _route_to_daemon(
             exec_path=exec_root,
             project_path=exec_root,
             plan_id=routing_plan_id,
+            timeout=explicit_timeout,
         )
     )
     if submit.get('status') != 'success':
@@ -1008,7 +1020,11 @@ def create_execute_handlers(
             # own reason for the identical condition.
             fallback_reason = 'env_or_working_dir_set'
         if execution_mode != 'in_process' and not daemon_incompatible:
-            routed, reason = _route_to_daemon(config, project_dir, plan_id)
+            # ``explicit_timeout`` rides the routed leg exactly as it rides the
+            # in-process one below. Omitting it here left the daemon bounding
+            # every routed build by its own default, so an explicit --timeout
+            # was silently discarded whenever the daemon happened to be up.
+            routed, reason = _route_to_daemon(config, project_dir, plan_id, explicit_timeout)
             if routed is not None:
                 _record_resolution(execution_mode, 'routed', None, notation, plan_id)
                 return cmd_run_common(

@@ -274,6 +274,65 @@ def test_job_spec_from_dict_non_string_command_token_raises():
         proto.JobSpec.from_dict(bad)
 
 
+def test_job_spec_round_trips_an_explicit_timeout():
+    """The optional bound survives the wire form it is carried in.
+
+    Without a field to carry it, an explicit ``--timeout`` could not cross the
+    socket at all and every routed build ran under the daemon's own default.
+    """
+    spec = proto.JobSpec(
+        command=['python3', '/tree/.plan/execute-script.py', 'a:b:c'],
+        exec_path='/tree',
+        project_path='/tree',
+        plan_id='p1',
+        fingerprint='deadbeef',
+        timeout=3000,
+    )
+
+    assert proto.JobSpec.from_dict(spec.to_dict()) == spec
+
+
+def test_job_spec_without_a_timeout_stays_valid_and_omits_the_key():
+    """Absence is VALID and is not written to the wire.
+
+    The field is optional precisely so a submit that names no bound — including
+    one from a client that predates the field — is still a well-formed spec,
+    with the exact wire shape it always had.
+    """
+    spec = proto.JobSpec(
+        command=['python3', '/tree/.plan/execute-script.py', 'a:b:c'],
+        exec_path='/tree',
+        project_path='/tree',
+        plan_id='p1',
+    )
+
+    assert 'timeout' not in spec.to_dict()
+    assert proto.JobSpec.from_dict(spec.to_dict()).timeout is None
+
+
+@pytest.mark.parametrize(
+    'bad', ['3000', 3000.0, 0, -1, True], ids=['str', 'float', 'zero', 'negative', 'bool']
+)
+def test_job_spec_rejects_a_present_but_malformed_timeout(bad):
+    """A nonsense bound is REFUSED, never quietly degraded to the daemon default.
+
+    Degrading it would reproduce the defect the field exists to fix — a caller's
+    bound silently replaced — with nothing to say it happened. ``True`` is in the
+    set because ``bool`` is an ``int`` subclass and would otherwise coerce to a
+    one-second bound.
+    """
+    with pytest.raises(ValueError, match='timeout must be a positive integer'):
+        proto.JobSpec.from_dict(
+            {
+                'command': ['python3', 'x', 'a:b:c'],
+                'exec_path': '/t',
+                'project_path': '/t',
+                'plan_id': 'p',
+                'timeout': bad,
+            }
+        )
+
+
 def test_compute_fingerprint_deterministic_and_sensitive():
     fp1 = proto.compute_fingerprint('p', ['a', 'b'], '/tree', '/tree')
     fp2 = proto.compute_fingerprint('p', ['a', 'b'], '/tree', '/tree')

@@ -42,7 +42,8 @@ or an unregistered project, behaves byte-identically to today.
 
 1. **submit** — the client S3-verifies the daemon (socket-owner uid check +
    version handshake), sends the job spec (the exact executor-form `command`, the
-   `exec_path` tree root, the `project_path`, and the `plan_id`), and on
+   `exec_path` tree root, the `project_path`, the `plan_id`, and — when the
+   caller named one — the explicit `timeout` bound), and on
    acceptance **writes the daemon-assigned `job_id` to the change-ledger**
    (`kind=job`). That ledger row is what lets a rebuilt or harness-reaped session
    RE-ATTACH — `wait` with no `--job-id` recovers the id from the latest `kind=job`
@@ -155,12 +156,13 @@ xref this section by name instead of restating the command inline. See
 ```bash
 python3 .plan/execute-script.py plan-marshall:build-server-client:build_server submit \
   --command '["python3", "/tree/.plan/execute-script.py", "NOTATION", "run"]' \
-  [--exec-path EXEC_PATH] [--project-path PROJECT_PATH] [--plan-id PLAN_ID]
+  [--exec-path EXEC_PATH] [--project-path PROJECT_PATH] [--plan-id PLAN_ID] [--timeout TIMEOUT]
 ```
 
 `--command` is the executor-form argv as a JSON array of strings. `--exec-path`
 defaults to `--project-path`; `--project-path` defaults to the current working
-directory.
+directory. `--timeout` is the submit's explicit wall-clock bound in seconds; when
+omitted, the job spec carries no bound and the daemon applies its own default.
 
 ### build_server — wait
 
