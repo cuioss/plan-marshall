@@ -7,14 +7,39 @@ Pins the per-module on-disk layout: readers iterate ``_project.json``'s
 ``modules`` index and lazy-load per-module ``derived.json`` /
 ``enriched.json`` on demand. Legacy monolithic files are intentionally
 absent from this surface.
+
+Three groups here are tabular and are driven as one parametrize each, with the
+``ids`` list carrying the prose the per-case test names and docstrings held: the
+``get_modules_with_command`` command sweep, the ``cmd_modules`` ``--command``
+filter sweep, and the ``_count_profile_skills`` shape-to-count sweep.
+
+Three groups were read and judged NOT to be families:
+
+- ``test_cmd_modules_naming_collision_regression`` drives the same no-filter
+  namespace as the first filter row but is a named guard, not a row: it exists to
+  pin that the handler reads ``filter_command`` and not the ``command`` subparser
+  dest, and its assertion messages are what make the collision legible when it
+  resurfaces. Folding it into the sweep would delete that guard's voice.
+- ``test_count_profile_skills_dict_and_list_parity`` is the matched control over
+  the first two rows of the shape sweep — its subject is that the dict and list
+  forms AGREE, which no row of a per-shape table can state.
+- The seven ``test_*filter*`` cases are not one family despite the shared word:
+  they span three different verbs (``cmd_modules``' ``--command``, ``cmd_files``'
+  and ``cmd_find``'s ``--category``, and ``get_module_graph``'s aggregator
+  filtering) with different fixtures and different return shapes. Only the
+  ``cmd_modules`` subset is a table; the rest share a name, not an axis.
 """
 
+import argparse
+import copy
 import sys
 import tempfile
-from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
-from conftest import load_script_module
+import pytest
+
+from conftest import load_script_module, parse_ns
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -46,6 +71,51 @@ ModuleNotFoundInProjectError = _architecture_core.ModuleNotFoundInProjectError
 _cmd_client_query = sys.modules['_cmd_client_query']
 _derive_edges = _cmd_client_query._derive_edges
 
+_ARCH_BUNDLE = 'plan-marshall'
+_ARCH_SKILL = 'manage-architecture'
+_ARCH_SCRIPT = 'architecture.py'
+
+
+def _verb_args(*argv: str) -> argparse.Namespace:
+    """The namespace ``architecture.py``'s OWN parser yields for ``argv``.
+
+    ``register=False`` so building one never publishes ``architecture`` in
+    ``sys.modules`` beside the ``_architecture_core`` / ``_cmd_client`` modules
+    this file already loads under their own explicit names.
+    """
+    args: argparse.Namespace = parse_ns(_ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT, *argv, register=False)
+    return args
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because the values are the
+    parser's own scalars, and the base must stay unmutated for the other callers
+    sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: One parser-derived namespace per read verb, hoisted to module scope because
+#: ``parse_ns`` re-executes the script module on every call. Each carries the
+#: ``command`` discriminator, the ``plan_id`` half of the
+#: ``--plan-id``/``--project-dir`` pair — absent from every hand-built namespace
+#: these replace — and the verb's own flag defaults (``files``/``find``'s
+#: ``--category``, ``resolve``'s ``--module``, ``neighbors``' ``--depth``).
+_MODULES_ARGS = _verb_args('--project-dir', '.', 'modules')
+_RESOLVE_ARGS = _verb_args('--project-dir', '.', 'resolve', '--command', 'verify')
+_FILES_ARGS = _verb_args('--project-dir', '.', 'files', '--module', 'placeholder')
+_WHICH_MODULE_ARGS = _verb_args('--project-dir', '.', 'which-module', '--path', 'placeholder')
+_FIND_ARGS = _verb_args('--project-dir', '.', 'find', '--pattern', 'placeholder')
+_PATH_ARGS = _verb_args('--project-dir', '.', 'path', 'placeholder-source', 'placeholder-target')
+_NEIGHBORS_ARGS = _verb_args('--project-dir', '.', 'neighbors', '--module', 'placeholder')
+_IMPACT_ARGS = _verb_args('--project-dir', '.', 'impact', '--module', 'placeholder')
+
 
 # =============================================================================
 # Tests for get_modules_list
@@ -65,44 +135,37 @@ def test_get_modules_list_returns_all():
 # =============================================================================
 
 
-def test_get_modules_with_command_verify():
-    """get_modules_with_command returns modules that declare 'verify'."""
+#: The command-filter sweep over the ``command_variety`` fixture, as one table:
+#: ``(command, expected_modules)``. The expectation is a SORTED list rather than a
+#: set, so the row pins cardinality as well as membership — a duplicate entry in
+#: the returned list would pass a set comparison and fails this one.
+_MODULES_WITH_COMMAND_CASES: tuple[tuple[str, list[str]], ...] = (
+    ('verify', ['module-a', 'module-b']),
+    ('module-tests', ['module-a', 'module-b']),
+    ('quality-gate', ['module-a']),
+    ('build', ['module-c']),
+    ('nonexistent-command', []),
+)
+
+_MODULES_WITH_COMMAND_IDS = [
+    'verify is declared by two modules',
+    'module-tests is declared by two modules',
+    'quality-gate is declared by module-a alone',
+    'build is declared by module-c alone',
+    'an unknown command name returns empty',
+]
+
+
+@pytest.mark.parametrize(
+    ('command', 'expected_modules'),
+    _MODULES_WITH_COMMAND_CASES,
+    ids=_MODULES_WITH_COMMAND_IDS,
+)
+def test_get_modules_with_command(command, expected_modules):
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_project(tmpdir, shape='command_variety')
-        modules = get_modules_with_command('verify', tmpdir)
-        assert set(modules) == {'module-a', 'module-b'}
-
-
-def test_get_modules_with_command_module_tests():
-    """get_modules_with_command returns modules with 'module-tests'."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir, shape='command_variety')
-        modules = get_modules_with_command('module-tests', tmpdir)
-        assert set(modules) == {'module-a', 'module-b'}
-
-
-def test_get_modules_with_command_quality_gate_only_module_a():
-    """get_modules_with_command returns only module-a for 'quality-gate'."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir, shape='command_variety')
-        modules = get_modules_with_command('quality-gate', tmpdir)
-        assert modules == ['module-a']
-
-
-def test_get_modules_with_command_build_only_module_c():
-    """get_modules_with_command returns only module-c for 'build'."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir, shape='command_variety')
-        modules = get_modules_with_command('build', tmpdir)
-        assert modules == ['module-c']
-
-
-def test_get_modules_with_command_unknown_returns_empty():
-    """get_modules_with_command returns [] for an unknown command name."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir, shape='command_variety')
-        modules = get_modules_with_command('nonexistent-command', tmpdir)
-        assert modules == []
+        modules = get_modules_with_command(command, tmpdir)
+        assert sorted(modules) == expected_modules
 
 
 # =============================================================================
@@ -120,11 +183,10 @@ def test_cmd_modules_naming_collision_regression():
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_project(tmpdir, shape='command_variety')
 
-        args = Namespace(
-            project_dir=tmpdir,
-            command='modules',  # subparser dest — must be ignored for filtering
-            filter_command=None,
-        )
+        # The parser itself sets ``command='modules'`` from the subparser dest,
+        # so the collision this guards is the real one rather than a simulated
+        # one: the namespace here is exactly what the CLI hands the handler.
+        args = _variant(_MODULES_ARGS, project_dir=tmpdir)
 
         result = cmd_modules(args)
 
@@ -136,46 +198,42 @@ def test_cmd_modules_naming_collision_regression():
         assert {'module-a', 'module-b', 'module-c'} <= set(result['modules'])
 
 
-def test_cmd_modules_without_filter_lists_all():
-    """cmd_modules without --command filter returns every module."""
+#: The ``--command`` filter sweep at the handler boundary, as one table:
+#: ``(filter_command, expected_modules)``. ``None`` is a row rather than a
+#: separate test because "no filter" is a value of the same dial. The
+#: naming-collision regression above stays standalone: it drives the SAME
+#: no-filter namespace but exists to name the ``command``-vs-``filter_command``
+#: dest collision, and its diagnostics are what make that guard readable.
+_CMD_MODULES_FILTER_CASES: tuple[tuple[str | None, list[str]], ...] = (
+    (None, ['module-a', 'module-b', 'module-c']),
+    ('verify', ['module-a', 'module-b']),
+    ('quality-gate', ['module-a']),
+)
+
+_CMD_MODULES_FILTER_IDS = [
+    'no filter lists all',
+    'verify returns only matching modules',
+    'quality-gate returns only module-a',
+]
+
+
+@pytest.mark.parametrize(
+    ('filter_command', 'expected_modules'),
+    _CMD_MODULES_FILTER_CASES,
+    ids=_CMD_MODULES_FILTER_IDS,
+)
+def test_cmd_modules_filter(filter_command, expected_modules):
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_project(tmpdir, shape='command_variety')
 
-        args = Namespace(project_dir=tmpdir, command='modules', filter_command=None)
+        args = _variant(_MODULES_ARGS, project_dir=tmpdir, filter_command=filter_command)
         result = cmd_modules(args)
 
         assert result['status'] == 'success'
-        assert len(result['modules']) == 3
-        assert {'module-a', 'module-b', 'module-c'} <= set(result['modules'])
-
-
-def test_cmd_modules_with_filter_returns_matches():
-    """cmd_modules --command verify returns only matching modules."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir, shape='command_variety')
-
-        args = Namespace(project_dir=tmpdir, command='modules', filter_command='verify')
-        result = cmd_modules(args)
-
-        assert result['status'] == 'success'
-        assert result['command'] == 'verify'
-        assert 'module-a' in result['modules']
-        assert 'module-b' in result['modules']
-        assert 'module-c' not in result['modules']
-
-
-def test_cmd_modules_with_filter_quality_gate():
-    """cmd_modules --command quality-gate returns only module-a."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir, shape='command_variety')
-
-        args = Namespace(project_dir=tmpdir, command='modules', filter_command='quality-gate')
-        result = cmd_modules(args)
-
-        assert result['status'] == 'success'
-        assert 'module-a' in result['modules']
-        assert 'module-b' not in result['modules']
-        assert 'module-c' not in result['modules']
+        assert sorted(result['modules']) == expected_modules
+        # The filter the caller asked for is echoed back; with no filter there is
+        # nothing to echo, so the key is absent and ``.get`` reports the same None.
+        assert result.get('command') == filter_command
 
 
 # =============================================================================
@@ -460,7 +518,7 @@ def test_cmd_resolve_with_module_returns_executable():
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_project_with_root(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, resolve_command='module-tests', module='module-a')
+        args = _variant(_RESOLVE_ARGS, project_dir=tmpdir, resolve_command='module-tests', module='module-a')
         result = cmd_resolve(args)
 
         assert result['status'] == 'success'
@@ -475,7 +533,7 @@ def test_cmd_resolve_without_module_uses_root():
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_project_with_root(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, resolve_command='verify', module=None)
+        args = _variant(_RESOLVE_ARGS, project_dir=tmpdir)
         result = cmd_resolve(args)
 
         assert result['status'] == 'success'
@@ -489,7 +547,7 @@ def test_cmd_resolve_cascades_to_root_when_command_missing_at_module():
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_project_with_root(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, resolve_command='verify', module='module-a')
+        args = _variant(_RESOLVE_ARGS, project_dir=tmpdir, module='module-a')
         result = cmd_resolve(args)
 
         assert result['status'] == 'success'
@@ -503,7 +561,7 @@ def test_cmd_resolve_unknown_module_returns_error():
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_project_with_root(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, resolve_command='verify', module='nonexistent-module')
+        args = _variant(_RESOLVE_ARGS, project_dir=tmpdir, module='nonexistent-module')
         result = cmd_resolve(args)
 
         assert result['status'] == 'error'
@@ -514,7 +572,9 @@ def test_cmd_resolve_unknown_command_returns_error():
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_project_with_root(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, resolve_command='nonexistent-command', module='module-a')
+        args = _variant(
+            _RESOLVE_ARGS, project_dir=tmpdir, resolve_command='nonexistent-command', module='module-a'
+        )
         result = cmd_resolve(args)
 
         assert result['status'] == 'error'
@@ -568,7 +628,7 @@ def test_cmd_files_returns_full_inventory():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_inventory_project(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, module='pm-dev-java', category=None)
+        args = _variant(_FILES_ARGS, project_dir=tmpdir, module='pm-dev-java')
         result = cmd_files(args)
 
         assert result['status'] == 'success'
@@ -582,7 +642,7 @@ def test_cmd_files_with_category_filters():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_inventory_project(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, module='pm-dev-java', category='skill')
+        args = _variant(_FILES_ARGS, project_dir=tmpdir, module='pm-dev-java', category='skill')
         result = cmd_files(args)
 
         assert result['status'] == 'success'
@@ -598,7 +658,7 @@ def test_cmd_files_unknown_category_returns_empty_list():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_inventory_project(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, module='pm-dev-java', category='template')
+        args = _variant(_FILES_ARGS, project_dir=tmpdir, module='pm-dev-java', category='template')
         result = cmd_files(args)
 
         assert result['status'] == 'success'
@@ -618,7 +678,7 @@ def test_cmd_files_passes_through_elision_shape():
         }
         _seed_project(tmpdir, modules)
 
-        args = Namespace(project_dir=tmpdir, module='big', category='source')
+        args = _variant(_FILES_ARGS, project_dir=tmpdir, module='big', category='source')
         result = cmd_files(args)
 
         assert result['status'] == 'success'
@@ -630,7 +690,7 @@ def test_cmd_files_unknown_module_returns_error():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_inventory_project(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, module='nope', category=None)
+        args = _variant(_FILES_ARGS, project_dir=tmpdir, module='nope')
         result = cmd_files(args)
 
         assert result['status'] == 'error'
@@ -641,7 +701,8 @@ def test_cmd_which_module_resolves_unique_path():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_inventory_project(tmpdir)
 
-        args = Namespace(
+        args = _variant(
+            _WHICH_MODULE_ARGS,
             project_dir=tmpdir,
             path='marketplace/bundles/pm-dev-java/agents/reviewer.md',
         )
@@ -659,7 +720,8 @@ def test_cmd_which_module_tie_breaks_by_longest_prefix():
         # The path appears in both ``default`` (paths.module = '.') and
         # ``pm-dev-java`` (paths.module = 'marketplace/bundles/pm-dev-java').
         # The longer prefix wins.
-        args = Namespace(
+        args = _variant(
+            _WHICH_MODULE_ARGS,
             project_dir=tmpdir,
             path='marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md',
         )
@@ -674,7 +736,7 @@ def test_cmd_which_module_no_match_returns_null():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_inventory_project(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, path='nope/missing.md')
+        args = _variant(_WHICH_MODULE_ARGS, project_dir=tmpdir, path='nope/missing.md')
         result = cmd_which_module(args)
 
         assert result['status'] == 'success'
@@ -709,7 +771,7 @@ def test_cmd_which_module_root_exact_hit_degrades_to_containment_fallback():
         }
         _seed_project(tmpdir, modules)
 
-        args = Namespace(project_dir=tmpdir, path='src/widget/core.py')
+        args = _variant(_WHICH_MODULE_ARGS, project_dir=tmpdir, path='src/widget/core.py')
         result = cmd_which_module(args)
 
         assert result['status'] == 'success'
@@ -738,7 +800,7 @@ def test_cmd_which_module_empty_root_module_path_degrades_to_containment_fallbac
         }
         _seed_project(tmpdir, modules)
 
-        args = Namespace(project_dir=tmpdir, path='src/widget/core.py')
+        args = _variant(_WHICH_MODULE_ARGS, project_dir=tmpdir, path='src/widget/core.py')
         result = cmd_which_module(args)
 
         assert result['status'] == 'success'
@@ -750,7 +812,7 @@ def test_cmd_find_aggregates_across_modules():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_inventory_project(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, pattern='*SKILL.md', category=None)
+        args = _variant(_FIND_ARGS, project_dir=tmpdir, pattern='*SKILL.md')
         result = cmd_find(args)
 
         assert result['status'] == 'success'
@@ -766,7 +828,7 @@ def test_cmd_find_with_category_filter():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_inventory_project(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, pattern='*', category='agent')
+        args = _variant(_FIND_ARGS, project_dir=tmpdir, pattern='*', category='agent')
         result = cmd_find(args)
 
         assert result['status'] == 'success'
@@ -779,7 +841,7 @@ def test_cmd_find_no_matches_returns_empty_results():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_inventory_project(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, pattern='*.nonexistent', category=None)
+        args = _variant(_FIND_ARGS, project_dir=tmpdir, pattern='*.nonexistent')
         result = cmd_find(args)
 
         assert result['status'] == 'success'
@@ -832,7 +894,7 @@ def test_cmd_find_searches_elided_sample_paths():
         }
         _seed_project(tmpdir, modules)
 
-        args = Namespace(project_dir=tmpdir, pattern='big/a.py', category=None)
+        args = _variant(_FIND_ARGS, project_dir=tmpdir, pattern='big/a.py')
         result = cmd_find(args)
 
         assert result['status'] == 'success'
@@ -858,7 +920,7 @@ def test_cmd_find_self_scans_past_horizon_hit_with_truncated_false():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_self_scan_module(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, pattern='big/src/zzz_past_horizon.py', category=None)
+        args = _variant(_FIND_ARGS, project_dir=tmpdir, pattern='big/src/zzz_past_horizon.py')
         result = cmd_find(args)
 
         assert result['status'] == 'success'
@@ -878,7 +940,7 @@ def test_cmd_find_non_elided_project_is_not_truncated():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_inventory_project(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, pattern='*SKILL.md', category=None)
+        args = _variant(_FIND_ARGS, project_dir=tmpdir, pattern='*SKILL.md')
         result = cmd_find(args)
 
         assert result['status'] == 'success'
@@ -904,7 +966,7 @@ def test_cmd_which_module_reports_truncated_when_self_scan_impossible():
         }
         _seed_project(tmpdir, modules)
 
-        args = Namespace(project_dir=tmpdir, path='big/src/zzz_past_horizon.py')
+        args = _variant(_WHICH_MODULE_ARGS, project_dir=tmpdir, path='big/src/zzz_past_horizon.py')
         result = cmd_which_module(args)
 
         assert result['status'] == 'success'
@@ -923,7 +985,7 @@ def test_cmd_which_module_self_scans_past_horizon_and_resolves_owner():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_self_scan_module(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, path='big/src/zzz_past_horizon.py')
+        args = _variant(_WHICH_MODULE_ARGS, project_dir=tmpdir, path='big/src/zzz_past_horizon.py')
         result = cmd_which_module(args)
 
         assert result['status'] == 'success'
@@ -937,7 +999,7 @@ def test_cmd_which_module_non_elided_is_not_truncated():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_inventory_project(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, path='nope/missing.md')
+        args = _variant(_WHICH_MODULE_ARGS, project_dir=tmpdir, path='nope/missing.md')
         result = cmd_which_module(args)
 
         assert result['status'] == 'success'
@@ -994,7 +1056,11 @@ def test_which_module_carries_provenance_on_a_resolved_response(monkeypatch):
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_inventory_project(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, path='marketplace/bundles/pm-dev-java/agents/reviewer.md')
+        args = _variant(
+            _WHICH_MODULE_ARGS,
+            project_dir=tmpdir,
+            path='marketplace/bundles/pm-dev-java/agents/reviewer.md',
+        )
         result = cmd_which_module(args)
 
         assert result['module'] == 'pm-dev-java'
@@ -1007,7 +1073,7 @@ def test_which_module_carries_provenance_on_a_null_response(monkeypatch):
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_inventory_project(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, path='nope/missing.md')
+        args = _variant(_WHICH_MODULE_ARGS, project_dir=tmpdir, path='nope/missing.md')
         result = cmd_which_module(args)
 
         assert result['module'] is None
@@ -1028,7 +1094,7 @@ def test_which_module_carries_provenance_on_a_truncated_response(monkeypatch):
         }
         _seed_project(tmpdir, modules)
 
-        args = Namespace(project_dir=tmpdir, path='big/src/zzz_past_horizon.py')
+        args = _variant(_WHICH_MODULE_ARGS, project_dir=tmpdir, path='big/src/zzz_past_horizon.py')
         result = cmd_which_module(args)
 
         assert result['truncated'] is True
@@ -1045,7 +1111,7 @@ def test_which_module_residue_distinction_is_observable_without_reading_module(m
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_inventory_project(tmpdir)
-        args = Namespace(project_dir=tmpdir, path='nope/missing.md')
+        args = _variant(_WHICH_MODULE_ARGS, project_dir=tmpdir, path='nope/missing.md')
 
         _patch_attribution(monkeypatch, None, [])
         no_attributor_ran = cmd_which_module(args)
@@ -1067,7 +1133,7 @@ def test_which_module_zero_attributors_reports_an_empty_roster(monkeypatch):
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_inventory_project(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, path='nope/missing.md')
+        args = _variant(_WHICH_MODULE_ARGS, project_dir=tmpdir, path='nope/missing.md')
         result = cmd_which_module(args)
 
         assert result['status'] == 'success'
@@ -1092,7 +1158,7 @@ def test_which_module_surfaces_a_collision_note_alongside_a_null_module(monkeypa
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_inventory_project(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, path='doc/whatever.adoc')
+        args = _variant(_WHICH_MODULE_ARGS, project_dir=tmpdir, path='doc/whatever.adoc')
         result = cmd_which_module(args)
 
         assert result['module'] is None
@@ -1117,7 +1183,7 @@ def test_which_module_resolves_through_the_seam_at_rung_three(monkeypatch):
         }
         _seed_project(tmpdir, modules)
 
-        args = Namespace(project_dir=tmpdir, path='.claude/skills/foo/SKILL.md')
+        args = _variant(_WHICH_MODULE_ARGS, project_dir=tmpdir, path='.claude/skills/foo/SKILL.md')
         result = cmd_which_module(args)
 
         assert result['module'] == 'plan-marshall'
@@ -1378,7 +1444,7 @@ def test_cmd_path_consumes_args1_from_exception(monkeypatch):
     """``cmd_path`` uses ``exc.args[1]`` (no extra ``get_modules_list`` re-read)."""
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_project_with_deps(tmpdir)
-        args = Namespace(project_dir=tmpdir, source='api', target='nope-target')
+        args = _variant(_PATH_ARGS, project_dir=tmpdir, source='api', target='nope-target')
 
         get_modules_list_calls = []
         original_get_modules_list = _cmd_client.get_modules_list
@@ -1404,7 +1470,7 @@ def test_cmd_neighbors_consumes_args1_from_exception(monkeypatch):
     """``cmd_neighbors`` uses ``exc.args[1]`` (no extra ``get_modules_list`` re-read)."""
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_project_with_deps(tmpdir)
-        args = Namespace(project_dir=tmpdir, module='nope-mod', depth=1)
+        args = _variant(_NEIGHBORS_ARGS, project_dir=tmpdir, module='nope-mod')
 
         get_modules_list_calls = []
         original_get_modules_list = _cmd_client.get_modules_list
@@ -1427,7 +1493,7 @@ def test_cmd_impact_consumes_args1_from_exception(monkeypatch):
     """``cmd_impact`` uses ``exc.args[1]`` (no extra ``get_modules_list`` re-read)."""
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_project_with_deps(tmpdir)
-        args = Namespace(project_dir=tmpdir, module='nope-mod')
+        args = _variant(_IMPACT_ARGS, project_dir=tmpdir, module='nope-mod')
 
         get_modules_list_calls = []
         original_get_modules_list = _cmd_client.get_modules_list
@@ -1451,22 +1517,41 @@ def test_cmd_impact_consumes_args1_from_exception(monkeypatch):
 # =============================================================================
 
 
-def test_count_profile_skills_dict_shape():
-    """Dict shape with ``defaults`` + ``optionals`` returns combined length."""
-    profile = {'defaults': ['skill-a', 'skill-b'], 'optionals': ['skill-c']}
+#: The shape-to-count sweep, as one table: ``(profile, expected_count)``. Every
+#: row is one profile shape and what it must count to, supported and unsupported
+#: alike — the function's whole contract is that mapping. The five unsupported
+#: shapes were a chain of asserts inside a single test, where the first failure
+#: hid the rest; as rows they fail independently and each is named.
+_PROFILE_SKILL_COUNT_CASES: tuple[tuple[Any, int], ...] = (
+    ({'defaults': ['skill-a', 'skill-b'], 'optionals': ['skill-c']}, 3),
+    (['skill-a', 'skill-b', 'skill-c'], 3),
+    ({'defaults': ['skill-a', 'skill-b']}, 2),
+    (None, 0),
+    ('not-a-collection', 0),
+    (42, 0),
+    ({}, 0),
+    ([], 0),
+)
 
-    count = _count_profile_skills(profile)
+_PROFILE_SKILL_COUNT_IDS = [
+    'dict shape with defaults plus optionals',
+    'flat-list shape',
+    'dict shape with only defaults',
+    'None contributes zero',
+    'a string contributes zero',
+    'an int contributes zero',
+    'an empty dict contributes zero',
+    'an empty list contributes zero',
+]
 
-    assert count == 3
 
-
-def test_count_profile_skills_list_shape():
-    """Flat-list shape returns the list length directly."""
-    profile = ['skill-a', 'skill-b', 'skill-c']
-
-    count = _count_profile_skills(profile)
-
-    assert count == 3
+@pytest.mark.parametrize(
+    ('profile', 'expected_count'),
+    _PROFILE_SKILL_COUNT_CASES,
+    ids=_PROFILE_SKILL_COUNT_IDS,
+)
+def test_count_profile_skills(profile, expected_count):
+    assert _count_profile_skills(profile) == expected_count
 
 
 def test_count_profile_skills_dict_and_list_parity():
@@ -1478,24 +1563,6 @@ def test_count_profile_skills_dict_and_list_parity():
     list_count = _count_profile_skills(list_form)
 
     assert dict_count == list_count == 3
-
-
-def test_count_profile_skills_dict_partial_keys():
-    """Dict shape with only ``defaults`` (no ``optionals``) returns ``defaults`` length."""
-    profile = {'defaults': ['skill-a', 'skill-b']}
-
-    count = _count_profile_skills(profile)
-
-    assert count == 2
-
-
-def test_count_profile_skills_unknown_shape_returns_zero():
-    """Unsupported shapes (None, str, int) contribute zero."""
-    assert _count_profile_skills(None) == 0
-    assert _count_profile_skills('not-a-collection') == 0
-    assert _count_profile_skills(42) == 0
-    assert _count_profile_skills({}) == 0
-    assert _count_profile_skills([]) == 0
 
 
 # =============================================================================

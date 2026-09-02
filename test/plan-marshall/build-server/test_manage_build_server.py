@@ -13,17 +13,23 @@ sent, and no real socket is opened.
 
 from __future__ import annotations
 
+import argparse
+import copy
 import json
 import os
 import signal
 import sys
-from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
 import pytest
-from conftest import get_script_path
+from conftest import get_script_path, parse_ns
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-build-server', 'manage_build_server.py')
+_BUNDLE = 'plan-marshall'
+_SKILL = 'manage-build-server'
+_SCRIPT = 'manage_build_server.py'
+
+SCRIPT_PATH = get_script_path(_BUNDLE, _SKILL, _SCRIPT)
 SCRIPTS_DIR = SCRIPT_PATH.parent
 
 if str(SCRIPTS_DIR) not in sys.path:
@@ -31,6 +37,46 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 import _build_server_registry as registry  # noqa: E402
 import manage_build_server as mbs  # noqa: E402
+
+
+def _verb_args(*argv: str) -> argparse.Namespace:
+    """The namespace ``manage_build_server.py``'s OWN parser yields for ``argv``.
+
+    ``register=False`` so building one never publishes a second
+    ``manage_build_server`` in ``sys.modules`` alongside the one imported above.
+    """
+    args: argparse.Namespace = parse_ns(_BUNDLE, _SKILL, _SCRIPT, *argv, register=False)
+    return args
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because the values are the
+    parser's own scalars, and the base must stay unmutated for the other callers
+    sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: One parser-derived namespace per control verb, hoisted to module scope because
+#: ``parse_ns`` re-executes the script module on every call. Each carries the
+#: ``command`` discriminator and the verb's real flag defaults — ``register``'s
+#: ``--container``/``--notation`` and ``logs``' ``--limit`` among them — none of
+#: which the hand-built namespaces they replace carried.
+_REGISTER_ARGS = _verb_args('register')
+_UNREGISTER_ARGS = _verb_args('unregister')
+_START_ARGS = _verb_args('start')
+_STOP_ARGS = _verb_args('stop')
+_DRAIN_ARGS = _verb_args('drain')
+_STATUS_ARGS = _verb_args('status')
+_INSTALL_ARGS = _verb_args('install')
+_UPGRADE_ARGS = _verb_args('upgrade')
+_LOGS_ARGS = _verb_args('logs')
 
 
 @pytest.fixture
@@ -64,7 +110,12 @@ def test_register_round_trip_and_audit(home):
     root.mkdir()
 
     result = mbs.run_register(
-        Namespace(root=str(root), container=[str(home / 'wts')], notation=['a:b:c'])
+        _variant(
+            _REGISTER_ARGS,
+            root=str(root),
+            container=[str(home / 'wts')],
+            notation=['a:b:c'],
+        )
     )
 
     assert result['status'] == 'success'
@@ -84,7 +135,7 @@ def test_register_no_flags_populates_default_scope(home):
     root = home / 'proj'
     root.mkdir()
 
-    result = mbs.run_register(Namespace(root=str(root), container=None, notation=None))
+    result = mbs.run_register(_variant(_REGISTER_ARGS, root=str(root)))
 
     # Omitting --container / --notation now backfills canonical defaults rather
     # than storing empty scope (which left a registered project inert). Full
@@ -98,9 +149,9 @@ def test_register_no_flags_populates_default_scope(home):
 def test_unregister_round_trip_and_audit(home):
     root = home / 'proj'
     root.mkdir()
-    mbs.run_register(Namespace(root=str(root), container=None, notation=None))
+    mbs.run_register(_variant(_REGISTER_ARGS, root=str(root)))
 
-    result = mbs.run_unregister(Namespace(root=str(root)))
+    result = mbs.run_unregister(_variant(_UNREGISTER_ARGS, root=str(root)))
 
     assert result['status'] == 'success'
     assert result['removed'] is True
@@ -112,7 +163,7 @@ def test_unregister_round_trip_and_audit(home):
 def test_unregister_absent_is_idempotent_noop(home):
     root = home / 'never'
 
-    result = mbs.run_unregister(Namespace(root=str(root)))
+    result = mbs.run_unregister(_variant(_UNREGISTER_ARGS, root=str(root)))
 
     assert result['status'] == 'success'
     assert result['removed'] is False
@@ -129,7 +180,7 @@ def test_start_pins_version_and_writes_audit(home, monkeypatch):
     monkeypatch.setattr(mbs, '_running_pid', lambda: None)
     monkeypatch.setattr(mbs, '_spawn_detached', lambda command, env: spawned.append(command))
 
-    result = mbs.run_start(Namespace())
+    result = mbs.run_start(_START_ARGS)
 
     assert result['running'] is True
     assert result['already_running'] is False
@@ -152,7 +203,7 @@ def test_start_refuses_second_daemon(home, monkeypatch):
     monkeypatch.setattr(mbs, '_running_pid', lambda: 4321)
     monkeypatch.setattr(mbs, '_spawn_detached', lambda command, env: spawned.append(command))
 
-    result = mbs.run_start(Namespace())
+    result = mbs.run_start(_START_ARGS)
 
     assert result['already_running'] is True
     assert result['pid'] == 4321
@@ -165,7 +216,7 @@ def test_install_is_idempotent_when_running(home, monkeypatch):
     monkeypatch.setattr(mbs, '_running_pid', lambda: 99)
     monkeypatch.setattr(mbs, '_spawn_detached', lambda command, env: None)
 
-    result = mbs.run_install(Namespace())
+    result = mbs.run_install(_INSTALL_ARGS)
 
     assert result['action'] == 'install'
     assert result['already_running'] is True
@@ -182,7 +233,7 @@ def test_stop_sigterm_then_cleanup_when_graceful(home, monkeypatch):
     monkeypatch.setattr(mbs, '_signal', lambda pid, sig: sent.append(sig))
     monkeypatch.setattr(mbs, '_wait_for_exit', lambda pid, grace: True)
 
-    result = mbs.run_stop(Namespace())
+    result = mbs.run_stop(_STOP_ARGS)
 
     assert result['was_running'] is True
     assert result['forced'] is False
@@ -197,7 +248,7 @@ def test_stop_escalates_to_sigkill_when_wedged(home, monkeypatch):
     monkeypatch.setattr(mbs, '_signal', lambda pid, sig: sent.append(sig))
     monkeypatch.setattr(mbs, '_wait_for_exit', lambda pid, grace: False)
 
-    result = mbs.run_stop(Namespace())
+    result = mbs.run_stop(_STOP_ARGS)
 
     assert result['forced'] is True
     assert sent == [signal.SIGTERM, signal.SIGKILL]
@@ -206,7 +257,7 @@ def test_stop_escalates_to_sigkill_when_wedged(home, monkeypatch):
 def test_stop_absent_daemon_is_noop(home, monkeypatch):
     monkeypatch.setattr(mbs, '_running_pid', lambda: None)
 
-    result = mbs.run_stop(Namespace())
+    result = mbs.run_stop(_STOP_ARGS)
 
     assert result['was_running'] is False
     assert _lifecycle_lines() == []
@@ -223,7 +274,7 @@ def test_drain_sigterm_only_and_audits(home, monkeypatch):
     monkeypatch.setattr(mbs, '_signal', lambda pid, sig: sent.append(sig))
     monkeypatch.setattr(mbs, '_wait_for_exit', lambda pid, grace: True)
 
-    result = mbs.run_drain(Namespace())
+    result = mbs.run_drain(_DRAIN_ARGS)
 
     assert result['was_running'] is True
     assert result['exited'] is True
@@ -239,7 +290,7 @@ def test_drain_reports_non_exit_without_sigkill(home, monkeypatch):
     monkeypatch.setattr(mbs, '_signal', lambda pid, sig: sent.append(sig))
     monkeypatch.setattr(mbs, '_wait_for_exit', lambda pid, grace: False)
 
-    result = mbs.run_drain(Namespace())
+    result = mbs.run_drain(_DRAIN_ARGS)
 
     # Even when the daemon does not exit in the grace window, drain does not kill.
     assert result['exited'] is False
@@ -263,7 +314,7 @@ def test_upgrade_drains_then_starts(home, monkeypatch):
     monkeypatch.setattr(mbs, '_wait_for_exit', lambda pid, grace: True)
     monkeypatch.setattr(mbs, '_spawn_detached', lambda command, env: calls.append('spawn'))
 
-    result = mbs.run_upgrade(Namespace())
+    result = mbs.run_upgrade(_UPGRADE_ARGS)
 
     assert result['action'] == 'upgrade'
     assert result['drained'] is True
@@ -293,7 +344,7 @@ def test_upgrade_reports_a_failed_drain_instead_of_claiming_success(home, monkey
     monkeypatch.setattr(mbs, '_wait_for_exit', lambda pid, grace: False)
     monkeypatch.setattr(mbs, '_spawn_detached', lambda command, env: None)
 
-    result = mbs.run_upgrade(Namespace())
+    result = mbs.run_upgrade(_UPGRADE_ARGS)
 
     assert result['drain_exited'] is False
     assert result['already_running'] is True
@@ -318,7 +369,7 @@ def test_upgrade_reports_a_daemon_still_up_after_a_clean_drain(home, monkeypatch
     monkeypatch.setattr(mbs, '_wait_for_exit', lambda pid, grace: True)
     monkeypatch.setattr(mbs, '_spawn_detached', lambda command, env: None)
 
-    result = mbs.run_upgrade(Namespace())
+    result = mbs.run_upgrade(_UPGRADE_ARGS)
 
     assert result['drain_exited'] is True
     assert result['already_running'] is True
@@ -335,7 +386,7 @@ def test_upgrade_with_nothing_to_drain_stays_a_success(home, monkeypatch):
     monkeypatch.setattr(mbs, '_running_pid', lambda: None)
     monkeypatch.setattr(mbs, '_spawn_detached', lambda command, env: None)
 
-    result = mbs.run_upgrade(Namespace())
+    result = mbs.run_upgrade(_UPGRADE_ARGS)
 
     assert result['drain_exited'] is True
     assert result['already_running'] is False
@@ -374,7 +425,7 @@ def test_status_running_reports_running_provenance_when_current(home, monkeypatc
     monkeypatch.setattr(mbs, '_ping', _fake_ping())
     monkeypatch.setattr(mbs, '_read_process_argv', lambda pid: _argv_for(_resolved_binary()))
 
-    result = mbs.run_status(Namespace())
+    result = mbs.run_status(_STATUS_ARGS)
 
     assert result['running'] is True
     assert result['version'] == mbs.marshalld.VERSION
@@ -393,7 +444,7 @@ def test_status_reports_in_flight_and_queued_counts(home, monkeypatch):
     monkeypatch.setattr(mbs, '_ping', _fake_ping(in_flight=2, queued=3))
     monkeypatch.setattr(mbs, '_read_process_argv', lambda pid: _argv_for(_resolved_binary()))
 
-    result = mbs.run_status(Namespace())
+    result = mbs.run_status(_STATUS_ARGS)
 
     assert result['in_flight'] == 2
     assert result['queued'] == 3
@@ -415,7 +466,7 @@ def test_status_reports_unknown_counts_when_the_daemon_sent_none(home, monkeypat
     monkeypatch.setattr(mbs, '_ping', _fake_ping_without_counts())
     monkeypatch.setattr(mbs, '_read_process_argv', lambda pid: _argv_for(_resolved_binary()))
 
-    result = mbs.run_status(Namespace())
+    result = mbs.run_status(_STATUS_ARGS)
 
     assert result['in_flight'] == mbs._UNKNOWN_COUNT
     assert result['queued'] == mbs._UNKNOWN_COUNT
@@ -431,7 +482,7 @@ def test_status_reports_a_genuine_zero_count_as_zero(home, monkeypatch):
     monkeypatch.setattr(mbs, '_ping', _fake_ping(in_flight=0, queued=0))
     monkeypatch.setattr(mbs, '_read_process_argv', lambda pid: _argv_for(_resolved_binary()))
 
-    result = mbs.run_status(Namespace())
+    result = mbs.run_status(_STATUS_ARGS)
 
     assert result['in_flight'] == 0
     assert result['queued'] == 0
@@ -445,7 +496,7 @@ def test_status_stale_daemon_shows_divergence(home, monkeypatch):
     monkeypatch.setattr(mbs, '_ping', _fake_ping())
     monkeypatch.setattr(mbs, '_read_process_argv', lambda pid: _argv_for(stale_binary))
 
-    result = mbs.run_status(Namespace())
+    result = mbs.run_status(_STATUS_ARGS)
 
     assert result['running'] is True
     # The RUNNING provenance is the old binary — the actually-executing one.
@@ -466,7 +517,7 @@ def test_status_unknown_provenance_never_falls_back_to_resolved(home, monkeypatc
     monkeypatch.setattr(mbs, '_ping', _fake_ping())
     monkeypatch.setattr(mbs, '_read_process_argv', lambda pid: None)
 
-    result = mbs.run_status(Namespace())
+    result = mbs.run_status(_STATUS_ARGS)
 
     assert result['running'] is True
     assert result['running_binary_path'] == 'unknown'
@@ -481,7 +532,7 @@ def test_status_unknown_when_argv_has_no_marshalld_token(home, monkeypatch):
     monkeypatch.setattr(mbs, '_ping', _fake_ping())
     monkeypatch.setattr(mbs, '_read_process_argv', lambda pid: ['/usr/bin/python3', '-c', 'pass'])
 
-    result = mbs.run_status(Namespace())
+    result = mbs.run_status(_STATUS_ARGS)
 
     assert result['running_binary_path'] == 'unknown'
     assert result['binary_diverges'] is False
@@ -507,7 +558,7 @@ def test_status_down_reports_reason(home, monkeypatch):
     monkeypatch.setattr(mbs, '_ping', lambda timeout=mbs._PING_TIMEOUT_SECONDS: None)
     monkeypatch.setattr(mbs, '_running_pid', lambda: None)
 
-    result = mbs.run_status(Namespace())
+    result = mbs.run_status(_STATUS_ARGS)
 
     assert result['running'] is False
     assert result['reason'] == 'no_pidfile'
@@ -522,7 +573,7 @@ def test_status_down_unreachable_when_pid_present(home, monkeypatch):
     monkeypatch.setattr(mbs, '_ping', lambda timeout=mbs._PING_TIMEOUT_SECONDS: None)
     monkeypatch.setattr(mbs, '_running_pid', lambda: 1234)
 
-    result = mbs.run_status(Namespace())
+    result = mbs.run_status(_STATUS_ARGS)
 
     assert result['running'] is False
     assert result['reason'] == 'unreachable'
@@ -535,7 +586,7 @@ def test_status_reports_registration(home, monkeypatch):
     monkeypatch.setattr(mbs, '_ping', lambda timeout=mbs._PING_TIMEOUT_SECONDS: None)
     monkeypatch.setattr(mbs, '_running_pid', lambda: None)
 
-    result = mbs.run_status(Namespace())
+    result = mbs.run_status(_STATUS_ARGS)
 
     assert result['registered'] is True
 
@@ -555,7 +606,7 @@ def test_logs_filters_to_the_caller_project(home):
     audit.record('submit', other, 'p2', 'JOB-B', 'queued')
     audit.record('wait', caller, '', 'JOB-A', 'success')
 
-    result = mbs.run_logs(Namespace(root=str(root), limit=None))
+    result = mbs.run_logs(_variant(_LOGS_ARGS, root=str(root)))
 
     assert result['status'] == 'success'
     assert result['action'] == 'logs'
@@ -577,7 +628,7 @@ def test_logs_absent_log_fails_closed_with_reason(home):
     root = home / 'proj'
     root.mkdir()
 
-    result = mbs.run_logs(Namespace(root=str(root), limit=None))
+    result = mbs.run_logs(_variant(_LOGS_ARGS, root=str(root)))
 
     assert result['status'] == 'success'
     assert result['records'] == []
@@ -595,7 +646,7 @@ def test_logs_unreadable_log_fails_closed_with_reason(home):
     audit.record('submit', mbs.canonicalize_root(str(root)), 'p1', 'JOB-A', 'queued')
     audit.path.write_bytes(b'\xff\xfe not valid utf-8 \x80\x81')
 
-    result = mbs.run_logs(Namespace(root=str(root), limit=None))
+    result = mbs.run_logs(_variant(_LOGS_ARGS, root=str(root)))
 
     assert result['status'] == 'success'
     assert result['records'] == []
@@ -611,7 +662,7 @@ def test_logs_limit_bounds_the_newest_tail(home):
     for index in range(5):
         audit.record('ping', caller, '', f'JOB-{index}', 'ok')
 
-    result = mbs.run_logs(Namespace(root=str(root), limit=2))
+    result = mbs.run_logs(_variant(_LOGS_ARGS, root=str(root), limit=2))
 
     assert result['count'] == 2
     assert result['total_matched'] == 5
@@ -629,7 +680,7 @@ def test_logs_performs_no_mutation(home):
     audit.record('submit', caller, 'p1', 'JOB-A', 'queued')
     before = audit.path.read_text(encoding='utf-8')
 
-    result = mbs.run_logs(Namespace(root=str(root), limit=1))
+    result = mbs.run_logs(_variant(_LOGS_ARGS, root=str(root), limit=1))
 
     after = mbs.InteractionAudit().path.read_text(encoding='utf-8')
     assert after == before
@@ -655,7 +706,7 @@ def test_logs_joins_the_job_fate_onto_the_interaction_row(home):
     audit.record_job_fate('JOB-DONE', 'success', caller, 'p1')
     audit.record_job_fate('JOB-LOST', 'killed', caller, 'p1')
 
-    result = mbs.run_logs(Namespace(root=str(root), limit=None))
+    result = mbs.run_logs(_variant(_LOGS_ARGS, root=str(root)))
 
     interactions = [r for r in result['records'] if r['kind'] == 'interaction']
     fates = {r['job_id']: r['fate'] for r in interactions}
@@ -691,7 +742,7 @@ def test_logs_renders_legacy_row_fail_closed_with_unknown_fate(home):
     with open(audit.path, 'a', encoding='utf-8') as handle:
         handle.write(json.dumps(legacy) + '\n')
 
-    result = mbs.run_logs(Namespace(root=str(root), limit=None))
+    result = mbs.run_logs(_variant(_LOGS_ARGS, root=str(root)))
 
     rendered = next(r for r in result['records'] if r['job_id'] == 'JOB-LEGACY')
     assert rendered['kind'] == 'interaction'

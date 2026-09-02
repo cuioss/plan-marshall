@@ -23,19 +23,27 @@ isolation (via ``plan_context``):
   with constructed argv at the subprocess boundary (``run_script``).
 """
 
+import argparse
+import copy
 import json
-from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
 from plan_logging import log_entry
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import get_script_path, load_script_module, parse_ns, run_script
 
-ORCH_SCRIPT_PATH = get_script_path('plan-marshall', 'plan-orchestrator', 'orchestrator.py')
+#: The orchestrator script's address, as module-level string constants so every
+#: ``parse_ns`` call below stays statically resolvable.
+_ORCH_BUNDLE = 'plan-marshall'
+_ORCH_SKILL = 'plan-orchestrator'
+_ORCH_SCRIPT = 'orchestrator.py'
+
+ORCH_SCRIPT_PATH = get_script_path(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT)
 STATUS_SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
 
 _orch = load_script_module(
-    'plan-marshall', 'plan-orchestrator', 'orchestrator.py', 'orchestrator_script'
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script'
 )
 
 cmd_archive = _orch.cmd_archive
@@ -43,6 +51,56 @@ cmd_resume_summary = _orch.cmd_resume_summary
 cmd_scaffold = _orch.cmd_scaffold
 
 FIXED_TIMESTAMP = '2020-01-01T00:00:00Z'
+
+#: The slug every hoisted base below is parsed with. Each caller overrides it
+#: through :func:`_variant`, so the value is a placeholder rather than a fixture.
+_BASE_SLUG = 'base-epic'
+
+
+# =============================================================================
+# Parser-derived argument namespaces
+# =============================================================================
+#
+# One hoisted namespace per verb, built by the orchestrator's OWN parser so each
+# carries every default the production CLI applies. ``parse_ns`` re-executes the
+# script module on every call, so these live at module scope and each caller
+# derives its own slug through :func:`_variant` instead of parsing again.
+# ``register=False`` throughout: only the namespace is wanted, and publishing
+# ``orchestrator`` in ``sys.modules`` would displace the explicitly-named
+# registration above.
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because a namespace's values
+    are the parser's own scalars, and the base must stay unmutated for the other
+    callers sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+_ARCHIVE_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'archive', '--slug', _BASE_SLUG,
+    register=False,
+)
+
+_SCAFFOLD_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'scaffold', '--slug', _BASE_SLUG,
+    register=False,
+)
+
+_RESUME_SUMMARY_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'resume-summary', '--slug', _BASE_SLUG,
+    register=False,
+)
 
 
 def _active_epic_dir(plan_context, slug: str) -> Path:
@@ -74,7 +132,7 @@ def _write_epic_status(epic_dir: Path, phase: str = 'closed') -> Path:
 
 def _seed_active_epic(plan_context, slug: str, phase: str = 'closed') -> Path:
     """Scaffold the active epic tree and write its status.json at ``phase``."""
-    cmd_scaffold(Namespace(slug=slug))
+    cmd_scaffold(_variant(_SCAFFOLD_ARGS, slug=slug))
     return _write_epic_status(_active_epic_dir(plan_context, slug), phase=phase)
 
 
@@ -89,7 +147,7 @@ class TestArchiveRelocation:
         active = _active_epic_dir(plan_context, 'closed-epic')
         archived = _archived_epic_dir(plan_context, 'closed-epic')
 
-        result = cmd_archive(Namespace(slug='closed-epic'))
+        result = cmd_archive(_variant(_ARCHIVE_ARGS, slug='closed-epic'))
 
         assert result['status'] == 'success'
         assert result['operation'] == 'archive'
@@ -101,7 +159,7 @@ class TestArchiveRelocation:
     def test_should_preserve_status_json_across_the_move(self, plan_context):
         _seed_active_epic(plan_context, 'preserve-epic', phase='closed')
 
-        cmd_archive(Namespace(slug='preserve-epic'))
+        cmd_archive(_variant(_ARCHIVE_ARGS, slug='preserve-epic'))
 
         moved = _archived_epic_dir(plan_context, 'preserve-epic') / 'status.json'
         doc = json.loads(moved.read_text(encoding='utf-8'))
@@ -119,7 +177,7 @@ class TestArchiveRefusals:
         _seed_active_epic(plan_context, 'busy-epic', phase='orchestrating')
         active = _active_epic_dir(plan_context, 'busy-epic')
 
-        result = cmd_archive(Namespace(slug='busy-epic'))
+        result = cmd_archive(_variant(_ARCHIVE_ARGS, slug='busy-epic'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'not_closed'
@@ -130,7 +188,7 @@ class TestArchiveRefusals:
         assert not _archived_epic_dir(plan_context, 'busy-epic').exists()
 
     def test_should_error_when_no_epic_exists(self, plan_context):
-        result = cmd_archive(Namespace(slug='ghost-epic'))
+        result = cmd_archive(_variant(_ARCHIVE_ARGS, slug='ghost-epic'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'not_found'
@@ -141,7 +199,7 @@ class TestArchiveRefusals:
         _write_epic_status(_archived_epic_dir(plan_context, 'dup-epic'), phase='closed')
         active = _active_epic_dir(plan_context, 'dup-epic')
 
-        result = cmd_archive(Namespace(slug='dup-epic'))
+        result = cmd_archive(_variant(_ARCHIVE_ARGS, slug='dup-epic'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'archive_conflict'
@@ -150,7 +208,7 @@ class TestArchiveRefusals:
         assert (_archived_epic_dir(plan_context, 'dup-epic') / 'status.json').is_file()
 
     def test_should_reject_invalid_slug(self, plan_context):
-        result = cmd_archive(Namespace(slug='../evil'))
+        result = cmd_archive(_variant(_ARCHIVE_ARGS, slug='../evil'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_slug'
@@ -167,7 +225,7 @@ class TestArchiveIdempotency:
         _write_epic_status(_archived_epic_dir(plan_context, 'done-epic'), phase='closed')
         archived = _archived_epic_dir(plan_context, 'done-epic')
 
-        result = cmd_archive(Namespace(slug='done-epic'))
+        result = cmd_archive(_variant(_ARCHIVE_ARGS, slug='done-epic'))
 
         assert result['status'] == 'success'
         assert result['already_archived'] is True
@@ -177,8 +235,8 @@ class TestArchiveIdempotency:
     def test_should_be_idempotent_on_repeated_archive(self, plan_context):
         _seed_active_epic(plan_context, 'twice-epic', phase='closed')
 
-        first = cmd_archive(Namespace(slug='twice-epic'))
-        second = cmd_archive(Namespace(slug='twice-epic'))
+        first = cmd_archive(_variant(_ARCHIVE_ARGS, slug='twice-epic'))
+        second = cmd_archive(_variant(_ARCHIVE_ARGS, slug='twice-epic'))
 
         assert first['status'] == 'success'
         assert first['already_archived'] is False
@@ -201,11 +259,11 @@ class TestArchiveIdempotency:
 
         # First request: Step 3 (log) then Step 4 (archive).
         log_entry('decision', slug, 'INFO', 'archive decision (first)', store='orchestrator')
-        first = cmd_archive(Namespace(slug=slug))
+        first = cmd_archive(_variant(_ARCHIVE_ARGS, slug=slug))
 
         # Repeated request: Step 3 (log) then Step 4 (archive) again.
         log_entry('decision', slug, 'INFO', 'archive decision (repeat)', store='orchestrator')
-        second = cmd_archive(Namespace(slug=slug))
+        second = cmd_archive(_variant(_ARCHIVE_ARGS, slug=slug))
 
         assert first['status'] == 'success'
         assert first['already_archived'] is False
@@ -223,9 +281,9 @@ class TestArchiveIdempotency:
 class TestReadFallback:
     def test_resume_summary_resolves_archived_epic(self, plan_context):
         _seed_active_epic(plan_context, 'summary-epic', phase='closed')
-        cmd_archive(Namespace(slug='summary-epic'))
+        cmd_archive(_variant(_ARCHIVE_ARGS, slug='summary-epic'))
 
-        result = cmd_resume_summary(Namespace(slug='summary-epic'))
+        result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='summary-epic'))
 
         assert result['status'] == 'success'
         assert result['operation'] == 'resume-summary'

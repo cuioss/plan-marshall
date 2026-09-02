@@ -67,9 +67,10 @@ error envelope AND that the spec file is byte-identical afterwards — the "reje
 instead of writing" obligation is about the disk, not about the exception type.
 """
 
+import argparse
+import copy
 import json
 import re
-from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
@@ -80,10 +81,17 @@ from conftest import (
     PROJECT_ROOT,
     get_script_path,
     load_script_module,
+    parse_ns,
     run_script,
 )
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'plan-orchestrator', 'orchestrator.py')
+#: The orchestrator script's address, as module-level string constants so every
+#: ``parse_ns`` call below stays statically resolvable.
+_ORCH_BUNDLE = 'plan-marshall'
+_ORCH_SKILL = 'plan-orchestrator'
+_ORCH_SCRIPT = 'orchestrator.py'
+
+SCRIPT_PATH = get_script_path(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT)
 
 _orch = load_script_module(
     'plan-marshall', 'plan-orchestrator', 'orchestrator.py', 'orchestrator_script'
@@ -170,6 +178,76 @@ FIXED_TIMESTAMP = '2020-01-01T00:00:00Z'
 SHA = '9f3a1c2'
 OTHER_SHA = 'abc1234'
 PRODUCER = 'fixture-corpus-epic/cleanup'
+
+
+# =============================================================================
+# Parser-derived argument namespaces
+# =============================================================================
+#
+# One hoisted namespace per corpus sub-verb, built by the orchestrator's OWN
+# parser so each carries every default the production CLI applies rather than
+# only the fields a test author remembered. ``parse_ns`` re-executes the script
+# module on every call, so these live at module scope and a test needing a
+# variant derives it through :func:`_variant` instead of parsing again.
+#
+# ``register=False`` throughout: only the namespace is wanted here, and
+# publishing ``orchestrator`` in ``sys.modules`` would displace the registration
+# other modules in this directory rely on.
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because a namespace's values
+    are the parser's own scalars, and the base must stay unmutated for the other
+    tests sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+_ENUMERATE_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'corpus', 'enumerate', '--slug', SLUG,
+    register=False,
+)
+
+_CROSS_CHECK_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'corpus', 'cross-check', '--slug', SLUG,
+    register=False,
+)
+
+_SURFACES_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'corpus', 'surfaces', '--slug', SLUG,
+    register=False,
+)
+
+_VERDICTS_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'corpus', 'verdicts', '--slug', SLUG,
+    register=False,
+)
+
+#: The ``set-verdict`` base carries every one of that verb's nine flags, so a
+#: caller overriding one still gets the other eight from the parser.
+_SET_VERDICT_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'corpus', 'set-verdict',
+    '--slug', SLUG,
+    '--plan', 'PLAN-01',
+    '--claim-index', '0',
+    '--verdict', 'corroborated',
+    '--checked-at', SHA,
+    '--by', PRODUCER,
+    '--rescoped', 'n/a',
+    '--evidence', 'holds at this sha',
+    register=False,
+)
 
 # --- cross-check fixtures --------------------------------------------------
 
@@ -427,8 +505,8 @@ def _set_verdict_args(
     by: str = PRODUCER,
     slug: str = SLUG,
     section_scope: bool = False,
-) -> Namespace:
-    """Build a complete ``set-verdict`` Namespace so every flag attribute exists.
+) -> argparse.Namespace:
+    """Derive a complete ``set-verdict`` namespace from the parser-built base.
 
     ``claim_index`` and ``section_scope`` are the two addressing modes argparse
     declares as a REQUIRED mutually exclusive pair. This builder does not enforce
@@ -436,7 +514,8 @@ def _set_verdict_args(
     construct either mode, and the section mode passes ``claim_index=None``
     exactly as the parser's default would.
     """
-    return Namespace(
+    return _variant(
+        _SET_VERDICT_ARGS,
         slug=slug,
         plan=plan,
         claim_index=claim_index,
@@ -449,7 +528,7 @@ def _set_verdict_args(
     )
 
 
-def _section_scope_args(plan: str, **overrides) -> Namespace:
+def _section_scope_args(plan: str, **overrides) -> argparse.Namespace:
     """The ``--section-scope`` addressing mode: no ordinal, section flag set."""
     return _set_verdict_args(plan, None, section_scope=True, **overrides)
 
@@ -466,7 +545,7 @@ class TestCorpusEnumeratePopulation:
         _write_spec(plan_context, 'PLAN-01-alpha.md')
         _write_spec(plan_context, 'PLAN-02-beta.md')
 
-        result = cmd_corpus_enumerate(Namespace(slug=SLUG))
+        result = cmd_corpus_enumerate(_ENUMERATE_ARGS)
 
         assert result['status'] == 'success'
         assert result['operation'] == 'corpus-enumerate'
@@ -479,7 +558,7 @@ class TestCorpusEnumeratePopulation:
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-01-alpha.md')
 
-        result = cmd_corpus_enumerate(Namespace(slug=SLUG))
+        result = cmd_corpus_enumerate(_ENUMERATE_ARGS)
 
         for count_field, population_field in (
             ('rows_without_spec_count', 'rows_total'),
@@ -490,13 +569,13 @@ class TestCorpusEnumeratePopulation:
             assert population_field in result
 
     def test_should_error_when_status_json_missing(self, plan_context):
-        result = cmd_corpus_enumerate(Namespace(slug='absent-corpus-epic'))
+        result = cmd_corpus_enumerate(_variant(_ENUMERATE_ARGS, slug='absent-corpus-epic'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'file_not_found'
 
     def test_should_reject_invalid_slug(self, plan_context):
-        result = cmd_corpus_enumerate(Namespace(slug='../evil'))
+        result = cmd_corpus_enumerate(_variant(_ENUMERATE_ARGS, slug='../evil'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_slug'
@@ -510,7 +589,7 @@ class TestCorpusEnumerateDirections:
         _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
         _write_spec(plan_context, 'PLAN-01-alpha.md')
 
-        result = cmd_corpus_enumerate(Namespace(slug=SLUG))
+        result = cmd_corpus_enumerate(_ENUMERATE_ARGS)
 
         assert result['rows_without_spec'] == [{'id': 'PLAN-02', 'status': 'staged'}]
         assert result['rows_without_spec_count'] == 1
@@ -522,7 +601,7 @@ class TestCorpusEnumerateDirections:
         _write_spec(plan_context, 'PLAN-01-alpha.md')
         _write_spec(plan_context, 'PLAN-09-unqueued.md')
 
-        result = cmd_corpus_enumerate(Namespace(slug=SLUG))
+        result = cmd_corpus_enumerate(_ENUMERATE_ARGS)
 
         assert result['specs_without_row'] == ['PLAN-09-unqueued.md']
         assert result['specs_without_row_count'] == 1
@@ -536,7 +615,7 @@ class TestCorpusEnumerateDirections:
         _write_spec(plan_context, 'PLAN-01-alpha.md')
         _write_spec(plan_context, 'PLAN-02-beta.md')
 
-        result = cmd_corpus_enumerate(Namespace(slug=SLUG))
+        result = cmd_corpus_enumerate(_ENUMERATE_ARGS)
 
         assert result['rows_without_spec_count'] == 0
         assert result['specs_without_row_count'] == 0
@@ -549,7 +628,7 @@ class TestCorpusEnumerateDirections:
         _write_status(plan_context, [_row('PLAN-1')])
         _write_spec(plan_context, 'PLAN-10-decoy.md')
 
-        result = cmd_corpus_enumerate(Namespace(slug=SLUG))
+        result = cmd_corpus_enumerate(_ENUMERATE_ARGS)
 
         assert result['rows_without_spec_count'] == 1
         assert result['specs_without_row'] == ['PLAN-10-decoy.md']
@@ -559,7 +638,7 @@ class TestCorpusEnumerateDirections:
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-02-orphan.md')
 
-        result = cmd_corpus_enumerate(Namespace(slug=SLUG))
+        result = cmd_corpus_enumerate(_ENUMERATE_ARGS)
 
         glob_stems = sorted(path.stem for path in (_epic_dir(plan_context) / 'plans').glob('PLAN-*.md'))
         row_ids = sorted(row['id'] for row in result['rows'])
@@ -577,7 +656,7 @@ class TestCorpusEnumerateRunningExclusion:
         _write_spec(plan_context, 'PLAN-01-alpha.md')
         _write_spec(plan_context, 'PLAN-02-beta.md')
 
-        result = cmd_corpus_enumerate(Namespace(slug=SLUG))
+        result = cmd_corpus_enumerate(_ENUMERATE_ARGS)
 
         by_id = {row['id']: row for row in result['rows']}
         assert set(by_id) == {'PLAN-01', 'PLAN-02'}, 'a running row was omitted rather than excluded'
@@ -588,7 +667,7 @@ class TestCorpusEnumerateRunningExclusion:
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-01-alpha.md')
 
-        result = cmd_corpus_enumerate(Namespace(slug=SLUG))
+        result = cmd_corpus_enumerate(_ENUMERATE_ARGS)
 
         assert result['rows'][0]['excluded_reason'] == ''
 
@@ -598,7 +677,7 @@ class TestCorpusEnumerateRunningExclusion:
             [_row('PLAN-01'), _row('PLAN-02', status='running'), _row('PLAN-03', status='shipped')],
         )
 
-        result = cmd_corpus_enumerate(Namespace(slug=SLUG))
+        result = cmd_corpus_enumerate(_ENUMERATE_ARGS)
 
         assert result['status_tally'] == [
             {'status': 'running', 'count': 1},
@@ -616,7 +695,7 @@ class TestCorpusEnumerateUnreadable:
         broken = _epic_dir(plan_context) / 'plans' / 'PLAN-02-broken.md'
         broken.write_bytes(b'\xff\xfe not valid utf-8 \xff')
 
-        result = cmd_corpus_enumerate(Namespace(slug=SLUG))
+        result = cmd_corpus_enumerate(_ENUMERATE_ARGS)
 
         assert result['status'] == 'success'
         assert result['unreadable'] == [{'spec': 'PLAN-02-broken.md', 'error': 'unreadable'}]
@@ -629,7 +708,7 @@ class TestCorpusEnumerateUnreadable:
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-01-alpha.md')
 
-        result = cmd_corpus_enumerate(Namespace(slug=SLUG))
+        result = cmd_corpus_enumerate(_ENUMERATE_ARGS)
 
         assert result['unreadable'] == []
         assert result['unreadable_count'] == 0
@@ -711,7 +790,7 @@ class TestCorpusVerdictsAdmissionTable:
     def _rows(self, plan_context) -> dict:
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-01-alpha.md', _ADMISSION_CLAIMS)
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
         assert result['status'] == 'success'
         assert result['claims_scanned'] == 6, 'the claim population did not materialize'
         return {row['claim_index']: row for row in result['claims']}
@@ -765,7 +844,7 @@ class TestCorpusVerdictsAdmissionTable:
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-01-alpha.md', list(_TABLE_CLAIM_SECTION))
 
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         assert result['specs_scanned'] == 1, 'the fixture population did not materialize'
         assert result['claims_scanned'] == 0, 'a table-form section yields no addressable claim'
@@ -788,7 +867,7 @@ class TestCorpusVerdictsAdmissionTable:
         _write_spec(plan_context, 'PLAN-01-empty.md', list(_EMPTY_CLAIM_SECTION))
         _write_spec_without_claim_section(plan_context, 'PLAN-02-absent.md')
 
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         assert result['specs_scanned'] == 2, 'the fixture population did not materialize'
         assert result['count'] == 0
@@ -800,7 +879,7 @@ class TestCorpusVerdictsAdmissionTable:
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-01-alpha.md', _ADMISSION_CLAIMS)
 
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         assert result['specs_total'] == 1
         assert result['specs_scanned'] == 1
@@ -813,7 +892,7 @@ class TestCorpusVerdictsAdmissionTable:
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-01-alpha.md')
 
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         assert result['count'] == 0
         assert result['specs_scanned'] == 1
@@ -825,14 +904,14 @@ class TestCorpusVerdictsAdmissionTable:
         broken.parent.mkdir(parents=True, exist_ok=True)
         broken.write_bytes(b'\xff\xfe \xff')
 
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         assert result['unreadable'] == [{'spec': 'PLAN-01-broken.md', 'error': 'unreadable'}]
         assert result['specs_scanned'] == 0
         assert result['specs_total'] == 1
 
     def test_should_reject_invalid_slug(self, plan_context):
-        result = cmd_corpus_verdicts(Namespace(slug='../evil'))
+        result = cmd_corpus_verdicts(_variant(_VERDICTS_ARGS, slug='../evil'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_slug'
@@ -862,7 +941,7 @@ class TestVerdictStaleness:
             ],
         )
 
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
         row = result['claims'][0]
 
         assert result['head_sha'] == self.STUB_HEAD
@@ -885,7 +964,7 @@ class TestVerdictStaleness:
             ],
         )
 
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
         row = result['claims'][0]
 
         assert result['head_sha'] == self.STUB_HEAD
@@ -928,7 +1007,7 @@ class TestVerdictParseRule:
         cmd_corpus_set_verdict(
             _set_verdict_args('PLAN-01', 0, verdict='contradicted', rescoped='no', evidence=evidence)
         )
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         assert result['claims'][0]['evidence'] == evidence
 
@@ -991,7 +1070,7 @@ class TestCorpusSetVerdict:
         _write_spec(plan_context, 'PLAN-01-alpha.md', _TWO_CLAIMS)
 
         cmd_corpus_set_verdict(_set_verdict_args('PLAN-01', 1, evidence='second only'))
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         assert result['count'] == 1
         assert result['claims'][0]['claim_index'] == 1
@@ -1236,7 +1315,7 @@ class TestCorpusVerdictsClaimSectionReporting:
         _write_spec(plan_context, 'PLAN-02-empty.md', list(_EMPTY_CLAIM_SECTION))
         _write_spec(plan_context, 'PLAN-03-unreadable.md', list(_TABLE_CLAIM_SECTION))
         _write_spec(plan_context, 'PLAN-04-parsed.md', list(_ONE_CLAIM))
-        result: dict = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result: dict = cmd_corpus_verdicts(_VERDICTS_ARGS)
         assert result['status'] == 'success'
         assert result['specs_scanned'] == 4, 'the fixture population did not materialize'
         return result
@@ -1258,7 +1337,7 @@ class TestCorpusVerdictsClaimSectionReporting:
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-01-parsed.md', list(_ONE_CLAIM))
 
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
         tally = {row['state']: row['count'] for row in result['claim_section_states']}
 
         assert result['specs_scanned'] == 1
@@ -1294,7 +1373,7 @@ class TestCorpusVerdictsClaimSectionReporting:
         _write_spec(plan_context, 'PLAN-01-alpha.md', _ONE_CLAIM)
         cmd_corpus_set_verdict(_set_verdict_args('PLAN-01', 0))
 
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         assert result['count'] == 1
         assert result['claims'][0]['scope'] == 'claim'
@@ -1313,7 +1392,7 @@ class TestSectionScopedStamp:
         spec = self._unreadable_spec(plan_context)
 
         stamped = cmd_corpus_set_verdict(_section_scope_args('PLAN-01'))
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         assert stamped['status'] == 'success'
         assert stamped['scope'] == 'section'
@@ -1501,7 +1580,7 @@ class TestCorpusCrossCheckPopulation:
         _write_spec(plan_context, 'PLAN-77-sibling.md', epic_dir=_epic_dir(plan_context, SIBLING_SLUG))
         _write_live_plan(plan_context, LIVE_PLAN_ID)
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['status'] == 'success'
         assert result['operation'] == 'corpus-cross-check'
@@ -1515,7 +1594,7 @@ class TestCorpusCrossCheckPopulation:
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-01-alpha.md')
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         for count_field, population_field in (
             ('source_origin_match_count', 'candidates_scanned'),
@@ -1545,7 +1624,7 @@ class TestCorpusCrossCheckPopulation:
             affected_files=[OTHER_PATH],
         )
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['source_origin_match_count'] == 0
         assert result['file_overlap_match_count'] == 0
@@ -1557,13 +1636,13 @@ class TestCorpusCrossCheckPopulation:
         assert result['candidates_scanned'] == 2
 
     def test_should_error_when_the_epic_has_no_store_tree(self, plan_context):
-        result = cmd_corpus_cross_check(Namespace(slug='absent-corpus-epic'))
+        result = cmd_corpus_cross_check(_variant(_CROSS_CHECK_ARGS, slug='absent-corpus-epic'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'not_found'
 
     def test_should_reject_invalid_slug(self, plan_context):
-        result = cmd_corpus_cross_check(Namespace(slug='../evil'))
+        result = cmd_corpus_cross_check(_variant(_CROSS_CHECK_ARGS, slug='../evil'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_slug'
@@ -1579,7 +1658,7 @@ class TestCrossCheckSourceOriginClass:
         _write_spec(plan_context, 'PLAN-01-alpha.md')
         _write_live_plan(plan_context, LIVE_PLAN_ID, source_id=_pointer('PLAN-01-alpha.md'))
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['source_origin_matches'] == [
             {
@@ -1604,7 +1683,7 @@ class TestCrossCheckSourceOriginClass:
             objective=f'Supersedes {_pointer("PLAN-01-alpha.md")} in full.',
         )
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['source_origin_match_count'] == 1
         row = result['source_origin_matches'][0]
@@ -1625,7 +1704,7 @@ class TestCrossCheckSourceOriginClass:
             objective=f'Already delivered by {_pointer("PLAN-01-alpha.md")}.',
         )
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['epics_scanned'] == 1
         assert result['source_origin_match_count'] == 1
@@ -1644,7 +1723,7 @@ class TestCrossCheckSourceOriginClass:
             objective=f'Grounded in {SHARED_LESSON}.',
         )
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['source_origin_match_count'] == 0
         assert result['collision_detected'] is False
@@ -1657,7 +1736,7 @@ class TestCrossCheckSourceOriginClass:
         _write_spec(plan_context, 'PLAN-01-alpha.md')
         _write_live_plan(plan_context, LIVE_PLAN_ID, source_id='')
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['source_origin_match_count'] == 0
         assert result['plans_scanned'] == 1, 'the plan population must be non-empty'
@@ -1669,7 +1748,7 @@ class TestCrossCheckSourceOriginClass:
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-01-alpha.md')
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['source_origin_match_count'] == 0
         assert result['specs_scanned'] == 1
@@ -1685,7 +1764,7 @@ class TestCrossCheckFileOverlapClass:
         _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
         _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[SHARED_PATH, OTHER_PATH])
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['file_overlap_matches'] == [
             {
@@ -1710,7 +1789,7 @@ class TestCrossCheckFileOverlapClass:
             surface_lines=_surface(SHARED_PATH, OTHER_PATH),
         )
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['file_overlap_match_count'] == 1
         row = result['file_overlap_matches'][0]
@@ -1724,7 +1803,7 @@ class TestCrossCheckFileOverlapClass:
         _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH, OTHER_PATH))
         _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[OTHER_PATH, SHARED_PATH])
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         row = result['file_overlap_matches'][0]
         assert row['overlap_count'] == 2
@@ -1738,7 +1817,7 @@ class TestCrossCheckFileOverlapClass:
         _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
         _write_spec(plan_context, 'PLAN-02-beta.md', surface_lines=_surface(SHARED_PATH))
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['file_overlap_match_count'] == 2
         assert {row['candidate_kind'] for row in result['file_overlap_matches']} == {'corpus_spec'}
@@ -1753,7 +1832,7 @@ class TestCrossCheckFileOverlapClass:
         _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
         _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[OTHER_PATH])
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['file_overlap_match_count'] == 0
         assert result['collision_detected'] is False
@@ -1771,7 +1850,7 @@ class TestCrossCheckFileOverlapClass:
         )
         _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[SHARED_PATH])
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['file_overlap_match_count'] == 0
         assert result['candidates_scanned'] == 1
@@ -1786,7 +1865,7 @@ class TestCrossCheckUnreadable:
         broken = _epic_dir(plan_context) / 'plans' / 'PLAN-02-broken.md'
         broken.write_bytes(b'\xff\xfe not valid utf-8 \xff')
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['status'] == 'success'
         assert result['unreadable'] == [{'spec': 'PLAN-02-broken.md', 'error': 'unreadable'}]
@@ -1801,7 +1880,7 @@ class TestCrossCheckUnreadable:
         broken.parent.mkdir(parents=True, exist_ok=True)
         broken.write_bytes(b'\xff\xfe \xff')
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['unreadable'] == [
             {'spec': f'{SIBLING_SLUG}/PLAN-77-broken.md', 'error': 'unreadable'}
@@ -1831,7 +1910,7 @@ class TestCrossCheckReadOnlyBoundary:
         before = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
         assert before, 'fixture tree did not materialize'
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         after = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
         assert after == before
@@ -1867,7 +1946,7 @@ def _surfaces(plan_context) -> Any:
     ``load_script_module``, so every handler is untyped at check time and a
     narrower annotation would be a claim mypy cannot substantiate.
     """
-    return cmd_corpus_surfaces(Namespace(slug=SLUG))
+    return cmd_corpus_surfaces(_SURFACES_ARGS)
 
 
 def _row_for(result: Any, spec_name: str) -> Any:
@@ -2010,7 +2089,7 @@ class TestCrossCheckPublishesTheComparedPopulation:
         _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
         _write_spec_without_surface_section(plan_context, 'PLAN-02-beta.md')
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['specs_scanned'] == 2
         assert result['specs_comparable'] == 1
@@ -2025,7 +2104,7 @@ class TestCrossCheckPublishesTheComparedPopulation:
         _write_spec_without_surface_section(plan_context, 'PLAN-01-alpha.md')
         _write_spec_without_surface_section(plan_context, 'PLAN-02-beta.md')
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['file_overlap_match_count'] == 0
         assert result['specs_comparable'] == 0, (
@@ -2042,7 +2121,7 @@ class TestCrossCheckPublishesTheComparedPopulation:
         _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
         _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[SHARED_PATH])
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['file_overlap_match_count'] == 1
         assert result['specs_comparable'] == 1
@@ -2066,7 +2145,7 @@ class TestCrossCheckPublishesTheComparedPopulation:
         )
         _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[SHARED_PATH])
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
         surfaces_row = _row_for(_surfaces(plan_context), 'PLAN-01-alpha.md')
 
         assert surfaces_row['derivation_status'] == SURFACE_DERIVED
@@ -2089,7 +2168,7 @@ class TestCrossCheckPublishesTheComparedPopulation:
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         tallied = [row['derivation_status'] for row in result['spec_surface_states']]
         assert tallied == list(SURFACE_STATES)
@@ -2113,7 +2192,7 @@ class TestCrossCheckPublishesTheComparedPopulation:
         broken.parent.mkdir(parents=True, exist_ok=True)
         broken.write_bytes(b'\xff\xfe \xff')
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['unreadable_count'] == 1, 'the sibling breakage must reach the shared list'
         assert result['specs_total'] == 1, "the sibling's spec is not one of OUR specs"
@@ -2137,13 +2216,13 @@ class TestCrossCheckPublishesTheComparedPopulation:
 
 class TestCorpusSurfacesRefusals:
     def test_an_unsafe_slug_is_refused(self):
-        result = cmd_corpus_surfaces(Namespace(slug='../escape'))
+        result = cmd_corpus_surfaces(_variant(_SURFACES_ARGS, slug='../escape'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_slug'
 
     def test_an_epic_with_no_store_tree_is_refused(self, plan_context):
-        result = cmd_corpus_surfaces(Namespace(slug='no-such-epic'))
+        result = cmd_corpus_surfaces(_variant(_SURFACES_ARGS, slug='no-such-epic'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'not_found'
@@ -2157,7 +2236,7 @@ class TestCorpusSurfacesReadOnlyBoundary:
         before = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
         assert before, 'fixture tree did not materialize'
 
-        result = cmd_corpus_surfaces(Namespace(slug=SLUG))
+        result = cmd_corpus_surfaces(_SURFACES_ARGS)
 
         after = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
         assert after == before
@@ -2181,8 +2260,8 @@ class TestCorpusReadOnlyBoundary:
         before = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
         assert before, 'fixture tree did not materialize'
 
-        cmd_corpus_enumerate(Namespace(slug=SLUG))
-        cmd_corpus_verdicts(Namespace(slug=SLUG))
+        cmd_corpus_enumerate(_ENUMERATE_ARGS)
+        cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         after = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
         assert after == before
@@ -2446,7 +2525,7 @@ class TestFencedExpectedSurface:
         )
         _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[OTHER_PATH])
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['specs_scanned'] == 1, 'the own corpus did not materialize'
         assert result['candidates_scanned'] == 1, 'the candidate population did not materialize'
@@ -2475,7 +2554,7 @@ class TestFencedExpectedSurface:
         _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=list(_FENCED_SURFACE))
         _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[OTHER_PATH])
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['specs_scanned'] == 1, 'the own corpus did not materialize'
         assert result['candidates_scanned'] == 1, 'the candidate population did not materialize'
@@ -2492,7 +2571,7 @@ class TestFencedClaimParsing:
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-01-alpha.md')
 
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         assert result['specs_scanned'] == 1
         assert result['claims_scanned'] == 1
@@ -2501,7 +2580,7 @@ class TestFencedClaimParsing:
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-01-alpha.md', _FENCED_CLAIMS)
 
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         assert result['specs_scanned'] == 1
         assert result['claims_scanned'] == 2, (
@@ -2514,7 +2593,7 @@ class TestFencedClaimParsing:
         _write_spec(plan_context, 'PLAN-01-alpha.md', _FENCED_CLAIMS)
 
         stamped = cmd_corpus_set_verdict(_set_verdict_args('PLAN-01', 1, evidence='second only'))
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         assert stamped['status'] == 'success'
         assert stamped['claims_total'] == 2
@@ -2529,7 +2608,7 @@ class TestFencedClaimParsing:
         _write_spec(plan_context, 'PLAN-01-alpha.md', _FENCED_CLAIMS)
 
         cmd_corpus_set_verdict(_set_verdict_args('PLAN-01', 0, evidence='first only'))
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         assert result['claims_scanned'] == 2, 'the stamp changed the claim population'
         assert result['count'] == 1
@@ -3000,7 +3079,7 @@ class TestIndentedDelimiterExpectedSurface:
         )
         _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[OTHER_PATH])
 
-        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['specs_scanned'] == 1, 'the own corpus did not materialize'
         assert result['candidates_scanned'] == 1, 'the candidate population did not materialize'
@@ -3053,7 +3132,7 @@ class TestIndentedDelimiterClaimAddressing:
         _write_spec(plan_context, 'PLAN-01-alpha.md', list(_INDENTED_DELIMITER_CLAIMS))
 
         cmd_corpus_set_verdict(_set_verdict_args('PLAN-01', 1, evidence='second only'))
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         assert result['specs_scanned'] == 1
         assert result['claims_scanned'] == 2, 'the stamp changed the claim population'
@@ -3253,7 +3332,7 @@ def test_the_own_unreadable_tally_changed_over_a_sibling_bearing_population(plan
     broken.parent.mkdir(parents=True, exist_ok=True)
     broken.write_bytes(b'\xff\xfe \xff')
 
-    result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+    result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
     pre_fix = _pre_fix_own_unreadable_count(result['unreadable'])
     shipped = _own_unreadable_tally(result)
@@ -3274,7 +3353,7 @@ def test_the_own_unreadable_tally_agrees_when_no_sibling_is_registered(plan_cont
     broken = _epic_dir(plan_context) / 'plans' / 'PLAN-02-broken.md'
     broken.write_bytes(b'\xff\xfe \xff')
 
-    result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+    result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
     assert _pre_fix_own_unreadable_count(result['unreadable']) == _own_unreadable_tally(result) == 1, (
         'with no sibling contributing, both rules return the own count — the agreement '

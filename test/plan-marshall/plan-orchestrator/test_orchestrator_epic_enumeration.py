@@ -31,22 +31,40 @@ The main-anchoring pair closes with a discriminator: redirecting only
 cwd-relative base path instead would stay put and fail the assertion.
 """
 
-from argparse import Namespace
 from pathlib import Path
 
 import file_ops
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import get_script_path, load_script_module, parse_ns, run_script
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'plan-orchestrator', 'orchestrator.py')
+#: The orchestrator script's address, as module-level string constants so the
+#: ``parse_ns`` call below stays statically resolvable.
+_ORCH_BUNDLE = 'plan-marshall'
+_ORCH_SKILL = 'plan-orchestrator'
+_ORCH_SCRIPT = 'orchestrator.py'
+
+SCRIPT_PATH = get_script_path(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT)
 
 _orch = load_script_module(
-    'plan-marshall', 'plan-orchestrator', 'orchestrator.py', 'orchestrator_script'
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script'
 )
 
 cmd_corpus_epics = _orch.cmd_corpus_epics
 SCOPE_ACTIVE = _orch.SCOPE_ACTIVE
 SCOPE_ARCHIVED = _orch.SCOPE_ARCHIVED
+
+#: The ``corpus epics`` namespace, built by the orchestrator's OWN parser so it
+#: carries every default the production CLI applies — the verb takes no
+#: ``--slug``, and the hand-built empty namespace it replaces carried neither the
+#: ``command`` / ``corpus_action`` discriminators nor the resolved ``handler``.
+#: Hoisted to module scope because ``parse_ns`` re-executes the script module on
+#: every call, and ``register=False`` so it cannot displace the explicitly-named
+#: registration above.
+_EPICS_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'corpus', 'epics',
+    register=False,
+)
 
 #: The seeded epic population, named rather than inlined so every count
 #: assertion below can state the population it was derived from instead of
@@ -90,7 +108,7 @@ class TestCorpusEpicsPopulation:
         """Non-empty-population guard: a fixture that did not land must fail loudly."""
         _seed_epic_population(plan_context)
 
-        result = cmd_corpus_epics(Namespace())
+        result = cmd_corpus_epics(_EPICS_ARGS)
 
         assert result['status'] == 'success'
         assert result['operation'] == 'corpus-epics'
@@ -105,7 +123,7 @@ class TestCorpusEpicsPopulation:
         """The count cannot drift from the population it names."""
         _seed_epic_population(plan_context)
 
-        result = cmd_corpus_epics(Namespace())
+        result = cmd_corpus_epics(_EPICS_ARGS)
 
         # Derived from the RETURNED lists, not from the seeded constants: a total
         # computed independently of its own lists is exactly the drift this pins.
@@ -123,7 +141,7 @@ class TestCorpusEpicsPopulation:
         both = 'fixture-relocating-epic'
         _seed_epic_population(plan_context, active=(both,), archived=(both,))
 
-        result = cmd_corpus_epics(Namespace())
+        result = cmd_corpus_epics(_EPICS_ARGS)
 
         assert result['active'] == [both]
         assert result['archived'] == [both]
@@ -140,7 +158,7 @@ class TestCorpusEpicsDerivedZero:
         active_root.mkdir(parents=True)
         archived_root.mkdir(parents=True)
 
-        result = cmd_corpus_epics(Namespace())
+        result = cmd_corpus_epics(_EPICS_ARGS)
 
         rows = _roots_by_scope(result)
         assert result['status'] == 'success', 'an empty store is not a failure'
@@ -161,7 +179,7 @@ class TestCorpusEpicsDerivedZero:
             'the fixture pre-created the root under test — the absent state is unreachable'
         )
 
-        result = cmd_corpus_epics(Namespace())
+        result = cmd_corpus_epics(_EPICS_ARGS)
 
         rows = _roots_by_scope(result)
         assert result['status'] == 'success'
@@ -182,7 +200,7 @@ class TestCorpusEpicsDropsNothing:
         active_root, _ = _seed_epic_population(plan_context, archived=())
         (active_root / '.DS_Store').write_text('', encoding='utf-8')
 
-        result = cmd_corpus_epics(Namespace())
+        result = cmd_corpus_epics(_EPICS_ARGS)
 
         rows = _roots_by_scope(result)
         assert result['non_directory_count'] == 1
@@ -211,7 +229,7 @@ class TestCorpusEpicsDropsNothing:
 
         monkeypatch.setattr(Path, 'is_dir', _raising_is_dir)
 
-        result = cmd_corpus_epics(Namespace())
+        result = cmd_corpus_epics(_EPICS_ARGS)
 
         assert result['unreadable_count'] == 1, (
             f'{result["unreadable_count"]} unreadable entry reported over a seeded '
@@ -244,7 +262,7 @@ class TestCorpusEpicsResolvesMainAnchored:
             file_ops, 'resolve_main_anchored_path', lambda subpath: anchored / str(subpath)
         )
 
-        result = cmd_corpus_epics(Namespace())
+        result = cmd_corpus_epics(_EPICS_ARGS)
 
         rows = _roots_by_scope(result)
         assert len(rows) == 2, f'{len(rows)} root row(s) published, expected both homes'
@@ -256,12 +274,12 @@ class TestCorpusEpicsResolvesMainAnchored:
     ):
         """A worktree and the main checkout must resolve the SAME store root."""
         _seed_epic_population(plan_context)
-        before = cmd_corpus_epics(Namespace())
+        before = cmd_corpus_epics(_EPICS_ARGS)
         worktree = tmp_path / 'checkout' / '.plan' / 'local' / 'worktrees' / 'fixture-worktree'
         worktree.mkdir(parents=True)
         monkeypatch.chdir(worktree)
 
-        after = cmd_corpus_epics(Namespace())
+        after = cmd_corpus_epics(_EPICS_ARGS)
 
         assert len(after['roots']) == 2
         assert [row['path'] for row in after['roots']] == [

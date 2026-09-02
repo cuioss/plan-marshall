@@ -10,11 +10,12 @@ Tests both subcommands:
 - check-docs: Check if project docs need required documentation content
 """
 
+import argparse
 import copy
 import json
-from argparse import Namespace
+from typing import Any
 
-from conftest import MARKETPLACE_ROOT, run_script
+from conftest import MARKETPLACE_ROOT, parse_ns, run_script
 
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts' / 'determine_mode.py'
 
@@ -32,6 +33,45 @@ from determine_mode import (  # noqa: E402
 
 _DEFAULT_WORKING_PREFIXES = DEFAULT_PROJECT['working_prefixes']
 
+_BUNDLE = 'plan-marshall'
+_SKILL = 'marshall-steward'
+_SCRIPT = 'determine_mode.py'
+
+
+def _verb_args(*argv: str) -> argparse.Namespace:
+    """The namespace ``determine_mode.py``'s OWN parser yields for ``argv``.
+
+    ``register=False`` so building one never publishes a second
+    ``determine_mode`` in ``sys.modules`` alongside the one imported above.
+    """
+    args: argparse.Namespace = parse_ns(_BUNDLE, _SKILL, _SCRIPT, *argv, register=False)
+    return args
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because the values are the
+    parser's own scalars, and the base must stay unmutated for the other callers
+    sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: One parser-derived namespace per subcommand, hoisted to module scope because
+#: ``parse_ns`` re-executes the script module on every call. Each carries the
+#: ``command`` discriminator and the subcommand's real path default (``--plan-dir``
+#: defaults to ``.plan``, ``--project-root`` to ``.``), neither of which the
+#: hand-built namespaces they replace carried.
+_MODE_ARGS = _verb_args('mode')
+_CHECK_DOCS_ARGS = _verb_args('check-docs')
+_FIX_DOCS_ARGS = _verb_args('fix-docs')
+_CHECK_WORKING_PREFIXES_ARGS = _verb_args('check-working-prefixes')
+
 
 class TestModeSubcommand:
     """Test the 'mode' subcommand via direct import."""
@@ -42,7 +82,7 @@ class TestModeSubcommand:
         plan_dir.mkdir(parents=True)
         (plan_dir / 'marshal.json').write_text('{}')
 
-        result = cmd_mode(Namespace(plan_dir=str(plan_dir)))
+        result = cmd_mode(_variant(_MODE_ARGS, plan_dir=str(plan_dir)))
         assert result['status'] == 'success'
         assert result['mode'] == 'wizard'
         assert result['reason'] == 'executor_missing'
@@ -53,7 +93,7 @@ class TestModeSubcommand:
         plan_dir.mkdir(parents=True)
         (plan_dir / 'execute-script.py').write_text('# executor script')
 
-        result = cmd_mode(Namespace(plan_dir=str(plan_dir)))
+        result = cmd_mode(_variant(_MODE_ARGS, plan_dir=str(plan_dir)))
         assert result['status'] == 'success'
         assert result['mode'] == 'wizard'
         assert result['reason'] == 'marshal_missing'
@@ -63,7 +103,7 @@ class TestModeSubcommand:
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir(parents=True)
 
-        result = cmd_mode(Namespace(plan_dir=str(plan_dir)))
+        result = cmd_mode(_variant(_MODE_ARGS, plan_dir=str(plan_dir)))
         assert result['status'] == 'success'
         assert result['mode'] == 'wizard'
         assert result['reason'] == 'executor_missing'
@@ -75,7 +115,7 @@ class TestModeSubcommand:
         (plan_dir / 'execute-script.py').write_text('# executor script')
         (plan_dir / 'marshal.json').write_text('{}')
 
-        result = cmd_mode(Namespace(plan_dir=str(plan_dir)))
+        result = cmd_mode(_variant(_MODE_ARGS, plan_dir=str(plan_dir)))
         assert result['status'] == 'success'
         assert result['mode'] == 'menu'
         assert result['reason'] == 'both_exist'
@@ -84,7 +124,7 @@ class TestModeSubcommand:
         """Should return wizard mode for non-existent plan directory."""
         nonexistent_dir = tmp_path / 'nonexistent'
 
-        result = cmd_mode(Namespace(plan_dir=str(nonexistent_dir)))
+        result = cmd_mode(_variant(_MODE_ARGS, plan_dir=str(nonexistent_dir)))
         assert result['status'] == 'success'
         assert result['mode'] == 'wizard'
         assert result['reason'] == 'executor_missing'
@@ -103,7 +143,7 @@ class TestCheckDocsSubcommand:
 
     def test_ok_when_no_docs_exist(self, tmp_path):
         """Should return ok when no documentation files exist."""
-        result = cmd_check_docs(Namespace(project_root=str(tmp_path)))
+        result = cmd_check_docs(_variant(_CHECK_DOCS_ARGS, project_root=str(tmp_path)))
         assert result['status'] == 'success'
         assert result['check_status'] == 'ok'
         assert result['missing_count'] == 0
@@ -116,7 +156,7 @@ class TestCheckDocsSubcommand:
             'For file operations use Glob, Read, Grep tools.\n'
         )
 
-        result = cmd_check_docs(Namespace(project_root=str(tmp_path)))
+        result = cmd_check_docs(_variant(_CHECK_DOCS_ARGS, project_root=str(tmp_path)))
         assert result['status'] == 'success'
         assert result['check_status'] == 'ok'
         assert result['missing_count'] == 0
@@ -126,7 +166,7 @@ class TestCheckDocsSubcommand:
         claude_md = tmp_path / 'CLAUDE.md'
         claude_md.write_text('# Project\n\nFor file operations use Glob, Read, Grep tools.\n')
 
-        result = cmd_check_docs(Namespace(project_root=str(tmp_path)))
+        result = cmd_check_docs(_variant(_CHECK_DOCS_ARGS, project_root=str(tmp_path)))
         assert result['status'] == 'success'
         assert result['check_status'] == 'needs_update'
         assert 'CLAUDE.md' in result.get('plan_temp', '')
@@ -136,7 +176,7 @@ class TestCheckDocsSubcommand:
         claude_md = tmp_path / 'CLAUDE.md'
         claude_md.write_text('# Project\n\nUse .plan/temp for files.\n')
 
-        result = cmd_check_docs(Namespace(project_root=str(tmp_path)))
+        result = cmd_check_docs(_variant(_CHECK_DOCS_ARGS, project_root=str(tmp_path)))
         assert result['status'] == 'success'
         assert result['check_status'] == 'needs_update'
         assert 'CLAUDE.md' in result.get('file_ops', '')
@@ -146,7 +186,7 @@ class TestCheckDocsSubcommand:
         agents_md = tmp_path / 'AGENTS.md'
         agents_md.write_text('# Agents\n\nSome other content.\n')
 
-        result = cmd_check_docs(Namespace(project_root=str(tmp_path)))
+        result = cmd_check_docs(_variant(_CHECK_DOCS_ARGS, project_root=str(tmp_path)))
         assert result['status'] == 'success'
         assert result['check_status'] == 'needs_update'
         assert 'AGENTS.md' in result.get('plan_temp', '')
@@ -156,7 +196,7 @@ class TestCheckDocsSubcommand:
         (tmp_path / 'CLAUDE.md').write_text('# Project\n')
         (tmp_path / 'AGENTS.md').write_text('# Agents\n')
 
-        result = cmd_check_docs(Namespace(project_root=str(tmp_path)))
+        result = cmd_check_docs(_variant(_CHECK_DOCS_ARGS, project_root=str(tmp_path)))
         assert result['status'] == 'success'
         assert result['check_status'] == 'needs_update'
         # plan_temp missing from both files
@@ -169,7 +209,7 @@ class TestCheckDocsSubcommand:
         """file_ops should only be checked for CLAUDE.md, not AGENTS.md."""
         (tmp_path / 'AGENTS.md').write_text('Use .plan/temp for files.\n')
 
-        result = cmd_check_docs(Namespace(project_root=str(tmp_path)))
+        result = cmd_check_docs(_variant(_CHECK_DOCS_ARGS, project_root=str(tmp_path)))
         assert result['status'] == 'success'
         assert result['check_status'] == 'ok'
 
@@ -181,7 +221,7 @@ class TestCheckDocsSubcommand:
         )
         (tmp_path / 'AGENTS.md').write_text('# Agents\n')
 
-        result = cmd_check_docs(Namespace(project_root=str(tmp_path)))
+        result = cmd_check_docs(_variant(_CHECK_DOCS_ARGS, project_root=str(tmp_path)))
         assert result['status'] == 'success'
         assert result['check_status'] == 'needs_update'
         assert result['missing_count'] == 1
@@ -193,7 +233,7 @@ class TestCheckDocsSubcommand:
         (tmp_path / 'CLAUDE.md').write_text('# Project\n')
         (tmp_path / 'AGENTS.md').write_text('# Agents\n')
 
-        result = cmd_check_docs(Namespace(project_root=str(tmp_path)))
+        result = cmd_check_docs(_variant(_CHECK_DOCS_ARGS, project_root=str(tmp_path)))
         assert result['status'] == 'success'
         assert result['missing_count'] == 3
 
@@ -209,7 +249,7 @@ class TestFixDocsSubcommand:
 
     def test_ok_when_no_docs_exist(self, tmp_path):
         """Should return ok when no documentation files exist."""
-        result = cmd_fix_docs(Namespace(project_root=str(tmp_path)))
+        result = cmd_fix_docs(_variant(_FIX_DOCS_ARGS, project_root=str(tmp_path)))
         assert result['status'] == 'success'
         assert result['fix_status'] == 'ok'
         assert result['fixed_count'] == 0
@@ -221,7 +261,7 @@ class TestFixDocsSubcommand:
             '# Project\n\nUse `.plan/temp/` for temporary files.\n\n'
             'use Glob, Read, Grep tools.\n'
         )
-        result = cmd_fix_docs(Namespace(project_root=str(tmp_path)))
+        result = cmd_fix_docs(_variant(_FIX_DOCS_ARGS, project_root=str(tmp_path)))
         assert result['fix_status'] == 'ok'
         assert result['fixed_count'] == 0
 
@@ -229,7 +269,7 @@ class TestFixDocsSubcommand:
         """Should append plan_temp content to CLAUDE.md."""
         claude_md = tmp_path / 'CLAUDE.md'
         claude_md.write_text('# Project\n\nuse Glob, Read, Grep tools.\n')
-        result = cmd_fix_docs(Namespace(project_root=str(tmp_path)))
+        result = cmd_fix_docs(_variant(_FIX_DOCS_ARGS, project_root=str(tmp_path)))
         assert result['fix_status'] == 'fixed'
         assert 'plan_temp:CLAUDE.md' in result['fixes']
 
@@ -246,7 +286,7 @@ class TestFixDocsSubcommand:
         """Should append file_ops content to CLAUDE.md."""
         claude_md = tmp_path / 'CLAUDE.md'
         claude_md.write_text('# Project\n\nUse .plan/temp for files.\n')
-        result = cmd_fix_docs(Namespace(project_root=str(tmp_path)))
+        result = cmd_fix_docs(_variant(_FIX_DOCS_ARGS, project_root=str(tmp_path)))
         assert result['fix_status'] == 'fixed'
         assert 'file_ops:CLAUDE.md' in result['fixes']
 
@@ -257,7 +297,7 @@ class TestFixDocsSubcommand:
         """Should fix all missing checks in one call."""
         claude_md = tmp_path / 'CLAUDE.md'
         claude_md.write_text('# Project\n')
-        result = cmd_fix_docs(Namespace(project_root=str(tmp_path)))
+        result = cmd_fix_docs(_variant(_FIX_DOCS_ARGS, project_root=str(tmp_path)))
         assert result['fix_status'] == 'fixed'
         assert result['fixed_count'] == 2
 
@@ -269,7 +309,7 @@ class TestFixDocsSubcommand:
         """Should append plan_temp to AGENTS.md when missing."""
         agents_md = tmp_path / 'AGENTS.md'
         agents_md.write_text('# Agents\n')
-        result = cmd_fix_docs(Namespace(project_root=str(tmp_path)))
+        result = cmd_fix_docs(_variant(_FIX_DOCS_ARGS, project_root=str(tmp_path)))
         assert result['fix_status'] == 'fixed'
         assert 'plan_temp:AGENTS.md' in result['fixes']
 
@@ -281,8 +321,8 @@ class TestFixDocsSubcommand:
         claude_md = tmp_path / 'CLAUDE.md'
         claude_md.write_text('# Project\n')
 
-        cmd_fix_docs(Namespace(project_root=str(tmp_path)))
-        result2 = cmd_fix_docs(Namespace(project_root=str(tmp_path)))
+        cmd_fix_docs(_variant(_FIX_DOCS_ARGS, project_root=str(tmp_path)))
+        result2 = cmd_fix_docs(_variant(_FIX_DOCS_ARGS, project_root=str(tmp_path)))
         assert result2['fix_status'] == 'ok'
         assert result2['fixed_count'] == 0
 
@@ -340,7 +380,7 @@ class TestCheckWorkingPrefixesSubcommand:
         plan_dir = tmp_path / '.plan'
         _write_marshal(plan_dir, {'project': {'working_prefixes': copy.deepcopy(_DEFAULT_WORKING_PREFIXES)}})
 
-        result = cmd_check_working_prefixes(Namespace(plan_dir=str(plan_dir)))
+        result = cmd_check_working_prefixes(_variant(_CHECK_WORKING_PREFIXES_ARGS, plan_dir=str(plan_dir)))
 
         assert result == {'status': 'ok'}
 
@@ -349,7 +389,7 @@ class TestCheckWorkingPrefixesSubcommand:
         plan_dir = tmp_path / '.plan'
         _write_marshal(plan_dir, {'project': {'default_base_branch': 'main'}})
 
-        result = cmd_check_working_prefixes(Namespace(plan_dir=str(plan_dir)))
+        result = cmd_check_working_prefixes(_variant(_CHECK_WORKING_PREFIXES_ARGS, plan_dir=str(plan_dir)))
 
         assert result['status'] == 'missing'
         assert result['detail'] == 'absent'
@@ -361,7 +401,7 @@ class TestCheckWorkingPrefixesSubcommand:
         plan_dir = tmp_path / '.plan'
         _write_marshal(plan_dir, {'project': {'working_prefixes': superset}})
 
-        result = cmd_check_working_prefixes(Namespace(plan_dir=str(plan_dir)))
+        result = cmd_check_working_prefixes(_variant(_CHECK_WORKING_PREFIXES_ARGS, plan_dir=str(plan_dir)))
 
         assert result == {'status': 'ok'}
 
@@ -371,7 +411,7 @@ class TestCheckWorkingPrefixesSubcommand:
         plan_dir = tmp_path / '.plan'
         _write_marshal(plan_dir, {'project': {'working_prefixes': drifted}})
 
-        result = cmd_check_working_prefixes(Namespace(plan_dir=str(plan_dir)))
+        result = cmd_check_working_prefixes(_variant(_CHECK_WORKING_PREFIXES_ARGS, plan_dir=str(plan_dir)))
 
         assert result['status'] == 'missing'
         assert result['detail'] == 'drift'
@@ -382,7 +422,7 @@ class TestCheckWorkingPrefixesSubcommand:
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir(parents=True)
 
-        result = cmd_check_working_prefixes(Namespace(plan_dir=str(plan_dir)))
+        result = cmd_check_working_prefixes(_variant(_CHECK_WORKING_PREFIXES_ARGS, plan_dir=str(plan_dir)))
 
         assert result == {'status': 'ok'}
 

@@ -22,12 +22,14 @@ marshal.json build.map and per-module ``derived.json`` files carrying
 ``paths.module`` + ``commands``.
 """
 
+import argparse
+import copy
 import json
 import tempfile
-from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
-from conftest import load_script_module
+from conftest import load_script_module, parse_ns
 
 _architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
@@ -38,6 +40,40 @@ classify_changed_path = _architecture_core.classify_changed_path
 load_merged_build_map = _architecture_core.load_merged_build_map
 resolve_module_for_path = _architecture_core.resolve_module_for_path
 cmd_derive_verification = _cmd_client.cmd_derive_verification
+
+#: The architecture script's address, as module-level string constants so the
+#: ``parse_ns`` call below stays statically resolvable.
+_ARCH_BUNDLE = 'plan-marshall'
+_ARCH_SKILL = 'manage-architecture'
+_ARCH_SCRIPT = 'architecture.py'
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from the hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because a namespace's values
+    are the parser's own scalars, and the base must stay unmutated for the other
+    callers sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: The ``derive-verification`` namespace, built by ``architecture.py``'s OWN
+#: parser so it carries every default the production CLI applies — the
+#: ``command`` discriminator and the ``plan_id`` half of the
+#: ``--plan-id``/``--project-dir`` pair among them, neither of which the
+#: hand-built namespaces carried. Hoisted to module scope because ``parse_ns``
+#: re-executes the script module on every call, and ``register=False`` because
+#: only the namespace is wanted here.
+_DERIVE_ARGS = parse_ns(
+    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
+    '--project-dir', '.', 'derive-verification', '--changed-artifacts', '',
+    register=False,
+)
 
 
 # =============================================================================
@@ -330,7 +366,8 @@ def test_production_js_under_maven_wrapper_derives_npm_compile():
         _seed_virtual_siblings(str(project))
 
         result = cmd_derive_verification(
-            Namespace(
+            _variant(
+                _DERIVE_ARGS,
                 changed_artifacts='e-2-e-playwright/utils/constants.js',
                 project_dir=str(project),
             )
@@ -358,7 +395,7 @@ def test_production_path_derives_compile_only():
         _seed(str(project))
 
         result = cmd_derive_verification(
-            Namespace(changed_artifacts='pm-mod/scripts/architecture.py', project_dir=str(project))
+            _variant(_DERIVE_ARGS, changed_artifacts='pm-mod/scripts/architecture.py', project_dir=str(project))
         )
 
         assert result['status'] == 'success'
@@ -376,7 +413,7 @@ def test_test_path_derives_test_compile_and_module_tests():
         _seed(str(project))
 
         result = cmd_derive_verification(
-            Namespace(changed_artifacts='test/pm-mod/test_foo.py', project_dir=str(project))
+            _variant(_DERIVE_ARGS, changed_artifacts='test/pm-mod/test_foo.py', project_dir=str(project))
         )
 
         assert result['status'] == 'success'
@@ -399,7 +436,7 @@ def test_docs_only_set_derives_zero_builds():
 
         doc_path = 'marketplace/bundles/plan-marshall/skills/manage-architecture/SKILL.md'
         result = cmd_derive_verification(
-            Namespace(changed_artifacts=doc_path, project_dir=str(project))
+            _variant(_DERIVE_ARGS, changed_artifacts=doc_path, project_dir=str(project))
         )
 
         assert result['status'] == 'success'
@@ -418,7 +455,7 @@ def test_non_marketplace_doc_is_unclaimed():
         _seed(str(project))
 
         result = cmd_derive_verification(
-            Namespace(changed_artifacts='pm-mod/skills/foo/SKILL.md', project_dir=str(project))
+            _variant(_DERIVE_ARGS, changed_artifacts='pm-mod/skills/foo/SKILL.md', project_dir=str(project))
         )
 
         assert result['status'] == 'success'
@@ -435,7 +472,7 @@ def test_none_only_set_derives_no_command():
         _seed(str(project))
 
         result = cmd_derive_verification(
-            Namespace(changed_artifacts='pm-mod/generated/codegen.py', project_dir=str(project))
+            _variant(_DERIVE_ARGS, changed_artifacts='pm-mod/generated/codegen.py', project_dir=str(project))
         )
 
         assert result['status'] == 'success'
@@ -456,7 +493,8 @@ def test_mixed_set_derives_union():
 
         doc_path = 'marketplace/bundles/plan-marshall/skills/manage-architecture/SKILL.md'
         result = cmd_derive_verification(
-            Namespace(
+            _variant(
+                _DERIVE_ARGS,
                 changed_artifacts=(
                     'pm-mod/scripts/architecture.py,'
                     'test/pm-mod/test_foo.py,'
@@ -484,7 +522,8 @@ def test_duplicate_production_files_derive_one_compile():
         _seed(str(project))
 
         result = cmd_derive_verification(
-            Namespace(
+            _variant(
+                _DERIVE_ARGS,
                 changed_artifacts='pm-mod/scripts/a.py,pm-mod/scripts/b.py,pm-mod/scripts/c.py',
                 project_dir=str(project),
             )
@@ -502,7 +541,7 @@ def test_unclaimed_path_recorded():
         _seed(str(project))
 
         result = cmd_derive_verification(
-            Namespace(changed_artifacts='unrelated/file.txt', project_dir=str(project))
+            _variant(_DERIVE_ARGS, changed_artifacts='unrelated/file.txt', project_dir=str(project))
         )
 
         assert result['status'] == 'success'
@@ -517,7 +556,8 @@ def test_deriver_is_deterministic():
         project.mkdir()
         _seed(str(project))
 
-        args = Namespace(
+        args = _variant(
+            _DERIVE_ARGS,
             changed_artifacts='pm-mod/scripts/architecture.py,test/pm-mod/test_foo.py',
             project_dir=str(project),
         )
@@ -552,7 +592,8 @@ def test_it_route_stamped_verify_derives_failsafe_gate():
         _seed(str(project), build_map=build_map)
 
         result = cmd_derive_verification(
-            Namespace(
+            _variant(
+                _DERIVE_ARGS,
                 changed_artifacts='pm-mod/src/test/java/com/example/RestApiGatewayIT.java',
                 project_dir=str(project),
             )
@@ -578,7 +619,8 @@ def test_plain_test_java_still_derives_module_tests_beside_it_route():
         _seed(str(project), build_map=build_map)
 
         result = cmd_derive_verification(
-            Namespace(
+            _variant(
+                _DERIVE_ARGS,
                 changed_artifacts='pm-mod/src/test/java/com/example/FooTest.java',
                 project_dir=str(project),
             )
@@ -613,7 +655,8 @@ def test_nested_pom_against_bare_route_derives_verify():
         _seed(str(project), build_map=build_map)
 
         result = cmd_derive_verification(
-            Namespace(
+            _variant(
+                _DERIVE_ARGS,
                 changed_artifacts='pm-mod/services/auth/pom.xml',
                 project_dir=str(project),
             )
@@ -635,7 +678,7 @@ def test_empty_build_map_yields_all_unclaimed():
         _seed(str(project), build_map=None)
 
         result = cmd_derive_verification(
-            Namespace(changed_artifacts='pm-mod/scripts/architecture.py', project_dir=str(project))
+            _variant(_DERIVE_ARGS, changed_artifacts='pm-mod/scripts/architecture.py', project_dir=str(project))
         )
 
         assert result['status'] == 'success'

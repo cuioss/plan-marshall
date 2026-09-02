@@ -32,16 +32,24 @@ materialize on disk — a suite that silently measured nothing would report the
 same green as one that measured everything.
 """
 
+import argparse
+import copy
 import json
-from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from conftest import load_script_module
+from conftest import load_script_module, parse_ns
+
+#: The orchestrator script's address, as module-level string constants so every
+#: ``parse_ns`` call below stays statically resolvable.
+_ORCH_BUNDLE = 'plan-marshall'
+_ORCH_SKILL = 'plan-orchestrator'
+_ORCH_SCRIPT = 'orchestrator.py'
 
 _orch = load_script_module(
-    'plan-marshall', 'plan-orchestrator', 'orchestrator.py', 'orchestrator_script'
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script'
 )
 
 cmd_corpus_verdicts = _orch.cmd_corpus_verdicts
@@ -69,6 +77,55 @@ PRODUCER = 'fixture-integrity-epic/cleanup'
 #: shape. Derived from the module's own prefix constant so a change to the token
 #: cannot leave this suite quietly matching nothing.
 _TOP_LEVEL_VERDICT_PREFIX = f'- {VERDICT_PREFIX}'
+
+
+# =============================================================================
+# Parser-derived argument namespaces
+# =============================================================================
+#
+# Both hoisted namespaces are built by the orchestrator's OWN parser, so each
+# carries every default the production CLI applies rather than only the fields a
+# test author remembered. ``parse_ns`` re-executes the script module on every
+# call, so they live at module scope and the section-scope builder derives from
+# the base through :func:`_variant` instead of parsing again. ``register=False``
+# so neither can displace the explicitly-named registration above.
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because a namespace's values
+    are the parser's own scalars, and the base must stay unmutated for the other
+    callers sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+_VERDICTS_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'corpus', 'verdicts', '--slug', SLUG,
+    register=False,
+)
+
+#: The ``set-verdict`` base carries every one of that verb's nine flags, so the
+#: section-scope builder below overrides only the two addressing fields.
+_SET_VERDICT_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'corpus', 'set-verdict',
+    '--slug', SLUG,
+    '--plan', 'PLAN-01',
+    '--claim-index', '0',
+    '--verdict', 'corroborated',
+    '--checked-at', SHA,
+    '--by', PRODUCER,
+    '--rescoped', 'n/a',
+    '--evidence', 'the section is settled as a whole',
+    register=False,
+)
 
 
 # =============================================================================
@@ -130,19 +187,9 @@ def _write_spec(plan_context, name: str, claim_lines: list | None) -> Path:
     return path
 
 
-def _section_scope_args(plan: str) -> Namespace:
-    """A complete ``set-verdict`` Namespace in the ``--section-scope`` mode."""
-    return Namespace(
-        slug=SLUG,
-        plan=plan,
-        claim_index=None,
-        section_scope=True,
-        verdict='corroborated',
-        checked_at=SHA,
-        by=PRODUCER,
-        rescoped='n/a',
-        evidence='the section is settled as a whole',
-    )
+def _section_scope_args(plan: str) -> argparse.Namespace:
+    """A complete ``set-verdict`` namespace in the ``--section-scope`` mode."""
+    return _variant(_SET_VERDICT_ARGS, plan=plan, claim_index=None, section_scope=True)
 
 
 # =============================================================================
@@ -212,7 +259,7 @@ class TestUnreadableToStampedJourney:
     def test_the_journey_reports_blocks_recovers_and_admits(self, plan_context):
         spec = self._spec(plan_context)
 
-        before = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        before = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         # Waypoint 1 — REPORTED: the spec is named, with its offending line.
         assert before['specs_scanned'] == 1, 'the fixture population did not materialize'
@@ -230,7 +277,7 @@ class TestUnreadableToStampedJourney:
         assert before['blocking_count'] == 1
 
         stamped = cmd_corpus_set_verdict(_section_scope_args('PLAN-01'))
-        after = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        after = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         # Waypoint 3 — RECOVERED: one call, and the section is now settled.
         assert stamped['status'] == 'success'
@@ -254,7 +301,7 @@ class TestUnreadableToStampedJourney:
         # value the same rule forbids.
         self._spec(plan_context)
 
-        payload = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        payload = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         assert payload['specs_scanned'] == 1, 'the fixture population did not materialize'
         synthesised = [row for row in payload['claims'] if row['synthesised']]
@@ -277,7 +324,7 @@ class TestUnreadableToStampedJourney:
         self._spec(plan_context)
         cmd_corpus_set_verdict(_section_scope_args('PLAN-01'))
 
-        payload = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        payload = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         rows = [row for row in payload['claims'] if row['scope'] == 'section']
         assert len(rows) == 1, f'{len(rows)} section row(s), expected 1'
@@ -334,7 +381,7 @@ class TestDetectorFixtureMatrix:
     def test_the_detector_names_exactly_the_two_blind_forms(self, plan_context):
         _materialize_matrix(plan_context)
 
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         assert result['specs_scanned'] == _FIXTURE_COUNT, (
             f'{_FIXTURE_COUNT} fixture(s) written, {result["specs_scanned"]} scanned'
@@ -346,7 +393,7 @@ class TestDetectorFixtureMatrix:
     def test_the_tally_accounts_for_every_fixture_across_the_vocabulary(self, plan_context):
         _materialize_matrix(plan_context)
 
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         tally = {row['state']: row['count'] for row in result['claim_section_states']}
         expected: dict = dict.fromkeys(CLAIM_SECTION_STATES, 0)
@@ -363,7 +410,7 @@ class TestDetectorFixtureMatrix:
         # non-zero on the same payload that carries the counts.
         _materialize_matrix(plan_context)
 
-        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        result = cmd_corpus_verdicts(_VERDICTS_ARGS)
 
         assert result['specs_total'] == _FIXTURE_COUNT
         assert result['specs_scanned'] == _FIXTURE_COUNT

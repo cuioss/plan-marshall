@@ -17,15 +17,21 @@ arguments were removed when the contract was tightened to path-allocate only.
 A dedicated test below pins that they no longer parse.
 """
 
-from argparse import Namespace
+import argparse
+import copy
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import get_script_path, load_script_module, parse_ns, run_script
+
+_BUNDLE = 'plan-marshall'
+_SKILL = 'manage-plan-documents'
+_SCRIPT = 'manage-plan-documents.py'
 
 # Script path for subprocess (CLI plumbing) tests
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-plan-documents', 'manage-plan-documents.py')
+SCRIPT_PATH = get_script_path(_BUNDLE, _SKILL, _SCRIPT)
 
 # Import toon_parser for subprocess tests
 from toon_parser import parse_toon  # noqa: E402, I001
@@ -43,6 +49,47 @@ cmd_remove = _cmd_request.cmd_remove
 cmd_list_types = _cmd_types.cmd_list_types
 
 
+def _verb_args(*argv: str) -> argparse.Namespace:
+    """The namespace ``manage-plan-documents.py``'s OWN parser yields for ``argv``.
+
+    ``register=False`` so building one never publishes ``manage-plan-documents``
+    in ``sys.modules`` beside the handler modules loaded above.
+    """
+    args: argparse.Namespace = parse_ns(_BUNDLE, _SKILL, _SCRIPT, *argv, register=False)
+    return args
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because the values are the
+    parser's own scalars, and the base must stay unmutated for the other callers
+    sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: One parser-derived namespace per verb, hoisted to module scope because
+#: ``parse_ns`` re-executes the script module on every call. Each carries the two
+#: routing discriminators this two-level CLI produces — ``doc_type`` and ``verb`` —
+#: which no hand-built namespace here carried, alongside each verb's real flag
+#: defaults (``read``'s ``--raw`` / ``--section``, ``create``'s ``--force`` /
+#: ``--source-id`` / ``--body-file``).
+_LIST_TYPES_ARGS = _verb_args('list-types')
+_CREATE_ARGS = _verb_args(
+    'request', 'create', '--plan-id', 'placeholder', '--title', 'placeholder', '--source', 'description'
+)
+_READ_ARGS = _verb_args('request', 'read', '--plan-id', 'placeholder')
+_PATH_ARGS = _verb_args('request', 'path', '--plan-id', 'placeholder')
+_EXISTS_ARGS = _verb_args('request', 'exists', '--plan-id', 'placeholder')
+_REMOVE_ARGS = _verb_args('request', 'remove', '--plan-id', 'placeholder')
+_MARK_CLARIFIED_ARGS = _verb_args('request', 'mark-clarified', '--plan-id', 'placeholder')
+
+
 def _make_create_args(
     plan_id: str,
     title: str = 'Test Feature',
@@ -50,15 +97,16 @@ def _make_create_args(
     source_id: str | None = None,
     body_file: str | None = None,
     force: bool = False,
-) -> Namespace:
-    """Build a Namespace matching the trimmed `request create` CLI surface.
+) -> argparse.Namespace:
+    """Derive a `request create` namespace from the parser-derived base.
 
-    Only fields that survived the path-allocate refactor are present:
+    Only fields that survived the path-allocate refactor are named here:
     plan_id, title, source, source_id, body_file, force. Callers that previously
     passed body/context/clarifications/clarified_request must stop — those
     arguments were removed from both the argparse parser and cmd_create.
     """
-    return Namespace(
+    return _variant(
+        _CREATE_ARGS,
         plan_id=plan_id,
         title=title,
         source=source,
@@ -75,7 +123,7 @@ def _make_create_args(
 
 def test_list_types(plan_context):
     """Test listing available document types."""
-    result = cmd_list_types(Namespace())
+    result = cmd_list_types(_LIST_TYPES_ARGS)
     assert result['status'] == 'success'
     assert 'types' in result
     type_names = [t['name'] for t in result['types']]
@@ -147,7 +195,7 @@ Test context
 
     result = cmd_read(
         'request',
-        Namespace(plan_id='request-read', raw=False, section=None),
+        _variant(_READ_ARGS, plan_id='request-read'),
     )
     assert result['status'] == 'success'
     assert result['document'] == 'request'
@@ -161,7 +209,7 @@ def test_request_read_raw(plan_context, capsys):
 
     result = cmd_read(
         'request',
-        Namespace(plan_id='request-raw', raw=True, section=None),
+        _variant(_READ_ARGS, plan_id='request-raw', raw=True),
     )
     assert result['status'] == 'success'
     captured = capsys.readouterr()
@@ -172,7 +220,7 @@ def test_request_read_not_found(plan_context):
     """Test reading a non-existent request document."""
     result = cmd_read(
         'request',
-        Namespace(plan_id='request-notfound', raw=False, section=None),
+        _variant(_READ_ARGS, plan_id='request-notfound'),
     )
     assert result['status'] == 'error'
     assert result['error'] == 'document_not_found'
@@ -184,7 +232,7 @@ def test_request_exists_present(plan_context):
 
     result = cmd_exists(
         'request',
-        Namespace(plan_id='request-exists'),
+        _variant(_EXISTS_ARGS, plan_id='request-exists'),
     )
     assert result['exists'] is True
 
@@ -193,7 +241,7 @@ def test_request_exists_absent(plan_context):
     """Test checking if request exists (absent)."""
     result = cmd_exists(
         'request',
-        Namespace(plan_id='request-absent'),
+        _variant(_EXISTS_ARGS, plan_id='request-absent'),
     )
     assert result['exists'] is False
 
@@ -205,7 +253,7 @@ def test_request_remove(plan_context):
 
     result = cmd_remove(
         'request',
-        Namespace(plan_id='request-remove'),
+        _variant(_REMOVE_ARGS, plan_id='request-remove'),
     )
     assert result['action'] == 'removed'
     assert not (plan_dir / 'request.md').exists()
@@ -374,7 +422,7 @@ Ctx
 
     result = cmd_path(
         'request',
-        Namespace(plan_id='path-ok'),
+        _variant(_PATH_ARGS, plan_id='path-ok'),
     )
     assert result['status'] == 'success'
     assert result['document'] == 'request'
@@ -393,7 +441,7 @@ def test_request_path_missing_document(plan_context):
     """`request path` errors when the request document does not exist yet."""
     result = cmd_path(
         'request',
-        Namespace(plan_id='path-missing'),
+        _variant(_PATH_ARGS, plan_id='path-missing'),
     )
     assert result['status'] == 'error'
 
@@ -424,7 +472,7 @@ Clarified version of the request
 """)
     result = cmd_mark_clarified(
         'request',
-        Namespace(plan_id='mc-ok'),
+        _variant(_MARK_CLARIFIED_ARGS, plan_id='mc-ok'),
     )
     assert result['status'] == 'success'
     assert result['clarified'] is True
@@ -448,7 +496,7 @@ Clarified content
 """)
     result = cmd_mark_clarified(
         'request',
-        Namespace(plan_id='mc-no-clar'),
+        _variant(_MARK_CLARIFIED_ARGS, plan_id='mc-no-clar'),
     )
     assert result['status'] == 'success'
     assert result['clarified'] is True
@@ -468,7 +516,7 @@ Body
 """)
     result = cmd_mark_clarified(
         'request',
-        Namespace(plan_id='mc-missing'),
+        _variant(_MARK_CLARIFIED_ARGS, plan_id='mc-missing'),
     )
     assert result['status'] == 'error'
     assert result['error'] == 'not_clarified'
@@ -478,7 +526,7 @@ def test_mark_clarified_fails_when_document_missing(plan_context):
     """mark-clarified errors when the request document itself does not exist."""
     result = cmd_mark_clarified(
         'request',
-        Namespace(plan_id='mc-no-doc'),
+        _variant(_MARK_CLARIFIED_ARGS, plan_id='mc-no-doc'),
     )
     assert result['status'] == 'error'
 
@@ -494,7 +542,7 @@ def test_three_step_edit_roundtrip(plan_context):
     # Step 1: script allocates path
     path_result = cmd_path(
         'request',
-        Namespace(plan_id='three-step'),
+        _variant(_PATH_ARGS, plan_id='three-step'),
     )
     assert path_result['status'] == 'success'
     target = Path(path_result['path'])
@@ -507,7 +555,7 @@ def test_three_step_edit_roundtrip(plan_context):
     # Step 3: script validates and records transition
     mark_result = cmd_mark_clarified(
         'request',
-        Namespace(plan_id='three-step'),
+        _variant(_MARK_CLARIFIED_ARGS, plan_id='three-step'),
     )
     assert mark_result['status'] == 'success'
     assert mark_result['clarified'] is True
@@ -515,7 +563,7 @@ def test_three_step_edit_roundtrip(plan_context):
     # And a subsequent section read returns the clarified content
     read_result = cmd_read(
         'request',
-        Namespace(plan_id='three-step', raw=False, section='clarified_request'),
+        _variant(_READ_ARGS, plan_id='three-step', section='clarified_request'),
     )
     assert read_result['status'] == 'success'
     assert read_result['section'] == 'clarified_request'
@@ -593,7 +641,7 @@ def test_read_section_clarified_request_fallback(plan_context):
     # Request clarified_request - should return original_input
     result = cmd_read(
         'request',
-        Namespace(plan_id='fallback-test', raw=False, section='clarified_request'),
+        _variant(_READ_ARGS, plan_id='fallback-test', section='clarified_request'),
     )
     assert result['status'] == 'success'
     assert result['section'] == 'original_input'  # actual section returned
@@ -612,7 +660,7 @@ def test_read_section_returns_clarified_when_present_after_direct_edit(plan_cont
     # Step 1: script allocates canonical path
     path_result = cmd_path(
         'request',
-        Namespace(plan_id='clarified-present'),
+        _variant(_PATH_ARGS, plan_id='clarified-present'),
     )
     target = Path(path_result['path'])
 
@@ -627,13 +675,13 @@ def test_read_section_returns_clarified_when_present_after_direct_edit(plan_cont
     # Step 3: record the transition
     cmd_mark_clarified(
         'request',
-        Namespace(plan_id='clarified-present'),
+        _variant(_MARK_CLARIFIED_ARGS, plan_id='clarified-present'),
     )
 
     # Subsequent read of clarified_request returns the edited section
     result = cmd_read(
         'request',
-        Namespace(plan_id='clarified-present', raw=False, section='clarified_request'),
+        _variant(_READ_ARGS, plan_id='clarified-present', section='clarified_request'),
     )
     assert result['section'] == 'clarified_request'
     assert 'Clarified version' in result['content']
@@ -675,7 +723,7 @@ def test_read_section_source_from_header(plan_context):
 
     result = cmd_read(
         'request',
-        Namespace(plan_id='header-source', raw=False, section='source'),
+        _variant(_READ_ARGS, plan_id='header-source', section='source'),
     )
     assert result['status'] == 'success'
     assert result['section'] == 'source'
@@ -689,7 +737,7 @@ def test_read_section_source_id_from_header(plan_context):
 
     result = cmd_read(
         'request',
-        Namespace(plan_id='header-source-id', raw=False, section='source_id'),
+        _variant(_READ_ARGS, plan_id='header-source-id', section='source_id'),
     )
     assert result['status'] == 'success'
     assert result['section'] == 'source_id'
@@ -702,7 +750,7 @@ def test_read_section_plan_id_from_header(plan_context):
 
     result = cmd_read(
         'request',
-        Namespace(plan_id='header-plan-id', raw=False, section='plan_id'),
+        _variant(_READ_ARGS, plan_id='header-plan-id', section='plan_id'),
     )
     assert result['status'] == 'success'
     assert result['section'] == 'plan_id'
@@ -715,7 +763,7 @@ def test_read_section_created_from_header(plan_context):
 
     result = cmd_read(
         'request',
-        Namespace(plan_id='header-created', raw=False, section='created'),
+        _variant(_READ_ARGS, plan_id='header-created', section='created'),
     )
     assert result['status'] == 'success'
     assert result['section'] == 'created'
@@ -728,7 +776,7 @@ def test_read_section_header_preserves_original_block(plan_context):
 
     result = cmd_read(
         'request',
-        Namespace(plan_id='header-preserved', raw=False, section='_header'),
+        _variant(_READ_ARGS, plan_id='header-preserved', section='_header'),
     )
     assert result['status'] == 'success'
     assert result['section'] == '_header'
@@ -747,7 +795,7 @@ def test_read_unknown_section_lists_header_fields_as_available(plan_context):
 
     result = cmd_read(
         'request',
-        Namespace(plan_id='header-unknown', raw=False, section='does_not_exist'),
+        _variant(_READ_ARGS, plan_id='header-unknown', section='does_not_exist'),
     )
     assert result['status'] == 'error'
     assert result['error'] == 'section_not_found'

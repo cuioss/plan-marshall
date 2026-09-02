@@ -13,19 +13,44 @@ from __future__ import annotations
 
 import json
 import sys
-from argparse import Namespace
 from pathlib import Path
 
 import pytest
-from conftest import get_script_path
+from conftest import get_script_path, parse_ns
 
-_CLIENT_DIR = get_script_path('plan-marshall', 'build-server-client', 'build_server.py').parent
+_BUNDLE = 'plan-marshall'
+_SKILL = 'build-server-client'
+_SCRIPT = 'build_server.py'
+
+_CLIENT_DIR = get_script_path(_BUNDLE, _SKILL, _SCRIPT).parent
 if str(_CLIENT_DIR) not in sys.path:
     sys.path.insert(0, str(_CLIENT_DIR))
 
 import _ledger_core as ledger_core  # noqa: E402
 import build_server as client  # noqa: E402
 from _build_server_protocol import STATUS_QUEUED  # noqa: E402
+
+#: The two command lines this acceptance drives, parsed by ``build_server.py``'s
+#: OWN parser and hoisted to module scope because ``parse_ns`` re-executes the
+#: script module on every call. Both carry only fixed values, so no per-test
+#: derivation is needed: the submit half names the tree it targets, and the wait
+#: half deliberately omits ``--job-id`` — the parser's ``None`` for it is the very
+#: input that forces the ledger re-attach this test is about. ``register=False``
+#: so neither publishes a second ``build_server`` in ``sys.modules``.
+_SUBMIT_ARGS = parse_ns(
+    _BUNDLE, _SKILL, _SCRIPT, 'submit',
+    '--command', json.dumps(['python3', '/tree/.plan/execute-script.py', 'nt:sk:s', 'run']),
+    '--exec-path', '/tree',
+    '--project-path', '/tree',
+    '--plan-id', 'plan-x',
+    register=False,
+)
+_WAIT_ARGS = parse_ns(
+    _BUNDLE, _SKILL, _SCRIPT, 'wait',
+    '--plan-id', 'plan-x',
+    '--bound', '1',
+    register=False,
+)
 
 
 @pytest.fixture
@@ -44,12 +69,7 @@ def test_wait_reattaches_via_the_ledger_job_id(isolated, monkeypatch):
         client, '_call_daemon',
         lambda _req, timeout: {'status': STATUS_QUEUED, 'job_id': 'JOB-77', 'attached': False},
     )
-    submit = client.run_submit(
-        Namespace(
-            command=json.dumps(['python3', '/tree/.plan/execute-script.py', 'nt:sk:s', 'run']),
-            exec_path='/tree', project_path='/tree', plan_id='plan-x',
-        )
-    )
+    submit = client.run_submit(_SUBMIT_ARGS)
     assert submit['status'] == 'success'
     assert submit['job_id'] == 'JOB-77'
 
@@ -61,7 +81,7 @@ def test_wait_reattaches_via_the_ledger_job_id(isolated, monkeypatch):
         return {'status': 'success', 'job_status': 'success', 'duration_seconds': 1, 'log_file': 'l'}
 
     monkeypatch.setattr(client, '_call_daemon', _capture)
-    waited = client.run_wait(Namespace(job_id=None, plan_id='plan-x', bound=1))
+    waited = client.run_wait(_WAIT_ARGS)
 
     assert seen['job_id'] == 'JOB-77'  # recovered from the ledger, not passed in
     assert waited['job_status'] == 'success'

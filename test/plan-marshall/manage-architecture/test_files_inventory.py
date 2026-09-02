@@ -15,11 +15,13 @@ their owning module.
 
 import os
 import sys
+import argparse
+import copy
 import tempfile
-from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
-from conftest import load_script_module
+from conftest import load_script_module, parse_ns
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -43,6 +45,39 @@ resolve_module_for_path = _architecture_core.resolve_module_for_path
 # here rather than from a hard-coded list.
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _BUNDLES_ROOT = _REPO_ROOT / 'marketplace' / 'bundles'
+
+#: The architecture script's address, as module-level string constants so the
+#: ``parse_ns`` call below stays statically resolvable.
+_ARCH_BUNDLE = 'plan-marshall'
+_ARCH_SKILL = 'manage-architecture'
+_ARCH_SCRIPT = 'architecture.py'
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from the hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because a namespace's values
+    are the parser's own scalars, and the base must stay unmutated for the other
+    callers sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: The ``which-module`` namespace, built by ``architecture.py``'s OWN parser so
+#: it carries every default the production CLI applies — the ``command``
+#: discriminator and the ``plan_id`` half of the ``--plan-id``/``--project-dir``
+#: pair among them, neither of which the hand-built namespaces carried. Hoisted
+#: to module scope because ``parse_ns`` re-executes the script module on every
+#: call, and ``register=False`` because only the namespace is wanted here.
+_WHICH_MODULE_ARGS = parse_ns(
+    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
+    '--project-dir', '.', 'which-module', '--path', '.',
+    register=False,
+)
 
 
 # =============================================================================
@@ -699,7 +734,7 @@ def test_which_module_resolves_test_path_via_paths_tests():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_containment_project(tmpdir)
 
-        result = cmd_which_module(Namespace(project_dir=tmpdir, path=_TEST_PATH))
+        result = cmd_which_module(_variant(_WHICH_MODULE_ARGS, project_dir=tmpdir, path=_TEST_PATH))
 
         assert result['status'] == 'success'
         assert result['module'] == 'plan-marshall'
@@ -716,7 +751,7 @@ def test_which_module_resolves_claude_skills_path_through_the_attribution_seam()
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_containment_project(tmpdir)
 
-        result = cmd_which_module(Namespace(project_dir=tmpdir, path=_CLAUDE_SKILLS_PATH))
+        result = cmd_which_module(_variant(_WHICH_MODULE_ARGS, project_dir=tmpdir, path=_CLAUDE_SKILLS_PATH))
 
         assert result['status'] == 'success'
         assert result['module'] == 'pm-plugin-development'

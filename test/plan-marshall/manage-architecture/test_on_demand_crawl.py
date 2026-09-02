@@ -15,14 +15,16 @@ tests seed module data via ``save_module_derived`` even though no real
 extension would pick up the fake project tree.
 """
 
+import argparse
+import copy
 import json
 import tempfile
-from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from conftest import load_script_module
+from conftest import load_script_module, parse_ns
 
 _architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
 _cmd_manage = load_script_module('plan-marshall', 'manage-architecture', '_cmd_manage.py', '_cmd_manage')
@@ -36,6 +38,39 @@ save_module_derived = _architecture_core.save_module_derived
 save_project_meta = _architecture_core.save_project_meta
 invalidate_crawl_cache = _architecture_core.invalidate_crawl_cache
 DataNotFoundError = _architecture_core.DataNotFoundError
+
+#: The architecture script's address, as module-level string constants so the
+#: ``parse_ns`` call below stays statically resolvable.
+_ARCH_BUNDLE = 'plan-marshall'
+_ARCH_SKILL = 'manage-architecture'
+_ARCH_SCRIPT = 'architecture.py'
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from the hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because a namespace's values
+    are the parser's own scalars, and the base must stay unmutated for the other
+    callers sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: The ``resolve`` namespace, built by ``architecture.py``'s OWN parser so it
+#: carries every default the production CLI applies — the ``command``
+#: discriminator and the ``plan_id`` half of the ``--plan-id``/``--project-dir``
+#: pair among them, neither of which the hand-built namespace carried. Hoisted
+#: to module scope because ``parse_ns`` re-executes the script module on every
+#: call, and ``register=False`` because only the namespace is wanted here.
+_RESOLVE_ARGS = parse_ns(
+    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
+    '--project-dir', '.', 'resolve', '--command', 'verify',
+    register=False,
+)
 
 
 def _seed_synthetic(tmpdir: str, modules: dict[str, dict]) -> None:
@@ -156,7 +191,7 @@ def test_resolve_crawls_exactly_once(monkeypatch):
             },
         )
         try:
-            args = Namespace(project_dir=tmpdir, resolve_command='verify', module=None)
+            args = _variant(_RESOLVE_ARGS, project_dir=tmpdir)
             result = _cmd_client.cmd_resolve(args)
         finally:
             invalidate_crawl_cache(tmpdir)

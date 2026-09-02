@@ -13,15 +13,21 @@ test touches the real ledger, and ``PLAN_MARSHALL_HOME`` isolates the registry.
 
 from __future__ import annotations
 
+import argparse
+import copy
 import sys
-from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
 import pytest
 from _resolve_project_dir_fixtures import NO_PLAN_SENTINEL
-from conftest import get_script_path
+from conftest import get_script_path, parse_ns
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'build-server-client', 'build_server.py')
+_BUNDLE = 'plan-marshall'
+_SKILL = 'build-server-client'
+_SCRIPT = 'build_server.py'
+
+SCRIPT_PATH = get_script_path(_BUNDLE, _SKILL, _SCRIPT)
 SCRIPTS_DIR = SCRIPT_PATH.parent
 _LOGGING_SCRIPTS_DIR = get_script_path('plan-marshall', 'manage-logging', 'plan_logging.py').parent
 
@@ -33,6 +39,42 @@ import _build_server_registry as registry  # noqa: E402
 import _ledger_core as ledger_core  # noqa: E402
 import build_server as client  # noqa: E402
 import plan_logging  # noqa: E402
+
+
+def _verb_args(*argv: str) -> argparse.Namespace:
+    """The namespace ``build_server.py``'s OWN parser yields for ``argv``.
+
+    ``register=False`` so building one never publishes a second ``build_server``
+    in ``sys.modules`` alongside the one imported above.
+    """
+    args: argparse.Namespace = parse_ns(_BUNDLE, _SKILL, _SCRIPT, *argv, register=False)
+    return args
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because the values are the
+    parser's own scalars, and the base must stay unmutated for the other callers
+    sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: One parser-derived namespace per client verb, hoisted to module scope because
+#: ``parse_ns`` re-executes the script module on every call. Each carries the
+#: verb's real flag defaults rather than values repeated at the call site.
+#: ``submit`` declares ``--command`` as required and binds it to the same ``dest``
+#: the sub-command discriminator uses, so the base is built with an inert empty
+#: argv payload that every caller overrides with the command under test.
+_PREFLIGHT_ARGS = _verb_args('preflight')
+_SUBMIT_ARGS = _verb_args('submit', '--command', '[]')
+_WAIT_ARGS = _verb_args('wait')
+_PING_ARGS = _verb_args('ping')
 
 
 @pytest.fixture
@@ -85,7 +127,7 @@ def test_preflight_disabled_does_no_daemon_round_trip(home, monkeypatch):
 
     monkeypatch.setattr(client, '_handshake', _fail_handshake)
 
-    result = client.run_preflight(Namespace(project_path=str(home / 'proj')))
+    result = client.run_preflight(_variant(_PREFLIGHT_ARGS, project_path=str(home / 'proj')))
 
     assert result['status'] == 'success'
     assert result['preflight'] == 'disabled'
@@ -98,7 +140,7 @@ def test_preflight_ready_when_registered_and_daemon_answers(home, monkeypatch):
     registry.register_project(root)
     monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1', 'pid': 42}, None))
 
-    result = client.run_preflight(Namespace(project_path=str(root)))
+    result = client.run_preflight(_variant(_PREFLIGHT_ARGS, project_path=str(root)))
 
     assert result['preflight'] == 'ready'
     assert result['registered'] is True
@@ -111,7 +153,7 @@ def test_preflight_down_carries_named_reason(home, monkeypatch):
     registry.register_project(root)
     monkeypatch.setattr(client, '_handshake', lambda _p: (None, client.REASON_UNREACHABLE))
 
-    result = client.run_preflight(Namespace(project_path=str(root)))
+    result = client.run_preflight(_variant(_PREFLIGHT_ARGS, project_path=str(root)))
 
     assert result['preflight'] == 'down'
     assert result['reason'] == client.REASON_UNREACHABLE
@@ -122,9 +164,10 @@ def test_preflight_down_carries_named_reason(home, monkeypatch):
 # =============================================================================
 
 
-def _submit_args(project_path: str, plan_id: str = 'p1') -> Namespace:
+def _submit_args(project_path: str, plan_id: str | None = 'p1') -> argparse.Namespace:
     command = f'["python3", "{project_path}/.plan/execute-script.py", "a:b:c", "run"]'
-    return Namespace(
+    return _variant(
+        _SUBMIT_ARGS,
         command=command,
         exec_path=project_path,
         project_path=project_path,
@@ -194,7 +237,7 @@ def test_plan_less_submit_records_the_sentinel_and_reattaches(
         return {'status': 'success', 'job_id': request['job_id'], 'exit_code': 0}
 
     monkeypatch.setattr(client, '_call_daemon', _capture)
-    result = client.run_wait(Namespace(job_id=None, plan_id=plan_id, bound=1))
+    result = client.run_wait(_variant(_WAIT_ARGS, job_id=None, plan_id=plan_id, bound=1))
 
     assert captured.get('job_id') == 'JOB-NP', (
         'the plan-less re-attach lookup did not find the row the plan-less '
@@ -303,7 +346,13 @@ def test_submit_survives_ledger_recording_oserror(home, ledger, monkeypatch, fai
 
 def test_submit_rejects_non_json_command(home, ledger):
     result = client.run_submit(
-        Namespace(command='not-json', exec_path=None, project_path=str(home), plan_id='p1')
+        _variant(
+            _SUBMIT_ARGS,
+            command='not-json',
+            exec_path=None,
+            project_path=str(home),
+            plan_id='p1',
+        )
     )
 
     assert result['status'] == 'error'
@@ -328,7 +377,7 @@ def test_wait_bound_expiry_returns_live_running_status(monkeypatch):
         },
     )
 
-    result = client.run_wait(Namespace(job_id='JOB-1', plan_id=None, bound=300))
+    result = client.run_wait(_variant(_WAIT_ARGS, job_id='JOB-1', plan_id=None, bound=300))
 
     assert result['status'] == 'success'
     assert result['job_status'] == 'running'
@@ -347,7 +396,7 @@ def test_wait_killed_renders_no_blind_retry_message(monkeypatch):
         lambda _req, timeout: {'status': 'killed', 'job_id': 'JOB-1'},
     )
 
-    result = client.run_wait(Namespace(job_id='JOB-1', plan_id=None, bound=1))
+    result = client.run_wait(_variant(_WAIT_ARGS, job_id='JOB-1', plan_id=None, bound=1))
 
     assert result['job_status'] == 'killed'
     assert result['message'] == client._KILLED_MESSAGE
@@ -373,14 +422,14 @@ def test_wait_reattaches_via_ledger_when_no_job_id(home, ledger, monkeypatch):
 
     monkeypatch.setattr(client, '_call_daemon', _capture)
 
-    result = client.run_wait(Namespace(job_id=None, plan_id='p1', bound=1))
+    result = client.run_wait(_variant(_WAIT_ARGS, job_id=None, plan_id='p1', bound=1))
 
     assert captured['job_id'] == 'JOB-REATTACH'
     assert result['job_status'] == 'success'
 
 
 def test_wait_errors_when_no_job_id_and_no_ledger_row(home, ledger):
-    result = client.run_wait(Namespace(job_id=None, plan_id='p1', bound=1))
+    result = client.run_wait(_variant(_WAIT_ARGS, job_id=None, plan_id='p1', bound=1))
 
     assert result['status'] == 'error'
 
@@ -406,7 +455,7 @@ def test_wait_reattach_on_unreadable_ledger_degrades_to_not_found(home, ledger, 
         lambda _p: pytest.fail('re-attach must fail closed before any daemon round-trip'),
     )
 
-    result = client.run_wait(Namespace(job_id=None, plan_id='p1', bound=1))
+    result = client.run_wait(_variant(_WAIT_ARGS, job_id=None, plan_id='p1', bound=1))
 
     assert result['status'] == 'error'
     # The EXISTING no-row result, not a new unreadable-ledger error shape.
@@ -434,7 +483,7 @@ def test_wait_refused_response_preserves_reason(monkeypatch):
         },
     )
 
-    result = client.run_wait(Namespace(job_id='JOB-1', plan_id=None, bound=1))
+    result = client.run_wait(_variant(_WAIT_ARGS, job_id='JOB-1', plan_id=None, bound=1))
 
     assert result['job_status'] == client.STATUS_REFUSED
     assert result['reason'] == 'not_registered'
@@ -443,7 +492,7 @@ def test_wait_refused_response_preserves_reason(monkeypatch):
 def test_wait_degraded_when_daemon_unreachable(monkeypatch):
     monkeypatch.setattr(client, '_handshake', lambda _p: (None, client.REASON_SOCKET_ABSENT))
 
-    result = client.run_wait(Namespace(job_id='JOB-1', plan_id=None, bound=1))
+    result = client.run_wait(_variant(_WAIT_ARGS, job_id='JOB-1', plan_id=None, bound=1))
 
     assert result['status'] == 'degraded'
     assert result['reason'] == client.REASON_SOCKET_ABSENT
@@ -457,7 +506,7 @@ def test_wait_degraded_when_daemon_unreachable(monkeypatch):
 def test_ping_up_reports_version_and_pid(monkeypatch):
     monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1', 'pid': 7}, None))
 
-    result = client.run_ping(Namespace())
+    result = client.run_ping(_PING_ARGS)
 
     assert result['daemon'] == 'up'
     assert result['version'] == '1'
@@ -467,7 +516,7 @@ def test_ping_up_reports_version_and_pid(monkeypatch):
 def test_ping_down_reports_reason(monkeypatch):
     monkeypatch.setattr(client, '_handshake', lambda _p: (None, client.REASON_VERSION_MISMATCH))
 
-    result = client.run_ping(Namespace())
+    result = client.run_ping(_PING_ARGS)
 
     assert result['daemon'] == 'down'
     assert result['reason'] == client.REASON_VERSION_MISMATCH
@@ -582,7 +631,7 @@ def test_wait_logs_result_entry_with_job_id(captured_logs, monkeypatch):
         lambda _req, timeout: {'status': 'success', 'job_id': 'JOB-1', 'exit_code': 0},
     )
 
-    client.run_wait(Namespace(job_id='JOB-1', plan_id='p1', bound=1))
+    client.run_wait(_variant(_WAIT_ARGS, job_id='JOB-1', plan_id='p1', bound=1))
 
     info_entries = [c for c in captured_logs if c[0] == 'work' and c[2] == 'INFO']
     assert info_entries, 'a wait must log its result'
@@ -606,7 +655,7 @@ def test_wait_with_control_char_job_id_never_forges_a_log_header(captured_logs, 
         lambda _req, timeout: {'status': 'success', 'job_id': 'JOB-1', 'exit_code': 0},
     )
 
-    client.run_wait(Namespace(job_id=injected_job_id, plan_id='p1', bound=1))
+    client.run_wait(_variant(_WAIT_ARGS, job_id=injected_job_id, plan_id='p1', bound=1))
 
     work_entries = [c for c in captured_logs if c[0] == 'work']
     assert work_entries, 'a wait must log (otherwise this test is vacuous)'
@@ -638,7 +687,7 @@ def test_wait_with_control_char_daemon_response_never_forges_a_log_header(
         },
     )
 
-    client.run_wait(Namespace(job_id='JOB-1', plan_id='p1', bound=1))
+    client.run_wait(_variant(_WAIT_ARGS, job_id='JOB-1', plan_id='p1', bound=1))
 
     work_entries = [c for c in captured_logs if c[0] == 'work']
     assert work_entries, 'a wait must log (otherwise this test is vacuous)'
@@ -704,7 +753,7 @@ def test_submit_refused_with_control_char_reason_never_forges_a_log_header(
 def test_wait_degraded_logs_warning(captured_logs, monkeypatch):
     monkeypatch.setattr(client, '_handshake', lambda _p: (None, client.REASON_SOCKET_ABSENT))
 
-    client.run_wait(Namespace(job_id='JOB-1', plan_id='p1', bound=1))
+    client.run_wait(_variant(_WAIT_ARGS, job_id='JOB-1', plan_id='p1', bound=1))
 
     assert any(
         level == 'WARNING'
@@ -774,7 +823,7 @@ def test_submit_with_control_char_notation_never_forges_a_log_header(home, ledge
     )
 
     client.run_submit(
-        Namespace(command=command, exec_path=root, project_path=root, plan_id='p1')
+        _variant(_SUBMIT_ARGS, command=command, exec_path=root, project_path=root, plan_id='p1')
     )
 
     work_entries = [c for c in captured_logs if c[0] == 'work']

@@ -17,12 +17,11 @@ This suite is scoped strictly to the phase-1-init contract.
 """
 
 import importlib.util
-from argparse import Namespace
 from unittest.mock import patch
 
 import pytest
 
-from conftest import MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT, parse_ns
 
 # Tier 2 direct import — load the hyphenated manage-lessons module via importlib
 _MANAGE_LESSONS_SCRIPT = str(
@@ -34,6 +33,32 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 cmd_convert_to_plan = _mod.cmd_convert_to_plan
+
+#: The lesson and plan the move-contract test drives, named once so the hoisted
+#: ``parse_ns`` command line and the test body cannot drift apart.
+#:
+#: ⛔ The lesson-id SHAPE is load-bearing, and it changed with this conversion.
+#: ``--lesson-id`` carries a validating ``type=`` (``validate_lesson_id``), so the
+#: real CLI accepts only ``YYYY-MM-DD-HH-NNN`` — five fields, with an hour between
+#: the date and the counter. The value this test used before,
+#: ``2026-04-15-099``, has no hour field and the production parser rejects it
+#: outright: the hand-built namespace bypassed the validator, so the contract test
+#: was driving ``cmd_convert_to_plan`` with an id the executor path it claims to
+#: mirror could never deliver. Deriving the namespace from that parser is what
+#: surfaced it.
+_LESSON_ID = '2026-04-15-14-099'
+_CONTRACT_PLAN_ID = 'phase1-init-contract-plan'
+
+#: The ``convert-to-plan`` namespace ``manage-lessons.py``'s OWN parser yields,
+#: hoisted to module scope because ``parse_ns`` re-executes the script module on
+#: every call. Every value is fixed, so no per-test derivation is needed.
+#: ``register=False`` so it never publishes a second ``manage-lessons`` in
+#: ``sys.modules`` beside the copy loaded above as ``manage_lessons``.
+_CONVERT_TO_PLAN_ARGS = parse_ns(
+    'plan-marshall', 'manage-lessons', 'manage-lessons.py',
+    'convert-to-plan', '--lesson-id', _LESSON_ID, '--plan-id', _CONTRACT_PLAN_ID,
+    register=False,
+)
 
 
 class TestPhase1InitLessonMoveContract:
@@ -49,8 +74,8 @@ class TestPhase1InitLessonMoveContract:
         relies on at Step 5b — any divergence here would silently break the
         phase-1-init workflow without failing its (skill-only) self-tests.
         """
-        lesson_id = '2026-04-15-099'
-        plan_id = 'phase1-init-contract-plan'
+        lesson_id = _LESSON_ID
+        plan_id = _CONTRACT_PLAN_ID
 
         lessons_dir = tmp_path / 'lessons-learned'
         lessons_dir.mkdir(parents=True)
@@ -69,7 +94,7 @@ class TestPhase1InitLessonMoveContract:
         source.write_text(lesson_content)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_convert_to_plan(Namespace(lesson_id=lesson_id, plan_id=plan_id))
+            result = cmd_convert_to_plan(_CONVERT_TO_PLAN_ARGS)
 
         # Contract assertion 1: success status with echoed identifiers
         assert result['status'] == 'success'

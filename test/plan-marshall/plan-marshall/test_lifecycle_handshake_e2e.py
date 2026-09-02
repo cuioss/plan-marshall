@@ -31,17 +31,20 @@ The summarize step uses a real subprocess (``run_script``) so the
 
 from __future__ import annotations
 
+import argparse
+import copy
 import json
 import shutil
 import sys
-from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
 import pytest
 from conftest import (
     MARKETPLACE_ROOT,
     get_script_path,
     load_script_module,
+    parse_ns,
     run_script,
 )
 
@@ -96,6 +99,50 @@ cmd_list = _query.cmd_list
 cmd_read = _query.cmd_read
 
 
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because the values are the
+    parser's own scalars, and the base must stay unmutated for the other callers
+    sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: Parser-derived bases for the two surfaces this e2e drives, hoisted to module
+#: scope because ``parse_ns`` re-executes the script module on every call. The
+#: ``phase_handshake`` pair is where the parser is most corrective: ``capture``
+#: declares no ``--strict`` and ``verify`` declares neither ``--override`` nor
+#: ``--reason``, yet the hand-built namespaces these replace gave every field to
+#: both — so each test asserted against a shape the CLI cannot produce.
+#: ``register=False`` throughout, so none displaces a module registration this
+#: file already performs under its own explicit names.
+_TASKS_LIST_ARGS = parse_ns(
+    'plan-marshall', 'manage-tasks', 'manage-tasks.py',
+    'list', '--plan-id', 'placeholder',
+    register=False,
+)
+_TASKS_READ_ARGS = parse_ns(
+    'plan-marshall', 'manage-tasks', 'manage-tasks.py',
+    'read', '--plan-id', 'placeholder', '--task-number', '1',
+    register=False,
+)
+_HANDSHAKE_CAPTURE_ARGS = parse_ns(
+    'plan-marshall', 'plan-marshall', 'phase_handshake.py',
+    'capture', '--plan-id', 'placeholder', '--phase', '1-init',
+    register=False,
+)
+_HANDSHAKE_VERIFY_ARGS = parse_ns(
+    'plan-marshall', 'plan-marshall', 'phase_handshake.py',
+    'verify', '--plan-id', 'placeholder', '--phase', '1-init', '--strict',
+    register=False,
+)
+
+
 def _make_stub_run_script():
     """Return a stub for ``inv._run_script`` covering the notations the capture
     functions invoke.
@@ -131,16 +178,15 @@ def _make_stub_run_script():
                     s_idx = args.index('--status')
                     if s_idx + 1 < len(args):
                         status_filter = args[s_idx + 1]
-                ns = Namespace(
-                    plan_id=plan_id,
-                    status=status_filter,
-                    deliverable=None,
-                    ready=False,
-                )
+                ns = _variant(_TASKS_LIST_ARGS, plan_id=plan_id, status=status_filter)
                 return serialize_toon(cmd_list(ns))
             if subcommand == 'read':
-                t_idx = args.index('--task')
-                ns = Namespace(plan_id=plan_id, task=int(args[t_idx + 1]))
+                # ``--task-number`` is the flag the real CLI declares, and
+                # ``task_number`` the field its parser produces. The hand-built
+                # namespace this replaces named both ``--task`` and ``task``, so
+                # the branch could never have matched a real capture's argv.
+                t_idx = args.index('--task-number')
+                ns = _variant(_TASKS_READ_ARGS, plan_id=plan_id, task_number=int(args[t_idx + 1]))
                 return serialize_toon(cmd_read(ns))
             return None
 
@@ -204,24 +250,12 @@ def stub_load_status_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
 # =============================================================================
 
 
-def _capture_args(plan_id: str, phase: str) -> Namespace:
-    return Namespace(
-        plan_id=plan_id,
-        phase=phase,
-        override=False,
-        reason=None,
-        strict=False,
-    )
+def _capture_args(plan_id: str, phase: str) -> argparse.Namespace:
+    return _variant(_HANDSHAKE_CAPTURE_ARGS, plan_id=plan_id, phase=phase)
 
 
-def _verify_args(plan_id: str, phase: str) -> Namespace:
-    return Namespace(
-        plan_id=plan_id,
-        phase=phase,
-        override=False,
-        reason=None,
-        strict=True,
-    )
+def _verify_args(plan_id: str, phase: str) -> argparse.Namespace:
+    return _variant(_HANDSHAKE_VERIFY_ARGS, plan_id=plan_id, phase=phase)
 
 
 def _create_plan(plan_id: str, title: str = 'E2E Handshake') -> None:

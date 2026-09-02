@@ -28,16 +28,24 @@ exercised in-process against the ``_orchestrator_inbox`` handlers under
   unsafe as a directory name is refused rather than allowed to traverse.
 """
 
-from argparse import Namespace
+import argparse
+import copy
 from pathlib import Path
+from typing import Any
 
-from conftest import load_script_module
+from conftest import load_script_module, parse_ns
+
+#: The orchestrator script's address, as module-level string constants so every
+#: ``parse_ns`` call below stays statically resolvable.
+_ORCH_BUNDLE = 'plan-marshall'
+_ORCH_SKILL = 'plan-orchestrator'
+_ORCH_SCRIPT = 'orchestrator.py'
 
 _inbox = load_script_module(
     'plan-marshall', 'plan-orchestrator', '_orchestrator_inbox.py', 'orchestrator_inbox'
 )
 _orch = load_script_module(
-    'plan-marshall', 'plan-orchestrator', 'orchestrator.py', 'orchestrator_script'
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script'
 )
 
 LIFECYCLE_LIVE = _inbox.LIFECYCLE_LIVE
@@ -63,6 +71,94 @@ SENDER = 'demo-plan'
 OTHER = 'other-plan'
 
 
+# =============================================================================
+# Parser-derived argument namespaces
+# =============================================================================
+#
+# One hoisted namespace per verb, built by the orchestrator's OWN parser so each
+# carries every default the production CLI applies — ``inbox write``'s
+# ``target_plan`` and ``close-stream``'s ``sender_type`` among them — rather than
+# only the fields a test author remembered. ``parse_ns`` re-executes the script
+# module on every call, so these live at module scope and the builders below
+# derive from them through :func:`_variant` instead of parsing again.
+#
+# ``register=False`` throughout: only the namespace is wanted, and publishing
+# ``orchestrator`` in ``sys.modules`` would displace the explicitly-named
+# registration this module already performs.
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because a namespace's values
+    are the parser's own scalars, and the base must stay unmutated for the other
+    callers sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+_SCAFFOLD_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'scaffold', '--slug', EPIC,
+    register=False,
+)
+
+_WRITE_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'inbox', 'write', '--slug', EPIC,
+    '--sender-type', 'plan', '--sender-id', SENDER,
+    '--kind', 'landing', '--payload-file', '',
+    register=False,
+)
+
+_AMEND_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'inbox', 'amend', '--slug', EPIC, '--message', '', '--payload-file', '',
+    register=False,
+)
+
+_SUPERSEDE_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'inbox', 'supersede', '--slug', EPIC, '--message', '', '--by', '',
+    register=False,
+)
+
+_CLOSE_STREAM_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'inbox', 'close-stream', '--slug', EPIC,
+    '--sender-type', 'plan', '--sender-id', SENDER,
+    register=False,
+)
+
+_VALIDATE_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'inbox', 'validate', '--slug', EPIC, '--message', '',
+    register=False,
+)
+
+_LIST_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'inbox', 'list', '--slug', EPIC,
+    register=False,
+)
+
+_ARCHIVE_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'inbox', 'archive', '--slug', EPIC, '--message', '',
+    register=False,
+)
+
+_MIGRATE_ARCHIVE_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'inbox', 'migrate-archive', '--slug', EPIC,
+    register=False,
+)
+
+
 def _epic_dir(plan_context, slug: str = EPIC) -> Path:
     return Path(plan_context.fixture_dir) / 'orchestrator' / slug
 
@@ -83,8 +179,9 @@ def _write_args(
     sender_id: str = SENDER,
     kind: str = 'landing',
     payload_file: str = '',
-) -> Namespace:
-    return Namespace(
+) -> argparse.Namespace:
+    return _variant(
+        _WRITE_ARGS,
         slug=slug,
         sender_type=sender_type,
         sender_id=sender_id,
@@ -93,12 +190,12 @@ def _write_args(
     )
 
 
-def _amend_args(message: str, payload_file: str, slug: str = EPIC) -> Namespace:
-    return Namespace(slug=slug, message=message, payload_file=payload_file)
+def _amend_args(message: str, payload_file: str, slug: str = EPIC) -> argparse.Namespace:
+    return _variant(_AMEND_ARGS, slug=slug, message=message, payload_file=payload_file)
 
 
-def _supersede_args(message: str, by: str, slug: str = EPIC) -> Namespace:
-    return Namespace(slug=slug, message=message, by=by)
+def _supersede_args(message: str, by: str, slug: str = EPIC) -> argparse.Namespace:
+    return _variant(_SUPERSEDE_ARGS, slug=slug, message=message, by=by)
 
 
 def _close_stream_args(
@@ -106,8 +203,14 @@ def _close_stream_args(
     slug: str = EPIC,
     sender_type: str = 'plan',
     reason: str | None = None,
-) -> Namespace:
-    return Namespace(slug=slug, sender_type=sender_type, sender_id=sender_id, reason=reason)
+) -> argparse.Namespace:
+    return _variant(
+        _CLOSE_STREAM_ARGS,
+        slug=slug,
+        sender_type=sender_type,
+        sender_id=sender_id,
+        reason=reason,
+    )
 
 
 def _write_message(plan_context, tmp_path, body: str = 'the original body', name: str = 'p.md'):
@@ -126,7 +229,7 @@ def _read(plan_context, message: str) -> str:
 
 class TestInboxAmend:
     def test_should_replace_the_body_in_place(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         message = _write_message(plan_context, tmp_path, 'first version', 'a.md')
 
         result = cmd_inbox_amend(
@@ -141,7 +244,7 @@ class TestInboxAmend:
 
     def test_should_stamp_amended_and_bump_revision(self, plan_context, tmp_path):
         # (D5a) An amended message is distinguishable from a virgin one.
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         message = _write_message(plan_context, tmp_path, 'v1', 'a.md')
 
         result = cmd_inbox_amend(_amend_args(message, _payload(tmp_path, 'v2', 'b.md')))
@@ -158,7 +261,7 @@ class TestInboxAmend:
         # (D5a) The load-bearing claim, checked from the ENVELOPE alone: the
         # amended message's header carries fields the virgin one's does not, so
         # no body diff against a kept copy is needed to see the mutation.
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         virgin = _write_message(plan_context, tmp_path, 'untouched', 'a.md')
         amended = _write_message(plan_context, tmp_path, 'to correct', 'b.md')
         cmd_inbox_amend(_amend_args(amended, _payload(tmp_path, 'corrected', 'c.md')))
@@ -179,7 +282,7 @@ class TestInboxAmend:
         # "now" is caught regardless of the clock's one-second granularity (a
         # restamp landing in the same second as the write would otherwise slip
         # past a same-instant comparison).
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         planted = _inbox_dir(plan_context) / f'{SENDER}-001.md'
         planted.write_text(_state_message(), encoding='utf-8')
         assert 'created=2020-01-01T00:00:00Z' in planted.read_text(encoding='utf-8')
@@ -193,7 +296,7 @@ class TestInboxAmend:
     def test_should_bump_revision_monotonically_across_two_amends(
         self, plan_context, tmp_path
     ):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         message = _write_message(plan_context, tmp_path, 'v1', 'a.md')
 
         first = cmd_inbox_amend(_amend_args(message, _payload(tmp_path, 'v2', 'b.md')))
@@ -204,11 +307,11 @@ class TestInboxAmend:
         assert 'revision=2' in _read(plan_context, message)
 
     def test_amended_message_still_validates_green(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         message = _write_message(plan_context, tmp_path, 'v1', 'a.md')
         cmd_inbox_amend(_amend_args(message, _payload(tmp_path, 'v2', 'b.md')))
 
-        result = cmd_inbox_validate(Namespace(slug=EPIC, message=message))
+        result = cmd_inbox_validate(_variant(_VALIDATE_ARGS, message=message))
 
         assert result['status'] == 'success'
         assert result['revision'] == '1'
@@ -222,14 +325,14 @@ class TestInboxAmend:
         assert result['error'] == 'invalid_slug'
 
     def test_should_reject_a_path_shaped_message(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
 
         result = cmd_inbox_amend(_amend_args('../status.json', _payload(tmp_path)))
 
         assert result['error'] == 'invalid_message_name'
 
     def test_should_reject_a_missing_payload(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         message = _write_message(plan_context, tmp_path, 'v1', 'a.md')
 
         result = cmd_inbox_amend(_amend_args(message, str(tmp_path / 'absent.md')))
@@ -237,23 +340,23 @@ class TestInboxAmend:
         assert result['error'] == 'payload_not_found'
 
     def test_should_reject_a_missing_message(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
 
         result = cmd_inbox_amend(_amend_args('absent-001.md', _payload(tmp_path)))
 
         assert result['error'] == 'file_not_found'
 
     def test_should_refuse_to_amend_a_consumed_message(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         message = _write_message(plan_context, tmp_path, 'v1', 'a.md')
-        cmd_inbox_archive(Namespace(slug=EPIC, message=message, as_name=None))
+        cmd_inbox_archive(_variant(_ARCHIVE_ARGS, message=message))
 
         result = cmd_inbox_amend(_amend_args(message, _payload(tmp_path, 'v2', 'b.md')))
 
         assert result['error'] == 'not_live'
 
     def test_should_refuse_to_amend_a_superseded_message(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         first = _write_message(plan_context, tmp_path, 'v1', 'a.md')
         second = _write_message(plan_context, tmp_path, 'successor', 'b.md')
         cmd_inbox_supersede(_supersede_args(first, second))
@@ -270,7 +373,7 @@ class TestInboxAmend:
 
 class TestInboxSupersede:
     def test_should_flip_lifecycle_and_record_successor(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         first = _write_message(plan_context, tmp_path, 'wrong body', 'a.md')
         second = _write_message(plan_context, tmp_path, 'the successor', 'b.md')
 
@@ -287,14 +390,14 @@ class TestInboxSupersede:
         self, plan_context, tmp_path
     ):
         # (D5c) The retired message drops out of the live set yet still resolves.
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         first = _write_message(plan_context, tmp_path, 'wrong body', 'a.md')
         second = _write_message(plan_context, tmp_path, 'the successor', 'b.md')
         cmd_inbox_supersede(_supersede_args(first, second))
 
-        listing = cmd_inbox_list(Namespace(slug=EPIC))
+        listing = cmd_inbox_list(_LIST_ARGS)
         rows = {row['name']: row for row in listing['messages']}
-        resolved = cmd_inbox_validate(Namespace(slug=EPIC, message=first))
+        resolved = cmd_inbox_validate(_variant(_VALIDATE_ARGS, message=first))
 
         # Stops presenting as live: flagged superseded and out of live_count.
         assert rows[first]['lifecycle'] == LIFECYCLE_SUPERSEDED
@@ -308,7 +411,7 @@ class TestInboxSupersede:
     def test_should_preserve_the_body_byte_for_byte(self, plan_context, tmp_path):
         # The inbox is append-only for content: supersede records state in the
         # envelope and never rewrites the body into a redirect stub.
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         first = _write_message(plan_context, tmp_path, 'the original narrative', 'a.md')
         second = _write_message(plan_context, tmp_path, 'the successor', 'b.md')
         body_before = _read(plan_context, first).split('\n\n', 1)[1]
@@ -318,7 +421,7 @@ class TestInboxSupersede:
         assert _read(plan_context, first).split('\n\n', 1)[1] == body_before
 
     def test_should_refuse_a_self_supersede(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         message = _write_message(plan_context, tmp_path, 'v1', 'a.md')
 
         result = cmd_inbox_supersede(_supersede_args(message, message))
@@ -326,7 +429,7 @@ class TestInboxSupersede:
         assert result['error'] == 'self_supersede'
 
     def test_should_refuse_a_missing_successor(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         message = _write_message(plan_context, tmp_path, 'v1', 'a.md')
 
         result = cmd_inbox_supersede(_supersede_args(message, 'absent-001.md'))
@@ -334,7 +437,7 @@ class TestInboxSupersede:
         assert result['error'] == 'successor_not_found'
 
     def test_should_refuse_a_path_shaped_successor(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         message = _write_message(plan_context, tmp_path, 'v1', 'a.md')
 
         result = cmd_inbox_supersede(_supersede_args(message, '../evil-001.md'))
@@ -346,7 +449,7 @@ class TestInboxSupersede:
         # superseded would drop the sender from closed_senders and re-open the
         # stream. The successor must still exist so the refusal is the marker
         # guard firing, not successor_not_found.
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         marker = cmd_inbox_close_stream(_close_stream_args())['message']
         successor = _write_message(plan_context, tmp_path, 'successor', 'b.md')
 
@@ -354,7 +457,7 @@ class TestInboxSupersede:
 
         assert result['error'] == 'not_supersedable'
         # The marker still closes the stream — the guard preserved the signal.
-        assert cmd_inbox_list(Namespace(slug=EPIC))['closed_senders'] == [SENDER]
+        assert cmd_inbox_list(_LIST_ARGS)['closed_senders'] == [SENDER]
 
 
 # =============================================================================
@@ -440,7 +543,7 @@ class TestStateFieldValidation:
 
 class TestCloseStreamAndDrain:
     def test_should_file_a_stream_end_marker(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
 
         result = cmd_inbox_close_stream(_close_stream_args())
 
@@ -451,10 +554,10 @@ class TestCloseStreamAndDrain:
         assert f'kind={STREAM_END_KIND}' in text
 
     def test_stream_end_marker_validates_green(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         marker = cmd_inbox_close_stream(_close_stream_args())['message']
 
-        result = cmd_inbox_validate(Namespace(slug=EPIC, message=marker))
+        result = cmd_inbox_validate(_variant(_VALIDATE_ARGS, message=marker))
 
         assert result['status'] == 'success'
         assert result['lifecycle'] == LIFECYCLE_STREAM_END
@@ -462,7 +565,7 @@ class TestCloseStreamAndDrain:
     def test_close_stream_allocates_a_fresh_sequence(self, plan_context, tmp_path):
         # The marker claims a sequence like any message, so a later write for the
         # same sender never re-uses the marker's number.
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         _write_message(plan_context, tmp_path, 'v1', 'a.md')
         marker = cmd_inbox_close_stream(_close_stream_args())['message']
 
@@ -474,30 +577,30 @@ class TestCloseStreamAndDrain:
         # third — BLOCKED, live_count 0 with invalid_count > 0 — is pinned by
         # test_a_blocked_queue_zero_is_distinct_from_an_empty_queue_zero; this
         # case holds invalid_count at 0 throughout.
-        cmd_scaffold(Namespace(slug=EPIC))
-        empty = cmd_inbox_list(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        empty = cmd_inbox_list(_LIST_ARGS)
         assert empty['live_count'] == 0
         assert empty['closed_senders'] == []
 
         cmd_inbox_close_stream(_close_stream_args())
-        finished = cmd_inbox_list(Namespace(slug=EPIC))
+        finished = cmd_inbox_list(_LIST_ARGS)
 
         assert finished['live_count'] == 0
         assert finished['closed_senders'] == [SENDER]
 
     def test_live_count_excludes_the_stream_end_marker(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         _write_message(plan_context, tmp_path, 'live work', 'a.md')
         cmd_inbox_close_stream(_close_stream_args())
 
-        listing = cmd_inbox_list(Namespace(slug=EPIC))
+        listing = cmd_inbox_list(_LIST_ARGS)
 
         assert listing['count'] == 2  # the payload message and the marker
         assert listing['live_count'] == 1  # only the payload message is live
         assert listing['closed_senders'] == [SENDER]
 
     def test_should_reject_an_unsafe_sender_id(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
 
         result = cmd_inbox_close_stream(_close_stream_args(sender_id='../escape'))
 
@@ -516,7 +619,7 @@ class TestCloseStreamAndDrain:
 class TestStreamClosureIsEnforced:
     def test_a_write_after_close_stream_is_refused(self, plan_context, tmp_path):
         """A closed sender writes no more — the refusal is what makes that true."""
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         marker = cmd_inbox_close_stream(_close_stream_args())['message']
 
         result = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
@@ -527,17 +630,17 @@ class TestStreamClosureIsEnforced:
 
     def test_a_refused_write_queues_nothing(self, plan_context, tmp_path):
         """The refusal is a refusal, not a warning: no message file is allocated."""
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         cmd_inbox_close_stream(_close_stream_args())
-        before = cmd_inbox_list(Namespace(slug=EPIC))['count']
+        before = cmd_inbox_list(_LIST_ARGS)['count']
 
         cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
 
-        assert cmd_inbox_list(Namespace(slug=EPIC))['count'] == before
+        assert cmd_inbox_list(_LIST_ARGS)['count'] == before
 
     def test_a_write_before_close_stream_still_succeeds(self, plan_context, tmp_path):
         """The control: an open sender is not affected by the guard."""
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
 
         result = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
 
@@ -545,7 +648,7 @@ class TestStreamClosureIsEnforced:
 
     def test_another_senders_closure_does_not_block_this_sender(self, plan_context, tmp_path):
         """The guard is PER SENDER: one sender's closure closes only its own stream."""
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         cmd_inbox_close_stream(_close_stream_args(sender_id='other-sender'))
 
         result = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
@@ -554,7 +657,7 @@ class TestStreamClosureIsEnforced:
 
     def test_a_second_close_stream_is_idempotent_success(self, plan_context, tmp_path):
         """Closing twice reports the EXISTING marker rather than allocating a second."""
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         first = cmd_inbox_close_stream(_close_stream_args())
 
         second = cmd_inbox_close_stream(_close_stream_args())
@@ -566,12 +669,12 @@ class TestStreamClosureIsEnforced:
 
     def test_a_second_close_stream_allocates_no_second_marker(self, plan_context, tmp_path):
         """The set dedup in ``closed_senders`` must not be what hides a second marker."""
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         cmd_inbox_close_stream(_close_stream_args())
 
         cmd_inbox_close_stream(_close_stream_args())
 
-        listing = cmd_inbox_list(Namespace(slug=EPIC))
+        listing = cmd_inbox_list(_LIST_ARGS)
         assert listing['count'] == 1
         assert listing['closed_senders'] == [SENDER]
 
@@ -583,12 +686,12 @@ class TestStreamClosureIsEnforced:
 
 class TestListSurfacesState:
     def test_row_carries_lifecycle_and_revision(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         virgin = _write_message(plan_context, tmp_path, 'v1', 'a.md')
         amended = _write_message(plan_context, tmp_path, 'to fix', 'b.md')
         cmd_inbox_amend(_amend_args(amended, _payload(tmp_path, 'fixed', 'c.md')))
 
-        rows = {row['name']: row for row in cmd_inbox_list(Namespace(slug=EPIC))['messages']}
+        rows = {row['name']: row for row in cmd_inbox_list(_LIST_ARGS)['messages']}
 
         # A virgin row and a revised row are visibly different in the listing.
         assert rows[virgin]['revision'] == '0'
@@ -607,8 +710,8 @@ class TestListSurfacesState:
         ``invalid_count`` is what separates them, so the two states are asserted
         against each other rather than each in isolation.
         """
-        cmd_scaffold(Namespace(slug=EPIC))
-        empty = cmd_inbox_list(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
+        empty = cmd_inbox_list(_LIST_ARGS)
 
         # A malformed message: a header-only file. It carries one of the six base
         # header fields, so validate_envelope rejects it as missing_header_field
@@ -616,7 +719,7 @@ class TestListSurfacesState:
         (_inbox_dir(plan_context) / f'{SENDER}-001.md').write_text(
             'envelope_version=1\n', encoding='utf-8'
         )
-        blocked = cmd_inbox_list(Namespace(slug=EPIC))
+        blocked = cmd_inbox_list(_LIST_ARGS)
 
         # The rejection code is pinned, so the comment above cannot go stale.
         assert [row['error'] for row in blocked['messages']] == ['missing_header_field']
@@ -657,10 +760,10 @@ class TestFolderedArchive:
         assert next_sequence(tmp_path, SENDER) == 8
 
     def test_archive_writes_into_a_per_sender_subdirectory(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         message = _write_message(plan_context, tmp_path, 'body', 'a.md')
 
-        result = cmd_inbox_archive(Namespace(slug=EPIC, message=message, as_name=None))
+        result = cmd_inbox_archive(_variant(_ARCHIVE_ARGS, message=message))
 
         assert result['archived_to'].endswith(f'archive/{SENDER}/{message}')
         assert (_inbox_dir(plan_context) / 'archive' / SENDER / message).is_file()
@@ -671,12 +774,12 @@ class TestFolderedArchive:
         # (D4 safety) A ``..``-shaped sender segment is a valid FILENAME
         # component but would traverse out of the archive as a DIRECTORY. It is
         # refused fail-closed rather than folded into ``archive/../``.
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         inbox = _inbox_dir(plan_context)
         planted = inbox / '..-001.md'
         planted.write_text('hand-planted\n', encoding='utf-8')
 
-        result = cmd_inbox_archive(Namespace(slug=EPIC, message=planted.name, as_name=None))
+        result = cmd_inbox_archive(_variant(_ARCHIVE_ARGS, message=planted.name))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_message_name'
@@ -688,13 +791,13 @@ class TestFolderedArchive:
     def test_migrate_archive_folds_flat_and_reports_per_sender_counts(
         self, plan_context, tmp_path
     ):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         archive = _inbox_dir(plan_context) / 'archive'
         archive.mkdir(parents=True, exist_ok=True)
         for name in (f'{SENDER}-001.md', f'{SENDER}-002.md', f'{OTHER}-001.md'):
             (archive / name).write_text('flat\n', encoding='utf-8')
 
-        result = cmd_inbox_migrate_archive(Namespace(slug=EPIC))
+        result = cmd_inbox_migrate_archive(_MIGRATE_ARCHIVE_ARGS)
 
         assert result['status'] == 'success'
         assert result['moved_total'] == 3
@@ -706,25 +809,25 @@ class TestFolderedArchive:
         assert (archive / OTHER / f'{OTHER}-001.md').is_file()
 
     def test_migrate_archive_is_idempotent(self, plan_context, tmp_path):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         archive = _inbox_dir(plan_context) / 'archive'
         archive.mkdir(parents=True, exist_ok=True)
         (archive / f'{SENDER}-001.md').write_text('flat\n', encoding='utf-8')
-        cmd_inbox_migrate_archive(Namespace(slug=EPIC))
+        cmd_inbox_migrate_archive(_MIGRATE_ARCHIVE_ARGS)
 
-        second = cmd_inbox_migrate_archive(Namespace(slug=EPIC))
+        second = cmd_inbox_migrate_archive(_MIGRATE_ARCHIVE_ARGS)
 
         assert second['moved_total'] == 0
 
     def test_migrate_archive_skips_a_sender_unsafe_as_a_directory(
         self, plan_context, tmp_path
     ):
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         archive = _inbox_dir(plan_context) / 'archive'
         archive.mkdir(parents=True, exist_ok=True)
         (archive / '..-001.md').write_text('unsafe\n', encoding='utf-8')
 
-        result = cmd_inbox_migrate_archive(Namespace(slug=EPIC))
+        result = cmd_inbox_migrate_archive(_MIGRATE_ARCHIVE_ARGS)
 
         assert result['moved_total'] == 0
         assert any(row['reason'] == 'unsafe_sender' for row in result['skipped'])
@@ -736,12 +839,12 @@ class TestFolderedArchive:
     ):
         # The full cycle end-to-end: a drained sender's next write lands above
         # the foldered archived twin, and archives cleanly under the sender dir.
-        cmd_scaffold(Namespace(slug=EPIC))
+        cmd_scaffold(_SCAFFOLD_ARGS)
         first = _write_message(plan_context, tmp_path, 'first', 'a.md')
-        cmd_inbox_archive(Namespace(slug=EPIC, message=first, as_name=None))
+        cmd_inbox_archive(_variant(_ARCHIVE_ARGS, message=first))
 
         second = _write_message(plan_context, tmp_path, 'second', 'b.md')
-        archived = cmd_inbox_archive(Namespace(slug=EPIC, message=second, as_name=None))
+        archived = cmd_inbox_archive(_variant(_ARCHIVE_ARGS, message=second))
 
         assert second == f'{SENDER}-002.md'
         assert archived['status'] == 'success'

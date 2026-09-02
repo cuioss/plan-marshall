@@ -18,19 +18,21 @@ re-threading is responsible for:
 
 The build-server client is faked at the ``_build_execute_factory._load_build_server``
 seam (the pattern ``test_acceptance_fallback.py`` uses), so no daemon process
-and no machine-global state is ever touched. Every constructed ``Namespace``
-declares ``execution_mode`` explicitly, so no assertion depends on live daemon
-state.
+and no machine-global state is ever touched. Every namespace is derived from the
+one ``pyproject_build.py`` 's own parser produces and declares ``execution_mode``
+explicitly, so no assertion depends on live daemon state.
 """
 
 import argparse
+import copy
 import json
 from pathlib import Path
+from typing import Any
 
 import _build_queue_slot as bqs
 import pytest
 
-from conftest import load_script_module
+from conftest import load_script_module, parse_ns
 
 _pyproject_execute_mod = load_script_module(
     'plan-marshall', 'build-pyproject', '_pyproject_execute.py', '_pyproject_execute'
@@ -41,6 +43,35 @@ cmd_run = _pyproject_execute_mod.cmd_run
 import _build_execute_factory as _factory  # noqa: E402
 
 PYPROJECT_NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from the hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because the values are the
+    parser's own scalars, and the base must stay unmutated for the other callers
+    sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: The ``run`` namespace ``pyproject_build.py``'s OWN parser yields for the shared
+#: ``cmd_run`` these tests drive. Hoisted to module scope because ``parse_ns``
+#: re-executes the script module on every call. It carries ``--env`` and
+#: ``--working-dir`` as the parser's ``None``, which matters here: the daemon
+#: fail-loud cases below SET one of those two fields, and with a hand-built
+#: namespace the unset case had no attribute for the production code to read at
+#: all. ``register=False`` so it never publishes ``pyproject_build`` in
+#: ``sys.modules``.
+_RUN_ARGS = parse_ns(
+    'plan-marshall', 'build-pyproject', 'pyproject_build.py',
+    'run', '--command-args', 'verify', '--plan-id', 'P',
+    register=False,
+)
 
 # This module owns the D5 routing seam as its SUBJECT — it fakes the build-server
 # client at ``_load_build_server`` and then asserts what the REAL
@@ -215,13 +246,7 @@ class TestPyprojectRoutesToDaemon:
         exec_recorder = _install_exec(monkeypatch)
 
         rc = cmd_run(
-            argparse.Namespace(
-                command_args='verify',
-                plan_id='P',
-                format='toon',
-                execution_mode='auto',
-                project_dir=str(tmp_path),
-            )
+            _variant(_RUN_ARGS, execution_mode='auto', project_dir=str(tmp_path))
         )
 
         assert rc == 0
@@ -265,13 +290,7 @@ class TestPyprojectFallbackKeepsSelfHeal:
         exec_recorder = _install_exec(monkeypatch, [failure, success])
 
         rc = cmd_run(
-            argparse.Namespace(
-                command_args='verify',
-                plan_id=None,
-                format='toon',
-                execution_mode='auto',
-                project_dir=str(tmp_path),
-            )
+            _variant(_RUN_ARGS, plan_id=None, execution_mode='auto', project_dir=str(tmp_path))
         )
 
         assert rc == 0
@@ -298,14 +317,15 @@ class TestPyprojectPlanlessPassthrough:
         monkeypatch.setattr(bqs, '_release_raw', spy.release)
         exec_recorder = _install_exec(monkeypatch)
 
-        rc = cmd_run(
-            argparse.Namespace(
-                command_args='verify',
-                format='toon',
-                execution_mode='in_process',
-                project_dir=str(tmp_path),
-            )
-        )
+        # The absent ``plan_id`` attribute IS the subject: the production code
+        # reads it through ``getattr(args, 'plan_id', None)``, and the real parser
+        # always supplies the field. The namespace is therefore derived from the
+        # parser base and then has that one field removed, so every OTHER field
+        # stays the CLI's own.
+        args = _variant(_RUN_ARGS, execution_mode='in_process', project_dir=str(tmp_path))
+        delattr(args, 'plan_id')
+
+        rc = cmd_run(args)
 
         assert rc == 0
         assert len(exec_recorder.calls) == 1
@@ -334,14 +354,9 @@ class TestPyprojectDaemonModeFailsLoud:
         client = _install_client(monkeypatch, _FakeClient(preflight={'status': 'success', 'preflight': 'ready'}))
         exec_recorder = _install_exec(monkeypatch)
 
-        namespace = argparse.Namespace(
-            command_args='verify',
-            plan_id='P',
-            format='toon',
-            execution_mode='daemon',
-            project_dir=str(tmp_path),
+        namespace = _variant(
+            _RUN_ARGS, execution_mode='daemon', project_dir=str(tmp_path), **{flag: value}
         )
-        setattr(namespace, flag, value)
 
         rc = cmd_run(namespace)
 
@@ -367,13 +382,7 @@ class TestPyprojectDaemonModeFailsLoud:
         exec_recorder = _install_exec(monkeypatch)
 
         rc = cmd_run(
-            argparse.Namespace(
-                command_args='verify',
-                plan_id='P',
-                format='toon',
-                execution_mode='daemon',
-                project_dir=str(tmp_path),
-            )
+            _variant(_RUN_ARGS, execution_mode='daemon', project_dir=str(tmp_path))
         )
 
         assert rc == 1
@@ -393,13 +402,8 @@ class TestPyprojectDaemonModeFailsLoud:
         exec_recorder = _install_exec(monkeypatch)
 
         rc = cmd_run(
-            argparse.Namespace(
-                command_args='verify',
-                plan_id='P',
-                format='toon',
-                execution_mode='auto',
-                env='FOO=bar',
-                project_dir=str(tmp_path),
+            _variant(
+                _RUN_ARGS, execution_mode='auto', env='FOO=bar', project_dir=str(tmp_path)
             )
         )
 

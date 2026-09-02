@@ -35,12 +35,14 @@ than merely present:
   ``^token``; the mid-line control proves the anchor still binds.
 """
 
+import argparse
+import copy
 import sys
 import tempfile
-from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import get_script_path, load_script_module, parse_ns, run_script
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -57,7 +59,47 @@ FILE_CATEGORIES = _architecture_core.FILE_CATEGORIES
 cmd_find = _cmd_client.cmd_find
 cmd_search = _cmd_client.cmd_search
 
-_ARCHITECTURE_SCRIPT = get_script_path('plan-marshall', 'manage-architecture', 'architecture.py')
+#: The architecture script's address, as module-level string constants so every
+#: ``parse_ns`` call below stays statically resolvable.
+_ARCH_BUNDLE = 'plan-marshall'
+_ARCH_SKILL = 'manage-architecture'
+_ARCH_SCRIPT = 'architecture.py'
+
+_ARCHITECTURE_SCRIPT = get_script_path(_ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT)
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because a namespace's values
+    are the parser's own scalars, and the base must stay unmutated for the other
+    callers sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: The ``search`` and ``find`` namespaces, built by ``architecture.py``'s OWN
+#: parser so each carries every default the production CLI applies — the
+#: ``command`` discriminator, the ``plan_id`` half of the
+#: ``--plan-id``/``--project-dir`` pair, and ``search``'s ``--literal`` /
+#: ``--ignore-case`` store_true defaults among them. Hoisted to module scope
+#: because ``parse_ns`` re-executes the script module on every call, and
+#: ``register=False`` because only the namespace is wanted here.
+_SEARCH_ARGS = parse_ns(
+    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
+    '--project-dir', '.', 'search', '--content', '--pattern', '.',
+    register=False,
+)
+
+_FIND_ARGS = parse_ns(
+    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
+    '--project-dir', '.', 'find', '--pattern', '.',
+    register=False,
+)
 
 # The exact key set a result entry is allowed to carry. Line bodies and line
 # numbers are deliberately absent — see the module docstring.
@@ -186,13 +228,13 @@ def _search(
 ) -> dict:
     """Invoke ``cmd_search`` with the argparse namespace the CLI would build."""
     result: dict = cmd_search(
-        Namespace(
+        _variant(
+            _SEARCH_ARGS,
             project_dir=tmpdir,
             pattern=pattern,
             category=category,
             literal=literal,
             ignore_case=ignore_case,
-            content=True,
         )
     )
     return result
@@ -237,7 +279,7 @@ def test_body_hit_is_found_by_search_and_missed_by_find():
 
         # Control: the same token as a path glob finds nothing — the token
         # appears in no path anywhere in the fixture.
-        missed = cmd_find(Namespace(project_dir=tmpdir, pattern=f'*{_BODY_ONLY_TOKEN}*', category=None))
+        missed = cmd_find(_variant(_FIND_ARGS, project_dir=tmpdir, pattern=f'*{_BODY_ONLY_TOKEN}*'))
         assert missed['status'] == 'success'
         assert missed['count'] == 0
 

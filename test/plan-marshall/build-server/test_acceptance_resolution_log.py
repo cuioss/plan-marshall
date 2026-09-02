@@ -15,12 +15,14 @@ unconditional stderr line — so a regression back to a logger-only emit fails.
 
 from __future__ import annotations
 
-from argparse import Namespace
+import argparse
+import copy
 from contextlib import contextmanager
 from typing import Any
 
 import pytest
 from _build_extension_fixtures import build_scripts_dir, execute_config
+from conftest import parse_ns
 
 build_scripts_dir()
 
@@ -28,6 +30,24 @@ import _build_execute_factory as factory  # noqa: E402
 from _build_execute import CaptureStrategy  # noqa: E402
 
 _MAVEN_NOTATION = 'plan-marshall:build-maven:maven'
+
+#: The ``run`` namespace ``pyproject_build.py``'s OWN parser yields for the argv
+#: these tests drive — the shared build CLI whose ``cmd_run`` is the subject here.
+#: Being parser-derived it also carries ``--env`` and ``--working-dir``, which the
+#: hand-built namespace it replaces omitted entirely. Hoisted to module scope
+#: because ``parse_ns`` re-executes the script module on every call.
+_RUN_ARGS: argparse.Namespace = parse_ns(
+    'plan-marshall', 'build-pyproject', 'pyproject_build.py',
+    'run', '--command-args', 'verify core', '--plan-id', 'plan-x',
+    register=False,
+)
+#: ``--plan-id`` and ``--project-dir`` are mutually exclusive on the shared build
+#: CLI, so no argv carrying both ever reaches ``cmd_run``: ``build_main`` refuses
+#: the pair outright and otherwise DERIVES ``project_dir`` from the plan before
+#: dispatching. The assignment below models that derivation, keeping the base a
+#: namespace the CLI can actually deliver rather than one the parser accepts and
+#: ``build_main`` then rejects.
+_RUN_ARGS.project_dir = '/tree'
 
 
 def _config(**overrides: Any):
@@ -40,19 +60,18 @@ def _config(**overrides: Any):
     return execute_config(factory, CaptureStrategy.TOOL_LOG_FLAG, **overrides)
 
 
-def _run_args(**overrides: Any) -> Namespace:
-    """The cmd_run argv Namespace, defaulting to a plan-bound auto-mode build."""
-    base: dict[str, Any] = {
-        'command_args': 'verify core',
-        'project_dir': '/tree',
-        'plan_id': 'plan-x',
-        'format': 'toon',
-        'mode': 'actionable',
-        'timeout': None,
-        'execution_mode': 'auto',
-    }
-    base.update(overrides)
-    return Namespace(**base)
+def _run_args(**overrides: Any) -> argparse.Namespace:
+    """The cmd_run argv namespace for a plan-bound auto-mode build.
+
+    Derived from the hoisted parser-derived base, which supplies every flag
+    default and carries the ``project_dir`` ``build_main`` resolves from
+    ``--plan-id``; ``overrides`` names only the fields a given test differs in.
+    The shallow copy keeps the shared base unmutated.
+    """
+    derived = copy.copy(_RUN_ARGS)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
 
 
 class _FakeClient:

@@ -24,16 +24,24 @@ group's envelope schema and handler surface have theirs
   ``test_inbox_channel_contract.py``.
 """
 
+import argparse
+import copy
 import json
-from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import get_script_path, load_script_module, parse_ns, run_script
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'plan-orchestrator', 'orchestrator.py')
+#: The orchestrator script's address, as module-level string constants so every
+#: ``parse_ns`` call below stays statically resolvable.
+_ORCH_BUNDLE = 'plan-marshall'
+_ORCH_SKILL = 'plan-orchestrator'
+_ORCH_SCRIPT = 'orchestrator.py'
+
+SCRIPT_PATH = get_script_path(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT)
 
 _orch = load_script_module(
-    'plan-marshall', 'plan-orchestrator', 'orchestrator.py', 'orchestrator_script'
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script'
 )
 
 cmd_scaffold = _orch.cmd_scaffold
@@ -44,6 +52,62 @@ EPIC_SUBDIRS = _orch.EPIC_SUBDIRS
 PLAN_ROW_FIELDS = _orch.PLAN_ROW_FIELDS
 
 FIXED_TIMESTAMP = '2020-01-01T00:00:00Z'
+
+#: The slug every hoisted base below is parsed with. Each test overrides it
+#: through :func:`_variant`, so the value is a placeholder rather than a fixture.
+_BASE_SLUG = 'base-epic'
+
+
+# =============================================================================
+# Parser-derived argument namespaces
+# =============================================================================
+#
+# One hoisted namespace per verb, built by the orchestrator's OWN parser so each
+# carries every default the production CLI applies rather than only the fields a
+# test author remembered. ``parse_ns`` re-executes the script module on every
+# call, so these live at module scope and each test derives its own slug through
+# :func:`_variant` instead of parsing again. ``register=False`` throughout: only
+# the namespace is wanted, and publishing ``orchestrator`` in ``sys.modules``
+# would displace the explicitly-named registration above.
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because a namespace's values
+    are the parser's own scalars, and the base must stay unmutated for the other
+    callers sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+_SCAFFOLD_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'scaffold', '--slug', _BASE_SLUG,
+    register=False,
+)
+
+_QUEUE_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'queue', '--slug', _BASE_SLUG,
+    register=False,
+)
+
+_RESUME_SUMMARY_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'resume-summary', '--slug', _BASE_SLUG,
+    register=False,
+)
+
+_INBOX_LIST_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'inbox', 'list', '--slug', _BASE_SLUG,
+    register=False,
+)
 
 
 def _epic_dir(plan_context, slug: str) -> Path:
@@ -57,9 +121,10 @@ def _queue_args(
     set_row: str | None = None,
     field: str | None = None,
     value: str | None = None,
-) -> Namespace:
-    """Build a complete ``queue`` Namespace so every flag attribute is present."""
-    return Namespace(
+) -> argparse.Namespace:
+    """Derive a complete ``queue`` namespace so every flag attribute is present."""
+    return _variant(
+        _QUEUE_ARGS,
         slug=slug,
         transition=transition,
         status=status,
@@ -146,7 +211,7 @@ def _seed_inbox(
 
 class TestScaffold:
     def test_should_create_epic_directory_tree(self, plan_context):
-        result = cmd_scaffold(Namespace(slug='fresh-epic'))
+        result = cmd_scaffold(_variant(_SCAFFOLD_ARGS, slug='fresh-epic'))
 
         assert result['status'] == 'success'
         assert result['operation'] == 'scaffold'
@@ -158,36 +223,36 @@ class TestScaffold:
             assert (root / sub).is_dir()
 
     def test_should_report_all_layout_subdirs(self, plan_context):
-        result = cmd_scaffold(Namespace(slug='layout-epic'))
+        result = cmd_scaffold(_variant(_SCAFFOLD_ARGS, slug='layout-epic'))
 
         assert sorted(result['directories']) == sorted(EPIC_SUBDIRS)
         assert set(EPIC_SUBDIRS) == {'workstreams', 'plans', 'landings', 'logs', 'inbox'}
 
     def test_should_be_idempotent_on_rerun(self, plan_context):
-        cmd_scaffold(Namespace(slug='rerun-epic'))
+        cmd_scaffold(_variant(_SCAFFOLD_ARGS, slug='rerun-epic'))
         marker = _epic_dir(plan_context, 'rerun-epic') / 'plans' / 'PLAN-01-keep.md'
         marker.write_text('kept', encoding='utf-8')
 
-        result = cmd_scaffold(Namespace(slug='rerun-epic'))
+        result = cmd_scaffold(_variant(_SCAFFOLD_ARGS, slug='rerun-epic'))
 
         assert result['status'] == 'success'
         assert result['already_existed'] is True
         assert marker.read_text(encoding='utf-8') == 'kept'
 
     def test_should_not_create_status_json(self, plan_context):
-        cmd_scaffold(Namespace(slug='no-status-epic'))
+        cmd_scaffold(_variant(_SCAFFOLD_ARGS, slug='no-status-epic'))
 
         assert not (_epic_dir(plan_context, 'no-status-epic') / 'status.json').exists()
 
     def test_should_reject_invalid_slug(self, plan_context):
-        result = cmd_scaffold(Namespace(slug='../evil'))
+        result = cmd_scaffold(_variant(_SCAFFOLD_ARGS, slug='../evil'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_slug'
         assert not (plan_context.fixture_dir / 'evil').exists()
 
     def test_should_reject_empty_slug(self, plan_context):
-        result = cmd_scaffold(Namespace(slug=''))
+        result = cmd_scaffold(_variant(_SCAFFOLD_ARGS, slug=''))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_slug'
@@ -212,7 +277,7 @@ class TestQueueRead:
         assert result['plans'] == plans
 
     def test_should_error_when_status_json_missing(self, plan_context):
-        cmd_scaffold(Namespace(slug='bare-epic'))
+        cmd_scaffold(_variant(_SCAFFOLD_ARGS, slug='bare-epic'))
 
         result = cmd_queue(_queue_args('bare-epic'))
 
@@ -445,7 +510,7 @@ class TestResumeSummary:
         ]
         _write_status(plan_context, 'summary-epic', plans=plans)
 
-        result = cmd_resume_summary(Namespace(slug='summary-epic'))
+        result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='summary-epic'))
 
         assert result['status'] == 'success'
         assert result['operation'] == 'resume-summary'
@@ -473,7 +538,7 @@ class TestResumeSummary:
         ]
         _write_status(plan_context, 'oq-epic', plans=plans)
 
-        result = cmd_resume_summary(Namespace(slug='oq-epic'))
+        result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='oq-epic'))
 
         queue = result['ordered_queue']
         assert '| # | Plan | Workstream | Status | Surface (expected) |' in queue
@@ -487,7 +552,7 @@ class TestResumeSummary:
             plan_context, 'gap-both-epic', plans=[_make_plan('PLAN-01', status='shipped')]
         )
 
-        result = cmd_resume_summary(Namespace(slug='gap-both-epic'))
+        result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='gap-both-epic'))
 
         assert '(!) missing: pr, landing' in result['summary']
 
@@ -498,7 +563,7 @@ class TestResumeSummary:
             plans=[_make_plan('PLAN-01', status='shipped', landing='PLAN-01.md')],
         )
 
-        result = cmd_resume_summary(Namespace(slug='gap-pr-epic'))
+        result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='gap-pr-epic'))
 
         assert '(!) missing: pr' in result['summary']
         assert '(!) missing: pr, landing' not in result['summary']
@@ -510,7 +575,7 @@ class TestResumeSummary:
             plans=[_make_plan('PLAN-01', status='landed', pr='#901')],
         )
 
-        result = cmd_resume_summary(Namespace(slug='gap-landed-epic'))
+        result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='gap-landed-epic'))
 
         assert '(!) missing: landing' in result['summary']
 
@@ -523,7 +588,7 @@ class TestResumeSummary:
             ],
         )
 
-        result = cmd_resume_summary(Namespace(slug='gap-none-epic'))
+        result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='gap-none-epic'))
 
         assert '(!) missing' not in result['summary']
 
@@ -534,14 +599,14 @@ class TestResumeSummary:
             plans=[_make_plan('PLAN-01', status='staged'), _make_plan('PLAN-02', status='running')],
         )
 
-        result = cmd_resume_summary(Namespace(slug='gap-inflight-epic'))
+        result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='gap-inflight-epic'))
 
         assert '(!) missing' not in result['summary']
 
     def test_should_render_empty_queue_marker(self, plan_context):
         _write_status(plan_context, 'empty-epic', plans=[])
 
-        result = cmd_resume_summary(Namespace(slug='empty-epic'))
+        result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='empty-epic'))
 
         assert '**Queue** (staged, in order):' in result['summary']
         assert '- (empty)' in result['summary']
@@ -549,18 +614,18 @@ class TestResumeSummary:
     def test_should_render_placeholder_for_unset_anchor(self, plan_context):
         _write_status(plan_context, 'anchorless-epic', resume_anchor='')
 
-        result = cmd_resume_summary(Namespace(slug='anchorless-epic'))
+        result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='anchorless-epic'))
 
         assert '**Resume anchor**: (not set)' in result['summary']
 
     def test_should_error_when_status_json_missing(self, plan_context):
-        result = cmd_resume_summary(Namespace(slug='absent-epic'))
+        result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='absent-epic'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'file_not_found'
 
     def test_should_reject_invalid_slug(self, plan_context):
-        result = cmd_resume_summary(Namespace(slug='../evil'))
+        result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='../evil'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_slug'
@@ -586,7 +651,7 @@ class TestResumeSummaryDerivedInbox:
         _write_status(plan_context, 'inbox-count-epic')
         _seed_inbox(plan_context, 'inbox-count-epic', queued=2, archived=3)
 
-        result = cmd_resume_summary(Namespace(slug='inbox-count-epic'))
+        result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='inbox-count-epic'))
 
         assert '**Inbox (derived)**: 2 queued, 3 archived' in result['summary']
 
@@ -595,7 +660,7 @@ class TestResumeSummaryDerivedInbox:
         _write_status(plan_context, 'inbox-fields-epic')
         _seed_inbox(plan_context, 'inbox-fields-epic', queued=1, archived=4)
 
-        result = cmd_resume_summary(Namespace(slug='inbox-fields-epic'))
+        result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='inbox-fields-epic'))
 
         assert result['inbox_queued'] == 1
         assert result['inbox_archived'] == 4
@@ -606,7 +671,7 @@ class TestResumeSummaryDerivedInbox:
         _write_status(plan_context, 'inbox-empty-epic')
         _seed_inbox(plan_context, 'inbox-empty-epic')
 
-        result = cmd_resume_summary(Namespace(slug='inbox-empty-epic'))
+        result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='inbox-empty-epic'))
 
         assert '**Inbox (derived)**: 0 queued, 0 archived' in result['summary']
         assert result['inbox_state'] == 'present'
@@ -619,7 +684,7 @@ class TestResumeSummaryDerivedInbox:
         _write_status(plan_context, 'inbox-absent-epic')
         assert not (_epic_dir(plan_context, 'inbox-absent-epic') / 'inbox').exists()
 
-        result = cmd_resume_summary(Namespace(slug='inbox-absent-epic'))
+        result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='inbox-absent-epic'))
 
         assert '**Inbox (derived)**: no inbox directory' in result['summary']
         assert '0 queued' not in result['summary']
@@ -632,8 +697,8 @@ class TestResumeSummaryDerivedInbox:
         _seed_inbox(plan_context, 'zero-looked-epic')
         _write_status(plan_context, 'zero-blind-epic')
 
-        looked = cmd_resume_summary(Namespace(slug='zero-looked-epic'))
-        could_not_look = cmd_resume_summary(Namespace(slug='zero-blind-epic'))
+        looked = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='zero-looked-epic'))
+        could_not_look = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='zero-blind-epic'))
 
         assert looked['inbox_queued'] == could_not_look['inbox_queued'] == 0
         assert looked['inbox_archived'] == could_not_look['inbox_archived'] == 0
@@ -653,7 +718,7 @@ class TestResumeSummaryDerivedInbox:
         )
         _seed_inbox(plan_context, 'stale-anchor-epic', queued=3)
 
-        result = cmd_resume_summary(Namespace(slug='stale-anchor-epic'))
+        result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='stale-anchor-epic'))
 
         summary = result['summary']
         assert '**Resume anchor**: inbox drained 8/8 — nothing queued' in summary
@@ -667,7 +732,7 @@ class TestResumeSummaryDerivedInbox:
         _write_status(plan_context, 'separate-lines-epic')
         _seed_inbox(plan_context, 'separate-lines-epic', queued=1)
 
-        lines = cmd_resume_summary(Namespace(slug='separate-lines-epic'))['summary']
+        lines = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='separate-lines-epic'))['summary']
 
         anchor_line = next(
             line for line in lines.split('\n') if line.startswith('**Resume anchor**')
@@ -686,8 +751,8 @@ class TestResumeSummaryDerivedInbox:
         )
         _seed_inbox(plan_context, 'cross-verb-epic', queued=4, archived=2)
 
-        summary = cmd_resume_summary(Namespace(slug='cross-verb-epic'))
-        listed = cmd_inbox_list(Namespace(slug='cross-verb-epic'))
+        summary = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='cross-verb-epic'))
+        listed = cmd_inbox_list(_variant(_INBOX_LIST_ARGS, slug='cross-verb-epic'))
 
         assert summary['inbox_queued'] == listed['count'] == 4
         assert summary['inbox_state'] == listed['inbox_state'] == 'present'
@@ -695,12 +760,12 @@ class TestResumeSummaryDerivedInbox:
     def test_should_agree_with_inbox_list_on_the_absent_inbox_state(self, plan_context):
         # The agreement holds on the *could not look* zero too — both verbs draw
         # ``inbox_state`` from the same closed present/missing vocabulary.
-        cmd_scaffold(Namespace(slug='cross-verb-absent-epic'))
+        cmd_scaffold(_variant(_SCAFFOLD_ARGS, slug='cross-verb-absent-epic'))
         _write_status(plan_context, 'cross-verb-absent-epic')
         (_epic_dir(plan_context, 'cross-verb-absent-epic') / 'inbox').rmdir()
 
-        summary = cmd_resume_summary(Namespace(slug='cross-verb-absent-epic'))
-        listed = cmd_inbox_list(Namespace(slug='cross-verb-absent-epic'))
+        summary = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='cross-verb-absent-epic'))
+        listed = cmd_inbox_list(_variant(_INBOX_LIST_ARGS, slug='cross-verb-absent-epic'))
 
         assert summary['inbox_state'] == listed['inbox_state'] == 'missing'
         assert summary['inbox_queued'] == listed['count'] == 0
@@ -718,7 +783,7 @@ class TestResumeSummaryDerivedInbox:
             extra_names=('README.md', 'notes.txt', 'sender-nn.md'),
         )
 
-        result = cmd_resume_summary(Namespace(slug='shape-filter-epic'))
+        result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='shape-filter-epic'))
 
         assert result['inbox_archived'] == 2
 

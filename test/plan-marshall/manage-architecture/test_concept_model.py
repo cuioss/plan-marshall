@@ -23,14 +23,16 @@ from a clone.
 """
 
 import argparse
+import copy
 import json
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from conftest import load_script_module
+from conftest import load_script_module, parse_ns
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -75,6 +77,41 @@ enrich_package = _cmd_enrich.enrich_package
 cmd_enrich_package = _cmd_enrich.cmd_enrich_package
 
 get_project_info = _cmd_client_query.get_project_info
+
+#: The architecture script's address, as module-level string constants so the
+#: ``parse_ns`` call below stays statically resolvable.
+_ARCH_BUNDLE = 'plan-marshall'
+_ARCH_SKILL = 'manage-architecture'
+_ARCH_SCRIPT = 'architecture.py'
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from the hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because a namespace's values
+    are the parser's own scalars, and the base must stay unmutated for the other
+    callers sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: The ``enrich package`` namespace, built by ``architecture.py``'s OWN parser
+#: so it carries every default the production CLI applies — the ``command`` /
+#: ``enrich_command`` discriminators and the ``plan_id`` half of the
+#: ``--plan-id``/``--project-dir`` pair among them, none of which the hand-built
+#: namespace carried. Hoisted to module scope because ``parse_ns`` re-executes
+#: the script module on every call, and ``register=False`` because only the
+#: namespace is wanted here.
+_ENRICH_PACKAGE_ARGS = parse_ns(
+    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
+    '--project-dir', '.', 'enrich', 'package',
+    '--module', 'module', '--package', 'package', '--description', 'description',
+    register=False,
+)
 
 
 # =============================================================================
@@ -348,8 +385,9 @@ def test_cmd_enrich_package_returns_named_error_for_non_resolving_key():
     """The CLI handler surfaces a NAMED error code rather than a bare failure."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
-        args = argparse.Namespace(
-            module='module-a', package='de.cuioss.nope', description='X', project_dir=tmpdir, components=None
+        args = _variant(
+            _ENRICH_PACKAGE_ARGS,
+            module='module-a', package='de.cuioss.nope', description='X', project_dir=tmpdir,
         )
         result = cmd_enrich_package(args)
 

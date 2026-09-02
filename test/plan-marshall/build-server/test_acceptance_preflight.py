@@ -10,18 +10,45 @@ registered project completes a verified handshake and returns `ready` or `down`
 
 from __future__ import annotations
 
+import argparse
+import copy
 import sys
-from argparse import Namespace
+from typing import Any
 
 import pytest
-from conftest import get_script_path
+from conftest import get_script_path, parse_ns
 
-_CLIENT_DIR = get_script_path('plan-marshall', 'build-server-client', 'build_server.py').parent
+_BUNDLE = 'plan-marshall'
+_SKILL = 'build-server-client'
+_SCRIPT = 'build_server.py'
+
+_CLIENT_DIR = get_script_path(_BUNDLE, _SKILL, _SCRIPT).parent
 if str(_CLIENT_DIR) not in sys.path:
     sys.path.insert(0, str(_CLIENT_DIR))
 
 import build_server as client  # noqa: E402
 from _build_server_registry import canonicalize_root, register_project  # noqa: E402
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from the hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because the values are the
+    parser's own scalars, and the base must stay unmutated for the other callers
+    sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: The ``preflight`` namespace ``build_server.py``'s OWN parser yields, hoisted to
+#: module scope because ``parse_ns`` re-executes the script module on every call.
+#: ``register=False`` so it never publishes a second ``build_server`` in
+#: ``sys.modules`` alongside the one imported above.
+_PREFLIGHT_ARGS = parse_ns(_BUNDLE, _SKILL, _SCRIPT, 'preflight', register=False)
 
 
 @pytest.fixture
@@ -36,7 +63,9 @@ def test_preflight_disabled_makes_no_daemon_round_trip(home, monkeypatch):
 
     monkeypatch.setattr(client, '_handshake', _fail)
 
-    result = client.run_preflight(Namespace(project_path=str(home / 'unregistered')))
+    result = client.run_preflight(
+        _variant(_PREFLIGHT_ARGS, project_path=str(home / 'unregistered'))
+    )
 
     assert result['preflight'] == 'disabled'
     assert result['registered'] is False
@@ -47,7 +76,7 @@ def test_preflight_ready_on_a_verified_handshake(home, monkeypatch):
     register_project(root)
     monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
 
-    result = client.run_preflight(Namespace(project_path=root))
+    result = client.run_preflight(_variant(_PREFLIGHT_ARGS, project_path=root))
 
     assert result['preflight'] == 'ready'
     assert result['registered'] is True
@@ -59,7 +88,7 @@ def test_preflight_down_carries_a_named_reason(home, monkeypatch):
     register_project(root)
     monkeypatch.setattr(client, '_handshake', lambda _p: (None, client.REASON_SOCKET_ABSENT))
 
-    result = client.run_preflight(Namespace(project_path=root))
+    result = client.run_preflight(_variant(_PREFLIGHT_ARGS, project_path=root))
 
     assert result['preflight'] == 'down'
     assert result['registered'] is True

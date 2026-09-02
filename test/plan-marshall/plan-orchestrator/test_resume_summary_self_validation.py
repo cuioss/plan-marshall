@@ -26,22 +26,63 @@ scanned count is asserted alongside it — a detector that scanned nothing would
 otherwise report the same clean zero as one that scanned and found nothing.
 """
 
+import argparse
+import copy
 import json
-from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
-from conftest import get_script_path, load_script_module
+from conftest import get_script_path, load_script_module, parse_ns
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'plan-orchestrator', 'orchestrator.py')
+#: The orchestrator script's address, as module-level string constants so the
+#: ``parse_ns`` call below stays statically resolvable.
+_ORCH_BUNDLE = 'plan-marshall'
+_ORCH_SKILL = 'plan-orchestrator'
+_ORCH_SCRIPT = 'orchestrator.py'
+
+SCRIPT_PATH = get_script_path(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT)
 
 _orch = load_script_module(
-    'plan-marshall', 'plan-orchestrator', 'orchestrator.py', 'orchestrator_script'
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script'
 )
 
 cmd_resume_summary = _orch.cmd_resume_summary
 
 SLUG = 'fixture-selfvalidation-epic'
 FIXED_TIMESTAMP = '2020-01-01T00:00:00Z'
+
+
+# =============================================================================
+# Parser-derived argument namespaces
+# =============================================================================
+#
+# The ``resume-summary`` namespace is built by the orchestrator's OWN parser, so
+# it carries every default the production CLI applies rather than only the fields
+# a test author remembered. ``parse_ns`` re-executes the script module on every
+# call, so it is hoisted to module scope and the two rejection cases derive their
+# slug through :func:`_variant` instead of parsing again. ``register=False`` so
+# it cannot displace the explicitly-named registration above.
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because a namespace's values
+    are the parser's own scalars, and the base must stay unmutated for the other
+    callers sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+_RESUME_SUMMARY_ARGS = parse_ns(
+    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
+    'resume-summary', '--slug', SLUG,
+    register=False,
+)
 
 
 # =============================================================================
@@ -95,7 +136,7 @@ THREE_ROWS = [_row('PLAN-01', 'shipped'), _row('PLAN-02', 'shipped'), _row('PLAN
 
 
 def _run() -> dict:
-    result: dict = cmd_resume_summary(Namespace(slug=SLUG))
+    result: dict = cmd_resume_summary(_RESUME_SUMMARY_ARGS)
     return result
 
 
@@ -122,13 +163,13 @@ class TestSelfValidationPayload:
         assert result['contradictions_count'] == len(result['contradictions'])
 
     def test_should_error_when_status_json_is_absent(self, plan_context):
-        result = cmd_resume_summary(Namespace(slug='absent-selfvalidation-epic'))
+        result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='absent-selfvalidation-epic'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'file_not_found'
 
     def test_should_reject_invalid_slug(self, plan_context):
-        result = cmd_resume_summary(Namespace(slug='../evil'))
+        result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='../evil'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_slug'

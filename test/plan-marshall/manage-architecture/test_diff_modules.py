@@ -22,13 +22,15 @@ matter; differences in ``enriched.json`` never produce a ``changed``
 classification.
 """
 
+import argparse
+import copy
 import shutil
 import sys
 import tempfile
-from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
-from conftest import load_script_module
+from conftest import load_script_module, parse_ns
 
 _architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
@@ -39,6 +41,40 @@ save_module_derived = _architecture_core.save_module_derived
 save_module_enriched = _architecture_core.save_module_enriched
 get_data_dir = _architecture_core.get_data_dir
 cmd_diff_modules = _cmd_client.cmd_diff_modules
+
+#: The architecture script's address, as module-level string constants so the
+#: ``parse_ns`` call below stays statically resolvable.
+_ARCH_BUNDLE = 'plan-marshall'
+_ARCH_SKILL = 'manage-architecture'
+_ARCH_SCRIPT = 'architecture.py'
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from the hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because a namespace's values
+    are the parser's own scalars, and the base must stay unmutated for the other
+    callers sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: The ``diff-modules`` namespace, built by ``architecture.py``'s OWN parser so
+#: it carries every default the production CLI applies — the ``command``
+#: discriminator and the ``plan_id`` half of the ``--plan-id``/``--project-dir``
+#: pair among them, neither of which the hand-built namespaces carried. Hoisted
+#: to module scope because ``parse_ns`` re-executes the script module on every
+#: call, and ``register=False`` so it cannot displace the ``architecture``
+#: registration this module performs above.
+_DIFF_MODULES_ARGS = parse_ns(
+    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
+    '--project-dir', '.', 'diff-modules', '--pre', '.',
+    register=False,
+)
 
 
 # =============================================================================
@@ -98,7 +134,7 @@ def test_unchanged_tree_classifies_every_module_as_unchanged():
 
         snapshot_dir = _snapshot_data_dir(str(project), tmp)
 
-        result = cmd_diff_modules(Namespace(project_dir=str(project), pre=str(snapshot_dir)))
+        result = cmd_diff_modules(_variant(_DIFF_MODULES_ARGS, project_dir=str(project), pre=str(snapshot_dir)))
 
         assert result['status'] == 'success'
         assert result['added'] == []
@@ -118,7 +154,7 @@ def test_byte_modified_derived_classifies_as_changed():
         # Mutate mod-b's derived.json in the live tree (simulating a re-discover).
         save_module_derived('mod-b', {**_make_module('mod-b'), 'note': 'mutated'}, str(project))
 
-        result = cmd_diff_modules(Namespace(project_dir=str(project), pre=str(snapshot_dir)))
+        result = cmd_diff_modules(_variant(_DIFF_MODULES_ARGS, project_dir=str(project), pre=str(snapshot_dir)))
 
         assert result['status'] == 'success'
         assert result['added'] == []
@@ -141,7 +177,7 @@ def test_added_module_classifies_as_added():
             {'mod-a': _make_module('mod-a'), 'mod-new': _make_module('mod-new')},
         )
 
-        result = cmd_diff_modules(Namespace(project_dir=str(project), pre=str(snapshot_dir)))
+        result = cmd_diff_modules(_variant(_DIFF_MODULES_ARGS, project_dir=str(project), pre=str(snapshot_dir)))
 
         assert result['status'] == 'success'
         assert result['added'] == ['mod-new']
@@ -165,7 +201,7 @@ def test_removed_module_classifies_as_removed():
         shutil.rmtree(get_data_dir(str(project)))
         _seed_project(str(project), {'mod-a': _make_module('mod-a')})
 
-        result = cmd_diff_modules(Namespace(project_dir=str(project), pre=str(snapshot_dir)))
+        result = cmd_diff_modules(_variant(_DIFF_MODULES_ARGS, project_dir=str(project), pre=str(snapshot_dir)))
 
         assert result['status'] == 'success'
         assert result['added'] == []
@@ -188,7 +224,7 @@ def test_missing_snapshot_directory_returns_snapshot_not_found():
 
         missing = Path(tmp) / 'no-such-snapshot'
 
-        result = cmd_diff_modules(Namespace(project_dir=str(project), pre=str(missing)))
+        result = cmd_diff_modules(_variant(_DIFF_MODULES_ARGS, project_dir=str(project), pre=str(missing)))
 
         assert result['status'] == 'error'
         assert result['error'] == 'snapshot_not_found'
@@ -206,7 +242,7 @@ def test_snapshot_dir_present_but_project_meta_missing_returns_error():
         empty_snapshot = Path(tmp) / 'empty-snapshot'
         empty_snapshot.mkdir()
 
-        result = cmd_diff_modules(Namespace(project_dir=str(project), pre=str(empty_snapshot)))
+        result = cmd_diff_modules(_variant(_DIFF_MODULES_ARGS, project_dir=str(project), pre=str(empty_snapshot)))
 
         assert result['status'] == 'error'
         assert result['error'] == 'snapshot_not_found'
@@ -231,7 +267,7 @@ def test_enriched_only_diff_does_not_produce_changed():
         # Mutate ONLY enriched.json on the current side.
         save_module_enriched('mod-a', {'responsibility': 'after'}, str(project))
 
-        result = cmd_diff_modules(Namespace(project_dir=str(project), pre=str(snapshot_dir)))
+        result = cmd_diff_modules(_variant(_DIFF_MODULES_ARGS, project_dir=str(project), pre=str(snapshot_dir)))
 
         assert result['status'] == 'success'
         assert result['changed'] == []

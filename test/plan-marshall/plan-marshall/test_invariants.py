@@ -34,14 +34,16 @@ invariants.
 
 from __future__ import annotations
 
+import argparse
+import copy
 import json
 import subprocess
 import sys
-from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
 import pytest
-from conftest import get_script_path, load_script_module
+from conftest import get_script_path, load_script_module, parse_ns
 
 # =============================================================================
 # Import the invariants module under test.
@@ -110,6 +112,58 @@ query_qgate_findings = _findings_core.query_qgate_findings
 
 
 # =============================================================================
+# Parser-derived namespaces for the manage-tasks handlers driven below.
+# =============================================================================
+
+_TASKS_BUNDLE = 'plan-marshall'
+_TASKS_SKILL = 'manage-tasks'
+_TASKS_SCRIPT = 'manage-tasks.py'
+
+
+def _verb_args(*argv: str) -> argparse.Namespace:
+    """The namespace ``manage-tasks.py``'s OWN parser yields for ``argv``.
+
+    ``register=False`` so building one never publishes ``manage-tasks`` in
+    ``sys.modules`` beside the handler modules this file loads under its own
+    explicit names.
+    """
+    args: argparse.Namespace = parse_ns(_TASKS_BUNDLE, _TASKS_SKILL, _TASKS_SCRIPT, *argv, register=False)
+    return args
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because the values are the
+    parser's own scalars, and the base must stay unmutated for the other callers
+    sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: One parser-derived namespace per manage-tasks verb these helpers drive,
+#: hoisted to module scope because ``parse_ns`` re-executes the script module on
+#: every call. The placeholder ids in each argv are overridden per call; what the
+#: base contributes is every OTHER flag the verb declares — ``update``'s
+#: ``--cost-size`` / ``--envelope-id`` / ``--predicted-cost-tokens``,
+#: ``finalize-step``'s ``--reason`` and its three ``--outcome-*`` fields, and
+#: ``list``'s ``--domain`` / ``--profile`` — none of which the hand-built
+#: namespaces carried, so a handler reading one of them found no attribute at all.
+_PREPARE_ADD_ARGS = _verb_args('prepare-add', '--plan-id', 'placeholder')
+_COMMIT_ADD_ARGS = _verb_args('commit-add', '--plan-id', 'placeholder')
+_UPDATE_ARGS = _verb_args('update', '--plan-id', 'placeholder', '--task-number', '1')
+_FINALIZE_STEP_ARGS = _verb_args(
+    'finalize-step', '--plan-id', 'placeholder', '--task-number', '1', '--step', '1', '--outcome', 'done'
+)
+_LIST_ARGS = _verb_args('list', '--plan-id', 'placeholder')
+_READ_ARGS = _verb_args('read', '--plan-id', 'placeholder', '--task-number', '1')
+
+
+# =============================================================================
 # Helpers: create tasks via the manage-tasks path-allocate flow.
 # =============================================================================
 
@@ -147,7 +201,7 @@ def _build_task_toon(
 
 def _add_task(plan_id: str, title: str, number_hint: int, depends_on: str = 'none') -> dict:
     """Drive prepare-add → write scratch → commit-add."""
-    prep = cmd_prepare_add(Namespace(plan_id=plan_id, slot=None))
+    prep = cmd_prepare_add(_variant(_PREPARE_ADD_ARGS, plan_id=plan_id))
     assert prep.get('status') == 'success', f'prepare-add failed: {prep}'
     toon = _build_task_toon(
         title=title,
@@ -156,52 +210,28 @@ def _add_task(plan_id: str, title: str, number_hint: int, depends_on: str = 'non
         depends_on=depends_on,
     )
     Path(prep['path']).write_text(toon, encoding='utf-8')
-    result: dict = cmd_commit_add(Namespace(plan_id=plan_id, slot=None))
+    result: dict = cmd_commit_add(_variant(_COMMIT_ADD_ARGS, plan_id=plan_id))
     assert result.get('status') == 'success', f'commit-add failed: {result}'
     return result
 
 
 def _set_depends_on(plan_id: str, number: int, depends_on: list[str]) -> None:
     """Retroactively set ``depends_on`` so cycles can be constructed."""
-    result = cmd_update(
-        Namespace(
-            plan_id=plan_id,
-            task_number=number,
-            title=None,
-            description=None,
-            depends_on=depends_on,
-            status=None,
-            domain=None,
-            profile=None,
-            skills=None,
-            deliverable=None,
-        )
-    )
+    result = cmd_update(_variant(_UPDATE_ARGS, plan_id=plan_id, task_number=number, depends_on=depends_on))
     assert result.get('status') == 'success', f'update failed: {result}'
 
 
 def _set_status(plan_id: str, number: int, status: str) -> None:
     """Retroactively set a task's ``status`` field."""
-    result = cmd_update(
-        Namespace(
-            plan_id=plan_id,
-            task_number=number,
-            title=None,
-            description=None,
-            depends_on=None,
-            status=status,
-            domain=None,
-            profile=None,
-            skills=None,
-            deliverable=None,
-        )
-    )
+    result = cmd_update(_variant(_UPDATE_ARGS, plan_id=plan_id, task_number=number, status=status))
     assert result.get('status') == 'success', f'update failed: {result}'
 
 
 def _finalize_step(plan_id: str, task: int, step: int, outcome: str) -> None:
     """Mark a step with outcome (done/skipped/failed)."""
-    result = cmd_finalize_step(Namespace(plan_id=plan_id, task_number=task, step=step, outcome=outcome))
+    result = cmd_finalize_step(
+        _variant(_FINALIZE_STEP_ARGS, plan_id=plan_id, task_number=task, step=step, outcome=outcome)
+    )
     assert result.get('status') == 'success', f'finalize-step failed: {result}'
 
 
@@ -245,18 +275,13 @@ def _make_stub_run_script():
                 s_idx = args.index('--status')
                 if s_idx + 1 < len(args):
                     status_filter = args[s_idx + 1]
-            ns = Namespace(
-                plan_id=plan_id,
-                status=status_filter,
-                deliverable=None,
-                ready=False,
-            )
+            ns = _variant(_LIST_ARGS, plan_id=plan_id, status=status_filter)
             return serialize_toon(cmd_list(ns))
         if subcommand == 'read':
             # args[...] contains '--task-number', followed by the number
             t_idx = args.index('--task-number')
             number = int(args[t_idx + 1])
-            ns = Namespace(plan_id=plan_id, task_number=number)
+            ns = _variant(_READ_ARGS, plan_id=plan_id, task_number=number)
             return serialize_toon(cmd_read(ns))
         return None
 

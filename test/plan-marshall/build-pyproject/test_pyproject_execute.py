@@ -29,13 +29,15 @@ separately.
 """
 
 import argparse
+import copy
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import _build_queue_slot as bqs
 import pytest
 
-from conftest import load_script_module
+from conftest import load_script_module, parse_ns
 
 _pyproject_execute_mod = load_script_module('plan-marshall', 'build-pyproject', '_pyproject_execute.py', '_pyproject_execute')
 
@@ -50,6 +52,33 @@ from marketplace_paths import NO_PLAN_SENTINEL  # noqa: E402
 #: Plan id the direct ``execute_direct`` drives in this module attribute the
 #: build to. ``plan_id`` is keyword-only and mandatory on the generated closure.
 _PLAN_ID = 'pyproject-execute-test-plan'
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from the hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because the values are the
+    parser's own scalars, and the base must stay unmutated for the other callers
+    sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: The ``run`` namespace ``pyproject_build.py``'s OWN parser yields — the CLI whose
+#: shared ``cmd_run`` every queue-integration test below drives. Hoisted to module
+#: scope because ``parse_ns`` re-executes the script module on every call.
+#: Parser-derived, it also carries ``--mode``, ``--timeout``, ``--env`` and
+#: ``--working-dir``, none of which the hand-built namespaces it replaces had.
+#: ``register=False`` so it never publishes ``pyproject_build`` in ``sys.modules``.
+_RUN_ARGS = parse_ns(
+    'plan-marshall', 'build-pyproject', 'pyproject_build.py',
+    'run', '--command-args', 'verify', '--plan-id', 'P',
+    register=False,
+)
 
 
 def test_config_tool_name():
@@ -512,9 +541,7 @@ class TestPyprojectCmdRunQueueAdmitted:
         exec_recorder = _install_queue(monkeypatch, double)
 
         rc = cmd_run(
-            argparse.Namespace(
-                command_args='verify', plan_id='P', format='toon', execution_mode='in_process'
-            )
+            _variant(_RUN_ARGS, execution_mode='in_process')
         )
 
         assert rc == 0
@@ -537,9 +564,7 @@ class TestPyprojectCmdRunQueueBlockedThenAdmitted:
         exec_recorder = _install_queue(monkeypatch, double)
 
         rc = cmd_run(
-            argparse.Namespace(
-                command_args='verify', plan_id='P', format='toon', execution_mode='in_process'
-            )
+            _variant(_RUN_ARGS, execution_mode='in_process')
         )
 
         assert rc == 0
@@ -563,9 +588,7 @@ class TestPyprojectCmdRunQueueBlockedThenAdmitted:
         exec_recorder = _install_queue(monkeypatch, double)
 
         cmd_run(
-            argparse.Namespace(
-                command_args='verify', plan_id='P', format='toon', execution_mode='in_process'
-            )
+            _variant(_RUN_ARGS, execution_mode='in_process')
         )
 
         assert sleeps == [bqs._WAIT_SECONDS, bqs._WAIT_SECONDS]
@@ -583,9 +606,7 @@ class TestPyprojectCmdRunQueueSaturated:
         exec_recorder = _install_queue(monkeypatch, double)
 
         rc = cmd_run(
-            argparse.Namespace(
-                command_args='verify', plan_id='P', format='toon', execution_mode='in_process'
-            )
+            _variant(_RUN_ARGS, execution_mode='in_process')
         )
 
         assert rc == 1
@@ -608,9 +629,7 @@ class TestPyprojectCmdRunPlanIdAbsentPassthrough:
         exec_recorder = _install_queue(monkeypatch, double)
 
         rc = cmd_run(
-            argparse.Namespace(
-                command_args='verify', plan_id=plan_id, format='toon', execution_mode='in_process'
-            )
+            _variant(_RUN_ARGS, plan_id=plan_id, execution_mode='in_process')
         )
 
         assert rc == 0
@@ -620,13 +639,20 @@ class TestPyprojectCmdRunPlanIdAbsentPassthrough:
 
     def test_missing_plan_id_attr_is_passthrough(self, monkeypatch):
         """A Namespace with no plan_id attribute at all (getattr default None)
-        is also a pure passthrough."""
+        is also a pure passthrough.
+
+        The absent attribute IS the subject here, and the production parser always
+        supplies ``plan_id`` — so this namespace is derived from the parser base and
+        then has that one field removed, rather than hand-built. Every other field
+        stays the real CLI's, so the test still exercises a production-shaped
+        namespace missing exactly the attribute it is about.
+        """
         double = _QueueDouble([])
         exec_recorder = _install_queue(monkeypatch, double)
+        args = _variant(_RUN_ARGS, execution_mode='in_process')
+        delattr(args, 'plan_id')
 
-        rc = cmd_run(
-            argparse.Namespace(command_args='verify', format='toon', execution_mode='in_process')
-        )
+        rc = cmd_run(args)
 
         assert rc == 0
         assert len(exec_recorder.calls) == 1

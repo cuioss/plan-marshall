@@ -29,12 +29,14 @@ behaviour, which lives in
 
 from __future__ import annotations
 
-from argparse import Namespace
+import argparse
+import copy
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from conftest import MARKETPLACE_ROOT, load_script_module
+from conftest import MARKETPLACE_ROOT, load_script_module, parse_ns
 
 # -----------------------------------------------------------------------------
 # Tier 2 direct import — load manage-references CRUD module via importlib so
@@ -50,6 +52,47 @@ _crud = load_script_module(
 cmd_create = _crud.cmd_create
 cmd_get = _crud.cmd_get
 cmd_set = _crud.cmd_set
+
+_REFS_BUNDLE = 'plan-marshall'
+_REFS_SKILL = 'manage-references'
+_REFS_SCRIPT = 'manage-references.py'
+
+
+def _verb_args(*argv: str) -> argparse.Namespace:
+    """The namespace ``manage-references.py``'s OWN parser yields for ``argv``.
+
+    ``register=False`` so building one never publishes ``manage-references`` in
+    ``sys.modules`` beside the CRUD module loaded above under its own name.
+    """
+    args: argparse.Namespace = parse_ns(_REFS_BUNDLE, _REFS_SKILL, _REFS_SCRIPT, *argv, register=False)
+    return args
+
+
+def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
+    """Derive a namespace from a hoisted parser-derived base.
+
+    The base supplies every parser default; ``overrides`` names only the fields
+    this call differs in. A shallow copy is enough because the values are the
+    parser's own scalars, and the base must stay unmutated for the other callers
+    sharing it.
+    """
+    derived = copy.copy(base)
+    for field, value in overrides.items():
+        setattr(derived, field, value)
+    return derived
+
+
+#: One parser-derived namespace per manage-references verb this module drives,
+#: hoisted to module scope because ``parse_ns`` re-executes the script module on
+#: every call. ``create``'s ``--issue-url`` / ``--build-system`` / ``--domains``
+#: now come from the parser rather than being repeated as ``None`` at each call
+#: site, and every namespace carries the ``command`` discriminator the hand-built
+#: ones lacked.
+_CREATE_ARGS = _verb_args('create', '--plan-id', 'placeholder', '--branch', 'feature/test')
+_SET_ARGS = _verb_args(
+    'set', '--plan-id', 'placeholder', '--field', 'scope_estimate', '--value', 'placeholder'
+)
+_GET_ARGS = _verb_args('get', '--plan-id', 'placeholder', '--field', 'scope_estimate')
 
 
 # -----------------------------------------------------------------------------
@@ -290,25 +333,19 @@ def test_scope_estimate_persists_to_references_json(value: str, plan_context) ->
     # Bootstrap references.json — phase-1-init does this for real plans;
     # we replicate the minimum here so the persistence call has a target.
     create_result = cmd_create(
-        Namespace(
-            plan_id=plan_id,
-            branch='feature/test',
-            issue_url=None,
-            build_system=None,
-            domains=None,
-        )
+        _variant(_CREATE_ARGS, plan_id=plan_id)
     )
     assert create_result['status'] == 'success', create_result
 
     # Step 13 contract: persist scope_estimate
-    set_result = cmd_set(Namespace(plan_id=plan_id, field='scope_estimate', value=value))
+    set_result = cmd_set(_variant(_SET_ARGS, plan_id=plan_id, value=value))
     assert set_result['status'] == 'success'
     assert set_result['field'] == 'scope_estimate'
     assert set_result['value'] == value
 
     # Read-back: phase-3-outline / manifest composer / Q-Gate bypass
     # consumers all rely on cmd_get returning the persisted value.
-    get_result = cmd_get(Namespace(plan_id=plan_id, field='scope_estimate'))
+    get_result = cmd_get(_variant(_GET_ARGS, plan_id=plan_id))
     assert get_result is not None
     assert get_result['status'] == 'success'
     assert get_result['field'] == 'scope_estimate'
@@ -323,16 +360,10 @@ def test_scope_estimate_overwrite_records_previous(plan_context) -> None:
     """
     plan_id = 'phase2-scope-estimate-overwrite'
     cmd_create(
-        Namespace(
-            plan_id=plan_id,
-            branch='feature/test',
-            issue_url=None,
-            build_system=None,
-            domains=None,
-        )
+        _variant(_CREATE_ARGS, plan_id=plan_id)
     )
-    cmd_set(Namespace(plan_id=plan_id, field='scope_estimate', value='single_module'))
-    overwrite = cmd_set(Namespace(plan_id=plan_id, field='scope_estimate', value='surgical'))
+    cmd_set(_variant(_SET_ARGS, plan_id=plan_id, value='single_module'))
+    overwrite = cmd_set(_variant(_SET_ARGS, plan_id=plan_id, value='surgical'))
 
     assert overwrite['status'] == 'success'
     assert overwrite['value'] == 'surgical'
@@ -341,7 +372,7 @@ def test_scope_estimate_overwrite_records_previous(plan_context) -> None:
         'audit refinements (phase-3-outline downgrades, manifest revisions).'
     )
 
-    final = cmd_get(Namespace(plan_id=plan_id, field='scope_estimate'))
+    final = cmd_get(_variant(_GET_ARGS, plan_id=plan_id))
     assert final is not None
     assert final['value'] == 'surgical'
 
