@@ -102,8 +102,11 @@ def cmd_project(args) -> dict:
     """Handle project noun.
 
     Exposes the project-level `project.*` block in marshal.json — the admitted
-    field set is exactly the :data:`DEFAULT_PROJECT` keys. On a fresh marshal.json that lacks
-    the `project` block, `get` returns the value from
+    field set is exactly the :data:`DEFAULT_PROJECT` keys, enforced on BOTH
+    verbs through the one
+    :func:`reject_unknown_provisioning_field` seam, so `get` and `set` cannot
+    give two different answers to "what is a project field?". On a fresh
+    marshal.json that lacks the `project` block, `get` returns the value from
     :data:`DEFAULT_PROJECT` so consumers always observe the canonical
     default — mirroring the implicit-default semantics of the other
     `DEFAULT_PLAN_*` blocks.
@@ -124,6 +127,18 @@ def cmd_project(args) -> dict:
 
     if args.verb == 'get':
         field = args.field
+        # Fail-closed provisioning-READ guard (ADR-009) — the read half of the
+        # boundary whose write half the `set` arm below already guards, routed
+        # through the SAME seam so one predicate answers "what is a project
+        # field?" for both verbs. Membership is checked BEFORE the live block is
+        # consulted, and that order is the whole point: marshal.json is
+        # operator-editable and `sync-defaults` preserves an already-present key
+        # without inspecting it, so a retired or typo'd key persisted in the
+        # live `project` block would otherwise read back as a success that `set`
+        # would have refused for the same name.
+        rejection = reject_unknown_provisioning_field(field, DEFAULT_PROJECT, 'project')
+        if rejection is not None:
+            return rejection
         if field in project_config:
             value = project_config[field]
             # Re-validate the persisted value at this read boundary — mirroring
@@ -140,11 +155,10 @@ def cmd_project(args) -> dict:
                 except ValueError as e:
                     return error_exit(str(e), error_type='invalid_value')
             return success_exit({'field': field, 'value': value})
-        if field in DEFAULT_PROJECT:
-            # The DEFAULT_PROJECT fallback needs no guard — `get_default_config`
-            # already self-validates the seed.
-            return success_exit({'field': field, 'value': DEFAULT_PROJECT[field]})
-        return error_exit(f"Field '{field}' not found in project config", error_type='field_not_found')
+        # The field is admitted (the guard above proved it) but absent from the
+        # live block — the implicit-default fallback. It needs no value guard:
+        # `get_default_config` already self-validates the seed.
+        return success_exit({'field': field, 'value': DEFAULT_PROJECT[field]})
 
     elif args.verb == 'set':
         field = args.field

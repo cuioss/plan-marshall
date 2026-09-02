@@ -8,12 +8,15 @@ test_cmd_quality_phases.py.
 Tier 2 (direct import) tests with 2 subprocess tests for CLI plumbing.
 """
 
+import json
 from argparse import Namespace
+
+import pytest
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from _manage_config_fixtures import SCRIPT_PATH, create_marshal_json
 
-from conftest import load_script_module, run_script
+from conftest import load_script_module, parse_ns, run_script
 
 _cmd_system_plan = load_script_module(
     'plan-marshall', 'manage-config', '_cmd_system_plan.py', module_name='_cmd_system_plan'
@@ -251,8 +254,8 @@ def test_plan_q_gate_validation_set_rejects_invalid_value(plan_context):
 # =============================================================================
 #
 # `cmd_project`'s set branch rejects any field not in DEFAULT_PROJECT with
-# error_type='unknown_field' before persisting, making set symmetric with the
-# get branch's field_not_found handling. A typo'd or retired key (e.g. a dead
+# error_type='unknown_field' before persisting, symmetrically with the get
+# branch's read-side guard below. A typo'd or retired key (e.g. a dead
 # lane knob like use_merge_queue) is rejected rather than silently written to
 # marshal.json where no reader would ever consult it. The four known
 # DEFAULT_PROJECT fields must still set successfully.
@@ -270,17 +273,17 @@ def test_project_set_rejects_unknown_field(plan_context):
 
 
 def test_project_set_unknown_field_not_persisted(plan_context):
-    """A rejected unknown field is never written to marshal.json — a follow-up get is field_not_found."""
-    create_marshal_json(plan_context.fixture_dir)
+    """A rejected unknown field is never written to the marshal.json project block."""
+    marshal_path = create_marshal_json(plan_context.fixture_dir)
 
     set_result = cmd_project(Namespace(verb='set', field='use_merge_queue', value='true'))
     assert set_result['status'] == 'error'
 
-    # The dead key must not have been persisted: get resolves neither the stored
-    # project config nor DEFAULT_PROJECT, so it surfaces field_not_found.
-    get_result = cmd_project(Namespace(verb='get', field='use_merge_queue'))
-    assert get_result['status'] == 'error'
-    assert get_result['error_type'] == 'field_not_found'
+    # Non-persistence is proven against the file itself, not against a follow-up
+    # get: the read arm now refuses an unknown field NAME outright, so its
+    # rejection would be returned whether or not the key had been written.
+    persisted = json.loads(marshal_path.read_text(encoding='utf-8'))
+    assert 'use_merge_queue' not in persisted.get('project', {})
 
 
 def test_project_set_default_base_branch_succeeds(plan_context):
@@ -337,6 +340,79 @@ def test_project_set_pr_compact_max_changed_files_succeeds(plan_context):
     get_result = cmd_project(Namespace(verb='get', field='pr_compact_max_changed_files'))
     assert get_result['status'] == 'success'
     assert get_result['value'] == 200
+
+
+# =============================================================================
+# project get field-name whitelist (read side)
+# =============================================================================
+#
+# `cmd_project`'s get branch routes the caller-named field through the SAME
+# reject_unknown_provisioning_field seam the set branch uses, and does so BEFORE
+# consulting the live `project` block. That order is the contract: marshal.json
+# is operator-editable and sync-defaults preserves an already-present key
+# without inspecting it, so a retired or typo'd key sitting in the live block
+# would otherwise read back as a success while `set` refuses the same name. The
+# DEFAULT_PROJECT implicit-default fallback is untouched — an admitted field
+# absent from the live block still resolves to its canonical default.
+
+
+def _project_get_ns(field: str):
+    """Build the `project get --field X` namespace through the script's own parser."""
+    return parse_ns(
+        'plan-marshall', 'manage-config', 'manage-config.py', 'project', 'get', '--field', field
+    )
+
+
+def test_project_get_rejects_unknown_field_name(plan_context):
+    """`project get` refuses a field outside DEFAULT_PROJECT with error_type='unknown_field'."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_project(_project_get_ns('use_merge_queue'))
+
+    assert result['status'] == 'error'
+    assert result['error_type'] == 'unknown_field'
+    assert 'use_merge_queue' in result['error']
+
+
+def test_project_get_rejects_unknown_field_persisted_in_live_block(plan_context):
+    """An unknown key already persisted in the live project block is refused, not returned."""
+    create_marshal_json(
+        plan_context.fixture_dir,
+        config=_marshal_with_block(
+            project={'default_base_branch': 'main', 'retired_lane_knob': 'stale-value'}
+        ),
+    )
+
+    result = cmd_project(_project_get_ns('retired_lane_knob'))
+
+    assert result['status'] == 'error'
+    assert result['error_type'] == 'unknown_field'
+    # The persisted value must not leak out of the rejection.
+    assert 'value' not in result
+
+
+@pytest.mark.parametrize(
+    ('field', 'expected'),
+    [
+        ('user_language', 'auto'),
+        ('default_base_branch', 'develop'),
+    ],
+    ids=[
+        'admitted-field-absent-from-live-block-falls-back-to-canonical-default',
+        'admitted-field-present-in-live-block-returns-the-persisted-value',
+    ],
+)
+def test_project_get_admitted_field_resolves(plan_context, field, expected):
+    """An admitted field still resolves — from the live block, else from DEFAULT_PROJECT."""
+    create_marshal_json(
+        plan_context.fixture_dir,
+        config=_marshal_with_block(project={'default_base_branch': 'develop'}),
+    )
+
+    result = cmd_project(_project_get_ns(field))
+
+    assert result['status'] == 'success'
+    assert result['value'] == expected
 
 
 # =============================================================================
