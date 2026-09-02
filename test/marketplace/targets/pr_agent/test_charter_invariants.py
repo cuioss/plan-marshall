@@ -6,18 +6,17 @@ emittable pack population, so a domain added to the marketplace is guarded the
 moment it becomes derivable. Four invariants protect the charter from the
 dilution that produced five consecutive empty reviews:
 
-(a) the anti-fabrication clause is present verbatim in every pack;
-(b) the substantiation requirement is present verbatim in every pack;
+(a) the anti-fabrication clause is present verbatim in the spine;
+(b) the substantiation requirement is present verbatim in the spine;
 (c) no pack's category bullet list exceeds the ceiling;
 (d) no pack carries withholding language.
 
-**The population covers COMPOSED packs, not only single-domain ones.** A
-repository's emitted pack may compose several derived domains, and that shape is
-one ``compose_packs`` never produces — guarding only single-domain packs would
-leave the ceiling unmeasured on exactly the shape most likely to breach it. The
-population therefore adds the widest composition the marketplace admits: every
-derived domain in one pack. If the ceiling holds there it holds for every subset,
-because the composition contributes ONE domain category bullet for any N.
+**The population is the derived domain set, and the charter lives in the SPINE.**
+There is no composed pack: the target emits an orthogonal artifact set, so a
+domain body carries its domain part alone and the charter text is rendered once,
+by ``compose_spine``. Invariants (a) and (b) are therefore measured against the
+spine body, while (c) and (d) stay per-domain. The spine reserves one slot of the
+ceiling and each domain body contributes exactly one bullet.
 
 **Check topology.** The population is DERIVED; the expectations it is measured
 against are NOT. Every expected value below is a literal declared in this module
@@ -39,33 +38,24 @@ over nothing. The negative controls at the end prove each assertion can fail.
 import pytest
 
 from conftest import PROJECT_ROOT
-from marketplace.targets.pr_agent.target import compose_packs, compose_selection
+from marketplace.targets.pr_agent.target import compose_packs, compose_spine, discover_spine_topics
 
 MARKETPLACE_BUNDLES = PROJECT_ROOT / 'marketplace' / 'bundles'
 
 
 def _emittable_packs() -> dict[str, str]:
-    """Every pack the target can emit from the REAL marketplace.
-
-    The single-domain packs plus the widest composition — every derived domain in
-    one pack, the shape that stresses the ceiling hardest.
-    """
-    packs = dict(compose_packs(MARKETPLACE_BUNDLES))
-    domains = sorted(packs)
-    if len(domains) > 1:
-        packs[f'composed:{",".join(domains)}'] = compose_selection(MARKETPLACE_BUNDLES, domains)
-    return packs
+    """Every domain body the target can emit from the REAL marketplace."""
+    return dict(compose_packs(MARKETPLACE_BUNDLES))
 
 
-#: The emittable pack population, computed at collection time from the REAL
-#: marketplace. This is the ONLY derived input in the module.
+#: The emittable domain-body population, computed at collection time from the
+#: REAL marketplace. This and SPINE_BODY are the ONLY derived inputs here.
 PACKS: dict[str, str] = _emittable_packs()
 PACK_IDS: list[str] = sorted(PACKS)
 
-#: The composed-pack ids inside the population. Named separately so the guard can
-#: assert the composed shape is actually PRESENT — a population that silently
-#: lost it would still pass every invariant below, over single-domain packs only.
-COMPOSED_PACK_IDS: list[str] = [pack_id for pack_id in PACK_IDS if pack_id.startswith('composed:')]
+#: The spine body — the one place the charter clauses are rendered. Invariants
+#: (a) and (b) are measured against it, because no domain body carries them.
+SPINE_BODY: str = compose_spine(discover_spine_topics(MARKETPLACE_BUNDLES))
 
 # ---------------------------------------------------------------------------
 # Expectations — literals, copied from the org charter. Never imported.
@@ -140,32 +130,20 @@ class TestPopulation:
         assert len(PACKS) == len(PACK_IDS)
         assert len(PACKS) >= 1
 
-    def test_population_includes_the_composed_shape(self):
-        """The composed shape must be IN the population, not merely composable.
 
-        The ceiling invariant is the one composition can breach; a population
-        that quietly held single-domain packs only would report green while the
-        emitted composed pack went unmeasured.
-        """
-        assert COMPOSED_PACK_IDS, (
-            'the guard population carries no composed pack; the real marketplace '
-            f'derived {len(PACKS)} domain(s), and a composition needs at least two'
-        )
+class TestSpineCharterInvariants:
+    """(a) and (b) — the charter clauses, measured where they are now rendered."""
+
+    def test_anti_fabrication_clause_is_present_verbatim(self):
+        assert ANTI_FABRICATION_CLAUSE in SPINE_BODY, 'the spine lost the anti-fabrication clause'
+
+    def test_substantiation_requirement_is_present_verbatim(self):
+        assert SUBSTANTIATION_REQUIREMENT in SPINE_BODY, 'the spine lost the substantiation requirement'
 
 
 @pytest.mark.parametrize('domain', PACK_IDS)
 class TestCharterInvariants:
-    """The four invariants, applied to every derived pack."""
-
-    def test_anti_fabrication_clause_is_present_verbatim(self, domain):
-        assert ANTI_FABRICATION_CLAUSE in PACKS[domain], (
-            f'pack {domain!r} lost the anti-fabrication clause'
-        )
-
-    def test_substantiation_requirement_is_present_verbatim(self, domain):
-        assert SUBSTANTIATION_REQUIREMENT in PACKS[domain], (
-            f'pack {domain!r} lost the substantiation requirement'
-        )
+    """(c) and (d), applied to every derived domain body."""
 
     def test_category_list_does_not_exceed_the_ceiling(self, domain):
         bullets = category_bullets(PACKS[domain])
@@ -197,26 +175,34 @@ class TestGuardBites:
         return PACKS[PACK_IDS[0]]
 
     def test_missing_anti_fabrication_clause_is_detected(self):
-        mutated = self._sample().replace(ANTI_FABRICATION_CLAUSE, 'nothing to see here')
+        # Mutated against the SPINE, the only body that carries the clause: a
+        # mutation of a domain body would remove nothing and pass vacuously.
+        assert ANTI_FABRICATION_CLAUSE in SPINE_BODY
+        mutated = SPINE_BODY.replace(ANTI_FABRICATION_CLAUSE, 'nothing to see here')
         assert ANTI_FABRICATION_CLAUSE not in mutated
 
     def test_missing_substantiation_requirement_is_detected(self):
-        mutated = self._sample().replace(SUBSTANTIATION_REQUIREMENT, 'say whatever')
+        assert SUBSTANTIATION_REQUIREMENT in SPINE_BODY
+        mutated = SPINE_BODY.replace(SUBSTANTIATION_REQUIREMENT, 'say whatever')
         assert SUBSTANTIATION_REQUIREMENT not in mutated
 
     def test_an_eleventh_category_bullet_is_detected(self):
-        """An extra bullet inserted into the category list breaks the ceiling."""
-        sample = self._sample()
-        bullets = category_bullets(sample)
-        assert len(bullets) == CATEGORY_CEILING, (
-            'the sample pack is expected to sit exactly at the ceiling, so adding '
-            f'one bullet crosses it; got {len(bullets)}'
+        """An extra bullet inserted into the spine's category list breaks the budget.
+
+        The spine sits one under the ceiling — the last slot is reserved for the
+        single bullet each domain artifact contributes — so one extra spine bullet
+        is what puts a single-domain assembly over.
+        """
+        bullets = category_bullets(SPINE_BODY)
+        assert len(bullets) == CATEGORY_CEILING - 1, (
+            'the spine is expected to sit exactly one under the ceiling, reserving '
+            f'the last slot for the domain bullet; got {len(bullets)}'
         )
 
         marker = f'- {bullets[-1]}'
-        mutated = sample.replace(marker, f'{marker}\n- An eleventh category nobody budgeted for.', 1)
+        mutated = SPINE_BODY.replace(marker, f'{marker}\n- A tenth spine category nobody budgeted for.', 1)
 
-        assert len(category_bullets(mutated)) == CATEGORY_CEILING + 1
+        assert len(category_bullets(mutated)) == CATEGORY_CEILING
 
     def test_reintroduced_withholding_language_is_detected(self):
         for phrase in WITHHOLDING_DENY_LIST:

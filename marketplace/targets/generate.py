@@ -6,8 +6,12 @@ Usage:
     uv run python marketplace/targets/generate.py --target claude
     uv run python marketplace/targets/generate.py --target claude --output target/claude
     uv run python marketplace/targets/generate.py --target opencode --output target/opencode
-    uv run python marketplace/targets/generate.py --target pr-agent --output . --packs python,plugin
+    uv run python marketplace/targets/generate.py --target pr-agent --output target/pr-agent
     uv run python marketplace/targets/generate.py --target all --output target
+
+The pr-agent target writes its artifact set under {output}/packs/ — one Markdown
+file per derived review domain, plus the spine artifact carrying the review
+charter once.
 
 Exits 0 on success, 2 on any failure (unknown target, missing required
 flag, generator-reported error).
@@ -71,16 +75,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help='Comma-separated list of bundles to process. Default: all bundles.',
     )
     parser.add_argument(
-        '--packs',
-        type=str,
-        default=None,
-        help=(
-            'pr-agent target only: comma-separated derived domains to compose into the one '
-            'emitted pack (e.g. "python,plugin" for a repository that is both). Ignored by '
-            'every other target. Default: the target\'s own DEFAULT_PACK.'
-        ),
-    )
-    parser.add_argument(
         '--marketplace-dir',
         type=Path,
         default=DEFAULT_MARKETPLACE_DIR,
@@ -125,25 +119,6 @@ def _resolve_targets(name: str) -> list[str]:
     if name == 'all':
         return sorted(TARGET_REGISTRY.keys())
     return [name]
-
-
-#: The one target that takes a construction argument. Kept as an explicit,
-#: named constant rather than as an inline string test so the special case is
-#: greppable: every other target is constructed with no arguments, and a second
-#: parametrised target would extend this seam rather than add another branch.
-_PACK_SELECTING_TARGET = 'pr-agent'
-
-
-def _instantiate(target_name: str, target_cls: type, packs: str | None):
-    """Construct a target, forwarding the pack selection to the one that takes it.
-
-    ``--packs`` is meaningful only for the pr-agent target; forwarding it to a
-    target that does not accept it would be a TypeError, and silently accepting
-    it everywhere would imply the flag does something it does not.
-    """
-    if target_name == _PACK_SELECTING_TARGET and packs:
-        return target_cls(packs)
-    return target_cls()
 
 
 # ---------------------------------------------------------------------------
@@ -423,11 +398,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f'error: unknown target {target_name!r}', file=sys.stderr)
             return EXIT_ERROR
 
-        try:
-            target = _instantiate(target_name, target_cls, args.packs)
-        except ValueError as exc:
-            print(f'error: target {target_name!r} rejected --packs: {exc}', file=sys.stderr)
-            return EXIT_ERROR
+        target = target_cls()
         per_target_output = output_dir / target_name if (output_dir is not None and args.target == 'all') else output_dir
 
         try:
