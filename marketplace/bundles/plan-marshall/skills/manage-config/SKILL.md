@@ -590,7 +590,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `get-skills-by-profile` | `--domain` (skills organized by profile) |
 | `ext-defaults` | get, set, set-default, list, remove |
 | `system` | retention get, retention set |
-| `project` | `get/set` (`default_base_branch`, `working_prefixes`, `pr_strategy`, `pr_compact_max_changed_files`), `pr-decision --changed-files N` (resolve the two PR-batching knobs into a `ride`\|`split` verdict) |
+| `project` | `get/set` (the admitted field set is exactly the `DEFAULT_PROJECT` keys in `scripts/_config_defaults.py` — that mapping doubles as the fail-closed whitelist `set` validates against, so it is the set, not a copy of it), `pr-decision --changed-files N` (resolve the two PR-batching knobs into a `ride`\|`split` verdict) |
 | `orchestrator` | `get`/`set --field {parallelization_scope\|auto_emit}` (whitelist-guarded scalar knobs on the top-level `orchestrator` block, a sibling of `plan`: `parallelization_scope` int >= 1, `auto_emit` bool. `orchestrator.effort.*` is NOT handled here — see the `effort` row's `orchestrator[...]` scope forms.) |
 | `plan` | `{phase} get/set` (incl. gate_mode planning gates + flat finalize automation knobs), `{phase} step get/set` (one-stop keyed-map step-param read/write; ceremony gates ride the step `lane` param), set-steps, add-step, remove-step, set-max-iterations |
 | `effort` | `read` (role/phase/`--default` resolver; `--role orchestrator`\|`orchestrator.{analyze\|decompose\|reader}` resolves the sibling `orchestrator.effort` block, clamped to `orchestrator.effort.max`), `resolve-target` (same lookup plus `execution-context-{level}` target-name computation), `apply-preset --preset` (whole-tree writer), `set --scope {phase}.{role}\|plan\|orchestrator[.{analyze\|decompose\|reader}\|default\|max] --level` (surgical per-scope writer), `identify` (read-only recogniser: reconstructs the on-disk `{default, roles}` payload and classifies it against the preset ladder as `current`\|`previous-ladder`\|`custom`\|`not_configured`, returning the wizard's ready-to-print `message`) |
@@ -1015,6 +1015,13 @@ falling back to the same `DEFAULT_PROJECT` default when the key is absent:
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config project get \
   --field user_language
 ```
+
+A `user_language` read from the live `project` block is re-validated at this read
+boundary and refused with `error_type: invalid_value` when it is not a non-empty
+string — the read-side mirror of the `set` guard below. The `DEFAULT_PROJECT`
+fallback arm is not re-validated, because the seed is self-validated. See
+[standards/api-reference.md](standards/api-reference.md) § Noun: project for the
+per-verb contract.
 
 ### project set
 
@@ -1475,7 +1482,7 @@ This is the **sole build/no-build authority**: every consumer site — the `pre_
 | `invalid_domain` | Domain not in skill_domains | Check domain name or run `/marshall-steward` |
 | `skill_domains not configured` | No domains in marshal.json | Run `/marshall-steward` |
 | `invalid_field` | Unknown field for phase/noun | Check field reference table above |
-| `unknown_field` | `project set --field X` where `X` is not a known project field (`default_base_branch`, `working_prefixes`, `pr_strategy`, `pr_compact_max_changed_files`) | Use one of the four known project fields; the write is refused before persisting so no dead key is written |
+| `unknown_field` | `project set --field X` where `X` is not a known project field — the admitted set is exactly the `DEFAULT_PROJECT` keys in `scripts/_config_defaults.py` | Use a field from that set; the write is refused before persisting so no dead key is written |
 | keyed step-map `set --field` rejection | `set --field verification_steps` (phase-5-execute) or `set --field steps` (phase-6-finalize) — those fields are keyed step-maps, not scalars | Use `set-steps` / `add-step` / `remove-step`, or `step set` for a step's nested params |
 | `skill_not_found` | Skill not in domain defaults/optionals | Check with `validate --domain --skill` |
 
