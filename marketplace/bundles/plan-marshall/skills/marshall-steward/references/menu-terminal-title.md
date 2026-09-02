@@ -43,8 +43,9 @@ published.
 in both install modes — the terminal-title install and the orthogonal
 `--enforcement` install alike — because both are machine-local operator wiring
 and that file is gitignored, so absolute per-user paths never enter version
-control. The `display` health check reads BOTH files, so an entry in either
-counts as present. Report the file the call actually wrote by reading
+control. The `display` health check reads BOTH files: an entry in either file
+alone counts as `present`, and an entry in both reads `divergence`. Report the
+file the call actually wrote by reading
 `settings_path` from the install response rather than naming a path this flow
 does not control.
 
@@ -106,13 +107,20 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
 ```
 
 Inspect the `display` entry in the `results` array. Its `detail` field reports
-every piece on its own line, each ending in `present` or `MISSING`. Once the
-overall `status` has routed the flow (see the branch rule below), the `detail`
-lines are how a PARTIAL install is diagnosed — each `MISSING` line names one
-render entry, statusLine, or env value still to be installed. Read them as a
-diagnosis, never as the branch condition: one label on this list is deliberately
-non-blocking, so the presence of a `MISSING` line does not imply an unhealthy
-check.
+every piece on its own line, each ending in `present`, `divergence`, or
+`MISSING`. Once the overall `status` has routed the flow (see the branch rule
+below), the `detail` lines are how a PARTIAL install is diagnosed — each
+`MISSING` line names one render entry, statusLine, or env value still to be
+installed. Read them as a diagnosis, never as the branch condition: this list
+carries non-blocking conditions by design, so neither a `MISSING` line nor a
+`divergence` line implies an unhealthy check.
+
+A `divergence` line means that surface is installed in BOTH
+`.claude/settings.json` and `.claude/settings.local.json`. It is a
+report-only observation about the operator's configuration and is explicitly
+**NOT** a reason to offer the enable or re-install prompt — the entry is already
+installed, and nothing in this flow repairs, migrates, or de-duplicates it.
+Report it and change nothing.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
@@ -150,21 +158,28 @@ would delete the entry that clear depends on.
 `SessionStart:clear` **is** installed as its own entry — it is what routes the
 session teardown when a session is cleared.
 
-**The check is fail-closed.** A divergence between the expected and installed
+**The check is fail-closed.** A mismatch between the expected and installed
 sets returns `status: error` with `error: display_unhealthy`, not a `success`
-carrying `all_healthy: false`. Branch on the status, not on the text.
+carrying `all_healthy: false`. Branch on the status, not on the text. (That
+mismatch is a missing entry — it is not the `divergence` label value, which
+reports an entry installed in both settings files and never fails the check.)
 
 When `display` reports `status: success`, every required entry is present.
 
 **Branch on the status, never on a `MISSING` text scan.** A text scan is not a
 narrower spelling of the status check — it disagrees with it in the ordinary
 case. `_diagnose_display_entries` also emits a `PreToolUse:enforcement:
-present|MISSING` label, and that label's absence deliberately does NOT set
-`healthy = False`, because the enforcement hook is an orthogonal opt-in. So a
-project with the terminal title fully installed and enforcement simply not
+present|divergence|MISSING` label, and that label's absence deliberately does
+NOT set `healthy = False`, because the enforcement hook is an orthogonal opt-in.
+So a project with the terminal title fully installed and enforcement simply not
 enabled reports `status: success` **and** carries a line containing `MISSING`. A
 scan would route that healthy project to the Step 2 enable prompt and offer to
 install what is already installed.
+
+A `divergence` line likewise never changes the status: it reports an installed
+surface, so it leaves `healthy` `true` on every label that carries it. A text
+scan keyed on `divergence` would misroute a dual-homed but fully working project
+in exactly the same way a `MISSING` scan misroutes an enforcement-free one.
 
 **Presence is not correctness**: the `display` check keys on the hook command
 string alone and never inspects an entry's `timeout`, so a present entry can

@@ -2043,8 +2043,15 @@ class ClaudeRuntime(Runtime):
             # check must too, or such an install reports a false MISSING.
             display_main = claude_runtime._read_json(Path(".claude") / "settings.json") or {}
             display_local = claude_runtime._read_json(Path(".claude") / "settings.local.json") or {}
+            # Detect the dual-homed install BEFORE the merge: the merge
+            # concatenates the per-event hook lists and the presence probes
+            # return on the first match, so an entry installed in both files is
+            # indistinguishable from a single-homed one afterwards. Report-only
+            # and non-fatal — a divergent label is installed, so it does not
+            # touch ``healthy`` and never trips the fail-closed gate below.
+            divergent = claude_runtime._dual_homed_labels(display_main, display_local)
             merged = claude_runtime._merge_display_settings(display_main, display_local)
-            lines, healthy = claude_runtime._diagnose_display_entries(merged)
+            lines, healthy = claude_runtime._diagnose_display_entries(merged, divergent)
             if healthy:
                 detail = "; ".join(lines)
             else:
@@ -2098,7 +2105,13 @@ class ClaudeRuntime(Runtime):
             healthy = in_settings_json or in_settings_local
 
             if in_settings_json and in_settings_local:
-                detail = "SessionStart hook entry present in .claude/settings.json and .claude/settings.local.json"
+                # Dual-homed: the same named, non-fatal state the ``display``
+                # check reports per label. ``healthy`` stays True above — the
+                # entry IS installed; the divergence is report-only.
+                detail = (
+                    f"SessionStart hook entry: {claude_runtime._DIVERGENCE_TOKEN} — "
+                    "present in .claude/settings.json and .claude/settings.local.json"
+                )
             elif in_settings_json:
                 detail = "SessionStart hook entry present in .claude/settings.json"
             elif in_settings_local:

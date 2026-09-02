@@ -176,18 +176,24 @@ without the other).
   rewrites to the current one. An entry that is already correct reports
   `already_present` and the file is not written at all.
 - **Detect surface.** The `health-check --checks display` diagnostic emits a
-  dedicated `PreToolUse:enforcement: present` / `MISSING` label, keyed on the
-  enforcement command (not the render command), so a partial or absent
-  enforcement install is diagnosable independently of the terminal-title wiring.
+  dedicated `PreToolUse:enforcement: present` / `divergence` / `MISSING` label,
+  keyed on the enforcement command (not the render command), so a partial,
+  absent, or dual-homed enforcement install is diagnosable independently of the
+  terminal-title wiring.
   The label is scoped to the **matcher-less** entry: an enforcement command
   parked under some matcher reads `MISSING`, because such an entry does not
   enforce on every tool. The presence probe and the timeout migration carry the
   same scope, so a wrong-matcher entry never suppresses the install of the real
   matcher-less one.
   The enforcement label does not gate the terminal-title `healthy` flag. The
-  check inspects BOTH `.claude/settings.json` and `.claude/settings.local.json`
-  (an entry in either file counts as present), matching the `hook` check and the
-  fact that a hook entry can legitimately live in either file.
+  check inspects BOTH `.claude/settings.json` and `.claude/settings.local.json`:
+  an entry in **either file alone** counts as `present`, and an entry in **both**
+  reads `divergence`. It matches the `hook` check on both points — the fact that
+  a hook entry can legitimately live in either file, and the fact that an entry
+  living in both is reported rather than collapsed into `present`. `divergence`
+  is report-only: it is an installed entry, so it never makes the check
+  unhealthy and nothing repairs or rewrites it. See
+  [`contract.md`](contract.md) § `health-check` for the value domain.
 - **Menu surface.** The marshall-steward Configuration → Enforcement Hook action
   drives the detect→confirm→install flow; see
   [`../../marshall-steward/references/menu-enforcement-hook.md`](../../marshall-steward/references/menu-enforcement-hook.md).

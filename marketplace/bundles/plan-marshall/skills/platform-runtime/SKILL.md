@@ -59,7 +59,7 @@ Twenty-five operations covering the full platform lifecycle:
 
 See `standards/contract.md` for per-operation TOON schemas (success, error, no-op paths).
 
-The `health-check --checks display` surface inspects each terminal-title render entry plus a dedicated `PreToolUse:enforcement` present/MISSING label for the orthogonal enforcement hook, so a partial or absent enforcement install is diagnosable and repairable independently of the terminal-title wiring.
+The `health-check --checks display` surface inspects each terminal-title render entry plus a dedicated `PreToolUse:enforcement` `present` / `divergence` / `MISSING` label for the orthogonal enforcement hook, so a partial, absent, or dual-homed enforcement install is diagnosable and repairable independently of the terminal-title wiring. `divergence` (the entry is installed in BOTH `.claude/settings.json` and `.claude/settings.local.json`) is report-only and never makes the check unhealthy — see `standards/contract.md` § `health-check` for the value domain.
 
 ## Architecture
 
@@ -176,7 +176,8 @@ It is implemented by three sibling scripts:
 
 The enforcement hook is installed on demand via the orthogonal
 `project install-hook --enforcement` path (independent of the terminal-title
-bundle), surfaces a dedicated `PreToolUse:enforcement` present/MISSING label on
+bundle), surfaces a dedicated `PreToolUse:enforcement`
+`present` / `divergence` / `MISSING` label on
 the `health-check --checks display` diagnostic, and is registered through the
 marshall-steward Configuration → Enforcement Hook menu
 ([`../marshall-steward/references/menu-enforcement-hook.md`](../marshall-steward/references/menu-enforcement-hook.md)).

@@ -39,7 +39,8 @@ duplicates an entry and brings an already-present one onto the current shape.
 ### Step 1: Detect
 
 Probe the current `.claude/settings.local.json` for the enforcement entry's
-present/MISSING state via the platform-runtime health-check `display` surface:
+`present` / `divergence` / `MISSING` state via the platform-runtime health-check
+`display` surface:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
@@ -88,12 +89,32 @@ every required surface on its own line; scan for the dedicated
   `enforcement_status: migrated` when a stale value was rewritten, or
   `already_present` when the entry was already correct.
 
+- `PreToolUse:enforcement: divergence` — the enforcement entry is installed in
+  BOTH `.claude/settings.json` and `.claude/settings.local.json`. The entry IS
+  installed, so this is **report-only** and is **NOT** a reason to offer the
+  install prompt. Report the observation and change nothing:
+
+  ```text
+  The PreToolUse enforcement hook is already configured, in both settings files.
+
+  The enforcement entry is present in ./.claude/settings.json AND in
+  ./.claude/settings.local.json. This is reported for your awareness only —
+  nothing here repairs, migrates, or de-duplicates it, and the hook is armed
+  either way.
+  ```
+
+  Return to the Configuration menu. Do NOT proceed to Step 2, and do NOT offer
+  the re-run install: this flow writes only `.claude/settings.local.json`, so it
+  cannot resolve a state that spans both files, and offering a write that cannot
+  change the reported condition would be misleading.
+
 - `PreToolUse:enforcement: MISSING` — the enforcement hook is not installed.
   Proceed to Step 2.
 
 Note: the enforcement entry is orthogonal — a `MISSING` enforcement line does
-NOT make the terminal-title `display` check unhealthy, and a `present`
-enforcement line does not by itself make it healthy. Read the
+NOT make the terminal-title `display` check unhealthy, a `divergence` line
+likewise does NOT make it unhealthy (it reports an installed entry), and a
+`present` enforcement line does not by itself make it healthy. Read the
 `PreToolUse:enforcement` line specifically, not the overall `healthy` flag.
 
 ### Step 2: Confirm
