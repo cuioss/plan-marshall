@@ -40,7 +40,7 @@ did NOT yet share that guard was `cmd_system retention set`.
 | Site | Shape | Disposition |
 |------|-------|-------------|
 | `cmd_system` retention `set` (lines 61-83) | (a) | **FIX (D4).** Writes `retention[field] = value` with NO whitelist check on `field`, then returns `success_exit`. A typo'd or retired retention key persists silently. This is the one concrete silent-success write the sweep found; deliverable 4 routes it through the validated-write seam / generalizes the `cmd_project set` whitelist. |
-| `cmd_project set` (lines 120-177) | (a) | **JUSTIFY.** Already fails closed: rejects unknown fields (`unknown_field`), invalid `pr_strategy` / `pr_compact_max_changed_files` values (`invalid_value`), and non-list/non-string `working_prefixes` (`invalid_type`, `invalid_json`) before `save_config`. This is the pattern D4 generalizes. |
+| `cmd_project set` (lines 120-177) | (a) | **JUSTIFY.** Already fails closed: rejects unknown fields (`unknown_field`), invalid `pr_strategy` / `pr_compact_max_changed_files` values (`invalid_value`), a non-`str` or empty `user_language` (`invalid_value`, which is what stops `_coerce_value` persisting a `bool` for `--value false`), and non-list/non-string `working_prefixes` (`invalid_type`, `invalid_json`) before `save_config`. This is the pattern D4 generalizes. |
 | `cmd_project get` (lines 112-118) | (b) | **JUSTIFY.** Returns `field_not_found` for an unknown field rather than a vacuous value; falls back to `DEFAULT_PROJECT` only for known fields. |
 | `cmd_project pr-decision` (lines 179-211) | (b) | **JUSTIFY.** Re-validates the resolved knobs at the read boundary and rejects a negative `--changed-files`; a corrupt marshal.json fails loud here rather than producing a wrong verdict. |
 | `cmd_system` unknown sub-noun / verb (line 85); `cmd_project` unknown verb (line 213); `cmd_plan` unknown sub-noun (line 227) | — | **JUSTIFY.** All terminate in `error_exit`, never a silent success. |
@@ -67,7 +67,7 @@ did NOT yet share that guard was `cmd_system retention set`.
 |------|-------|-------------|
 | `stamp_provisioning_fields` (lines 1141-1173) | (b) | **JUSTIFY.** Non-destructive on an empty read: when `read_provisioned_version` returns `''` (unstamped/absent executor), a pre-existing `provisioned_version` is preserved rather than blanked — a known-good version is never lost merely because the executor could not be read. |
 | `read_provisioned_version` (lines 1114-1138) | (b) | **JUSTIFY.** Returns `''` on an absent/unreadable executor. The empty string is the documented unstamped sentinel consumed as "fresh install", NOT a vacuous positive — downstream `_version_tuple('')` sorts lowest, so an unstamped surface is never treated as newer than a real version. |
-| `validate_*` helpers (pr_strategy, gate_mode, lane_*, per_deliverable_build, cost_size_token_table, sonar_touched_file_cleanup, simplicity, domain invariants) | (a) | **JUSTIFY.** Each raises `ValueError` on an invalid value; the `cmd_*` callers convert that to `error_exit`, so an invalid value never persists. |
+| `validate_*` helpers (pr_strategy, user_language, gate_mode, lane_*, per_deliverable_build, cost_size_token_table, sonar_touched_file_cleanup, simplicity, domain invariants) | (a) | **JUSTIFY.** Each raises `ValueError` on an invalid value; the `cmd_*` callers convert that to `error_exit`, so an invalid value never persists. |
 
 ### marshall-steward/scripts/determine_mode.py
 

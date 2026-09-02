@@ -23,7 +23,8 @@ JSON structure and field definitions for project configuration.
     "working_prefixes": ["feature/", "fix/", "chore/"],
     "pr_strategy": "compact",
     "pr_compact_max_changed_files": 150,
-    "merge_queue_managed_externally": false
+    "merge_queue_managed_externally": false,
+    "user_language": "auto"
   },
   "orchestrator": {
     "effort": {
@@ -220,7 +221,8 @@ Project-level settings (committed, shared via git). Seeded on `init` and back-fi
     "working_prefixes": ["feature/", "fix/", "chore/"],
     "pr_strategy": "compact",
     "pr_compact_max_changed_files": 150,
-    "merge_queue_managed_externally": false
+    "merge_queue_managed_externally": false,
+    "user_language": "auto"
   }
 }
 ```
@@ -234,6 +236,7 @@ Project-level settings (committed, shared via git). Seeded on `init` and back-fi
 | `pr_strategy` | string | `"compact"` | PR-consolidation policy. `compact` ⇒ follow-up / config-migration / ad-hoc changes ride an already-pending related PR when the changed-file count stays within `pr_compact_max_changed_files`; `distinct` ⇒ always open a separate PR. The `manage-config project pr-decision --changed-files N` verb resolves this knob (with `pr_compact_max_changed_files`) into a `ride|split` decision — see `manage-config` Canonical invocations → `project pr-decision`; it is the consult surface every PR-opening guidance references rather than re-deriving the comparison. |
 | `pr_compact_max_changed_files` | int | `150` | The compact-strategy ceiling: under `pr_strategy: compact`, a change riding an existing PR splits into its own PR once the changed-file count exceeds this value. Resolved together with `pr_strategy` by the `manage-config project pr-decision --changed-files N` consult verb (see `manage-config` Canonical invocations → `project pr-decision`). |
 | `merge_queue_managed_externally` | bool | `false` | Declares that the repository's merge queue is owned by an org- or externally-managed ruleset rather than by plan-marshall. When `true`, `marshall-steward` never prompts to create or enable a queue and never reconciles a foreign ruleset — it only aligns the `use_merge_queue` step param to the detected platform state (see `marshall-steward/references/merge-queue-setup.md` § Step MQ-0). It also short-circuits the probe-backed set-time validation of `use_merge_queue`, since plan-marshall has neither the standing nor necessarily the token scope to adjudicate a foreign queue's eligibility. |
+| `user_language` | string | `"auto"` | The language plan-marshall answers the user in. `auto` means "follow the language the user is writing in"; any other value is a pin the rule prefers over inference — e.g. `manage-config project set --field user_language --value de`. The value is prose an agent reads, not a tag a parser consumes, so no BCP-47 grammar is enforced (`de`, `German`, and `pt-BR` are all legitimate); `validate_user_language` rejects only a non-`str` or empty value, which is what stops `_coerce_value` from persisting a `bool` for `--value false`. The rule that consumes it — including which surfaces are in scope and which are not — is [`persona-plan-marshall-agent/standards/user-communication.md`](../../persona-plan-marshall-agent/standards/user-communication.md). |
 
 ## Section: orchestrator
 

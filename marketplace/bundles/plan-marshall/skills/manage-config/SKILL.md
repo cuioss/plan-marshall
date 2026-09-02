@@ -1008,6 +1008,14 @@ working-branch prefixes (a flat JSON array of strings, default
 `["feature/", "fix/", "chore/"]`), falling back to the `DEFAULT_PROJECT`
 default when the key is absent from marshal.json.
 
+`--field user_language` returns the pinned answer language (default `auto`),
+falling back to the same `DEFAULT_PROJECT` default when the key is absent:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config project get \
+  --field user_language
+```
+
 ### project set
 
 ```bash
@@ -1025,6 +1033,17 @@ default `compact`) is rejected with `error_type: invalid_value` when the value i
 outside the enum; `pr_compact_max_changed_files` (int `>= 0`, default `150`) is
 rejected with `error_type: invalid_value` when the value is a bool, a non-int, or
 negative.
+
+`user_language` (string, default `auto`) pins the language plan-marshall answers
+the user in — no tag grammar is enforced, so `de`, `German`, and `pt-BR` are all
+accepted; a non-string or empty value is rejected with
+`error_type: invalid_value`, which is what stops the `true`/`false`/digit
+coercion from persisting a non-string:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config project set \
+  --field user_language --value de
+```
 
 ### project pr-decision
 

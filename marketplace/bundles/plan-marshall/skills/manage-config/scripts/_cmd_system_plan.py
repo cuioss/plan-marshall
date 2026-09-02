@@ -28,6 +28,7 @@ from _config_defaults import (
     validate_plugin_cache_retention,
     validate_pr_compact_max_changed_files,
     validate_pr_strategy,
+    validate_user_language,
 )
 
 # Retention fields carrying a numeric contract beyond the whitelist check.
@@ -158,8 +159,11 @@ def cmd_project(args) -> dict:
         else:
             value = _coerce_value(args.value)
 
-        # Validate the two PR-batching knobs at this system boundary so an
-        # invalid value returns a status: error rather than persisting garbage.
+        # Validate the knobs carrying a value contract at this system boundary so
+        # an invalid value returns a status: error rather than persisting garbage.
+        # `user_language` is guarded here because _coerce_value above turns
+        # `--value false` into a bool and `--value 0` into an int, and every
+        # reader of the knob expects a string.
         if field == 'pr_strategy':
             try:
                 validate_pr_strategy(value)
@@ -168,6 +172,11 @@ def cmd_project(args) -> dict:
         elif field == 'pr_compact_max_changed_files':
             try:
                 validate_pr_compact_max_changed_files(value)
+            except ValueError as e:
+                return error_exit(str(e), error_type='invalid_value')
+        elif field == 'user_language':
+            try:
+                validate_user_language(value)
             except ValueError as e:
                 return error_exit(str(e), error_type='invalid_value')
 
