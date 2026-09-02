@@ -198,12 +198,9 @@ def validate_plugin_cache_retention(value: object, field_name: str) -> None:
 # that consumes it). It is seeded on `init` and back-filled into existing
 # projects by `sync-defaults`' non-destructive deep-merge, exactly as its
 # siblings are, because DEFAULT_PROJECT doubles as the fail-closed field
-# whitelist `project set` admits against. The value is prose an LLM reads, not a
-# tag a parser consumes, so `validate_user_language` deliberately enforces only
-# "non-empty str" and no BCP-47 grammar — `auto`, `de`, `German`, and `pt-BR` are
-# all legitimate. The guard exists because `_coerce_value` bool/int-coerces `set`
-# input, so an unguarded `--value false` would persist a `bool` where every
-# reader expects a string.
+# whitelist `project set` admits against. The value contract — why it is only
+# "non-empty str" and no BCP-47 grammar — is documented on
+# `validate_user_language` below.
 DEFAULT_PROJECT = {
     'default_base_branch': 'main',
     'working_prefixes': list(DEFAULT_BRANCH_PREFIX_WORKING),

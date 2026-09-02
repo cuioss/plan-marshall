@@ -161,9 +161,6 @@ def cmd_project(args) -> dict:
 
         # Validate the knobs carrying a value contract at this system boundary so
         # an invalid value returns a status: error rather than persisting garbage.
-        # `user_language` is guarded here because _coerce_value above turns
-        # `--value false` into a bool and `--value 0` into an int, and every
-        # reader of the knob expects a string.
         if field == 'pr_strategy':
             try:
                 validate_pr_strategy(value)
