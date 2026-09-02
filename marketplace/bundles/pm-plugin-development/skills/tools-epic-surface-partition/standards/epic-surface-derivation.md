@@ -246,9 +246,15 @@ phrasing, one level down:
   hard-wrapped, so a quotation's marks routinely land on different lines and a
   line-bounded span would miss the dominant real form outright, while the blank
   line still keeps an unpaired mark from reaching beyond its own paragraph.
-- a **code span** — inline or fenced, closed only by a backtick run of the same
-  length as the one that opened it. This is the corpus's most common way of
-  setting off a phrase it discusses rather than asserts.
+- a **code span** — inline or fenced, this corpus's most common way of setting off
+  a phrase it discusses rather than asserts. The two are separated by POSITION and
+  never by run length: a FENCE is a delimiter line whose run of three or more
+  backticks is the line's first content, indented at most three spaces, and any
+  other run — of whatever length, `` ``` `` in running prose included — opens an
+  INLINE span. An inline span closes on a run of its own length; a fenced block
+  closes on a delimiter line built from a run AT LEAST AS LONG as the opener's
+  and carrying no info string, matching the CommonMark rule the shared spec
+  reader's fenced mask already applies to the same corpus.
 - a **blockquote** — a run of consecutive `>`-prefixed lines. Markdown's lazy
   continuation, where a blockquote runs on into following lines carrying no
   marker, is deliberately OUT OF SCOPE: which unprefixed line starts a new block
@@ -257,9 +263,24 @@ phrasing, one level down:
   therefore firing.
 
 Containment must be total: a marker merely overlapping a reproduction span still
-counts, so a partial or mismatched delimiter can never suppress a real
-declaration. The straight single quote is not read as a quotation mark at all,
-because specs write the possessive apostrophe with it.
+counts. The straight single quote is not read as a quotation mark at all, because
+specs write the possessive apostrophe with it.
+
+⛔ Every form's **reach is bounded by the blank line** — a quotation's, an inline
+code span's and a blockquote's alike — so a stray or mismatched delimiter costs at
+most its own paragraph and cannot suppress a declaration standing outside it. Two
+strays in different paragraphs do not pair into one span that swallows everything
+between them; that failure is the mirror of the one the guard exists to stop, and
+it is the worse direction, since it demotes a real sweep to an ordinary slice in
+silence.
+
+The **fenced code block is the single exception**: an unterminated fence runs to
+the end of the document. That is markdown's own reading, and it is the reading the
+shared spec reader takes over the same corpus — a second reader disagreeing about
+where a block ends is the drift this alignment removes. It costs nothing in
+practice, because a spec with an unterminated fence renders as code from that point
+on for every other reader too, and the position rule above keeps the common
+accident — a fence marker typed mid-sentence — out of the fenced form entirely.
 
 ⛔ A sweep plan is a property of the PLAN; a **root span** is a property of an
 ENTRY. The two are independent and neither implies the other.

@@ -228,12 +228,33 @@ _QUOTATION_RE = re.compile(
 #: it fire — the conservative direction, and the one a reader can see.
 _BLOCKQUOTE_RE = re.compile(r'^[ \t]{0,3}>.*(?:\n[ \t]{0,3}>.*)*', re.MULTILINE)
 
-#: The longest backtick run that opens an INLINE code span; anything longer opens
-#: a fenced block. The two differ in REACH, which is the only reason the
-#: distinction is drawn here: markdown forbids a blank line inside an inline span,
-#: so its closing run must sit in the same paragraph, while a fence closes
-#: wherever its matching fence sits however many paragraphs later.
-_INLINE_CODE_MAX_RUN = 2
+#: The backtick character, bound once so the fence rules below name what they
+#: enforce rather than repeating a bare literal.
+_BACKTICK = '`'
+
+#: A fenced-code-block delimiter LINE. What separates a fence from an inline code
+#: span is POSITION, not run length: CommonMark opens a fence only on a line whose
+#: first content is the run, indented at most three spaces. A run of any length
+#: sitting mid-line is an inline span, however long it is.
+#:
+#: ⛔ The distinction is load-bearing because the two differ in REACH. An inline
+#: span may not contain a blank line, so it is bounded to its own paragraph; a
+#: fence runs to its closing delimiter however many paragraphs later, and to the
+#: END OF DOCUMENT when it has none. Deciding the two by run length instead —
+#: three-or-more is a fence, wherever it sits — hands end-of-document reach to a
+#: stray ``` typed in running prose, which then pairs with the next such run and
+#: swallows every declaration between them. Group ``fence`` carries the WHOLE RUN
+#: so its length survives to the close test; group ``info`` carries whatever
+#: follows it on the line.
+#:
+#: This is the same rule, written the same way, as
+#: ``epic_spec_parser._FENCE_RE`` / ``_fenced_mask`` — the shared reader that
+#: masks fenced blocks out of the very specs this module scans. Two readers of
+#: one corpus disagreeing about where a code block ends is the drift the
+#: alignment removes. Only the backtick fence is recognised here: a ``~~~`` block
+#: leaves its contents UNMASKED, so a marker inside one still fires — the
+#: conservative direction, which over-reports a sweep rather than suppressing one.
+_FENCE_LINE_RE = re.compile(r'^ {0,3}(?P<fence>`{3,})(?P<info>.*)$', re.MULTILINE)
 
 
 def _backtick_run(text: str, index: int) -> int:
@@ -247,9 +268,11 @@ def _backtick_run(text: str, index: int) -> int:
 def _closing_backtick_run(text: str, start: int, run: int, limit: int) -> int | None:
     """Where the next backtick run of EXACTLY ``run`` begins, searching to ``limit``.
 
-    Exactly, because a code span is closed only by a run of its own length — a
+    Exactly, because an INLINE span is closed only by a run of its own length — a
     longer or shorter run is content, which is how a nested backtick survives
-    inside a doubled span and how an inline span survives inside a fence.
+    inside a doubled span. A FENCED block closes on the weaker at-least-as-long
+    rule and is resolved by :func:`_fenced_block_spans` instead, so this helper
+    is the inline scan's alone.
     """
     index = start
     while index < limit:
@@ -263,32 +286,91 @@ def _closing_backtick_run(text: str, start: int, run: int, limit: int) -> int | 
     return None
 
 
-def _code_spans(text: str) -> list[tuple[int, int]]:
-    """The ``[start, end)`` span of every markdown code span, inline or fenced.
+def _fenced_block_spans(text: str) -> list[tuple[int, int]]:
+    """The ``[start, end)`` span of every FENCED code block, delimiters included.
 
-    Scanned rather than pattern-matched: a code span is opened by a RUN of
-    backticks and closed only by a run of the SAME length, which a single regex
-    states as a backreference thicket while the scan reads as the rule itself.
-    An unclosed run delimits nothing and is skipped, so a stray backtick costs no
-    more than a stray quotation mark does.
+    Both decisions are taken against the CommonMark clauses, matching
+    ``epic_spec_parser._fenced_mask`` rather than restating a looser rule:
+
+    - a block OPENS only on a delimiter line whose info string carries no
+      backtick, because a backtick fence's info string may not contain one. A
+      sentence that begins with the fence marker and then quotes inline code
+      wears the same shape, and reading it as an opener swallows the rest of the
+      document;
+    - it CLOSES only on a delimiter line built from a run AT LEAST AS LONG as the
+      opener's and carrying no info string. A length-blind close ends a
+      four-backtick block at the first three-backtick example inside it; an
+      info-blind close ends a block at the next ````` ```text ````` heading.
+
+    An unterminated fence runs to the end of the document — markdown's own
+    reading, and the only place a stray delimiter reaches past its paragraph.
     """
     spans: list[tuple[int, int]] = []
-    index = 0
-    while index < len(text):
-        if text[index] != '`':
+    open_start: int | None = None
+    open_length = 0
+    for match in _FENCE_LINE_RE.finditer(text):
+        run = match.group('fence')
+        info = match.group('info')
+        if open_start is None:
+            if _BACKTICK in info:
+                continue
+            open_start, open_length = match.start(), len(run)
+            continue
+        if len(run) >= open_length and not info.strip():
+            spans.append((open_start, match.end()))
+            open_start, open_length = None, 0
+    if open_start is not None:
+        spans.append((open_start, len(text)))
+    return spans
+
+
+def _inline_code_spans(text: str, start: int, end: int) -> list[tuple[int, int]]:
+    """Every INLINE code span within ``text[start:end]``.
+
+    Scanned rather than pattern-matched: a span is opened by a RUN of backticks
+    and closed only by a run of the SAME length, which a single regex states as a
+    backreference thicket while the scan reads as the rule itself.
+
+    ⛔ Pairing is bounded by the BLANK LINE, because markdown forbids one inside
+    an inline span. An unclosed run therefore delimits nothing beyond its own
+    paragraph and is skipped, so a stray backtick costs exactly what a stray
+    quotation mark costs — and two strays in different paragraphs cannot pair
+    into one span that swallows a declaration standing between them.
+    """
+    spans: list[tuple[int, int]] = []
+    index = start
+    while index < end:
+        if text[index] != _BACKTICK:
             index += 1
             continue
         run = _backtick_run(text, index)
-        limit = len(text)
-        if run <= _INLINE_CODE_MAX_RUN:
-            paragraph_break = _PARAGRAPH_BREAK_RE.search(text, index + run)
-            limit = paragraph_break.start() if paragraph_break else len(text)
+        paragraph_break = _PARAGRAPH_BREAK_RE.search(text, index + run, end)
+        limit = paragraph_break.start() if paragraph_break else end
         closing = _closing_backtick_run(text, index + run, run, limit)
         if closing is None:
             index += run
             continue
         spans.append((index, closing + run))
         index = closing + run
+    return spans
+
+
+def _code_spans(text: str) -> list[tuple[int, int]]:
+    """The ``[start, end)`` span of every markdown code span, inline or fenced.
+
+    The two forms are separated by POSITION and resolved in that order: fenced
+    blocks are taken first from the delimiter LINES, and the inline scan then
+    runs over the gaps BETWEEN them. Scanning inline first would let a run inside
+    a fence pair with one outside it, and a length-based split would give
+    end-of-document reach to a run that merely happens to be long.
+    """
+    fenced = _fenced_block_spans(text)
+    spans = list(fenced)
+    cursor = 0
+    for start, end in fenced:
+        spans.extend(_inline_code_spans(text, cursor, start))
+        cursor = end
+    spans.extend(_inline_code_spans(text, cursor, len(text)))
     return spans
 
 
@@ -604,8 +686,16 @@ def is_sweep_declaration(spec_text: str) -> bool:
     applied here, to every match of every alternative, which is what makes the
     guard uniform: a narrowing written into one alternative's pattern leaves its
     siblings open. Containment must be TOTAL — a match merely OVERLAPPING a
-    reproduction span still counts, so a partial or mismatched delimiter cannot
-    suppress a real declaration.
+    reproduction span still counts.
+
+    ⛔ Every form's REACH is bounded by the blank line — a quotation's, a
+    blockquote's and an inline code span's alike — so a stray or mismatched
+    delimiter costs at most its own paragraph and cannot suppress a declaration
+    standing outside it. The FENCED code block is the single exception: an
+    unterminated fence runs to the end of the document, which is markdown's own
+    reading of it and the one this corpus's shared reader
+    (``epic_spec_parser._fenced_mask``) also takes. Departing from it here would
+    put two readers of one corpus in disagreement over where a block ends.
     """
     spans = _reproduction_spans(spec_text)
     return any(
