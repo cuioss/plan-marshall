@@ -743,7 +743,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 7: Detect Domain(s)
 
-Run the deterministic detector; it returns the matched-domain SET `domains` — the unconditional union of the narrative/override/single-domain detector leg, the `always_on` leg, and the `file_globs` leg. A detector multi-match is the branch that prompts; a zero narrative match resolves silently by over-provisioning every offerable domain — unless that offerable set is empty, the retained bounded escape below, which prompts as well. On the ambiguous branch fire a native **multiSelect** `AskUserQuestion` inline. There is no LLM dispatch on this code path — multi-match cases are genuinely human-input territory, resolved in-context.
+Run the deterministic detector; it returns the matched-domain SET `domains` — the unconditional union of the narrative/override/single-domain detector leg, the `always_on` leg, and the `file_globs` leg. On the ambiguous branch fire a native **multiSelect** `AskUserQuestion` inline. There is no LLM dispatch on this code path — multi-match cases are genuinely human-input territory, resolved in-context.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \

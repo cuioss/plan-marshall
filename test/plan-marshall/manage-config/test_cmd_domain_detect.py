@@ -5,10 +5,7 @@
 Deterministic domain detector for phase-1-init Step 7 and phase-2-refine. Walks
 the clarified-request narrative for explicit bundle / skill mentions and returns
 the SET of matching domains — the unconditional union of the detector, always_on,
-and file_globs merge legs. A multi-match returns ambiguous=true so the caller
-raises a multiSelect AskUserQuestion; a zero-match over-provisions the whole
-offerable domain set instead, and stays ambiguous only in the bounded escape
-where that set is empty. There is no LLM dispatch fallback on this path.
+and file_globs merge legs. There is no LLM dispatch fallback on this path.
 """
 
 from __future__ import annotations

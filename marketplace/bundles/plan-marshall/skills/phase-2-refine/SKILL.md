@@ -211,7 +211,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 Emit one decision-log entry naming any newly-merged domains. The union is monotonic (widen-only), so re-running the re-merge on a later confidence-loop iteration is idempotent once the affected-files set has stabilised.
 
-**Expected widening on a zero narrative match.** The re-merge reads only `domains` / `glob_matched` / `always_on` — never `ambiguous` — so no branch here changes with the detector's resolution. What does change is the size of the returned set: when the real `affected_files` produce no narrative match and no inclusion-leg hit, `domain-detect` returns every offerable domain under `reason=over_provisioned_resolve` rather than the empty set, so the union widens to the project's full configured domain set. That growth is the detector's contract, not an unexplained drift — and it preserves both invariants above, since unioning with a fixed set is monotonic and idempotent.
+**Expected widening on a zero narrative match.** The re-merge reads only `domains` / `glob_matched` / `always_on` — never `ambiguous` — so no branch here changes with the detector's resolution. What does change is the size of the returned set: when the real `affected_files` produce no narrative match and no inclusion-leg hit, `domain-detect` returns every offerable domain under `reason=over_provisioned_resolve` rather than the empty set. That growth is the detector's contract, not an unexplained drift — and it preserves both invariants above, since unioning with a fixed set is monotonic and idempotent.
 
 ### Step 10: Evaluate Confidence
 
