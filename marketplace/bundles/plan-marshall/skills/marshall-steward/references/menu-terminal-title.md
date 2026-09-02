@@ -201,13 +201,30 @@ carry a stale one. Re-running the install rewrites only stale values and leaves
 everything else untouched.
 ```
 
+A `divergence` line is an installed surface, so the flow reaches this same
+success branch carrying one. Silence would leave the operator told only that
+everything "is present", which is not what the check observed. When any label in
+`detail` reads `divergence` rather than `present`, append the paragraph below to
+the report, naming those labels. This is a **report addition only** — it changes
+nothing about the branch, which still routes on `status` alone (see "Branch on
+the status, never on a `MISSING` text scan" above), and it does not suppress the
+re-run offer, which still converges a stale timeout on every non-divergent label:
+
+```text
+Installed in both settings files: <divergent labels>. Each of these is present
+in ./.claude/settings.json AND in ./.claude/settings.local.json. The terminal
+title works either way, so this is reported for your awareness only — nothing
+here repairs, migrates, or de-duplicates a dual-homed entry, and re-running the
+install does not clear it.
+```
+
 ```text
 AskUserQuestion:
-  question: "Every entry is present. Re-run the install to converge any stale hook timeouts in the resolved Claude settings file?"
+  question: "Every entry is installed. Re-run the install to converge any stale hook timeouts in the resolved Claude settings file?"
   header: "Terminal Title"
   options:
     - label: "Re-run install"
-      description: "Rewrite any hook timeout that falls outside the plausible seconds range; entries already correct are left untouched and nothing is duplicated"
+      description: "Rewrite any hook timeout that falls outside the plausible seconds range; entries already correct in the resolved settings file are left untouched, and an entry already there is not duplicated"
     - label: "Leave as is"
       description: "Make no changes and return to the Configuration menu"
   multiSelect: false
