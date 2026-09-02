@@ -33,8 +33,9 @@ the project is being set up for the first time or is already configured.
 The flow mirrors the terminal-title Action A
 ([`menu-terminal-title.md`](menu-terminal-title.md) § Action A): a non-mutating
 probe via `health-check --checks display`, an `AskUserQuestion` confirmation,
-then a convergent `project install-hook --enforcement` install — one that never
-duplicates an entry and brings an already-present one onto the current shape.
+then a `project install-hook --enforcement` install. What that install converges,
+and the shared-file case where a re-run appends a second entry instead, are stated
+per-branch in Step 1 below.
 
 ### Step 1: Detect
 

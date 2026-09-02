@@ -91,8 +91,10 @@ and surfaces explicit prompts for the two conflict cases (`statusLine` /
 
 ### Step 1: Detect
 
-Probe the resolved Claude settings file to discover what is already wired
-up. Because the install operation never duplicates an entry and reports a
+Probe what is already wired up. The `display` health check reads BOTH
+`.claude/settings.json` and `.claude/settings.local.json` (see "Which settings
+file" above), so the probe scope is the pair rather than the single file the
+install writes. Because the install reports a
 precise per-event summary, the same call drives both detect and install — the
 `installed_events` / `already_present_events` / `migrated_events` /
 `capture_status` / `statusLine_status` / `env_status` fields in the response
@@ -193,12 +195,15 @@ this branch offers the re-run rather than returning silently:
 Terminal title is already configured.
 
 All nine render-trigger hook entries, the statusLine command, and the
-CLAUDE_CODE_DISABLE_TERMINAL_TITLE env entry are present in
-the resolved Claude settings file.
+CLAUDE_CODE_DISABLE_TERMINAL_TITLE env entry are present. The check reads both
+./.claude/settings.json and ./.claude/settings.local.json and reports only that
+each surface is installed, never which file carries it.
 
 The presence check does not inspect hook timeouts, so a present entry may still
-carry a stale one. Re-running the install rewrites only stale values and leaves
-everything else untouched.
+carry a stale one. The install writes ./.claude/settings.local.json, so a re-run
+converges a stale timeout only for entries that live there; an entry homed in the
+shared ./.claude/settings.json is not reached, and the re-run appends a second
+copy alongside it.
 ```
 
 A `divergence` line is an installed surface, so the flow reaches this same
@@ -220,11 +225,11 @@ install does not clear it.
 
 ```text
 AskUserQuestion:
-  question: "Every entry is installed. Re-run the install to converge any stale hook timeouts in the resolved Claude settings file?"
+  question: "Every entry is installed. A re-run fixes an out-of-range timeout in ./.claude/settings.local.json, and adds a duplicate for any entry that actually lives in the shared ./.claude/settings.json. Re-run the install?"
   header: "Terminal Title"
   options:
     - label: "Re-run install"
-      description: "Rewrite any hook timeout that falls outside the plausible seconds range; entries already correct in the resolved settings file are left untouched, and an entry already there is not duplicated"
+      description: "Rewrites any hook timeout that falls outside the plausible seconds range and lives in ./.claude/settings.local.json; an entry already correct there is left untouched, and an entry homed in the shared ./.claude/settings.json is not converged — a second copy is added alongside it, leaving that surface dual-homed"
     - label: "Leave as is"
       description: "Make no changes and return to the Configuration menu"
   multiSelect: false
