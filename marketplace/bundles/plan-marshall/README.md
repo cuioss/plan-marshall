@@ -88,9 +88,14 @@ bundle sources.
 repo's first finalize):
 
 ```bash
-uv run python marketplace/targets/generate.py --target claude --output target/claude
+./pw generate-claude
 rsync -av --delete target/claude/plan-marshall/ ~/.claude/plugins/cache/plan-marshall/{version}/
 ```
+
+The generator always runs through the `./pw` wrapper: `uv` is installed
+only into the project-local `.pyprojectx/` tree and is not on `PATH`, so a
+bare `uv run …` fails outside it. The `generate-claude` alias carries the
+`--target claude --output target/claude` arguments.
 
 `{version}` comes from `.claude-plugin/plugin.json` (this file's
 sibling). After this bootstrap, every subsequent finalize cycle in this

@@ -80,8 +80,16 @@ generator is a fast, deterministic Python script.
 ### 1. Invoke the generator
 
 ```bash
-uv run python marketplace/targets/generate.py --target claude --output target/claude
+./pw generate-claude
 ```
+
+Always go through the wrapper: `uv` is installed only into the
+project-local `.pyprojectx/` tree and is not on `PATH`, so a bare
+`uv run …` exits 127 outside it, and a bare `python3
+marketplace/targets/generate.py` fails with `ModuleNotFoundError: No
+module named 'yaml'` because PyYAML resolves into the uv-managed venv.
+The `generate-claude` alias in `pyproject.toml` carries the
+`--target claude --output target/claude` arguments.
 
 The script returns a TOON document on stdout describing the run.
 Capture exit code and stdout.
@@ -96,7 +104,7 @@ Capture exit code and stdout.
 ### 3. Mark step complete
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   mark-step-done --plan-id {plan_id} --phase 6-finalize \
   --step project:finalize-step-deploy-target \
   --outcome {done|failed} \

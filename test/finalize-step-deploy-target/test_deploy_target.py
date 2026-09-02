@@ -29,12 +29,32 @@ from pathlib import Path
 
 import pytest
 
+from _documented_example_scan import DEFECTIVE_GENERATOR_CALL
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT
 
 _SKILL_MD = (
     PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-deploy-target' / 'SKILL.md'
 )
 _GENERATE_PY = PROJECT_ROOT / 'marketplace' / 'targets' / 'generate.py'
+
+#: The invocation the skill prescribes. ``uv`` is installed only into the
+#: project-local ``.pyprojectx/`` tree and is not on ``PATH``, so the wrapper
+#: alias is the only form that runs from a normal shell.
+_WRAPPER_INVOCATION = './pw generate-claude'
+
+#: The prescription that cannot succeed as written — it exits 127 outside the
+#: wrapper. Pinned as the COMMAND literal rather than as the bare words
+#: ``uv run``, because the body legitimately names that form while explaining
+#: why it is wrong, and a bare-word match would forbid the explanation too.
+#: Imported rather than spelled: the repository-wide prescription guard sweeps
+#: ``test/`` too, and a module that spells the literal reads to that guard as a
+#: file prescribing it.
+_DEFECTIVE_INVOCATION = DEFECTIVE_GENERATOR_CALL
+
+#: The script segment the executor rejects with ``Unknown notation``. Its
+#: diagnostic then suggests appending the typo as a subcommand, so the failure
+#: sends a caller to fix something already correct.
+_DEFECTIVE_NOTATION = 'manage_status'
 
 _MANAGE_CONFIG_SCRIPTS_DIR = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
@@ -84,9 +104,30 @@ def test_skill_body_documents_inline_only_and_no_skip_detector():
         'standard must explicitly state there is no skip detector — generator handles no-op'
     )
     # Generator command must appear verbatim
-    assert 'marketplace/targets/generate.py --target claude --output target/claude' in text
+    assert _WRAPPER_INVOCATION in text
     # display_detail template must reference emitted_count semantics
     assert 'files emitted to target/claude/' in text
+
+
+def test_skill_body_prescribes_no_command_that_fails_as_written():
+    """Neither defective prescription the skill once carried may reappear.
+
+    Both failed when run as written and both named the wrong culprit: the bare
+    generator line exits 127 because ``uv`` is not on ``PATH``, and the
+    underscore notation is rejected by the executor as ``Unknown notation``.
+    Asserting only that the corrected forms are present would not catch a
+    reintroduction sitting BESIDE them, so their absence is pinned separately.
+    """
+    text = _SKILL_MD.read_text(encoding='utf-8')
+
+    assert _DEFECTIVE_INVOCATION not in text, (
+        f'skill body prescribes {_DEFECTIVE_INVOCATION!r}, which exits 127 outside '
+        f'the wrapper — prescribe {_WRAPPER_INVOCATION!r} instead'
+    )
+    assert _DEFECTIVE_NOTATION not in text, (
+        f'skill body carries the {_DEFECTIVE_NOTATION!r} script segment, which the '
+        'executor rejects as Unknown notation — the correct segment is manage-status'
+    )
 
 
 # ---------------------------------------------------------------------------

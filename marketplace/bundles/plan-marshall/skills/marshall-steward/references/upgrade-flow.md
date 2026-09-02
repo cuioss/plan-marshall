@@ -180,8 +180,13 @@ plan emitted for the resolved kind:
   regenerate the Claude target tree:
 
   ```bash
-  uv run python marketplace/targets/generate.py --target claude --output target/claude
+  ./pw generate-claude
   ```
+
+  Always go through the `./pw` wrapper — `uv` is installed only into the
+  project-local `.pyprojectx/` tree and is not on `PATH`, so a bare `uv run …`
+  fails outside it. The `generate-claude` alias carries the
+  `--target claude --output target/claude` arguments.
 
 - **`regenerate-executor`** (both kinds) — regenerate the executor. Invoke the
   post-change `generate_executor.py` **directly, by its resolved script path**
