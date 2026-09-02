@@ -15,6 +15,7 @@ implementation, which is the entire reason it exists.
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,7 @@ EXPECTED_SECTIONS = (
     'attribution',
     'disagreements',
     'contested',
+    'lifecycle',
     'swept',
     'not_derivable',
     'injected_controls',
@@ -52,8 +54,19 @@ def write(path: Path, text: str) -> None:
     path.write_text(text, encoding='utf-8')
 
 
-def build_world(root: Path, specs: dict[str, str], modules: tuple[str, ...]) -> tuple[Path, Path]:
-    """Return ``(epic_dir, repo_root)`` for a corpus and a tree built under ``root``."""
+def build_world(
+    root: Path,
+    specs: dict[str, str],
+    modules: tuple[str, ...],
+    ledger: dict[str, str] | None = None,
+) -> tuple[Path, Path]:
+    """Return ``(epic_dir, repo_root)`` for a corpus and a tree built under ``root``.
+
+    ``ledger`` is the epic's plan queue as ``plan_id -> status``. Omitting it
+    leaves the epic directory with no ledger at all, which is the DEGRADED input
+    state the report must state rather than absorb — so the default here is a
+    fixture of that state, never a stand-in for a read one.
+    """
     repo = root / 'repo'
     (repo / 'test').mkdir(parents=True)
     (repo / 'marketplace').mkdir(parents=True)
@@ -63,6 +76,9 @@ def build_world(root: Path, specs: dict[str, str], modules: tuple[str, ...]) -> 
     epic_dir = root / 'epic'
     for name, body in specs.items():
         write(epic_dir / 'plans' / name, body)
+    if ledger is not None:
+        payload = {'plans': [{'id': pid, 'status': st} for pid, st in ledger.items()]}
+        write(epic_dir / 'status.json', json.dumps(payload))
     return epic_dir, repo
 
 
@@ -260,6 +276,141 @@ def test_baseline_drift_does_not_make_the_report_fail(tmp_path: Path, monkeypatc
     assert report['baseline_drift']['removed_count'] == 1
 
 
+# --- the plan-lifecycle input ------------------------------------------------
+#
+# The second input source, rendered as its own block so a ledger fact is never
+# read as a corpus fact. Its ABSENCE is a first-class rendered state: the report
+# says the ledger was unavailable and why, rather than publishing an all-plans-
+# live partition that reads identically to a measured one.
+
+
+def test_the_lifecycle_section_states_the_degradation_when_no_ledger_is_read(clean) -> None:
+    lifecycle = clean['lifecycle']
+
+    assert lifecycle['available'] is False
+    assert lifecycle['degradation'] == 'ledger_absent'
+    assert lifecycle['ledger_path'].endswith('status.json')
+    assert clean['lifecycle_plans'] == []
+    assert clean['lifecycle_resolved'] == []
+
+
+def test_the_degraded_lifecycle_summary_names_the_reason(clean) -> None:
+    """The summary a reader sees carries the reason, not only the payload block."""
+    assert clean['lifecycle']['degradation'] in section(clean, 'lifecycle')['summary']
+
+
+def test_a_degraded_ledger_leaves_the_contest_standing(disagreeing) -> None:
+    """With no ledger read, nothing is retired and the report is what it always was."""
+    assert disagreeing['lifecycle']['available'] is False
+    assert [row['path'] for row in disagreeing['contested']] == ['test/alpha/test_one.py']
+    assert disagreeing['contested'][0]['retired'] == ''
+
+
+def test_a_read_ledger_retires_the_finished_plans_claim(tmp_path: Path, monkeypatch) -> None:
+    """The same disagreeing corpus, with a ledger: the live plan owns the module."""
+    epic_dir, repo = build_world(
+        tmp_path,
+        dict(DISAGREEING_SPECS),
+        DISAGREEING_MODULES,
+        ledger={'PLAN-300': 'landed', 'PLAN-310': 'staged'},
+    )
+
+    report = render(monkeypatch, epic_dir, repo)
+
+    assert report['lifecycle']['available'] is True
+    assert report['lifecycle']['degradation'] == ''
+    assert report['contested'] == []
+    assert report['lifecycle_resolved'] == [
+        {'path': 'test/alpha/test_one.py', 'owner': 'PLAN-310', 'retired': 'PLAN-300'}
+    ]
+
+
+def test_the_ledger_rows_are_rendered_with_the_bucket_each_falls_in(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The partition that drove the retirement is readable from the output itself."""
+    epic_dir, repo = build_world(
+        tmp_path,
+        dict(DISAGREEING_SPECS),
+        DISAGREEING_MODULES,
+        ledger={'PLAN-300': 'landed', 'PLAN-310': 'staged'},
+    )
+
+    report = render(monkeypatch, epic_dir, repo)
+
+    assert report['lifecycle_plans'] == [
+        {'plan_id': 'PLAN-300', 'status': 'landed', 'lifecycle': 'terminal'},
+        {'plan_id': 'PLAN-310', 'status': 'staged', 'lifecycle': 'active'},
+    ]
+    assert report['lifecycle']['terminal_count'] == 1
+    assert report['lifecycle']['active_count'] == 1
+
+
+def test_two_live_plans_keep_the_module_contested_in_the_report(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """⛔ The refusal, carried through to the rendered report."""
+    epic_dir, repo = build_world(
+        tmp_path,
+        dict(DISAGREEING_SPECS),
+        DISAGREEING_MODULES,
+        ledger={'PLAN-300': 'running', 'PLAN-310': 'staged'},
+    )
+
+    report = render(monkeypatch, epic_dir, repo)
+
+    assert report['lifecycle']['available'] is True
+    assert [row['path'] for row in report['contested']] == ['test/alpha/test_one.py']
+    assert report['contested'][0]['plans'] == 'PLAN-300,PLAN-310'
+    assert report['lifecycle_resolved'] == []
+
+
+@pytest.mark.parametrize('verb', ['partition', 'attribution', 'report'])
+def test_an_unknown_ledger_status_is_reported_as_a_structured_error(
+    tmp_path: Path, monkeypatch, verb: str
+) -> None:
+    """Every verb that reads the ledger refuses loudly and names the offending value.
+
+    ``classify`` is absent from this list on purpose: it reads the spec corpus
+    alone, so no ledger fault can reach it.
+    """
+    epic_dir, repo = build_world(
+        tmp_path,
+        dict(CLEAN_SPECS),
+        CLEAN_MODULES,
+        ledger={'PLAN-400': 'mothballed'},
+    )
+    monkeypatch.setattr(entry, 'get_store_dir', lambda *a, **k: epic_dir)
+    monkeypatch.setattr(entry, 'cwd_checkout_root', lambda: str(repo))
+    args = argparse.Namespace(
+        epic='fixture-epic', budget=400, tests_before=None, baseline_findings=None
+    )
+
+    payload = getattr(entry, f'cmd_{verb}')(args)
+
+    assert payload['status'] == 'error'
+    assert payload['error'] == 'unknown_plan_status'
+    assert payload['plan_id'] == 'PLAN-400'
+    assert 'mothballed' in payload['plan_status']
+    assert payload['known_terminal'] and payload['known_active']
+
+
+def test_classify_is_unaffected_by_an_unreadable_ledger_status(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Matched negative for the separation: the corpus verb never reads the ledger."""
+    epic_dir, repo = build_world(
+        tmp_path, dict(CLEAN_SPECS), CLEAN_MODULES, ledger={'PLAN-400': 'mothballed'}
+    )
+    monkeypatch.setattr(entry, 'get_store_dir', lambda *a, **k: epic_dir)
+    monkeypatch.setattr(entry, 'cwd_checkout_root', lambda: str(repo))
+
+    payload = entry.cmd_classify(argparse.Namespace(epic='fixture-epic'))
+
+    assert payload['status'] == 'success'
+    assert 'lifecycle' not in payload
+
+
 # --- not-derivable is first-class --------------------------------------------
 
 
@@ -350,6 +501,8 @@ def test_injected_controls_are_reported_with_their_demonstrating_control(disagre
         'injected_root_span',
         'injected_container_span',
         'injected_cross_plan_citation',
+        'injected_terminal_claim_retired',
+        'injected_active_versus_active',
     }
     assert all(row['demonstrated_by'].strip() for row in controls)
 

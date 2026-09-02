@@ -6,25 +6,34 @@
 Drives the underscore-prefixed helpers directly by inserting the scripts dir on
 ``sys.path`` (the canonical scaffolding pattern).
 
-Three independent rules decide whether a spec's entry carries OWNERSHIP, and
+Three independent rules decide whether a spec's ENTRY carries OWNERSHIP, and
 each is covered here with a matched positive and negative control, in isolation
 from the others: the sweep-plan self-declaration, the lead-shaped entry stage 1
 publishes, and the ``derived`` spec class. A rule that silently stopped firing
 would restore the single-bucket collapse the partition exists to break, so each
 is pinned on its own rather than only through their combined effect.
 
-The closing cluster measures the three of them TOGETHER against a corpus
-reproducing the residual drivers the live epic carries, as a per-driver
-differential: with each driver's own wording the contest disappears, and with its
-matched near-miss substituted the contest returns. That shape asserts the
-headline outcome without transcribing a live-corpus figure that would go stale.
+A fourth input decides whether a PLAN's claims still compete at all — the epic
+ledger's per-plan lifecycle state, the one input that is not the spec corpus. It
+carries the same control discipline plus two of its own: the REFUSAL to
+adjudicate between two live plans, and the stated degradation when no ledger can
+be read. Its cluster runs against a constructed ledger, because the real one is
+git-ignored and absent from a fresh clone.
 
-Every corpus and every test tree used here is built under ``tmp_path``; the real
-orchestrator store and the real ``test/`` tree are neither read nor written.
+The closing clusters measure the rules TOGETHER against corpora reproducing the
+residual drivers the live epic carries, as a differential: with each driver's own
+wording (or the ledger present) the contest disappears, and with its matched
+near-miss substituted (or the ledger withheld) the contest returns. That shape
+asserts the headline outcome without transcribing a live-corpus figure that would
+go stale.
+
+Every corpus, ledger and test tree used here is built under ``tmp_path``; the
+real orchestrator store and the real ``test/`` tree are neither read nor written.
 """
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -797,6 +806,439 @@ def test_a_genuine_two_slice_overlap_is_still_reported_as_contested(
     assert contests_of(result) == {
         'test/plan-marshall/alpha/test_one.py': ('PLAN-410', 'PLAN-460')
     }
+
+
+# --- rule 4: plan lifecycle state, the input that is not the spec corpus ------
+#
+# The three rules above read what a spec SAYS. This one reads whether the plan
+# saying it is still working, which no spec can state about itself. It narrows a
+# CONTEST and does nothing else.
+#
+# ⛔ Both rival specs below carry neutral, interchangeable identifiers and the
+# SAME claim, and every control varies only the ledger beside them. A difference
+# in outcome is therefore attributable to the recorded STATUS and to nothing
+# else — which is what a plan-id list, the mechanism this input must never
+# degenerate into, could not produce.
+
+#: The ledger filename and its two row keys, written as literals: they ARE the
+#: external contract this module reads, so a rename must surface here as a
+#: failing assertion rather than travel silently through an import.
+_LEDGER_FILE = 'status.json'
+_LEDGER_QUEUE_KEY = 'plans'
+
+#: Two ordinary slice plans claiming the SAME directory.
+_RIVAL_SPECS = {
+    'PLAN-RIVAL-10.md': '# PLAN-RIVAL-10\n\n## Expected Surface\n\n- OBSERVED: `test/beta/`\n',
+    'PLAN-RIVAL-20.md': '# PLAN-RIVAL-20\n\n## Expected Surface\n\n- OBSERVED: `test/beta/`\n',
+}
+_RIVAL_MODULE = 'test/beta/test_three.py'
+_RIVAL_ONE = 'PLAN-RIVAL-10'
+_RIVAL_TWO = 'PLAN-RIVAL-20'
+
+
+def write_ledger(epic_dir: Path, rows: dict[str, str]) -> Path:
+    """Write an epic ledger carrying one queue row per ``plan_id -> status``."""
+    epic_dir.mkdir(parents=True, exist_ok=True)
+    path = epic_dir / _LEDGER_FILE
+    payload = {_LEDGER_QUEUE_KEY: [{'id': pid, 'status': st} for pid, st in rows.items()]}
+    path.write_text(json.dumps(payload), encoding='utf-8')
+    return path
+
+
+def rival_world(tmp_path: Path, name: str) -> tuple[Path, Path]:
+    """The two-rival corpus and an empty epic directory to hang a ledger on."""
+    plans = tmp_path / f'rivals_{name}'
+    plans.mkdir()
+    build_corpus(plans, dict(_RIVAL_SPECS))
+    epic_dir = tmp_path / f'epic_{name}'
+    epic_dir.mkdir()
+    return plans, epic_dir
+
+
+def rival_partition(
+    repo: Path, plans: Path, epic_dir: Path
+) -> tuple[partition_mod.PlanLifecycle, partition_mod.Partition]:
+    """Partition the two-rival corpus against whatever ledger ``epic_dir`` holds."""
+    lifecycle = partition_mod.read_plan_lifecycle(epic_dir)
+    claims = classify_corpus(plans, repo)
+    modules = partition_mod.iter_test_modules(repo / 'test', repo)
+    result = partition_mod.derive_partition(
+        claims, modules, frozenset(), lifecycle.terminal_plans()
+    )
+    return lifecycle, result
+
+
+def retired_of(result: partition_mod.Partition, path: str) -> tuple[str, ...]:
+    return next(module.retired for module in result.modules if module.path == path)
+
+
+# --- the vocabulary IS the mechanism -----------------------------------------
+
+
+def test_the_lifecycle_partition_names_no_plan_identifier() -> None:
+    """Anti-degeneration at the mechanism: the split is over statuses, not plans.
+
+    A plan-id list here would be the same defect the derivation exists to close,
+    one level down — the mirror of the guard the sweep marker carries.
+    """
+    vocabulary = partition_mod.TERMINAL_STATUSES | partition_mod.ACTIVE_STATUSES
+
+    assert vocabulary
+    assert not any('PLAN' in status.upper() for status in vocabulary)
+
+
+def test_the_two_buckets_partition_the_known_vocabulary() -> None:
+    """Every covered status falls in exactly one bucket — no overlap, no gap."""
+    assert not partition_mod.TERMINAL_STATUSES & partition_mod.ACTIVE_STATUSES
+    assert (
+        partition_mod.TERMINAL_STATUSES | partition_mod.ACTIVE_STATUSES
+        == partition_mod.KNOWN_STATUSES
+    )
+
+
+#: Every covered status paired with the bucket it must fall in, derived from the
+#: shipped vocabulary so a status added there arrives here as a new case rather
+#: than as silently untested behaviour.
+_BUCKETED_STATUSES = [
+    (status, partition_mod.LIFECYCLE_TERMINAL)
+    for status in sorted(partition_mod.TERMINAL_STATUSES)
+] + [
+    (status, partition_mod.LIFECYCLE_ACTIVE)
+    for status in sorted(partition_mod.ACTIVE_STATUSES)
+]
+
+
+@pytest.mark.parametrize(('status', 'bucket'), _BUCKETED_STATUSES)
+def test_every_known_status_resolves_to_its_bucket(status: str, bucket: str) -> None:
+    assert partition_mod.lifecycle_of(status) == bucket
+
+
+# --- positive: a finished plan's claim is retired in favour of the live one ---
+
+
+@pytest.mark.parametrize(
+    ('ledger', 'winner', 'loser'),
+    [
+        ({_RIVAL_ONE: 'staged', _RIVAL_TWO: 'landed'}, _RIVAL_ONE, _RIVAL_TWO),
+        ({_RIVAL_ONE: 'landed', _RIVAL_TWO: 'running'}, _RIVAL_TWO, _RIVAL_ONE),
+    ],
+    ids=['first_plan_live', 'second_plan_live'],
+)
+def test_a_terminal_plans_claim_is_retired_in_favour_of_the_live_one(
+    repo: Path, tmp_path: Path, ledger: dict[str, str], winner: str, loser: str
+) -> None:
+    """Both directions, so the winner is seen to follow the STATUS, not the id order."""
+    plans, epic_dir = rival_world(tmp_path, f'resolved_{winner}')
+    write_ledger(epic_dir, ledger)
+
+    lifecycle, result = rival_partition(repo, plans, epic_dir)
+
+    assert lifecycle.available is True
+    assert verdict_of(result, _RIVAL_MODULE) == partition_mod.VERDICT_CLAIMED
+    assert plans_of(result, _RIVAL_MODULE) == (winner,)
+    assert retired_of(result, _RIVAL_MODULE) == (loser,)
+
+
+def test_the_retirement_is_reported_per_instance(repo: Path, tmp_path: Path) -> None:
+    """The input's own effect is enumerable, never only a shrunken total."""
+    plans, epic_dir = rival_world(tmp_path, 'reported')
+    write_ledger(epic_dir, {_RIVAL_ONE: 'staged', _RIVAL_TWO: 'shipped'})
+
+    _, result = rival_partition(repo, plans, epic_dir)
+
+    assert [module.path for module in result.lifecycle_resolved()] == [_RIVAL_MODULE]
+
+
+# --- THE REFUSAL: two live plans are never adjudicated ------------------------
+
+
+def test_a_module_two_live_plans_claim_stays_contested(repo: Path, tmp_path: Path) -> None:
+    """⛔ The single most important control in this cluster.
+
+    Lifecycle narrows the competing set; it never picks a winner among live
+    plans. A rule that quietly adjudicated here would look like success while
+    inventing an ownership the corpus does not contain — and it would do so
+    silently, because the resolved module reads exactly like a correctly
+    attributed one.
+    """
+    plans, epic_dir = rival_world(tmp_path, 'both_live')
+    write_ledger(epic_dir, {_RIVAL_ONE: 'running', _RIVAL_TWO: 'staged'})
+
+    _, result = rival_partition(repo, plans, epic_dir)
+
+    assert verdict_of(result, _RIVAL_MODULE) == partition_mod.VERDICT_CONTESTED
+    assert plans_of(result, _RIVAL_MODULE) == (_RIVAL_ONE, _RIVAL_TWO)
+    assert retired_of(result, _RIVAL_MODULE) == ()
+    assert result.lifecycle_resolved() == ()
+
+
+def test_a_parked_plan_still_competes(repo: Path, tmp_path: Path) -> None:
+    """Paused work is unfinished work: a parked plan resumes onto its surface."""
+    plans, epic_dir = rival_world(tmp_path, 'parked')
+    write_ledger(epic_dir, {_RIVAL_ONE: 'parked', _RIVAL_TWO: 'staged'})
+
+    _, result = rival_partition(repo, plans, epic_dir)
+
+    assert verdict_of(result, _RIVAL_MODULE) == partition_mod.VERDICT_CONTESTED
+
+
+# --- near-miss: two finished plans are not silently attributed to either ------
+
+
+def test_a_module_only_terminal_plans_claim_stays_contested(
+    repo: Path, tmp_path: Path
+) -> None:
+    """Narrowing to nothing would manufacture an ownerless module out of a real claim.
+
+    The mirror of the refusal above: with no live claimant left standing there is
+    no one to narrow TO, so the contest is reported unchanged rather than being
+    silently handed to whichever finished plan happens to sort first.
+    """
+    plans, epic_dir = rival_world(tmp_path, 'both_terminal')
+    write_ledger(epic_dir, {_RIVAL_ONE: 'landed', _RIVAL_TWO: 'shipped'})
+
+    _, result = rival_partition(repo, plans, epic_dir)
+
+    assert verdict_of(result, _RIVAL_MODULE) == partition_mod.VERDICT_CONTESTED
+    assert plans_of(result, _RIVAL_MODULE) == (_RIVAL_ONE, _RIVAL_TWO)
+    assert retired_of(result, _RIVAL_MODULE) == ()
+
+
+def test_a_sole_terminal_claimant_keeps_the_module(repo: Path, tmp_path: Path) -> None:
+    """No contest, nothing to narrow: a finished plan is still the only claimant.
+
+    Retiring it here would replace an attribution with a blank, which is a loss
+    of information rather than a correction of one.
+    """
+    plans = tmp_path / 'sole_terminal'
+    plans.mkdir()
+    build_corpus(plans, {'PLAN-RIVAL-20.md': _RIVAL_SPECS['PLAN-RIVAL-20.md']})
+    epic_dir = tmp_path / 'epic_sole_terminal'
+    epic_dir.mkdir()
+    write_ledger(epic_dir, {_RIVAL_TWO: 'landed'})
+
+    _, result = rival_partition(repo, plans, epic_dir)
+
+    assert verdict_of(result, _RIVAL_MODULE) == partition_mod.VERDICT_CLAIMED
+    assert plans_of(result, _RIVAL_MODULE) == (_RIVAL_TWO,)
+    assert retired_of(result, _RIVAL_MODULE) == ()
+
+
+# --- an unrecognised status fails loudly, never defaults into a bucket --------
+
+
+def test_an_unknown_status_raises_rather_than_defaulting(tmp_path: Path) -> None:
+    epic_dir = tmp_path / 'epic_unknown'
+    write_ledger(epic_dir, {_RIVAL_ONE: 'abandoned', _RIVAL_TWO: 'staged'})
+
+    with pytest.raises(partition_mod.UnknownPlanStatusError) as raised:
+        partition_mod.read_plan_lifecycle(epic_dir)
+
+    assert raised.value.plan_id == _RIVAL_ONE
+    assert 'abandoned' in raised.value.status
+    assert 'abandoned' in str(raised.value)
+
+
+def test_a_non_string_status_is_also_refused_by_name(tmp_path: Path) -> None:
+    """A row whose status is not even a token is an unknown status, not a gap."""
+    epic_dir = tmp_path / 'epic_nonstring'
+    epic_dir.mkdir()
+    (epic_dir / _LEDGER_FILE).write_text(
+        json.dumps({_LEDGER_QUEUE_KEY: [{'id': _RIVAL_ONE, 'status': None}]}), encoding='utf-8'
+    )
+
+    with pytest.raises(partition_mod.UnknownPlanStatusError) as raised:
+        partition_mod.read_plan_lifecycle(epic_dir)
+
+    assert raised.value.plan_id == _RIVAL_ONE
+    assert 'None' in raised.value.status
+
+
+# --- a ledger that cannot be read degrades, and SAYS so ----------------------
+
+
+@pytest.fixture(
+    params=[
+        (None, partition_mod.DEGRADED_LEDGER_ABSENT),
+        ('{not json at all', partition_mod.DEGRADED_LEDGER_UNREADABLE),
+        ('{"plans": "not a list"}', partition_mod.DEGRADED_LEDGER_MALFORMED),
+        ('{"plans": [{"status": "landed"}]}', partition_mod.DEGRADED_LEDGER_MALFORMED),
+        ('["not an object"]', partition_mod.DEGRADED_LEDGER_MALFORMED),
+    ],
+    ids=['absent', 'unreadable', 'queue_not_a_list', 'row_without_a_plan_id', 'not_an_object'],
+)
+def unusable_ledger(request, tmp_path: Path) -> tuple[Path, str]:
+    body, reason = request.param
+    epic_dir = tmp_path / 'epic_degraded'
+    epic_dir.mkdir()
+    if body is not None:
+        (epic_dir / _LEDGER_FILE).write_text(body, encoding='utf-8')
+    return epic_dir, reason
+
+
+def test_an_unusable_ledger_states_its_degradation(unusable_ledger) -> None:
+    epic_dir, reason = unusable_ledger
+
+    lifecycle = partition_mod.read_plan_lifecycle(epic_dir)
+
+    assert lifecycle.available is False
+    assert lifecycle.degradation == reason
+    assert lifecycle.rows == ()
+    assert lifecycle.ledger_path.endswith(_LEDGER_FILE)
+
+
+def test_an_unusable_ledger_leaves_every_plan_competing(
+    repo: Path, tmp_path: Path, unusable_ledger
+) -> None:
+    """The degraded read reproduces the behaviour that held before this input existed.
+
+    Asserted TOGETHER with the stated reason above rather than on the counts
+    alone: an all-active partition published with no reason attached is
+    indistinguishable from a ledger that really said every plan is live.
+    """
+    epic_dir, reason = unusable_ledger
+    plans = tmp_path / 'degraded_corpus'
+    plans.mkdir()
+    build_corpus(plans, dict(_RIVAL_SPECS))
+
+    lifecycle, result = rival_partition(repo, plans, epic_dir)
+
+    assert lifecycle.degradation == reason
+    assert verdict_of(result, _RIVAL_MODULE) == partition_mod.VERDICT_CONTESTED
+    assert plans_of(result, _RIVAL_MODULE) == (_RIVAL_ONE, _RIVAL_TWO)
+
+
+def test_an_empty_queue_is_a_read_ledger_not_a_degraded_one(tmp_path: Path) -> None:
+    """An epic with no plans queued was measured; it is not a gap in the evidence."""
+    epic_dir = tmp_path / 'epic_empty_queue'
+    write_ledger(epic_dir, {})
+
+    lifecycle = partition_mod.read_plan_lifecycle(epic_dir)
+
+    assert lifecycle.available is True
+    assert lifecycle.degradation == ''
+    assert lifecycle.terminal_plans() == frozenset()
+
+
+# --- the ten observed contested shapes, end to end ---------------------------
+#
+# The shapes the live epic's residual contested set falls into, reproduced over a
+# constructed corpus and ledger. Seven have a single live claimant and resolve to
+# it; three have two or more and MUST survive. The identifiers are deliberately
+# unlike anything in the live corpus, so a mechanism that had memorised the real
+# plan ids partitions nothing here.
+
+#: ``module key -> (finished claimants, live claimants)``.
+_PATTERNS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    'm01': (('PLAN-TERM-10',), ('PLAN-LIVE-10',)),
+    'm02': (('PLAN-TERM-20',), ('PLAN-LIVE-20',)),
+    'm03': (('PLAN-TERM-30',), ('PLAN-LIVE-30',)),
+    'm04': (('PLAN-TERM-40',), ('PLAN-LIVE-40',)),
+    'm05': (('PLAN-TERM-50',), ('PLAN-LIVE-30',)),
+    'm06': (('PLAN-TERM-60',), ('PLAN-LIVE-30',)),
+    'm07': (('PLAN-TERM-10', 'PLAN-TERM-30'), ('PLAN-LIVE-30',)),
+    'm08': (('PLAN-TERM-20',), ('PLAN-LIVE-20', 'PLAN-LIVE-40')),
+    'm09': (('PLAN-TERM-10',), ('PLAN-LIVE-10', 'PLAN-LIVE-50')),
+    'm10': (('PLAN-TERM-20', 'PLAN-TERM-70'), ('PLAN-LIVE-20', 'PLAN-LIVE-50')),
+}
+
+
+def pattern_module(key: str) -> str:
+    return f'test/tq/{key}/test_{key}.py'
+
+
+def pattern_specs() -> dict[str, str]:
+    """One spec per plan, claiming exactly the directories its patterns place it in."""
+    directories: dict[str, set[str]] = {}
+    for key, (terminal, live) in _PATTERNS.items():
+        for plan_id in terminal + live:
+            directories.setdefault(plan_id, set()).add(f'test/tq/{key}/')
+    return {
+        f'{plan_id}.md': f'# {plan_id}\n\n## Expected Surface\n\n'
+        + ''.join(f'- OBSERVED: `{path}`\n' for path in sorted(paths))
+        for plan_id, paths in directories.items()
+    }
+
+
+def pattern_ledger() -> dict[str, str]:
+    ledger = {}
+    for terminal, live in _PATTERNS.values():
+        ledger.update(dict.fromkeys(terminal, 'landed'))
+        ledger.update(dict.fromkeys(live, 'staged'))
+    return ledger
+
+
+#: What the ten shapes must resolve to. Derived from the shape table because that
+#: table is the SPECIFICATION of the shapes, not the implementation's output.
+_PATTERN_RESOLVED = {
+    pattern_module(key): live[0] for key, (_, live) in _PATTERNS.items() if len(live) == 1
+}
+_PATTERN_CONTESTED = {
+    pattern_module(key): tuple(sorted(live))
+    for key, (_, live) in _PATTERNS.items()
+    if len(live) > 1
+}
+
+
+@pytest.fixture
+def pattern_world(tmp_path: Path) -> tuple[Path, Path, Path]:
+    root = tmp_path / 'pattern_repo'
+    (root / 'test').mkdir(parents=True)
+    for key in _PATTERNS:
+        write_module(root, pattern_module(key))
+    plans = tmp_path / 'pattern_plans'
+    plans.mkdir()
+    build_corpus(plans, pattern_specs())
+    epic_dir = tmp_path / 'pattern_epic'
+    write_ledger(epic_dir, pattern_ledger())
+    return root, plans, epic_dir
+
+
+def pattern_partition(
+    world: tuple[Path, Path, Path], with_ledger: bool
+) -> partition_mod.Partition:
+    root, plans, epic_dir = world
+    claims = classify_corpus(plans, root)
+    modules = partition_mod.iter_test_modules(root / 'test', root)
+    terminal = (
+        partition_mod.read_plan_lifecycle(epic_dir).terminal_plans()
+        if with_ledger
+        else frozenset()
+    )
+    return partition_mod.derive_partition(claims, modules, frozenset(), terminal)
+
+
+def test_without_the_ledger_every_observed_shape_is_contested(pattern_world) -> None:
+    """The differential's other half: all ten shapes contest with the input withheld."""
+    result = pattern_partition(pattern_world, with_ledger=False)
+
+    assert set(contests_of(result)) == {pattern_module(key) for key in _PATTERNS}
+
+
+def test_the_ledger_resolves_every_single_live_claimant_shape(pattern_world) -> None:
+    result = pattern_partition(pattern_world, with_ledger=True)
+
+    resolved = {module.path: module.plans[0] for module in result.lifecycle_resolved()}
+    assert resolved == _PATTERN_RESOLVED
+
+
+def test_only_the_two_or_more_live_shapes_survive_as_contested(pattern_world) -> None:
+    result = pattern_partition(pattern_world, with_ledger=True)
+
+    assert contests_of(result) == _PATTERN_CONTESTED
+
+
+def test_no_surviving_contest_names_a_finished_plan(pattern_world) -> None:
+    """Every remaining entry is an overlap between live plans, by construction."""
+    _, _, epic_dir = pattern_world
+    terminal = partition_mod.read_plan_lifecycle(epic_dir).terminal_plans()
+
+    result = pattern_partition(pattern_world, with_ledger=True)
+
+    assert terminal
+    for module in result.with_verdict(partition_mod.VERDICT_CONTESTED):
+        assert not set(module.plans) & terminal
+        assert set(module.retired) <= terminal
 
 
 # --- budget findings and attribution -----------------------------------------

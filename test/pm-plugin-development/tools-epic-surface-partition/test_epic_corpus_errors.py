@@ -2,13 +2,14 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the corpus-load error contracts every subcommand publishes.
 
-``_load_corpus`` is the sole seam translating the three load failures into the
-TOON payloads SKILL.md § "Step 2: Route on the TOON status" tells callers to
+``_load_corpus`` is the sole seam translating the SPEC-CORPUS load failures into
+the TOON payloads SKILL.md § "Step 2: Route on the TOON status" tells callers to
 branch on. Renaming one of those codes, or dropping one of the branch-specific
 keys, would break every documented caller silently — so each branch is pinned
 here by the ``error`` code it emits AND by the keys that branch carries, and a
-closing test asserts the same three literals are the ones the routing table
-publishes.
+closing test asserts that each of those literals is one the routing table
+publishes. The table also carries codes from the derivation's OTHER input
+source, which this module neither drives nor claims to enumerate.
 
 The four subcommands share the seam, so every case runs against all four: the
 SKILL.md claim that they share the three error shapes is the thing under test,

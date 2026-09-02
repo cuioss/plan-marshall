@@ -11,8 +11,9 @@ claiming it, and groups the test-module line-budget findings by owning plan.
 The partition reports each verdict in :data:`VERDICT_ORDER` as a SEPARATE
 population:
 
-- ``claimed`` — exactly one SLICE plan's resolved entries cover the module.
-- ``contested`` — two or more SLICE plans cover it. This is the residual
+- ``claimed`` — exactly one SLICE plan whose work is still outstanding covers
+  the module.
+- ``contested`` — two or more such plans cover it. This is the residual
   genuinely-contested set: small enough to enumerate and act on.
 - ``swept`` — no slice plan covers it, but one or more SWEEP plans do. The
   crossing is reported and no owner is manufactured.
@@ -62,9 +63,41 @@ silently dropped.
 union of OTHER plans' surfaces, so its entries restate their claims instead of
 competing with them. Its coverage is reported as ``not_derivable`` when no slice
 claims the module, never as an ownership contest.
+
+**Plan lifecycle state is the FOURTH derivation input, and the first that is not
+the spec corpus.** A plan whose work is finished no longer competes for
+ownership: its declared surface is a historical record, not a live claim. The
+epic ledger beside the corpus carries an authoritative per-plan ``status``; its
+vocabulary partitions into TERMINAL (:data:`TERMINAL_STATUSES`, the work is
+finished) and ACTIVE (:data:`ACTIVE_STATUSES`, the work is outstanding), and a
+module contested only between terminal and active plans resolves to the active
+one, with the terminal claims recorded beside the verdict as
+:attr:`ModuleVerdict.retired`.
+
+⛔ The partition is taken over the ledger's OWN status vocabulary — never a
+hard-coded plan-id list, and never the presence of a landing file. A status the
+vocabulary does not cover raises :class:`UnknownPlanStatusError` rather than
+defaulting into either bucket: silently bucketing an unrecognised status is how
+this degenerates into the plan list the module forbids, one level down.
+
+⛔ **Lifecycle narrows the competing set; it never picks a winner among live
+plans.** A module contested between two or more ACTIVE plans stays contested —
+that overlap is the one class this derivation deliberately refuses to
+adjudicate. A module every one of whose claimants is terminal stays contested
+too: narrowing it to nothing would manufacture an ownerless module out of one
+that several plans really did claim. Both refusals are the same rule read in
+opposite directions — the narrowing applies only when it leaves exactly one live
+claimant standing.
+
+⛔ A missing or unreadable ledger degrades to treating EVERY plan as active,
+which is the behaviour that held before this input existed, and the degradation
+is STATED on :attr:`PlanLifecycle.degradation` rather than absorbed. An absent
+input reported as a clean one would attribute a terminal plan's claims on no
+evidence.
 """
 
 import fnmatch
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -148,6 +181,138 @@ TEST_MODULE_GLOB = 'test_*.py'
 #: The population root. An entry spanning exactly this discriminates nothing.
 ROOT_PREFIX = 'test'
 
+#: The epic ledger, and the keys the plan queue is read through. It sits BESIDE
+#: the ``plans/`` spec corpus in the epic directory, and it is a genuinely
+#: different input source: the corpus states what a plan SAYS it will touch,
+#: the ledger states whether that plan is still doing it.
+LEDGER_FILE = 'status.json'
+LEDGER_QUEUE_KEY = 'plans'
+LEDGER_ROW_ID_KEY = 'id'
+LEDGER_ROW_STATUS_KEY = 'status'
+
+#: The two buckets the ledger's status vocabulary partitions into.
+LIFECYCLE_TERMINAL = 'terminal'
+LIFECYCLE_ACTIVE = 'active'
+
+#: The ledger's own per-plan status vocabulary, split by whether the plan's work
+#: is FINISHED. A terminal plan's declared surface is a historical record; an
+#: active plan's is a live claim. ``parked`` is ACTIVE by the same reading —
+#: paused work is unfinished work, and a parked plan resumes onto the surface it
+#: declared, so retiring its claim would hand that surface away while it waits.
+TERMINAL_STATUSES = frozenset({'landed', 'shipped'})
+ACTIVE_STATUSES = frozenset({'staged', 'running', 'parked'})
+
+#: Every status the partition covers. A ledger value outside this set is not
+#: bucketed by guess — see :class:`UnknownPlanStatusError`.
+KNOWN_STATUSES = TERMINAL_STATUSES | ACTIVE_STATUSES
+
+#: Why the lifecycle input could not be read. Each is STATED on the returned
+#: :class:`PlanLifecycle` so a caller reporting all-plans-active can say whether
+#: that is what the ledger said or what its absence forced.
+DEGRADED_LEDGER_ABSENT = 'ledger_absent'
+DEGRADED_LEDGER_UNREADABLE = 'ledger_unreadable'
+DEGRADED_LEDGER_MALFORMED = 'ledger_malformed'
+
+
+class UnknownPlanStatusError(Exception):
+    """A ledger status value the terminal/active partition does not cover.
+
+    Raised instead of defaulting the row into either bucket, so the run halts
+    with the plan and the offending value named. Defaulting to ACTIVE would
+    quietly keep a finished plan competing; defaulting to TERMINAL would quietly
+    retire a live one — and neither guess is derivable from the vocabulary, which
+    is the only authority this module reads the partition from.
+    """
+
+    def __init__(self, plan_id: str, status: str) -> None:
+        super().__init__(f'{plan_id}: unknown plan status {status}')
+        self.plan_id = plan_id
+        self.status = status
+
+
+@dataclass(frozen=True)
+class LifecycleRow:
+    """One ledger row: a plan, its recorded status, and the bucket it falls in."""
+
+    plan_id: str
+    status: str
+    lifecycle: str
+
+
+@dataclass(frozen=True)
+class PlanLifecycle:
+    """The ledger's per-plan lifecycle state, or a stated reason there is none.
+
+    ⛔ Read :attr:`available` FIRST. When it is ``False`` no ledger was read at
+    all, :attr:`rows` is empty, and :meth:`terminal_plans` is empty because
+    nothing substantiates a single retirement — NOT because every plan is live.
+    The two readings coincide in the partition's behaviour and differ entirely in
+    what they claim, which is why :attr:`degradation` names the reason rather
+    than leaving an empty set to be read as a measurement.
+    """
+
+    ledger_path: str
+    available: bool
+    degradation: str
+    rows: tuple[LifecycleRow, ...] = ()
+
+    def terminal_plans(self) -> frozenset[str]:
+        """The plans whose work is finished, so their claims no longer compete."""
+        return frozenset(row.plan_id for row in self.rows if row.lifecycle == LIFECYCLE_TERMINAL)
+
+    def active_plans(self) -> frozenset[str]:
+        """The plans whose work is outstanding, so their claims still compete."""
+        return frozenset(row.plan_id for row in self.rows if row.lifecycle == LIFECYCLE_ACTIVE)
+
+
+def lifecycle_of(status: str) -> str:
+    """The bucket one status falls in, for a status already known to be covered.
+
+    Total over :data:`KNOWN_STATUSES` and meaningless outside it — the
+    unknown-status refusal belongs to the caller, which is the only party that
+    knows WHICH plan carried the value and can therefore name it.
+    """
+    return LIFECYCLE_TERMINAL if status in TERMINAL_STATUSES else LIFECYCLE_ACTIVE
+
+
+def read_plan_lifecycle(epic_dir: Path) -> PlanLifecycle:
+    """Read the epic ledger's plan queue and partition it terminal/active.
+
+    This is the derivation's SECOND input source and is read entirely apart from
+    the spec corpus: it opens one file, consults no spec, and resolves no path.
+    Keeping the two reads separate is what stops a ledger fact and a corpus fact
+    from being mistaken for one another downstream.
+
+    Raises:
+        UnknownPlanStatusError: when a row carries a status outside
+            :data:`KNOWN_STATUSES`. A structurally unusable ledger degrades with
+            a stated reason instead — an unreadable input is a gap in the
+            evidence, while an unrecognised status is a gap in this module's own
+            model of the vocabulary, and only the latter is this module's to fix.
+    """
+    ledger_path = epic_dir / LEDGER_FILE
+    if not ledger_path.is_file():
+        return PlanLifecycle(str(ledger_path), False, DEGRADED_LEDGER_ABSENT)
+    try:
+        document = json.loads(ledger_path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return PlanLifecycle(str(ledger_path), False, DEGRADED_LEDGER_UNREADABLE)
+    if not isinstance(document, dict) or not isinstance(document.get(LEDGER_QUEUE_KEY), list):
+        return PlanLifecycle(str(ledger_path), False, DEGRADED_LEDGER_MALFORMED)
+
+    rows: list[LifecycleRow] = []
+    for entry in document[LEDGER_QUEUE_KEY]:
+        if not isinstance(entry, dict):
+            return PlanLifecycle(str(ledger_path), False, DEGRADED_LEDGER_MALFORMED)
+        plan_id = entry.get(LEDGER_ROW_ID_KEY)
+        status = entry.get(LEDGER_ROW_STATUS_KEY)
+        if not isinstance(plan_id, str) or not plan_id:
+            return PlanLifecycle(str(ledger_path), False, DEGRADED_LEDGER_MALFORMED)
+        if not isinstance(status, str) or status not in KNOWN_STATUSES:
+            raise UnknownPlanStatusError(plan_id, repr(status))
+        rows.append(LifecycleRow(plan_id, status, lifecycle_of(status)))
+    return PlanLifecycle(str(ledger_path), True, '', tuple(rows))
+
 
 @dataclass(frozen=True)
 class ModuleVerdict:
@@ -158,12 +323,19 @@ class ModuleVerdict:
     because they are separate facts: a sweep crossing a slice's module is not a
     competing claim on it, and folding the two together is what produced a
     single undifferentiated contested bucket.
+
+    ``retired`` carries the plans whose claim on this module lifecycle set aside
+    — a third separate fact, for the same reason. It is populated only where the
+    narrowing actually applied, so an empty tuple means "no claim was retired
+    here", never "the ledger was not consulted"; that question is answered once,
+    on :class:`PlanLifecycle`, rather than guessed from a per-module absence.
     """
 
     path: str
     verdict: str
     plans: tuple[str, ...]
     sweeps: tuple[str, ...] = ()
+    retired: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -191,6 +363,19 @@ class Partition:
         for module in self.modules:
             counts[module.verdict] += 1
         return counts
+
+    def lifecycle_resolved(self) -> tuple[ModuleVerdict, ...]:
+        """Every module an owner was found for by retiring a finished plan's claim.
+
+        These are exactly the modules that would read ``contested`` without the
+        lifecycle input, so the population is the input's own effect, measurable
+        per instance rather than asserted as a shrunken total.
+        """
+        return tuple(
+            module
+            for module in self.modules
+            if module.retired and module.verdict == VERDICT_CLAIMED
+        )
 
 
 @dataclass(frozen=True)
@@ -424,6 +609,7 @@ def derive_partition(
     claims: list[SpecClaim],
     modules: tuple[str, ...],
     sweeps: frozenset[str] = frozenset(),
+    terminal_plans: frozenset[str] = frozenset(),
 ) -> Partition:
     """Assign every module exactly one verdict against the claim model.
 
@@ -432,6 +618,24 @@ def derive_partition(
     BEFORE the owner count is taken, which is what lets a single slice own a
     module that any number of sweeps also cross. Passing an empty set is the
     honest "no sweep declared" case, never a default that hides one.
+
+    ``terminal_plans`` names the plans whose work is FINISHED, read from the epic
+    ledger by :func:`read_plan_lifecycle`. It narrows a CONTEST and nothing else:
+
+    - one owner — untouched, whatever its lifecycle. A sole terminal claimant is
+      still the only plan that ever named the module, and there is no contest to
+      resolve, so retiring it would replace an attribution with a blank.
+    - two or more owners, exactly one of them live — the live plan owns it, and
+      the finished plans land in :attr:`ModuleVerdict.retired`.
+    - two or more owners, two or more of them live — CONTESTED among the live
+      plans, with the finished ones retired beside the verdict. ⛔ Lifecycle
+      never picks a winner here; that is the whole refusal.
+    - two or more owners, NONE of them live — CONTESTED, unnarrowed and with
+      nothing retired. Narrowing to an empty set would manufacture an ownerless
+      module out of one that several plans really did claim.
+
+    An empty ``terminal_plans`` reproduces the behaviour that held before the
+    ledger was an input at all, which is exactly what the degraded read yields.
     """
     root_claims = tuple(
         RootClaim(plan_id=claim.plan_id, path=entry.path)
@@ -448,7 +652,14 @@ def derive_partition(
             verdicts.append(ModuleVerdict(module, VERDICT_CLAIMED, owners, crossing))
             continue
         if len(owners) > 1:
-            verdicts.append(ModuleVerdict(module, VERDICT_CONTESTED, owners, crossing))
+            live = tuple(plan_id for plan_id in owners if plan_id not in terminal_plans)
+            retired = tuple(plan_id for plan_id in owners if plan_id in terminal_plans)
+            if not live:
+                verdicts.append(ModuleVerdict(module, VERDICT_CONTESTED, owners, crossing))
+            elif len(live) == 1:
+                verdicts.append(ModuleVerdict(module, VERDICT_CLAIMED, live, crossing, retired))
+            else:
+                verdicts.append(ModuleVerdict(module, VERDICT_CONTESTED, live, crossing, retired))
             continue
         if crossing:
             verdicts.append(ModuleVerdict(module, VERDICT_SWEPT, (), crossing))
@@ -488,7 +699,10 @@ def owner_of(module: ModuleVerdict) -> str:
 
     A ``claimed`` module is attributed to its owning slice REGARDLESS of how
     many sweeps also cross it — that is the whole point of separating the two
-    populations, and it is what breaks the single-bucket collapse.
+    populations, and it is what breaks the single-bucket collapse. The same
+    holds for the plans lifecycle retired: ``plans[0]`` is the live owner
+    :func:`derive_partition` left standing, and the retired claims are read from
+    :attr:`ModuleVerdict.retired` rather than from the attribution bucket.
     """
     if module.verdict == VERDICT_CLAIMED:
         return module.plans[0]

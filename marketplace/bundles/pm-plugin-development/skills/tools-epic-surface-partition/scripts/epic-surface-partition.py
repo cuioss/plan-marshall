@@ -17,10 +17,14 @@ Subcommands:
 - ``partition --epic {slug}`` — join that claim model against the real ``test/``
   tree and assign every test module exactly one verdict. A module claimed by one
   SLICE plan is owned by it however many self-declared SWEEP plans also cross
-  it; the crossings are reported beside the verdict as a separate fact. Two or
-  more slice plans make the module ``contested`` — the residual, enumerable
-  disagreement — and ``unclaimed``, ``swept`` and ``not_derivable`` are each
-  reported per instance and never merged.
+  it; the crossings are reported beside the verdict as a separate fact. It also
+  reads the epic LEDGER — a second input source, separate from the spec corpus —
+  and retires the claims of plans whose work is finished, so a module contested
+  only between a finished and a live plan resolves to the live one. Two or more
+  LIVE slice plans still make the module ``contested`` — the residual, enumerable
+  disagreement this derivation deliberately refuses to adjudicate — and
+  ``unclaimed``, ``swept`` and ``not_derivable`` are each reported per instance
+  and never merged.
 
 - ``attribution --epic {slug}`` — group the test-module line-budget findings,
   re-derived from the current tree, by owning plan. Modules with no single
@@ -29,10 +33,11 @@ Subcommands:
 
 - ``report --epic {slug}`` — render every section of the derivation: the
   partition, the attribution, the entries awaiting a decision, the contested
-  set, the sweep crossings, every spec whose spans the parser could not resolve,
-  the injected-failure demonstrations, the declared-test count before and after,
-  the baseline drift, and provenance. Each section carries the command that
-  produced it, and the rendered set is exactly ``_SECTION_ORDER``.
+  set, the plan-lifecycle input and what it retired, the sweep crossings, every
+  spec whose spans the parser could not resolve, the injected-failure
+  demonstrations, the declared-test count before and after, the baseline drift,
+  and provenance. Each section carries the command that produced it, and the
+  rendered set is exactly ``_SECTION_ORDER``.
 
 The derivation is a report, never a build gate: the specs live under a
 git-ignored path and are absent from a fresh clone, so no CI check can read
@@ -46,16 +51,21 @@ from pathlib import Path
 from typing import Any
 
 from _epic_partition import (
+    ACTIVE_STATUSES,
     DEFAULT_LINE_BUDGET,
+    TERMINAL_STATUSES,
     VERDICT_CONTESTED,
     VERDICT_NOT_DERIVABLE,
     VERDICT_ORDER,
     VERDICT_UNCLAIMED,
+    PlanLifecycle,
+    UnknownPlanStatusError,
     derive_attribution,
     derive_budget_findings,
     derive_partition,
     derive_sweep_plans,
     iter_test_modules,
+    read_plan_lifecycle,
 )
 from epic_spec_parser import (
     CLASS_DECLARATIVE,
@@ -72,16 +82,34 @@ from file_ops import cwd_checkout_root, get_store_dir, output_toon, safe_main
 _TALLY_ORDER = (CLASS_DECLARATIVE, CLASS_DERIVED, CLASS_PROSE)
 
 
-class _CorpusError(Exception):
-    """A corpus the derivation cannot load; carries the caller's error payload."""
+class _PayloadError(Exception):
+    """A load failure a handler reports as a structured error payload."""
 
     def __init__(self, payload: dict[str, Any]) -> None:
-        super().__init__(payload.get('error', 'corpus_error'))
+        super().__init__(payload.get('error', 'load_error'))
         self.payload = payload
 
 
-def _load_corpus(epic: str) -> tuple[list[Any], Path, Path]:
+class _CorpusError(_PayloadError):
+    """A SPEC CORPUS the derivation cannot load."""
+
+
+class _LedgerError(_PayloadError):
+    """A LEDGER whose status vocabulary the derivation cannot partition.
+
+    ⛔ Deliberately a different class from :class:`_CorpusError`, because the two
+    name failures of two different input sources. One class for both would put a
+    ledger fault behind a corpus-shaped error code and lose exactly the
+    separation the two loaders exist to keep.
+    """
+
+
+def _load_corpus(epic: str) -> tuple[list[Any], Path, Path, Path]:
     """Resolve the epic's spec corpus and classify it.
+
+    Returns the classified claims, the epic directory, the ``plans/`` corpus
+    directory inside it, and the repository root. The epic directory rides along
+    because it is where the SECOND input source lives; nothing here reads it.
 
     Raises:
         _CorpusError: when the slug is invalid, the corpus is absent, or a spec
@@ -119,14 +147,73 @@ def _load_corpus(epic: str) -> tuple[list[Any], Path, Path]:
             }
         ) from error
 
-    return claims, plans_dir, repo_root
+    return claims, epic_dir, plans_dir, repo_root
+
+
+def _load_lifecycle(epic: str, epic_dir: Path) -> PlanLifecycle:
+    """Read the epic ledger — the derivation's second, non-corpus input source.
+
+    A separate call from :func:`_load_corpus` on purpose: it takes the epic
+    directory rather than the claim model, consults no spec, and resolves no
+    path, so no ledger fact can reach the join dressed as a corpus fact. A
+    missing or unusable ledger comes back DEGRADED with its reason stated, and
+    only an unrecognised status value is an error — that one is a gap in this
+    tool's model of the vocabulary, not in the evidence.
+
+    Raises:
+        _LedgerError: when a ledger row carries a status the terminal/active
+            partition does not cover, carrying the offending plan and value.
+    """
+    try:
+        return read_plan_lifecycle(epic_dir)
+    except UnknownPlanStatusError as error:
+        raise _LedgerError(
+            {
+                'status': 'error',
+                'error': 'unknown_plan_status',
+                'epic': epic,
+                'plan_id': error.plan_id,
+                'plan_status': error.status,
+                'known_terminal': ','.join(sorted(TERMINAL_STATUSES)),
+                'known_active': ','.join(sorted(ACTIVE_STATUSES)),
+            }
+        ) from error
+
+
+def _lifecycle_payload(lifecycle: PlanLifecycle) -> dict[str, Any]:
+    """The ledger read as its own payload block, never folded into the corpus keys.
+
+    ⛔ Read ``available`` FIRST. When it is ``false`` the counts below are zeros
+    because nothing was read, and ``degradation`` names why; the partition then
+    behaves as it did before this input existed, which is a declared state rather
+    than a measurement that every plan is live.
+    """
+    return {
+        'ledger_path': lifecycle.ledger_path,
+        'available': lifecycle.available,
+        'degradation': lifecycle.degradation,
+        'terminal_count': len(lifecycle.terminal_plans()),
+        'active_count': len(lifecycle.active_plans()),
+    }
+
+
+def _lifecycle_rows(lifecycle: PlanLifecycle) -> list[dict[str, Any]]:
+    """Every ledger row, so the partition it drove is readable from the output."""
+    return [
+        {'plan_id': row.plan_id, 'status': row.status, 'lifecycle': row.lifecycle}
+        for row in lifecycle.rows
+    ]
 
 
 def cmd_classify(args: argparse.Namespace) -> dict[str, Any]:
-    """Handle ``classify --epic EPIC``."""
+    """Handle ``classify --epic EPIC``.
+
+    The one verb that reads the SPEC CORPUS alone: what a spec declares is a
+    property of the spec, and no ledger state changes it.
+    """
     try:
-        claims, plans_dir, repo_root = _load_corpus(args.epic)
-    except _CorpusError as error:
+        claims, _epic_dir, plans_dir, repo_root = _load_corpus(args.epic)
+    except _PayloadError as error:
         return error.payload
 
     tally = Counter(claim.spec_class for claim in claims)
@@ -179,16 +266,22 @@ def cmd_classify(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def cmd_partition(args: argparse.Namespace) -> dict[str, Any]:
-    """Handle ``partition --epic EPIC``."""
+    """Handle ``partition --epic EPIC``.
+
+    Reads BOTH input sources through their own loaders — the spec corpus for what
+    each plan claims, the epic ledger for whether that plan is still working —
+    and emits the ledger's contribution as its own payload block.
+    """
     try:
-        claims, plans_dir, repo_root = _load_corpus(args.epic)
-    except _CorpusError as error:
+        claims, epic_dir, plans_dir, repo_root = _load_corpus(args.epic)
+        lifecycle = _load_lifecycle(args.epic, epic_dir)
+    except _PayloadError as error:
         return error.payload
 
     test_root = repo_root / 'test'
     modules = iter_test_modules(test_root, repo_root)
     sweeps = derive_sweep_plans(claims, plans_dir)
-    partition = derive_partition(claims, modules, sweeps)
+    partition = derive_partition(claims, modules, sweeps, lifecycle.terminal_plans())
     tally = partition.tally()
 
     return {
@@ -201,11 +294,25 @@ def cmd_partition(args: argparse.Namespace) -> dict[str, Any]:
             {'verdict': verdict, 'count': tally[verdict]} for verdict in VERDICT_ORDER
         ],
         'sweep_plans': sorted(sweeps),
+        'lifecycle': _lifecycle_payload(lifecycle),
+        'lifecycle_plans': _lifecycle_rows(lifecycle),
+        'lifecycle_resolved': [
+            {
+                'path': module.path,
+                'owner': module.plans[0],
+                'retired': ','.join(module.retired),
+            }
+            for module in partition.lifecycle_resolved()
+        ],
         'root_claims': [
             {'plan_id': root.plan_id, 'path': root.path} for root in partition.root_claims
         ],
         'contested': [
-            {'path': module.path, 'plans': ','.join(module.plans)}
+            {
+                'path': module.path,
+                'plans': ','.join(module.plans),
+                'retired': ','.join(module.retired),
+            }
             for module in partition.with_verdict(VERDICT_CONTESTED)
         ],
         'sweep_crossings': [
@@ -219,6 +326,7 @@ def cmd_partition(args: argparse.Namespace) -> dict[str, Any]:
                 'verdict': module.verdict,
                 'plans': ','.join(module.plans),
                 'sweeps': ','.join(module.sweeps),
+                'retired': ','.join(module.retired),
             }
             for module in partition.modules
         ],
@@ -228,14 +336,15 @@ def cmd_partition(args: argparse.Namespace) -> dict[str, Any]:
 def cmd_attribution(args: argparse.Namespace) -> dict[str, Any]:
     """Handle ``attribution --epic EPIC``."""
     try:
-        claims, plans_dir, repo_root = _load_corpus(args.epic)
-    except _CorpusError as error:
+        claims, epic_dir, plans_dir, repo_root = _load_corpus(args.epic)
+        lifecycle = _load_lifecycle(args.epic, epic_dir)
+    except _PayloadError as error:
         return error.payload
 
     test_root = repo_root / 'test'
     modules = iter_test_modules(test_root, repo_root)
     sweeps = derive_sweep_plans(claims, plans_dir)
-    partition = derive_partition(claims, modules, sweeps)
+    partition = derive_partition(claims, modules, sweeps, lifecycle.terminal_plans())
     findings = derive_budget_findings(modules, repo_root, args.budget)
     attribution = derive_attribution(partition, findings, args.budget)
 
@@ -248,8 +357,13 @@ def cmd_attribution(args: argparse.Namespace) -> dict[str, Any]:
         'modules_total': len(modules),
         'findings_total': attribution.total_findings(),
         'sweep_plans': sorted(sweeps),
+        'lifecycle': _lifecycle_payload(lifecycle),
         'contested': [
-            {'path': module.path, 'plans': ','.join(module.plans)}
+            {
+                'path': module.path,
+                'plans': ','.join(module.plans),
+                'retired': ','.join(module.retired),
+            }
             for module in partition.with_verdict(VERDICT_CONTESTED)
         ],
         'sweep_crossings': [
@@ -344,6 +458,18 @@ _INJECTED_CONTROLS = (
         'test_epic_partition_injected_failures.py::'
         'test_injected_cross_plan_citation_does_not_contest_the_cited_slice',
     ),
+    (
+        'injected_terminal_claim_retired',
+        'a module contested between a finished and a live plan resolves to the live one',
+        'test_epic_partition_injected_failures.py::'
+        'test_injected_terminal_claim_is_retired_in_favour_of_the_active_plan',
+    ),
+    (
+        'injected_active_versus_active',
+        'a module contested between two live plans stays contested, with no winner picked',
+        'test_epic_partition_injected_failures.py::'
+        'test_injected_active_versus_active_module_stays_contested',
+    ),
 )
 
 #: The line prefix that makes a declaration a test. Named once so the counter,
@@ -360,12 +486,14 @@ _TEST_COUNT_METHOD = f'static "{_TEST_DEF_PREFIX}" count over the enumerated tes
 #: written count-free, so adding a section here cannot leave a stale number
 #: behind. ``disagreements`` is the actionable list — everything awaiting a
 #: decision — while ``contested`` and ``swept`` isolate the two populations
-#: inside it that are read for different reasons.
+#: inside it that are read for different reasons, and ``lifecycle`` states the
+#: second input source and what its terminal/active partition retired.
 _SECTION_ORDER = (
     'partition',
     'attribution',
     'disagreements',
     'contested',
+    'lifecycle',
     'swept',
     'not_derivable',
     'injected_controls',
@@ -413,14 +541,15 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
     a build.
     """
     try:
-        claims, plans_dir, repo_root = _load_corpus(args.epic)
-    except _CorpusError as error:
+        claims, epic_dir, plans_dir, repo_root = _load_corpus(args.epic)
+        lifecycle = _load_lifecycle(args.epic, epic_dir)
+    except _PayloadError as error:
         return error.payload
 
     test_root = repo_root / 'test'
     modules = iter_test_modules(test_root, repo_root)
     sweeps = derive_sweep_plans(claims, plans_dir)
-    partition = derive_partition(claims, modules, sweeps)
+    partition = derive_partition(claims, modules, sweeps, lifecycle.terminal_plans())
     findings = derive_budget_findings(modules, repo_root, args.budget)
     attribution = derive_attribution(partition, findings, args.budget)
     tally = partition.tally()
@@ -433,6 +562,7 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
     contested = partition.with_verdict(VERDICT_CONTESTED)
     crossings = [module for module in partition.modules if module.sweeps]
     not_derivable = partition.with_verdict(VERDICT_NOT_DERIVABLE)
+    lifecycle_resolved = partition.lifecycle_resolved()
 
     baseline_supplied, baseline = _read_baseline(args.baseline_findings)
     observed = frozenset(finding.path for finding in findings)
@@ -450,7 +580,17 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
         'partition': f'{len(modules)} modules across {len(VERDICT_ORDER)} verdicts',
         'attribution': f'{attribution.total_findings()} findings over budget {attribution.budget}',
         'disagreements': f'{len(disagreements)} entries listed per instance',
-        'contested': f'{len(contested)} modules claimed by more than one slice plan',
+        'contested': f'{len(contested)} modules claimed by more than one live slice plan',
+        'lifecycle': (
+            f'{len(lifecycle.terminal_plans())} finished and {len(lifecycle.active_plans())} '
+            f'live plans in the ledger; {len(lifecycle_resolved)} modules attributed by '
+            'retiring a finished claim'
+            if lifecycle.available
+            else (
+                f'ledger unavailable ({lifecycle.degradation}); every plan treated as live '
+                'and no claim retired'
+            )
+        ),
         'swept': (
             f'{len(crossings)} modules crossed by {len(sweeps)} self-declared sweep plan(s)'
         ),
@@ -471,6 +611,11 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
         'attribution': _verb_command('attribution', args.epic),
         'disagreements': _verb_command('partition', args.epic),
         'contested': _verb_command('partition', args.epic),
+        # ``partition`` is the verb that READS the ledger and emits the whole
+        # lifecycle block — the per-plan rows, the availability verdict and the
+        # modules the retirement attributed. ``classify`` reads the spec corpus
+        # alone and cannot reproduce any of it.
+        'lifecycle': _verb_command('partition', args.epic),
         'swept': _verb_command('partition', args.epic),
         # The drift comparison needs BOTH the re-derived findings and the
         # supplied baseline, and ``report`` is the only verb that takes a
@@ -509,12 +654,32 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
             for bucket in attribution.buckets
         ],
         'disagreements': [
-            {'path': module.path, 'verdict': module.verdict, 'plans': ','.join(module.plans)}
+            {
+                'path': module.path,
+                'verdict': module.verdict,
+                'plans': ','.join(module.plans),
+                'retired': ','.join(module.retired),
+            }
             for module in disagreements
         ],
         'sweep_plans': sorted(sweeps),
+        'lifecycle': _lifecycle_payload(lifecycle),
+        'lifecycle_plans': _lifecycle_rows(lifecycle),
+        'lifecycle_resolved': [
+            {
+                'path': module.path,
+                'owner': module.plans[0],
+                'retired': ','.join(module.retired),
+            }
+            for module in lifecycle_resolved
+        ],
         'contested': [
-            {'path': module.path, 'plans': ','.join(module.plans)} for module in contested
+            {
+                'path': module.path,
+                'plans': ','.join(module.plans),
+                'retired': ','.join(module.retired),
+            }
+            for module in contested
         ],
         'sweep_crossings': [
             {'path': module.path, 'verdict': module.verdict, 'sweeps': ','.join(module.sweeps)}

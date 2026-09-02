@@ -14,6 +14,7 @@ under ``tmp_path``; the real orchestrator store is never touched.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -63,10 +64,22 @@ def build_plans(root: Path, specs: dict[str, str]) -> Path:
     return plans
 
 
-def partition_of(repo: Path, plans: Path):
+def partition_of(repo: Path, plans: Path, terminal: frozenset[str] = frozenset()):
     claims = classify_corpus(plans, repo)
     modules = partition_mod.iter_test_modules(repo / 'test', repo)
-    return partition_mod.derive_partition(claims, modules)
+    return partition_mod.derive_partition(claims, modules, frozenset(), terminal)
+
+
+def terminal_from_ledger(epic_dir: Path, rows: dict[str, str]) -> frozenset[str]:
+    """Write a ledger and read the finished-plan set back out of it.
+
+    Injected through the real reader rather than hand-built, so a control here
+    also exercises the ledger parse the live derivation depends on.
+    """
+    epic_dir.mkdir(parents=True, exist_ok=True)
+    payload = {'plans': [{'id': pid, 'status': st} for pid, st in rows.items()]}
+    (epic_dir / 'status.json').write_text(json.dumps(payload), encoding='utf-8')
+    return partition_mod.read_plan_lifecycle(epic_dir).terminal_plans()
 
 
 def named(result, verdict: str) -> set[str]:
@@ -305,3 +318,58 @@ def test_injected_uncited_claim_over_the_cited_slice_is_reported_by_name(clean) 
     )
     assert named(result, partition_mod.VERDICT_CONTESTED) == {'test/alpha/test_one.py'}
     assert owners == ('PLAN-200', 'PLAN-250')
+
+
+# --- negative control 6: a finished plan's claim no longer competes -----------
+#
+# The injected double claim above, with a LEDGER beside it. The corpus is
+# byte-identical in both halves of this pair and only the recorded status
+# differs, so the retirement is attributable to the lifecycle input alone.
+
+#: The second claimant over PLAN-200's subtree, and the module they both cover.
+DOUBLE_CLAIM_BODY = '# PLAN-220\n\n## Expected Surface\n\n- Also adds `test/alpha/**`\n'
+DOUBLE_CLAIM_MODULE = 'test/alpha/test_one.py'
+
+
+def test_injected_terminal_claim_is_retired_in_favour_of_the_active_plan(
+    clean, tmp_path: Path
+) -> None:
+    """A plan whose work is finished stops competing; the live plan owns the module."""
+    repo, plans = clean
+    (plans / 'PLAN-220.md').write_text(DOUBLE_CLAIM_BODY, encoding='utf-8')
+    terminal = terminal_from_ledger(
+        tmp_path / 'epic_retired', {'PLAN-200': 'landed', 'PLAN-220': 'staged'}
+    )
+
+    result = partition_of(repo, plans, terminal)
+    module = next(m for m in result.modules if m.path == DOUBLE_CLAIM_MODULE)
+
+    assert named(result, partition_mod.VERDICT_CONTESTED) == set()
+    assert module.verdict == partition_mod.VERDICT_CLAIMED
+    assert module.plans == ('PLAN-220',)
+    assert module.retired == ('PLAN-200',)
+
+
+# --- negative control 7: two live plans are never adjudicated ----------------
+
+
+def test_injected_active_versus_active_module_stays_contested(clean, tmp_path: Path) -> None:
+    """⛔ The refusal: lifecycle narrows the competing set, it never picks a winner.
+
+    The matched half of the control above — same corpus, same ledger shape, both
+    plans recorded as still working. A rule that resolved this would look exactly
+    like a success while inventing an ownership no plan has yet earned.
+    """
+    repo, plans = clean
+    (plans / 'PLAN-220.md').write_text(DOUBLE_CLAIM_BODY, encoding='utf-8')
+    terminal = terminal_from_ledger(
+        tmp_path / 'epic_live', {'PLAN-200': 'running', 'PLAN-220': 'staged'}
+    )
+
+    result = partition_of(repo, plans, terminal)
+    module = next(m for m in result.modules if m.path == DOUBLE_CLAIM_MODULE)
+
+    assert terminal == frozenset()
+    assert named(result, partition_mod.VERDICT_CONTESTED) == {DOUBLE_CLAIM_MODULE}
+    assert module.plans == ('PLAN-200', 'PLAN-220')
+    assert module.retired == ()

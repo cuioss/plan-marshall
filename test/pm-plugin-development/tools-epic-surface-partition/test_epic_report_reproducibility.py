@@ -22,6 +22,7 @@ never read and never written.
 from __future__ import annotations
 
 import argparse
+import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -84,8 +85,28 @@ SPECS = {
     '- Adds `test/alpha/**` — the sites this plan converts\n'
     '\nThis surface crosses several reduction slices deliberately; the sites it visits '
     "do not respect the epic's partition.\n",
+    'PLAN-340.md': '# PLAN-340\n\n## Expected Surface\n\n- Adds `test/gamma/**`\n',
+    'PLAN-350.md': '# PLAN-350\n\n## Expected Surface\n\n- Also adds `test/gamma/**`\n',
 }
-MODULES = ('test/alpha/test_one.py', 'test/orphan/test_two_a.py')
+MODULES = (
+    'test/alpha/test_one.py',
+    'test/orphan/test_two_a.py',
+    'test/gamma/test_three.py',
+)
+
+#: The epic's plan queue. PLAN-350 is the one FINISHED plan, so the ``lifecycle``
+#: section has a real retirement to reproduce; PLAN-300 and PLAN-310 both stay
+#: live, so the ``contested`` population it must not disturb survives beside it.
+#: A section that reproduced only because both populations were empty would
+#: reproduce trivially, which is what this fixture exists to prevent.
+LEDGER = {
+    'PLAN-300': 'staged',
+    'PLAN-310': 'staged',
+    'PLAN-320': 'staged',
+    'PLAN-330': 'staged',
+    'PLAN-340': 'running',
+    'PLAN-350': 'landed',
+}
 
 #: A recorded baseline naming a module the current tree no longer reports, so the
 #: drift section has a non-empty population to reproduce.
@@ -111,6 +132,10 @@ def build_world(root: Path) -> tuple[Path, Path]:
     epic_dir = root / 'epic'
     for name, body in SPECS.items():
         write(epic_dir / 'plans' / name, body)
+    write(
+        epic_dir / 'status.json',
+        json.dumps({'plans': [{'id': pid, 'status': st} for pid, st in LEDGER.items()]}),
+    )
     return epic_dir, repo
 
 
@@ -188,12 +213,21 @@ FIGURES: dict[str, Callable[[dict[str, Any], dict[str, Any]], tuple[Any, Any]]] 
     'disagreements': lambda rep, out: (
         rep['disagreements'],
         [
-            {'path': row['path'], 'verdict': row['verdict'], 'plans': row['plans']}
+            {
+                'path': row['path'],
+                'verdict': row['verdict'],
+                'plans': row['plans'],
+                'retired': row['retired'],
+            }
             for row in out['modules']
             if row['verdict'] in DISAGREEING_VERDICTS
         ],
     ),
     'contested': lambda rep, out: (rep['contested'], out['contested']),
+    'lifecycle': lambda rep, out: (
+        (rep['lifecycle'], rep['lifecycle_plans'], rep['lifecycle_resolved']),
+        (out['lifecycle'], out['lifecycle_plans'], out['lifecycle_resolved']),
+    ),
     'swept': lambda rep, out: (
         (rep['sweep_plans'], rep['sweep_crossings']),
         (out['sweep_plans'], out['sweep_crossings']),
@@ -230,6 +264,8 @@ def test_the_fixture_corpus_populates_every_reproduced_section(run_verb) -> None
     assert report['partition_tally'] and report['attribution_buckets']
     assert report['disagreements']
     assert report['contested']
+    assert report['lifecycle']['available'] is True
+    assert report['lifecycle_plans'] and report['lifecycle_resolved']
     assert report['sweep_plans'] and report['sweep_crossings']
     assert report['baseline_drift_instances']
     assert report['not_derivable_modules'] and report['not_derivable_specs']
@@ -305,7 +341,14 @@ def test_every_shipped_control_group_is_named_in_the_injected_controls_section(
 
 
 def test_the_after_figure_is_the_static_count_its_method_names(tmp_path: Path, monkeypatch) -> None:
-    """Collection would say five; the static method the section declares says three."""
+    """Collection would count the parametrized CASES; the declared method counts DECLARATIONS.
+
+    The rewritten module below declares two tests and collects four, and every
+    other fixture module declares and collects one — so the two methods disagree,
+    and the figure is checked against the one the section names.
+    """
+    declared_in_rewritten = 2
+    expected_after = declared_in_rewritten + (len(MODULES) - 1)
     epic_dir, repo = build_world(tmp_path)
     write(
         repo / MODULES[0],
@@ -323,7 +366,7 @@ def test_the_after_figure_is_the_static_count_its_method_names(tmp_path: Path, m
         )
     )
 
-    assert report['test_count']['after'] == 3
+    assert report['test_count']['after'] == expected_after
     assert report['test_count']['method'] == TEST_COUNT_METHOD
 
 
