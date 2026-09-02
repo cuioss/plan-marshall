@@ -860,9 +860,8 @@ def main() -> int:
             "Walk the plan's clarified-request narrative for explicit mentions of "
             "configured skill_domains and return the matching domains. Single-domain "
             "projects auto-select. A multi-match returns ambiguous=true so the caller "
-            "raises an AskUserQuestion; a no-match resolves silently by over-provisioning "
-            "every offerable domain, except when that union is empty, which retains "
-            "ambiguous=true with reason=no_narrative_match — no LLM fallback applies."
+            "raises an AskUserQuestion; a no-match resolves silently — no LLM fallback "
+            "applies."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,

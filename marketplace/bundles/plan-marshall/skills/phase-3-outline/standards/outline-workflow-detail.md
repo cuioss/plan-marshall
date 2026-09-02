@@ -549,9 +549,11 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ```toon
 status: success
-domains[2]: [plan-marshall-plugin-dev, python]
+domains[2]:
+  - plan-marshall-plugin-dev
+  - python
 domain_count: 2
-skill: pm-plugin-development:ext-outline-workflow
+skill: "pm-plugin-development:ext-outline-workflow"
 source: domain_specific
 resolved_from: plan-marshall-plugin-dev
 ```
@@ -560,7 +562,9 @@ no domain resolves a skill:
 
 ```toon
 status: success
-domains[2]: [python, documentation]
+domains[2]:
+  - python
+  - documentation
 domain_count: 2
 skill: none
 source: generic
@@ -571,12 +575,16 @@ more than one distinct skill competes:
 
 ```toon
 status: success
-domains[2]: [plan-marshall-plugin-dev, java]
+domains[2]:
+  - plan-marshall-plugin-dev
+  - java
 domain_count: 2
 skill: none
 source: generic
 reason: multiple_domain_skills
-competing_skills[2]: [pm-plugin-development:ext-outline-workflow, pm-dev-java:ext-outline-java]
+competing_skills[2]:
+  - "pm-plugin-development:ext-outline-workflow"
+  - "pm-dev-java:ext-outline-java"
 ```
 
 #### 9b: Load Change-Type Instructions
