@@ -1009,12 +1009,7 @@ working-branch prefixes (a flat JSON array of strings, default
 default when the key is absent from marshal.json.
 
 `--field user_language` returns the pinned answer language (default `auto`),
-falling back to the same `DEFAULT_PROJECT` default when the key is absent:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config project get \
-  --field user_language
-```
+falling back to the same `DEFAULT_PROJECT` default when the key is absent.
 
 A `user_language` read from the live `project` block is re-validated at this read
 boundary and refused with `error_type: invalid_value` when it is not a non-empty
@@ -1045,12 +1040,7 @@ negative.
 the user in — no tag grammar is enforced, so `de`, `German`, and `pt-BR` are all
 accepted; a non-string or empty value is rejected with
 `error_type: invalid_value`, which is what stops the `true`/`false`/digit
-coercion from persisting a non-string:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config project set \
-  --field user_language --value de
-```
+coercion from persisting a non-string.
 
 ### project pr-decision
 
