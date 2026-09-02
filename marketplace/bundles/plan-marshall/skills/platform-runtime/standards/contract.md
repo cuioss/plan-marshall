@@ -1271,7 +1271,7 @@ Verify platform integration.
 
 #### The per-label value domain of `detail`
 
-The `display` check's `detail` is a `; `-joined list of per-label readings, and the `hook` check's `detail` names the settings file(s) the entry was found in. Both report a surface against a **three-value** domain, because a surface can be installed in `.claude/settings.json`, in `.claude/settings.local.json`, in both, or in neither:
+The `display` check's `detail` is a `; `-joined list of per-label readings. Each reading reports its surface against a **three-value** domain, because a surface can be installed in `.claude/settings.json`, in `.claude/settings.local.json`, in both, or in neither:
 
 ```text
 <label>: present      — the surface is installed in exactly one settings file
@@ -1280,6 +1280,8 @@ The `display` check's `detail` is a `; `-joined list of per-label readings, and 
 ```
 
 Casing encodes severity. `MISSING` is uppercase because it is the actionable gap and the documented grep target; `present` and `divergence` are lowercase because both report an installed surface.
+
+The `hook` check reports the same four installation states, but its `detail` is **prose naming the settings file(s)**, not a `<label>: <value>` reading — so only `divergence` appears as a literal token there (`SessionStart hook entry: divergence — present in …`). Its absent state reads `missing from both …` in lowercase prose. **The `MISSING` grep target is therefore a `display` guarantee only**; a consumer testing the `hook` check for an absent entry must branch on `healthy: false`, never on a text scan.
 
 `divergence` is **non-fatal and report-only**. It never contributes to a check's `healthy` value and therefore never reaches the `display` check's fail-closed gate — the `error: display_unhealthy` refusal is driven by `healthy: false` alone, and a divergent label is by definition installed. The `hook` check likewise stays `healthy: true` for a dual-homed entry. This is deliberate: consumers branch on the returned `status`, so a divergence that flipped the verdict would route an already-installed project into an install prompt. Nothing in the runtime repairs, migrates, or rewrites a dual-homed install; the report is the whole remedy.
 
