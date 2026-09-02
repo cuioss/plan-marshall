@@ -75,18 +75,26 @@ class TestGenerateCli:
         assert (out / 'packs' / 'plugin.md').is_file()
         assert all(path.suffix == '.md' for path in (out / 'packs').iterdir())
 
-    def test_the_removed_packs_flag_is_rejected(self, tmp_path):
-        """Negative control for the removal: selection is no longer an argument.
+    def test_the_emitted_set_is_not_narrowable_by_the_caller(self, tmp_path):
+        """Control for the argument-free run: nothing the caller passes narrows it.
 
-        Without this, the argument-free assertions above could not distinguish
-        "the flag is gone" from "the flag exists and was simply not passed".
+        Selection used to be a CLI argument, and the emitted file was whatever
+        the caller asked for. It is not any more: the run emits the whole derived
+        set, so two independent runs land on the identical stems. Without this,
+        the assertions above could not distinguish "the emission is fixed by the
+        derivation" from "this particular invocation happened to emit these".
         """
-        out = tmp_path / 'pr-agent-single-out'
+        first = tmp_path / 'pr-agent-run-one'
+        second = tmp_path / 'pr-agent-run-two'
 
-        result = _run_cli('--target', 'pr-agent', '--output', str(out), '--packs', 'python')
+        one = _run_cli('--target', 'pr-agent', '--output', str(first))
+        two = _run_cli('--target', 'pr-agent', '--output', str(second))
 
-        assert result.returncode == 2
-        assert 'unrecognized arguments' in (result.stderr + result.stdout)
+        assert one.returncode == 0, one.stderr
+        assert two.returncode == 0, two.stderr
+        stems = sorted(p.stem for p in (first / 'packs').glob('*.md'))
+        assert stems, 'the run emitted no artifact at all'
+        assert stems == sorted(p.stem for p in (second / 'packs').glob('*.md'))
 
     def test_pr_agent_emits_no_repo_local_config(self, tmp_path):
         """The output root holds the artifact set and nothing else."""

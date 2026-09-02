@@ -49,26 +49,26 @@ uv run python marketplace/targets/generate.py --target opencode --output target/
 
 The OpenCode adapter produces output conforming to the OpenCode specification; only the Claude target is validated end-to-end. Adapter implementations register in `TARGET_REGISTRY` (see `marketplace/targets/generate.py`).
 
-=== The `pr-agent` target — a generated, committed configuration
+=== The `pr-agent` target — a published reviewer artifact set
 
-Not every target emits an assistant bundle tree. The `pr-agent` target emits a reviewer configuration: a `.pr_agent.toml` carrying one per-domain instruction pack under `[pr_reviewer].extra_instructions`, read by the org's PR-Agent reviewer.
+Not every target emits an assistant bundle tree. The `pr-agent` target emits a reviewer artifact set: one Markdown artifact per derived review domain under `{output}/packs/`, plus `spine.md` carrying the cross-cutting review charter. The set is published to `cuioss/pr-agent-settings`, where the org's PR-Agent reviewer reads it.
 
 [source,bash]
 ----
-uv run python marketplace/targets/generate.py --target pr-agent --output . --packs python,plugin
+uv run python marketplace/targets/generate.py --target pr-agent --output target/pr-agent
 ----
 
 Three consequences follow from that difference, and all are load-bearing.
 
-**Its output is committed, not gitignored.** `target/claude/` and `target/opencode/` are build artifacts. `.pr_agent.toml` is not: the reviewer resolves it from the repository's DEFAULT BRANCH, so it must be tracked in git. It is nonetheless generated rather than hand-maintained — regenerate it instead of editing it, and a regeneration must reproduce the committed file byte-for-byte.
+**Its output is a build artifact, like every other target's.** `target/pr-agent/packs/` is gitignored exactly as `target/claude/` and `target/opencode/` are; this repository tracks no generated reviewer configuration. That is the fuller alignment with link:../adr/006-Generated-tree_drift_is_gated_at_the_consume_boundary_not_in_CI.adoc[ADR-006]: nothing generated is committed, so generated-tree currency is uniformly a consume-boundary concern rather than a mixture of committed and derived state. `.github/workflows/pr-agent-packs-publish.yml` regenerates the set on merge to `main` and opens the publish pull request.
 
-**One pack may compose several domains, and this repository's does.** `--packs` names the derived domains composed into the single emitted pack. This repository is both a Python codebase and a marketplace-tooling codebase, so its `.pr_agent.toml` carries `python,plugin` — both domains' rules. A selection naming one domain is the one-element case of the same mechanism; a consumer repository whose surface is Java selects `java`. The generated header states the selection and the exact `--packs` command that reproduces the file, because a regenerate line without it would name a command producing a different file and silently narrow the review.
+**The artifact set is orthogonal, and a repository composes by selecting.** A domain artifact carries that domain's part alone, and the charter appears exactly once — in `spine.md`. A repository that is several languages at once names several published artifacts instead of carrying one file that folds them together, so a rule change is published once rather than regenerated into every consumer. The run takes no selection argument: it emits the whole derived set, and the generated header names the argument-free command that reproduces it.
 
-**The generic bundle-tree post-emit steps are gated off for it.** The CLI stamps the deterministic version into every bundle `plugin.json` and emits a `dist-manifest.json` at each output root. Both are bundle-tree semantics and would be wrong artifacts in a reviewer-config directory, so `TargetBase` declares an `emits_bundle_tree` property (default `true`) that this target overrides to `false`. The gate is not optional: `--target all` reaches that path for every registered target.
+**The generic bundle-tree post-emit steps are gated off for it.** The CLI stamps the deterministic version into every bundle `plugin.json` and emits a `dist-manifest.json` at each output root. Both are bundle-tree semantics and would be wrong artifacts in a reviewer-artifact directory, so `TargetBase` declares an `emits_bundle_tree` property (default `true`) that this target overrides to `false`. The gate is not optional: `--target all` reaches that path for every registered target.
 
-The pack composition — the derived domain set, the cross-cutting spine, the ten-category ceiling that composition holds by grouping rather than widening, and the verbatim substantiation and anti-fabrication clauses — is documented in link:../../marketplace/targets/README.md[`marketplace/targets/README.md`] § PR-Agent target.
+The emission rules — the derived domain set, the spine that carries the charter once, the two-part category budget, and the verbatim substantiation and anti-fabrication clauses — are documented in link:../../marketplace/targets/README.md[`marketplace/targets/README.md`] § PR-Agent target.
 
-A repo-root reviewer descriptor is recognized by the change-footprint classifier as owner-less infrastructure config, so it classifies `config` rather than `unknown`; see link:../../marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md[`decision-rules.md`] § "Owner-less recognition (no build owner)".
+A repo-root reviewer descriptor is recognized by the change-footprint classifier as owner-less infrastructure config, so it classifies `config` rather than `unknown`; see link:../../marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md[`decision-rules.md`] § "Owner-less recognition (no build owner)". That classification governs the basename family and is unchanged by this repository carrying no such file of its own.
 
 == Deterministic Versioning and Staleness Signaling
 
