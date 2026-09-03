@@ -4,12 +4,8 @@
 
 Walks the plan's clarified-request narrative for explicit mentions of
 configured skill_domains (or their bundle aliases) and returns the SET of
-matching domains. The two inclusion legs are not equal evidence: ``file_globs``
-fires because the plan's OWN files matched, so it is evidence about this plan,
-while ``always_on`` is a standing project-wide inclusion that says nothing about
-any particular plan. Only the plan-specific leg can resolve a zero-match plan;
-an always_on-only union leaves it over-provisioned. The composition contract —
-the merge legs and the exception to them — is documented in
+matching domains. The composition contract — the merge legs, why they are not
+equal evidence, and the exception to them — is documented in
 ``standards/skill-domains.md`` § Domain Inclusion.
 
 The file signal feeding the ``file_globs`` leg is ``--affected-files`` when
