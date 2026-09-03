@@ -275,12 +275,33 @@ def _strip_template_suffix(path: str) -> str:
 
 
 # record-step contract. The execution log records per-step execution outcome
-# plus token attribution into a new ``execution_log[]`` section of the
-# manifest, written by the ``record-step`` subcommand. Phases are the bare
-# phase keys the orchestrator emits at step-dispatch time; outcomes name
-# whether the step ran, was skipped, or errored.
+# plus token attribution into the ``execution_log[]`` section of the manifest,
+# written by the ``record-step`` subcommand. Phases are the bare phase keys the
+# orchestrator emits at step-dispatch time.
 VALID_RECORD_PHASES = ('5-execute', '6-finalize')
-VALID_RECORD_OUTCOMES = ('executed', 'skipped', 'error')
+
+# The outcome vocabulary names WHICH SITUATION the row records, and each value
+# is a distinct one:
+#
+#   executed   — the step ran and completed.
+#   skipped    — the step did not run (a re-entry skip, a signal-gate skip).
+#   loop_back  — a PRODUCTIVE non-completion: the step examined its surface,
+#                filed real findings and handed control back. Its dispatcher
+#                records `mark-step-done --outcome loop_back`, and the dispatch
+#                ledger already stamps `returned_with_findings` for it.
+#   failed     — the step RAN CLEANLY and self-assessed not-clean (a red gate).
+#                The dispatch did not raise; the verdict is negative.
+#   error      — the DISPATCH itself raised, timed out, or was cut short. This
+#                value is reserved for that case and for nothing else.
+#
+# ⚠ `loop_back` and `failed` both used to be recorded as `error`, which made the
+# ledger say that the more thoroughly a gate worked, the worse its plan looked:
+# any archive-wide analysis counting `error` mis-graded every multi-round
+# self-review as a defect. The corruption was silent, cumulative, and lived in
+# the archive — so the fix is a vocabulary that a reader can partition, not a
+# convention a reader has to know. `manifest-schema.md` § "execution_log[]"
+# states the same partition for a reader who has only the file.
+VALID_RECORD_OUTCOMES = ('executed', 'skipped', 'loop_back', 'failed', 'error')
 EXECUTION_LOG_KEY = 'execution_log'
 
 # The literal an OPTIONAL ``execution_log[]`` column carries when its flag was

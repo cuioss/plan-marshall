@@ -2831,6 +2831,14 @@ def summarize_refires(
     skip is precisely the outcome a preserved verdict produces, so folding it in
     would make the instrument unable to measure the thing it exists to measure.
 
+    **The three non-completion outcomes are counted APART.** ``loop_backs`` is a
+    productive non-completion (the step filed findings and handed control back),
+    ``failures`` is a step that ran cleanly and self-assessed not-clean, and
+    ``errors`` is a dispatch that raised. Summing them into one column is what
+    made a thorough gate read as a defective one: the more rounds a self-review
+    filed findings for, the worse any ``error``-counting analysis graded its
+    plan. Each has its own column so a reader never has to infer which happened.
+
     **Each metric sum carries its own coverage.** The three token-attribution
     columns are three-state (see :func:`_refire_metric`), so every step entry and
     the totals publish ``unmeasured_columns`` and ``unrecognised_columns`` beside
@@ -2862,6 +2870,8 @@ def summarize_refires(
                 'firings': 0,
                 'refires': 0,
                 'skipped': 0,
+                'loop_backs': 0,
+                'failures': 0,
                 'errors': 0,
                 'total_tokens': 0,
                 'tool_uses': 0,
@@ -2875,6 +2885,14 @@ def summarize_refires(
             entry['firings'] += 1
         elif outcome == 'skipped':
             entry['skipped'] += 1
+        elif outcome == 'loop_back':
+            # A PRODUCTIVE non-completion, counted in its own column. Folding it
+            # into `errors` is what made a thorough gate's plan look defective —
+            # the more rounds a self-review filed findings for, the worse the
+            # archive graded it.
+            entry['loop_backs'] += 1
+        elif outcome == 'failed':
+            entry['failures'] += 1
         elif outcome == 'error':
             entry['errors'] += 1
         for column in ('total_tokens', 'tool_uses', 'duration_ms'):
@@ -2894,6 +2912,8 @@ def summarize_refires(
         'firings': sum(e['firings'] for e in steps),
         'refires': sum(e['refires'] for e in steps),
         'skipped': sum(e['skipped'] for e in steps),
+        'loop_backs': sum(e['loop_backs'] for e in steps),
+        'failures': sum(e['failures'] for e in steps),
         'errors': sum(e['errors'] for e in steps),
         'total_tokens': sum(e['total_tokens'] for e in steps),
         'tool_uses': sum(e['tool_uses'] for e in steps),

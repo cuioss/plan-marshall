@@ -10,6 +10,9 @@ cover:
 - the three-state token columns: an explicitly-passed value (including ``0``) is a
   MEASURED value, an OMITTED flag records the ``unmeasured`` token, and the two
   differ in the file bytes;
+- the five-way outcome partition — a productive ``loop_back``, a clean run with a
+  negative verdict (``failed``), and a dispatch that raised (``error``) are three
+  different situations and are recorded as three different values;
 - the ordered append-log semantics (re-recording the same step appends another
   row; reading back reflects the recorded sequence);
 - ``execution_log_count`` tracking the running row count;
@@ -22,6 +25,8 @@ Mirrors the tier-2 direct-import + CLI-subprocess split used by the sibling
 """
 
 from argparse import Namespace
+
+import pytest
 
 from conftest import get_script_path, load_script_module, parse_ns, run_script
 
@@ -511,7 +516,128 @@ def test_record_phase_validated_before_manifest_read(plan_context):
 def test_valid_record_enums_are_the_documented_sets(plan_context):
     """Guard the contract constants the record-step subcommand validates against."""
     assert VALID_RECORD_PHASES == ('5-execute', '6-finalize')
-    assert VALID_RECORD_OUTCOMES == ('executed', 'skipped', 'error')
+    assert VALID_RECORD_OUTCOMES == ('executed', 'skipped', 'loop_back', 'failed', 'error')
+
+
+def test_a_productive_loop_back_is_recordable_as_itself(plan_context):
+    """⛔ A findings-bearing return is a loop-back, not an error.
+
+    Before the partition it was recorded as `error`, so every archive-wide
+    analysis that counts errors mis-graded a multi-round self-review as a
+    defect — the more thoroughly a gate worked, the worse its plan looked.
+    """
+    _compose('rec-loop-back')
+
+    result = cmd_record_step(
+        _record_ns(
+            plan_id='rec-loop-back',
+            step_id='pre-submission-self-review',
+            phase='6-finalize',
+            outcome='loop_back',
+        )
+    )
+
+    assert result is not None and result['status'] == 'success'
+    assert result['outcome'] == 'loop_back'
+    assert read_manifest('rec-loop-back')[EXECUTION_LOG_KEY][0]['outcome'] == 'loop_back'
+
+
+def test_a_clean_run_with_a_negative_verdict_is_recordable_as_failed(plan_context):
+    """`failed` stays reachable, and separably so, for a red gate.
+
+    A step that RAN CLEANLY and self-assessed not-clean is neither a productive
+    hand-back nor a dispatch that raised; collapsing it into either loses the
+    one fact the row exists to carry.
+    """
+    _compose('rec-failed')
+
+    result = cmd_record_step(
+        _record_ns(
+            plan_id='rec-failed',
+            step_id='pre-push-quality-gate',
+            phase='6-finalize',
+            outcome='failed',
+        )
+    )
+
+    assert result is not None and result['status'] == 'success'
+    assert result['outcome'] == 'failed'
+
+
+def test_the_five_outcomes_are_pairwise_distinct_on_disk(plan_context):
+    """The partition is a property of the ROWS, not of a reader's convention.
+
+    Recording all five and reading them back is what makes the ledger's own
+    bytes answer "which situation was this" — the question a single collapsed
+    `error` value could not answer at all.
+    """
+    _compose('rec-partition')
+    for outcome in VALID_RECORD_OUTCOMES:
+        cmd_record_step(
+            _record_ns(
+                plan_id='rec-partition',
+                step_id=f'step-{outcome}',
+                phase='6-finalize',
+                outcome=outcome,
+            )
+        )
+
+    rows = read_manifest('rec-partition')[EXECUTION_LOG_KEY]
+
+    assert [row['outcome'] for row in rows] == list(VALID_RECORD_OUTCOMES)
+    assert len({row['outcome'] for row in rows}) == len(VALID_RECORD_OUTCOMES)
+
+
+def test_an_outcome_outside_the_partition_is_still_refused(plan_context):
+    """Widening the vocabulary must not widen it to anything.
+
+    Without this the two additions above would be indistinguishable from
+    dropping the membership check altogether.
+    """
+    _compose('rec-partition-closed')
+
+    result = cmd_record_step(
+        _record_ns(plan_id='rec-partition-closed', step_id='x', outcome='returned_with_findings')
+    )
+
+    assert result is not None
+    assert result['error'] == 'invalid_outcome'
+
+
+@pytest.mark.parametrize('outcome', ['skipped', 'loop_back', 'failed'])
+def test_a_step_outcome_is_representable_in_the_manifest_ledger(plan_context, outcome):
+    """Cross-ledger representability, derived from BOTH parsers rather than asserted.
+
+    A step records its situation on `status.metadata.phase_steps` through
+    `mark-step-done`, and the dispatcher mirrors it into the manifest's
+    `execution_log[]` through `record-step`. If one vocabulary can express a
+    situation the other cannot, the mirror has to collapse it — which is exactly
+    how a productive loop-back became an `error` row in the first place.
+
+    Acceptance is probed through each script's OWN parser and handler, so this
+    cannot pass against a literal list that has drifted from either surface.
+    `done` is deliberately excluded: it maps to `executed`, the one value the
+    two vocabularies name differently by design.
+    """
+    parse_ns(
+        'plan-marshall',
+        'manage-status',
+        'manage-status.py',
+        'mark-step-done',
+        '--plan-id', 'rec-cross-ledger',
+        '--phase', '6-finalize',
+        '--step', 'a-step',
+        '--outcome', outcome,
+        register=False,
+    )
+
+    _compose(f'rec-cross-{outcome}')
+    result = cmd_record_step(
+        _record_ns(plan_id=f'rec-cross-{outcome}', step_id='a-step', phase='6-finalize', outcome=outcome)
+    )
+
+    assert result is not None and result['status'] == 'success'
+    assert result['outcome'] == outcome
 
 
 # =============================================================================

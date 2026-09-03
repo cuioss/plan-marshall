@@ -20,7 +20,7 @@ implements:
 
 Pure executor for the `pre-submission-self-review` finalize step. Catches the class of structural defects that PR-review bots reliably surface but local quality gates systematically miss: missing initialization in symmetric save/restore pairs, regex/glob over-fit, ambiguous user-facing wording, duplicate prose sections covering the same contract, and schema/contract drift.
 
-Outcome bookkeeping (Step 4) now includes finding persistence: every returned finding is written to the plan's `qgate-6-finalize.jsonl` finding store before the step's `--outcome failed` is recorded.
+Outcome bookkeeping (Step 4) now includes finding persistence: every returned finding is written to the plan's `qgate-6-finalize.jsonl` finding store before the step's `--outcome loop_back` is recorded.
 
 ## Exit-code convention for every script call
 
@@ -360,7 +360,9 @@ findings[N]{file,line,defect_class,rationale,cohort_size}:
 
 `cohort_size` is the number of findings in this round sharing that entry's `defect_class` (see § Class-closure obligation). Every entry carries it, including a genuine cohort of one — an omitted field would be indistinguishable from a cohort whose other members were never looked for.
 
-`status: success` regardless of findings count — the workflow itself succeeds at producing the structural-review verdict; the caller's manifest-step orchestration translates a non-empty `findings` list into the manifest step's `--outcome failed` per the gating-step convention. Empty `findings` → caller marks `--outcome done`.
+`status: success` regardless of findings count — the workflow itself succeeds at producing the structural-review verdict; the caller's manifest-step orchestration translates a non-empty `findings` list into the manifest step's `--outcome loop_back --loop-back-target 6-finalize`. Empty `findings` → caller marks `--outcome done`.
+
+⚠ **A findings-bearing return is a loop-back, not a failure.** This step examined its surface, filed real findings and handed control back — a PRODUCTIVE non-completion. Recording it as `failed` made every archive-wide analysis that counts failures mis-grade a thorough round as a defect, so *the more findings this gate legitimately raised, the worse its plan looked*. `loop_back` is also what makes the dispatch ledger's `returned_with_findings` stamp correct **by construction** rather than by coincidence — that stamp's documented trigger is precisely a `mark-step-done` recording `outcome: loop_back`. The contrast to keep is `pre-push-quality-gate`, which records `failed`: a red build gate RAN CLEANLY and self-assessed not-clean, which is a negative verdict rather than a productive hand-back. See [`../../manage-execution-manifest/standards/manifest-schema.md`](../../manage-execution-manifest/standards/manifest-schema.md) § "Which situation each `outcome` value means".
 
 `display_detail` shape. A clean run has TWO disjoint verdicts — an undifferentiated single clean string is prohibited, because "nothing was there to check" and "everything checked passed" are different pieces of information and an operator reading one as the other draws the wrong conclusion about review coverage. Let `{N}` be the surfacer's emitted `counts.total`. Which lists that sum covers is the surfacer's contract — see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) § Output Schema — and is deliberately not restated here:
 
@@ -411,7 +413,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qg
   --component pm-plugin-development:ext-self-review-plan-marshall --severity warning
 ```
 
-Then resolve the worktree HEAD SHA — the same call and the same `{worktree_path}` as Branch A — and record the failed outcome carrying it:
+Then resolve the worktree HEAD SHA — the same call and the same `{worktree_path}` as Branch A — and record the loop-back outcome carrying it:
 
 ```bash
 git -C {worktree_path} rev-parse HEAD
@@ -419,14 +421,17 @@ git -C {worktree_path} rev-parse HEAD
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome failed \
+  --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome loop_back \
+  --loop-back-target 6-finalize \
   --display-detail "{display_detail_from_workflow}" \
   --head-at-completion {sha}
 ```
 
-Branch A (empty findings) persists nothing — there are no findings to write. Branch B forwards `--head-at-completion` even though the dispatcher retries `failed` records unconditionally: the SHA carries no *retry* decision value, but it IS the delta anchor the NEXT round reads in Step 1. A `failed` record written without it leaves the following round with no anchor, which silently degrades that round to a full sweep — the exact re-sweep this scoping exists to remove. The anchor is written on both terminal branches for that reason, not for the dispatcher's benefit.
+`--loop-back-target 6-finalize` is the inline-fixable tier: the findings are addressed on this branch and the finalize step loop is re-entered, with no phase-5-execute re-dispatch. The target is not a free choice — `5-execute` is the fix-task-required tier, and these findings are amendments to the diff in hand.
 
-The dispatcher's existing failure handling halts the phase on `outcome=failed`, matching the gating-step contract used by `pre-push-quality-gate`. The operator must address every finding (amend the diff: rename, tighten regex, rewrite wording, delete duplicate section, fix contract drift), re-run the step, and only then advance to `push`.
+Branch A (empty findings) persists nothing — there are no findings to write. Branch B forwards `--head-at-completion` even though the dispatcher re-fires `loop_back` records unconditionally: the SHA carries no *re-fire* decision value, but it IS the delta anchor the NEXT round reads in Step 1. A record written without it leaves the following round with no anchor, which silently degrades that round to a full sweep — the exact re-sweep this scoping exists to remove. The anchor is written on both terminal branches for that reason, not for the dispatcher's benefit.
+
+The dispatcher's loop-back continuation hook admits the round under `loop_back_without_asking` and the `max_iterations` ceiling, so the round loop is bounded exactly as before. The operator must address every finding (amend the diff: rename, tighten regex, rewrite wording, delete duplicate section, fix contract drift), re-run the step, and only then advance to `push`.
 
 ## Round-loop termination: converged, self-seeding, and out of budget
 
@@ -439,7 +444,7 @@ This step re-fires per round (§ HEAD-dependency) and closes only on a clean pas
 
 **Resolve a self-seeding finding by deletion, not correction.** The convergent action on a self-seeding finding is to DELETE the over-claiming prose — the stale count, the duplicated section, the claim phrased wider than the code — rather than rewrite it. Rewriting authors the next round's finding; deletion ends the class. This is the only resolution that lets the doc-claim half reach a clean pass, and it is the same lesson the round-loop level inherits from the individual claim.
 
-**How this is recorded — no new outcome, an existing channel.** D5 introduces NO new `mark-step-done` outcome: a self-seeding round still has findings, so it records `--outcome failed` through Step 4 Branch B exactly as any non-clean round does, and the dispatcher re-fires it. The difference is entirely in RESOLUTION and REPORTING, not in the outcome enum. Resolution is deletion (above), so the re-fired round converges instead of re-seeding. Reporting is a `manage-logging decision --level WARNING` naming the round self-seeding — the same deviation-logging channel this step already uses for its gate decisions (Step 1b) — so the classification is an auditable record rather than merely narrative, and an *out of budget* close (below) is a distinct WARNING from a *converged* one. "Reported as self-seeding rather than counted as an ordinary non-clean round" is therefore precise: the round's `failed` record is unchanged, but its findings are deleted (not corrected) and its nature is logged, so it is neither mistaken for clean nor fed back into the correct-and-re-run cycle that spirals.
+**How this is recorded — no new outcome, an existing channel.** A self-seeding round introduces NO outcome of its own: it still has findings, so it records `--outcome loop_back` through Step 4 Branch B exactly as any non-clean round does, and the dispatcher re-fires it. The difference is entirely in RESOLUTION and REPORTING, not in the outcome enum. Resolution is deletion (above), so the re-fired round converges instead of re-seeding. Reporting is a `manage-logging decision --level WARNING` naming the round self-seeding — the same deviation-logging channel this step already uses for its gate decisions (Step 1b) — so the classification is an auditable record rather than merely narrative, and an *out of budget* close (below) is a distinct WARNING from a *converged* one. "Reported as self-seeding rather than counted as an ordinary non-clean round" is therefore precise: the round's loop-back record is unchanged, but its findings are deleted (not corrected) and its nature is logged, so it is neither mistaken for clean nor fed back into the correct-and-re-run cycle that spirals.
 
 **The termination criterion — converged versus out of budget.** These are two DIFFERENT closes and a later reader MUST NOT collapse them:
 
