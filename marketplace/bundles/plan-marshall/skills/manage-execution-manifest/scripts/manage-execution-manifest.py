@@ -1867,6 +1867,21 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
                 f'composing on the supplied --plan-change-type={supplied_change_type!r}',
             )
     elif settled_change_type != supplied_change_type:
+        # The refusal is a reconciliation OUTCOME and belongs in the decision log
+        # beside the accepting one. Without this line the refusal returned an error
+        # to its caller and left no trace in the plan's own record, so a compose that
+        # never wrote a manifest was indistinguishable from one that was never
+        # attempted. The shared ``change_type reconciliation — `` prefix is what puts
+        # it in front of the retrospective's compose-tag filter, so both outcomes of
+        # the same decision are read back by one consumer.
+        _emit_decision_log(
+            plan_id,
+            '(plan-marshall:manage-execution-manifest:compose) change_type reconciliation — '
+            f'REFUSED: settled status.metadata.change_type={settled_change_type!r} '
+            f'(the PLAN scope) contradicts the supplied '
+            f'--plan-change-type={supplied_change_type!r} (a DELIVERABLE-scoped value); '
+            'returning change_type_scope_conflict and writing no manifest',
+        )
         return {
             'status': 'error',
             'plan_id': plan_id,
