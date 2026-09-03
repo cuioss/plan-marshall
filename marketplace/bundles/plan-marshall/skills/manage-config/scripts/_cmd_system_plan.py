@@ -28,6 +28,7 @@ from _config_defaults import (
     validate_plugin_cache_retention,
     validate_pr_compact_max_changed_files,
     validate_pr_strategy,
+    validate_user_language,
 )
 
 # Retention fields carrying a numeric contract beyond the whitelist check.
@@ -100,9 +101,12 @@ def cmd_system(args) -> dict:
 def cmd_project(args) -> dict:
     """Handle project noun.
 
-    Exposes the project-level `project.*` block in marshal.json
-    (currently `default_base_branch`). On a fresh marshal.json that lacks
-    the `project` block, `get` returns the value from
+    Exposes the project-level `project.*` block in marshal.json — the admitted
+    field set is exactly the :data:`DEFAULT_PROJECT` keys, enforced on BOTH
+    verbs through the one
+    :func:`reject_unknown_provisioning_field` seam, so `get` and `set` cannot
+    give two different answers to "what is a project field?". On a fresh
+    marshal.json that lacks the `project` block, `get` returns the value from
     :data:`DEFAULT_PROJECT` so consumers always observe the canonical
     default — mirroring the implicit-default semantics of the other
     `DEFAULT_PLAN_*` blocks.
@@ -123,11 +127,38 @@ def cmd_project(args) -> dict:
 
     if args.verb == 'get':
         field = args.field
+        # Fail-closed provisioning-READ guard (ADR-009) — the read half of the
+        # boundary whose write half the `set` arm below already guards, routed
+        # through the SAME seam so one predicate answers "what is a project
+        # field?" for both verbs. Membership is checked BEFORE the live block is
+        # consulted, and that order is the whole point: marshal.json is
+        # operator-editable and `sync-defaults` preserves an already-present key
+        # without inspecting it, so a retired or typo'd key persisted in the
+        # live `project` block would otherwise read back as a success that `set`
+        # would have refused for the same name.
+        rejection = reject_unknown_provisioning_field(field, DEFAULT_PROJECT, 'project')
+        if rejection is not None:
+            return rejection
         if field in project_config:
-            return success_exit({'field': field, 'value': project_config[field]})
-        if field in DEFAULT_PROJECT:
-            return success_exit({'field': field, 'value': DEFAULT_PROJECT[field]})
-        return error_exit(f"Field '{field}' not found in project config", error_type='field_not_found')
+            value = project_config[field]
+            # Re-validate the persisted value at this read boundary — mirroring
+            # the sibling `set` arm and the `pr-decision` verb below. marshal.json
+            # is operator-editable and `sync-defaults` preserves an already-present
+            # key without inspecting its value, so a hand-edited or migrated
+            # non-string survives indefinitely. The language rule resolves anything
+            # other than `auto` as a pinned language, so an unguarded `true` or `42`
+            # would read as a pin; failing loud here is what keeps that off the
+            # rule's input.
+            if field == 'user_language':
+                try:
+                    validate_user_language(value)
+                except ValueError as e:
+                    return error_exit(str(e), error_type='invalid_value')
+            return success_exit({'field': field, 'value': value})
+        # The field is admitted (the guard above proved it) but absent from the
+        # live block — the implicit-default fallback. It needs no value guard:
+        # `get_default_config` already self-validates the seed.
+        return success_exit({'field': field, 'value': DEFAULT_PROJECT[field]})
 
     elif args.verb == 'set':
         field = args.field
@@ -158,8 +189,8 @@ def cmd_project(args) -> dict:
         else:
             value = _coerce_value(args.value)
 
-        # Validate the two PR-batching knobs at this system boundary so an
-        # invalid value returns a status: error rather than persisting garbage.
+        # Validate the knobs carrying a value contract at this system boundary so
+        # an invalid value returns a status: error rather than persisting garbage.
         if field == 'pr_strategy':
             try:
                 validate_pr_strategy(value)
@@ -170,12 +201,18 @@ def cmd_project(args) -> dict:
                 validate_pr_compact_max_changed_files(value)
             except ValueError as e:
                 return error_exit(str(e), error_type='invalid_value')
+        elif field == 'user_language':
+            try:
+                validate_user_language(value)
+            except ValueError as e:
+                return error_exit(str(e), error_type='invalid_value')
 
         # Reject any field not in the project schema before persisting it, via
-        # the shared fail-closed provisioning-write seam (ADR-009). This makes
-        # `set` symmetric with the `get` branch's field_not_found handling: a
-        # typo'd or retired key (e.g. a dead lane knob) is rejected rather than
-        # silently written to marshal.json where no reader would ever consult it.
+        # the shared fail-closed provisioning-write seam (ADR-009). `get` routes
+        # the same seam before it consults the live block, so both verbs answer
+        # "what is a project field?" identically: a typo'd or retired key (e.g. a
+        # dead lane knob) is rejected rather than silently written to marshal.json
+        # where no reader would ever consult it.
         # DEFAULT_PROJECT is the canonical field whitelist. Routing through the
         # single seam (rather than an inline check) is what encodes the invariant
         # once — the same guard `cmd_system retention set` now uses.

@@ -31,6 +31,8 @@ A plain-English index of the rules below. Each line is a memory hook that links 
 | Ask the architecture inventory before reaching for Glob/Grep. | [Structured queries first](#structured-queries-first) |
 | Quote script subcommands/flags verbatim; never paraphrase a verb. | [Never invent script subcommands — recurrence signatures](#never-invent-script-subcommands--recurrence-signatures) |
 
+**Talking to the user** is governed by [`user-communication.md`](user-communication.md), the sibling standard that loads unconditionally alongside this one. Its rules are not restated or summarised here — read it there.
+
 ## Core Development Principles
 
 ### Boy Scout Rule
