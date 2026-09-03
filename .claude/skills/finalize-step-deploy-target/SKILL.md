@@ -20,8 +20,8 @@ output tree at `target/claude/`. The generator itself handles the
 no-op case (when output already matches sources, the equality engine
 inside the `claude` target short-circuits the per-bundle write), so
 this step has **no skip detector**: it always runs, the generator
-always returns a status, and this executor records the outcome from
-that status.
+always exits with an outcome code, and this executor records the
+outcome from that exit code.
 
 The emitted tree contains both per-bundle artifacts
 (`target/claude/{bundle}/`, including each bundle's regenerated
@@ -80,34 +80,53 @@ generator is a fast, deterministic Python script.
 ### 1. Invoke the generator
 
 ```bash
-uv run python marketplace/targets/generate.py --target claude --output target/claude
+./pw generate-claude
 ```
 
-The script returns a TOON document on stdout describing the run.
-Capture exit code and stdout.
+Always go through the wrapper: `uv` is installed only into the
+project-local `.pyprojectx/` tree and is not on `PATH`, so a bare
+`uv run …` exits 127 outside it, and a bare `python3
+marketplace/targets/generate.py` fails with `ModuleNotFoundError: No
+module named 'yaml'` because PyYAML resolves into the uv-managed venv.
+The `generate-claude` alias in `pyproject.toml` carries the
+`--target claude --output target/claude` arguments.
 
-### 2. Parse the result
+Capture the exit code, stdout AND stderr. The generator reports its
+outcome through the **exit code**, writes a human-readable per-target
+summary to **stdout**, and writes every diagnostic to **stderr**. It
+emits no machine-readable envelope, so there is nothing on stdout to
+parse structurally.
 
-| Field | Meaning |
-|-------|---------|
-| `status: success` | Generation completed; record `outcome=done` and use `emitted_count` for the display detail |
-| `status: error` | Generation failed; record `outcome=failed` and surface the `error` field in `display_detail` |
+### 2. Read the result
+
+| Signal | Stream | Meaning |
+|--------|--------|---------|
+| exit code `0` | process status | Generation completed; record `outcome=done` |
+| exit code `2` | process status | Generation failed; record `outcome=failed` |
+| `claude: produced {N} entries` | stdout | `{N}` is the entry count for the display detail |
+| `claude: stamped version {V} into {M} bundle plugin.json; emitted dist-manifest.json` | stdout | The post-generation stamping summary |
+| `error: {text}` | stderr | The failure text to surface on `outcome=failed` |
+| `warning: {text}` | stderr | A tolerated degradation (an unresolvable fingerprint in a partial marketplace checkout); does NOT change the outcome |
+
+The exit code is the ONLY outcome signal — a run that failed for one
+target still prints that target's earlier stdout lines, so a `produced`
+line is not evidence of success on its own.
 
 ### 3. Mark step complete
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   mark-step-done --plan-id {plan_id} --phase 6-finalize \
   --step project:finalize-step-deploy-target \
   --outcome {done|failed} \
   --display-detail "{N} files emitted to target/claude/"
 ```
 
-On `status: success`, `{N}` is the integer from `emitted_count` and the
-`display_detail` reads `"{N} files emitted to target/claude/"`. On
-`status: error`, set `--outcome failed` and surface the generator's
-`error` field verbatim in `--display-detail` so the renderer shows the
-underlying failure.
+On exit code `0`, `{N}` is the integer read from the `claude: produced
+{N} entries` line and the `display_detail` reads `"{N} files emitted to
+target/claude/"`. On exit code `2`, set `--outcome failed` and surface
+the generator's `error: …` stderr line verbatim in `--display-detail` so
+the renderer shows the underlying failure.
 
 ## Why "always run" instead of a skip detector
 

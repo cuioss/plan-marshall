@@ -26,15 +26,21 @@ Usage:
 import json
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NamedTuple
 
 __version__ = '3.0'
 
 __all__ = [
+    'SimpleArrayLine',
     'ToonParseError',
+    'block_scalar_body_continues',
+    'block_scalar_header_indent',
+    'classify_simple_array_line',
+    'list_item_min_indent',
     'parse_toon',
     'parse_toon_table',
     'serialize_toon',
+    'value_needs_quoting',
 ]
 
 
@@ -219,6 +225,72 @@ def _parse_uniform_array(ctx: ParseContext, count: int, fields: list[str], min_i
     return result
 
 
+def list_item_min_indent(header_indent: int) -> int:
+    """Report the minimum indent a row must carry to belong to an array header.
+
+    A top-level header (indent 0) admits rows at column 0 as well as indented
+    ones: a document whose whole body sits at column 0 has no shallower level
+    for a row to fall out of, so requiring a deeper row would reject the shape
+    ``parse_toon_table``'s own documented example writes. A nested header admits
+    rows at its own indent or deeper.
+
+    Exported because it is a BOUNDARY, and any second reader that must agree
+    with ``parse_toon`` about which rows belong to a list has to derive it from
+    here rather than restate it — two readers deriving one boundary two ways is
+    how a row becomes visible to one and invisible to the other.
+
+    Args:
+        header_indent: Leading-space count of the ``key[N]:`` header line.
+
+    Returns:
+        The minimum leading-space count an item row may carry.
+    """
+    return 0 if header_indent == 0 else header_indent
+
+
+class SimpleArrayLine(NamedTuple):
+    """One line's role while walking a simple-array body.
+
+    Attributes:
+        kind: ``item`` when the line is a list row, ``skip`` when it belongs to
+            the body but carries no value (blank line, comment, malformed
+            marker), ``end`` when the array has closed before this line.
+        value: The raw row text after the ``- `` marker, still quoted exactly as
+            written; empty unless ``kind`` is ``item``.
+    """
+
+    kind: str
+    value: str
+
+
+def classify_simple_array_line(line: str, min_indent: int) -> SimpleArrayLine:
+    """Decide whether a line is a simple-array row, ignorable, or past the array's end.
+
+    This is the single membership rule for a ``key[N]:`` list body. It is
+    exported alongside ``list_item_min_indent`` so that a caller which has to
+    walk the same body for its own purposes — collecting the raw, still-quoted
+    row texts before ``parse_toon`` unquotes them, say — reads the identical
+    boundary instead of approximating it.
+
+    Args:
+        line: The raw line, indentation included.
+        min_indent: The array's minimum row indent, from ``list_item_min_indent``.
+
+    Returns:
+        The line's role, with the raw row text when it is an item.
+    """
+    content = line.strip()
+    if not content or content.startswith('#'):
+        return SimpleArrayLine('skip', '')
+    if _get_indent(line) < min_indent:
+        return SimpleArrayLine('end', '')
+    if content.startswith('- '):
+        return SimpleArrayLine('item', content[2:])
+    if not content.startswith('-'):
+        return SimpleArrayLine('end', '')
+    return SimpleArrayLine('skip', '')
+
+
 def _parse_simple_array(ctx: ParseContext, min_indent: int) -> list[Any]:
     """Parse a simple list with - markers.
 
@@ -229,36 +301,66 @@ def _parse_simple_array(ctx: ParseContext, min_indent: int) -> list[Any]:
     result = []
 
     while ctx.index < len(ctx.lines):
-        line = ctx.lines[ctx.index]
-
-        # Skip empty lines
-        if not line.strip():
-            ctx.index += 1
-            continue
-
-        # Skip comments
-        if line.strip().startswith('#'):
-            ctx.index += 1
-            continue
-
-        indent = _get_indent(line)
-        content = line.strip()
-
-        # Check if we've exited the array (less indentation)
-        if indent < min_indent and content:
+        classified = classify_simple_array_line(ctx.lines[ctx.index], min_indent)
+        if classified.kind == 'end':
             break
-
-        # Check for list item marker
-        if content.startswith('- '):
-            result.append(_parse_value(content[2:]))
-            ctx.index += 1
-        elif indent >= min_indent and not content.startswith('-'):
-            # Non-list-item at same or greater indent = end of array
-            break
-        else:
-            ctx.index += 1
+        if classified.kind == 'item':
+            result.append(_parse_value(classified.value))
+        ctx.index += 1
 
     return result
+
+
+def block_scalar_header_indent(line: str) -> int | None:
+    """Report the header indent when ``line`` opens a block scalar, else ``None``.
+
+    The rule is the one ``_parse_object`` applies and nothing narrower: take the
+    text up to the FIRST colon as the key, and the block opens when everything
+    after that colon is exactly the ``|`` marker. The key is therefore ANY text —
+    ``task.name: |`` and ``a b c: |`` open a block scalar just as ``description: |``
+    does — because the parser never constrains it. Blank and comment lines are
+    excluded for the same reason: ``_parse_object`` skips them before it ever
+    looks for a key.
+
+    Exported because it is a BOUNDARY. Any second reader that must agree with
+    ``parse_toon`` about where opaque prose begins has to derive it from here
+    rather than restate it — a stricter key class here and a permissive one in
+    the parser is how a block's prose body becomes structure to one reader and
+    text to the other.
+
+    Args:
+        line: The raw line, indentation included.
+
+    Returns:
+        The header's leading-space count when the line opens a block scalar,
+        ``None`` otherwise.
+    """
+    content = line.strip()
+    if not content or content.startswith('#') or ':' not in content:
+        return None
+    if content[content.index(':') + 1 :].strip() != '|':
+        return None
+    return _get_indent(line)
+
+
+def block_scalar_body_continues(line: str, header_indent: int) -> bool:
+    """Report whether ``line`` still belongs to the body of a block scalar.
+
+    The body runs while lines are blank or indented deeper than the ``key: |``
+    header, and closes at the first non-blank line indented at or outside it.
+
+    Exported for the same reason as ``block_scalar_header_indent``: the extent of
+    a block scalar is a boundary two readers must agree on, so both consume this
+    predicate instead of each deriving it.
+
+    Args:
+        line: The raw line, indentation included.
+        header_indent: Leading-space count of the ``key: |`` header line.
+
+    Returns:
+        ``True`` while the line is part of the body, ``False`` at its end.
+    """
+    return not line.strip() or _get_indent(line) > header_indent
 
 
 def _parse_multiline_value(ctx: ParseContext, base_indent: int) -> str:
@@ -267,19 +369,14 @@ def _parse_multiline_value(ctx: ParseContext, base_indent: int) -> str:
 
     while ctx.index < len(ctx.lines):
         line = ctx.lines[ctx.index]
-        indent = _get_indent(line)
+        if not block_scalar_body_continues(line, base_indent):
+            break
 
         # Empty line within multi-line is preserved
         if not line.strip():
             lines.append('')
-            ctx.index += 1
-            continue
-
-        # Check if we're still in the multi-line value
-        if indent <= base_indent and line.strip():
-            break
-
-        lines.append(line[base_indent + 2 :] if len(line) > base_indent + 2 else line.strip())
+        else:
+            lines.append(line[base_indent + 2 :] if len(line) > base_indent + 2 else line.strip())
         ctx.index += 1
 
     return '\n'.join(lines).strip()
@@ -324,9 +421,7 @@ def _parse_object(ctx: ParseContext, base_indent: int) -> dict[str, Any]:
                 count = int(array_match.group(2))
                 fields = [f.strip() for f in array_match.group(3).split(',')]
                 ctx.index += 1
-                # Array items should be at current indent level (for top-level) or indented
-                min_array_indent = 0 if indent == 0 else indent
-                result[key] = _parse_uniform_array(ctx, count, fields, min_array_indent)
+                result[key] = _parse_uniform_array(ctx, count, fields, list_item_min_indent(indent))
                 continue
 
             # Check for simple array pattern: key[N]:
@@ -335,9 +430,7 @@ def _parse_object(ctx: ParseContext, base_indent: int) -> dict[str, Any]:
             if simple_array_match:
                 key = simple_array_match.group(1)
                 ctx.index += 1
-                # Array items should be at current indent level (for top-level) or indented
-                min_array_indent = 0 if indent == 0 else indent
-                result[key] = _parse_simple_array(ctx, min_array_indent)
+                result[key] = _parse_simple_array(ctx, list_item_min_indent(indent))
                 continue
 
             # Regular key: value
@@ -347,8 +440,10 @@ def _parse_object(ctx: ParseContext, base_indent: int) -> dict[str, Any]:
 
             ctx.index += 1
 
-            # Check for multi-line value
-            if value_part == '|':
+            # Check for multi-line value — the block-scalar rule lives in
+            # ``block_scalar_header_indent`` so second readers consume it rather
+            # than approximating it.
+            if block_scalar_header_indent(line) is not None:
                 result[key] = _parse_multiline_value(ctx, indent)
             # Check for nested object (no value after colon)
             elif not value_part:
@@ -453,6 +548,41 @@ def parse_toon_table(content: str, key: str, *, null_markers: set[str] | None = 
     return rows
 
 
+def value_needs_quoting(value: str, table_separator: str = ',') -> bool:
+    """Report whether ``serialize_toon`` would wrap ``value`` in outer double-quotes.
+
+    This is the serializer's own quoting decision, exposed as a named predicate so
+    consumers can discriminate a quote the serializer was OBLIGED to add from a
+    quote a human added by hand. Re-deriving the rule at a call site would
+    duplicate the decision and let the two copies drift; consult this function
+    instead.
+
+    Args:
+        value: The raw (unquoted) string the serializer is about to emit.
+        table_separator: The separator in force for the current uniform-array
+            table (``','`` for CSV rows, ``'\\t'`` for TSV rows). A value
+            containing the active separator must be quoted or it would split the
+            row.
+
+    Returns:
+        ``True`` when the value must be quoted, ``False`` when it may be emitted
+        bare.
+    """
+    return bool(
+        table_separator in value
+        or ',' in value
+        or ':' in value
+        or '\n' in value
+        or '"' in value
+        or value.startswith('#')
+        or value.startswith('- ')
+        or value in ('true', 'false', 'null', '')
+        or re.match(r'^-?\d+$', value)
+        or re.match(r'^-?\d+\.\d+$', value)
+        or re.match(r'^\d+%$', value)
+    )
+
+
 def _serialize_value(value: Any, table_separator: str = ',') -> str:
     """Serialize a Python value to TOON format.
 
@@ -471,20 +601,7 @@ def _serialize_value(value: Any, table_separator: str = ',') -> str:
         return str(value)
     if isinstance(value, str):
         # Quote if contains separator, special characters, or would be misinterpreted
-        needs_quoting = (
-            table_separator in value
-            or ',' in value
-            or ':' in value
-            or '\n' in value
-            or '"' in value
-            or value.startswith('#')
-            or value.startswith('- ')
-            or value in ('true', 'false', 'null', '')
-            or re.match(r'^-?\d+$', value)
-            or re.match(r'^-?\d+\.\d+$', value)
-            or re.match(r'^\d+%$', value)
-        )
-        if needs_quoting:
+        if value_needs_quoting(value, table_separator):
             escaped = value.replace('"', '\\"')
             return f'"{escaped}"'
         return value

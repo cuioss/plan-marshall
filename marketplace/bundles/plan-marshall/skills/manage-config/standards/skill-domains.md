@@ -349,7 +349,17 @@ Both keys are **absent by default** — no seed into `DEFAULT_SYSTEM_DOMAIN` / `
 
 The domain detector (`manage-config domain-detect`) composes the plan's domain set as the union `{detector/prompt selections} ∪ always_on_set ∪ glob_matched_set`: the narrative/override/multiSelect detector leg, the `always_on` leg, and the `file_globs` leg (evaluated against the request narrative's path tokens at init, and the real `affected_files` at refine).
 
-When all three legs come up empty — no narrative match, no `always_on` domain, no glob hit — the detector over-provisions the whole offerable domain set (`reason=over_provisioned_resolve`) and returns `ambiguous: false`, rather than prompting over a candidate list that already holds every offerable domain. Over-provisioning is bounded by the offerable set itself, so a project whose `skill_domains` carries no dict-valued non-`system` entry has nothing to over-provision and still returns the empty set with `ambiguous: true`.
+**The two inclusion legs merge equally, but they are not equal evidence.** `always_on` is a PROJECT-level signal — it is true for every plan in the project by configuration, so it carries no information about which domains the plan in front of the detector actually touches. `file_globs` is PLAN-level evidence — it fires only because this plan's own file signal matched the glob. The governing rule follows: on a zero narrative match, only plan-level evidence suppresses over-provisioning. A `file_globs` hit narrows the answer to the inclusion union; an `always_on`-only union does not.
+
+The zero-narrative-match branch therefore resolves three ways:
+
+| Inclusion state on a zero narrative match | `domains` | `reason` |
+|-------------------------------------------|-----------|----------|
+| `file_globs` matched (with or without `always_on`) | the inclusion union | `inclusion_only_resolve` |
+| `always_on` only, no glob hit | the whole offerable set, retaining the `always_on` domains | `over_provisioned_always_on_only` |
+| all three legs empty — no narrative match, no `always_on` domain, no glob hit | the whole offerable set | `over_provisioned_resolve` |
+
+All three return `ambiguous: false`, rather than prompting over a candidate list that already holds every offerable domain. Over-provisioning is bounded by the offerable set itself, so a project whose `skill_domains` carries no dict-valued non-`system` entry has nothing to over-provision and still returns the empty set with `ambiguous: true` (`reason=no_narrative_match`).
 
 Set the keys via the `skill-domains set-inclusion` verb (each key is written independently; an omitted flag leaves the persisted value untouched):
 

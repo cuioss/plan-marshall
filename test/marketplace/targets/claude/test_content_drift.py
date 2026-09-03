@@ -142,7 +142,7 @@ def test_on_disk_md_mutation_surfaces_drift_and_names_file(synced_target: tuple[
     assert result.missing_in_target == []
     assert result.orphan_in_target == []
     assert rel in result.summary
-    assert 'generate.py --target claude' in result.summary
+    assert './pw generate-claude' in result.summary
 
 
 def test_source_md_edit_without_reemit_surfaces_drift(synced_target: tuple[Path, Path]):
@@ -212,7 +212,7 @@ def test_missing_target_dir_returns_diagnostic_not_crash(tmp_path: Path):
     assert result.passed is False
     assert result.drifted_files == []
     assert 'not generated' in result.summary
-    assert 'generate.py --target claude' in result.summary
+    assert './pw generate-claude' in result.summary
 
 
 def test_manifest_and_marker_files_are_out_of_scope(synced_target: tuple[Path, Path]):

@@ -436,9 +436,11 @@ targets: [claude]
 - **Format**: a YAML list, inline (`targets: [claude]`) or block form. Values are build-target registry names. The live set is never enumerated in prose because it would go stale; ask the tooling for it instead:
 
   ```bash
-  uv run python marketplace/targets/generate.py --help
+  ./pw generate --help
   ```
 
+  Go through the `./pw` wrapper: `uv` is installed only into the project-local
+  `.pyprojectx/` tree and is not on `PATH`, so a bare `uv run …` fails outside it.
   The `--target` choices it prints are the registry as it stands at the moment you run it, derived from `TARGET_REGISTRY` in `marketplace/targets/__init__.py`, plus the literal `all` — a run-every-target convenience, not a target name and not a valid `targets:` value.
 - **Scope of one declaration**: an agent's or a command's declaration governs that one file. A skill's declaration lives on its `SKILL.md` and governs the **whole skill directory**, its `standards/`, `references/`, `templates/`, and `scripts/` sub-trees included. Files *inside* a skill are not individually scopable.
 

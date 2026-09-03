@@ -2,12 +2,19 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """CLI entry point for marketplace target generation.
 
+Always invoked through the ``./pw`` wrapper. ``uv`` is installed only into the
+project-local ``.pyprojectx/`` tree and is not on ``PATH``, so a bare
+``uv run …`` exits 127 outside it, and a bare ``python3`` cannot import the
+project's ``PyYAML`` dependency. The ``generate`` alias forwards whatever
+arguments follow it; ``generate-claude`` and ``generate-opencode`` carry their
+own ``--target``/``--output`` pair.
+
 Usage:
-    uv run python marketplace/targets/generate.py --target claude
-    uv run python marketplace/targets/generate.py --target claude --output target/claude
-    uv run python marketplace/targets/generate.py --target opencode --output target/opencode
-    uv run python marketplace/targets/generate.py --target pr-agent --output . --packs python,plugin
-    uv run python marketplace/targets/generate.py --target all --output target
+    ./pw generate --target claude
+    ./pw generate-claude
+    ./pw generate-opencode
+    ./pw generate --target pr-agent --output . --packs python,plugin
+    ./pw generate --target all --output target
 
 Exits 0 on success, 2 on any failure (unknown target, missing required
 flag, generator-reported error).
