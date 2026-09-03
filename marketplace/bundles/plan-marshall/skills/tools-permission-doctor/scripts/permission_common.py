@@ -30,12 +30,13 @@ for _ancestor in Path(__file__).resolve().parents:
         break
 
 from platform_runtime import _runtime_for_target  # noqa: E402
+from runtime_base import Runtime  # noqa: E402
 
 # Exit codes
 EXIT_SUCCESS = 0
 
 
-def _active_runtime():
+def _active_runtime() -> Runtime:
     """Resolve the active runtime through the platform-runtime registry.
 
     Reads ``runtime.target`` from the project's marshal.json like the router

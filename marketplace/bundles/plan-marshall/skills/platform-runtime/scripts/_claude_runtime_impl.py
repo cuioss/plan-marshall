@@ -985,7 +985,7 @@ class ClaudeRuntime(Runtime):
         rendered: list[str] = []
         for intent in grants:
             rules, err = claude_runtime._render_permission_intent(intent)
-            if err:
+            if err or rules is None:
                 return toon_error(
                     "permission configure",
                     "invalid_intent",
@@ -1235,6 +1235,8 @@ class ClaudeRuntime(Runtime):
             planned: set[str] = set()
             for intent in arguments:
                 rules, _err = claude_runtime._render_permission_intent(intent)
+                if rules is None:
+                    continue
                 new_rules = [r for r in rules if r not in allow and r not in planned]
                 if not new_rules:
                     continue
@@ -1254,6 +1256,8 @@ class ClaudeRuntime(Runtime):
             remove_rules: set[str] = set()
             for intent in arguments:
                 rules, _err = claude_runtime._render_permission_intent(intent)
+                if rules is None:
+                    continue
                 remove_rules.update(rules)
             allow = [p for p in allow if p not in remove_rules]
             changes_applied = original_len - len(allow)
@@ -1266,6 +1270,8 @@ class ClaudeRuntime(Runtime):
             planned = set()
             for intent in arguments:
                 rules, _err = claude_runtime._render_permission_intent(intent)
+                if rules is None:
+                    continue
                 new_rules = [r for r in rules if r not in allow and r not in planned]
                 if not new_rules:
                     continue
