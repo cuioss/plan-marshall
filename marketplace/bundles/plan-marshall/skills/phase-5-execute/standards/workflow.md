@@ -116,7 +116,7 @@ Each `diff --name-status` line has the shape `{status}\t{path}` (or `{status}\t{
 
 An untracked path maps to `Wrote` — it is a file the task created. Rename entries produce **exactly one** `Renamed` message — never a delete entry for the old path plus a write entry for the new path. This keeps the audit trail unambiguous about the operation's intent.
 
-Paths are **worktree-relative** (as git emits them). If the diff is empty (no paths changed), the script emits **nothing** — an empty artifact list is a valid outcome (for example, a pre-implemented task or a verification-profile task that legitimately modified no files). The absence of artifact entries in the work log is itself meaningful signal, and the `finalize-step` result echoes `artifact_lines` so a caller can distinguish a measured zero from a channel that never ran.
+Paths are **worktree-relative** (as git emits them). If the diff is empty (no paths changed), the script emits **nothing** — an empty artifact list is a valid outcome (for example, a pre-implemented task or a verification-profile task that legitimately modified no files). The absence of artifact entries in the work log is itself meaningful signal, and the `finalize-step` result echoes `artifact_lines` — the count the script emitted.
 
 The mapping above is implemented by `manage-tasks/scripts/_task_artifacts.py`; `manage-tasks/SKILL.md` § "Script-Level `[OUTCOME]` + `[ARTIFACT]` Emission" carries the script-side contract.
 
