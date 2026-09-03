@@ -59,6 +59,26 @@ _SKILL_MD: Path = get_skill_dir('plan-marshall', 'automatic-review') / 'SKILL.md
 _BLOCK_START = '**Escalating `unregistered_kind`'
 _BLOCK_END = '**Generating the trigger for `not_triggered`.**'
 
+#: Cardinals a member count could be written as: digit runs, the number words, and the
+#: vague quantifiers English substitutes for them. The set is deliberately INDEPENDENT
+#: of the taxonomy's current size — a detector that enumerated only the cardinals
+#: bracketing today's count would stop matching the moment the count it exists to catch
+#: drifted past that bracket, which is the one case it is for.
+_CARDINAL = (
+    r'\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|'
+    r'thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|'
+    r'thirty|forty|fifty|dozen|several'
+)
+
+#: A cardinal is a restated member count only when it sits beside the noun phrase the
+#: contract names. Anchoring on ``non-participation`` is what keeps unrelated prose out
+#: of the match — "PR 508 closed the loop" and "the 2 member logins" both carry a
+#: cardinal next to one of the nouns, and neither restates a count.
+_STALE_COUNT_RE = re.compile(
+    rf'\b(?:{_CARDINAL})[ -](?:closed[ -])?non-participation',
+    re.IGNORECASE,
+)
+
 
 def _skill_text() -> str:
     return _SKILL_MD.read_text(encoding='utf-8')
@@ -244,14 +264,12 @@ def test_the_document_enumerates_the_taxonomy_without_restating_its_size():
     """A hand-written member count is the defect one member later.
 
     The count is stated in exactly one place — the contract doc, where a test reads it
-    back against the module's own constants. Any cardinal restated beside "closed
-    non-participation members" here is an unguarded duplicate, and this document's own
-    enumeration line already went stale that way once.
+    back against the module's own constants. Any cardinal restated beside the
+    "non-participation" noun phrase here is an unguarded duplicate, and this document's
+    own enumeration line already went stale that way once.
     """
     text = _skill_text()
-    stale_count = re.search(
-        r'\b(nine|ten|eleven|twelve|thirteen|[0-9]+)[ -](closed|member)', text, re.IGNORECASE
-    )
+    stale_count = _STALE_COUNT_RE.search(text)
 
     assert stale_count is None, (
         f'SKILL.md restates a taxonomy member count ({stale_count.group(0)!r}); enumerate '
