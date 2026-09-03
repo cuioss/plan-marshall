@@ -24,13 +24,9 @@ for _ancestor in Path(__file__).resolve().parents:
             sys.path.append(_rt_path)
         break
 
-from claude_runtime import (  # noqa: E402
-    _extract_project_steps,
-    _load_marshal_config,
-    _skill_permission_covered,
-)
 from permission_common import (  # noqa: E402
     EXIT_SUCCESS,
+    _active_runtime,
     get_global_settings_path,
     get_project_settings_path,
     load_settings,
@@ -412,36 +408,48 @@ def cmd_detect_suspicious(args) -> dict:
 def load_marshal_config(path: str) -> tuple[dict, str | None]:
     """Load marshal.json config file.
 
-    Thin delegator over the runtime's ``_load_marshal_config`` — the single home
-    for marshal parsing.
+    Thin delegator over the active runtime's ``permission_load_marshal_config``
+    — the single home for marshal parsing.
 
     Returns:
         Tuple of (config_dict, error_message). Error is None on success.
     """
-    return _load_marshal_config(path)
+    try:
+        data = _active_runtime().permission_load_marshal_config(path)
+    except RuntimeError:
+        return {}, f'No marshal support on this target: {path}'
+    if 'error' in data:
+        return {}, data['error']
+    return data, None
 
 
 def extract_project_steps(marshal_config: dict) -> list[dict]:
     """Enumerate project:{skill} step references from marshal.json.
 
-    Thin delegator over the runtime's ``_extract_project_steps``.
+    Thin delegator over the active runtime's ``permission_extract_project_steps``.
 
     Returns:
         List of dicts with keys: skill, step, phase.
     """
-    return _extract_project_steps(marshal_config)
+    try:
+        return _active_runtime().permission_extract_project_steps(marshal_config)
+    except RuntimeError:
+        return []
 
 
 def skill_permission_covered(skill: str, allow_list: list[str]) -> str | None:
     """Check if a skill is covered by an allow rule.
 
-    Thin delegator over the runtime's ``_skill_permission_covered`` — matches
-    exact ``Skill({skill})`` or covering wildcard ``Skill({skill}:*)``.
+    Thin delegator over the active runtime's ``permission_check_skill_coverage``
+    — matches exact ``Skill({skill})`` or covering wildcard ``Skill({skill}:*)``.
 
     Returns:
         The matching rule string, or None if no match found.
     """
-    return _skill_permission_covered(skill, allow_list)
+    try:
+        return _active_runtime().permission_check_skill_coverage(skill, allow_list)
+    except RuntimeError:
+        return None
 
 
 def cmd_detect_missing_project_step_permissions(args) -> dict:

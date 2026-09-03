@@ -3408,20 +3408,34 @@ class TestPermissionConfigure:
         assert result["error"] == "invalid_scope"
 
     def test_writes_permissions_to_project_settings(self, rt, tmp_path, monkeypatch):
-        """permission_configure writes the allow list to project settings.json."""
+        """permission_configure renders semantic intents into the allow list."""
         import claude_runtime as _cr
 
         settings_path = tmp_path / ".claude" / "settings.json"
         _write_settings(settings_path, [])
         monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
 
-        perms = ["Read(**)", "Write(.plan/**)"]
-        result = _parsed(rt.permission_configure("project", perms))
+        grant = {"kind": "path", "tool": "Read", "path": "**"}
+        result = _parsed(rt.permission_configure("project", [grant]))
         assert result["status"] == "success"
-        assert result["permissions_written"] == 2
+        assert result["permissions_written"] == 1
 
         saved = json.loads(settings_path.read_text())
-        assert saved["permissions"]["allow"] == perms
+        assert saved["permissions"]["allow"] == ["Read(**)"]
+
+    def test_invalid_intent_returns_error(self, rt, tmp_path, monkeypatch):
+        """An unknown intent kind is refused before any settings are written."""
+        import claude_runtime as _cr
+
+        settings_path = tmp_path / ".claude" / "settings.json"
+        _write_settings(settings_path, [])
+        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+
+        result = _parsed(rt.permission_configure("project", [{"kind": "nope"}]))
+        assert result["status"] == "error"
+        assert result["error"] == "invalid_intent"
+        saved = json.loads(settings_path.read_text())
+        assert saved["permissions"]["allow"] == []
 
     def test_empty_permissions_clears_allow_list(self, rt, tmp_path, monkeypatch):
         """Passing [] clears the allow list."""
@@ -3528,14 +3542,15 @@ class TestPermissionFix:
         assert result["error"] == "invalid_operation"
 
     def test_add_operation_appends_new_permissions(self, rt, tmp_path, monkeypatch):
-        """add operation appends new permissions to the allow list."""
+        """add operation renders an intent into the allow list."""
         import claude_runtime as _cr
 
         settings_path = tmp_path / "settings.json"
         _write_settings(settings_path, ["Read(**)"])
         monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
 
-        result = _parsed(rt.permission_fix("project", "add", ["Write(**)"], False))
+        intent = {"kind": "path", "tool": "Write", "path": "**"}
+        result = _parsed(rt.permission_fix("project", "add", [intent], False))
         assert result["status"] == "success"
         assert result["changes_applied"] == 1
         saved = json.loads(settings_path.read_text())
@@ -3549,9 +3564,22 @@ class TestPermissionFix:
         _write_settings(settings_path, ["Read(**)"])
         monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
 
-        result = _parsed(rt.permission_fix("project", "add", ["Read(**)"], False))
+        intent = {"kind": "path", "tool": "Read", "path": "**"}
+        result = _parsed(rt.permission_fix("project", "add", [intent], False))
         assert result["status"] == "success"
         assert result["changes_applied"] == 0
+
+    def test_add_invalid_intent_returns_error(self, rt, tmp_path, monkeypatch):
+        """add with an unknown intent kind fails before writing."""
+        import claude_runtime as _cr
+
+        settings_path = tmp_path / "settings.json"
+        _write_settings(settings_path, ["Read(**)"])
+        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+
+        result = _parsed(rt.permission_fix("project", "add", [{"kind": "nope"}], False))
+        assert result["status"] == "error"
+        assert result["error"] == "invalid_intent"
 
     def test_remove_operation_removes_permissions(self, rt, tmp_path, monkeypatch):
         """remove operation removes matching permissions from the allow list."""
@@ -3561,7 +3589,8 @@ class TestPermissionFix:
         _write_settings(settings_path, ["Read(**)", "Write(**)"])
         monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
 
-        result = _parsed(rt.permission_fix("project", "remove", ["Write(**)"], False))
+        intent = {"kind": "path", "tool": "Write", "path": "**"}
+        result = _parsed(rt.permission_fix("project", "remove", [intent], False))
         assert result["status"] == "success"
         assert result["changes_applied"] == 1
         saved = json.loads(settings_path.read_text())
@@ -3644,7 +3673,7 @@ class TestPermissionFix:
         _write_settings(settings_path, original)
         monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
 
-        result = _parsed(rt.permission_fix("project", "add", ["Write(**)"], True))
+        result = _parsed(rt.permission_fix("project", "add", [{"kind": "path", "tool": "Write", "path": "**"}], True))
         assert result["status"] == "success"
         assert result["dry_run"] is True
         assert result["changes_applied"] == 0
@@ -3653,14 +3682,14 @@ class TestPermissionFix:
         assert saved["permissions"]["allow"] == original
 
     def test_ensure_operation_adds_missing(self, rt, tmp_path, monkeypatch):
-        """ensure operation adds permissions that are not already present."""
+        """ensure operation renders an intent not already present."""
         import claude_runtime as _cr
 
         settings_path = tmp_path / "settings.json"
         _write_settings(settings_path, [])
         monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
 
-        result = _parsed(rt.permission_fix("project", "ensure", ["Bash(python3 .plan/execute-script.py *)"], False))
+        result = _parsed(rt.permission_fix("project", "ensure", [{"kind": "executor"}], False))
         assert result["status"] == "success"
         saved = json.loads(settings_path.read_text())
         assert "Bash(python3 .plan/execute-script.py *)" in saved["permissions"]["allow"]
