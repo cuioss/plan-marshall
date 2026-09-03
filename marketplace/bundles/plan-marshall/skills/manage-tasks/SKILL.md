@@ -630,10 +630,11 @@ baseline emits nothing rather than deriving a list from a guessed base.
 
 ⚠ **Two boundaries a reader must know.** Commits fire at the per-deliverable
 chain tail, so two tasks of the SAME deliverable share one base and the later
-task's artifact list is a SUPERSET — it re-reports the earlier task's files. And
-the diff is taken against the WORKING TREE (`git diff {base}`, plus the
-untracked-file walk), not against `HEAD`: a task's edits are uncommitted at the
-moment it closes, so a `{base}..HEAD` comparison would see nothing at all.
+task's artifact list is a SUPERSET — it re-reports the files of the task that
+preceded it. And the diff is taken against the WORKING TREE (`git diff {base}`,
+plus the untracked-file walk), not against `HEAD`: a task's edits are
+uncommitted at the moment it closes, so a `{base}..HEAD` comparison would see
+nothing at all.
 
 ### Add Flow — Three-Step Path-Allocate Pattern
 

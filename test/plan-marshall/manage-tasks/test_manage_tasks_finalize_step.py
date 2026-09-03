@@ -326,10 +326,15 @@ def test_emits_outcome_with_overrides(plan_context):
         '[OUTCOME] (custom-bundle:custom-skill) Completed TASK-001: Overridden Title (42 steps)'
         in log_text
     )
-    assert 'plan-marshall:phase-5-execute' not in log_text.split('[OUTCOME]', 1)[1], (
+    # Scope the leak assertions to the [OUTCOME] LINE, which is what they claim
+    # to be about. Splitting on the marker and keeping the whole tail also swept
+    # in the [ARTIFACT] lines that follow it — those legitimately carry the
+    # default caller, so the assertion failed on a line it was never about.
+    outcome_line = next(line for line in log_text.splitlines() if '[OUTCOME]' in line)
+    assert 'plan-marshall:phase-5-execute' not in outcome_line, (
         'Default caller leaked into [OUTCOME] line despite override'
     )
-    assert 'Original Disk Title' not in log_text.split('[OUTCOME]', 1)[1], (
+    assert 'Original Disk Title' not in outcome_line, (
         'Default title leaked into [OUTCOME] line despite override'
     )
 
