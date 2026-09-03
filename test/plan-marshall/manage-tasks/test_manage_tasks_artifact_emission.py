@@ -194,9 +194,17 @@ class TestBaselineCapture:
         assert task[_artifacts.TASK_START_SHA_FIELD] == first
 
     def test_an_unresolvable_head_writes_no_baseline(self, tmp_path, monkeypatch):
-        """A fabricated base is worse than an honestly-absent one."""
+        """A fabricated base is worse than an honestly-absent one.
+
+        ⛔ A bare non-repo directory does NOT neutralize git: ``rev-parse`` walks
+        UP from it, so when pytest's basetemp sits inside a checkout the call
+        resolves that checkout's HEAD and this test passes a real SHA into an
+        ``is None`` assertion. The ceiling makes the negative branch selected by
+        the fixture rather than by where the suite happens to run.
+        """
         not_a_repo = tmp_path / 'plain'
         not_a_repo.mkdir()
+        monkeypatch.setenv('GIT_CEILING_DIRECTORIES', str(tmp_path.resolve()))
         monkeypatch.setattr(_artifacts, 'cwd_checkout_root', lambda: str(not_a_repo))
         task: dict = {}
 

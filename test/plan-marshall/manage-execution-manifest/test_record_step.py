@@ -135,7 +135,8 @@ def _record_ns(
     ):
         if value is not None:
             argv += [flag, str(value)]
-    return parse_ns(_BUNDLE, _SKILL, _SCRIPT_NAME, *argv, register=False)
+    ns: Namespace = parse_ns(_BUNDLE, _SKILL, _SCRIPT_NAME, *argv, register=False)
+    return ns
 
 
 def _compose(plan_id: str) -> None:
@@ -292,7 +293,14 @@ def test_a_measured_zero_and_an_omitted_flag_differ_in_the_file_bytes(plan_conte
     """
     _compose('rec-bytes')
     cmd_record_step(
-        _record_ns(plan_id='rec-bytes', step_id='measured', outcome='skipped', total_tokens=0)
+        _record_ns(
+            plan_id='rec-bytes',
+            step_id='measured',
+            outcome='skipped',
+            total_tokens=0,
+            tool_uses=0,
+            duration_ms=0,
+        )
     )
     cmd_record_step(_record_ns(plan_id='rec-bytes', step_id='omitted', outcome='executed'))
 
@@ -631,9 +639,12 @@ def test_a_step_outcome_is_representable_in_the_manifest_ledger(plan_context, ou
         register=False,
     )
 
-    _compose(f'rec-cross-{outcome}')
+    # plan_id is kebab-case-validated, so an outcome carrying an underscore
+    # (`loop_back`) cannot be interpolated into one verbatim.
+    plan_id = 'rec-cross-' + outcome.replace('_', '-')
+    _compose(plan_id)
     result = cmd_record_step(
-        _record_ns(plan_id=f'rec-cross-{outcome}', step_id='a-step', phase='6-finalize', outcome=outcome)
+        _record_ns(plan_id=plan_id, step_id='a-step', phase='6-finalize', outcome=outcome)
     )
 
     assert result is not None and result['status'] == 'success'

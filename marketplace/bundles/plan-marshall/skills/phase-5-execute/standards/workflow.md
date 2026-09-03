@@ -103,7 +103,7 @@ git -C {checkout_root} ls-files --others --exclude-standard
 
 ⛔ The second operand is deliberately absent — a `{task_start_sha} HEAD` comparison is EMPTY for the whole window this channel covers, because a task's edits are uncommitted until the per-deliverable chain-tail commit. The untracked walk is needed for the same reason at one remove: a file the task created is untracked and appears in neither form until it is staged.
 
-⚠ Commits fire at the per-deliverable chain tail, so two tasks of the same deliverable share one base and the later task's artifact list is a **superset** — it re-reports the earlier task's files. That is a property of a SHA base under per-deliverable commits, and it is stated rather than hidden.
+⚠ Commits fire at the per-deliverable chain tail, so two tasks of the same deliverable share one base and the later task's artifact list is a **superset** — it re-reports the files of the task that preceded it. That is a property of a SHA base under per-deliverable commits, and it is stated rather than hidden.
 
 Each `diff --name-status` line has the shape `{status}\t{path}` (or `{status}\t{old_path}\t{new_path}` for renames/copies) and maps to exactly one `[ARTIFACT]` message:
 
