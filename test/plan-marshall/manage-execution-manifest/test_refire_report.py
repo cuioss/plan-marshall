@@ -18,9 +18,11 @@ boundaries:
 - a ``skipped`` row is counted separately and NEVER folded into ``firings`` — a
   skip is precisely the outcome a preserved verdict produces, so folding it in
   would make the instrument unable to measure the thing it exists to measure;
-- the token column is a FLOOR (inline steps record zeros by contract), and the
-  payload carries a ``token_population`` field saying so rather than presenting a
-  bare number that merely looks comparable;
+- the token column is a FLOOR (an inline step's caller omits the flags, and the
+  writer records that omission as the ``unmeasured`` token), and the payload
+  carries a ``token_population`` field saying so — plus per-state
+  ``unmeasured_columns`` / ``unrecognised_columns`` counts that SIZE the floor —
+  rather than presenting a bare number that merely looks comparable;
 - ``--phase`` restricts the derivation, so a finalize figure is not inflated by
   phase-5 rows;
 - rows are ordered worst-offender-first so the report reads as a diagnosis.
@@ -227,6 +229,45 @@ def test_non_numeric_metrics_contribute_zero_rather_than_raising(junk):
     assert steps[0]['tool_uses'] == 0
     assert steps[0]['duration_ms'] == 0
     assert totals['total_tokens'] == 0
+
+
+def test_an_unmeasured_column_is_counted_not_summed_as_zero():
+    """The writer's ``unmeasured`` token contributes nothing AND is counted.
+
+    Reading the sum alone cannot distinguish "these steps spent nothing" from
+    "nobody measured what these steps spent", which is exactly the fabricated
+    total the token exists to remove. The per-state counts are what make the
+    floor's SIZE readable rather than merely asserted in prose.
+    """
+    rows = [_row('push', total_tokens=_mem.UNMEASURED_COLUMN_TOKEN, tool_uses=0, duration_ms=0)]
+
+    steps, totals = summarize_refires(rows)
+
+    assert steps[0]['total_tokens'] == 0
+    assert steps[0]['unmeasured_columns'] == 1
+    assert steps[0]['unrecognised_columns'] == 0
+    assert totals['unmeasured_columns'] == 1
+
+
+def test_a_fully_measured_row_reports_no_unmeasured_columns():
+    """The matched control — a reader that counted everything would pass alone."""
+    rows = [_row('push', total_tokens=100, tool_uses=2, duration_ms=10)]
+
+    steps, totals = summarize_refires(rows)
+
+    assert steps[0]['unmeasured_columns'] == 0
+    assert steps[0]['unrecognised_columns'] == 0
+    assert totals['unmeasured_columns'] == 0
+
+
+def test_an_unreadable_cell_is_counted_as_unrecognised_not_unmeasured():
+    """The third state is reported as itself rather than folded into a neighbour."""
+    rows = [_row('push', total_tokens='12x', tool_uses=0, duration_ms=0)]
+
+    steps, _totals = summarize_refires(rows)
+
+    assert steps[0]['unrecognised_columns'] == 1
+    assert steps[0]['unmeasured_columns'] == 0
 
 
 def test_a_bad_metric_does_not_suppress_a_good_row():

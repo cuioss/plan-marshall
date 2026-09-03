@@ -76,6 +76,24 @@ MANIFEST_FILENAME = 'execution.toon'
 #: contract-drift test ``test_reconciliation_execution_log_phases_match_writer``.
 EXECUTION_LOG_PHASES = ('5-execute', '6-finalize')
 
+#: The literal an OMITTED ``execution_log[]`` token-attribution column carries.
+#: A hand-mirror of ``UNMEASURED_COLUMN_TOKEN`` in
+#: ``manage-execution-manifest/scripts/_manifest_core.py`` (the writer), which
+#: this skill runs in a different process from and cannot import — the same
+#: cross-skill mirror shape :data:`EXECUTION_LOG_PHASES` already uses, and the
+#: same literal this skill's own ``manage-metrics.UNMEASURED_COLUMN_TOKEN``
+#: defines for the dispatch-boundary row. Held honest by the contract-drift test
+#: ``test_reconciliation_unmeasured_token_matches_writer``.
+UNMEASURED_COLUMN_TOKEN = 'unmeasured'
+
+#: The three states an ``execution_log[]`` token column can be read in. An
+#: unmeasured or unrecognised cell contributes NOTHING to a sum and is reported
+#: as its own state — coercing either to ``0`` is what makes an unmeasured column
+#: read as a measured zero.
+COLUMN_MEASURED = 'measured'
+COLUMN_UNMEASURED = 'unmeasured'
+COLUMN_UNRECOGNISED = 'unrecognised'
+
 #: Default pairing window. Both writers fire around the same dispatch return —
 #: ``record-dispatch-boundary`` at the termination, ``record-step`` once the
 #: orchestrator has recorded the outcome — with intervening script calls between
@@ -153,6 +171,37 @@ def _as_int(value: object) -> int:
     return 0
 
 
+def read_token_column(value: object) -> tuple[int, str]:
+    """Read an ``execution_log[]`` token column into ``(value, state)``.
+
+    The three-state read the writer's absence-vs-zero contract requires. It keeps
+    an int-parsing FLOOR — every historical all-numeric row parses exactly as it
+    did before — and refuses to coerce the other two states into it:
+
+    * an int (or an all-digit string) is :data:`COLUMN_MEASURED`, including a
+      measured ``0``;
+    * :data:`UNMEASURED_COLUMN_TOKEN` is :data:`COLUMN_UNMEASURED` — the writer
+      recorded that nobody measured this column;
+    * anything else, including an absent column, is :data:`COLUMN_UNRECOGNISED`.
+
+    ⛔ The non-measured states carry ``0`` as their numeric placeholder so the
+    row shape stays uniform, but the STATE is what a caller must branch on. Using
+    the number alone re-creates the defect: ``_as_int`` returned ``0`` for the
+    token, and that zero re-entered the reconciliation looking measured.
+    """
+    if isinstance(value, bool):
+        return 0, COLUMN_UNRECOGNISED
+    if isinstance(value, int):
+        return value, COLUMN_MEASURED
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped == UNMEASURED_COLUMN_TOKEN:
+            return 0, COLUMN_UNMEASURED
+        if stripped.lstrip('-').isdigit():
+            return int(stripped), COLUMN_MEASURED
+    return 0, COLUMN_UNRECOGNISED
+
+
 def load_execution_log(plan_dir: Path) -> tuple[list[dict[str, Any]] | None, str]:
     """Return ``execution_log[]`` rows and a read state.
 
@@ -196,18 +245,27 @@ def execution_rows_for_phase(rows: list[dict[str, Any]], phase: str) -> list[dic
     timestamps), so it surfaces as an unpaired row — the honest outcome for a row
     whose position nothing can establish — and its finding still quotes the raw
     value, so a reader can see what could not be parsed.
+
+    Each row also carries ``total_tokens_state`` (:func:`read_token_column`), so
+    a downstream consumer can tell a MEASURED ``0`` from a column the writer
+    recorded as unmeasured. The numeric field stays an int either way, which is
+    what keeps the sort key and every arithmetic consumer unchanged; the state is
+    the field that must be read before the number is presented as a measurement.
     """
     selected = [row for row in rows if str(row.get('phase')) == phase]
-    normalised = [
-        {
-            'step_id': str(row.get('step_id') or ''),
-            'timestamp': row.get('timestamp'),
-            'parsed_timestamp': _parse_iso(row.get('timestamp')),
-            'total_tokens': _as_int(row.get('total_tokens')),
-            'outcome': str(row.get('outcome') or ''),
-        }
-        for row in selected
-    ]
+    normalised: list[dict[str, Any]] = []
+    for row in selected:
+        total_tokens, token_state = read_token_column(row.get('total_tokens'))
+        normalised.append(
+            {
+                'step_id': str(row.get('step_id') or ''),
+                'timestamp': row.get('timestamp'),
+                'parsed_timestamp': _parse_iso(row.get('timestamp')),
+                'total_tokens': total_tokens,
+                'total_tokens_state': token_state,
+                'outcome': str(row.get('outcome') or ''),
+            }
+        )
     return sorted(normalised, key=_row_sort_key)
 
 
@@ -359,7 +417,14 @@ def _phase_findings(
     unpaired_boundary: list[dict],
     structurally_excluded: bool,
 ) -> list[dict[str, Any]]:
-    """One finding per unpaired row, in each direction."""
+    """One finding per unpaired row, in each direction.
+
+    An execution-log finding publishes ``total_tokens_state`` beside its
+    ``total_tokens``. Without it a row whose token column the writer recorded as
+    UNMEASURED is reported carrying ``0``, and a reader has no way to tell that
+    from a dispatch that genuinely spent nothing — the same absence-read-as-zero
+    conflation the column state exists to end, arriving through the finding.
+    """
     findings: list[dict[str, Any]] = []
     for row in unpaired_execution:
         findings.append(
@@ -369,6 +434,7 @@ def _phase_findings(
                 'step_id': row['step_id'],
                 'timestamp': row['timestamp'],
                 'total_tokens': row['total_tokens'],
+                'total_tokens_state': row.get('total_tokens_state', COLUMN_MEASURED),
                 'detail': (
                     'recorded by record-step with no dispatch-boundary row in the window — '
                     'either the dispatch registers no boundary (a declared exclusion class) '
@@ -386,6 +452,7 @@ def _phase_findings(
                 'step_id': '',
                 'timestamp': row['timestamp'],
                 'total_tokens': row['total_tokens'],
+                'total_tokens_state': COLUMN_MEASURED,
                 'detail': (
                     'a dispatch terminated and recorded its usage, but no record-step row '
                     'names it in the window — this spend is invisible to any execution_log sum'
@@ -438,6 +505,7 @@ def reconcile_phase(
                 'step_id': '',
                 'timestamp': '',
                 'total_tokens': sum(row['total_tokens'] for row in boundary_rows),
+                'total_tokens_state': COLUMN_MEASURED,
                 'detail': (
                     f'{len(boundary_rows)} dispatch-boundary row(s) recorded but the phase '
                     'row carries no end_time — the rows are present and no close recorded '
@@ -455,6 +523,10 @@ def reconcile_phase(
                 'step_id': '',
                 'timestamp': '',
                 'total_tokens': 0,
+                # A re-entry finding measures no tokens — the ``0`` is a shape
+                # placeholder keeping the finding rows uniform, and the state
+                # says so rather than letting it read as a measured zero.
+                'total_tokens_state': COLUMN_UNMEASURED,
                 'detail': (
                     f'the phase closed {close_count} times, so its metrics.toon totals are '
                     'cumulative across closes while both row ledgers are append logs — a '

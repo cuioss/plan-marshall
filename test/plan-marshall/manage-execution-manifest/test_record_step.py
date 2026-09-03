@@ -7,7 +7,9 @@ token attribution) to the manifest's ``execution_log[]`` section. These tests
 cover:
 
 - appending ``executed`` / ``skipped`` / ``error`` rows with token attribution;
-- token-attribution fields defaulting to ``0`` when omitted;
+- the three-state token columns: an explicitly-passed value (including ``0``) is a
+  MEASURED value, an OMITTED flag records the ``unmeasured`` token, and the two
+  differ in the file bytes;
 - the ordered append-log semantics (re-recording the same step appends another
   row; reading back reflects the recorded sequence);
 - ``execution_log_count`` tracking the running row count;
@@ -21,10 +23,16 @@ Mirrors the tier-2 direct-import + CLI-subprocess split used by the sibling
 
 from argparse import Namespace
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import get_script_path, load_script_module, parse_ns, run_script
 
-# Script path for subprocess (CLI plumbing) tests.
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py')
+# Script path for subprocess (CLI plumbing) tests. Split into module-level string
+# constants so the `parse_ns` calls below stay statically resolvable for the
+# loader-registration walker in `test_conftest_loader_contract`.
+_BUNDLE = 'plan-marshall'
+_SKILL = 'manage-execution-manifest'
+_SCRIPT_NAME = 'manage-execution-manifest.py'
+
+SCRIPT_PATH = get_script_path(_BUNDLE, _SKILL, _SCRIPT_NAME)
 
 # Tier 2 direct imports, resolved by (bundle, skill, script).
 
@@ -35,7 +43,10 @@ _mem = load_script_module(
 cmd_compose = _mem.cmd_compose
 cmd_record_step = _mem.cmd_record_step
 read_manifest = _mem.read_manifest
+get_plan_dir = _mem.get_plan_dir
 EXECUTION_LOG_KEY = _mem.EXECUTION_LOG_KEY
+MANIFEST_FILENAME = _mem.MANIFEST_FILENAME
+UNMEASURED_COLUMN_TOKEN = _mem.UNMEASURED_COLUMN_TOKEN
 VALID_RECORD_PHASES = _mem.VALID_RECORD_PHASES
 VALID_RECORD_OUTCOMES = _mem.VALID_RECORD_OUTCOMES
 DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
@@ -92,19 +103,34 @@ def _record_ns(
     step_id: str = 'verify:quality-gate',
     phase: str = '5-execute',
     outcome: str = 'executed',
-    total_tokens: int = 0,
-    tool_uses: int = 0,
-    duration_ms: int = 0,
+    total_tokens: int | None = None,
+    tool_uses: int | None = None,
+    duration_ms: int | None = None,
 ) -> Namespace:
-    return Namespace(
-        plan_id=plan_id,
-        step_id=step_id,
-        phase=phase,
-        outcome=outcome,
-        total_tokens=total_tokens,
-        tool_uses=tool_uses,
-        duration_ms=duration_ms,
-    )
+    """Build ``record-step`` args through the script's OWN parser.
+
+    ``None`` means the flag is OMITTED from the argv — the state the writer
+    records as the ``unmeasured`` token. That distinction cannot be expressed by a
+    hand-built ``argparse.Namespace``: the whole discriminator lives in the
+    parser's ``default=None``, so a namespace assembled by hand bypasses the one
+    thing under test and would let the omitted case pass against a writer that
+    still defaults to ``0``.
+    """
+    argv = [
+        'record-step',
+        '--plan-id', plan_id,
+        '--step-id', step_id,
+        '--phase', phase,
+        '--outcome', outcome,
+    ]
+    for flag, value in (
+        ('--total-tokens', total_tokens),
+        ('--tool-uses', tool_uses),
+        ('--duration-ms', duration_ms),
+    ):
+        if value is not None:
+            argv += [flag, str(value)]
+    return parse_ns(_BUNDLE, _SKILL, _SCRIPT_NAME, *argv, register=False)
 
 
 def _compose(plan_id: str) -> None:
@@ -202,20 +228,110 @@ def test_record_error_outcome_appends_row(plan_context):
     assert result['phase'] == '6-finalize'
 
 
-def test_record_token_attribution_defaults_to_zero(plan_context):
-    """Omitting the token-attribution flags records zeros, not missing columns."""
-    _compose('rec-zero')
+def test_explicitly_passed_zero_is_a_measured_zero(plan_context):
+    """``--total-tokens 0`` is a MEASUREMENT and is stored as the integer ``0``.
 
-    result = cmd_record_step(_record_ns(plan_id='rec-zero', step_id='verify:quality-gate', outcome='skipped'))
+    A skipped step genuinely consumed nothing, and its caller says so by passing
+    the flag. Nothing about that row may read as unmeasured.
+    """
+    _compose('rec-measured-zero')
+
+    result = cmd_record_step(
+        _record_ns(
+            plan_id='rec-measured-zero',
+            step_id='verify:quality-gate',
+            outcome='skipped',
+            total_tokens=0,
+            tool_uses=0,
+            duration_ms=0,
+        )
+    )
 
     assert result is not None
     assert result['total_tokens'] == 0
     assert result['tool_uses'] == 0
     assert result['duration_ms'] == 0
-    entry = read_manifest('rec-zero')[EXECUTION_LOG_KEY][0]
+    entry = read_manifest('rec-measured-zero')[EXECUTION_LOG_KEY][0]
     assert entry['total_tokens'] == 0
     assert entry['tool_uses'] == 0
     assert entry['duration_ms'] == 0
+
+
+def test_omitted_flags_record_the_unmeasured_token(plan_context):
+    """OMITTING the flags records the token — never a fabricated ``0``."""
+    _compose('rec-unmeasured')
+
+    result = cmd_record_step(
+        _record_ns(plan_id='rec-unmeasured', step_id='verify:quality-gate', outcome='executed')
+    )
+
+    assert result is not None
+    assert result['total_tokens'] == UNMEASURED_COLUMN_TOKEN
+    assert result['tool_uses'] == UNMEASURED_COLUMN_TOKEN
+    assert result['duration_ms'] == UNMEASURED_COLUMN_TOKEN
+    entry = read_manifest('rec-unmeasured')[EXECUTION_LOG_KEY][0]
+    assert entry['total_tokens'] == UNMEASURED_COLUMN_TOKEN
+    assert entry['tool_uses'] == UNMEASURED_COLUMN_TOKEN
+    assert entry['duration_ms'] == UNMEASURED_COLUMN_TOKEN
+
+
+def test_a_measured_zero_and_an_omitted_flag_differ_in_the_file_bytes(plan_context):
+    """The distinction survives to disk — asserted on the BYTES, not a round trip.
+
+    ⛔ A round-trip assertion (write, then read back through the same reader)
+    passes against the defect: if the writer collapsed both states to ``0`` the
+    reader would faithfully return ``0`` twice and the assertion would still be
+    about self-consistency rather than about the distinction. Reading the raw
+    ``execution.toon`` text is what makes this test capable of failing against a
+    writer that fabricates the zero.
+    """
+    _compose('rec-bytes')
+    cmd_record_step(
+        _record_ns(plan_id='rec-bytes', step_id='measured', outcome='skipped', total_tokens=0)
+    )
+    cmd_record_step(_record_ns(plan_id='rec-bytes', step_id='omitted', outcome='executed'))
+
+    raw = (get_plan_dir('rec-bytes') / MANIFEST_FILENAME).read_text(encoding='utf-8')
+    measured_line = next(line for line in raw.splitlines() if line.strip().startswith('measured,'))
+    omitted_line = next(line for line in raw.splitlines() if line.strip().startswith('omitted,'))
+
+    assert measured_line != omitted_line
+    assert UNMEASURED_COLUMN_TOKEN not in measured_line
+    assert UNMEASURED_COLUMN_TOKEN in omitted_line
+
+
+def test_the_parser_supplies_none_not_zero_for_an_omitted_flag(plan_context):
+    """The discriminator lives in the PARSER's default, so it is pinned there.
+
+    ``default=0`` would make an omitted flag reach the handler byte-identical to
+    an explicit ``0``, and no care in the handler could recover the distinction.
+    The handler test above cannot see that regression — it would keep passing
+    while every omitted column silently became a measured zero.
+    """
+    omitted = _record_ns(plan_id='rec-parser', step_id='verify:quality-gate')
+    supplied = _record_ns(plan_id='rec-parser', step_id='verify:quality-gate', total_tokens=0)
+
+    assert omitted.total_tokens is None
+    assert omitted.tool_uses is None
+    assert omitted.duration_ms is None
+    assert supplied.total_tokens == 0
+
+
+def test_unmeasured_token_matches_the_sibling_ledger():
+    """The mirrored literal agrees with ``manage-metrics``' own definition.
+
+    The absence-vs-zero contract is a property of the ledger FAMILY, so the two
+    skills define the same literal independently (they run in different processes
+    and neither may import the other's private module). Nothing but this check
+    stops the two drifting into two different tokens, at which point every
+    cross-ledger reader would silently classify one skill's unmeasured column as
+    unrecognised.
+    """
+    metrics = load_script_module(
+        'plan-marshall', 'manage-metrics', 'manage-metrics.py', module_name='_mm_token_drift'
+    )
+
+    assert UNMEASURED_COLUMN_TOKEN == metrics.UNMEASURED_COLUMN_TOKEN
 
 
 def test_record_negative_token_values_clamped_to_zero(plan_context):

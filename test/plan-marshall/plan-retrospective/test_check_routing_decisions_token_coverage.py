@@ -1,0 +1,154 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""The ``execution_log`` token sum states how much of its population it READ.
+
+The sum is already labelled with the phase population it covers. A phase filter
+is not the only way it can be partial, though: the writer's token columns are
+three-state, so a row whose flag the caller omitted carries the ``unmeasured``
+token and contributes nothing. Summing over such rows and publishing the total
+alone reconstructs the fabricated figure the token exists to prevent, one level
+up from the ledger.
+
+These tests pin the reader's own output: the per-state row counts beside the sum,
+the int-parsing floor that keeps historical all-numeric rows summing exactly as
+before, and the refusal to emit a delta computed against a floor. Every positive
+assertion has its fully-measured control beside it.
+"""
+
+
+from __future__ import annotations
+
+from _check_routing_decisions_fixtures import _crd
+
+from conftest import load_script_module
+
+#: The population the sum claims to cover — rows outside it are excluded before
+#: any state is read, which the out-of-population test below keeps honest.
+IN_POPULATION_PHASE = '5-execute'
+
+
+def _row(step_id: str, total_tokens: object, phase: str = IN_POPULATION_PHASE) -> dict:
+    return {'step_id': step_id, 'phase': phase, 'total_tokens': total_tokens}
+
+
+def _manifest(*rows: dict) -> dict:
+    return {'execution_log': list(rows)}
+
+
+class TestSumCoverageIsPublished:
+    """Every sum carries the per-state row counts it was taken over."""
+
+    def test_a_fully_measured_population_reports_no_gap(self):
+        """The control: without it, a reader that reported everything unmeasured passes."""
+        coverage = _crd.summarize_execution_log_tokens(
+            _manifest(_row('a', 40_000), _row('b', 60_000))
+        )
+
+        assert coverage['total_tokens'] == 100_000
+        assert coverage['rows_in_population'] == 2
+        assert coverage['rows_measured'] == 2
+        assert coverage['rows_unmeasured'] == 0
+        assert coverage['rows_unrecognised'] == 0
+
+    def test_an_unmeasured_row_is_counted_not_summed(self):
+        coverage = _crd.summarize_execution_log_tokens(
+            _manifest(_row('a', 40_000), _row('b', _crd.UNMEASURED_COLUMN_TOKEN))
+        )
+
+        assert coverage['total_tokens'] == 40_000
+        assert coverage['rows_measured'] == 1
+        assert coverage['rows_unmeasured'] == 1
+        assert coverage['rows_unrecognised'] == 0
+
+    def test_a_measured_zero_counts_as_measured(self):
+        """⛔ The distinction the whole contract turns on, asserted at this reader."""
+        coverage = _crd.summarize_execution_log_tokens(_manifest(_row('a', 0)))
+
+        assert coverage['rows_measured'] == 1
+        assert coverage['rows_unmeasured'] == 0
+
+    def test_an_unreadable_cell_is_unrecognised_not_unmeasured(self):
+        coverage = _crd.summarize_execution_log_tokens(_manifest(_row('a', '12x')))
+
+        assert coverage['rows_unrecognised'] == 1
+        assert coverage['rows_unmeasured'] == 0
+
+    def test_the_state_counts_partition_the_population(self):
+        coverage = _crd.summarize_execution_log_tokens(
+            _manifest(
+                _row('a', 5),
+                _row('b', _crd.UNMEASURED_COLUMN_TOKEN),
+                _row('c', '12x'),
+                _row('d', 7, phase='1-init'),
+            )
+        )
+
+        assert coverage['rows_in_population'] == 3
+        assert (
+            coverage['rows_measured']
+            + coverage['rows_unmeasured']
+            + coverage['rows_unrecognised']
+            == coverage['rows_in_population']
+        )
+
+    def test_the_int_parsing_floor_still_reads_a_digit_string(self):
+        """Historical all-numeric rows parse and sum exactly as before."""
+        coverage = _crd.summarize_execution_log_tokens(_manifest(_row('a', '12000')))
+
+        assert coverage['total_tokens'] == 12_000
+        assert coverage['rows_measured'] == 1
+
+
+class TestCostPreviewRefusesADeltaAgainstAFloor:
+    """A populations-match delta is emitted only when the sum covered its population."""
+
+    _METADATA = {
+        'execution_profile_cost_preview': '50000',
+        'execution_profile_cost_preview_population': _crd.EXECUTION_LOG_POPULATION,
+    }
+
+    def test_a_fully_measured_sum_still_computes_the_delta(self):
+        """The control — the refusal must not fire on a complete measurement."""
+        preview = _crd.evaluate_cost_preview(_manifest(_row('a', 60_000)), self._METADATA)
+
+        assert preview['comparison'] == _crd.COMPARISON_COMPUTED
+        assert preview['delta_tokens'] == 10_000
+
+    def test_an_unmeasured_row_refuses_the_delta(self):
+        preview = _crd.evaluate_cost_preview(
+            _manifest(_row('a', 60_000), _row('b', _crd.UNMEASURED_COLUMN_TOKEN)),
+            self._METADATA,
+        )
+
+        assert preview['comparison'] == _crd.COMPARISON_REFUSED
+        assert 'incomplete_measurement' in preview['comparison_reason']
+        assert 'delta_tokens' not in preview
+
+    def test_the_preview_publishes_the_coverage_either_way(self):
+        preview = _crd.evaluate_cost_preview(
+            _manifest(_row('a', 60_000), _row('b', _crd.UNMEASURED_COLUMN_TOKEN)),
+            self._METADATA,
+        )
+
+        assert preview['execution_log_rows_in_population'] == 2
+        assert preview['execution_log_rows_measured'] == 1
+        assert preview['execution_log_rows_unmeasured'] == 1
+        assert preview['execution_log_rows_unrecognised'] == 0
+
+
+def test_unmeasured_token_matches_writer():
+    """The mirrored literal agrees with the manifest writer's own definition.
+
+    This script runs in a different process from ``manage-execution-manifest`` and
+    cannot import its private module, so the token is a hand-mirror — the same
+    shape ``EXECUTION_LOG_PHASES`` already uses beside it. Without this check the
+    two could drift, and every unmeasured row would then be counted as
+    unrecognised instead.
+    """
+    core = load_script_module(
+        'plan-marshall',
+        'manage-execution-manifest',
+        '_manifest_core.py',
+        module_name='_mem_core_crd_token_drift',
+    )
+
+    assert _crd.UNMEASURED_COLUMN_TOKEN == core.UNMEASURED_COLUMN_TOKEN
