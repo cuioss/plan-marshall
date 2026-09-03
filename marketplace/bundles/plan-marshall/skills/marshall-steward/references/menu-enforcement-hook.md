@@ -115,13 +115,15 @@ every required surface on its own line; scan for the dedicated
   The enforcement entry is present in ./.claude/settings.json AND in
   ./.claude/settings.local.json. This is reported for your awareness only —
   nothing here repairs, migrates, or de-duplicates it, and the hook is armed
-  either way.
+  either way. Re-running the install does not clear it.
   ```
 
-  Return to the Configuration menu. Do NOT proceed to Step 2, and do NOT offer
-  the re-run install: this flow writes only `.claude/settings.local.json`, so it
-  cannot resolve a state that spans both files, and offering a write that cannot
-  change the reported condition would be misleading.
+  Do NOT proceed to Step 2 — the hook is installed, so there is nothing to
+  enable. Then offer the same timeout re-run the `present` branch offers, for
+  the same reason and with the same outcome expectations: `divergence` means the
+  entry is in `.claude/settings.local.json` among others, which is the file the
+  install writes, so a stale timeout there converges and no duplicate can be
+  added. The divergence itself is untouched either way.
 
 - `PreToolUse:enforcement: MISSING` — the enforcement hook is not installed.
   Proceed to Step 2.
