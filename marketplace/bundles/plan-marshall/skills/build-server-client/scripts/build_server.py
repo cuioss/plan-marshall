@@ -428,18 +428,17 @@ def run_submit(args: Namespace) -> dict[str, Any]:
     # absent, so the plan-less no-op it always had is preserved.
     plan_id = args.plan_id or NO_PLAN_SENTINEL
     notation = _notation_from_command(command)
-    # The caller's EXPLICIT build bound, forwarded onto the wire. ``None`` means
-    # "this submit stated no bound" and leaves the daemon on its own default;
-    # anything else is a real override the daemon must honour, because a
-    # ``--timeout`` the routed leg cannot transmit is a bound the client asked
-    # for and never got.
-    explicit_timeout = getattr(args, 'timeout', None)
+    # ``args.timeout`` is the caller's EXPLICIT build bound, forwarded onto the
+    # wire. ``None`` means "this submit stated no bound" and leaves the daemon on
+    # its own default; anything else is a real override the daemon must honour,
+    # because a ``--timeout`` the routed leg cannot transmit is a bound the
+    # client asked for and never got.
     spec = make_job_spec(
         command=command,
         exec_path=exec_path,
         project_path=project_path,
         plan_id=plan_id,
-        timeout=explicit_timeout,
+        timeout=args.timeout,
     )
 
     _, reason = _handshake(_socket_path())
