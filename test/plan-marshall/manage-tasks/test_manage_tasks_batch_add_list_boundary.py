@@ -90,8 +90,8 @@ def _toon_with_command_row(row, indent):
 def test_hand_quoted_command_raises_at_every_indent_the_parser_admits(indent):
     """The same disagreement one level down: a nested header admits its own indent.
 
-    ``commands[1]:`` sits at indent 2, so ``parse_toon`` reads a row at indent 2. The
-    stricter walk required indent 3+, which no real document writes.
+    ``commands[1]:`` sits at indent 2, so ``parse_toon`` reads a row at indent 2, which
+    the stricter walk excluded.
     """
     with pytest.raises(ValueError) as excinfo:
         parse_stdin_task(_toon_with_command_row('"make"', indent))
