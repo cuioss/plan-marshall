@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for _marshalld_supervisor (clean env, classification, run_job).
 
 Terminal classification carries one subtlety worth stating up front: the daemon's
@@ -17,16 +16,11 @@ import asyncio
 import sys
 from pathlib import Path
 
-from conftest import get_script_path
+import _build_server_protocol as protocol
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-build-server', 'marshalld.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
+from conftest import load_script_module
 
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import _build_server_protocol as protocol  # noqa: E402
-import _marshalld_supervisor as supervisor  # noqa: E402
+supervisor = load_script_module('plan-marshall', 'manage-build-server', '_marshalld_supervisor.py')
 
 # Child programs run through run_job. Each writes the shape of build-wrapper
 # output the supervisor has to classify, then exits 0 (or is killed).

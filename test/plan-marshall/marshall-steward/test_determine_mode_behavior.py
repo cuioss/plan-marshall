@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: E402
 """In-process behavioral tests for determine_mode.py mode/doc/structure logic.
 
 The existing marshall-steward suites cover the worktree guard and the
@@ -22,12 +21,9 @@ from typing import cast
 
 from conftest import MARKETPLACE_ROOT, load_script_module
 
-# Ensure manage-config scripts are importable so determine_mode's lazy
-# ``_config_defaults`` import (used by working-prefix drift detection) resolves.
-_MANAGE_CONFIG_SCRIPTS = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
-if str(_MANAGE_CONFIG_SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(_MANAGE_CONFIG_SCRIPTS))
-
+# ``determine_mode`` lazily imports ``_config_defaults`` (for working-prefix drift
+# detection). No bootstrap is needed for that: the root conftest already puts every
+# marketplace ``scripts/`` directory on ``sys.path`` before any test module loads.
 dm = load_script_module(
     'plan-marshall', 'marshall-steward', 'determine_mode.py', 'determine_mode_behavior_cov'
 )

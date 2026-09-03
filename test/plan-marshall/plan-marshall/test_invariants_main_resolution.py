@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Main-anchored resolution for the ``main_*`` handshake columns.
 
 A column named for main must be read from main. ``_current_repo_root`` is
@@ -31,20 +30,18 @@ move.
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
 
+# Imported PLAINLY so this suite holds the same ``_invariants`` instance the
+# production path resolves; its marketplace ``scripts/`` directory is already on
+# ``sys.path`` via the root conftest.
+import _invariants as inv
+import file_ops
 import pytest
 
 from conftest import get_script_path, load_script_module
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall', 'phase_handshake.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import _invariants as inv
-import file_ops
 
 
 def _git(cwd: Path, *args: str) -> str:

@@ -37,18 +37,17 @@ Two consequences bind anything added to this module:
 * Do NOT hoist the factory load to module scope. Loading it here at import time
   would register a copy at a DIFFERENT moment than the lazy call below, adding a
   second live copy to a hazard that already has two.
-* :func:`build_scripts_dir` deliberately only puts the build scripts directory on
-  ``sys.path``; it does NOT import the factory. Each consumer keeps its own
+* :func:`build_scripts_dir` deliberately only RESOLVES the build scripts
+  directory; it does NOT import the factory. Each consumer keeps its own
   module-level ``import _build_execute_factory as factory`` so its binding timing
-  is unchanged by sharing this bootstrap.
+  is unchanged by sharing this resolution.
 """
 
 import importlib.util
-import sys
 
 from toon_parser import parse_toon
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import get_script_path, get_scripts_dir, load_script_module, run_script
 
 # =============================================================================
 # Extension-contract staging — the surface all six build-* directories share
@@ -56,28 +55,26 @@ from conftest import get_script_path, load_script_module, run_script
 
 
 def build_scripts_dir():
-    """Put ``script-shared/scripts/build`` on ``sys.path`` and return it.
+    """Return ``script-shared/scripts/build``.
 
     The build backends' shared modules (``_build_execute_factory``,
-    ``_build_execute``, ``_build_server_protocol``) live outside every
-    ``scripts/`` directory pytest already resolves, so a consumer must add that
-    directory before importing them.
-
-    Idempotent: the insert is skipped when the directory is already on the path.
+    ``_build_execute``, ``_build_server_protocol``) live here. No ``sys.path``
+    bootstrap is needed to import them: the root ``conftest`` puts every
+    marketplace ``scripts/`` directory AND each of its immediate subdirectories
+    on ``sys.path`` before any test module is imported, and this directory is one
+    of those subdirectories. The accessor survives the bootstrap it replaced
+    because callers derive sibling paths from the directory it returns.
 
     This function does NOT import the factory, and must not start doing so — see
     the ``sys.modules`` re-registration hazard in this module's docstring. The
     caller keeps its own module-level ``import _build_execute_factory as
     factory`` so that binding happens at the caller's import time, exactly as it
-    did before this bootstrap was shared.
+    did before this resolution was shared.
 
     Returns:
         The build scripts directory, so a caller can derive sibling paths.
     """
-    build_dir = get_script_path('plan-marshall', 'script-shared', 'marketplace_paths.py').parent / 'build'
-    if str(build_dir) not in sys.path:
-        sys.path.insert(0, str(build_dir))
-    return build_dir
+    return get_scripts_dir('plan-marshall', 'script-shared') / 'build'
 
 
 def execute_config(factory, capture_strategy, **overrides):

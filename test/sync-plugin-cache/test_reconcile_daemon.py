@@ -39,6 +39,12 @@ import pytest
 
 from conftest import PROJECT_ROOT
 
+# ``reconcile_daemon`` is a PROJECT-LOCAL skill script under ``.claude/``, not a
+# marketplace bundle script, so neither ``load_script_module`` nor
+# ``load_skill_module`` can address it and the root conftest's marketplace
+# ``sys.path`` setup does not reach it. This bootstrap therefore stays where every
+# marketplace one was removed, and it is what the file-level ``I001, E402`` waiver
+# above is still paying for.
 _SCRIPTS = PROJECT_ROOT / '.claude' / 'skills' / 'sync-plugin-cache' / 'scripts'
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))

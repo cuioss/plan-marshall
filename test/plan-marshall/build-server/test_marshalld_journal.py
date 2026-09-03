@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for _marshalld_journal (retention/GC, restart replay, ETA history).
 
 Every test isolates the machine-global home via PLAN_MARSHALL_HOME -> tmp_path,
@@ -9,21 +8,12 @@ so no test touches the real ~/.plan-marshall/marshalld/journal/ tree.
 
 from __future__ import annotations
 
-import sys
 import time
 from pathlib import Path
 
+import _marshalld_audit as audit_mod
+import _marshalld_journal as journal_mod
 import pytest
-from conftest import get_script_path
-
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-build-server', 'marshalld.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import _marshalld_audit as audit_mod  # noqa: E402
-import _marshalld_journal as journal_mod  # noqa: E402
 
 
 @pytest.fixture

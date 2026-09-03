@@ -1,34 +1,27 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Injected-failure controls for the partition — a checker never observed failing is not a checker.
 
 Each negative control is paired with the matching positive control on the SAME
 clean corpus, so a test that passes because the derivation reports nothing at all
 cannot be mistaken for a test that passes because the derivation works.
 
-Drives the underscore-prefixed helpers directly by inserting the scripts dir on
-``sys.path`` (the canonical scaffolding pattern). Every corpus and tree is built
+Drives the underscore-prefixed helpers directly, through the shared
+``conftest.load_script_module`` loader. Every corpus and tree is built
 under ``tmp_path``; the real orchestrator store is never touched.
 """
 
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
+# PLAIN import, deliberately — see the sibling suites: only a plain import gives
+# mypy the real module, and the name must be bound the same way everywhere or the
+# loader would register a copy beside the plainly-imported one.
+import _epic_partition as partition_mod
 import pytest
-
-from conftest import get_scripts_dir
-
-SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'tools-epic-surface-partition')
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import _epic_partition as partition_mod  # noqa: E402
-from epic_spec_parser import classify_corpus  # noqa: E402
-
+from epic_spec_parser import classify_corpus
 
 # --- the clean baseline ------------------------------------------------------
 

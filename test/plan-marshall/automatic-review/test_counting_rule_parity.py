@@ -28,19 +28,20 @@ from __future__ import annotations
 
 import sys
 
-from conftest import PROJECT_ROOT, get_script_path
+import review_gate_delta as delta
 
-_DELTA_SCRIPTS = get_script_path('plan-marshall', 'automatic-review', 'review_gate_delta.py').parent
-if str(_DELTA_SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(_DELTA_SCRIPTS))
+from conftest import PROJECT_ROOT
 
+# ``review_retrospective`` is a PROJECT-LOCAL skill script under ``.claude/``, not
+# a marketplace bundle script, so ``conftest.load_script_module`` cannot address
+# it and the root conftest's marketplace ``sys.path`` setup does not reach it.
+# This bootstrap therefore stays where every marketplace one was removed, and it
+# is what the file-level ``I001, E402`` waiver above is still paying for.
 _RETRO_SCRIPTS = (
     PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-review-retrospective' / 'scripts'
 )
 if str(_RETRO_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_RETRO_SCRIPTS))
-
-import review_gate_delta as delta  # noqa: E402
 
 # A bare ``type: ignore`` is deliberate here, not laziness: mypy resolves this
 # project-local import differently depending on which roots are on its search

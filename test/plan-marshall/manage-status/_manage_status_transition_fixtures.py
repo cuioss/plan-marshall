@@ -19,10 +19,14 @@ loop-back target validation.
 
 
 import json
-import sys as _sys
 from argparse import Namespace
 from pathlib import Path
 
+# PLAIN imports, deliberately — see the MODULE IDENTITY note further down. The
+# handshake modules ship in a marketplace ``scripts/`` directory, which the root
+# conftest already puts on ``sys.path``, so no bootstrap is needed to reach them.
+import _handshake_commands as _cmds
+import _invariants as _inv
 import pytest
 
 from conftest import get_script_path, load_script_module
@@ -189,27 +193,16 @@ def _seed_legitimate_plan(plan_id: str) -> None:
 # that orchestrator workflow docs used to issue separately at 5-execute -> 6-finalize).
 # =============================================================================
 
-# Use STANDARD imports for handshake modules so the monkeypatch in the
-# fixtures in the sibling modules hits the same module instance that
-# ``_cmd_lifecycle.cmd_verify``
-# reads at runtime.
-_PLAN_HANDSHAKE_SCRIPTS_DIR = str(
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-marshall'
-    / 'scripts'
-)
-
-
-if _PLAN_HANDSHAKE_SCRIPTS_DIR not in _sys.path:
-    _sys.path.insert(0, _PLAN_HANDSHAKE_SCRIPTS_DIR)
-
-
-import _handshake_commands as _cmds  # noqa: E402
-import _invariants as _inv  # noqa: E402
+# MODULE IDENTITY, not merely reachability. ``_cmds`` and ``_inv`` are imported
+# PLAINLY at the top of this module so they bind the SAME module objects
+# ``_cmd_lifecycle.cmd_verify`` resolves at runtime — which is what makes the
+# monkeypatching in the sibling fixtures reach the production path at all.
+#
+# ⛔ A ``conftest.load_script_module`` call would NOT preserve that. It registers
+# a SECOND copy under the same name, so a stub applied here would patch an object
+# the production path never consults: the test would pass while verifying
+# nothing. The sibling test modules assert the shared-instance property directly
+# rather than leaving it to a green run.
 
 
 def _seed_plan_with_5_execute_capture(plan_id):

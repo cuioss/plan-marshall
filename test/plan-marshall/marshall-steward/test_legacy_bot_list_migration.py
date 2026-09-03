@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """End-to-end landing suite for the retired ``enabled_bots`` auto-map.
 
 Cross-cutting counterpart to ``test_upgrade.py``, which owns the pure
@@ -26,28 +25,21 @@ literal — so changing the fixture cannot leave a stale expectation passing.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
+import bot_registry
 import pytest
 
-from conftest import get_script_path
-
-_STEWARD_SCRIPTS = get_script_path('plan-marshall', 'marshall-steward', 'upgrade.py').parent
-_AR_SCRIPTS = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py').parent
 # ``upgrade`` imports ``file_ops`` at module scope (for the ``safe_main`` entry
 # wrapper), and ``file_ops`` in turn imports from ``script-shared``. Under the
-# executor both arrive on one injected PYTHONPATH; here each dir is named.
-_FILE_OPS_SCRIPTS = get_script_path('plan-marshall', 'tools-file-ops', 'file_ops.py').parent
-_SHARED_SCRIPTS = get_script_path('plan-marshall', 'script-shared', 'marketplace_paths.py').parent
+# executor both arrive on one injected PYTHONPATH; under pytest the root conftest
+# puts every marketplace ``scripts/`` directory on ``sys.path`` instead, so this
+# plain import resolves without a bootstrap.
+import upgrade
 
-for _dir in (_STEWARD_SCRIPTS, _AR_SCRIPTS, _FILE_OPS_SCRIPTS, _SHARED_SCRIPTS):
-    if str(_dir) not in sys.path:
-        sys.path.insert(0, str(_dir))
+from conftest import load_script_module
 
-import bot_registry  # noqa: E402
-import review_completeness as rc  # noqa: E402
-import upgrade  # noqa: E402
+rc = load_script_module('plan-marshall', 'automatic-review', 'review_completeness.py')
 
 _AUTOMATIC_REVIEW_STEP_ID = 'plan-marshall:automatic-review'
 

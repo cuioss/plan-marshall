@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the surface partition — every verdict and the budget attribution.
 
-Drives the underscore-prefixed helpers directly by inserting the scripts dir on
-``sys.path`` (the canonical scaffolding pattern).
+Drives the underscore-prefixed helpers directly, through the shared
+``conftest.load_script_module`` loader.
 
 Three independent rules decide whether a spec's ENTRY carries OWNERSHIP, and
 each is covered here with a matched positive and negative control, in isolation
@@ -35,26 +34,20 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from pathlib import Path
 
+# PLAIN import, deliberately: the annotations below name ``partition_mod.Partition``,
+# and only a plain import gives mypy the real module — the shared loader returns
+# ``Any``, which turns every such annotation into an undefined name.
+import _epic_partition as partition_mod
 import pytest
-
-from conftest import get_scripts_dir
-
-SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'tools-epic-surface-partition')
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import _epic_partition as partition_mod  # noqa: E402
-from epic_spec_parser import (  # noqa: E402
+from epic_spec_parser import (
     KIND_DIRECTORY,
     KIND_FILE,
     KIND_FILENAME_GLOB,
     KIND_RECURSIVE_GLOB,
     classify_corpus,
 )
-
 
 # --- scaffolding -------------------------------------------------------------
 

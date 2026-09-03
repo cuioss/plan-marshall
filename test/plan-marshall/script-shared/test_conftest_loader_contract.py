@@ -69,7 +69,6 @@ UNRESOLVED_CALL_SITE_BOUND = 87
 KNOWN_REGISTRATION_COLLISIONS = frozenset({
     '_architecture_core',
     '_build_execute_factory',
-    '_cmd_effort',
     '_config_defaults',
     '_cred_edit',
     '_findings_core',
@@ -78,17 +77,13 @@ KNOWN_REGISTRATION_COLLISIONS = frozenset({
     '_gradle_execute',
     '_maven_execute',
     '_pyproject_execute',
-    'lsp_client',
     'permission_doctor',
     'permission_fix',
     'platform_runtime',
-    'effort_presets',
-    'finalize_step_presets',
     'github_pr',
     'manage_terminal_title',
     'plan_logging',
     'recipe_scoring',
-    'review_completeness',
     'run_config',
 })
 

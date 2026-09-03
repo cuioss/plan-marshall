@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Acceptance: the S1/S2/S3/S4 verify-not-resolve refusals.
 
 S1/S2 — the verifier refuses an unregistered tree, an off-template argv, a
@@ -15,29 +14,20 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sys
 
+# PLAIN import, deliberately: the build-server suites annotate against
+# ``marshalld.Daemon``, which only a plain import gives mypy. The name is bound the
+# same way in every suite, so no loaded copy is published beside it.
+import marshalld
 import pytest
-from conftest import get_script_path
-
-_DAEMON_DIR = get_script_path('plan-marshall', 'manage-build-server', 'marshalld.py').parent
-_CLIENT_DIR = get_script_path('plan-marshall', 'build-server-client', 'build_server.py').parent
-for _d in (_DAEMON_DIR, _CLIENT_DIR):
-    if str(_d) not in sys.path:
-        sys.path.insert(0, str(_d))
-
-import _marshalld_supervisor as supervisor  # noqa: E402
-import build_server as client  # noqa: E402
-import manage_build_server as control  # noqa: E402
-import marshalld  # noqa: E402
-from _build_server_protocol import STATUS_QUEUED, STATUS_REFUSED, JobSpec  # noqa: E402
-from _build_server_registry import canonicalize_root  # noqa: E402
-from _marshalld_audit import InteractionAudit  # noqa: E402
-from _marshalld_journal import Journal  # noqa: E402
-from _marshalld_scheduler import Scheduler  # noqa: E402
-from _marshalld_verifier import (  # noqa: E402
-    REFUSE_EXECUTOR_MISMATCH,
+from _build_server_protocol import STATUS_QUEUED, STATUS_REFUSED, JobSpec
+from _build_server_registry import canonicalize_root
+from _marshalld_audit import InteractionAudit
+from _marshalld_journal import Journal
+from _marshalld_scheduler import Scheduler
+from _marshalld_verifier import (
     REFUSE_EXEC_PATH_ESCAPE,
+    REFUSE_EXECUTOR_MISMATCH,
     REFUSE_NOT_REGISTERED,
     REFUSE_NOTATION_NOT_ALLOWLISTED,
     REFUSE_PROJECT_PATH_ESCAPE,
@@ -45,6 +35,12 @@ from _marshalld_verifier import (  # noqa: E402
     _exec_path_within_registration,
     verify_submit,
 )
+
+from conftest import load_script_module
+
+supervisor = load_script_module('plan-marshall', 'manage-build-server', '_marshalld_supervisor.py')
+client = load_script_module('plan-marshall', 'build-server-client', 'build_server.py')
+control = load_script_module('plan-marshall', 'manage-build-server', 'manage_build_server.py')
 
 _NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
 

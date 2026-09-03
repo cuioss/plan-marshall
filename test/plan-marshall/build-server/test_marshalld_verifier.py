@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for _marshalld_verifier (S1/S2 accept/refuse matrix).
 
 Drives the pure verifier against hand-built registry dicts and JobSpecs, with an
@@ -14,20 +13,16 @@ import os
 import sys
 from pathlib import Path
 
-from conftest import get_script_path
+import _build_server_protocol as proto
+import _marshalld_verifier as verifier
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-build-server', 'marshalld.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import _build_server_protocol as proto  # noqa: E402
-import _marshalld_verifier as verifier  # noqa: E402
-import marshalld  # noqa: E402
-from _marshalld_audit import InteractionAudit  # noqa: E402
-from _marshalld_journal import Journal  # noqa: E402
-from _marshalld_scheduler import Scheduler  # noqa: E402
+# PLAIN import, deliberately: the build-server suites annotate against
+# ``marshalld.Daemon``, which only a plain import gives mypy. The name is bound the
+# same way in every suite, so no loaded copy is published beside it.
+import marshalld
+from _marshalld_audit import InteractionAudit
+from _marshalld_journal import Journal
+from _marshalld_scheduler import Scheduler
 
 # A Homebrew/framework-shaped interpreter path — deliberately NOT basenamed
 # `python3`/`python`. It is what a regression to `baseline_interpreter or

@@ -68,8 +68,9 @@ def load_executor_module():
         'def _resolve_notation_by_target(notation):\n    return None\n',
     )
 
-    # Add logging dir to path so plan_logging can be imported
-    sys.path.insert(0, str(LOGGING_DIR))
+    # ``plan_logging`` resolves for the exec'd template without a bootstrap: the
+    # root conftest puts every marketplace ``scripts/`` directory — LOGGING_DIR
+    # among them — on ``sys.path`` before any test module is imported.
 
     # Create a module and provide __file__
     import types

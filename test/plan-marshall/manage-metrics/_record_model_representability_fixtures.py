@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Shared preamble for the ``record model representability`` test modules.
 
 Holds the module-level loads, constants and helpers the modules beside it
@@ -56,30 +55,12 @@ separate trees, so a change that moved only one of them fails in the modules thi
 
 from __future__ import annotations
 
-
 import importlib
-
-
-import importlib.util
-
-
 import json
-
-
 import sys
-
-
 from argparse import Namespace
-
-
 from pathlib import Path
-
-
 from typing import Any
-
-
-from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, get_script_path, load_script_module, parse_ns
-
 
 from _manage_metrics_fixtures import (
     ns_end_phase,
@@ -89,28 +70,21 @@ from _manage_metrics_fixtures import (
     ns_start_phase,
 )
 
+from conftest import PROJECT_ROOT, load_script_module, parse_ns
 
 # ---------------------------------------------------------------------------
 # Modules under composition
 # ---------------------------------------------------------------------------
 #
-# Three production surfaces, loaded the way each of their own test modules loads
-# them. `manage-metrics.py` and `analyze-logs.py` have kebab-case filenames (not
-# valid Python identifiers), so they come in through importlib by file location.
+# Three production surfaces, loaded through the shared loader. `manage-metrics.py`
+# and `analyze-logs.py` have kebab-case filenames (not valid Python identifiers),
+# so they are addressable only by file — which is exactly what the shared loader
+# resolves, and each is published under an explicit test-local name so neither
+# displaces a registration another test module holds.
 
-_METRICS_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
-
-
-_metrics_spec = importlib.util.spec_from_file_location('manage_metrics_representability', _METRICS_PATH)
-
-
-assert _metrics_spec is not None and _metrics_spec.loader is not None
-
-
-manage_metrics = importlib.util.module_from_spec(_metrics_spec)
-
-
-_metrics_spec.loader.exec_module(manage_metrics)
+manage_metrics = load_script_module(
+    'plan-marshall', 'manage-metrics', 'manage-metrics.py', 'manage_metrics_representability'
+)
 
 
 cmd_start_phase = manage_metrics.cmd_start_phase
@@ -152,30 +126,18 @@ cmd_mark_step_done = _mark_step.cmd_mark_step_done
 read_status = _status_core.read_status
 
 
-_ANALYZE_LOGS_PATH = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'analyze-logs.py'
+analyze_logs = load_script_module(
+    'plan-marshall', 'plan-retrospective', 'analyze-logs.py', 'analyze_logs_representability'
 )
-
-
-_analyze_spec = importlib.util.spec_from_file_location(
-    'analyze_logs_representability', str(_ANALYZE_LOGS_PATH)
-)
-
-
-assert _analyze_spec is not None and _analyze_spec.loader is not None
-
-
-analyze_logs = importlib.util.module_from_spec(_analyze_spec)
-
-
-_analyze_spec.loader.exec_module(analyze_logs)
 
 
 # The `.claude` audit skill is a project-local script, not a marketplace-bundle
-# script, so `conftest.get_script_path` does not resolve it — its `scripts/` dir
-# goes on sys.path directly. `import_module` (rather
-# than a second file-location load) reuses the one canonical module instance, so
-# the schema constants compared against are the same objects the reader returns.
+# script, so neither `conftest.get_script_path` nor `conftest.load_script_module`
+# resolves it — both address only `marketplace/bundles/`. Its `scripts/` dir goes
+# on sys.path directly, and this bootstrap therefore survives a sweep that removed
+# every marketplace one. `import_module` (rather than a file-location load) reuses
+# the one canonical module instance, so the schema constants compared against are
+# the same objects the reader returns.
 _AUDIT_SCRIPTS_DIR = PROJECT_ROOT / '.claude' / 'skills' / 'audit-archived-plan-retrospectives' / 'scripts'
 
 

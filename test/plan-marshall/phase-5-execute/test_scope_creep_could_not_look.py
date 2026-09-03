@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """The scope-creep guard's unmeasured state cannot render as a measured zero.
 
 The defect (finding 5ebd40): ``scope_creep_check`` returned ``residual_count: 0``
@@ -20,22 +19,17 @@ rather than a fix.
 from __future__ import annotations
 
 import json
-import sys
 from argparse import Namespace
 from pathlib import Path
 
 import file_ops
+
+# PLAIN import, deliberately — matching the sibling suites, whose annotations need
+# mypy to see the real module. The name must be bound the same way in all three or
+# the loader would register a copy beside the plainly-imported one.
+import scope_creep_check as scc
 from _resolve_project_dir_fixtures import worktree_query_result
-from conftest import get_script_path
 from toon_parser import parse_toon
-
-SCRIPT_PATH = get_script_path('plan-marshall', 'phase-5-execute', 'scope_creep_check.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import scope_creep_check as scc  # noqa: E402
 
 
 def _seed_plan(plan_context, *, with_baseline: bool):

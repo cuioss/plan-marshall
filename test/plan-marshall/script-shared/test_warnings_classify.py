@@ -1,16 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for _warnings_classify module — unified warning categorization with pluggable matching."""
 
-import importlib
-import sys
-
-from conftest import get_scripts_dir
-
-# Add script path for imports
-_SCRIPT_DIR = get_scripts_dir('plan-marshall', 'script-shared') / 'build'
-sys.path.insert(0, str(_SCRIPT_DIR))
-
-_wc = importlib.import_module('_warnings_classify')
+# ``_warnings_classify`` lives in ``script-shared/scripts/build``, an immediate
+# subdirectory the root conftest already puts on ``sys.path``, so it imports
+# plainly with no bootstrap.
+import _warnings_classify as _wc
 
 
 def _warn(message: str, wtype: str = 'other', severity: str = 'WARNING') -> dict:

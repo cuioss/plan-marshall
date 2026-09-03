@@ -41,6 +41,12 @@ import pytest
 
 from conftest import PROJECT_ROOT
 
+# ``review_retrospective`` is a PROJECT-LOCAL skill script under ``.claude/``, not a
+# marketplace bundle script. ``conftest.load_script_module`` /
+# ``load_skill_module`` resolve only under ``marketplace/bundles/``, and the root
+# conftest's ``sys.path`` setup walks only that tree, so neither can address this
+# module. The bootstrap therefore stays where every marketplace one was removed,
+# and it is what the file-level ``I001, E402`` waiver above is still paying for.
 _SCRIPTS_DIR = (
     PROJECT_ROOT
     / '.claude'

@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for manage_build_server — the operator control surface.
 
-Drive the control verbs directly by inserting the manage-build-server scripts dir
-on sys.path. Every test isolates the machine-global home root by pointing
+Drive the control verbs directly, through the shared ``conftest.load_script_module``
+loader. Every test isolates the machine-global home root by pointing
 ``PLAN_MARSHALL_HOME`` at a per-test ``tmp_path`` so no test touches the real
 ``~/.plan-marshall/`` tree. The OS seams (``_spawn_detached`` / ``_signal`` /
 ``_ping``) are monkeypatched so no real daemon is launched, no real signal is
@@ -18,32 +17,26 @@ import copy
 import json
 import os
 import signal
-import sys
 from pathlib import Path
 from typing import Any
 
+import _build_server_registry as registry
 import pytest
-from conftest import get_script_path, parse_ns
+
+from conftest import load_script_module, parse_ns
 
 _BUNDLE = 'plan-marshall'
 _SKILL = 'manage-build-server'
 _SCRIPT = 'manage_build_server.py'
 
-SCRIPT_PATH = get_script_path(_BUNDLE, _SKILL, _SCRIPT)
-SCRIPTS_DIR = SCRIPT_PATH.parent
-
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import _build_server_registry as registry  # noqa: E402
-import manage_build_server as mbs  # noqa: E402
+mbs = load_script_module(_BUNDLE, _SKILL, _SCRIPT)
 
 
 def _verb_args(*argv: str) -> argparse.Namespace:
     """The namespace ``manage_build_server.py``'s OWN parser yields for ``argv``.
 
     ``register=False`` so building one never publishes a second
-    ``manage_build_server`` in ``sys.modules`` alongside the one imported above.
+    ``manage_build_server`` in ``sys.modules`` alongside the one the loader published above.
     """
     args: argparse.Namespace = parse_ns(_BUNDLE, _SKILL, _SCRIPT, *argv, register=False)
     return args

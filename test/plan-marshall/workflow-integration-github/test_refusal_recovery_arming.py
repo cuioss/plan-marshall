@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Cross-cutting suite: a NON-CodeRabbit refusal arms the right recovery.
 
 Fail-first suite for D2 (registry-driven per-bot detection) and D4 (refusal
@@ -37,23 +36,21 @@ doc is swept here automatically.
 
 from __future__ import annotations
 
-import sys
+import importlib
 
-import pytest
+# ``github_ops`` MUST be resolved FIRST: importing ``_github_pr`` before it fails
+# outright with a partially-initialised-module ImportError, because the two close
+# an import cycle. It is reached through ``import_module`` rather than an
+# ``import`` statement because isort sorts ``_github_pr`` ahead of ``github_ops``,
+# so no arrangement of plain imports can express the ordering. That one statement
+# is what puts the imports below out of the file's import block, which is the
+# whole of the per-line ``E402`` waivers they carry.
+importlib.import_module('github_ops')
 
-from conftest import get_script_path
-
-_GH_SCRIPTS = get_script_path('plan-marshall', 'workflow-integration-github', 'github_pr.py').parent
-_AR_SCRIPTS = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py').parent
-
-for _dir in (_GH_SCRIPTS, _AR_SCRIPTS):
-    if str(_dir) not in sys.path:
-        sys.path.insert(0, str(_dir))
-
-import bot_registry  # noqa: E402
-import github_ops  # noqa: E402, F401 — import first; _github_pr closes a cycle with it
-import github_re_review  # noqa: E402
 import _github_pr  # noqa: E402
+import bot_registry  # noqa: E402
+import github_re_review  # noqa: E402
+import pytest  # noqa: E402
 from _github_pr import (  # noqa: E402
     REFUSAL_LAYER_REGISTRY,
     REFUSAL_LAYER_STRUCTURAL,

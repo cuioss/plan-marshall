@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the persisted architecture store's concept model.
 
 Covers the four deliverables of ``150-architecture-store-concept-model``:
@@ -25,19 +24,14 @@ from a clone.
 import argparse
 import copy
 import json
-import sys
 import tempfile
 from pathlib import Path
 from typing import Any
 
 import pytest
+from _arch_fixtures import setup_test_project
 
 from conftest import load_script_module, parse_ns
-
-sys.path.insert(0, str(Path(__file__).parent))
-
-from _arch_fixtures import setup_test_project  # noqa: E402
-
 
 _architecture_core = load_script_module(
     'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'

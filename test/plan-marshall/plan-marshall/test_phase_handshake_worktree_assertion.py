@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the phase-entry worktree assertion in phase_handshake.
 
 Pins the resolved-path / unresolved-path / stale-path / refusal contract
@@ -22,17 +21,16 @@ import sys
 import types
 from pathlib import Path
 
+# Imported PLAINLY so this suite holds the same instances the production path
+# resolves; their marketplace ``scripts/`` directory is already on ``sys.path``
+# via the root conftest.
+import _handshake_commands as cmds
+import _invariants as inv
 import pytest
+
 from conftest import get_script_path, load_script_module
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall', 'phase_handshake.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import _handshake_commands as cmds  # noqa: E402
-import _invariants as inv  # noqa: E402
 
 
 # =============================================================================

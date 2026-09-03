@@ -61,20 +61,15 @@ from pathlib import Path
 
 import pytest
 
-from conftest import PROJECT_ROOT
-from toon_parser import parse_toon
-
-# Ensure the marketplace package is importable so the fingerprint helper
-# can be loaded directly in the unit tests below.
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-from marketplace.targets.claude.source_fingerprint import (  # noqa: E402
+from marketplace.targets.claude.source_fingerprint import (
     FingerprintError,
     compute_source_tree_fingerprint,
     hash_objects,
     list_tracked_files,
 )
+from toon_parser import parse_toon
+
+from conftest import PROJECT_ROOT
 
 _SYNC_PY = PROJECT_ROOT / '.claude' / 'skills' / 'sync-plugin-cache' / 'scripts' / 'sync.py'
 _SENTINEL_NAME = '.emit-marker.json'

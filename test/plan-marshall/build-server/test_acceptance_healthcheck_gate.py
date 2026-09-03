@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Acceptance: a self-resolvable health condition does NOT block the start path.
 
 A stale socket (its recorded owner is dead) is self-resolvable: the start path
@@ -11,22 +10,20 @@ gate names its reason so the operator sees WHY the daemon is unreachable.
 
 from __future__ import annotations
 
-import sys
-
+# PLAIN import, deliberately: the build-server suites annotate against
+# ``marshalld.Daemon``, which only a plain import gives mypy. The name is bound the
+# same way in every suite, so no loaded copy is published beside it.
+import marshalld
 import pytest
-from conftest import get_script_path, parse_ns
 
-_DAEMON_DIR = get_script_path('plan-marshall', 'manage-build-server', 'marshalld.py').parent
-if str(_DAEMON_DIR) not in sys.path:
-    sys.path.insert(0, str(_DAEMON_DIR))
+from conftest import load_script_module, parse_ns
 
-import manage_build_server as control  # noqa: E402
-import marshalld  # noqa: E402
+control = load_script_module('plan-marshall', 'manage-build-server', 'manage_build_server.py')
 
 #: The ``status`` namespace ``manage_build_server.py``'s OWN parser yields, hoisted
 #: to module scope because ``parse_ns`` re-executes the script module on every
 #: call. ``register=False`` so it never publishes a second ``manage_build_server``
-#: in ``sys.modules`` alongside the one imported above.
+#: in ``sys.modules`` alongside the one the loader published above.
 _STATUS_ARGS = parse_ns(
     'plan-marshall', 'manage-build-server', 'manage_build_server.py', 'status', register=False
 )

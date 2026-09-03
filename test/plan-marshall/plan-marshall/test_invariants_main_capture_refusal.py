@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """The capture-time refusal of a row whose ``main_*`` columns read the worktree.
 
 The two SHA columns exist because they describe two different trees. When they
@@ -29,17 +28,16 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+# Imported PLAINLY so this suite holds the same instances the production path
+# resolves; their marketplace ``scripts/`` directory is already on ``sys.path``
+# via the root conftest.
+import _handshake_commands as hc
+import _invariants as inv
 import pytest
 
 from conftest import get_script_path, load_script_module, parse_ns
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall', 'phase_handshake.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import _handshake_commands as hc
-import _invariants as inv
 
 #: The two command lines these tests drive, parsed by ``phase_handshake.py``'s
 #: OWN parser and hoisted to module scope because ``parse_ns`` re-executes the

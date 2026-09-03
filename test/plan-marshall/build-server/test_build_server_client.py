@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for build_server — the marshalld build-server consumption client.
 
-Drive the client verbs directly by inserting the build-server-client scripts dir
-on sys.path. The daemon-facing seams (``_handshake`` — the S3 owner + version
+Drive the client verbs directly, through the shared ``conftest.load_script_module``
+loader. The daemon-facing seams (``_handshake`` — the S3 owner + version
 check, ``_call_daemon`` — the socket round-trip) are monkeypatched so no real
 socket is opened and no daemon is required. The change-ledger is isolated by
 pointing ``_ledger_core.resolve_ledger_path`` at a per-test ``tmp_path`` so no
@@ -15,37 +14,29 @@ from __future__ import annotations
 
 import argparse
 import copy
-import sys
 from pathlib import Path
 from typing import Any
 
+import _build_server_registry as registry
+import _ledger_core as ledger_core
+import plan_logging
 import pytest
 from _resolve_project_dir_fixtures import NO_PLAN_SENTINEL
-from conftest import get_script_path, parse_ns
+
+from conftest import load_script_module, parse_ns
 
 _BUNDLE = 'plan-marshall'
 _SKILL = 'build-server-client'
 _SCRIPT = 'build_server.py'
 
-SCRIPT_PATH = get_script_path(_BUNDLE, _SKILL, _SCRIPT)
-SCRIPTS_DIR = SCRIPT_PATH.parent
-_LOGGING_SCRIPTS_DIR = get_script_path('plan-marshall', 'manage-logging', 'plan_logging.py').parent
-
-for _dir in (SCRIPTS_DIR, _LOGGING_SCRIPTS_DIR):
-    if str(_dir) not in sys.path:
-        sys.path.insert(0, str(_dir))
-
-import _build_server_registry as registry  # noqa: E402
-import _ledger_core as ledger_core  # noqa: E402
-import build_server as client  # noqa: E402
-import plan_logging  # noqa: E402
+client = load_script_module(_BUNDLE, _SKILL, _SCRIPT)
 
 
 def _verb_args(*argv: str) -> argparse.Namespace:
     """The namespace ``build_server.py``'s OWN parser yields for ``argv``.
 
     ``register=False`` so building one never publishes a second ``build_server``
-    in ``sys.modules`` alongside the one imported above.
+    in ``sys.modules`` alongside the one the loader published above.
     """
     args: argparse.Namespace = parse_ns(_BUNDLE, _SKILL, _SCRIPT, *argv, register=False)
     return args

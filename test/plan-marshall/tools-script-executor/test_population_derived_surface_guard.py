@@ -43,19 +43,17 @@ with the sibling ``slow_live`` characterization, so whichever runs second reads 
 warm cache rather than re-probing.
 """
 
-import sys
 from pathlib import Path
 
 import argparse_surface as surf
 import pytest
 
-from conftest import PROJECT_ROOT
-
 # The validator lives in the executor TEMPLATE; load it as a module via the
 # established helper (renders the template with an empty SCRIPT_SURFACES, which
 # this test overrides with the real derived index below).
-sys.path.insert(0, str(Path(__file__).parent))
-from test_execute_script import load_executor_module  # noqa: E402
+from test_execute_script import load_executor_module
+
+from conftest import PROJECT_ROOT
 
 # COUPLED TO pyproject.toml's ``timeout = 300`` pytest-timeout hang detector.
 # This is a TRUE TOTAL wall-clock deadline for the whole derivation batch, so it

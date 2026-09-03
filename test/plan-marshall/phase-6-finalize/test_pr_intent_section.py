@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for pr_intent_section.py — the PR body's distilled ``## Intent`` section.
 
 The script owns every DETERMINISTIC decision about the section: whether it is
@@ -29,21 +28,16 @@ Pinned properties:
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from conftest import get_script_path
+from conftest import get_script_path, load_script_module
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'phase-6-finalize', 'pr_intent_section.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
 
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import pr_intent_section as pis  # noqa: E402
+pis = load_script_module('plan-marshall', 'phase-6-finalize', 'pr_intent_section.py')
 
 BUDGET = pis.INTENT_BUDGET_CHARS
 MARKER_STEM = '_[Intent truncated'

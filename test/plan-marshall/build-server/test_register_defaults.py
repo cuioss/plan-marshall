@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for registration-scope default population and backfill-on-re-register.
 
 Exercise ``manage_build_server.run_register``'s default-scope policy: when the
@@ -21,33 +20,27 @@ from __future__ import annotations
 
 import argparse
 import copy
-import sys
 from pathlib import Path
 from typing import Any
 
+import _build_execute_factory as factory
+import _build_server_registry as registry
 import pytest
-from conftest import get_script_path, parse_ns
+
+from conftest import load_script_module, parse_ns
 
 _BUNDLE = 'plan-marshall'
 _SKILL = 'manage-build-server'
 _SCRIPT = 'manage_build_server.py'
 
-SCRIPT_PATH = get_script_path(_BUNDLE, _SKILL, _SCRIPT)
-SCRIPTS_DIR = SCRIPT_PATH.parent
-
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import _build_execute_factory as factory  # noqa: E402
-import _build_server_registry as registry  # noqa: E402
-import manage_build_server as mbs  # noqa: E402
+mbs = load_script_module(_BUNDLE, _SKILL, _SCRIPT)
 
 
 def _verb_args(*argv: str) -> argparse.Namespace:
     """The namespace ``manage_build_server.py``'s OWN parser yields for ``argv``.
 
     ``register=False`` so building one never publishes a second
-    ``manage_build_server`` in ``sys.modules`` alongside the one imported above.
+    ``manage_build_server`` in ``sys.modules`` alongside the one the loader published above.
     """
     args: argparse.Namespace = parse_ns(_BUNDLE, _SKILL, _SCRIPT, *argv, register=False)
     return args

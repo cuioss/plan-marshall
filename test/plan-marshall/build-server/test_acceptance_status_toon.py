@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Acceptance: the status-TOON's two hard guarantees.
 
 A bound-expiry wait returns a LIVE running status carrying elapsed / eta /
@@ -13,26 +12,24 @@ from __future__ import annotations
 import asyncio
 import sys
 
+# PLAIN import, deliberately: the build-server suites annotate against
+# ``marshalld.Daemon``, which only a plain import gives mypy. The name is bound the
+# same way in every suite, so no loaded copy is published beside it.
+import marshalld
 import pytest
-from conftest import get_script_path, parse_ns
+from _build_server_protocol import STATUS_KILLED, STATUS_RUNNING, JobSpec
+from _marshalld_journal import Journal
+from _marshalld_scheduler import Scheduler
 
-_DAEMON_DIR = get_script_path('plan-marshall', 'manage-build-server', 'marshalld.py').parent
-_CLIENT_DIR = get_script_path('plan-marshall', 'build-server-client', 'build_server.py').parent
-for _d in (_DAEMON_DIR, _CLIENT_DIR):
-    if str(_d) not in sys.path:
-        sys.path.insert(0, str(_d))
+from conftest import load_script_module, parse_ns
 
-import build_server as client  # noqa: E402
-import marshalld  # noqa: E402
-from _build_server_protocol import STATUS_KILLED, STATUS_RUNNING, JobSpec  # noqa: E402
-from _marshalld_journal import Journal  # noqa: E402
-from _marshalld_scheduler import Scheduler  # noqa: E402
+client = load_script_module('plan-marshall', 'build-server-client', 'build_server.py')
 
 #: The one ``wait`` command line this module drives, parsed by ``build_server.py``'s
 #: OWN parser. Every value is fixed, so no per-test derivation is needed. Hoisted
 #: because ``parse_ns`` re-executes the script module on every call, and
 #: ``register=False`` so it never publishes a second ``build_server`` in
-#: ``sys.modules`` alongside the one imported above.
+#: ``sys.modules`` alongside the one the loader published above.
 _WAIT_ARGS = parse_ns(
     'plan-marshall', 'build-server-client', 'build_server.py',
     'wait', '--job-id', 'J', '--plan-id', '', '--bound', '1',

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Contract-level suite for ``standards/bot-participation-contract.md``.
 
 Cross-cutting counterpart to the co-located unit suites. Those pin per-component
@@ -59,13 +58,11 @@ from __future__ import annotations
 import itertools
 import json
 import re
-import sys
 from unittest.mock import patch
 
+import bot_registry
 import pytest
-
 from _bot_flag_derivation import derive_bot_flags, derive_declared_flags
-from conftest import PLAN_DIR_NAME, PROJECT_ROOT, get_script_path, run_script
 
 # The EVIDENCE-CLASS vocabulary and its per-script records are OWNED by the
 # participation-site population module and read from it here rather than restated.
@@ -74,17 +71,17 @@ from conftest import PLAN_DIR_NAME, PROJECT_ROOT, get_script_path, run_script
 # class the population itself does not recognise.
 from test_participation_site_population import READS_VOCABULARY, SITE_EXPECTATIONS
 
+from conftest import (
+    PLAN_DIR_NAME,
+    PROJECT_ROOT,
+    get_script_path,
+    load_script_module,
+    run_script,
+)
+
+rc = load_script_module('plan-marshall', 'automatic-review', 'review_completeness.py')
+
 _AR_SCRIPTS = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py').parent
-_GH_SCRIPTS = get_script_path(
-    'plan-marshall', 'workflow-integration-github', 'github_pr.py'
-).parent
-
-for _dir in (_AR_SCRIPTS, _GH_SCRIPTS):
-    if str(_dir) not in sys.path:
-        sys.path.insert(0, str(_dir))
-
-import bot_registry  # noqa: E402
-import review_completeness as rc  # noqa: E402
 
 _CONTRACT_DOC = _AR_SCRIPTS.parent / 'standards' / 'bot-participation-contract.md'
 _AR_SKILL = _AR_SCRIPTS.parent / 'SKILL.md'

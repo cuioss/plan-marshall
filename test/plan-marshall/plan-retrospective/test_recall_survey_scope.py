@@ -18,14 +18,11 @@ compare") on a plan that had declared its whole mutation surface.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+from _plan_retrospective_fixtures import build_happy_plan_dir
 
-from _plan_retrospective_fixtures import build_happy_plan_dir  # noqa: E402
-
-from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
+from conftest import MARKETPLACE_ROOT, run_script
 
 SCRIPT_PATH = (
     MARKETPLACE_ROOT

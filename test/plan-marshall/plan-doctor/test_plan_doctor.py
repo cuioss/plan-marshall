@@ -33,24 +33,15 @@ exactly as they do under the executor.
 from __future__ import annotations
 
 import shutil
-import sys
-from pathlib import Path
 
-# Insert this test directory at the FRONT of sys.path so the helper module
-# resolves to the per-test-package version rather than any same-named
-# module that happened to load earlier (sys.modules caches by name and
-# pytest's collection order is not stable across runs). The module is
-# named ``_doctor_fixtures`` rather than ``_fixtures`` to avoid colliding
-# with the unrelated ``_fixtures.py`` in
-# ``test/plan-marshall/plan-retrospective/``: Python's module cache keys
-# on the bare module name, and the executor-built sys.path keeps every
-# test subdirectory reachable, so two ``_fixtures`` modules in the same
-# tree shadow each other in collection order. Using a domain-prefixed
-# name keeps both helpers loadable at the same time and complies with
-# the task contract's "NOT conftest.py" requirement.
-sys.path.insert(0, str(Path(__file__).parent))
-
-from _doctor_fixtures import (  # noqa: E402
+# The helper is named ``_doctor_fixtures`` rather than ``_fixtures`` to avoid
+# colliding with the unrelated ``_fixtures.py`` in
+# ``test/plan-marshall/plan-retrospective/``: Python's module cache keys on the
+# bare module name, and every test subdirectory is reachable on ``sys.path``, so
+# two ``_fixtures`` modules in one tree would shadow each other in collection
+# order. The domain-prefixed name — not a path insert, which cannot change what
+# ``sys.modules`` already holds under a name — is what keeps both loadable.
+from _doctor_fixtures import (
     REAL_LESSON_IDS,
     make_archived_plan,
     make_healthy_plan,

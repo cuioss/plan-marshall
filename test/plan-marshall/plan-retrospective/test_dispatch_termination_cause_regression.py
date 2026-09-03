@@ -41,16 +41,11 @@ deterministic regression here is the data shape the rule consumes.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
-
-# Sibling _plan_retrospective_fixtures.py / conftest.py rely on the existing
-# sys.path setup pattern used by the other retrospective tests.
-sys.path.insert(0, str(Path(__file__).parent))
 
 from _plan_retrospective_fixtures import ANALYZE_LOGS
 
-from conftest import get_script_path, run_script  # noqa: E402
+from conftest import get_script_path, run_script
 
 MANAGE_TASKS = get_script_path('plan-marshall', 'manage-tasks', 'manage-tasks.py')
 

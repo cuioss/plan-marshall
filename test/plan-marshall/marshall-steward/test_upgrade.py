@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the marshall-steward ``upgrade`` stage-plan / gate-decision emitter.
 
 ``upgrade.py`` is a pure deterministic planner: its ``plan`` subcommand emits
@@ -11,14 +10,14 @@ parse the emitted TOON with the canonical parser to assert the stage order, the
 top-level-gate suppression semantics, and the ``integrate``-invariance of the
 nested gates.
 
-``upgrade.py`` is a marshall-steward skill script, not on ``PYTHONPATH`` during
-pytest collection; the canonical ``sys.path.insert`` prologue (see
-``pm-plugin-development:plugin-script-architecture`` test-scaffolding.md) makes
-it and the shared libraries it imports at module scope importable — the TOON
-parser, ``file_ops`` (for the ``safe_main`` wrapper), ``bot_registry`` (the live
-reviewer-kind registry ``validate_bot_lists`` checks tokens against) and the
-``script-shared`` tree ``file_ops`` itself imports from. Under the executor these
-all arrive on one injected ``PYTHONPATH``; here each dir is named.
+``upgrade.py`` is a marshall-steward skill script, imported by name along with
+the shared libraries it pulls in at module scope — the TOON parser, ``file_ops``
+(for the ``safe_main`` wrapper), ``bot_registry`` (the live reviewer-kind
+registry ``validate_bot_lists`` checks tokens against) and the ``script-shared``
+tree ``file_ops`` itself imports from. Under the executor those arrive on one
+injected ``PYTHONPATH``; under pytest the root conftest puts every marketplace
+``scripts/`` directory on ``sys.path`` before any test module is imported, so no
+bootstrap is needed here.
 """
 
 from __future__ import annotations
@@ -30,27 +29,14 @@ from pathlib import Path
 
 import pytest
 
-# test/plan-marshall/marshall-steward/ -> repo root is three parents up.
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_SKILLS_ROOT = _REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills'
-_SCRIPTS_DIR = _SKILLS_ROOT / 'marshall-steward' / 'scripts'
-_TOON_SCRIPTS = _SKILLS_ROOT / 'ref-toon-format' / 'scripts'
-_FILE_OPS_SCRIPTS = _SKILLS_ROOT / 'tools-file-ops' / 'scripts'
-_SHARED_SCRIPTS = _SKILLS_ROOT / 'script-shared' / 'scripts'
-_AUTOMATIC_REVIEW_SCRIPTS = _SKILLS_ROOT / 'automatic-review' / 'scripts'
-for _dir in (
-    _SCRIPTS_DIR,
-    _TOON_SCRIPTS,
-    _FILE_OPS_SCRIPTS,
-    _SHARED_SCRIPTS,
-    _AUTOMATIC_REVIEW_SCRIPTS,
-):
-    if str(_dir) not in sys.path:
-        sys.path.insert(0, str(_dir))
-
-import bot_registry  # noqa: E402
-import upgrade  # noqa: E402
-from toon_parser import parse_toon  # noqa: E402
+# ``upgrade`` pulls in ``file_ops`` and the ``script-shared`` library at module
+# scope, and ``bot_registry`` supplies the live reviewer-kind set the bot-list
+# assertions check against. Under the executor those arrive on one injected
+# PYTHONPATH; under pytest the root conftest puts every marketplace ``scripts/``
+# directory on ``sys.path``, so no bootstrap is needed here.
+import bot_registry
+import upgrade
+from toon_parser import parse_toon
 
 _EXPECTED_STAGE_KEYS = ['regenerate-targets', 'reconcile-config', 'verify', 'land']
 _EXPECTED_STAGE_ORDERS = [1, 2, 3, 4]

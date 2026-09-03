@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the single-pass two-phase rule runner (``_runner.py``).
 
 :class:`RuleRunner` builds the parse-once AST corpus once and dispatches
@@ -48,21 +47,15 @@ from _plugin_doctor_dispatching_executor import (
     seed_notation_registry,
     write_dispatching_executor,
 )
+
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, get_scripts_dir, load_script_module
 
+# No bootstrap: the analyzer modules' intra-bundle references, ``file_ops``
+# (plan-marshall) and ``_dep_index`` — the AstCache substrate the runner threads,
+# in tools-marketplace-inventory — all resolve because the root conftest puts
+# every marketplace ``scripts/`` directory on ``sys.path`` before any test module
+# is imported. ``SCRIPTS_DIR`` survives as the anchor a sweep below walks.
 SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'plugin-doctor')
-_FILE_OPS_DIR = (
-    PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills'
-    / 'tools-file-ops' / 'scripts'
-)
-# AstCache (the D2 substrate the runner threads) lives in tools-marketplace-inventory.
-_DEP_INDEX_DIR = (
-    PROJECT_ROOT / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills'
-    / 'tools-marketplace-inventory' / 'scripts'
-)
-for _d in (SCRIPTS_DIR, _FILE_OPS_DIR, _DEP_INDEX_DIR):
-    if str(_d) not in sys.path:
-        sys.path.insert(0, str(_d))
 
 
 def _load(filename: str, name: str):

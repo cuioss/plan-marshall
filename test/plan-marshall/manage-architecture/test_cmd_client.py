@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001
 """Tests for ``_cmd_client.py`` — read-side commands.
 
 Pins the per-module on-disk layout: readers iterate ``_project.json``'s
@@ -38,13 +37,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _arch_fixtures import create_test_project
+from _arch_fixtures import seed_project as _seed_project
 
 from conftest import load_script_module, parse_ns
-
-sys.path.insert(0, str(Path(__file__).parent))
-
-from _arch_fixtures import create_test_project  # noqa: E402
-from _arch_fixtures import seed_project as _seed_project  # noqa: E402
 
 _architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')

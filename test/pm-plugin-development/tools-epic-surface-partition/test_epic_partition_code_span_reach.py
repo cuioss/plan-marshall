@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for how far a markdown code-span delimiter REACHES in a spec.
 
-Drives the underscore-prefixed helpers directly by inserting the scripts dir on
-``sys.path`` (the canonical scaffolding pattern).
+Drives the underscore-prefixed helpers directly, through the shared
+``conftest.load_script_module`` loader.
 
 The reproduction guard discards a sweep marker lying wholly inside a code span,
 so every question about a span's REACH is a question about whether a real
@@ -26,16 +25,11 @@ Every body here is a literal built in the test; no file, corpus or tree is read.
 
 from __future__ import annotations
 
-import sys
-
-from conftest import get_scripts_dir
-
-SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'tools-epic-surface-partition')
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import _epic_partition as partition_mod  # noqa: E402
-
+# PLAIN import, deliberately — matching the sibling suites, whose annotations name
+# ``partition_mod.Partition``. Only a plain import gives mypy the real module, and
+# the name must be bound the same way everywhere or the loader would register a
+# copy beside the plainly-imported one.
+import _epic_partition as partition_mod
 
 # --- scaffolding -------------------------------------------------------------
 

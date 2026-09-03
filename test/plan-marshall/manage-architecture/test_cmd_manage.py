@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for ``_cmd_manage.py`` — discover, init, derived, derived-module.
 
 Pins the per-module on-disk layout: ``_project.json`` is the canonical module
@@ -10,18 +9,12 @@ surface.
 """
 
 import json
-import sys
 import tempfile
-from pathlib import Path
 
 import pytest
+from _arch_fixtures import create_test_project
 
 from conftest import load_script_module
-
-sys.path.insert(0, str(Path(__file__).parent))
-
-from _arch_fixtures import create_test_project  # noqa: E402
-
 
 _architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
 _cmd_manage = load_script_module('plan-marshall', 'manage-architecture', '_cmd_manage.py', '_cmd_manage')

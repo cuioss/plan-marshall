@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the marshall-steward worktree refuse-or-scaffold guard.
 
 ``determine_mode.py`` exposes ``check_worktree_plan_local(repo_root, scaffold)``
@@ -301,10 +300,6 @@ def test_cli_reports_ok_when_all_project_steps_present(tmp_path: Path):
     # neither detection set fires. The built-in set is discovered via the reusable
     # find_implementors query (the hand-maintained BUILT_IN_FINALIZE_STEPS
     # constant was removed).
-    from conftest import MARKETPLACE_ROOT as _MR
-    _config_scripts = _MR / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
-    if str(_config_scripts) not in sys.path:
-        sys.path.insert(0, str(_config_scripts))
     from _config_defaults import FINALIZE_STEP_EXT_POINT
     from extension_discovery import find_implementors
 

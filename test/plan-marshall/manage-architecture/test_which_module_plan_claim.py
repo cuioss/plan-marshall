@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001
 """Tests for core's ``.plan/**`` path claim, registered through the Axis-D seam.
 
 Before this claim existed, every ``.plan/`` path answered ``module: null`` — the
@@ -35,16 +34,12 @@ See ``extension-api/standards/ext-point-path-attribution.md`` for the contract.
 
 import argparse
 import copy
-import sys
 import tempfile
-from pathlib import Path
 from typing import Any
 
+from _arch_fixtures import seed_project
+
 from conftest import load_script_module, parse_ns
-
-sys.path.insert(0, str(Path(__file__).parent))
-
-from _arch_fixtures import seed_project  # noqa: E402
 
 _architecture_core = load_script_module(
     'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'

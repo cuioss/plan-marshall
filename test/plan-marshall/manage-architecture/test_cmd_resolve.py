@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for ``cmd_resolve`` augmentation with bash-timeout / execution-tier fields.
 
 Pins the contract documented in ``_cmd_client`` § "Build-executable
@@ -73,13 +72,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _arch_fixtures import seed_project as _seed_project
 
 from conftest import get_scripts_dir, load_script_module, parse_ns
-
-sys.path.insert(0, str(Path(__file__).parent))
-
-from _arch_fixtures import seed_project as _seed_project  # noqa: E402
-
 
 _architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')

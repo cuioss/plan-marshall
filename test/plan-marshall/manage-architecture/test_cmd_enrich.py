@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for ``_cmd_enrich.py`` — per-module enrichment commands.
 
 Pins the per-module on-disk layout: ``enrich project`` updates
@@ -9,19 +8,14 @@ touched module's ``enriched.json``. Legacy monolithic files are intentionally
 absent from this surface.
 """
 
-import sys
 import tempfile
 from pathlib import Path
 
 import pytest
+from _arch_fixtures import seed_project as _seed_project
+from _arch_fixtures import setup_test_project
 
 from conftest import load_script_module
-
-sys.path.insert(0, str(Path(__file__).parent))
-
-from _arch_fixtures import seed_project as _seed_project  # noqa: E402
-from _arch_fixtures import setup_test_project  # noqa: E402
-
 
 _architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
 _cmd_enrich = load_script_module('plan-marshall', 'manage-architecture', '_cmd_enrich.py', '_cmd_enrich')

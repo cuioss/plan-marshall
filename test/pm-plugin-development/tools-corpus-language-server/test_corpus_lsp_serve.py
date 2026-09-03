@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """End-to-end tests for `serve` as an LSP CLIENT actually spawns it.
 
 These drive the real script as a subprocess with **no `PYTHONPATH`**, which is
@@ -23,11 +22,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from conftest import get_script_path
+from conftest import get_script_path, load_script_module
 
-sys.path.insert(0, str(get_script_path('pm-plugin-development', 'tools-corpus-language-server', 'corpus_lsp.py').parent))
-
-import corpus_lsp
+corpus_lsp = load_script_module(
+    'pm-plugin-development', 'tools-corpus-language-server', 'corpus_lsp.py'
+)
 
 SCRIPT = get_script_path('pm-plugin-development', 'tools-corpus-language-server', 'corpus_lsp.py')
 

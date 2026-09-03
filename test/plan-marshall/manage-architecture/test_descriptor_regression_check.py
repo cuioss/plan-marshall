@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the ``descriptor-regression-check`` commit-gate verb.
 
 Deliverable 2 of the accept/commit/write-gate hardening plan: the
@@ -14,15 +13,11 @@ missing-baseline error contract.
 """
 
 import json
-import sys
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
 from conftest import load_script_module
-
-sys.path.insert(0, str(Path(__file__).parent))
-
 
 _architecture_core = load_script_module(
     'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'

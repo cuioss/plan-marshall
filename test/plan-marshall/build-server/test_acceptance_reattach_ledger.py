@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Acceptance: a second / rebuilt session re-attaches via the ledger job_id.
 
 submit persists the daemon-assigned job_id to the change-ledger (kind=job); a
@@ -12,23 +11,19 @@ running build from plan state alone.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
+import _ledger_core as ledger_core
 import pytest
-from conftest import get_script_path, parse_ns
+from _build_server_protocol import STATUS_QUEUED
+
+from conftest import load_script_module, parse_ns
 
 _BUNDLE = 'plan-marshall'
 _SKILL = 'build-server-client'
 _SCRIPT = 'build_server.py'
 
-_CLIENT_DIR = get_script_path(_BUNDLE, _SKILL, _SCRIPT).parent
-if str(_CLIENT_DIR) not in sys.path:
-    sys.path.insert(0, str(_CLIENT_DIR))
-
-import _ledger_core as ledger_core  # noqa: E402
-import build_server as client  # noqa: E402
-from _build_server_protocol import STATUS_QUEUED  # noqa: E402
+client = load_script_module(_BUNDLE, _SKILL, _SCRIPT)
 
 #: The two command lines this acceptance drives, parsed by ``build_server.py``'s
 #: OWN parser and hoisted to module scope because ``parse_ns`` re-executes the

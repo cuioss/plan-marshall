@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """End-to-end regression tests for the phase-6-finalize architecture-refresh standard.
 
 The standard at ``standards/architecture-refresh.md`` is a markdown executor
@@ -40,12 +39,16 @@ file pins ONLY the orchestration contract documented in the standard.
 from __future__ import annotations
 
 import re
-import sys
 from typing import Any
 
+# ``_invariants`` is imported PLAINLY so this suite exercises the same module
+# instance the ``phase_steps_complete`` invariant uses at runtime; the root
+# conftest already puts its marketplace ``scripts/`` directory on ``sys.path``.
+import _invariants as inv
 import pytest
 from _dispatch_roster import parse_roster
 from _push_prescription_scan import fenced_command_lines, scan_push_prescriptions
+
 from conftest import MARKETPLACE_ROOT
 
 # ---------------------------------------------------------------------------
@@ -60,18 +63,6 @@ _DISPATCHED_HEADING = '## Dispatched steps'
 _INLINE_HEADING = '## Inline steps'
 _REQUIRED_STEPS_MD = _PHASE_6_DIR / 'standards' / 'required-steps.md'
 _PHASE_1_INIT_SKILL_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-1-init' / 'SKILL.md'
-
-# ---------------------------------------------------------------------------
-# Bring the live ``_parse_required_steps`` helper onto the import path so the
-# required-steps.md registration test exercises the same parser the
-# ``phase_steps_complete`` invariant uses at runtime.
-# ---------------------------------------------------------------------------
-
-_PHASE_HANDSHAKE_SCRIPTS_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 'scripts'
-if str(_PHASE_HANDSHAKE_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_PHASE_HANDSHAKE_SCRIPTS_DIR))
-
-import _invariants as inv  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

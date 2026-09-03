@@ -1,15 +1,22 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for _build_shared utilities and resolve_project_dir executor resolution."""
 
-import importlib
 import json
 import os
-import sys
 
+# Every module below lives in a marketplace ``scripts/`` directory — or one of
+# their immediate subdirectories — which the root conftest already puts on
+# ``sys.path``, so all of them import plainly with no bootstrap.
+#
+# The worktree/checkout-root resolution these tests exercise lives in file_ops
+# (resolve_project_dir is the argv/flag layer on top of it), and
+# marketplace_paths owns the distinctly-named git-common-dir resolver.
+import _build_shared
+import file_ops
+import marketplace_paths
 import pytest
+import resolve_project_dir as _resolve_project_dir
 from _resolve_project_dir_fixtures import worktree_query_result
-
-from conftest import get_scripts_dir
 
 # Plan ids this module's tests file findings against — seeded by the autouse
 # ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.
@@ -19,23 +26,6 @@ PLAN_IDS = (
     'build-shared-persist-ok',
     'build-shared-persist-reject',
 )
-
-# Add script path for imports
-_SCRIPT_DIR = get_scripts_dir('plan-marshall', 'script-shared') / 'build'
-sys.path.insert(0, str(_SCRIPT_DIR))
-
-# resolve_project_dir.py lives in the script-shared scripts/ dir (one level up
-# from build/). Add it so `import resolve_project_dir` resolves regardless of
-# the conftest PYTHONPATH wiring.
-sys.path.insert(0, str(_SCRIPT_DIR.parent))
-
-_build_shared = importlib.import_module('_build_shared')
-_resolve_project_dir = importlib.import_module('resolve_project_dir')
-# The worktree/checkout-root resolution these tests exercise now lives in
-# file_ops (resolve_project_dir is the argv/flag layer on top of it), and
-# marketplace_paths owns the distinctly-named git-common-dir resolver.
-file_ops = importlib.import_module('file_ops')
-marketplace_paths = importlib.import_module('marketplace_paths')
 
 
 class TestGetBashTimeout:

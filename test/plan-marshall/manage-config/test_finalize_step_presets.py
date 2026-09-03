@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the discovery-driven FinalizeStepPresets access surface.
 
 Covers behaviour and cross-checks for the finalize-step preset registry. The
@@ -26,25 +25,13 @@ frontmatter list, and the preset step lists are BUILT lazily from the reusable
 
 from __future__ import annotations
 
-import sys
-
+import _config_defaults as cfg
 import pytest
-from conftest import get_script_path
+from extension_discovery import find_implementors
 
-PRESETS_SCRIPT = get_script_path('plan-marshall', 'manage-config', 'finalize_step_presets.py')
-PRESETS_DIR = PRESETS_SCRIPT.parent
+from conftest import load_script_module
 
-CONFIG_DEFAULTS_SCRIPT = get_script_path('plan-marshall', 'manage-config', '_config_defaults.py')
-CONFIG_DEFAULTS_DIR = CONFIG_DEFAULTS_SCRIPT.parent
-
-if str(PRESETS_DIR) not in sys.path:
-    sys.path.insert(0, str(PRESETS_DIR))
-if str(CONFIG_DEFAULTS_DIR) not in sys.path:
-    sys.path.insert(0, str(CONFIG_DEFAULTS_DIR))
-
-import _config_defaults as cfg  # noqa: E402
-import finalize_step_presets as fp  # noqa: E402
-from extension_discovery import find_implementors  # noqa: E402
+fp = load_script_module('plan-marshall', 'manage-config', 'finalize_step_presets.py')
 
 
 # =============================================================================

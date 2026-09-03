@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for claude_pretooluse_hook.py — the conditional PreToolUse enforcement leaf.
 
 The leaf is a stdin->stdout hook script, so it is exercised both via subprocess (a
@@ -29,20 +28,19 @@ Coverage:
 from __future__ import annotations
 
 import json
-import sys
 
-from conftest import get_script_path, run_script
+# PLAIN import, deliberately — matching ``test_pretooluse_gate.py``, whose typed
+# probes need mypy to see the real module. The name must be bound the same way in
+# both suites or the loader would register a copy beside the plainly-imported one.
+import pretooluse_gate as gate
+
+from conftest import get_script_path, load_script_module, run_script
 
 SCRIPT_PATH = get_script_path(
     "plan-marshall", "platform-runtime", "claude_pretooluse_hook.py"
 )
-SCRIPTS_DIR = SCRIPT_PATH.parent
 
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import pretooluse_gate as gate  # noqa: E402
-import claude_pretooluse_hook as hook  # noqa: E402
+hook = load_script_module('plan-marshall', 'platform-runtime', 'claude_pretooluse_hook.py')
 
 
 # =============================================================================

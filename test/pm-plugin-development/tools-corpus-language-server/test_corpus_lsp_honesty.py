@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """The resident server survives a bad frame, and never presents a guess as exact.
 
 Four defects, each of which made the surface answer confidently without an
@@ -38,17 +37,19 @@ import subprocess
 import sys
 from pathlib import Path
 
+# PLAIN import, deliberately — matching ``test_corpus_index.py``: only a plain
+# import gives mypy the real module, and the name must be bound the same way in
+# both suites or the loader would register a copy beside the plainly-imported one.
+import _corpus_index as corpus_index
 import pytest
-from conftest import get_script_path, get_scripts_dir
+
+from conftest import get_script_path, get_scripts_dir, load_script_module
 
 SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'tools-corpus-language-server')
-INVENTORY_SCRIPTS = get_scripts_dir('pm-plugin-development', 'tools-marketplace-inventory')
-for _dir in (str(SCRIPTS_DIR), str(INVENTORY_SCRIPTS)):
-    if _dir not in sys.path:
-        sys.path.insert(0, _dir)
 
-import _corpus_index as corpus_index  # noqa: E402
-import corpus_lsp  # noqa: E402
+corpus_lsp = load_script_module(
+    'pm-plugin-development', 'tools-corpus-language-server', 'corpus_lsp.py'
+)
 
 SCRIPT = get_script_path('pm-plugin-development', 'tools-corpus-language-server', 'corpus_lsp.py')
 

@@ -1,22 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for _marshalld_scheduler (slots, round-robin fairness, idempotent attach)."""
 
 from __future__ import annotations
 
-import sys
-
-from conftest import get_script_path
-
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-build-server', 'marshalld.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import _build_server_protocol as proto  # noqa: E402
-import _marshalld_scheduler as scheduler_mod  # noqa: E402
+import _build_server_protocol as proto
+import _marshalld_scheduler as scheduler_mod
 
 
 def _spec(notation: str, *, plan_id: str = 'p', tree: str = '/tree') -> proto.JobSpec:
