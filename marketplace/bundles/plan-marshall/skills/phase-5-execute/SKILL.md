@@ -420,9 +420,15 @@ Inlined flow:
      baseline-reconcile --plan-id {plan_id} --no-emit
    ```
 
-   Parse `conflict_count`, `upstream_commit_count`, and `upstream_commits` from the returned TOON.
+   **Branch on the returned `status` BEFORE reading `conflict_count`.** The wrapper prints the payload through a helper that always exits 0, so an "if the script exits non-zero" test never fires, and the probe's non-classifying returns carry **no `conflict_count` field at all**. An agent that reads the absent field as falsy records a new baseline on the strength of a probe that declined to classify:
 
-7. **Self-absorption branch — `conflict_count == 0`** (zero-overlap case): the upstream tip can be absorbed into the baseline metadata without re-authoring the request, the outline, or any task. Persist the new `worktree_sha` (the current HEAD sha after the fetch — unchanged, but recorded for audit) and the new `main_sha` (the resolved `origin/{base_branch}` sha) into `status.metadata` via a single fused `manage-status metadata --set` call:
+   - **`status: error`** (e.g. `error: probe_mutated_head`) → ABORT. Return the structured drift TOON with `error: baseline_drift` per step 8 below; do NOT self-absorb and do NOT enter the task loop. A probe that could not be trusted to classify the state it reported is not evidence that the drift is safe to absorb.
+   - **`status: skipped`** → the same abort, with `display_detail` carrying the returned `reason` (`main_checkout_flow`, `worktree_not_materialized`, `status_not_found`, `status_module_unavailable`, `worktree_path_missing`, `worktree_path_not_a_directory`, `no_remote`, `fetch_failed`, `head_unresolved`, `merge_base_unresolved`). A skip is the probe **declining to classify**, which is not evidence of zero overlap.
+   - **`status: success`** → and only then, parse `conflict_count`, `upstream_commit_count`, and `upstream_commits` from the returned TOON and continue to step 7.
+
+   An absent `conflict_count` is **never** treated as zero. Only a `conflict_count` read off a `status: success` payload may drive the self-absorption branch in step 7.
+
+7. **Self-absorption branch — `status: success` AND `conflict_count == 0`** (zero-overlap case): the upstream tip can be absorbed into the baseline metadata without re-authoring the request, the outline, or any task. Persist the new `worktree_sha` (the current HEAD sha after the fetch — unchanged, but recorded for audit) and the new `main_sha` (the resolved `origin/{base_branch}` sha) into `status.metadata` via a single fused `manage-status metadata --set` call:
 
    ```bash
    git -C {worktree_path} rev-parse HEAD
@@ -461,7 +467,7 @@ Inlined flow:
 
    Then **continue the task loop** — no return to orchestrator, no dispatch to phase-2-refine, no architecture reload, no source-premise verification, no Q-Gate. Self-absorption is metadata-only: the request narrative, solution outline, task list, and confidence score remain valid because the upstream commits touched no overlapping files. Proceed to Step 4.
 
-8. **Drift contract — `conflict_count > 0`** (non-zero-overlap case): the upstream commits touch files that overlap with the worktree's in-flight changes. ABORT the phase fail-loud — re-authoring is required and only refine's iterate-to-confidence loop can absorb the overlap correctly. Return the structured drift TOON for the orchestrator's drift-recovery branch to act on (see `plan-marshall:plan-marshall/workflow/execution.md` § "Baseline drift recovery (non-zero overlap)"):
+8. **Drift contract — `conflict_count > 0`, or a non-`success` probe return**: either the upstream commits touch files that overlap with the worktree's in-flight changes, or the probe declined to classify at all. ABORT the phase fail-loud — re-authoring is required and only refine's iterate-to-confidence loop can absorb the overlap correctly. Return the structured drift TOON for the orchestrator's drift-recovery branch to act on (see `plan-marshall:plan-marshall/workflow/execution.md` § "Baseline drift recovery (non-zero overlap)"):
 
    ```toon
    status: error
@@ -470,6 +476,18 @@ Inlined flow:
    upstream_commit_count: {upstream_commit_count}
    conflict_count: {conflict_count}
    display_detail: "baseline drift: {upstream_commit_count} upstream commits"
+   ```
+
+   On the non-`success` route from step 6 there is no overlap verdict to report, so the payload carries the probe's own outcome instead of a fabricated count — `conflict_count` is **omitted**, never sent as `0`, and `upstream_commit_count` is the count of `{divergent_commits}` captured from `git log` in step 5, not a probe-derived field:
+
+   ```toon
+   status: error
+   error: baseline_drift
+   reconcile_status: skipped | error
+   reason: {reason from a skipped return, or the error token from an error return}
+   divergent_commits: {divergent_commits}
+   upstream_commit_count: {count of divergent_commits}
+   display_detail: "baseline drift: probe {reconcile_status} ({reason})"
    ```
 
    Log the failure to work-log:

@@ -8,9 +8,14 @@ phase-2-refine set --field simplicity --value lean``) writes to the tracked
 ``.plan/marshal.json``, making the working tree dirty and corrupting
 configuration intended for the current plan's marshal state.
 
-The post-refine orchestrator catches this via ``git status --porcelain``.
-These tests pin both the mutation detection path and the recovery path so
-a future regression is caught before it reaches code review.
+The post-refine orchestrator detects this via ``git status --porcelain``. The
+named-recovery contract then requires the change to be INSPECTED and an explicit
+operator disposition recorded before anything is discarded: a dirty
+``.plan/marshal.json`` is most likely uncommitted operator configuration, which
+``git checkout --`` would destroy irrecoverably. The authority is
+``plan-marshall:plan-marshall/workflow/planning.md`` § "Named recovery case —
+``.plan/marshal.json``". These tests pin the detection step and the inspection
+step it feeds, so a future regression is caught before it reaches code review.
 
 Two test cases:
 
@@ -19,8 +24,11 @@ Two test cases:
    via subprocess produces a dirty ``.plan/marshal.json`` detectable by
    ``git status --porcelain``.
 
-2. ``test_marshal_json_restored_after_checkout`` — ``git checkout --
-   .plan/marshal.json`` restores clean state after the mutation.
+2. ``test_marshal_json_diff_surfaces_the_mutation_content`` — ``git diff --
+   .plan/marshal.json`` surfaces the mutation's *content*, which is what makes
+   an informed operator disposition possible. A diff that reported only that
+   something changed would satisfy the letter of "inspect" while leaving the
+   operator unable to see what a discard would destroy.
 
 Both tests run against a synthetic ``tmp_path`` git repository with its own
 committed ``.plan/marshal.json``: ``manage-config set`` is invoked with
@@ -28,7 +36,7 @@ committed ``.plan/marshal.json``: ``manage-config set`` is invoked with
 repo's ``.plan`` directory, so the mutation lands on the synthetic file and
 never touches the real checkout's tracked ``.plan/marshal.json``. This keeps
 the tests hermetic (no real-tree pollution, no cross-worker TOCTOU window)
-while preserving the exact mutation/recovery contract they pin. Because the
+while preserving the exact mutation/inspection contract they pin. Because the
 tests no longer touch the real file, they rely on the autouse
 ``PLAN_BASE_DIR`` sandbox and do NOT opt out via ``allow_pollution``.
 """
@@ -212,17 +220,24 @@ def test_manage_config_set_dirties_marshal_json(tmp_path) -> None:
     )
 
 
-def test_marshal_json_restored_after_checkout(tmp_path) -> None:
-    """``git checkout -- .plan/marshal.json`` restores clean working-tree state.
+def test_marshal_json_diff_surfaces_the_mutation_content(tmp_path) -> None:
+    """``git diff -- .plan/marshal.json`` surfaces the mutation's content.
 
-    This pins the recovery path: after the mutation is detected, the
-    post-refine orchestrator runs ``git checkout -- .plan/marshal.json`` to
-    undo the change. Verifies clean state is restored. Exercised against a
-    synthetic tmp_path repo so the real checkout is never touched.
+    This pins the INSPECTION step the named-recovery contract mandates. Once the
+    detection step above reports the file dirty, the contract requires the change
+    to be read and an explicit operator disposition recorded before anything is
+    discarded — a dirty ``.plan/marshal.json`` is most likely uncommitted
+    operator configuration, and no reflog covers a worktree file. The inspection
+    is only worth anything if it shows *what* changed: a diff reporting merely
+    that something changed leaves the operator unable to judge. Authority:
+    ``plan-marshall:plan-marshall/workflow/planning.md`` § "Named recovery case
+    — ``.plan/marshal.json``". Exercised against a synthetic tmp_path repo so the
+    real checkout is never touched.
 
     Arrange: dirty ``marshal.json`` via the same mutating verb as above.
-    Act:     run ``git checkout -- .plan/marshal.json`` in the synthetic repo.
-    Assert:  ``git status --porcelain .plan/marshal.json`` is empty.
+    Act:     run ``git diff -- .plan/marshal.json`` in the synthetic repo.
+    Assert:  the diff is non-empty AND carries added/removed content lines, not
+             just a file header.
     """
     _init_synthetic_repo(tmp_path)
 
@@ -233,8 +248,9 @@ def test_marshal_json_restored_after_checkout(tmp_path) -> None:
         f'stdout: {set_result.stdout}\nstderr: {set_result.stderr}'
     )
 
-    # Confirm dirty before restore.
-    pre_restore_status = subprocess.run(
+    # Confirm dirty before inspecting — otherwise the diff assertions below
+    # would be vacuous against an unmutated file.
+    pre_inspect_status = subprocess.run(
         ['git', 'status', '--porcelain', '.plan/marshal.json'],
         capture_output=True,
         text=True,
@@ -242,34 +258,38 @@ def test_marshal_json_restored_after_checkout(tmp_path) -> None:
         cwd=tmp_path,
         timeout=10,
     )
-    assert pre_restore_status.stdout.strip() != '', (
-        'marshal.json was not dirty after the arrange step — cannot test the restore path.'
+    assert pre_inspect_status.stdout.strip() != '', (
+        'marshal.json was not dirty after the arrange step — cannot test the inspection step.'
     )
 
-    # run the orchestrator recovery command.
-    checkout_result = subprocess.run(
-        ['git', 'checkout', '--', '.plan/marshal.json'],
+    # run the inspection command the contract mandates ahead of any disposition.
+    diff_result = subprocess.run(
+        ['git', 'diff', '--', '.plan/marshal.json'],
         capture_output=True,
         text=True,
         check=True,
         cwd=tmp_path,
         timeout=10,
     )
-    assert checkout_result.returncode == 0, (
-        f'git checkout -- .plan/marshal.json failed: {checkout_result.stderr}'
+    diff_output = diff_result.stdout
+    assert diff_output.strip() != '', (
+        'git diff -- .plan/marshal.json produced no output for a file git status '
+        'reports as modified. The inspection step cannot inform an operator '
+        'disposition, so the contract has nothing to decide on.'
     )
 
-    # clean state must be restored.
-    post_restore_status = subprocess.run(
-        ['git', 'status', '--porcelain', '.plan/marshal.json'],
-        capture_output=True,
-        text=True,
-        check=True,
-        cwd=tmp_path,
-        timeout=10,
-    )
-    assert post_restore_status.stdout.strip() == '', (
-        f'marshal.json is still dirty after git checkout --: '
-        f'{post_restore_status.stdout.strip()!r}. '
-        'The checkout-based recovery mechanism is broken.'
+    # A diff that surfaces only a header (or only paths, as --name-only would)
+    # satisfies the letter of "inspect" while showing the operator nothing of
+    # what a discard would destroy.
+    content_lines = [
+        line
+        for line in diff_output.splitlines()
+        if (line.startswith('+') and not line.startswith('+++'))
+        or (line.startswith('-') and not line.startswith('---'))
+    ]
+    assert content_lines, (
+        'git diff -- .plan/marshal.json emitted no added/removed content lines:\n'
+        f'{diff_output}\n'
+        'The operator can see THAT the file changed but not WHAT changed, which '
+        'is exactly the state the named-recovery contract forbids disposing from.'
     )
