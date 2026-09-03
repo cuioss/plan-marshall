@@ -414,8 +414,6 @@ def cmd_migrate_bot_lists(_args: argparse.Namespace) -> dict:
 # on an unregistered name, so refusing here would turn a one-token typo into an
 # unstartable finalize without catching anything the barrier misses.
 
-_BOT_LIST_KEYS = (_REQUIRED_BOTS_KEY, _OPTIONAL_BOTS_KEY)
-
 
 def _split_bot_list(raw: object) -> list[str]:
     """Split one comma-separated bot-list value into its non-empty tokens.
@@ -476,7 +474,7 @@ def validate_bot_lists(params: dict) -> dict:
     known = bot_registry.bot_kinds()
     checked_count = 0
     unknown: list[str] = []
-    for key in _BOT_LIST_KEYS:
+    for key in (_REQUIRED_BOTS_KEY, _OPTIONAL_BOTS_KEY):
         for token in _split_bot_list(params.get(key)):
             checked_count += 1
             if token not in known and token not in unknown:
