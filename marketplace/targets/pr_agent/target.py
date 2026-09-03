@@ -590,6 +590,21 @@ class PrAgentTarget(TargetBase):
                 f'no review domains derived from {marketplace_dir}: expected at least one bundle '
                 f'carrying a *-security, arch-gate-* or ext-triage-* skill'
             )
+        if _SPINE_ARTIFACT_NAME in bodies:
+            # Fail CLOSED on a name collision. A bundle shipping a `spine-security`
+            # (or `arch-gate-spine` / `ext-triage-spine`) skill derives the domain
+            # `spine`, and a bare assignment would replace that domain's harvested
+            # rules with the spine — dropping enforcement text from the published
+            # set with no error, while the publish workflow's count-before-delete
+            # guard still sees a non-zero count. A security control must not fail
+            # open. `test_the_spine_stem_is_not_itself_a_derived_domain` catches
+            # this in THIS repository's suite; this raise is what protects every
+            # consumer that runs the generator without that test.
+            raise ValueError(
+                f'derived domain {_SPINE_ARTIFACT_NAME!r} collides with the spine artifact '
+                f'name: one would silently replace the other. Rename the skill that derives '
+                f'it, or reserve the name in _classify_skill.'
+            )
         bodies[_SPINE_ARTIFACT_NAME] = compose_spine(discover_spine_topics(marketplace_dir))
 
         packs_dir = output_dir / _PACKS_DIRNAME
