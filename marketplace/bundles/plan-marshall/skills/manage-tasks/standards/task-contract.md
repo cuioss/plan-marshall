@@ -127,6 +127,30 @@ For `verification` profile tasks, steps contain verification commands instead of
 | `cost_size` | string | No | Predicted T-shirt cost size (`S`/`M`/`L`/`XL`), stamped by phase-4-plan from the cost-sizing rubric (see Cost-Sizing Fields below) |
 | `predicted_cost_tokens` | integer | No | Predicted token cost for the task, stamped alongside `cost_size` (see Cost-Sizing Fields below) |
 | `envelope_id` | integer | No | Bin-packer envelope-group identifier assigned by `manage-tasks pack-envelopes` (see Cost-Sizing Fields below) |
+| `task_start_sha` | string | No | Worktree HEAD recorded as the task's artifact-diff baseline (see Artifact-Baseline Field below) |
+
+## Artifact-Baseline Field
+
+`task_start_sha` is written by `manage-tasks` itself, not by a caller, and it is
+the base the `[ARTIFACT]` channel diffs against.
+
+| Property | Value |
+|----------|-------|
+| Type | string — a 40-character hex SHA |
+| Producer | `_task_artifacts.capture_task_start_sha` |
+| Write path | The FIRST transition into `in_progress`, from either entry point: the implicit flip inside `finalize-step`, or an explicit `update --status in_progress` |
+| Serialisation | `_tasks_core.format_task_file` (`json.dumps` over the whole record), so the key reaches `TASK-NNN.json` on disk |
+
+Two properties a reader must not assume away:
+
+- **Idempotent.** A task already carrying the field keeps it, so a re-entry — a
+  second `finalize-step`, a repeated `update --status in_progress` — cannot move
+  the base forward and silently shrink the artifact list to the edits made after
+  the re-entry.
+- **Absent, never fabricated.** When HEAD cannot be resolved the field is not
+  written at all. A task carrying no baseline is an honestly-unknown state, and
+  the emission gate gives it an empty artifact list rather than deriving one from
+  a guessed base.
 
 ## Task ID Format
 
