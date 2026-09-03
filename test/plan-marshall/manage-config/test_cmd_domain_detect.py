@@ -25,6 +25,8 @@ _mod = load_script_module(
 cmd_domain_detect = _mod.cmd_domain_detect
 _glob_to_regex = _mod._glob_to_regex
 _extract_narrative_paths = _mod._extract_narrative_paths
+_always_on_domains = _mod._always_on_domains
+_offerable_domains = _mod._offerable_domains
 
 
 def _ns(
@@ -254,6 +256,36 @@ def test_zero_narrative_match_with_always_on_only_over_provisions(plan_context):
     assert result['reason'] == 'over_provisioned_always_on_only'
     assert set(result['domains']) == {'java', 'python'}
     assert 'python' in result['always_on']
+
+
+def test_always_on_is_a_subset_of_offerable():
+    """``always_on`` domains are retained by over-provisioning only via this subset.
+
+    The over-provision branch returns ``offerable`` ALONE and retains the
+    ``always_on`` domains solely because they are already inside it — there is no
+    explicit union to carry them. That makes the containment a load-bearing
+    invariant of the branch rather than an incidental property of two filters.
+
+    It is worth pinning because the two helpers' docstrings already disagree about
+    it: ``_always_on_domains`` says "non-system domains" while ``_offerable_domains``
+    says only "real, offerable domains", yet neither applies a system filter — the
+    caller strips ``system`` once, before both. A future edit that narrows
+    ``_offerable_domains`` to match some stricter reading of its docstring, without
+    narrowing ``_always_on_domains`` in step, would drop an always_on domain out of
+    the over-provisioned set with nothing else failing. This assertion is what makes
+    that loud.
+    """
+    cfg = {
+        'system': {'defaults': []},  # dict-valued, stripped by the caller not the helpers
+        'java': {'bundle': 'pm-dev-java'},  # offerable, not always_on
+        'python': {'bundle': 'pm-dev-python', 'always_on': True},  # offerable AND always_on
+        'active_profiles': [],  # non-dict bookkeeping sibling — offerable by neither
+    }
+
+    assert _always_on_domains(cfg) <= _offerable_domains(cfg)
+    # Guard the assertion against passing vacuously on an empty left-hand set.
+    assert _always_on_domains(cfg) == {'python'}
+    assert 'active_profiles' not in _offerable_domains(cfg)
 
 
 # =============================================================================
