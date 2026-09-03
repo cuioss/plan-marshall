@@ -643,8 +643,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         type=positive_timeout_seconds,
         default=None,
         help='Wall-clock bound in seconds for this job, which can only RAISE the '
-        "daemon's supervisory bound — never lower it. When omitted, or when the "
-        'request is below it, the daemon default applies.',
+        "daemon's supervisory bound — never lower it. When omitted, the daemon "
+        'default applies.',
     )
     submit.set_defaults(func=run_submit)
 

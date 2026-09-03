@@ -545,10 +545,9 @@ class Daemon:
         configured default unchanged. A submit that DID state one raises the
         bound to that request plus :data:`_JOB_TIMEOUT_MARGIN_SECONDS`, so the
         child's own (identical, since the daemon re-runs the same argv) bound is
-        the one that fires and reports. The default still floors the result: a
-        request below it changes nothing, because the child already enforces the
-        smaller bound itself and an outer kill underneath it would only destroy
-        the child's diagnosis.
+        the one that fires and reports. The default still floors the result,
+        because the child already enforces the smaller bound itself and an outer
+        kill underneath it would only destroy the child's diagnosis.
 
         Args:
             requested: The spec's explicit bound in seconds, or ``None``.

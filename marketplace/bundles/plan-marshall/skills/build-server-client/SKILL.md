@@ -165,11 +165,10 @@ directory.
 
 `--timeout` is a wall-clock bound in seconds that can only **raise** the daemon's
 supervisory bound — it never lowers it. `marshalld._resolve_job_timeout` resolves
-`max(requested + margin, daemon_default)`, so a request below the default leaves the
-supervisory bound at the default: `--timeout 120` against an 1800s default still
-supervises for 1800s. That is deliberate, not a defect — the inner child reports a
-diagnosable timeout instead of losing a race to an opaque outer kill. When `--timeout`
-is omitted the job spec carries no bound at all and the daemon applies its own default.
+`max(requested + margin, daemon_default)`. That is deliberate, not a defect — the inner
+child reports a diagnosable timeout instead of losing a race to an opaque outer kill.
+When `--timeout` is omitted the job spec carries no bound at all and the daemon applies
+its own default.
 
 A **lower** bound therefore takes effect only where something else enforces it. On the
 routed leg it does: the routing client rebuilds `command` from its own argv tail, so the

@@ -376,6 +376,27 @@ def test_a_request_below_the_default_does_not_lower_the_outer_bound(home, tmp_pa
     assert received == marshalld._DEFAULT_JOB_TIMEOUT
 
 
+def test_a_request_inside_the_margin_window_still_raises_the_bound(home, tmp_path, monkeypatch):
+    """The floor is ``max(requested + margin, default)``, NOT a flat clamp to the default.
+
+    ``BELOW_DEFAULT_TIMEOUT`` sits far under the default, so the test above passes for a
+    request the margin cannot lift over it — and passes equally under either reading. A
+    request within ``_JOB_TIMEOUT_MARGIN_SECONDS`` of the default is the case that
+    separates them: it is below the default, yet resolves ABOVE it.
+
+    That gap is not hypothetical. Three separate docstrings described this resolver as
+    "a request below the default changes nothing"; the window is where that sentence is
+    false, and nothing in the suite reached it to contradict them.
+    """
+    inside_window = marshalld._DEFAULT_JOB_TIMEOUT - marshalld._JOB_TIMEOUT_MARGIN_SECONDS + 10
+
+    received = _bound_run_job_received(tmp_path, _spec(home, inside_window), monkeypatch)
+
+    assert inside_window < marshalld._DEFAULT_JOB_TIMEOUT, 'precondition: the request is below the default'
+    assert received == inside_window + marshalld._JOB_TIMEOUT_MARGIN_SECONDS
+    assert received > marshalld._DEFAULT_JOB_TIMEOUT
+
+
 # =============================================================================
 # The chain — cmd_run's --timeout is the bound the supervisor measures against
 # =============================================================================
