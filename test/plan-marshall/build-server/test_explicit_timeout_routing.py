@@ -38,6 +38,7 @@ Against the pre-fix code it fails at the first link.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import sys
@@ -57,6 +58,7 @@ for _dep in (_SHARED_SCRIPTS, _CLIENT_SCRIPTS, _DAEMON_SCRIPTS, _LOGGING_SCRIPTS
     if str(_dep) not in sys.path:
         sys.path.insert(0, str(_dep))
 
+import _build_cli as build_cli  # noqa: E402
 import _build_execute_factory as factory  # noqa: E402
 import build_server as bsclient  # noqa: E402
 import marshalld  # noqa: E402
@@ -275,6 +277,67 @@ def test_submit_without_a_bound_omits_the_key(home, wire_frames):
     bsclient.run_submit(_submit_args(str(home / 'proj')))
 
     assert 'timeout' not in wire_frames[0]['job']
+
+
+# =============================================================================
+# The two --timeout parsers validate alike
+# =============================================================================
+
+
+def _client_submit_parser() -> argparse.ArgumentParser:
+    """The real client CLI surface, built exactly as ``main`` builds it."""
+    return bsclient._build_arg_parser()
+
+
+def _wrapper_run_parser() -> argparse.ArgumentParser:
+    """A wrapper CLI carrying the shared ``run`` subparser every build skill uses."""
+    parser = argparse.ArgumentParser(prog='wrapper', allow_abbrev=False)
+    sub = parser.add_subparsers(dest='command', required=True)
+    build_cli.add_run_subparser(
+        sub, command_args_help='build command args', default_timeout=1800
+    )
+    return parser
+
+
+@pytest.mark.parametrize(
+    'bad', ['0', '-1', 'abc'], ids=['zero', 'negative', 'not_a_number']
+)
+def test_both_timeout_parsers_reject_the_same_values(bad, capsys):
+    """The client's ``submit`` and the wrapper's ``run`` agree on what --timeout admits.
+
+    They are two parsers over ONE concept and used to share only a bare
+    ``type=int``, which accepted ``0`` and negatives at both. They now share one
+    validator, and the agreement is asserted from the OUTSIDE rather than by
+    reading the ``type=`` off each parser: a surface that drifted back to
+    ``type=int`` would stop raising here while its sibling kept raising, so the
+    drift fails a test instead of surviving as a comment.
+
+    ``capsys`` is read after each parse only to keep argparse's usage text off the
+    captured report; the assertion is the ``SystemExit``.
+    """
+    with pytest.raises(SystemExit):
+        _client_submit_parser().parse_args(['submit', '--command', '["x"]', '--timeout', bad])
+    capsys.readouterr()
+
+    with pytest.raises(SystemExit):
+        _wrapper_run_parser().parse_args(['run', '--command-args', 'x', '--timeout', bad])
+    capsys.readouterr()
+
+
+def test_both_timeout_parsers_accept_a_positive_bound():
+    """CONTROL: the shared validator admits a real bound at both surfaces.
+
+    Without it the test above is satisfied by a parser that rejects everything.
+    """
+    client = _client_submit_parser().parse_args(
+        ['submit', '--command', '["x"]', '--timeout', str(REQUESTED_TIMEOUT)]
+    )
+    wrapper = _wrapper_run_parser().parse_args(
+        ['run', '--command-args', 'x', '--timeout', str(REQUESTED_TIMEOUT)]
+    )
+
+    assert client.timeout == REQUESTED_TIMEOUT
+    assert wrapper.timeout == REQUESTED_TIMEOUT
 
 
 # =============================================================================

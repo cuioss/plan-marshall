@@ -10,6 +10,7 @@ daemon and client run under).
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import socket
@@ -311,7 +312,9 @@ def test_job_spec_without_a_timeout_stays_valid_and_omits_the_key():
 
 
 @pytest.mark.parametrize(
-    'bad', ['3000', 3000.0, 0, -1, True], ids=['str', 'float', 'zero', 'negative', 'bool']
+    'bad',
+    ['3000', 3000.0, 0, -1, True, None],
+    ids=['str', 'float', 'zero', 'negative', 'bool', 'present_null'],
 )
 def test_job_spec_rejects_a_present_but_malformed_timeout(bad):
     """A nonsense bound is REFUSED, never quietly degraded to the daemon default.
@@ -319,7 +322,8 @@ def test_job_spec_rejects_a_present_but_malformed_timeout(bad):
     Degrading it would reproduce the defect the field exists to fix — a caller's
     bound silently replaced — with nothing to say it happened. ``True`` is in the
     set because ``bool`` is an ``int`` subclass and would otherwise coerce to a
-    one-second bound.
+    one-second bound; ``None`` is in it because a PRESENT ``"timeout": null`` is
+    a malformed spec rather than an unset one (see the dedicated test below).
     """
     with pytest.raises(ValueError, match='timeout must be a positive integer'):
         proto.JobSpec.from_dict(
@@ -331,6 +335,56 @@ def test_job_spec_rejects_a_present_but_malformed_timeout(bad):
                 'timeout': bad,
             }
         )
+
+
+def test_a_present_null_timeout_is_distinguished_from_an_absent_one():
+    """Presence is read off the KEY, never off the fetched value.
+
+    ``data.get('timeout')`` maps a present ``"timeout": null`` onto the same
+    ``None`` an omitted key yields, so a spec that explicitly named a null bound
+    would be handed the daemon default as though it had named nothing — the
+    silent override-drop this field exists to prevent, arriving by a second
+    route. The two payloads below differ ONLY in whether the key is present at
+    all, so a regression that collapses the distinction fails here and nowhere
+    else: neither payload is malformed in any other respect.
+
+    ``to_dict`` omits the key when the bound is unset, so our own client never
+    emits this shape — the guarded caller is a hand-crafted or third-party frame.
+    """
+    base = {
+        'command': ['python3', 'x', 'a:b:c'],
+        'exec_path': '/t',
+        'project_path': '/t',
+        'plan_id': 'p',
+    }
+
+    assert proto.JobSpec.from_dict(dict(base)).timeout is None
+    with pytest.raises(ValueError, match='timeout must be a positive integer'):
+        proto.JobSpec.from_dict({**base, 'timeout': None})
+
+
+@pytest.mark.parametrize(
+    'raw',
+    ['0', '-1', '-300', 'abc', '', '1.5'],
+    ids=['zero', 'negative_one', 'negative', 'not_a_number', 'empty', 'float'],
+)
+def test_positive_timeout_seconds_rejects_a_non_positive_or_non_integer(raw):
+    """The shared argparse type refuses what ``type=int`` used to admit.
+
+    ``0`` and negatives are the ones that mattered: on the in-process path — taken
+    whenever preflight reports the daemon unavailable — a non-positive explicit
+    value is clamped to the engine minimum and can silently REPLACE a larger
+    learned timeout, so the caller gets a shorter build budget than the one
+    already learned for that command.
+    """
+    with pytest.raises(argparse.ArgumentTypeError):
+        proto.positive_timeout_seconds(raw)
+
+
+def test_positive_timeout_seconds_accepts_a_positive_integer():
+    """CONTROL: the guard admits the values it is supposed to admit."""
+    assert proto.positive_timeout_seconds('1') == 1
+    assert proto.positive_timeout_seconds('1800') == 1800
 
 
 def test_compute_fingerprint_deterministic_and_sensitive():

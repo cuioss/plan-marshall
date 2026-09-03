@@ -21,10 +21,15 @@ Three properties of the emission are load-bearing:
   several published artifacts instead of carrying one file that folds them
   together, so a charter change is published once rather than regenerated into
   every consumer.
-* **A run EMITS the whole set.** One artifact per derived domain plus the
-  spine, under ``{output_dir}/packs/``. The spine is emitted unconditionally
-  and is not selectable: a spine a consumer could omit is a charter a consumer
-  could drop.
+* **A run EMITS the whole set, and the set stays equal to the derivation.** One
+  artifact per derived domain plus the spine, under ``{output_dir}/packs/``. The
+  claim is enforced rather than asserted, at both ends: no function in this
+  module takes a bundle allow-list, so nothing can narrow the set on the way in
+  (``PrAgentTarget.generate`` accepts ``bundles`` for the base signature and
+  ignores it), and ``_prune_stale_artifacts`` removes a generated artifact this
+  run did not write, so a domain that stops deriving does not survive in the
+  output. The spine is emitted unconditionally and is not selectable: a spine a
+  consumer could omit is a charter a consumer could drop.
 
 The substantiation clause and the anti-fabrication clause are carried VERBATIM
 into the spine artifact, and appear in no domain artifact.
@@ -138,6 +143,14 @@ _SPINE_ARTIFACT_NAME = 'spine'
 #: The source repository every emitted artifact names in its header, so a reader
 #: who finds an artifact in the published set can reach the derivation.
 _SOURCE_REPOSITORY = 'cuioss/plan-marshall'
+
+#: First line of every generated artifact's header. Both the renderer and the
+#: stale-artifact prune read it from HERE rather than each spelling it out: the
+#: prune may only reclaim files this generator produced, so the marker it
+#: matches has to be the very one the renderer writes. Two copies of the string
+#: could drift apart, and the drift would show up as the prune silently
+#: reclaiming nothing.
+_GENERATED_HEADER_MARKER = '<!-- GENERATED ARTIFACT — do not edit by hand.'
 
 #: The argument-free command that reproduces the whole artifact set. Selection is
 #: no longer an argument, so there is exactly one regenerate line for every
@@ -290,7 +303,7 @@ def _is_withholding(text: str) -> bool:
     return any(phrase in lowered for phrase in _WITHHOLDING_PHRASES)
 
 
-def discover_domains(marketplace_dir: Path, bundles: list[str] | None = None) -> dict[str, DomainContribution]:
+def discover_domains(marketplace_dir: Path) -> dict[str, DomainContribution]:
     """Derive the review-domain set by scanning the source marketplace.
 
     A bundle contributes a domain when it holds at least one per-domain
@@ -302,23 +315,25 @@ def discover_domains(marketplace_dir: Path, bundles: list[str] | None = None) ->
     The spine bundle is excluded: it carries the cross-cutting foundations, not
     a domain of its own.
 
+    The derivation takes NO bundle allow-list, and that absence is the contract
+    rather than an omission: this target is not bundle-scopable (see
+    :meth:`PrAgentTarget.generate`), so there is no parameter by which a caller
+    could narrow the set. Removing the knob is what makes the whole-set claim
+    true by construction instead of by convention.
+
     Args:
         marketplace_dir: Path to ``marketplace/bundles/``.
-        bundles: Optional bundle allow-list. ``None`` scans every bundle.
 
     Returns:
         Derived domain identifier -> :class:`DomainContribution`, ordered by
         domain identifier.
     """
-    allowed = set(bundles) if bundles else None
     # bundle -> kind -> (domain_token, skill_dir)
     per_bundle: dict[str, dict[str, tuple[str, Path]]] = {}
 
     for bundle_dir in sorted(p for p in marketplace_dir.glob('*') if p.is_dir()):
         bundle = bundle_dir.name
         if bundle == SPINE_BUNDLE:
-            continue
-        if allowed is not None and bundle not in allowed:
             continue
         skills_dir = bundle_dir / 'skills'
         if not skills_dir.is_dir():
@@ -515,7 +530,7 @@ def render_pack_artifact(name: str, body: str) -> str:
             'in no domain artifact.'
         )
     return (
-        f'<!-- GENERATED ARTIFACT — do not edit by hand.\n'
+        f'{_GENERATED_HEADER_MARKER}\n'
         f'Derived from the {_SOURCE_REPOSITORY} marketplace (marketplace/bundles/**).\n'
         f'Regenerate with:\n'
         f'  {_REGENERATE_COMMAND}\n'
@@ -526,7 +541,7 @@ def render_pack_artifact(name: str, body: str) -> str:
     )
 
 
-def compose_packs(marketplace_dir: Path, bundles: list[str] | None = None) -> dict[str, str]:
+def compose_packs(marketplace_dir: Path) -> dict[str, str]:
     """Compose the spine-free body for every derived domain.
 
     The population is derived, not hand-written: a consumer enumerating packs
@@ -534,11 +549,53 @@ def compose_packs(marketplace_dir: Path, bundles: list[str] | None = None) -> di
     a literal list, so a new domain is guarded the moment it is derivable. The
     spine is deliberately not a member — it is not a domain, and it is emitted
     separately by :func:`compose_spine`.
+
+    Like :func:`discover_domains`, this takes no bundle allow-list: every caller
+    gets the whole derived set, so no call site can publish a narrowed one.
     """
     return {
         domain: compose_domain_pack(contribution)
-        for domain, contribution in discover_domains(marketplace_dir, bundles=bundles).items()
+        for domain, contribution in discover_domains(marketplace_dir).items()
     }
+
+
+def _prune_stale_artifacts(packs_dir: Path, keep: set[Path]) -> list[Path]:
+    """Delete generated artifacts in ``packs_dir`` that this run did not write.
+
+    A domain that stops deriving — its standards skill removed or renamed — used
+    to leave its artifact behind, so the published set carried MORE artifacts
+    than the derived set while every remaining file still looked freshly
+    generated. Nothing downstream could tell the difference: the publish
+    workflow's count-before-delete guard sees a plausible count either way, and
+    a consumer selecting the stale stem gets rules for a domain this repository
+    no longer states any.
+
+    Two properties are load-bearing:
+
+    * **It runs AFTER the new set is written.** A compose that raises therefore
+      leaves the previous set intact, where clearing the directory first would
+      publish an empty set on any failure.
+    * **It reclaims only what this generator produced.** A file is removed only
+      when it carries :data:`_GENERATED_HEADER_MARKER`, so a hand-written note
+      someone dropped into ``packs/`` survives. The prune's job is to keep the
+      generated set equal to the derived set, not to own the directory.
+
+    Args:
+        packs_dir: The emission directory, already written.
+        keep: Absolute paths this run wrote — every one is left alone.
+
+    Returns:
+        The paths removed, sorted.
+    """
+    pruned: list[Path] = []
+    for path in sorted(packs_dir.glob('*.md')):
+        if path in keep:
+            continue
+        if not path.read_text(encoding='utf-8').startswith(_GENERATED_HEADER_MARKER):
+            continue
+        path.unlink()
+        pruned.append(path)
+    return pruned
 
 
 # ---------------------------------------------------------------------------
@@ -579,12 +636,38 @@ class PrAgentTarget(TargetBase):
         output_dir: Path | None,
         bundles: list[str] | None = None,
     ) -> list[Path]:
+        """Emit the whole derived artifact set under ``{output_dir}/packs/``.
+
+        ``bundles`` is accepted to satisfy the :class:`TargetBase` signature and
+        is deliberately IGNORED — this target is not bundle-scopable. Its
+        published set must EQUAL the derived set, for two reasons that a narrowed
+        run breaks together: every artifact stamps the argument-free
+        :data:`_REGENERATE_COMMAND` into its header, so a narrowed set publishes
+        artifacts whose own stated reproduction command does not reproduce them;
+        and a consumer selecting a stem that a narrowed run happened to omit gets
+        no artifact at all, with nothing in the published set saying why.
+
+        Ignoring the filter — rather than rejecting it — is what keeps
+        ``--target all --bundles X`` working: the CLI forwards ``bundles`` to
+        every registered target, so a raise here would fail the whole fan-out
+        run. The other targets scope; this one emits its whole set alongside
+        them. There is consequently no parameter anywhere in this module by
+        which the derived set can be narrowed (see :func:`discover_domains`).
+
+        Args:
+            marketplace_dir: Path to ``marketplace/bundles/``.
+            output_dir: Root under which ``packs/`` is written. Required.
+            bundles: Ignored — see above.
+
+        Returns:
+            The written artifact paths, sorted.
+        """
         if output_dir is None:
             raise ValueError(
                 'PrAgentTarget requires --output: pass an output directory '
                 '(e.g. target/pr-agent, under which the packs/ artifact set is written)'
             )
-        bodies = compose_packs(marketplace_dir, bundles=bundles)
+        bodies = compose_packs(marketplace_dir)
         if not bodies:
             raise ValueError(
                 f'no review domains derived from {marketplace_dir}: expected at least one bundle '
@@ -614,6 +697,7 @@ class PrAgentTarget(TargetBase):
             path = packs_dir / f'{artifact_name}.md'
             path.write_text(render_pack_artifact(artifact_name, body), encoding='utf-8')
             written.append(path)
+        _prune_stale_artifacts(packs_dir, keep=set(written))
         return sorted(written)
 
 

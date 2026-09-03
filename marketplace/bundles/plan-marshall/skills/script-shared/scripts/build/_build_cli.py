@@ -15,6 +15,7 @@ from collections.abc import Callable
 
 from _build_format import format_toon
 from _build_parse import Issue
+from _build_server_protocol import positive_timeout_seconds
 from _build_shared import ParserFn, cmd_discover_common, cmd_parse_common
 from file_ops import safe_main  # noqa: F401  # canonical entry-point wrapper
 from marketplace_paths import NO_PLAN_SENTINEL
@@ -168,11 +169,13 @@ def add_run_subparser(
     # ``config.default_timeout`` supplies the fallback, exactly as before.
     run_parser.add_argument(
         '--timeout',
-        type=int,
+        type=positive_timeout_seconds,
         default=None,
         help='Build timeout in seconds — an explicit value overrides the learned value '
         '(no learned value can reduce it, though the engine floor still applies). '
-        f'When omitted, the learned value is used, falling back to {default_timeout}.',
+        f'When omitted, the learned value is used, falling back to {default_timeout}. '
+        'Must be positive: a non-positive value is clamped to the engine minimum and '
+        'would silently replace a larger learned value, so it is rejected here.',
     )
     run_parser.add_argument(
         '--mode',

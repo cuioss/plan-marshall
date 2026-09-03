@@ -62,39 +62,65 @@ class TestGenerateCli:
         assert result.returncode == 0, result.stderr
         assert (out / 'packs' / 'spine.md').is_file()
 
-    def test_pr_agent_emits_one_artifact_per_derived_domain(self, tmp_path):
-        """The emitted set is the derived domain set plus the spine, as Markdown."""
+    def test_pr_agent_emits_a_markdown_artifact_set(self, tmp_path):
+        """Shape check only: the run emits a non-empty set, and all of it is Markdown.
+
+        The name and this docstring are deliberately narrower than "one artifact
+        per derived domain": the body below never enumerates the derived set, so
+        a claim of set identity would be one no assertion here establishes. That
+        comparison belongs to test_pr_agent_target.py, which checks the emitted
+        stems against the composer's own derived set on a fixture marketplace.
+        Re-deriving the same expectation here would share the CLI's composer and
+        cost this smoke test its independence.
+        """
         out = tmp_path / 'pr-agent-packs-out'
 
         result = _run_cli('--target', 'pr-agent', '--output', str(out))
 
         assert result.returncode == 0, result.stderr
-        # python and plugin are the two domains this repository selects; they are
-        # now separate artifacts rather than one composed file.
-        assert (out / 'packs' / 'python.md').is_file()
-        assert (out / 'packs' / 'plugin.md').is_file()
-        assert all(path.suffix == '.md' for path in (out / 'packs').iterdir())
+        emitted = sorted((out / 'packs').iterdir())
+        assert emitted, 'the run emitted no artifact at all'
+        assert all(path.suffix == '.md' for path in emitted)
 
     def test_the_emitted_set_is_not_narrowable_by_the_caller(self, tmp_path):
-        """Control for the argument-free run: nothing the caller passes narrows it.
+        """Two argument-free runs land on identical stems, and ``--bundles`` changes nothing.
 
         Selection used to be a CLI argument, and the emitted file was whatever
-        the caller asked for. It is not any more: the run emits the whole derived
-        set, so two independent runs land on the identical stems. Without this,
-        the assertions above could not distinguish "the emission is fixed by the
-        derivation" from "this particular invocation happened to emit these".
+        the caller asked for. It is not any more. The two argument-free runs
+        establish that the emission is fixed by the derivation rather than by the
+        invocation — without them, the shape check above could not distinguish
+        "the emission is fixed" from "this particular invocation happened to emit
+        these".
+
+        The third run is what makes the NAME of this test true. A pair of runs
+        that both pass no narrowing flag cannot observe whether a narrowing flag
+        would be honoured, so the two-run form asserted non-narrowability while
+        testing only determinism. ``--bundles`` is the flag that still narrows
+        every bundle-tree target; here it must be ignored. ``plan-marshall`` is
+        chosen deliberately: it is the spine bundle, excluded from domain
+        derivation, so a target that HONOURED the filter would derive no domain
+        at all and exit non-zero — the failure is loud rather than a quietly
+        shorter set.
         """
         first = tmp_path / 'pr-agent-run-one'
         second = tmp_path / 'pr-agent-run-two'
+        scoped = tmp_path / 'pr-agent-run-scoped'
 
         one = _run_cli('--target', 'pr-agent', '--output', str(first))
         two = _run_cli('--target', 'pr-agent', '--output', str(second))
+        three = _run_cli(
+            '--target', 'pr-agent', '--output', str(scoped), '--bundles', 'plan-marshall'
+        )
 
         assert one.returncode == 0, one.stderr
         assert two.returncode == 0, two.stderr
+        assert three.returncode == 0, three.stderr
         stems = sorted(p.stem for p in (first / 'packs').glob('*.md'))
         assert stems, 'the run emitted no artifact at all'
         assert stems == sorted(p.stem for p in (second / 'packs').glob('*.md'))
+        assert stems == sorted(p.stem for p in (scoped / 'packs').glob('*.md')), (
+            '--bundles narrowed the pr-agent set; this target must ignore it'
+        )
 
     def test_pr_agent_emits_no_repo_local_config(self, tmp_path):
         """The output root holds the artifact set and nothing else."""

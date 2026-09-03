@@ -118,13 +118,14 @@ uv run python marketplace/targets/generate.py --target opencode --output target/
 # PR-Agent reviewer packs → target/pr-agent/packs/, one Markdown artifact per
 # derived review domain plus spine.md. The run takes no selection argument: it
 # emits the whole derived set, and a consumer selects from the published one.
+# --bundles below does not narrow this target — it is ignored here.
 uv run python marketplace/targets/generate.py --target pr-agent --output target/pr-agent
 
 # Every target at once (claude → target/claude/, opencode → target/opencode/,
 # pr-agent → target/pr-agent/packs/)
 uv run python marketplace/targets/generate.py --target all --output target
 
-# Scope to specific bundles
+# Scope to specific bundles (bundle-tree targets only — pr-agent ignores it)
 uv run python marketplace/targets/generate.py --target opencode --output target/opencode \
     --bundles plan-marshall,pm-dev-java
 ```
@@ -207,9 +208,15 @@ Three properties are load-bearing:
   several published artifacts instead of carrying one file that folds them
   together, so a charter change is published once rather than regenerated
   into every consumer.
-* **A run emits the whole set.** One artifact per derived domain plus the
-  spine, and the generated header names the argument-free command that
-  reproduces it. The spine is emitted unconditionally and is not selectable —
+* **A run emits the whole set, and the set stays equal to the derivation.**
+  One artifact per derived domain plus the spine, and the generated header
+  names the argument-free command that reproduces it. The claim is enforced at
+  both ends rather than asserted: no function in `pr_agent/target.py` takes a
+  bundle allow-list, so `--bundles` cannot narrow this target (it is accepted
+  and ignored, which is what keeps `--target all --bundles X` working for the
+  targets that do scope); and a generated artifact the current run did not
+  write is pruned, so a domain that stops deriving does not survive in the
+  output. The spine is emitted unconditionally and is not selectable —
   a spine a consumer could omit is a charter a consumer could drop.
 
 The emission is bounded and guarded. The substantiation bar and the

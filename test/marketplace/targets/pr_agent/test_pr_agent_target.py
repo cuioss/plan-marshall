@@ -11,6 +11,7 @@ Every test builds its own fixture marketplace, so the assertions do not depend o
 which bundles the real marketplace happens to ship today.
 """
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -348,7 +349,13 @@ class TestPackComposition:
 
 
 class TestEmission:
-    """A run emits the whole artifact set under ``packs/``, and a re-run rewrites it."""
+    """A run emits the whole artifact set under ``packs/``, and a re-run REPLACES it.
+
+    "Replaces" is the load-bearing word and is asserted in both directions: a
+    re-run widens the set when a domain starts deriving, and narrows it when one
+    stops. Without the narrowing half, a run could only ever add — leaving a
+    de-derived domain's artifact in the published set, where it reads as current.
+    """
 
     def test_emits_one_artifact_per_derived_domain_plus_the_spine(self, tmp_path):
         bundles = _two_domain_marketplace(tmp_path)
@@ -371,6 +378,51 @@ class TestEmission:
 
         assert before == ['java', SPINE_STEM]
         assert _emitted_stems(out) == ['java', 'ruby', SPINE_STEM]
+
+    def test_emitted_set_narrows_with_the_derived_set(self, tmp_path):
+        """The mirror of the widening control: a de-derived domain is PRUNED.
+
+        Writing the new set over the old one is not enough. A domain whose
+        standards skill is removed stops deriving, but its artifact from the
+        previous run survives untouched in ``packs/`` — so the published set
+        carries a domain this repository no longer states any rules for, and
+        every remaining file still looks freshly generated. Nothing downstream
+        can see the difference: the publish workflow's count-before-delete guard
+        reads a plausible count either way.
+        """
+        bundles = _two_domain_marketplace(tmp_path)
+        out = tmp_path / 'out'
+        PrAgentTarget().generate(bundles, out)
+        before = _emitted_stems(out)
+
+        shutil.rmtree(bundles / 'pm-fixture-ruby')
+        written = PrAgentTarget().generate(bundles, out)
+
+        assert before == ['java', 'ruby', SPINE_STEM]
+        assert _emitted_stems(out) == ['java', SPINE_STEM]
+        assert not (out / 'packs' / 'ruby.md').exists()
+        # the emitted set and the returned set agree — the prune does not strand
+        # a path the caller was told was written
+        assert sorted(p.stem for p in written) == _emitted_stems(out)
+
+    def test_an_unmanaged_file_in_packs_survives_the_prune(self, tmp_path):
+        """The prune reclaims only what this generator wrote.
+
+        Negative control for the prune above. ``packs/`` is an output directory,
+        not a directory this target owns outright: a file without the generated
+        header was put there by someone, and deleting it would make the prune a
+        directory-clearing step rather than a set-equality one.
+        """
+        bundles = _fixture_marketplace(tmp_path)
+        out = tmp_path / 'out'
+        PrAgentTarget().generate(bundles, out)
+        hand_written = out / 'packs' / 'notes.md'
+        hand_written.write_text('# reviewer notes, not generated\n', encoding='utf-8')
+
+        PrAgentTarget().generate(bundles, out)
+
+        assert hand_written.is_file()
+        assert hand_written.read_text(encoding='utf-8') == '# reviewer notes, not generated\n'
 
     def test_no_repo_local_config_is_emitted(self, tmp_path):
         bundles = _fixture_marketplace(tmp_path)

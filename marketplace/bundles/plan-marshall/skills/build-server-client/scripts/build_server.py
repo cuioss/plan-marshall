@@ -61,6 +61,7 @@ from _build_server_protocol import (
     STATUS_REFUSED,
     FrameError,
     make_job_spec,
+    positive_timeout_seconds,
     recv_frame,
     send_frame,
 )
@@ -639,9 +640,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     # caller named a bound" from "the caller named none, use the daemon default".
     submit.add_argument(
         '--timeout',
-        type=int,
+        type=positive_timeout_seconds,
         default=None,
-        help='Explicit wall-clock bound in seconds for this job (default: the daemon default).',
+        help='Wall-clock bound in seconds for this job, which can only RAISE the '
+        "daemon's supervisory bound — never lower it. When omitted, or when the "
+        'request is below it, the daemon default applies.',
     )
     submit.set_defaults(func=run_submit)
 

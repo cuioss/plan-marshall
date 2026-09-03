@@ -48,6 +48,7 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import socket
@@ -438,30 +439,89 @@ is optional, so a client that never sets it (and an older client that does not
 know the field) still submits a valid spec."""
 
 
+_ABSENT = object()
+"""Sentinel distinguishing "the wire payload has no ``timeout`` key" from a key
+that is present and carries ``null``. ``dict.get``'s default cannot be ``None``
+here without collapsing the two, which is exactly the case
+:func:`_coerce_wire_timeout` must tell apart."""
+
+
+def positive_timeout_seconds(raw: str) -> int:
+    """argparse ``type`` for a ``--timeout`` value: a strictly positive integer.
+
+    Shared deliberately by BOTH ``--timeout`` parsers — the build wrapper's
+    ``run`` and the build-server client's ``submit`` — so the two cannot drift
+    into accepting different value sets. A bare ``type=int`` admits ``0`` and
+    negatives at both, and neither is meaningful under either reading of the
+    bound. The two paths fail differently and both badly: on the wire the daemon
+    refuses a non-positive value as ``invalid_job`` (see
+    :func:`_coerce_wire_timeout`), while on the IN-PROCESS path — taken whenever
+    preflight reports the daemon unavailable, so ``run_submit`` is skipped
+    entirely — the value is clamped to the engine's minimum and can silently
+    REPLACE a larger learned timeout. Rejecting at the parser turns both into one
+    argparse error the caller reads before anything runs.
+
+    This validates the value's SHAPE only. It says nothing about how the bound is
+    applied: a request can only RAISE the daemon's supervisory bound (see
+    ``marshalld._resolve_job_timeout``), and that is deliberate.
+
+    Args:
+        raw: The raw command-line token.
+
+    Returns:
+        The parsed positive integer.
+
+    Raises:
+        argparse.ArgumentTypeError: when the token is not an integer, or is not
+            strictly positive.
+    """
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError(
+            f'--timeout must be an integer number of seconds, got {raw!r}'
+        ) from None
+    if value <= 0:
+        raise argparse.ArgumentTypeError(
+            f'--timeout must be a positive number of seconds, got {value}'
+        )
+    return value
+
+
 def _coerce_wire_timeout(raw: Any) -> int | None:
     """Coerce the optional wire ``timeout`` to a positive int, or ``None``.
 
-    Absent reads as ``None`` ("this submit stated no bound"), which is what
-    makes the field optional on the wire. A PRESENT value is validated rather
-    than best-effort coerced: the daemon feeds it straight into the supervisor's
-    wall-clock bound, so a string, a float, a bool, or a non-positive number is
-    a malformed spec — the submit is refused with ``invalid_job`` instead of
-    silently degrading to the daemon default, which would reproduce the very
-    dropped-override this field exists to fix.
+    ABSENCE is signalled by the :data:`_ABSENT` sentinel — never by ``None``.
+    That distinction is the whole point of the sentinel: a frame carrying
+    ``"timeout": null`` decodes to the same ``None`` an omitted key yields, so a
+    function that read absence off the VALUE would apply the daemon default to a
+    spec that explicitly named a null bound. That is the silent degrade this
+    field exists to prevent, arriving by a different route — so a PRESENT
+    ``null`` is refused as malformed rather than quietly treated as unset.
+
+    A present value is validated rather than best-effort coerced: the daemon
+    feeds it straight into the supervisor's wall-clock bound, so a string, a
+    float, a bool, ``null``, or a non-positive number is a malformed spec and the
+    submit is refused with ``invalid_job``.
+
+    ``to_dict`` omits the key entirely when the bound is unset, so our own client
+    never emits a present ``null``; this guards a hand-crafted or third-party
+    frame.
 
     Args:
-        raw: The decoded ``timeout`` value, or ``None`` when absent.
+        raw: The decoded ``timeout`` value, or :data:`_ABSENT` when the key is
+            not in the payload at all.
 
     Returns:
         The positive integer bound in seconds, or ``None`` when absent.
 
     Raises:
-        ValueError: when present but not a positive integer.
+        ValueError: when the key is present but not a positive integer.
     """
-    if raw is None:
+    if raw is _ABSENT:
         return None
     # bool is an int subclass — `True` would otherwise coerce to a 1-second bound.
-    if isinstance(raw, bool) or not isinstance(raw, int) or raw <= 0:
+    if raw is None or isinstance(raw, bool) or not isinstance(raw, int) or raw <= 0:
         raise ValueError(f'job spec timeout must be a positive integer, got {raw!r}')
     return raw
 
@@ -526,7 +586,8 @@ class JobSpec:
         Raises:
             ValueError: when a required field is missing, ``command`` is not a
                 list of strings, or a PRESENT ``timeout`` is not a positive
-                integer. An ABSENT ``timeout`` is valid and reads as ``None``.
+                integer — ``"timeout": null`` is present, and is refused. An
+                ABSENT ``timeout`` is valid and reads as ``None``.
         """
         missing = [key for key in _JOB_SPEC_REQUIRED if key not in data]
         if missing:
@@ -544,7 +605,9 @@ class JobSpec:
             project_path=str(data['project_path']),
             plan_id=str(data['plan_id']),
             fingerprint=str(data.get('fingerprint', '')),
-            timeout=_coerce_wire_timeout(data.get('timeout')),
+            # `data.get('timeout')` would map a present `null` onto the same
+            # `None` an omitted key yields; the sentinel keeps them distinct.
+            timeout=_coerce_wire_timeout(data.get('timeout', _ABSENT)),
         )
 
 
@@ -559,13 +622,25 @@ def compute_fingerprint(
     double-running it. The digest is order-stable (``sort_keys``) and
     independent of dict insertion order.
 
-    ``JobSpec.timeout`` is deliberately NOT part of the material, and that does
-    NOT let two differently-bounded submits collapse onto one job: the routing
-    client reconstructs ``command`` from its own argv tail, so an explicit
-    ``--timeout N`` is already a token INSIDE ``command`` and two submits with
-    different bounds therefore already digest differently. Adding the field
-    would re-hash the same distinction a second time while changing every
-    existing fingerprint.
+    ``JobSpec.timeout`` is deliberately NOT part of the material. On the ROUTING
+    leg that costs nothing: the routing client reconstructs ``command`` from its
+    own argv tail, so an explicit ``--timeout N`` is already a token INSIDE
+    ``command`` and two submits with different bounds already digest differently.
+    Adding the field would re-hash the same distinction a second time while
+    changing every existing fingerprint.
+
+    On the DIRECT surface (``submit --command X --timeout N``) the claim does not
+    hold, and the qualification is stated here rather than left to be discovered:
+    ``command`` is the JSON array passed via ``--command`` and ``--timeout`` is
+    not among its tokens, so two submits differing only in bound digest
+    identically and :meth:`Scheduler.submit` attaches the second to the first.
+    The consequence is bounded by the floor rather than by this function: a
+    request can only RAISE the daemon's supervisory bound, so two below-default
+    requests resolve to the identical bound anyway and lose nothing by sharing a
+    job. The one observable divergence is an above-default request attaching to
+    an earlier job that carries a different above-default bound. The field is
+    still not added to the material — that would change every existing
+    fingerprint for a narrow bounded case.
 
     Args:
         plan_id: The submitting plan id.

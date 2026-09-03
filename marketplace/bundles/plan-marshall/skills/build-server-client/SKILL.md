@@ -161,8 +161,23 @@ python3 .plan/execute-script.py plan-marshall:build-server-client:build_server s
 
 `--command` is the executor-form argv as a JSON array of strings. `--exec-path`
 defaults to `--project-path`; `--project-path` defaults to the current working
-directory. `--timeout` is the submit's explicit wall-clock bound in seconds; when
-omitted, the job spec carries no bound and the daemon applies its own default.
+directory.
+
+`--timeout` is a wall-clock bound in seconds that can only **raise** the daemon's
+supervisory bound — it never lowers it. `marshalld._resolve_job_timeout` resolves
+`max(requested + margin, daemon_default)`, so a request below the default leaves the
+supervisory bound at the default: `--timeout 120` against an 1800s default still
+supervises for 1800s. That is deliberate, not a defect — the inner child reports a
+diagnosable timeout instead of losing a race to an opaque outer kill. When `--timeout`
+is omitted the job spec carries no bound at all and the daemon applies its own default.
+
+A **lower** bound therefore takes effect only where something else enforces it. On the
+routed leg it does: the routing client rebuilds `command` from its own argv tail, so the
+same `--timeout N` is a token inside the submitted command and the child re-runs it and
+self-bounds. On the direct surface above, `--command` is whatever JSON array the caller
+passes, so a lower `--timeout` there bounds nothing unless the caller also puts it in
+that array. The value must be a positive integer; `0` and negatives are rejected by the
+parser.
 
 ### build_server — wait
 
