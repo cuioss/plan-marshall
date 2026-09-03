@@ -616,8 +616,15 @@ The three-segment caller prefix and the status-code mapping are owned by
 § "Task Completion Emission ([STEP] + [ARTIFACT])"; the script implements that
 mapping and does not restate it. An empty diff emits nothing — an empty artifact
 list is a valid outcome, and its absence from the log is itself the signal. The
-`finalize-step` result echoes `artifact_lines` (the count emitted) so a caller
-can see the channel fired without reading the log back.
+`finalize-step` result echoes `artifact_lines` — the count the script emitted.
+
+⛔ That count is a plain int and is NOT a fired-vs-not discriminator: it reads
+`0` for an empty diff (the measured zero), for a task carrying no
+`task_start_sha`, for a failed `git diff`, and for any `finalize-step` call that
+did not close the task. Reading a `0` as "the channel fired and found nothing" is
+the measured-zero-versus-unmeasured conflation this bundle removes elsewhere;
+distinguishing the four would need a tri-state field, which `_cmd_step.py` does
+not have.
 
 **The diff base is `task_start_sha`, and `manage-tasks` writes it.** The field
 is captured on the FIRST transition of a task into `in_progress` — the implicit
