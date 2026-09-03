@@ -31,12 +31,20 @@ D2 — ``dispatch_coverage`` (did dispatch that SHOULD have happened, happen —
     The discriminator is the **token record**, not the completion line: the
     ``[STEP] … Completed step:`` line fires for inline steps too, whereas a
     non-zero ``execution_log[]`` ``total_tokens`` is written only when the step
-    ran as a dispatched Task agent (an inline step records a measured ``0``). So
-    each terminal finalize step is classified from its token record into one of
-    three evidence states — ``dispatched`` (non-zero tokens), ``ran_inline`` (a
-    RECORDED zero), ``no_evidence`` (no token row at all, OR a row whose
-    ``total_tokens`` could not be read) — and NEVER reported as "ran inline where
-    dispatch was required" on the strength of a missing dispatch line alone.
+    ran as a dispatched Task agent. So each terminal finalize step is classified
+    from its token record into one of three evidence states — ``dispatched``
+    (non-zero tokens), ``ran_inline`` (a RECORDED zero), ``no_evidence`` (no
+    token row at all, OR a row whose ``total_tokens`` could not be read,
+    INCLUDING the writer's ``unmeasured`` token) — and NEVER reported as "ran
+    inline where dispatch was required" on the strength of a missing dispatch
+    line alone.
+
+    ⚠ The writer distinguishes the two zero-shaped states on its own side: a
+    caller with no ``<usage>`` envelope OMITS the flags and the row records
+    ``unmeasured``, while an explicit ``0`` is written only where zero was
+    actually measured. That NARROWS ``ran_inline`` — an inline step no longer
+    lands there by default — so a small ``ran_inline`` is not evidence that few
+    steps ran inline.
 
     ⛔ ``ran_inline`` is an **UPPER BOUND on inline execution, never proof of it**.
     It means *a recorded zero token attribution*, which an inline step produces —
@@ -386,18 +394,20 @@ def finalize_token_records(manifest: dict[str, Any] | None) -> dict[str, int | N
 
     ``record-step`` writes one row per finalize step — dispatched OR inline —
     carrying ``step_id``, ``phase`` and ``total_tokens``; a dispatched step's row
-    carries the agent's measured tokens, an inline step's a measured ``0``. Rows
+    carries the agent's measured tokens, while a caller that measured nothing
+    omits the flag and the row carries the writer's ``unmeasured`` token. Rows
     for other phases are ignored.
 
     ⛔ **An unreadable ``total_tokens`` maps to ``None``, never to ``0``.** A row
     with no ``total_tokens`` column at all, a non-integer value, and a
-    non-digit string are three ways of saying *nothing was recorded* — and the
-    predecessor coerced all three to ``0``, which the classifier then read as a
-    MEASURED zero and filed under ``ran_inline``, the bucket the module docstring
-    and the shipped standard both present as evidence the step ran inline. ``None``
-    routes to ``no_evidence`` instead, where the absence belongs. An EXPLICIT
-    integer ``0`` still maps to ``0`` and still classifies ``ran_inline``, which
-    bounds the change: no plan whose rows carry real token columns changes verdict.
+    non-digit string — the writer's ``unmeasured`` token among them — are ways of
+    saying *nothing was recorded*, and the predecessor coerced all of them to
+    ``0``, which the classifier then read as a MEASURED zero and filed under
+    ``ran_inline``, the bucket the module docstring and the shipped standard both
+    present as evidence the step ran inline. ``None`` routes to ``no_evidence``
+    instead, where the absence belongs. An EXPLICIT integer ``0`` still maps to
+    ``0`` and still classifies ``ran_inline``, which bounds the change: no plan
+    whose rows carry real token columns changes verdict.
 
     When two rows name the same step (a re-fire that re-recorded) the larger
     RECORDED value wins, so a later zero cannot mask an earlier dispatched

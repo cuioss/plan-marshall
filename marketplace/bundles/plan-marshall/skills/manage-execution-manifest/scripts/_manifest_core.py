@@ -283,6 +283,33 @@ VALID_RECORD_PHASES = ('5-execute', '6-finalize')
 VALID_RECORD_OUTCOMES = ('executed', 'skipped', 'error')
 EXECUTION_LOG_KEY = 'execution_log'
 
+# The literal an OPTIONAL ``execution_log[]`` column carries when its flag was
+# omitted.
+#
+# The three token-attribution columns (``total_tokens`` / ``tool_uses`` /
+# ``duration_ms``) are optional: a caller with no ``<usage>`` figure to forward
+# passes no flag. Writing ``0`` for an omitted flag made "the caller passed no
+# measurement" and "the step really consumed nothing" byte-identical rows, so no
+# reader could tell a measured zero from a fabricated one.
+#
+# ⚠ The absence-vs-zero contract is a property of the ledger FAMILY, not of the
+# verb that happens to carry the tests. ``manage-metrics`` already defines the
+# same literal for its dispatch-boundary row's context-load columns
+# (``UNMEASURED_COLUMN_TOKEN`` in ``manage-metrics/scripts/manage-metrics.py``,
+# documented per column in that skill's ``standards/data-format.md``); this
+# ledger MIRRORS that definition rather than importing it, because the two skills
+# run in different processes and neither may import the other's private module.
+# The duplication is DECLARED here rather than left silent, and the two literals
+# are held in lock-step by the contract-drift test
+# ``test_unmeasured_token_matches_the_sibling_ledger`` in
+# ``test/plan-marshall/manage-execution-manifest/test_record_step.py``.
+#
+# Readers get a three-state column: a measured value, this token, or an
+# unrecognised cell — reported as unrecognised rather than folded into either
+# neighbour. Every reader keeps an int-parsing floor so historical all-numeric
+# rows still parse unchanged.
+UNMEASURED_COLUMN_TOKEN = 'unmeasured'
+
 # Default candidate step sets when callers don't pass --phase-5-steps / --phase-6-steps.
 # These are bare step IDs (post boundary-normalization shape). The phase-5
 # defaults are parameterized canonical-verify IDs in their bare

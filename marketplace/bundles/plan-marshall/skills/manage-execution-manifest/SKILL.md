@@ -61,7 +61,10 @@ phase_6:
 execution_log[K]{step_id,phase,outcome,total_tokens,tool_uses,duration_ms,timestamp}:
   - quality_check,5-execute,executed,12000,8,4200,2026-06-08T10:15:00+00:00
   - create-pr,6-finalize,skipped,0,0,0,2026-06-08T10:42:00+00:00
+  - push,6-finalize,executed,unmeasured,unmeasured,unmeasured,2026-06-08T10:44:00+00:00
 ```
+
+The three rows differ in kind, not only in value. The `skipped` row carries a MEASURED `0` — its caller passed `--total-tokens 0` because the step genuinely consumed nothing — while the `push` row carries `unmeasured` because its caller ran the step inline, had no `<usage>` envelope to forward, and OMITTED the flags. See [standards/manifest-schema.md](standards/manifest-schema.md) § "`execution_log[]` — the per-step execution log".
 
 ### Schema Fields
 
@@ -77,7 +80,7 @@ execution_log[K]{step_id,phase,outcome,total_tokens,tool_uses,duration_ms,timest
 | `phase_6.candidate_steps` | list[string] | The phase-6 candidate set this compose selected FROM, snapshotted **before** any pre-filter or decision-matrix row subtracted from it, boundary-normalized exactly like `phase_6.steps`. Written by `compose`; read only by `reconcile`, which diffs it against live configuration to tell a candidate that is NEW since compose (owed a backfill) from one the matrix considered and deliberately dropped (must stay dropped). The emitted `phase_6.steps` cannot serve that purpose — it is the post-subtraction result, so "in live config but not in the manifest" would match both cases. A manifest composed before this field existed has no `phase_6.candidate_steps` key; `reconcile` then reports `backfill_determinable: false` rather than guessing. |
 | `phase_5.step_params` | object | Per-step param snapshot for the selected Phase 5 verify steps, keyed by the (bare) in-manifest step id; each value is the step's resolved param object snapshotted from the marshal.json keyed map at compose time. Verify steps own no params, so values are typically `{}`. Read via `step-params get`; per-plan overridable via `step-params set`. |
 | `phase_6.step_params` | object | Per-step param snapshot for the selected Phase 6 finalize steps, keyed by the (bare) in-manifest step id; each value is the step's resolved param object snapshotted from the marshal.json keyed map at compose time (e.g. `branch-cleanup` carries `pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold`; `sonar-roundtrip` carries `touched_file_cleanup` / `do_transition` / `ce_wait_timeout_seconds`; `automated-review` carries `review_bot_buffer_seconds`). This is the **plan-local runtime source** that phase-5/6 consumers read via `step-params get` (per-plan overridable via `step-params set`), NOT the marshal.json keyed map (the compose-time default). |
-| `execution_log` | list[object] | Ordered append log of per-step execution records, written one row per `record-step` invocation. Each row carries `step_id` (the dispatched step), `phase` (`5-execute` or `6-finalize`), `outcome` (`executed`/`skipped`/`error`), the token-attribution triple `total_tokens`/`tool_uses`/`duration_ms` (default `0`), and an ISO-8601 `timestamp`. Absent until the first `record-step` call; the `compose`/`read`/`validate`/`validate-loadable` operations never read or write it. |
+| `execution_log` | list[object] | Ordered append log of per-step execution records, written one row per `record-step` invocation. Each row carries `step_id` (the dispatched step), `phase` (`5-execute` or `6-finalize`), `outcome` (`executed`/`skipped`/`error`), the token-attribution triple `total_tokens`/`tool_uses`/`duration_ms`, and an ISO-8601 `timestamp`. Each of the three token columns is **three-state**: a non-negative int is a measured value (including a measured `0`), the literal `unmeasured` is written when the caller OMITTED the flag, and any other cell is unrecognised. There is no `0` default — see [standards/manifest-schema.md](standards/manifest-schema.md) § "`execution_log[]` — the per-step execution log" for the write-side discriminator and the reader obligation. Absent until the first `record-step` call; the `compose`/`read`/`validate`/`validate-loadable` operations never read or write it. |
 
 ---
 
@@ -268,9 +271,11 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 - `--step-id` (required): Step identifier being recorded (e.g., a phase-5 verification step ID or a phase-6 finalize step ID)
 - `--phase` (required): `5-execute|6-finalize` — the phase the step ran in
 - `--outcome` (required): `executed|skipped|error` — whether the step ran, was skipped, or errored
-- `--total-tokens` (optional, default `0`): Total tokens attributed to the step
-- `--tool-uses` (optional, default `0`): Tool-use count attributed to the step
-- `--duration-ms` (optional, default `0`): Wall-clock duration in milliseconds
+- `--total-tokens` (optional, **no default**): Total tokens attributed to the step
+- `--tool-uses` (optional, **no default**): Tool-use count attributed to the step
+- `--duration-ms` (optional, **no default**): Wall-clock duration in milliseconds
+
+**Absence is not zero for the three token columns.** Each of the three flags is three-state and has NO `0` default. Pass a value — including `0` — only when that is what you MEASURED: a `skipped` step really did consume nothing, so `--total-tokens 0` is its correct record. **Omit the flag entirely when nothing was measured** (an inline step with no `<usage>` envelope to forward), and the row records the literal `unmeasured` instead. Passing `0` for an unmeasured column is the prohibited move: it is byte-identical to a measured zero, and no reader can recover the difference afterwards. The absence-vs-zero contract is a property of the ledger FAMILY — `manage-metrics` publishes the same rule and the same literal for its dispatch-boundary row — and the two definitions are mirrors held in lock-step by a contract-drift test on each side. See [standards/manifest-schema.md](standards/manifest-schema.md) § "`execution_log[]` — the per-step execution log".
 
 Each call appends exactly one row to `execution_log[]` (an ordered append log, not a keyed map) and emits one `decision.log` line via the in-process `_emit_decision_log` helper. Re-invocation appends another row deterministically, so every dispatch of a step is recorded. This makes per-step execution metadata loggable per-plan deterministically rather than relying on the fragile orchestrator `<usage>`-forwarding boundary call.
 
@@ -313,7 +318,9 @@ Because `execution_log[]` is an ordered append log with one row per firing, a st
 
 **`refires` counts extra firings, NOT re-stales.** At least four mechanisms produce a second `executed` row — the dispatcher's HEAD-advance re-entry check re-firing a re-staled verdict, a `loop_back` record re-firing the step on the next entry, a retry after a `failed` record, and the `push` barrier's parity-driven re-fire plus its explicit post-PR re-invocation — and this column does not separate them. A before/after comparison over the same plan shape stays sound, since the other causes are common to both arms; a single run's `refires` is not a re-stale count and must not be reported as one. The consuming model — what advances HEAD, what a re-stale costs, and how an advance is classified as invalidating or not — is owned by [`phase-6-finalize/standards/verdict-currency.md`](../phase-6-finalize/standards/verdict-currency.md).
 
-**Two coverage boundaries the payload names rather than hides.** A `skipped` row is counted in its own column and never folded into `firings` — a skip is precisely what a preserved verdict produces, so folding it in would make the instrument unable to measure the thing it exists to measure. And `total_tokens` is a **floor**: `record-step` receives the `<usage>` triple only for steps dispatched as Task agents, while every inline step records zeros by contract, so `token_population` states which rows the figure was summed over. A saving computed from this column is reported with that floor attached, never as a measured total.
+**Two coverage boundaries the payload names rather than hides.** A `skipped` row is counted in its own column and never folded into `firings` — a skip is precisely what a preserved verdict produces, so folding it in would make the instrument unable to measure the thing it exists to measure. And `total_tokens` is a **floor**: `record-step` receives the `<usage>` triple only for steps dispatched as Task agents, while an inline step's caller omits the flags (recorded as the `unmeasured` token, never a fabricated zero), so `token_population` states which rows the figure was summed over. A saving computed from this column is reported with that floor attached, never as a measured total.
+
+**The floor is SIZED, not merely asserted.** Every step row and the `totals` block carry `unmeasured_columns` and `unrecognised_columns` — the count of three-state cells the sum could not read. Without them an all-unmeasured population and a genuinely-zero one are the same number, which is the confident-but-untrue signal the column state exists to remove.
 
 **Output** (TOON):
 ```toon
@@ -321,10 +328,10 @@ status: success
 plan_id: EXAMPLE-PLAN
 phase: 6-finalize
 execution_log_rows: 11
-steps[2]{step_id,firings,refires,skipped,errors,total_tokens,tool_uses,duration_ms}:
-  pre-submission-self-review,7,6,0,0,412000,58,930000
-  push,1,0,3,0,0,0,0
-totals: { steps: 2, firings: 8, refires: 6, skipped: 3, errors: 0, ... }
+steps[2]{step_id,firings,refires,skipped,errors,total_tokens,tool_uses,duration_ms,unmeasured_columns,unrecognised_columns}:
+  pre-submission-self-review,7,6,0,0,412000,58,930000,0,0
+  push,1,0,3,0,0,0,0,3,0
+totals: { steps: 2, firings: 8, refires: 6, skipped: 3, errors: 0, unmeasured_columns: 3, ... }
 token_population: record-step rows only; ...
 ```
 

@@ -36,9 +36,10 @@ Facts emitted:
     output. An absent or unreadable decision log substantiates no cause at all,
     so the verdict is ``inconclusive`` rather than a fabricated ``fail``.
   * ``cost_preview`` — the ``execution_log`` token sum beside the init preview,
-    each naming the POPULATION it measures, and a ``comparison`` verdict that
+    each naming the POPULATION it measures and the per-state row counts saying how
+    much of that population the sum could READ, and a ``comparison`` verdict that
     feeds the ``cost_size_token_table`` recalibration loop only when the two
-    populations match.
+    populations match AND every in-population row carried a readable token column.
   * ``kept_step_yield`` — finding count as the adversarial-step yield proxy.
   * ``recompose_divergence`` — the lane_resolution decision-log LINE count. Not a
     recompose count despite the name; see :func:`lane_resolution_view`.
@@ -499,6 +500,15 @@ def footprint_has_production(files: list[str]) -> bool:
 # phase is added or removed on either side.
 EXECUTION_LOG_PHASES = ('5-execute', '6-finalize')
 
+#: The literal an OMITTED ``execution_log[]`` token column carries. A hand-mirror
+#: of ``UNMEASURED_COLUMN_TOKEN`` in
+#: ``manage-execution-manifest/scripts/_manifest_core.py``, held in the same
+#: cross-skill shape :data:`EXECUTION_LOG_PHASES` already uses above — this script
+#: runs in a different process from the writer and cannot import its private
+#: module. Held honest by the contract-drift test
+#: ``test_unmeasured_token_matches_writer``.
+UNMEASURED_COLUMN_TOKEN = 'unmeasured'
+
 #: The population label the ``execution_log`` sum carries. A comma-joined phase
 #: list rather than a coined vocabulary word: this script is a CONSUMER of the
 #: population vocabulary, never its author, and the phase set is the exact,
@@ -523,8 +533,8 @@ COMPARISON_REFUSED = 'refused'
 COMPARISON_COMPUTED = 'computed'
 
 
-def sum_execution_log_tokens(manifest: dict[str, Any]) -> int:
-    """Sum ``total_tokens`` across the ``execution_log`` rows this sum CLAIMS to cover.
+def summarize_execution_log_tokens(manifest: dict[str, Any]) -> dict[str, int]:
+    """Sum ``total_tokens`` over the in-population rows AND state the sum's coverage.
 
     Filtered to :data:`EXECUTION_LOG_PHASES`, which is the population
     :data:`EXECUTION_LOG_POPULATION` publishes beside the figure. Summing every
@@ -535,21 +545,64 @@ def sum_execution_log_tokens(manifest: dict[str, Any]) -> int:
     naming phases it did not measure. That is this plan's own keeper rule applied
     to its own deliverable: the figure carries its population, or it is not named
     for one.
+
+    ⛔ **A phase filter is not the only way a sum can be partial.** The writer's
+    token columns are three-state: a measured value, :data:`UNMEASURED_COLUMN_TOKEN`
+    for a column whose flag the caller OMITTED, or an unrecognised cell. Both
+    non-measured states contribute nothing, so a sum taken over them is a FLOOR —
+    and a sum published without saying how many rows it could not read is exactly
+    the fabricated total the token exists to prevent, reconstructed one level up.
+    The int-parsing branch is kept unchanged, so every historical all-numeric row
+    still parses and still sums as before.
+
+    Returns:
+        ``{'total_tokens', 'rows_in_population', 'rows_measured',
+        'rows_unmeasured', 'rows_unrecognised'}`` — the sum plus the per-state row
+        counts it was taken over. ``rows_measured + rows_unmeasured +
+        rows_unrecognised == rows_in_population`` holds unconditionally.
     """
+    coverage = {
+        'total_tokens': 0,
+        'rows_in_population': 0,
+        'rows_measured': 0,
+        'rows_unmeasured': 0,
+        'rows_unrecognised': 0,
+    }
     rows = manifest.get('execution_log')
     if not isinstance(rows, list):
-        return 0
-    total = 0
+        return coverage
     for row in rows:
-        if isinstance(row, dict):
-            if str(row.get('phase')) not in EXECUTION_LOG_PHASES:
-                continue
-            value = row.get('total_tokens')
-            if isinstance(value, int):
-                total += value
-            elif isinstance(value, str) and value.isdigit():
-                total += int(value)
-    return total
+        if not isinstance(row, dict):
+            continue
+        if str(row.get('phase')) not in EXECUTION_LOG_PHASES:
+            continue
+        coverage['rows_in_population'] += 1
+        value = row.get('total_tokens')
+        if isinstance(value, bool):
+            # A bool is not a token count; it is an unreadable cell.
+            coverage['rows_unrecognised'] += 1
+        elif isinstance(value, int):
+            coverage['total_tokens'] += value
+            coverage['rows_measured'] += 1
+        elif isinstance(value, str) and value.strip() == UNMEASURED_COLUMN_TOKEN:
+            coverage['rows_unmeasured'] += 1
+        elif isinstance(value, str) and value.isdigit():
+            coverage['total_tokens'] += int(value)
+            coverage['rows_measured'] += 1
+        else:
+            coverage['rows_unrecognised'] += 1
+    return coverage
+
+
+def sum_execution_log_tokens(manifest: dict[str, Any]) -> int:
+    """Return only the token sum from :func:`summarize_execution_log_tokens`.
+
+    The thin accessor kept for callers that need the figure alone. Anything that
+    PRESENTS the figure must take the full coverage dict instead — a sum quoted
+    without its per-state row counts cannot state how much of its population it
+    actually read.
+    """
+    return summarize_execution_log_tokens(manifest)['total_tokens']
 
 
 def _phase_6_steps(manifest: dict[str, Any]) -> list[str]:
@@ -731,9 +784,17 @@ def evaluate_cost_preview(manifest: dict[str, Any], metadata: dict[str, Any]) ->
     ``comparison`` is always present and is one of
     :data:`COMPARISON_NOT_ATTEMPTED` (no prediction recorded — the state EVERY
     run is in today, since no producer writes the key),
-    :data:`COMPARISON_REFUSED` (populations differ), or
-    :data:`COMPARISON_COMPUTED` (populations match; ``delta_tokens`` and
-    ``delta_pct`` accompany it and nowhere else).
+    :data:`COMPARISON_REFUSED` (populations differ, OR the sum does not cover its
+    own population because some rows carry an unmeasured / unrecognised token
+    column), or :data:`COMPARISON_COMPUTED` (populations match AND every
+    in-population row was readable; ``delta_tokens`` and ``delta_pct`` accompany
+    it and nowhere else).
+
+    The second refusal is the same rule as the first, applied to COVERAGE rather
+    than to scope: a delta taken against a floor is as plausible-looking, and as
+    unusable for recalibration, as a delta taken across populations. The
+    ``execution_log_rows_*`` fields publish the coverage either way, so a reader
+    sees the size of the gap and not only its existence.
 
     Args:
         manifest: The parsed ``execution.toon`` manifest.
@@ -742,7 +803,9 @@ def evaluate_cost_preview(manifest: dict[str, Any], metadata: dict[str, Any]) ->
     Returns:
         The ``cost_preview`` fact block.
     """
-    execution_log_tokens = sum_execution_log_tokens(manifest)
+    coverage = summarize_execution_log_tokens(manifest)
+    execution_log_tokens = coverage['total_tokens']
+    unreadable_rows = coverage['rows_unmeasured'] + coverage['rows_unrecognised']
     raw_predicted = metadata.get('execution_profile_cost_preview')
     predicted: int | None = None
     # `.strip()` before the digit test so a padded value is read rather than
@@ -773,6 +836,13 @@ def evaluate_cost_preview(manifest: dict[str, Any], metadata: dict[str, Any]) ->
     preview: dict[str, Any] = {
         'execution_log_tokens': execution_log_tokens,
         'execution_log_population': EXECUTION_LOG_POPULATION,
+        # How much of that population the sum could actually READ. A sum quoted
+        # without these is a figure whose coverage nobody stated — the same
+        # defect as a figure quoted without its population, one level down.
+        'execution_log_rows_in_population': coverage['rows_in_population'],
+        'execution_log_rows_measured': coverage['rows_measured'],
+        'execution_log_rows_unmeasured': coverage['rows_unmeasured'],
+        'execution_log_rows_unrecognised': coverage['rows_unrecognised'],
         'predicted_tokens': predicted,
         'predicted_population': predicted_population if predicted is not None else POPULATION_UNSTATED,
     }
@@ -797,6 +867,24 @@ def evaluate_cost_preview(manifest: dict[str, Any], metadata: dict[str, Any]) ->
             f'{predicted_population}; no delta is emitted, because subtracting '
             'across populations yields a plausible number that would recalibrate '
             'cost_size_token_table against a quantity nobody measured'
+        )
+        return preview
+
+    if unreadable_rows:
+        # The populations match, but the SUM does not cover its own population:
+        # some rows carry an unmeasured or unrecognised token column, so the
+        # figure is a floor. Subtracting a prediction from a floor yields a
+        # plausible number that would recalibrate `cost_size_token_table` against
+        # a quantity nobody measured — the same reason a population mismatch
+        # refuses, applied to coverage instead of scope.
+        preview['comparison'] = COMPARISON_REFUSED
+        preview['comparison_reason'] = (
+            f'incomplete_measurement: {coverage["rows_measured"]} of '
+            f'{coverage["rows_in_population"]} in-population row(s) carry a readable '
+            f'total_tokens ({coverage["rows_unmeasured"]} unmeasured, '
+            f'{coverage["rows_unrecognised"]} unrecognised), so the recorded sum is a '
+            'FLOOR rather than a total; no delta is emitted, because a delta against a '
+            'floor reads as a measurement of the gap'
         )
         return preview
 
