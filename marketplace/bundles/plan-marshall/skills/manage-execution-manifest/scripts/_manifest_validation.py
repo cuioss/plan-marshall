@@ -737,8 +737,17 @@ def _build_step_marshal_key_map(marshal_map: dict[str, Any] | None) -> dict[str,
     the author's original prefixes (``default:foo`` / ``project:foo`` /
     ``bundle:skill``). The composed manifest carries boundary-normalized ids, so a
     resolution failure on a normalized id is reported by the marshal.json key the
-    author actually wrote. Returns ``{}`` when the map is absent (the CSV-fallback
-    compose path), which the caller degrades to reporting the emitted id itself.
+    author actually wrote.
+
+    Two degradations, and the caller reads them differently. A step id MISSING from
+    a map that WAS supplied is not authored in marshal.json at all — it was routed
+    in by the execution_tier COMMAND routing pass (phase_5) or injected by the
+    composer (phase_6) — and the caller names that origin. Returns ``{}`` when the
+    map itself is absent (the CSV-fallback compose path), where no origin can be
+    determined for any step and the caller degrades to reporting the emitted id.
+    The empty map produced by the two cases is the same; what the caller may
+    conclude from it is not, which is why it branches on ``marshal_map`` rather
+    than on this result.
     """
     if not isinstance(marshal_map, dict):
         return {}
@@ -828,16 +837,22 @@ def check_emitted_steps_resolvable(
                         'marshal_key': step,
                         'message': f'{phase} step `{step}` is unresolvable: {base_reason}. {origin_note}',
                     }
-                # CSV-fallback compose path (no marshal step map): the emitted id is
-                # the best identifier available. This branch holds NO marshal.json key
-                # map by construction, so it states no origin — naming marshal.json
-                # here would send the reader hunting a key in a section that may not
-                # exist. Origin-neutral, matching the sibling branch above.
+                # CSV-fallback compose path: no marshal step map was read for this
+                # phase, so the emitted id is the best identifier available AND the
+                # authored-vs-routed question is unanswerable here — this branch
+                # holds no key map to answer it from. It says exactly that rather
+                # than naming marshal.json, which would send the reader hunting a
+                # key in a section that may not exist. Stating the indeterminacy is
+                # what keeps it from reading as "origin checked, nothing found".
                 return {
                     'phase': phase,
                     'step_id': step,
                     'marshal_key': step,
-                    'message': f'{phase} step `{step}` is unresolvable: {base_reason}',
+                    'message': (
+                        f'{phase} step `{step}` is unresolvable: {base_reason}. No step map '
+                        'was read for this phase, so the step\'s origin (authored vs routed) '
+                        'could not be determined'
+                    ),
                 }
     return None
 
