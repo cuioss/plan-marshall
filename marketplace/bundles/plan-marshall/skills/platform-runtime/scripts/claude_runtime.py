@@ -2858,6 +2858,68 @@ def _skill_permission_covered(skill: str, allow_list: list[str]) -> str | None:
     return None
 
 
+# Accepted semantic permission-intent kinds across the permission ops.
+_PERMISSION_INTENT_KINDS = ("web-domain", "executor", "bundle", "skill", "path", "macro")
+
+
+def _render_permission_intent(intent: Any) -> tuple[list[str] | None, str | None]:
+    """Map a semantic permission intent to Claude permission-DSL rules.
+
+    A caller states WHAT it wants (a web domain, the executor, a marketplace
+    bundle, a tool-and-path rule, or a named macro); this function renders the
+    ``WebFetch(...)`` / ``Bash(...)`` / ``Skill(...)`` / ``SlashCommand(...)``
+    grammar. The grammar lives here, inside the runtime — it never crosses the
+    operation boundary in either direction.
+
+    Returns ``(rules, None)`` on success, or ``(None, error)`` when the intent
+    is malformed or names an unknown kind.
+
+    Args:
+        intent: A semantic intent record with a ``kind`` key.
+    """
+    if not isinstance(intent, dict):
+        return None, "permission intent must be an object"
+    kind = intent.get("kind")
+    if kind == "web-domain":
+        domain = intent.get("domain")
+        if not isinstance(domain, str) or not domain:
+            return None, "web-domain intent requires a non-empty 'domain' string"
+        return [f"WebFetch({domain})"], None
+    if kind == "executor":
+        runtime = intent.get("runtime", "python3")
+        if not isinstance(runtime, str) or not runtime:
+            return None, "executor intent requires a non-empty 'runtime' string"
+        return [f"Bash({runtime} .plan/execute-script.py *)"], None
+    if kind == "bundle":
+        name = intent.get("name")
+        if not isinstance(name, str) or not name:
+            return None, "bundle intent requires a non-empty 'name' string"
+        return [f"Skill({name}:*)", f"SlashCommand(/{name}:*)"], None
+    if kind == "skill":
+        name = intent.get("name")
+        if not isinstance(name, str) or not name:
+            return None, "skill intent requires a non-empty 'name' string"
+        return [f"Skill({name})"], None
+    if kind == "path":
+        tool = intent.get("tool")
+        path = intent.get("path")
+        if not isinstance(tool, str) or not tool:
+            return None, "path intent requires a non-empty 'tool' string"
+        if not isinstance(path, str) or not path:
+            return None, "path intent requires a non-empty 'path' string"
+        return [f"{tool}({path})"], None
+    if kind == "macro":
+        mac_id = intent.get("id")
+        if not isinstance(mac_id, str) or not mac_id:
+            return None, "macro intent requires a non-empty 'id' string"
+        candidates = [*_default_permission_rules(), *_RETIRED_DEFAULT_RULES]
+        for rule_id, rule in candidates:
+            if rule_id == mac_id:
+                return [rule], None
+        return None, f"unknown macro id: {mac_id!r}"
+    return None, f"unknown permission intent kind: {kind!r}"
+
+
 # Phases in marshal.json that may carry ``project:{skill}`` step references.
 _PROJECT_STEP_PHASES = ("phase-5-execute", "phase-6-finalize")
 

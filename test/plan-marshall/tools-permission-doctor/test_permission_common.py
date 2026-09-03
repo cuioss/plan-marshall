@@ -205,6 +205,21 @@ class TestResolveScopeToPaths:
         assert global_path is None
         assert local_path is None
 
+    def test_declining_runtime_yields_none_paths(self, monkeypatch):
+        """A runtime that declines path resolution yields (None, None).
+
+        The decline must surface as a normal status result, not escape as a
+        RuntimeError that turns into a non-zero exit at the entry point.
+        """
+
+        def _raise(_target=None):
+            raise RuntimeError('no permission backend')
+
+        monkeypatch.setattr('permission_common._active_runtime', _raise)
+        global_path, local_path = resolve_scope_to_paths('both')
+        assert global_path is None
+        assert local_path is None
+
 
 # =============================================================================
 # Test: exit code constants

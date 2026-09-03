@@ -182,7 +182,7 @@ class TestWriteOpsFailClosedOnMalformedSettings:
         settings = self._malformed_settings(tmp_path)
         before = settings.read_bytes()
         self._pin_scope_path(monkeypatch, settings)
-        result = _parse(claude_runtime.ClaudeRuntime().permission_configure("project", ["Read(**)"]))
+        result = _parse(claude_runtime.ClaudeRuntime().permission_configure("project", [{"kind": "path", "tool": "Read", "path": "**"}]))
         assert result["status"] == "error"
         assert result["error"] == "invalid_settings"
         assert settings.read_bytes() == before
@@ -192,7 +192,9 @@ class TestWriteOpsFailClosedOnMalformedSettings:
         before = settings.read_bytes()
         self._pin_scope_path(monkeypatch, settings)
         result = _parse(
-            claude_runtime.ClaudeRuntime().permission_fix("project", "add", ["Read(**)"], False)
+            claude_runtime.ClaudeRuntime().permission_fix(
+                "project", "add", [{"kind": "path", "tool": "Read", "path": "**"}], False
+            )
         )
         assert result["status"] == "error"
         assert result["error"] == "invalid_settings"
@@ -284,9 +286,11 @@ class TestScriptsDelegateToRuntime:
     """The tools-permission-* scripts no longer own settings path resolution / I/O."""
 
     def test_permission_common_imports_runtime_helpers(self) -> None:
-        """permission_common delegates path-resolution + load/save to claude_runtime."""
+        """permission_common delegates path-resolution + load/save to the active runtime."""
         source = Path(permission_common.__file__).read_text(encoding="utf-8")
-        assert "from claude_runtime import" in source
+        # D3: routing through the registry, never a direct claude_runtime import.
+        assert "from claude_runtime import" not in source
+        assert "_runtime_for_target" in source
 
     def test_permission_common_path_for_write_delegates(self, tmp_path: Path) -> None:
         """get_project_settings_path_for_write resolves identically to the runtime."""
@@ -323,9 +327,11 @@ class TestScriptsDelegateToRuntime:
         assert path.exists()
 
     def test_permission_doctor_imports_runtime_helpers(self) -> None:
-        """permission_doctor delegates marshal/skill helpers to claude_runtime."""
+        """permission_doctor delegates marshal/skill helpers to the active runtime."""
         source = Path(permission_doctor.__file__).read_text(encoding="utf-8")
-        assert "from claude_runtime import" in source
+        # D3: routing through the registry, never a direct claude_runtime import.
+        assert "from claude_runtime import" not in source
+        assert "_active_runtime" in source
 
     def test_permission_doctor_skill_covered_delegates(self) -> None:
         """permission_doctor.skill_permission_covered delegates to the runtime."""
@@ -381,13 +387,13 @@ class TestOpenCodePermissionsHonestNoop:
         assert "wildcards_added" not in result
 
     def test_configure_is_honest_noop(self) -> None:
-        self._assert_noop(_parse(self.runtime.permission_configure("project", ["Read(**)"])))
+        self._assert_noop(_parse(self.runtime.permission_configure("project", [{"kind": "path", "tool": "Read", "path": "**"}])))
 
     def test_analyze_is_honest_noop(self) -> None:
         self._assert_noop(_parse(self.runtime.permission_analyze("both", ["all"], None)))
 
     def test_fix_is_honest_noop(self) -> None:
-        self._assert_noop(_parse(self.runtime.permission_fix("project", "add", ["Read(**)"], False)))
+        self._assert_noop(_parse(self.runtime.permission_fix("project", "add", [{"kind": "path", "tool": "Read", "path": "**"}], False)))
 
     def test_ensure_wildcards_is_honest_noop(self) -> None:
         self._assert_noop(
@@ -411,7 +417,7 @@ class TestOpenCodePermissionsHonestNoop:
 
     def test_invalid_scope_still_errors_before_noop(self) -> None:
         """Scope validation still runs first — invalid scope is an error, not a no-op."""
-        result = _parse(self.runtime.permission_configure("workspace", ["Read(**)"]))
+        result = _parse(self.runtime.permission_configure("workspace", [{"kind": "path", "tool": "Read", "path": "**"}]))
         assert result["status"] == "error"
         assert result["error"] == "invalid_scope"
 
@@ -461,7 +467,7 @@ class TestFailClosedDispatchRegression:
         settings = self._malformed_project_settings(claude_dir)
         before = settings.read_bytes()
         parsed = self._run(
-            capsys, ["permission", "configure", "--scope", "project", "--permissions", "Read(**)"]
+            capsys, ["permission", "configure", "--scope", "project", "--permissions", '{"kind":"path","tool":"Read","path":"**"}']
         )
         assert parsed["status"] == "error"
         assert parsed["error"] == "invalid_settings"
@@ -473,7 +479,7 @@ class TestFailClosedDispatchRegression:
         before = settings.read_bytes()
         parsed = self._run(
             capsys,
-            ["permission", "fix", "--scope", "project", "--operation", "add", "--permissions", "Read(**)"],
+            ["permission", "fix", "--scope", "project", "--operation", "add", "--permissions", '{"kind":"path","tool":"Read","path":"**"}'],
         )
         assert parsed["status"] == "error"
         assert parsed["error"] == "invalid_settings"

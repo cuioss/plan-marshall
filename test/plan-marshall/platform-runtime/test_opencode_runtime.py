@@ -310,20 +310,24 @@ def _assert_permission_noop(result: dict) -> None:
 
 def test_permission_configure_is_noop(runtime: OpenCodeRuntime) -> None:
     """permission_configure returns an honest no-op (no fake permissions_written count)."""
-    result = _parse(runtime.permission_configure("project", ["Read(**)", "Write(**)"]))
+    grants = [
+        {"kind": "path", "tool": "Read", "path": "**"},
+        {"kind": "path", "tool": "Write", "path": "**"},
+    ]
+    result = _parse(runtime.permission_configure("project", grants))
     assert result["operation"] == "permission configure"
     _assert_permission_noop(result)
 
 
 def test_permission_configure_global_scope_is_noop(runtime: OpenCodeRuntime) -> None:
     """permission_configure with global scope is also an honest no-op."""
-    result = _parse(runtime.permission_configure("global", ["Read(**)"]))
+    result = _parse(runtime.permission_configure("global", [{"kind": "path", "tool": "Read", "path": "**"}]))
     _assert_permission_noop(result)
 
 
 def test_permission_configure_invalid_scope_returns_error(runtime: OpenCodeRuntime) -> None:
     """permission_configure with invalid scope returns error before the no-op path."""
-    result = _parse(runtime.permission_configure("workspace", ["Read(**)"]))
+    result = _parse(runtime.permission_configure("workspace", [{"kind": "path", "tool": "Read", "path": "**"}]))
     assert result["status"] == "error"
     assert result["error"] == "invalid_scope"
 
@@ -357,8 +361,11 @@ def test_permission_analyze_invalid_check_returns_error(runtime: OpenCodeRuntime
 
 def test_permission_fix_is_noop(runtime: OpenCodeRuntime) -> None:
     """permission_fix returns an honest no-op (no fake changes_applied count)."""
-    perms = ["Read(**)", "Write(.plan/**)"]
-    result = _parse(runtime.permission_fix("project", "add", perms, False))
+    args = [
+        {"kind": "path", "tool": "Read", "path": "**"},
+        {"kind": "path", "tool": "Write", "path": ".plan/**"},
+    ]
+    result = _parse(runtime.permission_fix("project", "add", args, False))
     assert result["operation"] == "permission fix"
     _assert_permission_noop(result)
 
@@ -445,6 +452,28 @@ def test_permission_ensure_steps_invalid_scope_returns_error(
     result = _parse(runtime.permission_ensure_steps(str(marshal_path), "workspace", False))
     assert result["status"] == "error"
     assert result["error"] == "invalid_scope"
+
+
+def test_load_marshal_config_invalid_utf8_returns_error(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
+) -> None:
+    """Invalid UTF-8 in marshal.json is a load error, not an uncaught exception."""
+    marshal_path = tmp_path / "marshal.json"
+    marshal_path.write_bytes(b"\xff\xfe\x00\x01")
+
+    result = runtime.permission_load_marshal_config(str(marshal_path))
+    assert "error" in result
+    assert "marshal.json" in result["error"]
+
+
+def test_extract_project_steps_rejects_empty_project_prefix(
+    runtime: OpenCodeRuntime,
+) -> None:
+    """A bare 'project:' entry yields no step record (empty skill is rejected)."""
+    steps = runtime.permission_extract_project_steps(
+        {"plan": {"phase-5-execute": {"steps": ["project:", "project:real-skill"]}}}
+    )
+    assert steps == [{"skill": "real-skill", "step": "project:real-skill", "phase": "phase-5-execute"}]
 
 
 # 10. permission_web_analyze

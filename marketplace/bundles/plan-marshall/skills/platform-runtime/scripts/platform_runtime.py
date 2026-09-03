@@ -203,6 +203,27 @@ _TARGET_BOOTSTRAP_LIBS: dict[str, tuple[str, ...]] = {
 _PLAN_DIR_NAME = os.environ.get("PLAN_DIR_NAME", ".plan")
 
 
+def _parse_permission_intents(
+    raw: list[str],
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Parse semantic permission intents from command-line JSON strings.
+
+    Each raw value must be a JSON object describing a permission intent (a
+    ``kind`` plus its payload). Returns ``(intents, None)`` on success, or
+    ``(None, error)`` when any value is not a JSON object.
+    """
+    intents: list[dict[str, Any]] = []
+    for token in raw:
+        try:
+            parsed = json.loads(token)
+        except json.JSONDecodeError:
+            return [], f"permission must be a semantic intent (JSON); got {token!r}"
+        if not isinstance(parsed, dict):
+            return [], f"permission must be a semantic intent (JSON object); got {token!r}"
+        intents.append(parsed)
+    return intents, None
+
+
 # ---------------------------------------------------------------------------
 # Marshal.json loader
 # ---------------------------------------------------------------------------
@@ -247,6 +268,33 @@ def _make_runtime(target: str) -> Runtime | None:
     if cls is None:
         return None
     return cls()
+
+
+def _runtime_for_target(project_dir: str | None = None) -> Runtime:
+    """Resolve the active runtime for a project from marshal.json.
+
+    Public entry point for scripts (e.g. the permission skills) that must
+    honour ``runtime.target`` without going through the ``_dispatch`` router,
+    which is bound to a CLI argv shape. Reads marshal.json the same way the
+    router does and looks the implementation up in ``_REGISTRY``.
+
+    When no marshal.json (or no ``runtime.target``) can be resolved, the
+    default target is used — a project that declares no target is assumed to
+    be on the default platform. A target that IS declared is always honoured:
+    the fallback never overrides an explicit ``runtime.target``.
+
+    Raises:
+        RuntimeError: When the resolved target is not registered in the
+            registry.
+    """
+    marshal = _read_marshal(project_dir)
+    target = _resolve_target(marshal) if marshal is not None else None
+    if target is None:
+        target = _DEFAULT_TARGET
+    runtime = _make_runtime(target)
+    if runtime is None:
+        raise RuntimeError(f"Unknown runtime target: {target!r}")
+    return runtime
 
 
 # ---------------------------------------------------------------------------
@@ -433,7 +481,10 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         p.add_argument("--scope", required=True, choices=["project", "global"])
         p.add_argument("--permissions", nargs="+", required=True)
         ns = p.parse_args(remaining)
-        return runtime.permission_configure(ns.scope, ns.permissions)
+        intents, intent_err = _parse_permission_intents(ns.permissions)
+        if intent_err:
+            return toon_error("permission configure", "invalid_intent", intent_err)
+        return runtime.permission_configure(ns.scope, intents)
 
     # ------------------------------------------------------------------
     # permission analyze
@@ -459,7 +510,14 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         p.add_argument("--permissions", nargs="*", default=[])
         p.add_argument("--dry-run", action="store_true")
         ns = p.parse_args(remaining)
-        return runtime.permission_fix(ns.scope, ns.operation, ns.permissions, ns.dry_run)
+        if ns.operation == "protect-path":
+            return runtime.permission_fix(
+                ns.scope, ns.operation, list(ns.permissions), ns.dry_run
+            )
+        intents, intent_err = _parse_permission_intents(ns.permissions)
+        if intent_err:
+            return toon_error("permission fix", "invalid_intent", intent_err)
+        return runtime.permission_fix(ns.scope, ns.operation, intents, ns.dry_run)
 
     # ------------------------------------------------------------------
     # permission ensure-wildcards

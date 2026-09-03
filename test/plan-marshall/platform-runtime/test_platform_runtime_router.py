@@ -655,13 +655,31 @@ class TestDispatch:
     # ---- permission configure -------------------------------------------------
 
     def test_dispatch_permission_configure(self, rt):
-        """permission configure forwards --scope and --permissions to runtime."""
+        """permission configure forwards semantic --permissions intents to runtime."""
         _dispatch(
             rt,
             "permission configure",
-            ["--scope", "project", "--permissions", "Read(**)", "Write(.plan/**)"],
+            [
+                "--scope", "project",
+                "--permissions", '{"kind":"path","tool":"Read","path":"**"}',
+            ],
         )
-        rt.permission_configure.assert_called_once_with("project", ["Read(**)", "Write(.plan/**)"])
+        rt.permission_configure.assert_called_once_with(
+            "project", [{"kind": "path", "tool": "Read", "path": "**"}]
+        )
+
+    def test_dispatch_permission_configure_bad_intent(self, rt):
+        """permission configure with a non-JSON --permissions value errors."""
+        result = _parsed(
+            _dispatch(
+                rt,
+                "permission configure",
+                ["--scope", "project", "--permissions", "Read(**)"],
+            )
+        )
+        assert result["status"] == "error"
+        assert result["error"] == "invalid_intent"
+        rt.permission_configure.assert_not_called()
 
     # ---- permission analyze ---------------------------------------------------
 
@@ -693,13 +711,20 @@ class TestDispatch:
         rt.permission_fix.assert_called_once_with("project", "normalize", [], False)
 
     def test_dispatch_permission_fix_add_dry_run(self, rt):
-        """permission fix add with --dry-run forwards permissions and dry_run=True."""
+        """permission fix add with --dry-run forwards semantic intents and dry_run=True."""
         _dispatch(
             rt,
             "permission fix",
-            ["--scope", "global", "--operation", "add", "--permissions", "Read(**)", "--dry-run"],
+            [
+                "--scope", "global",
+                "--operation", "add",
+                "--permissions", '{"kind":"path","tool":"Read","path":"**"}',
+                "--dry-run",
+            ],
         )
-        rt.permission_fix.assert_called_once_with("global", "add", ["Read(**)"], True)
+        rt.permission_fix.assert_called_once_with(
+            "global", "add", [{"kind": "path", "tool": "Read", "path": "**"}], True
+        )
 
     # ---- permission ensure-wildcards ------------------------------------------
 

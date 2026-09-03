@@ -973,8 +973,8 @@ class ClaudeRuntime(Runtime):
     # Permission operations
     # ------------------------------------------------------------------
 
-    def permission_configure(self, scope: str, permissions: list[str]) -> str:
-        """Write a raw permission list to the Claude Code settings."""
+    def permission_configure(self, scope: str, grants: list[dict[str, Any]]) -> str:
+        """Write a semantic permission-intent list to the Claude Code settings."""
         if scope not in ("project", "global"):
             return toon_error(
                 "permission configure",
@@ -982,11 +982,22 @@ class ClaudeRuntime(Runtime):
                 f"--scope must be 'project' or 'global'; got {scope!r}",
             )
 
+        rendered: list[str] = []
+        for intent in grants:
+            rules, err = claude_runtime._render_permission_intent(intent)
+            if err or rules is None:
+                return toon_error(
+                    "permission configure",
+                    "invalid_intent",
+                    f"{err}; got {intent!r}",
+                )
+            rendered.extend(rules)
+
         settings_path = claude_runtime._settings_path_for_scope(scope)
         settings = claude_runtime._load_settings(settings_path)
         if "error" in settings:
             return toon_error("permission configure", "invalid_settings", settings["error"])
-        settings["permissions"]["allow"] = list(permissions)
+        settings["permissions"]["allow"] = rendered
 
         if not claude_runtime._save_settings(settings_path, settings):
             return toon_error(
@@ -999,7 +1010,7 @@ class ClaudeRuntime(Runtime):
             "permission configure",
             {
                 "scope": scope,
-                "permissions_written": len(permissions),
+                "permissions_written": len(rendered),
                 "target_file": str(settings_path),
             },
         )
@@ -1120,7 +1131,7 @@ class ClaudeRuntime(Runtime):
         self,
         scope: str,
         operation: str,
-        permissions: list[str],
+        arguments: list[Any],
         dry_run: bool,
     ) -> str:
         """Apply hygienic fixes to permission configuration."""
@@ -1139,7 +1150,7 @@ class ClaudeRuntime(Runtime):
                 f"--operation must be one of {valid_ops}; got {operation!r}",
             )
         if operation == "protect-path":
-            if not permissions:
+            if not arguments:
                 return toon_error(
                     "permission fix",
                     "invalid_operation",
@@ -1148,13 +1159,30 @@ class ClaudeRuntime(Runtime):
             # Validate BEFORE loading settings, so an unprotectable path cannot
             # reach the renderer. A deny rule is a security control: a path this
             # cannot render faithfully is refused, never rendered approximately.
-            for candidate in permissions:
+            for candidate in arguments:
+                if not isinstance(candidate, str):
+                    return toon_error(
+                        "permission fix",
+                        "invalid_operation",
+                        f"protect-path arguments must be directory paths; got {candidate!r}",
+                    )
                 refusal = claude_runtime._reject_unprotectable_path(candidate)
                 if refusal is not None:
                     return toon_error(
                         "permission fix",
                         "invalid_operation",
                         f"cannot protect {candidate!r}: {refusal}",
+                    )
+        elif operation in ("add", "remove", "ensure"):
+            # Render the semantic intents once, up front, so a malformed intent
+            # fails the whole operation before any settings are touched.
+            for intent in arguments:
+                rules, err = claude_runtime._render_permission_intent(intent)
+                if err:
+                    return toon_error(
+                        "permission fix",
+                        "invalid_intent",
+                        f"{err}; got {intent!r}",
                     )
 
         settings_path = claude_runtime._settings_path_for_scope(scope)
@@ -1164,7 +1192,7 @@ class ClaudeRuntime(Runtime):
         allow: list[str] = settings["permissions"]["allow"]
 
         changes_applied = 0
-        proposed_additions: list[str] = []
+        proposed_additions: list[dict[str, Any]] = []
         proposed_count = 0
         rules_rendered = 0
 
@@ -1204,13 +1232,20 @@ class ClaudeRuntime(Runtime):
                     return _write_failed(settings_path)
 
         elif operation == "add":
-            for perm in permissions:
-                if perm not in allow:
-                    if not dry_run:
-                        allow.append(perm)
-                        changes_applied += 1
-                    else:
-                        proposed_additions.append(perm)
+            planned: set[str] = set()
+            for intent in arguments:
+                rules, _err = claude_runtime._render_permission_intent(intent)
+                if rules is None:
+                    continue
+                new_rules = [r for r in rules if r not in allow and r not in planned]
+                if not new_rules:
+                    continue
+                if not dry_run:
+                    allow.extend(new_rules)
+                    changes_applied += 1
+                else:
+                    planned.update(new_rules)
+                    proposed_additions.append(intent)
             if not dry_run:
                 settings["permissions"]["allow"] = allow
                 if not _persisted(settings_path, settings):
@@ -1218,7 +1253,13 @@ class ClaudeRuntime(Runtime):
 
         elif operation == "remove":
             original_len = len(allow)
-            allow = [p for p in allow if p not in permissions]
+            remove_rules: set[str] = set()
+            for intent in arguments:
+                rules, _err = claude_runtime._render_permission_intent(intent)
+                if rules is None:
+                    continue
+                remove_rules.update(rules)
+            allow = [p for p in allow if p not in remove_rules]
             changes_applied = original_len - len(allow)
             if not dry_run:
                 settings["permissions"]["allow"] = allow
@@ -1226,13 +1267,20 @@ class ClaudeRuntime(Runtime):
                     return _write_failed(settings_path)
 
         elif operation == "ensure":
-            for perm in permissions:
-                if perm not in allow:
-                    if not dry_run:
-                        allow.append(perm)
-                        changes_applied += 1
-                    else:
-                        proposed_additions.append(perm)
+            planned = set()
+            for intent in arguments:
+                rules, _err = claude_runtime._render_permission_intent(intent)
+                if rules is None:
+                    continue
+                new_rules = [r for r in rules if r not in allow and r not in planned]
+                if not new_rules:
+                    continue
+                if not dry_run:
+                    allow.extend(new_rules)
+                    changes_applied += 1
+                else:
+                    planned.update(new_rules)
+                    proposed_additions.append(intent)
             if not dry_run:
                 settings["permissions"]["allow"] = allow
                 if not _persisted(settings_path, settings):
@@ -1289,7 +1337,7 @@ class ClaudeRuntime(Runtime):
             # counted them separately would report rules the caller will not
             # get — the count the per-path renderer already refuses to inflate.
             rendered: list[str] = []
-            for protected_dir in permissions:
+            for protected_dir in arguments:
                 rendered.extend(claude_runtime._protect_path_deny_rules(protected_dir))
             rendered = list(dict.fromkeys(rendered))
             rules_rendered = len(rendered)
@@ -1326,7 +1374,7 @@ class ClaudeRuntime(Runtime):
             # Named, not protected: three spellings of one directory are three
             # names and one protection. `rules_total` is the honest measure of
             # what was written.
-            result["paths_named"] = len(permissions)
+            result["paths_named"] = len(arguments)
             result["rules_total"] = rules_rendered
             if dry_run:
                 result["proposed_count"] = proposed_count
@@ -1357,7 +1405,7 @@ class ClaudeRuntime(Runtime):
         bundles_scanned = 0
         wildcards_added = 0
         wildcards_already_present = 0
-        proposed_additions: list[str] = []
+        proposed_additions: list[dict[str, Any]] = []
 
         if mp_path.is_dir():
             try:
@@ -1377,12 +1425,19 @@ class ClaudeRuntime(Runtime):
                 for wildcard in (skill_wildcard, cmd_wildcard):
                     if wildcard in allow:
                         wildcards_already_present += 1
+                    elif dry_run:
+                        # Report the semantic intent once, not the two rendered
+                        # wildcard rules: the operator states the bundle, the
+                        # runtime owns the Skill/SlashCommand grammar.
+                        if proposed_additions and proposed_additions[-1] == {
+                            "kind": "bundle",
+                            "name": bundle_name,
+                        }:
+                            continue
+                        proposed_additions.append({"kind": "bundle", "name": bundle_name})
                     else:
-                        if dry_run:
-                            proposed_additions.append(wildcard)
-                        else:
-                            allow.append(wildcard)
-                            wildcards_added += 1
+                        allow.append(wildcard)
+                        wildcards_added += 1
 
         if not dry_run:
             settings["permissions"]["allow"] = allow
@@ -1436,20 +1491,24 @@ class ClaudeRuntime(Runtime):
         steps_scanned = len(steps)
         permissions_added = 0
         permissions_already_present = 0
-        proposed_additions: list[str] = []
+        proposed_additions: list[dict[str, Any]] = []
 
+        planned_skills: set[str] = set()
         for step_entry in steps:
             skill_name = step_entry.get("skill", "")
             if not skill_name:
                 continue
-            skill_perm = f"Skill({skill_name})"
-            if claude_runtime._skill_permission_covered(skill_name, allow):
+            if (
+                claude_runtime._skill_permission_covered(skill_name, allow)
+                or skill_name in planned_skills
+            ):
                 permissions_already_present += 1
             else:
                 if dry_run:
-                    proposed_additions.append(skill_perm)
+                    planned_skills.add(skill_name)
+                    proposed_additions.append({"kind": "skill", "name": skill_name})
                 else:
-                    allow.append(skill_perm)
+                    allow.append(f"Skill({skill_name})")
                     permissions_added += 1
 
         if not dry_run:
@@ -1612,6 +1671,60 @@ class ClaudeRuntime(Runtime):
                 "target_file": str(settings_path),
             },
         )
+
+    # ------------------------------------------------------------------
+    # Permission settings I/O — used by permission_common / permission_doctor
+    # ------------------------------------------------------------------
+
+    def permission_settings_path(
+        self, scope: str, write: bool = False, project_dir: str | None = None
+    ) -> str:
+        """Resolve the Claude settings file path for a permission scope."""
+        if scope == "global":
+            return str(claude_runtime._claude_global_settings_path())
+        if scope == "project":
+            if write:
+                return str(claude_runtime._claude_project_settings_path(project_dir))
+            return str(claude_runtime._claude_project_settings_read_path(project_dir))
+        raise ValueError(f"Unsupported scope: {scope!r}")
+
+    def permission_load_settings(self, path: str) -> dict[str, Any]:
+        """Load settings from a Claude JSON file."""
+        return claude_runtime._load_settings(Path(path))
+
+    def permission_save_settings(self, path: str, settings: dict[str, Any]) -> bool:
+        """Persist settings to a Claude JSON file."""
+        return claude_runtime._save_settings(Path(path), settings)
+
+    def permission_ensure_defaults(
+        self,
+        settings: dict[str, Any],
+        settings_path: str,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Ensure the default permission set and prune retired rules."""
+        return claude_runtime.ensure_default_permissions(
+            settings, Path(settings_path), dry_run
+        )
+
+    def permission_check_skill_coverage(
+        self, skill: str, allow_list: list[str]
+    ) -> str | None:
+        """Check if a skill is covered by an allow rule."""
+        return claude_runtime._skill_permission_covered(skill, allow_list)
+
+    def permission_load_marshal_config(self, marshal_path: str) -> dict[str, Any]:
+        """Load and parse marshal.json, returning a dict with an ``error`` key."""
+        config, err = claude_runtime._load_marshal_config(marshal_path)
+        if err is not None:
+            return {"error": err}
+        return config
+
+    def permission_extract_project_steps(
+        self, marshal_config: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """Enumerate project:{skill} step references."""
+        return claude_runtime._extract_project_steps(marshal_config)
 
     # ------------------------------------------------------------------
     # Metrics

@@ -26,7 +26,9 @@ All methods return a serialized TOON string via the helpers in runtime_base.
 """
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 from runtime_base import (
@@ -327,7 +329,7 @@ class OpenCodeRuntime(Runtime):
         "Claude-only"
     )
 
-    def permission_configure(self, scope: str, permissions: list[str]) -> str:
+    def permission_configure(self, scope: str, grants: list[dict[str, Any]]) -> str:
         """Honest no-op: OpenCode has no validated permission-write backend."""
         if scope not in ("project", "global"):
             return toon_error(
@@ -370,7 +372,7 @@ class OpenCodeRuntime(Runtime):
         self,
         scope: str,
         operation: str,
-        permissions: list[str],
+        arguments: list[Any],
         dry_run: bool,
     ) -> str:
         """Honest no-op: OpenCode has no validated permission-fix backend."""
@@ -467,6 +469,102 @@ class OpenCodeRuntime(Runtime):
             self._PERMISSION_NOOP_REASON,
             self._PERMISSION_NOOP_ALTERNATIVE,
         )
+
+    # ------------------------------------------------------------------
+    # Permission settings I/O — honest no-ops for OpenCode
+    # ------------------------------------------------------------------
+
+    def permission_settings_path(
+        self, scope: str, write: bool = False, project_dir: str | None = None
+    ) -> str:
+        """Decline — OpenCode has no permission settings files."""
+        raise RuntimeError(
+            f"permission_settings_path: {self._PERMISSION_NOOP_REASON}"
+        )
+
+    def permission_load_settings(self, path: str) -> dict[str, Any]:
+        """Decline — OpenCode has no permission settings files."""
+        return {}
+
+    def permission_save_settings(
+        self, path: str, settings: dict[str, Any]
+    ) -> bool:
+        """Decline — OpenCode has no permission settings files."""
+        return False
+
+    def permission_ensure_defaults(
+        self,
+        settings: dict[str, Any],
+        settings_path: str,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Decline — OpenCode has no permission settings files."""
+        return {
+            "defaults_added": [],
+            "defaults_added_count": 0,
+            "defaults_removed": [],
+            "defaults_removed_count": 0,
+            "applied": False,
+        }
+
+    def permission_check_skill_coverage(
+        self, skill: str, allow_list: list[str]
+    ) -> str | None:
+        """Decline — OpenCode has no permission settings files."""
+        return None
+
+    def permission_load_marshal_config(self, marshal_path: str) -> dict[str, Any]:
+        """Load marshal.json — target-neutral, same schema on every target."""
+        marshal = Path(marshal_path)
+        if not marshal.exists():
+            return {"error": f"marshal.json not found: {marshal_path}"}
+        try:
+            data = json.loads(marshal.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            return {"error": f"Invalid JSON in {marshal_path}: {exc}"}
+        except OSError as exc:
+            return {"error": f"Could not read {marshal_path}: {exc}"}
+        if not isinstance(data, dict):
+            return {"error": f"Invalid marshal.json (expected object) in {marshal_path}"}
+        return data
+
+    def permission_extract_project_steps(
+        self, marshal_config: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """Enumerate project:{skill} step references — target-neutral.
+
+        Scans the same phases as the Claude side: ``plan.{phase-5-execute}.steps``
+        and ``plan.{phase-6-finalize}.steps``, returning one ``{skill, step,
+        phase}`` dict per ``project:``-prefixed entry. Marshal.json is a shared,
+        target-neutral file, so the schema is identical across targets.
+        """
+        if "error" in marshal_config:
+            return []
+        plan = marshal_config.get("plan", {})
+        if not isinstance(plan, dict):
+            return []
+        steps: list[dict[str, Any]] = []
+        for phase in ("phase-5-execute", "phase-6-finalize"):
+            phase_config = plan.get(phase, {})
+            if not isinstance(phase_config, dict):
+                continue
+            entries = phase_config.get("steps", [])
+            if not isinstance(entries, list):
+                continue
+            for step in entries:
+                if (
+                    isinstance(step, str)
+                    and step.startswith("project:")
+                    and len(step) > len("project:")
+                ):
+                    steps.append(
+                        {
+                            "skill": step[len("project:") :],
+                            "step": step,
+                            "phase": phase,
+                        }
+                    )
+        return steps
 
     # ------------------------------------------------------------------
     # Metrics

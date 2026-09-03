@@ -583,12 +583,16 @@ class Runtime(ABC):
     # ------------------------------------------------------------------
 
     @abstractmethod
-    def permission_configure(self, scope: str, permissions: list[str]) -> str:
-        """Write a raw permission list to the platform settings.
+    def permission_configure(self, scope: str, grants: list[dict[str, Any]]) -> str:
+        """Write a semantic permission-intent list to the platform settings.
 
         Args:
             scope: ``"project"`` or ``"global"``.
-            permissions: List of permission patterns to write.
+            grants: List of semantic permission intents, each a dict with a
+                ``kind`` key (``web-domain``, ``executor``, ``bundle``,
+                ``skill``, ``path``, or ``macro``) plus the payload that kind
+                needs. The target renders the permission-DSL grammar from these
+                intents itself; no rendered rule text crosses this boundary.
 
         Returns:
             Serialized TOON string (success, error, or no-op). A target whose
@@ -622,7 +626,7 @@ class Runtime(ABC):
         self,
         scope: str,
         operation: str,
-        permissions: list[str],
+        arguments: list[Any],
         dry_run: bool,
     ) -> str:
         """Apply hygienic fixes to permission configuration.
@@ -630,11 +634,13 @@ class Runtime(ABC):
         Args:
             scope: ``"project"`` or ``"global"``.
             operation: One of ``PERMISSION_FIX_OPERATIONS``.
-            permissions: The operation's semantic arguments. Patterns for
-                ``add``/``remove``/``ensure``; directory paths to protect for
-                ``protect-path`` (the target renders the protecting rules
-                itself, so no rule text crosses this boundary in either
-                direction); empty for ``normalize`` and ``consolidate``.
+            arguments: The operation's semantic arguments. For ``add`` /
+                ``remove`` / ``ensure`` these are semantic permission intents
+                (the same dict shape ``permission_configure`` takes). For
+                ``protect-path`` they are directory paths to protect (the
+                target renders the protecting rules itself, so no rule text
+                crosses this boundary in either direction). Empty for
+                ``normalize`` and ``consolidate``.
             dry_run: When ``True``, preview changes without applying.
 
         Returns:
@@ -715,6 +721,124 @@ class Runtime(ABC):
             permission model this operation cannot be expressed against declines
             here like any other operation, rather than reporting an outcome it
             did not reach.
+        """
+
+    # ------------------------------------------------------------------
+    # Permission settings I/O — used by permission_common / permission_doctor
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    def permission_settings_path(
+        self, scope: str, write: bool = False, project_dir: str | None = None
+    ) -> str:
+        """Resolve the settings file path for a permission scope.
+
+        Args:
+            scope: ``"global"`` or ``"project"``.
+            write: When ``True``, return the write-preferred path (which may
+                differ from the read path on targets that split them).
+            project_dir: When resolving the project scope, an explicit project
+                root to resolve relative settings files against (optional; the
+                target resolves against its own layout when omitted).
+
+        Returns:
+            Absolute file-system path as a string.
+
+        Raises:
+            ValueError: On an unsupported scope.
+            RuntimeError: When the target has no settings files (honest
+                decline — callers MUST handle this).
+        """
+
+    @abstractmethod
+    def permission_load_settings(self, path: str) -> dict[str, Any]:
+        """Load settings from a JSON file.
+
+        Args:
+            path: Absolute path to the settings JSON file.
+
+        Returns:
+            Parsed settings dictionary.  An empty ``{}`` on a missing file is
+            legitimate; a parse error surfaces as ``{"error": "<message>"}``.
+        """
+
+    @abstractmethod
+    def permission_save_settings(self, path: str, settings: dict[str, Any]) -> bool:
+        """Persist settings to a JSON file.
+
+        Args:
+            path: Absolute path to write.
+            settings: The settings dictionary to persist.
+
+        Returns:
+            ``True`` on success, ``False`` on failure.
+        """
+
+    @abstractmethod
+    def permission_ensure_defaults(
+        self,
+        settings: dict[str, Any],
+        settings_path: str,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Ensure the default permission set and prune retired rules.
+
+        The runtime renders the default rules from its own resolved layout;
+        no rendered grammar crosses the boundary.  The caller receives only
+        semantic status: which defaults were added, which were removed, and
+        whether the write was applied.
+
+        Args:
+            settings: Current settings dictionary (mutated in-place when
+                ``dry_run`` is ``False``).
+            settings_path: Absolute path to the settings file.
+            dry_run: When ``True``, preview without writing.
+
+        Returns:
+            Status dict with keys ``defaults_added``, ``defaults_added_count``,
+            ``defaults_removed``, ``defaults_removed_count``, ``applied``.
+        """
+
+    @abstractmethod
+    def permission_check_skill_coverage(
+        self, skill: str, allow_list: list[str]
+    ) -> str | None:
+        """Check if a skill is covered by an allow rule.
+
+        Matches exact ``Skill({skill})`` or covering wildcard
+        ``Skill({skill}:*)``.
+
+        Args:
+            skill: Skill name to check.
+            allow_list: The current allow rules list.
+
+        Returns:
+            The matching rule string, or ``None`` if not covered.
+        """
+
+    @abstractmethod
+    def permission_load_marshal_config(self, marshal_path: str) -> dict[str, Any]:
+        """Load and parse marshal.json configuration.
+
+        Args:
+            marshal_path: Path to marshal.json.
+
+        Returns:
+            Parsed configuration dictionary.  An ``error`` key signals a
+            parse failure.
+        """
+
+    @abstractmethod
+    def permission_extract_project_steps(
+        self, marshal_config: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """Enumerate ``project:{skill}`` step references from marshal config.
+
+        Args:
+            marshal_config: The parsed marshal.json dictionary.
+
+        Returns:
+            List of dicts with keys ``skill``, ``step``, ``phase``.
         """
 
     # ------------------------------------------------------------------
