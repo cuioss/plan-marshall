@@ -1232,15 +1232,17 @@ class ClaudeRuntime(Runtime):
                     return _write_failed(settings_path)
 
         elif operation == "add":
+            planned: set[str] = set()
             for intent in arguments:
                 rules, _err = claude_runtime._render_permission_intent(intent)
-                new_rules = [r for r in rules if r not in allow]
+                new_rules = [r for r in rules if r not in allow and r not in planned]
                 if not new_rules:
                     continue
                 if not dry_run:
                     allow.extend(new_rules)
                     changes_applied += 1
                 else:
+                    planned.update(new_rules)
                     proposed_additions.append(intent)
             if not dry_run:
                 settings["permissions"]["allow"] = allow
@@ -1261,15 +1263,17 @@ class ClaudeRuntime(Runtime):
                     return _write_failed(settings_path)
 
         elif operation == "ensure":
+            planned = set()
             for intent in arguments:
                 rules, _err = claude_runtime._render_permission_intent(intent)
-                new_rules = [r for r in rules if r not in allow]
+                new_rules = [r for r in rules if r not in allow and r not in planned]
                 if not new_rules:
                     continue
                 if not dry_run:
                     allow.extend(new_rules)
                     changes_applied += 1
                 else:
+                    planned.update(new_rules)
                     proposed_additions.append(intent)
             if not dry_run:
                 settings["permissions"]["allow"] = allow
@@ -1483,14 +1487,19 @@ class ClaudeRuntime(Runtime):
         permissions_already_present = 0
         proposed_additions: list[dict[str, Any]] = []
 
+        planned_skills: set[str] = set()
         for step_entry in steps:
             skill_name = step_entry.get("skill", "")
             if not skill_name:
                 continue
-            if claude_runtime._skill_permission_covered(skill_name, allow):
+            if (
+                claude_runtime._skill_permission_covered(skill_name, allow)
+                or skill_name in planned_skills
+            ):
                 permissions_already_present += 1
             else:
                 if dry_run:
+                    planned_skills.add(skill_name)
                     proposed_additions.append({"kind": "skill", "name": skill_name})
                 else:
                     allow.append(f"Skill({skill_name})")

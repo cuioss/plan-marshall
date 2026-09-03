@@ -520,7 +520,7 @@ class OpenCodeRuntime(Runtime):
             return {"error": f"marshal.json not found: {marshal_path}"}
         try:
             data = json.loads(marshal.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             return {"error": f"Invalid JSON in {marshal_path}: {exc}"}
         except OSError as exc:
             return {"error": f"Could not read {marshal_path}: {exc}"}
@@ -552,7 +552,11 @@ class OpenCodeRuntime(Runtime):
             if not isinstance(entries, list):
                 continue
             for step in entries:
-                if isinstance(step, str) and step.startswith("project:"):
+                if (
+                    isinstance(step, str)
+                    and step.startswith("project:")
+                    and len(step) > len("project:")
+                ):
                     steps.append(
                         {
                             "skill": step[len("project:") :],

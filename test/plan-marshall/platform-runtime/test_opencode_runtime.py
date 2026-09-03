@@ -454,6 +454,28 @@ def test_permission_ensure_steps_invalid_scope_returns_error(
     assert result["error"] == "invalid_scope"
 
 
+def test_load_marshal_config_invalid_utf8_returns_error(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
+) -> None:
+    """Invalid UTF-8 in marshal.json is a load error, not an uncaught exception."""
+    marshal_path = tmp_path / "marshal.json"
+    marshal_path.write_bytes(b"\xff\xfe\x00\x01")
+
+    result = runtime.permission_load_marshal_config(str(marshal_path))
+    assert "error" in result
+    assert "marshal.json" in result["error"]
+
+
+def test_extract_project_steps_rejects_empty_project_prefix(
+    runtime: OpenCodeRuntime,
+) -> None:
+    """A bare 'project:' entry yields no step record (empty skill is rejected)."""
+    steps = runtime.permission_extract_project_steps(
+        {"plan": {"phase-5-execute": {"steps": ["project:", "project:real-skill"]}}}
+    )
+    assert steps == [{"skill": "real-skill", "step": "project:real-skill", "phase": "phase-5-execute"}]
+
+
 # 10. permission_web_analyze
 
 

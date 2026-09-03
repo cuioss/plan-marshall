@@ -278,10 +278,14 @@ def _runtime_for_target(project_dir: str | None = None) -> Runtime:
     which is bound to a CLI argv shape. Reads marshal.json the same way the
     router does and looks the implementation up in ``_REGISTRY``.
 
+    When no marshal.json (or no ``runtime.target``) can be resolved, the
+    default target is used — a project that declares no target is assumed to
+    be on the default platform. A target that IS declared is always honoured:
+    the fallback never overrides an explicit ``runtime.target``.
+
     Raises:
-        RuntimeError: When no marshal.json or no ``runtime.target`` can be
-            resolved, or the target is unknown. A caller that cannot honour the
-            active target must fail loudly rather than fall back to a default.
+        RuntimeError: When the resolved target is not registered in the
+            registry.
     """
     marshal = _read_marshal(project_dir)
     target = _resolve_target(marshal) if marshal is not None else None

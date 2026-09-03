@@ -3893,6 +3893,61 @@ class TestPermissionEnsureSteps:
         assert result["status"] == "success"
         assert result["proposed_additions"] == [{"kind": "skill", "name": "demo-skill"}]
 
+    def test_ensure_steps_dry_run_dedupes_repeated_skills(self, rt, tmp_path, monkeypatch):
+        """Repeated project:{skill} steps report one proposed_addition in dry run.
+
+        A dry run leaves allow untouched, so without planned tracking each
+        occurrence of the same step would be reported again.
+        """
+        import claude_runtime as _cr
+
+        marshal = tmp_path / "marshal.json"
+        marshal.write_text(
+            json.dumps(
+                {
+                    "plan": {
+                        "phase-5-execute": {
+                            "steps": ["project:demo-skill", "project:demo-skill"]
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        settings_path = tmp_path / "settings.json"
+        _write_settings(settings_path, [])
+        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+
+        result = _parsed(rt.permission_ensure_steps(str(marshal), "project", True))
+        assert result["status"] == "success"
+        assert result["proposed_additions"] == [{"kind": "skill", "name": "demo-skill"}]
+
+    def test_add_dry_run_dedupes_repeated_intents(self, rt, tmp_path, monkeypatch):
+        """Repeated intents report one proposed_addition in dry run."""
+        import claude_runtime as _cr
+
+        settings_path = tmp_path / "settings.json"
+        _write_settings(settings_path, [])
+        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+
+        intent = {"kind": "bundle", "name": "x"}
+        result = _parsed(rt.permission_fix("project", "add", [intent, intent], True))
+        assert result["status"] == "success"
+        assert result["proposed_additions"] == [intent]
+
+    def test_ensure_dry_run_dedupes_repeated_intents(self, rt, tmp_path, monkeypatch):
+        """Repeated intents report one proposed_addition in dry run."""
+        import claude_runtime as _cr
+
+        settings_path = tmp_path / "settings.json"
+        _write_settings(settings_path, [])
+        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+
+        intent = {"kind": "bundle", "name": "x"}
+        result = _parsed(rt.permission_fix("project", "ensure", [intent, intent], True))
+        assert result["status"] == "success"
+        assert result["proposed_additions"] == [intent]
+
 
 # =============================================================================
 # 10. permission_web_analyze

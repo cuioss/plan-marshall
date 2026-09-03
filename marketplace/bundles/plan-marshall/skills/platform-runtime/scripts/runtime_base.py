@@ -590,9 +590,9 @@ class Runtime(ABC):
             scope: ``"project"`` or ``"global"``.
             grants: List of semantic permission intents, each a dict with a
                 ``kind`` key (``web-domain``, ``executor``, ``bundle``,
-                ``path``, or ``macro``) plus the payload that kind needs. The
-                target renders the permission-DSL grammar from these intents
-                itself; no rendered rule text crosses this boundary.
+                ``skill``, ``path``, or ``macro``) plus the payload that kind
+                needs. The target renders the permission-DSL grammar from these
+                intents itself; no rendered rule text crosses this boundary.
 
         Returns:
             Serialized TOON string (success, error, or no-op). A target whose

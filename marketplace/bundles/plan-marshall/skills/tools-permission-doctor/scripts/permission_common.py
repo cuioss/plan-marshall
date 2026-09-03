@@ -160,11 +160,19 @@ def resolve_scope_to_paths(scope: str) -> tuple[str | None, str | None]:
     Returns:
         Tuple of (global_path, local_path). For 'global' or 'project' scope,
         one will be None. For 'both', both paths are returned.
+
+    A runtime that declines settings-path resolution (a platform with no
+    permission backend, e.g. OpenCode) yields ``(None, None)``: the caller
+    then reports the decline through its normal status path instead of letting
+    the ``RuntimeError`` escape to the entry point and exit non-zero.
     """
-    if scope == 'global':
-        return str(get_global_settings_path()), None
-    elif scope == 'project':
-        return None, str(get_project_settings_path())
-    elif scope == 'both':
-        return str(get_global_settings_path()), str(get_project_settings_path())
+    try:
+        if scope == 'global':
+            return str(get_global_settings_path()), None
+        elif scope == 'project':
+            return None, str(get_project_settings_path())
+        elif scope == 'both':
+            return str(get_global_settings_path()), str(get_project_settings_path())
+    except RuntimeError:
+        return None, None
     return None, None
