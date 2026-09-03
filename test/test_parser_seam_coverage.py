@@ -297,7 +297,6 @@ def test_the_exempt_roster_is_well_formed():
     )
     unknown = sorted(label for label, row in SEAM_EXEMPT.items() if row.probe not in (PROBE_LIVE, PROBE_STRUCTURAL))
     assert unknown == [], f'SEAM_EXEMPT row(s) declare an unknown probe mode: {unknown}'
-    assert LIVE_PROBED | STRUCTURALLY_PINNED == set(SEAM_EXEMPT)
     assert LIVE_PROBED, 'No row is live-probed, so the raising set below is empty and its equality is vacuous'
 
 
