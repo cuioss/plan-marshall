@@ -41,6 +41,11 @@ from pathlib import Path
 
 from _fidelity_diff import list_python_files_at_ref, read_file_at_ref
 
+#: The three node kinds this instrument treats as a definition. Bound once and
+#: used both as the annotation and as the ``isinstance`` filter, so the type the
+#: normaliser accepts and the nodes the collector hands it cannot drift apart.
+Definition = ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+
 #: The definition this instrument applies, printed verbatim in every report.
 DEFINITION = (
     'a MODULE-LEVEL `def`/`async def`/`class` is a definition; two occurrences are '
@@ -59,7 +64,7 @@ class Occurrence:
     lineno: int
 
 
-def _normalise_body(node: ast.AST, source_lines: list[str]) -> str:
+def _normalise_body(node: Definition, source_lines: list[str]) -> str:
     """Return the definition's body with formatting and prose removed.
 
     Docstrings and comments are dropped because a reworded explanation is not a
@@ -70,15 +75,14 @@ def _normalise_body(node: ast.AST, source_lines: list[str]) -> str:
     end = node.end_lineno if node.end_lineno is not None else node.lineno
     body = source_lines[start:end]
     docstring_spans: set[int] = set()
-    if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
-        first = node.body[0] if node.body else None
-        if (
-            isinstance(first, ast.Expr)
-            and isinstance(first.value, ast.Constant)
-            and isinstance(first.value.value, str)
-            and first.end_lineno is not None
-        ):
-            docstring_spans = set(range(first.lineno - 1, first.end_lineno))
+    first = node.body[0] if node.body else None
+    if (
+        isinstance(first, ast.Expr)
+        and isinstance(first.value, ast.Constant)
+        and isinstance(first.value.value, str)
+        and first.end_lineno is not None
+    ):
+        docstring_spans = set(range(first.lineno - 1, first.end_lineno))
     kept: list[str] = []
     for offset, line in enumerate(body):
         if start + offset in docstring_spans:
@@ -103,7 +107,7 @@ def collect_definitions(source: str, path: str) -> list[Occurrence]:
     lines = source.splitlines()
     found: list[Occurrence] = []
     for node in tree.body:
-        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+        if not isinstance(node, Definition):
             continue
         digest = hashlib.sha256(_normalise_body(node, lines).encode('utf-8')).hexdigest()
         found.append(Occurrence(name=node.name, path=path, body_hash=digest, lineno=node.lineno))

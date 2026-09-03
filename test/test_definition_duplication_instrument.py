@@ -86,7 +86,8 @@ def planted_duplicate_repo(tmp_path):
 
 
 def _survey(repo) -> dict:
-    return survey_refs('before-ref', 'HEAD', ['pkg'], repo)['after']
+    side: dict = survey_refs('before-ref', 'HEAD', ['pkg'], repo)['after']
+    return side
 
 
 def _collect(source: str, path: str):

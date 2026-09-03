@@ -87,7 +87,7 @@ def read_file_at_ref(ref: str, path: str, repo: Path) -> str | None:
     result = _git(repo, 'show', f'{ref}:{path}')
     if result.returncode != 0:
         return None
-    return result.stdout
+    return str(result.stdout)
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +106,8 @@ class Facets:
     unparsed: list[str] = field(default_factory=list)
 
     def facet(self, name: str) -> Counter:
-        return getattr(self, name)
+        counter: Counter = getattr(self, name)
+        return counter
 
 
 def collect_comments(source: str) -> Counter:

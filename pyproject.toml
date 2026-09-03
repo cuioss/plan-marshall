@@ -296,7 +296,30 @@ select = ["E", "W", "F", "I", "B", "C4", "UP"]
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
-"test/*" = ["B011"]
+# F401 and F811 are ignored across the test tree because pytest's fixture
+# resolution makes both fire on correct code, and no code change reaches
+# either. A fixture is resolved BY NAME at call time, so the import that puts
+# it in the module's namespace is never read as a name (F401), and a test that
+# takes it as a parameter shadows that binding by design (F811). Both are the
+# framework's semantics, not dead code — the only way to silence them per site
+# is a suppression comment, and F811 is reported at the PARAMETER, out of reach
+# of any directive on the import, so it needs a module-level one that disables
+# redefinition checking for the whole file.
+#
+# What this costs, stated rather than left to the diff: F401 also catches
+# genuinely dead imports, and this turns that off across test/** — the
+# redefinition guard against two `def test_x` in one namespace goes with it.
+# The population now covered, measured on this tree rather than carried from
+# the request, is F401 195 and F811 362, by:
+#
+#     python3 -m ruff check test/ --select F401,F811 --ignore-noqa --statistics
+#
+# Every one of those 557 is suppressed today by a directive at its own site, so
+# this entry changes what the gate REPORTS not at all; it changes where the
+# decision is recorded, from 557 scattered comments to one stated rule. The
+# figure is given with the command that produces it because it moves with the
+# tree: re-derive it rather than trusting it.
+"test/*" = ["B011", "F401", "F811"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["marketplace"]
