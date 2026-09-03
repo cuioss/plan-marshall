@@ -24,7 +24,10 @@ test/
 ├── test_runner_falsifiability.py
 ├── test_shared_harness.py
 ├── _shared/                     # bundle-neutral helpers, importable by bare name
-│   └── _poll_until.py …
+│   ├── _poll_until.py …
+│   ├── _fidelity_diff.py          # campaign instrument: what two refs lost
+│   ├── _definition_duplication.py # campaign instrument: duplicates vs same-name
+│   └── _banner_attribution.py     # campaign instrument: wrong-section constructs
 ├── fixtures/                    # static fixture data (no .py)
 └── {bundle}/                    # one directory per marketplace bundle
     └── {skill}/                 # …and per skill, where a bundle has many
@@ -88,6 +91,39 @@ Naming is not cosmetic. A helper module must be `_{domain}_fixtures.py`: never
 silent no-op in the run), never a nested `conftest.py`, and never a bare
 `_fixtures.py` or `_helpers.py` (basenames must be unique tree-wide, because
 they are imported by bare name).
+
+### The campaign instruments
+
+Three modules in `test/_shared/` are **measuring instruments** rather than test
+helpers. A tree-wide refactoring campaign — a split, a move, a de-duplication
+pass — needs to prove it lost nothing, and these answer that question the same
+way on every run instead of being rebuilt from prose each time.
+
+| Instrument | Answers |
+|---|---|
+| `_fidelity_diff.py` | What did two refs lose? Compares comments, code lines and `Class::test` identities as **multisets**, so a loss is a named element rather than a count that failed to match. |
+| `_definition_duplication.py` | Which repeated definitions have a home? Separates a name whose body is identical everywhere (safe to hoist) from a name carrying **more than one body** (same-named local helpers — hoisting one would merge two behaviours). |
+| `_banner_attribution.py` | Which construct sits under the wrong section heading? Reports a top-level construct sharing no token with its enclosing banner while sharing a **distinctive** token — one no other heading carries — with exactly one other. Name-vs-heading similarity cannot fully separate a misfiling from a module organised by layer, so this one carries a standing baseline and its **verdict is the delta**: it gates on what the change *introduced*, never on the absolute count. |
+
+Three properties are common to all three, and each is load-bearing:
+
+- **Each takes two refs and computes both sides itself.** None accepts a
+  pre-computed figure or a baseline for one end — a check handed one side as a
+  number trusts the measurement it exists to verify.
+- **Each prints the definition it applied** — what it counted and which paths it
+  covered. Two instruments silently applying two definitions of "the same thing"
+  is how one question acquires two irreconcilable answers.
+- **Each exposes importable functions plus a `main()` CLI**, so a test drives the
+  logic directly and a campaign run drives the command.
+
+The two-ref git access lives in `_fidelity_diff.py` and the other two import it,
+so all three read a ref identically rather than carrying three copies that could
+drift. Each instrument is exercised by a root-level meta-test that plants a known
+loss, duplicate or misattribution and confirms detection.
+
+This addition to `test/_shared/` was made as an **approved** promotion, not a
+unilateral edit — the promotion rule below was satisfied before the modules
+landed.
 
 ## Where does a new helper go?
 
