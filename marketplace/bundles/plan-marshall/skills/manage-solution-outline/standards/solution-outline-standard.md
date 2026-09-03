@@ -387,12 +387,17 @@ Assign profiles based on what the **deliverable itself** creates or modifies —
 | Production code only | `implementation` |
 | Production code + test files | `implementation`, `module_testing` |
 | Test files only | `module_testing` |
-| Markdown components (skills/agents/commands) | `implementation` (plugin-doctor verification) |
+| Markdown components (skills/agents/commands) | `implementation` (see the verification note below) |
 | Scripts only (no test files) | `implementation` (compile verification) |
 | Scripts + test files | `implementation`, `module_testing` |
 | Verification only (no file changes, runs commands) | `verification` |
 
 **Key rule**: `module_testing` is assigned only when the deliverable creates or modifies test files. The existence of test infrastructure in the module is irrelevant — it only matters whether *this deliverable* touches test files.
+
+**Verifying the markdown-components row.** The row fires wherever a deliverable touches markdown components, and consumer projects do carry them — under `.claude/skills/` and `.claude/agents/`. What verifies them differs, and the row names no single answer on purpose:
+
+- **In the plan-marshall marketplace repository only**, `pm-plugin-development:plugin-doctor` is the structural verification, and the deliverable's `Verification` block names it. Plugin-doctor is a marketplace-authoring tool that ships in this repository; it is not part of what plan-marshall installs into a consumer project, and a consumer is not expected to carry an equivalent.
+- **Everywhere else**, there is no structural linter for markdown components. Do NOT copy a plugin-doctor invocation into the `Verification` block — it would name a gate that does not exist and pass vacuously. Give the deliverable a verification the project can actually run (the architecture-resolved `quality-gate` when the deliverable also touches buildable sources), or mark the block `manual: true` with criteria a reviewer checks by reading. An honest "verified by review" beats a command that reports green because nothing ran.
 
 #### Per-Profile Verification Semantics
 

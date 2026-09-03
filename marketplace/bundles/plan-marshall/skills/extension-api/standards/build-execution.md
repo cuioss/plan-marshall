@@ -426,7 +426,7 @@ All `execute_direct()` implementations return `DirectCommandResult` (TypedDict f
 | `exit_code` | int | Process exit code (-1 for timeout / execution failure / indeterminate; the negative `-N` signal code for `killed`) |
 | `duration_seconds` | int | Actual execution time. On `killed` this is a **truncation**, not a measurement of the command — which is why it is never fed to the adaptive-timeout learner |
 | `log_file` | string | Path to captured output (R1 requirement) |
-| `command` | string | Full command executed |
+| `command` | string | Full command executed — the argv the **auto-detected project wrapper** produced (R2), never a literal this contract fixes. Its shape varies per build system, so read it as a record of what ran, not as the form a caller should reproduce; a caller that needs the command resolves it through `plan-marshall:manage-architecture:architecture resolve --command {canonical}` and runs the returned `executable`. |
 
 **Optional fields** (present when applicable):
 
@@ -461,6 +461,8 @@ def execute_direct(...) -> DirectCommandResult:
 ```
 
 ## Format Examples
+
+The examples below deliberately vary the build system — a Maven wrapper in the success and error cases, a Python one in the timeout case — because `command` and `log_file` are the two fields whose shape is decided by the project's own wrapper rather than by this contract. Read each literal as one build system's instance, not as the exemplar to copy: an implementor of `ext-point-build-verify-step` for Maven, Gradle or npm reproduces the *field set* and the *status semantics*, and lets its own wrapper detection decide what `command` says.
 
 ### TOON Format (Default)
 

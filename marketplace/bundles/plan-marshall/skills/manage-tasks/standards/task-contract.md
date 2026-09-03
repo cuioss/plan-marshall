@@ -81,23 +81,25 @@ Tasks are stored as JSON files: `TASK-{NNN}.json`
 
 For `verification` profile tasks, steps contain verification commands instead of file paths. File-path validation is skipped for this profile.
 
+The command literals in `steps[].target` and `verification.commands[]` are **the executable the architecture resolver returned for that project** — `architecture resolve --command {canonical} --module {module}`, run at outline time (phase-3-outline Steps 9-10) and copied verbatim from there. They are therefore build-system-specific by construction. The example below is one Maven project's resolution; a Gradle, npm or Python project's task carries whatever its own resolver returned. Never copy a command literal across projects, and never hard-code a build wrapper into this field.
+
 ```json
 {
   "number": 6,
-  "title": "Verify plan-marshall bundle",
+  "title": "Verify auth-service module",
   "status": "pending",
-  "domain": "plan-marshall-plugin-dev",
+  "domain": "java",
   "profile": "verification",
   "origin": "plan",
   "skills": [],
   "deliverable": 6,
   "depends_on": ["TASK-5"],
-  "description": "Run full verification suite for the plan-marshall bundle.",
+  "description": "Run full verification suite for the auth-service module.",
   "steps": [
-    {"number": 1, "target": "./pw verify plan-marshall", "status": "pending", "intent": "read"}
+    {"number": 1, "target": "./mvnw -pl auth-service verify", "status": "pending", "intent": "read"}
   ],
   "verification": {
-    "commands": ["./pw verify plan-marshall"],
+    "commands": ["./mvnw -pl auth-service verify"],
     "criteria": "All tests, types, and linting pass",
     "manual": false
   },

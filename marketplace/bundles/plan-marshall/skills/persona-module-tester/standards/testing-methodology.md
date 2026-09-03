@@ -77,14 +77,17 @@ Each production type (class, module, component) requires at least one dedicated 
 **A test module is budgeted at 400 lines.** A module over budget is split by *behaviour cluster* into
 `test_{unit}_{cluster}.py` — never in arbitrary halves, and never by line count alone.
 
-The budget is derived from the corpus rather than invented: the median test module in this repository
-measures ~327 lines, so a 400-line budget sits above the median and describes the tree's own compliant
-majority instead of an aspiration no module meets.
+The budget is derived from a corpus rather than invented: the median test module in the plan-marshall
+marketplace repository measures ~327 lines, so a 400-line budget sits above the median and describes a
+real tree's compliant majority instead of an aspiration no module meets.
 
-The budget is **enforced** — `pm-plugin-development:plugin-doctor`'s
+**Whether anything enforces it depends on the project.** In the plan-marshall marketplace repository —
+and only there — `pm-plugin-development:plugin-doctor`'s
 [`test-module-line-budget`](../../../../pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md#test-module-line-budget)
-rule reports every module over it. That enforcement is the difference between this budget and a
-number a reader learns to ignore.
+rule reports every module over budget. Plugin-doctor is a marketplace-authoring tool that ships in that
+repository; it is not installed into a consumer project, and a consumer is not expected to carry an
+equivalent. Everywhere else the budget is a review standard that no tool reports — which is exactly why
+it is stated here as a number with a derivation behind it, so a reviewer can apply it without a gate.
 
 ### Splitting by behaviour cluster
 
