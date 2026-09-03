@@ -99,12 +99,13 @@ def test_d3a_recorded_vector_does_not_route_deep():
     assert result['signals']['risk_prose'] is True
 
 
-def test_recorded_vector_routes_deep_without_the_corroboration_fix():
-    """Sanity anchor for D3(a): the vector's deep verdict was S7-carried.
+def test_recorded_vector_is_light_when_s7_does_not_fire():
+    """The recorded vector with ``risk_prose`` off is light, suppressing nothing.
 
     Flipping ``risk_prose`` off (the ONLY fired signal) yields ``light`` with an
-    EMPTY suppressed set — proving the deep verdict in the test above came from S7
-    and that suppression, not some other signal, is what changed.
+    EMPTY suppressed set — proving the deep verdict this vector originally produced
+    came from S7, and that suppression, not some other signal, is what changed it in
+    the test above. The sanity anchor for D3(a).
     """
     vector = {**_RECORDED_VECTOR, 'risk_prose': False}
 

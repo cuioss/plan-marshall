@@ -702,12 +702,22 @@ def main() -> int:
         description=(
             "Resolve planning_lane in {light, deep} from cheap field reads + a "
             "request.md regex (zero codebase discovery, zero LLM cognition). "
-            "'route' evaluates the DQ1 signal set (S1-S7): default is light; any "
-            "deep-precondition signal forces deep; plan.phase-1-init."
-            "deep_lane (always|never|auto) short-circuits the signals. 'escalate' "
-            "is the one-way light->deep ratchet — it sets planning_lane=deep + "
-            "lane_escalated=true and refuses any downgrade to light. Both verbs "
-            "emit one decision-log line."
+            "'route' evaluates the DQ1 signal set (S1-S7): default is light; a "
+            "deep-precondition signal forces deep, subject to two documented "
+            "exceptions. (1) Narrow-and-concrete carve-out: when scope_estimate "
+            "== surgical AND the request is concrete, S3 (change_type) and S4 "
+            "(compatibility) are suppressed so neither forces deep alone; "
+            "single_module is the catch-all middle band and does NOT earn the "
+            "carve-out. (2) Corroboration bound: S7 (author risk prose) alone "
+            "does not carry deep against a MEASURED single_module band "
+            "(path_count_middle_band) — an unmeasured or absent band leaves the "
+            "warning uncontradicted, so S7 keeps the lane, and the denied signal "
+            "is reported under suppressed_signals. S1/S2/S5/S6 are unaffected by "
+            "both. plan.phase-1-init.deep_lane (always|never|auto) short-circuits "
+            "the signals. 'escalate' is the one-way light->deep ratchet — it sets "
+            "planning_lane=deep + lane_escalated=true and refuses any downgrade to "
+            "light. Both verbs emit one decision-log line. See the manage-status "
+            "skill § planning-lane for the full signal table."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,

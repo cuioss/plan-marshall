@@ -99,10 +99,12 @@ Arbitrary key-value pairs stored in `status.json` under the `metadata` object. C
 
 | Field | Set By | Purpose |
 |-------|--------|---------|
-| `change_type` | phase-3-outline Step 4 (`manage-status:change-type-heuristic` script; LLM fallback via `effort` when the heuristic is ambiguous) | feature, bug_fix, tech_debt, etc. |
+| `change_type` | phase-3-outline Step 4 (`manage-status:change-type-heuristic` script; LLM fallback via `effort` when the heuristic is ambiguous) | The PLAN-scoped classification — feature, bug_fix, tech_debt, etc. |
 | `confidence` | phase-2-refine | Request clarity confidence (0-100) |
 
 Metadata fields are promoted to top-level in `get-context` output for convenience.
+
+`metadata.change_type` is the **PLAN-scoped** field — the plan's single settled classification, authoritative wherever the two scopes are compared. It is not the identically-named DELIVERABLE-scoped field a `solution_outline.md` deliverable carries in its own `**Metadata:**` block, of which there is one per deliverable. See [`manage-execution-manifest/standards/decision-rules.md` § change_type scope reconciliation](../../manage-execution-manifest/standards/decision-rules.md#change_type-scope-reconciliation) for how the composer reconciles the two scopes.
 
 ## Orchestrator Status (`kind=orchestrator`)
 
