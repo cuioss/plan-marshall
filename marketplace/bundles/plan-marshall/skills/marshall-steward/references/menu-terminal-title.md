@@ -116,9 +116,11 @@ can never read `divergence` are named. Once the overall `status` has routed the
 flow (see the branch rule
 below), the `detail` lines are how a PARTIAL install is diagnosed — each
 `MISSING` line names one render entry, statusLine, or env value still to be
-installed. Read them as a diagnosis, never as the branch condition: this list
-carries non-blocking conditions by design, so neither a `MISSING` line nor a
-`divergence` line implies an unhealthy check.
+installed. Read them as a diagnosis, never as the branch condition. They are not
+uniformly non-blocking: a `MISSING` render entry, statusLine or env value DOES
+make the check unhealthy, and only `PreToolUse:enforcement: MISSING` is
+orthogonal (see the note under the label list below). A `divergence` line never
+makes the check unhealthy, whichever label carries it.
 
 A `divergence` line means that surface is installed in BOTH
 `.claude/settings.json` and `.claude/settings.local.json`. The entry is already
