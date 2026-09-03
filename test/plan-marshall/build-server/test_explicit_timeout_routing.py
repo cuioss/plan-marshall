@@ -383,10 +383,6 @@ def test_a_request_inside_the_margin_window_still_raises_the_bound(home, tmp_pat
     request the margin cannot lift over it — and passes equally under either reading. A
     request within ``_JOB_TIMEOUT_MARGIN_SECONDS`` of the default is the case that
     separates them: it is below the default, yet resolves ABOVE it.
-
-    That gap is not hypothetical. Three separate docstrings described this resolver as
-    "a request below the default changes nothing"; the window is where that sentence is
-    false, and nothing in the suite reached it to contradict them.
     """
     inside_window = marshalld._DEFAULT_JOB_TIMEOUT - marshalld._JOB_TIMEOUT_MARGIN_SECONDS + 10
 
