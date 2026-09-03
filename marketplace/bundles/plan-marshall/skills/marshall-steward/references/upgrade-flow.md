@@ -44,7 +44,8 @@ sub-steps on a consumer).
                                 consumer: cache-freshness-check + regenerate-executor
                                           + cache-retention-sweep
                                 └─ nested gate: cache-retention-prune (still prompts)
-  Stage 2  reconcile-config     both:     reconcile-marshal-json                        [mutating]
+  Stage 2  reconcile-config     both:     reconcile-marshal-json + migrate-bot-lists    [mutating]
+                                          + validate-bot-lists
                                 └─ nested gate: build-map re-seed (still prompts)
   Stage 3  verify               meta:     executor-preflight + content-drift-report     [read-only]
                                 consumer: executor-preflight
@@ -316,8 +317,9 @@ tree and both leave superseded version dirs behind. The sweep and its
 ## Stage 2: reconcile-config (mutating)
 
 Honor the Stage 2 top-level gate, then run exactly the Stage 2 `sub_steps` the
-plan emitted. That list is kind-invariant — `reconcile-marshal-json` then
-`migrate-bot-lists` — and both sub-steps are expanded below, in that order. The
+plan emitted. That list is kind-invariant — `reconcile-marshal-json`, then
+`migrate-bot-lists`, then `validate-bot-lists` — and all three sub-steps are
+expanded below, in that order. The
 prose enumerates the emitted set: a sub-step the planner emits but this section
 never names is one a reader completes the documented upgrade without ever
 running.
@@ -390,7 +392,56 @@ Reaching Stage 3 without running this sub-step is the concrete loss it guards: a
 project carrying a legacy `enabled_bots` value completes the upgrade with the
 retired knob still in `marshal.json` and neither participation list seeded.
 
-**Nested gate — `build-map` re-seed (STILL prompts under `integrate=true`).**
+### Sub-step `validate-bot-lists`
+
+Run after `migrate-bot-lists` and before the `build-map` drift gate below,
+matching the emitted order:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade validate-bot-lists
+```
+
+A read-only report of every `required_bots` / `optional_bots` token on the
+`plan-marshall:automatic-review` step that matches no registered reviewer. It runs
+AFTER the migration because the migration is what may have just seeded
+`required_bots` from a legacy `enabled_bots` value — a value written before the
+registry had its current membership, and therefore the likeliest source of a name
+no reviewer answers to.
+
+It **reports and never rewrites**: no token is dropped and no list is rejected.
+Surface the result to the operator rather than acting on it:
+
+- **`state: clean`** — every checked token is registered. Report it WITH
+  `checked_count`, never as a bare "the reviewer configuration is fine": a clean
+  verdict over zero configured tokens is not the same claim as a clean verdict
+  over three, and the count is what tells them apart.
+- **`state: unknown_tokens`** — show `unknown_tokens` alongside `known_bot_kinds`.
+  The kind set is the remedy, not decoration: the operator has to pick the
+  corrected name out of it. The fix is an edit to `required_bots` /
+  `optional_bots`; this flow performs no edit of its own and continues to Stage 3
+  either way.
+- **`state: noop`** — nothing was checked (no `marshal.json`, or no
+  `plan-marshall:automatic-review` step). Report `detail` and continue. Do NOT
+  report this as clean, and do NOT substitute a `checked_count` of `0` — the shape
+  carries no count precisely so an unchecked run cannot read as a checked one.
+
+See the [`../SKILL.md`](../SKILL.md) Canonical invocations
+(`upgrade validate-bot-lists`) for the verb shape and the full emitted-field list,
+and
+[`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md)
+for the non-participation state an unregistered name resolves to at the merge
+gate — that taxonomy lives there and is not restated here.
+
+Reaching Stage 3 without running this sub-step is the concrete loss it guards: a
+project whose reviewer configuration names a reviewer the registry has never heard
+of completes the upgrade reporting nothing, and learns about it only when a
+finalize run stalls at the participation barrier — after a pull request exists,
+where the same one-line config edit costs a full re-review cycle.
+
+### Nested gate — `build-map` re-seed (STILL prompts under `integrate=true`)
+
+The gate belongs to the stage, not to any one sub-step: it runs once, after every
+Stage 2 sub-step above has settled.
 Compute the drift between the persisted `build.map` and the live-tree derivation,
 then gate any re-seed behind an `AskUserQuestion` so deliberate hand-edits are
 never clobbered — the same read-only drift gate the Re-Run Remediation Pass step

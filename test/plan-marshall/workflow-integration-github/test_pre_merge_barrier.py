@@ -321,7 +321,7 @@ review_completeness = load_script_module(
 # from, further down this module.
 
 
-# Only CodeRabbit speaks. `pr-agent` — the required bot — never publishes: a
+# Only CodeRabbit speaks. `cuioss-review-bot` — the required bot — never publishes: a
 # commit reviewed by a non-required bot and never by the required one, which
 # nothing downstream would otherwise block.
 _CODERABBIT_ONLY = [_INITIAL_COMMENTS[0]]
@@ -361,7 +361,7 @@ def test_absent_required_bot_blocks_merge_though_no_comment_is_pending(plan_cont
 
     The comment predicate is satisfied (every fetched comment triaged, zero
     pending), so on the pending count alone the barrier would proceed to merge.
-    The participation predicate must independently refuse, because `pr-agent`
+    The participation predicate must independently refuse, because `cuioss-review-bot`
     published nothing at all and its silence is indistinguishable from a clean
     review to any count of comments.
     """
@@ -370,8 +370,8 @@ def test_absent_required_bot_blocks_merge_though_no_comment_is_pending(plan_cont
     _patch_provider(monkeypatch, _CODERABBIT_ONLY)
     result = _run_fetch(206, plan_id)
     assert result['status'] == 'success'
-    # `pr-agent` is not in the observed participation set — it never published.
-    assert 'pr-agent' not in {row['bot_kind'] for row in result['participated_bots']}
+    # `cuioss-review-bot` is not in the observed participation set — it never published.
+    assert 'cuioss-review-bot' not in {row['bot_kind'] for row in result['participated_bots']}
 
     # Triage handles every comment that exists: predicate 1 is CLEAN.
     _resolve_all_pending(plan_id)
@@ -381,12 +381,12 @@ def test_absent_required_bot_blocks_merge_though_no_comment_is_pending(plan_cont
     verdict = _completeness(
         plan_id,
         _participation_csv(result),
-        required=['pr-agent'],
+        required=['cuioss-review-bot'],
         optional=['coderabbit'],
     )
     assert verdict['participation_complete'] is False
-    assert verdict['unproven_bots'] == ['pr-agent']
-    assert {r['bot_kind']: r['state'] for r in verdict['bot_states']}['pr-agent'] == 'absent'
+    assert verdict['unproven_bots'] == ['cuioss-review-bot']
+    assert {r['bot_kind']: r['state'] for r in verdict['bot_states']}['cuioss-review-bot'] == 'absent'
     # The ceiling travels with the verdict: a satisfied quorum is never a quality claim.
     assert verdict['proves'] == 'participation_only'
 
@@ -411,11 +411,11 @@ def test_optional_bot_silence_does_not_block_merge(plan_context, monkeypatch):
         plan_id,
         _participation_csv(result),
         required=['coderabbit'],
-        optional=['pr-agent', 'sourcery'],
+        optional=['cuioss-review-bot', 'sourcery'],
     )
     assert verdict['participation_complete'] is True
     # The silent optional bots are still REPORTED — accepted, never hidden.
-    assert 'pr-agent' in verdict['unproven_bots']
+    assert 'cuioss-review-bot' in verdict['unproven_bots']
     assert 'sourcery' in verdict['unproven_bots']
 
 
@@ -504,8 +504,8 @@ def test_stale_override_does_not_satisfy_barrier_after_head_advances(plan_contex
         'barrier-ask-override',
         _DOCS_ONLY_HEAD,
         gap_class=_BARRIER_GAP,
-        granted_over='0 unhandled, docs-only delta, unproven_bots=pr-agent',
-        reason='operator: docs-only change, proceeding without the pr-agent review',
+        granted_over='0 unhandled, docs-only delta, unproven_bots=cuioss-review-bot',
+        reason='operator: docs-only change, proceeding without the cuioss-review-bot review',
     )
 
     # The rebase lands production commits and the required bot has not reviewed
@@ -519,11 +519,11 @@ def test_stale_override_does_not_satisfy_barrier_after_head_advances(plan_contex
     verdict = _completeness(
         plan_id,
         _participation_csv(result),
-        required=['pr-agent'],
+        required=['cuioss-review-bot'],
         optional=['coderabbit'],
     )
     assert verdict['participation_complete'] is False
-    assert verdict['unproven_bots'] == ['pr-agent']
+    assert verdict['unproven_bots'] == ['cuioss-review-bot']
 
     # THE property: the ruling made over HEAD A is not evidence at HEAD B.
     stale = _authorization_check(plan_id, _REBASED_HEAD)
@@ -539,7 +539,7 @@ def test_stale_override_does_not_satisfy_barrier_after_head_advances(plan_contex
         'barrier-ask-override',
         _REBASED_HEAD,
         gap_class=_BARRIER_GAP,
-        granted_over='0 unhandled, unproven_bots=pr-agent',
+        granted_over='0 unhandled, unproven_bots=cuioss-review-bot',
         reason='operator: re-asked after the rebase, accepting the gap on this tree',
     )
 
@@ -587,7 +587,7 @@ def test_consent_over_a_different_gap_at_the_same_head_does_not_satisfy_barrier(
     verdict = _completeness(
         plan_id,
         _participation_csv(result),
-        required=['pr-agent'],
+        required=['cuioss-review-bot'],
         optional=['coderabbit'],
     )
     assert verdict['participation_complete'] is False
@@ -621,7 +621,7 @@ def test_consent_over_a_different_gap_at_the_same_head_does_not_satisfy_barrier(
         'barrier-ask-override',
         _REBASED_HEAD,
         gap_class=_BARRIER_GAP,
-        granted_over='0 unhandled, unproven_bots=pr-agent',
+        granted_over='0 unhandled, unproven_bots=cuioss-review-bot',
         reason='operator: accepting the participation gap on this tree',
     )
 
@@ -683,18 +683,18 @@ def _barrier_projection(verdict, pending):
 #: ``refused_structural`` was added to the classifier and went unswept here with
 #: nothing reporting the gap.
 _MEMBER_OBSERVATIONS = {
-    review_completeness.STATE_PARTICIPATED_STALE: {'stale_participation_bots': ['pr-agent']},
+    review_completeness.STATE_PARTICIPATED_STALE: {'stale_participation_bots': ['cuioss-review-bot']},
     review_completeness.STATE_NOT_TRIGGERED: {'not_triggered': True},
-    review_completeness.STATE_DECLINED: {'declined_bots': ['pr-agent']},
-    review_completeness.STATE_IN_PROGRESS: {'in_progress_bots': ['pr-agent']},
-    # pr-agent's registry rate_limit_class is ``unknown``, so a bare refusal from it
+    review_completeness.STATE_DECLINED: {'declined_bots': ['cuioss-review-bot']},
+    review_completeness.STATE_IN_PROGRESS: {'in_progress_bots': ['cuioss-review-bot']},
+    # cuioss-review-bot's registry rate_limit_class is ``unknown``, so a bare refusal from it
     # resolves to the declared-ignorance member.
-    review_completeness.STATE_REFUSED_UNKNOWN: {'refused_bots': ['pr-agent']},
+    review_completeness.STATE_REFUSED_UNKNOWN: {'refused_bots': ['cuioss-review-bot']},
     # ...and the same refusal with an observed SIZE cause resolves structurally,
     # because the cause axis dominates the class axis.
     review_completeness.STATE_REFUSED_STRUCTURAL: {
-        'refused_bots': ['pr-agent'],
-        'refused_causes': {'pr-agent': 'size'},
+        'refused_bots': ['cuioss-review-bot'],
+        'refused_causes': {'cuioss-review-bot': 'size'},
     },
 }
 
@@ -728,11 +728,23 @@ _UNPRODUCIBLE_MEMBERS = {
     ),
     review_completeness.STATE_REFUSED_AWAITABLE: (
         'requires a refusing bot whose registry rate_limit_class is awaitable_window; '
-        'the required bot in this scenario (pr-agent) declares unknown'
+        'the required bot in this scenario (cuioss-review-bot) declares unknown'
     ),
     review_completeness.STATE_REFUSED_HARD: (
         'requires a refusing bot whose registry rate_limit_class is hard_quota; '
-        'the required bot in this scenario (pr-agent) declares unknown'
+        'the required bot in this scenario (cuioss-review-bot) declares unknown'
+    ),
+    review_completeness.STATE_UNREGISTERED_KIND: (
+        'decided from the CONFIGURATION, not from an observation: it requires the '
+        'required token to be absent from bot_registry.bot_kinds(), which no entry in '
+        '_MEMBER_OBSERVATIONS can produce because those are predicate observations and '
+        'this is a registry fact. Producing it would mean swapping the scenario\'s '
+        'required bot for an unregistered token — and that changes the bot whose state '
+        'the parity compares, so the absent baseline and the widened run would name '
+        'DIFFERENT bots in unproven_bots and the projection could never be equal. The '
+        'parity this sweep asserts is therefore not statable for this member here; the '
+        'barrier-relevant property (it blocks exactly as absent does) is covered by its '
+        'membership in _UNPROVEN_STATES, asserted in test_structural_refusal.py'
     ),
 }
 
@@ -797,18 +809,18 @@ def test_widened_member_gates_byte_identically_to_absent(
 ):
     """A widened member's merge verdict equals ``absent``'s, and the check can fail.
 
-    One scenario is built once — CodeRabbit reviewed, the required ``pr-agent`` did
+    One scenario is built once — CodeRabbit reviewed, the required ``cuioss-review-bot`` did
     not, triage cleared every comment that exists — so Predicate 1 is clean and the
     merge decision rests entirely on Predicate 2. The predicate is then run against
     that same store three ways: with no further observation (``absent``), with the
-    widened member's observation, and with ``pr-agent`` proven as a participant.
+    widened member's observation, and with ``cuioss-review-bot`` proven as a participant.
 
     Three assertions carry the property, and each answers a different way the test
     could pass while proving nothing:
 
     * the member assertions prove the observation LANDED. Without them the parity
       would hold just as well when the observation was ignored and both runs
-      classified ``pr-agent`` ``absent`` — an equality that passes for the wrong
+      classified ``cuioss-review-bot`` ``absent`` — an equality that passes for the wrong
       reason, which is exactly how a mis-keyed observation set would slip through.
     * the projection equality is the property itself: no merge verdict moves.
     * the ``participated`` control proves the comparison CAN fail, so the equality
@@ -825,15 +837,15 @@ def test_widened_member_gates_byte_identically_to_absent(
     assert pending == []
 
     participated_csv = _participation_csv(result)
-    required = ['pr-agent']
+    required = ['cuioss-review-bot']
     optional = ['coderabbit']
 
     absent_verdict = _completeness(plan_id, participated_csv, required, optional)
     widened_verdict = _completeness(plan_id, participated_csv, required, optional, **observation)
 
     # The scenarios genuinely differ upstream of the projection.
-    assert _state_of(absent_verdict, 'pr-agent') == review_completeness.STATE_ABSENT
-    assert _state_of(widened_verdict, 'pr-agent') == member
+    assert _state_of(absent_verdict, 'cuioss-review-bot') == review_completeness.STATE_ABSENT
+    assert _state_of(widened_verdict, 'cuioss-review-bot') == member
 
     # THE property: the barrier cannot tell the two apart.
     assert _barrier_projection(widened_verdict, pending) == _barrier_projection(
@@ -845,12 +857,12 @@ def test_widened_member_gates_byte_identically_to_absent(
     # rather than a literal, so the control cannot rot into an inadmissible pair
     # that is silently dropped — which would make it pass by failing to prove
     # participation at all.
-    evidence_kind = review_completeness.bot_registry.participation_evidence('pr-agent')[0]
+    evidence_kind = review_completeness.bot_registry.participation_evidence('cuioss-review-bot')[0]
     participated_verdict = _completeness(
-        plan_id, f'{participated_csv},pr-agent:{evidence_kind}', required, optional
+        plan_id, f'{participated_csv},cuioss-review-bot:{evidence_kind}', required, optional
     )
 
-    assert _state_of(participated_verdict, 'pr-agent') != review_completeness.STATE_ABSENT
+    assert _state_of(participated_verdict, 'cuioss-review-bot') != review_completeness.STATE_ABSENT
     assert _barrier_projection(participated_verdict, pending) != _barrier_projection(
         absent_verdict, pending
     )

@@ -364,7 +364,7 @@ Read/write through the nested step-param verb (never a dotted `--field` path):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan phase-6-finalize step set \
-  --step-id plan-marshall:automatic-review --param required_bots --value "coderabbit,pr-agent"
+  --step-id plan-marshall:automatic-review --param required_bots --value "coderabbit,cuioss-review-bot"
 ```
 
 ```bash

@@ -111,6 +111,11 @@ _PASSABLE_BY_PLAN_ACTION = {
     rc.STATE_REFUSED_HARD: False,            # a budget the plan cannot restore
     rc.STATE_DECLINED: False,                # re-triggering yields another decline
     rc.STATE_REFUSED_STRUCTURAL: False,      # the ceiling is on the diff, not on time
+    # The remedy is an edit to the reviewer CONFIGURATION — the third case this
+    # classification's own docstring names as outside the plan's reach. No plan-side
+    # move exists at all: the token names no reviewer, so there is nothing to
+    # re-trigger, generate an event for, or await.
+    rc.STATE_UNREGISTERED_KIND: False,
 }
 
 #: Per member: could WAITING, in principle, ever produce the review? This is the axis
@@ -138,6 +143,12 @@ _AWAIT_CAN_EVER_SUCCEED = {
     rc.STATE_REFUSED_HARD: False,            # does not reopen on a useful timescale
     rc.STATE_DECLINED: False,                # the bot answered and will answer the same
     rc.STATE_REFUSED_STRUCTURAL: False,      # ⭐ the diff is the limit; time is not
+    # No reviewer answers to this NAME, and none ever could — participation is keyed
+    # by a bot_kind derived from an author login, so a token outside that codomain
+    # can never be credited however long the wait. This is the strongest ``False`` on
+    # the axis: the others describe a reviewer that will not answer NOW, this one a
+    # reviewer that does not exist.
+    rc.STATE_UNREGISTERED_KIND: False,
 }
 
 
@@ -1487,19 +1498,19 @@ class TestStaleParticipationSurvivesAnInadmissibleEvidenceKind:
     def test_the_probe_kind_really_is_inadmissible_for_pr_agent(self):
         """⛔ Control: the case below is only meaningful if the filter WOULD drop it.
 
-        If this kind were ever added to pr-agent's declared publish shapes, the
+        If this kind were ever added to cuioss-review-bot's declared publish shapes, the
         assertions below would pass through the old code path too and prove
         nothing.
         """
-        assert self._INADMISSIBLE not in bot_registry.participation_evidence('pr-agent')
+        assert self._INADMISSIBLE not in bot_registry.participation_evidence('cuioss-review-bot')
         # And the old parse — which still applies the filter — does drop it, which
         # is what made the downgrade reachable.
-        assert rc.parse_participation(f'pr-agent:{self._INADMISSIBLE}') == {}
+        assert rc.parse_participation(f'cuioss-review-bot:{self._INADMISSIBLE}') == {}
 
     def test_the_dedicated_parse_admits_the_pair(self):
         """The new parse keeps the observation the producer emitted."""
-        assert rc.parse_stale_participation(f'pr-agent:{self._INADMISSIBLE}') == {
-            'pr-agent': self._INADMISSIBLE
+        assert rc.parse_stale_participation(f'cuioss-review-bot:{self._INADMISSIBLE}') == {
+            'cuioss-review-bot': self._INADMISSIBLE
         }
 
     def test_the_cli_resolves_it_to_participated_stale_and_never_absent(self, plan_context):
@@ -1509,13 +1520,13 @@ class TestStaleParticipationSurvivesAnInadmissibleEvidenceKind:
 
         result = run_script(
             SCRIPT_PATH, 'check', '--plan-id', plan_id,
-            '--required-bots', 'pr-agent',
-            '--stale-participation-bots', f'pr-agent:{self._INADMISSIBLE}',
+            '--required-bots', 'cuioss-review-bot',
+            '--stale-participation-bots', f'cuioss-review-bot:{self._INADMISSIBLE}',
         )
 
         assert result.returncode == 0
-        assert f'pr-agent,{rc.STATE_PARTICIPATED_STALE}' in result.stdout
-        assert f'pr-agent,{rc.STATE_ABSENT}' not in result.stdout
+        assert f'cuioss-review-bot,{rc.STATE_PARTICIPATED_STALE}' in result.stdout
+        assert f'cuioss-review-bot,{rc.STATE_ABSENT}' not in result.stdout
 
     def test_the_shape_check_still_rejects_a_bare_token(self, plan_context):
         """Dropping the admissibility filter did NOT drop the SHAPE check.
@@ -1529,7 +1540,7 @@ class TestStaleParticipationSurvivesAnInadmissibleEvidenceKind:
 
         result = run_script(
             SCRIPT_PATH, 'check', '--plan-id', plan_id,
-            '--required-bots', 'pr-agent', '--stale-participation-bots', 'pr-agent',
+            '--required-bots', 'cuioss-review-bot', '--stale-participation-bots', 'cuioss-review-bot',
         )
 
         assert result.returncode == 1
@@ -1537,11 +1548,11 @@ class TestStaleParticipationSurvivesAnInadmissibleEvidenceKind:
 
     def test_an_admissible_pair_is_unchanged(self):
         """Matched control: the fix widened admission, it did not alter the shape."""
-        declared = bot_registry.participation_evidence('pr-agent')
-        assert declared, 'pr-agent must declare a publish shape for this control'
+        declared = bot_registry.participation_evidence('cuioss-review-bot')
+        assert declared, 'cuioss-review-bot must declare a publish shape for this control'
 
-        assert rc.parse_stale_participation(f'pr-agent:{declared[0]}') == {
-            'pr-agent': declared[0]
+        assert rc.parse_stale_participation(f'cuioss-review-bot:{declared[0]}') == {
+            'cuioss-review-bot': declared[0]
         }
 
 

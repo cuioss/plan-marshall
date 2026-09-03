@@ -109,10 +109,14 @@ _PROVENANCE_STATES = ('never_asked', 'migrated', 'answered')
 # The closed NON-participation members. ``participated`` is deliberately NOT a
 # member — it is the complement the taxonomy exists to distinguish from.
 #
-# The last two are the REFINEMENTS of ``absent``, listed after the mutually
+# The last THREE are the REFINEMENTS of ``absent``, listed after the mutually
 # independent observations because that is what they are: each says the bot
 # published nothing, and each carries a remedy opposite to ``absent``'s escalation
-# (re-trigger the stale review / trigger the review at all). ``declined`` sits among
+# (re-trigger the stale review / trigger the review at all / fix the configured
+# name). ``unregistered_kind`` is last because it is the only member decided from
+# the CONFIGURATION rather than from an observation — the classifier checks it after
+# every observation branch, so a token that is unregistered yet observed still
+# reports what was observed. ``declined`` sits among
 # the independent observations: like a refusal, it says the bot engaged and would
 # not review this commit, so it is not a refinement of ``absent``. Of the FOUR refusal
 # members, three (``refused_awaitable`` / ``refused_hard`` / ``refused_unknown``) are the
@@ -138,6 +142,7 @@ _NON_PARTICIPATION_MEMBERS = (
     rc.STATE_DECLINED,
     rc.STATE_PARTICIPATED_STALE,
     rc.STATE_NOT_TRIGGERED,
+    rc.STATE_UNREGISTERED_KIND,
 )
 
 # ...and the DERIVED population it must equal. The tuple above is retained for its
@@ -381,7 +386,7 @@ class TestThisRepositorysSettledConfiguration:
     def test_required_and_optional_lists_are_the_settled_two_list_split(self):
         """PR-Agent is the SOLE required bot; CodeRabbit and Sourcery are optional.
 
-        Operator decision, on **reliability**: pr-agent is the only reviewer with
+        Operator decision, on **reliability**: cuioss-review-bot is the only reviewer with
         neither a per-account review quota nor a diff-size refusal. CodeRabbit
         carries a rolling per-developer quota and Sourcery a weekly diff-character
         cap, so requiring either makes routine review-coverage gaps gate the merge
@@ -400,7 +405,7 @@ class TestThisRepositorysSettledConfiguration:
         """
         params = _live_step_params()
 
-        assert params['required_bots'] == 'pr-agent'
+        assert params['required_bots'] == 'cuioss-review-bot'
         assert params['optional_bots'] == 'coderabbit,sourcery'
 
     def test_the_retired_single_list_key_does_not_survive(self):
@@ -1312,7 +1317,7 @@ class TestCrashedGateNeverRecordsAPass:
             '--plan-id',
             plan_id,
             '--required-bots',
-            'coderabbit,pr-agent',
+            'coderabbit,cuioss-review-bot',
             '--optional-bots',
             '--participated-bots',
             '--in-progress-bots',

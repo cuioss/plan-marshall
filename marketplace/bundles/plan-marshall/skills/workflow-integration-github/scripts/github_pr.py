@@ -1453,7 +1453,8 @@ def cmd_fetch_findings(args):
         author = comment.get('author') or 'unknown'
 
         # Derive bot_kind from the comment author login (coderabbitai ->
-        # coderabbit, cuioss-review-bot -> pr-agent); a human author resolves to
+        # coderabbit, cuioss-review-bot -> cuioss-review-bot, whose login and kind
+        # are deliberately the SAME name); a human author resolves to
         # None. Computed BEFORE the noise pre-filter (so per-bot ignore patterns
         # apply) AND before the dedup check (so the cross-iteration guard can key
         # on (bot_kind, comment_id)).
@@ -2384,7 +2385,7 @@ Examples:
                         'default': '',
                         'help': (
                             'Comma-joined bot_kinds whose participation is REQUIRED (e.g. '
-                            '"coderabbit,pr-agent"). A required bot\'s silence is a failure and gates the '
+                            '"coderabbit,cuioss-review-bot"). A required bot\'s silence is a failure and gates the '
                             'review-completeness quorum. This list classifies, it does NOT admit: a comment '
                             'from a bot outside both lists is still ingested and its bot is reported in '
                             'unclassified_bots. May be supplied bare (no value), which reads as the empty '

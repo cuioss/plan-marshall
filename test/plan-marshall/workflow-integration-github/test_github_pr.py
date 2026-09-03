@@ -101,7 +101,7 @@ query_findings = _findings_core.query_findings
 
 
 # Mixed-bot, mixed-thread comment set: coderabbit (thread-bearing), sourcery
-# (thread_id-less review_body), pr-agent (thread-bearing — a third registered
+# (thread_id-less review_body), cuioss-review-bot (thread-bearing — a third registered
 # bot_kind, which is all this fixture needs), and a human (thread_id-less issue
 # comment). Bodies are substantive so none is dropped by the
 # ``_is_obvious_noise`` pre-filter.
@@ -233,7 +233,7 @@ def _live_findings_core():
 def test_second_fetch_dedupes_all_bot_kinds(plan_context, monkeypatch):
     """A re-fetch of an already-staged PR stores zero new findings for every bot kind.
 
-    Thread-bearing (coderabbit/pr-agent) AND thread_id-less (sourcery/human)
+    Thread-bearing (coderabbit/cuioss-review-bot) AND thread_id-less (sourcery/human)
     comments are all deduped on ``(bot_kind, comment_id)``. Without that, every
     barrier re-fetch re-stores the same comments as fresh ``pending`` findings,
     so the queue accretes duplicates faster than triage can drain it and the
@@ -273,7 +273,7 @@ def test_a_deduped_comment_is_still_credited_as_participating(plan_context, monk
     Both observables are pinned on ONE fetch: at an unchanged HEAD every comment
     is dropped by the storage dedup, YET every participating bot stays credited
     byte-identically to the first fetch. It covers a
-    ``participation_requires_update`` bot (pr-agent, credited via the SHA-current
+    ``participation_requires_update`` bot (cuioss-review-bot, credited via the SHA-current
     currency arm) alongside the presence-credited bots, so the guard holds across
     both participation shapes.
     """
@@ -287,7 +287,7 @@ def test_a_deduped_comment_is_still_credited_as_participating(plan_context, monk
     assert first['status'] == 'success'
     assert first['count_skipped_duplicate'] == 0
     # Every bot with a comment in a declared publish shape is credited: coderabbit and
-    # sourcery by presence of a declared evidence kind, pr-agent by the first-observation
+    # sourcery by presence of a declared evidence kind, cuioss-review-bot by the first-observation
     # currency arm at the resolvable head. (The human comment resolves to no bot_kind.)
     # The expected participant list is DERIVED from the registry intersected with the
     # bots the _COMMENTS fixture represents — never a hand-listed set of bot names, which
@@ -367,7 +367,7 @@ def _run_fetch_classified(pr_number, plan_id, *, required_bots=None, optional_bo
     """Invoke ``cmd_fetch_findings`` with explicit participation-classification lists.
 
     ``required_bots`` / ``optional_bots`` are the raw comma-joined flag values
-    (``'coderabbit'``, ``'coderabbit,pr-agent'``, or ``''`` for an answered-empty
+    (``'coderabbit'``, ``'coderabbit,cuioss-review-bot'``, or ``''`` for an answered-empty
     list). Their union is the CLASSIFIED set; neither list admits or drops a
     comment. The sibling ``_run_fetch`` omits both attributes entirely, which the
     handler's ``getattr(args, ..., None)`` reads as the never-supplied case. Both
@@ -385,7 +385,7 @@ def _run_fetch_classified(pr_number, plan_id, *, required_bots=None, optional_bo
 def test_unclassified_bot_comments_are_ingested_and_reported(plan_context, monkeypatch):
     """A bot in NEITHER list is warned about, never dropped — its findings are USED.
 
-    With only ``--required-bots "coderabbit"`` supplied, sourcery and pr-agent
+    With only ``--required-bots "coderabbit"`` supplied, sourcery and cuioss-review-bot
     fall outside the classified union. Under the warn-but-ingest rule their
     comments are stored exactly like a classified bot's; the two bots are merely
     named in ``unclassified_bots`` so the caller can surface the configuration
@@ -399,19 +399,19 @@ def test_unclassified_bot_comments_are_ingested_and_reported(plan_context, monke
     assert result['status'] == 'success'
     # Every comment is ingested — classification is not admission.
     assert result['count_stored'] == len(_COMMENTS)
-    assert result['unclassified_bots'] == ['pr-agent', 'sourcery']
+    assert result['unclassified_bots'] == ['cuioss-review-bot', 'sourcery']
     assert result['producer_mismatch_hash_id'] is None
 
     stored = query_findings(plan_id, finding_type='pr-comment')['findings']
     bot_kinds = {f.get('bot_kind') for f in stored}
     # The unclassified bots' findings are present and usable, not merely counted.
-    assert {'coderabbit', 'pr-agent', 'sourcery'} <= bot_kinds
+    assert {'coderabbit', 'cuioss-review-bot', 'sourcery'} <= bot_kinds
 
 
 def test_classification_union_spans_both_lists(plan_context, monkeypatch):
     """A bot classified via EITHER list is not reported unclassified.
 
-    ``--required-bots "coderabbit,pr-agent"`` plus ``--optional-bots "sourcery"``
+    ``--required-bots "coderabbit,cuioss-review-bot"`` plus ``--optional-bots "sourcery"``
     classifies all three participating bots, proving the producer takes the union
     of the two comma-split sets rather than reading only one list.
     """
@@ -419,7 +419,7 @@ def test_classification_union_spans_both_lists(plan_context, monkeypatch):
     _patch_provider(monkeypatch, _COMMENTS)
 
     result = _run_fetch_classified(
-        103, plan_id, required_bots='coderabbit,pr-agent', optional_bots='sourcery'
+        103, plan_id, required_bots='coderabbit,cuioss-review-bot', optional_bots='sourcery'
     )
     assert result['status'] == 'success'
     assert result['count_stored'] == len(_COMMENTS)
@@ -428,7 +428,7 @@ def test_classification_union_spans_both_lists(plan_context, monkeypatch):
 
     stored = query_findings(plan_id, finding_type='pr-comment')['findings']
     bot_kinds = {f.get('bot_kind') for f in stored}
-    assert {'coderabbit', 'pr-agent', 'sourcery'} <= bot_kinds
+    assert {'coderabbit', 'cuioss-review-bot', 'sourcery'} <= bot_kinds
 
 
 def test_empty_classification_lists_still_ingest_every_bot(plan_context, monkeypatch):
@@ -446,7 +446,7 @@ def test_empty_classification_lists_still_ingest_every_bot(plan_context, monkeyp
     result = _run_fetch_classified(102, plan_id, required_bots='', optional_bots='')
     assert result['status'] == 'success'
     assert result['count_stored'] == len(_COMMENTS)
-    assert result['unclassified_bots'] == ['coderabbit', 'pr-agent', 'sourcery']
+    assert result['unclassified_bots'] == ['coderabbit', 'cuioss-review-bot', 'sourcery']
     assert result['producer_mismatch_hash_id'] is None
 
     stored = query_findings(plan_id, finding_type='pr-comment')['findings']
@@ -2688,10 +2688,10 @@ class TestBareClassificationFlags:
         """
         args = _parsed_fetch_args(
             monkeypatch,
-            ['fetch_findings', '--pr-number', '1', '--plan-id', 'p', flag, 'coderabbit,pr-agent'],
+            ['fetch_findings', '--pr-number', '1', '--plan-id', 'p', flag, 'coderabbit,cuioss-review-bot'],
         )
 
-        assert getattr(args, dest) == 'coderabbit,pr-agent'
+        assert getattr(args, dest) == 'coderabbit,cuioss-review-bot'
 
     @pytest.mark.parametrize(('flag', 'dest'), _CLASSIFICATION_FLAGS)
     def test_omitted_flag_now_parses_to_empty_string_not_none(self, monkeypatch, flag, dest):
@@ -2745,12 +2745,12 @@ class TestBareClassificationFlags:
         assert 'status: success' in emitted
         assert f'count_stored: {len(_COMMENTS)}' in emitted
         # Every participating bot is named as unclassified — warned about, not dropped.
-        for bot_kind in ('coderabbit', 'pr-agent', 'sourcery'):
+        for bot_kind in ('coderabbit', 'cuioss-review-bot', 'sourcery'):
             assert bot_kind in emitted
 
         stored = query_findings(plan_id, finding_type='pr-comment')['findings']
         assert len(stored) == len(_COMMENTS)
-        assert {f.get('bot_kind') for f in stored} >= {'coderabbit', 'pr-agent', 'sourcery'}
+        assert {f.get('bot_kind') for f in stored} >= {'coderabbit', 'cuioss-review-bot', 'sourcery'}
 
 
 # =============================================================================
@@ -2762,11 +2762,11 @@ class TestBareClassificationFlags:
 # than an end-to-end ingest outcome.
 #
 # The required-marker set is read FROM THE REGISTRY rather than restated here, so
-# a marker added to (or dropped from) ``pr-agent.md`` changes the covered
+# a marker added to (or dropped from) ``cuioss-review-bot.md`` changes the covered
 # population automatically instead of leaving a hand-written list one member
 # short of the real one.
 
-_PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('pr-agent')
+_PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('cuioss-review-bot')
 
 # Both Guide bodies come from ``test/_shared/_pr_agent_guide_bodies.py`` — the
 # CLEAN one is the verbatim body observed on #1078 (an HTML ``<table>`` of
@@ -2779,7 +2779,7 @@ _PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('pr-agent')
 def test_clean_guide_fixture_carries_every_declared_required_marker():
     """The fixture stays in step with the registry it is meant to exercise.
 
-    Without this guard a marker added to ``pr-agent.md`` would leave the
+    Without this guard a marker added to ``cuioss-review-bot.md`` would leave the
     conjunction cases below asserting ``False`` for the trivial reason that the
     fixture never carried the new marker — the whole layer-3 suite would keep
     passing while covering nothing.
@@ -2805,7 +2805,7 @@ def test_empty_required_markers_short_circuit_to_false(bot_kind):
 
 def test_clean_guide_is_contentless_boilerplate():
     """Every required marker present and no disqualifying marker — the drop case."""
-    assert github_pr._is_contentless_boilerplate(OBSERVED_CLEAN_GUIDE, 'pr-agent') is True
+    assert github_pr._is_contentless_boilerplate(OBSERVED_CLEAN_GUIDE, 'cuioss-review-bot') is True
 
 
 @pytest.mark.parametrize('missing', _PR_AGENT_REQUIRED_MARKERS)
@@ -2821,7 +2821,7 @@ def test_removing_any_single_required_marker_fails_the_conjunction(missing):
     body = OBSERVED_CLEAN_GUIDE.replace(missing, '')
 
     assert missing not in body
-    assert github_pr._is_contentless_boilerplate(body, 'pr-agent') is False
+    assert github_pr._is_contentless_boilerplate(body, 'cuioss-review-bot') is False
 
 
 def test_any_actionable_marker_vetoes_the_drop():
@@ -2835,7 +2835,7 @@ def test_any_actionable_marker_vetoes_the_drop():
         assert marker in GUIDE_WITH_FINDING
     assert '<details>' in GUIDE_WITH_FINDING
 
-    assert github_pr._is_contentless_boilerplate(GUIDE_WITH_FINDING, 'pr-agent') is False
+    assert github_pr._is_contentless_boilerplate(GUIDE_WITH_FINDING, 'cuioss-review-bot') is False
 
 
 def test_registry_markers_are_stripped_before_matching(monkeypatch):
@@ -2859,10 +2859,10 @@ def test_registry_markers_are_stripped_before_matching(monkeypatch):
         lambda bot_kind: ['  <details>  '],
     )
 
-    assert github_pr._is_contentless_boilerplate(OBSERVED_CLEAN_GUIDE, 'pr-agent') is True
+    assert github_pr._is_contentless_boilerplate(OBSERVED_CLEAN_GUIDE, 'cuioss-review-bot') is True
     # The disqualifying marker is stripped on the same path — a padded veto entry
     # must still veto, not silently stop matching.
-    assert github_pr._is_contentless_boilerplate(GUIDE_WITH_FINDING, 'pr-agent') is False
+    assert github_pr._is_contentless_boilerplate(GUIDE_WITH_FINDING, 'cuioss-review-bot') is False
 
 
 def test_obvious_noise_drops_the_clean_guide_via_layer_three():
@@ -2871,8 +2871,8 @@ def test_obvious_noise_drops_the_clean_guide_via_layer_three():
     Layer 3 is reached through the public pre-filter, not only through the helper
     — the wiring is what makes the fix take effect in ``cmd_fetch_findings``.
     """
-    assert github_pr._is_obvious_noise(OBSERVED_CLEAN_GUIDE, 'pr-agent') is True
-    assert github_pr._is_obvious_noise(GUIDE_WITH_FINDING, 'pr-agent') is False
+    assert github_pr._is_obvious_noise(OBSERVED_CLEAN_GUIDE, 'cuioss-review-bot') is True
+    assert github_pr._is_obvious_noise(GUIDE_WITH_FINDING, 'cuioss-review-bot') is False
 
 
 def test_layer_three_is_consulted_only_after_layers_one_and_two_miss(monkeypatch):
@@ -2893,16 +2893,16 @@ def test_layer_three_is_consulted_only_after_layers_one_and_two_miss(monkeypatch
     monkeypatch.setattr(github_pr, '_is_contentless_boilerplate', _spy)
 
     # Layer 1 — a shared, bot-agnostic acknowledgment regex.
-    assert github_pr._is_obvious_noise('LGTM, nothing further from me.', 'pr-agent') is True
+    assert github_pr._is_obvious_noise('LGTM, nothing further from me.', 'cuioss-review-bot') is True
     assert calls == []
 
     # Layer 2 — PR-Agent's own literal ignore marker.
-    assert github_pr._is_obvious_noise('## PR Agent Walkthrough\n\nAvailable commands.', 'pr-agent') is True
+    assert github_pr._is_obvious_noise('## PR Agent Walkthrough\n\nAvailable commands.', 'cuioss-review-bot') is True
     assert calls == []
 
     # Neither matches — only now is layer 3 consulted.
-    assert github_pr._is_obvious_noise(OBSERVED_CLEAN_GUIDE, 'pr-agent') is True
-    assert calls == ['pr-agent']
+    assert github_pr._is_obvious_noise(OBSERVED_CLEAN_GUIDE, 'cuioss-review-bot') is True
+    assert calls == ['cuioss-review-bot']
 
 
 # =============================================================================

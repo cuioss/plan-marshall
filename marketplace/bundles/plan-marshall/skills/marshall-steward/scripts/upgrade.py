@@ -46,7 +46,8 @@ Per-stage ``sub_steps`` (the meta/consumer matrix):
                                            cache-retention-sweep]
                                 consumer: [cache-freshness-check, regenerate-executor,
                                            cache-retention-sweep]
-    Stage 2 reconcile-config    both:     [reconcile-marshal-json, migrate-bot-lists]
+    Stage 2 reconcile-config    both:     [reconcile-marshal-json, migrate-bot-lists,
+                                           validate-bot-lists]
     Stage 3 verify              meta:     [executor-preflight, content-drift-report]
                                 consumer: [executor-preflight]
     Stage 4 land                both:     [run-landing-cycle]
@@ -70,12 +71,20 @@ Subcommands:
                        knob onto ``required_bots`` / ``optional_bots``. Driven as
                        the ``migrate-bot-lists`` sub_step of Stage 2
                        (``reconcile-config``).
+    validate-bot-lists Report any configured ``required_bots`` / ``optional_bots``
+                       token that matches no registered reviewer, alongside the
+                       live kind set it was checked against and the size of the
+                       population actually checked. REPORTS ONLY — it never
+                       rewrites ``marshal.json``. Driven as the
+                       ``validate-bot-lists`` sub_step of Stage 2
+                       (``reconcile-config``).
 
 Usage:
     python3 upgrade.py plan
     python3 upgrade.py plan --integrate true
     python3 upgrade.py plan --project-kind consumer
     python3 upgrade.py migrate-bot-lists
+    python3 upgrade.py validate-bot-lists
 
 Output (TOON):
     status: success
@@ -105,6 +114,7 @@ from pathlib import Path
 # script is Stage 2 (reconcile-config) of the upgrade flow, which runs AFTER
 # Stage 1 has regenerated the executor, so there is no pre-executor window to
 # bootstrap around and the imports are written plainly.
+import bot_registry
 from file_ops import safe_main
 from toon_parser import serialize_toon
 
@@ -134,7 +144,7 @@ _STAGE_SPECS: list[dict] = [
         'name': 'Reconcile config',
         'mutating': True,
         'nested_gates': ['build-map-reseed'],
-        'sub_steps': ['reconcile-marshal-json', 'migrate-bot-lists'],
+        'sub_steps': ['reconcile-marshal-json', 'migrate-bot-lists', 'validate-bot-lists'],
     },
     {
         'order': 3,
@@ -390,6 +400,137 @@ def cmd_migrate_bot_lists(_args: argparse.Namespace) -> dict:
     return {'status': 'success', 'operation': 'migrate-bot-lists', **report}
 
 
+# ---------------------------------------------------------------------------
+# validate-bot-lists — report configured reviewer names no registry entry answers to
+# ---------------------------------------------------------------------------
+#
+# The config-read-time counterpart of the participation barrier: it reaches a
+# stale or misspelled reviewer token BEFORE any pull request exists, where the
+# remedy is a one-line config edit rather than a stalled merge gate.
+#
+# It REPORTS ONLY, and both halves of that are load-bearing. It drops no token —
+# a silent drop is the very collapse this surface exists to remove — and it
+# rejects no list, because the fail-closed participation barrier already blocks
+# on an unregistered name, so refusing here would turn a one-token typo into an
+# unstartable finalize without catching anything the barrier misses.
+
+
+def _split_bot_list(raw: object) -> list[str]:
+    """Split one comma-separated bot-list value into its non-empty tokens.
+
+    Mirrors how the participation step reads the same knobs: comma-separated,
+    whitespace-insensitive, with empty segments ignored so a trailing comma or an
+    empty value contributes no token rather than an empty one. A non-string value
+    yields no tokens — it is a malformed knob, not a reviewer name.
+    """
+    if not isinstance(raw, str):
+        return []
+    return [token.strip() for token in raw.split(',') if token.strip()]
+
+
+def validate_bot_lists(params: dict) -> dict:
+    """Report the configured reviewer tokens that match no registered bot kind.
+
+    Pure function over ONE step's param object, modelled on
+    :func:`migrate_bot_lists` — except that it MUTATES NOTHING. It splits
+    ``required_bots`` and ``optional_bots``, checks each token against
+    ``bot_registry.bot_kinds()``, and returns a report.
+
+    The report carries three things, and the third is what makes the other two
+    trustworthy (ADR-019 — a surface that measures reports its coverage beside its
+    result):
+
+    * ``unknown_tokens`` — the configured names no registered reviewer answers to,
+      in first-seen order and de-duplicated, so a name configured in BOTH lists is
+      reported once. Never a rejection: the token stays in ``marshal.json``.
+    * ``known_bot_kinds`` — the live registry kind set the tokens were checked
+      against. It is the REMEDY for an unknown token, not decoration: an operator
+      told a name is wrong still has to be told which names are right, and this is
+      also the set the corrected token must be chosen from.
+    * ``checked_count`` — the size of the population actually validated. Without it
+      a clean verdict is ambiguous in exactly the direction that does harm: "no
+      unknown tokens among the three configured" and "no tokens configured at all"
+      both render as an empty ``unknown_tokens``, and the second is not a clean
+      bill of health. A caller reads ``checked_count`` to tell them apart.
+
+    ``bot_registry.bot_kinds()`` is consumed as-is — no accessor is added here, so a
+    reviewer added or removed in a standards doc changes this check with no edit to
+    this module.
+
+    A registry that resolved no bots at all does not need a third state here. The
+    failure would surface as EVERY configured token reading unknown beside an empty
+    ``known_bot_kinds`` — loud and self-describing — rather than as the silent clean
+    verdict ADR-019's third-state obligation exists to prevent.
+
+    Args:
+        params: The ``plan-marshall:automatic-review`` step's param object. Read
+            only; this function never writes to it.
+
+    Returns:
+        A report dict: ``state`` (``clean`` when every checked token is registered,
+        ``unknown_tokens`` when at least one is not), plus ``unknown_tokens``,
+        ``known_bot_kinds`` and ``checked_count``.
+    """
+    known = bot_registry.bot_kinds()
+    checked_count = 0
+    unknown: list[str] = []
+    for key in (_REQUIRED_BOTS_KEY, _OPTIONAL_BOTS_KEY):
+        for token in _split_bot_list(params.get(key)):
+            checked_count += 1
+            if token not in known and token not in unknown:
+                unknown.append(token)
+    return {
+        'state': 'unknown_tokens' if unknown else 'clean',
+        'unknown_tokens': unknown,
+        'known_bot_kinds': known,
+        'checked_count': checked_count,
+    }
+
+
+def cmd_validate_bot_lists(_args: argparse.Namespace) -> dict:
+    """Handle the ``validate-bot-lists`` subcommand against the live marshal.json.
+
+    The thin CLI verb over :func:`validate_bot_lists`, reading ``marshal.json``
+    through the same path :func:`cmd_migrate_bot_lists` uses. It **never calls**
+    ``save_config``: this verb reports, and a reporting verb that can write is one
+    an operator has to audit before trusting.
+
+    Two states carry no verdict at all, and both are typed no-op successes rather
+    than tracebacks — the same two real filesystem boundaries the migration verb
+    already treats that way. A project with NO ``marshal.json`` is un-initialized
+    and has no reviewer configuration to check; a project whose config carries no
+    ``plan-marshall:automatic-review`` step has no configured reviewer names either.
+
+    ⛔ Both return ``state: noop`` and deliberately carry NO ``checked_count``. The
+    absence is the contract (ADR-019): a ``checked_count: 0`` published by a run
+    that never looked is indistinguishable from a genuine "looked, found nothing
+    configured", so a consumer branching on the count finds no key rather than a
+    false zero. Read ``state`` first.
+    """
+    from _config_core import is_initialized, load_config
+
+    if not is_initialized():
+        return {
+            'status': 'success',
+            'operation': 'validate-bot-lists',
+            'state': 'noop',
+            'detail': 'no marshal.json — project not initialized, nothing to validate',
+        }
+
+    config = load_config()
+    steps = (config.get('plan', {}).get('phase-6-finalize', {}) or {}).get('steps') or {}
+    params = steps.get(_AUTOMATIC_REVIEW_STEP_ID)
+    if not isinstance(params, dict):
+        return {
+            'status': 'success',
+            'operation': 'validate-bot-lists',
+            'state': 'noop',
+            'detail': f'no {_AUTOMATIC_REVIEW_STEP_ID} step configured',
+        }
+
+    return {'status': 'success', 'operation': 'validate-bot-lists', **validate_bot_lists(params)}
+
+
 def cmd_plan(args: argparse.Namespace) -> dict:
     """Handle the ``plan`` subcommand.
 
@@ -445,12 +586,24 @@ def main() -> int:
         allow_abbrev=False,
     )
 
+    subparsers.add_parser(
+        'validate-bot-lists',
+        help=(
+            'Report required_bots / optional_bots tokens that match no registered '
+            'bot kind, with the live kind set and the checked population size. '
+            'Reports only — never rewrites marshal.json.'
+        ),
+        allow_abbrev=False,
+    )
+
     args = parser.parse_args()
 
     if args.command == 'plan':
         result = cmd_plan(args)
     elif args.command == 'migrate-bot-lists':
         result = cmd_migrate_bot_lists(args)
+    elif args.command == 'validate-bot-lists':
+        result = cmd_validate_bot_lists(args)
     else:  # pragma: no cover - argparse enforces a valid subcommand
         parser.print_help()
         return 2

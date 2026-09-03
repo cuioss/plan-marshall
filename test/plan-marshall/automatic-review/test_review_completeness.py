@@ -25,6 +25,13 @@ reports whether every REQUIRED bot's participation is proven:
                               blocking, yet remedied by accepting the decline rather
                               than re-triggering a bot that already declined)
     in_progress             — review still running at the poll bound
+    unregistered_kind       — the configured token matches no member of the live
+                              registry kind set, so no reviewer answers to this name
+                              and none ever could. A refinement of absent decided from
+                              the CONFIGURATION rather than from an observation, and
+                              checked after every observation branch; blocking exactly
+                              as absent is, but remedied by fixing the NAME rather
+                              than by chasing the reviewer
     absent                  — no evidence of any kind (the fail-closed default)
 
 Participation is **evidence-typed, not presence-typed**: a bot counts only when an
@@ -83,12 +90,34 @@ assert _REGISTERED_BOTS, (
     'than failed, so the swept properties would be covered by nothing'
 )
 
+# The two tokens the unregistered-kind cases turn on, both DERIVED against the live
+# registry rather than written as independent literals.
+#
+# ``_VALID_TOKEN`` is taken FROM the registry, never spelled. That is what keeps the
+# matched negative control honest across a bot_kind RENAME: a hardcoded name would
+# silently become an unregistered token the moment the registry renamed it, at which
+# point the control would assert ``absent`` for a token that no longer resolves —
+# passing before the rename and failing after it for a reason that has nothing to do
+# with the property under test.
+_VALID_TOKEN = _REGISTERED_BOTS[0]
+
+# ...and its counterpart, asserted OUT of the registry rather than assumed to be. A
+# fixture whose unregistered-ness is merely believed is one a future registry can
+# quietly adopt, and every case below would then classify it ``absent`` and still
+# report green while covering nothing.
+_UNREGISTERED_TOKEN = 'not-a-registered-reviewer'
+assert _UNREGISTERED_TOKEN not in _REGISTERED_BOTS, (
+    f'{_UNREGISTERED_TOKEN!r} is a REGISTERED bot kind, so it cannot stand for a '
+    f'configured name that matches no reviewer — every unregistered-kind case would '
+    f'silently degrade into an absent case. Live kind set: {_REGISTERED_BOTS}'
+)
+
 # Evidence pairs that match each bot's DECLARED participation_evidence. Derived by
 # name from the registry docs rather than invented, so a registry change that
 # retires a publish shape breaks these tests loudly instead of silently.
 CODERABBIT_EVIDENCE = {'coderabbit': 'inline'}
 SOURCERY_EVIDENCE = {'sourcery': 'review_body'}
-PR_AGENT_EVIDENCE = {'pr-agent': 'issue_comment'}
+PR_AGENT_EVIDENCE = {'cuioss-review-bot': 'issue_comment'}
 
 
 def _seed(plan_id: str, bot_kind: str, resolution: str = 'pending', detail: str | None = None) -> str:
@@ -134,7 +163,7 @@ class TestEvidenceTyping:
         assert rc.parse_participation('coderabbit:inline') == CODERABBIT_EVIDENCE
         assert rc.parse_participation('coderabbit:review_body') == {'coderabbit': 'review_body'}
         assert rc.parse_participation('sourcery:review_body') == SOURCERY_EVIDENCE
-        assert rc.parse_participation('pr-agent:issue_comment') == PR_AGENT_EVIDENCE
+        assert rc.parse_participation('cuioss-review-bot:issue_comment') == PR_AGENT_EVIDENCE
 
     def test_a_shape_the_bot_does_not_publish_is_not_evidence(self, plan_context):
         """Evidence is per-bot: another bot's publish shape proves nothing here.
@@ -188,9 +217,9 @@ class TestEvidenceTyping:
         CodeRabbit and PR-Agent both declare ``inline``, so a mixed list admits it
         for each of them — a shape is not owned by the first bot to declare it.
         """
-        assert rc.parse_participation('coderabbit:inline,pr-agent:inline') == {
+        assert rc.parse_participation('coderabbit:inline,cuioss-review-bot:inline') == {
             'coderabbit': 'inline',
-            'pr-agent': 'inline',
+            'cuioss-review-bot': 'inline',
         }
 
     def test_bot_with_empty_participation_evidence_is_never_proven(self, plan_context, monkeypatch):
@@ -226,15 +255,15 @@ class TestPRAgentParticipation:
 
     def test_guide_comment_is_its_evidence(self, plan_context):
         """Its single persistent `issue_comment` IS its review artifact."""
-        plan_id = 'rc-pr-agent-guide'
+        plan_id = 'rc-cuioss-review-bot-guide'
         plan_context.plan_dir_for(plan_id)
 
         result = rc.check_completeness(
-            plan_id, ['pr-agent'], participated_bots=PR_AGENT_EVIDENCE
+            plan_id, ['cuioss-review-bot'], participated_bots=PR_AGENT_EVIDENCE
         )
 
         assert result['participation_complete'] is True
-        assert _state_of(result, 'pr-agent') == rc.STATE_PARTICIPATED_BUT_EMPTY
+        assert _state_of(result, 'cuioss-review-bot') == rc.STATE_PARTICIPATED_BUT_EMPTY
 
     def test_inline_comment_is_also_its_evidence(self, plan_context):
         """`/improve` publishes inline suggestions, so an inline pair proves it too.
@@ -242,16 +271,16 @@ class TestPRAgentParticipation:
         The registry declares ``inline`` alongside ``issue_comment``, so an
         observation of the label-gated shape is admissible on its own.
         """
-        plan_id = 'rc-pr-agent-inline'
+        plan_id = 'rc-cuioss-review-bot-inline'
         plan_context.plan_dir_for(plan_id)
-        _seed(plan_id, 'pr-agent', resolution='fixed')
+        _seed(plan_id, 'cuioss-review-bot', resolution='fixed')
 
         result = rc.check_completeness(
-            plan_id, ['pr-agent'], participated_bots=rc.parse_participation('pr-agent:inline')
+            plan_id, ['cuioss-review-bot'], participated_bots=rc.parse_participation('cuioss-review-bot:inline')
         )
 
         assert result['participation_complete'] is True
-        assert _state_of(result, 'pr-agent') != rc.STATE_ABSENT
+        assert _state_of(result, 'cuioss-review-bot') != rc.STATE_ABSENT
 
     def test_absent_inline_shape_does_not_make_it_unproven(self, plan_context):
         """An absent inline count is NOT evidence of non-participation.
@@ -261,15 +290,15 @@ class TestPRAgentParticipation:
         still proves participation — reading the missing inline shape as a failure
         would score the bot unproven on every repository that did not opt in.
         """
-        plan_id = 'rc-pr-agent-guide-only'
+        plan_id = 'rc-cuioss-review-bot-guide-only'
         plan_context.plan_dir_for(plan_id)
 
         result = rc.check_completeness(
-            plan_id, ['pr-agent'], participated_bots=rc.parse_participation('pr-agent:issue_comment')
+            plan_id, ['cuioss-review-bot'], participated_bots=rc.parse_participation('cuioss-review-bot:issue_comment')
         )
 
         assert result['participation_complete'] is True
-        assert _state_of(result, 'pr-agent') != rc.STATE_ABSENT
+        assert _state_of(result, 'cuioss-review-bot') != rc.STATE_ABSENT
 
     def test_a_shape_it_does_not_declare_is_still_not_its_evidence(self, plan_context):
         """The widening is an enumeration, not a blanket admission.
@@ -278,17 +307,17 @@ class TestPRAgentParticipation:
         by PR-Agent, so it proves nothing here — without this control the widened
         record would be indistinguishable from "any shape counts".
         """
-        plan_id = 'rc-pr-agent-review-body'
+        plan_id = 'rc-cuioss-review-bot-review-body'
         plan_context.plan_dir_for(plan_id)
 
-        assert rc.parse_participation('pr-agent:review_body') == {}
+        assert rc.parse_participation('cuioss-review-bot:review_body') == {}
 
         result = rc.check_completeness(
-            plan_id, ['pr-agent'], participated_bots=rc.parse_participation('pr-agent:review_body')
+            plan_id, ['cuioss-review-bot'], participated_bots=rc.parse_participation('cuioss-review-bot:review_body')
         )
 
         assert result['participation_complete'] is False
-        assert _state_of(result, 'pr-agent') == rc.STATE_ABSENT
+        assert _state_of(result, 'cuioss-review-bot') == rc.STATE_ABSENT
 
     def test_check_state_is_not_its_evidence(self, plan_context):
         """It posts NO check-run, so no check signal can stand in for participation.
@@ -297,16 +326,16 @@ class TestPRAgentParticipation:
         completion signal only ever feeds the orthogonal ``in_progress`` timing
         state, which is an UNPROVEN state, not a proven one.
         """
-        plan_id = 'rc-pr-agent-check'
+        plan_id = 'rc-cuioss-review-bot-check'
         plan_context.plan_dir_for(plan_id)
 
         result = rc.check_completeness(
-            plan_id, ['pr-agent'], in_progress_bots=['pr-agent']
+            plan_id, ['cuioss-review-bot'], in_progress_bots=['cuioss-review-bot']
         )
 
         assert result['participation_complete'] is False
-        assert _state_of(result, 'pr-agent') == rc.STATE_IN_PROGRESS
-        assert result['unproven_bots'] == ['pr-agent']
+        assert _state_of(result, 'cuioss-review-bot') == rc.STATE_IN_PROGRESS
+        assert result['unproven_bots'] == ['cuioss-review-bot']
 
     def test_registry_declares_update_movement_requirement(self, plan_context):
         """The in-place-edit qualifier is registry data, not a code branch.
@@ -315,7 +344,7 @@ class TestPRAgentParticipation:
         ``participation_requires_update``; the bots that append a new comment per
         review do not. The producer reads this flag — there is no bot-name literal.
         """
-        assert rc.bot_registry.participation_requires_update('pr-agent') is True
+        assert rc.bot_registry.participation_requires_update('cuioss-review-bot') is True
         assert rc.bot_registry.participation_requires_update('coderabbit') is False
         assert rc.bot_registry.participation_requires_update('sourcery') is False
 
@@ -484,11 +513,11 @@ class TestStateTaxonomy:
         plan_id = 'rc-state-refused-unknown'
         plan_context.plan_dir_for(plan_id)
 
-        result = rc.check_completeness(plan_id, ['pr-agent'], refused_bots=['pr-agent'])
+        result = rc.check_completeness(plan_id, ['cuioss-review-bot'], refused_bots=['cuioss-review-bot'])
 
-        assert rc.bot_registry.rate_limit_class('pr-agent') == 'unknown'
-        assert _state_of(result, 'pr-agent') == rc.STATE_REFUSED_UNKNOWN
-        assert _state_of(result, 'pr-agent') != rc.STATE_REFUSED_HARD
+        assert rc.bot_registry.rate_limit_class('cuioss-review-bot') == 'unknown'
+        assert _state_of(result, 'cuioss-review-bot') == rc.STATE_REFUSED_UNKNOWN
+        assert _state_of(result, 'cuioss-review-bot') != rc.STATE_REFUSED_HARD
         assert rc.STATE_REFUSED_UNKNOWN in rc._UNPROVEN_STATES
         assert result['participation_complete'] is False
 
@@ -613,19 +642,19 @@ class TestStateTaxonomy:
         plan_id = 'rc-state-declined'
         plan_context.plan_dir_for(plan_id)
 
-        result = rc.check_completeness(plan_id, ['pr-agent'], declined_bots=['pr-agent'])
+        result = rc.check_completeness(plan_id, ['cuioss-review-bot'], declined_bots=['cuioss-review-bot'])
 
-        assert _state_of(result, 'pr-agent') == rc.STATE_DECLINED
-        assert result['unproven_bots'] == ['pr-agent']
+        assert _state_of(result, 'cuioss-review-bot') == rc.STATE_DECLINED
+        assert result['unproven_bots'] == ['cuioss-review-bot']
         assert result['participation_complete'] is False
 
         control_id = 'rc-state-declined-absent-control'
         plan_context.plan_dir_for(control_id)
-        control = rc.check_completeness(control_id, ['pr-agent'])
+        control = rc.check_completeness(control_id, ['cuioss-review-bot'])
 
         assert control['participation_complete'] == result['participation_complete']
         assert control['unproven_bots'] == result['unproven_bots']
-        assert _state_of(control, 'pr-agent') == rc.STATE_ABSENT
+        assert _state_of(control, 'cuioss-review-bot') == rc.STATE_ABSENT
 
     def test_declined_is_an_unproven_state_distinct_from_refused_and_stale(self, plan_context):
         """``declined`` blocks like the others but is a DISTINCT member with its own remedy.
@@ -659,10 +688,10 @@ class TestStateTaxonomy:
         # Shape B: incremental-review decline.
         decline_id = 'rc-two-shapes-decline'
         plan_context.plan_dir_for(decline_id)
-        decline = rc.check_completeness(decline_id, ['pr-agent'], declined_bots=['pr-agent'])
+        decline = rc.check_completeness(decline_id, ['cuioss-review-bot'], declined_bots=['cuioss-review-bot'])
         assert decline['participation_complete'] is False
-        assert 'pr-agent' in decline['unproven_bots']
-        assert _state_of(decline, 'pr-agent') == rc.STATE_DECLINED
+        assert 'cuioss-review-bot' in decline['unproven_bots']
+        assert _state_of(decline, 'cuioss-review-bot') == rc.STATE_DECLINED
 
     def test_a_refusal_outranks_a_decline(self, plan_context):
         """A bot with BOTH an explicit refusal and a decline is classified refused.
@@ -751,7 +780,7 @@ class TestStateTaxonomy:
         # The expected member is derived from the bot's own three-valued
         # rate_limit_class through the DEFAULT mapping (neither override is in play
         # here), never written as a literal, so a bot whose class is ``unknown``
-        # (pr-agent) is asserted as ``refused_unknown`` — not folded into
+        # (cuioss-review-bot) is asserted as ``refused_unknown`` — not folded into
         # ``refused_hard`` — and the sweep stays correct if a bot's class changes.
         expected = rc._refusal_state(rc.bot_registry.rate_limit_class(bot_kind))
 
@@ -911,13 +940,13 @@ class TestStateTaxonomy:
         result = rc.check_completeness(
             plan_id,
             ['coderabbit', 'sourcery'],
-            optional_bots=['pr-agent'],
+            optional_bots=['cuioss-review-bot'],
             participated_bots=CODERABBIT_EVIDENCE,
             refused_bots=['sourcery'],
         )
 
         classified = [r['bot_kind'] for r in result['bot_states']]
-        assert classified == ['coderabbit', 'sourcery', 'pr-agent']
+        assert classified == ['coderabbit', 'sourcery', 'cuioss-review-bot']
         assert len(set(classified)) == len(classified)
         # DERIVED from the classifier's own ``STATE_`` constants rather than
         # hand-listed. The hand-written set this replaces had already drifted: it
@@ -1320,11 +1349,11 @@ class TestTriageStateAwareness:
         plan_id = 'rc-empty-store'
         plan_context.plan_dir_for(plan_id)
 
-        result = rc.check_completeness(plan_id, ['coderabbit', 'pr-agent'])
+        result = rc.check_completeness(plan_id, ['coderabbit', 'cuioss-review-bot'])
 
         assert result['participation_complete'] is False
         assert result['pending_bots'] == []
-        assert result['unproven_bots'] == ['coderabbit', 'pr-agent']
+        assert result['unproven_bots'] == ['coderabbit', 'cuioss-review-bot']
 
 
 # =============================================================================
@@ -1872,14 +1901,14 @@ class TestStaleParticipationIsPairForm:
             '--plan-id',
             plan_id,
             '--required-bots',
-            'pr-agent',
+            'cuioss-review-bot',
             '--stale-participation-bots',
-            'pr-agent:issue_comment',
+            'cuioss-review-bot:issue_comment',
         )
 
         assert result.success, result.stderr
         assert 'participation_complete: false' in result.stdout
-        assert 'pr-agent,participated_stale' in result.stdout
+        assert 'cuioss-review-bot,participated_stale' in result.stdout
 
     def test_bare_kind_to_stale_flag_is_rejected(self, plan_context):
         """A BARE kind on the now-pair-form flag is a caller error — the other D1 half."""
@@ -1892,9 +1921,9 @@ class TestStaleParticipationIsPairForm:
             '--plan-id',
             plan_id,
             '--required-bots',
-            'pr-agent',
+            'cuioss-review-bot',
             '--stale-participation-bots',
-            'pr-agent',
+            'cuioss-review-bot',
         )
 
         assert result.returncode == 1, result.stderr
@@ -2051,7 +2080,7 @@ class TestBareListFlags:
             '--plan-id',
             plan_id,
             '--required-bots',
-            'coderabbit,pr-agent',
+            'coderabbit,cuioss-review-bot',
             '--optional-bots',
             '--participated-bots',
             '--in-progress-bots',
@@ -2063,7 +2092,7 @@ class TestBareListFlags:
         assert 'participation_complete: false' in result.stdout
         assert 'unproven_bots[2]' in result.stdout
         assert 'coderabbit,absent' in result.stdout
-        assert 'pr-agent,absent' in result.stdout
+        assert 'cuioss-review-bot,absent' in result.stdout
 
     @pytest.mark.parametrize(('flag', 'dest'), _LIST_FLAGS)
     def test_each_flag_bare_followed_by_another_flag(self, monkeypatch, flag, dest):
@@ -2202,12 +2231,12 @@ class TestReviewStateSummary:
         nobody = rc.compose_review_state_summary([
             {'bot_kind': 'coderabbit', 'state': rc.STATE_REFUSED_AWAITABLE},
             {'bot_kind': 'sourcery', 'state': rc.STATE_REFUSED_HARD},
-            {'bot_kind': 'pr-agent', 'state': rc.STATE_REFUSED_UNKNOWN},
+            {'bot_kind': 'cuioss-review-bot', 'state': rc.STATE_REFUSED_UNKNOWN},
         ])
         reviewed_clean = rc.compose_review_state_summary([
             {'bot_kind': 'coderabbit', 'state': rc.STATE_PARTICIPATED_BUT_EMPTY},
             {'bot_kind': 'sourcery', 'state': rc.STATE_PARTICIPATED_BUT_EMPTY},
-            {'bot_kind': 'pr-agent', 'state': rc.STATE_PARTICIPATED_BUT_EMPTY},
+            {'bot_kind': 'cuioss-review-bot', 'state': rc.STATE_PARTICIPATED_BUT_EMPTY},
         ])
         assert nobody == '3 refused'
         assert reviewed_clean == '3 empty'
@@ -2239,8 +2268,8 @@ class TestReviewStateSummary:
         plan_id = 'rc-summary-in-output'
         plan_context.plan_dir_for(plan_id)
         result = rc.check_completeness(
-            plan_id, ['coderabbit', 'sourcery', 'pr-agent'],
-            refused_bots=['coderabbit', 'sourcery', 'pr-agent'],
+            plan_id, ['coderabbit', 'sourcery', 'cuioss-review-bot'],
+            refused_bots=['coderabbit', 'sourcery', 'cuioss-review-bot'],
         )
         assert result['review_state_summary'] == '3 refused'
 
@@ -2249,6 +2278,184 @@ class TestReviewStateSummary:
         plan_context.plan_dir_for(plan_id)
         result = rc.check_completeness(plan_id, [])
         assert result['review_state_summary'] == ''
+
+
+# =============================================================================
+# A configured name that matches no registered reviewer is its own state
+# =============================================================================
+
+
+class TestUnregisteredKind:
+    """A token outside ``bot_registry.bot_kinds()`` resolves to ``unregistered_kind``.
+
+    The defect this closes is a COLLAPSE: a configured token that names no
+    registered reviewer could only ever fall through to ``absent``, which is the
+    state reserved for *"this bot did not review"*. The barrier then reported a true
+    statement about the observed set beside a false steer about its cause — the
+    review existed and was plainly visible, while the operator was sent to chase a
+    reviewer that was never the problem.
+
+    Every case here is paired with a MATCHED NEGATIVE CONTROL: a correctly-named
+    required bot that genuinely did not review must still resolve to ``absent``.
+    Without that control the new member is indistinguishable from a blanket
+    reclassification of every silent bot, which would destroy the distinction the
+    member exists to draw rather than sharpen it.
+    """
+
+    def test_an_unregistered_required_token_gets_its_own_state(self, plan_context):
+        """The new member, pinned. FAILS pre-change, where this resolved ``absent``."""
+        plan_id = 'rc-unregistered-kind'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(plan_id, [_UNREGISTERED_TOKEN])
+
+        assert _state_of(result, _UNREGISTERED_TOKEN) == rc.STATE_UNREGISTERED_KIND
+        # The load-bearing half: it is NOT the state that means "did not review".
+        assert _state_of(result, _UNREGISTERED_TOKEN) != rc.STATE_ABSENT
+
+    def test_matched_negative_control_a_valid_silent_bot_is_still_absent(self, plan_context):
+        """The control, which passes in BOTH the pre- and post-change forms.
+
+        This is what proves the suite DISCRIMINATES rather than merely asserting: a
+        refinement that also moved this case would be a blanket reclassification, and
+        the case above alone could not tell the two apart.
+        """
+        plan_id = 'rc-unregistered-control'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(plan_id, [_VALID_TOKEN])
+
+        assert _state_of(result, _VALID_TOKEN) == rc.STATE_ABSENT
+        assert _state_of(result, _VALID_TOKEN) != rc.STATE_UNREGISTERED_KIND
+
+    def test_the_two_tokens_are_separated_within_one_run(self, plan_context):
+        """Both tokens, one call, identical (empty) observations.
+
+        Registry membership is then the ONLY difference between them, so the split
+        cannot be attributed to anything else about the two invocations.
+        """
+        plan_id = 'rc-unregistered-both'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(plan_id, [_VALID_TOKEN, _UNREGISTERED_TOKEN])
+
+        assert _state_of(result, _VALID_TOKEN) == rc.STATE_ABSENT
+        assert _state_of(result, _UNREGISTERED_TOKEN) == rc.STATE_UNREGISTERED_KIND
+
+    def test_the_new_state_blocks_and_the_token_stays_in_the_roster(self, plan_context):
+        """Fail-CLOSED: an unknown name blocks exactly as ``absent`` does.
+
+        A silent drop would replace a confusing block with a silent PASS — the quorum
+        satisfied through a reviewer nobody configured — which is strictly worse than
+        the defect being fixed. So the token is still classified, still reported, and
+        still holds the step open.
+        """
+        plan_id = 'rc-unregistered-blocks'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(plan_id, [_UNREGISTERED_TOKEN])
+
+        assert result['participation_complete'] is False
+        assert result['unproven_bots'] == [_UNREGISTERED_TOKEN]
+        assert rc.STATE_UNREGISTERED_KIND in rc._UNPROVEN_STATES
+
+    def test_an_observation_outranks_the_membership_test(self, plan_context):
+        """Ordering: a fact about the NAME never displaces something observed.
+
+        The membership test is checked AFTER every observation branch, so an
+        unregistered token that was nonetheless observed reports what was observed.
+        Hoisting the test above the observations would erase real evidence on the
+        strength of a config lookup.
+        """
+        plan_id = 'rc-unregistered-observed'
+        plan_context.plan_dir_for(plan_id)
+
+        in_progress = rc.check_completeness(
+            plan_id, [_UNREGISTERED_TOKEN], in_progress_bots=[_UNREGISTERED_TOKEN]
+        )
+        assert _state_of(in_progress, _UNREGISTERED_TOKEN) == rc.STATE_IN_PROGRESS
+
+        # Passed as a dict directly: ``parse_participation`` admits a pair only when
+        # the evidence kind is one the bot's registry record declares, and an
+        # unregistered token has no record and therefore no admissible shape. Going
+        # through the parser here would assert the fall-through rather than the
+        # branch ordering this case exists to pin.
+        participating = rc.check_completeness(
+            plan_id, [_UNREGISTERED_TOKEN], participated_bots={_UNREGISTERED_TOKEN: 'inline'}
+        )
+        assert (
+            _state_of(participating, _UNREGISTERED_TOKEN) == rc.STATE_PARTICIPATED_BUT_EMPTY
+        )
+
+    def test_the_payload_names_the_live_kind_set_it_checked_against(self, plan_context):
+        """ADR-019: the verdict carries the POPULATION the token was checked against.
+
+        "This name matches no reviewer we know" is only actionable beside the set of
+        names we DO know — which is also the set the corrected token must come from.
+        Derived from the registry here rather than spelled, so the assertion tracks a
+        rename instead of pinning a stale roster.
+        """
+        plan_id = 'rc-unregistered-kind-set'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(plan_id, [_UNREGISTERED_TOKEN])
+
+        assert result['known_bot_kinds'] == _REGISTERED_BOTS
+
+    def test_the_summary_gives_the_new_member_its_own_bucket(self):
+        """``unregistered`` never renders as ``absent`` in the compact distribution.
+
+        Collapsing it there would undo, at the summary line a reader actually sees,
+        exactly the distinction the member was added to carry.
+        """
+        summary = rc.compose_review_state_summary([
+            {'bot_kind': _UNREGISTERED_TOKEN, 'state': rc.STATE_UNREGISTERED_KIND},
+            {'bot_kind': _VALID_TOKEN, 'state': rc.STATE_ABSENT},
+        ])
+
+        assert summary == '1 unregistered, 1 absent'
+
+    def test_cli_publishes_the_kind_set_and_its_population_size(self, plan_context):
+        """Through the REAL parser: the emitted TOON names the set AND its size.
+
+        The size is PUBLISHED in the row header rather than left for the reader to
+        count — a population whose size is implied is one a consumer cannot check it
+        read completely.
+        """
+        plan_id = 'rc-cli-unregistered'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(
+            SCRIPT_PATH, 'check', '--plan-id', plan_id, '--required-bots', _UNREGISTERED_TOKEN
+        )
+
+        assert result.success, result.stderr
+        assert result.returncode != 2, result.stderr
+        assert f'{_UNREGISTERED_TOKEN},unregistered_kind' in result.stdout
+        assert f'known_bot_kinds[{len(_REGISTERED_BOTS)}]:' in result.stdout
+        for kind in _REGISTERED_BOTS:
+            assert f'  - {kind}' in result.stdout
+
+    def test_cli_omits_the_kind_set_when_every_token_is_registered(self, plan_context):
+        """The paired emission control: the remedy line is gated, not unconditional.
+
+        When no token failed the membership test the same list is noise on every run
+        — a population nobody is being asked to choose from, printed beside a verdict
+        it did not shape. Isolating the token as the only difference between this
+        invocation and the one above is what shows the gate keys on the FAILURE
+        rather than on something else in the command line.
+        """
+        plan_id = 'rc-cli-unregistered-omitted'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(
+            SCRIPT_PATH, 'check', '--plan-id', plan_id, '--required-bots', _VALID_TOKEN
+        )
+
+        assert result.success, result.stderr
+        assert f'{_VALID_TOKEN},absent' in result.stdout
+        assert 'known_bot_kinds' not in result.stdout
+        assert 'unregistered_kind' not in result.stdout
 
 
 # =============================================================================
@@ -2268,7 +2475,7 @@ class TestDeficitSignal:
     """
 
     def _required(self, count, reviewed=True):
-        return {'bot_kind': 'pr-agent', 'reviewed': reviewed, 'finding_count': count}
+        return {'bot_kind': 'cuioss-review-bot', 'reviewed': reviewed, 'finding_count': count}
 
     def _baseline(self, count, reviewed=True, bot='coderabbit'):
         return {'bot_kind': bot, 'reviewed': reviewed, 'finding_count': count}
@@ -2277,15 +2484,15 @@ class TestDeficitSignal:
         # Row A: a baseline reviewer produced 4 findings; the required reviewer
         # reviewed and produced 0. 4 : 0 is a deficit.
         result = rc.assess_deficit(
-            [self._required(0), self._baseline(4)], required_bots=['pr-agent']
+            [self._required(0), self._baseline(4)], required_bots=['cuioss-review-bot']
         )
         assert result['verdict'] == rc.DEFICIT_DEFICIT
-        assert result['deficit_reviewers'] == [{'bot_kind': 'pr-agent', 'findings': 0, 'deficit': 4}]
+        assert result['deficit_reviewers'] == [{'bot_kind': 'cuioss-review-bot', 'findings': 0, 'deficit': 4}]
         assert result['baseline_max'] == 4
 
     def test_row_b_deficit_two_to_zero(self):
         result = rc.assess_deficit(
-            [self._required(0), self._baseline(2)], required_bots=['pr-agent']
+            [self._required(0), self._baseline(2)], required_bots=['cuioss-review-bot']
         )
         assert result['verdict'] == rc.DEFICIT_DEFICIT
 
@@ -2294,7 +2501,7 @@ class TestDeficitSignal:
         # found nothing; the required reviewer found nothing. 0 : 0 against a real
         # baseline is CLEAN, never a deficit. The detector MUST NOT fire here.
         result = rc.assess_deficit(
-            [self._required(0), self._baseline(0)], required_bots=['pr-agent']
+            [self._required(0), self._baseline(0)], required_bots=['cuioss-review-bot']
         )
         assert result['verdict'] == rc.DEFICIT_CLEAN
         assert result['deficit_reviewers'] == []
@@ -2309,7 +2516,7 @@ class TestDeficitSignal:
                 self._baseline(0, reviewed=False, bot='coderabbit'),
                 self._baseline(0, reviewed=False, bot='sourcery'),
             ],
-            required_bots=['pr-agent'],
+            required_bots=['cuioss-review-bot'],
         )
         assert result['verdict'] == rc.DEFICIT_UNASSESSABLE
         assert result['verdict'] != rc.DEFICIT_CLEAN
@@ -2325,8 +2532,8 @@ class TestDeficitSignal:
         """
         def verdict(baseline):
             return rc.assess_deficit(
-                [{'bot_kind': 'pr-agent', 'reviewed': True, 'finding_count': 0}, *baseline],
-                required_bots=['pr-agent'],
+                [{'bot_kind': 'cuioss-review-bot', 'reviewed': True, 'finding_count': 0}, *baseline],
+                required_bots=['cuioss-review-bot'],
             )['verdict']
 
         # required_count is 0 in every call below; only the baseline varies.
@@ -2338,13 +2545,13 @@ class TestDeficitSignal:
         # A 1-finding gap is a deficit at the default threshold; raising the
         # threshold above the gap makes the same shape clean.
         rows = [self._required(1), self._baseline(2)]
-        assert rc.assess_deficit(rows, ['pr-agent'])['verdict'] == rc.DEFICIT_DEFICIT
-        assert rc.assess_deficit(rows, ['pr-agent'], min_deficit=2)['verdict'] == rc.DEFICIT_CLEAN
+        assert rc.assess_deficit(rows, ['cuioss-review-bot'])['verdict'] == rc.DEFICIT_DEFICIT
+        assert rc.assess_deficit(rows, ['cuioss-review-bot'], min_deficit=2)['verdict'] == rc.DEFICIT_CLEAN
 
     def test_signal_never_gates_the_merge(self):
         """Every deficit envelope declares itself non-gating — the cold-read requirement."""
         result = rc.assess_deficit(
-            [self._required(0), self._baseline(4)], required_bots=['pr-agent']
+            [self._required(0), self._baseline(4)], required_bots=['cuioss-review-bot']
         )
         assert result['gates_merge'] is False
         assert result['proves'] == 'reviewer_quality_only'
@@ -2362,14 +2569,14 @@ class TestDeficitSignal:
 
         result = rc.check_deficit(
             plan_id,
-            ['pr-agent'],
+            ['cuioss-review-bot'],
             optional_bots=['coderabbit'],
-            participated_bots=rc.parse_participation('pr-agent:issue_comment,coderabbit:inline'),
+            participated_bots=rc.parse_participation('cuioss-review-bot:issue_comment,coderabbit:inline'),
         )
 
         assert result['verdict'] == rc.DEFICIT_DEFICIT
         assert result['baseline_max'] == 4
-        assert {'bot_kind': 'pr-agent', 'findings': 0, 'deficit': 4} in result['deficit_reviewers']
+        assert {'bot_kind': 'cuioss-review-bot', 'findings': 0, 'deficit': 4} in result['deficit_reviewers']
 
     def test_deficit_cli_declares_non_gating(self, plan_context):
         """The CLI TOON carries ``gates_merge: false`` so a cold read sees it is no gate."""
@@ -2377,7 +2584,7 @@ class TestDeficitSignal:
         plan_context.plan_dir_for(plan_id)
         result = run_script(
             SCRIPT_PATH, 'deficit', '--plan-id', plan_id,
-            '--required-bots', 'pr-agent',
+            '--required-bots', 'cuioss-review-bot',
             '--optional-bots', 'coderabbit,sourcery',
             '--refused-bots', 'coderabbit,sourcery',
         )

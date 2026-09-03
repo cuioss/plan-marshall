@@ -790,7 +790,7 @@ def test_comparison_measured_when_findings_exist():
 
 
 def test_comparison_clean_when_a_reviewer_reviewed_and_found_nothing():
-    # Zero findings, but pr-agent is positively substantiated as having reviewed
+    # Zero findings, but cuioss-review-bot is positively substantiated as having reviewed
     # (participated_but_empty maps into the reviewed-at-all set). Reviewers ran and
     # found nothing — a legitimate no-op, graded `clean`, NOT indeterminate.
     result = rr.aggregate(

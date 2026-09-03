@@ -57,13 +57,16 @@ and had nothing to say — ``participated_but_empty``, an accounted-for outcome,
 an incompleteness. This stops the guard manufacturing an infinite loop-back for a
 bot whose review landed as pure noise.
 
-Every required bot is classified into exactly one **state**. Ten of the eleven are
-the closed non-participation taxonomy owned by
+Every required bot is classified into exactly one **state**. All but one are the
+closed non-participation taxonomy owned by
 ``standards/bot-participation-contract.md`` (``absent``, ``in_progress``,
 ``refused_awaitable``, ``refused_hard``, ``refused_unknown``,
 ``refused_structural``, ``participated_but_empty``, ``participated_stale``,
-``declined``, ``not_triggered``); the eleventh, ``participated``, is its complement —
-the bot delivered a usable review — and is not a non-participation.
+``declined``, ``not_triggered``, ``unregistered_kind``); the remaining one,
+``participated``, is its complement — the bot delivered a usable review — and is not
+a non-participation. The taxonomy's SIZE is deliberately not restated in this prose:
+the members are enumerated instead, so a reader who wants a total counts the
+enumeration and a member added later cannot leave a stale numeral behind it.
 
 The FOUR refusal states are decided from a DEFAULT mapping plus overrides on it, and
 no bot-name literal appears here. The default is the refusing bot's registry
@@ -189,6 +192,12 @@ Return TOON shape (check):
     unproven_bots[N]:                    # emitted only when non-empty
       - bot
     bot_states[N]{bot_kind,state}: ...   # one row per required ∪ optional bot
+    known_bot_kinds[N]:                  # the live registry kind set every configured
+      - kind                             # token was checked against (ADR-019 coverage
+                                         # discriminator). Emitted ONLY when at least
+                                         # one token resolved unregistered_kind — it is
+                                         # the remedy for that verdict, and noise
+                                         # without it. Always present in the payload.
     measured_diff_size: <how big the refused diff was>   # emitted only alongside a non-empty refusal_causes
     refusal_causes[N]{bot_kind,cause,cap}: ...  # emitted only when non-empty — the size/quota CAUSE axis per refusing bot, with the ceiling its notice stated (``unknown`` when it stated none)
 
@@ -217,11 +226,14 @@ import bot_registry
 from _findings_core import query_findings
 from _findings_store_state import as_unresolved_store_error
 
-# The state every classified bot resolves to. Ten members are the closed
-# NON-participation taxonomy owned by
+# The state every classified bot resolves to. Every member below except
+# ``participated`` is part of the closed NON-participation taxonomy owned by
 # ``standards/bot-participation-contract.md``; ``participated`` is its complement
-# (the bot delivered a usable review) and is deliberately NOT an eleventh member of
-# that taxonomy — it is the success case the taxonomy exists to distinguish from.
+# (the bot delivered a usable review) and is deliberately NOT a member of that
+# taxonomy — it is the success case the taxonomy exists to distinguish from. The
+# member COUNT is not stated here on purpose: these declarations are the source a
+# count would be derived from, so restating one beside them only creates something
+# that can go stale.
 STATE_ABSENT = 'absent'
 STATE_IN_PROGRESS = 'in_progress'
 STATE_REFUSED_AWAITABLE = 'refused_awaitable'
@@ -281,6 +293,25 @@ STATE_DECLINED = 'declined'
 # every bot on the PR — which is why its input is a single bool rather than an
 # observation set keyed by bot.
 STATE_NOT_TRIGGERED = 'not_triggered'
+# A REFINEMENT of ``absent``, and the only member keyed to the CONFIGURATION rather
+# than to an observation: the configured token matches no member of the live registry
+# kind set, so there is no reviewer by that name for an observation to be about.
+# Nothing could ever have been observed under it, either — participation is keyed by a
+# ``bot_kind`` DERIVED from the author login, and a token outside that codomain can
+# never enter ``participated_bots``.
+#
+# Its OWN member rather than a fold into ``absent``, for the reason every refinement
+# here exists: the REMEDIES ARE DISJOINT. ``absent`` says a reviewer we know was asked
+# and did not answer, so its remedy is to chase the reviewer. This member says the NAME
+# matches no reviewer we know, so its remedy is to FIX THE NAME. Rendering it as
+# ``absent`` is precisely what sends an operator to chase a review that already
+# existed, which is a diagnosis cost, not a detection one.
+#
+# Blocking exactly as ``absent`` is — it is a member of :data:`_UNPROVEN_STATES` — so
+# the barrier still fails closed. Dropping an unknown token instead would replace a
+# confusing block with a SILENT PASS, which is strictly worse: the quorum would then
+# be satisfied by a reviewer nobody ever configured.
+STATE_UNREGISTERED_KIND = 'unregistered_kind'
 STATE_PARTICIPATED = 'participated'
 
 # The states that leave a REQUIRED bot's participation unproven. A required bot in
@@ -300,6 +331,7 @@ _UNPROVEN_STATES = frozenset(
         STATE_PARTICIPATED_STALE,
         STATE_DECLINED,
         STATE_NOT_TRIGGERED,
+        STATE_UNREGISTERED_KIND,
     }
 )
 
@@ -346,6 +378,13 @@ _STATE_SUMMARY_BUCKETS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ('declined', (STATE_DECLINED,)),
     ('in-progress', (STATE_IN_PROGRESS,)),
     ('not-triggered', (STATE_NOT_TRIGGERED,)),
+    # Its OWN bucket rather than a fold into ``absent`` below, on the same reasoning
+    # that separates ``not-triggered`` from it: a reader scanning ``display_detail``
+    # must be able to tell "a reviewer we know stayed silent" from "this name matches
+    # no reviewer we know", because only the second is fixed by editing the config.
+    # Collapsing it into ``absent`` here would undo, at the summary line, exactly the
+    # distinction the member was added to carry.
+    ('unregistered', (STATE_UNREGISTERED_KIND,)),
     ('absent', (STATE_ABSENT,)),
 )
 
@@ -703,6 +742,14 @@ def classify_bot(
       re-trigger a re-review — the opposite of ``absent``, where there is no review to
       refresh.
     - **``in_progress``** — the bot's review is still running.
+    - **``unregistered_kind``** — the configured token matches no member of the live
+      registry kind set, so no reviewer answers to this name and none ever could:
+      participation is keyed by a ``bot_kind`` derived from the author login, and this
+      token is outside that codomain. A refinement of ``absent`` keyed to the
+      CONFIGURATION rather than to an observation, checked after every observation
+      branch so a token that is unregistered yet observed still reports what was
+      observed. Unproven and blocking exactly as ``absent`` is, but its remedy is to
+      FIX THE NAME rather than to chase the reviewer.
     - **``not_triggered``** — PR-wide: no ``pull_request``-event workflow run exists
       for this PR at all, so NO bot could have published and this bot's silence
       says nothing about this bot. A refinement of ``absent`` rather than a sibling
@@ -735,6 +782,23 @@ def classify_bot(
         return STATE_PARTICIPATED_STALE
     if bot in in_progress:
         return STATE_IN_PROGRESS
+    # Evaluated AFTER every observation branch and BEFORE the two absence branches,
+    # and the position is the whole contract. A registry-membership test is a fact
+    # about the NAME, not about the reviewer, so it must never displace something the
+    # run actually observed: a token that is unregistered yet somehow observed
+    # participating, refusing, or still running reports THAT, because an observation
+    # is evidence and a membership test is not. Hoisting this above them would erase
+    # real evidence on the strength of a config lookup.
+    #
+    # Below the observations but above ``not_triggered`` / ``absent`` because it is a
+    # refinement of the same silence those two describe, and the more specific one:
+    # when nothing was observed, "no reviewer answers to this name" says strictly more
+    # than "nobody answered", and it is the only one of the three whose remedy is to
+    # edit the configuration. ``bot_kinds()`` is consumed as-is — no accessor is added
+    # here, so a reviewer added or removed in a standards doc changes this test with no
+    # edit to this module.
+    if bot not in bot_registry.bot_kinds():
+        return STATE_UNREGISTERED_KIND
     # Last branch before the fallthrough: every earlier state is POSITIVE evidence
     # about this specific bot, and a PR-wide "nothing ran" must never override an
     # observation that something did. Placing it here means no existing verdict
@@ -1003,13 +1067,16 @@ def check_completeness(
         Dict with the TOON-serialisable fields ``status``,
         ``participation_complete``, ``proves`` (always ``participation_only`` — the
         machine-readable form of the ceiling), ``pending_bots``, ``unproven_bots``,
-        and ``bot_states`` (one ``{bot_kind, state}`` record per classified bot).
+        ``bot_states`` (one ``{bot_kind, state}`` record per classified bot), and
+        ``known_bot_kinds`` (the live registry kind set every configured token was
+        checked against — the ADR-019 coverage discriminator for that membership
+        test, always carried here and rendered only when a token failed it).
 
         ``bot_states`` spans required ∪ optional and assigns exactly one state per
         bot. ``unproven_bots`` is the subset whose state leaves participation
         unproven — the members of ``_UNPROVEN_STATES`` (``absent`` /
         ``in_progress`` / any of the four refusal members / ``participated_stale`` /
-        ``declined`` / ``not_triggered``);
+        ``declined`` / ``not_triggered`` / ``unregistered_kind``);
         ``pending_bots`` is the subset carrying an untriaged finding. Both span
         required ∪ optional for visibility, but only the REQUIRED subset gates
         ``participation_complete``, and only ``pending``'s contribution
@@ -1141,6 +1208,15 @@ def check_completeness(
         # The CAUSE axis per refusing bot with the ceiling its notice stated. Names the
         # remedy; state-determining for ``size``, advisory for every other value.
         'refusal_causes': refusal_causes_out,
+        # ADR-019 coverage discriminator for the membership test ``classify_bot``
+        # applies: the POPULATION every configured token was checked against. Carried
+        # unconditionally here so an ``unregistered_kind`` verdict is never a bare
+        # name-rejection a reader cannot audit — "this name matches no reviewer we
+        # know" is actionable only beside the set of names we DO know, which is also
+        # the set the operator must pick the corrected token from. The emitter gates
+        # the RENDERING on whether any token actually failed; the datum is always
+        # present in the payload, so a programmatic consumer never has to re-derive it.
+        'known_bot_kinds': bot_registry.bot_kinds(),
     }
 
 
@@ -1268,6 +1344,21 @@ def _emit_toon(payload: dict) -> None:
         print(f'bot_states[{len(states)}]{{bot_kind,state}}:')
         for record in states:
             print(f'  {record["bot_kind"]},{record["state"]}')
+    # The ADR-019 coverage discriminator for the registry-membership test, emitted
+    # ONLY when at least one configured token actually failed it. The condition is
+    # DERIVED from the states just rendered rather than from a second flag, so the
+    # line cannot disagree with the verdict it qualifies.
+    #
+    # Gated rather than unconditional because the two cases need opposite things. When
+    # a token failed, the kind set is the remedy — it names what the token should have
+    # been, and without it the operator is told a name is wrong and not what is right.
+    # When none failed, the same list is noise on every run: a population nobody is
+    # being asked to choose from, printed beside a verdict it did not shape.
+    if any(record['state'] == STATE_UNREGISTERED_KIND for record in states):
+        kinds = payload.get('known_bot_kinds') or []
+        print(f'known_bot_kinds[{len(kinds)}]:')
+        for kind in kinds:
+            print(f'  - {kind}')
     # Emitted immediately before the causes it qualifies, and only when a refusal cause
     # was reported: a measured diff size standing alone would be a statistic about the
     # PR with nothing to reconcile it against.
