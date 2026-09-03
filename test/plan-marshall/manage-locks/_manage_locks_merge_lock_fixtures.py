@@ -76,6 +76,7 @@ import json
 from pathlib import Path
 
 import pytest
+from _manage_locks_fixtures import _make_live_plan  # noqa: F401 — re-exported to the modules beside this preamble
 
 from conftest import get_script_path, load_script_module
 
@@ -162,11 +163,6 @@ def isolated_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
         'lock_path': base / 'merge.lock',
         'queue_path': base / 'merge-queue.json',
     }
-
-
-def _make_live_plan(base: Path, plan_id: str) -> None:
-    """Create a holder plan directory so the holder counts as LIVE."""
-    (base / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)
 
 
 class _TokenRecorder:

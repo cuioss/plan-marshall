@@ -22,6 +22,8 @@ import json
 from argparse import Namespace
 from datetime import UTC, datetime, timedelta
 
+from _manage_status_fixtures import _age_token
+
 from conftest import load_script_module
 
 _lifecycle = load_script_module(
@@ -51,15 +53,6 @@ def _set(plan_id, state, owner='cli'):
 
 def _clear(plan_id, owner='cli'):
     return cmd_title_token(Namespace(plan_id=plan_id, token_verb='clear', owner=owner))
-
-
-def _age_token(plan_context, plan_id, seconds):
-    """Backdate the stored token's ``set_at`` by ``seconds``, in place."""
-    status_file = plan_context.plan_dir_for(plan_id) / 'status.json'
-    status = json.loads(status_file.read_text(encoding='utf-8'))
-    aged = datetime.now(UTC) - timedelta(seconds=seconds)
-    status['title_token']['set_at'] = aged.strftime('%Y-%m-%dT%H:%M:%SZ')
-    status_file.write_text(json.dumps(status), encoding='utf-8')
 
 
 # =============================================================================
