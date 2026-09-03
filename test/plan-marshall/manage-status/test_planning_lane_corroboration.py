@@ -8,15 +8,20 @@ on a single fired signal — ``S7:risk_prose`` — against a resolved ``single_m
 scope, over a signal vector in which three metadata inputs and the override were
 null. Three defects, three deliverables exercised here:
 
-- **D2** — a prose-only warning must not carry the lane ALONE when it contradicts a
-  resolved scope estimate. The corroboration is scoped to the non-committal middle
-  band (``single_module``) so it fixes the recorded over-route WITHOUT reopening the
-  prior false-negative fix, which lets S7 outrank a POSITIVELY-earned narrow band
-  (``surgical``). ``test_prior_fix_surgical_plus_s7_alone_still_deep`` is the
-  don't-fight regression; ``test_planning_lane_risk_prose.py`` keeps the original
-  surgical assertions unchanged.
-- **D1** — the route reports the resolved-vs-null split of the signal vector, so a
-  1-of-4 decision cannot read like a 1-of-7 one.
+- **D2** — a prose-only warning must not carry the lane ALONE when a MEASUREMENT
+  contradicts it. The corroboration is scoped to the non-committal middle band
+  (``single_module``) reached by the ``path_count_middle_band`` rule, so it fixes the
+  recorded over-route WITHOUT reopening the prior false-negative fix, which lets S7
+  outrank a POSITIVELY-earned narrow band (``surgical``). A ``single_module`` band
+  that counted nothing (``pathless_non_empty_body``), an unrecognised band, and a
+  caller that supplies no band rule at all are all "no measurement" — S7 keeps the
+  lane. ``test_prior_fix_surgical_plus_s7_alone_still_deep`` is the don't-fight
+  regression; ``test_planning_lane_risk_prose.py`` keeps the original surgical
+  assertions unchanged.
+- **D1** — the route reports the resolved-vs-null split of the six READ signals
+  (``planning_lane_override`` is excluded — its absence is the normal state), and
+  flags ``low_confidence`` when two or more of the four discriminating reads are
+  null, so a decision resting on two unresolved inputs cannot read as a confident one.
 - **D0/S1** — ``plan_source`` is null for EVERY orchestrator-launched plan because
   phase-1-init records the spec pointer as ``request.md`` ``source_id`` but never
   seeds ``status.metadata.plan_source`` on the file-pointer branch. The router
@@ -25,7 +30,8 @@ null. Three defects, three deliverables exercised here:
 D3 coverage (each of a–d from the plan's deliverable 4):
 
 - ``test_d3a_recorded_vector_does_not_route_deep`` — (a) replay the exact recorded
-  vector; it must NOT route deep.
+  vector against a MEASURED middle band (``path_count_middle_band``); it must NOT
+  route deep.
 - ``test_d3b_orchestrator_spec_resolves_plan_source_nonnull`` — (b) an
   orchestrator-spec-sourced request resolves ``plan_source`` non-null.
 - ``test_d3c_several_nulls_reported_low_confidence`` — (c) a several-nulls vector is
@@ -33,11 +39,23 @@ D3 coverage (each of a–d from the plan's deliverable 4):
 - ``test_d3d_control_deep_warranting_vector_still_routes_deep`` — (d) the CONTROL: a
   genuinely deep-warranting vector still routes deep (a router hardwired to
   ``light`` would pass every OTHER test here).
+
+The measured-evidence bound adds four more:
+
+- ``test_recorded_case_end_to_end_routes_light`` — a body whose 4 distinct paths
+  MEASURE the middle band still routes light, end to end.
+- ``test_pathless_single_module_band_does_not_suppress_s7`` — a ``single_module``
+  band that counted no path suppresses nothing; the warning routes deep.
+- ``test_unrecognised_noncommittal_band_does_not_suppress_s7`` — an unrecognised,
+  empty or whitespace-padded band is not in the allowlist and suppresses nothing.
+- ``test_post_bridge_motivating_vector_is_low_confidence`` — the motivating vector
+  is still low-confidence once the bridge resolves ``plan_source``.
 """
 
 
 from __future__ import annotations
 
+import pytest
 from _planning_lane_corroboration_fixtures import (
     _RECORDED_VECTOR,
     _ns_route,
@@ -50,6 +68,11 @@ from _planning_lane_corroboration_fixtures import (
     evaluate_signals_pure,
 )
 
+# The ONE ``band_rule`` that counts as a measurement of the non-committal middle
+# band: 4-7 distinct paths counted, landing between the surgical maximum and the
+# multi-module floor. Every other band rule leaves S7 uncontradicted.
+_MEASURED_MIDDLE_BAND = 'path_count_middle_band'
+
 # =============================================================================
 # D3(a) — replay the recorded vector: NOT deep
 # =============================================================================
@@ -58,12 +81,16 @@ from _planning_lane_corroboration_fixtures import (
 def test_d3a_recorded_vector_does_not_route_deep():
     """(a) The exact recorded signal vector must NOT route deep.
 
-    S7 was the SOLE fired signal against a resolved ``single_module`` scope — the
-    non-committal middle band. Post-fix the prose warning is uncorroborated and
-    does not carry the lane: the verdict is ``light``, and S7 is reported under
-    ``suppressed_signals`` rather than silently dropped.
+    S7 was the SOLE fired signal against a ``single_module`` scope — the
+    non-committal middle band — and the band was MEASURED
+    (``path_count_middle_band``), so a real count contradicts the prose warning.
+    The warning is uncorroborated and does not carry the lane: the verdict is
+    ``light``, and S7 is reported under ``suppressed_signals`` rather than silently
+    dropped.
     """
-    result = evaluate_signals_pure(**_RECORDED_VECTOR)
+    result = evaluate_signals_pure(
+        **_RECORDED_VECTOR, scope_band_rule=_MEASURED_MIDDLE_BAND
+    )
 
     assert result['lane'] == 'light'
     assert result['fired_signals'] == []
@@ -81,10 +108,25 @@ def test_recorded_vector_routes_deep_without_the_corroboration_fix():
     """
     vector = {**_RECORDED_VECTOR, 'risk_prose': False}
 
-    result = evaluate_signals_pure(**vector)
+    result = evaluate_signals_pure(**vector, scope_band_rule=_MEASURED_MIDDLE_BAND)
 
     assert result['lane'] == 'light'
     assert result['fired_signals'] == []
+    assert result['suppressed_signals'] == []
+
+
+def test_recorded_vector_without_a_measured_band_keeps_the_lane():
+    """No band rule supplied means nothing was measured — S7 keeps the lane.
+
+    The same recorded vector, called the way a consumer that cannot supply a band
+    rule calls it. Nothing contradicts the author, so the warning carries ``deep``
+    and the suppressed set stays empty. This is the negative control for the
+    measured-evidence bound: it differs from ``test_d3a_...`` in the band rule alone.
+    """
+    result = evaluate_signals_pure(**_RECORDED_VECTOR)
+
+    assert result['lane'] == 'deep'
+    assert result['fired_signals'] == ['S7:risk_prose']
     assert result['suppressed_signals'] == []
 
 
@@ -93,20 +135,22 @@ def test_recorded_vector_routes_deep_without_the_corroboration_fix():
 # =============================================================================
 
 def test_recorded_case_end_to_end_routes_light(plan_context):
-    """End-to-end wiring of D3(a): a single_module request whose body fires ONLY S7
-    routes light through the real command entry point.
+    """End-to-end wiring of D3(a): a MEASURED middle band that fires ONLY S7 routes
+    light through the real command entry point.
 
-    The scope is persisted ``single_module`` and the body names a concrete path (so
-    S5 / S1 stay quiet) while carrying one risk-prose phrase (``foundation``), so S7
-    is the sole fired signal. The corroboration then denies it the lane: ``light``,
-    with S7 suppressed — the recorded over-route, corrected, proven through the
-    reader rather than only the pure scorer.
+    The body names four distinct paths and no fan-out marker, so the band table
+    counts them into the middle band (``path_count_middle_band``) — a real
+    measurement, not a default. The count also keeps S5 / S1 quiet, while one
+    risk-prose phrase (``foundation``) fires S7 alone. The corroboration then denies
+    it the lane: ``light``, with S7 suppressed — the recorded over-route, corrected,
+    proven through the reader rather than only the pure scorer.
     """
     plan_dir = plan_context.plan_dir_for('pl-recorded-e2e')
     _write_orchestrator_request(
         plan_dir,
         '.plan/local/orchestrator/y/plans/PLAN-03-y.md',
-        'Update pkg/one.py. This is foundation work the rest builds on.',
+        'Update pkg/one.py, pkg/two.py, pkg/three.py and pkg/four.py. '
+        'This is foundation work the rest builds on.',
     )
     _write_status(plan_dir, metadata={})
     _write_references(plan_dir, scope_estimate='single_module')
@@ -114,10 +158,71 @@ def test_recorded_case_end_to_end_routes_light(plan_context):
 
     result = cmd_planning_lane_route(_ns_route('pl-recorded-e2e'))
 
+    assert result['scope_provenance']['band_rule'] == _MEASURED_MIDDLE_BAND
     assert result['signals']['risk_prose'] is True
     assert result['planning_lane'] == 'light'
     assert result['fired_signals'] == []
     assert result['suppressed_signals'] == ['S7:risk_prose']
+
+
+def test_pathless_single_module_band_does_not_suppress_s7(plan_context):
+    """A ``single_module`` band that counted NO path cannot contradict the author.
+
+    The body carries a ``manage-*`` notation (so S5 reads it as concrete and S7 stays
+    the sole fired signal) but no ``dir/name.ext`` path at all, so the band table
+    falls through to ``pathless_non_empty_body`` — ``single_module`` by default,
+    measured from nothing. The plain-text request shape is what makes that reachable:
+    the orchestrator-spec header carries a path-shaped ``source_id`` the whole-body
+    read would count. The warning therefore keeps the lane: ``deep``, with an EMPTY
+    suppressed set.
+    """
+    plan_dir = plan_context.plan_dir_for('pl-pathless')
+    _write_plaintext_request(
+        plan_dir,
+        'Rework the manage-status router. This is foundation work the rest builds on.',
+    )
+    _write_status(plan_dir, metadata={})
+    _write_references(plan_dir, scope_estimate='single_module')
+    _write_marshal(plan_context.fixture_dir)
+
+    result = cmd_planning_lane_route(_ns_route('pl-pathless'))
+
+    assert result['scope_provenance']['band_rule'] == 'pathless_non_empty_body'
+    assert result['signals']['risk_prose'] is True
+    assert result['planning_lane'] == 'deep'
+    assert result['fired_signals'] == ['S7:risk_prose']
+    assert result['suppressed_signals'] == []
+
+
+@pytest.mark.parametrize(
+    'scope_estimate',
+    ['module_pair', '', ' single_module'],
+    ids=['unrecognised_band', 'empty_band', 'whitespace_padded_band'],
+)
+def test_unrecognised_noncommittal_band_does_not_suppress_s7(scope_estimate):
+    """Only the explicit allowlist denies S7 the lane — nothing else does.
+
+    Each band here is neither deep-biasing nor narrow, so the retired
+    complement-of-two-sets test admitted all three and suppressed the warning. The
+    allowlist admits ``single_module`` alone, so an unrecognised band, an empty one
+    and a whitespace-padded one all fall through to "no corroboration" — even with
+    the measured middle-band rule supplied, which isolates the allowlist as the
+    single discriminator.
+    """
+    result = evaluate_signals_pure(
+        plan_source='lesson',
+        scope_estimate=scope_estimate,
+        change_type='bug_fix',
+        compatibility='deprecation',
+        request_concrete=True,
+        risk_prose=True,
+        override=None,
+        scope_band_rule=_MEASURED_MIDDLE_BAND,
+    )
+
+    assert result['lane'] == 'deep'
+    assert result['fired_signals'] == ['S7:risk_prose']
+    assert result['suppressed_signals'] == []
 
 
 # =============================================================================
@@ -232,31 +337,52 @@ def test_single_module_without_s7_is_unaffected():
 def test_d3c_several_nulls_reported_low_confidence():
     """(c) A signal vector with several nulls is reported low-confidence.
 
-    The recorded vector resolved only 3 of 7 signals — ``plan_source``,
-    ``change_type``, ``compatibility`` and ``planning_lane_override`` were null. The
-    confidence block reports that split and flags it low-confidence, so a 1-of-4
-    decision cannot masquerade as a 1-of-7 one.
+    The recorded vector resolved only 3 of the 6 READ signals — ``plan_source``,
+    ``change_type`` and ``compatibility`` were null. Three of the four discriminating
+    reads are unresolved, so the block flags it low-confidence and a 3-of-6 decision
+    cannot masquerade as a confident one. ``planning_lane_override`` is absent from
+    the split entirely: it was never read, only unset.
     """
     result = evaluate_signals_pure(**_RECORDED_VECTOR)
     confidence = result['confidence']
 
-    assert confidence['signals_total'] == 7
+    assert confidence['signals_total'] == 6
     assert confidence['signals_resolved'] == 3
-    assert confidence['signals_null'] == 4
-    assert confidence['null_signals'] == [
-        'change_type',
-        'compatibility',
-        'plan_source',
-        'planning_lane_override',
-    ]
+    assert confidence['signals_null'] == 3
+    assert confidence['null_signals'] == ['change_type', 'compatibility', 'plan_source']
+    assert confidence['low_confidence'] is True
+
+
+def test_post_bridge_motivating_vector_is_low_confidence():
+    """The motivating vector stays low-confidence once the bridge resolves plan_source.
+
+    Two of the four discriminating reads (``change_type``, ``compatibility``) are
+    null against four resolved signals — a bare majority rule called that confident,
+    because the two body-derived booleans can never be null and always pad the
+    resolved side. Keying on the discriminators alone is what makes the flag fire.
+    """
+    result = evaluate_signals_pure(
+        plan_source='.plan/local/orchestrator/x/plans/PLAN-01-x.md',
+        scope_estimate='single_module',
+        change_type=None,
+        compatibility=None,
+        request_concrete=True,
+        risk_prose=True,
+        override=None,
+    )
+    confidence = result['confidence']
+
+    assert confidence['signals_resolved'] == 4
+    assert confidence['null_signals'] == ['change_type', 'compatibility']
     assert confidence['low_confidence'] is True
 
 
 def test_confidence_high_when_most_signals_resolve():
-    """The mirror: a mostly-resolved vector is NOT flagged low-confidence.
+    """The mirror: a fully-resolved vector is NOT flagged low-confidence.
 
-    Pairs with the low-confidence case so the flag is shown to discriminate, not to
-    fire unconditionally. Only the (unset) override is null here.
+    Pairs with the low-confidence cases so the flag is shown to discriminate, not to
+    fire unconditionally. Every read resolved, so the null set is empty — the unset
+    override is no longer counted as an unresolved read.
     """
     result = evaluate_signals_pure(
         plan_source='lesson',
@@ -270,8 +396,30 @@ def test_confidence_high_when_most_signals_resolve():
     confidence = result['confidence']
 
     assert confidence['signals_resolved'] == 6
-    assert confidence['signals_null'] == 1
-    assert confidence['null_signals'] == ['planning_lane_override']
+    assert confidence['signals_null'] == 0
+    assert confidence['null_signals'] == []
+    assert confidence['low_confidence'] is False
+
+
+def test_one_null_discriminator_is_not_low_confidence():
+    """A single unresolved discriminating read is not enough to flag the verdict.
+
+    The boundary companion of the two-null case: the predicate fires at two, so one
+    null must not. Without this the ``>= 2`` threshold would be indistinguishable
+    from ``>= 1``.
+    """
+    result = evaluate_signals_pure(
+        plan_source=None,
+        scope_estimate='surgical',
+        change_type='bug_fix',
+        compatibility='deprecation',
+        request_concrete=True,
+        risk_prose=False,
+        override=None,
+    )
+    confidence = result['confidence']
+
+    assert confidence['null_signals'] == ['plan_source']
     assert confidence['low_confidence'] is False
 
 
