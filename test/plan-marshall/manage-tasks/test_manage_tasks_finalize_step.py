@@ -15,6 +15,7 @@ END-TO-END proof that the task-closing ``finalize-step`` call actually writes
 those lines to the plan's work log.
 """
 
+import json
 import subprocess
 from argparse import Namespace
 from pathlib import Path
@@ -23,11 +24,9 @@ import pytest
 
 from _manage_tasks_fixtures import (
     _finalize_step_ns,
-    _read_ns,
     _update_ns,
     add_basic_task,
     cmd_finalize_step,
-    cmd_read,
     cmd_update,
 )
 
@@ -488,6 +487,20 @@ def test_task_close_with_an_empty_diff_emits_no_artifact_line(plan_context, _art
 # other path's tests stay green. The two cases below are the matched pair.
 
 
+def _persisted_task(plan_context, plan_id: str, number: int = 1) -> dict:
+    """Read the PERSISTED task record straight off disk.
+
+    ⛔ NOT through `cmd_read`: that verb returns a fixed projection of the task
+    and does not surface `task_start_sha`, so a read-back through it cannot see
+    the field this pair is about — it would report the baseline as absent on
+    both the positive and the negative case, and the pair would agree for the
+    wrong reason.
+    """
+    path = plan_context.plan_dir_for(plan_id) / 'tasks' / f'TASK-{number:03d}.json'
+    record: dict = json.loads(path.read_text(encoding='utf-8'))
+    return record
+
+
 def test_update_to_in_progress_records_the_baseline(plan_context, _artifact_repo):
     """The explicit entry path lands the same baseline as its finalize-step sibling."""
     add_basic_task(
@@ -499,7 +512,7 @@ def test_update_to_in_progress_records_the_baseline(plan_context, _artifact_repo
 
     cmd_update(_update_ns(plan_id='outcome-default', number=1, status='in_progress'))
 
-    task = cmd_read(_read_ns(plan_id='outcome-default', number=1))['task']
+    task = _persisted_task(plan_context, 'outcome-default')
     assert task[_artifacts.TASK_START_SHA_FIELD] == _head(_artifact_repo)
 
 
@@ -519,5 +532,5 @@ def test_update_to_a_non_opening_status_records_no_baseline(plan_context, _artif
 
     cmd_update(_update_ns(plan_id='outcome-default', number=1, status='blocked'))
 
-    task = cmd_read(_read_ns(plan_id='outcome-default', number=1))['task']
+    task = _persisted_task(plan_context, 'outcome-default')
     assert _artifacts.TASK_START_SHA_FIELD not in task
