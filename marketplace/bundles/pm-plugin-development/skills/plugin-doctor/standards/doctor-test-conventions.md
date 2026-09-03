@@ -113,13 +113,21 @@ Validate that every registered identifier validator's regex round-trips every ou
 
 **Anchor**: `#test-module-line-budget`
 
-Flag a collected test module over the 400-line budget.
+Flag a collected test module over the 400-line budget, unless its whole content is a single class within the class-line ceiling.
 
 **Detection**:
 
 1. Enumerate every `*.py` under `--test-root` matching pytest's collection patterns (`test_*.py` / `*_test.py`).
 2. Count the module's lines.
-3. Flag any module over `TEST_MODULE_LINE_BUDGET` (400).
+3. Flag any module over `TEST_MODULE_LINE_BUDGET` (400), **except** a module matching the single-class shape below.
+
+**The single-class exemption**:
+
+A module is exempt when its whole content is **one class** — exactly one `ClassDef` at module level and no module-level function — **and that class's own span is within `TEST_MODULE_SINGLE_CLASS_CEILING` (520)**.
+
+- **The ceiling is measured on the class, not on the module.** A module exceeds its own class only by header, imports and a banner, none of which a split could redistribute — so the module's line count is the wrong quantity to judge this shape by. The span is the class's `end_lineno - lineno + 1`.
+- **The boundary is inclusive**, mirroring the budget's own: a module of exactly 400 lines is within budget, so a class of exactly 520 lines is within the ceiling. A class over 520 is flagged like any other over-budget module.
+- **The narrowness is the safety property, not a limitation to be relaxed.** A module of two under-ceiling classes stays flagged: it has a second nameable subject, so the prescribed remedy — split by behaviour cluster — applies to it unchanged. The exemption covers only the case where that remedy has nothing to cut along, because there is exactly one subject.
 
 **Violation message format**:
 

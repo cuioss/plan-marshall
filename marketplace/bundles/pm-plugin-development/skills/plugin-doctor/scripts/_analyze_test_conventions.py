@@ -74,6 +74,17 @@ ID_LINE_PATTERN = re.compile(r'^\s*(?:- )?id:\s*(?P<id>\S+)\s*$', re.MULTILINE)
 #: describes the tree's own compliant majority rather than an aspiration.
 TEST_MODULE_LINE_BUDGET = 400
 
+#: Ceiling for the single-class exemption below, measured on the CLASS and not
+#: on the module. A module exceeds its own class only by header, imports and a
+#: banner — none of which a split could redistribute — so the module's line
+#: count is the wrong quantity to judge this shape by.
+#:
+#: The exemption is deliberately narrow, and the narrowness is the property
+#: being bought: a module of two under-ceiling classes is an ordinary split and
+#: stays flagged, because it has a second nameable subject to split along. This
+#: is one constant so a ceiling decision changes one line.
+TEST_MODULE_SINGLE_CLASS_CEILING = 520
+
 # --- Rule 6 -----------------------------------------------------------------
 
 #: ``Path(__file__).parent.parent.parent`` and deeper. A chain this long is
@@ -569,6 +580,46 @@ def _read_source(path: Path) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+def _sole_class_span(source: str, path: Path) -> int | None:
+    """Return the span of the module's single class, or None if the shape differs.
+
+    The shape is "the module's whole content is one class": exactly one
+    ``ClassDef`` at module level and no module-level function. Anything else --
+    two classes, or a class beside a module-level helper -- has a second
+    nameable subject and is an ordinary split.
+
+    The span is the class's own ``end_lineno - lineno + 1``, not the module's
+    line count.
+    """
+    try:
+        tree = ast.parse(source, filename=str(path))
+    except SyntaxError:
+        return None
+    classes = [node for node in tree.body if isinstance(node, ast.ClassDef)]
+    if len(classes) != 1:
+        return None
+    if any(isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) for node in tree.body):
+        return None
+    sole = classes[0]
+    if sole.end_lineno is None:
+        return None
+    return sole.end_lineno - sole.lineno + 1
+
+
+def _is_single_class_exempt(
+    source: str, path: Path, ceiling: int = TEST_MODULE_SINGLE_CLASS_CEILING
+) -> bool:
+    """Return True when ``path`` is one class whose own span is within ``ceiling``.
+
+    The comparison is ``<=``, matching the budget rule's own boundary: a module
+    of exactly ``TEST_MODULE_LINE_BUDGET`` lines is within budget, so a class of
+    exactly ``ceiling`` lines is within the ceiling. A class over the ceiling is
+    flagged like any other over-budget module.
+    """
+    span = _sole_class_span(source, path)
+    return span is not None and span <= ceiling
+
+
 def analyze_test_module_line_budget(test_root: Path, budget: int = TEST_MODULE_LINE_BUDGET) -> list[dict]:
     """Rule 4 -- flag a collected test module over the line budget.
 
@@ -576,6 +627,12 @@ def analyze_test_module_line_budget(test_root: Path, budget: int = TEST_MODULE_L
     ``test_{unit}_{cluster}.py``. The finding carries the module's own line
     count and the budget so the message states the overage rather than
     merely naming the rule.
+
+    One shape is exempt: a module whose whole content is a single class whose
+    own span is within :data:`TEST_MODULE_SINGLE_CLASS_CEILING`. Such a module
+    has one nameable subject and no split boundary to cut along, so the
+    prescribed remedy does not apply to it. See
+    ``standards/doctor-test-conventions.md`` § test-module-line-budget.
     """
     findings: list[dict] = []
     for path in _iter_test_tree_modules(test_root):
@@ -585,8 +642,11 @@ def analyze_test_module_line_budget(test_root: Path, budget: int = TEST_MODULE_L
         if source is None:
             continue
         line_count = len(source.splitlines())
-        if line_count > budget:
-            findings.append(_build_line_budget_finding(path, line_count, budget))
+        if line_count <= budget:
+            continue
+        if _is_single_class_exempt(source, path):
+            continue
+        findings.append(_build_line_budget_finding(path, line_count, budget))
     return findings
 
 

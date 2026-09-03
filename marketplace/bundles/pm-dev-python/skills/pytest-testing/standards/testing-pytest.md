@@ -400,6 +400,10 @@ when over. The budget and its derivation are stated in
 [`test-module-line-budget`](../../../../pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md#test-module-line-budget)
 rule.
 
+A module whose whole content is a **single class** is exempt while that class's own span is within 520
+lines — the ceiling is measured on the class, not on the module. Both documents above state the
+exemption and its reasoning; it is not restated here.
+
 ### Docstring content
 
 A test docstring states the invariant in the present tense. It does not narrate the incident that
