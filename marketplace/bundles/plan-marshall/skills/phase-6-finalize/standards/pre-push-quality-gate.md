@@ -21,13 +21,13 @@ Pure executor for the `pre-push-quality-gate` finalize step. Runs three guards o
 
 The three-guard order — quality-gate (per-bundle, then whole-tree) → test-compile → module-tests — is the order `build.py:cmd_verify` uses on the CI path. Matching it is the point: the gate is only a useful pre-push proxy for CI if it runs the same checks in the same sequence.
 
-**Why guard 1 carries a whole-tree arm.** Three `quality-gate` dimensions exist ONLY at whole-tree scope, so a purely bundle-scoped sweep can never reach them and they surface first at remote CI:
+**Why guard 1 carries a whole-tree arm.** Some `quality-gate` dimensions exist ONLY at whole-tree scope, so a purely bundle-scoped sweep can never reach them and they surface first at remote CI. **The three enumerated below are this repository's** — they are what the plan-marshall marketplace repository's own `quality-gate` widens to at whole-tree scope, and the first of them exists nowhere else:
 
-1. **The marketplace-wide plugin-doctor static-analysis pass** — it analyses the marketplace as a whole; no per-bundle invocation runs it.
+1. **The marketplace-wide plugin-doctor static-analysis pass** — it analyses the marketplace as a whole; no per-bundle invocation runs it. ⛔ **Marketplace repository only.** `plugin-doctor` is a marketplace-authoring tool that ships in this repository; it is not installed into a consumer project, and a consumer is not expected to carry an equivalent. In any other project this dimension does not exist, so it is neither gated nor un-gated there — it is simply not one of that project's dimensions, and the WARNING wording below must not assert it as a lost gate.
 2. **The `.claude/` and `marketplace/targets` ruff coverage** — whole-tree scope widens the linted path set to include `.claude/` and `marketplace/targets` alongside `marketplace/bundles` and `test`; a bundle-scoped run never lints `.claude/` or `marketplace/targets`.
 3. **The `marketplace/targets` SPDX-header coverage** — whole-tree scope widens the SPDX-enforced path set to include `marketplace/targets`; a bundle-scoped run never enforces headers there.
 
-The per-bundle loop remains the precise, footprint-proportional pass that attributes a failure to its bundle; the whole-tree arm exists solely to make those three dimensions reachable.
+**The general rule, which is what a consumer applies.** A project's whole-tree-only dimensions are whatever its own `quality-gate` widens to beyond module scope. Derive that set from the project's build configuration; do not read the three above as a portable list, and do not conclude from their absence that a project has none. The per-bundle loop remains the precise, footprint-proportional pass that attributes a failure to its bundle; the whole-tree arm exists solely to make whichever such dimensions exist reachable.
 
 **Recorded: the build.map-consult intent is already satisfied — and the premise that it is not is REFUTED.** A standing claim held that the per-bundle `quality-gate` arm "does not consult the footprint" and therefore "selects nothing", implying a build.map consult still had to be built. Both halves are false against the shipped document, and the evidence is in this file's own § Execution:
 
@@ -47,14 +47,18 @@ An open question sat behind the two unconditional whole-tree arms: after a loop-
 
 Both settlements are scoping decisions only. The existing **honest-degradation branch** (the whole-tree invocation cannot run at all in this project) and its mandatory **three-dimension WARNING** are unchanged by this section — they remain the only sanctioned path on which the whole-tree `quality-gate` arm does not run.
 
-The module-tests gate consults the callable scope-resolution seam (`pyproject_build resolve-test-scope`, backed by the pure `_test_scope_divergence.resolve_test_scope`) and runs a real whole-tree `module-tests` only when divergence is possible — mirroring the escalate-only-on-trigger discipline of the `finalize-step-plugin-doctor` reference behavior (PLAN-02), so whole-tree cost is paid only where a scoped run could miss a cross-module regression.
+The module-tests gate consults the callable scope-resolution seam — the `resolve-test-scope` verb of whichever `build-{tool}` skill the project's `module-tests` canonical resolves to (in this repository `build-pyproject`, backed by the pure `_test_scope_divergence.resolve_test_scope`) — and runs a real whole-tree `module-tests` only when divergence is possible — mirroring the escalate-only-on-trigger discipline of the `finalize-step-plugin-doctor` reference behavior (PLAN-02), so whole-tree cost is paid only where a scoped run could miss a cross-module regression.
 
 ## Coverage parity with CI, freshness, and honest coverage
 
-This gate is a proxy for what CI runs — `./pw verify` (`build.py:cmd_verify`, reading the one shared
-`pyproject.toml` tool config) — and is only useful while it stays a *truthful* proxy. Two properties
-keep it honest, both enforced in `build.py` and its pure `_gate_coverage` seam
-(`script-shared/scripts/build/_gate_coverage.py`), so they hold on every arm below:
+This gate is a proxy for whatever the project's CI runs as its full `verify`, and is only useful while
+it stays a *truthful* proxy. In this repository that is `./pw verify` (`build.py:cmd_verify`, reading
+the one shared `pyproject.toml` tool config), and the two properties below are enforced in `build.py`
+and its pure `_gate_coverage` seam (`script-shared/scripts/build/_gate_coverage.py`). Another project's
+`verify` is its own build tool's, enforced wherever that tool enforces it — the properties are the
+requirement on the proxy; the pyprojectx implementation named here is how this repository meets it. The
+arms below all obtain their invocation from `architecture resolve`, so they run the project's own tool
+either way:
 
 - **Freshness (cold, like CI).** Every mypy invocation runs with the incremental cache disabled
   (`--no-incremental`), so the verdict is computed against the current tree rather than a possibly-
@@ -214,14 +218,16 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Run quality-gate per bundle
 
-For each `bundle` in `bundles` (in sorted order):
+For each `bundle` in `bundles` (in sorted order), resolve the canonical **module-scoped to that bundle** and invoke what the resolver returned. The resolver is the authority for which build tool runs and under what bound; this loop never names one:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build \
-  run --command-args "quality-gate {bundle}" --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  resolve --command quality-gate --module {bundle} --audit-plan-id {plan_id}
 ```
 
-Inspect the TOON output. On `status: error`, halt: stop iterating, record the failing bundle, and proceed to **Mark Step Complete (Failure)** below. The underlying `pyproject_build` TOON output already carries `errors[N]{file,line,message,category}` — surface the offending file/line via the standard finalize TOON.
+Capture `executable`, `execution_tier` and `bash_timeout_seconds` from the returned TOON, then run the captured `executable` with the Bash timeout set to `bash_timeout_seconds * 1000` milliseconds. When `execution_tier` is `orchestrator` the invocation exceeds the Bash ceiling and MUST NOT be run here — hand it to the orchestrator's `await-long-running` seam and resume this loop on its result. A `status: error` from the resolve is handled exactly as the whole-tree arm's availability probe below prescribes: only the exact `error: architecture_error` + `message: Command not found` + `available[]`-omits-`quality-gate` shape proves the bundle exposes no `quality-gate` target (skip that bundle and record it in the same `[WARNING]` idiom § "Derive unique bundle set" uses); every other error shape did not answer, so STOP the step per § "Exit-code convention for every script call".
+
+Inspect the invocation's TOON output. On `status: error`, halt: stop iterating, record the failing bundle, and proceed to **Mark Step Complete (Failure)** below. The build wrapper's TOON already carries `errors[N]{file,line,message,category}` — surface the offending file/line via the standard finalize TOON. Read the verdict from that `status` / `errors[]`, never from the exit code, which is `0` even on a red gate.
 
 If every bundle succeeds (`status: success` for all `N` invocations), proceed to the **Whole-tree quality-gate arm** below.
 
@@ -238,18 +244,15 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
 
 Branch on the **probe's** TOON, not on the build wrapper's — and on the probe's **exact shape**, not on a bare `status: error`. The resolver (`manage-architecture`'s `cmd_resolve`) returns `status: error` from four distinct paths, and only one of them says anything about whether the target exists: a missing project architecture (nothing was ever discovered), a module that does not exist, the command not being registered at the resolved module, and a catch-all for any other resolver failure. Only the third is proof of unavailability. Branching on the bare status would let an un-crawled project, a resolver IO error, or a malformed command entry downgrade a merge-gating check to a WARNING on evidence that proves nothing about availability — an unknown collapsing into a positive answer, which is the fail-open class ADR-009 forbids:
 
-- **`status: success`** → the whole-tree target exists (the return carries the `executable` and its `execution_tier` / `bash_timeout_seconds`). Run the invocation below and read its result as a gate verdict.
+- **`status: success`** → the whole-tree target exists, and the return carries the invocation itself. Capture `executable`, `execution_tier` and `bash_timeout_seconds`, then run the captured `executable` and read its result as a gate verdict. The probe is not merely a yes/no oracle whose answer is then discarded for a pinned wrapper — the executable it returned IS the arm's invocation.
 - **`status: error` carrying ALL THREE of `error: architecture_error`, `message: Command not found`, and an `available[]` list that omits `quality-gate`** → this exact shape, and only this shape, proves the whole-tree `quality-gate` cannot run at all in this project; `available[]` names the commands the `default` module *does* expose. Take the **honest-degradation branch** below and do NOT run the invocation. The third conjunct is **"`available[]` omits `quality-gate`"**, deliberately NOT "`available[]` is non-empty": the resolver's own inner fallback on this path yields an EMPTY list when the module's derived command set cannot be read, so an empty `available[]` is a legitimate instance of the shape rather than a reason to reject it.
 - **`status: error` in ANY other shape** → the probe did not establish unavailability; it failed to answer. An unreadable probe is not evidence that the target is absent, so do NOT degrade — STOP the step: proceed to **Mark Step Complete (Failure)** below, preserving the probe's stdout error envelope verbatim, exactly as § "Exit-code convention for every script call" middle clause requires of any zero-exit non-`success` return. The honest-degradation branch is a narrow carve-out from that clause for the one shape that proves the target does not exist; every other probe error keeps the clause's default STOP disposition.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build \
-  run --command-args "quality-gate" --plan-id {plan_id}
-```
+Run the captured `executable` verbatim, with the Bash timeout set to `bash_timeout_seconds * 1000` milliseconds. When `execution_tier` is `orchestrator` the invocation exceeds the Bash ceiling and MUST NOT be run here — hand it to the orchestrator's `await-long-running` seam and read the verdict from its result. Because the executable comes from the probe, this arm names no build tool and runs whatever the project resolves; a pyprojectx project gets its wrapper, a Maven or npm project gets its own.
 
 Inspect the TOON output. On `status: error`, halt: record the failure and proceed to **Mark Step Complete (Failure)** below. The probe above already routed a non-resolving target away from this invocation, so a `status: error` here is a real gate red and nothing else — do not weaken the check or fall back to the per-bundle result to get past it; a finding that only whole-tree scope can see is exactly what this arm exists for. On `status: success`, proceed to the **Whole-tree test-compile gate** below.
 
-**Honest-degradation branch — whole-tree `quality-gate` unavailable.** Reached ONLY from the availability probe's exact-unavailability arm above (`error: architecture_error` **and** `message: Command not found` **and** an `available[]` omitting `quality-gate`) — never from a probe error of any other shape, which STOPs the step instead, and never from the invocation's own result, which by then can only be a gate verdict. When the whole-tree invocation cannot run at all (the canonical does not resolve at default scope in this project, or the project exposes no whole-tree `quality-gate` target), do NOT silently skip it. Emit one loud WARNING naming **all three** un-gated dimensions explicitly — never a silent skip and never a singular "the whole-tree dimension" — then proceed to the **Whole-tree test-compile gate**. Mirror the wording shape of the module-tests `whole_tree_available == false` branch below:
+**Honest-degradation branch — whole-tree `quality-gate` unavailable.** Reached ONLY from the availability probe's exact-unavailability arm above (`error: architecture_error` **and** `message: Command not found` **and** an `available[]` omitting `quality-gate`) — never from a probe error of any other shape, which STOPs the step instead, and never from the invocation's own result, which by then can only be a gate verdict. When the whole-tree invocation cannot run at all (the canonical does not resolve at default scope in this project, or the project exposes no whole-tree `quality-gate` target), do NOT silently skip it. Emit one loud WARNING naming **each** un-gated dimension explicitly — never a silent skip and never a singular "the whole-tree dimension" — then proceed to the **Whole-tree test-compile gate**. The dimensions to name are **the project's own**, derived as § "Why guard 1 carries a whole-tree arm" directs. The message below is this repository's instance, carrying its three; a project with a different set names that set, and a project that cannot enumerate its whole-tree-only dimensions says exactly that rather than naming none — an unenumerated set must not render as an empty one. Mirror the wording shape of the module-tests `whole_tree_available == false` branch below:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -257,7 +260,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "[WARNING] (plan-marshall:pre-push-quality-gate) Whole-tree quality-gate unavailable — three whole-tree-only dimensions are UN-GATED at finalize for this push: the marketplace-wide plugin-doctor static-analysis pass, the .claude/ ruff path coverage, and the marketplace/targets SPDX-header coverage. Proceeding on honest degradation."
 ```
 
-The whole-tree arm is **unconditional**. The honest-degradation branch above — the invocation cannot run at all in this project, proven by the probe's exact unavailability shape — is the ONLY sanctioned path that proceeds past this arm without running it. A probe error of any other shape is not a second such path: it does not proceed at all, it halts the step. There is no trigger-gated variant of this arm, and a project MUST NOT gate it on a trigger to save cost: two admissible behaviours for the same guard make Branch A's "clean whole-tree `quality-gate`" precondition mean different things across runs, which is precisely the divergence this arm exists to prevent. (The escalate-only-on-trigger discipline the module-tests gate applies below governs a different gate with a different cost profile; it does not extend here.) The three-dimension WARNING is mandatory on the honest-degradation path — the degradation must be legible in the work-log, never inferred from its absence.
+The whole-tree arm is **unconditional**. The honest-degradation branch above — the invocation cannot run at all in this project, proven by the probe's exact unavailability shape — is the ONLY sanctioned path that proceeds past this arm without running it. A probe error of any other shape is not a second such path: it does not proceed at all, it halts the step. There is no trigger-gated variant of this arm, and a project MUST NOT gate it on a trigger to save cost: two admissible behaviours for the same guard make Branch A's "clean whole-tree `quality-gate`" precondition mean different things across runs, which is precisely the divergence this arm exists to prevent. (The escalate-only-on-trigger discipline the module-tests gate applies below governs a different gate with a different cost profile; it does not extend here.) The per-dimension WARNING is mandatory on the honest-degradation path — the degradation must be legible in the work-log, never inferred from its absence.
 
 **Sibling branch, checked and left alone.** The module-tests `whole_tree_available == false` branch this one mirrors (§ "Whole-tree module-tests divergence gate", branch 3) carries no equivalent reachability defect: it is selected by a genuine boolean the `resolve-test-scope` seam returns in its own `status: success` payload, not inferred from a build wrapper's error. Its predicate can match the scenario it was written for, so it is unchanged. Only this arm needed the probe, because only this arm had to tell "the target does not exist" from "the gate went red" inside one `status: error`.
 
@@ -267,14 +270,18 @@ The per-bundle `quality-gate` loop above type-checks **production sources only**
 
 Run it **whole-tree, not per-bundle**. The gap being closed is specifically a whole-tree one: the two errors that escaped to CI were an invalid dashed package name and a contract change left un-propagated to a test file *outside the plan's footprint*. A footprint-scoped `test-compile` would have missed the second, which is the whole reason this guard exists.
 
+`test-compile` does not resolve at default (whole-tree) scope — see the recorded caveat below — so obtain the invocation from a **module-scoped** resolve and widen it. Pick any module the derivation above yielded (`bundles[0]` in sorted order; when `bundles` is empty, any module the project exposes):
+
 ```bash
-python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build \
-  run --command-args "test-compile" --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  resolve --command test-compile --module {module} --audit-plan-id {plan_id}
 ```
+
+Capture `executable`, `execution_tier` and `bash_timeout_seconds`. Take the captured `executable` and **drop its trailing module argument** to obtain the whole-tree form — the notation, the verb and the argument shape all still come from the resolver, so this arm names no build tool either. Run that form with the Bash timeout set to `bash_timeout_seconds * 1000` milliseconds, handing an `orchestrator`-tier invocation to the `await-long-running` seam rather than running it here. When the module-scoped resolve returns the exact `error: architecture_error` + `message: Command not found` + `available[]`-omits-`test-compile` shape, this project exposes no `test-compile` target at any scope: emit one `[WARNING]` naming the test-tree type-checking dimension as un-gated for this push and proceed to the **Whole-tree module-tests divergence gate**, exactly as the whole-tree `quality-gate` arm's honest-degradation branch does for its three dimensions. Any other error shape did not answer — STOP the step per § "Exit-code convention for every script call".
 
 On `status: error`, halt: record the failure and proceed to **Mark Step Complete (Failure)** below. Do not weaken or skip the check to get past a red — a genuine test-tree type error is exactly what this guard is for, so fix the underlying cause. On `status: success`, proceed to the **Whole-tree module-tests divergence gate** below.
 
-**Recorded caveat — `test-compile` does not resolve at default scope.** The invocation above is written directly rather than obtained from `architecture resolve --command test-compile`, because that call fails at default (whole-tree) scope:
+**Recorded caveat — `test-compile` does not resolve at default scope.** The procedure above resolves `test-compile` **module-scoped** and widens the returned executable, rather than resolving it at default scope, because the default-scope call fails:
 
 ```text
 status: error
@@ -283,7 +290,7 @@ message: Command not found
 available[6]: clean, compile, quality-gate, verify, module-tests, coverage
 ```
 
-Only the module-scoped form resolves — `architecture resolve --command test-compile --module plan-marshall` returns `pyproject_build run --command-args "test-compile plan-marshall"`. The omission site is `_pyproject_cmd_discover._build_commands`, which builds its `cmd_map` with `clean`, `compile`, `quality-gate`, `verify` and — when the module has tests — `module-tests` and `coverage`; it never emits `test-compile` for any module, and the `default` module's command set is exactly those six.
+Only the module-scoped form resolves. The observation was recorded against this repository, whose build tool is pyprojectx: `architecture resolve --command test-compile --module plan-marshall` returned `pyproject_build run --command-args "test-compile plan-marshall"`. That literal is the evidence for the caveat, not the arm's invocation — the arm runs whatever the resolve returns for *this* project. The omission site is `_pyproject_cmd_discover._build_commands`, which builds its `cmd_map` with `clean`, `compile`, `quality-gate`, `verify` and — when the module has tests — `module-tests` and `coverage`; it never emits `test-compile` for any module, and the `default` module's command set is exactly those six.
 
 The whole-tree invocation is therefore obtained by taking the architecture-resolved module-scoped `executable` and dropping its module argument — the executable, the notation, and the `run --command-args` shape all still come from the resolver, so this is **not** a hard-coded build command. This is a deliberate, recorded bypass of the default-scope resolve, not an oversight. The unblocking condition is registering `test-compile` in `_build_commands` plus an `architecture discover` refresh so the persisted inventory picks it up; that registration is deliberately NOT done here, being a production change to build-system discovery and outside a gate-document change.
 
@@ -293,14 +300,23 @@ The whole-tree invocation is therefore obtained by taking the architecture-resol
 
 The guards above run mypy + ruff over production sources and mypy over `test/` — neither runs **any pytest**. A scoped-green / whole-tree-red regression (the PLAN-08 class: a change that passes a scoped run but fails when the whole tree is tested) therefore slips them and surfaces first at remote CI. This section closes that gap by running a real `module-tests` (pytest) gate, escalating to a whole-tree run only when the footprint provably risks divergence.
 
-1. **Resolve the scope** — call the callable seam and parse its resolution:
+0. **Resolve the canonical once, and derive both the seam notation and the invocations from it.** Every invocation in this arm comes from one resolve rather than from a pinned wrapper:
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build \
+   python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+     resolve --command module-tests --audit-plan-id {plan_id}
+   ```
+
+   Capture `executable`, `execution_tier` and `bash_timeout_seconds`. The captured `executable` IS branch 4's whole-tree invocation; appending the module argument to it gives branch 6's scoped invocation; and its **build-skill notation** (the `{bundle}:{skill}:{script}` prefix of the executable) is the notation branch 1 calls `resolve-test-scope` on. A project whose build skill exposes no `resolve-test-scope` verb cannot answer the divergence question at all — treat that as `whole_tree_available: false` and take branch 3's honest-degradation path. Branch on the resolve's error shapes exactly as the whole-tree `quality-gate` probe prescribes: only the `Command not found` + `available[]`-omits-`module-tests` shape proves absence (branch 3); any other error shape did not answer, so STOP the step.
+
+1. **Resolve the scope** — call the callable seam on the notation captured above and parse its resolution:
+
+   ```bash
+   python3 .plan/execute-script.py {resolved_build_notation} \
      resolve-test-scope --plan-id {plan_id}
    ```
 
-   Parse `scoped_modules`, `divergence_possible`, `recommended_target`, `unresolved_paths`, and `whole_tree_available` from the TOON output. See [`build-pyproject/SKILL.md`](../../build-pyproject/SKILL.md) § "Canonical invocations" → `resolve-test-scope` for the seam's argument surface and output contract.
+   Parse `scoped_modules`, `divergence_possible`, `recommended_target`, `unresolved_paths`, and `whole_tree_available` from the TOON output. For this repository the notation resolves to `plan-marshall:build-pyproject:pyproject_build`; see [`build-pyproject/SKILL.md`](../../build-pyproject/SKILL.md) § "Canonical invocations" → `resolve-test-scope` for that seam's argument surface and output contract, and the corresponding section of whichever `build-{tool}` skill a different project resolves to.
 
 2. **Diagnosable-WARNING branch — `unresolved_paths` non-empty** → emit exactly one `[WARNING]` naming the paths and continue to the routing branches below. These are footprint entries the seam could not map to a registered module, so the coverage it can claim for them is *none*; the seam already reports them as `divergence_possible: true`, which routes the run through the whole-tree arm, but the suppression itself must reach a human rather than dying in the TOON (ADR-014). This is the same "an unresolvable derivation is never a silent drop and never a hard fail" contract the `derive_gate_bundles` `unresolved` branch establishes in § "Derive unique bundle set" above — same idiom, different derivation:
 
@@ -322,12 +338,7 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
    below rather than Branch A's default string — the default ends `module-tests green`, which this path
    did not earn.
 
-4. **`divergence_possible == true` and `whole_tree_available == true`** → run whole-tree `module-tests` (no module arg — the whole tree is the authority):
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build \
-     run --command-args "module-tests" --plan-id {plan_id}
-   ```
+4. **`divergence_possible == true` and `whole_tree_available == true`** → run whole-tree `module-tests`. The invocation is the `executable` captured at branch 0, used verbatim: it carries no module argument, so the whole tree is the authority. Run it with the Bash timeout set to `bash_timeout_seconds * 1000` milliseconds, and hand an `orchestrator`-tier invocation to the `await-long-running` seam rather than running it here — a whole-tree pytest run is the invocation most likely to exceed the Bash ceiling.
 
    On `status: error` (whole-tree red), the scoped-green / whole-tree-red regression is **caught here instead of at CI**: record the failing tests and proceed to **Mark Step Complete (Failure)**, which halts the phase before push. On `status: success`, proceed to **Mark Step Complete (Success)**.
 
@@ -341,12 +352,7 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
 
    `{files}` is the live footprint read in § "Read the live footprint" above, so the skip names the evidence it rests on rather than being an unattributable silence.
 
-6. **`divergence_possible == false` and exactly one scoped module** → that single isolated module cannot diverge from the whole tree (match by equivalence), and `recommended_target` is non-null precisely in this case. The `exactly one` precondition is load-bearing, not decorative: it is what branch 5 above peels off first. Run scoped `module-tests {recommended_target}` — do NOT pay the whole-tree cost:
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build \
-     run --command-args "module-tests {recommended_target}" --plan-id {plan_id}
-   ```
+6. **`divergence_possible == false` and exactly one scoped module** → that single isolated module cannot diverge from the whole tree (match by equivalence), and `recommended_target` is non-null precisely in this case. The `exactly one` precondition is load-bearing, not decorative: it is what branch 5 above peels off first. Run the scoped form — do NOT pay the whole-tree cost. The invocation is the branch-0 `executable` with `{recommended_target}` appended as its module argument; equivalently, re-resolve module-scoped (`architecture resolve --command module-tests --module {recommended_target} --audit-plan-id {plan_id}`) and run what that returns, which additionally gives the module's own `bash_timeout_seconds` rather than the whole-tree bound. Either way the invocation comes from the resolver, and the same `orchestrator`-tier hand-off applies.
 
    Gate on its result the same way: `status: error` → **Mark Step Complete (Failure)** (halt before push); `status: success` → **Mark Step Complete (Success)**.
 
