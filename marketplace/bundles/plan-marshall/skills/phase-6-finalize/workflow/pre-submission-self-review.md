@@ -407,9 +407,17 @@ written by Branch B in the previous round — the clean round that closes a loop
 the whole point of re-firing this step. Without the flag that write returns
 `error: conflict`, the step records nothing, and the dispatcher's post-dispatch
 completion guard halts the phase reporting a missing terminal record — i.e. the round
-that finally came back clean is the one that cannot record itself. Branch B needs no
-such flag: it writes `loop_back` over a stored `loop_back`, which is the same-outcome
-path.
+that finally came back clean is the one that cannot record itself.
+
+⛔ **Branch B carries it for the same reason** — the mirror case is real, not hypothetical,
+and the "Branch B only ever re-writes `loop_back` over `loop_back`" reading is FALSE. This
+step is `head_dependent: true` (§ HEAD-dependency above), so the dispatcher re-fires it on
+any HEAD advance past the recorded `head_at_completion` — including an advance past a stored
+`done`. A findings-bearing round after such a re-fire runs Branch B, writes `loop_back` over
+that `done`, and hits the identical `error: conflict`. The governing rule covers both:
+[`../standards/external-step-contract.md`](../standards/external-step-contract.md) makes
+`--force` mandatory on ANY terminal branch whose write can land on a record carrying a
+different outcome, and both of this step's branches can.
 
 **Branch B — findings list is non-empty**: first persist every finding to the plan's `qgate-6-finalize.jsonl` finding store, then surface the findings in the finalize TOON output (consumed by `output-template.md`) so the operator sees `file:line` and `defect_class` per finding.
 
@@ -436,7 +444,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome loop_back \
   --loop-back-target 6-finalize \
   --display-detail "{display_detail_from_workflow}" \
-  --head-at-completion {sha}
+  --head-at-completion {sha} \
+  --force
 ```
 
 `--loop-back-target 6-finalize` is the inline-fixable tier: the findings are addressed on this branch and the finalize step loop is re-entered, with no phase-5-execute re-dispatch. The target is not a free choice — `5-execute` is the fix-task-required tier, and these findings are amendments to the diff in hand.
