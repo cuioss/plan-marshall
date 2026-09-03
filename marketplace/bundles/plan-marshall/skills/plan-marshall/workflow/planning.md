@@ -226,7 +226,37 @@ Extract `value` (`light` or `deep`). When the field is absent or unresolved, tre
      --message "(plan-marshall:planning) planning-lane=light — dispatching ONE collapsed light-lane envelope (refine+outline+derive), skipping the deep refine-loop and Complex-Track outline"
    ```
 
-2. Resolve the dispatch target and dispatch ONE light-lane envelope. The envelope LOADS `plan-marshall:phase-3-outline/workflow/light-lane.md` as its workflow (the doc folds refine-no-loop + Simple-outline + deliverable-derivation, bounds discovery per DQ2, and evaluates the DQ3 escalation ratchet in-context). Resolve the level via the `phase-3-outline` role:
+2. **Close `2-refine` before the envelope is dispatched.** All three calls below are orchestrator-side and pre-dispatch, and they are deliberately kept on one side of the dispatch boundary. Two structural facts decide that placement:
+
+   - `manage-metrics enrich` attributes a dispatch's transcript to whichever phase window contains its **spawn timestamp**. Stamping the boundary only after the envelope returns leaves the collapsed envelope's entire spend inside an open `2-refine` window, so `2-refine` is billed for `3-outline`'s work. The boundary stamp must therefore precede the dispatch.
+   - The light-lane envelope runs the phase-3-outline Phase Entry Protocol, which calls `phase_handshake verify --phase 2-refine`. That verify needs the captured `2-refine` row to already exist, so the capture must precede the dispatch as well — a capture placed inside the envelope would have the leaf capture the very row it then verifies. The transition stays on this same side because it must not be separated from its paired capture.
+
+   The light lane never dispatches `phase-2-refine`, so the phase body that issues `manage-status transition --completed 2-refine` on the deep lane never runs. That transition has **no orchestrator-side deep-lane counterpart to mirror** — it lives inside `phase-2-refine`'s own body — so the call in (a) is written from the verb's own contract rather than copied from a deep-lane seam.
+
+   a. Transition `2-refine`:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
+     --plan-id {plan_id} --completed 2-refine
+   ```
+
+   b. Record the `2-refine → 3-outline` boundary. **OMIT** the `<usage>`-derived flags (`--total-tokens` / `--tool-uses` / `--duration-ms`): no dispatch has run inside `2-refine` on this lane, so there is no `<usage>` total to forward, and passing `0` would write a fabricated measurement where an absent one is the honest record. This follows the `1-init → 2-refine` boundary call in § Action: init, which omits the same flags for the same reason:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
+     --plan-id {plan_id} --prev-phase 2-refine --next-phase 3-outline
+   ```
+
+   c. Capture the `2-refine` invariants, paired with the transition in (a):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capture \
+     --plan-id {plan_id} --phase 2-refine
+   ```
+
+   After these three calls the light-lane envelope's own entry sees `2-refine` closed with a captured invariant row present and the `3-outline` window already open, so its Phase Entry Protocol verify resolves against a row that exists and the envelope's spawn timestamp falls inside `3-outline`.
+
+3. Resolve the dispatch target and dispatch ONE light-lane envelope. The envelope LOADS `plan-marshall:phase-3-outline/workflow/light-lane.md` as its workflow (the doc folds refine-no-loop + Simple-outline + deliverable-derivation, bounds discovery per DQ2, and evaluates the DQ3 escalation ratchet in-context). Resolve the level via the `phase-3-outline` role:
 
    The resolve carries the dispatch context (`--workflow`/`--plan-id`/`--caller`), so the seam emits the standardized `[DISPATCH]` work-log line and its paired decision-log record itself — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; every firing re-runs the resolve, so the record is re-emitted per firing.
 
@@ -247,16 +277,21 @@ Extract `value` (`light` or `deep`). When the field is absent or unresolved, tre
      WORKTREE: .
    ```
 
-3. **Inspect the light-lane return** for the escalation signal:
-   - **`outcome: escalate_to_deep`** (the DQ3 ratchet fired — the envelope already set `planning_lane=deep` + `lane_escalated=true` via `manage-status planning-lane escalate`): the orchestrator OWNS the deep-lane re-dispatch (the leaf cannot self-dispatch). Log the re-dispatch decision, then **fall through to the deep-lane branch below** — run the full refine-loop → outline → plan pipeline fresh from the escalation point:
+4. **Inspect the light-lane return** for the escalation signal:
+   - **`outcome: escalate_to_deep`** (the DQ3 ratchet fired — the envelope already set `planning_lane=deep` + `lane_escalated=true` via `manage-status planning-lane escalate`): the orchestrator OWNS the deep-lane re-dispatch (the leaf cannot self-dispatch). **The pre-dispatch closure of `2-refine` from step 2 is REVERSED, not carried forward**: the deep pipeline genuinely re-runs refine, and the dispatched `phase-2-refine` body issues its own `manage-status transition --completed 2-refine` when it finishes, so the phase must be open again before that body runs. Re-open it, then log the re-dispatch decision and **fall through to the deep-lane branch below** — running the full refine-loop → outline → plan pipeline fresh from the escalation point:
+
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status set-phase \
+       --plan-id {plan_id} --phase 2-refine
+     ```
 
      ```bash
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
        decision --plan-id {plan_id} --level INFO \
-       --message "(plan-marshall:planning) light-lane returned escalate_to_deep (trigger={escalation_trigger}) — orchestrator re-dispatching the deep refine→outline→plan pipeline"
+       --message "(plan-marshall:planning) light-lane returned escalate_to_deep (trigger={escalation_trigger}) — re-opened 2-refine and re-dispatching the deep refine→outline→plan pipeline"
      ```
 
-   - **`status: success`** (deliverables derived, no escalation): the light lane has already written `solution_outline.md`, derived the deliverables, and transitioned `3-outline`. Record the `2-refine → 3-outline → 4-plan` boundary metrics from the envelope's `<usage>`, then proceed to **Action: outline** Step 4-plan (task derivation) — the light lane self-derived the outline, so the Complex-Track + q-gate-validation sibling dispatch is skipped (see `planning-outline.md` § lane branch).
+   - **`status: success`** (deliverables derived, no escalation): the light lane has already written `solution_outline.md`, derived the deliverables, and transitioned `3-outline`. Record ONLY the `3-outline → 4-plan` boundary from the returned `<usage>` — the `2-refine → 3-outline` half was already stamped pre-dispatch at step 2 and MUST NOT be recorded again here. Then proceed to **Action: outline** Step 4-plan (task derivation) — the light lane self-derived the outline, so the Complex-Track + q-gate-validation sibling dispatch is skipped (see `planning-outline.md` § lane branch).
 
 **Deep-lane branch** — when `planning_lane == deep` (or the light-lane envelope returned `escalate_to_deep`): run the full phases-2-4 pipeline documented below without modification (the standard refine→outline→plan dispatch chain).
 
