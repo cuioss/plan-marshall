@@ -327,6 +327,37 @@ def test_hand_added_quote_on_verification_command_still_raises():
 # =============================================================================
 # Test: unrecognized input is named rather than silently discarded
 # =============================================================================
+#
+# The diagnostic is FAILURE-ONLY: ``parse_stdin_task`` consults
+# ``_KNOWN_TASK_KEYS`` inside its ``except ValueError`` arm alone, so a valid
+# task carrying an unrecognized key parses cleanly and the key simply does not
+# reach the returned record. The pair below therefore holds the unrecognized key
+# CONSTANT and varies ONLY the task's validity — otherwise each case differs in
+# two respects at once and neither can fail for the reason it advertises.
+
+
+#: The mis-serialized key both cases carry. Named once so the pair cannot drift
+#: into testing different keys.
+_UNRECOGNIZED_KEY = 'stpes'
+
+_VALID_STEP_ROW = 'src/real.py (write-replace)'
+
+#: Fails ``validate_steps_are_file_paths`` — no path separator, no source
+#: extension — so it is the ONLY difference between the two cases.
+_INVALID_STEP_ROW = 'notafilepath (write-replace)'
+
+
+def _toon_with_unrecognized_key(step_row):
+    """Build a task carrying ``stpes:`` whose validity turns solely on ``step_row``."""
+    return (
+        'title: Typo key\n'
+        'deliverable: 1\n'
+        'domain: plan-marshall-plugin-dev\n'
+        f'{_UNRECOGNIZED_KEY}: typo-key-here\n'
+        'steps[1]:\n'
+        f'  - {step_row}\n'
+        'depends_on: none\n'
+    )
 
 
 def test_validation_failure_names_unrecognized_fields():
@@ -336,28 +367,26 @@ def test_validation_failure_names_unrecognized_fields():
     recognize, so a typo'd key vanished and the caller was told only that a
     required field was missing — pointing at the wrong culprit.
     """
-    toon = (
-        'title: Typo key\n'
-        'deliverable: 1\n'
-        'domain: plan-marshall-plugin-dev\n'
-        'stpes: typo-key-here\n'
-        'steps[1]:\n'
-        '  - notafilepath (write-replace)\n'
-        'depends_on: none\n'
-    )
-
     with pytest.raises(ValueError) as excinfo:
-        parse_stdin_task(toon)
+        parse_stdin_task(_toon_with_unrecognized_key(_INVALID_STEP_ROW))
 
-    assert 'stpes' in str(excinfo.value)
+    assert _UNRECOGNIZED_KEY in str(excinfo.value)
 
 
-def test_successful_parse_reports_no_unrecognized_fields():
-    """A clean parse stays silent — the diagnostic is failure-only.
+def test_a_valid_task_carrying_the_same_key_parses_and_does_not_keep_it():
+    """MATCHED NEGATIVE CONTROL — the same key, on a task that validates.
 
-    Without this matched case the accumulator could grow into noise emitted on
-    every green parse, which is the opposite of the defect it closes.
+    Two claims, both of which a leak would break. The parse SUCCEEDS, so the
+    accumulator has not grown into noise emitted on every green parse; and the
+    key is ABSENT from the returned record, so nothing unrecognized was carried
+    into the task. The declared canonical fields are asserted alongside, so a
+    leak that renamed or reshaped a recognized field is caught here too rather
+    than only where that field is consumed.
     """
-    parsed = parse_stdin_task(_TABULAR_TASK_TOON)
+    parsed = parse_stdin_task(_toon_with_unrecognized_key(_VALID_STEP_ROW))
 
-    assert parsed['title'] == 'Tabular form'
+    assert _UNRECOGNIZED_KEY not in parsed
+    assert parsed['steps'] == [{'target': 'src/real.py', 'intent': 'write-replace'}]
+    assert parsed['title'] == 'Typo key'
+    assert parsed['deliverable'] == 1
+    assert parsed['domain'] == 'plan-marshall-plugin-dev'

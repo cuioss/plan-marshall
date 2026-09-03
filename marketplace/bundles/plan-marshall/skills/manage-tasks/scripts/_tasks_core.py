@@ -29,6 +29,8 @@ from file_ops import (  # noqa: F401 - re-exported
 from input_validation import require_valid_plan_id  # noqa: F401 - re-exported
 from toon_parser import (
     ToonParseError,
+    block_scalar_body_continues,
+    block_scalar_header_indent,
     classify_simple_array_line,
     list_item_min_indent,
     parse_toon,
@@ -375,12 +377,17 @@ _STEP_INTENT_SUFFIX_RE = re.compile(r'^(?P<target>.+?)\s*\((?P<intent>[a-z-]+)\)
 _BARE_LIST_HEADER_RE = re.compile(r'^(?P<indent> *)(?P<key>steps|skills|commands):[ \t]*$')
 _DECLARED_LIST_HEADER_RE = re.compile(r'^(?P<indent> *)(?P<key>steps|skills|commands)\[\d+\]:[ \t]*$')
 
-#: Opens a TOON block scalar — a key whose whole value is the ``|`` marker, as in
-#: ``description: |``. Everything indented beneath it is opaque PROSE that
+#: A TOON block scalar — a key whose whole value is the ``|`` marker, as in
+#: ``description: |`` — opens a run of opaque PROSE that
 #: ``toon_parser._parse_multiline_value`` consumes verbatim, never document
 #: structure. A line inside such a body that happens to read ``steps:`` is a
 #: sentence, so the list-header patterns above must not be tested against it.
-_BLOCK_SCALAR_HEADER_RE = re.compile(r'^(?P<indent> *)[\w_-]+:[ \t]*\|[ \t]*$')
+#: WHICH lines open and close such a block is not decided here:
+#: ``block_scalar_header_indent`` and ``block_scalar_body_continues`` in
+#: ``plan-marshall:ref-toon-format`` are the one authority, and this module
+#: consumes them. A local pattern would constrain the key more narrowly than the
+#: canonical parser does — ``task.name: |`` is a block scalar to ``parse_toon``
+#: and its prose would be scanned as structure here.
 
 #: Top-level keys the task schema recognises. Anything else the canonical
 #: parser returns is named on a validation failure rather than silently
@@ -428,12 +435,11 @@ class _RawListItem(NamedTuple):
 def _copy_block_scalar_body(lines: list[str], start: int, header_indent: int, out: list[str]) -> int:
     """Copy a block scalar's body through untouched and report where it ends.
 
-    The extent rule mirrors ``toon_parser._parse_multiline_value`` exactly, because
-    a body this function walks past must be the same body the canonical parser
-    later reads: the block runs while lines are blank or indented deeper than the
-    ``key: |`` header, and closes at the first non-blank line indented at or
-    outside it. Deriving the boundary a second way would let the two disagree
-    about which lines are prose.
+    The extent rule is not restated here: a body this function walks past must be
+    the same body the canonical parser later reads, so both call sites consume
+    ``toon_parser.block_scalar_body_continues``. Deriving the boundary a second
+    way would let the two disagree about which lines are prose — which is the
+    very thing the docstring used to promise while re-deriving it anyway.
 
     Args:
         lines: The document's lines.
@@ -445,11 +451,8 @@ def _copy_block_scalar_body(lines: list[str], start: int, header_indent: int, ou
         Index of the first line past the block body.
     """
     i = start
-    while i < len(lines):
-        line = lines[i]
-        if line.strip() and len(line) - len(line.lstrip()) <= header_indent:
-            break
-        out.append(line)
+    while i < len(lines) and block_scalar_body_continues(lines[i], header_indent):
+        out.append(lines[i])
         i += 1
     return i
 
@@ -513,10 +516,10 @@ def _normalize_list_headers(content: str) -> tuple[str, dict[str, list[_RawListI
     while i < len(lines):
         line = lines[i]
 
-        block = _BLOCK_SCALAR_HEADER_RE.match(line)
-        if block:
+        block_indent = block_scalar_header_indent(line)
+        if block_indent is not None:
             out.append(line)
-            i = _copy_block_scalar_body(lines, i + 1, len(block.group('indent')), out)
+            i = _copy_block_scalar_body(lines, i + 1, block_indent, out)
             continue
 
         bare = _BARE_LIST_HEADER_RE.match(line)
@@ -608,6 +611,13 @@ def _coerce_steps(raw_steps: Any) -> list[dict[str, str]]:
     (``steps[N]{target,intent}:``) that ``serialize_toon`` emits for a stored
     task record, where target and intent are already separate columns.
 
+    A row whose target is empty is NAMED rather than dropped. Skipping it and
+    letting the caller renumber the survivors loses a declared step with nothing
+    said — a uniform-array row written ``,write-replace`` would leave a shorter
+    task than the author wrote, and ``cmd_commit_add`` would persist the reduced
+    record. That is the same silent-discard this module rejects for unrecognized
+    top-level keys, so it takes the same treatment.
+
     Args:
         raw_steps: The ``steps`` value as returned by ``parse_toon``.
 
@@ -616,34 +626,48 @@ def _coerce_steps(raw_steps: Any) -> list[dict[str, str]]:
 
     Raises:
         ValueError: When a simple-list row omits its required ``(intent)``
-            marker, or an intent is outside the closed vocabulary.
+            marker, an intent is outside the closed vocabulary, or a row
+            declares no target.
     """
     if not isinstance(raw_steps, list):
         return []
 
     steps: list[dict[str, str]] = []
-    for raw_step in raw_steps:
+    for position, raw_step in enumerate(raw_steps, 1):
         if isinstance(raw_step, dict):
             target = str(raw_step.get('target') or '').strip()
             intent = validate_step_intent(raw_step.get('intent'))
         else:
             text = str(raw_step).strip()
-            if not text:
-                continue
-            match = _STEP_INTENT_SUFFIX_RE.match(text)
-            if not match:
-                raise ValueError(
-                    f"Task contract violation - step item '{text}' is missing its "
-                    f'required intent marker. Each step MUST be written as '
-                    f"'path (intent)' where intent is one of: "
-                    + ', '.join(VALID_STEP_INTENTS)
-                    + '. See plan-marshall:manage-tasks/standards/task-contract.md.'
-                )
-            target = match.group('target').strip()
-            intent = validate_step_intent(match.group('intent'))
+            if text:
+                match = _STEP_INTENT_SUFFIX_RE.match(text)
+                if not match:
+                    raise ValueError(
+                        f"Task contract violation - step item '{text}' is missing its "
+                        f'required intent marker. Each step MUST be written as '
+                        f"'path (intent)' where intent is one of: "
+                        + ', '.join(VALID_STEP_INTENTS)
+                        + '. See plan-marshall:manage-tasks/standards/task-contract.md.'
+                    )
+                target = match.group('target').strip()
+                intent = validate_step_intent(match.group('intent'))
+            else:
+                # An empty item carries neither target nor marker. Fall through to
+                # the empty-target rejection below rather than reporting a missing
+                # ``(intent)`` marker, which would name a cause that is not the
+                # problem and send the author to fix something already correct.
+                target = ''
+                intent = ''
         normalized_target = normalize_step_path(target)
-        if normalized_target:
-            steps.append({'target': normalized_target, 'intent': intent})
+        if not normalized_target:
+            raise ValueError(
+                f'Task contract violation - steps row {position} declares no target: '
+                f'{raw_step!r}. Each step MUST name the file it acts on; an empty '
+                f'target cannot be dropped silently because the surviving rows are '
+                f'renumbered and the shortened task is persisted. '
+                f'See plan-marshall:manage-tasks/standards/task-contract.md.'
+            )
+        steps.append({'target': normalized_target, 'intent': intent})
     return steps
 
 
@@ -703,8 +727,27 @@ def _build_task_record(parsed: dict[str, Any], raw_items: dict[str, list[_RawLis
         ', '.join(str(d) for d in depends_raw) if isinstance(depends_raw, list) else str(depends_raw)
     )
 
+    # A ``skills`` value the canonical parser did NOT return as a list is named,
+    # not replaced with ``[]``. Both non-list shapes are reachable and each loses
+    # a DECLARED skill: a single-line ``skills: bundle:skill`` parses to a str
+    # (the parser splits on the first colon, so the value is the rest of the
+    # line), and a bare ``skills:`` block whose rows are not ``- `` items is left
+    # un-rewritten by ``_normalize_list_headers`` and parses to a nested dict.
+    # An absent field and an empty ``skills:`` header declare nothing, so those
+    # two stay the legitimate empty list.
     raw_skills = parsed.get('skills')
-    skills = [str(s).strip() for s in raw_skills if str(s).strip()] if isinstance(raw_skills, list) else []
+    if raw_skills is None or (isinstance(raw_skills, str) and not raw_skills.strip()):
+        skills: list[str] = []
+    elif isinstance(raw_skills, list):
+        skills = [str(s).strip() for s in raw_skills if str(s).strip()]
+    else:
+        raise ValueError(
+            f'Task contract violation - skills must be a list, but the parser read '
+            f'a {type(raw_skills).__name__}: {raw_skills!r}. Write skills as '
+            f"'skills:' followed by indented '- bundle:skill' rows (or the "
+            f"length-declared 'skills[N]:' form); a single-line value would be "
+            f'dropped. See plan-marshall:manage-tasks/standards/task-contract.md.'
+        )
 
     if not title:
         raise ValueError('Missing required field: title')

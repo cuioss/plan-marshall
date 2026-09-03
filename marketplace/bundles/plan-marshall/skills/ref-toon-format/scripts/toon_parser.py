@@ -33,6 +33,8 @@ __version__ = '3.0'
 __all__ = [
     'SimpleArrayLine',
     'ToonParseError',
+    'block_scalar_body_continues',
+    'block_scalar_header_indent',
     'classify_simple_array_line',
     'list_item_min_indent',
     'parse_toon',
@@ -309,25 +311,72 @@ def _parse_simple_array(ctx: ParseContext, min_indent: int) -> list[Any]:
     return result
 
 
+def block_scalar_header_indent(line: str) -> int | None:
+    """Report the header indent when ``line`` opens a block scalar, else ``None``.
+
+    The rule is the one ``_parse_object`` applies and nothing narrower: take the
+    text up to the FIRST colon as the key, and the block opens when everything
+    after that colon is exactly the ``|`` marker. The key is therefore ANY text —
+    ``task.name: |`` and ``a b c: |`` open a block scalar just as ``description: |``
+    does — because the parser never constrains it. Blank and comment lines are
+    excluded for the same reason: ``_parse_object`` skips them before it ever
+    looks for a key.
+
+    Exported because it is a BOUNDARY. Any second reader that must agree with
+    ``parse_toon`` about where opaque prose begins has to derive it from here
+    rather than restate it — a stricter key class here and a permissive one in
+    the parser is how a block's prose body becomes structure to one reader and
+    text to the other.
+
+    Args:
+        line: The raw line, indentation included.
+
+    Returns:
+        The header's leading-space count when the line opens a block scalar,
+        ``None`` otherwise.
+    """
+    content = line.strip()
+    if not content or content.startswith('#') or ':' not in content:
+        return None
+    if content[content.index(':') + 1 :].strip() != '|':
+        return None
+    return _get_indent(line)
+
+
+def block_scalar_body_continues(line: str, header_indent: int) -> bool:
+    """Report whether ``line`` still belongs to the body of a block scalar.
+
+    The body runs while lines are blank or indented deeper than the ``key: |``
+    header, and closes at the first non-blank line indented at or outside it.
+
+    Exported for the same reason as ``block_scalar_header_indent``: the extent of
+    a block scalar is a boundary two readers must agree on, so both consume this
+    predicate instead of each deriving it.
+
+    Args:
+        line: The raw line, indentation included.
+        header_indent: Leading-space count of the ``key: |`` header line.
+
+    Returns:
+        ``True`` while the line is part of the body, ``False`` at its end.
+    """
+    return not line.strip() or _get_indent(line) > header_indent
+
+
 def _parse_multiline_value(ctx: ParseContext, base_indent: int) -> str:
     """Parse a multi-line string value (indicated by |)."""
     lines = []
 
     while ctx.index < len(ctx.lines):
         line = ctx.lines[ctx.index]
-        indent = _get_indent(line)
+        if not block_scalar_body_continues(line, base_indent):
+            break
 
         # Empty line within multi-line is preserved
         if not line.strip():
             lines.append('')
-            ctx.index += 1
-            continue
-
-        # Check if we're still in the multi-line value
-        if indent <= base_indent and line.strip():
-            break
-
-        lines.append(line[base_indent + 2 :] if len(line) > base_indent + 2 else line.strip())
+        else:
+            lines.append(line[base_indent + 2 :] if len(line) > base_indent + 2 else line.strip())
         ctx.index += 1
 
     return '\n'.join(lines).strip()
@@ -391,8 +440,10 @@ def _parse_object(ctx: ParseContext, base_indent: int) -> dict[str, Any]:
 
             ctx.index += 1
 
-            # Check for multi-line value
-            if value_part == '|':
+            # Check for multi-line value — the block-scalar rule lives in
+            # ``block_scalar_header_indent`` so second readers consume it rather
+            # than approximating it.
+            if block_scalar_header_indent(line) is not None:
                 result[key] = _parse_multiline_value(ctx, indent)
             # Check for nested object (no value after colon)
             elif not value_part:

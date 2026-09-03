@@ -43,6 +43,13 @@ parse_stdin_task = _core.parse_stdin_task
 normalize_list_headers = _core._normalize_list_headers
 
 
+#: Exposed so a test can assert that this module's block-scalar walk and
+#: ``toon_parser._parse_multiline_value`` resolve the SAME extent predicate. Both
+#: still working is not the property at issue — a re-duplicated copy also works,
+#: right up until one of the two is changed.
+copy_block_scalar_body = _core._copy_block_scalar_body
+
+
 def _ns(plan_id, tasks_json=None, tasks_file=None):
     """Build a Namespace for cmd_batch_add."""
     return Namespace(plan_id=plan_id, tasks_json=tasks_json, tasks_file=tasks_file)

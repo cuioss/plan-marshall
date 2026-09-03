@@ -33,9 +33,9 @@ mode: knowledge
 
 | Module | Purpose |
 |--------|---------|
-| `scripts/toon_parser.py` | TOON parsing and serialization. The public surface is the module's `__all__` — `SimpleArrayLine`, `ToonParseError`, `classify_simple_array_line`, `list_item_min_indent`, `parse_toon`, `parse_toon_table`, `serialize_toon`, `value_needs_quoting` — and `__all__` is the authority when this list and the module disagree. |
+| `scripts/toon_parser.py` | TOON parsing and serialization. The public surface is the module's `__all__` — `SimpleArrayLine`, `ToonParseError`, `block_scalar_body_continues`, `block_scalar_header_indent`, `classify_simple_array_line`, `list_item_min_indent`, `parse_toon`, `parse_toon_table`, `serialize_toon`, `value_needs_quoting` — and `__all__` is the authority when this list and the module disagree. |
 
-Three of those exports exist so a consumer never has to re-derive a decision this
+Five of those exports exist so a consumer never has to re-derive a decision this
 module already makes:
 
 - `value_needs_quoting` reports whether the serializer is OBLIGED to wrap a value
@@ -46,11 +46,20 @@ module already makes:
   for a nested one.
 - `classify_simple_array_line` reports one line's role in a list body: an item
   (with its raw, still-quoted text), an ignorable line, or the array's end.
+- `block_scalar_header_indent` reports whether a line opens a `key: |` block
+  scalar, and at what indent. The key is any text up to the FIRST colon — the
+  parser constrains it no further, so `task.name: |` opens a block exactly as
+  `description: |` does.
+- `block_scalar_body_continues` reports whether a line still belongs to an open
+  block's body: blank lines and lines indented deeper than the header do, and the
+  first non-blank line at or outside it closes the block.
 
-The last two are the array-membership boundary. A caller that walks a list body
-for its own purposes — collecting raw row texts before `parse_toon` unquotes
-them, say — reads it from here, because two readers deriving one boundary two
-ways is how a row becomes visible to one and invisible to the other.
+Those four are boundaries — where a list body begins and ends, and where opaque
+prose begins and ends. A caller that walks either for its own purposes —
+collecting raw row texts before `parse_toon` unquotes them, or skipping past a
+block scalar so a `steps:` sentence inside a description is not read as document
+structure — reads it from here, because two readers deriving one boundary two
+ways is how a line becomes structure to one and text to the other.
 
 ### Known Limitations
 
