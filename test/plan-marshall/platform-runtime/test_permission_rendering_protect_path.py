@@ -421,15 +421,21 @@ class TestPermissionFixProtectPath:
         )
 
         for operation in operations:
+            if operation == 'protect-path':
+                args = [str(tmp_path / 'arg')]
+            elif operation in ('add', 'remove', 'ensure'):
+                args = [{'kind': 'path', 'tool': 'Read', 'path': str(tmp_path / 'arg')}]
+            else:
+                args = []
             claude = _parse(
                 claude_runtime.ClaudeRuntime().permission_fix(
-                    'global', operation, [str(tmp_path / 'arg')], True
+                    'global', operation, args, True
                 )
             )
             assert claude['status'] == 'success', operation
 
             opencode = _parse(
-                OpenCodeRuntime().permission_fix('global', operation, [str(tmp_path / 'arg')], True)
+                OpenCodeRuntime().permission_fix('global', operation, args, True)
             )
             assert opencode['status'] == 'no-op', operation
 
@@ -453,9 +459,9 @@ class TestEveryMutatingBranchReportsAFailedWrite:
         ('operation', 'permissions'),
         [
             ('normalize', []),
-            ('add', ['Read(/tmp/x)']),
-            ('remove', ['Read(/tmp/seeded)']),
-            ('ensure', ['Read(/tmp/x)']),
+            ('add', [{'kind': 'path', 'tool': 'Read', 'path': '/tmp/x'}]),
+            ('remove', [{'kind': 'path', 'tool': 'Read', 'path': '/tmp/seeded'}]),
+            ('ensure', [{'kind': 'path', 'tool': 'Read', 'path': '/tmp/x'}]),
             ('consolidate', []),
         ],
     )
@@ -502,7 +508,7 @@ class TestEveryMutatingBranchReportsAFailedWrite:
 
         result = _parse(
             claude_runtime.ClaudeRuntime().permission_fix(
-                'global', 'add', ['Read(/tmp/x)'], False
+                'global', 'add', [{'kind': 'path', 'tool': 'Read', 'path': '/tmp/x'}], False
             )
         )
 

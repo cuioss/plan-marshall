@@ -214,6 +214,37 @@ class _ConcreteRuntime(Runtime):
     def health_check(self, checks: str) -> str:
         return toon_success("health-check")
 
+    def permission_settings_path(
+        self, scope: str, write: bool = False, project_dir: str | None = None
+    ) -> str:
+        return "/tmp/settings.json"
+
+    def permission_load_settings(self, path: str) -> dict:
+        return {"permissions": {"allow": []}}
+
+    def permission_save_settings(self, path: str, settings: dict) -> bool:
+        return True
+
+    def permission_ensure_defaults(
+        self, settings: dict, settings_path: str, dry_run: bool = False
+    ) -> dict:
+        return {
+            "defaults_added": [],
+            "defaults_added_count": 0,
+            "defaults_removed": [],
+            "defaults_removed_count": 0,
+            "applied": False,
+        }
+
+    def permission_check_skill_coverage(self, skill: str, allow_list: list) -> str | None:
+        return None
+
+    def permission_load_marshal_config(self, marshal_path: str) -> dict:
+        return {}
+
+    def permission_extract_project_steps(self, marshal_config: dict) -> list[dict]:
+        return []
+
 
 ALL_ABSTRACT_METHODS = [
     "project_initial_setup",
@@ -241,19 +272,26 @@ ALL_ABSTRACT_METHODS = [
     "subagent_dispatch",
     "wait_for",
     "health_check",
+    "permission_settings_path",
+    "permission_load_settings",
+    "permission_save_settings",
+    "permission_ensure_defaults",
+    "permission_check_skill_coverage",
+    "permission_load_marshal_config",
+    "permission_extract_project_steps",
 ]
 
 
-def test_runtime_has_25_abstract_methods():
-    """Runtime ABC exposes exactly 25 abstract methods."""
+def test_runtime_has_32_abstract_methods():
+    """Runtime ABC exposes exactly 32 abstract methods."""
     abstract_methods = getattr(Runtime, "__abstractmethods__", frozenset())
-    assert len(abstract_methods) == 25, (
-        f"Expected 25 abstract methods, found {len(abstract_methods)}: {sorted(abstract_methods)}"
+    assert len(abstract_methods) == 32, (
+        f"Expected 32 abstract methods, found {len(abstract_methods)}: {sorted(abstract_methods)}"
     )
 
 
 def test_all_expected_methods_are_abstract():
-    """Each of the 25 documented operations is abstract on Runtime."""
+    """Each of the 32 documented operations is abstract on Runtime."""
     abstract_methods = getattr(Runtime, "__abstractmethods__", frozenset())
     for method in ALL_ABSTRACT_METHODS:
         assert method in abstract_methods, (
@@ -321,7 +359,7 @@ def test_concrete_returns_valid_toon_for_each_method():
         runtime.health_check("all"),
     ]
 
-    assert len(outputs) == 25, "Expected output for each of the 25 methods"
+    assert len(outputs) == 25, "Expected output for each of the 25 TOON-returning operations"
     for output in outputs:
         result = parse_toon(output)
         assert result.get("status") == "success", (

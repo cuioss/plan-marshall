@@ -446,8 +446,8 @@ fix_operation: add
 dry_run: true
 target_file: /repo/.claude/settings.local.json
 changes_applied: 0
-proposed_additions[1]:
-  - {"kind": "executor", "runtime": "python3"}
+proposed_additions[1]{kind,runtime}:
+  executor,python3
 ```
 
 **Success (`protect-path`)**:
@@ -527,9 +527,9 @@ marketplace_dir: marketplace/
 dry_run: true
 bundles_scanned: 10
 wildcards_added: 0
-proposed_additions[2]:
-  - {"kind": "bundle", "name": "plan-marshall"}
-  - {"kind": "bundle", "name": "example-bundle"}
+proposed_additions[2]{kind,name}:
+  bundle,plan-marshall
+  bundle,example-bundle
 ```
 
 **Error**:
@@ -578,9 +578,9 @@ scope: project
 dry_run: true
 steps_scanned: 8
 permissions_added: 0
-proposed_additions[2]:
-  - {"kind": "skill", "name": "finalize-step-plugin-doctor"}
-  - {"kind": "skill", "name": "finalize-step-sync-plugin-cache"}
+proposed_additions[2]{kind,name}:
+  skill,finalize-step-plugin-doctor
+  skill,finalize-step-sync-plugin-cache
 ```
 
 **Error**:
