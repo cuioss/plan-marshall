@@ -40,6 +40,12 @@ from _findings_store_state import (
     store_unreached,
     unresolved_store_error,
 )
+from _preference_admissibility import (
+    preference_admissible as _preference_admissible,
+)
+from _preference_admissibility import (
+    recognized_bot_kinds as _recognized_bot_kinds,
+)
 from bot_registry import bot_kinds as _registry_bot_kinds
 from constants import (
     FILE_FINDINGS_DIR,
@@ -385,6 +391,25 @@ def _filter_records(
     return filtered
 
 
+def _narrow_to_preference_admissible(
+    records: list[dict[str, Any]],
+    enabled: bool,
+) -> list[dict[str, Any]]:
+    """Apply the shared authorship-admissibility rule when ``enabled``.
+
+    The rule itself lives in :mod:`_preference_admissibility` and is applied
+    here, never re-derived: this function owns only the once-per-call resolution
+    of the recognized reviewer set and the pass-through of ``None`` (registry
+    unresolvable) so the predicate takes its documented degrade-to-presence-only
+    path. Returns ``records`` untouched when the narrowing is off, which is what
+    keeps the default-OFF flag free of any cost for callers that never ask for it.
+    """
+    if not enabled:
+        return records
+    recognized = _recognized_bot_kinds()
+    return [r for r in records if _preference_admissible(r, recognized)]
+
+
 # --- Plan Findings ---
 
 
@@ -493,6 +518,7 @@ def query_findings(
     author: str | None = None,
     kind: str | None = None,
     bot_kind: str | None = None,
+    preference_admissible: bool = False,
     any_checkout: bool = False,
 ) -> dict[str, Any]:
     """Query findings across all per-type files, merging results.
@@ -502,6 +528,18 @@ def query_findings(
     `total_count` reflects the entire store; type/resolution/file_pattern/promoted
     filters then narrow the result to `filtered_count`. This preserves the
     CLI-surface semantics from the pre-split single-file layout.
+
+    ``preference_admissible`` is an opt-in narrowing (default OFF, so every
+    existing caller is unchanged) that applies the shared authorship-admissibility
+    rule from :mod:`_preference_admissibility` — the SAME predicate the cross-plan
+    auditor delegates to, not a second copy of it. It composes with the other
+    filters by acting on the already-filtered slice, exactly as they do, so
+    ``total_count`` keeps spanning the whole store and ``filtered_count`` reports
+    the post-narrowing result. The recognized reviewer set is resolved ONCE per
+    query rather than per record, mirroring the auditor's once-per-corpus-walk
+    resolution; ``None`` (registry unresolvable) is passed through so the
+    predicate degrades to its presence-only check instead of excluding every
+    attributed comment.
 
     Every return states which store the counts were computed from. A plan
     directory that is absent under the resolved root is REFUSED
@@ -525,6 +563,7 @@ def query_findings(
         file_pattern=file_pattern,
         promoted=promoted,
     )
+    filtered = _narrow_to_preference_admissible(filtered, preference_admissible)
 
     return {
         'status': 'success',
@@ -546,6 +585,7 @@ def query_findings_unified(
     author: str | None = None,
     kind: str | None = None,
     bot_kind: str | None = None,
+    preference_admissible: bool = False,
     any_checkout: bool = False,
 ) -> dict[str, Any]:
     """Query the per-plan findings store merged with pending per-phase Q-Gate findings.
@@ -555,6 +595,12 @@ def query_findings_unified(
       type/resolution/promoted/file_pattern/author/kind/bot_kind filters), and
     - the PENDING Q-Gate findings across every phase in `QGATE_PHASES`, with the
       same `finding_type` / `file_pattern` / `author` / `kind` / `bot_kind` filters applied for parity.
+
+    ``preference_admissible`` narrows BOTH slices, not just the per-plan one. The
+    flag is a single opt-in on one read verb, so applying it to only half of what
+    that verb returns would make it silently partial — the caller would still be
+    handed the very pipeline-authored comments it asked to exclude, with nothing
+    in the payload to say so.
 
     Only Q-Gate records whose `resolution == 'pending'` are merged — resolved
     Q-Gate findings are never surfaced through this read. The per-plan slice keeps
@@ -577,6 +623,7 @@ def query_findings_unified(
         author=author,
         kind=kind,
         bot_kind=bot_kind,
+        preference_admissible=preference_admissible,
         any_checkout=any_checkout,
     )
     plan_findings = plan_result['findings']
@@ -591,11 +638,14 @@ def query_findings_unified(
         )['findings']
         qgate_total += len(records)
         qgate_findings.extend(
-            _filter_records(
-                records,
-                exact_filters={'author': author, 'kind': kind, 'bot_kind': bot_kind},
-                type_filter=type_filter,
-                file_pattern=file_pattern,
+            _narrow_to_preference_admissible(
+                _filter_records(
+                    records,
+                    exact_filters={'author': author, 'kind': kind, 'bot_kind': bot_kind},
+                    type_filter=type_filter,
+                    file_pattern=file_pattern,
+                ),
+                preference_admissible,
             )
         )
 

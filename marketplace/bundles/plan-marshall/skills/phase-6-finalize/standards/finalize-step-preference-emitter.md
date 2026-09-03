@@ -116,11 +116,11 @@ dispositions, one `manage-findings list` call per disposition:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
-  --plan-id {plan_id} --resolution suppressed
+  --plan-id {plan_id} --resolution suppressed --preference-admissible
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
-  --plan-id {plan_id} --resolution accepted
+  --plan-id {plan_id} --resolution accepted --preference-admissible
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
-  --plan-id {plan_id} --resolution taken_into_account
+  --plan-id {plan_id} --resolution taken_into_account --preference-admissible
 ```
 
 Aggregate the returned findings into `(module, finding-class, disposition)`
@@ -130,12 +130,13 @@ collapsed at the first `:` and lowercased, and the module is the finding's
 `module` attribution (falling back to `component`, then `default`). Count how
 many times each tuple recurs within the plan.
 
-**Before counting, EXCLUDE any finding that is not authorship-admissible** per
+The authorship-admissibility gate is applied by the `--preference-admissible`
+flag on the three calls above, before this step sees a single record: a
+`pr-comment` finding without a recognized reviewer `bot_kind` is the pipeline's
+own control traffic, not preference evidence, and the script has already dropped
+it. Nothing is excluded here by hand. For why the gate is shaped that way, see
 [`disposition-to-hint-routing.md`](disposition-to-hint-routing.md) § "(e)
-Authorship admissibility": a `pr-comment` finding without a recognized reviewer
-`bot_kind` is the pipeline's own control traffic — not preference evidence — and
-must not seed a recurrence. (The `bot_kind` field is on the finding record;
-`manage-findings list` surfaces it.)
+Authorship admissibility".
 
 ### Step 2: Read the per-plan promotion threshold knob
 

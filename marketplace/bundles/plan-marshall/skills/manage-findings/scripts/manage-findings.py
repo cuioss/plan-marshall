@@ -199,6 +199,7 @@ def cmd_query(args: argparse.Namespace) -> dict:
         author=args.author,
         kind=args.kind,
         bot_kind=args.bot_kind,
+        preference_admissible=bool(getattr(args, 'preference_admissible', False)),
         any_checkout=_any_checkout(args),
     )
 
@@ -391,6 +392,15 @@ def main() -> int:
     query_parser.add_argument('--kind', choices=PR_COMMENT_KINDS, help='Filter by pr-comment kind')
     query_parser.add_argument(
         '--bot-kind', dest='bot_kind', choices=BOT_KINDS, help='Filter by reviewer-bot identity'
+    )
+    query_parser.add_argument(
+        '--preference-admissible',
+        action='store_true',
+        dest='preference_admissible',
+        help=(
+            'Return only findings admissible as preference evidence: a pr-comment '
+            'is kept only when attributed to a recognized reviewer bot'
+        ),
     )
     query_parser.add_argument(
         '--include-qgate',

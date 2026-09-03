@@ -116,21 +116,19 @@ is positively attributed to a recognized external reviewer bot — i.e. it carri
 registry-derived set.
 
 ⚠ **The write-time check does not enforce this, and must not be mistaken for it.**
-The ingest verb stamps `bot_kind` from the comment author login, and
-`add_finding` rejects a value that is non-empty and unrecognized — but its
-predicate is `if bot_kind and bot_kind not in BOT_KINDS`, so a finding with the
-field **absent** passes untouched. That is deliberate, not a hole to close at the
-write: an absent `bot_kind` is the correct recorded state for an unattributed
-human comment and for the pipeline's own posted comments, both of which must
-still be ingestible as findings. Rejecting them at write time would discard
-legitimate `pr-comment` records entirely.
+What `add_finding` rejects and what it admits is stated once, at the field's own
+specification — see
+[`../../manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md)
+§ Optional Fields, the `bot_kind` row. The only consequence that matters here is
+that a finding whose `bot_kind` is **absent** passes the write untouched, so the
+store legitimately holds records this gate must still exclude.
 
 The admissibility gate is therefore **load-bearing at aggregation, not
 redundant with the write**: it is the only place that distinguishes "attributed
 to a recognized reviewer" from "present in the store". Both consuming surfaces
-apply it — the auditor structurally in `_preference_admissible`, re-validating
-archived records against the live registry because it reads JSONL directly; the
-emitter per the paragraph below. A `pr-comment` with no `bot_kind` — or one
+apply it — the auditor re-validating archived records against the live registry
+because it reads JSONL directly; the emitter per the paragraph below. A
+`pr-comment` with no `bot_kind` — or one
 whose `bot_kind` is not a recognized reviewer identity — cannot be told apart from
 the pipeline's own posted comments: the ingest verb records the pipeline's own PR
 comments (a review-trigger comment, a description-restore) with `bot_kind` absent,
@@ -145,14 +143,15 @@ trying to recognize "self" directly. Non-comment findings (lint/sonar/bug/…) c
 no author and are never pipeline-authored PR chatter — they are unaffected, and
 their tool-disposition recurrences remain the primary preference signal.
 
-Both surfaces apply this before a recurrence is counted: the cross-plan auditor
-structurally in `cross_preference_pattern`; the per-plan emitter by admitting a
-`pr-comment` finding only when its `bot_kind` is a **recognized reviewer identity**
-in the registry-derived set, and excluding every other one when it aggregates
-dispositions. Presence of the field is not the test: an unrecognized `bot_kind`
-passes a presence check and fails the admissibility this section opens with, so the
-two must not be conflated — the emitter is an LLM-executed prose contract, and this
-paragraph IS its implementation.
+Both surfaces apply this before a recurrence is counted, and both reach ONE
+implementation rather than each carrying a copy: the rule lives in
+[`../../manage-findings/scripts/_preference_admissibility.py`](../../manage-findings/scripts/_preference_admissibility.py).
+The cross-plan auditor imports that module and applies the predicate in
+`cross_preference_pattern`; the per-plan emitter invokes the same predicate
+through `manage-findings list --preference-admissible`, so the exclusion happens
+in the script before the step aggregates anything. Presence of the field is not
+the test: an unrecognized `bot_kind` passes a presence check and fails the
+admissibility this section opens with, so the two must not be conflated.
 
 ## Threshold gate is surface-owned
 

@@ -145,7 +145,8 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 # List findings (per-plan; add --include-qgate to merge pending Q-Gate findings)
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   list --plan-id {plan_id} [--type T] [--resolution R] \
-  [--promoted BOOL] [--file-pattern PATTERN] [--include-qgate] [--any-checkout]
+  [--promoted BOOL] [--file-pattern PATTERN] [--author AUTHOR] [--kind KIND] \
+  [--bot-kind BOT_KIND] [--preference-admissible] [--include-qgate] [--any-checkout]
 
 # Get single finding
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
@@ -176,6 +177,12 @@ Producers file untrusted free-text under a quarantined `raw_input.{field}` sub-o
 By default `list` returns only the per-plan findings store (the per-type `{type}.jsonl` files). Passing `--include-qgate` merges the **pending** per-phase Q-Gate findings — across every phase in the Q-Gate phase set — into the same result set, so a caller can retrieve both the per-plan findings and the in-flight Q-Gate findings in a single read. Only Q-Gate records whose `resolution == 'pending'` are merged; resolved Q-Gate findings are never surfaced through this read. The `--type` and `--file-pattern` filters apply to both slices for parity; the `--resolution` and `--promoted` filters apply to the per-plan slice only (the Q-Gate slice is implicitly `pending`).
 
 The merged response is shape-compatible with the default `list` output and adds three provenance markers — `qgate_included: true`, `plan_count`, and `qgate_count` — so consumers can tell how many findings came from each store (see **Output Format** below). The unified query is the read surface `verification-feedback.md` and `triage.md` consume for the per-plan finding sweep. See the `## Canonical invocations` → `list` section below for the authoritative `--include-qgate` argparse surface.
+
+#### Preference-evidence narrowing (`--preference-admissible`)
+
+`--preference-admissible` narrows the result to the findings that may seed a preference recurrence: a `pr-comment` is kept only when it is positively attributed to a recognized reviewer bot, and every other finding type passes through untouched. The flag APPLIES the authorship-admissibility rule; [`scripts/_preference_admissibility.py`](scripts/_preference_admissibility.py) IMPLEMENTS it, as the single home both preference surfaces reach. For why the gate keys on positive external attribution rather than trying to recognize the pipeline's own comments, see [`../phase-6-finalize/standards/disposition-to-hint-routing.md`](../phase-6-finalize/standards/disposition-to-hint-routing.md) § "(e) Authorship admissibility" — the single source of truth, not restated here.
+
+The flag is **off by default**, so no existing caller's result changes. It composes with the other filters by acting on the already-filtered slice — `total_count` still spans the whole store, `filtered_count` reports the post-narrowing result — and it narrows the Q-Gate slice too under `--include-qgate`, so one flag never returns half-excluded output.
 
 ### Q-Gate Commands
 
@@ -391,7 +398,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings li
   --plan-id PLAN_ID \
   [--type TYPE_CSV] [--resolution RESOLUTION] [--promoted {true|false}] \
   [--file-pattern PATTERN] [--include-qgate] [--author AUTHOR] [--kind KIND] \
-  [--any-checkout]
+  [--bot-kind BOT_KIND] [--preference-admissible] [--any-checkout]
 ```
 
 ### get
