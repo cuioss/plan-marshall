@@ -9,7 +9,7 @@ to build a tool-specific handler from config.
 
 from __future__ import annotations
 
-from _build_shared import create_subcommand_handler  # noqa: F401 -- re-export for backward compat
+from _build_shared import create_subcommand_handler
 from _coverage_parse import find_report, parse_coverage_report
 from toon_parser import serialize_toon
 

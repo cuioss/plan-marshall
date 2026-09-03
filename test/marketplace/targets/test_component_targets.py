@@ -106,7 +106,7 @@ class _TreelessTarget(TargetBase):
     def emits_bundle_tree(self) -> bool:
         return False
 
-    def generate(self, marketplace_dir, output_dir, bundles=None):  # noqa: ANN001, ANN201, D102
+    def generate(self, marketplace_dir, output_dir, bundles=None):  # deliberately unannotated and undocumented: a stub that only has to satisfy the protocol
         return []
 
     def supports_agents(self) -> bool:

@@ -1053,7 +1053,7 @@ def cmd_pr_landing_state(args: argparse.Namespace) -> dict:
     branch, err_dict = _resolve_landing_branch(getattr(args, 'branch', None))
     if err_dict is not None:
         return err_dict
-    assert branch is not None  # noqa: S101 — narrowed by the err_dict guard
+    assert branch is not None  # narrowed by the err_dict guard
 
     # PR state is authoritative, but answering it needs auth; a merged/open
     # verdict must not be silently downgraded to pushed_no_pr because gh was
@@ -1065,7 +1065,7 @@ def cmd_pr_landing_state(args: argparse.Namespace) -> dict:
     tip_sha, err_dict = _branch_tip_sha(branch)
     if err_dict is not None:
         return err_dict
-    assert tip_sha is not None  # noqa: S101 — narrowed by the err_dict guard
+    assert tip_sha is not None  # narrowed by the err_dict guard
 
     rc, stdout, stderr = github_ops.run_gh(
         [
@@ -1112,7 +1112,7 @@ def cmd_pr_landing_state(args: argparse.Namespace) -> dict:
         # pushed_err is set whenever pushed_state is None (the two-state contract
         # of _branch_pushed_state), so the verdict rests on push evidence we could
         # not read.
-        assert pushed_err is not None  # noqa: S101 — narrowed by the contract above
+        assert pushed_err is not None  # narrowed by the contract above
         return pushed_err
 
     return {
@@ -1758,7 +1758,7 @@ def cmd_pr_merge(args: argparse.Namespace) -> dict:
     identifier, err_dict = github_ops._resolve_pr_identifier(args, 'pr_merge')
     if err_dict:
         return err_dict
-    assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
+    assert identifier is not None  # narrowing after err_dict guard
 
     # ``pr safe-merge`` runs this preflight itself before polling, then delegates
     # here; re-running it would pay a second round trip AND risk a divergent
@@ -1929,7 +1929,7 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
     identifier, err_dict = github_ops._resolve_pr_identifier(args, 'pr_auto_merge')
     if err_dict:
         return err_dict
-    assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
+    assert identifier is not None  # narrowing after err_dict guard
 
     base_branch, discriminator, detail, probe_err = _resolve_base_queue_state(identifier, 'pr_auto_merge')
     if probe_err is not None:
@@ -1993,7 +1993,7 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
     identifier, err_dict = github_ops._resolve_pr_identifier(args, 'pr_safe_merge')
     if err_dict:
         return err_dict
-    assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
+    assert identifier is not None  # narrowing after err_dict guard
 
     # Base-branch-scoped merge-queue preflight (guards the close-unmerged signature: an
     # immediate merge on a branch with a REQUIRED platform merge queue closes
@@ -2202,7 +2202,7 @@ def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
     identifier, err_dict = github_ops._resolve_pr_identifier(args, 'pr_merge_queue')
     if err_dict:
         return err_dict
-    assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
+    assert identifier is not None  # narrowing after err_dict guard
 
     base_branch, discriminator, detail, probe_err = _resolve_base_queue_state(identifier, 'pr_merge_queue')
     if probe_err is not None:
@@ -2295,7 +2295,7 @@ def cmd_pr_update_branch(args: argparse.Namespace) -> dict:
     identifier, err_dict = github_ops._resolve_pr_identifier(args, 'pr_update_branch')
     if err_dict:
         return err_dict
-    assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
+    assert identifier is not None  # narrowing after err_dict guard
 
     gh_args = ['pr', 'update-branch', identifier]
 

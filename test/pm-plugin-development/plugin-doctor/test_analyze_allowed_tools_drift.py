@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the ``allowed-tools-body-drift`` rule analyzer.
 
 The analyzer detects a *drift* between a component's declared

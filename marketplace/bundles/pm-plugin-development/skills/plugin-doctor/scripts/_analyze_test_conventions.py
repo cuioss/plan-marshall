@@ -471,7 +471,7 @@ def _resolve_regex_value(value: ast.expr) -> str | None:
 
 def _run_list_command(list_command: str, cwd: Path) -> str:
     args = shlex.split(list_command)
-    completed = subprocess.run(  # noqa: S603 - registry-controlled command
+    completed = subprocess.run(  # registry-controlled command
         args, capture_output=True, text=True, cwd=str(cwd), check=True, timeout=30
     )
     return completed.stdout

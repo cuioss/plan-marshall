@@ -15,7 +15,6 @@ enablement: the ``on:`` block MUST declare ``merge_group`` so the reusable verif
 job runs when a PR is queued.
 """
 
-# ruff: noqa: I001, E402
 
 import importlib.util
 import re

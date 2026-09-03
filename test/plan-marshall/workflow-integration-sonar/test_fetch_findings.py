@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001
 """Tests for workflow-integration-sonar sonar.py — two-verb provider contract.
 
 The provider surface is exactly two pure, zero-LLM verbs:
@@ -47,7 +46,7 @@ _resolve_ce_wait_timeout = sonar_mod._resolve_ce_wait_timeout
 # call, which extends the shared ci_base subcommand registry. ``extract_routing_args`` is the
 # router-level pre-parser that the bug stripped ``--plan-id`` through; the regression test below
 # exercises it directly.
-from ci_base import extract_routing_args  # noqa: E402,I001
+from ci_base import extract_routing_args  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

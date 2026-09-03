@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001
 """Pluggable invariant registry for phase_handshake.
 
 Each invariant is a tuple ``(name, applies_fn, capture_fn)``.

@@ -377,7 +377,7 @@ class _FormAVisitor(ast.NodeVisitor):
         super().generic_visit(node)
         self._parent_stack.pop()
 
-    def visit_Constant(self, node: ast.Constant) -> None:  # noqa: N802
+    def visit_Constant(self, node: ast.Constant) -> None:  # ast.NodeVisitor dispatches on this exact method name
         if (
             isinstance(node.value, str)
             and _FORM_A_MARKER in node.value

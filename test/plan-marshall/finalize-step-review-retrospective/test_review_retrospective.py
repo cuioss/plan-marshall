@@ -64,7 +64,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
 # when it is not found at all. A code-scoped ignore names exactly one of them and is
 # therefore UNUSED in the environment that raises the other — which
 # ``warn_unused_ignores`` turns into a hard error. The bare form is correct in both.
-import review_retrospective as rr  # type: ignore  # noqa: E402
+import review_retrospective as rr  # type: ignore
 
 
 # ---------------------------------------------------------------------------

@@ -770,7 +770,7 @@ def cmd_list(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def cmd_list_orphans(args: argparse.Namespace) -> dict[str, Any]:  # noqa: ARG001
+def cmd_list_orphans(args: argparse.Namespace) -> dict[str, Any]:  # args unused: the uniform cmd_* handler signature
     """Discover orphan plan directories (directories without a readable status.json).
 
     Inverse of ``cmd_list``: walks ``plans_dir.iterdir()`` and collects directory

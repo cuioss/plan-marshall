@@ -17,7 +17,7 @@ Covers the sibling ``orchestrator`` block (a peer of ``plan``), added by this pl
   fail-closed unknown-field rejection, and the int >= 1 validation.
 """
 
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 
 from pathlib import Path
 import json

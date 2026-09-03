@@ -28,7 +28,7 @@ Gradle is installed:
 
 import sys
 
-import _gradle_execute  # noqa: F401  (ensures sys.modules['_gradle_execute'] is populated)
+import _gradle_execute
 
 from conftest import load_script_module
 

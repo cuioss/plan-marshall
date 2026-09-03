@@ -10,7 +10,7 @@ from _manage_metrics_fixtures import (
     ns_end_phase,
     ns_start_phase,
 )
-from _manage_metrics_module_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
+from _manage_metrics_module_fixtures import (
     _DATA_FORMAT_MD,
     _INLINE_BUCKET,
     _INLINE_SUM,

@@ -66,7 +66,7 @@ class _FrozenClock:
     def __init__(self, instant: datetime) -> None:
         self._instant = instant
 
-    def now(self, tz=None) -> datetime:  # noqa: D102 - mirrors the datetime API
+    def now(self, tz=None) -> datetime:  # undocumented on purpose: mirrors the datetime API this stand-in replaces
         if tz is None:
             # ``datetime.now()`` yields the LOCAL wall clock with no tzinfo.
             return self._instant.astimezone().replace(tzinfo=None)

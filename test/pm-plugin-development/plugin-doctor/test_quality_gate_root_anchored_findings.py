@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Root-anchored anti-vacuity findings survive a ``--paths``-scoped quality gate.
 
 Three rules emit a finding anchored at the marketplace ROOT when their derived

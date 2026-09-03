@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the project-local list_bundles_and_versions.py helper.
 
 After cluster 02 the helper's default --source-root is

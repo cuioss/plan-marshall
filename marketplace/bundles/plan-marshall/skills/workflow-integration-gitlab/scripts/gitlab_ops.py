@@ -820,7 +820,7 @@ def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
     iid, err_dict = _resolve_mr_iid(args, 'pr_merge_queue')
     if err_dict:
         return err_dict
-    assert iid is not None  # noqa: S101 — narrowing after err_dict guard
+    assert iid is not None  # narrowing after err_dict guard
 
     # Probe BEFORE the POST — see the docstring for why the read precedes the
     # side effect rather than letting the endpoint's 404 stand in for a verdict.
@@ -1410,7 +1410,7 @@ def cmd_ci_status(args: argparse.Namespace) -> dict:
     iid, err_dict = _resolve_mr_iid(args, 'ci_status')
     if err_dict:
         return err_dict
-    assert iid is not None  # noqa: S101 — narrowing after err_dict guard
+    assert iid is not None  # narrowing after err_dict guard
 
     # Get MR to find pipeline
     returncode, stdout, stderr = run_glab(['mr', 'view', iid, '--output', 'json'])
@@ -2090,7 +2090,7 @@ def cmd_pr_merge(args: argparse.Namespace) -> dict:
     iid, err_dict = _resolve_mr_iid(args, 'pr_merge')
     if err_dict:
         return err_dict
-    assert iid is not None  # noqa: S101 — narrowing after err_dict guard
+    assert iid is not None  # narrowing after err_dict guard
 
     # ``pr safe-merge`` runs this preflight itself before polling, then delegates
     # here; re-running it would pay a second round trip AND risk a divergent
@@ -2264,7 +2264,7 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
     iid, err_dict = _resolve_mr_iid(args, 'pr_auto_merge')
     if err_dict:
         return err_dict
-    assert iid is not None  # noqa: S101 — narrowing after err_dict guard
+    assert iid is not None  # narrowing after err_dict guard
 
     discriminator, detail, scope_error = _probe_merge_train_state()
     if scope_error is not None:
@@ -2354,7 +2354,7 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
     iid, err_dict = _resolve_mr_iid(args, 'pr_safe_merge')
     if err_dict:
         return err_dict
-    assert iid is not None  # noqa: S101 — narrowing after err_dict guard
+    assert iid is not None  # narrowing after err_dict guard
 
     # Project-scoped merge-train preflight, run BEFORE the readiness poll so an
     # unsafe project refuses immediately rather than after the full poll budget.

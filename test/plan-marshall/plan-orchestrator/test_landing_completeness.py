@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Contract tests for the landing drain-completeness check (plan 302 D5).
 
 The terminal ``kind: landing`` message must carry a machine-readable

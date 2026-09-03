@@ -3419,7 +3419,7 @@ class TestSurfaceResolverMigration:
         subprocess would not inherit the monkeypatched seam, leaving the guard
         armed in this process and unarmed in the one under test.
         """
-        import file_ops  # noqa: PLC0415
+        import file_ops  # local import: the handle is needed only to patch a seam here
         import self_review
 
         repo = tmp_path / 'repo'

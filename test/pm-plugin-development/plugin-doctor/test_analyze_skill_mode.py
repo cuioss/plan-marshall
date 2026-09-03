@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the ``skill-missing-mode`` rule analyzer.
 
 Every skill declares its execution archetype via the ``mode:`` frontmatter

@@ -12,7 +12,7 @@ from _manage_metrics_fixtures import (
     ns_record_dispatch_boundary,
     raw_ns,
 )
-from _manage_metrics_module_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
+from _manage_metrics_module_fixtures import (
     _NEW_TERMINATION_CAUSES_WITH_PHASE,
     _UNSEEDED_PLAN_IDS,
     _seed_guarded_plan_dirs,

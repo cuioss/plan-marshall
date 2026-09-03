@@ -5,9 +5,9 @@
 from __future__ import annotations
 
 from _direct_gh_glab_usage_fixtures import SCRIPT_PATH, _commit_file, _init_git_repo
-from _plan_retrospective_fixtures import setup_live_plan  # noqa: E402
+from _plan_retrospective_fixtures import setup_live_plan
 
-from conftest import run_script  # noqa: E402
+from conftest import run_script
 
 # ---------------------------------------------------------------------------
 # Surface A: log leaks

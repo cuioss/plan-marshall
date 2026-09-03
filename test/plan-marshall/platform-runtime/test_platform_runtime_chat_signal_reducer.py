@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import json
 
-import _chat_provenance as _prov  # noqa: I001
-import _chat_signal_reducer as _mod  # noqa: I001
-from _chat_signal_fixtures import (  # noqa: I001, E402
+import _chat_provenance as _prov
+import _chat_signal_reducer as _mod
+from _chat_signal_fixtures import (
     SKILL_LOAD_TEXT,
 )
 from _chat_signal_fixtures import (

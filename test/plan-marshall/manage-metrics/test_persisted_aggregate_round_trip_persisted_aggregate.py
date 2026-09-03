@@ -15,7 +15,7 @@ from _manage_metrics_fixtures import (
     ns_generate,
     ns_start_phase,
 )
-from _persisted_aggregate_round_trip_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
+from _persisted_aggregate_round_trip_fixtures import (
     _TOTAL_COLUMNS,
     _drive_two_dispatched_phases,
     _phase_field,

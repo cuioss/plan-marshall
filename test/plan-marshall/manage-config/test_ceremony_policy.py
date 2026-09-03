@@ -50,7 +50,7 @@ _cmd_init_mod = load_script_module(
 )
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH).
-import conftest  # noqa: E402, F401
+import conftest
 
 
 def _params_for(steps_map: dict, step_id: str):

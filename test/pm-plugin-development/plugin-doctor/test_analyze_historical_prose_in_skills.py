@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the ``no-historical-prose-in-skills`` rule analyzer.
 
 The analyzer detects historical and transitional narrative patterns inside

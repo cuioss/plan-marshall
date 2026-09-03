@@ -1824,7 +1824,7 @@ def _load_claude_resolver():
     module = load_module()
     src = module.generate_target_aware_resolver_code('claude')
     namespace: dict = {'Path': Path}
-    exec(src, namespace)  # noqa: S102 — controlled, generator-owned template source
+    exec(src, namespace)  # exec of generator-owned template source: that source is precisely what is under test
     return namespace['_resolve_notation_by_target']
 
 

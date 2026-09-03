@@ -20,7 +20,7 @@ from _footprint_oracle_classification_fixtures import (
     _write_diff,
 )
 
-from conftest import run_script  # noqa: E402
+from conftest import run_script
 
 # =============================================================================
 # D5c — rule M3 fires on the composer's real step-list shape

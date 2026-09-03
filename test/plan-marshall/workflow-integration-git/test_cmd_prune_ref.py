@@ -338,7 +338,7 @@ class TestResolveProjectDirAndHeadViaResolver:
 
     def test_head_branch_comes_from_the_resolver(self, monkeypatch) -> None:
         """The branch face supplies the head; the path face is not consulted."""
-        import file_ops  # noqa: PLC0415
+        import file_ops  # local import: the handle is needed only to patch a seam here
 
         monkeypatch.setattr(file_ops, 'cwd_checkout_root', lambda: MAIN_CHECKOUT_ROOT)
         args = Namespace(plan_id='pr-plan', project_dir=None, head=None)
@@ -361,7 +361,7 @@ class TestResolveProjectDirAndHeadViaResolver:
         regression that returned the plan's worktree path would leave the prune
         pointed at a directory that no longer exists.
         """
-        import file_ops  # noqa: PLC0415
+        import file_ops  # local import: the handle is needed only to patch a seam here
 
         monkeypatch.setattr(file_ops, 'cwd_checkout_root', lambda: MAIN_CHECKOUT_ROOT)
         args = Namespace(plan_id='pr-plan', project_dir=None, head=None)
@@ -375,7 +375,7 @@ class TestResolveProjectDirAndHeadViaResolver:
 
     def test_absent_branch_is_refused(self, monkeypatch) -> None:
         """A plan with no recorded branch has nothing to prune."""
-        import file_ops  # noqa: PLC0415
+        import file_ops  # local import: the handle is needed only to patch a seam here
 
         monkeypatch.setattr(file_ops, 'cwd_checkout_root', lambda: MAIN_CHECKOUT_ROOT)
         args = Namespace(plan_id='pr-no-branch', project_dir=None, head=None)
@@ -390,7 +390,7 @@ class TestResolveProjectDirAndHeadViaResolver:
 
     def test_resolution_failure_surfaces_the_resolver_message(self, monkeypatch) -> None:
         """A ``WorktreeResolutionError`` is surfaced verbatim, not swallowed."""
-        import file_ops  # noqa: PLC0415
+        import file_ops  # local import: the handle is needed only to patch a seam here
 
         def _raise(_plan_id):
             raise file_ops.WorktreeResolutionError('metadata is corrupt')
@@ -413,7 +413,7 @@ class TestResolveProjectDirAndHeadViaResolver:
         the refusal happens here, on the absent-branch guard. Asserting it keeps
         a future reader from routing a plan-less caller into a branch deletion.
         """
-        import file_ops  # noqa: PLC0415
+        import file_ops  # local import: the handle is needed only to patch a seam here
 
         monkeypatch.setattr(file_ops, 'cwd_checkout_root', lambda: MAIN_CHECKOUT_ROOT)
         args = Namespace(plan_id=NO_PLAN_SENTINEL, project_dir=None, head=None)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: E402
 """The epic's counting rule has TWO implementations — this pins them together.
 
 ``bot-participation-contract.md`` § "The counting rule" is the epic's single source
@@ -50,7 +50,7 @@ if str(_RETRO_SCRIPTS) not in sys.path:
 # therefore "unused" in whichever environment raises the OTHER code, and
 # ``--warn-unused-ignores`` turns that into a hard error. The bare form is used
 # in both.
-import review_retrospective as retro  # type: ignore  # noqa: E402
+import review_retrospective as retro  # type: ignore
 
 #: One corpus, exercising every axis the rule distinguishes. Each entry carries the
 #: REAL record shape — `title`/`detail` built from structured metadata, the comment

@@ -35,8 +35,8 @@ from typing import Any
 import _manifest_validation
 from _decision_line_shapes import RECONCILE_CALLER, format_dropped_record
 from _manifest_core import (
-    _CANONICAL_TO_ROLE,  # noqa: F401
-    _CANONICAL_VERIFY_PREFIX,  # noqa: F401
+    _CANONICAL_TO_ROLE,
+    _CANONICAL_VERIFY_PREFIX,
     _DOC_SUFFIXES,  # noqa: F401
     _INFRA_CONFIG_BASENAME_GLOBS,  # noqa: F401
     _INFRA_CONFIG_DIR_TREES,  # noqa: F401
@@ -44,34 +44,34 @@ from _manifest_core import (
     _INFRA_CONFIG_PARENT_DIRS,  # noqa: F401
     _TEMPLATE_SUFFIX,  # noqa: F401
     CLASSIFICATION_BUCKETS,  # noqa: F401
-    DEFAULT_ENVELOPE_COUNT,  # noqa: F401
-    DEFAULT_PHASE_5_STEPS,  # noqa: F401
-    DEFAULT_PHASE_6_STEPS,  # noqa: F401
-    EXECUTION_LOG_KEY,  # noqa: F401
-    MANIFEST_FILENAME,  # noqa: F401
-    MANIFEST_VERSION,  # noqa: F401
-    VALID_CHANGE_TYPES,  # noqa: F401
-    VALID_RECORD_OUTCOMES,  # noqa: F401
-    VALID_RECORD_PHASES,  # noqa: F401
-    VALID_SCOPE_ESTIMATES,  # noqa: F401
-    VALID_TRACKS,  # noqa: F401
+    DEFAULT_ENVELOPE_COUNT,
+    DEFAULT_PHASE_5_STEPS,
+    DEFAULT_PHASE_6_STEPS,
+    EXECUTION_LOG_KEY,
+    MANIFEST_FILENAME,
+    MANIFEST_VERSION,
+    VALID_CHANGE_TYPES,
+    VALID_RECORD_OUTCOMES,
+    VALID_RECORD_PHASES,
+    VALID_SCOPE_ESTIMATES,
+    VALID_TRACKS,
     _denormalize_step_params_for_write,  # noqa: F401
-    _is_documentation_path,  # noqa: F401
-    _is_infrastructure_config_path,  # noqa: F401
-    _is_template_path,  # noqa: F401
+    _is_documentation_path,
+    _is_infrastructure_config_path,
+    _is_template_path,
     _normalize_step_params_block,  # noqa: F401
-    _role_of,  # noqa: F401
-    _strip_template_suffix,  # noqa: F401
+    _role_of,
+    _strip_template_suffix,
     get_manifest_path,  # noqa: F401
-    read_manifest,  # noqa: F401
-    write_manifest,  # noqa: F401
+    read_manifest,
+    write_manifest,
 )
 from _manifest_decide import (
-    _decide,  # noqa: F401
-    _read_recipe_source,  # noqa: F401
-    _read_settled_change_type,  # noqa: F401
-    _read_task_queue_active,  # noqa: F401
-    _split_csv,  # noqa: F401
+    _decide,
+    _read_recipe_source,
+    _read_settled_change_type,
+    _read_task_queue_active,
+    _split_csv,
 )
 from _manifest_lanes import (
     _CLASS_DEFAULT_TIER,  # noqa: F401
@@ -80,21 +80,21 @@ from _manifest_lanes import (
     _TIER_RANK,  # noqa: F401
     DEFAULT_EXECUTION_PROFILE,  # noqa: F401
     LANE_OVERRIDES,  # noqa: F401
-    LANE_TIERS,  # noqa: F401
-    _effective_lane_tier,  # noqa: F401
-    _lane_keep_decision,  # noqa: F401
-    _lane_override_for,  # noqa: F401
-    _parse_cost_magnitude,  # noqa: F401
-    _read_cost_size_token_table,  # noqa: F401
-    _read_execution_profile,  # noqa: F401
-    _read_frontmatter_lane,  # noqa: F401
-    _read_frontmatter_scalar,  # noqa: F401
+    LANE_TIERS,
+    _effective_lane_tier,
+    _lane_keep_decision,
+    _lane_override_for,
+    _parse_cost_magnitude,
+    _read_cost_size_token_table,
+    _read_execution_profile,
+    _read_frontmatter_lane,
+    _read_frontmatter_scalar,
 )
 from _manifest_rules import (
     _CEREMONY_FINALIZE_DEFAULT,  # noqa: F401
     _CEREMONY_FINALIZE_GATES,  # noqa: F401
     _CEREMONY_FINALIZE_STEP_MAP,  # noqa: F401
-    _FOOTPRINT_GATED_CANONICAL_ROLES,  # noqa: F401
+    _FOOTPRINT_GATED_CANONICAL_ROLES,
     _PRE_SUBMISSION_SELF_REVIEW_STEP,  # noqa: F401
     _SCOPE_GATED_SINGLE_MODULE_DROP,  # noqa: F401
     _SCOPE_GATED_SURGICAL_DROP,  # noqa: F401
@@ -103,26 +103,26 @@ from _manifest_rules import (
     _SIMPLIFY_CHANGE_TYPES,  # noqa: F401
     _SIMPLIFY_OWNER_STEP,  # noqa: F401
     _VERB_TO_PHASE_5_STEP,  # noqa: F401
-    _apply_ceremony_finalize_selection,  # noqa: F401
+    _apply_ceremony_finalize_selection,
     _apply_code_step_inactive,  # noqa: F401
-    _apply_commit_push_disabled,  # noqa: F401
-    _apply_scope_gated_finalize,  # noqa: F401
-    _apply_security_class_inactive,  # noqa: F401
-    _apply_simplify_inactive,  # noqa: F401
-    _apply_unresolved_ask_provider_drop,  # noqa: F401
+    _apply_commit_push_disabled,
+    _apply_scope_gated_finalize,
+    _apply_security_class_inactive,
+    _apply_simplify_inactive,
+    _apply_unresolved_ask_provider_drop,
     _ceremony_finalize_insert_index,  # noqa: F401
-    _footprint_has_role,  # noqa: F401
+    _footprint_has_role,
     _has_declared_lane_override,  # noqa: F401
-    _parse_verification_command,  # noqa: F401
-    _read_ci_provider,  # noqa: F401
-    _read_finalize_gates,  # noqa: F401
-    _read_marshal_phase_step_map,  # noqa: F401
-    _read_merged_phase_6_step_map,  # noqa: F401
+    _parse_verification_command,
+    _read_ci_provider,
+    _read_finalize_gates,
+    _read_marshal_phase_step_map,
+    _read_merged_phase_6_step_map,
     _read_plan_local_phase_6_step_map,  # noqa: F401
-    _read_sonar_provider,  # noqa: F401
+    _read_sonar_provider,
     _read_step_owned_knob,  # noqa: F401
-    _snapshot_step_params,  # noqa: F401
-    _verb_to_phase_5_step,  # noqa: F401
+    _snapshot_step_params,
+    _verb_to_phase_5_step,
 )
 from _manifest_validation import (
     _ORDER_NOT_APPLICABLE,  # noqa: F401
@@ -133,25 +133,25 @@ from _manifest_validation import (
     _PHASE_6_STANDARDS_DIR,  # noqa: F401
     _PHASE_6_WORKFLOW_DIR,  # noqa: F401
     _PHASE_TO_BODY_SECTION,  # noqa: F401
-    _REPO_ROOT,  # noqa: F401
-    _check_ascending_order,  # noqa: F401
-    _check_step_loadable,  # noqa: F401
-    _check_step_resolvable,  # noqa: F401
+    _REPO_ROOT,
+    _check_ascending_order,
+    _check_step_loadable,
+    _check_step_resolvable,
     _coerce_param_value,  # noqa: F401
-    _is_external_step,  # noqa: F401
+    _is_external_step,
     _read_frontmatter_order,  # noqa: F401
     _render_standards_rel_path,  # noqa: F401
-    _resolve_standards_path,  # noqa: F401
+    _resolve_standards_path,
     _resolve_step_order,  # noqa: F401
     _resolve_step_order_verdict,  # noqa: F401
-    _sort_steps_by_frontmatter_order,  # noqa: F401
+    _sort_steps_by_frontmatter_order,
     check_build_verdict_consistent,
     check_emitted_steps_ascending_order,
     check_emitted_steps_canonical,
-    check_emitted_steps_resolvable,  # noqa: F401
-    cmd_step_params_get,  # noqa: F401
-    cmd_step_params_set,  # noqa: F401
-    cmd_validate,  # noqa: F401
+    check_emitted_steps_resolvable,
+    cmd_step_params_get,
+    cmd_step_params_set,
+    cmd_validate,
 )
 from _references_core import (
     compute_plan_branch_diff,
@@ -726,7 +726,7 @@ def _command_free_build_verdict(plan_id: str) -> dict | None:
         from extension_base import should_execute_build
 
         verdict = should_execute_build(None, plan_id)
-    except Exception:  # noqa: BLE001 — an unobtainable verdict proves no contradiction
+    except Exception:  # an unobtainable verdict proves no contradiction
         return None
     return verdict if isinstance(verdict, dict) else None
 

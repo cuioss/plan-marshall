@@ -162,7 +162,7 @@ def _consult_locator(root: Path, plan_id: str) -> Path | None:
         return None
 
     try:
-        completed = subprocess.run(  # noqa: S603 — fixed argv, no shell, no caller-supplied executable
+        completed = subprocess.run(  # fixed argv, no shell, no caller-supplied executable
             [
                 sys.executable,
                 str(executor),
@@ -182,10 +182,10 @@ def _consult_locator(root: Path, plan_id: str) -> Path | None:
         return None
 
     try:
-        from toon_parser import parse_toon  # noqa: PLC0415 — deferred: keeps import cost off the happy path
+        from toon_parser import parse_toon  # deferred: keeps import cost off the happy path
 
         parsed = parse_toon(completed.stdout)
-    except Exception:  # noqa: BLE001 — a malformed consult degrades to "no other checkout known"
+    except Exception:  # a malformed consult degrades to "no other checkout known"
         return None
 
     if not isinstance(parsed, dict) or parsed.get('location') != 'worktree':

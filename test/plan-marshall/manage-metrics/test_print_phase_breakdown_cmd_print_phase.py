@@ -15,7 +15,7 @@ from _manage_metrics_fixtures import (
     ns_generate,
     ns_print_phase_breakdown,
 )
-from _print_phase_breakdown_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
+from _print_phase_breakdown_fixtures import (
     _UNSEEDED_PLAN_IDS,
     _extract_phase_breakdown_section,
     _seed_guarded_plan_dirs,

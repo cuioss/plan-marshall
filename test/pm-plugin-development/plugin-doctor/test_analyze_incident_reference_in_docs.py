@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the ``no-incident-references`` rule analyzer.
 
 The analyzer detects references to specific past plan-marshall PRs/issues used

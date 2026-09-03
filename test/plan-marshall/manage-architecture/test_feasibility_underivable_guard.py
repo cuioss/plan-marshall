@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001
 """Negative-control test for the refine feasibility underivable guard (D3).
 
 The refine phase's feasibility check reasons over ``architecture graph`` output to

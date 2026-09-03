@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """D1 — derive the finalize-step producer→consumer ORDERING edges from the declared
 markers, publish the edge cardinality, and state the enumeration coverage as a FLOOR.
 

@@ -798,7 +798,7 @@ def _list_live_lesson_ids() -> list[str]:
 
     try:
         parsed = parse_toon(result.stdout)
-    except Exception as exc:  # noqa: BLE001 — surface any parser failure
+    except Exception as exc:  # surface any parser failure
         raise LessonInventoryUnavailable(f'Failed to parse manage-lessons list output as TOON: {exc}') from exc
 
     rows = parsed.get('lessons')

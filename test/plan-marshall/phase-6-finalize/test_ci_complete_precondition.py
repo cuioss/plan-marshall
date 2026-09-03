@@ -61,7 +61,7 @@ def _strip_ansi(text: str) -> str:
 # :func:`test_executor_invocation_with_scrubbed_pythonpath` below.
 # ---------------------------------------------------------------------------
 
-from conftest import get_scripts_dir, load_script_module  # noqa: E402
+from conftest import get_scripts_dir, load_script_module
 _SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'phase-6-finalize')
 
 
@@ -858,7 +858,7 @@ class _CapturingSubprocessRun:
         self.captured_cmd: list[str] | None = None
         self.captured_kwargs: dict | None = None
 
-    def __call__(self, cmd, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+    def __call__(self, cmd, *args, **kwargs):  # deliberately unannotated: it accepts whatever subprocess.run is called with
         self.captured_cmd = list(cmd)
         self.captured_kwargs = dict(kwargs)
         return subprocess.CompletedProcess(
@@ -944,7 +944,7 @@ def test_run_ci_wait_success_envelope_yields_wait_succeeded(plan_context, monkey
 # ---------------------------------------------------------------------------
 
 
-def _raise_timeout_expired(cmd, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+def _raise_timeout_expired(cmd, *args, **kwargs):  # deliberately unannotated: it accepts whatever subprocess.run is called with
     """subprocess.run stand-in that always raises TimeoutExpired.
 
     Mirrors the real signature: subprocess.run forwards its ``timeout``
@@ -1391,7 +1391,7 @@ _parse_toon = _load_parse_toon()
 def _make_fixture_wait_runner(parsed: dict):
     """Build a ci_wait_runner stub that returns the parsed-fixture dict."""
 
-    def _runner(plan_id, pr_number, timeout_seconds, worktree_path):  # noqa: ARG001
+    def _runner(plan_id, pr_number, timeout_seconds, worktree_path):  # the parameters are unused: the stub exists to match the real runner's signature
         return parsed
 
     return _runner

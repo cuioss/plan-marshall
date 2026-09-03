@@ -353,7 +353,7 @@ def _update_fallback_streak(
         all_state[key] = state
         _write_fallback_state(all_state)
         return None, False
-    except Exception:  # noqa: BLE001 — escalation is best-effort, never abort a build
+    except Exception:  # escalation is best-effort, never abort a build
         return None, False
 
 

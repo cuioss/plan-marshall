@@ -11,7 +11,7 @@ Covers:
   - _dispatch: correct routing and argparse for all 25 operations
   - main: full integration — no args, missing marshal, unknown target, dispatch
 """
-from __future__ import annotations  # noqa: I001
+from __future__ import annotations
 
 import json
 from pathlib import Path

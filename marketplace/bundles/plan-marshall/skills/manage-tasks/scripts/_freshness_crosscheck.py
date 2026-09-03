@@ -359,7 +359,7 @@ def load_analysis_vocabulary() -> tuple[AnalysisVocabulary | None, str | None]:
             ANALYSIS_TEST,
             CANONICAL_ANALYSES,
         )
-    except Exception:  # noqa: BLE001 — an import can fail as more than ImportError
+    except Exception:  # an import can fail as more than ImportError
         return None, REASON_VOCABULARY_UNIMPORTABLE
     return (
         AnalysisVocabulary(
@@ -661,7 +661,7 @@ def resolve_expected_notations(project_dir: str) -> tuple[frozenset[str], str | 
     """
     try:
         from _cmd_client_query import resolve_project_build_notations
-    except Exception:  # noqa: BLE001 — see below: an import can fail as more than ImportError
+    except Exception:  # see below: an import can fail as more than ImportError
         # NOT just ``ImportError``. Importing this module executes another
         # skill's module body, and that body can raise anything: today
         # ``_cmd_client_build`` resolves its bundles root at module scope via
@@ -675,7 +675,7 @@ def resolve_expected_notations(project_dir: str) -> tuple[frozenset[str], str | 
         return frozenset(), REASON_RESOLVER_UNIMPORTABLE
     try:
         notations = resolve_project_build_notations(project_dir)
-    except Exception:  # noqa: BLE001 — any resolver failure is an inability, not a refutation
+    except Exception:  # any resolver failure is an inability, not a refutation
         return frozenset(), REASON_RESOLUTION_FAILED
     # Defence against a FUTURE resolver, not a live hazard: today
     # ``resolve_project_build_notations`` has a single ``return frozenset(...)``,

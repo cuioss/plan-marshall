@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: F811 — tests take the imported fixture as a parameter
+
 """Tests for the ``merge_lock.py`` ``rate-window`` verbs — the cross-plan claim on
 ONE review bot's rate window, co-tenanting the merge-lock store.
 """
@@ -13,7 +13,7 @@ import time
 from argparse import Namespace
 
 import pytest
-from _merge_lock_rate_window_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
+from _merge_lock_rate_window_fixtures import (
     _check,
     _claim,
     _make_live_plan,

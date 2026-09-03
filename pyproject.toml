@@ -292,7 +292,22 @@ src = ["marketplace/bundles", "marketplace/targets", "test", ".claude"]
 extend-exclude = [".claude/worktrees/"]
 
 [tool.ruff.lint]
-select = ["E", "W", "F", "I", "B", "C4", "UP"]
+# RUF100 is the entry that keeps the rest of this list honest. It fails on a
+# `# noqa` directive that suppresses nothing — one naming a rule this config
+# never enabled, or one whose rule no longer fires at that site. Left
+# unchecked, such a directive outlives the diagnostic it was written for and
+# then reads, to the next person, as a live warning about a problem the code
+# no longer has; worse, it silently widens over time, because a directive
+# nobody can see failing is a directive nobody removes.
+#
+# Armed on a clean tree, and only after the sweep that made it clean: every
+# such directive across the four lint roots (`marketplace/bundles/`,
+# `marketplace/targets/`, `test/`, `.claude/`) was either converted to a
+# plain-language comment stating the intent the rule code used to carry, or
+# narrowed to the codes still doing work. The rule therefore costs nothing
+# today and turns the next stale suppression into a failure at the commit
+# that introduces it, rather than letting the population grow back.
+select = ["E", "W", "F", "I", "B", "C4", "UP", "RUF100"]
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
@@ -314,11 +329,13 @@ ignore = ["E501"]
 #
 #     python3 -m ruff check test/ --select F401,F811 --ignore-noqa --statistics
 #
-# Every one of those 557 is suppressed today by a directive at its own site, so
-# this entry changes what the gate REPORTS not at all; it changes where the
-# decision is recorded, from 557 scattered comments to one stated rule. The
-# figure is given with the command that produces it because it moves with the
-# tree: re-derive it rather than trusting it.
+# This entry changes what the gate REPORTS not at all — it changes where the
+# decision is recorded, from a comment at every one of those sites to one
+# stated rule here. The per-site directives are gone: with RUF100 armed (see
+# `select` above) each was reported as suppressing nothing, which is exactly
+# what a rule turned off by this entry makes them. The figure is given with the
+# command that produces it because it moves with the tree: re-derive it rather
+# than trusting it.
 "test/*" = ["B011", "F401", "F811"]
 
 [tool.ruff.lint.isort]

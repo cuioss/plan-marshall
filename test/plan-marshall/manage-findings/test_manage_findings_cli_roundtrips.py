@@ -7,7 +7,7 @@ Its one section: CLI Plumbing Tests (subprocess).
 
 
 from _manage_findings_fixtures import SCRIPT_PATH
-from toon_parser import parse_toon  # noqa: E402
+from toon_parser import parse_toon
 
 from conftest import run_script
 

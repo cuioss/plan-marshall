@@ -26,10 +26,10 @@ from conftest import add_skill_scripts_to_path, get_script_path
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall', 'phase_handshake.py')
 SCRIPTS_DIR = add_skill_scripts_to_path('plan-marshall', 'plan-marshall')
 
-import _git_helpers as git_helpers  # noqa: E402, F401
-import _handshake_commands as cmds  # noqa: E402
-import _handshake_store as store  # noqa: E402, F401
-import _invariants as inv  # noqa: E402
+import _git_helpers as git_helpers
+import _handshake_commands as cmds
+import _handshake_store as store
+import _invariants as inv
 
 
 # =============================================================================

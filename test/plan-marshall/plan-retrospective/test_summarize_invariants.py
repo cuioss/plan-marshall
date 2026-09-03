@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 
-from _plan_retrospective_fixtures import (  # noqa: E402
+from _plan_retrospective_fixtures import (
     _HAPPY_HANDSHAKE_ROWS,
     setup_broken_plan,
     setup_live_plan,
@@ -14,7 +14,7 @@ from _plan_retrospective_fixtures import (  # noqa: E402
 )
 from _summarize_invariants_fixtures import SCRIPT_PATH
 
-from conftest import run_script  # noqa: E402
+from conftest import run_script
 
 
 class TestHappyPath:

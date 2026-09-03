@@ -192,8 +192,8 @@ _MARKETPLACE_SCRIPT_DIRS = _setup_marketplace_pythonpath()
 # ``sys.modules``, and every later importer gets that object. Binding them from
 # the root conftest makes the real modules the ones every test sees, rather than
 # leaving the binding to whichever test module happened to be collected first.
-import plan_logging as _plan_logging  # noqa: F401, E402
-import run_config as _run_config  # noqa: F401, E402
+import plan_logging as _plan_logging  # noqa: E402
+import run_config as _run_config  # noqa: E402
 
 # Add test subdirectories with shared helpers to sys.path so tests can
 # import them without manual sys.path manipulation
@@ -1127,7 +1127,7 @@ def pytest_report_header(config):
             module = _load_never_registering(TEST_ROOT / relative)
             label = module.GUARD_POPULATION_LABEL
             size = module.GUARD_POPULATION_SIZE
-        except BaseException as exc:  # noqa: BLE001 — reported, never swallowed
+        except BaseException as exc:  # broad on purpose: the failure is reported in the entry below, never swallowed
             entries.append(f'{short_name}: UNAVAILABLE ({type(exc).__name__}: {exc})')
             continue
         entries.append(f'{label}: {size}')
@@ -1646,7 +1646,7 @@ def _neutralize_daemon_routing(request, monkeypatch):
         return
 
     # Ensure the canonical copy is loaded before the scan below.
-    import _build_execute_factory  # noqa: F401
+    import _build_execute_factory
 
     for namespace in _routing_namespaces(getattr(request, 'module', None)):
         monkeypatch.setitem(namespace, _ROUTING_SEAM_NAME, _no_daemon_routing)
@@ -1906,7 +1906,7 @@ def _materialize_declared_plan_dirs(request):
     if 'plan_context' in request.fixturenames:
         request.getfixturevalue('plan_context')
 
-    from file_ops import get_base_dir  # noqa: PLC0415 — lazy: avoids a bootstrap import cycle
+    from file_ops import get_base_dir  # local import: avoids a bootstrap import cycle
 
     plans_root = get_base_dir() / 'plans'
     for plan_id in plan_ids:

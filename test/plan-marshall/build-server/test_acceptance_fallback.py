@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: E402
 """Acceptance: daemon-down / unregistered → in-process fallback with a recorded reason.
 
 When preflight is not `ready`, the build-execute routing seam does NOT submit —
@@ -15,8 +15,8 @@ from _build_extension_fixtures import build_scripts_dir, execute_config
 
 build_scripts_dir()
 
-import _build_execute_factory as factory  # noqa: E402
-from _build_execute import CaptureStrategy  # noqa: E402
+import _build_execute_factory as factory
+from _build_execute import CaptureStrategy
 
 
 def _config(**overrides):

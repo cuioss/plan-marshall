@@ -7,13 +7,13 @@ from __future__ import annotations
 import json
 
 from _check_artifact_consistency_fixtures import SCRIPT_PATH, _check_by_name
-from _plan_retrospective_fixtures import (  # noqa: E402
+from _plan_retrospective_fixtures import (
     setup_archived_plan,
     setup_broken_plan,
     setup_live_plan,
 )
 
-from conftest import run_script  # noqa: E402
+from conftest import run_script
 
 
 class TestHappyPath:

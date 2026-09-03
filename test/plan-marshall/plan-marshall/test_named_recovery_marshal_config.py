@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the named `.plan/marshal.json` recovery case in the planning workflow docs.
 
 Plan ``truthful-signals/210-named-recovery-discards-operator-config``.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: F811 — tests take the imported fixture as a parameter
+
 """Tests for the unified ``manage-locks/merge_lock.py`` — the single main-anchored
 merge-to-main serializer fronted by a FIFO admission queue.
 """
@@ -11,13 +11,13 @@ from __future__ import annotations
 import json
 from argparse import Namespace
 
-from _manage_locks_merge_lock_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
+from _manage_locks_merge_lock_fixtures import (
     _make_live_plan,
     _read_queue,
     _stub_title_tokens,
     _TokenRecorder,
     _waiting_plan_ids,
-    isolated_base,  # noqa: F401 — a fixture is used by NAME, not by reference
+    isolated_base,
     merge_lock,
 )
 

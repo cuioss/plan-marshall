@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the ``phase-5-step-missing-role-field`` rule analyzer.
 
 The analyzer scans

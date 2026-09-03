@@ -13,7 +13,7 @@ states the flag exists and belongs before the verb.
 import argparse
 
 import pytest
-from input_validation import (  # noqa: I001
+from input_validation import (
     _augment_misplaced_router_flag,
     _root_router_option_strings,
     parse_args_with_toon_errors,

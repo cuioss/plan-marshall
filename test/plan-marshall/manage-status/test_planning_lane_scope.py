@@ -220,7 +220,7 @@ def test_scope_unknown_is_a_deep_biasing_s2_value():
 def test_scope_pure_makes_no_architecture_call(monkeypatch):
     """The classifier performs zero architecture calls (pure, regex-only)."""
     # Any attempt to import or invoke an architecture surface would raise here.
-    import builtins  # noqa: PLC0415
+    import builtins  # local import: the import hook is installed only here
 
     real_import = builtins.__import__
 
@@ -319,7 +319,7 @@ def test_scope_heuristic_plan_dir_not_found_errors(plan_context):
 
 def test_scope_estimate_heuristic_registered_in_manage_status_dispatch():
     """The scope-estimate-heuristic verb resolves to cmd_scope_estimate_heuristic."""
-    import argparse  # noqa: PLC0415
+    import argparse  # local import: only this dispatch-wiring check needs it
 
     manage_status = load_script_module(
         'plan-marshall', 'manage-status', 'manage-status.py', '_manage_status_dispatch_check_scope_est'

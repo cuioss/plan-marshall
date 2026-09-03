@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the ``targets-scope-invalid`` rule analyzer.
 
 A component may declare the build-time ``targets:`` frontmatter field naming

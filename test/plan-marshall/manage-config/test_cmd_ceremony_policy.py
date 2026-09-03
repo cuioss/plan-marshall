@@ -50,7 +50,7 @@ cmd_set_lane = _cmd_finalize_steps_mod.cmd_finalize_steps_set_lane
 _ASK_INFRA_STEPS = ('plan-marshall:automatic-review', 'default:sonar-roundtrip')
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH).
-import conftest  # noqa: E402, F401
+import conftest
 
 # The two flat auto-continuation knobs that remain phase-level fields, with
 # their migrated (preserved) defaults. final_merge_without_asking is NOT here —

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: E402
 """End-to-end regression tests for PR-Agent's contentless Guide, producer + aggregator.
 
 On a clean PR, PR-Agent posts exactly one persistent ``## PR Reviewer Guide 🔍``
@@ -109,7 +109,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
 # therefore "unused" in whichever environment raises the OTHER code, and
 # ``--warn-unused-ignores`` turns that into a hard error. The bare form is used
 # in both.
-import review_retrospective as rr  # type: ignore  # noqa: E402
+import review_retrospective as rr  # type: ignore
 
 github_pr = load_script_module('plan-marshall', 'workflow-integration-github', 'github_pr.py', 'github_pr')
 _findings_core = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core')
@@ -200,7 +200,7 @@ def _run_fetch(pr_number, plan_id):
     drives ``cmd_fetch_findings`` directly — see the unreached-store section in
     ``test_comments_stage.py``.
     """
-    from file_ops import get_base_dir  # noqa: PLC0415 — resolved per call, after the sandbox fixture
+    from file_ops import get_base_dir  # local import: resolved per call, after the sandbox fixture
 
     (get_base_dir() / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)
     args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id)

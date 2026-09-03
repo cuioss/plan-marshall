@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """The argument-naming cluster resolves flags against the layer that ACCEPTS them.
 
 ``ARGUMENT_NAMING_FLAG_UNKNOWN`` used to judge every documented flag against the

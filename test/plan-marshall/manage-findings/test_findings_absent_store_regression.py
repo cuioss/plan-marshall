@@ -85,7 +85,7 @@ def _root() -> Path:
     Read from the live resolver rather than reconstructed, so the test and the
     subprocess cannot disagree about which sandbox is in play.
     """
-    from file_ops import get_base_dir  # noqa: PLC0415 — resolved per test, after the sandbox fixture
+    from file_ops import get_base_dir  # local import: resolved per test, after the sandbox fixture
 
     return get_base_dir()
 
@@ -95,7 +95,7 @@ def _cli(*args: str, **kwargs) -> tuple[int, dict]:
     result = run_script(SCRIPT_PATH, *args, **kwargs)
     try:
         payload = parse_toon(result.stdout)
-    except Exception:  # noqa: BLE001 — an unparsable payload is reported as empty, not swallowed
+    except Exception:  # broad on purpose: an unparsable payload is reported as empty, never swallowed
         payload = {}
     return result.returncode, (payload if isinstance(payload, dict) else {})
 

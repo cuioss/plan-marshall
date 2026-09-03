@@ -677,7 +677,7 @@ class TestNarrativeContract:
 
     def test_documents_changed_bucket_is_noise(self, standard_text: str):
         """The standard must document that the changed bucket is noise; consume added union removed."""
-        assert 'added ∪ removed' in standard_text  # noqa: RUF001
+        assert 'added ∪ removed' in standard_text  # the union sign is the literal the standard uses, not a lookalike to normalise away
         assert 'changed' in standard_text
 
     # ----- Step 3: Tier 0 ---------------------------------------------------

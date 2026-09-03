@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Regression for the external finalize-step termination contract.
 
 ``standards/external-step-contract.md`` is the authoring contract for external

@@ -76,7 +76,7 @@ import json
 from pathlib import Path
 
 import pytest
-from _manage_locks_fixtures import _make_live_plan  # noqa: F401 — re-exported to the modules beside this preamble
+from _manage_locks_fixtures import _make_live_plan
 
 from conftest import get_script_path, load_script_module
 

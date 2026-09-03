@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Derivation guard for the branch-cleanup merge-routing contract.
 
 Follows the precedent of ``test_merge_authorization_roster.py``: every

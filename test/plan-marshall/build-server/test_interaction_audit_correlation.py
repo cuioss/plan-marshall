@@ -70,7 +70,7 @@ class _Accepted:
 
     accepted = True
     reason = ''
-    record = {'canonical_root': 'root'}  # noqa: RUF012 — a test stub, not shared state
+    record = {'canonical_root': 'root'}  # a per-test stub value, not shared mutable state
 
 
 @pytest.fixture

@@ -30,7 +30,7 @@ Without that snapshot (a manifest frozen before the field existed) backfill is
 reported INDETERMINATE rather than guessed.
 """
 
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 
 from pathlib import Path
 import json

@@ -53,7 +53,7 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
-from _manage_locks_fixtures import _make_live_plan  # noqa: F401 — re-exported to the modules beside this preamble
+from _manage_locks_fixtures import _make_live_plan
 
 from conftest import load_script_module
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Population-complete BEHAVIOURAL guard for the merge-shaped off-routing refusal.
 
 This is the deliverable of plan

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Behavioral tests for ``_cmd_verify.py`` — the fix-verification predicates.
 
 Each ``verify_*`` function reads a file and reports whether a previously-applied

@@ -374,7 +374,7 @@ class Daemon:
                 request_status=str(response.get('status', '')),
                 reason=str(reason) if reason else None,
             )
-        except Exception:  # noqa: BLE001 — audit is best-effort, never abort request handling
+        except Exception:  # audit is best-effort, never abort request handling
             pass
 
     def _audit_job_fate(self, job_id: str, fate: str, spec: dict[str, Any]) -> None:
@@ -407,7 +407,7 @@ class Daemon:
                 project_root=canonicalize_root(project_path) if project_path else '',
                 plan_id=str(spec.get('plan_id', '')),
             )
-        except Exception:  # noqa: BLE001 — fate audit is best-effort, never abort the caller
+        except Exception:  # fate audit is best-effort, never abort the caller
             pass
 
     @staticmethod
@@ -571,7 +571,7 @@ class Daemon:
                 log_file=log_file,
                 progress=self._progress.get(job_id),
             )
-        except Exception as exc:  # noqa: BLE001 -- any failure becomes a terminal result
+        except Exception as exc:  # any failure becomes a terminal result
             payload = status_payload('failure', error=str(exc))
         self._journal.record_result(job_id, payload)
         self._audit_job_fate(job_id, str(payload.get('status', '')), spec_dict)

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the ``metadata-field-undefined`` rule analyzer.
 
 The analyzer performs a two-phase static check:

@@ -25,7 +25,7 @@ from _manage_metrics_fixtures import (
     ns_start_phase,
 )
 
-from conftest import get_script_path  # noqa: I001
+from conftest import get_script_path
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
 
@@ -216,7 +216,7 @@ def _patch_runtime_op(monkeypatch, *, status: str, per_phase: dict | None, count
     """
     counters = counters or {}
 
-    def _fake_run(argv, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+    def _fake_run(argv, *args, **kwargs):  # deliberately unannotated: it accepts whatever subprocess.run is called with
         output_file = None
         for i, token in enumerate(argv):
             if token == '--output-file' and i + 1 < len(argv):

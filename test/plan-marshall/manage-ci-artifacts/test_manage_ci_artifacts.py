@@ -37,7 +37,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 _REPO_ROOT = Path(__file__).parent.parent.parent.parent
-from conftest import get_scripts_dir, load_script_module  # noqa: E402
+from conftest import get_scripts_dir, load_script_module
 _SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'manage-ci-artifacts')
 
 

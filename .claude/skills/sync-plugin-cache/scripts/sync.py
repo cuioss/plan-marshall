@@ -245,7 +245,7 @@ def _load_source_fingerprint_module():
     sys.modules[HELPER_MODULE_NAME] = module
     try:
         spec.loader.exec_module(module)
-    except Exception as exc:  # noqa: BLE001 - normalised to ImportError below
+    except Exception as exc:  # normalised to ImportError below
         sys.modules.pop(HELPER_MODULE_NAME, None)
         raise ImportError(f'fingerprint helper at {helper_path} failed to import: {exc}') from exc
     return module

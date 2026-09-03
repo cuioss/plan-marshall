@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Cross-cutting suite: every thread-bearing disposition reaches its own thread.
 
 Fail-first suite for D5. Against the pre-fix code ``cmd_post_responses``

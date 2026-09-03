@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the ``plan-path-in-scripts`` rule analyzer.
 
 The analyzer detects drift from the canonical ``tools-file-ops:file_ops``

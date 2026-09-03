@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001
 """Tests for Git provider loading from marshal.json declarations."""
 
 from _providers_core import load_declared_providers
 from _providers_fixtures import stage_marshal
 
-import conftest  # noqa: F401
+import conftest
 
 # Like the other CLI-lane providers, git declares no ``default_url`` — it
 # resolves its host from the repository's git remote instead.

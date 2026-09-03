@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the planning-phase ``*-contract-violation`` rule analyzer.
 
 The analyzer scans the three planning-phase workflow directories

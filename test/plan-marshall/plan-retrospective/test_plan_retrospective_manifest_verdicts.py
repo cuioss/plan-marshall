@@ -24,7 +24,7 @@ from _plan_retrospective_manifest_fixtures import (
     _write_diff,
 )
 
-from conftest import run_script  # noqa: E402
+from conftest import run_script
 
 # =============================================================================
 # Skipped path: no manifest present

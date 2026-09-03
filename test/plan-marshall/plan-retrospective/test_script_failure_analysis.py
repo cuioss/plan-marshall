@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from _plan_retrospective_fixtures import (  # noqa: E402
+from _plan_retrospective_fixtures import (
     setup_archived_plan,
     setup_live_plan,
     write_captured_real_log,
@@ -22,7 +22,7 @@ from _script_failure_analysis_fixtures import (
     _write_work_log,
 )
 
-from conftest import run_script  # noqa: E402
+from conftest import run_script
 
 
 class TestBuildSeedLessons:
