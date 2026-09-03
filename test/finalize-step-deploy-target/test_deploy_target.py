@@ -30,8 +30,8 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from _documented_example_scan import DEFECTIVE_GENERATOR_CALL
+
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module
 
 cd = load_script_module('plan-marshall', 'manage-config', '_config_defaults.py')
