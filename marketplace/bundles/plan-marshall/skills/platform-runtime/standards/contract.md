@@ -321,9 +321,9 @@ alternative: pass --total-tokens manually to metrics capture
 
 ### `permission configure`
 
-Write a raw permission list to the target platform's settings.
+Write a semantic permission-intent list to the target platform's settings. Each target renders its own permission-DSL grammar from the intents; no rendered rule text crosses the operation boundary in either direction.
 
-**Arguments**: `--scope project|global` (required), `--permissions <pattern> [<pattern>...]` (required)
+**Arguments**: `--scope project|global` (required), `--permissions <intent> [<intent>...]` (required) — each `<intent>` is a JSON semantic-intent record with a `kind` key (one of `web-domain`, `executor`, `bundle`, `skill`, `path`, `macro`) plus the payload that kind needs. The target renders `WebFetch(...)` / `Bash(...)` / `Skill(...)` / `SlashCommand(...)` from the intents itself.
 
 **Success**:
 ```toon
@@ -420,7 +420,7 @@ Apply hygienic fixes to permission configuration.
 
 **Arguments**: `--scope project|global` (required), `--operation normalize|add|remove|ensure|consolidate|protect-path` (required), `--permissions <argument> [...]`, `--dry-run` (optional)
 
-`--permissions` carries the operation's semantic arguments, not one fixed kind of value: permission patterns for `add`, `remove` and `ensure`; **directory paths** for `protect-path`; nothing for `normalize` and `consolidate`.
+`--permissions` carries the operation's semantic arguments, not one fixed kind of value: JSON semantic intent records (the same shape `permission configure` takes) for `add`, `remove` and `ensure`; **directory paths** for `protect-path`; nothing for `normalize` and `consolidate`.
 
 `protect-path` is the goal-based deny-rule operation: the caller names directories to protect, and the target renders whatever rules express that on its own permission model and writes them itself. No rule text crosses the boundary in either direction, so the response carries counts rather than rendered rules — `paths_named` (how many paths the caller supplied, **not** how many distinct directories are guarded: three spellings of one directory are three names and one protection) and `rules_total` (the de-duplicated rule set actually applied, which is the honest measure) always, and `proposed_count` in place of the other operations' `proposed_additions` under `--dry-run`, since listing the additions would return the rule text this operation exists to keep inside the target. It is the one fix operation that writes the deny list rather than the allow list.
 
@@ -447,7 +447,7 @@ dry_run: true
 target_file: /repo/.claude/settings.local.json
 changes_applied: 0
 proposed_additions[1]:
-  - Bash(python3 scripts/*.py)
+  - {"kind": "executor", "runtime": "python3"}
 ```
 
 **Success (`protect-path`)**:
@@ -518,6 +518,20 @@ wildcards_already_present: 7
 target_file: /repo/.claude/settings.local.json
 ```
 
+**Success (dry-run)**:
+```toon
+status: success
+operation: permission ensure-wildcards
+scope: project
+marketplace_dir: marketplace/
+dry_run: true
+bundles_scanned: 10
+wildcards_added: 0
+proposed_additions[2]:
+  - {"kind": "bundle", "name": "plan-marshall"}
+  - {"kind": "bundle", "name": "example-bundle"}
+```
+
 **Error**:
 ```toon
 status: error
@@ -565,8 +579,8 @@ dry_run: true
 steps_scanned: 8
 permissions_added: 0
 proposed_additions[2]:
-  - Skill(finalize-step-plugin-doctor)
-  - Skill(finalize-step-sync-plugin-cache)
+  - {"kind": "skill", "name": "finalize-step-plugin-doctor"}
+  - {"kind": "skill", "name": "finalize-step-sync-plugin-cache"}
 ```
 
 **Error**:

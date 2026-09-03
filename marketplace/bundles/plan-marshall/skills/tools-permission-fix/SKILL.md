@@ -33,12 +33,12 @@ The common permission mutations are platform-neutral: they flow through the `pla
 | Intent | Platform-routed command |
 |--------|-------------------------|
 | Normalize / dedupe / sort + ensure defaults | `platform_runtime permission fix --scope project --operation normalize [--dry-run]` |
-| Add a permission | `platform_runtime permission fix --scope project --operation add --permissions "Bash(docker:*)" [--dry-run]` |
-| Remove a permission | `platform_runtime permission fix --scope project --operation remove --permissions "Bash(docker:*)" [--dry-run]` |
-| Ensure permissions exist | `platform_runtime permission fix --scope global --operation ensure --permissions "Bash(git:*)" "Bash(npm:*)" [--dry-run]` |
+| Add a permission | `platform_runtime permission fix --scope project --operation add --permissions '{"kind":"executor","runtime":"docker"}' [--dry-run]` |
+| Remove a permission | `platform_runtime permission fix --scope project --operation remove --permissions '{"kind":"executor","runtime":"docker"}' [--dry-run]` |
+| Ensure permissions exist | `platform_runtime permission fix --scope global --operation ensure --permissions '{"kind":"executor","runtime":"git"}' '{"kind":"executor","runtime":"npm"}' [--dry-run]` |
 | Consolidate enumerated entries into wildcards | `platform_runtime permission fix --scope project --operation consolidate [--dry-run]` |
 | Protect a directory from being read | `platform_runtime permission fix --scope global --operation protect-path --permissions /absolute/path/to/protect [--dry-run]` |
-| Set the full permission list | `platform_runtime permission configure --scope project --permissions "Read(**)" "Edit(.plan/**)"` |
+| Set the full permission list | `platform_runtime permission configure --scope project --permissions '{"kind":"path","tool":"Read","path":"**"}' '{"kind":"path","tool":"Edit","path":".plan/**"}'` |
 | Ensure marketplace bundle wildcards | `platform_runtime permission ensure-wildcards --scope project --marketplace-dir marketplace [--dry-run]` |
 | Ensure `project:{skill}` step permissions | `platform_runtime permission ensure-steps --marshal .plan/marshal.json --scope project [--dry-run]` |
 
