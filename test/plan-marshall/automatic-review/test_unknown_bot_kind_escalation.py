@@ -61,8 +61,7 @@ _BLOCK_END = '**Generating the trigger for `not_triggered`.**'
 
 
 def _skill_text() -> str:
-    text: str = _SKILL_MD.read_text(encoding='utf-8')
-    return text
+    return _SKILL_MD.read_text(encoding='utf-8')
 
 
 def _live_kinds() -> list[str]:
