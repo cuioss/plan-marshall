@@ -250,7 +250,7 @@ def test_missing_target_dir_returns_diagnostic(clean_marketplace: tuple[Path, Pa
     result = run_equality_check(nowhere, bundles)
     assert result.passed is False
     assert 'not generated' in result.summary
-    assert 'generate.py --target claude' in result.summary
+    assert './pw generate-claude' in result.summary
     assert result.unusable_target_bundles == ['demo']
 
 
@@ -281,7 +281,7 @@ def test_corrupt_emitted_plugin_json_returns_diagnostic(clean_marketplace: tuple
     result = run_equality_check(target, bundles)
     assert result.passed is False
     assert 'demo' in result.summary
-    assert 'generate.py --target claude' in result.summary
+    assert './pw generate-claude' in result.summary
     assert 'demo' in result.unusable_target_bundles
 
 
@@ -313,7 +313,7 @@ def test_valid_json_that_is_not_an_object_returns_the_diagnostic(
 
     assert result.passed is False
     assert 'demo' in result.unusable_target_bundles
-    assert 'generate.py --target claude' in result.summary
+    assert './pw generate-claude' in result.summary
 
 
 def test_an_unreadable_emitted_plugin_json_returns_the_diagnostic(
@@ -337,7 +337,7 @@ def test_an_unreadable_emitted_plugin_json_returns_the_diagnostic(
 
     assert result.passed is False
     assert result.unusable_target_bundles == ['demo']
-    assert 'generate.py --target claude' in result.summary
+    assert './pw generate-claude' in result.summary
 
 
 def test_undecodable_bytes_in_an_emitted_plugin_json_return_the_diagnostic(
@@ -427,7 +427,7 @@ def test_an_explicit_null_array_field_returns_the_diagnostic(
     result = run_equality_check(target, bundles)
 
     assert result.unusable_target_bundles == ['demo']
-    assert 'generate.py --target claude' in result.summary
+    assert './pw generate-claude' in result.summary
 
 
 @pytest.mark.parametrize('field_name', _ARRAY_FIELDS)

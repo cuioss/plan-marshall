@@ -637,17 +637,16 @@ skills:
   - pm-plugin-development:plugin-architecture
 
 steps:
-  - First step to execute
-  - Second step to execute
-  - Third step to execute
+  - marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md (write-replace)
+  - marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_tasks_core.py (write-replace)
+  - test/plan-marshall/manage-tasks/test_manage_tasks_crud.py (write-new)
 
 depends_on: none
 
 verification:
   commands:
-    - grep -l '```json' marketplace/bundles/*.md | wc -l
-    - mvn verify
-  criteria: All grep commands return 0 (no JSON blocks remain)
+    - python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate plan-marshall"
+  criteria: Quality gate passes with no findings
   manual: false
 ```
 
@@ -660,8 +659,60 @@ verification:
 - `domain`: Domain from references.json (e.g., `java`, `javascript`, `plan-marshall-plugin-dev`)
 - `profile`: Profile key from marshal.json. Standard profiles: `implementation`, `module_testing`, `integration_testing`, `quality`, `verification`, `standalone`
 - `skills`: Array of `bundle:skill` format strings
+- `steps`: Array of repo-relative file paths, each carrying a required trailing `(intent)` marker — `path/to/file.ext (intent)`, where intent is one of `read`, `write-new`, `write-replace`, `delete`. A step without the marker, or one that is not a file path, is rejected.
 - `depends_on`: `none` or task references like `TASK-1, TASK-2`
 - `origin`: `plan` (from task-plan), `fix` (from verify), `sonar`, `pr`, `lint`, `security`, or `documentation`
+
+**List field forms**: structural parsing is delegated to the canonical
+`plan-marshall:ref-toon-format` parser. The two row-based shapes are
+interchangeable on every list field; the uniform-array shape is `steps` only:
+
+| Form | Shape | Accepted for |
+|------|-------|--------------|
+| Bare block | `key:` followed by `  - item` rows | `steps`, `skills`, `verification.commands` |
+| Length-declared | `key[2]:` followed by the same `  - item` rows | `steps`, `skills`, `verification.commands` |
+| Uniform array | `steps[2]{target,intent}:` followed by CSV rows `path,intent` | `steps` only |
+
+The uniform-array shape is scoped to `steps` because it is a shape for rows of
+FIELDS: `serialize_toon` emits it only for a list of dicts, and `steps` is the
+only list field whose items are dicts (`{target, intent}`). `skills` and
+`verification.commands` are lists of plain strings, so the serializer never
+writes them that way and the reader coerces each of their rows with `str()`.
+A hand-written `skills[2]{name}:` block is therefore **not** rejected — each row
+is stringified into a value like `"{'name': 'x'}"`, which is silent corruption
+rather than an error. Write those two fields in one of the row-based forms.
+
+Round-tripping is unaffected: `parse_stdin_task(serialize_toon(task))`
+reproduces `steps`, `skills` and `verification.commands` without loss, because
+the serializer writes each field in the shape that field accepts.
+
+**Outer quotes**: do not hand-quote `steps` or `verification.commands` items.
+Those two fields are guarded; `skills` is not, for the reason below. Under a
+guarded field an outer-quoted item is accepted only when `serialize_toon` could
+have produced that quote, which takes BOTH of:
+
+- **Header provenance** — the item sits under the length-declared `key[N]:`
+  header. The serializer never writes a bare `key:` header, so a quote under one
+  cannot be its, whatever the value contains.
+- **Value provenance** — the value is one the serializer is obliged to quote.
+  `value_needs_quoting` in `plan-marshall:ref-toon-format` is the authority on
+  that; it is not re-derived here, and it covers more than the obvious cases
+  (a value containing `:` or the table separator, an embedded `"`, a leading
+  `#`, a bare `true` / `false` / `null`, and others).
+
+An accepted item is unquoted automatically. Under a guarded field everything
+else is rejected: an outer quote on a value that needed none, and — regardless
+of the value — any outer quote under a bare `key:` header. Note the consequence
+of the two conjuncts together: an item accepted verbatim under `steps[1]:` is
+rejected byte-for-byte identical under `steps:`.
+
+`skills` carries no such guard because the value conjunct cannot discriminate
+there: every valid skill is `bundle:skill`, so every valid value contains `:`
+and is one `value_needs_quoting` reports on. The rule would reduce to its header
+conjunct and reject `skills:` + `- "bundle:skill"` — a hand-written form that
+quotes precisely because the notation carries a colon. A quoted `skills` item is
+unquoted in either header form; the unquoted form shown above is still the one
+to write.
 
 ### List/Next Filters
 
@@ -685,16 +736,18 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
 # Step 2: Write tool writes TOON content to the returned path, e.g.:
 #   title: Update misc agents to TOON
 #   deliverable: 1
-#   domain: java
+#   domain: plan-marshall-plugin-dev
+#   profile: implementation
+#   skills:
+#     - pm-plugin-development:plugin-maintain
 #   description: Migrate miscellaneous agents from JSON to TOON output format.
 #   steps:
-#     - file1.md
-#     - file2.md
-#     - file3.md
+#     - marketplace/bundles/plan-marshall/agents/execution-context.md (write-replace)
+#     - marketplace/bundles/plan-marshall/skills/ref-toon-format/SKILL.md (write-replace)
 #   verification:
 #     commands:
-#       - mvn verify
-#     criteria: Build passes
+#       - python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate plan-marshall"
+#     criteria: Quality gate passes with no findings
 
 # Step 3: commit
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
@@ -756,7 +809,7 @@ form used by `phase-4-plan`:
 # Step 1: stage the JSON array as a plan-relative file under work/
 python3 .plan/execute-script.py plan-marshall:manage-files:manage-files \
   write --plan-id my-feature --file work/tasks-batch.json \
-  --content '[{"title":"Task A","deliverable":1,"domain":"java","profile":"implementation","skills":[],"steps":["src/main/java/A.java"]},{"title":"Task B","deliverable":1,"domain":"java","profile":"module_testing","skills":[],"steps":["src/test/java/ATest.java"],"depends_on":["TASK-1"]}]'
+  --content '[{"title":"Task A","deliverable":1,"domain":"java","profile":"implementation","skills":[],"steps":[{"target":"src/main/java/A.java","intent":"write-replace"}]},{"title":"Task B","deliverable":1,"domain":"java","profile":"module_testing","skills":[],"steps":[{"target":"src/test/java/ATest.java","intent":"write-new"}],"depends_on":["TASK-1"]}]'
 
 # Step 2: persist the batch atomically by pointing batch-add at the staged file
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks batch-add \
@@ -772,7 +825,7 @@ shell escaping cost is negligible. Phase-4-plan does NOT use this form.
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks batch-add \
   --plan-id my-feature \
-  --tasks-json '[{"title":"Task A","deliverable":1,"domain":"java","profile":"implementation","skills":[],"steps":["src/main/java/A.java"]}]'
+  --tasks-json '[{"title":"Task A","deliverable":1,"domain":"java","profile":"implementation","skills":[],"steps":[{"target":"src/main/java/A.java","intent":"write-replace"}]}]'
 ```
 
 The batch path replaces the per-task `prepare-add` + Write + `commit-add`
@@ -878,10 +931,14 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
 #   title: {task_title}
 #   deliverable: {deliverable_number}
 #   domain: {domain}
+#   profile: {profile}
 #   steps:
-#     - {step1}
-#     - {step2}
+#     - {step1_path} ({step1_intent})
+#     - {step2_path} ({step2_intent})
 #   depends_on: none
+#
+# Each {stepN_path} is a repo-relative file path and each {stepN_intent} is one
+# of read / write-new / write-replace / delete — the trailing marker is required.
 
 # Step 3
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \

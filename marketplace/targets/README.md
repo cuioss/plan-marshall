@@ -100,31 +100,36 @@ registered target, so the gate is not optional.
 
 The generator runs inside the project environment because it reads component
 frontmatter with `yaml.safe_load` — `PyYAML` is a declared project dependency,
-so `uv run` (or `./pw`) is the invocation, not a bare `python3`. See
-`component_targets.py` for the frontmatter extraction and the shape rules that
-module owns on top of the YAML load.
+so a bare `python3 marketplace/targets/generate.py` fails with
+`ModuleNotFoundError: No module named 'yaml'`. Always invoke it through the
+`./pw` wrapper: `uv` is installed only into the project-local `.pyprojectx/`
+tree and is not on `PATH`, so a bare `uv run …` exits 127 outside it. The
+`generate`, `generate-claude` and `generate-opencode` aliases in
+`pyproject.toml` are the invocation surface, and `generate` forwards whatever
+arguments follow it. See `component_targets.py` for the frontmatter extraction
+and the shape rules that module owns on top of the YAML load.
 
 
 ```bash
 # Verbatim Claude mirror + plugin.json regeneration
-uv run python marketplace/targets/generate.py --target claude --output target/claude
+./pw generate-claude
 
 # Equality check only (no emit) — exits 2 if committed plugin.json drifts
-uv run python marketplace/targets/generate.py --target claude
+./pw generate --target claude
 
 # OpenCode emit
-uv run python marketplace/targets/generate.py --target opencode --output target/opencode
+./pw generate-opencode
 
 # PR-Agent reviewer pack → ./.pr_agent.toml at the repository root
 # --packs composes one pack from several derived domains; omit it for the default
-uv run python marketplace/targets/generate.py --target pr-agent --output . --packs python,plugin
+./pw generate --target pr-agent --output . --packs python,plugin
 
 # Every target at once (claude → target/claude/, opencode → target/opencode/,
 # pr-agent → target/pr-agent/.pr_agent.toml)
-uv run python marketplace/targets/generate.py --target all --output target
+./pw generate --target all --output target
 
 # Scope to specific bundles
-uv run python marketplace/targets/generate.py --target opencode --output target/opencode \
+./pw generate --target opencode --output target/opencode \
     --bundles plan-marshall,pm-dev-java
 ```
 

@@ -14,9 +14,12 @@ contract from three angles:
    ``.claude/skills/finalize-step-deploy-target/SKILL.md`` (NOT in any
    marketplace bundle, NOT in ``BUILT_IN_FINALIZE_STEPS``).
 3. **Generator behaviour** — when the live generator runs against a
-   fixture marketplace, it returns ``status: success`` with a non-zero
-   ``produced`` count; the executor's ``display_detail`` template uses
-   that count.
+   fixture marketplace it exits ``0`` and prints a
+   ``claude: produced {N} entries`` line to stdout with a non-zero
+   ``{N}``; the executor reads its outcome from the exit code and its
+   ``display_detail`` count from that line. The generator emits no
+   machine-readable envelope, so the tests assert the exit code and the
+   stdout line — the two signals the skill body is written against.
 """
 
 from __future__ import annotations
@@ -29,12 +32,32 @@ from pathlib import Path
 
 import pytest
 
+from _documented_example_scan import DEFECTIVE_GENERATOR_CALL
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT
 
 _SKILL_MD = (
     PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-deploy-target' / 'SKILL.md'
 )
 _GENERATE_PY = PROJECT_ROOT / 'marketplace' / 'targets' / 'generate.py'
+
+#: The invocation the skill prescribes. ``uv`` is installed only into the
+#: project-local ``.pyprojectx/`` tree and is not on ``PATH``, so the wrapper
+#: alias is the only form that runs from a normal shell.
+_WRAPPER_INVOCATION = './pw generate-claude'
+
+#: The prescription that cannot succeed as written — it exits 127 outside the
+#: wrapper. Pinned as the COMMAND literal rather than as the bare words
+#: ``uv run``, because the body legitimately names that form while explaining
+#: why it is wrong, and a bare-word match would forbid the explanation too.
+#: Imported rather than spelled: the repository-wide prescription guard sweeps
+#: ``test/`` too, and a module that spells the literal reads to that guard as a
+#: file prescribing it.
+_DEFECTIVE_INVOCATION = DEFECTIVE_GENERATOR_CALL
+
+#: The script segment the executor rejects with ``Unknown notation``. Its
+#: diagnostic then suggests appending the typo as a subcommand, so the failure
+#: sends a caller to fix something already correct.
+_DEFECTIVE_NOTATION = 'manage_status'
 
 _MANAGE_CONFIG_SCRIPTS_DIR = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
@@ -84,9 +107,30 @@ def test_skill_body_documents_inline_only_and_no_skip_detector():
         'standard must explicitly state there is no skip detector — generator handles no-op'
     )
     # Generator command must appear verbatim
-    assert 'marketplace/targets/generate.py --target claude --output target/claude' in text
-    # display_detail template must reference emitted_count semantics
+    assert _WRAPPER_INVOCATION in text
+    # display_detail template must carry the count the produced-line supplies
     assert 'files emitted to target/claude/' in text
+
+
+def test_skill_body_prescribes_no_command_that_fails_as_written():
+    """Neither defective prescription the skill once carried may reappear.
+
+    Both failed when run as written and both named the wrong culprit: the bare
+    generator line exits 127 because ``uv`` is not on ``PATH``, and the
+    underscore notation is rejected by the executor as ``Unknown notation``.
+    Asserting only that the corrected forms are present would not catch a
+    reintroduction sitting BESIDE them, so their absence is pinned separately.
+    """
+    text = _SKILL_MD.read_text(encoding='utf-8')
+
+    assert _DEFECTIVE_INVOCATION not in text, (
+        f'skill body prescribes {_DEFECTIVE_INVOCATION!r}, which exits 127 outside '
+        f'the wrapper — prescribe {_WRAPPER_INVOCATION!r} instead'
+    )
+    assert _DEFECTIVE_NOTATION not in text, (
+        f'skill body carries the {_DEFECTIVE_NOTATION!r} script segment, which the '
+        'executor rejects as Unknown notation — the correct segment is manage-status'
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -179,31 +223,91 @@ def fixture_marketplace(tmp_path: Path) -> Path:
     return marketplace
 
 
-def test_generator_returns_success_with_emitted_count(fixture_marketplace: Path, tmp_path: Path):
-    """The deploy-target executor walks the generator's TOON return — verify
-    the live generator produces the expected ``status: success`` with a
-    non-zero ``produced`` count for a tiny fixture marketplace."""
-    output_dir = tmp_path / 'out'
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(_GENERATE_PY),
-            '--target', 'claude',
-            '--output', str(output_dir),
-            '--marketplace-dir', str(fixture_marketplace),
-        ],
+#: The stdout line the skill body reads its ``display_detail`` count from.
+#: Named here so the test parses the count exactly as the documented step does,
+#: rather than settling for a substring that would survive the line changing shape.
+_PRODUCED_LINE_RE = re.compile(r'^claude: produced (?P<count>\d+) entries$', re.MULTILINE)
+
+#: The exit codes ``generate.py`` returns. The exit code is the outcome signal —
+#: there is no ``status:`` field on stdout to branch on.
+_EXIT_OK = 0
+_EXIT_ERROR = 2
+
+
+def _run_generator(*args: str) -> subprocess.CompletedProcess[str]:
+    """Invoke the live generator with ``args`` and capture both streams."""
+    return subprocess.run(
+        [sys.executable, str(_GENERATE_PY), *args],
         capture_output=True,
         text=True,
         timeout=60,
     )
-    assert result.returncode == 0, f'generator exit={result.returncode}, stderr={result.stderr}'
-    # The generator's stdout includes a "claude: produced N entries" summary line
-    assert 'claude:' in result.stdout, f'expected "claude:" in stdout: {result.stdout!r}'
-    # Output directory must exist with at least one file
+
+
+def test_generator_success_exits_zero_and_prints_a_nonzero_produced_count(
+    fixture_marketplace: Path, tmp_path: Path
+):
+    """The two signals the skill body is written against, asserted as such.
+
+    The step reads its OUTCOME from the exit code and its ``display_detail``
+    COUNT from the ``claude: produced {N} entries`` stdout line. Asserting only
+    that ``'claude:'`` appears somewhere in stdout would pass on a line whose
+    count had vanished — the count is the thing the executor consumes, so it is
+    parsed here with the same shape the step body prescribes.
+
+    The absence of an envelope is asserted on the SAME run, because it is what
+    makes the exit code load-bearing: the body once branched on ``status:`` /
+    ``emitted_count`` fields no code path emits, so re-introducing one on stdout
+    must fail here and force the body to be updated in the same change.
+    """
+    output_dir = tmp_path / 'out'
+
+    result = _run_generator(
+        '--target', 'claude',
+        '--output', str(output_dir),
+        '--marketplace-dir', str(fixture_marketplace),
+    )
+
+    assert result.returncode == _EXIT_OK, f'generator exit={result.returncode}, stderr={result.stderr}'
+    match = _PRODUCED_LINE_RE.search(result.stdout)
+    assert match is not None, (
+        f'stdout carries no "claude: produced N entries" line, which is where the step '
+        f'body reads its display_detail count: {result.stdout!r}'
+    )
+    assert int(match.group('count')) > 0, 'a non-empty bundle must produce entries'
+    for absent in ('status:', 'emitted_count'):
+        assert absent not in result.stdout, (
+            f'stdout carries {absent!r}; the skill body reads the exit code and the '
+            f'produced-count line, so an envelope here means the two have diverged'
+        )
     assert output_dir.is_dir()
-    written = list(output_dir.rglob('*'))
-    files_only = [p for p in written if p.is_file()]
+    files_only = [p for p in output_dir.rglob('*') if p.is_file()]
     assert len(files_only) > 0, 'generator must emit at least one file for a non-empty bundle'
+
+
+def test_generator_failure_exits_two_and_writes_its_diagnostic_to_stderr(tmp_path: Path):
+    """MATCHED NEGATIVE — the failure half of the same two signals.
+
+    Without it, the success case alone is satisfied by a generator that exits
+    ``0`` unconditionally, and the step body's ``outcome=failed`` branch — which
+    surfaces the ``error: …`` stderr line — rests on nothing. A missing
+    marketplace directory is the generator's earliest documented failure path.
+    """
+    result = _run_generator(
+        '--target', 'claude',
+        '--output', str(tmp_path / 'out'),
+        '--marketplace-dir', str(tmp_path / 'does-not-exist'),
+    )
+
+    assert result.returncode == _EXIT_ERROR, (
+        f'a failed run must exit {_EXIT_ERROR}, got {result.returncode}: {result.stderr!r}'
+    )
+    assert 'error: marketplace directory not found' in result.stderr, (
+        f'the failure text the step surfaces must be on stderr: {result.stderr!r}'
+    )
+    assert _PRODUCED_LINE_RE.search(result.stdout) is None, (
+        f'a failed run must not print a produced-count line: {result.stdout!r}'
+    )
 
 
 def test_emit_marker_carries_file_hash_manifest(fixture_marketplace: Path, tmp_path: Path):

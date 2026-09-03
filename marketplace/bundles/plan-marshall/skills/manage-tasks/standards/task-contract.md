@@ -706,5 +706,7 @@ The verification block defines how to verify task completion:
 5. `domain` must be a valid domain value
 6. `profile` must be a valid profile value (implementation, module_testing, verification)
 7. Every step's `intent` is required and must be one of `read` / `write-new` / `write-replace` / `delete`; bare-string steps (no intent) are rejected
-8. Task `done` status requires all steps to be `done` or `skipped`
-9. Task `done` status requires verification to have passed
+8. Every step must name a target. A row whose target is empty — a uniform-array row written `,write-replace`, or an explicitly empty list item — is **rejected**, never skipped: dropping it renumbers the survivors and persists a task shorter than the author wrote, with no diagnostic
+9. `skills`, when present, must be a **list**. A single-line `skills: bundle:skill` parses to a string (the canonical parser splits on the first colon) and a bare `skills:` block whose rows are not `- ` items parses to a nested object; both are **rejected** rather than replaced with an empty list, because each loses a declared skill silently. An absent `skills` field and a `skills:` header with no rows declare nothing and yield `[]`
+10. Task `done` status requires all steps to be `done` or `skipped`
+11. Task `done` status requires verification to have passed
