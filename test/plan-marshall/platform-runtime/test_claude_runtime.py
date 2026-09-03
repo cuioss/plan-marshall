@@ -3694,6 +3694,47 @@ class TestPermissionFix:
         saved = json.loads(settings_path.read_text())
         assert "Bash(python3 .plan/execute-script.py *)" in saved["permissions"]["allow"]
 
+    def test_add_partial_multi_rule_intent_adds_only_missing(self, rt, tmp_path, monkeypatch):
+        """add with one of a multi-rule intent's rules present adds only the missing rule.
+
+        A bundle intent renders to ``[Skill(x:*), SlashCommand(/x:*)]``. With
+        ``Skill(x:*)`` already present, the old ``any(rule in allow ...)`` guard
+        skipped the whole intent; the guard must append only the missing rule.
+        """
+        import claude_runtime as _cr
+
+        settings_path = tmp_path / "settings.json"
+        _write_settings(settings_path, ["Skill(x:*)"])
+        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+
+        intent = {"kind": "bundle", "name": "x"}
+        result = _parsed(rt.permission_fix("project", "add", [intent], False))
+        assert result["status"] == "success"
+        assert result["changes_applied"] == 1
+        saved = json.loads(settings_path.read_text())
+        assert saved["permissions"]["allow"] == ["Skill(x:*)", "SlashCommand(/x:*)"]
+
+    def test_ensure_partial_multi_rule_intent_adds_only_missing(self, rt, tmp_path, monkeypatch):
+        """ensure with one of a multi-rule intent's rules present adds only the missing rule.
+
+        A bundle intent renders to ``[Skill(x:*), SlashCommand(/x:*)]``. With
+        ``Skill(x:*)`` already present, the old ``all(...)`` guard extended the
+        full rule list, duplicating the present rule; the guard must append only
+        the missing rule without duplicating.
+        """
+        import claude_runtime as _cr
+
+        settings_path = tmp_path / "settings.json"
+        _write_settings(settings_path, ["Skill(x:*)"])
+        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+
+        intent = {"kind": "bundle", "name": "x"}
+        result = _parsed(rt.permission_fix("project", "ensure", [intent], False))
+        assert result["status"] == "success"
+        assert result["changes_applied"] == 1
+        saved = json.loads(settings_path.read_text())
+        assert saved["permissions"]["allow"] == ["Skill(x:*)", "SlashCommand(/x:*)"]
+
     def test_consolidate_replaces_enumerated_with_wildcard(self, rt, tmp_path, monkeypatch):
         """consolidate replaces 3+ same-tool permissions with a wildcard."""
         import claude_runtime as _cr

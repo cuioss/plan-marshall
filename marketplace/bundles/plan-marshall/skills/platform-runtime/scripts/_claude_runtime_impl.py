@@ -1234,10 +1234,11 @@ class ClaudeRuntime(Runtime):
         elif operation == "add":
             for intent in arguments:
                 rules, _err = claude_runtime._render_permission_intent(intent)
-                if any(rule in allow for rule in rules):
+                new_rules = [r for r in rules if r not in allow]
+                if not new_rules:
                     continue
                 if not dry_run:
-                    allow.extend(rules)
+                    allow.extend(new_rules)
                     changes_applied += 1
                 else:
                     proposed_additions.append(intent)
@@ -1262,10 +1263,11 @@ class ClaudeRuntime(Runtime):
         elif operation == "ensure":
             for intent in arguments:
                 rules, _err = claude_runtime._render_permission_intent(intent)
-                if all(rule in allow for rule in rules):
+                new_rules = [r for r in rules if r not in allow]
+                if not new_rules:
                     continue
                 if not dry_run:
-                    allow.extend(rules)
+                    allow.extend(new_rules)
                     changes_applied += 1
                 else:
                     proposed_additions.append(intent)
