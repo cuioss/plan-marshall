@@ -22,11 +22,9 @@ Three properties of the emission are load-bearing:
   together, so a charter change is published once rather than regenerated into
   every consumer.
 * **A run EMITS the whole set, and the set stays equal to the derivation.** One
-  artifact per derived domain plus the spine, under ``{output_dir}/packs/``. The
-  claim is enforced rather than asserted, at both ends: no function in this
-  module takes a bundle allow-list, so nothing can narrow the set on the way in
-  (``PrAgentTarget.generate`` accepts ``bundles`` for the base signature and
-  ignores it), and ``_prune_stale_artifacts`` removes a generated artifact this
+  artifact per derived domain plus the spine, under ``{output_dir}/packs/``.
+  ``PrAgentTarget.generate`` accepts ``bundles`` for the base signature and
+  ignores it, and ``_prune_stale_artifacts`` removes a generated artifact this
   run did not write, so a domain that stops deriving does not survive in the
   output. The spine is emitted unconditionally and is not selectable: a spine a
   consumer could omit is a charter a consumer could drop.

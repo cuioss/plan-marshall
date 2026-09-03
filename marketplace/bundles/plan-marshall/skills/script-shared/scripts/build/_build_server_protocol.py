@@ -455,11 +455,10 @@ def positive_timeout_seconds(raw: str) -> int:
     negatives at both, and neither is meaningful under either reading of the
     bound. The two paths fail differently and both badly: on the wire the daemon
     refuses a non-positive value as ``invalid_job`` (see
-    :func:`_coerce_wire_timeout`), while on the IN-PROCESS path — taken whenever
-    preflight reports the daemon unavailable, so ``run_submit`` is skipped
-    entirely — the value is clamped to the engine's minimum and can silently
-    REPLACE a larger learned timeout. Rejecting at the parser turns both into one
-    argparse error the caller reads before anything runs.
+    :func:`_coerce_wire_timeout`), while on the in-process path the value is
+    clamped to the engine's minimum and can silently REPLACE a larger learned
+    timeout. Rejecting at the parser turns both into one argparse error the
+    caller reads before anything runs.
 
     This validates the value's SHAPE only. It says nothing about how the bound is
     applied: a request can only RAISE the daemon's supervisory bound (see
@@ -637,10 +636,8 @@ def compute_fingerprint(
     The consequence is bounded by the floor rather than by this function: a
     request can only RAISE the daemon's supervisory bound, so two below-default
     requests resolve to the identical bound anyway and lose nothing by sharing a
-    job. The one observable divergence is an above-default request attaching to
-    an earlier job that carries a different above-default bound. The field is
-    still not added to the material — that would change every existing
-    fingerprint for a narrow bounded case.
+    job. The field is still not added to the material — that would change every
+    existing fingerprint for a narrow bounded case.
 
     Args:
         plan_id: The submitting plan id.

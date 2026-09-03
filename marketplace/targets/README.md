@@ -210,11 +210,9 @@ Three properties are load-bearing:
   into every consumer.
 * **A run emits the whole set, and the set stays equal to the derivation.**
   One artifact per derived domain plus the spine, and the generated header
-  names the argument-free command that reproduces it. The claim is enforced at
-  both ends rather than asserted: no function in `pr_agent/target.py` takes a
-  bundle allow-list, so `--bundles` cannot narrow this target (it is accepted
+  names the argument-free command that reproduces it. `--bundles` is accepted
   and ignored, which is what keeps `--target all --bundles X` working for the
-  targets that do scope); and a generated artifact the current run did not
+  targets that do scope; and a generated artifact the current run did not
   write is pruned, so a domain that stops deriving does not survive in the
   output. The spine is emitted unconditionally and is not selectable —
   a spine a consumer could omit is a charter a consumer could drop.
