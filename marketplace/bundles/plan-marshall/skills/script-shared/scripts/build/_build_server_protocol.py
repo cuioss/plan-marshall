@@ -611,7 +611,11 @@ class JobSpec:
 
 
 def compute_fingerprint(
-    plan_id: str, command: list[str], exec_path: str, project_path: str
+    plan_id: str,
+    command: list[str],
+    exec_path: str,
+    project_path: str,
+    timeout: int | None = None,
 ) -> str:
     """Derive the deterministic idempotent-submit fingerprint for a job.
 
@@ -621,29 +625,36 @@ def compute_fingerprint(
     double-running it. The digest is order-stable (``sort_keys``) and
     independent of dict insertion order.
 
-    ``JobSpec.timeout`` is deliberately NOT part of the material. On the ROUTING
-    leg that costs nothing: the routing client reconstructs ``command`` from its
-    own argv tail, so an explicit ``--timeout N`` is already a token INSIDE
-    ``command`` and two submits with different bounds already digest differently.
-    Adding the field would re-hash the same distinction a second time while
-    changing every existing fingerprint.
+    ``timeout`` IS part of the material, because two submits that state different
+    bounds are not the same job. :meth:`Scheduler.submit` attaches a matching
+    fingerprint to the in-flight job and discards the attaching spec entirely, so
+    a shared digest means the second caller's bound is silently dropped and it
+    waits on the first caller's. That is the same observable — an explicit
+    ``--timeout`` not honoured — that forwarding the bound to the daemon existed
+    to remove, and the harm is ASYMMETRIC: the attaching submit inherits the
+    running job's bound whether that is larger or smaller than the one it asked
+    for, and the smaller case truncates a build the caller sized deliberately.
 
-    On the DIRECT surface (``submit --command X --timeout N``) the claim does not
-    hold, and the qualification is stated here rather than left to be discovered:
-    ``command`` is the JSON array passed via ``--command`` and ``--timeout`` is
-    not among its tokens, so two submits differing only in bound digest
-    identically and :meth:`Scheduler.submit` attaches the second to the first.
-    The consequence is bounded by the floor rather than by this function: a
-    request can only RAISE the daemon's supervisory bound, so two below-default
-    requests resolve to the identical bound anyway and lose nothing by sharing a
-    job. The field is still not added to the material — that would change every
-    existing fingerprint for a narrow bounded case.
+    The routing leg would digest apart regardless, since the routing client
+    rebuilds ``command`` from its own argv tail and ``--timeout N`` is already a
+    token inside it. The direct surface (``submit --command X --timeout N``) is
+    the one that needs this: ``command`` there is the JSON array the caller
+    passed, and the bound is not among its tokens.
+
+    Including the field costs the deduplication nothing that matters. Identical
+    submits — the common case, including two that both state no bound — still
+    share a digest and still attach. Only submits that genuinely asked for
+    different bounds now run separately, which is what asking for different
+    bounds means.
 
     Args:
         plan_id: The submitting plan id.
         command: The exact executor-form argv tokens.
         exec_path: The submitted tree root.
         project_path: The project working directory.
+        timeout: The submit's explicit wall-clock bound in seconds, or ``None``
+            when it stated none. ``None`` and an explicit value digest apart, so
+            a bounded submit never attaches to an unbounded one.
 
     Returns:
         A hex SHA-256 digest of the canonical job material.
@@ -654,6 +665,7 @@ def compute_fingerprint(
             'command': list(command),
             'exec_path': exec_path,
             'project_path': project_path,
+            'timeout': timeout,
         },
         sort_keys=True,
         ensure_ascii=False,
@@ -679,14 +691,14 @@ def make_job_spec(
         fingerprint: An explicit fingerprint; when empty it is derived via
             :func:`compute_fingerprint`.
         timeout: The submit's explicit wall-clock bound in seconds, or ``None``
-            when it stated none (see :class:`JobSpec`). Not part of the
-            fingerprint material — see :func:`compute_fingerprint`.
+            when it stated none (see :class:`JobSpec`). Part of the fingerprint
+            material — see :func:`compute_fingerprint`.
 
     Returns:
         A fully-populated job spec with a non-empty fingerprint.
     """
     resolved = fingerprint or compute_fingerprint(
-        plan_id, command, exec_path, project_path
+        plan_id, command, exec_path, project_path, timeout
     )
     return JobSpec(
         command=list(command),

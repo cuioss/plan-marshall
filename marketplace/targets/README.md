@@ -219,8 +219,10 @@ Three properties are load-bearing:
   and ignored, which is what keeps `--target all --bundles X` working for the
   targets that do scope; and a generated artifact the current run did not
   write is pruned, so a domain that stops deriving does not survive in the
-  output. The spine is emitted unconditionally and is not selectable —
-  a spine a consumer could omit is a charter a consumer could drop.
+  output. The spine is emitted unconditionally on every run. Whether a consumer
+  then applies it is not something this target enforces — no consumer of these
+  artifacts exists yet — so each domain artifact's header asks for it and says
+  what a lone domain artifact lacks without it.
 
 The emission is bounded and guarded. The substantiation bar and the
 anti-fabrication clause are carried verbatim into the **spine artifact** and

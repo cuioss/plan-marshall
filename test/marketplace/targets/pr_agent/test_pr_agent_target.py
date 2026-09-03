@@ -443,11 +443,19 @@ class TestEmission:
             assert 'cuioss/plan-marshall' in text, path.name
             assert '--target pr-agent --output target/pr-agent' in text, path.name
 
-    def test_a_domain_artifact_names_the_spine_as_not_optional(self, tmp_path):
-        """The consumer-facing half of the orthogonality contract.
+    def test_a_domain_artifact_points_the_reader_at_the_spine(self, tmp_path):
+        """The consumer-facing half of the orthogonality contract, as a REQUEST.
 
         A domain artifact deliberately carries no charter text, so a reader who
-        applied one on its own would silently drop the substantiation bar.
+        applied one on its own would silently drop the substantiation bar. The
+        header therefore names where the charter lives and asks for the spine to
+        be applied alongside.
+
+        What it must NOT do is claim the pairing is enforced. This generator
+        writes separate files and no consumer of them exists yet, so a header
+        saying the spine "is not optional" would assert a guarantee nothing in
+        this repository provides. The negative assertions below are the ones that
+        matter: they fail if that claim returns.
         """
         bundles = _fixture_marketplace(tmp_path)
         out = tmp_path / 'out'
@@ -456,9 +464,12 @@ class TestEmission:
 
         domain_artifact = (out / 'packs' / 'java.md').read_text(encoding='utf-8')
         spine_artifact = (out / 'packs' / 'spine.md').read_text(encoding='utf-8')
-        assert 'is applied alongside it and is not optional' in domain_artifact
         assert 'spine.md' in domain_artifact
-        assert 'is not selectable' in spine_artifact
+        assert 'Apply the spine artifact alongside this one.' in domain_artifact
+        assert 'carries the cross-cutting review charter exactly once' in spine_artifact
+        # The over-claims, pinned as ABSENT — an enforcement this code does not perform.
+        assert 'is not optional' not in domain_artifact
+        assert 'is not selectable' not in spine_artifact
 
     def test_the_charter_reaches_the_spine_artifact_alone(self, tmp_path):
         bundles = _two_domain_marketplace(tmp_path)

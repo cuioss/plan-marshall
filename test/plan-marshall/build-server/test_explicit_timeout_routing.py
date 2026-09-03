@@ -394,6 +394,91 @@ def test_a_request_inside_the_margin_window_still_raises_the_bound(home, tmp_pat
 
 
 # =============================================================================
+# Two direct submits differing only in --timeout are two jobs, not one
+# =============================================================================
+
+
+def _direct_spec(timeout: int | None) -> JobSpec:
+    """A DIRECT-surface spec: the bound is NOT among the ``command`` tokens.
+
+    This is what distinguishes the direct surface from the routed leg. The
+    routing client rebuilds ``command`` from its own argv tail, so ``--timeout N``
+    is already inside it and two bounds digest apart for free. Here ``command`` is
+    the JSON array the caller passed to ``--command``, so the bound is carried
+    only in the spec field.
+    """
+    return make_job_spec(
+        ['python3', '/tree/.plan/execute-script.py', 'a:b:c', 'run'],
+        '/tree',
+        '/tree',
+        'p1',
+        timeout=timeout,
+    )
+
+
+@pytest.mark.parametrize(
+    ('first', 'second'),
+    [
+        (REQUESTED_TIMEOUT, BELOW_DEFAULT_TIMEOUT),
+        (BELOW_DEFAULT_TIMEOUT, REQUESTED_TIMEOUT),
+    ],
+    ids=['larger_first', 'smaller_first'],
+)
+def test_direct_submits_with_different_bounds_do_not_attach(first, second):
+    """Two submits that asked for different bounds run as two jobs.
+
+    BOTH orders are exercised because the harm is ASYMMETRIC and a single-order
+    test would pass against the defect. ``Scheduler.submit`` returns the in-flight
+    job's id on a fingerprint match and never builds the attaching spec at all, so
+    the second caller's bound is discarded either way — but only the
+    larger-second order also TRUNCATES a build the caller sized deliberately,
+    which is the case that costs something. Testing one order would leave the
+    other free to regress.
+    """
+    scheduler = Scheduler(max_slots=5)
+
+    one = scheduler.submit(_direct_spec(first), '/tree')
+    two = scheduler.submit(_direct_spec(second), '/tree')
+
+    assert one.attached is False
+    assert two.attached is False, (
+        'the second submit attached to the first and silently inherited its bound'
+    )
+    assert one.job_id != two.job_id
+
+
+def test_identical_direct_submits_still_attach():
+    """CONTROL: deduplication survives for submits that really are identical.
+
+    Without this, the test above is satisfied by a fingerprint that never matches
+    anything — which would defeat idempotent submit entirely rather than fix it.
+    """
+    scheduler = Scheduler(max_slots=5)
+
+    one = scheduler.submit(_direct_spec(REQUESTED_TIMEOUT), '/tree')
+    two = scheduler.submit(_direct_spec(REQUESTED_TIMEOUT), '/tree')
+
+    assert two.attached is True
+    assert two.job_id == one.job_id
+
+
+def test_an_unbounded_submit_does_not_attach_to_a_bounded_one():
+    """``None`` and an explicit bound are different jobs too.
+
+    The pair most likely to collide in practice: a routine unbounded build and a
+    deliberately-bounded one, same command and tree. Attaching either to the other
+    hands one caller a bound it did not choose.
+    """
+    scheduler = Scheduler(max_slots=5)
+
+    bounded = scheduler.submit(_direct_spec(REQUESTED_TIMEOUT), '/tree')
+    unbounded = scheduler.submit(_direct_spec(None), '/tree')
+
+    assert unbounded.attached is False
+    assert unbounded.job_id != bounded.job_id
+
+
+# =============================================================================
 # The chain — cmd_run's --timeout is the bound the supervisor measures against
 # =============================================================================
 

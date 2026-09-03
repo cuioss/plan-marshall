@@ -506,11 +506,14 @@ def render_pack_artifact(name: str, body: str) -> str:
     is no longer an argument, so following the line can no longer narrow what a
     repository gets.
 
-    A domain artifact's header additionally states that the spine artifact is
-    applied alongside it and is not optional. That sentence is the consumer-facing
-    half of the orthogonality contract: a domain artifact deliberately carries no
-    charter text, so reading one on its own would silently drop the substantiation
-    and anti-fabrication bars.
+    A domain artifact's header additionally records where the charter lives and
+    asks the reader to apply the spine artifact alongside it. That is stated as a
+    REQUIREMENT ON THE READER, not as a guarantee: this generator writes separate
+    files and nothing here makes the pairing hold, so a header claiming the spine
+    "is not optional" would assert an enforcement no code in this repository
+    performs. What is checkable is the fact behind the request — a domain artifact
+    carries no charter text, so one read on its own has neither the substantiation
+    nor the anti-fabrication bar.
 
     Args:
         name: The artifact stem — a derived domain, or the spine's own name.
@@ -519,15 +522,15 @@ def render_pack_artifact(name: str, body: str) -> str:
     """
     if name == _SPINE_ARTIFACT_NAME:
         role = (
-            'This is the spine artifact. It carries the cross-cutting review charter exactly once,\n'
-            'and applies to every review regardless of which domain artifacts a repository selects.\n'
-            'It is not selectable: a repository cannot deselect it.'
+            'This is the spine artifact. It carries the cross-cutting review charter exactly once.\n'
+            'The generator emits it on every run, and it is meant to apply to every review whichever\n'
+            'domain artifacts a repository selects.'
         )
     else:
         role = (
-            f'This artifact carries the {name} domain part alone. The spine artifact ({_SPINE_ARTIFACT_NAME}.md)\n'
-            'is applied alongside it and is not optional — the review charter lives there and appears\n'
-            'in no domain artifact.'
+            f'This artifact carries the {name} domain part alone. The review charter lives in the\n'
+            f'spine artifact ({_SPINE_ARTIFACT_NAME}.md) and appears in no domain artifact, so this file on its\n'
+            'own carries none of it. Apply the spine artifact alongside this one.'
         )
     return (
         f'{_GENERATED_HEADER_MARKER}\n'
