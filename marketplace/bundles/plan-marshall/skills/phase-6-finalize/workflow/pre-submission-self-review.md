@@ -409,7 +409,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 - **`loop_back` → `done`** (Branch A): round 1 files findings and records `--outcome loop_back`, the findings are fixed, and the converged round records `done` over that live `loop_back` record. This is the state Branch A is *most often* reached from — the clean round that closes a loop-back is the whole point of re-firing this step.
 - **`done` → `loop_back`** (Branch B): a round records `done`, a later settle-band step advances HEAD, § HEAD-dependency re-fires this step against the newer diff, and the re-fire finds a defect — writing `loop_back` over that live `done` record.
 
-Both are ordinary terminal writes of the loop this document prescribes, not escape hatches for an unexpected state, and neither round can record its outcome without the flag. Omitting it returns `error: conflict`, the step records nothing, and the dispatcher's post-dispatch completion guard halts the phase reporting a missing terminal record — i.e. the round that finally came back clean is the one that cannot record itself. The trigger is therefore symmetric: add `--force` to a terminal `mark-step-done` whenever a prior round of this step recorded ANY outcome differing from the one about to be written. The one case that needs no flag is Branch B writing `loop_back` over a stored `loop_back`, which is the same-outcome path. Branch A's forced form:
+Both are ordinary terminal writes of the loop this document prescribes, not escape hatches for an unexpected state, and neither round can record its outcome without the flag. Omitting it returns `error: conflict`, the step records nothing, and the dispatcher's post-dispatch completion guard halts the phase reporting a missing terminal record — i.e. the round that finally came back clean is the one that cannot record itself. The trigger is therefore symmetric: add `--force` to a terminal `mark-step-done` whenever a prior round of this step recorded ANY outcome differing from the one about to be written. Branch A's forced form:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
@@ -417,6 +417,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "{display_detail_from_workflow}" \
   --head-at-completion {sha} --force
 ```
+
+⛔ **Branch B carries it for the same reason** — the mirror case is real, not hypothetical, and the "Branch B only ever re-writes `loop_back` over `loop_back`" reading is FALSE. This step is `head_dependent: true` (§ HEAD-dependency above), so the dispatcher re-fires it on any HEAD advance past the recorded `head_at_completion` — including an advance past a stored `done`. A findings-bearing round after such a re-fire runs Branch B, writes `loop_back` over that `done`, and hits the identical `error: conflict`. The governing rule covers both: [`../standards/external-step-contract.md`](../standards/external-step-contract.md) makes `--force` mandatory on ANY terminal branch whose write can land on a record carrying a different outcome, and both of this step's branches can.
 
 The overwrite is intended and is not a loss of signal in either direction: a superseded `loop_back` record's findings are already persisted in the finding store by Branch B, a superseded `done` record's verdict was anchored to a SHA the re-fire has left behind, and `mark-step-done` returns `previous_outcome` / `previous_head_at_completion` so the transition it replaced stays legible in the return.
 
@@ -445,7 +447,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome loop_back \
   --loop-back-target 6-finalize \
   --display-detail "{display_detail_from_workflow}" \
-  --head-at-completion {sha}
+  --head-at-completion {sha} \
+  --force
 ```
 
 `--loop-back-target 6-finalize` is the inline-fixable tier: the findings are addressed on this branch and the finalize step loop is re-entered, with no phase-5-execute re-dispatch. The target is not a free choice — `5-execute` is the fix-task-required tier, and these findings are amendments to the diff in hand.
