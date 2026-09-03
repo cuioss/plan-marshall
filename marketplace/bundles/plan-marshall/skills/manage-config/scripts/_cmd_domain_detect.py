@@ -4,8 +4,13 @@
 
 Walks the plan's clarified-request narrative for explicit mentions of
 configured skill_domains (or their bundle aliases) and returns the SET of
-matching domains. The composition contract — the merge legs and the exception to
-them — is documented in ``standards/skill-domains.md`` § Domain Inclusion.
+matching domains. The two inclusion legs are not equal evidence: ``file_globs``
+fires because the plan's OWN files matched, so it is evidence about this plan,
+while ``always_on`` is a standing project-wide inclusion that says nothing about
+any particular plan. Only the plan-specific leg can resolve a zero-match plan;
+an always_on-only union leaves it over-provisioned. The composition contract —
+the merge legs and the exception to them — is documented in
+``standards/skill-domains.md`` § Domain Inclusion.
 
 The file signal feeding the ``file_globs`` leg is ``--affected-files`` when
 supplied (refine passes the real affected_files), else path-like tokens extracted
@@ -281,7 +286,10 @@ def cmd_domain_detect(args) -> dict[str, Any]:
     detector's narrative matches) first, then ``additional_candidates`` (the
     remaining configured non-system domains not already supplied by the
     ``always_on`` / ``file_globs`` legs), so a configured-but-unmatched domain
-    is selectable. No LLM dispatch fallback applies on this code path.
+    is selectable. A zero-match plan whose only inclusion leg is the
+    project-wide ``always_on`` set is reported as over-provisioned under
+    ``over_provisioned_always_on_only`` rather than resolved on that leg. No LLM
+    dispatch fallback applies on this code path.
     """
     plan_id: str = args.plan_id
     override: str | None = getattr(args, 'domain_override', None)
@@ -432,11 +440,19 @@ def cmd_domain_detect(args) -> dict[str, Any]:
             reason='multiple_narrative_matches',
         )
 
-    # Zero narrative match. When the always_on / glob legs contribute any domain
-    # the plan resolves on those legs alone; otherwise the whole offerable set is
-    # over-provisioned. Only an empty union — no offerable domain at all — stays
-    # ambiguous and surfaces the multiSelect prompt.
-    if inclusion_union:
+    # Zero narrative match. Only the glob leg is evidence about THIS plan — it
+    # fired because the plan's own files matched — so it alone resolves the plan
+    # on the inclusion legs. An always_on-only union is a project-wide standing
+    # inclusion that carries no plan-specific signal, so it leaves the whole
+    # offerable set over-provisioned exactly as a bare zero-match does. Only an
+    # empty offerable set — no configured domain at all — stays ambiguous and
+    # surfaces the multiSelect prompt.
+    offerable = sorted(_offerable_domains(user_domains))
+    prompt_candidates = [{'domain': d, 'matched_aliases': []} for d in offerable]
+    prompt_additional = _additional_candidates(user_domains, prompt_candidates, inclusion_union)
+    over_provisioned = set(offerable)
+
+    if glob_matched_set:
         return _result(
             plan_id,
             domains=inclusion_union,
@@ -448,11 +464,18 @@ def cmd_domain_detect(args) -> dict[str, Any]:
             source=narrative_source,
             reason='inclusion_only_resolve',
         )
-
-    offerable = sorted(_offerable_domains(user_domains))
-    prompt_candidates = [{'domain': d, 'matched_aliases': []} for d in offerable]
-    prompt_additional = _additional_candidates(user_domains, prompt_candidates, inclusion_union)
-    over_provisioned = set(offerable)
+    elif always_on_set:
+        return _result(
+            plan_id,
+            domains=set(offerable) | always_on_set,
+            candidates=prompt_candidates,
+            additional_candidates=prompt_additional,
+            always_on=always_on_set,
+            glob_matched=glob_matched_set,
+            ambiguous=False,
+            source=narrative_source,
+            reason='over_provisioned_always_on_only',
+        )
 
     if over_provisioned:
         return _result(

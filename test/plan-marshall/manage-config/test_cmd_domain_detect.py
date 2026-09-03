@@ -236,17 +236,24 @@ def test_always_on_domain_unioned_despite_unrelated_narrative(plan_context):
     assert result['ambiguous'] is False
 
 
-def test_zero_narrative_match_with_always_on_resolves_silently(plan_context):
-    """A zero narrative match resolved by the always_on leg is silent (ambiguous=false)."""
+def test_zero_narrative_match_with_always_on_only_over_provisions(plan_context):
+    """An always_on-only inclusion union is not evidence about the plan.
+
+    ``always_on`` is a standing project-wide inclusion, so it says nothing about
+    which domains THIS plan touches. A zero narrative match whose only inclusion
+    leg is ``always_on`` therefore over-provisions the whole offerable set under
+    ``over_provisioned_always_on_only`` — the always_on domain is still merged,
+    but it does not narrow the answer to itself.
+    """
     plan_dir = _make_plan_dir(plan_context, 'dd-silent')
     create_marshal_json(plan_context.fixture_dir, _config_with_inclusion(always_on=True))
     _write_request(plan_dir, 'Update the deployment pipeline configuration.')  # no domain mentioned
 
     result = cmd_domain_detect(_ns('dd-silent'))
     assert result['ambiguous'] is False
-    assert result['reason'] == 'inclusion_only_resolve'
-    assert result['domains'] == ['python']
-    assert result['candidates'] == []
+    assert result['reason'] == 'over_provisioned_always_on_only'
+    assert set(result['domains']) == {'java', 'python'}
+    assert 'python' in result['always_on']
 
 
 # =============================================================================
@@ -277,6 +284,29 @@ def test_file_globs_merge_via_narrative_paths(plan_context):
     assert 'python' in result['glob_matched']
     assert result['ambiguous'] is False
     assert result['reason'] == 'inclusion_only_resolve'
+
+
+def test_zero_narrative_match_with_both_legs_resolves_on_the_glob_hit(plan_context):
+    """A glob hit alongside always_on still resolves the plan on the legs.
+
+    The always_on leg does not weaken the plan-specific glob evidence: once a
+    glob matched, the inclusion union is the answer and the offerable set is not
+    over-provisioned.
+    """
+    plan_dir = _make_plan_dir(plan_context, 'dd-both-legs')
+    create_marshal_json(
+        plan_context.fixture_dir,
+        _config_with_inclusion(always_on=True, file_globs=['**/*.py']),
+    )
+    _write_request(plan_dir, 'Update the module at scripts/helper.py to fix the bug.')
+
+    result = cmd_domain_detect(_ns('dd-both-legs'))
+    assert result['ambiguous'] is False
+    assert result['reason'] == 'inclusion_only_resolve'
+    assert result['domains'] == ['python']
+    assert 'python' in result['always_on']
+    assert 'python' in result['glob_matched']
+    assert result['candidates'] == []
 
 
 def test_multi_match_still_merges_inclusion(plan_context):
