@@ -245,6 +245,42 @@ def test_platform_detection():
         assert 'bat' in result
 ```
 
+### Patch the namespace the callee reads, not the dotted string
+
+`patch('module.ATTR', ...)` resolves its target through `sys.modules['module']`. A function
+imported **by value** — `from module import fn` — reads module attributes out of
+`fn.__globals__`, the namespace of the module object it was *defined* in. Those two are the
+same dict only for as long as nothing re-registers `module` in `sys.modules`.
+
+A tree that loads modules by path into freshly-built module objects (as `conftest.py`'s
+`load_script_module` does here) replaces that entry. The dotted-string patch then lands on
+the new module object while the already-imported function keeps reading the old one's real
+attribute, and the assertion sees the unpatched value. The outcome becomes a function of
+whether such a sibling ran earlier on the same `pytest-xdist` worker — collection order,
+which the test declares nowhere. Under the default alphabetical order the suite is green, so
+the canonical gate never sees it; it surfaces only in reverse order, and then under a
+different test name each run.
+
+**Rule**: where the function under test was imported by value from the module whose attribute
+is being patched, patch that function's own globals, so the patch cannot be detached from the
+callee by `sys.modules` churn.
+
+```python
+from platform_runtime import _find_skills_root
+
+# Wrong — resolves through sys.modules, so a sibling path-load detaches it from the callee.
+with patch('platform_runtime.__file__', str(fake_file)):
+    result = _find_skills_root()
+
+# Right — patches the namespace _find_skills_root actually reads.
+with patch.dict(_find_skills_root.__globals__, {'__file__': str(fake_file)}):
+    result = _find_skills_root()
+```
+
+The dotted-string form stays correct where the callee genuinely resolves the attribute
+through `sys.modules` at call time — a body that does `import module` and then reads
+`module.ATTR` — because there the lookup and the patch go through the same entry.
+
 ### Patching Functions
 
 ```python
