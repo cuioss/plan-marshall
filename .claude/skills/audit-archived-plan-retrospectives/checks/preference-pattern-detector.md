@@ -4,8 +4,10 @@ Aggregates recurring user gate-dispositions across all scanned archived plans an
 surfaces any `(module, finding-class, disposition)` tuple appearing in N or more
 distinct plans as a candidate preference. This is a cross-plan check — it emits
 aggregate rows over the whole corpus rather than one row per plan. The
-deterministic aggregation lives in `scripts/audit.py`; this sub-document is the
-interpretation guide.
+deterministic aggregation is APPLIED by `scripts/audit.py`; the
+authorship-admissibility rule it applies is IMPLEMENTED once elsewhere, in
+`manage-findings/scripts/_preference_admissibility.py`, which the script
+delegates to. This sub-document is the interpretation guide.
 
 ## Inputs the check reads
 
@@ -84,7 +86,9 @@ Rows are ordered by descending `occurrence_count`, then by `module`,
 
 Each candidate row is a **preference-enrichment input** routed to
 `architecture enrich`. Every surfaced row is already threshold-gated AND
-module-attributed (the authorship and attribution gates ran in the script), so
+module-attributed (the script RAN both gates — applying, for authorship, the
+shared rule implemented in
+`manage-findings/scripts/_preference_admissibility.py`), so
 SKILL.md Step 4c routes EVERY surfaced row to its concrete module — there is no
 further gating in the LLM body, and no row routes to the `default` bucket. The
 generalization rule (tuple → best-practice / insight string), the routing target
@@ -104,7 +108,10 @@ this new check — no separate dormation wiring or new dormation code is added.
 ## Critical rules
 
 - The script is the single source of truth for the aggregate rows, the tuple
-  derivation, and the threshold gate. Do not re-aggregate dispositions in chat.
+  derivation, and the threshold gate; the shared module
+  `manage-findings/scripts/_preference_admissibility.py` is the single source of
+  truth for the authorship-admissibility rule the script applies. Do not
+  re-aggregate dispositions in chat.
 - This check is read-only; it never edits `.plan/` files.
 - **Generalize, do not log raw dispositions** — when routing surfaced rows to
   `architecture enrich`, never persist per-finding hash IDs or raw disposition
