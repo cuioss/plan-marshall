@@ -32,7 +32,7 @@ phase_6:
     <step-id>: { <param>: <value>, ... }
     ...
 execution_log[N]{step_id,phase,outcome,total_tokens,tool_uses,duration_ms,timestamp}:
-  <step-id>,5-execute | 6-finalize,executed | skipped | error,<int> | unmeasured,<int> | unmeasured,<int> | unmeasured,<iso-8601>
+  <step-id>,5-execute | 6-finalize,executed | skipped | loop_back | failed | error,<int> | unmeasured,<int> | unmeasured,<int> | unmeasured,<iso-8601>
   ...
 ```
 
@@ -68,6 +68,20 @@ The persisted `phase_6.steps` array is the **execution-profile-resolved** finali
 `execution_log[]` is an ordered APPEND log, not a keyed map: `record-step` appends exactly one row per invocation, so a step that fired seven times carries seven rows and `refire-report` derives the re-fire count from them. The section is created on the first `record-step` call; a composed-but-unrun plan carries no `execution_log` key at all.
 
 `step_id` is canonicalized on write by the same rule the id-keyed accessor family applies (see § "`step_params`" below), so `default:push` and `push` record under the bare key `push`. `phase` is one of `VALID_RECORD_PHASES` and `outcome` one of `VALID_RECORD_OUTCOMES` (both in `scripts/_manifest_core.py`); a value outside either set is refused rather than recorded.
+
+### Which situation each `outcome` value means
+
+| Value | The situation it records |
+|-------|--------------------------|
+| `executed` | The step ran and completed. |
+| `skipped` | The step did not run — a re-entry skip, a preserved verdict, a signal-gate zero. |
+| `loop_back` | A **productive non-completion**: the step examined its surface, filed real findings, and handed control back. Its dispatcher recorded `mark-step-done --outcome loop_back --loop-back-target 6-finalize`, and the dispatch ledger stamps `returned_with_findings` for the same event. |
+| `failed` | The step **ran cleanly and self-assessed not-clean** — a red gate. The dispatch did not raise; the verdict is negative. |
+| `error` | The **dispatch itself** raised, timed out, or was cut short. Reserved for that, and for nothing else. |
+
+⚠ **`loop_back` and `failed` were both recorded as `error` before this partition, and the consequence was not cosmetic.** Any archive-wide analysis that counts `error` — a plan-doctor health rule, a reliability report, a preference emitter keyed on recurrence — then mis-graded every multi-round self-review as a defect, so *the more thoroughly a gate worked, the worse its plan looked*. The corruption was silent, cumulative, and lived in the archive. A reader partitions the three by value; nothing has to be inferred from the step id or from surrounding prose.
+
+`refire-report` publishes the partition as three separate columns (`loop_backs`, `failures`, `errors`) per step and in its totals, so the distinction survives into the derived report rather than stopping at the row.
 
 ### The three token-attribution columns are three-state
 

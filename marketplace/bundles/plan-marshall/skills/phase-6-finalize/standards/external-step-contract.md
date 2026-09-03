@@ -28,14 +28,22 @@ The full command template (use verbatim, substituting the placeholders):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step {step_name} --outcome {done|skipped|failed} \
+  --plan-id {plan_id} --phase 6-finalize --step {step_name} --outcome {done|skipped|loop_back|failed} \
+  [--loop-back-target {5-execute|6-finalize}] \
   --display-detail "{one-line summary}"
 ```
 
 MANDATORY annotations for every argument:
 
 - `--phase` — MANDATORY. Always the literal string `6-finalize` for steps dispatched under this operation. This anchors the step record to the finalize phase; any other value routes the record into the wrong phase bucket and breaks the Step 4 renderer grouping.
-- `--outcome` — MANDATORY. Must be exactly one of `done`, `skipped`, or `failed`. Any other value (including misspellings or capitalized variants) is rejected by `manage-status`. The choice determines the headline classification and CANNOT be inferred from `display_detail` alone.
+- `--outcome` — MANDATORY, and it names WHICH SITUATION the step is in. Any value outside the accepted set (including misspellings or capitalized variants) is rejected by `manage-status`. The choice determines the headline classification and CANNOT be inferred from `display_detail` alone:
+  - `done` — the step ran and completed.
+  - `skipped` — the step did not run.
+  - `loop_back` — a **productive non-completion**: the step examined its surface, filed real findings and handed control back. Pair it with `--loop-back-target 6-finalize` when the findings are amendments to the diff in hand, or `5-execute` when they need fix tasks. ⛔ A findings-bearing return is NOT a failure — recording it as one made every archive-wide analysis that counts failures mis-grade a thorough gate as a defect, so *the more findings a gate legitimately raised, the worse its plan looked*. It is also what makes the dispatch ledger's `returned_with_findings` stamp correct by construction: that stamp's documented trigger is a `mark-step-done` recording `outcome: loop_back`.
+  - `failed` — the step **ran cleanly and self-assessed not-clean** (a red gate). The dispatch did not raise; the verdict is negative. This value stays reachable precisely so it is separable from both a loop-back and a dispatch that errored.
+
+  The same five-way partition is what `record-step` writes into the manifest's `execution_log[]` — see [`../../manage-execution-manifest/standards/manifest-schema.md`](../../manage-execution-manifest/standards/manifest-schema.md) § "Which situation each `outcome` value means", which additionally names `error` for a dispatch that raised (a dispatcher-side value no step records for itself).
+- `--loop-back-target` — MANDATORY when `--outcome loop_back`, rejected otherwise. `6-finalize` re-enters the finalize step loop with no phase-5-execute re-dispatch; `5-execute` routes through fix tasks first.
 - `--step` — MANDATORY. Pass the step's **composed manifest catalog key** — the key exactly as `manifest.phase_6.steps` catalogs it, NOT a name read off `marshal.json`. The `default:` prefix is normalised on write by the canonical step-key seam, so a built-in step lands on the same record whether authored bare (`push`) or prefixed (`default:push`). A `bundle:skill` id (e.g. `plan-marshall:automatic-review`) is **preserved verbatim** by that seam and therefore MUST be authored exactly as the manifest catalogs it — the normalisation cannot rescue a mis-authored bundle-prefixed key. A key the seam cannot reconcile creates an orphan status record that the renderer cannot pair with the dispatched step, which the dispatcher-side guard surfaces as `step_record_mismatched_key`.
 - `--display-detail` — MANDATORY. Single-line summary of what the step actually did, authored by the step itself. Subject to the constraints listed below. A missing, empty, or whitespace-only value triggers the `<missing display_detail>` placeholder and contributes a `[FAILED]` headline regardless of the `--outcome` value.
 

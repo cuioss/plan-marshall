@@ -157,6 +157,40 @@ def test_error_rows_are_counted_separately_from_firings():
     assert steps[0]['refires'] == 0
 
 
+def test_the_three_non_completion_outcomes_are_counted_apart():
+    """⛔ A productive loop-back must never land in the error column.
+
+    Summing loop-backs, negative verdicts and raised dispatches into one number
+    is what made a thorough gate read as a defective one: the more rounds a
+    self-review filed findings for, the worse any error-counting analysis
+    graded its plan. One row of each proves the three columns are disjoint.
+    """
+    rows = [
+        _row('gate', outcome='loop_back'),
+        _row('gate', outcome='failed'),
+        _row('gate', outcome='error'),
+    ]
+
+    steps, totals = summarize_refires(rows)
+
+    assert steps[0]['loop_backs'] == 1
+    assert steps[0]['failures'] == 1
+    assert steps[0]['errors'] == 1
+    assert steps[0]['firings'] == 0
+    assert totals['loop_backs'] == 1
+    assert totals['failures'] == 1
+    assert totals['errors'] == 1
+
+
+def test_a_completed_run_reports_zero_in_all_three_columns():
+    """The matched control — a reader that counted every row would pass alone."""
+    steps, totals = summarize_refires([_row('gate')])
+
+    assert steps[0]['firings'] == 1
+    assert (steps[0]['loop_backs'], steps[0]['failures'], steps[0]['errors']) == (0, 0, 0)
+    assert (totals['loop_backs'], totals['failures'], totals['errors']) == (0, 0, 0)
+
+
 def test_phase_filter_excludes_other_phases():
     rows = [
         _row('quality-gate', phase='5-execute'),
