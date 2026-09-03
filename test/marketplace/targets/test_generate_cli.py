@@ -60,49 +60,86 @@ class TestGenerateCli:
         out = tmp_path / 'pr-agent-out'
         result = _run_cli('--target', 'pr-agent', '--output', str(out))
         assert result.returncode == 0, result.stderr
-        assert (out / '.pr_agent.toml').is_file()
+        assert (out / 'packs' / 'spine.md').is_file()
 
-    def test_packs_flag_selects_the_composed_domains(self, tmp_path):
+    def test_pr_agent_emits_a_markdown_artifact_set(self, tmp_path):
+        """Shape check only: the run emits a non-empty set, and all of it is Markdown.
+
+        The name and this docstring are deliberately narrower than "one artifact
+        per derived domain": the body below never enumerates the derived set, so
+        a claim of set identity would be one no assertion here establishes. That
+        comparison belongs to test_pr_agent_target.py, which checks the emitted
+        stems against the composer's own derived set on a fixture marketplace.
+        Re-deriving the same expectation here would share the CLI's composer and
+        cost this smoke test its independence.
+        """
         out = tmp_path / 'pr-agent-packs-out'
 
-        result = _run_cli('--target', 'pr-agent', '--output', str(out), '--packs', 'python,plugin')
+        result = _run_cli('--target', 'pr-agent', '--output', str(out))
 
         assert result.returncode == 0, result.stderr
-        emitted = (out / '.pr_agent.toml').read_text(encoding='utf-8')
-        assert '# Pack: python,plugin.' in emitted
-        assert 'scoped to the python and plugin domains' in emitted
+        emitted = sorted((out / 'packs').iterdir())
+        assert emitted, 'the run emitted no artifact at all'
+        assert all(path.suffix == '.md' for path in emitted)
 
-    def test_packs_flag_narrows_to_a_single_domain(self, tmp_path):
-        """Negative control for the flag: a one-domain selection is not composed.
+    def test_the_emitted_set_is_not_narrowable_by_the_caller(self, tmp_path):
+        """Two argument-free runs land on identical stems, and ``--bundles`` changes nothing.
 
-        Without this, the composed assertion above could not distinguish "the
-        flag selected two domains" from "the pack always names both".
+        Selection used to be a CLI argument, and the emitted file was whatever
+        the caller asked for. It is not any more. The two argument-free runs
+        establish that the emission is fixed by the derivation rather than by the
+        invocation — without them, the shape check above could not distinguish
+        "the emission is fixed" from "this particular invocation happened to emit
+        these".
+
+        The third run is what makes the NAME of this test true. A pair of runs
+        that both pass no narrowing flag cannot observe whether a narrowing flag
+        would be honoured, so the two-run form asserted non-narrowability while
+        testing only determinism. ``--bundles`` is the flag that still narrows
+        every bundle-tree target; here it must be ignored. ``plan-marshall`` is
+        chosen deliberately: it is the spine bundle, excluded from domain
+        derivation, so a target that HONOURED the filter would derive no domain
+        at all and exit non-zero — the failure is loud rather than a quietly
+        shorter set.
         """
-        out = tmp_path / 'pr-agent-single-out'
+        first = tmp_path / 'pr-agent-run-one'
+        second = tmp_path / 'pr-agent-run-two'
+        scoped = tmp_path / 'pr-agent-run-scoped'
 
-        result = _run_cli('--target', 'pr-agent', '--output', str(out), '--packs', 'python')
+        one = _run_cli('--target', 'pr-agent', '--output', str(first))
+        two = _run_cli('--target', 'pr-agent', '--output', str(second))
+        three = _run_cli(
+            '--target', 'pr-agent', '--output', str(scoped), '--bundles', 'plan-marshall'
+        )
 
-        assert result.returncode == 0, result.stderr
-        emitted = (out / '.pr_agent.toml').read_text(encoding='utf-8')
-        assert '# Pack: python.' in emitted
-        assert 'scoped to the python domain' in emitted
-        assert 'plugin' not in emitted.split('[pr_reviewer]')[0]
+        assert one.returncode == 0, one.stderr
+        assert two.returncode == 0, two.stderr
+        assert three.returncode == 0, three.stderr
+        stems = sorted(p.stem for p in (first / 'packs').glob('*.md'))
+        assert stems, 'the run emitted no artifact at all'
+        assert stems == sorted(p.stem for p in (second / 'packs').glob('*.md'))
+        assert stems == sorted(p.stem for p in (scoped / 'packs').glob('*.md')), (
+            '--bundles narrowed the pr-agent set; this target must ignore it'
+        )
 
-    def test_unknown_pack_in_the_selection_exits_two(self, tmp_path):
+    def test_pr_agent_emits_no_repo_local_config(self, tmp_path):
+        """The output root holds the artifact set and nothing else."""
         out = tmp_path / 'pr-agent-bad-out'
 
-        result = _run_cli('--target', 'pr-agent', '--output', str(out), '--packs', 'python,cobol')
-
-        assert result.returncode == 2
-        assert 'unknown pack' in (result.stderr + result.stdout)
-
-    def test_packs_flag_is_ignored_by_a_non_pack_target(self, tmp_path):
-        """`--packs` is meaningful only for pr-agent; another target must not break."""
-        out = tmp_path / 'opencode-packs-out'
-
-        result = _run_cli('--target', 'opencode', '--output', str(out), '--packs', 'python,plugin')
+        result = _run_cli('--target', 'pr-agent', '--output', str(out))
 
         assert result.returncode == 0, result.stderr
+        assert not (out / '.pr_agent.toml').exists()
+        assert sorted(path.name for path in out.iterdir()) == ['packs']
+
+    def test_a_non_pack_target_emits_no_packs_directory(self, tmp_path):
+        """The ``packs/`` shape is the pr-agent target's alone."""
+        out = tmp_path / 'opencode-packs-out'
+
+        result = _run_cli('--target', 'opencode', '--output', str(out))
+
+        assert result.returncode == 0, result.stderr
+        assert not (out / 'packs').exists()
 
     def test_all_target_known_choice(self, tmp_path):
         out = tmp_path / 'all-out'
@@ -110,13 +147,13 @@ class TestGenerateCli:
         assert result.returncode == 0, result.stderr
         # --target all fans out one sub-directory per registered target, and it
         # reaches the gated post-emit path for every one of them.
-        assert (out / 'pr-agent' / '.pr_agent.toml').is_file()
+        assert (out / 'pr-agent' / 'packs' / 'spine.md').is_file()
 
     def test_all_target_skips_bundle_tree_post_emit_for_pr_agent(self, tmp_path):
         """The generic post-emit steps are gated on ``emits_bundle_tree``.
 
         Version stamping and the dist-manifest are bundle-tree semantics. The
-        pr-agent output is a reviewer configuration, so neither artifact may
+        pr-agent output is a reviewer artifact set, so neither artifact may
         appear there — while the bundle-tree targets keep both.
         """
         out = tmp_path / 'all-out'

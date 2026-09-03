@@ -1048,6 +1048,12 @@ def test_analyze_scans_project_local_recipe_tree_via_layout_op(tmp_path):
     )
 
 
+# Scans the whole marketplace and contends with the lint leg under `verify`, where
+# it exceeds the global 300s hang detector. 900 is derived, not chosen: this test
+# runs the gate as a SUBPROCESS under its own declared `timeout=600` below, so any
+# per-test bound at or under 600 is structurally unable to let that inner bound
+# report first — the global 300 was exactly that inversion. 900 clears it by 300s.
+@pytest.mark.timeout(900)
 def test_real_marketplace_quality_gate_has_zero_findings():
     """The real marketplace tree passes quality-gate with zero findings.
 

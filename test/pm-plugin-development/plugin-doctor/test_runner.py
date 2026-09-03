@@ -41,6 +41,8 @@ import sys
 from functools import lru_cache
 from pathlib import Path
 
+import pytest
+
 from _plugin_doctor_dispatching_executor import (
     FIXTURE_NOTATION,
     seed_notation_registry,
@@ -402,6 +404,12 @@ def _real_tree_summaries():
     return {s['rule']: s for s in summaries}
 
 
+# Runs the whole quality gate over the whole marketplace, so it contends with the
+# lint leg under `verify` and exceeds the global 300s hang detector there while
+# passing comfortably standalone. 900 keeps it a hang detector (a whole-tree scan
+# still running after 15 minutes is stuck, not slow) with real headroom over the
+# 600s the sibling gate test declares for the same work as a subprocess bound.
+@pytest.mark.timeout(900)
 def test_population_publishing_rules_report_their_size_on_a_clean_tree():
     """Over the REAL tree — clean for every one of them — the examined size is published.
 
@@ -420,6 +428,11 @@ def test_population_publishing_rules_report_their_size_on_a_clean_tree():
         )
 
 
+# Third consumer of the same shared whole-tree gate. ``_real_tree_summaries`` is
+# ``lru_cache``d PER WORKER and xdist runs ``--dist load``, so whichever of the three
+# consumers lands first on a given worker pays the full gate cost — this one included.
+# Marked for the same reason and at the same bound as its two siblings above.
+@pytest.mark.timeout(900)
 def test_population_size_is_omitted_for_rules_that_do_not_derive_one():
     """An absent figure is absent, never a zero.
 
@@ -435,6 +448,10 @@ def test_population_size_is_omitted_for_rules_that_do_not_derive_one():
     assert all('population_size' not in summaries[label] for label in non_publishing)
 
 
+# Same cost profile as the clean-tree test above: it consumes the shared whole-tree
+# gate AND re-runs two whole-marketplace analyzer sweeps, so it contends with the
+# lint leg under `verify`. See that test for why 900.
+@pytest.mark.timeout(900)
 def test_published_population_matches_the_analyzer_derivation():
     """The published figure IS the rule's own derivation, not a re-derived one.
 

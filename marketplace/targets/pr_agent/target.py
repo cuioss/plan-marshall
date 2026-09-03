@@ -2,45 +2,49 @@
 """PrAgentTarget — per-domain PR-Agent instruction-pack export target.
 
 Reads the same source of truth as every other target (``marketplace/bundles/``)
-and emits a REVIEWER CONFIGURATION rather than an assistant bundle tree: a
-repo-local ``.pr_agent.toml`` carrying exactly one composed instruction pack in
-``[pr_reviewer].extra_instructions``. ``emits_bundle_tree`` is therefore
-``False``, so the CLI skips its generic bundle-tree post-emit steps (version
-stamping and the dist-manifest) for this target.
+and emits a REVIEWER ARTIFACT SET rather than an assistant bundle tree: one
+Markdown artifact per derived domain, plus one spine artifact, written under
+``{output_dir}/packs/``. ``emits_bundle_tree`` is therefore ``False``, so the
+CLI skips its generic bundle-tree post-emit steps (version stamping and the
+dist-manifest) for this target.
 
-Three properties of the composition are load-bearing:
+Three properties of the emission are load-bearing:
 
 * **The domain set is DERIVED, never hand-transcribed.** ``discover_domains``
   scans ``marketplace_dir`` for the per-domain standards skills — ``*-security``,
   ``arch-gate-*`` and ``ext-triage-*`` — so a bundle added to the marketplace
   appears in the derived set with no edit to this module.
-* **A repository's pack may COMPOSE several domains.** A repository is not
-  always one language: this marketplace is both Python and marketplace-tooling,
-  so its reviewer needs the ``python`` and ``plugin`` rules together. The
-  selection is therefore a SET of derived domains, and the composed pack carries
-  every selected domain's rules.
-* **Pack SELECTION is an argument, not an accumulation.** A run emits exactly
-  ONE pack to ``{output_dir}/.pr_agent.toml``; a second run REPLACES that file
-  rather than appending to it, so a repository carries exactly one pack — even
-  when that one pack composes several domains.
+* **The artifact set is ORTHOGONAL; a repository composes by SELECTING.**
+  Composition is not an act of this module. A domain artifact carries that
+  domain's part alone, and the cross-cutting charter appears exactly once —
+  in the spine artifact. A repository that is several languages at once names
+  several published artifacts instead of carrying one file that folds them
+  together, so a charter change is published once rather than regenerated into
+  every consumer.
+* **A run EMITS the whole set, and the set stays equal to the derivation.** One
+  artifact per derived domain plus the spine, under ``{output_dir}/packs/``.
+  ``PrAgentTarget.generate`` accepts ``bundles`` for the base signature and
+  ignores it, and ``_prune_stale_artifacts`` removes a generated artifact this
+  run did not write, so a domain that stops deriving does not survive in the
+  output. The spine is emitted unconditionally and is not selectable: a spine a
+  consumer could omit is a charter a consumer could drop.
 
 The substantiation clause and the anti-fabrication clause are carried VERBATIM
-into every pack, and the category bullet list is capped at
-:data:`MAX_CATEGORY_BULLETS` entries.
+into the spine artifact, and appear in no domain artifact.
 
-**The category ceiling survives composition by GROUPING, not by widening.** The
-ceiling is an observed organisation rule quoted in ``pr-agent-settings``'
-README — past roughly ten entries the answer is a second focused pass, not an
-eleventh bullet — so it is not this module's number to raise. A composed pack
-therefore contributes exactly ONE domain category bullet naming every selected
-domain, and groups the per-domain rules under the single "Domain rules" block.
-Allocating one category per domain would put a two-domain pack at eleven
-entries; grouping keeps an N-domain pack at exactly :data:`MAX_CATEGORY_BULLETS`
-for every N. Rules are NOT categories and are deliberately not governed by that
-ceiling — a composed pack's rule list grows with the number of domains, each
-domain capped at :data:`MAX_DOMAIN_RULES`.
+**The category ceiling is a two-part BUDGET, not a grouping.** The ceiling is an
+observed organisation rule quoted in ``pr-agent-settings``' README — past roughly
+ten entries the answer is a second focused pass, not an eleventh bullet — so it
+is not this module's number to raise. The spine reserves one slot: it carries at
+most :data:`MAX_CATEGORY_BULLETS` minus one category bullets, and each domain
+artifact contributes exactly one. A single-domain assembly therefore lands
+exactly at the ceiling. Grouping the domain bullets of a multi-domain assembly
+back into one is the CONSUMER's obligation at assembly time; no assembled pack
+exists in this repository, so that half of the budget is not provable here.
+Rules are NOT categories and are deliberately not governed by that ceiling —
+each domain artifact's rule list is capped at :data:`MAX_DOMAIN_RULES`.
 
-The pack-selection rules live as module-level constants here rather than as a
+The derivation rules live as module-level constants here rather than as a
 sibling JSON config: a new ``marketplace/targets/**/*.json`` path is claimed by
 no build extension and by no owner-less classifier rule, so it would resolve to
 the ``unknown`` bucket. The existing ``opencode/*.json`` configs predate that
@@ -109,7 +113,7 @@ _WITHHOLDING_PHRASES = (
 )
 
 # ---------------------------------------------------------------------------
-# Composition limits and defaults
+# Composition limits and emission layout
 # ---------------------------------------------------------------------------
 
 #: Hard ceiling on the pack's category bullet list. ``pr-agent-settings``
@@ -119,42 +123,58 @@ MAX_CATEGORY_BULLETS = 10
 
 #: Ceiling on the harvested per-domain rule list, applied PER DOMAIN. Rules are
 #: not review categories, so they are not governed by
-#: :data:`MAX_CATEGORY_BULLETS`; the separate cap keeps a pack from growing
-#: without bound as standards are added. A composed pack carries up to this many
-#: rules per selected domain — composition widens the rule list on purpose,
-#: because dropping a second domain's rules to hit a single total is exactly the
-#: silent under-review this target exists to fix.
+#: :data:`MAX_CATEGORY_BULLETS`; the separate cap keeps an artifact from growing
+#: without bound as standards are added. Each domain artifact carries up to this
+#: many rules, and a repository selecting several domains reads several
+#: artifacts — dropping a second domain's rules to hit a single total is exactly
+#: the silent under-review this target exists to fix.
 MAX_DOMAIN_RULES = 12
 
-#: Separator for a multi-domain pack selection, in the CLI and in the target
-#: constructor alike.
-PACK_SEPARATOR = ','
+#: Directory, under the target's output root, holding the emitted artifact set.
+_PACKS_DIRNAME = 'packs'
 
-#: Pack selection emitted when the caller names none. This repository is both a
-#: Python codebase and a marketplace-tooling codebase, so its own reviewer needs
-#: both domains' rules; a single-language default would silently under-review
-#: whichever half it omitted.
-DEFAULT_PACK = 'python,plugin'
+#: Stem of the one artifact carrying the cross-cutting charter. It is emitted
+#: unconditionally and is not a derived domain — a consumer applies it alongside
+#: whichever domain artifacts it selects, and cannot deselect it.
+_SPINE_ARTIFACT_NAME = 'spine'
 
-#: Output filename. A run REPLACES this file — packs swap, they never accumulate.
-CONFIG_FILENAME = '.pr_agent.toml'
+#: The source repository every emitted artifact names in its header, so a reader
+#: who finds an artifact in the published set can reach the derivation.
+_SOURCE_REPOSITORY = 'cuioss/plan-marshall'
+
+#: First line of every generated artifact's header. Both the renderer and the
+#: stale-artifact prune read it from HERE rather than each spelling it out: the
+#: prune may only reclaim files this generator produced, so the marker it
+#: matches has to be the very one the renderer writes. Two copies of the string
+#: could drift apart, and the drift would show up as the prune silently
+#: reclaiming nothing.
+_GENERATED_HEADER_MARKER = '<!-- GENERATED ARTIFACT — do not edit by hand.'
+
+#: The argument-free command that reproduces the whole artifact set. Selection is
+#: no longer an argument, so there is exactly one regenerate line for every
+#: artifact — following it can no longer narrow what a repository gets. It is the
+#: ``./pw`` wrapper form because ``uv`` lives only in the project-local
+#: ``.pyprojectx/`` tree and is not on ``PATH``, so a bare ``uv run …`` exits 127
+#: outside it — and this line is stamped into artifacts published to another
+#: repository, where the reader has no such tree at all.
+_REGENERATE_COMMAND = './pw generate --target pr-agent --output target/pr-agent'
 
 # ---------------------------------------------------------------------------
-# Charter text carried verbatim into every pack
+# Charter text carried verbatim into the spine artifact
 # ---------------------------------------------------------------------------
 
-#: The substantiation bar. Carried byte-identical from the org charter; every
-#: generated pack contains it. Kept on ONE line so the clause is a contiguous
-#: substring and a guard can assert it verbatim.
+#: The substantiation bar. Carried byte-identical from the org charter; the
+#: generated spine artifact contains it. Kept on ONE line so the clause is a
+#: contiguous substring and a guard can assert it verbatim.
 SUBSTANTIATION_CLAUSE = (
     'For each finding, name the input or state that triggers it and what goes wrong. Overlap with '
     'other reviewers is acceptable — report the issue regardless of whether another tool might also '
     'catch it. Do not withhold a substantiated finding because it seems minor or obvious.'
 )
 
-#: The anti-fabrication clause. Load-bearing and must not be dropped when a pack
-#: is next tuned: pressure to report more is exactly the pressure that produces
-#: invented mechanisms. Carried byte-identical from the org charter.
+#: The anti-fabrication clause. Load-bearing and must not be dropped when the
+#: spine is next tuned: pressure to report more is exactly the pressure that
+#: produces invented mechanisms. Carried byte-identical from the org charter.
 ANTI_FABRICATION_CLAUSE = (
     'An empty list remains the correct answer when the diff genuinely carries nothing substantiable, and '
     'you must never invent a finding, pad the list, or report an issue whose mechanism you have not '
@@ -177,9 +197,9 @@ SEVERITY_CLAUSE = (
     'mention.'
 )
 
-#: The cross-cutting review categories carried by EVERY pack. This is the spine's
-#: review-category rendering; the domain adds exactly one further bullet, so a
-#: pack lands at :data:`MAX_CATEGORY_BULLETS` entries.
+#: The cross-cutting review categories carried by the SPINE artifact alone. The
+#: spine renders at most :data:`MAX_CATEGORY_BULLETS` minus one of them, reserving
+#: the last slot for the single bullet each domain artifact contributes.
 SPINE_CATEGORIES = (
     'Concurrency and time-of-check/time-of-use races; non-atomic file or state mutation; operations '
     'that are unsafe to retry or to run twice.',
@@ -283,7 +303,7 @@ def _is_withholding(text: str) -> bool:
     return any(phrase in lowered for phrase in _WITHHOLDING_PHRASES)
 
 
-def discover_domains(marketplace_dir: Path, bundles: list[str] | None = None) -> dict[str, DomainContribution]:
+def discover_domains(marketplace_dir: Path) -> dict[str, DomainContribution]:
     """Derive the review-domain set by scanning the source marketplace.
 
     A bundle contributes a domain when it holds at least one per-domain
@@ -295,23 +315,25 @@ def discover_domains(marketplace_dir: Path, bundles: list[str] | None = None) ->
     The spine bundle is excluded: it carries the cross-cutting foundations, not
     a domain of its own.
 
+    The derivation takes NO bundle allow-list, and that absence is the contract
+    rather than an omission: this target is not bundle-scopable (see
+    :meth:`PrAgentTarget.generate`), so there is no parameter by which a caller
+    could narrow the set. Removing the knob is what makes the whole-set claim
+    true by construction instead of by convention.
+
     Args:
         marketplace_dir: Path to ``marketplace/bundles/``.
-        bundles: Optional bundle allow-list. ``None`` scans every bundle.
 
     Returns:
         Derived domain identifier -> :class:`DomainContribution`, ordered by
         domain identifier.
     """
-    allowed = set(bundles) if bundles else None
     # bundle -> kind -> (domain_token, skill_dir)
     per_bundle: dict[str, dict[str, tuple[str, Path]]] = {}
 
     for bundle_dir in sorted(p for p in marketplace_dir.glob('*') if p.is_dir()):
         bundle = bundle_dir.name
         if bundle == SPINE_BUNDLE:
-            continue
-        if allowed is not None and bundle not in allowed:
             continue
         skills_dir = bundle_dir / 'skills'
         if not skills_dir.is_dir():
@@ -369,7 +391,7 @@ def discover_spine_topics(marketplace_dir: Path) -> tuple[str, ...]:
 
 
 # ---------------------------------------------------------------------------
-# Pack composition
+# Pack composition — two DISJOINT renderers
 # ---------------------------------------------------------------------------
 
 
@@ -382,117 +404,61 @@ def _join_terms(terms: Sequence[str]) -> str:
     return f'{", ".join(terms[:-1])} and {terms[-1]}'
 
 
-def parse_pack_selection(value: str | Sequence[str]) -> tuple[str, ...]:
-    """Normalize a pack selection into an ordered, deduped tuple of domains.
+def _domain_category_bullet(contribution: DomainContribution) -> str:
+    """Render the ONE derived category bullet a domain artifact contributes.
 
-    Accepts either a :data:`PACK_SEPARATOR`-separated string (the CLI and config
-    form) or an already-split sequence. Order is the caller's, because it is the
-    order the domains are named in the composed pack's prose; duplicates are
-    dropped so ``python,python`` cannot double a rule list.
+    Exactly one bullet per domain artifact — that is the domain half of the
+    category budget. The spine reserves the matching slot by rendering at most
+    :data:`MAX_CATEGORY_BULLETS` minus one of its own bullets, so a single-domain
+    assembly lands exactly at a ceiling this module does not own (see the module
+    docstring).
 
-    Raises:
-        ValueError: When the selection names no domain at all.
+    The bullet states only what the artifact actually carries. A domain whose
+    rules were harvested points at the "Domain rules" block; a domain that
+    contributed no rules is instead named with the standards that govern it, so
+    the reviewer is never promised a list that is not there.
     """
-    raw = value.split(PACK_SEPARATOR) if isinstance(value, str) else list(value)
-    selection: list[str] = []
-    for item in raw:
-        token = item.strip()
-        if token and token not in selection:
-            selection.append(token)
-    if not selection:
-        raise ValueError('empty pack selection: name at least one derived domain')
-    return tuple(selection)
-
-
-def _domain_category_bullet(contributions: Sequence[DomainContribution]) -> str:
-    """Render the SINGLE derived domain category bullet covering every selection.
-
-    Exactly one bullet regardless of how many domains the pack composes. That is
-    the grouping that keeps a composed pack inside :data:`MAX_CATEGORY_BULLETS`:
-    one category per domain would put a two-domain pack at eleven entries and
-    over a ceiling this module does not own (see the module docstring).
-
-    The bullet states only what the pack actually carries. Domains whose rules
-    were harvested point at the "Domain rules" block; domains that contributed no
-    rules are instead named with the standards that govern them, so the reviewer
-    is never promised a list that is not there.
-    """
-    domains = [c.domain for c in contributions]
-    with_rules = [c for c in contributions if c.rules]
-    without_rules = [c for c in contributions if not c.rules]
-
-    clauses: list[str] = []
-    if with_rules:
-        named = _join_terms([c.domain for c in with_rules])
-        clauses.append(
-            f'the rules this organisation enforces for {named} code are listed under '
+    if contribution.rules:
+        clause = (
+            f'the rules this organisation enforces for {contribution.domain} code are listed under '
             f'"Domain rules" below'
         )
-    for contribution in without_rules:
+    else:
         labels = _join_terms([_KIND_LABELS[kind] for kind in contribution.kinds])
-        clauses.append(
+        clause = (
             f'this organisation governs {contribution.domain} through its {labels} standards — '
             f'apply every category above to {contribution.domain} sources and idioms, not only to '
-            f'the repository\'s primary language'
+            f"the repository's primary language"
         )
-    return f'Defects specific to {_join_terms(domains)}: ' + '; '.join(clauses) + '.'
+    return f'Defects specific to {contribution.domain}: {clause}.'
 
 
-def compose_pack(
-    contributions: DomainContribution | Sequence[DomainContribution],
-    spine_topics: tuple[str, ...] = (),
-) -> str:
-    """Compose one instruction pack over one or more derived domains.
+def compose_spine(spine_topics: tuple[str, ...]) -> str:
+    """Compose the cross-cutting spine body — the charter, rendered exactly once.
 
-    The category bullet list is the cross-cutting spine plus exactly ONE derived
-    domain bullet — however many domains are composed — capped at
-    :data:`MAX_CATEGORY_BULLETS`; the domain bullet is never the entry dropped by
-    the cap. The substantiation and anti-fabrication clauses are appended
-    verbatim.
+    This is the half of the review instruction that does not vary by domain: the
+    category preamble, the :data:`SPINE_CATEGORIES` bullets sliced at
+    :data:`MAX_CATEGORY_BULLETS` minus one, the cross-cutting foundations line,
+    and the four charter clauses verbatim. None of it appears in any domain
+    artifact.
+
+    The body is emitted unconditionally. Only the foundations line depends on
+    ``spine_topics``, so a fixture marketplace carrying no spine skill still
+    yields a spine artifact — with that one line omitted, and the clauses and
+    categories intact.
 
     Args:
-        contributions: One contribution, or the ordered set composing the pack.
         spine_topics: Cross-cutting foundation topics, from
-            :func:`discover_spine_topics`.
+            :func:`discover_spine_topics`. Empty omits the foundations line.
     """
-    selected = (contributions,) if isinstance(contributions, DomainContribution) else tuple(contributions)
-    if not selected:
-        raise ValueError('compose_pack requires at least one domain contribution')
-
-    domains = [c.domain for c in selected]
-    scope = f'{_join_terms(domains)} domain' + ('s' if len(domains) > 1 else '')
-
-    spine_budget = MAX_CATEGORY_BULLETS - 1
-    categories = [*SPINE_CATEGORIES[:spine_budget], _domain_category_bullet(selected)]
-
-    lines: list[str] = [
-        f'Prioritise security and correctness over style. This pack is scoped to the {scope}.',
-        '',
-        'Report every issue you can substantiate, in these categories:',
-    ]
-    lines.extend(f'- {category}' for category in categories)
+    lines: list[str] = ['Report every issue you can substantiate, in these categories:']
+    lines.extend(f'- {category}' for category in SPINE_CATEGORIES[: MAX_CATEGORY_BULLETS - 1])
 
     if spine_topics:
         lines.append('')
         lines.append(
             'Cross-cutting foundations to apply in every review: ' + ', '.join(spine_topics) + '.'
         )
-
-    rule_bearing = [c for c in selected if c.rules]
-    if rule_bearing:
-        named = _join_terms([c.domain for c in rule_bearing])
-        lines.append('')
-        lines.append(
-            f'Domain rules — this organisation\'s own standards for {named} code. A diff '
-            f'that breaks one of these is a finding, and the rule already names the mechanism:'
-        )
-        # A composed pack tags each rule with the domain that contributed it, so
-        # the reviewer can tell a Python rule from a marketplace-tooling one. A
-        # single-domain pack needs no tag: the whole pack is that domain.
-        tag = len(rule_bearing) > 1
-        for contribution in rule_bearing:
-            prefix = f'[{contribution.domain}] ' if tag else ''
-            lines.extend(f'- {prefix}{rule}' for rule in contribution.rules)
 
     for clause in (SUBSTANTIATION_CLAUSE, INTENT_CLAUSE, SEVERITY_CLAUSE, ANTI_FABRICATION_CLAUSE):
         lines.append('')
@@ -501,89 +467,138 @@ def compose_pack(
     return '\n'.join(lines) + '\n'
 
 
-def compose_packs(marketplace_dir: Path, bundles: list[str] | None = None) -> dict[str, str]:
-    """Compose the single-domain pack for every derived domain.
+def compose_domain_pack(contribution: DomainContribution) -> str:
+    """Compose ONE domain's body — the domain part alone, spine-free.
+
+    The body is the scope line, exactly one category bullet, and the harvested
+    "Domain rules" block when the domain is rule-bearing. No spine category, no
+    foundations line and no charter clause appears here: that text lives in the
+    spine artifact, once, and the two bodies are disjoint by construction rather
+    than by subtraction.
+
+    Args:
+        contribution: The derived domain this artifact carries.
+    """
+    lines: list[str] = [
+        f'Prioritise security and correctness over style. This pack is scoped to the '
+        f'{contribution.domain} domain.',
+        '',
+        f'- {_domain_category_bullet(contribution)}',
+    ]
+
+    if contribution.rules:
+        lines.append('')
+        lines.append(
+            f'Domain rules — this organisation\'s own standards for {contribution.domain} code. A diff '
+            f'that breaks one of these is a finding, and the rule already names the mechanism:'
+        )
+        lines.extend(f'- {rule}' for rule in contribution.rules)
+
+    return '\n'.join(lines) + '\n'
+
+
+def render_pack_artifact(name: str, body: str) -> str:
+    """Render one published artifact: a do-not-edit header followed by ``body``.
+
+    The header names the source repository, so a reader who found the artifact in
+    the published set can reach the derivation that produced it, and the
+    argument-free regenerate command, which reproduces the WHOLE set — selection
+    is no longer an argument, so following the line can no longer narrow what a
+    repository gets.
+
+    A domain artifact's header additionally records where the charter lives and
+    asks the reader to apply the spine artifact alongside it. That is stated as a
+    REQUIREMENT ON THE READER, not as a guarantee: this generator writes separate
+    files and nothing here makes the pairing hold, so a header claiming the spine
+    "is not optional" would assert an enforcement no code in this repository
+    performs. What is checkable is the fact behind the request — a domain artifact
+    carries no charter text, so one read on its own has neither the substantiation
+    nor the anti-fabrication bar.
+
+    Args:
+        name: The artifact stem — a derived domain, or the spine's own name.
+        body: The composed body, from :func:`compose_domain_pack` or
+            :func:`compose_spine`.
+    """
+    if name == _SPINE_ARTIFACT_NAME:
+        role = (
+            'This is the spine artifact. It carries the cross-cutting review charter exactly once.\n'
+            'The generator emits it on every run, and it is meant to apply to every review whichever\n'
+            'domain artifacts a repository selects.'
+        )
+    else:
+        role = (
+            f'This artifact carries the {name} domain part alone. The review charter lives in the\n'
+            f'spine artifact ({_SPINE_ARTIFACT_NAME}.md) and appears in no domain artifact, so this file on its\n'
+            'own carries none of it. Apply the spine artifact alongside this one.'
+        )
+    return (
+        f'{_GENERATED_HEADER_MARKER}\n'
+        f'Derived from the {_SOURCE_REPOSITORY} marketplace (marketplace/bundles/**).\n'
+        f'Regenerate with:\n'
+        f'  {_REGENERATE_COMMAND}\n'
+        f'{role}\n'
+        f'-->\n'
+        f'\n'
+        f'{body}'
+    )
+
+
+def compose_packs(marketplace_dir: Path) -> dict[str, str]:
+    """Compose the spine-free body for every derived domain.
 
     The population is derived, not hand-written: a consumer enumerating packs
-    (e.g. the charter regression guard) asks this function rather than iterating
-    a literal list, so a new domain is guarded the moment it is derivable.
+    (e.g. the artifact-set drift guard) asks this function rather than iterating
+    a literal list, so a new domain is guarded the moment it is derivable. The
+    spine is deliberately not a member — it is not a domain, and it is emitted
+    separately by :func:`compose_spine`.
+
+    Like :func:`discover_domains`, this takes no bundle allow-list: every caller
+    gets the whole derived set, so no call site can publish a narrowed one.
     """
-    spine_topics = discover_spine_topics(marketplace_dir)
     return {
-        domain: compose_pack(contribution, spine_topics)
-        for domain, contribution in discover_domains(marketplace_dir, bundles=bundles).items()
+        domain: compose_domain_pack(contribution)
+        for domain, contribution in discover_domains(marketplace_dir).items()
     }
 
 
-def compose_selection(
-    marketplace_dir: Path,
-    selection: Sequence[str],
-    bundles: list[str] | None = None,
-) -> str:
-    """Compose the ONE pack a repository carries for the given domain selection.
+def _prune_stale_artifacts(packs_dir: Path, keep: set[Path]) -> list[Path]:
+    """Delete generated artifacts in ``packs_dir`` that this run did not write.
 
-    This is the composition the target emits, and the one a guard must measure:
-    a composed selection is a pack shape that :func:`compose_packs` — which only
-    enumerates single-domain packs — never produces.
+    A domain that stops deriving — its standards skill removed or renamed — used
+    to leave its artifact behind, so the published set carried MORE artifacts
+    than the derived set while every remaining file still looked freshly
+    generated. Nothing downstream could tell the difference: the publish
+    workflow's count-before-delete guard sees a plausible count either way, and
+    a consumer selecting the stale stem gets rules for a domain this repository
+    no longer states any.
 
-    Raises:
-        ValueError: When the marketplace derives no domain at all, or when the
-            selection names a domain that is not derivable.
+    Two properties are load-bearing:
+
+    * **It runs AFTER the new set is written.** A compose that raises therefore
+      leaves the previous set intact, where clearing the directory first would
+      publish an empty set on any failure.
+    * **It reclaims only what this generator produced.** A file is removed only
+      when it carries :data:`_GENERATED_HEADER_MARKER`, so a hand-written note
+      someone dropped into ``packs/`` survives. The prune's job is to keep the
+      generated set equal to the derived set, not to own the directory.
+
+    Args:
+        packs_dir: The emission directory, already written.
+        keep: Absolute paths this run wrote — every one is left alone.
+
+    Returns:
+        The paths removed, sorted.
     """
-    derived = discover_domains(marketplace_dir, bundles=bundles)
-    if not derived:
-        raise ValueError(
-            f'no review domains derived from {marketplace_dir}: expected at least one bundle '
-            f'carrying a *-security, arch-gate-* or ext-triage-* skill'
-        )
-    unknown = [domain for domain in selection if domain not in derived]
-    if unknown:
-        raise ValueError(
-            f'unknown pack {PACK_SEPARATOR.join(unknown)!r}; derived packs are: '
-            f'{", ".join(sorted(derived))}'
-        )
-    return compose_pack(
-        [derived[domain] for domain in selection],
-        discover_spine_topics(marketplace_dir),
-    )
-
-
-def render_config(selection: Sequence[str], pack: str) -> str:
-    """Render the repo-local ``.pr_agent.toml`` carrying exactly one pack.
-
-    The pack is emitted as a TOML multi-line LITERAL string: harvested rule text
-    can contain backslashes (regex fragments, path separators), which a basic
-    ``\"\"\"`` string would read as escape sequences.
-
-    The header states the selection and the command that reproduces the file,
-    including ``--packs``. That is load-bearing for a composed selection: a
-    regenerate line that omitted the selection would name a command producing a
-    DIFFERENT file, and following it would silently narrow the repository's
-    review to the default.
-    """
-    if "'''" in pack:
-        raise ValueError('composed pack contains a TOML literal-string terminator; cannot render')
-    joined = PACK_SEPARATOR.join(selection)
-    return (
-        '# Repository-local PR-Agent configuration — GENERATED, do not edit by hand.\n'
-        '#\n'
-        f'# Pack: {joined}. Regenerate with:\n'
-        f'#   ./pw generate --target pr-agent --output . --packs {joined}\n'
-        '#\n'
-        '# Merged ABOVE the organisation-wide cuioss/pr-agent-settings configuration, so this\n'
-        '# file carries the per-domain reviewer pack ONLY and inherits every other key — model,\n'
-        '# token budgets, output suppression — from that file. Restating those here would\n'
-        '# decentralize the configuration that file exists to centralize.\n'
-        '#\n'
-        '# A repository carries exactly ONE pack: a regeneration REPLACES the pack below rather\n'
-        '# than appending to it. One pack may COMPOSE several derived domains — a repository is\n'
-        '# not always one language — and the composed pack still contributes exactly one review\n'
-        '# category, so composition never widens the category ceiling.\n'
-        '\n'
-        '[pr_reviewer]\n'
-        "extra_instructions = '''\n"
-        f"{pack}'''\n"
-    )
+    pruned: list[Path] = []
+    for path in sorted(packs_dir.glob('*.md')):
+        if path in keep:
+            continue
+        if not path.read_text(encoding='utf-8').startswith(_GENERATED_HEADER_MARKER):
+            continue
+        path.unlink()
+        pruned.append(path)
+    return pruned
 
 
 # ---------------------------------------------------------------------------
@@ -592,18 +607,7 @@ def render_config(selection: Sequence[str], pack: str) -> str:
 
 
 class PrAgentTarget(TargetBase):
-    """Build target emitting a per-domain PR-Agent instruction pack."""
-
-    def __init__(self, pack: str | Sequence[str] = DEFAULT_PACK) -> None:
-        """Bind the target to ONE pack selection, over one or more domains.
-
-        Args:
-            pack: The derived domain(s) whose composed pack this run emits —
-                either a :data:`PACK_SEPARATOR`-separated string or a sequence.
-                Selection is an argument, never an accumulation: one run emits
-                one pack, and that pack may compose several domains.
-        """
-        self._packs = parse_pack_selection(pack)
+    """Build target emitting the per-domain PR-Agent artifact set plus the spine."""
 
     @property
     def name(self) -> str:
@@ -613,14 +617,14 @@ class PrAgentTarget(TargetBase):
     def config_dir(self) -> Path:
         """Directory holding this target's rules — the package directory itself.
 
-        The pack-selection rules are module-level constants rather than sibling
-        JSON files; see the module docstring for why.
+        The derivation rules are module-level constants rather than sibling JSON
+        files; see the module docstring for why.
         """
         return Path(__file__).resolve().parent
 
     @property
     def emits_bundle_tree(self) -> bool:
-        """This target emits a reviewer configuration, not a bundle tree."""
+        """This target emits a reviewer artifact set, not a bundle tree."""
         return False
 
     def supports_agents(self) -> bool:
@@ -629,53 +633,91 @@ class PrAgentTarget(TargetBase):
     def supports_commands(self) -> bool:
         return False
 
-    @property
-    def packs(self) -> tuple[str, ...]:
-        """The selected derived domains this run composes into one pack."""
-        return self._packs
-
-    @property
-    def pack(self) -> str:
-        """The selection in its canonical string form (the header/CLI spelling)."""
-        return PACK_SEPARATOR.join(self._packs)
-
     def generate(
         self,
         marketplace_dir: Path,
         output_dir: Path | None,
         bundles: list[str] | None = None,
     ) -> list[Path]:
+        """Emit the whole derived artifact set under ``{output_dir}/packs/``.
+
+        ``bundles`` is accepted to satisfy the :class:`TargetBase` signature and
+        is deliberately IGNORED — this target is not bundle-scopable. Its
+        published set must EQUAL the derived set, for two reasons that a narrowed
+        run breaks together: every artifact stamps the argument-free
+        :data:`_REGENERATE_COMMAND` into its header, so a narrowed set publishes
+        artifacts whose own stated reproduction command does not reproduce them;
+        and a consumer selecting a stem that a narrowed run happened to omit gets
+        no artifact at all, with nothing in the published set saying why.
+
+        Ignoring the filter — rather than rejecting it — is what keeps
+        ``--target all --bundles X`` working: the CLI forwards ``bundles`` to
+        every registered target, so a raise here would fail the whole fan-out
+        run. The other targets scope; this one emits its whole set alongside
+        them. There is consequently no parameter anywhere in this module by
+        which the derived set can be narrowed (see :func:`discover_domains`).
+
+        Args:
+            marketplace_dir: Path to ``marketplace/bundles/``.
+            output_dir: Root under which ``packs/`` is written. Required.
+            bundles: Ignored — see above.
+
+        Returns:
+            The written artifact paths, sorted.
+        """
         if output_dir is None:
             raise ValueError(
                 'PrAgentTarget requires --output: pass an output directory '
-                '(e.g. the repository root, which is where .pr_agent.toml lives)'
+                '(e.g. target/pr-agent, under which the packs/ artifact set is written)'
             )
-        pack = compose_selection(marketplace_dir, self._packs, bundles=bundles)
+        bodies = compose_packs(marketplace_dir)
+        if not bodies:
+            raise ValueError(
+                f'no review domains derived from {marketplace_dir}: expected at least one bundle '
+                f'carrying a *-security, arch-gate-* or ext-triage-* skill'
+            )
+        if _SPINE_ARTIFACT_NAME in bodies:
+            # Fail CLOSED on a name collision. A bundle shipping a `spine-security`
+            # (or `arch-gate-spine` / `ext-triage-spine`) skill derives the domain
+            # `spine`, and a bare assignment would replace that domain's harvested
+            # rules with the spine — dropping enforcement text from the published
+            # set with no error, while the publish workflow's count-before-delete
+            # guard still sees a non-zero count. A security control must not fail
+            # open. `test_the_spine_stem_is_not_itself_a_derived_domain` catches
+            # this in THIS repository's suite; this raise is what protects every
+            # consumer that runs the generator without that test.
+            raise ValueError(
+                f'derived domain {_SPINE_ARTIFACT_NAME!r} collides with the spine artifact '
+                f'name: one would silently replace the other. Rename the skill that derives '
+                f'it, or reserve the name in _classify_skill.'
+            )
+        bodies[_SPINE_ARTIFACT_NAME] = compose_spine(discover_spine_topics(marketplace_dir))
 
-        output_dir.mkdir(parents=True, exist_ok=True)
-        config_path = output_dir / CONFIG_FILENAME
-        config_path.write_text(render_config(self._packs, pack), encoding='utf-8')
-        return [config_path]
+        packs_dir = output_dir / _PACKS_DIRNAME
+        packs_dir.mkdir(parents=True, exist_ok=True)
+        written: list[Path] = []
+        for artifact_name, body in bodies.items():
+            path = packs_dir / f'{artifact_name}.md'
+            path.write_text(render_pack_artifact(artifact_name, body), encoding='utf-8')
+            written.append(path)
+        _prune_stale_artifacts(packs_dir, keep=set(written))
+        return sorted(written)
 
 
 __all__ = [
     'ANTI_FABRICATION_CLAUSE',
-    'CONFIG_FILENAME',
-    'DEFAULT_PACK',
     'DomainContribution',
     'INTENT_CLAUSE',
     'MAX_CATEGORY_BULLETS',
     'MAX_DOMAIN_RULES',
-    'PACK_SEPARATOR',
     'PrAgentTarget',
     'SEVERITY_CLAUSE',
     'SPINE_CATEGORIES',
     'SUBSTANTIATION_CLAUSE',
-    'compose_pack',
+    'compose_domain_pack',
     'compose_packs',
-    'compose_selection',
+    'compose_spine',
     'discover_domains',
     'discover_spine_topics',
-    'parse_pack_selection',
-    'render_config',
+    'render_pack_artifact',
 ]

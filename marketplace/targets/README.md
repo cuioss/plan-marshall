@@ -41,7 +41,7 @@ marketplace/targets/
 │   └── frontmatter-rules.json
 └── pr_agent/                     # PR-Agent per-domain instruction packs
     ├── __init__.py               # Registers PrAgentTarget
-    └── target.py                 # PrAgentTarget(TargetBase) + composition rules
+    └── target.py                 # PrAgentTarget(TargetBase) + derivation rules
 ```
 
 Each target lives in its own sub-package. The sub-package's `__init__.py`
@@ -84,7 +84,7 @@ the target's own `config_dir/` so a mapping change is a JSON edit, not a
 code edit. The `pr-agent` target is the one exception and states its reason
 in its module docstring: a new `marketplace/targets/**/*.json` path is
 claimed by no build extension and by no owner-less classifier rule, so it
-would resolve to the `unknown` role bucket. Its composition rules are
+would resolve to the `unknown` role bucket. Its derivation rules are
 module-level constants instead.
 
 `emits_bundle_tree` declares whether the target's output directory is a
@@ -120,15 +120,17 @@ and the shape rules that module owns on top of the YAML load.
 # OpenCode emit
 ./pw generate-opencode
 
-# PR-Agent reviewer pack → ./.pr_agent.toml at the repository root
-# --packs composes one pack from several derived domains; omit it for the default
-./pw generate --target pr-agent --output . --packs python,plugin
+# PR-Agent reviewer packs → target/pr-agent/packs/, one Markdown artifact per
+# derived review domain plus spine.md. The run takes no selection argument: it
+# emits the whole derived set, and a consumer selects from the published one.
+# --bundles below does not narrow this target — it is ignored here.
+./pw generate --target pr-agent --output target/pr-agent
 
 # Every target at once (claude → target/claude/, opencode → target/opencode/,
-# pr-agent → target/pr-agent/.pr_agent.toml)
+# pr-agent → target/pr-agent/packs/)
 ./pw generate --target all --output target
 
-# Scope to specific bundles
+# Scope to specific bundles (bundle-tree targets only — pr-agent ignores it)
 ./pw generate --target opencode --output target/opencode \
     --bundles plan-marshall,pm-dev-java
 ```
@@ -179,65 +181,70 @@ step emits `target/claude/` during the finalize phase; the
 `/sync-plugin-cache` skill consumes that directory when syncing the
 Claude plugin cache.
 
-The `pr-agent` target is the exception: its output is a **committed
-configuration file**, not a build artifact. `.pr_agent.toml` is read by the
-PR-Agent reviewer from the repository's default branch, so it must be
-tracked in git. It is generated rather than hand-maintained — regenerate it
-instead of editing it, and a regeneration must reproduce the committed file
-byte-for-byte.
+`target/pr-agent/packs/` is the same kind of output: a build artifact, not a
+committed source. The repository tracks no generated reviewer configuration —
+the artifact set is published to `cuioss/pr-agent-settings` by
+`.github/workflows/pr-agent-packs-publish.yml` on merge to `main`, and a
+consumer repository names a selection from that published set rather than
+carrying a copy of it.
 
 ## PR-Agent target — per-domain instruction packs
 
-The `pr-agent` target emits a reviewer configuration instead of an
-assistant bundle tree: a `.pr_agent.toml` carrying exactly one composed
-instruction pack under `[pr_reviewer].extra_instructions`. Every other key
-— model, token budgets, output suppression — is inherited from the
-organisation-wide `cuioss/pr-agent-settings` configuration, which is merged
-beneath the repository-local file.
+The `pr-agent` target emits a reviewer artifact set instead of an assistant
+bundle tree: one Markdown artifact per derived review domain under
+`{output}/packs/`, plus `spine.md` carrying the cross-cutting review charter.
+The artifacts are published to the organisation-wide
+`cuioss/pr-agent-settings` repository, which is also where every other
+reviewer key — model, token budgets, output suppression — lives.
 
 Three properties are load-bearing:
 
 * **The domain set is derived, never hand-transcribed.** The target scans
   `marketplace/bundles/` for the per-domain standards skills —
   `*-security`, `arch-gate-*` and `ext-triage-*` — so a bundle added to the
-  marketplace appears in the derived domain set with no code edit. Each
-  pack carries the cross-cutting `plan-marshall:persona-security-expert`
-  spine plus the selected domains' own rules, harvested from the domain
+  marketplace appears in the derived domain set with no code edit. A domain
+  artifact carries that domain's own rules, harvested from the domain
   security skill's `## Enforcement` block.
-* **One pack may compose several domains.** A repository is not always one
-  language: this marketplace is both Python and marketplace-tooling, so its
-  own pack is `--packs python,plugin` and carries both domains' rules. A
-  single-domain selection is just the one-element case of the same
-  mechanism.
-* **A repository carries exactly one pack, and swaps rather than
-  accumulates.** Pack selection is an argument to the target; a run writes
-  one `.pr_agent.toml`, replacing whatever pack was there before. The
-  generated header states the selection and the exact `--packs` command
-  that reproduces the file — following a regenerate line without it would
-  silently narrow the repository's review to the default.
+* **The artifact set is orthogonal, and a repository composes by
+  selecting.** Composition is not an act of this target: a domain artifact
+  carries the domain part alone, and the cross-cutting charter appears
+  exactly once, in `spine.md`. A repository that is several languages at
+  once — this marketplace is both Python and marketplace-tooling — names
+  several published artifacts instead of carrying one file that folds them
+  together, so a charter change is published once rather than regenerated
+  into every consumer.
+* **A run emits the whole set, and the set stays equal to the derivation.**
+  One artifact per derived domain plus the spine, and the generated header
+  names the argument-free command that reproduces it. `--bundles` is accepted
+  and ignored, which is what keeps `--target all --bundles X` working for the
+  targets that do scope; and a generated artifact the current run did not
+  write is pruned, so a domain that stops deriving does not survive in the
+  output. The spine is emitted unconditionally on every run. Whether a consumer
+  then applies it is not something this target enforces — no consumer of these
+  artifacts exists yet — so each domain artifact's header asks for it and says
+  what a lone domain artifact lacks without it.
 
-The composition is bounded and guarded. The category bullet list is capped
-at ten entries (past roughly ten, the answer is a second focused pass, not
-an eleventh bullet); the substantiation bar and the anti-fabrication clause
-are carried verbatim into every pack; and withholding language — the
-measured cause of five consecutive empty reviews — is dropped from any
-harvested rule that carries it.
+The emission is bounded and guarded. The substantiation bar and the
+anti-fabrication clause are carried verbatim into the **spine artifact** and
+appear in no domain artifact; withholding language — the measured cause of
+five consecutive empty reviews — is dropped from any harvested rule that
+carries it.
 
-**Composition holds the ceiling by grouping, not by widening it.** The ten
-is an observed organisation rule quoted in `pr-agent-settings`' README, not
-an internal number this target may raise. A composed pack therefore
-contributes exactly **one** domain category bullet naming every selected
-domain, and groups the per-domain rules under the single "Domain rules"
-block, each tagged with the domain that contributed it. One category per
-domain would put a two-domain pack at eleven bullets; grouping keeps an
-N-domain pack at ten for every N. Rules are not categories and are
-deliberately not governed by that ceiling — they carry their own per-domain
-cap, so a composed pack's rule list grows with the number of domains.
+**The category ceiling is a two-part budget, not a grouping.** The ten is an
+observed organisation rule quoted in `pr-agent-settings`' README, not an
+internal number this target may raise. The spine reserves one slot: it
+carries at most nine category bullets, and each domain artifact contributes
+exactly one. A single-domain assembly therefore lands exactly at the
+ceiling; grouping the domain bullets of a multi-domain assembly back into
+one is the consumer's obligation at assembly time, and no assembled pack
+exists in this repository to prove it against. Rules are not categories and
+are deliberately not governed by that ceiling — each domain artifact carries
+its own per-domain rule cap.
 
-`test/marketplace/targets/pr_agent/` enforces those invariants across the
-whole emittable pack population — every single-domain pack **and** the
-widest composition the marketplace admits, which is the shape most likely
-to breach the ceiling.
+`test/marketplace/targets/pr_agent/` enforces those invariants over the
+emitted artifact set: one guard pins the emitted stems to the derived domain
+set plus the spine, and a second pins each charter clause and each spine
+category to `spine.md` and to nowhere else.
 
 ## Claude target — emitted artifacts
 

@@ -1,0 +1,154 @@
+name: Publish PR-Agent Packs
+
+# Publish the derived reviewer pack artifacts into cuioss/pr-agent-settings as a
+# pull request. The pr-agent target emits one Markdown artifact per derived review
+# domain plus the spine artifact carrying the charter once; publishing that set
+# once, addressably, is what lets a consumer repository NAME a selection instead
+# of carrying a regenerated copy of the charter.
+#
+# The paths: filter names the only inputs the derivation reads — the marketplace
+# bundles the domains are scanned out of, and the target code that renders them.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'marketplace/bundles/**'
+      - 'marketplace/targets/**'
+
+# Default the workflow token to read-only. Every write in this workflow goes
+# through the cui-release-bot App token minted below, which is scoped to the
+# foreign repository: the settings checkout uses it, and so does `gh pr create`.
+# The default GITHUB_TOKEN therefore needs only read, and no step requires a
+# per-step write grant.
+permissions:
+  contents: read
+
+# Serialize publish runs so consecutive pushes queue rather than race on the
+# foreign repository's packs/ directory. Runs queue (cancel-in-progress: false)
+# rather than cancel, so every landed source commit reaches the published set.
+concurrency:
+  group: pr-agent-packs-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish reviewer packs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: source
+          # This checkout is a file tree the generator READS — no step runs git
+          # or gh against it. The default `persist-credentials: true` would write
+          # the workflow token into source/.git/config and leave it there for the
+          # whole job, next to the third-party package code installed below, to
+          # serve a git operation that never happens. A credential nothing uses
+          # is a credential that should not be on disk.
+          persist-credentials: false
+
+      - name: Set up Python 3
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.x'
+
+      - name: Install the generator's declared dependencies
+        working-directory: source
+        # The generator reads component frontmatter with `yaml.safe_load`, so it
+        # is no longer stdlib-only. `pyproject.toml` is the single source of
+        # truth for the constraint; deriving it here keeps CI from carrying a
+        # second copy that could drift from it.
+        run: |
+          python3 -c "import pathlib, tomllib; print('\n'.join(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['dependencies']))" > /tmp/generator-requirements.txt
+          python3 -m pip install -r /tmp/generator-requirements.txt
+
+      - name: Generate the pr-agent artifact set
+        working-directory: source
+        run: |
+          python3 marketplace/targets/generate.py \
+            --target pr-agent \
+            --output target/pr-agent
+
+      # Minted here rather than as the job's first step. Nothing above needs it:
+      # the source checkout, the dependency install and the derivation all run
+      # without any credential, so holding the mint until the artifact set exists
+      # keeps the write-scoped foreign-repository token off the runner while
+      # third-party package code (`pip install` above) executes. The mint still
+      # precedes every act with an effect — nothing is removed from or written to
+      # the foreign repository until the checkout below has succeeded.
+      - name: Generate Release Bot Token
+        id: release-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          # Named explicitly rather than defaulted to the current repository. The
+          # reach this workflow needs is cross-repository, so stating it is what
+          # makes a missing or narrowed App installation fail loudly AT THE MINT,
+          # instead of producing a token that silently lacks the scope and failing
+          # later as an opaque 404. The installation must carry `contents: write`
+          # and `pull-requests: write` on cuioss/pr-agent-settings — the foreign
+          # repository named below, not on this one.
+          owner: cuioss
+          repositories: pr-agent-settings
+
+      - name: Checkout cuioss/pr-agent-settings
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: cuioss/pr-agent-settings
+          token: ${{ steps.release-token.outputs.token }}
+          path: settings
+
+      - name: Replace the published packs directory
+        # A REPLACE, not a merge: a domain that stops deriving must disappear from
+        # the published set, which a copy-over-the-top would leave behind forever.
+        # The emitted set is counted BEFORE the destination is removed, so an
+        # empty derivation refuses rather than publishing the absence of every
+        # pack — the destructive step never runs on unverified input.
+        run: |
+          set -euo pipefail
+          artifact_count=$(find source/target/pr-agent/packs -maxdepth 1 -name '*.md' | wc -l)
+          if [ "${artifact_count}" -eq 0 ]; then
+            echo "::error::the generator emitted no pack artifacts; refusing to replace the published set with nothing"
+            exit 1
+          fi
+          echo "Publishing ${artifact_count} pack artifact(s)"
+          rm -rf settings/packs
+          mkdir -p settings/packs
+          cp source/target/pr-agent/packs/*.md settings/packs/
+
+      - name: Open the publish pull request
+        working-directory: settings
+        # Every context value is passed through env: and referenced as a quoted
+        # shell variable — no context expression is spliced into this shell.
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name 'cui-release-bot'
+          git config user.email 'cui-release-bot@cuioss.de'
+          git add --all packs
+          if git diff --cached --quiet; then
+            echo "The published packs already match the derived set — nothing to publish."
+            exit 0
+          fi
+          branch="pr-agent-packs/${SOURCE_SHA}"
+          title="chore(packs): publish reviewer packs from ${SOURCE_REPOSITORY}@${SOURCE_SHA}"
+          git checkout -b "${branch}"
+          git commit -m "${title}"
+          git push origin "${branch}"
+          # --label applies skip-bot-review AT CREATION TIME. That ordering is
+          # load-bearing rather than stylistic: the org reusable workflow honours
+          # the label through a job-level `if:` guard evaluated when the review job
+          # is scheduled, so a label added after the pull request exists loses the
+          # race and the review runs anyway.
+          gh pr create \
+            --repo cuioss/pr-agent-settings \
+            --base main \
+            --head "${branch}" \
+            --title "${title}" \
+            --label skip-bot-review \
+            --body "Generated artifact set, published from ${SOURCE_REPOSITORY}@${SOURCE_SHA}. The packs/ directory is REPLACED rather than merged, so a review domain that stopped deriving disappears from the published set. Do not edit these files by hand — they are regenerated from the source marketplace."

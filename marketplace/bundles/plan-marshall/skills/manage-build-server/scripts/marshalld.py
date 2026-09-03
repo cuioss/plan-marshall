@@ -68,6 +68,25 @@ VERSION = '1'
 """Daemon protocol/identity version reported by ``ping`` and the handshake."""
 
 _DEFAULT_JOB_TIMEOUT = 1800
+"""Default wall-clock bound (seconds) the supervisor runs a build child under.
+
+This bounds ONE job's child process — the executor-form command re-run inside
+the daemon — and is the value applied when a submit states no bound of its own.
+It is a FLOOR, not a ceiling: a :class:`JobSpec` carrying an explicit ``timeout``
+RAISES it (see :meth:`Daemon._resolve_job_timeout`), because the build wrapper's
+``--timeout`` is documented as an override and a routed build must honour it
+exactly as an in-process one does. A request never LOWERS this bound: the child
+enforces its own (floored) bound already, and an outer bound below the inner one
+would kill the run before the child could report which step hung."""
+
+_JOB_TIMEOUT_MARGIN_SECONDS = 30
+"""Headroom added to a requested bound so the CHILD's own timeout fires first.
+
+The daemon's timer starts before the child process does, so an outer bound equal
+to the child's inner bound expires first and turns the child's diagnosable
+``timeout`` (which names the step that hung) into an opaque outer kill. The
+margin keeps the two ordered. Mirrors the client's ``_WAIT_TIMEOUT_MARGIN_SECONDS``."""
+
 _DEFAULT_WAIT_BOUND = 300
 _POLL_INTERVAL_SECONDS = 0.5
 _LOG_MAX_BYTES = 8 * 1024 * 1024
@@ -262,7 +281,9 @@ class Daemon:
                 whichever interpreter happened to launch the daemon.
             common_dir_resolver: Worktree-liveness resolver for the verifier
                 (defaults to the git-backed resolver).
-            job_timeout: Per-job wall-clock timeout in seconds.
+            job_timeout: Default per-job wall-clock timeout in seconds, applied
+                when a submit states no bound of its own and used as the floor
+                when it does (see :meth:`_resolve_job_timeout`).
             log_dir: Per-job build-log directory.
             poll_interval: Wait long-poll interval in seconds.
         """
@@ -517,6 +538,27 @@ class Daemon:
             self._progress[entry.job_id] = JobProgress()
             self._tasks[entry.job_id] = asyncio.create_task(self._execute(entry.job_id, entry.spec))
 
+    def _resolve_job_timeout(self, requested: int | None) -> int:
+        """Return the supervisory bound for a job: the default, raised by a request.
+
+        A submit that stated no bound (``requested is None``) gets this daemon's
+        configured default unchanged. A submit that DID state one raises the
+        bound to that request plus :data:`_JOB_TIMEOUT_MARGIN_SECONDS`, so the
+        child's own (identical, since the daemon re-runs the same argv) bound is
+        the one that fires and reports. The default still floors the result,
+        because the child already enforces the smaller bound itself and an outer
+        kill underneath it would only destroy the child's diagnosis.
+
+        Args:
+            requested: The spec's explicit bound in seconds, or ``None``.
+
+        Returns:
+            The wall-clock bound in seconds to run the child under.
+        """
+        if requested is None:
+            return self._job_timeout
+        return max(requested + _JOB_TIMEOUT_MARGIN_SECONDS, self._job_timeout)
+
     async def _execute(self, job_id: str, spec_dict: dict[str, Any]) -> None:
         try:
             spec = JobSpec.from_dict(spec_dict)
@@ -525,7 +567,7 @@ class Daemon:
             payload = await run_job(
                 spec.command,
                 spec.project_path,
-                timeout=self._job_timeout,
+                timeout=self._resolve_job_timeout(spec.timeout),
                 log_file=log_file,
                 progress=self._progress.get(job_id),
             )

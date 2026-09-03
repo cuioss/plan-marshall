@@ -424,6 +424,11 @@ class TestDoctorMarketplaceWiring:
             is scan_step_configurable_contract
         )
 
+    # Runs `cmd_quality_gate` over the whole real marketplace, so it contends with
+    # the lint leg under `verify` and exceeds the global 300s hang detector there
+    # while passing standalone. See `test_doctor_marketplace.py`'s gate anchor for
+    # why 900 rather than a tighter figure.
+    @pytest.mark.timeout(900)
     def test_quality_gate_runs_the_rule(self) -> None:
         """``cmd_quality_gate`` includes the analyzer in its ``rules_run`` and
         the real tree is clean for it.

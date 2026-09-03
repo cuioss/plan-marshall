@@ -5,3 +5,22 @@ sonar:
 
 github-automation:
   auto-merge-build-versions: true
+
+# The reference example every repository copies: a project NAMES the published
+# reviewer artifacts it selects instead of carrying a generated copy of them.
+#
+# The spine artifact is applied unconditionally and is NOT listable here.
+# `packs:` names domain artifacts only, so a project can neither select nor
+# deselect the spine — a spine a project could opt out of is a review charter a
+# project could drop, which is exactly the regression this design forbids.
+pr-agent:
+  # The derived domain artifacts this repository selects. It is both a Python
+  # codebase and a marketplace-tooling codebase, so it needs both domains' rules.
+  packs:
+    - python
+    - plugin
+  # Project-specific rules, appended after the selected artifacts. Declared as an
+  # empty list rather than omitted so the shape stays visible: each entry is one
+  # rule sentence naming the mechanism a diff breaks. This repository adds none —
+  # its rules reach the reviewer through the derivation, not through this file.
+  additional_rules: []

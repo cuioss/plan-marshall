@@ -169,13 +169,25 @@ filterwarnings = ["error"]
 # tests) is used deliberately: the thread method's watchdog leaves the worker in
 # an unclean state on teardown under xdist.
 timeout = 300
-# Custom-marker registry — the SINGLE source of truth for every non-built-in
-# ``@pytest.mark.<name>`` in the suite. Declared here rather than through
-# ``config.addinivalue_line`` in ``test/conftest.py::pytest_configure`` so the
-# registry is data, not code, and so enabling ``--strict-markers`` later needs
-# no relocation. A whole-tree sweep of ``@pytest.mark.<name>`` plus the markers
-# applied programmatically in ``pytest_collection_modifyitems`` confirms these
-# six are the complete set of custom markers in use.
+# ``timeout = 300`` is a suite-wide DEFAULT, not a ceiling. A handful of tests
+# scan the WHOLE marketplace (the plugin-doctor quality gate and its analyzer
+# sweeps) and contend with the compile and lint legs under ``verify``, where they
+# exceed 300 while passing standalone. Those carry a per-test
+# ``@pytest.mark.timeout(N)`` naming why they need more, rather than raising the
+# suite default — which is coupled to the ``slow_live`` budget above and must not
+# drift up to accommodate a different class of test.
+#
+# ``timeout`` is NOT registered below and does not need to be: pytest-timeout
+# registers its own marker via ``addinivalue_line`` in its ``pytest_configure``,
+# so ``--strict-markers`` is satisfied by the plugin.
+#
+# Custom-marker registry — the SINGLE source of truth for every non-built-in,
+# non-PLUGIN-provided ``@pytest.mark.<name>`` in the suite. Declared here rather
+# than through ``config.addinivalue_line`` in ``test/conftest.py::pytest_configure``
+# so the registry is data, not code. A whole-tree sweep of ``@pytest.mark.<name>`` plus the
+# markers applied programmatically in ``pytest_collection_modifyitems`` confirms
+# these six are the complete set of custom markers in use; ``timeout`` and
+# ``parametrize`` are excluded from that set as plugin- and pytest-owned.
 markers = [
     # ``allow_pollution`` is a DELIBERATE ESCAPE HATCH, retained by design: it
     # is the single opt-out a test uses when it must exercise the real
