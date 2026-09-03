@@ -21,7 +21,15 @@ from pathlib import Path
 
 import pytest
 
-from _manage_tasks_fixtures import _finalize_step_ns, add_basic_task, cmd_finalize_step
+from _manage_tasks_fixtures import (
+    _finalize_step_ns,
+    _read_ns,
+    _update_ns,
+    add_basic_task,
+    cmd_finalize_step,
+    cmd_read,
+    cmd_update,
+)
 
 from conftest import add_skill_scripts_to_path
 
@@ -421,6 +429,16 @@ def _artifact_repo(tmp_path, monkeypatch):
     return root
 
 
+def _head(root) -> str:
+    completed = subprocess.run(
+        ['git', '-C', str(root), 'rev-parse', 'HEAD'],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout.strip()
+
+
 def test_task_close_emits_artifact_lines_from_the_script(plan_context, _artifact_repo):
     """The closing call records a baseline, diffs it, and writes the lines itself."""
     add_basic_task(
@@ -460,3 +478,46 @@ def test_task_close_with_an_empty_diff_emits_no_artifact_line(plan_context, _art
 
     assert result['artifact_lines'] == 0
     assert '[ARTIFACT]' not in _read_work_log(plan_context.plan_dir_for('outcome-default'))
+
+
+# The baseline capture has TWO entry paths: the implicit `in_progress` flip
+# inside `finalize-step`, covered above, and the explicit `update --status
+# in_progress` verb. Covering only one leaves the other free to regress into the
+# exact state the capture exists to prevent — a task opened through `update`
+# carrying no baseline, so its artifact channel is silently inert while the
+# other path's tests stay green. The two cases below are the matched pair.
+
+
+def test_update_to_in_progress_records_the_baseline(plan_context, _artifact_repo):
+    """The explicit entry path lands the same baseline as its finalize-step sibling."""
+    add_basic_task(
+        plan_id='outcome-default',
+        title='Opened Through Update',
+        deliverable=1,
+        steps=['src/main/java/A.java'],
+    )
+
+    cmd_update(_update_ns(plan_id='outcome-default', number=1, status='in_progress'))
+
+    task = cmd_read(_read_ns(plan_id='outcome-default', number=1))['task']
+    assert task[_artifacts.TASK_START_SHA_FIELD] == _head(_artifact_repo)
+
+
+def test_update_to_a_non_opening_status_records_no_baseline(plan_context, _artifact_repo):
+    """The negative control — only the `in_progress` transition captures.
+
+    Without it the positive case above would pass against an `update` that
+    captured on EVERY status change, which would move the base forward on the
+    closing transition and shrink the artifact list to nothing.
+    """
+    add_basic_task(
+        plan_id='outcome-default',
+        title='Blocked Without Opening',
+        deliverable=1,
+        steps=['src/main/java/A.java'],
+    )
+
+    cmd_update(_update_ns(plan_id='outcome-default', number=1, status='blocked'))
+
+    task = cmd_read(_read_ns(plan_id='outcome-default', number=1))['task']
+    assert _artifacts.TASK_START_SHA_FIELD not in task

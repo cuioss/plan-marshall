@@ -80,7 +80,7 @@ The three rows differ in kind, not only in value. The `skipped` row carries a ME
 | `phase_6.candidate_steps` | list[string] | The phase-6 candidate set this compose selected FROM, snapshotted **before** any pre-filter or decision-matrix row subtracted from it, boundary-normalized exactly like `phase_6.steps`. Written by `compose`; read only by `reconcile`, which diffs it against live configuration to tell a candidate that is NEW since compose (owed a backfill) from one the matrix considered and deliberately dropped (must stay dropped). The emitted `phase_6.steps` cannot serve that purpose — it is the post-subtraction result, so "in live config but not in the manifest" would match both cases. A manifest composed before this field existed has no `phase_6.candidate_steps` key; `reconcile` then reports `backfill_determinable: false` rather than guessing. |
 | `phase_5.step_params` | object | Per-step param snapshot for the selected Phase 5 verify steps, keyed by the (bare) in-manifest step id; each value is the step's resolved param object snapshotted from the marshal.json keyed map at compose time. Verify steps own no params, so values are typically `{}`. Read via `step-params get`; per-plan overridable via `step-params set`. |
 | `phase_6.step_params` | object | Per-step param snapshot for the selected Phase 6 finalize steps, keyed by the (bare) in-manifest step id; each value is the step's resolved param object snapshotted from the marshal.json keyed map at compose time (e.g. `branch-cleanup` carries `pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold`; `sonar-roundtrip` carries `touched_file_cleanup` / `do_transition` / `ce_wait_timeout_seconds`; `automated-review` carries `review_bot_buffer_seconds`). This is the **plan-local runtime source** that phase-5/6 consumers read via `step-params get` (per-plan overridable via `step-params set`), NOT the marshal.json keyed map (the compose-time default). |
-| `execution_log` | list[object] | Ordered append log of per-step execution records, written one row per `record-step` invocation. Each row carries `step_id` (the dispatched step), `phase` (`5-execute` or `6-finalize`), `outcome` (`executed`/`skipped`/`error`), the token-attribution triple `total_tokens`/`tool_uses`/`duration_ms`, and an ISO-8601 `timestamp`. Each of the three token columns is **three-state**: a non-negative int is a measured value (including a measured `0`), the literal `unmeasured` is written when the caller OMITTED the flag, and any other cell is unrecognised. There is no `0` default — see [standards/manifest-schema.md](standards/manifest-schema.md) § "`execution_log[]` — the per-step execution log" for the write-side discriminator and the reader obligation. Absent until the first `record-step` call; the `compose`/`read`/`validate`/`validate-loadable` operations never read or write it. |
+| `execution_log` | list[object] | Ordered append log of per-step execution records, written one row per `record-step` invocation. Each row carries `step_id` (the dispatched step), `phase` (`5-execute` or `6-finalize`), `outcome` (`executed`/`skipped`/`loop_back`/`failed`/`error`), the token-attribution triple `total_tokens`/`tool_uses`/`duration_ms`, and an ISO-8601 `timestamp`. Each of the three token columns is **three-state**: a non-negative int is a measured value (including a measured `0`), the literal `unmeasured` is written when the caller OMITTED the flag, and any other cell is unrecognised. There is no `0` default — see [standards/manifest-schema.md](standards/manifest-schema.md) § "`execution_log[]` — the per-step execution log" for the write-side discriminator and the reader obligation. Absent until the first `record-step` call; the `compose`/`read`/`validate`/`validate-loadable` operations never read or write it. |
 
 ---
 
@@ -260,7 +260,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   --plan-id {plan_id} \
   --step-id {step_id} \
   --phase {5-execute|6-finalize} \
-  --outcome {executed|skipped|error} \
+  --outcome {executed|skipped|loop_back|failed|error} \
   [--total-tokens {N}] \
   [--tool-uses {N}] \
   [--duration-ms {N}]
@@ -270,7 +270,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 - `--plan-id` (required): Plan identifier
 - `--step-id` (required): Step identifier being recorded (e.g., a phase-5 verification step ID or a phase-6 finalize step ID)
 - `--phase` (required): `5-execute|6-finalize` — the phase the step ran in
-- `--outcome` (required): `executed|skipped|error` — whether the step ran, was skipped, or errored
+- `--outcome` (required): `executed|skipped|loop_back|failed|error` — which of the five situations the row records. The three non-`executed` values do not overlap: `skipped` is a step that never ran, `loop_back` is a **productive non-completion** (the step examined its surface, filed findings and handed control back), `failed` is a step that ran cleanly and self-assessed not-clean, and `error` is a dispatch that raised, timed out, or was cut short. See [standards/manifest-schema.md](standards/manifest-schema.md) § "Which situation each `outcome` value means" — collapsing `loop_back` and `failed` into `error` is what made a thorough multi-round gate read as a defect.
 - `--total-tokens` (optional, **no default**): Total tokens attributed to the step
 - `--tool-uses` (optional, **no default**): Tool-use count attributed to the step
 - `--duration-ms` (optional, **no default**): Wall-clock duration in milliseconds
@@ -601,9 +601,11 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   --plan-id PLAN_ID \
   --step-id STEP_ID \
   --phase {5-execute|6-finalize} \
-  --outcome {executed|skipped|error} \
+  --outcome {executed|skipped|loop_back|failed|error} \
   [--total-tokens N] [--tool-uses N] [--duration-ms N]
 ```
+
+The three token flags are optional **and have no `0` default** — omit them when nothing was measured and the row records the `unmeasured` token; pass a value, `0` included, only when that is what was measured.
 
 ### refire-report
 

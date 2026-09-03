@@ -1161,11 +1161,16 @@ FOR each step_id in manifest.phase_6.steps:
            never reached item 7 still appears in per-step completion coverage.
 
   5e. Record per-step execution outcome to the manifest (mirror of the phase-5-execute Step 8c record-step call):
-      Append one execution-log row to the manifest so per-step finalize execution metadata is loggable per-plan deterministically — this is the consuming side of the `record-step` contract published by `manage-execution-manifest` (its Producers table names `phase-6-finalize` as a `record-step` producer). The call fires per dispatched finalize step return, mirroring the 5b accumulate-agent-usage call so the per-step execution log and the per-phase token accumulator stay aligned. Unlike 5b/5c/5d, this row is recorded for EVERY finalize step — dispatched OR inline — so a skipped or inline step still lands an `execution_log` row (with zero token attribution for inline steps that carry no `<usage>` tag):
+      Append one execution-log row to the manifest so per-step finalize execution metadata is loggable per-plan deterministically — this is the consuming side of the `record-step` contract published by `manage-execution-manifest` (its Producers table names `phase-6-finalize` as a `record-step` producer). The call fires per dispatched finalize step return, mirroring the 5b accumulate-agent-usage call so the per-step execution log and the per-phase token accumulator stay aligned. Unlike 5b/5c/5d, this row is recorded for EVERY finalize step — dispatched OR inline — so a skipped or inline step still lands an `execution_log` row (an inline step that carries no `<usage>` tag OMITS the three token flags, so its columns record as `unmeasured` rather than as a fabricated zero):
 
          python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest record-step \
-           --plan-id {plan_id} --step-id {step_id} --phase 6-finalize --outcome {executed|skipped|error} \
-           --total-tokens {total_tokens} --tool-uses {tool_uses} --duration-ms {duration_ms}
+           --plan-id {plan_id} --step-id {step_id} --phase 6-finalize --outcome {executed|skipped|loop_back|failed|error} \
+           [--total-tokens {total_tokens}] [--tool-uses {tool_uses}] [--duration-ms {duration_ms}]
+
+      The three token flags are bracketed because omission is a REAL branch, not a
+      formatting nicety: a dispatched step forwards its measured `<usage>` integers,
+      an item-1 SKIP passes an explicit `0` triple (it genuinely consumed nothing),
+      and an inline step passes none of the three.
 
       See `manage-execution-manifest` Canonical invocations → `record-step` for the authoritative argument surface. Contract:
 
