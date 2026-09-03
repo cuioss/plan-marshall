@@ -192,6 +192,43 @@ def category_bullets(artifact: str) -> list[str]:
     return bullets
 
 
+# ---------------------------------------------------------------------------
+# Guard predicates — the ONE implementation each guard and its control share
+# ---------------------------------------------------------------------------
+#
+# Each helper below is the predicate a guard asserts on. The guard calls it, and
+# so does the negative control that shows the guard bites. That sharing is the
+# point: a control that re-implements the check with `str.replace` plus `in`
+# proves a property of the stdlib, not of the guard, so a predicate that stopped
+# matching anything would leave BOTH green. Routing both through one callable
+# means a broken predicate fails the control too.
+
+
+def spine_carries(text: str, spine_artifact: str) -> bool:
+    """Guard B's presence predicate: does the spine artifact carry ``text``?"""
+    return text in spine_artifact
+
+
+def domain_artifacts_carrying(text: str, domain_artifacts: dict[str, str]) -> list[str]:
+    """Guard B's absence predicate: the domain artifact stems carrying ``text``.
+
+    Returns a list rather than a bool so the guard can NAME the offenders, and so
+    the control can assert exactly which artifact its injection landed in.
+    """
+    return [stem for stem, body in domain_artifacts.items() if text in body]
+
+
+def withholding_phrases_in(artifact: str) -> list[str]:
+    """The withholding phrases present in ``artifact``, matched case-insensitively."""
+    lowered = artifact.lower()
+    return [phrase for phrase in WITHHOLDING_DENY_LIST if phrase in lowered]
+
+
+def population_is_non_empty(population: object) -> bool:
+    """The non-vacuity predicate: is there anything for the guards to measure?"""
+    return bool(population)
+
+
 def _emitted_stems() -> set[str]:
     """The artifact stems on disk — read from the filesystem, not from ARTIFACTS."""
     return {path.stem for path in PACKS_DIR.glob('*.md')}
@@ -211,7 +248,7 @@ class TestPopulation:
         Stated as its own test case because the parametrized guards below would
         report SKIPPED — not FAILED — over an empty population.
         """
-        assert ARTIFACTS, (
+        assert population_is_non_empty(ARTIFACTS), (
             'the pr-agent target emitted NO artifacts from '
             f'{MARKETPLACE_BUNDLES}; every guard below would pass vacuously'
         )
@@ -283,10 +320,10 @@ class TestSpineTextAppearsExactlyOnce:
     """Guard B — the charter and the spine categories live in ONE artifact."""
 
     def test_present_in_the_spine_artifact(self, text):
-        assert text in SPINE_ARTIFACT, f'the spine artifact lost: {text[:60]!r}'
+        assert spine_carries(text, SPINE_ARTIFACT), f'the spine artifact lost: {text[:60]!r}'
 
     def test_absent_from_every_domain_artifact(self, text):
-        offenders = [stem for stem, body in DOMAIN_ARTIFACTS.items() if text in body]
+        offenders = domain_artifacts_carrying(text, DOMAIN_ARTIFACTS)
         assert not offenders, (
             f'spine text re-appeared in domain artifact(s) {offenders}: {text[:60]!r}. '
             'The artifact set must be orthogonal — spine text belongs to the spine alone.'
@@ -342,35 +379,47 @@ class TestWithholdingLanguage:
     """No artifact — domain or spine — carries language that suppresses a finding."""
 
     def test_carries_no_withholding_language(self, artifact_id):
-        lowered = ARTIFACTS[artifact_id].lower()
-        for phrase in WITHHOLDING_DENY_LIST:
-            assert phrase not in lowered, (
-                f'artifact {artifact_id!r} reintroduced withholding language: {phrase!r}'
-            )
+        offenders = withholding_phrases_in(ARTIFACTS[artifact_id])
+        assert not offenders, (
+            f'artifact {artifact_id!r} reintroduced withholding language: {offenders!r}'
+        )
 
 
 class TestGuardBites:
-    """Negative controls — each guard is shown to FAIL on a violating input.
+    """Negative controls — each guard's PREDICATE is shown to FAIL on a violating input.
 
     Without these, a guard whose extractor silently returned nothing (or whose
     literals never matched anything) would report green over every artifact
     forever.
+
+    Every control below drives the SAME callable its guard asserts on — never a
+    local re-implementation with ``str.replace`` plus ``in``. A control written
+    that way passes on stdlib behaviour the guard never touches, so a predicate
+    that stopped matching would leave the guard AND its control green together,
+    which is precisely the failure these controls exist to rule out. Each is a
+    matched pair: the real input passes the predicate, the mutated input fails
+    it.
     """
 
+    def _domain_sample_id(self) -> str:
+        return DOMAIN_ARTIFACT_IDS[0]
+
     def _domain_sample(self) -> str:
-        return DOMAIN_ARTIFACTS[DOMAIN_ARTIFACT_IDS[0]]
+        return DOMAIN_ARTIFACTS[self._domain_sample_id()]
 
     def test_missing_anti_fabrication_clause_is_detected(self):
         # Mutated against the SPINE, the only artifact that carries the clause:
         # mutating a domain artifact would remove nothing and pass vacuously.
-        assert ANTI_FABRICATION_CLAUSE in SPINE_ARTIFACT
         mutated = SPINE_ARTIFACT.replace(ANTI_FABRICATION_CLAUSE, 'nothing to see here')
-        assert ANTI_FABRICATION_CLAUSE not in mutated
+
+        assert spine_carries(ANTI_FABRICATION_CLAUSE, SPINE_ARTIFACT)
+        assert not spine_carries(ANTI_FABRICATION_CLAUSE, mutated)
 
     def test_missing_substantiation_requirement_is_detected(self):
-        assert SUBSTANTIATION_CLAUSE in SPINE_ARTIFACT
         mutated = SPINE_ARTIFACT.replace(SUBSTANTIATION_CLAUSE, 'say whatever')
-        assert SUBSTANTIATION_CLAUSE not in mutated
+
+        assert spine_carries(SUBSTANTIATION_CLAUSE, SPINE_ARTIFACT)
+        assert not spine_carries(SUBSTANTIATION_CLAUSE, mutated)
 
     def test_a_removed_artifact_makes_the_set_identity_guard_fail(self):
         """Guard A's control: the comparison must notice a missing artifact."""
@@ -386,15 +435,23 @@ class TestGuardBites:
         )
 
     def test_a_clause_injected_into_a_domain_artifact_is_detected(self):
-        """Guard B's control: the absence half must notice re-duplicated spine text."""
-        sample = self._domain_sample()
-        assert ANTI_FABRICATION_CLAUSE not in sample, (
-            'precondition: the sample domain artifact carries no charter clause'
-        )
+        """Guard B's control: the absence half must notice re-duplicated spine text.
 
-        mutated = f'{sample}\n{ANTI_FABRICATION_CLAUSE}\n'
+        The mutation is applied to a copy of the POPULATION, not to a lone string,
+        because the guard iterates ``DOMAIN_ARTIFACTS`` — a control that checked
+        membership in one mutated string never exercised that iteration at all,
+        and stayed green over a guard that inspected nothing.
+        """
+        sample_id = self._domain_sample_id()
+        mutated_population = {
+            **DOMAIN_ARTIFACTS,
+            sample_id: f'{DOMAIN_ARTIFACTS[sample_id]}\n{ANTI_FABRICATION_CLAUSE}\n',
+        }
 
-        assert ANTI_FABRICATION_CLAUSE in mutated
+        assert domain_artifacts_carrying(ANTI_FABRICATION_CLAUSE, DOMAIN_ARTIFACTS) == []
+        assert domain_artifacts_carrying(ANTI_FABRICATION_CLAUSE, mutated_population) == [
+            sample_id
+        ]
 
     def test_an_extra_spine_category_bullet_is_detected(self):
         """The moved successor of the eleventh-bullet control.
@@ -417,16 +474,33 @@ class TestGuardBites:
         assert len(category_bullets(mutated)) == CATEGORY_CEILING
 
     def test_reintroduced_withholding_language_is_detected(self):
+        """The deny-list control: every phrase must be caught by the real extractor.
+
+        Driven through ``withholding_phrases_in`` — the callable
+        ``TestWithholdingLanguage`` asserts on — so a deny-list entry that stopped
+        matching (a typo, a casing change) fails HERE rather than quietly
+        narrowing what the guard catches. Asserting the exact returned list also
+        pins that one injected phrase matches one entry, so a future entry that
+        subsumes another is visible.
+        """
+        sample = self._domain_sample()
+        assert withholding_phrases_in(sample) == [], (
+            'precondition: the sample domain artifact carries no withholding language'
+        )
+
         for phrase in WITHHOLDING_DENY_LIST:
-            mutated = f'{self._domain_sample()}\n{phrase.capitalize()} the other reviewers.\n'
-            assert phrase in mutated.lower()
+            mutated = f'{sample}\n{phrase.capitalize()} the other reviewers.\n'
+
+            assert withholding_phrases_in(mutated) == [phrase]
 
     def test_an_empty_population_would_fail_rather_than_skip(self):
         """The non-vacuity assertion's own negative control.
 
-        `TestPopulation.test_artifact_population_is_not_empty` asserts truthiness
-        of the population; this pins that an empty population is falsy, so that
-        assertion genuinely fails rather than skipping.
+        Driven through ``population_is_non_empty`` — the predicate
+        ``TestPopulation.test_artifact_population_is_not_empty`` asserts on — so
+        the control exercises that guard rather than dict falsiness. The positive
+        half is what makes the pair matched: the real population must PASS the
+        same predicate the empty one fails.
         """
-        empty: dict[str, str] = {}
-        assert not empty
+        assert population_is_non_empty(ARTIFACTS)
+        assert not population_is_non_empty({})
