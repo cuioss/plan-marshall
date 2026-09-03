@@ -113,13 +113,18 @@ Validate that every registered identifier validator's regex round-trips every ou
 
 **Anchor**: `#test-module-line-budget`
 
-Flag a collected test module over the 400-line budget, unless its whole content is a single class within the class-line ceiling.
+Flag any test-tree module over the 400-line budget, unless its whole content is a single class within the class-line ceiling.
 
 **Detection**:
 
-1. Enumerate every `*.py` under `--test-root` matching pytest's collection patterns (`test_*.py` / `*_test.py`).
+1. Enumerate every `*.py` under `--test-root`, **collected and helper alike** — the rule governs the whole tree, not only the modules pytest collects.
 2. Count the module's lines.
 3. Flag any module over `TEST_MODULE_LINE_BUDGET` (400), **except** a module matching the single-class shape below.
+4. Classify the flagged module's **kind** via the same `_is_collected_module` predicate — `collected` when it matches `test_*.py` / `*_test.py`, `helper` otherwise — and select the remedy the message names from that kind. The kind lands in the finding's `details.kind` so a consumer can partition findings without re-deriving it.
+
+**The rule measures every module, because a helper costs a reader the same.** A 1,796-line fixtures module is exactly as unreadable as a 1,796-line test module, and gating detection on the collection patterns left the tree's helper modules unmeasured while the rule's name claimed otherwise.
+
+⛔ **`_is_collected_module` is a kind discriminator here, not a gate.** [`test-helper-module-misnamed`](#test-helper-module-misnamed) keeps it as a genuine gate: that rule is *about* a module being collected while declaring no test, so widening it would invert its meaning.
 
 **The single-class exemption**:
 
@@ -129,15 +134,21 @@ A module is exempt when its whole content is **one class** — exactly one `Clas
 - **The boundary is inclusive**, mirroring the budget's own: a module of exactly 400 lines is within budget, so a class of exactly 520 lines is within the ceiling. A class over 520 is flagged like any other over-budget module.
 - **The narrowness is the safety property, not a limitation to be relaxed.** A module of two under-ceiling classes stays flagged: it has a second nameable subject, so the prescribed remedy — split by behaviour cluster — applies to it unchanged. The exemption covers only the case where that remedy has nothing to cut along, because there is exactly one subject.
 
-**Violation message format**:
+**Violation message format** — one per kind, selected by `details.kind`:
 
 ```text
 {file_path}: test module is {n} lines, over the 400-line budget (by {n-400}) — split by behaviour cluster into test_{unit}_{cluster}.py, not in arbitrary halves.
+{file_path}: test helper module is {n} lines, over the 400-line budget (by {n-400}) — split by the surface it supplies into _{domain}_{surface}.py, keeping each module outside pytest collection patterns.
 ```
 
-The message carries the module's own line count and the budget, so the overage is readable without re-measuring.
+Both messages carry the module's own line count and the budget, so the overage is readable without re-measuring.
 
-**Suggested remediation**: Split by behaviour cluster into `test_{unit}_{cluster}.py` — one nameable subject per module. Do not split in arbitrary halves: that leaves one subject spread across two files and neither module describable, so the next author cannot tell which half a new test belongs in.
+⛔ **The two remedies are not interchangeable, and that is why the kind is derived rather than assumed.** A helper module declares no test, so "split by behaviour cluster into `test_{unit}_{cluster}.py`" would prescribe renaming it *into* pytest's collection patterns — which [`test-helper-module-misnamed`](#test-helper-module-misnamed) then flags as an error. A message naming an inapplicable remedy is the defect this rule's widening must not introduce.
+
+**Suggested remediation**:
+
+- **Collected module** (`details.kind: collected`) — split by behaviour cluster into `test_{unit}_{cluster}.py`, one nameable subject per module. Do not split in arbitrary halves: that leaves one subject spread across two files and neither module describable, so the next author cannot tell which half a new test belongs in.
+- **Helper module** (`details.kind: helper`) — split by the surface it supplies into `_{domain}_{surface}.py`, one nameable fixture surface per module, keeping every part outside the collection patterns. The same "nameable subject" test applies: a part too small to name is not a part.
 
 **Why**: The budget is derived from the corpus rather than invented — the median module measures ~327 lines, so 400 sits above the median and describes the tree's own compliant majority. It replaces a `~200` figure that roughly three quarters of the corpus violated and that no guard ever enforced; a rule the tree violates at that rate is a number readers learn to ignore. The authoring standard is `plan-marshall:persona-module-tester` § "Module Budget: 400 lines".
 

@@ -2,11 +2,15 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the module-shape rules of doctor-test-conventions.
 
-Two warning-severity rules govern whether a module is the right shape to be
-collected at all: `test-module-line-budget` (a collected module over 400
-lines) and `test-helper-module-misnamed` (a module matching pytest's
-collection patterns that declares no test). Each has a positive fixture that
-fires it and a negative control that does not."""
+Two rules govern whether a module is the right shape: `test-module-line-budget`
+(any test-tree module over 400 lines, collected or helper, outside the
+single-class exemption) and `test-helper-module-misnamed` (a module matching
+pytest's collection patterns that declares no test). Each has a positive
+fixture that fires it and a negative control that does not.
+
+The two rules consume `_is_collected_module` differently, and the tests pin
+that difference: rule 4 reads it as a *kind discriminator* selecting which
+remedy the message names, while rule 5 keeps it as a *gate*."""
 
 import textwrap
 from pathlib import Path
@@ -80,11 +84,63 @@ def test_line_budget_finding_carries_count_and_budget(tmp_path):
     assert details['over_by'] == over_by
 
 
-def test_uncollected_module_over_budget_is_not_flagged(tmp_path):
-    """A helper module over the budget is out of scope — the rule governs collected modules."""
+def test_helper_module_over_budget_is_flagged(tmp_path):
+    """A helper module over the budget is flagged — the rule governs the whole tree.
+
+    A helper costs a reader exactly what a collected module does, so gating
+    detection on pytest's collection patterns would leave it unmeasured.
+    """
     _write(tmp_path, '_domain_fixtures.py', '# filler\n' * (TEST_MODULE_LINE_BUDGET + 50))
 
+    findings = analyze_test_module_line_budget(tmp_path)
+
+    assert [f['rule_id'] for f in findings] == ['test-module-line-budget']
+
+
+def test_collected_module_finding_names_the_split_remedy(tmp_path):
+    """A collected module's finding carries kind 'collected' and the cluster-split remedy."""
+    _write(tmp_path, 'test_big.py', '# filler\n' * (TEST_MODULE_LINE_BUDGET + 50))
+
+    finding = analyze_test_module_line_budget(tmp_path)[0]
+
+    assert finding['details']['kind'] == 'collected'
+    assert 'test_{unit}_{cluster}.py' in finding['description']
+    assert 'behaviour cluster' in finding['description']
+
+
+def test_helper_module_finding_names_the_helper_remedy(tmp_path):
+    """A helper module's finding carries kind 'helper' and the helper-shape remedy.
+
+    The remedy must NOT be the collected one: prescribing a `test_*.py` split for
+    a module that declares no test would rename it into pytest's collection
+    patterns, which `test-helper-module-misnamed` then reports as an error.
+    """
+    _write(tmp_path, '_domain_fixtures.py', '# filler\n' * (TEST_MODULE_LINE_BUDGET + 50))
+
+    finding = analyze_test_module_line_budget(tmp_path)[0]
+
+    assert finding['details']['kind'] == 'helper'
+    assert '_{domain}_{surface}.py' in finding['description']
+    assert 'test_{unit}_{cluster}.py' not in finding['description']
+
+
+def test_helper_module_within_budget_is_not_flagged(tmp_path):
+    """Widening the scope did not widen the budget — a small helper is still clean."""
+    _write(tmp_path, '_domain_fixtures.py', '# filler\n' * 10)
+
     assert analyze_test_module_line_budget(tmp_path) == []
+
+
+def test_helper_module_misnamed_is_not_widened(tmp_path):
+    """Rule 5 keeps its collection gate — an over-budget helper is not misnamed.
+
+    The two rules use `_is_collected_module` differently on purpose: rule 4 reads
+    it as a kind discriminator, while rule 5 is *about* a module being collected
+    while declaring no test, so widening rule 5 would invert its meaning.
+    """
+    _write(tmp_path, '_domain_fixtures.py', 'def build_plan():\n    return {}\n' * 300)
+
+    assert analyze_test_helper_module_misnamed(tmp_path) == []
 
 
 # ---------------------------------------------------------------------------
