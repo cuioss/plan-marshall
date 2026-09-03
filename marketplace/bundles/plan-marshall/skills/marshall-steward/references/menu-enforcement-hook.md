@@ -105,9 +105,8 @@ every required surface on its own line; scan for the dedicated
   all three cases.
 
 - `PreToolUse:enforcement: divergence` — the enforcement entry is installed in
-  BOTH `.claude/settings.json` and `.claude/settings.local.json`. The entry IS
-  installed, so this is **report-only** and is **NOT** a reason to offer the
-  install prompt. Report the observation and change nothing:
+  BOTH `.claude/settings.json` and `.claude/settings.local.json`. Report the
+  observation:
 
   ```text
   The PreToolUse enforcement hook is already configured, in both settings files.
@@ -120,10 +119,13 @@ every required surface on its own line; scan for the dedicated
 
   Do NOT proceed to Step 2 — the hook is installed, so there is nothing to
   enable. Then offer the same timeout re-run the `present` branch offers, for
-  the same reason and with the same outcome expectations: `divergence` means the
-  entry is in `.claude/settings.local.json` among others, which is the file the
-  install writes, so a stale timeout there converges and no duplicate can be
-  added. The divergence itself is untouched either way.
+  the same reason: `divergence` means the entry is in
+  `.claude/settings.local.json` among others, which is the file the install
+  writes, so a stale timeout there converges. Expect `enforcement_status:
+  migrated` when a stale value was rewritten, or `already_present` when the entry
+  was already correct — `installed` cannot occur here, because the entry is
+  already in the file the install writes. The divergence itself is untouched
+  either way.
 
 - `PreToolUse:enforcement: MISSING` — the enforcement hook is not installed.
   Proceed to Step 2.
