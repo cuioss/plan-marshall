@@ -2333,9 +2333,23 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # step id MUST resolve to a real built-in doc, project-local skill, or bundle
     # discovery-registry entry. An unresolvable id — a built-in doc deleted
     # without sweeping marshal.json, a renamed/removed project skill, or a
-    # never-existed bundle:skill key — fails the compose loud, naming the
-    # offending ORIGINAL marshal.json key and the phase (mapped back from the
-    # boundary-normalized emitted id via marshal_phase_{5,6}_map). The gate runs
+    # never-existed bundle:skill key — fails the compose loud, naming the phase and
+    # the step's PROVENANCE. The naming is not universal, because an emitted id has
+    # more than one possible origin and each sends the reader to a different file:
+    #   - authored — the id is in the phase's marshal_phase_{5,6}_map, so the
+    #     message names the author's ORIGINAL marshal.json key (mapped back from
+    #     the boundary-normalized emitted id).
+    #   - routed (phase_5 only) — the id is absent from that map, so it was
+    #     appended by the execution_tier COMMAND routing pass from a derived
+    #     `verification.commands` entry; the message names `architecture
+    #     derive-verification` as the emitter and says the step is NOT authored in
+    #     marshal.json.
+    #   - composer-injected (phase_6) — absent from the map with no routing path to
+    #     attribute it to, so the message carries a neutral not-authored note
+    #     rather than a false derive-verification claim.
+    #   - CSV-fallback — no marshal step map was read at all, so no origin can be
+    #     determined and the message reports the emitted id.
+    # The gate runs
     # here, on the FINAL step lists AFTER the sort + placement validator, so only
     # steps that will actually be persisted are checked. See
     # _manifest_validation.check_emitted_steps_resolvable and SKILL.md §
