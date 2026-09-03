@@ -444,14 +444,10 @@ def cmd_domain_detect(args) -> dict[str, Any]:
     # fired because the plan's own files matched — so it alone resolves the plan
     # on the inclusion legs. An always_on-only union is a project-wide standing
     # inclusion that carries no plan-specific signal, so it leaves the whole
-    # offerable set over-provisioned exactly as a bare zero-match does. Only an
-    # empty offerable set — no configured domain at all — stays ambiguous and
-    # surfaces the multiSelect prompt.
-    offerable = sorted(_offerable_domains(user_domains))
-    prompt_candidates = [{'domain': d, 'matched_aliases': []} for d in offerable]
-    prompt_additional = _additional_candidates(user_domains, prompt_candidates, inclusion_union)
-    over_provisioned = set(offerable)
-
+    # offerable set over-provisioned exactly as a bare zero-match does — the
+    # always_on domains are retained there because they are offerable themselves.
+    # Only an empty offerable set — no configured domain at all — stays ambiguous
+    # and surfaces the multiSelect prompt.
     if glob_matched_set:
         return _result(
             plan_id,
@@ -464,18 +460,11 @@ def cmd_domain_detect(args) -> dict[str, Any]:
             source=narrative_source,
             reason='inclusion_only_resolve',
         )
-    elif always_on_set:
-        return _result(
-            plan_id,
-            domains=set(offerable) | always_on_set,
-            candidates=prompt_candidates,
-            additional_candidates=prompt_additional,
-            always_on=always_on_set,
-            glob_matched=glob_matched_set,
-            ambiguous=False,
-            source=narrative_source,
-            reason='over_provisioned_always_on_only',
-        )
+
+    offerable = sorted(_offerable_domains(user_domains))
+    prompt_candidates = [{'domain': d, 'matched_aliases': []} for d in offerable]
+    prompt_additional = _additional_candidates(user_domains, prompt_candidates, inclusion_union)
+    over_provisioned = set(offerable)
 
     if over_provisioned:
         return _result(
@@ -487,7 +476,7 @@ def cmd_domain_detect(args) -> dict[str, Any]:
             glob_matched=glob_matched_set,
             ambiguous=False,
             source=narrative_source,
-            reason='over_provisioned_resolve',
+            reason='over_provisioned_always_on_only' if always_on_set else 'over_provisioned_resolve',
         )
 
     return _result(
