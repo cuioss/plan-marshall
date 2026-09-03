@@ -28,6 +28,15 @@ _ANALYSIS_MINIMUM = frozenset({'lessons-capture', 'adr-propose', 'archive-plan'}
 
 #: The retired phase-6 step id Rules 2 and 5 drop defensively, against project
 #: marshal.json files that still list it as a candidate.
+# SHIM(B): a project marshal.json whose phase-6 candidate list still carries the
+# retired `ci-wait` step id — a shape our own config seeder once wrote and the
+# current one no longer writes. Rules 2 and 5 drop the entry so such a config
+# still composes; it is a TOLERATE path, not a refusal, because without the drop
+# the compose-time resolution gate fails the whole compose with
+# `unresolvable_step`. It never disarms: the marshal.json is not rewritten.
+# shim-owner: manage-execution-manifest
+# shim-floor: the change that retired `ci-wait` from the seeded phase-6 finalize-step candidate set
+# shim-remove-when: no project marshal.json lists `ci-wait` as a phase-6 candidate
 _LEGACY_CI_WAIT = frozenset({'ci-wait'})
 
 #: The two matrix ``role:`` values Rules 2 and 5 keep in phase-5.
