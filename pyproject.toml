@@ -184,8 +184,7 @@ timeout = 300
 # Custom-marker registry — the SINGLE source of truth for every non-built-in,
 # non-PLUGIN-provided ``@pytest.mark.<name>`` in the suite. Declared here rather
 # than through ``config.addinivalue_line`` in ``test/conftest.py::pytest_configure``
-# so the registry is data, not code, and so enabling ``--strict-markers`` later
-# needs no relocation. A whole-tree sweep of ``@pytest.mark.<name>`` plus the
+# so the registry is data, not code. A whole-tree sweep of ``@pytest.mark.<name>`` plus the
 # markers applied programmatically in ``pytest_collection_modifyitems`` confirms
 # these six are the complete set of custom markers in use; ``timeout`` and
 # ``parametrize`` are excluded from that set as plugin- and pytest-owned.

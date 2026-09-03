@@ -428,6 +428,11 @@ def test_population_publishing_rules_report_their_size_on_a_clean_tree():
         )
 
 
+# Third consumer of the same shared whole-tree gate. ``_real_tree_summaries`` is
+# ``lru_cache``d PER WORKER and xdist runs ``--dist load``, so whichever of the three
+# consumers lands first on a given worker pays the full gate cost — this one included.
+# Marked for the same reason and at the same bound as its two siblings above.
+@pytest.mark.timeout(900)
 def test_population_size_is_omitted_for_rules_that_do_not_derive_one():
     """An absent figure is absent, never a zero.
 

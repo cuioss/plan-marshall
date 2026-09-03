@@ -208,10 +208,9 @@ Three properties are load-bearing:
   together, so a charter change is published once rather than regenerated
   into every consumer.
 * **A run emits the whole set.** One artifact per derived domain plus the
-  spine; a re-run rewrites that set rather than appending to it, and the
-  generated header names the argument-free command that reproduces it. The
-  spine is emitted unconditionally and is not selectable — a spine a
-  consumer could omit is a charter a consumer could drop.
+  spine, and the generated header names the argument-free command that
+  reproduces it. The spine is emitted unconditionally and is not selectable —
+  a spine a consumer could omit is a charter a consumer could drop.
 
 The emission is bounded and guarded. The substantiation bar and the
 anti-fabrication clause are carried verbatim into the **spine artifact** and

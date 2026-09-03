@@ -22,9 +22,9 @@ Three properties of the emission are load-bearing:
   together, so a charter change is published once rather than regenerated into
   every consumer.
 * **A run EMITS the whole set.** One artifact per derived domain plus the
-  spine, under ``{output_dir}/packs/``; a re-run rewrites that set rather than
-  appending to it. The spine is emitted unconditionally and is not selectable:
-  a spine a consumer could omit is a charter a consumer could drop.
+  spine, under ``{output_dir}/packs/``. The spine is emitted unconditionally
+  and is not selectable: a spine a consumer could omit is a charter a consumer
+  could drop.
 
 The substantiation clause and the anti-fabrication clause are carried VERBATIM
 into the spine artifact, and appear in no domain artifact.
