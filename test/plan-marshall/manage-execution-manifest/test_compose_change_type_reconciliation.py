@@ -171,21 +171,79 @@ def test_narrowing_decision_records_its_scope_and_input(plan_context):
     assert result['supplied_change_type'] == 'feature'
 
 
-def test_reconciliation_emits_auditable_decision_log_line(plan_context):
-    """The narrowing input is written to the decision log so it can be audited later."""
-    plan_id = 'reconcile-log'
-    _seed_settled(plan_context, plan_id, 'bug_fix')
+def _capture_reconciliation_lines(plan_id: str, supplied: str, **compose_kwargs) -> list[str]:
+    """Compose with ``_emit_decision_log`` captured; return the reconciliation lines.
+
+    The three cases below all need the same capture-and-filter, and the filter
+    (``'change_type reconciliation' in msg``) is the shared prefix both the
+    accepting and the refusing path carry.
+    """
     captured: list[tuple[str, str]] = []
     original = _mem._emit_decision_log
     _mem._emit_decision_log = lambda pid, msg: captured.append((pid, msg))
     try:
-        cmd_compose(_compose_ns(plan_id, 'bug_fix', scope_estimate='surgical'))
+        cmd_compose(_compose_ns(plan_id, supplied, **compose_kwargs))
     finally:
         _mem._emit_decision_log = original
-    recon = [msg for _pid, msg in captured if 'change_type reconciliation' in msg]
+    return [msg for _pid, msg in captured if 'change_type reconciliation' in msg]
+
+
+def test_reconciliation_emits_auditable_decision_log_line(plan_context):
+    """The narrowing input is written to the decision log naming the SCOPE it used.
+
+    The assertion is on the scope-bearing clause, not on the bare word ``settled``
+    or on the change type: both of those appear whichever scope drove the decision,
+    so a line rendered from the supplied scope satisfied them too and the test could
+    not tell the two apart. ``from the settled scope`` is the clause that moves.
+    """
+    plan_id = 'reconcile-log'
+    _seed_settled(plan_context, plan_id, 'bug_fix')
+
+    recon = _capture_reconciliation_lines(plan_id, 'bug_fix', scope_estimate='surgical')
+
     assert recon, 'no change_type reconciliation decision-log line emitted'
-    assert 'settled' in recon[0]
+    assert 'from the settled scope' in recon[0]
     assert 'bug_fix' in recon[0]
+
+
+def test_reconciliation_names_the_supplied_scope_when_nothing_is_settled(plan_context):
+    """The paired case: with no settled classification the line names the OTHER scope.
+
+    Pairs with the test above so each assertion is shown to fail on the other's
+    input. Without this pair, an implementation that hard-coded one scope word into
+    the line would pass the settled case and nothing would notice.
+    """
+    plan_id = 'reconcile-log-supplied'
+    # No status.json seeded → no settled classification to reconcile against.
+
+    recon = _capture_reconciliation_lines(plan_id, 'feature')
+
+    assert recon, 'no change_type reconciliation decision-log line emitted'
+    assert 'from the supplied scope' in recon[0]
+    assert 'from the settled scope' not in recon[0]
+
+
+def test_reconciliation_refusal_is_recorded_in_the_decision_log(plan_context):
+    """The REFUSAL is auditable too — it emits before returning the conflict.
+
+    The refusal returned ``change_type_scope_conflict`` to its caller and wrote
+    nothing to the plan's own record, so a compose that refused was
+    indistinguishable in ``decision.log`` from one that was never attempted. The
+    line carries the same reconciliation prefix as the accepting path, so one
+    consumer reads back both outcomes of the same decision, and it names both
+    values so the reader need not re-derive which side was rejected.
+    """
+    plan_id = 'reconcile-refusal-log'
+    _seed_settled(plan_context, plan_id, 'bug_fix')
+
+    recon = _capture_reconciliation_lines(plan_id, 'verification')
+
+    assert recon, 'no change_type reconciliation decision-log line emitted for the refusal'
+    assert 'REFUSED' in recon[0]
+    assert 'bug_fix' in recon[0]
+    assert 'verification' in recon[0]
+    # The refusal is not the accepting outcome wearing a different word.
+    assert 'from the settled scope' not in recon[0]
 
 
 # =============================================================================
