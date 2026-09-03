@@ -36,6 +36,8 @@ Mandatory template for each deliverable in solution_outline.md. **ALL fields are
 - {criterion 2}
 ```
 
+The `change_type` in the `**Metadata:**` block is the **DELIVERABLE-scoped** field — one per deliverable, describing that deliverable's local kind. It is not the identically-named PLAN-scoped field at `status.metadata.change_type`, which carries the plan's single settled classification and is authoritative wherever the two are compared. See [`manage-execution-manifest/standards/decision-rules.md` § change_type scope reconciliation](../../manage-execution-manifest/standards/decision-rules.md#change_type-scope-reconciliation) for how the composer reconciles the two scopes.
+
 ### Resolving Verification Commands
 
 Query the architecture for the module's canonical commands **before** writing deliverables:
@@ -56,7 +58,7 @@ Use the returned `executable` value as the Verification Command. Both Command an
 
 | Field | Required | Notes |
 |-------|----------|-------|
-| `change_type` | Yes | One of: analysis, feature, enhancement, bug_fix, tech_debt, verification |
+| `change_type` | Yes | DELIVERABLE-scoped. One of: analysis, feature, enhancement, bug_fix, tech_debt, verification |
 | `execution_mode` | Yes | One of: automated, manual, mixed |
 | `domain` | Yes | Single value from `config.domains` |
 | `module` | Yes | Module name from architecture |

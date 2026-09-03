@@ -468,6 +468,8 @@ Each deliverable in solution_outline.md MUST follow this field order. The author
 - {criterion 1}
 ```
 
+The `change_type` written in the `**Metadata:**` block above is the **DELIVERABLE-scoped** field — this one deliverable's local kind, one per deliverable. It is not the identically-named PLAN-scoped field at `status.metadata.change_type`, which carries the plan's single settled classification and is authoritative wherever the two are compared. See [`manage-execution-manifest/standards/decision-rules.md` § change_type scope reconciliation](../manage-execution-manifest/standards/decision-rules.md#change_type-scope-reconciliation) for how the composer reconciles the two scopes.
+
 `**Intent gloss:**` is copied verbatim by phase-4-plan into every derived task.description, so the sentence must stand alone without relying on the surrounding deliverable context.
 
 The `<!-- bucket: ... -->` comment on the `**Profiles:**` line is REQUIRED as the profile audit trail and records the resolved file-type bucket from the [File-type classifier](standards/outline-workflow-detail.md#file-type-classifier). The bucket determines which profiles are valid for the deliverable:
