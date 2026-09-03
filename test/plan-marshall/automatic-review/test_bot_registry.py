@@ -27,6 +27,8 @@ Module import resolves via the root conftest's marketplace PYTHONPATH setup
 (``import bot_registry``).
 """
 
+import re
+
 import bot_registry
 
 # The bots shipped as standards docs in this skill.
@@ -214,17 +216,19 @@ def test_refusal_size_patterns_mark_the_diff_size_cause():
     refusals is caused by the diff being too big (remedy: a smaller diff) rather than a
     rate/budget quota (remedy: backoff). Sourcery is the only shipped bot with a
     size-caused refusal — its per-PR size ceiling — and that entry ALSO appears in
-    ``refusal_patterns`` (detection stays that field's job). Its weekly-quota notice is
-    deliberately absent here, so it classifies ``quota``. CodeRabbit and PR-Agent
-    declare none, so every refusal they emit is a quota.
+    ``refusal_patterns`` (detection stays that field's job). Both of its
+    account-quota wordings are deliberately absent here, so both classify ``quota``.
+    CodeRabbit and PR-Agent declare none, so every refusal they emit is a quota.
     """
     sourcery_size = bot_registry.refusal_size_patterns('sourcery')
     assert sourcery_size == ['your pull request is larger than the review limit of']
     # The size marker is a genuine subset overlay — it is also a detection pattern.
     assert sourcery_size[0] in bot_registry.refusal_patterns('sourcery')
-    # The weekly-quota notice is a refusal but NOT a size cause.
-    assert 'reached your weekly rate limit of' in bot_registry.refusal_patterns('sourcery')
-    assert 'reached your weekly rate limit of' not in sourcery_size
+    # Both account-quota wordings are refusals but NOT a size cause. The second is the
+    # *used* phrasing (PR #1391), which the structural recogniser cannot see either.
+    for quota_marker in ('reached your weekly rate limit of', 'used your own review budget of'):
+        assert quota_marker in bot_registry.refusal_patterns('sourcery')
+        assert quota_marker not in sourcery_size
 
     assert bot_registry.refusal_size_patterns('coderabbit') == []
     assert bot_registry.refusal_size_patterns('pr-agent') == []
@@ -272,8 +276,10 @@ def test_rate_limit_eta_patterns_per_bot():
     """Only a bot whose notice states a reset time declares extraction patterns.
 
     CodeRabbit's window notice states when it reopens, so its patterns pull that
-    ETA out. Sourcery and PR-Agent declare none — Sourcery because a hard quota has
-    no reset to state, PR-Agent because no refusal has been observed at all — and
+    ETA out. Sourcery declares one too: its diff-character budget notice states a
+    reset days away — a concrete ETA, even though ``hard_quota`` makes it an
+    unawaitable one, so extracting it is reporting rather than an invitation to
+    wait. PR-Agent declares none because no refusal has been observed at all, and
     an empty list is the signal to report an absent ETA rather than invent one.
     """
     coderabbit = bot_registry.rate_limit_eta_patterns('coderabbit')
@@ -281,7 +287,21 @@ def test_rate_limit_eta_patterns_per_bot():
     assert all(isinstance(pattern, str) and pattern for pattern in coderabbit)
     assert 'wait ([0-9]+ minutes? and [0-9]+ seconds?) before requesting another review' in coderabbit
 
-    assert bot_registry.rate_limit_eta_patterns('sourcery') == []
+    sourcery = bot_registry.rate_limit_eta_patterns('sourcery')
+    assert sourcery
+    assert all(isinstance(pattern, str) and pattern for pattern in sourcery)
+    # The pattern must read the ETA out of the notice as actually observed (PR #1391) —
+    # a declared-but-non-matching pattern degrades silently to "no ETA stated".
+    observed = (
+        "Sorry @SomeUser, you've used your own review budget of 250,000 diff characters "
+        'for the last 7 days.  You can request another review in 3 days and 17 hours by '
+        'commenting `@sourcery-ai review`.'
+    )
+    assert any(re.search(pattern, observed) for pattern in sourcery)
+    assert next(
+        m.group(1) for p in sourcery if (m := re.search(p, observed))
+    ) == '3 days and 17 hours'
+
     assert bot_registry.rate_limit_eta_patterns('pr-agent') == []
 
 
@@ -292,8 +312,6 @@ def test_rate_limit_eta_patterns_are_valid_regexes():
     return path, so a malformed pattern would otherwise degrade silently to "no ETA
     stated" instead of surfacing as a defect.
     """
-    import re
-
     for bot_kind in bot_registry.bot_kinds():
         for pattern in bot_registry.rate_limit_eta_patterns(bot_kind):
             re.compile(pattern)

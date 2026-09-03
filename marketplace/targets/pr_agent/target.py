@@ -152,10 +152,12 @@ _GENERATED_HEADER_MARKER = '<!-- GENERATED ARTIFACT — do not edit by hand.'
 
 #: The argument-free command that reproduces the whole artifact set. Selection is
 #: no longer an argument, so there is exactly one regenerate line for every
-#: artifact — following it can no longer narrow what a repository gets.
-_REGENERATE_COMMAND = (
-    'uv run python marketplace/targets/generate.py --target pr-agent --output target/pr-agent'
-)
+#: artifact — following it can no longer narrow what a repository gets. It is the
+#: ``./pw`` wrapper form because ``uv`` lives only in the project-local
+#: ``.pyprojectx/`` tree and is not on ``PATH``, so a bare ``uv run …`` exits 127
+#: outside it — and this line is stamped into artifacts published to another
+#: repository, where the reader has no such tree at all.
+_REGENERATE_COMMAND = './pw generate --target pr-agent --output target/pr-agent'
 
 # ---------------------------------------------------------------------------
 # Charter text carried verbatim into the spine artifact

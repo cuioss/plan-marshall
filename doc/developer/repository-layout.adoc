@@ -63,7 +63,7 @@ The category vocabulary and the full per-verb contract live in the `manage-archi
 
 == `target/` (gitignored)
 
-Build output. `marketplace/targets/generate.py --target claude --output target/claude` populates `target/claude/`; future targets (OpenCode, etc.) populate `target/{target_name}/`. The `target/` tree is gitignored and never committed — distribution happens via orphan branches (`dist-claude`) and immutable tags (`claude/v*`) created by CI. See xref:distribution.adoc[Distribution].
+Build output. `./pw generate-claude` populates `target/claude/`; future targets (OpenCode, etc.) populate `target/{target_name}/` via their own aliases (`./pw generate-opencode`) or `./pw generate --target {name} --output target/{name}`. The `target/` tree is gitignored and never committed — distribution happens via orphan branches (`dist-claude`) and immutable tags (`claude/v*`) created by CI. See xref:distribution.adoc[Distribution].
 
 == `test/`
 

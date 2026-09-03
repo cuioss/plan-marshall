@@ -31,9 +31,11 @@ the walk. The fix in every drift case is the documented one: re-run the
 Claude target's emit mode so ``target/claude/`` is regenerated from the
 current sources::
 
-    uv run python marketplace/targets/generate.py --target claude --output target/claude
+    ./pw generate-claude
 
-Source files under ``marketplace/bundles/`` are canonical and MUST NOT be
+The wrapper is mandatory: ``uv`` is installed only into the project-local
+``.pyprojectx/`` tree and is not on ``PATH``, so a bare ``uv run …`` exits 127
+outside it. Source files under ``marketplace/bundles/`` are canonical and MUST NOT be
 edited to satisfy the gate — only the build artifact under
 ``target/claude/`` is regenerated.
 """
@@ -138,8 +140,7 @@ def run_content_drift_check(target_dir: Path, marketplace_dir: Path) -> ContentD
 
     if not target_dir.is_dir():
         summary = (
-            f"target/claude not generated at {target_dir} — "
-            "run 'uv run python marketplace/targets/generate.py --target claude --output target/claude' first"
+            f"target/claude not generated at {target_dir} — run './pw generate-claude' first"
         )
         return ContentDriftResult(passed=False, summary=summary)
 
@@ -176,7 +177,7 @@ def run_content_drift_check(target_dir: Path, marketplace_dir: Path) -> ContentD
             parts.append(f'{len(orphan_in_target)} orphan in target ({", ".join(orphan_in_target)})')
         summary = (
             f'content-drift check failed: {"; ".join(parts)}. '
-            "Re-run 'uv run python marketplace/targets/generate.py --target claude --output target/claude' "
+            "Re-run './pw generate-claude' "
             "to regenerate target/claude/ from current sources. "
             "Do NOT edit the source .md files under marketplace/bundles/ — they are canonical."
         )

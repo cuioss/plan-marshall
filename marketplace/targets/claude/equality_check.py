@@ -10,7 +10,7 @@ emitted ``target/claude/.claude-plugin/marketplace.json``. The build
 artifacts under ``target/claude/`` are the source of truth for the
 equality gate; the bundle's committed ``.claude-plugin/plugin.json`` is
 no longer consulted by this engine. Powers both the standalone validation
-mode (``generate.py --target claude`` without ``--output``) and the
+mode (``./pw generate --target claude`` without ``--output``) and the
 post-emit gate that runs immediately after a fresh emit.
 
 Variant-aware drift detection: agents declaring the
@@ -360,7 +360,7 @@ def run_equality_check(
     if not target_dir.exists():
         summary = (
             f"target/claude not generated at {target_dir} — "
-            "run 'uv run python marketplace/targets/generate.py --target claude --output target/claude' first"
+            "run './pw generate-claude' first"
         )
         return EqualityResult(
             passed=False,
@@ -401,7 +401,7 @@ def run_equality_check(
                            f"for: {', '.join(sorted(corrupt))}")
         summary = (
             f"target/claude/{{bundle}}/.claude-plugin/plugin.json {'; '.join(reasons)} — "
-            "run 'uv run python marketplace/targets/generate.py --target claude --output target/claude' first"
+            "run './pw generate-claude' first"
         )
         return EqualityResult(
             passed=False,
@@ -428,7 +428,7 @@ def run_equality_check(
     elif marketplace_drift and not all_diffs:
         summary = (
             f'equality check failed: {marketplace_diagnostic}. '
-            "Re-run 'uv run python marketplace/targets/generate.py --target claude --output target/claude' "
+            "Re-run './pw generate-claude' "
             "to regenerate target/claude/ from current sources."
         )
     else:
@@ -440,7 +440,7 @@ def run_equality_check(
             f'equality check failed: {len(all_diffs)} drift entries '
             f'across {len(bundles_with_drift)}/{bundle_count} bundles '
             f'({", ".join(bundles_with_drift)}).{suffix} '
-            "Re-run 'uv run python marketplace/targets/generate.py --target claude --output target/claude' "
+            "Re-run './pw generate-claude' "
             "to regenerate target/claude/ from current sources. "
             "Do NOT edit the source plugin.json files — they are canonical-only."
         )

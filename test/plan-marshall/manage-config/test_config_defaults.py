@@ -554,6 +554,13 @@ _VALIDATOR_REJECTIONS = [
     ('validate_pr_strategy', ('sloppy',), 'Invalid pr_strategy'),
     ('validate_pr_compact_max_changed_files', (-1,), 'pr_compact_max_changed_files'),
     ('validate_pr_compact_max_changed_files', (True,), 'pr_compact_max_changed_files'),
+    # `_coerce_value` turns `--value false` into a bool and `--value 0` into an
+    # int before the set path validates, so the non-str rows are the guard that
+    # keeps a coerced non-string off disk.
+    ('validate_user_language', (False,), 'user_language'),
+    ('validate_user_language', (0,), 'user_language'),
+    ('validate_user_language', ('',), 'user_language'),
+    ('validate_user_language', ('   ',), 'user_language'),
 ]
 
 _VALIDATOR_REJECTION_IDS = [
@@ -577,6 +584,10 @@ _VALIDATOR_REJECTION_IDS = [
     'pr_strategy-value-outside-the-enum',
     'pr_compact_max_changed_files-a-negative-int',
     'pr_compact_max_changed_files-a-bool-is-not-an-int',
+    'user_language-a-coerced-bool-is-not-a-string',
+    'user_language-a-coerced-int-is-not-a-string',
+    'user_language-the-empty-string',
+    'user_language-whitespace-only-is-empty',
 ]
 
 
@@ -2737,6 +2748,36 @@ def test_default_project_pr_strategy_is_compact():
 
     assert 'pr_strategy' in project_defaults
     assert project_defaults['pr_strategy'] == 'compact'
+
+
+def test_default_project_user_language_is_auto():
+    """DEFAULT_PROJECT must declare user_language == 'auto'."""
+    project_defaults = _config_defaults_mod.DEFAULT_PROJECT
+
+    assert 'user_language' in project_defaults
+    assert project_defaults['user_language'] == 'auto'
+
+
+def test_get_default_config_includes_user_language():
+    """get_default_config()['project'] must carry user_language at its 'auto' default."""
+    config = _config_defaults_mod.get_default_config()
+
+    assert config['project'].get('user_language') == 'auto'
+
+
+def test_validate_user_language_accepts_the_seed_and_free_form_pins():
+    """validate_user_language accepts the seed and any non-empty free-form pin.
+
+    No BCP-47 grammar is enforced: the value is prose an agent reads, not a tag a
+    parser consumes, so a bare code, an English language name, and a regional tag
+    are all legitimate. Over-validating would reject valid input for no reader's
+    benefit.
+    """
+    _config_defaults_mod.validate_user_language(
+        _config_defaults_mod.DEFAULT_PROJECT['user_language']
+    )
+    for pin in ('de', 'German', 'pt-BR', 'Deutsch'):
+        _config_defaults_mod.validate_user_language(pin)
 
 
 def test_default_project_pr_compact_max_changed_files_is_150():

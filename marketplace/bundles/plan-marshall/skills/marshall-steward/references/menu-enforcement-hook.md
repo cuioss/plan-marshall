@@ -33,13 +33,17 @@ the project is being set up for the first time or is already configured.
 The flow mirrors the terminal-title Action A
 ([`menu-terminal-title.md`](menu-terminal-title.md) § Action A): a non-mutating
 probe via `health-check --checks display`, an `AskUserQuestion` confirmation,
-then a convergent `project install-hook --enforcement` install — one that never
-duplicates an entry and brings an already-present one onto the current shape.
+then a `project install-hook --enforcement` install. What that install converges,
+and the shared-file case where a re-run appends a second entry instead, are stated
+per-branch in Step 1 below.
 
 ### Step 1: Detect
 
-Probe the current `.claude/settings.local.json` for the enforcement entry's
-present/MISSING state via the platform-runtime health-check `display` surface:
+Probe the enforcement entry's `present` / `divergence` / `MISSING` state via the
+platform-runtime health-check `display` surface. That surface reads BOTH
+`.claude/settings.json` and `.claude/settings.local.json`: an entry in either
+file alone counts as `present`, and an entry in both reads `divergence`, so the
+probe scope is the pair rather than the local file the install writes:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
@@ -50,32 +54,40 @@ Inspect the `display` entry in the `results` array. Its `detail` field reports
 every required surface on its own line; scan for the dedicated
 `PreToolUse:enforcement` line:
 
-- `PreToolUse:enforcement: present` — the enforcement entry is installed.
-  **Presence is not correctness**: the `display` check keys on the hook command
-  string alone and never inspects the entry's `timeout`, so a present entry can
-  still carry a stale one. A re-run of the install converges such an entry, so
-  offer it rather than returning silently:
+- `PreToolUse:enforcement: present` — the enforcement entry is installed in
+  exactly one of the two settings files. **Presence is not correctness**: the
+  `display` check keys on the hook command string alone and never inspects the
+  entry's `timeout`, so a present entry can still carry a stale one. A re-run of
+  the install converges such an entry when it lives in the file the install
+  writes, so offer it — with the caveat below — rather than returning silently:
 
   ```text
   The PreToolUse enforcement hook is already configured.
 
-  The enforcement entry is present in ./.claude/settings.local.json. A fresh
-  Claude Code session arms the hook automatically.
+  The enforcement entry is present in the Claude settings. The probe reads both
+  ./.claude/settings.json and ./.claude/settings.local.json and reports only
+  that exactly one of them carries the entry, never which one. A fresh Claude
+  Code session arms the hook automatically either way.
 
   The presence check does not inspect the hook timeout, so a present entry may
-  still carry a stale one. Re-running the install rewrites only a stale value.
-  An entry already correct is left untouched and the file is not written at all.
+  still carry a stale one. The install writes ./.claude/settings.local.json, so
+  re-running it converges a stale timeout only for an entry that lives there; an
+  entry already correct is left untouched and the file is not written at all.
+  An entry that lives in ./.claude/settings.json instead is not reached: the
+  re-run appends a second entry to ./.claude/settings.local.json and leaves the
+  install dual-homed — the `divergence` state described below, which nothing
+  here repairs.
   ```
 
   ```text
   AskUserQuestion:
-    question: "The enforcement entry is present. Re-run the install to converge a stale hook timeout in ./.claude/settings.local.json?"
+    question: "The enforcement hook is already installed, but the check that found it does not read the hook's timeout, and it cannot tell which of the two settings files holds the entry. A re-run fixes an out-of-range timeout in ./.claude/settings.local.json, and adds a duplicate if the entry actually lives in the shared ./.claude/settings.json. Re-run the install?"
     header: "Enforcement Hook"
     options:
       - label: "Re-run install"
-        description: "Rewrite the hook timeout only if it falls outside the plausible seconds range; nothing is duplicated and a correct entry is not written at all"
+        description: "Rewrites the hook timeout only if it falls outside the plausible seconds range and the entry lives in ./.claude/settings.local.json; an entry in the shared ./.claude/settings.json is not converged, and a second copy is added alongside it, leaving the install dual-homed"
       - label: "Leave as is"
-        description: "Make no changes and return to the Configuration menu"
+        description: "Make no changes and return to the Configuration menu; the hook stays armed with whatever timeout it carries, and no duplicate can be created"
     multiSelect: false
   ```
 
@@ -85,15 +97,43 @@ every required surface on its own line; scan for the dedicated
 
   On **Re-run install**: proceed to Step 3 (Install), skipping the Step 2
   enable prompt — the user has already consented to this write. Expect
-  `enforcement_status: migrated` when a stale value was rewritten, or
-  `already_present` when the entry was already correct.
+  `enforcement_status: migrated` when a stale value was rewritten,
+  `already_present` when the entry was already correct, or `installed` when the
+  present entry lived in the shared file and this call added a second one to
+  ./.claude/settings.local.json. `enforcement_status` is what distinguishes the
+  three — `settings_path` names the file the install wrote and is the same in
+  all three cases.
+
+- `PreToolUse:enforcement: divergence` — the enforcement entry is installed in
+  BOTH `.claude/settings.json` and `.claude/settings.local.json`. Report the
+  observation:
+
+  ```text
+  The PreToolUse enforcement hook is already configured, in both settings files.
+
+  The enforcement entry is present in ./.claude/settings.json AND in
+  ./.claude/settings.local.json. This is reported for your awareness only —
+  nothing here repairs, migrates, or de-duplicates it, and the hook is armed
+  either way. Re-running the install does not clear it.
+  ```
+
+  Do NOT proceed to Step 2 — the hook is installed, so there is nothing to
+  enable. Then offer the same timeout re-run the `present` branch offers, for
+  the same reason: `divergence` means the entry is in
+  `.claude/settings.local.json` among others, which is the file the install
+  writes, so a stale timeout there converges. Expect `enforcement_status:
+  migrated` when a stale value was rewritten, or `already_present` when the entry
+  was already correct — `installed` cannot occur here, because the entry is
+  already in the file the install writes. The divergence itself is untouched
+  either way.
 
 - `PreToolUse:enforcement: MISSING` — the enforcement hook is not installed.
   Proceed to Step 2.
 
 Note: the enforcement entry is orthogonal — a `MISSING` enforcement line does
-NOT make the terminal-title `display` check unhealthy, and a `present`
-enforcement line does not by itself make it healthy. Read the
+NOT make the terminal-title `display` check unhealthy, a `divergence` line
+likewise does NOT make it unhealthy (it reports an installed entry), and a
+`present` enforcement line does not by itself make it healthy. Read the
 `PreToolUse:enforcement` line specifically, not the overall `healthy` flag.
 
 ### Step 2: Confirm

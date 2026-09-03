@@ -190,12 +190,24 @@ def validate_plugin_cache_retention(value: object, field_name: str) -> None:
 # queue's provisioning is somebody else's responsibility and a local probe
 # verdict is not the authority. Boolean coercion is handled by `_coerce_value`,
 # so no bespoke `validate_*` helper is warranted.
+#
+# `user_language` (str, default `auto`) pins the language plan-marshall answers
+# the user in. `auto` — the default — means "follow the language the user is
+# writing in"; any other value is a pin the language rule prefers over inference
+# (see `persona-plan-marshall-agent/standards/user-communication.md`, the rule
+# that consumes it). It is seeded on `init` and back-filled into existing
+# projects by `sync-defaults`' non-destructive deep-merge, exactly as its
+# siblings are, because DEFAULT_PROJECT doubles as the fail-closed field
+# whitelist `project set` admits against. The value contract — why it is only
+# "non-empty str" and no BCP-47 grammar — is documented on
+# `validate_user_language` below.
 DEFAULT_PROJECT = {
     'default_base_branch': 'main',
     'working_prefixes': list(DEFAULT_BRANCH_PREFIX_WORKING),
     'pr_strategy': 'compact',
     'pr_compact_max_changed_files': 150,
     'merge_queue_managed_externally': False,
+    'user_language': 'auto',
 }
 
 
@@ -298,6 +310,32 @@ def validate_pr_strategy(value: object, field_name: str = 'pr_strategy') -> None
     if value not in VALID_PR_STRATEGY:
         raise ValueError(
             f"Invalid {field_name} '{value}'. Allowed: {list(VALID_PR_STRATEGY)}"
+        )
+
+
+def validate_user_language(value: object, field_name: str = 'user_language') -> None:
+    """Validate `user_language` (a non-empty ``str``).
+
+    The value is consumed by an LLM reading prose, not by code that parses a
+    language tag, so no BCP-47 grammar is enforced — ``auto``, ``de``, ``German``
+    and ``pt-BR`` are all legitimate, and over-validating would reject valid input
+    for no reader's benefit. The one thing that MUST hold is the type: the `set`
+    path routes ``--value`` through ``_coerce_value``, which turns ``true`` /
+    ``false`` into a ``bool`` and a digit string into an ``int``, so without this
+    guard a coerced non-string would reach disk where every reader expects a
+    string.
+
+    Args:
+        value: The candidate language value.
+        field_name: The ``project.user_language`` path, used in the error message
+            so a rejected value names the offending knob.
+
+    Raises:
+        ValueError: If ``value`` is not a ``str``, or is empty/whitespace-only.
+    """
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(
+            f"Invalid {field_name} {value!r}: expected a non-empty string."
         )
 
 
@@ -1303,10 +1341,12 @@ def get_default_config() -> dict:
     # default shape fails loud at seed time rather than at first read.
     validate_per_deliverable_build(DEFAULT_PLAN_EXECUTE['per_deliverable_build'])
     validate_cost_size_token_table(DEFAULT_PLAN_EXECUTE['cost_size_token_table'])
-    # Self-validate the seeded project PR-batching knobs so a malformed default
-    # fails loud at seed time rather than at first read.
+    # Self-validate the seeded project knobs that carry a validator (the two
+    # PR-batching knobs and the user-language pin) so a malformed default fails
+    # loud at seed time rather than at first read.
     validate_pr_strategy(DEFAULT_PROJECT['pr_strategy'])
     validate_pr_compact_max_changed_files(DEFAULT_PROJECT['pr_compact_max_changed_files'])
+    validate_user_language(DEFAULT_PROJECT['user_language'])
     # Self-validate the seeded plugin-cache retention knobs on the same footing.
     validate_plugin_cache_retention(
         DEFAULT_SYSTEM_RETENTION['plugin_cache_keep_versions'],

@@ -48,7 +48,7 @@ The two slash commands `/finalize-step-deploy-target` and `/sync-plugin-cache` a
 == What each command does
 
 `/finalize-step-deploy-target`::
-Runs `uv run python marketplace/targets/generate.py --target claude --output target/claude` to regenerate the build target from `marketplace/bundles/`. Generates per-level agent variants (`{name}-level-1.md` through `{name}-level-7.md`), expands the variant-aware `plugin.json` per bundle, and emits the top-level `target/claude/.claude-plugin/marketplace.json`. Reads source, writes `target/claude/`. Does NOT touch `~/.claude/plugins/cache/`.
+Runs `./pw generate-claude` to regenerate the build target from `marketplace/bundles/` — always through the `./pw` wrapper, because `uv` lives in the project-local `.pyprojectx/` tree and is not on `PATH`. Generates per-level agent variants (`{name}-level-1.md` through `{name}-level-7.md`), expands the variant-aware `plugin.json` per bundle, and emits the top-level `target/claude/.claude-plugin/marketplace.json`. Reads source, writes `target/claude/`. Does NOT touch `~/.claude/plugins/cache/`.
 
 `/sync-plugin-cache`::
 Runs `rsync --delete` from `target/claude/` into `~/.claude/plugins/cache/plan-marshall/`. Refuses to run when `target/claude/` is missing or stale relative to `marketplace/bundles/` — the staleness guard is the structural reason to run `/finalize-step-deploy-target` first whenever the source has advanced. Reads `target/claude/`, writes the host plugin cache. Does NOT regenerate from source.

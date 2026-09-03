@@ -513,6 +513,26 @@ The top-level `project` section holds the project's base branch and the closed b
 | `project.merge_queue_managed_externally` | `false` | Declares the repository's merge queue is owned by an org- or externally-managed ruleset rather than by Plan Marshall. When `true`, `marshall-steward` never creates, enables, or reconciles a queue, and the probe-backed set-time validation of `use_merge_queue` (see xref:parallelism-and-locking.adoc#merge-queue[Parallelism and Locking → Platform merge queue]) is short-circuited.
 |===
 
+[#user-facing-language]
+=== User-facing language
+
+The language Plan Marshall answers you in is a `project` knob of its own — it is not branch naming, so it sits in its own section rather than in the table above.
+
+[cols="1,1,3", options="header"]
+|===
+| Config key | Default | What it controls
+
+| `project.user_language` | `auto` | The language every user-facing surface is written in — prompts and their option labels, phase summaries, the finalize output, error text, and each step's `display_detail` summary. That list is illustrative rather than complete: the authoritative enumeration of the governed surfaces, and the per-surface constraints on them, live in `user-communication.md` Rule 1. `auto` follows the language you are writing in; any other value pins it, so Plan Marshall answers in that language whatever you type. The value is read by the language rule rather than parsed by code, so it is written the way you would say it (`de`, `German`, `pt-BR`). See link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] for the canonical per-key reference, and link:../../marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/user-communication.md[`user-communication.md`] for the rule that consumes it — including which surfaces it does *not* reach (code, commit messages, PR bodies).
+|===
+
+Pin a language with the standard `project` verb:
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  project set --field user_language --value de
+----
+
 [#build-systems]
 === Build systems and profiles
 

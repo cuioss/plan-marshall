@@ -6,7 +6,15 @@
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 
 # Import the module under test (PYTHONPATH set by conftest)
-from toon_parser import parse_toon, parse_toon_table, serialize_toon
+import pytest
+from toon_parser import (
+    block_scalar_body_continues,
+    block_scalar_header_indent,
+    parse_toon,
+    parse_toon_table,
+    serialize_toon,
+    value_needs_quoting,
+)
 
 # =============================================================================
 # Test: Basic Key-Value Parsing
@@ -262,6 +270,96 @@ name: test
 
 
 # =============================================================================
+# Test: block_scalar_header_indent / block_scalar_body_continues
+# =============================================================================
+#
+# The two predicates are exported BOUNDARIES: a second reader that must agree
+# with parse_toon about where opaque prose starts and stops derives it from here
+# instead of restating it. Each side is a matched pair — a rule that always said
+# "yes" and one that always said "no" are equally satisfiable by half a pair.
+
+
+@pytest.mark.parametrize(
+    'line,expected_indent,reason',
+    [
+        ('description: |', 0, 'the canonical example'),
+        ('  description: |', 2, 'a nested header reports its own indent'),
+        ('task.name: |', 0, 'a dotted key is text before the first colon like any other'),
+        ('a b c: |', 0, 'the parser never constrains the key, so spaces are permitted'),
+        ('description:   |  ', 0, 'surrounding whitespace around the marker is stripped'),
+    ],
+)
+def test_block_scalar_header_indent_matches_the_parser_key_rule(line, expected_indent, reason):
+    """Any text up to the first colon opens a block scalar when the value is ``|``.
+
+    ``_parse_object`` takes ``content.index(':')`` and tests the remainder against
+    ``'|'``, so the key class is unbounded. A predicate narrower than that reports
+    "not a block scalar" for a line the parser reads as one, and the block's prose
+    body is then scanned as document structure by whoever asked.
+    """
+    assert block_scalar_header_indent(line) == expected_indent, reason
+
+
+@pytest.mark.parametrize(
+    'line,reason',
+    [
+        ('description: text', 'a value that is not the bare marker'),
+        ('description: | more', 'the marker must be the WHOLE value'),
+        ('foo: bar: |', 'only the FIRST colon splits, so the value here is "bar: |"'),
+        ('steps[2]:', 'an array header carries no value at all'),
+        ('# description: |', 'the parser skips comments before it looks for a key'),
+        ('', 'a blank line is skipped, never a header'),
+        ('   ', 'a whitespace-only line is likewise skipped'),
+        ('no colon here', 'a line with no colon is not a key/value pair'),
+    ],
+)
+def test_block_scalar_header_indent_reports_none_for_non_headers(line, reason):
+    """MATCHED NEGATIVE — the predicate discriminates rather than accepting every line.
+
+    Without these cases a predicate that returned ``0`` unconditionally would
+    satisfy every positive case above, and every document would read as one
+    opaque block.
+    """
+    assert block_scalar_header_indent(line) is None, reason
+
+
+def test_block_scalar_with_a_key_outside_the_word_class_keeps_its_body_as_prose():
+    """END-TO-END — the parser itself treats a dotted-key block as opaque prose.
+
+    This is the case a ``[\\w_-]+`` key class misses. The body carries a line that
+    reads as a list header; it must arrive as text inside the value, and must NOT
+    become a top-level key.
+    """
+    toon = 'task.name: |\n  Prose line one.\n  steps:\n    - src/not_a_step.py\nname: after\n'
+
+    result = parse_toon(toon)
+
+    assert result['task.name'] == 'Prose line one.\nsteps:\n  - src/not_a_step.py'
+    assert 'steps' not in result
+    assert result['name'] == 'after'
+
+
+@pytest.mark.parametrize(
+    'line,continues,reason',
+    [
+        ('', True, 'a blank line is preserved inside the body'),
+        ('      ', True, 'a whitespace-only line is blank for this purpose'),
+        ('    deeper', True, 'indented past the header, so still body'),
+        ('  same', False, 'at the header indent, so the block has closed'),
+        ('outer', False, 'outside the header indent, so the block has closed'),
+    ],
+)
+def test_block_scalar_body_continues_reports_the_block_extent(line, continues, reason):
+    """The body runs while lines are blank or deeper, and closes at the first that is not.
+
+    Both directions are pinned in one parametrization: a predicate stuck at
+    ``True`` swallows the rest of the document, and one stuck at ``False`` makes
+    every block empty.
+    """
+    assert block_scalar_body_continues(line, 2) is continues, reason
+
+
+# =============================================================================
 # Test: Complete Handoff Document
 # =============================================================================
 
@@ -493,3 +591,97 @@ def test_parse_toon_table_non_list_key():
     toon = 'status: success\n'
     result = parse_toon_table(toon, 'status')
     assert result == []
+
+
+# =============================================================================
+# Test: value_needs_quoting — the serializer's exported quoting decision
+# =============================================================================
+#
+# The predicate is the serializer's own rule, exported so consumers can tell a
+# quote serialize_toon was OBLIGED to add from one a human added by hand. Each
+# disjunct it decides gets a case here, because a consumer that mis-reads any
+# one of them mis-classifies a legitimate quote as an anti-pattern (or the
+# reverse).
+
+
+@pytest.mark.parametrize(
+    'value,reason',
+    [
+        ('a,b', 'comma would split a CSV row'),
+        ('bundle:skill', 'colon would read as a key/value separator'),
+        ('line one\nline two', 'newline would break the record'),
+        ('say "hi"', 'embedded double-quote needs escaping'),
+        ('#leading-hash', 'leading # would read as a comment'),
+        ('- leading dash', 'leading "- " would read as a list item'),
+        ('true', 'reserved literal would parse as a boolean'),
+        ('false', 'reserved literal would parse as a boolean'),
+        ('null', 'reserved literal would parse as None'),
+        ('', 'empty string is indistinguishable from an absent value'),
+        ('42', 'bare integer would parse as int'),
+        ('-42', 'negative integer would parse as int'),
+        ('3.14', 'bare float would parse as float'),
+        ('95%', 'percentage would parse as int'),
+    ],
+)
+def test_value_needs_quoting_true_for_each_disjunct(value, reason):
+    """Every disjunct the predicate decides reports True."""
+    assert value_needs_quoting(value) is True, f'expected quoting because {reason}'
+
+
+@pytest.mark.parametrize(
+    'value',
+    [
+        'plain',
+        'hello world',
+        'write-replace',
+        'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md',
+        'a-b_c',
+        'not#leading',
+        '-notalistitem',
+        '3.x',
+    ],
+)
+def test_value_needs_quoting_false_for_plain_values(value):
+    """A value with no special character or reserved shape is emitted bare.
+
+    This is the matched negative side of the parametrization above: without it a
+    predicate that simply returned True would pass every case there.
+    """
+    assert value_needs_quoting(value) is False
+
+
+def test_value_needs_quoting_honours_the_active_table_separator():
+    """The separator argument is what makes the decision table-aware.
+
+    A tab is unremarkable in a comma-separated table and fatal in a
+    tab-separated one; the predicate must answer differently for the same value.
+    """
+    assert value_needs_quoting('a\tb', table_separator='\t') is True
+    assert value_needs_quoting('a\tb', table_separator=',') is False
+
+
+def test_serialize_toon_output_is_byte_exact_for_every_quoting_disjunct():
+    """Pin the serializer's exact bytes for a record exercising the quoting rule.
+
+    ``value_needs_quoting`` was extracted out of ``_serialize_value`` as a pure
+    move, so the emitted bytes must not shift. This golden literal is what makes
+    a future edit to the predicate observable here rather than only in a
+    consumer: any change to which values get quoted changes this string.
+    """
+    data = {
+        'plain': 'hello world',
+        'notation': 'bundle:skill',
+        'listy': ['a,b', 'plain', '42'],
+        'rows': [{'target': 'src/a.py', 'intent': 'write-replace'}],
+    }
+
+    assert serialize_toon(data) == (
+        'plain: hello world\n'
+        'notation: "bundle:skill"\n'
+        'listy[3]:\n'
+        '  - "a,b"\n'
+        '  - plain\n'
+        '  - "42"\n'
+        'rows[1]{target,intent}:\n'
+        '  src/a.py,write-replace'
+    )

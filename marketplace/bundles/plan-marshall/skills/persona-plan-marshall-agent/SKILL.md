@@ -14,15 +14,21 @@ Foundational development practices applicable across all technology stacks and d
 
 ## Workflow
 
-### Step 1: Load Core Development Rules
+### Step 1: Load Core Development Rules and User-Communication Rules
 
-**Important**: Load this standard at the start of any development work.
+**Important**: Load BOTH standards at the start of any development work. Neither is optional and neither is loaded on demand — they are the unconditional tier.
 
 ```text
 Read: standards/agent-behavior-rules.md
 ```
 
 Covers Boy Scout Rule, decision tree for when to ask users, research patterns, tool selection guide, document proliferation guidelines, and dependency approval.
+
+```text
+Read: standards/user-communication.md
+```
+
+Covers the three binding rules for everything the user reads: answer in the user's language (resolution order, scope and non-scope, and the write-then-ASCII-flatten form for `display_detail`), say the plain word instead of the internal term (the displacement glossary), and bound what a phase boundary prints to what the next decision needs (the completeness floor before the brevity ceiling).
 
 ### Step 2: Load Tool Usage Standards (As Needed)
 
@@ -133,6 +139,7 @@ When operating against the main checkout outside a pinned context, plain `git` (
 | Standard | Purpose |
 |----------|---------|
 | agent-behavior-rules.md | Boy Scout Rule, ask users, research, tool usage, dependencies |
+| user-communication.md | Answer in the user's language (resolution order via `project.user_language`, scope/non-scope, write-then-ASCII-flatten for `display_detail`), the displacement glossary that replaces internal terms with plain wording, and the phase-boundary output bound (completeness floor, then brevity ceiling) |
 | tool-usage-patterns.md | Tool selection, file operations, content search, Bash safety, build resolution |
 | argument-naming.md | Typed-ID flags, read-verb canonicalization, `--module` over `--name`, stdlib log-level names for `manage-*` scripts |
 | thoroughness.md | Scope × thoroughness coverage contract: thoroughness ladder (T1–T5), scope ladder, grade-to-the-floor rule, coupling constraint `reject thoroughness ≥ T4 ∧ scope < component`, floor-graded self-report |

@@ -1269,6 +1269,28 @@ Verify platform integration.
 
 **Arguments**: `--checks all|permissions|display|mcp-diagnostics` (required)
 
+#### The per-label value domain of `detail`
+
+The `display` check's `detail` is a `; `-joined list of per-label readings. Each reading reports its surface against a **three-value** domain, because a surface can be installed in `.claude/settings.json`, in `.claude/settings.local.json`, in both, or in neither:
+
+```text
+<label>: present      — the surface is installed in exactly one settings file
+<label>: divergence   — the surface is installed in BOTH settings files
+<label>: MISSING      — the surface is installed in neither
+```
+
+Casing encodes severity. `MISSING` is uppercase because it is the actionable gap and the documented grep target; `present` and `divergence` are lowercase because both report an installed surface.
+
+The `hook` check reports the same four installation states, but its `detail` is **prose naming the settings file(s)**, not a `<label>: <value>` reading — so only `divergence` appears as a literal token there (`SessionStart hook entry: divergence — present in …`). Its absent state reads `missing from both …` in lowercase prose. **The `MISSING` grep target is therefore a `display` guarantee only**; a consumer testing the `hook` check for an absent entry must branch on `healthy: false`, never on a text scan.
+
+`divergence` is **non-fatal and report-only**. It never contributes to a check's `healthy` value and therefore never reaches the `display` check's fail-closed gate — the `error: display_unhealthy` refusal is driven by `healthy: false` alone, and a divergent label is by definition installed. The `hook` check likewise stays `healthy: true` for a dual-homed entry. This is deliberate: consumers branch on the returned `status`, so a divergence that flipped the verdict would route an already-installed project into an install prompt. Nothing in the runtime repairs, migrates, or rewrites a dual-homed install; the report is the whole remedy.
+
+The `results[N]{check,healthy,detail}` row shape is **unchanged** by this domain — no fourth key is added, and the widened vocabulary lives entirely inside the existing `detail` string.
+
+The three values apply uniformly to every label reporting a **hook entry** — the nine render-trigger labels and `PreToolUse:enforcement` alike. The `statusLine` and `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE` labels stay two-valued: they are not hook entries, and the two files' values are reconciled first-seen-wins rather than being concatenated, so there is no dual-homed state for them to report.
+
+**What `divergence` deliberately does not claim.** Whether Claude Code executes both byte-identical hook entries or collapses them to one is **deliberately left unestablished** — this contract asserts nothing about it. The report is a valid remedy either way: it neither asserts double execution nor requires it. What it does assert is that the operator's configuration says something in two places, which is a fact about the configuration and is worth surfacing whichever way the platform resolves it.
+
 **Success (all checks passing)**:
 ```toon
 status: success

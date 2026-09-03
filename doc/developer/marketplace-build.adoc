@@ -11,7 +11,7 @@ How the marketplace source under `marketplace/bundles/` is transformed into depl
 
 image::../resources/diagrams/marketplace-build-pipeline.svg[Marketplace build pipeline — marketplace/bundles/ source is transformed by marketplace/targets/generate.py into target/claude/ per-bundle output with role-eligible agents expanded into per-level variants; the meta-project-local /sync-plugin-cache rsyncs that target directory into ~/.claude/plugins/cache/ which is what Claude Code actually loads, align=center]
 
-The middle hop (`target/claude/`) is produced by `marketplace/targets/generate.py --target claude` or by the link:../../.claude/skills/finalize-step-deploy-target/SKILL.md[`project:finalize-step-deploy-target`] finalize step in the meta-project. The `/sync-plugin-cache` slash command rsyncs that directory into the plugin cache; consumer projects of Plan Marshall use the cache directly via `/plugin marketplace update` and never see the SOURCE or TARGET stages.
+The middle hop (`target/claude/`) is produced by `./pw generate-claude` or by the link:../../.claude/skills/finalize-step-deploy-target/SKILL.md[`project:finalize-step-deploy-target`] finalize step in the meta-project. The `/sync-plugin-cache` slash command rsyncs that directory into the plugin cache; consumer projects of Plan Marshall use the cache directly via `/plugin marketplace update` and never see the SOURCE or TARGET stages.
 
 == Variant Emission
 
@@ -44,8 +44,10 @@ The marketplace generator also supports non-Claude targets via adapters under `m
 
 [source,bash]
 ----
-uv run python marketplace/targets/generate.py --target opencode --output target/opencode
+./pw generate-opencode
 ----
+
+Every generator invocation goes through the `./pw` wrapper: `uv` is installed only into the project-local `.pyprojectx/` tree and is not on `PATH`, so a bare `uv run …` fails outside it.
 
 The OpenCode adapter produces output conforming to the OpenCode specification; only the Claude target is validated end-to-end. Adapter implementations register in `TARGET_REGISTRY` (see `marketplace/targets/generate.py`).
 
@@ -55,7 +57,7 @@ Not every target emits an assistant bundle tree. The `pr-agent` target emits a r
 
 [source,bash]
 ----
-uv run python marketplace/targets/generate.py --target pr-agent --output target/pr-agent
+./pw generate --target pr-agent --output target/pr-agent
 ----
 
 Three consequences follow from that difference, and all are load-bearing.
@@ -177,7 +179,7 @@ The Claude inner loop is one command: edit `marketplace/bundles/`, run
 via the project-local `/sync-opencode` skill:
 
 ```bash
-uv run python marketplace/targets/generate.py --target opencode --output target/opencode
+./pw generate-opencode
 /sync-opencode
 ```
 
@@ -237,7 +239,7 @@ The Claude Code marketplace registration MUST point at `target/claude/`, not at 
 
 One-time migration on a developer machine:
 
-1. Ensure `target/claude/` is current: `uv run python marketplace/targets/generate.py --target claude --output target/claude`.
+1. Ensure `target/claude/` is current: `./pw generate-claude`.
 2. Re-point the marketplace: edit `~/.claude/plugins/known_marketplaces.json` so the `plan-marshall` entry's `source.path` and `installLocation` point at `/path/to/plan-marshall/target/claude` (NOT `.../marketplace`). Alternatively, in-app: `/plugin marketplace remove plan-marshall` then `/plugin marketplace add /path/to/plan-marshall/target/claude`.
 3. Reinstall the plugins so install metadata picks up the variant-aware `plugin.json`: `claude plugin uninstall plan-marshall@plan-marshall && claude plugin install plan-marshall@plan-marshall` (repeat per bundle as needed).
 4. Restart Claude Code or run `/reload-plugins`.

@@ -34,3 +34,9 @@ Each row names one dispatch site that applies this standard. A site joins the ro
 **`execution-context-reader`'s untrusted-ingestion boundary is explicitly NOT governed by this standard.** The reader variant also returns a constrained struct, but for an unrelated reason: it contains untrusted external bytes so a deterministic validator can clamp them before any consumer sees them. That boundary is about **containment of untrusted content**; this standard is about **return-shape economy** for content the envelope already trusts. The two constraints happen to rhyme in shape and must not be merged — folding the reader into this roster would make a security boundary look like a cost optimization, and a future relaxation of the cost rule would silently relax the containment rule with it. See `plan-marshall:untrusted-ingestion` for that boundary.
 
 A dispatch that mutates the working tree is likewise out of scope. Its return reports what it changed, and its detail lives in the diff and the change ledger — a different sink with a different retrieval path.
+
+## Sibling standard — the opposite direction
+
+Two standards bound output volume on the same traffic, in opposite directions. This one governs the **sub-agent-to-orchestrator** leg: what a dispatched envelope returns to its caller. Its sibling governs the **orchestrator-to-user** leg: what the main context prints to the user at a phase boundary — see [`persona-plan-marshall-agent/standards/user-communication.md`](../../persona-plan-marshall-agent/standards/user-communication.md) § "Rule 3 — Say only what the next decision needs".
+
+The two are siblings, not layers: neither one's contract reaches the other's leg, and a site obeys whichever leg it sits on. Rule 3's floor, ceiling, and reporting shape live in that standard and are deliberately not restated here.

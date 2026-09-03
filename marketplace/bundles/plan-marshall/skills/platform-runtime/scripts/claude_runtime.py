@@ -19,7 +19,7 @@ import re
 import shlex
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -356,8 +356,8 @@ _STATUSLINE_COMMAND = (
 # matcher-less ``hooks.PreToolUse`` entry, ORTHOGONAL to the terminal-title
 # render wiring: it invokes the enforcement leaf that blocks the four hard-rule
 # violation families inside a plan-marshall plan context (fail-open everywhere
-# else). Keyed on its own command string so its present/MISSING detection is
-# independent of the render-entry detection.
+# else). Keyed on its own command string so its present/divergence/MISSING
+# detection is independent of the render-entry detection.
 _ENFORCEMENT_HOOK_COMMAND = (
     f"{_EXECUTOR_GUARD_PREFIX}"
     "python3 .plan/execute-script.py "
@@ -520,8 +520,69 @@ _DISPLAY_RENDER_ENTRIES: tuple[tuple[str, str, str], ...] = (
     ("PostToolUse:Bash", "PostToolUse", "Bash"),
 )
 
+# Label of the enforcement-hook row in the ``display`` report. Named once here
+# because two surfaces must agree on it: the renderer below prints it, and
+# ``_dual_homed_labels`` returns it — a second spelling would make a divergence
+# on that row silently unreportable.
+_ENFORCEMENT_LABEL = "PreToolUse:enforcement"
 
-def _diagnose_display_entries(settings_data: dict[str, Any]) -> tuple[list[str], bool]:
+# The third per-label state of the ``display`` and ``hook`` reports, beside
+# ``present`` and ``MISSING``: the surface is installed in BOTH
+# ``.claude/settings.json`` and ``.claude/settings.local.json``.
+#
+# Lowercase because casing encodes severity in this report — ``MISSING`` is
+# uppercase as the documented grep target for an actionable gap, while a
+# divergence is informational. It is deliberately NON-FATAL and never sets
+# ``healthy = False``: the ``display`` check fails closed on an unhealthy
+# verdict and the marshall-steward menus route on that status, so a divergence
+# that flipped the verdict would send an already-installed project into the
+# install prompt. One definition, read by both checks and by the tests.
+_DIVERGENCE_TOKEN = "divergence"
+
+
+def _dual_homed_labels(shared: dict[str, Any], local: dict[str, Any]) -> set[str]:
+    """Return the ``display`` labels whose hook entry is installed in BOTH dicts.
+
+    Pure, and deliberately consumes the two RAW settings dicts PRE-merge:
+    :func:`_merge_display_settings` concatenates the per-event ``hooks`` lists
+    and the presence probes return on the first match, so after the merge a
+    dual-homed entry is indistinguishable from a single-homed one. The two raw
+    dicts are the only place that information still exists.
+
+    Covers every label the check reports as a hook entry — the
+    :data:`_DISPLAY_RENDER_ENTRIES` rows and :data:`_ENFORCEMENT_LABEL` alike —
+    and reuses the existing :func:`_has_render_entry` /
+    :func:`_has_enforcement_entry` probes per file rather than re-deriving entry
+    traversal. ``statusLine`` and ``env`` are not hook entries and merge
+    first-seen-wins rather than by concatenation, so they carry no divergence
+    and are not inspected.
+    """
+
+    def _installed(settings_data: dict[str, Any]) -> set[str]:
+        if not isinstance(settings_data, dict):
+            return set()
+        hooks_block = settings_data.get("hooks", {})
+        if not isinstance(hooks_block, dict):
+            return set()
+        labels: set[str] = set()
+        for label, block_key, matcher in _DISPLAY_RENDER_ENTRIES:
+            entries = hooks_block.get(block_key, [])
+            if isinstance(entries, list) and _has_render_entry(entries, matcher=matcher):
+                labels.add(label)
+        pre_tool_use = hooks_block.get("PreToolUse", [])
+        if isinstance(pre_tool_use, list) and _has_enforcement_entry(
+            pre_tool_use, matcher=""
+        ):
+            labels.add(_ENFORCEMENT_LABEL)
+        return labels
+
+    return _installed(shared) & _installed(local)
+
+
+def _diagnose_display_entries(
+    settings_data: dict[str, Any],
+    divergent_labels: Collection[str] = (),
+) -> tuple[list[str], bool]:
     """Build the per-entry ``display`` diagnostic lines for *settings_data*.
 
     Inspects every render-trigger entry in ``_DISPLAY_RENDER_ENTRIES`` plus the
@@ -529,6 +590,12 @@ def _diagnose_display_entries(settings_data: dict[str, Any]) -> tuple[list[str],
     each, appends a line of the form ``"<label>: present"`` or
     ``"<label>: MISSING"`` (the literal token ``MISSING`` is load-bearing — the
     menu doc tells the user to grep for it).
+
+    *divergent_labels* names the labels found installed in BOTH settings files
+    (see :func:`_dual_homed_labels`); each such label renders
+    ``"<label>: divergence"`` in place of ``"<label>: present"``. It defaults to
+    empty, so a caller that does not supply it renders exactly as before.
+    A divergent label is installed, so it NEVER contributes to ``healthy``.
 
     Returns ``(lines, healthy)`` where ``healthy`` is True iff every required
     entry is present.
@@ -540,15 +607,20 @@ def _diagnose_display_entries(settings_data: dict[str, Any]) -> tuple[list[str],
     lines: list[str] = []
     healthy = True
 
+    def _state(label: str, present: bool) -> str:
+        if not present:
+            return "MISSING"
+        return _DIVERGENCE_TOKEN if label in divergent_labels else "present"
+
     for label, block_key, matcher in _DISPLAY_RENDER_ENTRIES:
         entries = hooks_block.get(block_key, [])
         present = isinstance(entries, list) and _has_render_entry(entries, matcher=matcher)
-        lines.append(f"{label}: {'present' if present else 'MISSING'}")
+        lines.append(f"{label}: {_state(label, present)}")
         if not present:
             healthy = False
 
     # Enforcement-hook entry — keyed on _ENFORCEMENT_HOOK_COMMAND, NOT the render
-    # command, so it has its own present/MISSING label, and scoped to the
+    # command, so it has its own present/divergence/MISSING label, and scoped to the
     # matcher-less entry, because only a matcher-less entry actually enforces on
     # every tool: an entry parked under some matcher must read MISSING here, or
     # the label reports enforcement that is not running. The opt-in enforcement
@@ -559,7 +631,7 @@ def _diagnose_display_entries(settings_data: dict[str, Any]) -> tuple[list[str],
         pre_tool_use, matcher=""
     )
     lines.append(
-        f"PreToolUse:enforcement: {'present' if enforcement_present else 'MISSING'}"
+        f"{_ENFORCEMENT_LABEL}: {_state(_ENFORCEMENT_LABEL, enforcement_present)}"
     )
 
     statusline = settings_data.get("statusLine")

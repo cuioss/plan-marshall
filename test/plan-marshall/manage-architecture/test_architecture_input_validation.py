@@ -43,8 +43,21 @@ def test_module_subcommand_rejects_invalid_module(axis, bad_value):
 
 def test_module_subcommand_accepts_canonical_module():
     """Canonical ``--module`` value passes the validator (may still fail
-    downstream, but never with ``invalid_module``)."""
-    result = run_script(SCRIPT_PATH, 'module', '--module', HAPPY_VALUES['module'])
+    downstream, but never with ``invalid_module``).
+
+    Unlike its malformed-value siblings, this call clears the validator and so
+    runs the FULL module lookup — work this assertion never inspects, but pays
+    for. Measured single-call latency for that lookup, one invocation at a time
+    with no parallel test load: 24s on a main checkout, 32-57s in a worktree.
+    ``run_script``'s 30s default therefore sits inside the observed spread and
+    fails as a ``subprocess.TimeoutExpired`` on a busy machine, reporting a
+    latency problem as a red test in whatever plan happens to be running. The
+    explicit budget below is ~3x the worst observed solo run, leaving headroom
+    for the ``pytest -n`` parallelism this suite runs under.
+    """
+    result = run_script(
+        SCRIPT_PATH, 'module', '--module', HAPPY_VALUES['module'], timeout=180
+    )
     assert result.returncode == 0
     data = parse_toon(result.stdout)
     assert data.get('error') != 'invalid_module'
