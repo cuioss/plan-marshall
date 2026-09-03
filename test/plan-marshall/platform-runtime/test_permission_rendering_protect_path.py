@@ -421,12 +421,11 @@ class TestPermissionFixProtectPath:
         )
 
         for operation in operations:
+            args: list[Any] = []
             if operation == 'protect-path':
                 args = [str(tmp_path / 'arg')]
             elif operation in ('add', 'remove', 'ensure'):
                 args = [{'kind': 'path', 'tool': 'Read', 'path': str(tmp_path / 'arg')}]
-            else:
-                args = []
             claude = _parse(
                 claude_runtime.ClaudeRuntime().permission_fix(
                     'global', operation, args, True
