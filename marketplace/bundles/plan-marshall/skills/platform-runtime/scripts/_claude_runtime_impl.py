@@ -1393,7 +1393,7 @@ class ClaudeRuntime(Runtime):
         bundles_scanned = 0
         wildcards_added = 0
         wildcards_already_present = 0
-        proposed_additions: list[str] = []
+        proposed_additions: list[dict[str, Any]] = []
 
         if mp_path.is_dir():
             try:
@@ -1413,12 +1413,19 @@ class ClaudeRuntime(Runtime):
                 for wildcard in (skill_wildcard, cmd_wildcard):
                     if wildcard in allow:
                         wildcards_already_present += 1
+                    elif dry_run:
+                        # Report the semantic intent once, not the two rendered
+                        # wildcard rules: the operator states the bundle, the
+                        # runtime owns the Skill/SlashCommand grammar.
+                        if proposed_additions and proposed_additions[-1] == {
+                            "kind": "bundle",
+                            "name": bundle_name,
+                        }:
+                            continue
+                        proposed_additions.append({"kind": "bundle", "name": bundle_name})
                     else:
-                        if dry_run:
-                            proposed_additions.append(wildcard)
-                        else:
-                            allow.append(wildcard)
-                            wildcards_added += 1
+                        allow.append(wildcard)
+                        wildcards_added += 1
 
         if not dry_run:
             settings["permissions"]["allow"] = allow
@@ -1472,20 +1479,19 @@ class ClaudeRuntime(Runtime):
         steps_scanned = len(steps)
         permissions_added = 0
         permissions_already_present = 0
-        proposed_additions: list[str] = []
+        proposed_additions: list[dict[str, Any]] = []
 
         for step_entry in steps:
             skill_name = step_entry.get("skill", "")
             if not skill_name:
                 continue
-            skill_perm = f"Skill({skill_name})"
             if claude_runtime._skill_permission_covered(skill_name, allow):
                 permissions_already_present += 1
             else:
                 if dry_run:
-                    proposed_additions.append(skill_perm)
+                    proposed_additions.append({"kind": "skill", "name": skill_name})
                 else:
-                    allow.append(skill_perm)
+                    allow.append(f"Skill({skill_name})")
                     permissions_added += 1
 
         if not dry_run:

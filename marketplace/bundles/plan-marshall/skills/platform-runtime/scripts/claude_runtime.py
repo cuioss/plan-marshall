@@ -2859,7 +2859,7 @@ def _skill_permission_covered(skill: str, allow_list: list[str]) -> str | None:
 
 
 # Accepted semantic permission-intent kinds across the permission ops.
-_PERMISSION_INTENT_KINDS = ("web-domain", "executor", "bundle", "path", "macro")
+_PERMISSION_INTENT_KINDS = ("web-domain", "executor", "bundle", "skill", "path", "macro")
 
 
 def _render_permission_intent(intent: Any) -> tuple[list[str] | None, str | None]:
@@ -2895,6 +2895,11 @@ def _render_permission_intent(intent: Any) -> tuple[list[str] | None, str | None
         if not isinstance(name, str) or not name:
             return None, "bundle intent requires a non-empty 'name' string"
         return [f"Skill({name}:*)", f"SlashCommand(/{name}:*)"], None
+    if kind == "skill":
+        name = intent.get("name")
+        if not isinstance(name, str) or not name:
+            return None, "skill intent requires a non-empty 'name' string"
+        return [f"Skill({name})"], None
     if kind == "path":
         tool = intent.get("tool")
         path = intent.get("path")

@@ -3765,6 +3765,24 @@ class TestPermissionEnsureWildcards:
         saved = json.loads(settings_path.read_text())
         assert saved["permissions"]["allow"] == []
 
+    def test_dry_run_reports_semantic_bundle_intents(self, rt, tmp_path, monkeypatch):
+        """dry-run proposed_additions are bundle intents, never rendered wildcard rules."""
+        import claude_runtime as _cr
+
+        marketplace = tmp_path / "mpb"
+        bundle_dir = marketplace / "bundle-x"
+        pj = bundle_dir / ".claude-plugin" / "plugin.json"
+        pj.parent.mkdir(parents=True)
+        pj.write_text("{}", encoding="utf-8")
+
+        settings_path = tmp_path / "settings.json"
+        _write_settings(settings_path, [])
+        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+
+        result = _parsed(rt.permission_ensure_wildcards("project", str(marketplace), True))
+        assert result["status"] == "success"
+        assert result["proposed_additions"] == [{"kind": "bundle", "name": "bundle-x"}]
+
     def test_already_present_wildcards_not_duplicated(self, rt, tmp_path, monkeypatch):
         """Wildcards already in the allow list are not added again."""
         import claude_runtime as _cr
@@ -3815,6 +3833,24 @@ class TestPermissionEnsureSteps:
         result = _parsed(rt.permission_ensure_steps(str(marshal), "project", False))
         assert result["status"] == "success"
         assert result["marshal"] == str(marshal)
+
+
+    def test_dry_run_reports_semantic_skill_intents(self, rt, tmp_path, monkeypatch):
+        """dry-run proposed_additions are skill intents, never rendered DSL rules."""
+        import claude_runtime as _cr
+
+        marshal = tmp_path / "marshal.json"
+        marshal.write_text(
+            json.dumps({"plan": {"phase-5-execute": {"steps": ["project:demo-skill"]}}}),
+            encoding="utf-8",
+        )
+        settings_path = tmp_path / "settings.json"
+        _write_settings(settings_path, [])
+        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+
+        result = _parsed(rt.permission_ensure_steps(str(marshal), "project", True))
+        assert result["status"] == "success"
+        assert result["proposed_additions"] == [{"kind": "skill", "name": "demo-skill"}]
 
 
 # =============================================================================
