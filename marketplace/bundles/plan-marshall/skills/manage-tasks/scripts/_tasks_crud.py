@@ -29,6 +29,7 @@ import re
 import sys
 from pathlib import Path
 
+from _task_artifacts import capture_task_start_sha
 from _tasks_core import (
     find_task_file,
     format_task_file,
@@ -665,6 +666,14 @@ def cmd_update(args) -> dict:
                 f'Invalid status: {args.status}. Must be pending, in_progress, done, blocked, or infeasible'
             )
         task['status'] = args.status
+        # The explicit half of the task-start baseline capture — its implicit
+        # sibling is the `in_progress` flip inside `finalize-step`. A caller that
+        # opens a task through this verb must land the same baseline, or the
+        # artifact channel fires for one entry path and is silently inert for
+        # the other. The capture is idempotent, so whichever path runs first
+        # owns the SHA and a later transition cannot move it forward.
+        if args.status == 'in_progress':
+            capture_task_start_sha(task)
 
     # Handle new fields
     if getattr(args, 'domain', None):
