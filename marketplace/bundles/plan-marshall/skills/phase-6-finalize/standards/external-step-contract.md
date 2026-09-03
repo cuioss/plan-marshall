@@ -30,8 +30,19 @@ The full command template (use verbatim, substituting the placeholders):
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step {step_name} --outcome {done|skipped|loop_back|failed} \
   [--loop-back-target {5-execute|6-finalize}] \
+  [--force] \
   --display-detail "{one-line summary}"
 ```
+
+⛔ **`--force` is REQUIRED whenever the outcome being written DIFFERS from the one already
+stored**, and a re-fireable step reaches that state on its ordinary happy path: `mark-step-done`
+refuses any such write, so a step that recorded `loop_back` in one round and comes back clean in
+the next cannot record its own `done` without the flag. It receives `error: conflict`, writes
+nothing, and the dispatcher's post-dispatch completion guard then halts the phase on a missing
+terminal record — the round that finally succeeded is the one round unable to say so. Pass
+`--force` on a terminal branch that can overwrite a different stored outcome; omit it where the
+branch can only ever re-write the same value (a `loop_back` over a stored `loop_back` is the
+same-outcome path and needs nothing).
 
 MANDATORY annotations for every argument:
 
@@ -45,6 +56,7 @@ MANDATORY annotations for every argument:
   The same five-way partition is what `record-step` writes into the manifest's `execution_log[]` — see [`../../manage-execution-manifest/standards/manifest-schema.md`](../../manage-execution-manifest/standards/manifest-schema.md) § "Which situation each `outcome` value means", which additionally names `error` for a dispatch that raised (a dispatcher-side value no step records for itself).
 - `--loop-back-target` — MANDATORY when `--outcome loop_back`, rejected otherwise. `6-finalize` re-enters the finalize step loop with no phase-5-execute re-dispatch; `5-execute` routes through fix tasks first.
 - `--step` — MANDATORY. Pass the step's **composed manifest catalog key** — the key exactly as `manifest.phase_6.steps` catalogs it, NOT a name read off `marshal.json`. The `default:` prefix is normalised on write by the canonical step-key seam, so a built-in step lands on the same record whether authored bare (`push`) or prefixed (`default:push`). A `bundle:skill` id (e.g. `plan-marshall:automatic-review`) is **preserved verbatim** by that seam and therefore MUST be authored exactly as the manifest catalogs it — the normalisation cannot rescue a mis-authored bundle-prefixed key. A key the seam cannot reconcile creates an orphan status record that the renderer cannot pair with the dispatched step, which the dispatcher-side guard surfaces as `step_record_mismatched_key`.
+- `--force` — MANDATORY on any terminal branch whose write can land on a record already carrying a DIFFERENT outcome; rejected by nothing, but omitting it there is the defect described under the template above. The canonical case is a re-fireable step's clean branch overwriting the `loop_back` its own previous round stored.
 - `--display-detail` — MANDATORY. Single-line summary of what the step actually did, authored by the step itself. Subject to the constraints listed below. A missing, empty, or whitespace-only value triggers the `<missing display_detail>` placeholder and contributes a `[FAILED]` headline regardless of the `--outcome` value.
 
 **Notation:** the canonical 3-part notation is `plan-marshall:manage-status:manage-status` — every segment is kebab-case.
