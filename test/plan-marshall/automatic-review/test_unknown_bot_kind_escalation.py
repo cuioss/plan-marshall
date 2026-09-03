@@ -251,7 +251,7 @@ def test_the_document_enumerates_the_taxonomy_without_restating_its_size():
     """
     text = _skill_text()
     stale_count = re.search(
-        r'\b(nine|ten|eleven|twelve|thirteen)[ -](closed|member)', text, re.IGNORECASE
+        r'\b(nine|ten|eleven|twelve|thirteen|[0-9]+)[ -](closed|member)', text, re.IGNORECASE
     )
 
     assert stale_count is None, (
