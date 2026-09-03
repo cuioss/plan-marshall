@@ -22,8 +22,16 @@ Derivation rules (applied per footprint path, in order):
    dropped, never a hard failure. This is what keeps a ``test/marketplace/**``
    path (e.g. ``test/marketplace/targets/test_frontmatter.py``) from deriving a
    phantom ``marketplace`` bundle.
-4. Any other shape contributes no bundle (dropped silently — it is neither a
-   bundle nor a diagnosable-unresolvable, just out of the derivation's remit).
+4. Any other shape resolves to no bundle and is appended to ``unresolved[]``.
+   Reaching this rule means the path already matched a ``build_map`` glob at
+   rule 1 — the project itself declared it build-relevant — so it is a
+   diagnosable-unresolvable, not something outside the derivation's remit. A
+   consumer project whose sources live under any other layout produces a
+   footprint made entirely of such paths, so dropping them returned an empty
+   ``bundles`` list *and* an empty ``unresolved`` list, and the gate's
+   per-bundle loop iterated zero times and reported green. The disposition
+   mirrors ``_test_scope_divergence._module_for_path``, which returns None for
+   the same input class so its caller records the path in ``unresolved_paths``.
 
 An entry that resolves to no bundle is **never** an error. The ADR-009
 fail-closed contract continues to apply to genuine ``quality-gate`` failures,
@@ -89,8 +97,11 @@ def derive_gate_bundles(
     Returns:
         A ``(bundles, unresolved)`` tuple. ``bundles`` is the sorted,
         de-duplicated bundle-name list. ``unresolved`` preserves footprint
-        order and holds each ``test/<b>/…`` path whose ``<b>`` is not a real
-        bundle directory — a diagnosable signal, never an error.
+        order and holds every glob-matching path that resolved to no bundle:
+        a ``test/<b>/…`` path whose ``<b>`` is not a real bundle directory,
+        and — by rule 4 — a path of any other shape. Every entry matched a
+        ``build_map`` glob, so each is a diagnosable signal, never an error
+        and never a silent drop.
     """
     bundles: set[str] = set()
     unresolved: list[str] = []
@@ -111,7 +122,11 @@ def derive_gate_bundles(
                 bundles.add(candidate)
             else:
                 unresolved.append(path)
-        # Any other shape contributes no bundle (silent drop by rule 4).
+        else:
+            # Rule 4. The path matched a build_map glob but is neither a
+            # marketplace/bundles/<b>/… path nor a resolvable test/<b>/… one,
+            # so it resolves to no bundle and is REPORTED rather than dropped.
+            unresolved.append(path)
 
     return sorted(bundles), unresolved
 
