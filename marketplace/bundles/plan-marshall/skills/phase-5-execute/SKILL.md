@@ -670,8 +670,12 @@ After a verification step settles (its build/check completes with a known outcom
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest record-step \
   --plan-id {plan_id} --step-id {step_id} --phase 5-execute --outcome {executed|skipped|error} \
-  --total-tokens {total_tokens} --tool-uses {tool_uses} --duration-ms {duration_ms}
+  [--total-tokens {total_tokens}] [--tool-uses {tool_uses}] [--duration-ms {duration_ms}]
 ```
+
+The three token flags are bracketed because omission is a REAL branch, not a
+formatting nicety — an inline build invocation carrying no `<usage>` tag passes
+none of them, so its columns record as `unmeasured` instead of a fabricated `0`.
 
 See `manage-execution-manifest` Canonical invocations → `record-step` for the authoritative argument surface. Contract:
 

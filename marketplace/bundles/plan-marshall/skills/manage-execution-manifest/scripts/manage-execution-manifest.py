@@ -3449,7 +3449,10 @@ def _build_parser() -> argparse.ArgumentParser:
         '--phase', required=True, help='Phase the step ran in (one of VALID_RECORD_PHASES: 5-execute|6-finalize)'
     )
     record_step_parser.add_argument(
-        '--outcome', required=True, help='Execution outcome (one of VALID_RECORD_OUTCOMES: executed|skipped|error)'
+        '--outcome',
+        required=True,
+        help='Execution outcome (one of VALID_RECORD_OUTCOMES: '
+        'executed|skipped|loop_back|failed|error)',
     )
     # The three optional token-attribution flags default to ``None``, NOT ``0``.
     # The default is the whole discriminator: with ``default=0`` an omitted flag
