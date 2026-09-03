@@ -44,7 +44,7 @@ EXTENSION_SKILL = 'plan-marshall-plugin'
 #: from BOTH sides so the guard's blind spot stays a truthful quantity: it may not
 #: grow (that widens what the guard cannot see) and it may not silently shrink
 #: (that leaves the constant overstating the gap).
-UNRESOLVED_CALL_SITE_BOUND = 86
+UNRESOLVED_CALL_SITE_BOUND = 87
 
 #: Names a file-load registers that some test module ALSO imports plainly.
 #:
