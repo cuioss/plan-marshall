@@ -43,8 +43,9 @@ published.
 in both install modes — the terminal-title install and the orthogonal
 `--enforcement` install alike — because both are machine-local operator wiring
 and that file is gitignored, so absolute per-user paths never enter version
-control. The `display` health check reads BOTH files, so an entry in either
-counts as present. Report the file the call actually wrote by reading
+control. The `display` health check reads BOTH files: an entry in either file
+alone counts as `present`, and an entry in both reads `divergence`. Report the
+file the call actually wrote by reading
 `settings_path` from the install response rather than naming a path this flow
 does not control.
 
@@ -90,8 +91,10 @@ and surfaces explicit prompts for the two conflict cases (`statusLine` /
 
 ### Step 1: Detect
 
-Probe the resolved Claude settings file to discover what is already wired
-up. Because the install operation never duplicates an entry and reports a
+Probe what is already wired up. The `display` health check reads BOTH
+`.claude/settings.json` and `.claude/settings.local.json` (see "Which settings
+file" above), so the probe scope is the pair rather than the single file the
+install writes. Because the install reports a
 precise per-event summary, the same call drives both detect and install — the
 `installed_events` / `already_present_events` / `migrated_events` /
 `capture_status` / `statusLine_status` / `env_status` fields in the response
@@ -106,13 +109,25 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
 ```
 
 Inspect the `display` entry in the `results` array. Its `detail` field reports
-every piece on its own line, each ending in `present` or `MISSING`. Once the
-overall `status` has routed the flow (see the branch rule below), the `detail`
-lines are how a PARTIAL install is diagnosed — each `MISSING` line names one
-render entry, statusLine, or env value still to be installed. Read them as a
-diagnosis, never as the branch condition: one label on this list is deliberately
-non-blocking, so the presence of a `MISSING` line does not imply an unhealthy
-check.
+every piece on its own line, each ending in that piece's state value — the
+per-label value domain is `platform-runtime`'s `standards/contract.md`
+§ "The per-label value domain of `detail`", which is also where the labels that
+can never read `divergence` are named. Once the overall `status` has routed the
+flow (see the branch rule
+below), the `detail` lines are how a PARTIAL install is diagnosed — each
+`MISSING` line names one render entry, statusLine, or env value still to be
+installed. Read them as a diagnosis, never as the branch condition. They are not
+uniformly non-blocking: a `MISSING` render entry, statusLine or env value DOES
+make the check unhealthy, and only `PreToolUse:enforcement: MISSING` is
+orthogonal (see the note under the label list below). A `divergence` line never
+makes the check unhealthy, whichever label carries it.
+
+A `divergence` line means that surface is installed in BOTH
+`.claude/settings.json` and `.claude/settings.local.json`. The entry is already
+installed, so it never routes to the enable prompt, and nothing in this flow
+repairs, migrates, or de-duplicates the divergence itself. How the success
+branch reports it, and why it does not suppress the timeout re-run offer, is
+stated there.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
@@ -150,46 +165,74 @@ would delete the entry that clear depends on.
 `SessionStart:clear` **is** installed as its own entry — it is what routes the
 session teardown when a session is cleared.
 
-**The check is fail-closed.** A divergence between the expected and installed
+**The check is fail-closed.** A mismatch between the expected and installed
 sets returns `status: error` with `error: display_unhealthy`, not a `success`
-carrying `all_healthy: false`. Branch on the status, not on the text.
+carrying `all_healthy: false`. Branch on the status, not on the text. (That
+mismatch is a missing entry — it is not the `divergence` label value, which
+reports an entry installed in both settings files and never fails the check.)
 
 When `display` reports `status: success`, every required entry is present.
 
 **Branch on the status, never on a `MISSING` text scan.** A text scan is not a
 narrower spelling of the status check — it disagrees with it in the ordinary
 case. `_diagnose_display_entries` also emits a `PreToolUse:enforcement:
-present|MISSING` label, and that label's absence deliberately does NOT set
-`healthy = False`, because the enforcement hook is an orthogonal opt-in. So a
-project with the terminal title fully installed and enforcement simply not
+present|divergence|MISSING` label, and that label's absence deliberately does
+NOT set `healthy = False`, because the enforcement hook is an orthogonal opt-in.
+So a project with the terminal title fully installed and enforcement simply not
 enabled reports `status: success` **and** carries a line containing `MISSING`. A
 scan would route that healthy project to the Step 2 enable prompt and offer to
 install what is already installed.
 
+A `divergence` line likewise never changes the status: it reports an installed
+surface, so it leaves `healthy` `true` on every label that carries it. A text
+scan keyed on `divergence` would misroute a dual-homed but fully working project
+in exactly the same way a `MISSING` scan misroutes an enforcement-free one.
+
 **Presence is not correctness**: the `display` check keys on the hook command
 string alone and never inspects an entry's `timeout`, so a present entry can
-still carry a stale one. A re-run of the install converges any such entry, so
-this branch offers the re-run rather than returning silently:
+still carry a stale one. This branch therefore offers the re-run rather than
+returning silently; what the re-run does and does not converge is stated in the
+report text below:
 
 ```text
 Terminal title is already configured.
 
 All nine render-trigger hook entries, the statusLine command, and the
-CLAUDE_CODE_DISABLE_TERMINAL_TITLE env entry are present in
-the resolved Claude settings file.
+CLAUDE_CODE_DISABLE_TERMINAL_TITLE env entry are present. The check reads both
+./.claude/settings.json and ./.claude/settings.local.json and reports only that
+each surface is installed, never which file carries it.
 
 The presence check does not inspect hook timeouts, so a present entry may still
-carry a stale one. Re-running the install rewrites only stale values and leaves
-everything else untouched.
+carry a stale one. The install writes ./.claude/settings.local.json, so a re-run
+converges a stale timeout only for entries that live there; an entry homed in the
+shared ./.claude/settings.json is not reached, and the re-run appends a second
+copy alongside it.
+```
+
+A `divergence` line is an installed surface, so the flow reaches this same
+success branch carrying one. Silence would leave the operator told only that
+everything "is present", which is not what the check observed. When any label in
+`detail` reads `divergence` rather than `present`, append the paragraph below to
+the report, naming those labels. This is a **report addition only** — it changes
+nothing about the branch, which still routes on `status` alone (see "Branch on
+the status, never on a `MISSING` text scan" above), and it does not suppress the
+re-run offer:
+
+```text
+Installed in both settings files: <divergent labels>. Each of these is present
+in ./.claude/settings.json AND in ./.claude/settings.local.json. The terminal
+title works either way, so this is reported for your awareness only — nothing
+here repairs, migrates, or de-duplicates a dual-homed entry, and re-running the
+install does not clear it.
 ```
 
 ```text
 AskUserQuestion:
-  question: "Every entry is present. Re-run the install to converge any stale hook timeouts in the resolved Claude settings file?"
+  question: "Every entry is installed. A re-run fixes an out-of-range timeout in ./.claude/settings.local.json, and adds a duplicate for any entry that actually lives in the shared ./.claude/settings.json. Re-run the install?"
   header: "Terminal Title"
   options:
     - label: "Re-run install"
-      description: "Rewrite any hook timeout that falls outside the plausible seconds range; entries already correct are left untouched and nothing is duplicated"
+      description: "Rewrites any hook timeout that falls outside the plausible seconds range and lives in ./.claude/settings.local.json; an entry already correct there is left untouched, and an entry homed in the shared ./.claude/settings.json is not converged — a second copy is added alongside it, leaving that surface dual-homed"
     - label: "Leave as is"
       description: "Make no changes and return to the Configuration menu"
   multiSelect: false

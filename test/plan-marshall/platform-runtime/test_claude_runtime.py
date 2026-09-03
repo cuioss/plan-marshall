@@ -2112,7 +2112,10 @@ class TestCaptureEntryOutcomeIsReported:
 
 
 class TestDisplayEnforcementLabel:
-    """Tests for the dedicated ``PreToolUse:enforcement`` display present/MISSING label."""
+    """Tests for the dedicated ``PreToolUse:enforcement`` display label.
+
+    The label is three-valued: ``present`` / ``divergence`` / ``MISSING``.
+    """
 
     @pytest.fixture()
     def in_tmp_cwd(self, tmp_path, monkeypatch):
@@ -4135,6 +4138,16 @@ class TestHealthCheck:
             "env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE",
         )
 
+    # The subset of the labels above that report on a HOOK entry, and therefore
+    # the only ones that can be dual-homed: ``statusLine`` and ``env`` merge
+    # first-seen-wins rather than by concatenation, so they carry no divergence.
+    # Derived from the same constant for the same anti-drift reason.
+    @staticmethod
+    def _render_labels() -> tuple[str, ...]:
+        import claude_runtime as _cr
+
+        return tuple(label for label, _block, _matcher in _cr._DISPLAY_RENDER_ENTRIES)
+
     def test_display_expected_set_matches_the_converged_shape(self):
         """The expected set is the nine converged labels, in report order.
 
@@ -4179,6 +4192,146 @@ class TestHealthCheck:
         # The enforcement entry is orthogonal — absent after a terminal-title
         # install — so it is the ONLY MISSING line and the display stays healthy.
         assert "PreToolUse:enforcement: MISSING" in detail
+
+    # -- Three-state per-label vocabulary: present / divergence / MISSING ----
+    #
+    # The `display` check merges the two settings files before diagnosing, and
+    # the merge concatenates the per-event hook lists while the presence probe
+    # returns on the first match — so before the detector, an entry installed in
+    # BOTH files was indistinguishable from one installed in either. The three
+    # tests below pin the three states, and the single-homed one is the
+    # load-bearing negative control: a detector that matched too eagerly would
+    # pass the divergence case and fail only there.
+
+    def test_display_dual_homed_install_reads_divergence(self, rt, tmp_path, in_tmp_cwd):
+        """A render entry installed in BOTH settings files reads ``divergence``.
+
+        The report-only contract is asserted alongside the token: the verb still
+        returns ``status: success`` and the display check stays ``healthy`` —
+        the entry IS installed, so a divergence must never trip the fail-closed
+        ``display_unhealthy`` gate that the marshall-steward menus route on.
+        """
+        import claude_runtime as _cr
+
+        rt.project_install_hook(str(tmp_path / ".claude" / "settings.json"))
+        rt.project_install_hook(str(tmp_path / ".claude" / "settings.local.json"))
+
+        result = _parsed(rt.health_check("display"))
+        assert result["status"] == "success"
+        display_result = next(r for r in result["results"] if r["check"] == "display")
+        assert display_result["healthy"] is True
+        detail = display_result["detail"]
+
+        labels = self._render_labels()
+        assert labels, "render-label population is empty — nothing would be examined"
+        for label in labels:
+            assert f"{label}: {_cr._DIVERGENCE_TOKEN}" in detail
+            assert f"{label}: present" not in detail
+
+        # statusLine and env are not hook entries — they merge first-seen-wins,
+        # so they stay ``present`` and are NOT swept into the divergence.
+        assert "statusLine: present" in detail
+        assert "env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE: present" in detail
+
+    def test_display_single_homed_install_reports_no_divergence(self, rt, tmp_path, in_tmp_cwd):
+        """NEGATIVE CONTROL — one settings file reads ``present`` on every label.
+
+        This is the assertion that fails a detector matching too eagerly (one
+        that reported a divergence for an entry present in a single file). The
+        divergence case above is satisfiable by such a detector; this one is
+        not, so the pair is what makes the positive meaningful.
+        """
+        import claude_runtime as _cr
+
+        rt.project_install_hook(str(tmp_path / ".claude" / "settings.local.json"))
+
+        result = _parsed(rt.health_check("display"))
+        assert result["status"] == "success"
+        display_result = next(r for r in result["results"] if r["check"] == "display")
+        assert display_result["healthy"] is True
+        detail = display_result["detail"]
+        for label in self._display_labels():
+            assert f"{label}: present" in detail
+        assert _cr._DIVERGENCE_TOKEN not in detail
+
+    def test_display_absent_install_reads_missing_and_never_divergence(self, rt, in_tmp_cwd):
+        """The third state is unchanged: absent from both files still reads ``MISSING``.
+
+        Also asserts the divergence token appears nowhere — "installed in both"
+        and "installed in neither" are opposite states, and a detector that
+        confused an empty intersection for a full one would surface here.
+        """
+        import claude_runtime as _cr
+
+        result = _parsed(rt.health_check("display"))
+        display_result = next(r for r in result["results"] if r["check"] == "display")
+        detail = display_result["detail"]
+        for label in self._display_labels():
+            assert f"{label}: MISSING" in detail
+        assert _cr._DIVERGENCE_TOKEN not in detail
+
+    def test_display_enforcement_label_reads_divergence_when_dual_homed(
+        self, rt, tmp_path, in_tmp_cwd
+    ):
+        """Coverage is uniform: the enforcement label diverges like every other.
+
+        Pinned rather than left incidental — the enforcement entry is a hook
+        entry and can be dual-homed for exactly the same reason the render
+        entries can, so excluding it would be an unexplained hole in a report
+        whose purpose is to stop hiding this state.
+
+        Both install modes run against both files: ``--enforcement`` writes ONLY
+        the matcher-less PreToolUse entry (no render wiring, no ``statusLine``,
+        no ``env``), so an enforcement-only install would leave the display
+        legitimately unhealthy and the non-fatal assertions below would be
+        asserting the wrong thing.
+        """
+        import claude_runtime as _cr
+
+        for name in ("settings.json", "settings.local.json"):
+            target = str(tmp_path / ".claude" / name)
+            rt.project_install_hook(target)
+            rt.project_install_hook(target, enforcement=True)
+
+        result = _parsed(rt.health_check("display"))
+        assert result["status"] == "success"
+        display_result = next(r for r in result["results"] if r["check"] == "display")
+        assert display_result["healthy"] is True
+        assert (
+            f"PreToolUse:enforcement: {_cr._DIVERGENCE_TOKEN}"
+            in display_result["detail"]
+        )
+        assert "PreToolUse:enforcement: present" not in display_result["detail"]
+
+    def test_dual_homed_labels_detector_pairs_positive_and_negative(self):
+        """The detector itself, as a matched pair on the same input.
+
+        Both directions of the one-sided case are asserted: an entry in only the
+        shared dict and an entry in only the local dict must each yield an empty
+        set. Asserting one direction alone would leave an intersection
+        implemented as a union of one side undetected.
+        """
+        import claude_runtime as _cr
+
+        installed = {
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "matcher": "",
+                        "hooks": [
+                            {"type": "command", "command": _ENFORCEMENT_HOOK_COMMAND}
+                        ],
+                    }
+                ]
+            }
+        }
+
+        assert _cr._dual_homed_labels(installed, installed) == {
+            _cr._ENFORCEMENT_LABEL
+        }
+        assert _cr._dual_homed_labels(installed, {}) == set()
+        assert _cr._dual_homed_labels({}, installed) == set()
+        assert _cr._dual_homed_labels({}, {}) == set()
 
     def test_display_unhealthy_returns_status_error(self, rt, in_tmp_cwd):
         """An unhealthy display FAILS the verb — it does not report at exit 0.
@@ -4338,15 +4491,50 @@ class TestHealthCheck:
         assert "missing" in hook_result["detail"]
 
     def test_hook_check_healthy_when_in_both_files(self, rt, tmp_path, in_tmp_cwd):
-        """hook check is healthy when the hook is present in both settings files."""
+        """hook check names the dual-homed install ``divergence`` — and stays healthy.
+
+        The ``healthy is True`` assertion is the non-fatal contract and is kept:
+        the entry IS installed, so naming the state must not change the verdict.
+        The added token assertion is what promotes the pre-existing prose-only
+        discrimination (which named both files but had no named state) to the
+        same vocabulary the ``display`` check reports per label.
+        """
+        import claude_runtime as _cr
+
         self._write_hook_settings(tmp_path / ".claude" / "settings.json")
         self._write_hook_settings(tmp_path / ".claude" / "settings.local.json")
 
         result = _parsed(rt.health_check("all"))
         hook_result = next(r for r in result["results"] if r["check"] == "hook")
         assert hook_result["healthy"] is True
+        assert _cr._DIVERGENCE_TOKEN in hook_result["detail"]
         assert "settings.json" in hook_result["detail"]
         assert "settings.local.json" in hook_result["detail"]
+
+    def test_hook_check_single_homed_carries_no_divergence_token(
+        self, rt, tmp_path, in_tmp_cwd
+    ):
+        """NEGATIVE CONTROL for the hook check's divergence token.
+
+        Both one-sided installs are covered, because the arm that emits the
+        token is selected by ``in_settings_json and in_settings_local`` — a
+        detector reduced to either operand alone would still pass a test that
+        only ever wrote one of the two files.
+        """
+        import claude_runtime as _cr
+
+        self._write_hook_settings(tmp_path / ".claude" / "settings.json")
+        shared_only = _parsed(rt.health_check("all"))
+        shared_result = next(r for r in shared_only["results"] if r["check"] == "hook")
+        assert shared_result["healthy"] is True
+        assert _cr._DIVERGENCE_TOKEN not in shared_result["detail"]
+
+        (tmp_path / ".claude" / "settings.json").unlink()
+        self._write_hook_settings(tmp_path / ".claude" / "settings.local.json")
+        local_only = _parsed(rt.health_check("all"))
+        local_result = next(r for r in local_only["results"] if r["check"] == "hook")
+        assert local_result["healthy"] is True
+        assert _cr._DIVERGENCE_TOKEN not in local_result["detail"]
 
     def test_all_healthy_reflects_individual_results(self, rt, tmp_path, monkeypatch, in_tmp_cwd):
         """all_healthy is False when any single check is unhealthy."""
