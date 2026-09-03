@@ -121,11 +121,11 @@ carries non-blocking conditions by design, so neither a `MISSING` line nor a
 `divergence` line implies an unhealthy check.
 
 A `divergence` line means that surface is installed in BOTH
-`.claude/settings.json` and `.claude/settings.local.json`. It is a
-report-only observation about the operator's configuration and is explicitly
-**NOT** a reason to offer the enable or re-install prompt — the entry is already
-installed, and nothing in this flow repairs, migrates, or de-duplicates it.
-Report it and change nothing.
+`.claude/settings.json` and `.claude/settings.local.json`. The entry is already
+installed, so it never routes to the enable prompt, and nothing in this flow
+repairs, migrates, or de-duplicates the divergence itself. How the success
+branch reports it, and why it does not suppress the timeout re-run offer, is
+stated there.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
