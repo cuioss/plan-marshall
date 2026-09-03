@@ -165,6 +165,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transi
   --plan-id {plan_id} --completed 3-outline
 ```
 
+**`3-outline` is the only phase this envelope transitions.** The `2-refine` transition is owned by the **orchestrator**, which issues it — together with the paired `phase_handshake capture --phase 2-refine` and the `2-refine → 3-outline` boundary stamp — *before* this envelope is dispatched; **this envelope does not own it and must not issue it.** The split is not arbitrary: the boundary stamp has to precede the dispatch or `manage-metrics enrich` attributes this envelope's whole spend to a still-open `2-refine` window, and the capture has to precede it or the Phase Entry Protocol's `phase_handshake verify --phase 2-refine` at this envelope's own entry would be verifying a row that does not yet exist. See [`plan-marshall/workflow/planning.md`](../../plan-marshall/workflow/planning.md) § "Light-lane branch" step 2 for the three calls and the evidence behind the placement.
+
 ## Output
 
 The minimum contract this workflow doc (an `ext-point-execution-context-workflow` implementor) MUST return:
