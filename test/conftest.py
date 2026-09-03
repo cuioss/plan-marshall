@@ -1516,6 +1516,66 @@ def _credentials_dir_sandbox(request, tmp_path_factory, monkeypatch):
     yield
 
 
+@pytest.fixture(autouse=True)
+def _restore_sys_path():
+    """Undo any ``sys.path`` mutation a test performs, before the next one runs.
+
+    ``sys.path`` is process-global and append-only in practice, so an entry a test
+    adds is inherited by every later test on the same xdist worker. That turns a
+    path-ABSENCE assertion into a positional one — it passes when its test runs
+    before the adder and fails when it runs after — and the two orders differ
+    between a default run, a reverse run, and any two xdist distributions. The
+    class of defect is the same whichever entry leaked, so this is neutralized at
+    the fixture level rather than by teaching each affected test to tolerate the
+    pollution: inherited by construction, and a test written later gets it without
+    its author having to know.
+
+    Restoring the LIST does not unimport anything — ``sys.modules`` keeps every
+    module already imported through a since-removed entry, so a test that put a
+    directory on the path to reach a module still holds that module afterwards.
+    What it removes is the ability of one test to change what a LATER import
+    resolves to.
+
+    Module-level ``add_skill_scripts_to_path`` calls are unaffected: those run at
+    collection time, before any test's snapshot is taken, so their entries are part
+    of the baseline this fixture restores TO rather than something it strips.
+
+    A higher-scoped fixture that mutates the path is likewise safe — pytest
+    instantiates broader scopes first, so its entry is already present when the
+    snapshot is taken.
+    """
+    original = list(sys.path)
+    yield
+    sys.path[:] = original
+
+
+@pytest.fixture(autouse=True)
+def _reset_ci_default_cwd():
+    """Clear ``ci_base``'s process-global default cwd on both sides of every test.
+
+    ``ci_base._DEFAULT_CWD`` is module state written by ``set_default_cwd()`` and
+    read by every ``run_cli`` subprocess call that does not pass an explicit
+    ``cwd=``. A test that drives a provider ``main()`` with ``--project-dir`` or
+    ``--plan-id`` therefore installs a working directory that outlives it, and the
+    next test's provider call silently runs somewhere else. Nothing fails at the
+    point of the leak; it surfaces as an unrelated test failing by position.
+
+    Cleared on BOTH sides deliberately. Clearing only on entry would leave the last
+    test's value installed for whatever runs outside the fixture's window, and a
+    ``monkeypatch``-style restore would put back a value that was itself leaked
+    from an earlier test rather than a clean one.
+
+    The public setter is used rather than a direct attribute write so the value
+    lands in the module that owns it. Imported lazily inside the body, matching the
+    ``_config_core`` / ``_providers_core`` convention of the sandboxes above.
+    """
+    import ci_base
+
+    ci_base.set_default_cwd(None)
+    yield
+    ci_base.set_default_cwd(None)
+
+
 #: Location carve-out for ``_neutralize_daemon_routing``. Every test module under
 #: this directory owns the build-server routing seam as its SYSTEM UNDER TEST, so
 #: neutralizing the seam there would delete the coverage rather than isolate it.
