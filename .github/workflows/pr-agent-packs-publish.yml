@@ -36,25 +36,17 @@ jobs:
     name: Publish reviewer packs
     runs-on: ubuntu-latest
     steps:
-      - name: Generate Release Bot Token
-        id: release-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          # Named explicitly rather than defaulted to the current repository. The
-          # reach this workflow needs is cross-repository, so stating it is what
-          # makes a missing or narrowed App installation fail loudly HERE, at the
-          # mint, instead of producing a token that silently lacks the scope and
-          # failing later as an opaque 404. The installation must carry
-          # `contents: write` and `pull-requests: write` on this repository.
-          owner: cuioss
-          repositories: pr-agent-settings
-
       - name: Checkout source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: source
+          # This checkout is a file tree the generator READS — no step runs git
+          # or gh against it. The default `persist-credentials: true` would write
+          # the workflow token into source/.git/config and leave it there for the
+          # whole job, next to the third-party package code installed below, to
+          # serve a git operation that never happens. A credential nothing uses
+          # is a credential that should not be on disk.
+          persist-credentials: false
 
       - name: Set up Python 3
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -77,6 +69,29 @@ jobs:
           python3 marketplace/targets/generate.py \
             --target pr-agent \
             --output target/pr-agent
+
+      # Minted here rather than as the job's first step. Nothing above needs it:
+      # the source checkout, the dependency install and the derivation all run
+      # without any credential, so holding the mint until the artifact set exists
+      # keeps the write-scoped foreign-repository token off the runner while
+      # third-party package code (`pip install` above) executes. The mint still
+      # precedes every act with an effect — nothing is removed from or written to
+      # the foreign repository until the checkout below has succeeded.
+      - name: Generate Release Bot Token
+        id: release-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          # Named explicitly rather than defaulted to the current repository. The
+          # reach this workflow needs is cross-repository, so stating it is what
+          # makes a missing or narrowed App installation fail loudly AT THE MINT,
+          # instead of producing a token that silently lacks the scope and failing
+          # later as an opaque 404. The installation must carry `contents: write`
+          # and `pull-requests: write` on cuioss/pr-agent-settings — the foreign
+          # repository named below, not on this one.
+          owner: cuioss
+          repositories: pr-agent-settings
 
       - name: Checkout cuioss/pr-agent-settings
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
