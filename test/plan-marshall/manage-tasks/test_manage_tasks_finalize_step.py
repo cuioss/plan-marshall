@@ -4,16 +4,35 @@
 """Tests for manage-tasks.py finalize-step subcommand.
 
 Split from test_manage_tasks.py: covers finalize-step outcomes (done /
-skipped / failed), task-status derivation from step outcomes, progress
-indicator, and the script-level [OUTCOME] emission contract.
+skipped / failed), task-status derivation from step outcomes, and the two
+script-level emission contracts the task-closing call owns — [OUTCOME] and
+[ARTIFACT].
+
+The [ARTIFACT] status-code mapping, the baseline-capture rules and the diff
+form are pinned against a real git repository in
+``test_manage_tasks_artifact_emission.py``; what this module adds is the
+END-TO-END proof that the task-closing ``finalize-step`` call actually writes
+those lines to the plan's work log.
 """
 
+import subprocess
 from argparse import Namespace
 from pathlib import Path
 
 import pytest
 
 from _manage_tasks_fixtures import _finalize_step_ns, add_basic_task, cmd_finalize_step
+
+from conftest import add_skill_scripts_to_path
+
+add_skill_scripts_to_path('plan-marshall', 'manage-tasks')
+
+# ⛔ Imported PLAINLY, not through ``load_script_module``. The monkeypatch below
+# must land on the SAME module object ``_cmd_step`` imported its helpers from; a
+# separately-loaded copy would be patched while the handler kept calling the
+# original, and the end-to-end assertions would then run against the real
+# repository instead of the fixture one.
+import _task_artifacts as _artifacts  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -363,3 +382,76 @@ def test_no_outcome_on_failed_close(plan_context):
     assert '[OUTCOME]' not in log_text, (
         '[OUTCOME] must not be emitted on a failed-status closing finalize'
     )
+
+
+# =============================================================================
+# Tests: finalize-step script-level [ARTIFACT] emission (end-to-end)
+# =============================================================================
+#
+# The prose-instructed [ARTIFACT] channel inherited the same loss the [OUTCOME]
+# move was made to stop: a caller-side emission disappears when the caller
+# envelope is re-fired before it writes. These two cases prove the channel is
+# now driven by the closing `finalize-step` call itself — against a REAL git
+# baseline the same call recorded, because a channel whose base has no writer
+# lands script-owned and still inert.
+
+
+@pytest.fixture
+def _artifact_repo(tmp_path, monkeypatch):
+    """Point the artifact differ at a throwaway repository with one commit."""
+    root = tmp_path / 'artifact-repo'
+    root.mkdir()
+    for argv in (
+        ['init', '-q'],
+        ['config', 'user.email', 'test@example.com'],
+        ['config', 'user.name', 'Test'],
+    ):
+        subprocess.run(['git', '-C', str(root), *argv], check=True, capture_output=True, text=True)
+    (root / 'seed.txt').write_text('seed\n', encoding='utf-8')
+    subprocess.run(['git', '-C', str(root), 'add', '-A'], check=True, capture_output=True, text=True)
+    subprocess.run(
+        ['git', '-C', str(root), 'commit', '-q', '-m', 'seed'], check=True, capture_output=True, text=True
+    )
+    monkeypatch.setattr(_artifacts, 'cwd_checkout_root', lambda: str(root))
+    return root
+
+
+def test_task_close_emits_artifact_lines_from_the_script(plan_context, _artifact_repo):
+    """The closing call records a baseline, diffs it, and writes the lines itself."""
+    add_basic_task(
+        plan_id='outcome-default',
+        title='Artifact Task',
+        deliverable=1,
+        steps=['src/main/java/A.java', 'src/main/java/B.java'],
+    )
+    plan_dir = plan_context.plan_dir_for('outcome-default')
+
+    # The first call captures the baseline; the file change lands after it, so
+    # the diff is genuinely computed from the RECORDED base rather than from a
+    # base chosen once the answer was already known.
+    cmd_finalize_step(_finalize_step_ns(plan_id='outcome-default', task=1, step=1, outcome='done'))
+    (_artifact_repo / 'seed.txt').write_text('touched by the task\n', encoding='utf-8')
+
+    result = cmd_finalize_step(
+        _finalize_step_ns(plan_id='outcome-default', task=1, step=2, outcome='done')
+    )
+
+    assert result['artifact_lines'] == 1
+    assert '[ARTIFACT] (plan-marshall:phase-5-execute:1) Wrote seed.txt' in _read_work_log(plan_dir)
+
+
+def test_task_close_with_an_empty_diff_emits_no_artifact_line(plan_context, _artifact_repo):
+    """The negative control — an empty artifact list is a valid, measured outcome."""
+    add_basic_task(
+        plan_id='outcome-default',
+        title='Untouched Task',
+        deliverable=1,
+        steps=['src/main/java/A.java'],
+    )
+
+    result = cmd_finalize_step(
+        _finalize_step_ns(plan_id='outcome-default', task=1, step=1, outcome='done')
+    )
+
+    assert result['artifact_lines'] == 0
+    assert '[ARTIFACT]' not in _read_work_log(plan_context.plan_dir_for('outcome-default'))

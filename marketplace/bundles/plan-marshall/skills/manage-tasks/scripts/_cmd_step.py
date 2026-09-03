@@ -6,6 +6,7 @@ Step management command handlers for manage-tasks.py.
 Contains: finalize-step, add-step, remove-step subcommands.
 """
 
+from _task_artifacts import capture_task_start_sha, emit_artifact_lines
 from _tasks_core import (
     calculate_progress,
     find_task_file,
@@ -52,6 +53,14 @@ def cmd_finalize_step(args) -> dict:
     if not step_found:
         return output_error(f'Step {args.step} not found in TASK-{args.task_number}')
 
+    # Capture the task-start baseline on the FIRST finalize-step call — the
+    # transition into `in_progress` this handler performs on the line below.
+    # Recording it BEFORE the mutation keeps the two facts adjacent: the SHA is
+    # the tree the task started from, and the status flip is the transition it
+    # is the baseline for. The capture is idempotent, so the later calls of a
+    # multi-step task keep the SHA the first one recorded.
+    capture_task_start_sha(task)
+
     # Mark step with outcome
     step_found['status'] = args.outcome
     task['status'] = 'in_progress'
@@ -96,6 +105,7 @@ def cmd_finalize_step(args) -> dict:
     # boundary so the line cannot be lost when an orchestrator skill
     # re-dispatches a phase-5-execute agent and the original agent's working
     # context is discarded before its own [OUTCOME] emission would fire.
+    artifact_lines: list[str] = []
     if args.outcome == 'done' and all_terminal and not has_failed:
         caller = getattr(args, 'outcome_caller', None) or 'plan-marshall:phase-5-execute'
         title = getattr(args, 'outcome_task_title', None) or task.get('title', '')
@@ -108,6 +118,13 @@ def cmd_finalize_step(args) -> dict:
             'INFO',
             f'[OUTCOME] ({caller}) Completed TASK-{args.task_number:03d}: {title} ({step_count} steps)',
         )
+
+        # The [ARTIFACT] channel rides the SAME task-closing branch, for the same
+        # reason [OUTCOME] was moved into this script: a caller-side emission is
+        # lost when an execution-context is re-dispatched before it fires. Both
+        # channels are now script-owned, so neither depends on an agent
+        # remembering to emit it.
+        artifact_lines = emit_artifact_lines(args.plan_id, args.task_number, task)
 
     # Calculate progress
     completed, total = calculate_progress(task)
@@ -124,6 +141,10 @@ def cmd_finalize_step(args) -> dict:
         'task_complete': all_terminal,
         'task_status': task['status'],
         'progress': f'{completed}/{total}',
+        # Echoed so a caller can SEE what the script emitted rather than having
+        # to read the work log back. A task that closed with an empty diff
+        # legitimately reports zero.
+        'artifact_lines': len(artifact_lines),
     }
 
     # Include reason if provided (for skipped or failed steps)
