@@ -420,8 +420,15 @@ class PreferenceAdmissibility(NamedTuple):
     basis: str | None
 
 
-def resolve_preference_admissibility(enabled: bool) -> PreferenceAdmissibility:
+def _resolve_preference_admissibility(enabled: bool) -> PreferenceAdmissibility:
     """Resolve the recognized reviewer set ONCE and record which basis it yields.
+
+    Private on purpose. It is an internal helper of the two query surfaces, not a
+    findings OPERATION: it resolves no store and publishes none of the four
+    store-state fields every operation payload carries. The operation roster in
+    ``test_findings_store_resolution.py`` is derived from this module's PUBLIC
+    functions, so a public name here would be pulled into a store-state contract
+    this helper cannot satisfy.
 
     The gate degrades to a presence-only check when the live registry cannot be
     resolved (see :mod:`_preference_admissibility` § Degrade-to-presence-only).
@@ -634,7 +641,7 @@ def query_findings(
         kind=kind,
         bot_kind=bot_kind,
         any_checkout=any_checkout,
-        admissibility=resolve_preference_admissibility(preference_admissible),
+        admissibility=_resolve_preference_admissibility(preference_admissible),
     )
 
 
@@ -730,7 +737,7 @@ def query_findings_unified(
     if store_unreached(store):
         return unresolved_store_error(plan_id, store)
 
-    admissibility = resolve_preference_admissibility(preference_admissible)
+    admissibility = _resolve_preference_admissibility(preference_admissible)
 
     plan_result = _query_findings(
         plan_id,

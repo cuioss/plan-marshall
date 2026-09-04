@@ -19,9 +19,23 @@ import inspect
 import json
 from argparse import Namespace
 
-import _findings_core
 import pytest
-from _manage_findings_fixtures import _add_ns, cmd_add, cmd_query
+from _manage_findings_fixtures import _add_ns, cmd_add, cmd_query, query_findings_unified
+
+#: The globals of the core module ``cmd_query`` actually dispatches into, reached
+#: through a function the fixtures module already exports rather than by importing
+#: the module again. The tests below patch the once-per-query registry resolver,
+#: and a second import is not reliably the same module object: the surface modules
+#: are registered through ``conftest.load_script_module``, so a plain ``import
+#: _findings_core`` can bind a different instance than the one the query executes
+#: in — a patch applied there would be invisible and the test would silently
+#: assert the unpatched behaviour. A function's ``__globals__`` IS its module's
+#: namespace, so patching here cannot miss.
+_CORE_GLOBALS = query_findings_unified.__globals__
+
+#: The two query surfaces, taken from that same namespace for the same reason.
+_QUERY_FINDINGS = _CORE_GLOBALS['query_findings']
+_QUERY_FINDINGS_UNIFIED = _CORE_GLOBALS['query_findings_unified']
 
 # Plan ids this module's tests file findings against — seeded by the autouse
 # ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.
@@ -313,7 +327,7 @@ class TestPreferenceAdmissibilityBasis:
         # degrade — which is the defect this field exists to close.
         plan_id = 'pref-adm-basis-degraded'
         _seed_mixed_corpus(plan_context, plan_id)
-        monkeypatch.setattr(_findings_core, '_recognized_bot_kinds', lambda: None)
+        monkeypatch.setitem(_CORE_GLOBALS, '_recognized_bot_kinds', lambda: None)
 
         result = cmd_query(_list_ns(plan_id, preference_admissible=True))
 
@@ -338,7 +352,7 @@ class TestPreferenceAdmissibilityBasis:
                 author='repo-owner-bot',
             )
         )
-        monkeypatch.setattr(_findings_core, '_recognized_bot_kinds', lambda: None)
+        monkeypatch.setitem(_CORE_GLOBALS, '_recognized_bot_kinds', lambda: None)
 
         result = cmd_query(_list_ns(plan_id, preference_admissible=True))
 
@@ -391,7 +405,7 @@ class TestPreferenceAdmissibleIsKeywordOnly:
 
     @pytest.mark.parametrize(
         'fn',
-        [_findings_core.query_findings, _findings_core.query_findings_unified],
+        [_QUERY_FINDINGS, _QUERY_FINDINGS_UNIFIED],
         ids=['query_findings', 'query_findings_unified'],
     )
     def test_flag_is_keyword_only_and_any_checkout_keeps_its_slot(self, fn):
@@ -406,7 +420,7 @@ class TestPreferenceAdmissibleIsKeywordOnly:
 
     @pytest.mark.parametrize(
         'fn',
-        [_findings_core.query_findings, _findings_core.query_findings_unified],
+        [_QUERY_FINDINGS, _QUERY_FINDINGS_UNIFIED],
         ids=['query_findings', 'query_findings_unified'],
     )
     def test_a_tenth_positional_argument_is_rejected(self, fn):
