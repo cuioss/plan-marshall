@@ -328,7 +328,17 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
      --message "[WARNING] (plan-marshall:pre-push-quality-gate) The resolved build skill exposes no resolve-test-scope verb, so the divergence question cannot be answered and NO pytest ran — the scoped-green / whole-tree-red divergence class (PLAN-08) is UN-GATED at finalize for this push. Proceeding on honest degradation."
    ```
 
-   Branch on the resolve's error shapes exactly as the whole-tree `quality-gate` probe prescribes: only the `Command not found` + `available[]`-omits-`module-tests` shape proves absence, and it takes **the same own-WARNING path as the missing-verb case above** — NOT branch 3, whose WARNING interpolates `{scoped_modules}` and whose predicate reads `whole_tree_available`, neither of which exists on a path where this resolve returned no executable and branch 1's seam call therefore never ran. Any other error shape did not answer, so STOP the step.
+   Branch on the resolve's error shapes exactly as the whole-tree `quality-gate` probe prescribes: only the `Command not found` + `available[]`-omits-`module-tests` shape proves absence. That case is **structurally like** the missing-verb case above — no branch-3 routing, because branch 3's WARNING interpolates `{scoped_modules}` and its predicate reads `whole_tree_available`, neither of which exists where this resolve returned no executable and branch 1's seam call therefore never ran. But it does NOT reuse that case's message either: its cause is different (no `module-tests` canonical resolved at all, so there is no resolved build skill to lack a verb), and asserting a cause a path does not have is the same defect one layer down. Emit its own WARNING naming its own cause:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level WARNING \
+     --message "[WARNING] (plan-marshall:pre-push-quality-gate) No module-tests canonical resolves in this project, so no pytest could be run and the divergence question cannot be answered — the scoped-green / whole-tree-red divergence class (PLAN-08) is UN-GATED at finalize for this push. Proceeding on honest degradation."
+   ```
+
+   Then proceed to **Mark Step Complete (Success)** under the same governing rule, which requires the `display_detail` to name module-tests as un-gated. Any other error shape did not answer, so STOP the step.
+
+   **The rule both cases instantiate**, stated once so a third unanswerable case does not borrow either message: a degradation WARNING names the cause ITS OWN path actually has. Borrowing a sibling branch's message is prohibited for the same reason borrowing its routing is — the borrowed text asserts something untrue of the path that emitted it.
 
 1. **Resolve the scope** — call the callable seam on the notation captured above and parse its resolution:
 

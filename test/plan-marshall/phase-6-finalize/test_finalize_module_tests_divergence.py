@@ -349,10 +349,10 @@ def _degradation_warning_lines() -> list[str]:
 
     Scoped to *emitted* warnings on purpose. A sibling arm's prose may
     cross-reference this arm ("exactly as the whole-tree `quality-gate` arm's
-    honest-degradation branch does for its three dimensions") while describing
+    honest-degradation branch does for its own dimension set") while describing
     its OWN, single-dimension warning; that sentence is documentation of another
     guard, not a warning this arm emits, and holding it to this arm's
-    three-dimension rule would demand a false claim of it.
+    dimension-naming rule would demand a false claim of it.
     """
     return [
         line
@@ -588,15 +588,15 @@ def test_reachability_detector_rejects_a_module_scoped_resolve_and_an_empty_arm(
 
 
 def test_degradation_warning_detector_separates_an_emitted_warning_from_prose():
-    # Mutation guard for the three-dimension sweep. A sibling arm's prose may
+    # Mutation guard for the dimension-naming sweep. A sibling arm's prose may
     # name this arm while describing its own single-dimension warning; holding
-    # that sentence to the three-dimension rule would demand a false claim of
-    # it. Only a warning the gate EMITS carries the obligation.
+    # that sentence to this arm's dimension-naming rule would demand a false
+    # claim of it. Only a warning the gate EMITS carries the obligation.
     sibling_prose = (
         'this project exposes no `test-compile` target at any scope: emit one '
         '`[WARNING]` naming the test-tree type-checking dimension as un-gated '
         "for this push, exactly as the whole-tree `quality-gate` arm's "
-        'honest-degradation branch does for its three dimensions.'
+        'honest-degradation branch does for its own dimension set.'
     )
     assert _WHOLE_TREE_QUALITY_GATE.search(sibling_prose), (
         'Fixture drift: the sibling-arm prose no longer names the whole-tree '
