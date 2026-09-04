@@ -210,7 +210,7 @@ order:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \
-  --plan-id {plan_id} --phase 5-execute --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|budget_yield|harness_cancellation|error|clean_exit_queue_empty} \
+  --plan-id {plan_id} --phase 5-execute --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|budget_yield|harness_cancellation|error|baseline_drift|clean_exit_queue_empty} \
   --total-tokens {n} --tool-uses {n} --duration-ms {n}
 ```
 
