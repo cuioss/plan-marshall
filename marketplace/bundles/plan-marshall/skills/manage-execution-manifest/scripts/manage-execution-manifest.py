@@ -3454,14 +3454,25 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     add_plan_id_arg(record_step_parser)
     record_step_parser.add_argument('--step-id', required=True, help='Step identifier being recorded')
+    # ⛔ Both help strings DERIVE their member list from the constant they name.
+    # Hand-copying it beside the constant's own name is the closure-claim
+    # staleness shape: the text tells the reader the list is the complete legal
+    # set, so a member added to the constant leaves the CLI actively pointing at
+    # a wrong vocabulary rather than merely an incomplete one — and a caller
+    # obeying "quote flag values verbatim from the docs" is led to the stale copy.
     record_step_parser.add_argument(
-        '--phase', required=True, help='Phase the step ran in (one of VALID_RECORD_PHASES: 5-execute|6-finalize)'
+        '--phase',
+        required=True,
+        help='Phase the step ran in (one of VALID_RECORD_PHASES: '
+        + '|'.join(VALID_RECORD_PHASES)
+        + ')',
     )
     record_step_parser.add_argument(
         '--outcome',
         required=True,
         help='Execution outcome (one of VALID_RECORD_OUTCOMES: '
-        'executed|skipped|loop_back|failed|error)',
+        + '|'.join(VALID_RECORD_OUTCOMES)
+        + ')',
     )
     # The three optional token-attribution flags default to ``None``, NOT ``0``.
     # The default is the whole discriminator: with ``default=0`` an omitted flag

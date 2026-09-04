@@ -82,9 +82,10 @@ The `compose` **result** (the TOON the caller reads back — distinct from the p
 - `build_verdict_decision` — the build verdict's `decision` verbatim (`build` / `not_necessary` / `unknown`), or absent when the gate did not evaluate because the step was already gone. Reported alongside the boolean so an `unknown` verdict — which KEEPS the gate — is distinguishable from a `build` verdict.
 - `simplify_omitted` — bool. Single-step gate over the fixed `finalize-step-simplify`.
 - `security_class_omitted` — list of `{step, reason}`, one record per security-class step the `security_class_inactive` pre-filter dropped (empty when none). A record list rather than a boolean because the population is metadata-derived. `phase-4-plan` Step 7b surfaces each entry in its phase return.
-- `scope_gated_finalize_dropped` / `scope_gated_finalize_immune` — the scope gate's per-step subtraction and retention lists.
-- `unresolved_ask_provider_dropped` — the unresolved-ask infra elements dropped for an absent provider.
-- `terminal_emission_dropped` — the terminal-emission step the orchestration gate dropped. Emitted as a **bare step-id list**; the gate composes a per-record reason that the compose-result projection discards, so the reason is readable only on the paired `[STATUS]` decision-log line.
+- `scope_gated_finalize_dropped` / `scope_gated_finalize_immune` — the scope gate's per-step subtraction and retention lists. Both are **bare step-id lists**; each entry's reason is readable only on the paired `[STATUS]` decision-log line. Registered under *Known conformance gaps* below.
+- `unresolved_ask_provider_dropped` — the unresolved-ask infra elements dropped for an absent provider. A **bare step-id list**, same gap.
+- `terminal_emission_dropped` — the terminal-emission step the orchestration gate dropped. Emitted as a **bare step-id list**; the gate composes a per-record reason that the compose-result projection discards, so the reason is readable only on the paired `[STATUS]` decision-log line. Same gap.
+- `ceremony_finalize_forced_out` / `ceremony_finalize_forced_in` — the ceremony gate's `never`-forced removals and `always`-forced additions. Both are **bare step-id lists** projected from `{gate, step}` records; only the `forced_out` direction is a removal, and it is registered under *Known conformance gaps* below.
 - `decision_matrix_dropped` — list of `{step, reason}`, one record per candidate the FIRING matrix row removed, naming the rule that removed it. Empty for the default row, which narrows nothing.
 - `lane_dropped` — list of `{step, reason}`, one record per element the execution-profile lane resolution dropped, each naming the element's effective tier and the posture cutoff that removed it.
 
@@ -135,7 +136,19 @@ Three consequences are binding rather than stylistic. **One line per step, never
 
 The `security_class_inactive` gate below is the reference implementation of this convention; every other site reuses its shape verbatim rather than inventing a second one.
 
-**Known conformance gaps (phase-5 sites).** The rule above is normative, but two phase-5 removal sites do not yet satisfy its first clause: `canonical_verify_inactive` and the domain-seeded verify-step resolvability filter each drop a `phase_5.verification_steps` entry and emit only the `decision.log` line — neither surfaces a `{step, reason}` record in the `compose` result, and neither appears in the Outputs enumeration below. They are named here rather than left to be discovered, because an unlisted gap in a rule that claims universality is exactly the silent subtraction this section exists to prevent.
+**Known conformance gaps.** The rule above is normative, and the sites below do not yet satisfy its FIRST clause — each emits its `decision.log` line but surfaces no `{step, reason}` record in the `compose` result. They are named here rather than left to be discovered, because an unlisted exception to a rule that claims universality is exactly the silent subtraction this section exists to prevent. The set is derived from `cmd_compose`'s return dict — every field there that names a removed (or deliberately retained) step and is not a record list:
+
+*Phase-5 sites* — neither appears in the Outputs enumeration above at all:
+
+- `canonical_verify_inactive` — drops a `phase_5.verification_steps` entry.
+- the domain-seeded verify-step resolvability filter — same.
+
+*Phase-6 sites* — each IS in the Outputs enumeration, as a **bare step-id list**:
+
+- `scope_gated_finalize` — both `scope_gated_finalize_dropped` and the `scope_gated_finalize_immune` retention (the third clause's deliberated-retention case).
+- `unresolved_ask_provider_drop` — `unresolved_ask_provider_dropped`.
+- `terminal_emission_orchestration_gate` — `terminal_emission_dropped`. The gate composes a per-record reason and the compose-result projection discards it, so the reason survives only on the log line.
+- `ceremony_finalize_selection`, `never` direction — `ceremony_finalize_forced_out`, likewise projected from records that carry the deciding gate.
 
 The pre-filters run in this order:
 
@@ -389,12 +402,14 @@ The six-bucket classifier above (`_classify_paths_via_extensions`) and the `buil
 
 **Inputs**: the four `plan.phase-6-finalize` ceremony gates, each derived from its owning finalize step's per-element `lane` override, read from the MERGED plan-local-over-marshal step map (`_read_merged_phase_6_step_map(plan_id)`) — the same one source the scope gate's declared-lane immunity predicate consults, so a plan-local declaration governs a ceremony gate exactly as a project-wide one does:
 
+Each row's *Derived run decision* cell enumerates the CLOSED `lane` set member-for-member — `off`, `minimal`, `standard`, `full`, `ask`, and absent — so the table and the **Gate resolution** prose below it state the same mapping. A cell that names only some members reads as if the rest were unmapped, in a table whose purpose is to index the whole enum.
+
 | Gate | Owning step (its `lane` override) | Derived run decision |
 |------|-----------------------------------|----------------------|
-| `self_review` | `default:pre-submission-self-review` | `off→never` \| `minimal→always` \| `standard`/absent→`auto` (default) |
-| `qgate` | `default:pre-push-quality-gate` (finalize blocking-findings re-capture) | `off→never` \| `minimal→always` \| `standard`/absent→`auto` (default) |
-| `simplify` | `default:finalize-step-simplify` (holistic post-implementation simplification sweep) | `off→never` \| `minimal→always` \| `standard`/absent→`auto` (default) |
-| `security_audit` | `default:finalize-step-security-audit` (proactive security sweep) | `off→never` \| `minimal→always` \| `standard`/absent→`auto` (default) |
+| `self_review` | `default:pre-submission-self-review` | `off→never` \| `minimal→always` \| `standard`/`full`/`ask`/absent→`auto` (default) |
+| `qgate` | `default:pre-push-quality-gate` (finalize blocking-findings re-capture) | `off→never` \| `minimal→always` \| `standard`/`full`/`ask`/absent→`auto` (default) |
+| `simplify` | `default:finalize-step-simplify` (holistic post-implementation simplification sweep) | `off→never` \| `minimal→always` \| `standard`/`full`/`ask`/absent→`auto` (default) |
+| `security_audit` | `default:finalize-step-security-audit` (proactive security sweep) | `off→never` \| `minimal→always` \| `standard`/`full`/`ask`/absent→`auto` (default) |
 
 **Gate resolution**: each gate's run decision is derived from its owning step's per-element `lane` override (`steps[<owner>].lane`), read via `_read_finalize_gates(plan_id)` → `_read_step_owned_knob(owner, knob, plan_id)`. That reader and the lane-override reader behind the scope gate's immunity predicate are a symmetric pair over the same field, so both consume the merged map — widening only one would let a plan-local `lane` grant scope-gate immunity while leaving the ceremony gate deaf to it. The `lane` value maps to the ceremony run-at-all decision the transform consumes: `off` → `never` (force out), `minimal` → `always` (force in), and every other value (`standard` / `full` / `ask` / absent) → `auto` (defer to the pre-filter machinery). There is no flat phase-level `qgate` sibling and no step-owned run-at-all param — the four ceremony gates ride the same per-element `lane` override channel the other lane elements use.
 

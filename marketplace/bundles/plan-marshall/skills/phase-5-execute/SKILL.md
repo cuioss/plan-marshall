@@ -397,7 +397,7 @@ Inlined flow:
    git -C {worktree_path} merge-base --is-ancestor origin/{base_branch} HEAD
    ```
 
-   Exit code `0` means up to date. Log and continue to Step 4:
+   Exit code `0` means up to date. Log, then **proceed to Step 4** — this is one of the only two branches that reach it:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -465,7 +465,7 @@ Inlined flow:
      --message "[STATUS] (plan-marshall:phase-5-execute) Self-absorbed zero-overlap drift: {upstream_commit_count} commits, new main_sha={main_sha}"
    ```
 
-   Then **continue the task loop** — no return to orchestrator, no dispatch to phase-2-refine, no architecture reload, no source-premise verification, no Q-Gate. Self-absorption is metadata-only: the request narrative, solution outline, task list, and confidence score remain valid because the upstream commits touched no overlapping files. Proceed to Step 4.
+   Then **continue the task loop** — no return to orchestrator, no dispatch to phase-2-refine, no architecture reload, no source-premise verification, no Q-Gate. Self-absorption is metadata-only: the request narrative, solution outline, task list, and confidence score remain valid because the upstream commits touched no overlapping files. **Proceed to Step 4** — the second and last branch that reaches it.
 
 8. **Drift contract — `conflict_count > 0`, or a non-`success` probe return**: either the upstream commits touch files that overlap with the worktree's in-flight changes, or the probe declined to classify at all. ABORT the phase fail-loud — re-authoring is required and only refine's iterate-to-confidence loop can absorb the overlap correctly. Return the structured drift TOON for the orchestrator's drift-recovery branch to act on (see `plan-marshall:plan-marshall/workflow/execution.md` § "Baseline drift recovery (non-zero overlap)"):
 
@@ -490,17 +490,27 @@ Inlined flow:
    display_detail: "baseline drift: probe {reconcile_status} ({reason})"
    ```
 
-   Log the failure to work-log:
+   Log the failure to work-log. **The message is route-specific, because the two routes establish different things** — a log line MUST NOT assert a cause the probe never established, the same rule `pre-commit-verify-freshness` applies to its own stale reasons.
+
+   On the **`conflict_count > 0`** route the probe DID classify, so the message may name the overlap:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
      work --plan-id {plan_id} --level ERROR \
-     --message "[ERROR] (plan-marshall:phase-5-execute) Baseline drift at {worktree_path} — origin/{base_branch} contains commits not in HEAD: {divergent_commits}. Returning structured drift TOON; orchestrator will re-dispatch phase-2-refine."
+     --message "[ERROR] (plan-marshall:phase-5-execute) Baseline drift at {worktree_path} — origin/{base_branch} contains commits not in HEAD and the merge-tree probe found {conflict_count} conflicting file(s): {divergent_commits}. Returning structured drift TOON; orchestrator will re-dispatch phase-2-refine."
+   ```
+
+   On the **non-`success`** route there is NO overlap verdict, so the message reports the probe's own outcome instead and claims nothing about conflicts:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level ERROR \
+     --message "[ERROR] (plan-marshall:phase-5-execute) Baseline drift at {worktree_path} — origin/{base_branch} contains commits not in HEAD and baseline-reconcile returned {reconcile_status} ({reason}), so no overlap verdict was established: {divergent_commits}. Returning structured drift TOON; orchestrator will re-dispatch phase-2-refine."
    ```
 
    Phase-5-execute does NOT perform substantive reconciliation for non-zero overlap. The orchestrator's drift-recovery branch dispatches phase-2-refine, which surfaces the upstream commits as Q-Gate findings and runs the iterate-to-confidence loop to absorb the overlap.
 
-Proceed to Step 4.
+   ⛔ **This step is TERMINAL. Do NOT continue to Step 4.** Return the structured drift TOON above and stop. Exactly two branches reach Step 4 — the fast path (step 4) and the zero-overlap self-absorption (step 7) — and each says so at its own exit, which is why no unconditional continuation follows this abort: an agent that has just aborted would read one and enter the task loop on a baseline nothing classified, silently undoing the status-branch contract step 6 establishes.
 
 ### Step 4: Log Phase Start and Surface Active Worktree (Once per phase)
 
