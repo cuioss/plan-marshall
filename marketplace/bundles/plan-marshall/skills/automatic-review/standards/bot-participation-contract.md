@@ -165,6 +165,45 @@ take that is guaranteed not to work. A prompt that lists it has spent the operat
 non-option and left the real remedies unnamed. Any consumer that renders a remedy set for a refusal
 MUST take it from the member, and MUST NOT offer `await` on this one.
 
+## The reviewer-outcome signal
+
+A reader of a finished `automatic-review` step asks one question of it: **did the reviewers produce
+findings, produce a review that found nothing, or not run at all?** A finding count cannot answer it —
+`0 comment(s) found` is the identical string for a clean review of a large diff and for a run in which
+no reviewer published anything — so the step publishes the reviewer-state distribution alongside the
+count, and that distribution is where the three outcomes separate.
+
+Each outcome is already named by a state this document owns, and the signal introduces none of its own:
+
+- **Produced findings** — `participated`. It is the failure taxonomy's **complement**, never a member
+  of it: that taxonomy classifies non-participations, and this is the case where the bot delivered a
+  usable review. The closed set above gains nothing here.
+- **Produced a review that found nothing** — `participated_but_empty`, a member. The bot ran, read the
+  diff, and had nothing actionable to say. Accounted-for, never an incompleteness.
+- **Did not run at all** — `absent` for a reviewer that was asked and stayed silent, and
+  `not_triggered` for a PR on which no `pull_request`-event run exists at all. Both are members, and
+  § "Failure taxonomy" above keeps them apart because their remedies are opposite: chase the reviewer,
+  versus trigger the review.
+
+⛔ **The distinction the signal exists to carry is between the second outcome and the third**, and it is
+exactly the one a count collapses. A reviewer that reviewed and found nothing has discharged its
+obligation; a reviewer that never ran has not. Rendering both as *no findings* reports substantively
+zero review coverage as a clean pass — the same conflation § "A refusal is never noise — it is a
+branch" closes on the refusal branch, re-entered here through the count.
+
+`review_completeness check` renders the distribution with `compose_review_state_summary` and publishes
+it on the check envelope as `review_state_summary`; the step interpolates that value into its
+`display_detail`, so the distinction reaches the reader on the step's own line rather than only inside
+`bot_states`. **Which states share a display bucket, and in what order the buckets render, is
+`review_completeness`'s own bucket ladder and is deliberately not restated here** — a second copy would
+go stale against the ladder the moment a state moved between buckets, and a summary line disagreeing
+with the classification behind it is worse than no summary at all. See [`../SKILL.md`](../SKILL.md)
+§ "Step-done participation guard" for the guard that reads the envelope and composes that line.
+
+An empty reviewer roster distributes nothing, so the summary is the empty string and the step falls
+back to its count-only form. That is the honest value: inventing a bucket for reviewers nobody
+configured would be a claim about a population that does not exist.
+
 ## Evidence taxonomy
 
 Participation is **evidence-typed, not presence-typed.** The mere existence of a comment resolving to
