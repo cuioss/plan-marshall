@@ -165,8 +165,7 @@ def test_published_population_matches_a_live_sweep():
     ``GUARD_POPULATION_SIZE`` is bound from ``_DOCS`` at import, so comparing it
     against ``len(_DOCS)`` is a value against its own definition and cannot fail.
     Re-invoking ``_shipped_docs()`` makes the check falsifiable for the drift it
-    CAN see: the constant re-bound to something other than the swept population,
-    or ``_DOCS`` filtered after the binding.
+    CAN see: the constant re-bound to something other than the swept population.
 
     What this does NOT catch, stated so the green is not read as wider than it
     is: the sweep re-enters the same ``_shipped_docs()`` the constant came from,
