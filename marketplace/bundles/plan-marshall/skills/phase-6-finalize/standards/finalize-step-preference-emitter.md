@@ -131,10 +131,8 @@ collapsed at the first `:` and lowercased, and the module is the finding's
 many times each tuple recurs within the plan.
 
 The authorship-admissibility gate is applied by the `--preference-admissible`
-flag on the three calls above, before this step sees a single record: a
-`pr-comment` finding without a recognized reviewer `bot_kind` is the pipeline's
-own control traffic, not preference evidence, and the script has already dropped
-it. Nothing is excluded here by hand. For why the gate is shaped that way, see
+flag on the three calls above, before this step sees a single record. Nothing is
+excluded here by hand. For why the gate is shaped that way, see
 [`disposition-to-hint-routing.md`](disposition-to-hint-routing.md) § "(e)
 Authorship admissibility".
 
