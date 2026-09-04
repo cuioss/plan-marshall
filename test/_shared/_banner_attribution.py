@@ -287,13 +287,16 @@ def compare_refs(before_ref: str, after_ref: str, prefixes: list[str], repo: Pat
     }
 
 
+def _format_finding(finding: Misattribution) -> str:
+    return (
+        f'    {finding.path}:{finding.lineno} {finding.construct} '
+        f'sits under "{finding.under_banner}" but belongs under "{finding.belongs_under}"'
+    )
+
+
 def _format_side(side: dict) -> list[str]:
     out = [f"  ref {side['ref']}: {len(side['findings'])} misattributed across {len(side['paths'])} modules"]
-    for finding in side['findings']:
-        out.append(
-            f'    {finding.path}:{finding.lineno} {finding.construct} '
-            f'sits under "{finding.under_banner}" but belongs under "{finding.belongs_under}"'
-        )
+    out.extend(_format_finding(finding) for finding in side['findings'])
     return out
 
 
@@ -309,11 +312,7 @@ def format_report(report: dict) -> str:
     out.append('')
     introduced = report['introduced']
     out.append(f'INTRODUCED by the change ({len(introduced)}) — the verdict; a pre-existing finding gates nothing:')
-    for finding in introduced:
-        out.append(
-            f'    {finding.path}:{finding.lineno} {finding.construct} '
-            f'sits under "{finding.under_banner}" but belongs under "{finding.belongs_under}"'
-        )
+    out.extend(_format_finding(finding) for finding in introduced)
     return '\n'.join(out)
 
 

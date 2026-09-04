@@ -61,7 +61,6 @@ class Occurrence:
     name: str
     path: str
     body_hash: str
-    lineno: int
 
 
 def _normalise_body(node: Definition, source_lines: list[str]) -> str:
@@ -110,7 +109,7 @@ def collect_definitions(source: str, path: str) -> list[Occurrence]:
         if not isinstance(node, Definition):
             continue
         digest = hashlib.sha256(_normalise_body(node, lines).encode('utf-8')).hexdigest()
-        found.append(Occurrence(name=node.name, path=path, body_hash=digest, lineno=node.lineno))
+        found.append(Occurrence(name=node.name, path=path, body_hash=digest))
     return found
 
 

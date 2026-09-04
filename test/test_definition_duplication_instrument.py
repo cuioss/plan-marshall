@@ -90,11 +90,6 @@ def _survey(repo) -> dict:
     return side
 
 
-def _collect(source: str, path: str):
-    """Collect module-level definitions from one in-memory source."""
-    return collect_definitions(source, path)
-
-
 def test_identical_bodies_are_reported_as_a_duplicate_with_a_home(planted_duplicate_repo):
     """A name whose body matches everywhere is safe to hoist and is named as such."""
     homed = _survey(planted_duplicate_repo)['duplicates_with_a_home']
@@ -134,7 +129,7 @@ def test_formatting_differences_do_not_split_a_duplicate():
     decorated = 'def helper():\n    # a note the other copy lacks\n\n    return  1\n'
 
     partitioned = partition(
-        _collect(plain, 'a.py') + _collect(decorated, 'b.py'),
+        collect_definitions(plain, 'a.py') + collect_definitions(decorated, 'b.py'),
     )
 
     assert [entry['name'] for entry in partitioned['duplicates_with_a_home']] == ['helper']
@@ -144,7 +139,7 @@ def test_a_method_inside_a_class_is_not_a_candidate():
     """Only module-level definitions are surveyed — a method is scoped by its class."""
     source = 'class Holder:\n    def helper(self):\n        return 1\n'
 
-    names = [occurrence.name for occurrence in _collect(source, 'a.py')]
+    names = [occurrence.name for occurrence in collect_definitions(source, 'a.py')]
 
     assert names == ['Holder']
 
