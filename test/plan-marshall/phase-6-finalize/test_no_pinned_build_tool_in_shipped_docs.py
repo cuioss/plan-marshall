@@ -142,7 +142,6 @@ _SELF_REFERENCE = (
     'marketplace/bundles/plan-marshall/skills/marshall-steward/references/architecture-setup.md',
     'marketplace/bundles/plan-marshall/skills/marshall-steward/references/upgrade-flow.md',
     'marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md',
-    'marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md',
     'marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/q-gate-validation.md',
     'marketplace/bundles/plan-marshall/skills/platform-runtime/standards/pretooluse-enforcement.md',
 )
