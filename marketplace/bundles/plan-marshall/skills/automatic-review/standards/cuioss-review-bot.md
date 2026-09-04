@@ -103,10 +103,9 @@ participation_evidence:
 participation_requires_update: true   # a re-review EDITS that same comment in place, so continued
                                   # presence proves only that it reviewed once, at some earlier HEAD.
                                   # Evidence therefore has to clear the currency test. Its arms are
-                                  # NOT restated here — see bot-participation-contract.md
-                                  # § "The currency rule", the cross-bot contract. A copy here
-                                  # previously dropped the predate guard and so asserted a
-                                  # first-observation credit the code withholds.
+                                  # NOT restated at this annotation — see
+                                  # bot-participation-contract.md § "The currency rule", the
+                                  # cross-bot contract that defines them.
 # ignore_patterns: CONFIRMED on #103 — the first two did not fire, and neither
 # wrongly dropped the review. The fourth is CONFIRMED on #1334, the /improve pilot's own PR.
 ignore_patterns:

@@ -50,10 +50,9 @@ participation_evidence:          # the publish shapes that prove THIS bot review
 participation_requires_update: true    # the summary comment is EDITED in place on re-review, so
                                  # continued presence proves only that it reviewed at some earlier
                                  # commit. Evidence therefore has to clear the currency test. Its
-                                 # arms are NOT restated here — see bot-participation-contract.md
-                                 # § "The currency rule", the cross-bot contract. A copy here
-                                 # previously dropped the predate guard and so asserted a
-                                 # first-observation credit the code withholds.
+                                 # arms are NOT restated at this annotation — see
+                                 # bot-participation-contract.md § "The currency rule", the
+                                 # cross-bot contract that defines them.
 ignore_patterns:
   - "<!-- This is an auto-generated comment: summarize by coderabbit.ai -->"  # walkthrough / summary
   - "## Walkthrough"                                                          # walkthrough heading
