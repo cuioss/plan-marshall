@@ -169,7 +169,7 @@ All build output **must** go to a log file, not stdout/stderr.
 |-----------|--------|---------|
 | `{plan_id}` | The plan that caused the build, or `NO_PLAN` | `my-feature-plan`, `NO_PLAN` |
 | `{scope}` | `default` (root) or module name | `default`, `core-api` |
-| `{build-system}` | the slug of whichever build skill produced the run — `maven`, `gradle`, `npm`, `python`, and whatever a later-registered build skill reports. The set is OPEN: it grows with the registered build skills, so do not read this column as closed | `maven` |
+| `{build-system}` | `maven`, `gradle`, `npm`, `python`, and whatever a later-registered build skill reports. The set is OPEN — do not read this column as closed | `maven` |
 | `{timestamp}` | `YYYY-MM-DD-HHMMSS` | `2026-01-03-141523` |
 
 **Examples**:

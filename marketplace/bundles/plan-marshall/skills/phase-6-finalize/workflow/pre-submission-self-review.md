@@ -401,7 +401,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --head-at-completion {sha}
 ```
 
-**`--force` is REQUIRED on every round after the first, in BOTH directions.** `mark-step-done` refuses to overwrite a live record with a *differing* outcome, and the multi-round shape this step is built around produces that refusal on each terminal branch, not only on the closing one:
+**`--force` is REQUIRED whenever the outcome about to be written DIFFERS from the live record's, in BOTH directions.** `mark-step-done` refuses to overwrite a live record with a *differing* outcome — and only a differing one; a same-outcome overwrite lands without the flag. The multi-round shape this step is built around produces that refusal on each terminal branch, not only on the closing one:
 
 - **`failed` → `done`** (Branch A): round 1 files findings and records `--outcome failed`, the findings are fixed, and the converged round records `done` over that live `failed` record.
 - **`done` → `failed`** (Branch B): a round records `done`, a later settle-band step advances HEAD, § HEAD-dependency re-fires this step against the newer diff, and the re-fire finds a defect — writing `failed` over that live `done` record.
@@ -472,7 +472,7 @@ This step re-fires per round (§ HEAD-dependency) and closes only on a non-findi
 
 **The termination criterion — converged versus out of budget.** These are two DIFFERENT closes and a later reader MUST NOT collapse them:
 
-- **Converged** — the step closed on a clean pass (Step 4 Branch A): every counted candidate examined, no check matched, over `surface_scope: full` on any round a surfacer ran. The doc-claim half reached a fixpoint by deletion and the behavioural half found nothing. This is the ONLY clean close.
+- **Converged** — the step closed on a clean pass (Step 4 Branch A): every counted candidate examined, no check matched, over `surface_scope: full` on any round a surfacer ran. The doc-claim half reached a fixpoint by deletion and the behavioural half found nothing.
 - **Out of budget** — the loop stopped while the doc-claim half was still non-converged: a self-seeding spiral kept alive by correction-instead-of-deletion, or a round/token ceiling reached, closing on a recorded WARNING DEVIATION rather than a clean pass. This is NOT a converged close and MUST NOT be reported as one. A warning-deviation close is *out of budget*; a clean pass is *converged*.
 
 The cap is on **convergence, not on budget**. The remedy for a spiralling doc-claim half is to recognize it as self-seeding and resolve it by deletion so it converges — NEVER to reduce the number of rounds. Rounds late in a loop have caught structurally unreachable guards on an otherwise-green suite, so the willingness to run a round is never the target; the scope of a round, and how its findings are resolved, is.

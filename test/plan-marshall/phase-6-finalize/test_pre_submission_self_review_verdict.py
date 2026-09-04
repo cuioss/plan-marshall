@@ -615,9 +615,7 @@ def test_sole_non_finding_verdict_detector_rejects_the_pre_fix_shape():
 
     # This is exactly the state
     # test_old_undifferentiated_clean_form_is_not_the_sole_non_finding_verdict
-    # exists to fail on. Anchor by name, not by section letter: the letters are
-    # renumbered whenever a section is inserted, which strands a letter anchor
-    # silently while a name anchor moves with the thing it names.
+    # exists to fail on.
     assert non_finding == [_OLD_CLEAN_FORM]
     assert len(non_finding) < 2, (
         'The pre-fix shape must be detected as carrying fewer than two '
