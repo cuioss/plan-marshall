@@ -195,6 +195,48 @@ def _source_of(label: str) -> ast.Module:
     return ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
 
 
+#: How a module body binds a name, as reported in the seam-1 failure message. The
+#: remedy differs by route: a builder DEFINED here means the row is simply wrong,
+#: while an IMPORTED one may mean the hook re-exports a builder owned elsewhere.
+_BOUND_DEFINED = 'defined here'
+_BOUND_IMPORTED = 'imported'
+
+
+def _module_bindings(module: ast.Module) -> dict[str, str]:
+    """Every name the module BODY binds, mapped to the route that binds it.
+
+    Approximates the ``getattr(module, name, None)`` lookup that
+    :func:`conftest._parser_from_builder` performs, without importing anything.
+    Imports are bindings too — a module-level ``from helper import build_parser``
+    publishes that attribute exactly as a ``def`` does — so a collector reading only
+    definitions would report an imported builder as absent and leave a row pinned as
+    unprobeable while its seam 1 is reachable. Only module-level nodes are walked,
+    because a binding inside a function body is not a module attribute.
+    """
+    bound: dict[str, str] = {}
+    for node in module.body:
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            bound[node.name] = _BOUND_DEFINED
+        elif isinstance(node, ast.Assign):
+            bound.update((t.id, _BOUND_DEFINED) for t in node.targets if isinstance(t, ast.Name))
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            bound[node.target.id] = _BOUND_DEFINED
+        elif isinstance(node, ast.ImportFrom):
+            bound.update((alias.asname or alias.name, _BOUND_IMPORTED) for alias in node.names)
+        elif isinstance(node, ast.Import):
+            # ``import pkg.mod`` binds ``pkg``; only an ``as`` clause binds the tail.
+            bound.update(
+                (alias.asname or alias.name.split('.', 1)[0], _BOUND_IMPORTED) for alias in node.names
+            )
+    return bound
+
+
+def _published_builders(module: ast.Module) -> list[str]:
+    """The :data:`conftest.PARSER_BUILDER_NAMES` members *module* binds, route included."""
+    bound = _module_bindings(module)
+    return sorted(f'{name} ({bound[name]})' for name in PARSER_BUILDER_NAMES if name in bound)
+
+
 def _classify(bundle: str, skill: str, script: str, *, register: bool) -> tuple[str, str]:
     """Run one ``parse_ns`` probe and classify how it ended.
 
@@ -339,24 +381,19 @@ def test_every_probed_script_landed_in_exactly_one_outcome(probe):
 
 @pytest.mark.parametrize('label', sorted(STRUCTURALLY_PINNED))
 def test_a_structurally_pinned_row_publishes_no_parser_builder(label):
-    """Seam 1, pinned from source: the module binds no builder name.
+    """Seam 1, pinned from source: the module binds no builder name, by any route.
 
     Read from source because these scripts are never executed — importing one to
-    inspect its attributes is the cost this probe mode exists to avoid.
+    inspect its attributes is the cost this probe mode exists to avoid. The
+    approximation covers imports as well as definitions, because the runtime
+    predicate it stands in for is an attribute lookup, and an import binds a module
+    attribute just as a ``def`` does.
     """
-    bound: set[str] = set()
-    for node in _source_of(label).body:
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
-            bound.add(node.name)
-        elif isinstance(node, ast.Assign):
-            bound.update(t.id for t in node.targets if isinstance(t, ast.Name))
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            bound.add(node.target.id)
-
-    published = sorted(bound & set(PARSER_BUILDER_NAMES))
+    published = _published_builders(_source_of(label))
     assert published == [], (
         f'{label} is recorded as unprobeable but publishes {published}, which parse_ns resolves as seam 1. '
-        'It has a reachable seam and no longer belongs in SEAM_EXEMPT.'
+        'It has a reachable seam and no longer belongs in SEAM_EXEMPT. A builder defined here means the row '
+        'is simply wrong; an imported one may mean the hook re-exports a builder owned by another module.'
     )
 
 
@@ -431,6 +468,36 @@ _GUARD_SOURCES = [
 def test_guard_detector_classifies_each_shape(source, expected):
     """The detector fires on a real guard and on nothing that merely resembles one."""
     assert any(is_main_guard(node) for node in ast.parse(source).body) is expected
+
+
+#: Seam-1 collector controls, one binding route each. The import rows are what a
+#: definition-only collector misses, and they are matched by negative rows so the
+#: pin is shown to distinguish a published builder from a module that binds none.
+_BUILDER_SOURCES = [
+    ('def build_parser():\n    pass\n', ['build_parser (defined here)'], 'defined'),
+    ('_build_parser = None\n', ['_build_parser (defined here)'], 'assigned'),
+    ('from helper import build_parser\n', ['build_parser (imported)'], 'imported-from'),
+    ('import build_parser\n', ['build_parser (imported)'], 'imported-plain'),
+    ('from helper import make as _build_arg_parser\n', ['_build_arg_parser (imported)'], 'imported-aliased'),
+    ('import argparse\nVALUE = 1\n', [], 'binds-no-builder'),
+    ('def _hook():\n    from helper import build_parser\n', [], 'function-local-import'),
+]
+
+
+@pytest.mark.parametrize(
+    ('source', 'expected'),
+    [(source, expected) for source, expected, _ in _BUILDER_SOURCES],
+    ids=[name for _, _, name in _BUILDER_SOURCES],
+)
+def test_seam_one_collector_reports_a_builder_by_every_binding_route(source, expected):
+    """The pin fails for an import-bound builder and passes for a module binding none.
+
+    ``parse_ns`` resolves seam 1 with ``getattr`` plus ``callable``, which cannot tell
+    where the attribute came from, so a structural row that ignored imports would go
+    green over a hook that re-exported a builder — the same silently-out-of-date
+    verdict the row exists to catch.
+    """
+    assert _published_builders(ast.parse(source)) == expected
 
 
 def test_derivation_reports_empty_populations_for_a_tree_with_no_scripts(tmp_path):
