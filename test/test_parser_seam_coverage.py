@@ -253,7 +253,9 @@ def _classify(bundle: str, skill: str, script: str, *, register: bool) -> tuple[
         return _REACHED, ''
     except ParserSeamNotFound as exc:
         return _NO_SEAM, str(exc)
-    except Exception as exc:  # noqa: BLE001 — classified as unmeasured, never swallowed
+    # A broad catch is deliberate here: an unexpected exception is classified as
+    # unmeasured and reported with its type and message, never swallowed.
+    except Exception as exc:
         return _UNMEASURED, f'{type(exc).__name__}: {exc}'
     return _REACHED, ''
 
