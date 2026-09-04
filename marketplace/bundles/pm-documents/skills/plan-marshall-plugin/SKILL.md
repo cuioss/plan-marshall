@@ -41,6 +41,8 @@ into by multiple inheritance:
 |------|----------|---------|
 | A | `get_skill_domains()` | Domain metadata with profiles |
 | A | `provides_triage()` | Returns `pm-documents:ext-triage-docs` |
+| A | `applies_to_module()` | Check documentation applicability via doc directories in the module's paths and the `documentation` build-system marker |
+| A | `provides_file_globs()` | Declares the AsciiDoc suffixes plus the `doc/` tree (`['**/*.adoc', '**/*.asciidoc', 'doc/**']`) seeded into `skill_domains.documentation.file_globs` for domain detection. A bare `**/*.md` is deliberately excluded — it would union this domain into nearly every plan; markdown under `doc/` is covered by the tree claim instead. Contributes no `build.map` route |
 | A | `provides_recipes()` | Returns `recipe-doc-verify`, `recipe-verify-architecture-diagrams`, `recipe-verify-ascii-diagrams` |
 | A | `discover_modules()` | Discovers the `documentation` module when `doc/` (or `docs/`) holds `.adoc`/`.md` files **at any depth** — a nested-doc project has the same discovery seat as a top-level one |
 | D | `path_attributor_id()` / `claim_paths()` | Claims the documentation corpus for the `documentation` module |

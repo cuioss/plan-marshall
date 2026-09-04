@@ -208,3 +208,17 @@ class Extension(ExtensionBase):
     def provides_arch_gate(self) -> dict | None:
         """ArchUnit: Java arch-gate tool. Binding: pm-dev-java:arch-gate-java."""
         return {'tool': 'archunit'}
+
+    def provides_file_globs(self) -> list[str]:
+        """Declare the Java source glob — the file type this domain owns.
+
+        Java source is the whole of this domain's file-type identity: its skills are
+        Java-language standards, so a plan touching a ``.java`` file wants them and a
+        plan touching nothing else does not. The build descriptors this domain's
+        modules also carry (``pom.xml`` / ``build.gradle``) are deliberately absent:
+        they belong to the Maven and Gradle build systems under ADR-004, and
+        claiming them here would union the Java domain into every build-config
+        change. Written in the ``file_globs`` dialect, where a leading ``**/``
+        matches zero or more path segments.
+        """
+        return ['**/*.java']

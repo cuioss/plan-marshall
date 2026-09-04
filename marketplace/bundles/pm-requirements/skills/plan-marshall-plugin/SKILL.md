@@ -30,10 +30,12 @@ Declares the requirements domain configuration including:
 
 ## Configuration
 
-All configuration is in `extension.py` which implements the Extension API:
+All configuration is in `extension.py` which implements the Extension API.
+
+Axis-A (`ExtensionBase`):
 - `get_skill_domains()` - Domain metadata with profiles
-- `provides_triage()` - Triage skill reference or None
-- `provides_outline_skill()` - Domain-specific outline skill reference or None
+- `provides_triage()` - Returns `pm-requirements:ext-triage-reqs`
+- `provides_file_globs()` - Returns `[]` — a deliberate empty declaration: requirements are prose documents in whatever format the project already uses, and this bundle claims no distinct requirements-document tree, so it owns no file type of its own. A project that does keep such a tree declares it with `set-inclusion`, whose operator value wins over the seed
 
 ## Integration
 

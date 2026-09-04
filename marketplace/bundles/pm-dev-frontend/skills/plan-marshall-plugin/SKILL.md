@@ -25,6 +25,8 @@ Configuration in `extension.py` implements the Extension API contract:
 | `get_skill_domains()` | Domain metadata with profiles |
 | `applies_to_module()` | Check JavaScript applicability via build systems |
 | `provides_triage()` | Returns `pm-dev-frontend:ext-triage-js` |
+| `provides_arch_gate()` | Returns the `dependency-cruiser` arch-gate tool binding (`pm-dev-frontend:arch-gate-js`) |
+| `provides_file_globs()` | Declares the JS/CSS source globs (`['**/*.js', '**/*.mjs', '**/*.jsx', '**/*.css']`) seeded into `skill_domains.javascript.file_globs` for domain detection; contributes no `build.map` route |
 
 ## Build Operations
 

@@ -143,6 +143,24 @@ class Extension(ExtensionBase, DerivationResolverBase, PathAttributionBase):
         """Return triage skill reference."""
         return 'pm-plugin-development:ext-triage-plugin'
 
+    def provides_file_globs(self) -> list[str]:
+        """Declare the marketplace bundle tree — the corpus this domain owns.
+
+        A tree claim rather than a suffix claim, and that is the point: a bundle
+        holds ``SKILL.md`` manifests, ``extension.py`` scripts, standards documents,
+        and ``plugin.json`` descriptors, so no suffix names the domain while every
+        suffix that would is already another domain's (markdown is documentation's
+        question, ``.py`` is Python's). What makes a file this domain's is WHERE it
+        lives, so the tree is the honest declaration.
+
+        The project-local ``.claude`` tree this extension claims through Axis-D
+        ``claim_paths`` is deliberately absent: that claim settles which module a
+        path is attributed to, while this one decides whether a plan loads the
+        plugin-development skills, and a change to a project's own harness
+        configuration is not marketplace-component development.
+        """
+        return ['marketplace/bundles/**']
+
     def provides_retrospective_aspects(self) -> list[dict]:
         """Return the plan-marshall-plugin-dev retrospective aspects.
 

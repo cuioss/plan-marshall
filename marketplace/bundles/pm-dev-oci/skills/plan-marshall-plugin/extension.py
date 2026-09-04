@@ -62,6 +62,35 @@ class Extension(ExtensionBase):
         """Return triage skill reference."""
         return 'pm-dev-oci:ext-triage-oci'
 
+    def provides_file_globs(self) -> list[str]:
+        """Declare the container-manifest globs this domain owns.
+
+        One glob per entry of the ``container_filenames`` set ``applies_to_module``
+        recognises above — the container manifests, ignore files, and lint/scan
+        descriptors ADR-004 records this bundle as recognising for Axis-A. Those
+        same files have NO Axis-B owner: there is no ``build-oci``
+        ``BuildExtensionBase``, they contribute no ``build.map`` route, and this
+        declaration adds none. Recognised for skill-loading, absent from build
+        routing, exactly as ADR-004 § Consequences requires.
+
+        Written in the ``file_globs`` dialect, where a leading ``**/`` matches zero
+        or more path segments — so a repo-root ``Dockerfile`` matches as well as a
+        ``docker/Dockerfile``.
+        """
+        return [
+            '**/Dockerfile',
+            '**/Containerfile',
+            '**/docker-compose.yml',
+            '**/docker-compose.yaml',
+            '**/compose.yml',
+            '**/compose.yaml',
+            '**/.dockerignore',
+            '**/.containerignore',
+            '**/.hadolint.yaml',
+            '**/.hadolint.yml',
+            '**/.trivyignore',
+        ]
+
     def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
         return [
