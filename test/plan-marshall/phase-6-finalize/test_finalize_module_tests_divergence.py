@@ -37,9 +37,37 @@ _GATE_DOC = (
 #: The three guards the gate runs, in `build.py:cmd_verify` order.
 _GUARD_TOKENS = ('quality-gate', 'test-compile', 'module-tests')
 
-#: The three quality-gate dimensions ONLY whole-tree scope reaches. A
-#: degradation WARNING naming fewer than all three is a partial-truth signal.
+#: The three quality-gate dimensions ONLY whole-tree scope reaches IN THIS
+#: repository. They are this project's derived set, not a portable list, so they
+#: are asserted of the gate document's labelled WORKED EXAMPLE — the rendering
+#: of the degradation template for this repository — rather than of the emitted
+#: message itself. A worked example naming fewer than all three is the
+#: partial-truth signal.
 _WHOLE_TREE_ONLY_DIMENSIONS = ('plugin-doctor', '.claude/', 'marketplace/targets')
+
+#: The placeholder the emitted degradation WARNING interpolates. The dimension
+#: set is the PROJECT's — whatever its own ``quality-gate`` widens to beyond
+#: module scope — so the emitted message must carry the placeholder rather than
+#: one project's dimension names. The literal is what a downstream agent copies,
+#: and a copied literal asserts THIS repository's dimensions of a project whose
+#: set is different: prose saying "the project's own" does not undo a pinned
+#: artifact.
+_DIMENSION_PLACEHOLDER = '{dimension_clause}'
+
+#: The label anchoring the worked example that renders the placeholder for this
+#: repository. Anchored on the label rather than a line number, so ordinary
+#: prose edits around it do not silently empty the sweep — an absent label
+#: yields an empty block, which the assertion below rejects.
+_WORKED_EXAMPLE_LABEL = "**Worked example — this repository's instance.**"
+
+#: The two clauses the UNENUMERABLE rendering must state. A template with no
+#: legal value on the derivation-failed path is how an author ends up filling
+#: the placeholder with an empty list — rendering "no dimensions are un-gated",
+#: which is the confident-empty signal this gate exists to refuse.
+_UNENUMERABLE_RENDERING_CLAUSES = (
+    'could not be enumerated',
+    'UNKNOWN set of dimensions',
+)
 
 #: Guard 1's whole-tree arm, as the ADJACENT phrase "whole-tree quality-gate"
 #: (tolerating only markdown emphasis/backtick noise between the two words).
@@ -263,13 +291,20 @@ def test_unmapped_footprint_fails_closed_to_the_whole_tree_route():
 # Guard 1's whole-tree arm: reachability, honest degradation, lock-step
 # ---------------------------------------------------------------------------
 #
-# Three quality-gate dimensions exist ONLY at whole-tree scope (the
-# marketplace-wide plugin-doctor pass, the `.claude/` ruff coverage, and the
-# `marketplace/targets` SPDX coverage). A purely bundle-scoped guard 1 can never
-# reach them, so they surface first at remote CI. These tests pin that guard 1
-# carries a whole-tree arm, that any skip path degrades honestly by naming all
-# three dimensions, and that the lock-step sites describing the guard set cannot
-# drift apart one site at a time.
+# Three quality-gate dimensions exist ONLY at whole-tree scope IN THIS
+# repository (the marketplace-wide plugin-doctor pass, the `.claude/` ruff
+# coverage, and the `marketplace/targets` SPDX coverage). A purely bundle-scoped
+# guard 1 can never reach them, so they surface first at remote CI. These tests
+# pin that guard 1 carries a whole-tree arm, that any skip path degrades
+# honestly, and that the lock-step sites describing the guard set cannot drift
+# apart one site at a time.
+#
+# The degradation obligation is split across two assertions because the set is
+# the PROJECT's, not this repository's: the EMITTED message must interpolate the
+# derived set (so a consumer names its own dimensions), while the labelled
+# WORKED EXAMPLE — this repository's rendering of that template — must name all
+# three. Asserting all three of the emitted message would re-pin the literal;
+# asserting nothing of the example would let the template ship with no instance.
 
 
 def _gate_text() -> str:
@@ -460,7 +495,44 @@ def test_gate_document_parses_and_discloses_unresolved_paths():
     )
 
 
-def test_degradation_warning_names_all_three_dimensions():
+def _worked_example_block() -> list[str]:
+    """Return the fenced block rendering the degradation template for this repo.
+
+    Located by the worked-example label rather than by ordinal, so the sweep
+    survives prose edits around it. An absent label — or a label with no fenced
+    block under it — yields ``[]``, which the caller asserts against, so a
+    deleted example fails loudly instead of emptying the assertion.
+    """
+    lines = _gate_text().splitlines()
+    start = next(
+        (i for i, line in enumerate(lines) if _WORKED_EXAMPLE_LABEL in line), None
+    )
+    if start is None:
+        return []
+    block: list[str] = []
+    in_fence = False
+    for line in lines[start + 1 :]:
+        if line.lstrip().startswith('```'):
+            if in_fence:
+                break
+            in_fence = True
+            continue
+        if in_fence:
+            block.append(line)
+    return block
+
+
+def test_degradation_warning_interpolates_the_derived_dimension_set():
+    """The EMITTED WARNING carries the derived set, never one project's literal.
+
+    The surrounding prose has always said the dimensions to name are "the
+    project's own", but prose is not the artifact a downstream agent copies —
+    the message literal is. A hardcoded literal therefore asserts THIS
+    repository's three dimensions of a project whose whole-tree-only set is
+    different, which is the shipped-guard-assumes-our-layout defect in the one
+    place it does the most damage: a WARNING that is supposed to state a
+    coverage boundary honestly.
+    """
     warnings = _degradation_warning_lines()
 
     assert warnings, (
@@ -468,11 +540,62 @@ def test_degradation_warning_names_all_three_dimensions():
         'whole-tree quality-gate skip path — a silent skip is prohibited'
     )
     for warning in warnings:
-        assert _names_all_three_dimensions(warning), (
-            f'A whole-tree quality-gate degradation WARNING must name ALL '
-            f'THREE un-gated dimensions {_WHOLE_TREE_ONLY_DIMENSIONS} — never a '
-            f'singular "the whole-tree dimension". Offending line: {warning!r}'
+        assert _DIMENSION_PLACEHOLDER in warning, (
+            f'A whole-tree quality-gate degradation WARNING must interpolate '
+            f'the derived dimension set via {_DIMENSION_PLACEHOLDER!r}, so a '
+            f'consumer emits ITS OWN whole-tree-only dimensions. Offending '
+            f'line: {warning!r}'
         )
+        pinned = [d for d in _WHOLE_TREE_ONLY_DIMENSIONS if d in warning]
+        assert not pinned, (
+            f'The emitted WARNING pins this repository\'s dimension names '
+            f'{pinned} instead of interpolating the derived set — the literal '
+            f'is what a downstream agent copies. Offending line: {warning!r}'
+        )
+
+
+def test_degradation_warning_declares_an_unenumerable_rendering():
+    """The template must have a legal value when the derivation yields no set.
+
+    Without one, the only rendering an author can reach for on that path is the
+    empty list — which prints "no dimensions are un-gated" and turns an
+    unestablished set into a confident all-clear.
+    """
+    text = _gate_text()
+
+    missing = [c for c in _UNENUMERABLE_RENDERING_CLAUSES if c not in text]
+
+    assert not missing, (
+        f'The degradation template declares no unenumerable rendering '
+        f'(missing: {missing}), so a project that cannot derive its '
+        f'whole-tree-only dimension set has no honest value for '
+        f'{_DIMENSION_PLACEHOLDER!r} and an empty list becomes the default'
+    )
+
+
+def test_degradation_warning_worked_example_names_all_three_dimensions():
+    """The template's worked example must render this repository's full set.
+
+    A template with no instance is the opposite failure from a pinned literal:
+    the reader gets a placeholder and no evidence of what a correct rendering
+    looks like. The example is therefore mandatory, and — being this
+    repository's own rendering — it carries the same all-three obligation the
+    emitted literal used to.
+    """
+    block = _worked_example_block()
+
+    assert block, (
+        f'The gate document carries no fenced worked example under '
+        f'{_WORKED_EXAMPLE_LABEL!r}, so the degradation template ships with no '
+        f'concrete rendering to be read against'
+    )
+    rendered = '\n'.join(block)
+    assert _names_all_three_dimensions(rendered), (
+        f'The worked example renders the degradation template for THIS '
+        f'repository, so it must name ALL THREE un-gated dimensions '
+        f'{_WHOLE_TREE_ONLY_DIMENSIONS} — never a singular "the whole-tree '
+        f'dimension". Rendered: {rendered!r}'
+    )
 
 
 def test_lock_step_sites_all_name_the_whole_tree_quality_gate_arm():
