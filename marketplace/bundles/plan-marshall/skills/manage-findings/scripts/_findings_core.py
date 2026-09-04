@@ -464,7 +464,7 @@ def _narrow_to_preference_admissible(
     The rule itself lives in :mod:`_preference_admissibility` and is applied
     here, never re-derived; the recognized-set resolution (and the ``None``
     pass-through that selects the degrade path) is owned by
-    :func:`resolve_preference_admissibility`, so a single query resolves the
+    :func:`_resolve_preference_admissibility`, so a single query resolves the
     registry once no matter how many record slices it narrows. Returns
     ``records`` untouched when the narrowing is off, which is what keeps the
     default-OFF flag free of any cost for callers that never ask for it.

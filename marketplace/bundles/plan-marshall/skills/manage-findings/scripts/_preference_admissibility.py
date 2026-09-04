@@ -18,11 +18,10 @@ positively attributed to a recognized external reviewer bot — i.e. it carries 
 ``bot_kind`` that is one of the registry-derived reviewer identities the ingest
 verb stamps from the comment author login.
 
-A ``pr-comment`` with no ``bot_kind`` — or a ``bot_kind`` that is not a recognized
-reviewer identity — cannot be told apart from the pipeline's own posted comments:
-the ingest verb records the pipeline's own PR comments (a review-trigger comment,
-a description-restore) with ``bot_kind`` absent, exactly as it records an
-unattributed human comment. Admitting such a comment would let the pipeline's own
+A ``pr-comment`` with no ``bot_kind`` cannot be told apart from the pipeline's own
+posted comments: the ingest verb records the pipeline's own PR comments (a
+review-trigger comment, a description-restore) with ``bot_kind`` absent, exactly
+as it records an unattributed human comment. Admitting such a comment would let the pipeline's own
 control traffic become evidence about the pipeline's preferences — a
 SELF-REINFORCING measurement artifact that grows with pipeline chattiness rather
 than with operator judgement. There is no self-login signal on the finding to

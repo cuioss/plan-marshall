@@ -131,8 +131,7 @@ redundant with the write**: it is the only place that distinguishes "attributed
 to a recognized reviewer" from "present in the store". Both consuming surfaces
 apply it — the auditor re-validating archived records against the live registry
 because it reads JSONL directly; the emitter per the paragraph below. A
-`pr-comment` with no `bot_kind` — or one
-whose `bot_kind` is not a recognized reviewer identity — cannot be told apart from
+`pr-comment` with no `bot_kind` cannot be told apart from
 the pipeline's own posted comments: the ingest verb records the pipeline's own PR
 comments (a review-trigger comment, a description-restore) with `bot_kind` absent,
 exactly as it records an unattributed human comment. Admitting one would let the
