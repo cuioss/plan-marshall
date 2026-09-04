@@ -8,8 +8,20 @@ performs NO drift detection of its own — it resolves the two directory
 arguments, calls the existing engine, and serializes the returned
 ``ContentDriftResult`` to TOON. This exists so the ``marshall-steward``
 ``upgrade`` verb (Stage 3 — verify) can run the content-drift report as a
-direct ``python3 marketplace/targets/claude/content_drift_cli.py``
-invocation, exactly as ``generate.py`` is invoked for the emit step.
+single command, exactly as ``generate.py`` is invoked for the emit step — which
+means through the ``./pw`` wrapper, as ``./pw content-drift``.
+
+The wrapper is load-bearing, not stylistic. This module imports
+``marketplace.targets``, whose package ``__init__`` chain reaches
+``component_targets.py`` and its ``import yaml``; PyYAML is a project
+dependency resolved into the uv-owned ``.venv``, and ``uv`` itself lives only
+in the project-local ``.pyprojectx/`` tree. A bare
+``python3 marketplace/targets/claude/content_drift_cli.py`` therefore runs on
+whatever interpreter is on ``PATH`` and dies with
+``ModuleNotFoundError: No module named 'yaml'`` at import time, before any
+drift logic runs — so a documented bare-``python3`` form would be a command
+that cannot succeed. The ``sys.path`` bootstrap below makes the *repo's own*
+modules importable; it does not, and cannot, supply third-party dependencies.
 
 Exit codes follow the gate convention ``generate.py`` uses (non-zero on a
 failing gate so a CI/steward step surfaces the failure):
