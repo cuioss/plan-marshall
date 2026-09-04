@@ -523,7 +523,7 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 | `compose` | `--plan-id --plan-change-type --track --scope-estimate [--recipe-key] [--affected-files-count] [--phase-5-steps] [--phase-6-steps] [--commit-and-push] [--envelope-count]` | Compose and write execution.toon (`--phase-5-steps`/`--phase-6-steps` are fallback-only — `marshal.json` is the authoritative candidate source; `--plan-change-type` is reconciled against the settled `status.metadata.change_type`) |
 | `read` | `--plan-id` | Read manifest as TOON |
 | `lanes preview` | `--plan-id [--phase-6-steps]` | Resolve the minimal/standard/full phase-6 step sets + cost sums in one TOON (the posture-dialogue projection) |
-| `record-step` | `--plan-id --step-id --phase {5-execute\|6-finalize} --outcome {executed\|skipped\|error} [--total-tokens] [--tool-uses] [--duration-ms]` | Append a per-step execution-log row (outcome + token attribution) to execution.toon |
+| `record-step` | `--plan-id --step-id --phase {5-execute\|6-finalize} --outcome [--total-tokens] [--tool-uses] [--duration-ms]` | Append a per-step execution-log row (outcome + token attribution) to execution.toon. The accepted `--outcome` set is `VALID_RECORD_OUTCOMES`, declared in `scripts/_manifest_core.py` and spelled once in the `record-step` entry under Canonical invocations — never restated here |
 | `refire-report` | `--plan-id [--phase {5-execute\|6-finalize}]` | Report per-step firing / re-fire counts derived from the existing `execution_log[]` rows (read-only; names its token-population floor) |
 | `step-params get` | `--plan-id --phase {5-execute\|6-finalize} --step-id` | Return a step's snapshotted param object from the manifest (plan-local read) |
 | `step-params set` | `--plan-id --phase {5-execute\|6-finalize} --step-id --param --value` | Write a per-plan param override into the manifest snapshot |
@@ -546,7 +546,7 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 | `invalid_scope_estimate` | --scope-estimate not in the valid enum |
 | `invalid_track` | --track not `simple` or `complex` |
 | `invalid_phase` | `record-step` --phase not `5-execute` or `6-finalize` |
-| `invalid_outcome` | `record-step` --outcome not `executed`, `skipped`, or `error` |
+| `invalid_outcome` | `record-step` --outcome outside `VALID_RECORD_OUTCOMES` |
 | `invalid_manifest` | Manifest schema invalid or step IDs unknown; or `step-params set` target section malformed |
 | `unresolvable_step` | `compose` — a FINAL emitted phase-5/6 step id resolves to no built-in doc, project-local skill, or bundle discovery-registry entry (fail-loud; names the offending step's provenance — the `marshal.json` key for an authored step, or the derive-verification routing origin for a routed phase-5 step — and phase) |
 | `phase_6_order_violation` | `compose` — the FINAL composed `phase_6.steps` is not verifiably in ascending frontmatter `order`: either an `order_inversion` (a step precedes one with a lower `order`) or an `unresolvable_order` (a built-in / `project:` step whose `order` does not resolve, so its pinned position cannot be verified). Fail-loud; names the offending `step_id`, the `reason`, and `phase`; writes no partial manifest |
