@@ -1,5 +1,19 @@
 # Permission Architecture
 
+## Provenance: Claude rule-pack
+
+This document describes the **Claude** permission model's settings architecture. Every
+statement here — the settings file hierarchy, the resolution priority, the file-placement
+decision tree, and the permission grammar examples — binds only when the target is Claude.
+On a non-Claude target the settings paths, resolution order, and grammar may differ
+entirely; a reader should not assume any of these rules apply without confirming the
+target's own permission model first.
+
+The split is structural: this document is the Claude-specific half of the permission
+standards, declared alongside the target-agnostic analysis engine in `permission_doctor.py`.
+See `plugin-doctor/references/rule-provenance.md` § "Engine / Claude rule-pack split" for
+the architectural precedent.
+
 ## Settings File Hierarchy
 
 Claude Code uses a three-level settings hierarchy:

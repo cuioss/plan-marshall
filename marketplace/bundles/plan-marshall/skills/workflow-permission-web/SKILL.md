@@ -216,19 +216,18 @@ Script: `plan-marshall:workflow-permission-web` → `permission_web.py`. Invocat
 
 | Command | Behaviour |
 |---------|-----------|
-| `analyze` | Reads global and local settings, extracts WebFetch domains, categorizes them, detects duplicates and redundancy, and generates consolidation recommendations. Missing files are reported but do not cause failure. |
 | `categorize` | Categorizes a list of domains into universal, major, high_reach, suspicious, unknown. Also checks for red flag patterns in domain names. |
-| `apply` | Applies domain changes to a settings file deterministically. At least one of `--add`/`--remove` is required; the script modifies only `permissions.allow` WebFetch entries and writes back with `indent=2` formatting. |
+
+Settings I/O (reading, writing, and WebFetch grammar rendering) is handled by the platform-runtime (`permission_web_analyze` / `permission_web_apply`), not by this script.
 
 ## Error Handling
 
 | Failure | Action |
 |---------|--------|
-| Settings file not found | Report as missing in statistics. Ask user via `AskUserQuestion` (create defaults, skip, abort). |
-| Settings file invalid JSON | Return failure with parse error. Do not proceed with that file. |
 | WebSearch unavailable | Skip domain research. Present unknowns to user for manual assessment. |
-| Apply returns failure | Ask user (retry, skip file, abort). Track in files_modified counter. |
 | Red flag domain detected | Flag for review. Never auto-approve suspicious domains. |
+
+Settings-related errors (file not found, invalid JSON, apply failure) are handled by the platform-runtime, not by this script.
 
 ## Standards (Load On-Demand)
 
@@ -244,25 +243,11 @@ Domain categorization is data-driven — loaded from `standards/domain-lists.jso
 
 The canonical argparse surface for `permission_web.py`. The plugin-doctor `missing-canonical-block` rule checks that this section is PRESENT, matching its heading only — the body is never read; `manage-invocation-invalid` derives its accept-set from a live `--help` walk rather than from this section. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 
-### analyze
-
-```bash
-python3 .plan/execute-script.py plan-marshall:workflow-permission-web:permission_web analyze \
-  [--global-file GLOBAL_FILE] [--local-file LOCAL_FILE]
-```
-
 ### categorize
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-permission-web:permission_web categorize \
   --domains DOMAINS
-```
-
-### apply
-
-```bash
-python3 .plan/execute-script.py plan-marshall:workflow-permission-web:permission_web apply \
-  --file FILE [--add ADD] [--remove REMOVE]
 ```
 
 ## Related
