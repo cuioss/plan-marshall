@@ -184,15 +184,7 @@ def _any_checkout(args: argparse.Namespace) -> bool:
 
 
 def cmd_query(args: argparse.Namespace) -> dict:
-    """Handle: query
-
-    ``--preference-admissible`` is forwarded by KEYWORD, as the core requires:
-    the flag is keyword-only on both query functions so it can never bind to the
-    adjacent ``any_checkout`` slot. The core's returned mapping is emitted
-    verbatim, so ``preference_admissibility_basis`` — the ``recognized`` /
-    ``presence_only`` disclosure of which authorship check actually ran — reaches
-    the TOON payload whenever the narrowing is on, and is absent when it is off.
-    """
+    """Handle: query"""
     promoted = None
     if args.promoted is not None:
         promoted = args.promoted.lower() in ('true', '1', 'yes')
