@@ -606,18 +606,16 @@ def _sole_class_span(source: str, path: Path) -> int | None:
     return sole.end_lineno - sole.lineno + 1
 
 
-def _is_single_class_exempt(
-    source: str, path: Path, ceiling: int = TEST_MODULE_SINGLE_CLASS_CEILING
-) -> bool:
-    """Return True when ``path`` is one class whose own span is within ``ceiling``.
+def _is_single_class_exempt(source: str, path: Path) -> bool:
+    """Return True when ``path`` is one class whose own span is within the ceiling.
 
     The comparison is ``<=``, matching the budget rule's own boundary: a module
     of exactly ``TEST_MODULE_LINE_BUDGET`` lines is within budget, so a class of
-    exactly ``ceiling`` lines is within the ceiling. A class over the ceiling is
-    flagged like any other over-budget module.
+    exactly :data:`TEST_MODULE_SINGLE_CLASS_CEILING` lines is within the ceiling.
+    A class over the ceiling is flagged like any other over-budget module.
     """
     span = _sole_class_span(source, path)
-    return span is not None and span <= ceiling
+    return span is not None and span <= TEST_MODULE_SINGLE_CLASS_CEILING
 
 
 def analyze_test_module_line_budget(test_root: Path, budget: int = TEST_MODULE_LINE_BUDGET) -> list[dict]:
