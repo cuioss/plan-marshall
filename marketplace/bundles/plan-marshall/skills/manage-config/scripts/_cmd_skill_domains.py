@@ -11,6 +11,7 @@ Extension API functions:
 - provides_outline_skill() -> outline skill reference or None
 - provides_recipes() -> list of recipe definition dicts
 - provides_domain_verb() -> list of {'verb': str, 'notation': str} descriptors or None
+- provides_file_globs() -> list of path globs seeding skill_domains.{domain}.file_globs
 """
 
 import copy
@@ -372,6 +373,25 @@ def convert_extension_to_domain_config(module, domain_info: dict, bundle_name: s
                     extensions[verb] = descriptor['notation']
         if extensions:
             config['workflow_skill_extensions'] = extensions
+
+    # Seed the domain-detection globs from the optional Axis-A accessor. Guarded
+    # with hasattr exactly like the sibling provides_* reads above, so a domain
+    # extension predating the hook is unaffected. A raising accessor degrades to
+    # no seed rather than aborting the whole conversion — the domain's remaining
+    # config (bundle / outline_skill / workflow_skill_extensions) still lands,
+    # instead of the caller's except-and-continue reporting the domain as absent.
+    if hasattr(module, 'provides_file_globs'):
+        try:
+            file_globs = module.provides_file_globs()
+        except Exception:
+            file_globs = None
+        # Only a non-empty list seeds: an accessor returning [] writes no key, so a
+        # domain owning no distinct file type stays byte-identical to today. A
+        # malformed declaration is deliberately NOT degraded — validate_domain_inclusion
+        # raises here so the shape fails at seed time rather than persisting invalid.
+        if file_globs:
+            validate_domain_inclusion(None, file_globs)
+            config['file_globs'] = file_globs
 
     return config
 
@@ -844,6 +864,11 @@ def cmd_skill_domains(args) -> dict:
                     existing_project_skills[domain_key] = domain_config['project_skills']
                 if 'active_profiles' in domain_config:
                     existing_domain_active_profiles[domain_key] = domain_config['active_profiles']
+                # Both inclusion keys are snapshotted on PRESENCE, never on
+                # truthiness, so an operator's deliberate `always_on: false` or
+                # `file_globs: []` is captured rather than read as unset. The
+                # enclosing `if inclusion:` guard tests the non-empty dict, which
+                # a `{'file_globs': []}` entry satisfies.
                 inclusion = {}
                 if 'always_on' in domain_config:
                     inclusion['always_on'] = domain_config['always_on']
@@ -896,6 +921,15 @@ def cmd_skill_domains(args) -> dict:
 
         # Restore operator-set always_on / file_globs inclusion keys to domains
         # that still exist (mirrors the project_skills / active_profiles blocks).
+        #
+        # This restore runs AFTER the domain rebuild above, and that ORDERING —
+        # not a conditional — is what makes "absent means seed" hold on every
+        # configure rather than only the first. The rebuild writes the extension's
+        # seeded `file_globs`; this loop then overwrites it with whatever the
+        # snapshot captured, so an operator value always wins. A domain whose
+        # `file_globs` key was absent contributes nothing to the snapshot, so its
+        # seed survives untouched — which is precisely the backfill trigger, and it
+        # re-fires on every configure because the seed is recomputed each time.
         for domain_key, inclusion in existing_domain_inclusion.items():
             if domain_key in skill_domains:
                 skill_domains[domain_key].update(inclusion)
