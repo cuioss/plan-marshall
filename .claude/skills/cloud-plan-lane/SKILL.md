@@ -1363,7 +1363,7 @@ assign exactly one verdict:
 | `silent` | The author published **nothing at all** — no review, no notice. Before recording it, run the recovery check below — **not owed where the label governs this reviewer** (⛔ below), owed as usual where it does not; an unexplained silence is recorded as such only once that check has been made. |
 | `unreadable` | Either the surface that would carry this author's body **errored**, or the verdict **names no surface** it was read from. Not a statement about the author at all — a statement about the run's access: in both cases the run cannot substantiate what it read. |
 
-`reviewed-empty` is a **completed review**, so it behaves as `reviewed` does at both places the other
+`reviewed-empty` is a **completed review**, so it behaves as `reviewed` does wherever the other
 verdicts are consumed: its `Reopens?` cell is **blank** (nothing was refused, so there is no limit to
 clear), and it leaves no comment to handle, so **merge-gate condition 3 is unaffected** by it. What it
 does not do is disappear into `reviewed` — the whole point of the value is that a reader can tell a
@@ -2239,7 +2239,7 @@ cross-named by `.github/workflows/pr-agent.yml` — never a list transcribed her
 reviewer, each verdict derived from the stored comment bodies (§ Step 7), never from a check state or
 a summary:
 
-| Reviewer (`author_login`) | Class — ⛔ **do not enumerate the values here**: read them from § Step 7's *Record per-reviewer participation* subsection, which is their single definition | Verdict — ⛔ **do not enumerate the values here either**: read them from the verdict table in that same § Step 7 subsection. Annotate `(suppressed by label)` where § Step 8 condition 5 calls for it | Reopens? (`yes` / `no` / `unknown`; blank for a completed review, and blank where the label suppressed this reviewer's invitation and was still in place at the gate — a PR-open-only reviewer on an `applied-then-removed` PR takes `no`, not blank) | Body evidence / reason — including **which publish surfaces this verdict was read from** (§ Step 7; a verdict naming none is `unreadable`, not `silent`), and for `unreadable`, the surface and the error, plus whatever positive control was taken |
+| Reviewer (`author_login`) | Class — ⛔ **do not enumerate the values here**: read them from § Step 7's *Record per-reviewer participation* subsection, which is their single definition | Verdict — ⛔ **do not enumerate the values here either**: read them from the verdict table in that same § Step 7 subsection. Annotate `(suppressed by label)` where § Step 8 condition 5 calls for it | Reopens? (`yes` / `no` / `unknown`; blank for a completed review, and blank where the label suppressed this reviewer's invitation and was still in place at the gate — a PR-open-only reviewer on an `applied-then-removed` PR takes `no`, not blank) | Body evidence / reason — including **which publish surfaces this verdict was read from** (§ Step 7; a verdict naming none is `unreadable`, not `silent`), and for an **errored-surface** `unreadable`, the surface and the error, plus whatever positive control was taken |
 |---|---|---|---|---|
 | … | … | … | … | … |
 
