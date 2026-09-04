@@ -909,6 +909,8 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-
 
 Sets the per-domain inclusion keys `always_on` (bool) and `file_globs` (list[str], via the comma-separated `--file-globs` CSV) after `validate_domain_inclusion`. `--always-on` is a `BooleanOptionalAction` flag: pass `--always-on` to set it `true` or its `--no-always-on` companion to set it `false`; omitting the flag entirely leaves the persisted value untouched (each key is written independently). Domains carrying these keys are unioned into `references.domains` by `domain-detect`.
 
+A `file_globs` value set here is the **operator override, and it wins over the seed** `configure` writes (see `skill-domains configure` below). `configure` keys its snapshot on key PRESENCE rather than truthiness, so a deliberate `--file-globs ""` empty declaration is preserved across re-runs rather than silently re-seeded.
+
 ### skill-domains get-extensions
 
 ```bash
@@ -955,6 +957,8 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains configure \
   --domains LIST
 ```
+
+Rebuilds each named domain's config from its owning bundle's extension. Alongside the bundle reference and `workflow_skill_extensions`, the rebuild seeds `skill_domains.{domain}.file_globs` from the extension's `provides_file_globs()` accessor — an accessor returning `[]` writes no key, so a domain that owns no distinct file type stays absent. The seed fires whenever the key is absent and is re-evaluated on **every** `configure`, not only the first, so an already-configured project is backfilled on its next run with no remove-and-re-add cycle. An operator value set through `set-inclusion` is snapshotted and restored over the rebuild, so it always wins. The seeded globs are read only by `domain-detect`'s `file_globs` inclusion leg; they contribute no `build.map` route (ADR-004). See [standards/skill-domains.md § Domain Inclusion](standards/skill-domains.md).
 
 ### skill-domains discover-project
 

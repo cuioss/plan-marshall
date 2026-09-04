@@ -30,7 +30,9 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   skill-domains configure --domains "{comma,separated,keys}"
 ```
 
-This populates `skill_domains` in marshal.json with: the `system` domain (always) and each selected domain with bundle reference and workflow_skill_extensions (outline, triage, marker-detect). It also seeds `plan.phase-5-execute.verification_steps` with the built-in verify steps.
+This populates `skill_domains` in marshal.json with: the `system` domain (always) and each selected domain with bundle reference, workflow_skill_extensions (outline, triage, marker-detect), and the `file_globs` domain-detection globs seeded from the owning extension's `provides_file_globs()` (a domain whose accessor returns empty gets no key). It also seeds `plan.phase-5-execute.verification_steps` with the built-in verify steps.
+
+The `file_globs` seed fires whenever the key is absent, on every run of this step rather than only the first, so re-running the wizard backfills a project configured before the accessor existed. A value the operator set through `skill-domains set-inclusion` is preserved and wins over the seed, so a deliberate customization survives a wizard re-run.
 
 ## Configure Active Profiles
 

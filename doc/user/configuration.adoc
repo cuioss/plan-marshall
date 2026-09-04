@@ -551,17 +551,21 @@ A plan's applicable domains land in `references.domains` as a **multi-valued set
 
 ==== Per-domain inclusion keys (`always_on` / `file_globs`)
 
-Two additive, operator-set keys pull a domain into every relevant plan's domain set deterministically — without relying on the narrative detector matching it:
+Two additive keys pull a domain into every relevant plan's domain set deterministically — without relying on the narrative detector matching it:
 
 [cols="1,1,3", options="header"]
 |===
 | Key | Type | What it controls
 
 | `skill_domains.{domain}.always_on` | bool (default absent ⇒ `false`) | When `true`, the domain is unconditionally unioned into every plan's `domains` set — no narrative or file signal required. Useful for a meta-project's own domain (e.g. `plan-marshall-plugin-dev`), which is relevant to every plan.
-| `skill_domains.{domain}.file_globs` | list[str] (default absent) | Path globs (`**/*.py`, `src/*.js`, …). A plan whose affected files match any glob unions this domain in — evaluated against the request narrative's path tokens at init, and the real `affected_files` at refine.
+| `skill_domains.{domain}.file_globs` | list[str] (seeded from the owning domain extension's `provides_file_globs()`; absent when that accessor declares no globs) | Path globs (`**/*.py`, `src/*.js`, …). A plan whose affected files match any glob unions this domain in — evaluated against the request narrative's path tokens at init, and the real `affected_files` at refine.
 |===
 
-Both keys are absent by default (no seed, so `sync-defaults` neither adds nor wipes them) and are preserved across a `skill-domains configure` reconfigure. Set them with the `skill-domains set-inclusion` verb (each key is written independently; an omitted flag leaves the persisted value untouched):
+The two defaults differ, and deliberately so. `always_on` is genuinely absent by default: whether a domain should be unconditionally on is a project policy nothing can infer for you. `file_globs` is seeded, because which file types a domain owns is exactly what the domain's own bundle knows — so the Python domain arrives with the Python source glob already attached, and you only set the key when you want something other than what the bundle declares.
+
+The seed is written by `skill-domains configure` (the `/marshall-steward` domain step) whenever the key is absent, and is re-evaluated on every run rather than only the first — so a project configured before this existed is backfilled the next time you run the wizard, with no remove-and-re-add cycle. A value you set yourself is preserved and wins over the seed, including a deliberately empty list.
+
+Neither key is written into the defaults, so `sync-defaults` neither adds nor wipes them, and both are preserved across a `skill-domains configure` reconfigure. These globs steer domain detection only — they are not a build trigger and contribute nothing to the <<build-map,build map>>. Set them with the `skill-domains set-inclusion` verb (each key is written independently; an omitted flag leaves the persisted value untouched):
 
 [source,bash]
 ----
