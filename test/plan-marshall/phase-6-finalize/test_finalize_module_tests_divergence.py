@@ -43,7 +43,26 @@ _GUARD_TOKENS = ('quality-gate', 'test-compile', 'module-tests')
 #: of the degradation template for this repository — rather than of the emitted
 #: message itself. A worked example naming fewer than all three is the
 #: partial-truth signal.
+#:
+#: This tuple MIRRORS the gate document's own enumeration and is reconciled
+#: against it below, in both directions, rather than standing as an independent
+#: assertion of the population. A mirror nothing checks drifts silently: were
+#: the source section to gain a fourth dimension, the worked example could omit
+#: it and every sweep keyed on this tuple would still pass.
 _WHOLE_TREE_ONLY_DIMENSIONS = ('plugin-doctor', '.claude/', 'marketplace/targets')
+
+#: The label of the section that AUTHORITATIVELY enumerates those dimensions.
+#: The tuple above is derived from it, so the label is the anchor that keeps the
+#: population sourced rather than asserted.
+_DIMENSION_SOURCE_LABEL = '**Why guard 1 carries a whole-tree arm.**'
+
+#: The paragraph that closes the enumeration — the governing rule stated after
+#: the numbered items. Bounding the sweep here keeps the surrounding prose's
+#: bullet lists out of the item count.
+_DIMENSION_SOURCE_TERMINATOR = '**The general rule'
+
+#: A numbered enumeration item, as the source section renders one.
+_ENUMERATED_ITEM = re.compile(r'^\d+\.\s')
 
 #: The placeholder the emitted degradation WARNING interpolates. The dimension
 #: set is the PROJECT's — whatever its own ``quality-gate`` widens to beyond
@@ -68,6 +87,13 @@ _UNENUMERABLE_RENDERING_CLAUSES = (
     'could not be enumerated',
     'UNKNOWN set of dimensions',
 )
+
+#: The label anchoring the block that DECLARES the template's renderings. The
+#: clauses above are asserted of that block rather than of the whole document:
+#: searched document-wide they also occur in the surrounding explanatory prose,
+#: so the assertion would stay green after the rendering it names is removed or
+#: broken — passing without verifying its own mechanism.
+_TEMPLATE_RENDERINGS_LABEL = '`{dimension_clause}` has exactly two renderings'
 
 #: Guard 1's whole-tree arm, as the ADJACENT phrase "whole-tree quality-gate"
 #: (tolerating only markdown emphasis/backtick noise between the two words).
@@ -554,22 +580,128 @@ def test_degradation_warning_interpolates_the_derived_dimension_set():
         )
 
 
+def _degradation_template_block() -> list[str]:
+    """Return the lines declaring the two renderings of the degradation template.
+
+    Located by the renderings label rather than by ordinal, so the sweep
+    survives prose edits around it. An absent label — or a label with no body
+    beneath it — yields ``[]``, which the caller asserts against, so a deleted
+    or relocated declaration fails loudly instead of silently emptying the
+    sweep. Bounded by the worked-example label that follows it, since that block
+    is this repository's RENDERING of the template and is swept separately.
+    """
+    lines = _gate_text().splitlines()
+    start = next(
+        (i for i, line in enumerate(lines) if _TEMPLATE_RENDERINGS_LABEL in line),
+        None,
+    )
+    if start is None:
+        return []
+    block: list[str] = []
+    for line in lines[start + 1 :]:
+        if _SAME_OR_HIGHER_HEADING.match(line) or _WORKED_EXAMPLE_LABEL in line:
+            break
+        block.append(line)
+    return block
+
+
+def _enumerated_dimension_items() -> list[str]:
+    """Return the numbered items of the gate document's own dimension enumeration.
+
+    The authoritative source for ``_WHOLE_TREE_ONLY_DIMENSIONS``. Anchored on
+    the section label rather than an ordinal; an absent label yields ``[]``,
+    which the caller asserts against.
+    """
+    lines = _gate_text().splitlines()
+    start = next(
+        (i for i, line in enumerate(lines) if _DIMENSION_SOURCE_LABEL in line), None
+    )
+    if start is None:
+        return []
+    items: list[str] = []
+    for line in lines[start + 1 :]:
+        if _SAME_OR_HIGHER_HEADING.match(line) or line.startswith(
+            _DIMENSION_SOURCE_TERMINATOR
+        ):
+            break
+        if _ENUMERATED_ITEM.match(line):
+            items.append(line)
+    return items
+
+
 def test_degradation_warning_declares_an_unenumerable_rendering():
     """The template must have a legal value when the derivation yields no set.
 
     Without one, the only rendering an author can reach for on that path is the
     empty list — which prints "no dimensions are un-gated" and turns an
     unestablished set into a confident all-clear.
-    """
-    text = _gate_text()
 
-    missing = [c for c in _UNENUMERABLE_RENDERING_CLAUSES if c not in text]
+    Scoped to the declaring block, for the same reason its two siblings are
+    scoped (``_degradation_warning_lines``, ``_worked_example_block``): searched
+    document-wide, both clauses also occur in the surrounding explanatory prose,
+    so the assertion would survive the removal of the very rendering it names —
+    green without verifying its own mechanism.
+    """
+    block = _degradation_template_block()
+
+    assert block, (
+        f'The gate document declares no degradation-template block under '
+        f'{_TEMPLATE_RENDERINGS_LABEL!r}, so the unenumerable rendering has no '
+        f'declared home and this sweep would pass on prose alone'
+    )
+    declared = '\n'.join(block)
+
+    missing = [c for c in _UNENUMERABLE_RENDERING_CLAUSES if c not in declared]
 
     assert not missing, (
         f'The degradation template declares no unenumerable rendering '
         f'(missing: {missing}), so a project that cannot derive its '
         f'whole-tree-only dimension set has no honest value for '
         f'{_DIMENSION_PLACEHOLDER!r} and an empty list becomes the default'
+    )
+
+
+def test_whole_tree_only_dimension_population_is_derived_not_asserted():
+    """The expected dimension set must reconcile with the document's enumeration.
+
+    ``_WHOLE_TREE_ONLY_DIMENSIONS`` is what every dimension sweep above keys on,
+    so its own completeness is load-bearing. Left as a hand-written triple that
+    nothing reconciles against the authoritative section, it is an ASSERTED
+    population — and an asserted population cannot notice a fourth dimension
+    being added: the worked example could omit the new one and stay green.
+    Reconciled in BOTH directions, so neither an enumerated item without a token
+    nor a token without an enumerated item can pass.
+    """
+    items = _enumerated_dimension_items()
+
+    assert items, (
+        f'The gate document carries no enumerated dimension list under '
+        f'{_DIMENSION_SOURCE_LABEL!r}, so the authoritative source for '
+        f'{_WHOLE_TREE_ONLY_DIMENSIONS} is gone and every sweep keyed on that '
+        f'tuple now pins an unsourced literal'
+    )
+    assert len(items) == len(_WHOLE_TREE_ONLY_DIMENSIONS), (
+        f'The gate document enumerates {len(items)} whole-tree-only dimension(s) '
+        f'but the expected set carries {len(_WHOLE_TREE_ONLY_DIMENSIONS)}: '
+        f'{_WHOLE_TREE_ONLY_DIMENSIONS}. Enumerated: {items}'
+    )
+
+    enumerated = '\n'.join(items)
+    unsourced = [d for d in _WHOLE_TREE_ONLY_DIMENSIONS if d not in enumerated]
+    assert not unsourced, (
+        f'These expected dimensions appear in no enumerated item, so the tuple '
+        f'has drifted from the section that defines it: {unsourced}'
+    )
+
+    uncovered = [
+        item
+        for item in items
+        if not any(d in item for d in _WHOLE_TREE_ONLY_DIMENSIONS)
+    ]
+    assert not uncovered, (
+        f'These enumerated dimensions are matched by no token in '
+        f'{_WHOLE_TREE_ONLY_DIMENSIONS}, so the worked example could omit them '
+        f'while every sweep stayed green: {uncovered}'
     )
 
 
