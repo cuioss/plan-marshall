@@ -26,11 +26,10 @@ its section would be reported.
 dropping it makes the instrument unusable rather than merely noisier. Section
 headings share a large structural vocabulary — "public entry point", "file
 scanner", "data classes", "helpers" — so a construct matching a heading on a word
-that several headings also carry has been attributed by nothing. Measured over
-one real analyzer tree, matching on any shared token reported 72 constructs;
-requiring the shared token to be unique to one heading brings that to 32.
+that several headings also carry has been attributed by nothing.
 
-⛔ **32 is a standing BASELINE, not 32 defects, and the verdict is the DELTA.**
+⛔ **A standing finding count is a BASELINE, not a defect count, and the verdict
+is the DELTA.**
 The residue is real: a module whose sections are organised by *layer* rather
 than by *subject* — constants in one section, the checkers that consume them in
 another — legitimately has a checker named after a section it does not sit in.
