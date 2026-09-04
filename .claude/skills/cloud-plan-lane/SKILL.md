@@ -1333,7 +1333,17 @@ and it goes stale the instant a reviewer is added to or removed from the registr
 unchanged — it stays the registry-derived `author_login` set above — and the classification is read
 from the project's own configuration, in the git-tracked `.plan/marshal.json` that § Scope and
 precedence makes readable here: the `automatic-review` step's `required_bots` and `optional_bots` under
-`plan.phase-6-finalize.steps["plan-marshall:automatic-review"]`, each a comma-separated string. A
+`plan.phase-6-finalize.steps["plan-marshall:automatic-review"]`, each a comma-separated string.
+
+⛔ **Those two lists are keyed by `bot_kind`, not by `author_login` — the classification join crosses
+two key spaces and must be made explicitly.** Every registry doc declares **both** keys: the
+`author_login` the population above is built from, and the `bot_kind` the configuration classifies by.
+So classify a reviewer by taking **its registry entry's `bot_kind`** and testing *that* token against
+the two lists — never its `author_login`. The two keys coincide for some registered reviewers and
+differ for others, which is exactly what makes the wrong join look like it works: matching on
+`author_login` classifies the coincident ones correctly while silently leaving every reviewer whose
+keys differ **`unclassified`** on every PR, and a permanent false shortfall is then disclosed
+downstream at § Step 8 condition 5. A
 registered reviewer named by **neither** list is **`unclassified`**, which is a real third value rather
 than padding: the configuration genuinely may classify no list for a registered reviewer, and recording
 that honestly is what stops a run inferring required-ness from a reviewer's identity, its prominence, or
