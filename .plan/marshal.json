@@ -114,8 +114,8 @@
           "review_rate_window_timeout_seconds": 3600,
           "review_completion_poll_timeout_seconds": 600,
           "lane": "minimal",
-          "required_bots": "cuioss-review-bot",
-          "optional_bots": "coderabbit,sourcery",
+          "required_bots": "coderabbit,cuioss-review-bot",
+          "optional_bots": "sourcery",
           "bot_lists_provenance": "answered"
         },
         "default:ci-verify": {
@@ -353,7 +353,7 @@
       "no_plan_body_days": 7,
       "build_results_days": 5
     },
-    "provisioned_version": "0.1.1585",
+    "provisioned_version": "0.1.1589",
     "config_seed_fingerprint": "cf572469"
   }
 }
