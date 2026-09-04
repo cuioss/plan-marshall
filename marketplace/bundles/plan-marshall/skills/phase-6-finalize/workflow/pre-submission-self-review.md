@@ -148,7 +148,7 @@ The surfacer echoes `surface_scope` (`delta` or `full`), `since_ref`, `files_in_
 
 **A delta round cannot close the step on its own evidence.** A delta-scoped round examined only the files that changed since the previous round, so a clean result from it is a *filter* result, not a closing verdict: it says nothing about the files it did not look at. When a delta round returns zero findings, re-run this step ONCE at full scope — repeat the surface call WITHOUT `--since-ref` and carry that full candidate set through Steps 1b–3 — and record the outcome from that full-surface pass. Only a full-surface clean pass may record `done` (see Step 4 Branch A). A delta round that DOES return findings needs no confirmation sweep: it has already found the work that sends the step round the loop again.
 
-If the resolved implementor exits non-zero, halt and proceed to **Step 4 — Mark Step Complete (Failure)**, surfacing the helper error in the `display_detail` payload. Do NOT dispatch the LLM cognitive phase below.
+If the resolved implementor exits non-zero, halt and proceed to **Step 4 Branch C — helper failure**, surfacing the helper error in the `display_detail` payload. Do NOT dispatch the LLM cognitive phase below. A helper non-zero exit is an INFRASTRUCTURE failure, not a review verdict, and it must reach neither of the other two branches: Branch A would record a clean `done` for a round that never ran, and Branch B would re-fire the round loop over an error no amendment to the diff can fix.
 
 Capture the helper's TOON output as `{candidates_toon}` for forwarding to the cognitive-phase dispatch.
 
@@ -463,7 +463,17 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --head-at-completion {sha} --force
 ```
 
-Branch A (empty findings) persists nothing — there are no findings to write. Branch B forwards `--head-at-completion` even though the dispatcher re-fires `loop_back` records unconditionally: the SHA carries no *re-fire* decision value, but it IS the delta anchor the NEXT round reads in Step 1. A record written without it leaves the following round with no anchor, which silently degrades that round to a full sweep — the exact re-sweep this scoping exists to remove. The anchor is written on both terminal branches for that reason, not for the dispatcher's benefit.
+**Branch C — the deterministic helper exited non-zero** (Step 1's halt path). This is an INFRASTRUCTURE failure — `git_unavailable`, `base_branch_not_found`, `since_ref_unresolvable`, `worktree_resolution_failed` — not a review verdict, and it must not be routed into either branch above. Branch A would record a clean `done` for a round that never examined anything, and Branch B would send the round loop back over an error no amendment to the diff can fix. Record `failed`, which `external-step-contract.md` still admits and `assert-step-recorded --require-terminal` treats as terminal, and carry the helper's own error into the detail so the operator sees which of the four it was:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome failed \
+  --display-detail "surfacer failed: {helper_error}" \
+  --head-at-completion {sha} \
+  --force
+```
+
+Branch A (empty findings) persists nothing — there are no findings to write. Branches B and C forward `--head-at-completion` even though the dispatcher re-fires `loop_back` records unconditionally and retries `failed` ones: the SHA carries no *re-fire* decision value, but it IS the delta anchor the NEXT round reads in Step 1. A record written without it leaves the following round with no anchor, which silently degrades that round to a full sweep — the exact re-sweep this scoping exists to remove. The anchor is written on every terminal branch for that reason, not for the dispatcher's benefit.
 
 The dispatcher's loop-back continuation hook admits the round under `loop_back_without_asking` and the `max_iterations` ceiling, so the round loop is bounded exactly as before. The operator must address every finding (amend the diff: rename, tighten regex, rewrite wording, delete duplicate section, fix contract drift), re-run the step, and only then advance to `push`.
 
