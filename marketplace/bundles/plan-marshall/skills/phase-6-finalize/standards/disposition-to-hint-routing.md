@@ -152,9 +152,7 @@ implementation rather than each carrying a copy: the rule lives in
 The cross-plan auditor imports that module and applies the predicate in
 `cross_preference_pattern`; the per-plan emitter invokes the same predicate
 through `manage-findings list --preference-admissible`, so the exclusion happens
-in the script before the step aggregates anything. Presence of the field is not
-the test: an unrecognized `bot_kind` passes a presence check and fails the
-admissibility this section opens with, so the two must not be conflated.
+in the script before the step aggregates anything.
 
 ### The recognized-set resolution has two states, and the gate publishes which
 
