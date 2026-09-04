@@ -66,7 +66,7 @@ def _titles(result):
     return sorted(finding['title'] for finding in result['findings'])
 
 
-def _write_unrecognized_bot_comment(plan_context, plan_id, title, hash_id):
+def _write_unrecognized_bot_comment(plan_context, plan_id, title):
     """Append a pr-comment carrying an UNRECOGNIZED ``bot_kind``, bypassing ``add``.
 
     ``add_finding`` validates ``bot_kind`` against the live registry and rejects a
@@ -80,7 +80,7 @@ def _write_unrecognized_bot_comment(plan_context, plan_id, title, hash_id):
     findings_dir = plan_context.plan_dir_for(plan_id) / 'artifacts' / 'findings'
     findings_dir.mkdir(parents=True, exist_ok=True)
     record = {
-        'hash_id': hash_id,
+        'hash_id': 'rawunrecog',
         'timestamp': '2026-01-01T00:00:00Z',
         'type': 'pr-comment',
         'title': title,
@@ -132,7 +132,7 @@ def _seed_mixed_corpus(plan_context, plan_id):
             detail='tool output: no author, no bot_kind, never pipeline chatter',
         )
     )
-    _write_unrecognized_bot_comment(plan_context, plan_id, 'Spurious claim', 'rawunrecog')
+    _write_unrecognized_bot_comment(plan_context, plan_id, 'Spurious claim')
 
 
 # =============================================================================
@@ -166,7 +166,7 @@ def test_missing_bot_kind_pr_comment_is_excluded(plan_context):
 def test_unrecognized_bot_kind_pr_comment_is_excluded(plan_context):
     """Presence of bot_kind is not the test — the value must be a recognized one."""
     plan_id = 'pref-adm-unrecognized-bot'
-    _write_unrecognized_bot_comment(plan_context, plan_id, 'Spurious claim', 'rawunrecog')
+    _write_unrecognized_bot_comment(plan_context, plan_id, 'Spurious claim')
 
     result = cmd_query(_list_ns(plan_id, preference_admissible=True))
 
