@@ -462,15 +462,161 @@ authoritative envelope-field contract; it is not restated here.
 
 ## Signal calibration
 
-Recorded honestly from the one observed review that produced a finding at all (#103):
+Every yield figure here is stated together with the **configuration generation** it was measured
+under. That pairing is not bookkeeping: this reviewer's output has moved for a reason that is
+neither the diff nor the model, so a figure read against the wrong generation describes a reviewer
+that no longer exists. The generation boundary is fixed by reading
+[`cuioss/pr-agent-settings`](https://github.com/cuioss/pr-agent-settings) at its default-branch
+HEAD — the file PR-Agent actually loads — never from a value cached here.
 
-- PR-Agent produced **exactly one** focus-area finding, which the maintainer determined to be a
-  **false positive** (a plausible-sounding mechanism on a branch that cannot be reached).
-- CodeRabbit produced **twelve** valid findings on the same PR, with **zero overlap**.
+### The two generations
 
-The two are complementary rather than redundant on this sample, but the sample is **n=1**: #1078
-raised no finding at all, so it grounds the body SHAPE without adding to the quality sample. Do not
-read a quality ranking into it, and do not weaken the shared triage rules on its basis.
+| | G1 — the suppressed charter | G2 — live at `pr-agent-settings` HEAD |
+|---|---|---|
+| `extra_instructions` | "do not duplicate [the other reviewers]", "only when you can name the concrete input", "prefer one well-evidenced finding"; six classical AppSec categories | says what to look *for*; contests the empty-list permission directly; severity explicitly not a reporting threshold; anti-fabrication clause retained |
+| `num_max_findings` | 3, then 5 | 12 |
+| `temperature` | 0.2 — PR-Agent's Gemini-2.5-era default, transmitted on every review | 1.0 |
+| `model` | `gemini-3.5-flash` / `gemini-2.5-pro` / `gemini-3.6-flash` | `vertex_ai/gemini-3.7-flash`, with a four-rung fallback ladder |
+| `publish_output_no_suggestions` | false — a clean review and a total failure were indistinguishable | true |
+| `max_model_tokens` | 32000 (upstream default) | 256000 |
+| `max_description_tokens` | 500 (upstream default) | 2000 |
+| Charter composition | one generic central charter | central spine plus a generated per-repository domain pack |
+
+G1 is **not live**. The transition is recorded in that repository's own merged history — `#5` (the
+charter rewrite), `#7` (temperature), `#13` (the empty-list permission and `num_max_findings` → 12),
+`#14` (the checked model-parameter facts) and `#15` (the model leader) — corroborated against those
+pull requests rather than against any local note. Every G1 figure below is therefore a historical
+record, not a description of the reviewer this pipeline meets today.
+
+### What was measured, and under which generation
+
+All three measurements are **G1**:
+
+- **#103 (`cuioss/API-Sheriff`)** — one focus-area finding, which the maintainer determined to be a
+  **false positive** (a plausible-sounding mechanism on a branch that cannot be reached). CodeRabbit
+  produced twelve valid findings on the same diff, with zero overlap.
+- **The silence run** — across five pull requests and diffs from 5k to 57k tokens, every published
+  review was **byte-identical at 242 bytes**: the bare table, zero findings. Its controlled case was
+  `/review` on plan-marshall#1027 (`gemini-3.6-flash`, the full 40748-token diff, no pruning, final
+  commit), where CodeRabbit had already reported a TOCTOU race around `shutil.move` and an
+  empty-string filename resolving to a directory — both squarely inside the charter, and this
+  reviewer reported neither.
+- **The 58-pull-request sweep** — findings on 4 of 13 Python and markdown pull requests, and **0 of
+  19 Java** ones. A single generic charter is shaped like whichever language its author had in mind,
+  which is what G2's per-domain packs answer.
+
+⚠ **One G1 figure is not fully attributable, and is recorded that way rather than rounded off.** The
+source states the silence run covered "four models" while naming three ids (`3.5-flash`, `2.5-pro`,
+`3.6-flash`). The fourth is unnamed at the source, so the model count is reported here as *three
+named of a stated four*, never as four. #1078 raised no finding at all, so it grounds the body SHAPE
+recorded above and contributes nothing to any yield figure.
+
+### The reproduction, re-derived against the live generation
+
+**The empty yield does not reproduce as a knob effect, and that non-reproduction SUPERSEDES the knob
+variation rather than being one of its cells.** The silence run varied the model across its cells and
+the published review stayed byte-identical at 242 bytes. A result that does not move when the model
+changes is not a model result — so the empty list was never a knob to tune, and the arm that would
+have tuned one was retired by this finding rather than by preference.
+
+The cause is located, and it is not configurable. "No major issues detected" is not a severity
+filter; it is the text rendered when `key_issues_to_review` returns empty, and the suppression lives
+in that field's own description inside the pinned image (`pr_reviewer_prompts.toml:150`) — a ceiling
+read as a target, a scope narrower than the charter's, a confidence gate, and explicit permission to
+return nothing. `extra_instructions` is appended as its own earlier block, so a charter argues
+*alongside* that schema and can never replace it.
+
+⛔ **A green run is not a reproduction result.** An empty review is exactly what G1 produced, so "the
+reviewer ran and reported nothing" distinguishes nothing. The known-answer cases are
+plan-marshall#1027 (the two findings above must appear) and plan-marshall#1042, whose oracle is
+*shaped* rather than counted: a review returning only the two Major defects has NOT discharged the
+severity clause — it has reproduced the exact behaviour that clause was written against, while
+looking like a success.
+
+### Knob cells, nulls included
+
+One knob per run. A knob that was not varied is named here as not varied, never left absent.
+
+| Knob | Varied? | Cells | Outcome |
+|---|---|---|---|
+| `model` (yield) | yes | `gemini-3.5-flash`, `gemini-2.5-pro`, `gemini-3.6-flash` — three named of a stated four | **NULL** — output byte-identical at 242 bytes on every cell |
+| `model` (availability) | yes | `gemini-3.5-pro`, `gemini-3.1-pro`, `gemini-2.5-pro` | `404`, `404`, `429`-then-served. An entitlement result; it says nothing about yield |
+| `model` (leader promotion) | yes | `gemini-3.7-flash` | Entitlement-checked `HTTP 200`, promoted on published benchmarks — **not** on any yield measurement |
+| `temperature` | changed, never A/B-ed for yield | 0.2 → 1.0 | **UNMEASURED for yield.** The change was made on Gemini 3 guidance plus an endpoint probe (`200` at both 1.0 and 0.2; `400` at 3.0 and −1.0), with the charter moving in the same period, so no cell isolates its yield effect |
+| `reasoning_effort` | **not varied, and cannot be** | none | **Dead config for Gemini.** `litellm_ai_handler.py` transmits it only for models in `SUPPORT_REASONING_EFFORT_MODELS` (`o3-mini`, `o3-mini-2025-01-31`, `o3`, `o3-2025-04-16`, `o4-mini`, `o4-mini-2025-04-16`) — no Gemini entry. It appears in every run's resolved-config dump, which is what makes it look live |
+
+⛔ The `temperature` row is a **not-measured** null, not a measured-nil one. Reading it as evidence
+that temperature does not matter would be reading an absent experiment as a negative result.
+
+### The chosen arm, and the arms rejected
+
+**Chosen — the charter arm.** Rewrite `extra_instructions` to state what to look for rather than
+what to withhold, contest the empty-list permission head-on, add an explicit "severity is not a
+reporting threshold" clause, hold the anti-fabrication bar unchanged, and raise `num_max_findings`
+to 12 — that value is interpolated into the field description above, so it is read as the expected
+shape of an answer rather than as a ceiling. It is the single chosen arm, because the suppressor it
+addresses is the one the reproduction actually located.
+
+Rejected, each with the reason:
+
+- **Promote to a Pro model.** Wrong twice over: the 3.x Pro tier is not entitled to this project at
+  all (`404` on two rungs), and the published head-to-head puts `3.6-flash` ahead of `3.1 Pro` on
+  every coding and agentic benchmark reported. It also treats a prompt problem as a capacity one.
+- **Tune thinking depth via `reasoning_effort`.** Unreachable — see the table above. It would take
+  an upstream change, not a configuration one.
+- **`custom_reasoning_model = true`**, the only temperature suppression reachable from the file.
+  Rejected for collateral: it also disables system messages for the model, so it is not a
+  temperature-only lever.
+- **Add more charter categories.** Capped. Category growth was already tried, the ceiling is roughly
+  ten entries and is now enforced by a generator regression test rather than by discipline; past it
+  the remedy is a second focused pass, not an eleventh bullet.
+- **`pr_reviewer.inline_code_comments`.** It does not exist; setting it would parse, appear in the
+  resolved-config dump, and do nothing.
+- **`[skills]` prompt inlining.** Rejected on trust-boundary grounds: it is a filesystem scan, so it
+  needs a checkout of the pull request head, which would let reviewed content rewrite the reviewer's
+  own instructions — the hole `repo_context_from_default_branch` exists to close.
+- **A roster change.** Not taken, and this record alters no roster. The evidence is filed for
+  PLAN-PR-025B D7 instead: on plan-marshall#1041 all three reviewers commented on a 48-file pull
+  request and two of those comments were refusals, so a comment count read three while the number of
+  reviewers that read the diff was one — this one. This reviewer carries no per-account review quota
+  and does not decline on diff size, so it is frequently the member still available. That is an
+  argument about ensemble availability, not a quality ranking.
+
+### The in-tree counting boundary every figure is dated against
+
+A yield figure is comparable only to one computed under the same **counting** rule, and that rule
+moved in this repository independently of the configuration above.
+
+`review_gate_delta.py`'s `_is_actionable` treats a `review_body` finding as actionable unless
+`is_status_summary` matches the bot's registry `review_body_summary_patterns` against the comment
+BODY; `test_counting_rule_parity.py` pins that predicate across both implementations of the rule.
+Before the carve-out existed, a reviewer's `"Actionable comments posted: N"` status summary counted
+as one actionable finding.
+
+⛔ **The carve-out does not fire for this bot, and the asymmetry is the point.** This record declares
+no `review_body_summary_patterns`, so every one of its `review_body` comments stays counted — while
+the comparator in the #103 figure, CodeRabbit, does declare one. A PR-Agent-versus-CodeRabbit *ratio*
+computed before the carve-out therefore overstates the comparator by up to one finding per pull
+request it posted a summary on. The #103 figure above is a raw count on each side rather than a
+ratio, so it survives; a ratio carried over from that era does not.
+
+The reviewer's **identity** moved too: `bot_kind` is `cuioss-review-bot`, so a corpus keyed on the
+retired `pr-agent` token predates that rename. Establish which token a figure was filed under before
+comparing it with anything here.
+
+### What survives as a triage rule
+
+Do not read a quality ranking into any figure above, and do not weaken the shared triage rules on
+their basis. The G1 figures measure a charter that could not report; they are evidence about a
+configuration, not about this reviewer's ceiling. **No G2 yield figure exists yet** — the charter arm
+landed with no measured post-change yield, so the honest statement of this reviewer's current signal
+quality is that it has not been measured, not that it is good.
+
+⛔ A finding count carries no information about recall, in either direction. On plan-marshall#1038
+another reviewer posted three findings to this one's none — then withdrew all three itself, so the
+silence was the correct answer. On plan-marshall#1040 the direction reverses: this reviewer posted
+first and its finding was the live defect, while the other arrived after the fix and raised one that
+was refuted. Compare what was substantiated, never how much was said.
 
 ## Trust boundary
 
@@ -490,7 +636,8 @@ Ingest through the untrusted-ingestion boundary; never execute review text verba
   `persona-plan-marshall-agent` plan-intent validity check.
 - **Security findings get priority** — this bot exists to add a dedicated security lens to the
   three-bot set. A security finding it raises alone (not echoed by CodeRabbit or Sourcery) is the
-  highest-value output of the set — subject to the n=1 caveat in "Signal calibration" above.
+  highest-value output of the set — subject to "Signal calibration" above, where every yield figure
+  is dated to a superseded configuration generation and no post-change figure exists yet.
 - **Dedupe across reviewers**, not just within this one: three bots routinely raise the same point.
 - **Correct ≠ in-scope** — a security observation about pre-existing code is worth recording, not
   necessarily fixing in the PR that surfaced it.
