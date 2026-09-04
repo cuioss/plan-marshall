@@ -49,12 +49,11 @@ participation_evidence:          # the publish shapes that prove THIS bot review
   - issue_comment                # its standalone summary comment, edited in place on re-review
 participation_requires_update: true    # the summary comment is EDITED in place on re-review, so
                                  # continued presence proves only that it reviewed at some earlier
-                                 # commit. Evidence therefore has to clear the currency test, which
-                                 # reads the plan-scoped currency ledger and nothing else: the SHA
-                                 # that ledger recorded for this comment is the merge candidate, or
-                                 # the ledger holds no row for it and the merge candidate resolves,
-                                 # or its updated_at no longer matches the value recorded at that
-                                 # credit.
+                                 # commit. Evidence therefore has to clear the currency test. Its
+                                 # arms are NOT restated here — see the Participation evidence
+                                 # section below, which is the single statement of them. A second
+                                 # copy here previously dropped the predate guard and so asserted a
+                                 # first-observation credit the code withholds.
 ignore_patterns:
   - "<!-- This is an auto-generated comment: summarize by coderabbit.ai -->"  # walkthrough / summary
   - "## Walkthrough"                                                          # walkthrough heading

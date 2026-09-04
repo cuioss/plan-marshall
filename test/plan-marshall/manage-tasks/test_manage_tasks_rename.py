@@ -266,6 +266,37 @@ class TestRenamePathIncludeCompleted:
         written = json.loads(task_file.read_text())
         assert written['steps'][0]['target'] == 'auth/providers/config.py'
 
+    def test_done_task_with_pending_steps_is_counted_as_completed_work(self, plan_context):
+        """A done TASK whose step rows read `pending` still counts as finished work.
+
+        The regression this pins: reading only `step_status` reports this shape
+        as an ordinary pending rewrite — `rewritten_completed_count` 0 and no log
+        marker — even though the rewrite edited a finished task's record. The two
+        guards are independent, so the count must fire when EITHER is finished,
+        and the entry must carry both statuses to show which one it was.
+        """
+        _add_task(
+            'rename-inc-task-count',
+            _build_task_toon(deliverable=1, steps=['providers/config.py']),
+        )
+        self._mark(plan_context, 'rename-inc-task-count', task_status='done')
+
+        result = cmd_rename_path(
+            _rename_ns(
+                plan_id='rename-inc-task-count',
+                old_path='providers',
+                new_path='auth/providers',
+                include_completed=True,
+            )
+        )
+
+        assert result['rewritten_count'] == 1
+        assert result['rewritten_completed_count'] == 1
+        # The step really was pending — the count fired on the TASK status, which
+        # is the whole point of recording both.
+        assert [r['step_status'] for r in result['rewritten']] == ['pending']
+        assert [r['task_status'] for r in result['rewritten']] == ['done']
+
     def test_done_task_is_skipped_without_the_flag(self, plan_context):
         """Negative control for the task-level guard: the default still skips it."""
         _add_task(
@@ -312,6 +343,7 @@ class TestRenamePathIncludeCompleted:
 
         assert result['rewritten_completed_count'] == 1
         assert [r['step_status'] for r in result['rewritten']] == ['done']
+        assert [r['task_status'] for r in result['rewritten']] == ['pending']
 
     def test_pending_rewrite_is_not_counted_as_completed(self, plan_context):
         """A pending step rewritten under the flag does not inflate the completed count.

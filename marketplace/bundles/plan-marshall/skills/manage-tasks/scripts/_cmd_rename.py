@@ -91,12 +91,19 @@ def _apply_mappings_to_tasks(
                         'step': step['number'],
                         'old_target': target,
                         'new_target': new_target,
-                        # The step's status BEFORE the rewrite. A rewrite of an
-                        # already-finished step edits the record of work that is
-                        # done, so the audit trail must say which entries did
-                        # that rather than leaving it inferable only from the
+                        # The step's and the task's statuses BEFORE the rewrite.
+                        # A rewrite of already-finished work edits the record of
+                        # what is done, so the audit trail must say which entries
+                        # did that rather than leaving it inferable only from the
                         # flag that was passed.
+                        #
+                        # BOTH are recorded because either guard alone can be the
+                        # one lifted: a done TASK whose step rows still read
+                        # `pending` is finished work just as much as a done STEP
+                        # is, and reading only the step status reports that
+                        # rewrite as ordinary pending work.
                         'step_status': step.get('status', 'pending'),
+                        'task_status': task.get('status', 'pending'),
                     }
                 )
                 step['target'] = new_target
@@ -133,12 +140,18 @@ def cmd_rename_path(args) -> dict:
     rewritten = _apply_mappings_to_tasks(
         args.plan_id, old_path, new_path, include_completed=include_completed
     )
-    completed_rewritten = [r for r in rewritten if r['step_status'] != 'pending']
+    # Finished work is EITHER guard: a done step, or a done task whose step rows
+    # still read `pending`. Filtering on the step status alone would report the
+    # second shape as an ordinary pending rewrite, which is precisely the
+    # distinction this count exists to draw.
+    completed_rewritten = [
+        r for r in rewritten if r['step_status'] != 'pending' or r['task_status'] == 'done'
+    ]
 
     # A rewrite that edited finished work says so in the log line — the count
     # alone would not distinguish it from an ordinary pending-only rewrite.
     completed_note = (
-        f' ({len(completed_rewritten)} on already-completed steps)' if completed_rewritten else ''
+        f' ({len(completed_rewritten)} on already-completed work)' if completed_rewritten else ''
     )
     log_entry(
         'work',
