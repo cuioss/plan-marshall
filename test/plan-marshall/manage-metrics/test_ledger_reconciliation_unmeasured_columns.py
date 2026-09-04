@@ -23,6 +23,8 @@ sum taken over those rows, and the population coverage published beside it.
 """
 
 
+from pathlib import Path
+
 from _ledger_reconciliation_fixtures import (  # a fixture is used by NAME, not by reference
     _findings_of,
     _ledger,
@@ -154,8 +156,11 @@ class TestFindingsPublishTheState:
         assert orphans[0]['total_tokens_state'] == _ledger.COLUMN_MEASURED
 
 
-def _write_boundary_rows(plan_context, plan_id: str, cells: list[object]) -> None:
+def _write_boundary_rows(plan_context, plan_id: str, cells: list[object]) -> Path:
     """Write a dispatch-boundary file whose ``total_tokens`` column is ``cells[i]``.
+
+    Returns the path written, so a caller reads it back from the one expression
+    that built it rather than re-deriving the same three components.
 
     The cell is written VERBATIM. The production writer
     (``cmd_record_dispatch_boundary``) still defaults its legacy five columns to
@@ -167,7 +172,11 @@ def _write_boundary_rows(plan_context, plan_id: str, cells: list[object]) -> Non
     The header is the same three lines the writer emits, so the reader's own
     header-skip is exercised rather than bypassed.
     """
-    path = plan_context.plan_dir_for(plan_id) / 'work' / f'metrics-dispatch-boundaries-{PHASE}.toon'
+    path: Path = (
+        Path(plan_context.plan_dir_for(plan_id))
+        / 'work'
+        / f'metrics-dispatch-boundaries-{PHASE}.toon'
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     header = (
         f'plan_id: {plan_id}\n'
@@ -182,6 +191,7 @@ def _write_boundary_rows(plan_context, plan_id: str, cells: list[object]) -> Non
         for index, cell in enumerate(cells)
     )
     path.write_text(header + body, encoding='utf-8')
+    return path
 
 
 class TestBoundaryRowsCarryTheStateToo:
@@ -195,12 +205,7 @@ class TestBoundaryRowsCarryTheStateToo:
 
     def test_a_measured_boundary_cell_is_measured(self, plan_context):
         """The control — the state must not read ``unmeasured`` for everything."""
-        _write_boundary_rows(plan_context, 'recon-bnd-measured', [90000])
-        path = (
-            plan_context.plan_dir_for('recon-bnd-measured')
-            / 'work'
-            / f'metrics-dispatch-boundaries-{PHASE}.toon'
-        )
+        path = _write_boundary_rows(plan_context, 'recon-bnd-measured', [90000])
 
         rows = _ledger.load_boundary_rows(path)
 
@@ -209,25 +214,15 @@ class TestBoundaryRowsCarryTheStateToo:
 
     def test_a_measured_zero_boundary_cell_is_still_measured(self, plan_context):
         """⛔ The distinction the contract turns on, at this reader."""
-        _write_boundary_rows(plan_context, 'recon-bnd-zero', [0])
-        path = (
-            plan_context.plan_dir_for('recon-bnd-zero')
-            / 'work'
-            / f'metrics-dispatch-boundaries-{PHASE}.toon'
-        )
+        path = _write_boundary_rows(plan_context, 'recon-bnd-zero', [0])
 
         rows = _ledger.load_boundary_rows(path)
 
         assert rows[0]['total_tokens_state'] == _ledger.COLUMN_MEASURED
 
     def test_the_writer_token_is_not_coerced_to_a_measured_zero(self, plan_context):
-        _write_boundary_rows(
+        path = _write_boundary_rows(
             plan_context, 'recon-bnd-unmeasured', [_ledger.UNMEASURED_COLUMN_TOKEN]
-        )
-        path = (
-            plan_context.plan_dir_for('recon-bnd-unmeasured')
-            / 'work'
-            / f'metrics-dispatch-boundaries-{PHASE}.toon'
         )
 
         rows = _ledger.load_boundary_rows(path)
@@ -236,12 +231,7 @@ class TestBoundaryRowsCarryTheStateToo:
         assert rows[0]['total_tokens_state'] == _ledger.COLUMN_UNMEASURED
 
     def test_an_unreadable_boundary_cell_is_unrecognised(self, plan_context):
-        _write_boundary_rows(plan_context, 'recon-bnd-junk', ['12x'])
-        path = (
-            plan_context.plan_dir_for('recon-bnd-junk')
-            / 'work'
-            / f'metrics-dispatch-boundaries-{PHASE}.toon'
-        )
+        path = _write_boundary_rows(plan_context, 'recon-bnd-junk', ['12x'])
 
         rows = _ledger.load_boundary_rows(path)
 
