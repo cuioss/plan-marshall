@@ -27,14 +27,13 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
-
 # ``upgrade`` pulls in ``file_ops`` and the ``script-shared`` library at module
 # scope, and ``bot_registry`` supplies the live reviewer-kind set the bot-list
 # assertions check against. Under the executor those arrive on one injected
 # PYTHONPATH; under pytest the root conftest puts every marketplace ``scripts/``
 # directory on ``sys.path``, so no bootstrap is needed here.
 import bot_registry
+import pytest
 import upgrade
 from toon_parser import parse_toon
 

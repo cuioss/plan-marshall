@@ -79,7 +79,13 @@ from conftest import (
     run_script,
 )
 
-rc = load_script_module('plan-marshall', 'automatic-review', 'review_completeness.py')
+# ``register=False``: only the returned module is needed here, and a sibling suite
+# (``test_unknown_bot_kind_escalation.py``) imports ``review_completeness`` plainly.
+# Registering under that name would put two copies of the module in play, reachable
+# by different routes and differing by collection order.
+rc = load_script_module(
+    'plan-marshall', 'automatic-review', 'review_completeness.py', register=False
+)
 
 _AR_SCRIPTS = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py').parent
 

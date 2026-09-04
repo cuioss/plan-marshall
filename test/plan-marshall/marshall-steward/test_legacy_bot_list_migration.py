@@ -39,7 +39,12 @@ import upgrade
 
 from conftest import load_script_module
 
-rc = load_script_module('plan-marshall', 'automatic-review', 'review_completeness.py')
+# ``register=False``: only the returned module is needed, and a sibling suite
+# imports ``review_completeness`` plainly. Registering under that name would put two
+# copies in play, reachable by different routes and differing by collection order.
+rc = load_script_module(
+    'plan-marshall', 'automatic-review', 'review_completeness.py', register=False
+)
 
 _AUTOMATIC_REVIEW_STEP_ID = 'plan-marshall:automatic-review'
 

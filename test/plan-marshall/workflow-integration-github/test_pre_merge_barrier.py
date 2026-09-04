@@ -312,8 +312,11 @@ def test_self_response_loop_bound_reports_qgate_finding(plan_context, monkeypatc
 # triaged clean. The participation predicate is the complement, and these tests
 # pin the distinction the merge gate depends on.
 
+# ``register=False``: only the returned module is needed, and a sibling suite
+# imports ``review_completeness`` plainly. Publishing under that name would put two
+# copies in play, reachable by different routes and differing by collection order.
 review_completeness = load_script_module(
-    'plan-marshall', 'automatic-review', 'review_completeness.py', 'review_completeness'
+    'plan-marshall', 'automatic-review', 'review_completeness.py', register=False
 )
 
 # The widened-member parity cases seed their own plan ids — the ``PLAN_IDS +=``

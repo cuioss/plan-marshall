@@ -59,7 +59,12 @@ from _bot_flag_derivation import derive_bot_flags
 
 from conftest import get_script_path, load_script_module, run_script
 
-rc = load_script_module('plan-marshall', 'automatic-review', 'review_completeness.py')
+# ``register=False``: only the returned module is needed, and a sibling suite
+# imports ``review_completeness`` plainly. Registering under that name would put two
+# copies in play, reachable by different routes and differing by collection order.
+rc = load_script_module(
+    'plan-marshall', 'automatic-review', 'review_completeness.py', register=False
+)
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py')
 
