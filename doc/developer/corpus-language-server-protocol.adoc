@@ -10,7 +10,7 @@ xref:../../README.md[Plan Marshall] » xref:README.adoc[Developer Guide]
 
 This page records *why the corpus reference intelligence is exposed as a language server*, so the choice is not re-litigated from scratch later. It is a decision record, not a how-to: the operator-facing page is xref:../user/corpus-language-server.adoc[User Guide › The Corpus Language Server], and the contract is the xref:../../marketplace/bundles/pm-plugin-development/skills/tools-corpus-language-server/SKILL.md[skill].
 
-The full option analysis, with the measurements and the re-verified external research behind it, is the proposal at `doc/plans/code-intelligence-substrate/240-skill-lsp-server/proposal-protocol-surface.md`. This page records the decision that proposal was written to inform.
+The full option analysis behind the decision — the measurements and the re-verified external research — was carried by the standalone plan-lane corpus and is no longer in the tree. This page is the record of the decision itself.
 
 == The question
 

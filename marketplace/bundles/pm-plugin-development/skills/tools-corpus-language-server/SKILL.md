@@ -184,10 +184,10 @@ false positives — roughly 380 of about 5,300, near 97 %. Re-measured: **61 of
 5,083** dependencies over 308 components, of which about **43 %** are
 non-notations and **57 %** are well-formed notations whose target does not
 exist. That reverses the ratio. Whether it is now grounds to advertise
-diagnostics is an **open question, recorded rather than settled** — see the
-proposal in `doc/plans/code-intelligence-substrate/500-lsp-and-derivation-resolver-correctness/proposals.md`
-§ P6, which states the argument on both sides and the criterion that would
-settle it. ⛔ Re-derive the figures before acting on them; they move with every
+diagnostics is an **open question, recorded rather than settled** — the argument
+on both sides, and the criterion that would settle it, were carried by the
+standalone plan-lane corpus and are no longer in the tree.
+⛔ Re-derive the figures before acting on them; they move with every
 commit.
 
 ## How `serve` is launched

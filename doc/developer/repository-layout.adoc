@@ -22,10 +22,12 @@ plan-marshall/
 │   └── claude/                           # populated by marketplace/targets/generate.py
 ├── test/                                 # pytest tests for marketplace scripts
 ├── doc/                                  # documentation tree (you are here)
+│   ├── adr/                              # architectural decision records
+│   ├── analysis/                         # standalone measurement write-ups
+│   ├── analyzis-cloud-plan/              # cloud-run quality analyses
 │   ├── concepts/                         # conceptual overviews
 │   ├── user/                             # operator-facing guides
 │   ├── developer/                        # contributor-facing guides (this directory)
-│   ├── refactor/                         # historical refactor plans (out of active scope)
 │   └── resources/                        # static assets (hero image, etc.)
 ├── .plan/                                # partially tracked — see below
 ├── .claude/                              # project-level Claude Code configuration
@@ -71,12 +73,14 @@ Pytest tests for marketplace scripts. Mirrors the `marketplace/bundles/{bundle}/
 
 == `doc/`
 
-The documentation tree you are reading. Three audience-segmented areas plus the plan queue and a resources directory:
+The documentation tree you are reading. Three audience-segmented areas, three record areas, and a resources directory:
 
 * `doc/concepts/` — conceptual overviews (Component Model, Planning Workflow, Skill Handling, Execution Context, Effort and Models, Build Management, Security, Audit Trail).
 * `doc/user/` — operator-facing guides (Installation, Getting Started, Commands, Configuration, Efforts, Terminal Title).
 * `doc/developer/` — contributor-facing guides (this page, Build, Marketplace Build, Distribution, Testing, Workflow Verification).
-* `doc/plans/` — git-tracked plans for the standalone cloud lane; see `doc/plans/README.md` for the layout and run contract.
+* `doc/adr/` — architectural decision records, numbered and carrying an `adr-metadata` block.
+* `doc/analysis/` — standalone measurement write-ups.
+* `doc/analyzis-cloud-plan/` — the cloud-run quality analyses; see xref:../analyzis-cloud-plan/README.adoc[its README] for what the experiment established.
 * `doc/resources/` — static assets (currently the README hero image).
 
 == `.plan/` (partially tracked)
