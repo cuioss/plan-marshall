@@ -160,7 +160,7 @@ neither substitutes for the other:
 | Field | Layer | Example |
 |-------|-------|---------|
 | `args` | The **executor argv** — what the caller handed to `.plan/execute-script.py`. | `run --command-args "verify my-module"` |
-| `command` | The **wrapper-resolved command** — what the build wrapper turned that argv into and actually ran. | whatever `architecture resolve --command verify` resolved to for that project: a Maven project records `./mvnw -pl my-module verify`, an npm one `npm run verify --workspace my-module` |
+| `command` | The **wrapper-resolved command** — what the build wrapper turned that argv into and actually ran. | whatever the project's own wrapper detection produced from that argv: a Maven project records `./mvnw -pl my-module verify`, an npm one `npm run verify --workspace my-module` |
 
 The mapping between them belongs to the wrapper: a build-tool switch or a
 routing decision changes `command` while `args` stays byte-identical. That is

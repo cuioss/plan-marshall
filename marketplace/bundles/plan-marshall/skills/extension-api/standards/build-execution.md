@@ -462,7 +462,7 @@ def execute_direct(...) -> DirectCommandResult:
 
 ## Format Examples
 
-The examples below deliberately vary the build system — a Maven wrapper in the success and error cases, a Python one in the timeout case — because `command` and `log_file` are the two fields whose shape is decided by the project's own wrapper rather than by this contract. Read each literal as one build system's instance, not as the exemplar to copy: an implementor of `ext-point-build-verify-step` for Maven, Gradle or npm reproduces the *field set* and the *status semantics*, and lets its own wrapper detection decide what `command` says.
+The examples below deliberately vary the build system — a Maven wrapper in the success and error cases, a Python one in the timeout case — because `command` is the one field whose shape is decided by the project's own wrapper rather than by this contract. `log_file` is not: R1 fixes its path and names `file_ops.get_build_results_dir(plan_id)` as that path's single owner, so the only part of a `log_file` literal that varies across the examples is the contract-declared `{build-system}` component. Read each literal as one build system's instance, not as the exemplar to copy: an implementor of `ext-point-build-verify-step` for Maven, Gradle or npm reproduces the *field set* and the *status semantics*, and lets its own wrapper detection decide what `command` says.
 
 ### TOON Format (Default)
 

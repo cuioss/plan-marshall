@@ -37,7 +37,7 @@ Tasks are stored as JSON files: `TASK-{NNN}.json`
     {"number": 2, "target": "src/main/java/com/example/CacheManager.java", "status": "pending", "intent": "write-replace"}
   ],
   "verification": {
-    "commands": ["mvn test -Dtest=CacheConfigTest"],
+    "commands": ["python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Ppre-commit\""],
     "criteria": "All tests pass",
     "manual": false
   },
@@ -69,7 +69,7 @@ Tasks are stored as JSON files: `TASK-{NNN}.json`
     {"number": 1, "target": "src/test/java/com/example/CacheTest.java", "status": "pending", "intent": "write-replace"}
   ],
   "verification": {
-    "commands": ["mvn test -Dtest=CacheTest"],
+    "commands": ["python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test\""],
     "criteria": "Test passes",
     "manual": false
   },
@@ -81,7 +81,7 @@ Tasks are stored as JSON files: `TASK-{NNN}.json`
 
 For `verification` profile tasks, steps contain verification commands instead of file paths. File-path validation is skipped for this profile.
 
-The command literals in `steps[].target` and `verification.commands[]` are **the executable the architecture resolver returned for that project** — `architecture resolve --command {canonical} --module {module}`, run at outline time (phase-3-outline Steps 9-10) and copied verbatim from there. They are therefore build-system-specific by construction. The example below is one Maven project's resolution; a Gradle, npm or Python project's task carries whatever its own resolver returned. Never copy a command literal across projects, and never hard-code a build wrapper into this field.
+The command literals in a `verification`-profile task's `steps[].target`, and in every task's `verification.commands[]`, are **what `architecture resolve --command {canonical} --module {module}` returned for that project** — run at outline time (phase-3-outline Steps 9-10) and copied verbatim from there. What the resolver returns is the **executor notation** routing to the project's build skill, not a bare build-tool invocation: the literal is read out of the module's `commands` map, whose shape is documented in [`extension-api/standards/build-execution.md`](../../extension-api/standards/build-execution.md) § "From discover_modules()". The build tool itself appears only inside the `--command-args` payload the build skill hands to its own wrapper. These literals are therefore build-system-specific by construction — every example in this document resolves through `build-maven`; a Gradle, npm or Python project's task carries whatever its own resolver returned. Never copy a command literal across projects, and never hand-write a build wrapper into this field.
 
 ```json
 {
@@ -96,10 +96,10 @@ The command literals in `steps[].target` and `verification.commands[]` are **the
   "depends_on": ["TASK-5"],
   "description": "Run full verification suite for the auth-service module.",
   "steps": [
-    {"number": 1, "target": "./mvnw -pl auth-service verify", "status": "pending", "intent": "read"}
+    {"number": 1, "target": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -pl auth-service\"", "status": "pending", "intent": "read"}
   ],
   "verification": {
-    "commands": ["./mvnw -pl auth-service verify"],
+    "commands": ["python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -pl auth-service\""],
     "criteria": "All tests, types, and linting pass",
     "manual": false
   },
