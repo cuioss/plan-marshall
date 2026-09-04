@@ -61,7 +61,7 @@ Skills the caller MUST forward in `skills[]`: none (the workflow reads files wit
 
 ## HEAD-dependency
 
-`pre-submission-self-review` declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"). Its verdict is a **structural review of the plan's diff**, so the verdict is a function of that diff: a loop-back fix task that advances HEAD past the recorded `head_at_completion` produces a diff this step never examined, and a `done` record carried across that advance would stand as green for a diff no check ever ran against. The dispatcher MUST therefore re-fire this step against the newer HEAD. Capture `git rev-parse HEAD` immediately before EVERY terminal `mark-step-done` call — Branch A and Branch B alike — and forward it via `--head-at-completion {sha}`.
+`pre-submission-self-review` declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"). Its verdict is a **structural review of the plan's diff**, so the verdict is a function of that diff: a loop-back fix task that advances HEAD past the recorded `head_at_completion` produces a diff this step never examined, and a `done` record carried across that advance would stand as green for a diff no check ever ran against. The dispatcher MUST therefore re-fire this step against the newer HEAD. Capture `git rev-parse HEAD` immediately before EVERY terminal `mark-step-done` call — every branch of Step 4 without exception — and forward it via `--head-at-completion {sha}`. Naming the branches individually here is what let a later-added branch fall outside the rule while still reading as covered by it.
 
 The recorded SHA carries a **second, independent** load: it is the **delta anchor** the next round scopes itself against (Step 1 reads it back and passes it as `--since-ref`). That is why it is written on the `failed` branch too, where the dispatcher's retry decision does not need it, and why its absence on a `done` record is now REFUSED rather than tolerated — `manage-status mark-step-done` returns `error: missing_head_at_completion` and writes nothing when a `head_dependent: true` step records `done` without it. An unanchored record would leave the following round unable to define its delta, silently degrading it to a full re-sweep.
 
@@ -463,7 +463,15 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --head-at-completion {sha} --force
 ```
 
-**Branch C — the deterministic helper exited non-zero** (Step 1's halt path). This is an INFRASTRUCTURE failure — `git_unavailable`, `base_branch_not_found`, `since_ref_unresolvable`, `worktree_resolution_failed` — not a review verdict, and it must not be routed into either branch above. Branch A would record a clean `done` for a round that never examined anything, and Branch B would send the round loop back over an error no amendment to the diff can fix. Record `failed`, which `external-step-contract.md` still admits and `assert-step-recorded --require-terminal` treats as terminal, and carry the helper's own error into the detail so the operator sees which of the four it was:
+**Branch C — the deterministic helper exited non-zero** (Step 1's halt path). This is an INFRASTRUCTURE failure — `git_unavailable`, `base_branch_not_found`, `since_ref_unresolvable`, `worktree_resolution_failed` — not a review verdict, and it must not be routed into either branch above. Branch A would record a clean `done` for a round that never examined anything, and Branch B would send the round loop back over an error no amendment to the diff can fix. Record `failed`, which `external-step-contract.md` still admits and `assert-step-recorded --require-terminal` treats as terminal, and carry the helper's own error into the detail so the operator sees which of the four it was.
+
+Resolve the worktree HEAD SHA first, exactly as Branches A and B do — `{sha}` is not in scope here otherwise, and `--head-at-completion` applies no shape validation on a non-`done` outcome, so an unresolved placeholder would persist verbatim and be read back by the next round as a `{since_ref}` the surfacer then refuses as `since_ref_unresolvable`, routing straight back to this branch:
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Capture the stdout as `{sha}`, then record:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
