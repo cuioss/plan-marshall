@@ -313,15 +313,24 @@ def test_any_other_shape_detector_fires_on_both_wordings_of_rule_four():
 
 
 def test_pre_fix_comment_detector_fires_on_a_synthetic_regression():
+    # The regression is written out LITERALLY, never interpolated from
+    # ``_PRE_FIX_COMMENT``. Building it with an f-string would make the positive
+    # control below ``x in f'...{x}...'`` — true for every possible value of the
+    # constant, so it would pass even if the constant were edited to a spelling
+    # the real sweep can no longer find. An independently-written literal is what
+    # gives this control something to disagree with.
     regressed = (
         '        else:\n'
-        f'            {_PRE_FIX_COMMENT}\n'
+        '            # Any other shape contributes no bundle (silent drop by '
+        'rule 4).\n'
         '            continue\n'
     )
 
     assert _PRE_FIX_COMMENT in regressed, (
         'The pre-fix comment detector would not fire on a synthetic '
-        'regression, so the absence assertion above would be vacuous'
+        'regression, so the absence assertion above would be vacuous. Either '
+        '_PRE_FIX_COMMENT no longer spells the comment the fix replaced, or '
+        'this control has drifted from it.'
     )
     assert _PRE_FIX_COMMENT not in (
         '        else:\n'

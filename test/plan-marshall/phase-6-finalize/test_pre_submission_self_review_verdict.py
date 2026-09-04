@@ -315,14 +315,28 @@ def test_non_finding_verdicts_partition_over_the_declared_labels():
 
 
 def test_no_check_matched_verdict_carries_the_candidate_count():
+    """The no-check-matched verdict is the one that reports how many it examined.
+
+    Resolved through the label partition, NOT by filtering for ``{N}``. Selecting
+    the verdict by an incidental field is the identification method its sibling
+    ``test_non_finding_verdicts_partition_over_the_declared_labels`` documents as
+    the anti-pattern it replaced: the count placeholder is a property this verdict
+    happens to have, not what makes it that verdict, so a filter on it silently
+    re-targets the moment another verdict gains or loses a count.
+    """
     section = _section(_OUTPUT_HEADING)
     non_finding = _non_finding_verdicts(section)
-    counted = [literal for literal in non_finding if '{N}' in literal]
+    assert non_finding, 'No non-finding verdicts parsed — assertion would be vacuous'
 
-    assert len(counted) == 1, (
-        f'Exactly one non-finding verdict must carry the {{N}} candidate count '
-        f'(the no-check-matched verdict, reported when candidates WERE '
-        f'examined). Got: {counted}'
+    claimed = _partition_non_finding_verdicts(non_finding)['no-check-matched']
+
+    assert len(claimed) == 1, (
+        f'The no-check-matched label must claim exactly one verdict literal. '
+        f'Got: {claimed}'
+    )
+    assert '{N}' in claimed[0], (
+        f'The no-check-matched verdict is the one reported when candidates WERE '
+        f'examined, so it must carry the {{N}} candidate count. Got: {claimed[0]!r}'
     )
 
 

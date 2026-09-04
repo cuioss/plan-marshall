@@ -159,14 +159,32 @@ assert _ALLOW_LIST, 'The allow-list is empty — every hit would fail for the wr
 # ---------------------------------------------------------------------------
 
 
-def test_document_population_is_non_empty_and_published():
-    assert len(_DOCS) > 0, (
-        'No shipped markdown document was swept, so the verdict below rests on '
-        'no evidence'
+def test_published_population_matches_an_independent_re_derivation():
+    """The published size must equal a FRESH sweep, not its own definition.
+
+    ``GUARD_POPULATION_SIZE`` is bound from ``_DOCS`` at import and ``_DOCS`` is
+    already asserted non-empty there, so comparing either against itself is a
+    value against its own definition and cannot fail — a guard reporting green
+    having checked nothing, which is the archetype this module exists to catch.
+    Re-deriving the population from the tree is what makes the check falsifiable:
+    it fails if the module ever publishes a number that a live sweep does not
+    yield, which is exactly the drift the published number exists to expose on a
+    green run.
+    """
+    live = _shipped_docs()
+
+    assert live, (
+        f'A live sweep of {_rel(_BUNDLE)} found no markdown document, so the '
+        f'published population size describes an empty tree'
     )
-    assert GUARD_POPULATION_SIZE == len(_DOCS), (
-        'The published population size disagrees with the swept population, so '
-        'the number reported on a green run is not the number swept'
+    assert GUARD_POPULATION_SIZE == len(live), (
+        f'Published population size {GUARD_POPULATION_SIZE} disagrees with a '
+        f'live re-derivation ({len(live)}), so the number reported on a green '
+        f'run is not the number swept'
+    )
+    assert GUARD_POPULATION_LABEL.strip(), (
+        'The published label is empty, so the report header would carry a bare '
+        'number with nothing naming what was counted'
     )
 
 
