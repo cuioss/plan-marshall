@@ -292,7 +292,8 @@ def discover_available_domains(project_root: Path | None = None) -> dict:
 def load_domain_config_from_bundle(domain_key: str) -> dict | None:
     """Load domain configuration from bundle's extension.py.
 
-    Only returns bundle reference and workflow_skill_extensions.
+    Returns whatever convert_extension_to_domain_config persists; that function
+    is the single authority on the key set, so this docstring does not restate it.
     Profiles are NOT stored in marshal.json - read from extension.py at runtime.
 
     Args:
@@ -328,7 +329,8 @@ def convert_extension_to_domain_config(module, domain_info: dict, bundle_name: s
     """Convert extension.py data to skill_domains config format.
 
     Profiles are NOT copied - they're read from extension.py at runtime.
-    Only bundle reference and workflow_skill_extensions are stored in marshal.json.
+    The body below is the authority on which keys are stored in marshal.json;
+    no closed list is restated here, so adding a key cannot leave prose stale.
 
     Args:
         module: Loaded extension module

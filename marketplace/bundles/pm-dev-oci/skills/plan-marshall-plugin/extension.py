@@ -65,9 +65,12 @@ class Extension(ExtensionBase):
     def provides_file_globs(self) -> list[str]:
         """Declare the container-manifest globs this domain owns.
 
-        One glob per entry of the ``container_filenames`` set ``applies_to_module``
-        recognises above — the container manifests, ignore files, and lint/scan
-        descriptors ADR-004 records this bundle as recognising for Axis-A. Those
+        One glob per filename ``applies_to_module`` recognises above — the container
+        manifests, ignore files, and lint/scan descriptors ADR-004 records this bundle
+        as recognising for Axis-A. This is NOT one glob per ``container_filenames``
+        entry: those entries are matched as substrings, so the single
+        ``'docker-compose'`` entry covers both ``.yml`` and ``.yaml``, which are two
+        distinct globs here. Those
         same files have NO Axis-B owner: there is no ``build-oci``
         ``BuildExtensionBase``, they contribute no ``build.map`` route, and this
         declaration adds none. Recognised for skill-loading, absent from build

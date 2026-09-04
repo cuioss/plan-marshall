@@ -111,12 +111,11 @@ All extensions **must** inherit from `ExtensionBase` and implement required meth
 
 ### Optional Methods (With Defaults)
 
-| Method | Default | Purpose |
-|--------|---------|---------|
-| `config_defaults(project_root: str) -> None` | no-op | Configure project defaults (called during init) |
-| `provides_triage() -> str \| None` | `None` | Return triage skill reference (covers PR review comments and Sonar issues) |
-| `provides_outline_skill() -> str \| None` | `None` | Return domain-specific outline skill reference |
-| `provides_recipes() -> list[dict]` | `[]` | Return recipe definitions for predefined transformations |
+Enumerated once, authoritatively, in
+[`standards/extension-contract.md`](standards/extension-contract.md#why-eight-optional-hooks)
+§ "Why Eight Optional Hooks?" — read the set there. A partial copy lived here and
+went stale every time a hook was added, so this section deliberately carries a
+cross-reference instead of a fourth enumeration of the same set.
 
 ---
 
