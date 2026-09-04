@@ -185,6 +185,13 @@ or de-registered reviewer.
 - the cross-plan auditor's `preference-pattern-detector` block carries it under
   the same absent-key-is-undeclared rule.
 
+The two basis values are declared once, beside the rule whose paths they name, in
+[`../../manage-findings/scripts/_preference_admissibility.py`](../../manage-findings/scripts/_preference_admissibility.py)
+(`PREFERENCE_BASIS_RECOGNIZED` / `PREFERENCE_BASIS_PRESENCE_ONLY`). Both surfaces
+read them from there — the emitter side by importing them, the auditor off the
+module object its loader already returns — so neither can drift from the other on
+the vocabulary it publishes.
+
 ## Threshold gate is surface-owned
 
 This contract owns generalization and routing ONLY — it does NOT own the

@@ -58,11 +58,35 @@ PLAN_IDS = (
 #: publishes.
 BASIS_KEY = 'preference_admissibility_basis'
 
-#: A ``bot_kind`` value that is NOT a recognized reviewer identity. The registry
-#: derives the recognized set from ``automatic-review/standards/{bot_kind}.md``,
-#: and Sonar is a findings PRODUCER rather than a reviewer bot, so this value can
-#: reach the store on a legacy record but must never clear the gate.
-UNRECOGNIZED_BOT_KIND = 'sonarcloud'
+#: The realistic legacy value this module's negative control prefers. The registry
+#: derives the recognized set from ``automatic-review/standards/{bot_kind}.md``, and
+#: Sonar is a findings PRODUCER rather than a reviewer bot, so this value can reach
+#: the store on a legacy, de-registered or hand-edited record but must never clear
+#: the gate. It is a PREFERENCE, not the control itself — see below.
+_LEGACY_PRODUCER_BOT_KIND = 'sonarcloud'
+
+
+def _derive_unrecognized_bot_kind():
+    """Return a ``bot_kind`` derived to be absent from the LIVE recognized set.
+
+    The control asserts a fact about the COMPLEMENT of the registry-derived reviewer
+    set, so it is derived from that set rather than asserted against it: a hardcoded
+    value stops being a control the moment the registry grows to contain it. The
+    realistic legacy story is preferred (:data:`_LEGACY_PRODUCER_BOT_KIND`) and only
+    mutated, deterministically, if the registry ever recognizes it. The resolver is
+    the one ``_findings_core`` derives ``BOT_KINDS`` from, reached through that
+    module's namespace so the control and the gate read one set.
+    """
+    recognized = frozenset(str(kind) for kind in _CORE_GLOBALS['_registry_bot_kinds']())
+    candidate = _LEGACY_PRODUCER_BOT_KIND
+    while candidate in recognized:
+        candidate = f'{candidate}-deregistered'
+    return candidate
+
+
+#: A ``bot_kind`` value that is NOT a recognized reviewer identity, derived from the
+#: live registry so it cannot silently stop being one.
+UNRECOGNIZED_BOT_KIND = _derive_unrecognized_bot_kind()
 
 
 def _list_ns(plan_id, *, preference_admissible=False, include_qgate=False):

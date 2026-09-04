@@ -41,6 +41,10 @@ from _findings_store_state import (
     unresolved_store_error,
 )
 from _preference_admissibility import (
+    PREFERENCE_BASIS_PRESENCE_ONLY,
+    PREFERENCE_BASIS_RECOGNIZED,
+)
+from _preference_admissibility import (
     preference_admissible as _preference_admissible,
 )
 from _preference_admissibility import (
@@ -99,18 +103,11 @@ PR_COMMENT_KINDS = ['inline', 'review_body', 'issue_comment']
 # it — so adding a bot is a pure standards-doc edit with no change to this file.
 BOT_KINDS = _registry_bot_kinds()
 
-# The two values of the ``preference_admissibility_basis`` disclosure field.
-#
-# The authorship gate re-derives the recognized reviewer set from the live
-# registry, and that derivation can fail (see
-# ``_preference_admissibility`` § Degrade-to-presence-only). ``recognized`` says
-# the gate ran against the real identity set; ``presence_only`` says the registry
-# was unresolvable and the gate fell back to admitting any PRESENT ``bot_kind``.
-# The field is published on every payload the narrowing produced — the
+# ``PREFERENCE_BASIS_RECOGNIZED`` / ``PREFERENCE_BASIS_PRESENCE_ONLY`` are imported
+# above from ``_preference_admissibility``, which owns the rule whose two paths they
+# name. The field is published on every payload the narrowing produced — the
 # three-value house pattern already used by ``notation_cross_check`` and Sonar's
 # ``count_status``.
-PREFERENCE_BASIS_RECOGNIZED = 'recognized'
-PREFERENCE_BASIS_PRESENCE_ONLY = 'presence_only'
 
 # Default per-field byte cap for quarantined raw_input free-text (64 KiB).
 # The `finding_raw_input_max_bytes` config knob (seeded by manage-config) overrides

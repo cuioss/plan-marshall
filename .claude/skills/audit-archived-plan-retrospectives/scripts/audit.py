@@ -2570,26 +2570,6 @@ def _load_preference_admissibility():
     return _preference_admissibility
 
 
-# The two values of the `preference_admissibility_basis` disclosure this check
-# publishes. `recognized` means the authorship gate ran against the live
-# registry-derived reviewer set; `presence_only` means that set was unresolvable
-# and the shared rule took its documented degrade path, admitting any PRESENT
-# `bot_kind`. The degrade is deliberate — rejecting every bot-attributed comment
-# instead would hand preference learning a clean zero over an unread population —
-# but it must never pass as the strong check, so the basis travels with the result.
-#
-# The same two literals are emitted by `manage-findings`'s `_findings_core`
-# (`PREFERENCE_BASIS_*`), the other consumer of the same shared rule. They are
-# restated rather than imported because this auditor runs as a direct `python3
-# …/audit.py` with no executor PYTHONPATH: `_load_preference_admissibility` can
-# inject the two flat `scripts/` dirs the shared rule needs, but `_findings_core`
-# pulls in a wider dependency web (`constants`, `jsonl_store`, `file_ops`,
-# `input_validation`, `_findings_store_state`) that lives in directories this
-# entry point does not put on `sys.path`.
-PREFERENCE_BASIS_RECOGNIZED = "recognized"
-PREFERENCE_BASIS_PRESENCE_ONLY = "presence_only"
-
-
 def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
     """Aggregate `(module, finding-class, disposition)` recurrences corpus-wide.
 
@@ -2613,10 +2593,13 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
     # applies it, it does not own it.
     admissibility = _load_preference_admissibility()
     recognized_bot_kinds = admissibility.recognized_bot_kinds()
+    # The two basis values are read off the shared module, not restated here: the
+    # loader above already returns it, so naming which of its two paths ran costs
+    # neither a new `sys.path` entry nor a new dependency.
     admissibility_basis = (
-        PREFERENCE_BASIS_PRESENCE_ONLY
+        admissibility.PREFERENCE_BASIS_PRESENCE_ONLY
         if recognized_bot_kinds is None
-        else PREFERENCE_BASIS_RECOGNIZED
+        else admissibility.PREFERENCE_BASIS_RECOGNIZED
     )
     tuple_to_plans: dict[tuple[str, str, str], set[str]] = defaultdict(set)
     # Same declaration obligation as `cross_recurring_pattern`: this check narrows

@@ -44,6 +44,12 @@ first-class value of the contract, not an error state — a caller must pass it
 through rather than substituting an empty set, which would exclude every
 ``pr-comment`` instead of admitting the attributed ones.
 
+Which path ran travels with the result, so this module also owns the two values of
+that disclosure — :data:`PREFERENCE_BASIS_RECOGNIZED` and
+:data:`PREFERENCE_BASIS_PRESENCE_ONLY`. They live beside the rule whose two paths
+they name, so the two consumers cannot drift apart on the vocabulary the way they
+could while each declared its own copy.
+
 Import surface
 --------------
 
@@ -70,6 +76,21 @@ from typing import Any
 # The finding type the authorship gate is scoped to. Every other type is
 # unattributed tool output and is admitted unconditionally.
 PR_COMMENT_TYPE = 'pr-comment'
+
+# The two values of the ``preference_admissibility_basis`` disclosure both
+# preference surfaces publish. ``recognized`` says the gate ran against the live
+# registry-derived reviewer set; ``presence_only`` says that set was unresolvable
+# and the rule took its documented degrade path, admitting any PRESENT
+# ``bot_kind``. The degrade is deliberate — rejecting every bot-attributed comment
+# instead would hand preference learning a clean zero over an unread population —
+# but it must never pass as the strong check, so the basis travels with the result.
+#
+# Both consumers read these names from here: the per-plan surface
+# (``_findings_core``) imports them, and the cross-plan auditor
+# (``audit-archived-plan-retrospectives``) reads them off the module object its
+# loader already returns. Neither restates the literals.
+PREFERENCE_BASIS_RECOGNIZED = 'recognized'
+PREFERENCE_BASIS_PRESENCE_ONLY = 'presence_only'
 
 
 def recognized_bot_kinds() -> frozenset[str] | None:
