@@ -42,8 +42,11 @@ reported for the reader and gates nothing.
 
 ⛔ **The instrument computes BOTH sides itself** from two refs; it accepts no
 pre-computed figure and no baseline for one end. It also **prints its own
-definition** — what it recognises as a banner, how it tokenises a name, and the
-paths it covered.
+definition** — what it recognises as a banner and what makes a construct
+misattributed — alongside the path prefixes it was pointed at and, per ref, how
+many modules that resolved to. The tokenisation rules (the stopword set, the
+camelCase split, the distinctive-token requirement) are NOT printed; they are
+read here, in this module.
 
 The two-ref git access is imported from `_fidelity_diff`, the sibling campaign
 instrument that owns it, so all three read a ref the same way.
