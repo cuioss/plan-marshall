@@ -31,7 +31,8 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
     participation_evidence:
       - review_body
       - inline
-    participation_requires_update: false
+      - issue_comment
+    participation_requires_update: true
     ignore_patterns:
       - "## Walkthrough"
       - "No actionable comments were generated"

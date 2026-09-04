@@ -117,6 +117,28 @@ CODERABBIT_EVIDENCE = {'coderabbit': 'inline'}
 SOURCERY_EVIDENCE = {'sourcery': 'review_body'}
 PR_AGENT_EVIDENCE = {'cuioss-review-bot': 'issue_comment'}
 
+#: The CLOSED publish-shape vocabulary a ``participation_evidence`` entry may name —
+#: owned by ``automatic-review/standards/bot-participation-contract.md`` § "Evidence
+#: taxonomy". A registry record declares any subset of it, so "a shape this bot does
+#: not publish" is a pairing against THIS set, never against a remembered example.
+_PUBLISH_SHAPE_VOCABULARY: tuple[str, ...] = ('inline', 'issue_comment', 'review_body')
+
+
+def _undeclared_shape_pairs() -> list[tuple[str, str]]:
+    """Every ``(bot_kind, publish_shape)`` pairing the live registry leaves UNDECLARED.
+
+    Derived rather than hand-listed. A written-out bot name is the hand-maintained
+    roster that went stale here once already: ``coderabbit:issue_comment`` was the
+    inadmissible pair until CodeRabbit declared all three publish shapes, at which
+    point the assertion silently asserted the opposite of its own premise.
+    """
+    return [
+        (bot, shape)
+        for bot in _REGISTERED_BOTS
+        for shape in _PUBLISH_SHAPE_VOCABULARY
+        if shape not in rc.bot_registry.participation_evidence(bot)
+    ]
+
 
 def _seed(plan_id: str, bot_kind: str, resolution: str = 'pending', detail: str | None = None) -> str:
     """File one pr-comment finding for ``bot_kind`` and optionally resolve it.
@@ -160,18 +182,33 @@ class TestEvidenceTyping:
         """Each bot's OWN declared evidence shape is admitted."""
         assert rc.parse_participation('coderabbit:inline') == CODERABBIT_EVIDENCE
         assert rc.parse_participation('coderabbit:review_body') == {'coderabbit': 'review_body'}
+        # CodeRabbit's standalone summary comment is a declared shape, so it is
+        # admitted POSITIVELY rather than covered only by the absence of a failure.
+        assert rc.parse_participation('coderabbit:issue_comment') == {
+            'coderabbit': 'issue_comment'
+        }
         assert rc.parse_participation('sourcery:review_body') == SOURCERY_EVIDENCE
         assert rc.parse_participation('cuioss-review-bot:issue_comment') == PR_AGENT_EVIDENCE
 
     def test_a_shape_the_bot_does_not_publish_is_not_evidence(self, plan_context):
         """Evidence is per-bot: another bot's publish shape proves nothing here.
 
-        Sourcery publishes no inline comments and CodeRabbit publishes no
-        standalone issue comment, so neither pair is admissible even though both
-        name a real publish shape for SOME bot.
+        Sourcery publishes no inline comments, so that pair is inadmissible even
+        though ``inline`` is a real publish shape for other bots.
+
+        The second pair is DERIVED from the live registry and guarded non-empty, so
+        the case FAILS rather than asserting nothing should every registered bot come
+        to declare every shape.
         """
         assert rc.parse_participation('sourcery:inline') == {}
-        assert rc.parse_participation('coderabbit:issue_comment') == {}
+
+        undeclared_pairs = _undeclared_shape_pairs()
+        assert undeclared_pairs, (
+            'every registered bot declares every publish shape, so the registry offers '
+            'no (bot_kind, undeclared shape) pairing — this case would assert nothing.'
+        )
+        bot_kind, undeclared_shape = undeclared_pairs[0]
+        assert rc.parse_participation(f'{bot_kind}:{undeclared_shape}') == {}
 
     def test_unqualified_presence_is_rejected(self, plan_context):
         """A bare ``bot_kind`` with no evidence kind is REJECTED, never silently dropped.
@@ -338,12 +375,16 @@ class TestPRAgentParticipation:
     def test_registry_declares_update_movement_requirement(self, plan_context):
         """The in-place-edit qualifier is registry data, not a code branch.
 
-        PR-Agent re-reviews by editing the SAME Guide comment, so its record sets
-        ``participation_requires_update``; the bots that append a new comment per
-        review do not. The producer reads this flag — there is no bot-name literal.
+        PR-Agent re-reviews by editing the SAME Guide comment, and CodeRabbit
+        likewise edits its summary comment in place, so BOTH records set
+        ``participation_requires_update``; ``sourcery`` appends a new comment per
+        review and does not. Two of the three registered bots therefore declare the
+        flag, which is the point: the producer reads the flag, so a second bot
+        adopting in-place editing is a registry edit with no bot-name literal to
+        change anywhere.
         """
         assert rc.bot_registry.participation_requires_update('cuioss-review-bot') is True
-        assert rc.bot_registry.participation_requires_update('coderabbit') is False
+        assert rc.bot_registry.participation_requires_update('coderabbit') is True
         assert rc.bot_registry.participation_requires_update('sourcery') is False
 
 

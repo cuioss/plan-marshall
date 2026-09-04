@@ -438,15 +438,14 @@ Getting this bot's evidence wrong is consequential in both directions:
   candidate the comment does not demonstrably predate, or when its `updated_at` differs from the value
   recorded at the last credit. An unresolvable merge-candidate SHA withholds it on every arm.
 
-**`participation_requires_update: true` makes PR-Agent today the ONLY bot that can reach
-`participated_stale`.** Every registry record declares the field; PR-Agent is the only one that
-declares it `true`, so it is the only bot with a currency test that can fail. For a bot declaring
-`false` a declared publish shape is either proven participation or nothing at all. That is a
-property of the current registry, not of the taxonomy — a second bot adopting
-in-place editing inherits the state with no code or contract change, which is exactly why the member
-is defined against `participation_requires_update` rather than against this bot's name. And a failed
-currency test is emphatically **not** `absent`: PR-Agent published, so the remedy is the `/review`
-re-review trigger rather than escalating a reviewer that never engaged.
+**`participation_requires_update: true` is what subjects PR-Agent's evidence to the currency test,
+and it is the only thing that does.** The `participated_stale` member is defined against that flag
+rather than against any bot's name, so a bot that adopts in-place editing inherits the state with no
+code or contract change — and CodeRabbit has now done exactly that, editing its summary comment in
+place and declaring the flag `true`. For a bot declaring `false` a declared publish shape is either
+proven participation or nothing at all. And a failed currency test is emphatically **not** `absent`:
+PR-Agent published, so the remedy is the `/review` re-review trigger rather than escalating a
+reviewer that never engaged.
 
 The evidence proves PR-Agent *participated*, never that its review was good. This bot is the
 motivating case for that ceiling: on #1027 it posted its Guide — valid participation under this
