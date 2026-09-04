@@ -129,8 +129,6 @@ def cmd_rename_path(args) -> dict:
     if old_path == new_path:
         return output_error('Old path and new path are identical')
 
-    include_completed = bool(getattr(args, 'include_completed', False))
-
     # Record mapping
     mapping_path = _get_rename_mapping_path(args.plan_id)
     mappings = _read_mappings(mapping_path)
@@ -138,7 +136,7 @@ def cmd_rename_path(args) -> dict:
     _write_mappings(mapping_path, mappings)
 
     rewritten = _apply_mappings_to_tasks(
-        args.plan_id, old_path, new_path, include_completed=include_completed
+        args.plan_id, old_path, new_path, include_completed=args.include_completed
     )
     # Finished work is EITHER guard: a done step, or a done task whose step rows
     # still read `pending`. Filtering on the step status alone would report the
