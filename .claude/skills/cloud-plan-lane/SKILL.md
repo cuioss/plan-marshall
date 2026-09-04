@@ -1329,6 +1329,17 @@ set **is** the expected reviewer population for this PR. Do **not** transcribe a
 this contract or into the report: a hand-maintained list is the defect this step exists to prevent,
 and it goes stale the instant a reviewer is added to or removed from the registry.
 
+**Classify each member of that population `required` / `optional` / `unclassified`.** The population is
+unchanged — it stays the registry-derived `author_login` set above — and the classification is read
+from the project's own configuration, in the git-tracked `.plan/marshal.json` that § Scope and
+precedence makes readable here: the `automatic-review` step's `required_bots` and `optional_bots` under
+`plan.phase-6-finalize.steps["plan-marshall:automatic-review"]`, each a comma-separated string. A
+registered reviewer named by **neither** list is **`unclassified`**, which is a real third value rather
+than padding: the configuration genuinely may classify no list for a registered reviewer, and recording
+that honestly is what stops a run inferring required-ness from a reviewer's identity, its prominence, or
+the mere fact that it reviewed. ⛔ **Do not transcribe a reviewer list here or into the report** — the
+population rule above applies to the classification for the same reason.
+
 **Record a verdict per reviewer, derived from the stored comment bodies** — never from a check state,
 a review summary, an absence of complaint, or this contract's prose. For each `author_login` in the
 population, read that author's actual comment/review bodies on the PR (all three surfaces above) and
@@ -1336,10 +1347,24 @@ assign exactly one verdict:
 
 | Verdict | Body evidence |
 |---|---|
-| `reviewed` | The author published a review artifact **against the diff** — an inline thread comment, or a review/issue-comment body carrying findings (or an explicit "nothing to report" over the diff). |
+| `reviewed` | The author published a review artifact **against the diff** — an inline thread comment, or a review/issue-comment body **carrying findings**. |
+| `reviewed-empty` | The author published a review artifact **against the diff** carrying **no findings** — an explicit "nothing to report" over it. The reviewer ran and found nothing, which is a different fact from finding nine and a different fact again from never having looked. |
 | `rate-limited` | The author published **only a refusal/quota notice** in place of a review (e.g. "Review limit reached", "reached your weekly rate limit of … diff characters"). It engaged but did not review this diff. |
 | `silent` | The author published **nothing at all** — no review, no notice. Before recording it, run the recovery check below — **not owed where the label governs this reviewer** (⛔ below), owed as usual where it does not; an unexplained silence is recorded as such only once that check has been made. |
 | `unreadable` | The surface that would carry this author's body **errored**. Not a statement about the author at all — a statement about the run's access. |
+
+`reviewed-empty` is a **completed review**, so it behaves as `reviewed` does at both places the other
+verdicts are consumed: its `Reopens?` cell is **blank** (nothing was refused, so there is no limit to
+clear), and it leaves no comment to handle, so **merge-gate condition 3 is unaffected** by it. What it
+does not do is disappear into `reviewed` — the whole point of the value is that a reader can tell a
+reviewer that examined the diff and found nothing from one that filed findings.
+
+⛔ **This subsection is the single definition of both value sets** — the verdict vocabulary in the
+table above, and the `required` / `optional` / `unclassified` `Class` values. Every other passage that
+needs either one **cross-references this table and enumerates neither**, the § Report participation
+record included. A value set written down twice goes stale in one of the two copies, and this contract
+already applies exactly that remedy one section away for condition 6's arms (⛔ *"Do not enumerate the
+arms here … Read them from condition 6"*). Read them from here.
 
 ⛔ **An unreadable surface is not an empty one, and `silent` MUST NOT be used for it.** `silent` claims
 a reviewer published nothing; a run whose read failed cannot make that claim, and recording it as
@@ -1367,12 +1392,13 @@ A check-run state is never a verdict: a green check can conclude having publishe
 reviewer that posts no check at all would read as absent on every run. The verdict comes from the
 bodies or it is not evidence.
 
-#### Every non-`reviewed` verdict also records whether it reopens
+#### Every verdict that reports no review also records whether it reopens
 
 The verdict says a reviewer did not review. It does not say whether that is temporary — and the two
-cases call for opposite handling, so the record carries both. Alongside each non-`reviewed` verdict,
-state **`Reopens? yes / no / unknown`** — except where the label suppressed the invitation, where the
-cell is blank because no limit was ever reached:
+cases call for opposite handling, so the record carries both. Alongside each verdict that reports the
+reviewer did **not** review — that is, every verdict except the two completed-review ones, `reviewed`
+and `reviewed-empty` — state **`Reopens? yes / no / unknown`**, except where the label suppressed the
+invitation, where the cell is blank because no limit was ever reached:
 
 | Reopens? | Meaning | Example |
 |---|---|---|
