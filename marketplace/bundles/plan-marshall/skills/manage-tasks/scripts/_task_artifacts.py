@@ -27,6 +27,13 @@ one base, so the later task's artifact list is a SUPERSET — it re-reports the
 earlier task's files. That is a property of a SHA base under per-deliverable
 commits, not a defect in the diff, and it is stated rather than hidden.
 
+**The baseline is a validated object id at both ends.** It is persisted only
+when it is well-formed and refused when it is not (:func:`is_object_id`), because
+the read side passes it to ``git diff`` as an unseparated argument — a persisted
+``--output=/path`` was consumed by git as an OPTION and redirected the diff
+(CWE-88). The refusal is REPORTED rather than silently skipped, so a corrupted
+record does not present as a task that changed nothing.
+
 **Why the diff is against the WORKING TREE, not ``HEAD``.** The standard's
 ``git diff {base} HEAD`` form is empty for the whole window this channel covers:
 a task's edits are uncommitted until the chain-tail commit, so a base..HEAD
@@ -37,6 +44,7 @@ newly created file is untracked and appears in NEITHER form until it is staged.
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -46,6 +54,22 @@ from plan_logging import log_entry
 #: The task-record field holding the baseline SHA. Written by
 #: :func:`capture_task_start_sha`, read by :func:`emit_artifact_lines`.
 TASK_START_SHA_FIELD = 'task_start_sha'
+
+#: A well-formed git object id: hex only, between git's abbreviation floor (7)
+#: and a full SHA-256 (64). The bound is a strict ALLOWLIST, and that is what
+#: closes the argument-injection sink (CWE-88): the persisted baseline flows into
+#: ``git diff --name-status -M {base_sha}`` as an unseparated argument, so a
+#: recorded value such as ``--output=/path`` was consumed by git as an OPTION and
+#: redirected the diff. The value is plan-local state rather than remote input,
+#: but it is an unvalidated value reaching a subprocess argument sink and the
+#: guard is cheap.
+#:
+#: An end-of-options delimiter is deliberately NOT layered on top. A string this
+#: pattern admits cannot begin with ``-`` — the sink is already closed — and
+#: ``--end-of-options`` predates neither every git this project may run on nor a
+#: silent ``None`` return from :func:`_git` if it is rejected, which would turn a
+#: hardening measure into a silently empty artifact list.
+_OBJECT_ID_RE = re.compile(r'\A[0-9a-fA-F]{7,64}\Z')
 
 #: The caller prefix's first two segments. The third is the numeric task id — a
 #: documented exception to the two-segment ``(bundle:skill)`` convention, so a
@@ -82,6 +106,19 @@ def _checkout_root() -> Path:
     return Path(cwd_checkout_root())
 
 
+def is_object_id(value: object) -> bool:
+    """Return True when ``value`` is a well-formed git object id.
+
+    The one predicate both ends of the baseline field are held to: nothing that
+    fails it is persisted by :func:`capture_task_start_sha`, and nothing that
+    fails it reaches a git argument in :func:`artifact_messages`. Validating on
+    BOTH sides is deliberate — a record can be hand-edited, or written by a
+    version predating the write-side guard, so the read side cannot assume the
+    write side ran.
+    """
+    return isinstance(value, str) and bool(_OBJECT_ID_RE.match(value.strip()))
+
+
 def capture_task_start_sha(task: dict) -> str | None:
     """Record the worktree HEAD on ``task`` as the task's baseline, once.
 
@@ -91,15 +128,22 @@ def capture_task_start_sha(task: dict) -> str | None:
     shrink the artifact list to the edits made after the re-entry.
 
     Returns the SHA now on the task (existing or newly captured), or ``None``
-    when HEAD could not be resolved — in which case NOTHING is written, because a
-    task carrying no baseline is an honestly-unknown state and a fabricated one
-    would produce a confident, wrong artifact list.
+    when HEAD could not be resolved OR did not resolve to a well-formed object id
+    — in which case NOTHING is written, because a task carrying no baseline is an
+    honestly-unknown state and a fabricated one would produce a confident, wrong
+    artifact list.
+
+    ⛔ An EXISTING value is returned only when it is well-formed. A malformed one
+    is neither returned nor overwritten: overwriting would move the base forward
+    and silently shrink the artifact list, and returning it would hand a caller a
+    value :func:`artifact_messages` is going to refuse. The refusal belongs at
+    the read, where it is reported.
     """
     existing = task.get(TASK_START_SHA_FIELD)
     if isinstance(existing, str) and existing.strip():
-        return existing.strip()
+        return existing.strip() if is_object_id(existing) else None
     head = _git(_checkout_root(), 'rev-parse', 'HEAD')
-    if head is None or not head.strip():
+    if head is None or not is_object_id(head):
         return None
     sha = head.strip()
     task[TASK_START_SHA_FIELD] = sha
@@ -133,7 +177,20 @@ def artifact_messages(task_number: int, base_sha: str, root: Path | None = None)
     Returns an empty list when the diff is empty — an empty artifact list is a
     valid outcome (a pre-implemented task, a verification-profile task), and its
     absence from the log is itself the signal.
+
+    Raises:
+        ValueError: when ``base_sha`` is not a well-formed git object id (see
+            :data:`_OBJECT_ID_RE`). A malformed baseline is REJECTED rather than
+            silently skipped: skipping it would render a corrupted record as the
+            same empty list an honest no-change task produces, which is the
+            could-not-look-versus-nothing-to-look-at conflation this whole module
+            exists to avoid. No git command runs on this path.
     """
+    if not is_object_id(base_sha):
+        raise ValueError(
+            f'task_start_sha is not a well-formed git object id: {base_sha!r} — '
+            'refusing to pass it to git as an argument'
+        )
     root = root or _checkout_root()
     messages: list[str] = []
 
@@ -175,11 +232,27 @@ def emit_artifact_lines(plan_id: str, task_number: int, task: dict) -> list[str]
     transition ``manage-tasks`` never observed (an externally hand-edited task
     record, or a run predating this field); reporting an artifact list derived
     from a guessed base would be worse than reporting none.
+
+    A MALFORMED baseline is a third state and is reported rather than shared with
+    the absent one: :func:`artifact_messages` refuses it before any git call, and
+    the refusal is written to the work log as an ERROR naming the rejected value,
+    so a corrupted record is VISIBLE instead of presenting as a task that changed
+    nothing. The task-closing call still returns normally — the artifact channel
+    is an audit trail and must never take it down.
     """
     base_sha = task.get(TASK_START_SHA_FIELD)
     if not isinstance(base_sha, str) or not base_sha.strip():
         return []
-    messages = artifact_messages(task_number, base_sha.strip())
+    try:
+        messages = artifact_messages(task_number, base_sha.strip())
+    except ValueError as exc:
+        log_entry(
+            'work',
+            plan_id,
+            'ERROR',
+            f'[ARTIFACT] ({ARTIFACT_CALLER_SKILL}:{task_number}) refused — {exc}',
+        )
+        return []
     for message in messages:
         log_entry('work', plan_id, 'INFO', message)
     return messages

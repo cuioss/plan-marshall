@@ -665,14 +665,22 @@ def cmd_update(args) -> dict:
             return output_error(
                 f'Invalid status: {args.status}. Must be pending, in_progress, done, blocked, or infeasible'
             )
+        # The PRE-mutation status, read before the assignment below. The capture
+        # predicate is about a TRANSITION into `in_progress`, and after the write
+        # a transition and a repeat look identical.
+        prior_task_status = task.get('status')
         task['status'] = args.status
         # The explicit half of the task-start baseline capture — its implicit
-        # sibling is the `in_progress` flip inside `finalize-step`. A caller that
-        # opens a task through this verb must land the same baseline, or the
-        # artifact channel fires for one entry path and is silently inert for
-        # the other. The capture is idempotent, so whichever path runs first
+        # sibling is the `in_progress` flip inside `finalize-step`, and both
+        # halves apply the SAME predicate. A caller that opens a task through
+        # this verb must land the same baseline, or the artifact channel fires
+        # for one entry path and is silently inert for the other. Gating on the
+        # real transition is what stops a REPEATED `update --status in_progress`
+        # on a baseline-less task from stamping one at the current HEAD — after
+        # that task's earlier edits have landed, which the later diff would then
+        # omit. The capture is idempotent as well, so whichever path runs first
         # owns the SHA and a later transition cannot move it forward.
-        if args.status == 'in_progress':
+        if args.status == 'in_progress' and prior_task_status != 'in_progress':
             capture_task_start_sha(task)
 
     # Handle new fields

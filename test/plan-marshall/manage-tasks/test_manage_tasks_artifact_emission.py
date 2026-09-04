@@ -14,6 +14,12 @@ wrote ``task_start_sha``, so a test that only proved "the code path exists"
 would have passed against a channel that could never fire. Every assertion below
 therefore starts from a commit, mutates the tree, and reads what the script
 actually emitted.
+
+The baseline is also an untrusted-shaped value at a subprocess argument sink: it
+is read off the task record and passed to ``git diff`` unseparated, so a
+persisted ``--output=/path`` was consumed by git as an OPTION (CWE-88). The
+object-id validation and its REPORTED refusal — as distinct from the silent skip
+an absent baseline produces — are pinned in their own classes below.
 """
 
 
@@ -210,6 +216,132 @@ class TestBaselineCapture:
 
         assert _artifacts.capture_task_start_sha(task) is None
         assert _artifacts.TASK_START_SHA_FIELD not in task
+
+
+class TestTheBaselineIsAValidatedObjectId:
+    """``is_object_id`` is the one predicate both ends of the field are held to."""
+
+    @pytest.mark.parametrize(
+        'value',
+        ['0123456789abcdef0123456789abcdef01234567', 'abc1234', 'A' * 64, ' abc1234 '],
+        ids=['full_sha1', 'abbreviation_floor', 'full_sha256', 'surrounding_whitespace'],
+    )
+    def test_a_well_formed_object_id_is_accepted(self, value):
+        assert _artifacts.is_object_id(value) is True
+
+    @pytest.mark.parametrize(
+        'value',
+        ['--output=/tmp/x', 'abc123', 'a' * 65, 'zzzzzzz', '', '   ', None, 12345],
+        ids=[
+            'option_shaped',
+            'below_abbreviation_floor',
+            'above_sha256_width',
+            'non_hex',
+            'empty',
+            'whitespace_only',
+            'none',
+            'int',
+        ],
+    )
+    def test_anything_else_is_rejected(self, value):
+        assert _artifacts.is_object_id(value) is False
+
+
+class TestAMalformedBaselineIsRefusedNotSkipped:
+    """⛔ CWE-88: the persisted baseline reaches ``git diff`` as a bare argument.
+
+    A recorded value such as ``--output=/path`` is consumed by git as an OPTION
+    and redirects the diff — argument injection, not shell RCE, and the value is
+    plan-local state rather than remote input, but it is an unvalidated value
+    reaching a subprocess argument sink.
+
+    The refusal is also REPORTED rather than silently skipped. Skipping renders a
+    corrupted record as the same empty list an honest no-change task produces,
+    which is the could-not-look-versus-nothing-to-look-at conflation this module
+    exists to avoid.
+    """
+
+    def test_a_non_object_id_base_raises_rather_than_returning_empty(self, git_repo):
+        with pytest.raises(ValueError, match='not a well-formed git object id'):
+            _artifacts.artifact_messages(7, '--output=/tmp/whatever', root=git_repo)
+
+    def test_the_refusal_precedes_the_git_call_that_would_have_redirected(
+        self, git_repo, tmp_path
+    ):
+        """The injection's own side effect is the observable.
+
+        ``git diff --output=FILE`` writes the diff to FILE, so had the value
+        reached git the sink would exist. Asserting on the sink proves the guard
+        runs BEFORE the subprocess rather than merely that the call failed.
+        """
+        sink = tmp_path / 'redirected-diff.txt'
+
+        with pytest.raises(ValueError):
+            _artifacts.artifact_messages(7, f'--output={sink}', root=git_repo)
+
+        assert not sink.exists()
+
+    def test_a_well_formed_base_still_reaches_git(self, git_repo):
+        """The control — the guard must not refuse the normal path.
+
+        Without it a validator that rejected everything would satisfy both
+        assertions above while making the channel permanently inert.
+        """
+        base = _head(git_repo)
+        (git_repo / 'kept.txt').write_text('changed\n', encoding='utf-8')
+
+        assert _bodies(_artifacts.artifact_messages(7, base, root=git_repo)) == {'Wrote kept.txt'}
+
+    def test_emit_logs_the_refusal_instead_of_reporting_no_changes(self, git_repo, monkeypatch):
+        monkeypatch.setattr(_artifacts, 'cwd_checkout_root', lambda: str(git_repo))
+        emitted: list[tuple[str, str]] = []
+        monkeypatch.setattr(
+            _artifacts,
+            'log_entry',
+            lambda _kind, _plan, level, message: emitted.append((level, message)),
+        )
+        (git_repo / 'kept.txt').write_text('changed\n', encoding='utf-8')
+        task = {_artifacts.TASK_START_SHA_FIELD: '--output=/tmp/whatever'}
+
+        assert _artifacts.emit_artifact_lines('some-plan', 7, task) == []
+        assert [level for level, _ in emitted] == ['ERROR']
+        assert '--output=/tmp/whatever' in emitted[0][1]
+
+    def test_an_absent_baseline_stays_silent(self, git_repo, monkeypatch):
+        """The discriminator: absent is honestly-unknown, malformed is corrupt.
+
+        Both return an empty list, so only the log distinguishes them — which is
+        the whole point of reporting the refusal.
+        """
+        monkeypatch.setattr(_artifacts, 'cwd_checkout_root', lambda: str(git_repo))
+        emitted: list[tuple[str, str]] = []
+        monkeypatch.setattr(
+            _artifacts,
+            'log_entry',
+            lambda _kind, _plan, level, message: emitted.append((level, message)),
+        )
+        (git_repo / 'kept.txt').write_text('changed\n', encoding='utf-8')
+
+        assert _artifacts.emit_artifact_lines('some-plan', 7, {}) == []
+        assert emitted == []
+
+    def test_a_malformed_existing_baseline_is_neither_returned_nor_overwritten(
+        self, git_repo, monkeypatch
+    ):
+        """Overwriting would move the base forward and shrink the artifact list."""
+        monkeypatch.setattr(_artifacts, 'cwd_checkout_root', lambda: str(git_repo))
+        task = {_artifacts.TASK_START_SHA_FIELD: '--output=/tmp/whatever'}
+
+        assert _artifacts.capture_task_start_sha(task) is None
+        assert task[_artifacts.TASK_START_SHA_FIELD] == '--output=/tmp/whatever'
+
+    def test_a_well_formed_existing_baseline_is_still_returned(self, git_repo, monkeypatch):
+        """The control for the refusal above."""
+        monkeypatch.setattr(_artifacts, 'cwd_checkout_root', lambda: str(git_repo))
+        base = _head(git_repo)
+        task = {_artifacts.TASK_START_SHA_FIELD: base}
+
+        assert _artifacts.capture_task_start_sha(task) == base
 
 
 class TestEmissionGate:

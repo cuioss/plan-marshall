@@ -8,11 +8,17 @@ skipped / failed), task-status derivation from step outcomes, and the two
 script-level emission contracts the task-closing call owns — [OUTCOME] and
 [ARTIFACT].
 
-The [ARTIFACT] status-code mapping, the baseline-capture rules and the diff
-form are pinned against a real git repository in
+The [ARTIFACT] status-code mapping, the baseline-capture rules, the object-id
+validation and the diff form are pinned against a real git repository in
 ``test_manage_tasks_artifact_emission.py``; what this module adds is the
 END-TO-END proof that the task-closing ``finalize-step`` call actually writes
 those lines to the plan's work log.
+
+It also pins that both of this handler's gates are TRANSITIONS rather than
+states: a REPEATED closing call emits neither channel a second time, and a
+finalize (or an ``update --status in_progress``) on an ALREADY-open,
+baseline-less task stamps no late baseline. Both predicates were computed from
+the post-mutation record, where a transition and a repeat are indistinguishable.
 """
 
 import json
@@ -534,3 +540,201 @@ def test_update_to_a_non_opening_status_records_no_baseline(plan_context, _artif
 
     task = _persisted_task(plan_context, 'outcome-default')
     assert _artifacts.TASK_START_SHA_FIELD not in task
+
+
+def _write_persisted_task(plan_context, plan_id: str, record: dict, number: int = 1) -> None:
+    """Write a task record straight to disk, bypassing the handlers.
+
+    The states below — a task already `in_progress` and carrying NO baseline —
+    are reachable in production (the field shipped after those tasks were
+    opened) but are not reachable through the verbs, which now capture on the
+    opening transition. Constructing the state directly is what makes the
+    already-open population testable at all.
+    """
+    path = plan_context.plan_dir_for(plan_id) / 'tasks' / f'TASK-{number:03d}.json'
+    path.write_text(json.dumps(record, indent=2), encoding='utf-8')
+
+
+# =============================================================================
+# Tests: the emission and capture predicates are TRANSITIONS, not states
+# =============================================================================
+#
+# Both predicates were computed from the POST-mutation record, where a
+# transition and a repeat are indistinguishable — so a retry of the closing call
+# re-emitted both channels, and a late call on an already-open task stamped a
+# baseline AFTER that task's earlier edits had landed.
+
+
+def test_a_repeated_closing_finalize_emits_exactly_one_outcome_and_one_artifact_set(
+    plan_context, _artifact_repo
+):
+    """⛔ The retry path is reachable in normal operation.
+
+    A re-dispatch after a lost context is exactly the scenario the script-level
+    guard exists for, so the closing call genuinely gets repeated — and the
+    duplicate records inflate anything derived from them.
+    """
+    add_basic_task(
+        plan_id='outcome-default',
+        title='Retried Task',
+        deliverable=1,
+        steps=['src/main/java/A.java'],
+    )
+    plan_dir = plan_context.plan_dir_for('outcome-default')
+    (_artifact_repo / 'seed.txt').write_text('touched by the task\n', encoding='utf-8')
+
+    first = cmd_finalize_step(_finalize_step_ns(plan_id='outcome-default', task=1, step=1, outcome='done'))
+    retry = cmd_finalize_step(_finalize_step_ns(plan_id='outcome-default', task=1, step=1, outcome='done'))
+
+    log_text = _read_work_log(plan_dir)
+    assert first['artifact_lines'] == 1
+    assert retry['artifact_lines'] == 0
+    assert log_text.count('[OUTCOME]') == 1
+    assert log_text.count('[ARTIFACT]') == 1
+    # The retry is still a successful, task-closing call — the emission is what
+    # is suppressed, not the operation.
+    assert retry['task_complete'] is True
+    assert retry['task_status'] == 'done'
+
+
+def test_the_first_closing_finalize_still_emits_both_channels(plan_context, _artifact_repo):
+    """The control — suppressing the repeat must not suppress the real close.
+
+    Without it, a gate that never fired would satisfy the retry assertion above.
+    """
+    add_basic_task(
+        plan_id='outcome-default',
+        title='Closed Once',
+        deliverable=1,
+        steps=['src/main/java/A.java'],
+    )
+    plan_dir = plan_context.plan_dir_for('outcome-default')
+    (_artifact_repo / 'seed.txt').write_text('touched by the task\n', encoding='utf-8')
+
+    cmd_finalize_step(_finalize_step_ns(plan_id='outcome-default', task=1, step=1, outcome='done'))
+
+    log_text = _read_work_log(plan_dir)
+    assert log_text.count('[OUTCOME]') == 1
+    assert log_text.count('[ARTIFACT]') == 1
+
+
+def test_a_finalize_on_an_already_open_baseline_less_task_stamps_no_late_baseline(
+    plan_context, _artifact_repo
+):
+    """A late capture would be taken AFTER the task's earlier edits landed.
+
+    The diff would then silently omit them — defeating `emit_artifact_lines`'
+    own honesty guard, which returns [] for a baseline-less task precisely
+    because a guessed base is worse than none.
+    """
+    add_basic_task(
+        plan_id='outcome-default',
+        title='Already Open',
+        deliverable=1,
+        steps=['src/main/java/A.java'],
+    )
+    record = _persisted_task(plan_context, 'outcome-default')
+    record['status'] = 'in_progress'
+    record.pop(_artifacts.TASK_START_SHA_FIELD, None)
+    _write_persisted_task(plan_context, 'outcome-default', record)
+
+    result = cmd_finalize_step(_finalize_step_ns(plan_id='outcome-default', task=1, step=1, outcome='done'))
+
+    assert _artifacts.TASK_START_SHA_FIELD not in _persisted_task(plan_context, 'outcome-default')
+    assert result['artifact_lines'] == 0
+
+
+def test_a_finalize_on_a_pending_task_still_stamps_the_baseline(plan_context, _artifact_repo):
+    """The control — only the already-open case is exempt from the capture."""
+    add_basic_task(
+        plan_id='outcome-default',
+        title='Opened By Finalize',
+        deliverable=1,
+        steps=['src/main/java/A.java', 'src/main/java/B.java'],
+    )
+
+    cmd_finalize_step(_finalize_step_ns(plan_id='outcome-default', task=1, step=1, outcome='done'))
+
+    task = _persisted_task(plan_context, 'outcome-default')
+    assert task[_artifacts.TASK_START_SHA_FIELD] == _head(_artifact_repo)
+
+
+def test_a_repeated_update_to_in_progress_does_not_move_the_baseline(plan_context, _artifact_repo):
+    """The explicit entry path's half of the same predicate, with HEAD advanced.
+
+    Idempotence alone already protects a task that HAS a baseline; this pins
+    that the second call does not re-derive one against the newer HEAD.
+    """
+    add_basic_task(
+        plan_id='outcome-default',
+        title='Reopened Through Update',
+        deliverable=1,
+        steps=['src/main/java/A.java'],
+    )
+
+    cmd_update(_update_ns(plan_id='outcome-default', number=1, status='in_progress'))
+    first_baseline = _persisted_task(plan_context, 'outcome-default')[_artifacts.TASK_START_SHA_FIELD]
+
+    (_artifact_repo / 'seed.txt').write_text('advanced\n', encoding='utf-8')
+    subprocess.run(
+        ['git', '-C', str(_artifact_repo), 'commit', '-q', '-am', 'advance'],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    cmd_update(_update_ns(plan_id='outcome-default', number=1, status='in_progress'))
+
+    assert _head(_artifact_repo) != first_baseline
+    assert (
+        _persisted_task(plan_context, 'outcome-default')[_artifacts.TASK_START_SHA_FIELD]
+        == first_baseline
+    )
+
+
+def test_an_update_reopening_a_baseline_less_task_stamps_no_late_baseline(
+    plan_context, _artifact_repo
+):
+    """The `update` half of the already-open case, matching its finalize sibling."""
+    add_basic_task(
+        plan_id='outcome-default',
+        title='Already Open Via Update',
+        deliverable=1,
+        steps=['src/main/java/A.java'],
+    )
+    record = _persisted_task(plan_context, 'outcome-default')
+    record['status'] = 'in_progress'
+    record.pop(_artifacts.TASK_START_SHA_FIELD, None)
+    _write_persisted_task(plan_context, 'outcome-default', record)
+
+    cmd_update(_update_ns(plan_id='outcome-default', number=1, status='in_progress'))
+
+    assert _artifacts.TASK_START_SHA_FIELD not in _persisted_task(plan_context, 'outcome-default')
+
+
+def test_a_file_created_after_the_first_finalize_is_reported_as_an_artifact(
+    plan_context, _artifact_repo
+):
+    """⛔ A created file is in NO ``git diff`` output until it is staged.
+
+    The end-to-end pair only exercised the tracked-MODIFY path (``seed.txt``), so
+    a regression that dropped the untracked walk would leave the largest class of
+    artifact an implementation task produces — the files it creates — unreported
+    while every existing end-to-end assertion stayed green.
+    """
+    add_basic_task(
+        plan_id='outcome-default',
+        title='Creating Task',
+        deliverable=1,
+        steps=['src/main/java/A.java', 'src/main/java/B.java'],
+    )
+    plan_dir = plan_context.plan_dir_for('outcome-default')
+
+    cmd_finalize_step(_finalize_step_ns(plan_id='outcome-default', task=1, step=1, outcome='done'))
+    (_artifact_repo / 'created-by-the-task.txt').write_text('new\n', encoding='utf-8')
+
+    result = cmd_finalize_step(_finalize_step_ns(plan_id='outcome-default', task=1, step=2, outcome='done'))
+
+    assert result['artifact_lines'] == 1
+    assert '[ARTIFACT] (plan-marshall:phase-5-execute:1) Wrote created-by-the-task.txt' in (
+        _read_work_log(plan_dir)
+    )

@@ -53,13 +53,24 @@ def cmd_finalize_step(args) -> dict:
     if not step_found:
         return output_error(f'Step {args.step} not found in TASK-{args.task_number}')
 
-    # Capture the task-start baseline on the FIRST finalize-step call — the
-    # transition into `in_progress` this handler performs on the line below.
-    # Recording it BEFORE the mutation keeps the two facts adjacent: the SHA is
-    # the tree the task started from, and the status flip is the transition it
-    # is the baseline for. The capture is idempotent, so the later calls of a
-    # multi-step task keep the SHA the first one recorded.
-    capture_task_start_sha(task)
+    # ⛔ The PRE-mutation task status, read before anything below writes to the
+    # record. Two predicates in this handler are about a TRANSITION — "did this
+    # call open the task?" and "did this call close it?" — and both were computed
+    # from the POST-mutation state, where a transition and a repeat are
+    # indistinguishable. Neither question can be answered without this value, so
+    # it is captured first and used by both.
+    prior_task_status = task.get('status')
+
+    # Capture the task-start baseline only when THIS call actually opens the
+    # task. An unconditional capture stamped a baseline on a task that was
+    # ALREADY `in_progress` and carried none — at the current HEAD, i.e. AFTER
+    # that task's earlier edits had landed — so the artifact diff silently
+    # omitted them. That defeats `emit_artifact_lines`' own honesty guard, which
+    # returns [] for a baseline-less task precisely because a guessed base is
+    # worse than none. The capture remains idempotent, so a task that already
+    # carries a SHA keeps it whichever entry path opened it.
+    if prior_task_status != 'in_progress':
+        capture_task_start_sha(task)
 
     # Mark step with outcome
     step_found['status'] = args.outcome
@@ -105,8 +116,19 @@ def cmd_finalize_step(args) -> dict:
     # boundary so the line cannot be lost when an orchestrator skill
     # re-dispatches a phase-5-execute agent and the original agent's working
     # context is discarded before its own [OUTCOME] emission would fire.
+    #
+    # ⛔ The gate is a TRANSITION, not a state. `all_terminal and not has_failed`
+    # is computed after `step_found['status']` is assigned, so a RETRY of the
+    # closing call on an already-`done` task satisfied it just as the real
+    # closing call did, and both channels fired again — duplicate audit records
+    # inflating anything derived from them. A re-dispatch after a lost context is
+    # exactly the scenario this script-level guard exists for, so the retry path
+    # is reachable in normal operation. `prior_task_status != 'done'` is what
+    # makes the emission fire for the call that actually flips the task, which is
+    # also what `manage-tasks/SKILL.md` has said all along.
     artifact_lines: list[str] = []
-    if args.outcome == 'done' and all_terminal and not has_failed:
+    task_closed_by_this_call = all_terminal and not has_failed and prior_task_status != 'done'
+    if args.outcome == 'done' and task_closed_by_this_call:
         caller = getattr(args, 'outcome_caller', None) or 'plan-marshall:phase-5-execute'
         title = getattr(args, 'outcome_task_title', None) or task.get('title', '')
         step_count = getattr(args, 'outcome_step_count', None)
