@@ -138,7 +138,7 @@ the base the `[ARTIFACT]` channel diffs against.
 
 | Property | Value |
 |----------|-------|
-| Type | string — a 40-character hex SHA |
+| Type | string — a git object id, validated by `is_object_id` |
 | Producer | `_task_artifacts.capture_task_start_sha` |
 | Write path | The FIRST transition into `in_progress`, from either entry point: the implicit flip inside `finalize-step`, or an explicit `update --status in_progress` |
 | Serialisation | `_tasks_core.format_task_file` (`json.dumps` over the whole record), so the key reaches `TASK-NNN.json` on disk |
