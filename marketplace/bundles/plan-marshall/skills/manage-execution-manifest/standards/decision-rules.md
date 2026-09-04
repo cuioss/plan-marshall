@@ -92,13 +92,7 @@ The `compose` **result** (the TOON the caller reads back — distinct from the p
 
 The `execution_log[]` section is a runtime append log that is **separate from the decision matrix** — `compose` never reads or writes it. It is populated exclusively by the `record-step` subcommand, one row appended per invocation, capturing per-step execution outcome plus token attribution into the manifest. This makes per-step execution metadata loggable per-plan deterministically rather than relying on the fragile orchestrator `<usage>`-forwarding boundary call.
 
-**Section shape** (TOON):
-
-```toon
-execution_log[K]{step_id,phase,outcome,total_tokens,tool_uses,duration_ms,timestamp}:
-  - quality_check,5-execute,executed,12000,8,4200,2026-06-08T10:15:00+00:00
-  - create-pr,6-finalize,skipped,unmeasured,unmeasured,unmeasured,2026-06-08T10:42:00+00:00
-```
+**Section shape** — the worked example lives in [`../SKILL.md`](../SKILL.md) § Storage Location, whose three-row form contrasts a measured `0` against the `unmeasured` token; [manifest-schema.md](manifest-schema.md) § `execution_log[]` carries the schema. Read it in one of those two rather than from a third copy here: a worked example duplicated across contract sources of one skill drifts cell-by-cell, and this document already had one round of that.
 
 **Row fields:**
 
