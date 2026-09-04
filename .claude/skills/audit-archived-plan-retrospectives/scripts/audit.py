@@ -2570,6 +2570,26 @@ def _load_preference_admissibility():
     return _preference_admissibility
 
 
+# The two values of the `preference_admissibility_basis` disclosure this check
+# publishes. `recognized` means the authorship gate ran against the live
+# registry-derived reviewer set; `presence_only` means that set was unresolvable
+# and the shared rule took its documented degrade path, admitting any PRESENT
+# `bot_kind`. The degrade is deliberate — rejecting every bot-attributed comment
+# instead would hand preference learning a clean zero over an unread population —
+# but it must never pass as the strong check, so the basis travels with the result.
+#
+# The same two literals are emitted by `manage-findings`'s `_findings_core`
+# (`PREFERENCE_BASIS_*`), the other consumer of the same shared rule. They are
+# restated rather than imported because this auditor runs as a direct `python3
+# …/audit.py` with no executor PYTHONPATH: `_load_preference_admissibility` can
+# inject the two flat `scripts/` dirs the shared rule needs, but `_findings_core`
+# pulls in a wider dependency web (`constants`, `jsonl_store`, `file_ops`,
+# `input_validation`, `_findings_store_state`) that lives in directories this
+# entry point does not put on `sys.path`.
+PREFERENCE_BASIS_RECOGNIZED = "recognized"
+PREFERENCE_BASIS_PRESENCE_ONLY = "presence_only"
+
+
 def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
     """Aggregate `(module, finding-class, disposition)` recurrences corpus-wide.
 
@@ -2579,6 +2599,13 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
     the distinct plans each tuple appears in (a tuple appearing in multiple
     findings within one plan contributes a single occurrence for that plan), and
     threshold-gates at `THRESHOLDS["preference_disposition_occurrences"]`.
+
+    The result carries `preference_admissibility_basis` — `recognized` or
+    `presence_only` — so a corpus walked under the degraded authorship gate is
+    never read as one walked under the full check. This is the same disclosure
+    `manage-findings list --preference-admissible` publishes, which is what keeps
+    the two preference surfaces symmetric: both apply the shared rule, and both
+    say which of its two paths actually ran.
     """
     threshold = THRESHOLDS["preference_disposition_occurrences"]
     # Resolve the shared rule and the recognized reviewer-bot set ONCE for the whole
@@ -2587,6 +2614,11 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
     # applies it, it does not own it.
     admissibility = _load_preference_admissibility()
     recognized_bot_kinds = admissibility.recognized_bot_kinds()
+    admissibility_basis = (
+        PREFERENCE_BASIS_PRESENCE_ONLY
+        if recognized_bot_kinds is None
+        else PREFERENCE_BASIS_RECOGNIZED
+    )
     tuple_to_plans: dict[tuple[str, str, str], set[str]] = defaultdict(set)
     # Same declaration obligation as `cross_recurring_pattern`: this check narrows
     # on the identical predicate, so it publishes the population it examined rather
@@ -2654,6 +2686,7 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
         "candidate_count": len(candidates),
         "unattributed_excluded_count": unattributed_excluded,
         "plans_in_corpus": examined,
+        "preference_admissibility_basis": admissibility_basis,
         "rows": candidates,
     }
 
@@ -6307,6 +6340,19 @@ def emit_preference_pattern_block(result: dict[str, Any]) -> str:
         # threshold but were declined promotion — surfaced so the decision is
         # visible rather than a silent drop.
         f"unattributed_excluded_count: {result.get('unattributed_excluded_count', 0)}",
+        # Which authorship check actually ran: `recognized` (validated against the
+        # live registry-derived reviewer set) or `presence_only` (the registry was
+        # unresolvable and the shared rule took its degrade path). Emitted under
+        # the same absent-key-is-undeclared rule as `plans_in_corpus` above — a
+        # default would assert a basis for a walk that never reported one.
+        *(
+            [
+                "preference_admissibility_basis: "
+                f"{result['preference_admissibility_basis']}"
+            ]
+            if "preference_admissibility_basis" in result
+            else []
+        ),
         f"genuine_signal_count: {genuine_signal_count}",
         f"rows[{len(rows)}]{{module,finding_class,disposition,occurrence_count,plan_ids,severity}}:",
     ]

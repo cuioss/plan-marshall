@@ -41,6 +41,19 @@ Two gates run over the derived tuples, both owned by the shared contract
   comment) and is dropped before counting — self-authored comments cannot become
   evidence about the pipeline's own preferences. Non-comment findings are
   unaffected.
+
+  The recognized set is re-derived from the live reviewer registry, and that
+  derivation can fail. When it does the rule **degrades to a presence-only
+  check**: a `pr-comment` is admitted on a PRESENT `bot_kind` without validating
+  it against the registry. The degrade is deliberate — rejecting every
+  bot-attributed comment instead would hand preference learning a clean zero over
+  a population it never read — and the self-authored coverage is unaffected
+  either way, because that keys on an ABSENT `bot_kind` and the presence check
+  runs first. What the degrade does admit is a present-but-unrecognized
+  `bot_kind`: a legacy or de-registered reviewer identity. The emitted
+  `preference_admissibility_basis` names which of the two paths ran, so a corpus
+  walked under the degraded gate is never read as one walked under the full
+  check.
 - **Attribution gate (post-count).** A tuple whose module resolves to the
   `default` fallback bucket is UNATTRIBUTED **on this preference-aggregation path** —
   not a cross-cutting judgement here — and is
@@ -65,6 +78,7 @@ threshold: 3
 plans_in_corpus: P    # plans that carried a findings directory
 candidate_count: M
 unattributed_excluded_count: K
+preference_admissibility_basis: recognized   # or presence_only
 rows[M]{module,finding_class,disposition,occurrence_count,plan_ids,severity}
 ```
 
@@ -72,6 +86,7 @@ rows[M]{module,finding_class,disposition,occurrence_count,plan_ids,severity}
 |--------|---------|
 | `candidate_count` | Number of promotable (module-attributed) candidate rows. |
 | `unattributed_excluded_count` | Number of `default`-bucket recurrences that cleared the threshold but were declined promotion by the attribution gate. |
+| `preference_admissibility_basis` | Which authorship check ran: `recognized` (validated against the live registry-derived reviewer set) or `presence_only` (the registry was unresolvable and the rule degraded — see § "Attribution and authorship gates"). Absent when the block was produced without the disclosure; an absent key is undeclared, never a default. |
 | `module` | The finding's concrete module attribution — always a real module (the `default` bucket is never surfaced). |
 | `finding_class` | The collapsed finding signature (title prefix, lowercased). |
 | `disposition` | The user-gate disposition (`suppressed`/`accepted`/`taken_into_account`). |

@@ -31,7 +31,7 @@ import hashlib
 import json
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from _findings_store_state import (
     FindingsStore,
@@ -98,6 +98,19 @@ PR_COMMENT_KINDS = ['inline', 'review_body', 'issue_comment']
 # argparse ``choices=`` list and ``add_finding`` validates ``bot_kind`` against
 # it — so adding a bot is a pure standards-doc edit with no change to this file.
 BOT_KINDS = _registry_bot_kinds()
+
+# The two values of the ``preference_admissibility_basis`` disclosure field.
+#
+# The authorship gate re-derives the recognized reviewer set from the live
+# registry, and that derivation can fail (see
+# ``_preference_admissibility`` § Degrade-to-presence-only). ``recognized`` says
+# the gate ran against the real identity set; ``presence_only`` says the registry
+# was unresolvable and the gate fell back to admitting any PRESENT ``bot_kind``.
+# The field is published on every payload the narrowing produced so the degrade
+# can never pass as the strong check — the three-value house pattern already used
+# by ``notation_cross_check`` and Sonar's ``count_status``.
+PREFERENCE_BASIS_RECOGNIZED = 'recognized'
+PREFERENCE_BASIS_PRESENCE_ONLY = 'presence_only'
 
 # Default per-field byte cap for quarantined raw_input free-text (64 KiB).
 # The `finding_raw_input_max_bytes` config knob (seeded by manage-config) overrides
@@ -391,23 +404,79 @@ def _filter_records(
     return filtered
 
 
-def _narrow_to_preference_admissible(
-    records: list[dict[str, Any]],
-    enabled: bool,
-) -> list[dict[str, Any]]:
-    """Apply the shared authorship-admissibility rule when ``enabled``.
+class PreferenceAdmissibility(NamedTuple):
+    """The once-per-query resolution of the authorship gate, plus its disclosure.
 
-    The rule itself lives in :mod:`_preference_admissibility` and is applied
-    here, never re-derived: this function owns only the once-per-call resolution
-    of the recognized reviewer set and the pass-through of ``None`` (registry
-    unresolvable) so the predicate takes its documented degrade-to-presence-only
-    path. Returns ``records`` untouched when the narrowing is off, which is what
-    keeps the default-OFF flag free of any cost for callers that never ask for it.
+    ``recognized`` is the resolved reviewer-identity set, or ``None`` when the
+    registry could not be resolved — the value :func:`_preference_admissible`
+    reads to take its documented degrade-to-presence-only path. ``basis`` is the
+    two-valued disclosure of WHICH path the narrowing ran on, and is ``None``
+    exactly when the narrowing is off (so nothing is disclosed about a gate that
+    never ran).
+    """
+
+    enabled: bool
+    recognized: frozenset[str] | None
+    basis: str | None
+
+
+def resolve_preference_admissibility(enabled: bool) -> PreferenceAdmissibility:
+    """Resolve the recognized reviewer set ONCE and record which basis it yields.
+
+    The gate degrades to a presence-only check when the live registry cannot be
+    resolved (see :mod:`_preference_admissibility` § Degrade-to-presence-only).
+    That degrade is deliberate — over-excluding every bot-attributed comment
+    would hand preference learning a clean zero over an unread population — but
+    it MUST NOT be silent, so the basis it ran on travels with the result and is
+    published as ``preference_admissibility_basis`` on every payload the flag
+    narrowed.
+
+    Args:
+        enabled: Whether the caller asked for the authorship narrowing at all.
+
+    Returns:
+        The resolution context. When ``enabled`` is False nothing is resolved and
+        ``basis`` is ``None``, so no disclosure field is emitted for a gate that
+        did not run.
     """
     if not enabled:
-        return records
+        return PreferenceAdmissibility(enabled=False, recognized=None, basis=None)
     recognized = _recognized_bot_kinds()
-    return [r for r in records if _preference_admissible(r, recognized)]
+    basis = (
+        PREFERENCE_BASIS_PRESENCE_ONLY if recognized is None else PREFERENCE_BASIS_RECOGNIZED
+    )
+    return PreferenceAdmissibility(enabled=True, recognized=recognized, basis=basis)
+
+
+def _narrow_to_preference_admissible(
+    records: list[dict[str, Any]],
+    admissibility: PreferenceAdmissibility,
+) -> list[dict[str, Any]]:
+    """Apply the shared authorship-admissibility rule when it is enabled.
+
+    The rule itself lives in :mod:`_preference_admissibility` and is applied
+    here, never re-derived; the recognized-set resolution (and the ``None``
+    pass-through that selects the degrade path) is owned by
+    :func:`resolve_preference_admissibility`, so a single query resolves the
+    registry once no matter how many record slices it narrows. Returns
+    ``records`` untouched when the narrowing is off, which is what keeps the
+    default-OFF flag free of any cost for callers that never ask for it.
+    """
+    if not admissibility.enabled:
+        return records
+    return [r for r in records if _preference_admissible(r, admissibility.recognized)]
+
+
+def _preference_basis_fields(admissibility: PreferenceAdmissibility) -> dict[str, str]:
+    """Return the disclosure field, or nothing when the narrowing was off.
+
+    Emitting ``preference_admissibility_basis`` on a payload the gate never
+    touched would assert something about a check that did not run, so the field
+    is present exactly when the caller asked for the narrowing.
+    """
+    if admissibility.basis is None:
+        return {}
+    return {'preference_admissibility_basis': admissibility.basis}
 
 
 # --- Plan Findings ---
@@ -518,8 +587,9 @@ def query_findings(
     author: str | None = None,
     kind: str | None = None,
     bot_kind: str | None = None,
-    preference_admissible: bool = False,
     any_checkout: bool = False,
+    *,
+    preference_admissible: bool = False,
 ) -> dict[str, Any]:
     """Query findings across all per-type files, merging results.
 
@@ -535,11 +605,17 @@ def query_findings(
     auditor delegates to, not a second copy of it. It composes with the other
     filters by acting on the already-filtered slice, exactly as they do, so
     ``total_count`` keeps spanning the whole store and ``filtered_count`` reports
-    the post-narrowing result. The recognized reviewer set is resolved ONCE per
-    query rather than per record, mirroring the auditor's once-per-corpus-walk
-    resolution; ``None`` (registry unresolvable) is passed through so the
-    predicate degrades to its presence-only check instead of excluding every
-    attributed comment.
+    the post-narrowing result. It is KEYWORD-ONLY: both this function and
+    :func:`query_findings_unified` are consumed across skills, and two adjacent
+    booleans that a positional call could silently swap is a binding hazard no
+    caller should have to notice.
+
+    When the narrowing is on, the return carries
+    ``preference_admissibility_basis`` — ``recognized`` when the live reviewer
+    registry resolved, ``presence_only`` when it did not and the gate degraded to
+    admitting any present ``bot_kind``. The recognized reviewer set is resolved
+    ONCE per query rather than per record, mirroring the auditor's
+    once-per-corpus-walk resolution.
 
     Every return states which store the counts were computed from. A plan
     directory that is absent under the resolved root is REFUSED
@@ -547,6 +623,40 @@ def query_findings(
     a resolved plan directory holding no findings keeps returning
     ``status: success`` / ``total_count: 0`` with ``findings_store_state:
     missing``.
+    """
+    return _query_findings(
+        plan_id,
+        finding_type=finding_type,
+        resolution=resolution,
+        promoted=promoted,
+        file_pattern=file_pattern,
+        author=author,
+        kind=kind,
+        bot_kind=bot_kind,
+        any_checkout=any_checkout,
+        admissibility=resolve_preference_admissibility(preference_admissible),
+    )
+
+
+def _query_findings(
+    plan_id: str,
+    *,
+    finding_type: str | None,
+    resolution: str | None,
+    promoted: bool | None,
+    file_pattern: str | None,
+    author: str | None,
+    kind: str | None,
+    bot_kind: str | None,
+    any_checkout: bool,
+    admissibility: PreferenceAdmissibility,
+) -> dict[str, Any]:
+    """Query the per-plan store against an ALREADY-RESOLVED admissibility context.
+
+    Split out of :func:`query_findings` so :func:`query_findings_unified` can
+    narrow both of its slices against one resolution of the reviewer registry —
+    a single query then reports a single ``preference_admissibility_basis``,
+    instead of two independent resolutions that could disagree.
     """
     store = resolve_findings_store(plan_id, any_checkout=any_checkout)
     if store_unreached(store):
@@ -563,7 +673,7 @@ def query_findings(
         file_pattern=file_pattern,
         promoted=promoted,
     )
-    filtered = _narrow_to_preference_admissible(filtered, preference_admissible)
+    filtered = _narrow_to_preference_admissible(filtered, admissibility)
 
     return {
         'status': 'success',
@@ -572,6 +682,7 @@ def query_findings(
         'filtered_count': len(filtered),
         'findings': filtered,
         'file_paths': list({r.get('file_path') for r in filtered if r.get('file_path')}),
+        **_preference_basis_fields(admissibility),
         **store_state_fields(store),
     }
 
@@ -585,8 +696,9 @@ def query_findings_unified(
     author: str | None = None,
     kind: str | None = None,
     bot_kind: str | None = None,
-    preference_admissible: bool = False,
     any_checkout: bool = False,
+    *,
+    preference_admissible: bool = False,
 ) -> dict[str, Any]:
     """Query the per-plan findings store merged with pending per-phase Q-Gate findings.
 
@@ -600,7 +712,11 @@ def query_findings_unified(
     flag is a single opt-in on one read verb, so applying it to only half of what
     that verb returns would make it silently partial — the caller would still be
     handed the very pipeline-authored comments it asked to exclude, with nothing
-    in the payload to say so.
+    in the payload to say so. It is KEYWORD-ONLY for the same binding-hazard
+    reason as on :func:`query_findings`. The reviewer registry is resolved ONCE
+    for the whole query and both slices narrow against that one resolution, so
+    the single ``preference_admissibility_basis`` the return carries
+    (``recognized`` / ``presence_only``) describes both.
 
     Only Q-Gate records whose `resolution == 'pending'` are merged — resolved
     Q-Gate findings are never surfaced through this read. The per-plan slice keeps
@@ -614,7 +730,9 @@ def query_findings_unified(
     if store_unreached(store):
         return unresolved_store_error(plan_id, store)
 
-    plan_result = query_findings(
+    admissibility = resolve_preference_admissibility(preference_admissible)
+
+    plan_result = _query_findings(
         plan_id,
         finding_type=finding_type,
         resolution=resolution,
@@ -623,8 +741,8 @@ def query_findings_unified(
         author=author,
         kind=kind,
         bot_kind=bot_kind,
-        preference_admissible=preference_admissible,
         any_checkout=any_checkout,
+        admissibility=admissibility,
     )
     plan_findings = plan_result['findings']
 
@@ -645,7 +763,7 @@ def query_findings_unified(
                     type_filter=type_filter,
                     file_pattern=file_pattern,
                 ),
-                preference_admissible,
+                admissibility,
             )
         )
 
@@ -667,6 +785,7 @@ def query_findings_unified(
         'filtered_count': len(merged),
         'findings': merged,
         'file_paths': list({r.get('file_path') for r in merged if r.get('file_path')}),
+        **_preference_basis_fields(admissibility),
         **store_state_fields(store),
     }
 

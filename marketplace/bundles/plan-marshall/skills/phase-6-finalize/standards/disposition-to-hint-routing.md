@@ -113,7 +113,10 @@ A finding contributes to a preference recurrence only when it is not the
 pipeline's own control traffic. A `pr-comment` finding is admissible ONLY when it
 is positively attributed to a recognized external reviewer bot — i.e. it carries a
 `bot_kind` that is a **recognized reviewer identity**, validated against the
-registry-derived set.
+registry-derived set. That validation depends on resolving the live registry, and
+when it cannot be resolved the rule takes a documented degrade path instead — see
+§ "The recognized-set resolution has two states, and the gate publishes which"
+below, which is part of this contract, not an exception to it.
 
 ⚠ **The write-time check does not enforce this, and must not be mistaken for it.**
 What `add_finding` rejects and what it admits is stated once, at the field's own
@@ -152,6 +155,42 @@ through `manage-findings list --preference-admissible`, so the exclusion happens
 in the script before the step aggregates anything. Presence of the field is not
 the test: an unrecognized `bot_kind` passes a presence check and fails the
 admissibility this section opens with, so the two must not be conflated.
+
+### The recognized-set resolution has two states, and the gate publishes which
+
+The recognized reviewer set is re-derived from the live registry each time the
+gate runs, and that derivation can fail — the registry module may be
+unresolvable in the calling envelope. The rule therefore has two states, and both
+are part of this contract:
+
+| Basis | What ran | What is admitted |
+|-------|----------|------------------|
+| `recognized` | The registry resolved; the gate validated each `bot_kind` against the live set. | Only a `pr-comment` carrying a recognized reviewer identity. |
+| `presence_only` | The registry was unresolvable; the gate degraded. | Any `pr-comment` carrying a PRESENT `bot_kind`, unvalidated. |
+
+The degrade is deliberate, not an oversight. Rejecting every `pr-comment` on an
+unresolvable registry would hand preference learning a clean zero over a
+population it never read — every recurrence threshold would silently under-fire
+with nothing in the output saying so, the failure mode the fail-closed-with-an-
+explicit-unknown-state discipline exists to prevent. And the threat this gate
+actually defends against is untouched by the degrade: the pipeline's own posted
+comments carry an **absent** `bot_kind`, and the presence check runs before the
+registry check, so they are excluded on BOTH paths. What `presence_only` does
+admit is the narrow residual — a present-but-unrecognized identity, i.e. a legacy
+or de-registered reviewer.
+
+**Neither state is silent.** Both surfaces publish
+`preference_admissibility_basis` alongside their result:
+
+- `manage-findings list --preference-admissible` carries it in the TOON payload
+  whenever the flag is on, and omits it when the flag is off (an absent field
+  means the narrowing did not run — it never asserts a basis);
+- the cross-plan auditor's `preference-pattern-detector` block carries it under
+  the same absent-key-is-undeclared rule.
+
+A consumer that reads a narrowed set as authorship-validated MUST read the basis
+first: under `presence_only` the set is attribution-present, not
+attribution-verified.
 
 ## Threshold gate is surface-owned
 

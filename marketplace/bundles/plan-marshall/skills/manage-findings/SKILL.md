@@ -182,7 +182,11 @@ The merged response is shape-compatible with the default `list` output and adds 
 
 `--preference-admissible` narrows the result to the findings that may seed a preference recurrence: a `pr-comment` is kept only when it is positively attributed to a recognized reviewer bot, and every other finding type passes through untouched. The flag APPLIES the authorship-admissibility rule; [`scripts/_preference_admissibility.py`](scripts/_preference_admissibility.py) IMPLEMENTS it, as the single home both preference surfaces reach. For why the gate keys on positive external attribution rather than trying to recognize the pipeline's own comments, see [`../phase-6-finalize/standards/disposition-to-hint-routing.md`](../phase-6-finalize/standards/disposition-to-hint-routing.md) § "(e) Authorship admissibility" — the single source of truth, not restated here.
 
-The flag is **off by default**, so no existing caller's result changes. It composes with the other filters by acting on the already-filtered slice — `total_count` still spans the whole store, `filtered_count` reports the post-narrowing result — and it narrows the Q-Gate slice too under `--include-qgate`, so one flag never returns half-excluded output.
+The recognized reviewer set is re-derived from the live registry, once per query, and that derivation can fail. When it does, the rule **degrades to a presence-only check**: a `pr-comment` is kept on a PRESENT `bot_kind` without validating it against the registry. The degrade is deliberate — rejecting every bot-attributed comment instead would hand preference learning a clean zero over a population it never read — and the pipeline's own comments are excluded on BOTH paths, because they carry an ABSENT `bot_kind` and the presence check runs first. What the degrade admits is a present-but-unrecognized `bot_kind`: a legacy or de-registered reviewer identity.
+
+The degrade is never silent. Whenever the flag is on, the result carries **`preference_admissibility_basis`** — `recognized` when the registry resolved and the full check ran, `presence_only` when it did not and the rule degraded. The field is absent when the flag is off, so it never asserts a basis for a check that did not run. The cross-plan auditor publishes the same field on its `preference-pattern-detector` block, so both preference surfaces state which of the two paths they walked.
+
+The flag is **off by default**, so no existing caller's result changes. It is **keyword-only** on the underlying `query_findings` / `query_findings_unified` functions — both are consumed across skills, and it sits beside `any_checkout`, so positional binding is closed off rather than left to caller discipline. It composes with the other filters by acting on the already-filtered slice — `total_count` still spans the whole store, `filtered_count` reports the post-narrowing result — and it narrows the Q-Gate slice too under `--include-qgate`, so one flag never returns half-excluded output.
 
 ### Q-Gate Commands
 
@@ -321,6 +325,18 @@ findings[15]{hash_id,type,title,resolution}:
 a3f2c1,bug,Null check missing,pending
 b4e3d2,sonar-issue,TODO comment,fixed
 ```
+
+**Preference-narrowed query response** (`list --preference-admissible`, with or without `--include-qgate`): the same shape as above, plus `preference_admissibility_basis` naming which authorship check actually ran.
+
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+total_count: 30
+filtered_count: 9
+preference_admissibility_basis: recognized
+```
+
+⛔ **Read `preference_admissibility_basis` before treating the narrowed set as authorship-validated.** `recognized` means every kept `pr-comment` was checked against the live registry-derived reviewer set. `presence_only` means that registry was unresolvable and the rule degraded: the kept comments carry a `bot_kind`, but nothing validated it, so a legacy or de-registered identity is in the set. The field is emitted only when `--preference-admissible` is on — its absence means the narrowing did not run, never that the strong check did.
 
 ## Integration
 

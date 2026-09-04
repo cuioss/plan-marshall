@@ -15,9 +15,12 @@ its shape lives in ``phase-6-finalize/standards/disposition-to-hint-routing.md``
 § "(e) Authorship admissibility".
 """
 
+import inspect
 import json
 from argparse import Namespace
 
+import _findings_core
+import pytest
 from _manage_findings_fixtures import _add_ns, cmd_add, cmd_query
 
 # Plan ids this module's tests file findings against — seeded by the autouse
@@ -29,7 +32,17 @@ PLAN_IDS = (
     'pref-adm-non-comment',
     'pref-adm-recognized-bot',
     'pref-adm-unrecognized-bot',
+    'pref-adm-basis-recognized',
+    'pref-adm-basis-degraded',
+    'pref-adm-basis-flag-off',
+    'pref-adm-basis-unified',
+    'pref-adm-basis-degraded-self',
 )
+
+#: The payload key carrying the two-state disclosure of WHICH authorship check
+#: ran. Named once here so every assertion below reads the same key the payload
+#: publishes.
+BASIS_KEY = 'preference_admissibility_basis'
 
 #: A ``bot_kind`` value that is NOT a recognized reviewer identity. The registry
 #: derives the recognized set from ``automatic-review/standards/{bot_kind}.md``,
@@ -38,7 +51,7 @@ PLAN_IDS = (
 UNRECOGNIZED_BOT_KIND = 'sonarcloud'
 
 
-def _list_ns(plan_id, *, preference_admissible=False):
+def _list_ns(plan_id, *, preference_admissible=False, include_qgate=False):
     """Build a ``list`` namespace carrying the preference-admissibility opt-in.
 
     Built here rather than by extending the shared ``_manage_findings_fixtures``
@@ -53,7 +66,7 @@ def _list_ns(plan_id, *, preference_admissible=False):
         resolution=None,
         promoted=None,
         file_pattern=None,
-        include_qgate=False,
+        include_qgate=include_qgate,
         author=None,
         kind=None,
         bot_kind=None,
@@ -253,3 +266,152 @@ def test_flag_on_keeps_only_the_admissible_findings(plan_context):
     assert _titles(result) == ['Reviewer claim', 'Unused import']
     assert result['filtered_count'] == 2
     assert result['total_count'] == 4
+
+
+# =============================================================================
+# Test: the degrade is real, and it is disclosed
+# =============================================================================
+
+
+class TestPreferenceAdmissibilityBasis:
+    """The gate publishes WHICH of its two checks ran.
+
+    The recognized reviewer set is re-derived from the live registry, and that
+    derivation can fail. When it does, the rule degrades to a presence-only
+    check rather than rejecting every bot-attributed comment — a rejection would
+    hand preference learning a clean zero over a population it never read. The
+    degrade is therefore kept, and made non-silent: the payload carries
+    ``preference_admissibility_basis``, so a caller can never mistake a degraded
+    narrowing for a registry-validated one.
+
+    The registry is made unresolvable by patching ``_recognized_bot_kinds`` in
+    ``_findings_core`` — the module-global the once-per-query resolver looks up —
+    to return ``None``, which is exactly the value the real resolver returns on
+    an import or parse failure. Patching the resolver rather than breaking the
+    import keeps the fixture pinned to the contract's own ``None`` sentinel.
+    """
+
+    def test_basis_is_recognized_when_the_registry_resolves(self, plan_context):
+        plan_id = 'pref-adm-basis-recognized'
+        _seed_mixed_corpus(plan_context, plan_id)
+
+        result = cmd_query(_list_ns(plan_id, preference_admissible=True))
+
+        assert result[BASIS_KEY] == 'recognized'
+        # POSITIVE CONTROL for the degrade test below: under the full check the
+        # unrecognized `bot_kind` is excluded.
+        assert _titles(result) == ['Reviewer claim', 'Unused import']
+
+    def test_degraded_registry_reports_presence_only_and_admits_more(
+        self, plan_context, monkeypatch
+    ):
+        # Both halves in one assertion set: the basis SAYS `presence_only`, and
+        # the result set DEMONSTRATES it — the unrecognized-`bot_kind` comment,
+        # excluded under the full check above, is now retained. Asserting the
+        # label alone would pass against a build that relabelled without
+        # degrading, and asserting the set alone would pass against a silent
+        # degrade — which is the defect this field exists to close.
+        plan_id = 'pref-adm-basis-degraded'
+        _seed_mixed_corpus(plan_context, plan_id)
+        monkeypatch.setattr(_findings_core, '_recognized_bot_kinds', lambda: None)
+
+        result = cmd_query(_list_ns(plan_id, preference_admissible=True))
+
+        assert result[BASIS_KEY] == 'presence_only'
+        assert _titles(result) == ['Reviewer claim', 'Spurious claim', 'Unused import']
+
+    def test_pipeline_authored_comment_stays_excluded_under_the_degrade(
+        self, plan_context, monkeypatch
+    ):
+        # The threat the gate actually defends against is untouched by the
+        # degrade: the pipeline's own posted comment carries an ABSENT
+        # `bot_kind`, and the presence check runs before the registry check, so
+        # it is excluded on BOTH paths. Without this the degrade could not be
+        # kept at all.
+        plan_id = 'pref-adm-basis-degraded-self'
+        cmd_add(
+            _add_ns(
+                plan_id=plan_id,
+                type='pr-comment',
+                title='Pipeline note',
+                detail='d',
+                author='repo-owner-bot',
+            )
+        )
+        monkeypatch.setattr(_findings_core, '_recognized_bot_kinds', lambda: None)
+
+        result = cmd_query(_list_ns(plan_id, preference_admissible=True))
+
+        assert result[BASIS_KEY] == 'presence_only'
+        assert result['findings'] == []
+        assert result['total_count'] == 1
+
+    def test_basis_is_absent_when_the_flag_is_off(self, plan_context):
+        # An absent key is UNDECLARED, never a default. Emitting a basis for a
+        # gate that did not run would assert something about a check that never
+        # happened — the same absence-read-as-measurement defect the field
+        # exists to prevent.
+        plan_id = 'pref-adm-basis-flag-off'
+        _seed_mixed_corpus(plan_context, plan_id)
+
+        result = cmd_query(_list_ns(plan_id))
+
+        assert BASIS_KEY not in result
+
+    def test_unified_read_reports_one_basis_for_both_slices(self, plan_context):
+        # `--include-qgate` narrows two slices. The registry is resolved ONCE for
+        # the whole query, so the single basis the payload carries describes both
+        # — two independent resolutions could disagree and leave the caller with
+        # no way to tell which slice each applied to.
+        plan_id = 'pref-adm-basis-unified'
+        _seed_mixed_corpus(plan_context, plan_id)
+
+        result = cmd_query(_list_ns(plan_id, preference_admissible=True, include_qgate=True))
+
+        assert result['qgate_included'] is True
+        assert result[BASIS_KEY] == 'recognized'
+
+
+# =============================================================================
+# Test: the flag cannot bind positionally
+# =============================================================================
+
+
+class TestPreferenceAdmissibleIsKeywordOnly:
+    """``preference_admissible`` is keyword-only on both query functions.
+
+    Both are consumed across skills (``automatic-review``, ``phase-6-finalize``,
+    ``workflow-integration-github`` / ``-gitlab`` / ``-sonar``), and the flag sits
+    beside ``any_checkout`` — two adjacent booleans that a positional call could
+    silently swap, turning a request to read another checkout into a request to
+    narrow the result set. Keyword-only closes that off at the signature instead
+    of leaving it to caller discipline, and ``any_checkout`` keeps the positional
+    slot it held before the flag was added.
+    """
+
+    @pytest.mark.parametrize(
+        'fn',
+        [_findings_core.query_findings, _findings_core.query_findings_unified],
+        ids=['query_findings', 'query_findings_unified'],
+    )
+    def test_flag_is_keyword_only_and_any_checkout_keeps_its_slot(self, fn):
+        params = list(inspect.signature(fn).parameters.values())
+
+        assert params[8].name == 'any_checkout'
+        assert params[8].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+        assert (
+            inspect.signature(fn).parameters['preference_admissible'].kind
+            is inspect.Parameter.KEYWORD_ONLY
+        )
+
+    @pytest.mark.parametrize(
+        'fn',
+        [_findings_core.query_findings, _findings_core.query_findings_unified],
+        ids=['query_findings', 'query_findings_unified'],
+    )
+    def test_a_tenth_positional_argument_is_rejected(self, fn):
+        # The binding hazard stated as behaviour, not just as a signature shape:
+        # a caller that positionally supplies one argument past `any_checkout`
+        # is refused outright rather than quietly enabling the narrowing.
+        with pytest.raises(TypeError):
+            fn('some-plan', None, None, None, None, None, None, None, False, True)
