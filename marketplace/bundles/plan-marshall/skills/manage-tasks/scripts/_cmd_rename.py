@@ -49,8 +49,23 @@ def _write_mappings(path: Path, mappings: list[dict]) -> None:
     atomic_write_file(path, '\n'.join(lines))
 
 
-def _apply_mappings_to_tasks(plan_id: str, old_path: str, new_path: str) -> list[dict]:
-    """Rewrite step targets in all pending tasks that match old_path."""
+def _apply_mappings_to_tasks(
+    plan_id: str, old_path: str, new_path: str, include_completed: bool = False
+) -> list[dict]:
+    """Rewrite step targets that match old_path.
+
+    By default only unfinished work is rewritten: a task whose status is ``done``
+    is skipped whole, and within every other task only ``pending`` steps are
+    touched. That default keeps a finished task's record a faithful account of
+    the paths it actually edited.
+
+    With ``include_completed`` both guards are lifted, so finished tasks and
+    non-pending steps are rewritten too. The case it exists for is an upstream
+    rename landing mid-plan: the file a completed step named no longer exists, so
+    leaving the step alone does not preserve a true record — it strands the task
+    on a dead path that the declared-set closure check then flags for the rest of
+    the plan's life, with no sanctioned way to correct it.
+    """
     tasks_dir = get_tasks_dir(plan_id)
     if not tasks_dir.exists():
         return []
@@ -60,12 +75,12 @@ def _apply_mappings_to_tasks(plan_id: str, old_path: str, new_path: str) -> list
         content = task_file.read_text(encoding='utf-8')
         task = parse_task_file(content)
 
-        if task.get('status') == 'done':
+        if not include_completed and task.get('status') == 'done':
             continue
 
         changed = False
         for step in task.get('steps', []):
-            if step.get('status') != 'pending':
+            if not include_completed and step.get('status') != 'pending':
                 continue
             target = step.get('target', '')
             if target == old_path or target.startswith(old_path + '/'):
@@ -76,6 +91,12 @@ def _apply_mappings_to_tasks(plan_id: str, old_path: str, new_path: str) -> list
                         'step': step['number'],
                         'old_target': target,
                         'new_target': new_target,
+                        # The step's status BEFORE the rewrite. A rewrite of an
+                        # already-finished step edits the record of work that is
+                        # done, so the audit trail must say which entries did
+                        # that rather than leaving it inferable only from the
+                        # flag that was passed.
+                        'step_status': step.get('status', 'pending'),
                     }
                 )
                 step['target'] = new_target
@@ -91,7 +112,9 @@ def _apply_mappings_to_tasks(plan_id: str, old_path: str, new_path: str) -> list
 def cmd_rename_path(args) -> dict:
     """Handle 'rename-path' subcommand.
 
-    Records old→new path mapping and rewrites step targets in pending tasks.
+    Records old→new path mapping and rewrites matching step targets. Only
+    unfinished work is rewritten unless ``--include-completed`` is passed; see
+    ``_apply_mappings_to_tasks`` for what that flag lifts and why.
     """
     old_path = args.old_path.rstrip('/')
     new_path = args.new_path.rstrip('/')
@@ -99,20 +122,30 @@ def cmd_rename_path(args) -> dict:
     if old_path == new_path:
         return output_error('Old path and new path are identical')
 
+    include_completed = bool(getattr(args, 'include_completed', False))
+
     # Record mapping
     mapping_path = _get_rename_mapping_path(args.plan_id)
     mappings = _read_mappings(mapping_path)
     mappings.append({'old_path': old_path, 'new_path': new_path})
     _write_mappings(mapping_path, mappings)
 
-    # Rewrite step targets in pending tasks
-    rewritten = _apply_mappings_to_tasks(args.plan_id, old_path, new_path)
+    rewritten = _apply_mappings_to_tasks(
+        args.plan_id, old_path, new_path, include_completed=include_completed
+    )
+    completed_rewritten = [r for r in rewritten if r['step_status'] != 'pending']
 
+    # A rewrite that edited finished work says so in the log line — the count
+    # alone would not distinguish it from an ordinary pending-only rewrite.
+    completed_note = (
+        f' ({len(completed_rewritten)} on already-completed steps)' if completed_rewritten else ''
+    )
     log_entry(
         'work',
         args.plan_id,
         'INFO',
-        f'[MANAGE-TASKS] Recorded rename: {old_path} -> {new_path}, rewritten {len(rewritten)} step targets',
+        f'[MANAGE-TASKS] Recorded rename: {old_path} -> {new_path}, '
+        f'rewritten {len(rewritten)} step targets{completed_note}',
     )
 
     return {
@@ -124,5 +157,6 @@ def cmd_rename_path(args) -> dict:
         },
         'mapping_count': len(mappings),
         'rewritten_count': len(rewritten),
+        'rewritten_completed_count': len(completed_rewritten),
         'rewritten': rewritten,
     }

@@ -365,6 +365,15 @@ def build_parser() -> argparse.ArgumentParser:
     add_plan_id_arg(p_rename)
     p_rename.add_argument('--old-path', required=True, help='Original path before rename')
     p_rename.add_argument('--new-path', required=True, help='New path after rename')
+    p_rename.add_argument(
+        '--include-completed',
+        action='store_true',
+        help=(
+            'Also rewrite step targets on done tasks and non-pending steps. '
+            'Use when an upstream rename landed mid-plan, so a completed step '
+            'names a path that no longer exists'
+        ),
+    )
 
     # qgate-mechanical-checks
     p_qgate = subparsers.add_parser(
