@@ -325,9 +325,13 @@ ignore = ["E501"]
 # genuinely dead imports, and this turns that off across test/** — the
 # redefinition guard against two `def test_x` in one namespace goes with it.
 # The population now covered, measured on this tree rather than carried from
-# the request, is F401 195 and F811 362, by:
+# the request, is F401 199 and F811 362, by:
 #
-#     python3 -m ruff check test/ --select F401,F811 --ignore-noqa --statistics
+#     ruff check test/ --select F401,F811 --statistics --config "lint.per-file-ignores = {}"
+#
+# The `--config` override is what makes the command re-derivable at all:
+# `--select` enables a rule, it does not bypass `per-file-ignores`, so the
+# entry below would suppress both codes and the command would report nothing.
 #
 # This entry changes what the gate REPORTS not at all — it changes where the
 # decision is recorded, from a comment at every one of those sites to one
