@@ -320,7 +320,15 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
      resolve --command module-tests --audit-plan-id {plan_id}
    ```
 
-   Capture `executable`, `execution_tier` and `bash_timeout_seconds`. The captured `executable` IS branch 4's whole-tree invocation; appending the module argument to it gives branch 6's scoped invocation; and its **build-skill notation** (the `{bundle}:{skill}:{script}` prefix of the executable) is the notation branch 1 calls `resolve-test-scope` on. A project whose build skill exposes no `resolve-test-scope` verb cannot answer the divergence question at all — treat that as `whole_tree_available: false` and take branch 3's honest-degradation path. Branch on the resolve's error shapes exactly as the whole-tree `quality-gate` probe prescribes: only the `Command not found` + `available[]`-omits-`module-tests` shape proves absence (branch 3); any other error shape did not answer, so STOP the step.
+   Capture `executable`, `execution_tier` and `bash_timeout_seconds`. The captured `executable` IS branch 4's whole-tree invocation; appending the module argument to it gives branch 6's scoped invocation; and its **build-skill notation** (the `{bundle}:{skill}:{script}` prefix of the executable) is the notation branch 1 calls `resolve-test-scope` on. A project whose build skill exposes no `resolve-test-scope` verb cannot answer the divergence question at all. That case does NOT route to branch 3: branch 3's mandatory WARNING interpolates `{scoped_modules}`, which only branch 1's seam call produces and this path never makes, so borrowing it would prescribe an instruction the path structurally cannot satisfy. Emit its own WARNING instead — naming the un-gated dimension without a footprint it cannot know — and proceed to **Mark Step Complete (Success)** under § "Mark Step Complete"'s governing rule, which requires the `display_detail` to name module-tests as un-gated:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level WARNING \
+     --message "[WARNING] (plan-marshall:pre-push-quality-gate) The resolved build skill exposes no resolve-test-scope verb, so the divergence question cannot be answered and NO pytest ran — the scoped-green / whole-tree-red divergence class (PLAN-08) is UN-GATED at finalize for this push. Proceeding on honest degradation."
+   ```
+
+   Branch on the resolve's error shapes exactly as the whole-tree `quality-gate` probe prescribes: only the `Command not found` + `available[]`-omits-`module-tests` shape proves absence (branch 3); any other error shape did not answer, so STOP the step.
 
 1. **Resolve the scope** — call the callable seam on the notation captured above and parse its resolution:
 
