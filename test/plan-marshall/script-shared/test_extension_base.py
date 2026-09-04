@@ -192,6 +192,37 @@ def test_extension_base_domain_verb_descriptor_shape():
     assert descriptor == [{'verb': 'marker-detect', 'notation': 'pm-dev-java-cui:search-markers'}]
 
 
+def test_extension_base_default_file_globs():
+    """Default provides_file_globs returns [] — every pre-hook extension stays valid.
+
+    The safe default is what lets the seeding consumer read the hook off every
+    discovered domain extension without any bundle being edited first: an
+    extension that declares no globs seeds no ``file_globs`` key at all.
+    """
+    ext = ConcreteExtension()
+    assert ext.provides_file_globs() == []
+
+
+class FileGlobsExtension(ExtensionBase):
+    """Extension declaring the path globs its domain owns."""
+
+    def get_skill_domains(self) -> list[dict]:
+        return [{'domain': {'key': 'test'}, 'profiles': {}}]
+
+    def provides_file_globs(self) -> list[str]:
+        return ['**/*.py', 'scripts/**']
+
+
+def test_extension_base_file_globs_returned_unchanged():
+    """An overriding extension's declared glob list is returned verbatim.
+
+    The seed is written from this value as-is, so the accessor must neither
+    normalise, sort, nor de-duplicate what the domain declared — the order and
+    the exact glob strings are the domain's own contract with the detector.
+    """
+    assert FileGlobsExtension().provides_file_globs() == ['**/*.py', 'scripts/**']
+
+
 def test_extension_base_no_longer_exposes_verify_and_finalize_steps_hooks():
     """The dead provides_verify_steps and provides_finalize_steps hooks are removed from ExtensionBase."""
     ext = ConcreteExtension()

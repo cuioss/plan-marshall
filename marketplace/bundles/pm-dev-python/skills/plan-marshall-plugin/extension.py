@@ -152,6 +152,17 @@ class Extension(ExtensionBase, DerivationResolverBase):
         """import-linter: Python arch-gate tool. Binding: pm-dev-python:arch-gate-python."""
         return {'tool': 'import-linter'}
 
+    def provides_file_globs(self) -> list[str]:
+        """Declare the Python source glob — the file type this domain owns.
+
+        Python source is the whole of this domain's file-type identity: its skills
+        are Python-language standards, so a plan touching a ``.py`` file wants them
+        and a plan touching nothing else does not. Written in the ``file_globs``
+        dialect, where a leading ``**/`` matches zero or more path segments, so a
+        repo-root module file matches as well as a nested one.
+        """
+        return ['**/*.py']
+
     # =========================================================================
     # Axis-C: module-edge derivation (the python-import join)
     # =========================================================================

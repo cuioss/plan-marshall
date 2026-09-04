@@ -77,6 +77,20 @@ class Extension(ExtensionBase):
             'high', signals, additive_to='javascript', module_data=module_data, active_profiles=active_profiles
         )
 
+    def provides_file_globs(self) -> list[str]:
+        """Declare the JS/CSS source globs this additive domain owns.
+
+        ``javascript-cui`` layers CUI project-structure standards over the base
+        ``javascript`` domain, so it recognises the same file types and declares the
+        same globs. The duplication is intended: the inclusion leg unions matching
+        domains rather than picking one, so both the base and the additive domain
+        are pulled in by a JS/CSS change, which is exactly the pairing
+        ``applies_to_module``'s ``additive_to='javascript'`` already expresses. The
+        Maven and npm descriptors that make a CUI frontend module dual-build are
+        deliberately absent — they belong to those build systems under ADR-004.
+        """
+        return ['**/*.js', '**/*.mjs', '**/*.jsx', '**/*.css']
+
     def config_defaults(self, project_root: str) -> None:
         """Configure CUI-specific Maven defaults for frontend modules.
 
