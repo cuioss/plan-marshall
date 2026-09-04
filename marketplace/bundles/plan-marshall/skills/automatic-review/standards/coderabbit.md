@@ -173,7 +173,7 @@ CodeRabbit publishes a review summary, per-line comments, and a standalone summa
 one of those three shapes is evidence it reviewed this diff.
 
 **Presence alone is not enough — the update must move.** CodeRabbit **edits its summary comment in
-place** on re-review rather than leaving the earlier one untouched, so the comment's continued
+place** on re-review rather than appending a fresh one, so the comment's continued
 presence proves only that the bot reviewed at some *earlier* commit; after a force-push or a
 loop-back an unedited comment would silently credit CodeRabbit with reviewing code it never saw.
 That is the false-positive direction, and `participation_requires_update: true` closes it: every
