@@ -347,6 +347,44 @@ The full four-face contract (declaration, discovery, dispatch, null-on-absent re
 
 ---
 
+### provides_file_globs
+
+Declares the path globs that characterise the domain's **own file types**. Optional additive hook mirroring `provides_arch_gate()` / `provides_domain_verb()`: returns a list of globs, or `[]` (the default) when the domain owns no distinct file type.
+
+**Lifecycle**: Read by `manage-config`'s `convert_extension_to_domain_config` when it builds a domain's config block, and written as the SEED for `skill_domains.{domain}.file_globs`. Both `skill-domains configure` and `init` reach the hook through that single seam. The seed is written whenever the `file_globs` key is absent for the domain, so an already-configured project is backfilled on its next `configure` run; an operator value set via `set-inclusion` is restored after the domain rebuild and therefore wins over the seed.
+
+```python
+def provides_file_globs(self) -> list[str]:
+    """Return the path globs that characterise this domain's own file types.
+
+    Returns:
+        A list of glob strings in the ``file_globs`` dialect (e.g.
+        ``['**/*.py']`` for the python domain), or ``[]`` when the domain owns
+        no distinct file type.
+
+    Default: []
+    """
+```
+
+| Field | Value |
+|-------|-------|
+| Return type | `list[str]` |
+| Default | `[]` |
+| Seeding consumer | `manage-config` `_cmd_skill_domains.convert_extension_to_domain_config` → `skill_domains.{domain}.file_globs` |
+| Read by | `manage-config domain-detect`, glob inclusion leg only |
+
+**Contributes no `build.map` route.** The globs declared here are **domain-detection** knowledge, not build knowledge. They land in `skill_domains.{domain}.file_globs`, never in `build.map`; they contribute no `(pattern, role)` route and trigger no build gate. The Axis-B file-to-build map (`classify_globs` on `BuildExtensionBase`) remains the sole owner of build routing under [ADR-004](../../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc).
+
+**Glob dialect.** `file_globs` values are translated by `_cmd_domain_detect._glob_to_regex`: `**/` matches zero or more leading path segments (so a repo-root file DOES match `**/*.py`), `**` matches any run including separators, and `*` matches a run of non-separator characters. This is **not** the `fnmatch` dialect § [classify_globs](#classify_globs-build_map-routes) uses for build routes — the two glob families are matched by different matchers and must not be copied between each other.
+
+**Why Axis-A: the discovery-population criterion.** The hook belongs on `ExtensionBase` because the set of legitimate implementors is exactly the population `discover_all_extensions()` reaches — a bundle whose manifest `SKILL.md` declares `implements: plan-marshall:extension-api/standards/ext-point-domain-bundle` and whose sibling `extension.py` exposes an `Extension` class. That is precisely the population `convert_extension_to_domain_config` consumes, so the seeding consumer's reach and the hook's implementor set coincide. A build-system extension exposes a `BuildExtension` class and is reached only by the separate, name-driven `discover_build_extensions()`, which the domain-config conversion never calls.
+
+The criterion is the **discovery population**, not "which classes declare a skill domain" — the build-system extensions (`build-pyproject` / `build-maven` / `build-gradle` / `build-npm`) each **do** declare `get_skill_domains()`. What a build extension's declared domain carries is **empty `profiles`**: it names a domain solely to key its `build_map` routes and its `classify_build_class` lookup, contributing no skill-loading knowledge, so it is not a legitimate declarant of domain-detection globs. The file-type knowledge a build system genuinely owns is already declared as Axis-B `classify_globs()` routes.
+
+**Authoring rule.** Declare only globs the domain genuinely owns, and return `[]` when it owns no distinct file type. An over-broad glob — `**/*.md` on the documentation domain, say — unions the domain into nearly every plan in a marketplace repository, which is exactly what the `file_globs` inclusion leg exists to avoid. The hook is un-keyed and applies to every domain a multi-domain extension declares, matching the existing `provides_triage()` / `provides_arch_gate()` shape.
+
+---
+
 ## Extension Points
 
 Each extension point has its own contract document with formal parameters, pre-conditions, and post-conditions:
@@ -942,9 +980,9 @@ This is the only abstract method because every domain must:
 1. **Declare identity** — the domain key is used throughout marshal.json
 2. **Provide skills** — skills are the primary value a domain extension contributes
 
-### Why Seven Optional Hooks?
+### Why Eight Optional Hooks?
 
-All seven hooks (config_defaults, provides_triage, provides_outline_skill, provides_recipes, provides_retrospective_aspects, provides_arch_gate, provides_domain_verb) follow the same extension model:
+All eight hooks (config_defaults, provides_triage, provides_outline_skill, provides_recipes, provides_retrospective_aspects, provides_arch_gate, provides_domain_verb, provides_file_globs) follow the same extension model:
 
 1. **Domain ownership** — each domain declares its own capabilities rather than core code hardcoding domain-specific behavior
 2. **Safe defaults** — all hooks return None or empty, so bundles only implement what they need
