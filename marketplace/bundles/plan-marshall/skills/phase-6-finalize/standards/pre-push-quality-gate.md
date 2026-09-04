@@ -225,7 +225,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   resolve --command quality-gate --module {bundle} --audit-plan-id {plan_id}
 ```
 
-Capture `executable`, `execution_tier` and `bash_timeout_seconds` from the returned TOON, then run the captured `executable` with the Bash timeout set to `bash_timeout_seconds * 1000` milliseconds. When `execution_tier` is `orchestrator` the invocation exceeds the Bash ceiling and MUST NOT be run here — hand it to the orchestrator's `await-long-running` seam and resume this loop on its result. A `status: error` from the resolve is handled exactly as the whole-tree arm's availability probe below prescribes: only the exact `error: architecture_error` + `message: Command not found` + `available[]`-omits-`quality-gate` shape proves the bundle exposes no `quality-gate` target (skip that bundle and record it in the same `[WARNING]` idiom § "Derive unique bundle set" uses); every other error shape did not answer, so STOP the step per § "Exit-code convention for every script call".
+Capture `executable`, `execution_tier` and `bash_timeout_seconds` from the returned TOON, then run the captured `executable` with the Bash timeout set to `bash_timeout_seconds * 1000` milliseconds. When `execution_tier` is `orchestrator` the invocation exceeds the Bash ceiling and MUST NOT be run here — hand it to the orchestrator's `await-long-running` seam and resume this loop on its result. A `status: error` from the resolve is handled exactly as the whole-tree arm's availability probe below prescribes: only the exact `error: architecture_error` + `message: Command not found` + `available[]`-omits-`quality-gate` shape proves the bundle exposes no `quality-gate` target (skip that bundle and record it in the same `[WARNING]` idiom § "Derive unique bundle set" uses — a skipped bundle was NOT gated, so it does not count toward the `{N} bundles … green` in Branch A's detail; report the gated count and name the skipped bundle under § "Mark Step Complete"'s governing rule); every other error shape did not answer, so STOP the step per § "Exit-code convention for every script call".
 
 Inspect the invocation's TOON output. On `status: error`, halt: stop iterating, record the failing bundle, and proceed to **Mark Step Complete (Failure)** below. The build wrapper's TOON already carries `errors[N]{file,line,message,category}` — surface the offending file/line via the standard finalize TOON. Read the verdict from that `status` / `errors[]`, never from the exit code, which is `0` even on a red gate.
 
@@ -287,7 +287,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
 Branch on that probe with the same exact-shape discipline the whole-tree `quality-gate` availability probe uses:
 
 - **`status: success`** → the project DOES expose a whole-tree `test-compile`. There is nothing to widen: run the returned `executable` directly (same timeout and `orchestrator`-tier hand-off rules) and read its result as this arm's verdict.
-- **`status: error` carrying ALL THREE of `error: architecture_error`, `message: Command not found`, and an `available[]` that omits `test-compile`** → neither scope exposes the target, so this arm genuinely has no resolved invocation. Emit one `[WARNING]` naming the test-tree type-checking dimension as un-gated for this push and proceed to the **Whole-tree module-tests divergence gate**, exactly as the whole-tree `quality-gate` arm's honest-degradation branch does for its own dimension set.
+- **`status: error` carrying ALL THREE of `error: architecture_error`, `message: Command not found`, and an `available[]` that omits `test-compile`** → neither scope exposes the target, so this arm genuinely has no resolved invocation. Emit one `[WARNING]` naming the test-tree type-checking dimension as un-gated for this push and proceed to the **Whole-tree module-tests divergence gate**, exactly as the whole-tree `quality-gate` arm's honest-degradation branch does for its own dimension set — **including that branch's second obligation**: this path reaches Branch A with `test-compile` un-run, so its `display_detail` must name that arm as un-gated rather than using any variant ending `test-compile … green`. Compose it under § "Mark Step Complete"'s governing rule.
 - **`status: error` in ANY other shape** → the probe did not answer; STOP the step per § "Exit-code convention for every script call".
 
 Any other error shape from the module-scoped resolve likewise did not answer — STOP the step.
@@ -387,9 +387,11 @@ Taken together the honest surface is "the tracked tree", and a declaration namin
 
 ## Mark Step Complete
 
-Record the outcome on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. Branch A requires ALL FOUR of the per-bundle `quality-gate` sweep, the whole-tree `quality-gate` arm, the whole-tree `test-compile`, and the module-tests divergence gate to be green; Branch B fires when ANY of the four failed.
+Record the outcome on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. The arms are the per-bundle `quality-gate` sweep, the whole-tree `quality-gate` arm, the whole-tree `test-compile`, and the module-tests divergence gate: Branch A fires when NONE of them failed; Branch B fires when ANY of them failed.
 
-**Branch A — all bundles green AND whole-tree quality-gate green AND test-compile green AND module-tests gate green**:
+**Branch A — no bundle's `quality-gate` failed AND the whole-tree `quality-gate` arm did not fail AND `test-compile` did not fail AND the module-tests gate did not fail**:
+
+**Branch A does not mean every arm ran.** Several documented paths reach it having gated less than the full set: the whole-tree `quality-gate` honest-degradation branch, the `test-compile` both-scopes-unavailable branch, the per-bundle loop's skip of a bundle exposing no `quality-gate` target, and the module-tests `whole_tree_available == false` branch. **The governing rule is one sentence: the `display_detail` says "green" for an arm only if that arm RAN and passed, and names every arm that did not run.** That rule is what the variants below instantiate — read it as the contract and the variants as worked examples, never the reverse. A path that no variant below anticipates composes its own detail under that rule rather than borrowing the nearest one, which is how an un-run arm gets reported as green.
 
 Immediately before invoking `mark-step-done`, resolve the worktree HEAD SHA so the dispatcher can detect a stale completion record after a downstream loop-back commit advances HEAD:
 
@@ -406,6 +408,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --head-at-completion {sha}
 ```
 
+That literal is the **all-four-ran** case, and only that case. Every arm named in it must have actually run.
+
 **Detail variant — module-tests skipped (zero scoped modules).** When the module-tests gate concluded via branch 5 (no pytest ran because the footprint resolves to zero scoped modules), use the shorter variant below instead, so the skip is legible in the step record rather than indistinguishable from a green pytest run:
 
 ```text
@@ -420,7 +424,8 @@ so the whole-tree-only dimensions were UN-GATED and only a `[WARNING]` was emitt
 detail's "whole-tree quality-gate green" clause would **affirmatively misreport an un-run arm as
 green** — the exact confident-but-untrue signal this gate exists to prevent. Use the degraded variant
 below instead, so the step record names its coverage boundary rather than claiming a pass it did not
-earn (`test-compile` and `module-tests` still ran on this path, so "tests green" is accurate):
+earn. Its trailing "tests green" is accurate only when `test-compile` and `module-tests` both actually
+ran; when either also degraded, compose under the governing rule instead:
 
 ```text
 --display-detail "{N} bundles green, whole-tree quality-gate DEGRADED, tests green"
@@ -444,9 +449,10 @@ Its worst-case expansion is 67 characters at `{N}` = one digit and 68 at two —
 expanded string, not from the literal — so it stays inside the ceiling for any bundle count this gate
 can produce, exactly as the two variants above do.
 
-The two degradations are independent: a run can reach Branch A with the whole-tree `quality-gate`
-degraded, with module-tests un-gated, or with both. When both fire, neither single-arm variant is
-honest — compose one naming both un-gated arms, and size it the same way.
+These degradations are independent and any combination of them can co-occur on one run. Whenever more
+than one fires, no single-arm variant above is honest — compose a detail naming EVERY arm that did not
+run, under the governing rule, and size it the same way. The variants above are worked examples of
+that rule, not an enumeration of the paths that can reach Branch A.
 
 The persisted `head_at_completion` field is consumed by phase-6-finalize Step 3's resumable re-entry check: when the worktree HEAD has advanced past `{sha}` (typically because `automated-review` or `sonar-roundtrip` opened a loop-back fix-task that produced a new commit), the dispatcher re-fires this gate against the newer HEAD. See § "Verdict-input surface — deliberately undeclared" above for why the verdict-currency classifier never narrows that re-fire for THIS gate.
 
