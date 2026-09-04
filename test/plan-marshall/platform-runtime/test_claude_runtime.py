@@ -4286,6 +4286,28 @@ class TestHealthCheck:
         perm_result = next(r for r in result["results"] if r["check"] == "permissions")
         assert perm_result["healthy"] is True
 
+    def test_permissions_detail_names_the_settings_file_actually_resolved(
+        self, rt, tmp_path, monkeypatch, in_tmp_cwd
+    ):
+        """The permissions detail names the resolved file, not a hardcoded literal.
+
+        The read selector prefers ``settings.json`` over ``settings.local.json``,
+        so a project carrying only the shared file must be told to look at the
+        shared file — reporting ``settings.local.json present`` here would name a
+        file the check never examined.
+        """
+        import claude_runtime as _cr
+
+        fake_settings = tmp_path / "settings.json"
+        fake_settings.write_text('{"permissions": {"allow": ["Read(**)"]}}', encoding="utf-8")
+        monkeypatch.setattr(_cr, "_claude_project_settings_read_path", lambda *_: fake_settings)
+
+        result = _parsed(rt.health_check("permissions"))
+        perm_result = next(r for r in result["results"] if r["check"] == "permissions")
+        assert perm_result["healthy"] is True
+        assert "settings.json" in perm_result["detail"]
+        assert "settings.local.json present" not in perm_result["detail"]
+
     # Per-event labels reported by the display check, in order. Derived from
     # _DISPLAY_RENDER_ENTRIES rather than re-listed, so the expected set and the
     # checked set cannot drift apart — the divergence class this deliverable

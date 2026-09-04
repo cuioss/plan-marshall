@@ -198,13 +198,17 @@ class Runtime(ABC):
         ensures ``.plan/temp/`` exists, and installs any platform-specific
         session hook.
 
+        A target that cannot create this plan state returns ``no-op`` with a
+        ``reason`` and an ``alternative`` rather than reporting a setup it did
+        not perform.
+
         Args:
             project_dir: Project root directory path.
             target: Platform target identifier — the value seeded as
                 ``runtime.target``.
 
         Returns:
-            Serialized TOON string (success or error).
+            Serialized TOON string (success, error, or no-op).
         """
 
     @abstractmethod
@@ -301,9 +305,14 @@ class Runtime(ABC):
         this is the documented mitigation for the subprocess hop on hot
         config/manifest paths.
 
+        A target that cannot resolve its project-local-skill discovery roots
+        returns ``no-op`` with a ``reason`` and an ``alternative`` rather than
+        fabricating a root list.
+
         Returns:
             Serialized TOON string carrying ``roots[N]`` — the ordered list of
-            project-local-skill discovery roots for the active target.
+            project-local-skill discovery roots for the active target — or a
+            ``no-op`` from a target that cannot resolve them.
         """
 
     @abstractmethod
@@ -325,11 +334,16 @@ class Runtime(ABC):
         The result does not change for the lifetime of a process (the target
         is fixed by ``marshal.json``), so callers memoise it per process.
 
+        A target that cannot resolve its deployed-bundle cache root returns
+        ``no-op`` with a ``reason`` and an ``alternative`` rather than
+        fabricating a cache location.
+
         Returns:
             Serialized TOON string carrying ``roots[N]`` — the ordered list of
             deployed-bundle cache roots for the active target. The list may
             carry one root or several; callers ``~``-expand each entry before
-            probing it.
+            probing it. A target that cannot resolve them returns a ``no-op``
+            instead.
         """
 
     # ------------------------------------------------------------------
@@ -861,15 +875,6 @@ class Runtime(ABC):
         because a success the caller cannot distinguish from a stored one turns
         a declined measurement into a silently lost one.
 
-        **Known violation, documented rather than implied:** ``OpenCodeRuntime``
-        currently returns ``success`` for an explicit count while reaching no
-        persistence boundary. This is a recorded survivor, not the contract —
-        the requirement above is what an implementation must satisfy, and the
-        remedy is to relocate the (target-neutral) metrics boundary to a shared
-        home so both targets can reach it, or to decline with ``no-op``. Do not
-        read this note as permission; it exists so the contract does not assert
-        a behaviour a registered runtime does not have.
-
         Args:
             plan_id: Plan identifier.
             phase: Phase identifier (e.g. ``"phase-1-init"``).
@@ -1170,10 +1175,14 @@ class Runtime(ABC):
     def health_check(self, checks: str) -> str:
         """Verify platform integration.
 
+        A target that cannot report on its platform integration returns ``no-op``
+        with a ``reason`` and an ``alternative`` rather than inventing health
+        results.
+
         Args:
             checks: Comma-separated list of checks: ``"all"``,
                 ``"permissions"``, ``"display"``, ``"mcp-diagnostics"``.
 
         Returns:
-            Serialized TOON string (success or error).
+            Serialized TOON string (success, error, or no-op).
         """
