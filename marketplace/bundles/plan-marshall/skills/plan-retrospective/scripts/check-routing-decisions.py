@@ -795,17 +795,31 @@ def evaluate_cost_preview(manifest: dict[str, Any], metadata: dict[str, Any]) ->
     ``comparison`` is always present and is one of
     :data:`COMPARISON_NOT_ATTEMPTED` (no prediction recorded — the state EVERY
     run is in today, since no producer writes the key),
-    :data:`COMPARISON_REFUSED` (populations differ, OR the sum does not cover its
-    own population because some rows carry an unmeasured / unrecognised token
-    column), or :data:`COMPARISON_COMPUTED` (populations match AND every
-    in-population row was readable; ``delta_tokens`` and ``delta_pct`` accompany
-    it and nowhere else).
+    :data:`COMPARISON_REFUSED` (populations differ, OR the population is EMPTY,
+    OR the sum does not cover its own population because some rows carry an
+    unmeasured / unrecognised token column), or :data:`COMPARISON_COMPUTED`
+    (populations match AND the population is non-empty AND every in-population
+    row was readable; ``delta_tokens`` and ``delta_pct`` accompany it and nowhere
+    else).
 
-    The second refusal is the same rule as the first, applied to COVERAGE rather
+    The later refusals are the same rule as the first, applied to COVERAGE rather
     than to scope: a delta taken against a floor is as plausible-looking, and as
     unusable for recalibration, as a delta taken across populations. The
     ``execution_log_rows_*`` fields publish the coverage either way, so a reader
     sees the size of the gap and not only its existence.
+
+    ⛔ **The empty-population refusal is not a special case of the coverage one —
+    it is what stops the coverage guard from passing VACUOUSLY.** Over zero
+    in-population rows the sum is ``0``, ``rows_unmeasured`` and
+    ``rows_unrecognised`` are both ``0``, and "every in-population row carried a
+    readable token column" is vacuously TRUE — so a manifest with no
+    ``execution_log`` at all (composed but never run, or one whose rows were
+    never recorded) fell through to :data:`COMPARISON_COMPUTED` and emitted
+    ``delta_tokens = 0 - predicted``: a confident delta against a fabricated
+    zero, fed straight into the ``cost_size_token_table`` recalibration loop. The
+    refusal is therefore keyed on the POPULATION SIZE, which the block publishes
+    beside it, rather than on a count of unreadable rows that an empty population
+    can never produce.
 
     Args:
         manifest: The parsed ``execution.toon`` manifest.
@@ -878,6 +892,27 @@ def evaluate_cost_preview(manifest: dict[str, Any], metadata: dict[str, Any]) ->
             f'{predicted_population}; no delta is emitted, because subtracting '
             'across populations yields a plausible number that would recalibrate '
             'cost_size_token_table against a quantity nobody measured'
+        )
+        return preview
+
+    if not coverage['rows_in_population']:
+        # The populations match by NAME, but the sum was taken over NO ROWS. This
+        # branch MUST precede the coverage branch below, because that branch
+        # cannot fire here: `rows_unmeasured + rows_unrecognised` is 0 over an
+        # empty population, so "every in-population row was readable" is
+        # VACUOUSLY true and the fall-through emitted `delta_tokens =
+        # 0 - predicted` as a COMPUTED comparison. The refusal keys on the
+        # population size — the quantity an empty population actually moves —
+        # and names it in the reason so the `0` beside it reads as an
+        # unpopulated sum rather than as a measured total.
+        preview['comparison'] = COMPARISON_REFUSED
+        preview['comparison_reason'] = (
+            f'empty_population: the manifest execution_log holds no '
+            f'{EXECUTION_LOG_POPULATION} row at all '
+            f'({coverage["rows_in_population"]} in-population rows), so the recorded '
+            'sum of 0 measures nothing; no delta is emitted, because subtracting a '
+            'prediction from an unpopulated sum yields a confident-looking delta '
+            'against a fabricated zero'
         )
         return preview
 

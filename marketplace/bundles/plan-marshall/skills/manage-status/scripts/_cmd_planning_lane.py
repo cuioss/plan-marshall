@@ -34,8 +34,11 @@ is unchanged.
 
 The route also reports the signal-vector confidence (D1) under ``confidence``
 (``signals_resolved`` / ``signals_null`` / ``null_signals`` / ``low_confidence``).
-The split is taken over the six READ signals; ``planning_lane_override`` is
-excluded, because its absence is the normal state rather than a read that failed.
+The split is taken over every READ signal — DERIVED from the reported ``signals``
+mapping rather than mirrored into a second list, so a signal added there is
+scored by the same edit — minus ``planning_lane_override``, which is excluded
+because its absence is the normal state rather than a read that failed. The size
+of that population rides beside the counts as ``signals_total``.
 ``low_confidence`` keys on the four discriminating reads — ``plan_source``,
 ``scope_estimate``, ``change_type``, ``compatibility`` — and is True when two or
 more of them are null, so a verdict resting on two unresolved inputs is flagged
@@ -134,18 +137,21 @@ _DEEP_SCOPE_ESTIMATES = frozenset({'multi_module', 'broad', 'none'})
 # bug_fix / tech_debt / enhancement / verification bias light.
 _DEEP_CHANGE_TYPES = frozenset({'feature', 'feature_breaking'})
 
-# The signals the confidence split is taken over — every S1-S7 input EXCEPT the
-# S6 override. `planning_lane_override` is null on every plan where the operator
-# simply set none, which is the normal state and not a read that failed, so
-# counting it kept a permanent null in the denominator of every vector.
-_CONFIDENCE_SIGNALS = (
-    'plan_source',
-    'scope_estimate',
-    'change_type',
-    'compatibility',
-    'request_concrete',
-    'risk_prose',
-)
+# The ONE key excluded from the confidence split: the S6 override.
+# `planning_lane_override` is null on every plan where the operator simply set
+# none, which is the normal state and not a read that failed, so counting it
+# kept a permanent null in the denominator of every vector.
+#
+# ⛔ The exclusion is stated as a SUBTRAHEND, not as a hand-written copy of the
+# complement. The predecessor mirrored the `signals` mapping minus this key as a
+# literal tuple, so a routing signal added to `signals` was silently omitted from
+# `scored_signals` / `null_signals` / `signals_resolved` — the confidence vector
+# then reported full resolution over a population it had never scanned, and
+# `signals_total` under-published the size of the set it was taken over. Deriving
+# the population from the mapping itself (see `evaluate_signals_pure`) makes the
+# split total by construction: a new signal enters the denominator on the same
+# edit that introduces it, with no second site to remember.
+_OVERRIDE_SIGNAL = 'planning_lane_override'
 # The subset whose null-ness discriminates: the four FIELD READS that can come
 # back None. `request_concrete` and `risk_prose` are derived from the request
 # body and are never None, so they can only pad the resolved side; keying
@@ -659,10 +665,14 @@ def evaluate_signals_pure(
       warning; a band nothing was counted for cannot. ``signals.risk_prose`` still
       reports True, so the record shows the signal fired and was suppressed rather
       than hiding it.
-    - ``confidence`` (D1) — the resolved-vs-null split over the six READ signals
+    - ``confidence`` (D1) — the resolved-vs-null split over every READ signal
       (``signals_total`` / ``signals_resolved`` / ``signals_null`` / ``null_signals``
-      / ``low_confidence``). ``planning_lane_override`` is excluded: its absence is
-      the normal state, not an unresolved read. ``low_confidence`` is True when two
+      / ``low_confidence``). The population is DERIVED from the ``signals`` mapping
+      this function returns, minus ``planning_lane_override``, which is excluded
+      because its absence is the normal state, not an unresolved read; a signal
+      added to that mapping therefore enters the split automatically, and
+      ``signals_total`` publishes the size it was actually taken over.
+      ``low_confidence`` is True when two
       or more of the four discriminating reads (``plan_source`` / ``scope_estimate``
       / ``change_type`` / ``compatibility``) are null — the two body-derived
       booleans are never null and so can never outvote a real gap.
@@ -778,10 +788,16 @@ def evaluate_signals_pure(
     }
     # D1 — signal-resolution confidence. A signal whose value is None resolved to
     # NOTHING: it cannot vote for or against deep, so it cannot contradict a signal
-    # that did fire. The split is taken over `_CONFIDENCE_SIGNALS` — every input
-    # except the S6 override, whose absence is the normal state rather than a failed
-    # read, and which therefore used to sit as a permanent null in the denominator.
-    scored_signals = {name: signals[name] for name in _CONFIDENCE_SIGNALS}
+    # that did fire. The split is DERIVED from the `signals` mapping just built,
+    # minus the one excluded key (`_OVERRIDE_SIGNAL`, the S6 override — its absence
+    # is the normal state rather than a failed read, and it used to sit as a
+    # permanent null in the denominator). Deriving rather than mirroring is what
+    # keeps the population total: a signal added to `signals` is scored on the same
+    # edit, instead of being silently omitted from a hand-maintained second copy
+    # while `signals_total` kept publishing the smaller size.
+    scored_signals = {
+        name: value for name, value in signals.items() if name != _OVERRIDE_SIGNAL
+    }
     null_signals = sorted(name for name, value in scored_signals.items() if value is None)
     signals_null = len(null_signals)
     signals_resolved = len(scored_signals) - signals_null

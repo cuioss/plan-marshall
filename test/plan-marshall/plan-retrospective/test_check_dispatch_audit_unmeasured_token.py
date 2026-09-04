@@ -4,9 +4,10 @@
 ``ran_inline`` is the bucket a reader treats as evidence a step ran inline, so a
 column nobody measured must never land there. The audit already refuses to coerce
 an unreadable ``total_tokens`` to ``0``; these tests pin that the writer's
-explicit ``unmeasured`` token takes the same route, and — the control that makes
-the pair meaningful — that an explicitly-measured ``0`` still classifies
-``ran_inline``.
+explicit ``unmeasured`` token takes the same route, that a NEGATIVE value takes
+it too — no token count is negative, so ``-1`` is an unreadable cell rather than
+a measurement — and, the control that makes each pair meaningful, that an
+explicitly-measured ``0`` still classifies ``ran_inline``.
 
 Written as pure calls on the two derivations rather than through a materialized
 plan directory: the classification is a property of the token record alone, and
@@ -100,3 +101,73 @@ class TestCoverageClassification:
         assert coverage['dispatched'] == 0
         assert coverage['missing_dispatch_emission'] == 0
         assert coverage['findings'] == []
+
+
+class TestANegativeTokenCountIsNotAMeasurement:
+    """No token count is negative, so a negative cell is unreadable — not a zero.
+
+    The docstring said a non-digit token string maps to ``None``, while the
+    reader tested ``raw.strip().lstrip('-').isdigit()`` and the int arm tested
+    nothing at all. ``-1`` therefore classified as a MEASURED value and routed to
+    ``ran_inline`` — the bucket this module presents as evidence a step ran
+    inline, filled by a value that is not a count. Each case below has its
+    non-negative control beside it, because a reader that rejected everything
+    would satisfy the positive half alone.
+    """
+
+    def test_a_negative_int_reads_as_no_record(self):
+        records = _cda.finalize_token_records(_manifest(('push', -1)))
+
+        assert records['push'] is None
+
+    def test_a_negative_string_reads_as_no_record(self):
+        records = _cda.finalize_token_records(_manifest(('push', '-1')))
+
+        assert records['push'] is None
+
+    def test_a_signed_positive_string_is_not_a_digit_string(self):
+        """``+12000`` is not the writer's shape either — it is unreadable."""
+        records = _cda.finalize_token_records(_manifest(('push', '+12000')))
+
+        assert records['push'] is None
+
+    def test_a_padded_digit_string_is_read_from_the_stripped_value(self):
+        """The control: one stripped value is both tested AND parsed.
+
+        The predecessor tested ``raw.strip()`` and then parsed the UNSTRIPPED
+        ``raw``, so the two halves of one branch read the field by two rules.
+        """
+        records = _cda.finalize_token_records(_manifest(('push', ' 12000 ')))
+
+        assert records['push'] == 12_000
+
+    def test_a_zero_is_still_read_as_a_measurement(self):
+        """The boundary control — rejecting negatives must not reject ``0``."""
+        records = _cda.finalize_token_records(_manifest(('push', 0)))
+
+        assert records['push'] == 0
+
+    def test_a_negative_column_lands_in_no_evidence_not_ran_inline(self):
+        coverage = _cda.evaluate_dispatch_coverage(
+            ['push'],
+            _cda.finalize_token_records(_manifest(('push', -5))),
+            finalize_dispatch_line_count=0,
+        )
+
+        assert coverage['no_evidence'] == 1
+        assert coverage['no_evidence_steps'] == ['push']
+        assert coverage['ran_inline'] == 0
+        assert coverage['dispatched'] == 0
+
+    def test_a_negative_row_does_not_win_the_re_fire_max(self):
+        """A recorded measurement outranks a negative, whichever order they land.
+
+        The re-fire rule keeps the larger RECORDED value, and ``None`` is not a
+        value — so the measured row must survive a negative sibling in either
+        order rather than the negative being ``max()``-ed against it.
+        """
+        forwards = _cda.finalize_token_records(_manifest(('push', -9), ('push', 4_000)))
+        backwards = _cda.finalize_token_records(_manifest(('push', 4_000), ('push', -9)))
+
+        assert forwards['push'] == 4_000
+        assert backwards['push'] == 4_000

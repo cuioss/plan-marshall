@@ -10,8 +10,10 @@ up from the ledger.
 
 These tests pin the reader's own output: the per-state row counts beside the sum,
 the int-parsing floor that keeps historical all-numeric rows summing exactly as
-before, and the refusal to emit a delta computed against a floor. Every positive
-assertion has its fully-measured control beside it.
+before, the refusal to emit a delta computed against a floor, and the refusal to
+emit one over an EMPTY population — the case the floor guard cannot reach,
+because "every in-population row was readable" is vacuously true over zero rows.
+Every positive assertion has its fully-measured, populated control beside it.
 """
 
 
@@ -133,6 +135,94 @@ class TestCostPreviewRefusesADeltaAgainstAFloor:
         assert preview['execution_log_rows_measured'] == 1
         assert preview['execution_log_rows_unmeasured'] == 1
         assert preview['execution_log_rows_unrecognised'] == 0
+
+
+class TestCostPreviewRefusesOverAnEmptyPopulation:
+    """The coverage gate cannot fire over zero rows, so the SIZE gate must.
+
+    ``rows_unmeasured + rows_unrecognised`` is ``0`` over an empty population, so
+    "every in-population row was readable" is VACUOUSLY true and the
+    ``incomplete_measurement`` refusal above cannot reach this state. The
+    fall-through emitted ``delta_tokens = 0 - predicted`` under
+    ``COMPARISON_COMPUTED`` — a confident delta against a fabricated zero, fed to
+    the ``cost_size_token_table`` recalibration loop.
+
+    Every assertion here has its populated control beside it, because a reader
+    that refused unconditionally would satisfy the positive half alone.
+    """
+
+    _METADATA = {
+        'execution_profile_cost_preview': '50000',
+        'execution_profile_cost_preview_population': _crd.EXECUTION_LOG_POPULATION,
+    }
+
+    def test_a_manifest_with_no_execution_log_key_refuses(self):
+        """The composed-but-unrun manifest — the reported shape."""
+        preview = _crd.evaluate_cost_preview({}, self._METADATA)
+
+        assert preview['comparison'] == _crd.COMPARISON_REFUSED
+        assert 'empty_population' in preview['comparison_reason']
+        assert 'delta_tokens' not in preview
+        assert 'delta_pct' not in preview
+
+    def test_an_empty_execution_log_list_refuses(self):
+        preview = _crd.evaluate_cost_preview(_manifest(), self._METADATA)
+
+        assert preview['comparison'] == _crd.COMPARISON_REFUSED
+        assert 'empty_population' in preview['comparison_reason']
+
+    def test_rows_only_outside_the_population_refuse(self):
+        """Rows exist, but none in the population the sum names."""
+        preview = _crd.evaluate_cost_preview(
+            _manifest(_row('a', 60_000, phase='1-init')), self._METADATA
+        )
+
+        assert preview['comparison'] == _crd.COMPARISON_REFUSED
+        assert 'empty_population' in preview['comparison_reason']
+
+    def test_the_refusal_publishes_the_population_size_it_keyed_on(self):
+        """The zero is legible as an empty population, not as a measured total."""
+        preview = _crd.evaluate_cost_preview({}, self._METADATA)
+
+        assert preview['execution_log_rows_in_population'] == 0
+        assert preview['execution_log_tokens'] == 0
+        assert str(preview['execution_log_rows_in_population']) in preview['comparison_reason']
+
+    def test_one_measured_row_is_enough_to_compute(self):
+        """The control — the size gate must not fire on a populated measurement."""
+        preview = _crd.evaluate_cost_preview(_manifest(_row('a', 60_000)), self._METADATA)
+
+        assert preview['comparison'] == _crd.COMPARISON_COMPUTED
+        assert preview['delta_tokens'] == 10_000
+
+    def test_an_empty_population_still_refuses_before_the_coverage_reason(self):
+        """Ordering control: the empty case names its OWN reason, not the floor's.
+
+        Collapsing it into ``incomplete_measurement`` would tell a reader the sum
+        could not read some of its rows, when the truth is that there were none.
+        """
+        preview = _crd.evaluate_cost_preview({}, self._METADATA)
+
+        assert 'incomplete_measurement' not in preview['comparison_reason']
+
+    def test_a_population_mismatch_still_wins_over_an_empty_population(self):
+        """The scope gate is the outer one and keeps its own reason."""
+        preview = _crd.evaluate_cost_preview(
+            {},
+            {
+                'execution_profile_cost_preview': '50000',
+                'execution_profile_cost_preview_population': '6-finalize',
+            },
+        )
+
+        assert preview['comparison'] == _crd.COMPARISON_REFUSED
+        assert 'population_mismatch' in preview['comparison_reason']
+
+    def test_no_prediction_over_an_empty_population_is_still_not_attempted(self):
+        """The prediction gate is outermost — an absent prediction is not a refusal."""
+        preview = _crd.evaluate_cost_preview({}, {})
+
+        assert preview['comparison'] == _crd.COMPARISON_NOT_ATTEMPTED
 
 
 class TestAPaddedNumericTokenIsMeasured:

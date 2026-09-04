@@ -33,11 +33,11 @@ D2 — ``dispatch_coverage`` (did dispatch that SHOULD have happened, happen —
     non-zero ``execution_log[]`` ``total_tokens`` is written only when the step
     ran as a dispatched Task agent. So each terminal finalize step is classified
     from its token record into one of three evidence states — ``dispatched``
-    (non-zero tokens), ``ran_inline`` (a RECORDED zero), ``no_evidence`` (no
-    token row at all, OR a row whose ``total_tokens`` could not be read,
-    INCLUDING the writer's ``unmeasured`` token) — and NEVER reported as "ran
-    inline where dispatch was required" on the strength of a missing dispatch
-    line alone.
+    (a positive token count), ``ran_inline`` (a RECORDED zero), ``no_evidence``
+    (no token row at all, OR a row whose ``total_tokens`` could not be read —
+    the writer's ``unmeasured`` token and a negative value among them) — and
+    NEVER reported as "ran inline where dispatch was required" on the strength
+    of a missing dispatch line alone.
 
     ⚠ The writer distinguishes the two zero-shaped states on its own side: a
     caller with no ``<usage>`` envelope OMITS the flags and the row records
@@ -409,6 +409,18 @@ def finalize_token_records(manifest: dict[str, Any] | None) -> dict[str, int | N
     ``0`` and still classifies ``ran_inline``, which bounds the change: no plan
     whose rows carry real token columns changes verdict.
 
+    ⛔ **A NEGATIVE value is unreadable too, and maps to ``None``.** No token
+    count is negative, so ``-1`` is a recorded cell nobody can read as a
+    measurement — yet the string arm tested ``raw.strip().lstrip('-').isdigit()``
+    and the int arm tested nothing at all, so a negative classified as MEASURED
+    and routed to ``ran_inline``: the very bucket the paragraph above says is a
+    recorded zero, filled by a value that is not a count. The digit test is now
+    taken on the STRIPPED value with no sign strip (``stripped.isdigit()``, which
+    rejects ``'-1'`` and ``'+1'`` alike), matching the sibling reader in
+    ``check-routing-decisions.summarize_execution_log_tokens``, and the parse
+    consumes that same stripped value rather than the raw one — reading a field by
+    two different rules in one branch is how the third state went unnoticed.
+
     When two rows name the same step (a re-fire that re-recorded) the larger
     RECORDED value wins, so a later zero cannot mask an earlier dispatched
     measurement — and a recorded value of any size wins over ``None``, because a
@@ -435,9 +447,14 @@ def finalize_token_records(manifest: dict[str, Any] | None) -> dict[str, int | N
             # so it is an absence of evidence rather than a measured zero.
             value = None
         elif isinstance(raw, int):
-            value = raw
-        elif isinstance(raw, str) and raw.strip().lstrip('-').isdigit():
-            value = int(raw)
+            # A negative is not a token count either, and it reached `ran_inline`
+            # as a MEASURED value while this arm tested nothing.
+            value = raw if raw >= 0 else None
+        elif isinstance(raw, str) and raw.strip().isdigit():
+            # Strip ONCE and both test and parse the stripped value. `.isdigit()`
+            # carries the sign rejection itself — no `lstrip('-')`, which is what
+            # admitted `'-1'` here.
+            value = int(raw.strip())
         else:
             value = None
         key = _canon_step(step_id)

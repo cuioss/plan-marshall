@@ -13,6 +13,13 @@ and an unmeasured column must be separable in what the reconciliation returns,
 not merely in what the writer wrote. Each has its measured-value control beside
 it, because a reader that labelled everything ``unmeasured`` would satisfy the
 positive half alone.
+
+The contract covers BOTH ledgers. The dispatch-boundary reader was left running
+its cell through an ``_as_int`` coercion that returns ``0`` for this module's own
+``unmeasured`` token, and the two boundary-derived findings then hard-stamped
+``COLUMN_MEASURED`` whatever the rows carried — so the classes below pin the
+boundary reader's per-row state, the DERIVED (never stamped) aggregate state of a
+sum taken over those rows, and the population coverage published beside it.
 """
 
 
@@ -145,6 +152,223 @@ class TestFindingsPublishTheState:
         assert len(orphans) == 1
         assert orphans[0]['total_tokens'] == 0
         assert orphans[0]['total_tokens_state'] == _ledger.COLUMN_MEASURED
+
+
+def _write_boundary_rows(plan_context, plan_id: str, cells: list[object]) -> None:
+    """Write a dispatch-boundary file whose ``total_tokens`` column is ``cells[i]``.
+
+    The cell is written VERBATIM. The production writer
+    (``cmd_record_dispatch_boundary``) still defaults its legacy five columns to
+    ``0``, so it cannot itself emit an unmeasured cell there — which is exactly
+    why the READER must be pinned directly: an archived file, a hand-edited one,
+    or a later writer change would otherwise arrive at a reader that silently
+    coerces the token to a measured zero, and no test would notice.
+
+    The header is the same three lines the writer emits, so the reader's own
+    header-skip is exercised rather than bypassed.
+    """
+    path = plan_context.plan_dir_for(plan_id) / 'work' / f'metrics-dispatch-boundaries-{PHASE}.toon'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    header = (
+        f'plan_id: {plan_id}\n'
+        f'phase: {PHASE}\n'
+        'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
+        'input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens}:\n'
+    )
+    body = ''.join(
+        f'2026-01-01T10:0{index}:00+00:00,step_complete,{cell},0,0,'
+        f'{_ledger.UNMEASURED_COLUMN_TOKEN},{_ledger.UNMEASURED_COLUMN_TOKEN},'
+        f'{_ledger.UNMEASURED_COLUMN_TOKEN},{_ledger.UNMEASURED_COLUMN_TOKEN}\n'
+        for index, cell in enumerate(cells)
+    )
+    path.write_text(header + body, encoding='utf-8')
+
+
+class TestBoundaryRowsCarryTheStateToo:
+    """The OTHER ledger's reader reads the same three states, not an ``_as_int``.
+
+    ``load_boundary_rows`` ran its token cell through ``_as_int``, which returns
+    ``0`` for this module's OWN ``unmeasured`` token — so an omitted boundary
+    measurement re-entered the reconciliation looking measured, at the one reader
+    the three-state contract had not reached.
+    """
+
+    def test_a_measured_boundary_cell_is_measured(self, plan_context):
+        """The control — the state must not read ``unmeasured`` for everything."""
+        _write_boundary_rows(plan_context, 'recon-bnd-measured', [90000])
+        path = (
+            plan_context.plan_dir_for('recon-bnd-measured')
+            / 'work'
+            / f'metrics-dispatch-boundaries-{PHASE}.toon'
+        )
+
+        rows = _ledger.load_boundary_rows(path)
+
+        assert [row['total_tokens'] for row in rows] == [90000]
+        assert [row['total_tokens_state'] for row in rows] == [_ledger.COLUMN_MEASURED]
+
+    def test_a_measured_zero_boundary_cell_is_still_measured(self, plan_context):
+        """⛔ The distinction the contract turns on, at this reader."""
+        _write_boundary_rows(plan_context, 'recon-bnd-zero', [0])
+        path = (
+            plan_context.plan_dir_for('recon-bnd-zero')
+            / 'work'
+            / f'metrics-dispatch-boundaries-{PHASE}.toon'
+        )
+
+        rows = _ledger.load_boundary_rows(path)
+
+        assert rows[0]['total_tokens_state'] == _ledger.COLUMN_MEASURED
+
+    def test_the_writer_token_is_not_coerced_to_a_measured_zero(self, plan_context):
+        _write_boundary_rows(
+            plan_context, 'recon-bnd-unmeasured', [_ledger.UNMEASURED_COLUMN_TOKEN]
+        )
+        path = (
+            plan_context.plan_dir_for('recon-bnd-unmeasured')
+            / 'work'
+            / f'metrics-dispatch-boundaries-{PHASE}.toon'
+        )
+
+        rows = _ledger.load_boundary_rows(path)
+
+        assert rows[0]['total_tokens'] == 0
+        assert rows[0]['total_tokens_state'] == _ledger.COLUMN_UNMEASURED
+
+    def test_an_unreadable_boundary_cell_is_unrecognised(self, plan_context):
+        _write_boundary_rows(plan_context, 'recon-bnd-junk', ['12x'])
+        path = (
+            plan_context.plan_dir_for('recon-bnd-junk')
+            / 'work'
+            / f'metrics-dispatch-boundaries-{PHASE}.toon'
+        )
+
+        rows = _ledger.load_boundary_rows(path)
+
+        assert rows[0]['total_tokens_state'] == _ledger.COLUMN_UNRECOGNISED
+
+
+class TestTheAggregateStateIsDerivedNotStamped:
+    """A sum is only as readable as its least-readable term."""
+
+    def test_an_all_measured_population_aggregates_measured(self):
+        """The control — deriving must not report every aggregate unmeasured."""
+        rows = [
+            {'total_tokens_state': _ledger.COLUMN_MEASURED},
+            {'total_tokens_state': _ledger.COLUMN_MEASURED},
+        ]
+
+        assert _ledger.aggregate_token_state(rows) == _ledger.COLUMN_MEASURED
+
+    def test_one_unmeasured_row_makes_the_sum_a_floor(self):
+        rows = [
+            {'total_tokens_state': _ledger.COLUMN_MEASURED},
+            {'total_tokens_state': _ledger.COLUMN_UNMEASURED},
+        ]
+
+        assert _ledger.aggregate_token_state(rows) == _ledger.COLUMN_UNMEASURED
+
+    def test_an_unrecognised_row_outranks_an_unmeasured_one(self):
+        rows = [
+            {'total_tokens_state': _ledger.COLUMN_UNMEASURED},
+            {'total_tokens_state': _ledger.COLUMN_UNRECOGNISED},
+        ]
+
+        assert _ledger.aggregate_token_state(rows) == _ledger.COLUMN_UNRECOGNISED
+
+    def test_an_empty_population_is_not_measured(self):
+        """⛔ Over zero rows 'every row was measured' is VACUOUSLY true.
+
+        Stamping the aggregate ``measured`` there publishes a fabricated zero as
+        a measurement — the vacuous-guard shape reconstructed at the aggregate.
+        """
+        assert _ledger.aggregate_token_state([]) == _ledger.COLUMN_UNMEASURED
+
+    def test_the_state_counts_partition_the_population(self):
+        rows = [
+            {'total_tokens_state': _ledger.COLUMN_MEASURED},
+            {'total_tokens_state': _ledger.COLUMN_UNMEASURED},
+            {'total_tokens_state': _ledger.COLUMN_UNRECOGNISED},
+            {},  # a row carrying no state at all is counted, never dropped
+        ]
+
+        counts = _ledger.summarize_token_states(rows)
+
+        assert sum(counts.values()) == len(rows)
+        assert counts[_ledger.COLUMN_UNRECOGNISED] == 2
+
+
+class TestBoundaryDerivedFindingsPublishTheState:
+    """Both boundary-derived findings read the state instead of stamping it."""
+
+    def test_an_orphan_boundary_finding_reports_its_own_state(self, plan_context):
+        plan_id = 'recon-bnd-orphan-unmeasured'
+        cmd_start_phase(ns_start_phase(plan_id, PHASE))
+        _write_boundary_rows(plan_context, plan_id, [_ledger.UNMEASURED_COLUMN_TOKEN])
+        _write_rows(plan_context, plan_id, [])
+
+        result = cmd_reconcile_ledgers(_ns_reconcile(plan_id))
+
+        orphans = _findings_of(result, 'row_absent_from_execution_log')
+        assert len(orphans) == 1
+        assert orphans[0]['total_tokens'] == 0
+        assert orphans[0]['total_tokens_state'] == _ledger.COLUMN_UNMEASURED
+
+    def test_a_measured_orphan_boundary_finding_is_still_labelled_measured(self, plan_context):
+        """The matched control — the hard-stamped verdict was RIGHT for this row."""
+        plan_id = 'recon-bnd-orphan-measured'
+        cmd_start_phase(ns_start_phase(plan_id, PHASE))
+        _write_boundary_rows(plan_context, plan_id, [90000])
+        _write_rows(plan_context, plan_id, [])
+
+        result = cmd_reconcile_ledgers(_ns_reconcile(plan_id))
+
+        orphans = _findings_of(result, 'row_absent_from_execution_log')
+        assert orphans[0]['total_tokens'] == 90000
+        assert orphans[0]['total_tokens_state'] == _ledger.COLUMN_MEASURED
+
+    def test_a_never_closed_aggregate_over_an_unmeasured_row_is_a_floor(self, plan_context):
+        plan_id = 'recon-bnd-unclosed-floor'
+        cmd_start_phase(ns_start_phase(plan_id, PHASE))
+        _write_boundary_rows(plan_context, plan_id, [4000, _ledger.UNMEASURED_COLUMN_TOKEN])
+        _write_rows(plan_context, plan_id, [])
+
+        result = cmd_reconcile_ledgers(_ns_reconcile(plan_id))
+
+        unclosed = _findings_of(result, 'boundary_never_closed')
+        assert len(unclosed) == 1
+        assert unclosed[0]['total_tokens'] == 4000
+        assert unclosed[0]['total_tokens_state'] == _ledger.COLUMN_UNMEASURED
+
+    def test_a_never_closed_aggregate_over_measured_rows_stays_measured(self, plan_context):
+        """The control — the aggregate must not read ``unmeasured`` unconditionally."""
+        plan_id = 'recon-bnd-unclosed-measured'
+        cmd_start_phase(ns_start_phase(plan_id, PHASE))
+        _write_boundary_rows(plan_context, plan_id, [4000, 6000])
+        _write_rows(plan_context, plan_id, [])
+
+        result = cmd_reconcile_ledgers(_ns_reconcile(plan_id))
+
+        unclosed = _findings_of(result, 'boundary_never_closed')
+        assert unclosed[0]['total_tokens'] == 10000
+        assert unclosed[0]['total_tokens_state'] == _ledger.COLUMN_MEASURED
+
+    def test_the_never_closed_finding_publishes_its_population_coverage(self, plan_context):
+        """The size of the gap, not merely its existence."""
+        plan_id = 'recon-bnd-unclosed-coverage'
+        cmd_start_phase(ns_start_phase(plan_id, PHASE))
+        _write_boundary_rows(
+            plan_context, plan_id, [4000, _ledger.UNMEASURED_COLUMN_TOKEN, '12x']
+        )
+        _write_rows(plan_context, plan_id, [])
+
+        result = cmd_reconcile_ledgers(_ns_reconcile(plan_id))
+
+        unclosed = _findings_of(result, 'boundary_never_closed')[0]
+        assert unclosed['total_tokens_rows_in_population'] == 3
+        assert unclosed['total_tokens_rows_measured'] == 1
+        assert unclosed['total_tokens_rows_unmeasured'] == 1
+        assert unclosed['total_tokens_rows_unrecognised'] == 1
 
 
 def test_reconciliation_unmeasured_token_matches_writer():
