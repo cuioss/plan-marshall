@@ -97,7 +97,7 @@ The `execution_log[]` section is a runtime append log that is **separate from th
 ```toon
 execution_log[K]{step_id,phase,outcome,total_tokens,tool_uses,duration_ms,timestamp}:
   - quality_check,5-execute,executed,12000,8,4200,2026-06-08T10:15:00+00:00
-  - create-pr,6-finalize,skipped,0,0,0,2026-06-08T10:42:00+00:00
+  - create-pr,6-finalize,skipped,unmeasured,unmeasured,unmeasured,2026-06-08T10:42:00+00:00
 ```
 
 **Row fields:**
@@ -106,18 +106,18 @@ execution_log[K]{step_id,phase,outcome,total_tokens,tool_uses,duration_ms,timest
 |-------|------|-------------|
 | `step_id` | string | The dispatched step identifier (a phase-5 verification step ID or a phase-6 finalize step ID). |
 | `phase` | enum | `5-execute` or `6-finalize` — the phase the step ran in. |
-| `outcome` | enum | `executed` (the step ran), `skipped` (the step was gated off), or `error` (the step errored). |
-| `total_tokens` | int (≥0) | Total tokens attributed to the step; default `0` when omitted. |
-| `tool_uses` | int (≥0) | Tool-use count attributed to the step; default `0` when omitted. |
-| `duration_ms` | int (≥0) | Wall-clock duration in milliseconds; default `0` when omitted. |
+| `outcome` | enum | One of `VALID_RECORD_OUTCOMES`. Which situation each value means is tabulated in [manifest-schema.md](manifest-schema.md) — read it there rather than from a second enumeration here. |
+| `total_tokens` | three-state | See [manifest-schema.md](manifest-schema.md) § the three token-attribution columns. |
+| `tool_uses` | three-state | As `total_tokens`. |
+| `duration_ms` | three-state | As `total_tokens`. |
 | `timestamp` | string | ISO-8601 UTC timestamp generated at record time (`datetime.now(UTC).isoformat()`). |
 
 **Record-step contract:**
 
 - The manifest MUST already exist (composed at `phase-4-plan` Step 8b). `record-step` against a missing manifest returns `file_not_found` — it never composes a fresh manifest.
 - Each call appends **exactly one** row. `execution_log[]` is an ordered append log, NOT a keyed map — re-invocation with the same `step_id` appends another row, so every dispatch attempt of a step is recorded (a step that runs, errors, then re-runs produces three rows in order).
-- The token-attribution triple defaults to `0` when the caller omits the flags: a `skipped` step legitimately consumes no tokens, and a step dispatched without a `<usage>` tag reports zeros rather than a missing column.
-- Invalid `--phase` (not in `{5-execute, 6-finalize}`) returns `invalid_phase`; invalid `--outcome` (not in `{executed, skipped, error}`) returns `invalid_outcome` — both before any manifest read or write.
+- The token-attribution triple has **no** `0` default: omitting a flag records the `unmeasured` token, never a fabricated zero. A measured zero and an omitted column are different facts and must stay distinguishable — see [manifest-schema.md](manifest-schema.md) § the three token-attribution columns for the contract and the write-side discriminator.
+- Invalid `--phase` (not in `{5-execute, 6-finalize}`) returns `invalid_phase`; an `--outcome` outside `VALID_RECORD_OUTCOMES` returns `invalid_outcome` — both before any manifest read or write.
 - One `decision.log` line is emitted per record via the in-process `_emit_decision_log` helper (the same helper the composer uses), so the line lands in the plan's own `logs/decision.log` alongside `execution.toon`:
 
 ```text
