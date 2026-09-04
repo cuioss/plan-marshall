@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Every pre-push-quality-gate arm obtains its invocation from a resolver.
 
 ``standards/pre-push-quality-gate.md`` runs several build arms. Each one must

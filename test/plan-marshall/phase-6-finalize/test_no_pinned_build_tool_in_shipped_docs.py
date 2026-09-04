@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """No shipped plan-marshall doc pins a build tool outside the allow-list.
 
 ``./pw`` and ``pyproject_build`` are this repository's own build tool — the

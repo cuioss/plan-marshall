@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Contract-text agreement across the ``derive_gate_bundles`` unresolved-path sites.
 
 The rule that a footprint path which matched a ``build_map`` glob but resolves
