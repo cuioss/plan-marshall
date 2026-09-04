@@ -1392,6 +1392,27 @@ A check-run state is never a verdict: a green check can conclude having publishe
 reviewer that posts no check at all would read as absent on every run. The verdict comes from the
 bodies or it is not evidence.
 
+#### Every verdict names the surfaces it was read from
+
+The verdict says what a reviewer did. It does not say **where the run looked** to establish that — and
+without that, `silent` is an assertion a reader must take on trust rather than a claim they can audit.
+The three publish surfaces are enumerated above and this step already binds the run to reading all
+three, so ⛔ **do not enumerate them again here**; the contract is not missing them. What is added is
+the record obligation: **each verdict states which of those surfaces it was read from.** A `silent`
+then means *these surfaces were checked and were empty* — checkable against the run's own evidence —
+and the failure this closes stops being expressible: the observed run that recorded `sourcery-ai`
+`silent` while the review-summary surface carried a rate-limit notice from it could not have written
+that row without showing it had read that surface.
+
+⛔ **A verdict that names no surface is `unreadable`, not `silent`.** There is no third state for *the
+run did not say*: an unattributed verdict is an unverified claim, and it is recorded as the verdict
+that reports the run cannot vouch for what it read. The consequence follows the value, and it is
+**intended**: `unreadable` blocks merge-gate condition 3 where `silent` does not (the paragraph above),
+so an **unattributed verdict holds the gate**. That is the purpose of the rule, not a side effect of it
+— a run that cannot say where it looked has not established that every comment was handled. No grace
+period, no "unless", and no carve-out for a run that read the surfaces and merely omitted to record
+which.
+
 #### Every verdict that reports no review also records whether it reopens
 
 The verdict says a reviewer did not review. It does not say whether that is temporary — and the two
@@ -2208,7 +2229,7 @@ cross-named by `.github/workflows/pr-agent.yml` — never a list transcribed her
 reviewer, each verdict derived from the stored comment bodies (§ Step 7), never from a check state or
 a summary:
 
-| Reviewer (`author_login`) | Class — ⛔ **do not enumerate the values here**: read them from § Step 7's verdict table, which is their single definition | Verdict — ⛔ **do not enumerate the values here either**: read them from that same § Step 7 table. Annotate `(suppressed by label)` where § Step 8 condition 5 calls for it | Reopens? (`yes` / `no` / `unknown`; blank for a completed review, and blank where the label suppressed this reviewer's invitation and was still in place at the gate — a PR-open-only reviewer on an `applied-then-removed` PR takes `no`, not blank) | Body evidence / reason — for `unreadable`, the surface and the error, plus whatever positive control was taken |
+| Reviewer (`author_login`) | Class — ⛔ **do not enumerate the values here**: read them from § Step 7's verdict table, which is their single definition | Verdict — ⛔ **do not enumerate the values here either**: read them from that same § Step 7 table. Annotate `(suppressed by label)` where § Step 8 condition 5 calls for it | Reopens? (`yes` / `no` / `unknown`; blank for a completed review, and blank where the label suppressed this reviewer's invitation and was still in place at the gate — a PR-open-only reviewer on an `applied-then-removed` PR takes `no`, not blank) | Body evidence / reason — including **which publish surfaces this verdict was read from** (§ Step 7; a verdict naming none is `unreadable`, not `silent`), and for `unreadable`, the surface and the error, plus whatever positive control was taken |
 |---|---|---|---|---|
 | … | … | … | … | … |
 
