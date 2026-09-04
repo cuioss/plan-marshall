@@ -996,6 +996,7 @@ _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
         'api-contract-parity',
         'plan-marshall/workflow-integration-github/test_pr_landing_state.py',
     ),
+    ('parser-seam', 'test_parser_seam_coverage.py'),
 )
 
 
