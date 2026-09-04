@@ -103,12 +103,6 @@ PR_COMMENT_KINDS = ['inline', 'review_body', 'issue_comment']
 # it — so adding a bot is a pure standards-doc edit with no change to this file.
 BOT_KINDS = _registry_bot_kinds()
 
-# ``PREFERENCE_BASIS_RECOGNIZED`` / ``PREFERENCE_BASIS_PRESENCE_ONLY`` are imported
-# above from ``_preference_admissibility``, which owns the rule whose two paths they
-# name. The field is published on every payload the narrowing produced — the
-# three-value house pattern already used by ``notation_cross_check`` and Sonar's
-# ``count_status``.
-
 # Default per-field byte cap for quarantined raw_input free-text (64 KiB).
 # The `finding_raw_input_max_bytes` config knob (seeded by manage-config) overrides
 # this default; callers thread the resolved value in via `raw_input_max_bytes`.
@@ -476,7 +470,9 @@ def _preference_basis_fields(admissibility: PreferenceAdmissibility) -> dict[str
 
     Emitting ``preference_admissibility_basis`` on a payload the gate never
     touched would assert something about a check that did not run, so the field
-    is present exactly when the caller asked for the narrowing.
+    is present exactly when the caller asked for the narrowing — the three-value
+    house pattern already used by ``notation_cross_check`` and Sonar's
+    ``count_status``.
     """
     if admissibility.basis is None:
         return {}
