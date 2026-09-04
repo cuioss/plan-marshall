@@ -51,9 +51,7 @@ Two gates run over the derived tuples, both owned by the shared contract
   either way, because that keys on an ABSENT `bot_kind` and the presence check
   runs first. What the degrade does admit is a present-but-unrecognized
   `bot_kind`: a legacy or de-registered reviewer identity. The emitted
-  `preference_admissibility_basis` names which of the two paths ran, so a corpus
-  walked under the degraded gate is never read as one walked under the full
-  check.
+  `preference_admissibility_basis` names which of the two paths ran.
 - **Attribution gate (post-count).** A tuple whose module resolves to the
   `default` fallback bucket is UNATTRIBUTED **on this preference-aggregation path** —
   not a cross-cutting judgement here — and is

@@ -2601,8 +2601,7 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
     threshold-gates at `THRESHOLDS["preference_disposition_occurrences"]`.
 
     The result carries `preference_admissibility_basis` — `recognized` or
-    `presence_only` — so a corpus walked under the degraded authorship gate is
-    never read as one walked under the full check. This is the same disclosure
+    `presence_only`. This is the same disclosure
     `manage-findings list --preference-admissible` publishes, which is what keeps
     the two preference surfaces symmetric: both apply the shared rule, and both
     say which of its two paths actually ran.
