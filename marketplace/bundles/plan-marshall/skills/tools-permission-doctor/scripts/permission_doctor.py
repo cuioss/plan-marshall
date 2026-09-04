@@ -10,7 +10,8 @@ Provides:
 
 Claude rule-pack provenance:
 The analysis rules in this module (``SUSPICIOUS_PATTERNS``, ``is_marketplace_permission``,
-``extract_permission_parts``, ``is_covered_by_wildcard``, ``skill_permission_covered``)
+``extract_permission_parts``, ``is_covered_by_wildcard``, ``skill_permission_covered``,
+``check_permission``, ``cmd_detect_missing_project_step_permissions``)
 encode the **Claude** permission model. They bind only when the target is Claude; on a
 non-Claude target these rules do not apply. The companion standards documents
 (``permission-architecture.md``, ``permission-validation-standards.md``,
@@ -418,8 +419,11 @@ def cmd_detect_suspicious(args) -> dict:
 
 
 # =============================================================================
-# detect-missing-project-step-permissions subcommand
+# detect-missing-project-step-permissions subcommand — Claude rule-pack
 # =============================================================================
+# ``skill_permission_covered`` checks ``Skill(...)`` patterns — Claude-specific.
+# ``load_marshal_config`` and ``extract_project_steps`` delegate to the runtime
+# (target-neutral).
 
 def load_marshal_config(path: str) -> tuple[dict, str | None]:
     """Load marshal.json config file.
