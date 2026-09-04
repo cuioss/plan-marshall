@@ -327,7 +327,6 @@ Because `execution_log[]` is an ordered append log with one row per firing, a st
 status: success
 plan_id: EXAMPLE-PLAN
 phase: 6-finalize
-execution_log_rows: 11
 steps[2]{step_id,firings,refires,skipped,loop_backs,failures,errors,total_tokens,tool_uses,duration_ms,unmeasured_columns,unrecognised_columns}:
   pre-submission-self-review,7,6,0,6,0,0,412000,58,930000,0,0
   push,1,0,3,0,0,0,0,0,0,3,0
