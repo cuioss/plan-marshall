@@ -185,10 +185,6 @@ or de-registered reviewer.
 - the cross-plan auditor's `preference-pattern-detector` block carries it under
   the same absent-key-is-undeclared rule.
 
-A consumer that reads a narrowed set as authorship-validated MUST read the basis
-first: under `presence_only` the set is attribution-present, not
-attribution-verified.
-
 ## Threshold gate is surface-owned
 
 This contract owns generalization and routing ONLY — it does NOT own the
