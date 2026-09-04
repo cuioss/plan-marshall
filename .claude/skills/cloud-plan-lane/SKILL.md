@@ -1371,7 +1371,7 @@ reviewer that examined the diff and found nothing from one that filed findings.
 
 ⛔ **This subsection is the single definition of both value sets** — the verdict vocabulary in the
 table above, and the `required` / `optional` / `unclassified` `Class` values. Every other passage that
-needs either one **cross-references this table and enumerates neither**, the § Report participation
+needs either one **cross-references this subsection and enumerates neither**, the § Report participation
 record included. A value set written down twice goes stale in one of the two copies, and this contract
 already applies exactly that remedy one section away for condition 6's arms (⛔ *"Do not enumerate the
 arms here … Read them from condition 6"*). Read them from here.
@@ -1750,10 +1750,10 @@ hold:**
 
 5. **A review-coverage shortfall is disclosed to the operator.** From the per-reviewer participation
    record (§ Step 7), read the verdict **and the `Class`** of every expected reviewer — the `Class`
-   values are defined in § Step 7's table and are not restated here. The shortfall is computed
-   **against the required set**, not across the whole roster: a roster-wide trigger fires on an
-   optional reviewer's absence with exactly the force it fires on a required one, so it cannot say
-   whether coverage actually fell short.
+   values are defined in § Step 7's *Record per-reviewer participation* subsection and are not
+   restated here. The shortfall is computed **against the required set**, not across the whole
+   roster: a roster-wide trigger fires on an optional reviewer's absence with exactly the force it
+   fires on a required one, so it cannot say whether coverage actually fell short.
 
    State the coverage as **three named ratios**, never as one bare figure — each ratio naming the
    population it is measured against, so a reader can tell which denominator any number belongs to:
@@ -2239,7 +2239,7 @@ cross-named by `.github/workflows/pr-agent.yml` — never a list transcribed her
 reviewer, each verdict derived from the stored comment bodies (§ Step 7), never from a check state or
 a summary:
 
-| Reviewer (`author_login`) | Class — ⛔ **do not enumerate the values here**: read them from § Step 7's verdict table, which is their single definition | Verdict — ⛔ **do not enumerate the values here either**: read them from that same § Step 7 table. Annotate `(suppressed by label)` where § Step 8 condition 5 calls for it | Reopens? (`yes` / `no` / `unknown`; blank for a completed review, and blank where the label suppressed this reviewer's invitation and was still in place at the gate — a PR-open-only reviewer on an `applied-then-removed` PR takes `no`, not blank) | Body evidence / reason — including **which publish surfaces this verdict was read from** (§ Step 7; a verdict naming none is `unreadable`, not `silent`), and for `unreadable`, the surface and the error, plus whatever positive control was taken |
+| Reviewer (`author_login`) | Class — ⛔ **do not enumerate the values here**: read them from § Step 7's *Record per-reviewer participation* subsection, which is their single definition | Verdict — ⛔ **do not enumerate the values here either**: read them from the verdict table in that same § Step 7 subsection. Annotate `(suppressed by label)` where § Step 8 condition 5 calls for it | Reopens? (`yes` / `no` / `unknown`; blank for a completed review, and blank where the label suppressed this reviewer's invitation and was still in place at the gate — a PR-open-only reviewer on an `applied-then-removed` PR takes `no`, not blank) | Body evidence / reason — including **which publish surfaces this verdict was read from** (§ Step 7; a verdict naming none is `unreadable`, not `silent`), and for `unreadable`, the surface and the error, plus whatever positive control was taken |
 |---|---|---|---|---|
 | … | … | … | … | … |
 
