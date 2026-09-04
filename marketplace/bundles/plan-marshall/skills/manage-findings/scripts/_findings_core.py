@@ -106,9 +106,9 @@ BOT_KINDS = _registry_bot_kinds()
 # ``_preference_admissibility`` § Degrade-to-presence-only). ``recognized`` says
 # the gate ran against the real identity set; ``presence_only`` says the registry
 # was unresolvable and the gate fell back to admitting any PRESENT ``bot_kind``.
-# The field is published on every payload the narrowing produced so the degrade
-# can never pass as the strong check — the three-value house pattern already used
-# by ``notation_cross_check`` and Sonar's ``count_status``.
+# The field is published on every payload the narrowing produced — the
+# three-value house pattern already used by ``notation_cross_check`` and Sonar's
+# ``count_status``.
 PREFERENCE_BASIS_RECOGNIZED = 'recognized'
 PREFERENCE_BASIS_PRESENCE_ONLY = 'presence_only'
 
