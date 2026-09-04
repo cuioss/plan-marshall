@@ -169,7 +169,7 @@ All build output **must** go to a log file, not stdout/stderr.
 |-----------|--------|---------|
 | `{plan_id}` | The plan that caused the build, or `NO_PLAN` | `my-feature-plan`, `NO_PLAN` |
 | `{scope}` | `default` (root) or module name | `default`, `core-api` |
-| `{build-system}` | `maven`, `gradle`, `npm` | `maven` |
+| `{build-system}` | the slug of whichever build skill produced the run — `maven`, `gradle`, `npm`, `python`, and whatever a later-registered build skill reports. The set is OPEN: it grows with the registered build skills, so do not read this column as closed | `maven` |
 | `{timestamp}` | `YYYY-MM-DD-HHMMSS` | `2026-01-03-141523` |
 
 **Examples**:
@@ -462,7 +462,7 @@ def execute_direct(...) -> DirectCommandResult:
 
 ## Format Examples
 
-The examples below deliberately vary the build system — a Maven wrapper in the success and error cases, a Python one in the timeout case — because `command` is the one field whose shape is decided by the project's own wrapper rather than by this contract. `log_file` is not: R1 fixes its path and names `file_ops.get_build_results_dir(plan_id)` as that path's single owner, so the only part of a `log_file` literal that varies across the examples is the contract-declared `{build-system}` component. Read each literal as one build system's instance, not as the exemplar to copy: an implementor of `ext-point-build-verify-step` for Maven, Gradle or npm reproduces the *field set* and the *status semantics*, and lets its own wrapper detection decide what `command` says.
+The examples below deliberately vary the build system — a Maven wrapper in the success and error cases, a Python one in the timeout case — because `command` is the one field whose shape is decided by the project's own wrapper rather than by this contract. `log_file` is not: R1 fixes its path and names `file_ops.get_build_results_dir(plan_id)` as that path's single owner, so every part of a `log_file` literal that varies across the examples is a contract-declared component of that path — `{build-system}` and `{timestamp}`, both R1 rows. The variation is in the components, never in the path's shape. Read each literal as one build system's instance, not as the exemplar to copy: an implementor of `ext-point-build-verify-step` for Maven, Gradle or npm reproduces the *field set* and the *status semantics*, and lets its own wrapper detection decide what `command` says.
 
 ### TOON Format (Default)
 

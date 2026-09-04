@@ -401,7 +401,12 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --head-at-completion {sha}
 ```
 
-**`--force` is REQUIRED on every round after the first that filed findings.** The multi-round shape this step is built around guarantees the case: round 1 files findings and records `--outcome failed` (Branch B), the findings are fixed, and the converged round then records `done` over that live `failed` record — which `mark-step-done` refuses without `--force`. So the flag is not an escape hatch for an unexpected state; it is the ordinary terminal write of the convergence path this document prescribes, and a converged round CANNOT close the step without it. Add it to the call above whenever a prior round of this step recorded a non-`done` outcome:
+**`--force` is REQUIRED on every round after the first, in BOTH directions.** `mark-step-done` refuses to overwrite a live record with a *differing* outcome, and the multi-round shape this step is built around produces that refusal on each terminal branch, not only on the closing one:
+
+- **`failed` → `done`** (Branch A): round 1 files findings and records `--outcome failed`, the findings are fixed, and the converged round records `done` over that live `failed` record.
+- **`done` → `failed`** (Branch B): a round records `done`, a later settle-band step advances HEAD, § HEAD-dependency re-fires this step against the newer diff, and the re-fire finds a defect — writing `failed` over that live `done` record.
+
+Both are ordinary terminal writes of the loop this document prescribes, not escape hatches for an unexpected state, and neither round can record its outcome without the flag. The trigger is therefore symmetric: add `--force` to a terminal `mark-step-done` whenever a prior round of this step recorded ANY outcome differing from the one about to be written. Branch A's forced form:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
@@ -410,7 +415,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --head-at-completion {sha} --force
 ```
 
-The overwrite is intended and is not a loss of signal: the superseded `failed` record's findings are already persisted in the finding store by Branch B, and `mark-step-done` returns `previous_outcome` / `previous_head_at_completion` so the transition it replaced stays legible in the return.
+The overwrite is intended and is not a loss of signal in either direction: a superseded `failed` record's findings are already persisted in the finding store by Branch B, a superseded `done` record's verdict was anchored to a SHA the re-fire has left behind, and `mark-step-done` returns `previous_outcome` / `previous_head_at_completion` so the transition it replaced stays legible in the return.
 
 **Branch B — findings list is non-empty**: first persist every finding to the plan's `qgate-6-finalize.jsonl` finding store, then surface the findings in the finalize TOON output (consumed by `output-template.md`) so the operator sees `file:line` and `defect_class` per finding.
 
@@ -439,13 +444,22 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --head-at-completion {sha}
 ```
 
+Per the symmetric `--force` rule under Branch A, add `--force` to this call whenever a prior round recorded `done` — the `done` → `failed` direction the HEAD-dependency re-fire produces:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome failed \
+  --display-detail "{display_detail_from_workflow}" \
+  --head-at-completion {sha} --force
+```
+
 Branch A (empty findings) persists nothing — there are no findings to write. Branch B forwards `--head-at-completion` even though the dispatcher retries `failed` records unconditionally: the SHA carries no *retry* decision value, but it IS the delta anchor the NEXT round reads in Step 1. A `failed` record written without it leaves the following round with no anchor, which silently degrades that round to a full sweep — the exact re-sweep this scoping exists to remove. The anchor is written on both terminal branches for that reason, not for the dispatcher's benefit.
 
 The dispatcher's existing failure handling halts the phase on `outcome=failed`, matching the gating-step contract used by `pre-push-quality-gate`. The operator must address every finding (amend the diff: rename, tighten regex, rewrite wording, delete duplicate section, fix contract drift), re-run the step, and only then advance to `push`.
 
 ## Round-loop termination: converged, self-seeding, and out of budget
 
-This step re-fires per round (§ HEAD-dependency) and closes only on a clean pass at Step 4 Branch A — full-surface when a surfacer ran, or the zero-generator path's not-run verdict, which carries no surface scope to be full because it ran no surface at all. Two halves of what it reviews converge at DIFFERENT rates, and the termination criterion MUST keep them distinct — collapsing them is how a spiralling loop reads as either falsely clean or as an endless defect stream.
+This step re-fires per round (§ HEAD-dependency) and closes only on a non-finding round at Step 4 Branch A. Two shapes reach that branch, and they are NOT the same verdict: a **full-surface clean pass**, where a surfacer ran and found nothing, and the **zero-generator not-run close**, where no surfacer resolved so nothing was searched — it carries no surface scope to be full because it ran no surface at all, and § "A clean verdict states what the round observed" holds it apart from a clean one for exactly that reason. Both close the step; only the first is a clean pass. Two halves of what it reviews converge at DIFFERENT rates, and the termination criterion MUST keep them distinct — collapsing them is how a spiralling loop reads as either falsely clean or as an endless defect stream.
 
 - **The behavioural half** — findings about SHIPPED CODE (a missing test, an unguarded boundary, a producer with no consumer, an unreachable guard behind a scan-derived key). It converges under fixing: once the code defects are corrected, later rounds find fewer, and eventually a round finds none.
 - **The doc-claim half** — findings about PROSE the change authors (a duplicated section, a stale count, a drifted contract statement, a description-vs-body mismatch). It does NOT converge under *correction*: resolving a doc-claim finding by AUTHORING new prose hands the next round new prose to audit. This is the standing lesson — correction breeds the next instance of the class; only DELETION converges — now observed at the level of the round loop rather than the individual claim.
