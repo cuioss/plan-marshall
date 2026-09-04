@@ -19,7 +19,7 @@ import argparse
 import json
 from datetime import UTC, datetime
 
-import github_ops  # noqa: E402
+import github_ops
 import pytest
 from _ci_wait_contract import _ok_auth
 

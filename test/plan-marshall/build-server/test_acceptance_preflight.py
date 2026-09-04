@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Acceptance: the init preflight is ONE call over disabled | ready | down+reason.
 
 An unregistered project returns `disabled` with NO daemon round-trip; a
@@ -12,22 +11,21 @@ from __future__ import annotations
 
 import argparse
 import copy
-import sys
 from typing import Any
 
 import pytest
-from conftest import get_script_path, parse_ns
+from _build_server_registry import canonicalize_root, register_project
+
+from conftest import load_script_module, parse_ns
 
 _BUNDLE = 'plan-marshall'
 _SKILL = 'build-server-client'
 _SCRIPT = 'build_server.py'
 
-_CLIENT_DIR = get_script_path(_BUNDLE, _SKILL, _SCRIPT).parent
-if str(_CLIENT_DIR) not in sys.path:
-    sys.path.insert(0, str(_CLIENT_DIR))
-
-import build_server as client  # noqa: E402
-from _build_server_registry import canonicalize_root, register_project  # noqa: E402
+#: ``register=False`` because only the returned module is used here. Publishing
+#: ``build_server`` into ``sys.modules`` would collide with the sibling modules
+#: that import it plainly.
+client = load_script_module(_BUNDLE, _SKILL, _SCRIPT, register=False)
 
 
 def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
@@ -47,7 +45,7 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 #: The ``preflight`` namespace ``build_server.py``'s OWN parser yields, hoisted to
 #: module scope because ``parse_ns`` re-executes the script module on every call.
 #: ``register=False`` so it never publishes a second ``build_server`` in
-#: ``sys.modules`` alongside the one imported above.
+#: ``sys.modules`` alongside the one the loader published above.
 _PREFLIGHT_ARGS = parse_ns(_BUNDLE, _SKILL, _SCRIPT, 'preflight', register=False)
 
 

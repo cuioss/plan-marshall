@@ -17,11 +17,9 @@ canonical 6-axis matrix (TASK-2 foundation).
 
 from __future__ import annotations
 
-import sys
-
-import pytest
-
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
+import _invariants as inv
+import pytest
 from _input_validation_fixtures import (
     HAPPY_VALUES,
     MALFORMED_AXES,
@@ -33,14 +31,6 @@ from _input_validation_fixtures import (
 from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall', 'phase_handshake.py')
-
-# Bootstrap the script dir so the underscore-prefixed sibling modules
-# (_invariants) are importable for the retained-vs-relaxed behaviour tests.
-_SCRIPTS_DIR = SCRIPT_PATH.parent
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
-
-import _invariants as inv  # noqa: E402
 
 # Subcommands that declare ``--plan-id`` (all four).
 _PLAN_ID_SUBCOMMANDS = ('capture', 'verify', 'list', 'clear')

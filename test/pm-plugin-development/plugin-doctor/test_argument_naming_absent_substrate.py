@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Positive control for ``ARGUMENT_NAMING_SUBSTRATE_ABSENT`` — the could_not_look outcome.
 
 The argument-naming cluster derives its whole accept-set from the generated

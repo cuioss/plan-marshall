@@ -32,7 +32,7 @@ cmd_effort = _cmd_models_mod.cmd_effort
 cmd_effort_resolve_target = _cmd_models_mod.cmd_effort_resolve_target
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-import conftest  # noqa: E402, F401
+import conftest  # noqa: E402
 
 
 def _hash_marshal(fixture_dir):

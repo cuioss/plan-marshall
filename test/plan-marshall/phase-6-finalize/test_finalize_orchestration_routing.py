@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Contract tests for the finalize orchestration routing split (deliverable 3).
 
 Named for the finalize *routing split* rather than for one step, because it pins

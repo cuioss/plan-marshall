@@ -36,123 +36,28 @@ def test_coverage_threshold_constant_is_80() -> None:
     assert build_module.COVERAGE_THRESHOLD == 80
 
 
-def test_cmd_coverage_emits_cov_fail_under_flag() -> None:
-    """cmd_coverage's pytest invocation includes --cov-fail-under={COVERAGE_THRESHOLD}."""
-    build_module = _load_build_module()
-    captured: dict[str, list[str]] = {}
+def _capture_coverage_cmd(build_module) -> tuple[list[str], int]:
+    """Invoke cmd_coverage with run/prune/mkdir/path collaborators stubbed.
 
-    def fake_run(cmd: list[str], description: str, env: dict[str, str] | None = None) -> int:
-        captured['cmd'] = cmd
-        return 0
+    Returns ``(pytest_cmd, exit_code)``.
 
-    with patch.object(build_module, 'run', side_effect=fake_run):
-        with patch.object(build_module.Path, 'mkdir', return_value=None):
-            with patch.object(build_module, 'get_test_path', return_value='test/plan-marshall'):
-                with patch.object(
-                    build_module, 'get_bundle_path',
-                    return_value='marketplace/bundles/plan-marshall',
-                ):
-                    exit_code = build_module.cmd_coverage('plan-marshall')
+    ⛔ ``_prune_basetemp_roots`` MUST be stubbed, and this helper is the single
+    place that guarantees it. ``cmd_coverage`` calls ``_prepare_session_basetemp``,
+    which prunes the REAL ``.plan/temp/pytest-basetemp/`` root — the very root the
+    pytest session running this test is writing into. The prune walks newest-first
+    and STOPS at the first session dir it cannot measure inside the remaining entry
+    budget, retaining nothing beyond that point; a live session that has grown past
+    ``PYTEST_BASETEMP_MAX_ENTRIES`` is therefore unmeasurable, retains zero, and is
+    itself ``rmtree``d. Every later ``tmp_path`` / ``tmp_path_factory.mktemp`` in the
+    run then raises ``FileNotFoundError``, which is a whole-suite outage attributed
+    to whichever tests happened to run afterwards.
 
-    assert exit_code == 0
-    cmd = captured['cmd']
-    expected_flag = f'--cov-fail-under={build_module.COVERAGE_THRESHOLD}'
-    assert expected_flag in cmd, (
-        f'cmd_coverage must emit {expected_flag!r}; got cmd={cmd!r}'
-    )
-
-
-def test_cmd_coverage_emits_xml_report_flag() -> None:
-    """cmd_coverage's pytest invocation includes --cov-report=xml:.plan/temp/coverage.xml."""
-    build_module = _load_build_module()
-    captured: dict[str, list[str]] = {}
-
-    def fake_run(cmd: list[str], description: str, env: dict[str, str] | None = None) -> int:
-        captured['cmd'] = cmd
-        return 0
-
-    with patch.object(build_module, 'run', side_effect=fake_run):
-        with patch.object(build_module.Path, 'mkdir', return_value=None):
-            with patch.object(build_module, 'get_test_path', return_value='test/plan-marshall'):
-                with patch.object(
-                    build_module, 'get_bundle_path',
-                    return_value='marketplace/bundles/plan-marshall',
-                ):
-                    build_module.cmd_coverage('plan-marshall')
-
-    cmd = captured['cmd']
-    assert '--cov-report=xml:.plan/temp/coverage.xml' in cmd, (
-        f'cmd_coverage must emit --cov-report=xml:.plan/temp/coverage.xml; got cmd={cmd!r}'
-    )
-
-
-def test_cmd_coverage_emits_xdist_parallel_flags() -> None:
-    """cmd_coverage's pytest invocation includes ``-n auto --dist=loadgroup``.
-
-    Coverage runs the identical full suite as module-tests; without xdist it
-    runs serially on a single core and walls past the background-duration
-    ceiling (it gets killed mid-suite). ``--dist=loadgroup`` must accompany
-    ``-n`` so ``xdist_group`` markers stay pinned to one worker. This guards
-    against a silent regression back to a serial coverage run.
-    """
-    build_module = _load_build_module()
-    captured: dict[str, list[str]] = {}
-
-    def fake_run(cmd: list[str], description: str, env: dict[str, str] | None = None) -> int:
-        captured['cmd'] = cmd
-        return 0
-
-    with patch.object(build_module, 'run', side_effect=fake_run):
-        with patch.object(build_module.Path, 'mkdir', return_value=None):
-            with patch.object(build_module, 'get_test_path', return_value='test/plan-marshall'):
-                with patch.object(
-                    build_module, 'get_bundle_path',
-                    return_value='marketplace/bundles/plan-marshall',
-                ):
-                    build_module.cmd_coverage('plan-marshall')
-
-    cmd = captured['cmd']
-    assert '-n' in cmd and 'auto' in cmd[cmd.index('-n') + 1:cmd.index('-n') + 2], (
-        f'cmd_coverage must emit "-n auto" for parallel coverage; got cmd={cmd!r}'
-    )
-    assert '--dist=loadgroup' in cmd, (
-        f'cmd_coverage must emit --dist=loadgroup alongside -n; got cmd={cmd!r}'
-    )
-
-
-def test_cmd_coverage_retains_existing_cov_and_html_report_flags() -> None:
-    """cmd_coverage keeps the pre-existing --cov={bundle} and --cov-report=html flags."""
-    build_module = _load_build_module()
-    captured: dict[str, list[str]] = {}
-
-    def fake_run(cmd: list[str], description: str, env: dict[str, str] | None = None) -> int:
-        captured['cmd'] = cmd
-        return 0
-
-    with patch.object(build_module, 'run', side_effect=fake_run):
-        with patch.object(build_module.Path, 'mkdir', return_value=None):
-            with patch.object(build_module, 'get_test_path', return_value='test/plan-marshall'):
-                with patch.object(
-                    build_module, 'get_bundle_path',
-                    return_value='marketplace/bundles/plan-marshall',
-                ):
-                    build_module.cmd_coverage('plan-marshall')
-
-    cmd = captured['cmd']
-    assert '--cov=marketplace/bundles/plan-marshall' in cmd, (
-        f'cmd_coverage must retain --cov=<bundle_path>; got cmd={cmd!r}'
-    )
-    assert '--cov-report=html:.plan/temp/htmlcov' in cmd, (
-        f'cmd_coverage must retain --cov-report=html:.plan/temp/htmlcov; got cmd={cmd!r}'
-    )
-
-
-def _capture_coverage_cmd(build_module) -> list[str]:
-    """Invoke cmd_coverage with run/prune/mkdir/path collaborators stubbed, return the pytest cmd.
-
-    ``_prune_basetemp_roots`` is stubbed to a no-op so the capture never mutates
-    the real ``.plan/temp/pytest-basetemp/`` tree; the per-session path itself is
-    pure (pid + uuid) and needs no filesystem.
+    That makes the damage a function of WHEN this module runs: early in a session the
+    live root is small and survives the prune, late in one it does not. Running the
+    suite in reverse collection order moves this module to the end and turns the
+    latent hazard into ~1500 setup errors. The stub is what keeps the capture a pure
+    argv observation — the per-session path itself is pure (pid + uuid) and needs no
+    filesystem at all.
     """
     captured: dict[str, list[str]] = {}
 
@@ -168,9 +73,68 @@ def _capture_coverage_cmd(build_module) -> list[str]:
                         build_module, 'get_bundle_path',
                         return_value='marketplace/bundles/plan-marshall',
                     ):
-                        build_module.cmd_coverage('plan-marshall')
+                        exit_code = build_module.cmd_coverage('plan-marshall')
 
-    return captured['cmd']
+    return captured['cmd'], exit_code
+
+
+def test_cmd_coverage_emits_cov_fail_under_flag() -> None:
+    """cmd_coverage's pytest invocation includes --cov-fail-under={COVERAGE_THRESHOLD}."""
+    build_module = _load_build_module()
+
+    cmd, exit_code = _capture_coverage_cmd(build_module)
+
+    assert exit_code == 0
+    expected_flag = f'--cov-fail-under={build_module.COVERAGE_THRESHOLD}'
+    assert expected_flag in cmd, (
+        f'cmd_coverage must emit {expected_flag!r}; got cmd={cmd!r}'
+    )
+
+
+def test_cmd_coverage_emits_xml_report_flag() -> None:
+    """cmd_coverage's pytest invocation includes --cov-report=xml:.plan/temp/coverage.xml."""
+    build_module = _load_build_module()
+
+    cmd, _ = _capture_coverage_cmd(build_module)
+
+    assert '--cov-report=xml:.plan/temp/coverage.xml' in cmd, (
+        f'cmd_coverage must emit --cov-report=xml:.plan/temp/coverage.xml; got cmd={cmd!r}'
+    )
+
+
+def test_cmd_coverage_emits_xdist_parallel_flags() -> None:
+    """cmd_coverage's pytest invocation includes ``-n auto --dist=loadgroup``.
+
+    Coverage runs the identical full suite as module-tests; without xdist it
+    runs serially on a single core and walls past the background-duration
+    ceiling (it gets killed mid-suite). ``--dist=loadgroup`` must accompany
+    ``-n`` so ``xdist_group`` markers stay pinned to one worker. This guards
+    against a silent regression back to a serial coverage run.
+    """
+    build_module = _load_build_module()
+
+    cmd, _ = _capture_coverage_cmd(build_module)
+
+    assert '-n' in cmd and 'auto' in cmd[cmd.index('-n') + 1:cmd.index('-n') + 2], (
+        f'cmd_coverage must emit "-n auto" for parallel coverage; got cmd={cmd!r}'
+    )
+    assert '--dist=loadgroup' in cmd, (
+        f'cmd_coverage must emit --dist=loadgroup alongside -n; got cmd={cmd!r}'
+    )
+
+
+def test_cmd_coverage_retains_existing_cov_and_html_report_flags() -> None:
+    """cmd_coverage keeps the pre-existing --cov={bundle} and --cov-report=html flags."""
+    build_module = _load_build_module()
+
+    cmd, _ = _capture_coverage_cmd(build_module)
+
+    assert '--cov=marketplace/bundles/plan-marshall' in cmd, (
+        f'cmd_coverage must retain --cov=<bundle_path>; got cmd={cmd!r}'
+    )
+    assert '--cov-report=html:.plan/temp/htmlcov' in cmd, (
+        f'cmd_coverage must retain --cov-report=html:.plan/temp/htmlcov; got cmd={cmd!r}'
+    )
 
 
 def _extract_basetemp(cmd: list[str]) -> str:
@@ -183,7 +147,8 @@ def _extract_basetemp(cmd: list[str]) -> str:
 def test_cmd_coverage_emits_per_session_basetemp_flag() -> None:
     """cmd_coverage's pytest invocation carries --basetemp pointing under .plan/temp/pytest-basetemp/."""
     build_module = _load_build_module()
-    basetemp = _extract_basetemp(_capture_coverage_cmd(build_module))
+    cmd, _ = _capture_coverage_cmd(build_module)
+    basetemp = _extract_basetemp(cmd)
     assert basetemp.startswith('.plan/temp/pytest-basetemp/'), (
         f'cmd_coverage --basetemp must point under .plan/temp/pytest-basetemp/; got {basetemp!r}'
     )
@@ -192,8 +157,8 @@ def test_cmd_coverage_emits_per_session_basetemp_flag() -> None:
 def test_cmd_coverage_two_invocations_yield_distinct_basetemp() -> None:
     """Two cmd_coverage invocations yield distinct per-session basetemp paths (no collision)."""
     build_module = _load_build_module()
-    first = _extract_basetemp(_capture_coverage_cmd(build_module))
-    second = _extract_basetemp(_capture_coverage_cmd(build_module))
+    first = _extract_basetemp(_capture_coverage_cmd(build_module)[0])
+    second = _extract_basetemp(_capture_coverage_cmd(build_module)[0])
     assert first != second, (
         f'two cmd_coverage invocations must yield distinct basetemp roots; got {first!r} twice'
     )

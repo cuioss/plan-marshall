@@ -203,7 +203,7 @@ def _detect_scale_mismatch_light_routing(
     # `cmd_planning_lane_route`, so an import failure must degrade THIS one advisory
     # check, never crash `planning-lane route`.
     try:
-        from _cmd_planning_lane import (  # noqa: PLC0415
+        from _cmd_planning_lane import (  # deferred: this advisory check must degrade, never crash the route
             _MULTI_MODULE_MIN_PATHS,
             MULTI_MODULE,
             _read_request_body,

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Pin the ``unregistered_kind`` escalation contract in ``automatic-review/SKILL.md``.
 
 The classifier can only report the state; what makes it ACTIONABLE is the prose the
@@ -36,20 +35,16 @@ rename that changed nothing about the contract it pins.
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
 
-from conftest import get_script_path, get_skill_dir
+# ``bot_registry`` / ``review_completeness`` are automatic-review skill scripts.
+# Under the executor they arrive on one injected PYTHONPATH; under pytest the root
+# conftest puts every marketplace ``scripts/`` directory on ``sys.path`` before any
+# test module is imported, so no bootstrap is needed here.
+import bot_registry
+import review_completeness as rc
 
-# ``bot_registry`` / ``review_completeness`` are automatic-review skill scripts. The
-# root conftest already mirrors the executor PYTHONPATH, but the dir is named here
-# too so the module's imports are self-evident from the file itself.
-_AR_SCRIPTS = get_script_path('plan-marshall', 'automatic-review', 'bot_registry.py').parent
-if str(_AR_SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(_AR_SCRIPTS))
-
-import bot_registry  # noqa: E402
-import review_completeness as rc  # noqa: E402
+from conftest import get_skill_dir
 
 _SKILL_MD: Path = get_skill_dir('plan-marshall', 'automatic-review') / 'SKILL.md'
 

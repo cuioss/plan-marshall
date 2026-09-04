@@ -292,11 +292,55 @@ src = ["marketplace/bundles", "marketplace/targets", "test", ".claude"]
 extend-exclude = [".claude/worktrees/"]
 
 [tool.ruff.lint]
-select = ["E", "W", "F", "I", "B", "C4", "UP"]
+# RUF100 is the entry that keeps the rest of this list honest. It fails on a
+# `# noqa` directive that suppresses nothing — one naming a rule this config
+# never enabled, or one whose rule no longer fires at that site. Left
+# unchecked, such a directive outlives the diagnostic it was written for and
+# then reads, to the next person, as a live warning about a problem the code
+# no longer has; worse, it silently widens over time, because a directive
+# nobody can see failing is a directive nobody removes.
+#
+# Armed on a clean tree, and only after the sweep that made it clean: every
+# such directive across the four lint roots (`marketplace/bundles/`,
+# `marketplace/targets/`, `test/`, `.claude/`) was either converted to a
+# plain-language comment stating the intent the rule code used to carry, or
+# narrowed to the codes still doing work. The rule therefore costs nothing
+# today and turns the next stale suppression into a failure at the commit
+# that introduces it, rather than letting the population grow back.
+select = ["E", "W", "F", "I", "B", "C4", "UP", "RUF100"]
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
-"test/*" = ["B011"]
+# F401 and F811 are ignored across the test tree because pytest's fixture
+# resolution makes both fire on correct code, and no code change reaches
+# either. A fixture is resolved BY NAME at call time, so the import that puts
+# it in the module's namespace is never read as a name (F401), and a test that
+# takes it as a parameter shadows that binding by design (F811). Both are the
+# framework's semantics, not dead code — the only way to silence them per site
+# is a suppression comment, and F811 is reported at the PARAMETER, out of reach
+# of any directive on the import, so it needs a module-level one that disables
+# redefinition checking for the whole file.
+#
+# What this costs, stated rather than left to the diff: F401 also catches
+# genuinely dead imports, and this turns that off across test/** — the
+# redefinition guard against two `def test_x` in one namespace goes with it.
+# The population now covered, measured on this tree rather than carried from
+# the request, is F401 199 and F811 362, by:
+#
+#     ruff check test/ --select F401,F811 --statistics --config "lint.per-file-ignores = {}"
+#
+# The `--config` override is what makes the command re-derivable at all:
+# `--select` enables a rule, it does not bypass `per-file-ignores`, so the
+# entry below would suppress both codes and the command would report nothing.
+#
+# This entry changes what the gate REPORTS not at all — it changes where the
+# decision is recorded, from a comment at every one of those sites to one
+# stated rule here. The per-site directives are gone: with RUF100 armed (see
+# `select` above) each was reported as suppressing nothing, which is exactly
+# what a rule turned off by this entry makes them. The figure is given with the
+# command that produces it because it moves with the tree: re-derive it rather
+# than trusting it.
+"test/*" = ["B011", "F401", "F811"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["marketplace"]

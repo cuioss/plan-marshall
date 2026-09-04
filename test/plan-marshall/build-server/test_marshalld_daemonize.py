@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Test that marshalld.double_fork() re-parents the daemon to PID 1.
 
 Spawns a subprocess that imports marshalld, double-forks, and (after the

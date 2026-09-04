@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Contract tests for the epic inbox channel (deliverables 1 and 2).
 
 Behavioural assertions run end-to-end through the ``orchestrator.py`` CLI entry

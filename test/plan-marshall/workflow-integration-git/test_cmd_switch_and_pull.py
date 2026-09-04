@@ -425,7 +425,7 @@ class TestResolveProjectDirViaResolver:
         lands on main when cwd is already there — which from phase-5 onward it
         is not.
         """
-        import file_ops  # noqa: PLC0415
+        import file_ops  # local import: the handle is needed only to patch a seam here
 
         cwd_probe = MagicMock(return_value='/tmp/test-some-other-tree')
         monkeypatch.setattr(file_ops, 'cwd_checkout_root', cwd_probe)
@@ -497,7 +497,7 @@ class TestResolveProjectDirViaResolver:
         not use its result as a path: without it, a typo'd plan id would still
         switch and pull a checkout.
         """
-        import file_ops  # noqa: PLC0415
+        import file_ops  # local import: the handle is needed only to patch a seam here
 
         def _raise(_plan_id):
             raise file_ops.WorktreeResolutionError('plan metadata is corrupt')

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the ``literal-count-drift`` rule analyzer.
 
 The analyzer scans the ``extension-api`` ``SKILL.md`` "Extension Points" table

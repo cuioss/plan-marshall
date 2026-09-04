@@ -21,12 +21,12 @@ from _check_artifact_consistency_fixtures import (
     _run_archived,
     _setup_archived_plan_with_references,
 )
-from _plan_retrospective_fixtures import (  # noqa: E402
+from _plan_retrospective_fixtures import (
     setup_broken_plan,
     setup_live_plan,
 )
 
-from conftest import run_script  # noqa: E402
+from conftest import run_script
 
 
 class TestUnresolvableFootprintIsUnmeasurable:

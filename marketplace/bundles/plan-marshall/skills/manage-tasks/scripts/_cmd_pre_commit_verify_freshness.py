@@ -309,7 +309,7 @@ def _resolve_required_coverage(plan_id: str) -> tuple[RequiredCoverage | None, s
         from extension_base import _read_build_map_globs, _resolve_plan_footprint
         from marketplace_bundles import extract_bundle_name, find_bundles
         from marketplace_paths import find_marketplace_path
-    except Exception:  # noqa: BLE001 — an import can fail as more than ImportError
+    except Exception:  # an import can fail as more than ImportError
         return None, REASON_REQUIRED_COVERAGE_UNKNOWN
 
     try:
@@ -507,7 +507,7 @@ def _build_necessity_verdict(plan_id: str) -> dict:
         from extension_base import should_execute_build
 
         verdict = should_execute_build(None, plan_id)
-    except Exception:  # noqa: BLE001 — an unobtainable verdict must fail closed
+    except Exception:  # an unobtainable verdict must fail closed
         return {'decision': 'build'}
     if not isinstance(verdict, dict):
         return {'decision': 'build'}

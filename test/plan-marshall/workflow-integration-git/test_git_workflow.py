@@ -1731,7 +1731,7 @@ class TestWorktreeRemoveMoveBackPrecondition:
         :meth:`_patch`, because it is a different resolver serving a different need (the
         ``git -C`` target, which must name a real git checkout).
         """
-        import file_ops  # noqa: PLC0415
+        import file_ops  # local import: the handle is needed only to patch a seam here
 
         monkeypatch.setenv('PLAN_BASE_DIR', str(main / '.plan' / 'local'))
         monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)

@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for pretooluse_gate.py — the shared PreToolUse gate module.
 
 pretooluse_gate is a pure-function library shipped as a sibling module of the
-platform-runtime scripts. It is imported directly (not run as a subprocess), so
-the scripts dir is inserted on sys.path before the import per the canonical
-sibling-import scaffolding pattern.
+platform-runtime scripts. It is bound directly (not run as a subprocess) through
+the shared ``conftest.load_script_module`` loader.
 
 Coverage:
   - parse() returns {} on empty / malformed / non-object input and never raises.
@@ -20,18 +18,12 @@ Coverage:
 from __future__ import annotations
 
 import os
-import sys
 
-from conftest import get_script_path
-
-SCRIPT_PATH = get_script_path("plan-marshall", "platform-runtime", "pretooluse_gate.py")
-SCRIPTS_DIR = SCRIPT_PATH.parent
-
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import pretooluse_gate as gate  # noqa: E402
-
+# PLAIN import, deliberately: the ``type: ignore[arg-type]`` directives below only
+# suppress something when mypy sees the real module — the shared loader returns
+# ``Any``, which makes each of them an unused ignore and the suite's deliberate
+# wrong-type probes untyped.
+import pretooluse_gate as gate
 
 # =============================================================================
 # Helpers

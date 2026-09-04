@@ -16,7 +16,7 @@ from pathlib import Path
 import _freshness_crosscheck as crosscheck
 import file_ops
 import pytest
-from _freshness_notation_crosscheck_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
+from _freshness_notation_crosscheck_fixtures import (
     _GRADLE,
     _MAVEN,
     _NPM,

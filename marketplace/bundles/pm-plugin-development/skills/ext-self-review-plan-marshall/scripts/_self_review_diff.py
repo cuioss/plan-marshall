@@ -34,7 +34,7 @@ def _truncate(text: str, limit: int) -> str:
 def _run_git(project_dir: Path, *args: str) -> tuple[int, str, str]:
     """Run a git command via ``git -C {project_dir} ...`` and return (returncode, stdout, stderr)."""
     cmd = ['git', '-C', str(project_dir), *args]
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)  # constructed argv, never shell-interpolated
     return proc.returncode, proc.stdout, proc.stderr
 
 

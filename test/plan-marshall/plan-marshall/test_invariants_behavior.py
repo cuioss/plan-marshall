@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Unit coverage for the smaller ``_invariants`` helpers and capture functions.
 
 ``test_invariants.py`` drives the task-graph / task-state / findings-blocking /
@@ -29,19 +28,17 @@ each test asserts genuine return-value / branch behaviour, never a smoke check.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
+# Imported PLAINLY so this suite holds the same ``_invariants`` instance the
+# production path resolves; its marketplace ``scripts/`` directory is already on
+# ``sys.path`` via the root conftest.
+import _invariants as inv
 import pytest
 
 from conftest import get_script_path
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall', 'phase_handshake.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import _invariants as inv  # noqa: E402
 
 
 # =============================================================================

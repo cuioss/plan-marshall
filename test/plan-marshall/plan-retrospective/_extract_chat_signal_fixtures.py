@@ -11,12 +11,7 @@ returns a runtime-shaped record.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent))
-
-from conftest import load_script_module, parse_ns  # noqa: E402
+from conftest import load_script_module, parse_ns
 
 # Direct module load so unit tests can poke the consumer seam.
 _mod = load_script_module(

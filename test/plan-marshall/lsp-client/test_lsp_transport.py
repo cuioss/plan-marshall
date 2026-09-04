@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Transport robustness tests — no language server required.
 
 Covers the reader-thread resilience raised in review: a malformed / length-0
@@ -13,14 +12,7 @@ from __future__ import annotations
 
 import sys
 
-from conftest import get_script_path
-
-SCRIPT_PATH = get_script_path('plan-marshall', 'lsp-client', 'lsp_client.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-from _lsp_jsonrpc import StdioTransport  # noqa: E402
+from _lsp_jsonrpc import StdioTransport
 
 # A minimal fake LSP server: read one framed request, echo its id in a reply —
 # but first emit a length-0 junk frame, the exact case that used to make

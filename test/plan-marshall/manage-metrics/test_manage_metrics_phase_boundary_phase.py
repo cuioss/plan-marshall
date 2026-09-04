@@ -14,7 +14,7 @@ from _manage_metrics_fixtures import (
     ns_phase_boundary,
     ns_start_phase,
 )
-from _manage_metrics_phase_boundary_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
+from _manage_metrics_phase_boundary_fixtures import (
     _UNSEEDED_PLAN_IDS,
     _seed_guarded_plan_dirs,
     _seed_status_created,

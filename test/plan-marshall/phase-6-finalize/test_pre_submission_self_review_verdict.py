@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Doc-contract regression for the pre-submission-self-review clean verdicts.
 
 ``pre-submission-self-review.md`` used to report a single undifferentiated

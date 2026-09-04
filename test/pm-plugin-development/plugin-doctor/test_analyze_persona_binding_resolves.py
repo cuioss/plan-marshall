@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the ``persona-binding-resolves`` rule analyzer.
 
 Every persona that declares a ``profiles:`` binding is a dispatch target

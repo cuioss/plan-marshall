@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the marshall-steward ``cache_retention`` union-keep sweep.
 
 ``cache_retention.py`` partitions a plugin-cache tree into kept and removed
@@ -19,33 +18,25 @@ production state (every version dir carrying an ``.orphaned_at`` marker):
 * the ``N``/``D`` knobs are honoured from ``marshal.json`` and fall back to
   ``5``/``3`` with a legible source annotation when the config is absent.
 
-``cache_retention.py`` is a marshall-steward skill script, not on ``PYTHONPATH``
-during pytest collection; the canonical ``sys.path.insert`` prologue (see
-``pm-plugin-development:plugin-script-architecture`` test-scaffolding.md) makes
-it and the shared TOON parser importable.
+``cache_retention.py`` is a marshall-steward skill script, reached through the
+shared ``conftest.load_script_module`` loader; the shared TOON parser imports by
+name, because the root conftest puts every marketplace ``scripts/`` directory on
+``sys.path`` before any test module is imported.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import sys
 import time
 from pathlib import Path
 
 import pytest
+from toon_parser import parse_toon
 
-# test/plan-marshall/marshall-steward/ -> repo root is three parents up.
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_BUNDLE_SKILLS = _REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills'
-_SCRIPTS_DIR = _BUNDLE_SKILLS / 'marshall-steward' / 'scripts'
-_TOON_SCRIPTS = _BUNDLE_SKILLS / 'ref-toon-format' / 'scripts'
-for _dir in (_SCRIPTS_DIR, _TOON_SCRIPTS):
-    if str(_dir) not in sys.path:
-        sys.path.insert(0, str(_dir))
+from conftest import load_script_module
 
-import cache_retention  # noqa: E402
-from toon_parser import parse_toon  # noqa: E402
+cache_retention = load_script_module('plan-marshall', 'marshall-steward', 'cache_retention.py')
 
 _BUNDLE = 'plan-marshall'
 

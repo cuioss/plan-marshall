@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Keyed-map regression tests for marshall-steward finalize-step detection.
 
 The canonical serial form of ``marshal.json::plan["phase-6-finalize"]["steps"]``

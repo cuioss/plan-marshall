@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 
-from _build_shared import create_subcommand_handler  # noqa: F401 -- re-export for backward compat
+from _build_shared import create_subcommand_handler
 from _warnings_classify import categorize_warnings
 from toon_parser import serialize_toon
 

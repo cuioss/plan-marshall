@@ -13,7 +13,7 @@ from _manage_findings_fixtures import SCRIPT_PATH
 
 # Script path for remaining subprocess (CLI plumbing) tests
 # Import toon_parser - conftest sets up PYTHONPATH
-from toon_parser import parse_toon  # noqa: E402
+from toon_parser import parse_toon
 
 from conftest import run_script
 

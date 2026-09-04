@@ -286,7 +286,7 @@ class TestWorktreePathResolution:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A resolver failure surfaces as ``plan_resolution_failed``, message intact."""
-        import file_ops  # noqa: PLC0415
+        import file_ops  # local import: the handle is needed only to patch a seam here
 
         def _raise(_plan_id):
             raise file_ops.WorktreeResolutionError('plan not found')
@@ -421,7 +421,7 @@ def _pin_main_anchor(monkeypatch: pytest.MonkeyPatch, root: Path) -> None:
     is a DIFFERENT resolver serving a different need: the ``git -C`` target, which must
     name a real git checkout and therefore cannot come from an override directory.
     """
-    import file_ops  # noqa: PLC0415
+    import file_ops  # local import: the handle is needed only to patch a seam here
 
     monkeypatch.setenv('PLAN_BASE_DIR', str(root / '.plan' / 'local'))
     monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
@@ -502,7 +502,7 @@ class TestWorktreeRemove:
     @staticmethod
     def _fail_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
         """Make the manage-status channel refuse, as it does for an archived plan."""
-        import file_ops  # noqa: PLC0415
+        import file_ops  # local import: the handle is needed only to patch a seam here
 
         def _raise(_plan_id):
             raise file_ops.WorktreeResolutionError('plan does not exist')
@@ -1236,7 +1236,7 @@ class TestLocatePlanCheckout:
         # "not found" error (masked to not_found, not propagated). This forces
         # the primary path to yield no worktree_path and exercises the
         # structural-probe fallback.
-        import file_ops  # noqa: PLC0415
+        import file_ops  # local import: the handle is needed only to patch a seam here
 
         def _raise(_plan_id):
             raise file_ops.WorktreeResolutionError('plan probe-plan not found')
@@ -1263,7 +1263,7 @@ class TestLocatePlanCheckout:
         # No worktree resolution should be needed; the seam raises so the test
         # fails loudly if the current-checkout branch does NOT short-circuit
         # before the resolver is consulted.
-        import file_ops  # noqa: PLC0415
+        import file_ops  # local import: the handle is needed only to patch a seam here
 
         def _forbidden(_plan_id):
             raise AssertionError('the current-checkout branch consulted the resolver')

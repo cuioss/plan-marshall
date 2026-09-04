@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from _collect_fragments_fixtures import _ArgsNS, _load_module, _valid_fragment_body
-from _plan_retrospective_fixtures import setup_live_plan  # noqa: E402
+from _plan_retrospective_fixtures import setup_live_plan
 
 
 class TestCmdInit:

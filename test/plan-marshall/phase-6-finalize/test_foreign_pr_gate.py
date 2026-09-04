@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the pre-archive foreign-PR landing gate.
 
 The gate is the enforcement point that stops a foreign task from reaching

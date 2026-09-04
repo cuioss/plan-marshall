@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the marshall-steward Effort submenu round-trip.
 
 The Effort submenu is a markdown-driven wizard step that calls

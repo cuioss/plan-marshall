@@ -77,26 +77,21 @@ write_metrics = manage_metrics.write_metrics
 # ``plan_context`` fixture creates plan dirs without that sentinel, so every
 # positive test would otherwise trip the guard.
 #
-# The autouse fixture in each sibling module patches
-# ``manage_metrics.require_plan_exists`` so
+# The autouse fixture below patches ``manage_metrics.require_plan_exists`` so
 # that, during these tests, it auto-materialises the ``status.json`` sentinel for
 # any plan whose dir exists but is not explicitly registered as "unseeded". This
 # is the real guard chokepoint — it fires regardless of whether a test resolves
-# its plan dir before or after calling the writer. Guard-negative tests register
-# their plan_id via ``_register_unseeded`` so the patched guard lets the genuine
-# ``plan_not_found`` branch run.
+# its plan dir before or after calling the writer.
+#
+# No module served by this preamble needs the genuine ``plan_not_found`` branch,
+# so nothing ever registers a plan id and the set below stays empty. It is kept
+# as the guard's own condition rather than inlined as ``True``: a sibling module
+# added later registers through it, and a constant-true guard would have to be
+# re-derived first. The registrar itself lives beside the negative tests that
+# call it, in ``_manage_metrics_module_fixtures.py`` and
+# ``_manage_metrics_phase_boundary_fixtures.py``.
 
 _UNSEEDED_PLAN_IDS: set[str] = set()
-
-
-def _register_unseeded(plan_id: str) -> str:
-    """Mark ``plan_id`` so the autouse guard-seeder leaves it un-sentinelled.
-
-    Returns the plan_id for inline use. Negative guard tests call this so the
-    patched ``require_plan_exists`` runs its genuine ``plan_not_found`` branch.
-    """
-    _UNSEEDED_PLAN_IDS.add(plan_id)
-    return plan_id
 
 
 def _seed_metrics_md(plan_id: str) -> None:
@@ -140,10 +135,10 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
     The patched guard resolves the plan dir via the real ``get_plan_dir`` and, for
     any plan_id NOT registered as unseeded, writes the ``status.json`` sentinel
     before delegating to the genuine ``require_plan_exists``. This keeps every
-    positive test's happy path intact without per-test seeding. A
-    module whose tests need the real ``plan_not_found`` failure registers the
-    plan id via ``_register_unseeded`` first; no test in this module does, so
-    the guard here always seeds and the registry stays empty.
+    positive test's happy path intact without per-test seeding. No module served
+    by this preamble needs the real ``plan_not_found`` failure, so nothing
+    registers a plan id: the guard here always seeds and the registry stays
+    empty.
     """
     _UNSEEDED_PLAN_IDS.clear()
     real_require = manage_metrics.require_plan_exists

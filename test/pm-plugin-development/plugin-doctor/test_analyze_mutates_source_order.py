@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the ``mutates-source-step-post-merge-order`` rule analyzer.
 
 The analyzer enforces the pre-merge source-edit pushability contract: a

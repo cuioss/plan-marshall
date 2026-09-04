@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Contract tests for the project-local ``project:finalize-step-sync-plugin-cache`` skill.
 
 The skill is a markdown executor playbook backed by the project-local
@@ -20,12 +19,13 @@ The skill is a markdown executor playbook backed by the project-local
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
 
 import pytest
 
-from conftest import MARKETPLACE_ROOT, PROJECT_ROOT
+from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module
+
+cd = load_script_module('plan-marshall', 'manage-config', '_config_defaults.py')
 
 _SKILL_MD = (
     PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-sync-plugin-cache' / 'SKILL.md'
@@ -33,14 +33,6 @@ _SKILL_MD = (
 _DEPLOY_TARGET_SKILL_MD = (
     PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-deploy-target' / 'SKILL.md'
 )
-
-_MANAGE_CONFIG_SCRIPTS_DIR = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
-)
-if str(_MANAGE_CONFIG_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_MANAGE_CONFIG_SCRIPTS_DIR))
-
-import _config_defaults as cd  # noqa: E402
 
 
 def _parse_frontmatter(path: Path) -> dict[str, str]:

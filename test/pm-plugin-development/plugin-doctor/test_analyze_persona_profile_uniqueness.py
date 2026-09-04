@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the ``persona-profile-uniqueness`` rule analyzer.
 
 In the persona / ref / profile identity model, a persona skill's **primary**

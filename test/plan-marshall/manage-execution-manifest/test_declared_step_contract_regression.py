@@ -31,7 +31,7 @@ before the fix would be vacuous; these cannot, because the paired assertions
 observe the two behaviours diverging inside one run.
 """
 
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 
 import json
 from argparse import Namespace

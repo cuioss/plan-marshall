@@ -55,7 +55,7 @@ DEFAULT_OUTPUT_SUBDIR = 'tools-marketplace-inventory'
 
 # Shared path resolution (from script-shared)
 from marketplace_bundles import extract_bundle_name, find_bundles  # noqa: E402, I001
-from marketplace_paths import (  # noqa: E402, I001
+from marketplace_paths import (  # noqa: E402
     get_base_path as _shared_get_base_path,
     get_project_skill_roots,
     get_temp_dir,

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """D4: the opt-in gate, verified on an UNCONFIGURED project.
 
 The plan requires that an unconfigured project's behaviour be *verified* rather
@@ -11,21 +10,15 @@ server must start, advertise no capabilities, and answer every request emptily.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
-from conftest import get_scripts_dir
+from test_corpus_index import build_corpus
 
-SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'tools-corpus-language-server')
-INVENTORY_SCRIPTS = get_scripts_dir('pm-plugin-development', 'tools-marketplace-inventory')
-SHARED_SCRIPTS = get_scripts_dir('plan-marshall', 'tools-file-ops')
-for _dir in (str(SCRIPTS_DIR), str(INVENTORY_SCRIPTS), str(SHARED_SCRIPTS)):
-    if _dir not in sys.path:
-        sys.path.insert(0, _dir)
+from conftest import load_script_module
 
-import corpus_lsp  # noqa: E402
-
-from test_corpus_index import build_corpus  # noqa: E402
+corpus_lsp = load_script_module(
+    'pm-plugin-development', 'tools-corpus-language-server', 'corpus_lsp.py'
+)
 
 
 def _project(root: Path, marshal: dict | None) -> Path:

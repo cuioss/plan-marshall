@@ -31,12 +31,12 @@ import pytest
 # Cross-skill imports — PYTHONPATH is configured by the root test/conftest.py
 # which adds every marketplace scripts/ directory, including
 # marketplace/bundles/plan-marshall/skills/execute-task/scripts.
-from assert_test_identifiers import (  # noqa: E402
+from assert_test_identifiers import (
     DiffResult,
     assert_identifiers_in_log,
 )
 
-from conftest import get_scripts_dir, run_script  # noqa: E402
+from conftest import get_scripts_dir, run_script
 
 # Path to the script for CLI subprocess tests
 SCRIPT_PATH = get_scripts_dir('plan-marshall', 'execute-task') / 'assert_test_identifiers.py'

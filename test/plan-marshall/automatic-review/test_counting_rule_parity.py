@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: E402
 """The epic's counting rule has TWO implementations — this pins them together.
 
 ``bot-participation-contract.md`` § "The counting rule" is the epic's single source
@@ -28,19 +28,20 @@ from __future__ import annotations
 
 import sys
 
-from conftest import PROJECT_ROOT, get_script_path
+import review_gate_delta as delta
 
-_DELTA_SCRIPTS = get_script_path('plan-marshall', 'automatic-review', 'review_gate_delta.py').parent
-if str(_DELTA_SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(_DELTA_SCRIPTS))
+from conftest import PROJECT_ROOT
 
+# ``review_retrospective`` is a PROJECT-LOCAL skill script under ``.claude/``, not
+# a marketplace bundle script, so ``conftest.load_script_module`` cannot address
+# it and the root conftest's marketplace ``sys.path`` setup does not reach it.
+# This bootstrap therefore stays where every marketplace one was removed, and it
+# is what the file-level ``I001, E402`` waiver above is still paying for.
 _RETRO_SCRIPTS = (
     PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-review-retrospective' / 'scripts'
 )
 if str(_RETRO_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_RETRO_SCRIPTS))
-
-import review_gate_delta as delta  # noqa: E402
 
 # A bare ``type: ignore`` is deliberate here, not laziness: mypy resolves this
 # project-local import differently depending on which roots are on its search
@@ -49,7 +50,7 @@ import review_gate_delta as delta  # noqa: E402
 # therefore "unused" in whichever environment raises the OTHER code, and
 # ``--warn-unused-ignores`` turns that into a hard error. The bare form is used
 # in both.
-import review_retrospective as retro  # type: ignore  # noqa: E402
+import review_retrospective as retro  # type: ignore
 
 #: One corpus, exercising every axis the rule distinguishes. Each entry carries the
 #: REAL record shape — `title`/`detail` built from structured metadata, the comment

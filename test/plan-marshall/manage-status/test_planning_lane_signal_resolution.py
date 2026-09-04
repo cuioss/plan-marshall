@@ -150,7 +150,7 @@ def test_s5_concrete_request_with_cli_signal_stays_light(plan_context):
 
 def test_s5_regex_constants_are_module_level_importable():
     """The four S5 regexes are importable module-level compiled patterns."""
-    import re  # noqa: PLC0415
+    import re  # local import: only this check needs it
 
     for name in ('_PATH_RE', '_FENCE_RE', '_CLI_RE', '_NOTATION_RE'):
         pattern = getattr(_mod, name)

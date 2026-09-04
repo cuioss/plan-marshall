@@ -1134,7 +1134,7 @@ def _read_metadata_field(plan_id: str, field: str) -> str:
         return ''
     try:
         parsed = parse_toon(stdout)
-    except Exception:  # noqa: BLE001 — defensive against TOON drift
+    except Exception:  # defensive against TOON drift
         return ''
     if parsed.get('status') != 'success':
         return ''
@@ -2543,7 +2543,7 @@ def cmd_worktree_list(_args):
         # `or 'unknown'` normalizes an explicit None value (key present but null)
         # to the fail-closed scope, not just an absent key.
         scope = (parsed.get('scope') or 'unknown') if isinstance(parsed, dict) else 'unknown'
-    except Exception:  # noqa: BLE001 — a parse failure degrades to the fail-closed scope
+    except Exception:  # a parse failure degrades to the fail-closed scope
         scope = 'unknown'
 
     worktrees: list[dict[str, str]] = []

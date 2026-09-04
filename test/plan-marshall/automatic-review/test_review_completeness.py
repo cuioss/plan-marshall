@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for review_completeness.py — the automatic-review step-done PARTICIPATION guard.
 
 The predicate classifies every required ∪ optional bot into exactly one state and
@@ -54,21 +53,20 @@ The store is seeded in-process via ``_findings_core.add_finding`` /
 
 from __future__ import annotations
 
-import sys
-
+import _findings_core as fc
 import pytest
-
 from _bot_flag_derivation import derive_bot_flags
-from conftest import get_script_path, run_script
+
+from conftest import get_script_path, load_script_module, run_script
+
+# ``register=False``: only the returned module is needed, and a sibling suite
+# imports ``review_completeness`` plainly. Registering under that name would put two
+# copies in play, reachable by different routes and differing by collection order.
+rc = load_script_module(
+    'plan-marshall', 'automatic-review', 'review_completeness.py', register=False
+)
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import review_completeness as rc  # noqa: E402
-import _findings_core as fc  # noqa: E402
 
 # The registered bot population, hoisted to module scope so every sweep over it —
 # the collection-time parametrize below and the in-test PR-wide sweep — reads ONE

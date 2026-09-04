@@ -104,7 +104,7 @@ class StdioTransport:
         # cannot follow unless it is handed the same search path
         # (`extraPaths`). Default is the interactive client's own config.
         self._analysis_config = dict(analysis_config) if analysis_config else default_analysis_config()
-        self._proc = subprocess.Popen(  # noqa: S603 — command is operator-configured
+        self._proc = subprocess.Popen(  # command is operator-configured
             command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,

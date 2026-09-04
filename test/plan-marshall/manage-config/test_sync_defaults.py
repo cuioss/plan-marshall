@@ -15,7 +15,7 @@ parser (see :func:`_sync_ns`), which is what keeps that claim honest — a
 hand-built namespace can carry an attribute the CLI never supplies, and did.
 """
 
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 
 from pathlib import Path
 import copy

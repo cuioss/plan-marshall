@@ -237,7 +237,7 @@ def _resolve_worktree_path_for_plan(plan_id: str) -> tuple[Path | None, dict | N
     # verbatim; rescue only the recoverable channel-could-not-resolve case (no
     # worktree configured / status.json missing — the moved-in-from-main case)
     # via the structural probe.
-    assert error is not None  # noqa: S101 — channel returns an error when path is None
+    assert error is not None  # channel returns an error when path is None
     # ``make_error`` (triage_helpers) stores the human-readable text under the
     # ``error`` key, NOT ``message`` — read ``error`` first so the recoverable
     # channel-could-not-resolve case is actually detected (a ``message``-only read
@@ -429,7 +429,7 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
     worktree_path, wt_err = _resolve_worktree_path_for_plan(plan_id)
     if wt_err is not None:
         return _assert_cwd_unchanged(wt_err)
-    assert worktree_path is not None  # noqa: S101 — narrow for type-checker
+    assert worktree_path is not None  # narrow for type-checker
 
     try:
         main_plan_dir = resolve_main_anchored_path(f'plans/{plan_id}')
@@ -493,7 +493,7 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
             # set_title_token=False mirrors the acquire above — the move-back
             # lock never set a title token, so there is nothing to clear.
             merge_lock.run_release(Namespace(plan_id=plan_id, set_title_token=False))
-        except Exception:  # noqa: BLE001 - release must never mask the real result
+        except Exception:  # release must never mask the real result
             # Release failure is logged via the lock's own contract on the next
             # acquire's stale-reclamation path; never let it overwrite the
             # operation's real status.

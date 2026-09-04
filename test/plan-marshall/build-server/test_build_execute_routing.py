@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the D5 build-execute routing seam and the shared machine-global slot.
 
 Two production surfaces are exercised:
@@ -30,28 +29,16 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+import _build_execute_factory as factory
+import _build_queue_slot as slot_mod
 import pytest
-from _build_extension_fixtures import build_scripts_dir, execute_config
-from conftest import get_script_path, parse_ns
+from _build_execute import CaptureStrategy
+from _build_extension_fixtures import execute_config
+from _build_server_protocol import MARSHALLD_JOB_ENV
 
-# --- sys.path: the script-shared build library + its sibling deps ------------
-# The build directory comes from the shared bootstrap; this module additionally
-# drives the queue-slot and file-ops seams, whose directories are not part of the
-# extension-contract surface and so stay local.
-_SHARED_SCRIPTS = build_scripts_dir().parent
-_WORKFLOW_DIR = _SHARED_SCRIPTS / 'workflow'
-_LOCKS_SCRIPTS = get_script_path('plan-marshall', 'manage-locks', 'build_queue.py').parent
-_FILE_OPS_SCRIPTS = get_script_path('plan-marshall', 'tools-file-ops', 'file_ops.py').parent
+from conftest import load_script_module, parse_ns
 
-for _dep in (_SHARED_SCRIPTS, _WORKFLOW_DIR, _LOCKS_SCRIPTS, _FILE_OPS_SCRIPTS):
-    if str(_dep) not in sys.path:
-        sys.path.insert(0, str(_dep))
-
-import _build_execute_factory as factory  # noqa: E402
-import _build_queue_slot as slot_mod  # noqa: E402
-import build_queue as bq  # noqa: E402
-from _build_execute import CaptureStrategy  # noqa: E402
-from _build_server_protocol import MARSHALLD_JOB_ENV  # noqa: E402
+bq = load_script_module('plan-marshall', 'manage-locks', 'build_queue.py')
 
 
 def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:

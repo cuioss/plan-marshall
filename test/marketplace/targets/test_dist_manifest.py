@@ -9,12 +9,8 @@ Covers the pure, git-independent surface:
 
 import importlib.util
 import json
-import sys
 
 from conftest import PROJECT_ROOT
-
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def _load_generate():

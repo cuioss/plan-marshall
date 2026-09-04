@@ -696,7 +696,7 @@ def _read_plan_status(status_path: Path) -> tuple[dict | None, str]:
     return status, ''
 
 
-def cmd_list_stalled(args: argparse.Namespace) -> dict:  # noqa: ARG001
+def cmd_list_stalled(args: argparse.Namespace) -> dict:  # args unused: the uniform cmd_* handler signature
     """List plans whose relocated lesson file is stranded (stalled).
 
     A plan relocates a lesson into its plan directory via ``convert-to-plan``

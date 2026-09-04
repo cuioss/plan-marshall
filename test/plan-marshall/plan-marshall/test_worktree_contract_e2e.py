@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """End-to-end regression test for the worktree-contract fixes (D1-D4).
 
 Cross-cutting integration test for plan ``lesson-2026-05-08-08-001``.
@@ -30,8 +29,12 @@ contamination (per project memory note on test isolation).
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
+
+# Imported PLAINLY so this suite holds the same ``_invariants`` instance the
+# production path resolves; its marketplace ``scripts/`` directory is already on
+# ``sys.path`` via the root conftest.
+import _invariants as inv
 
 from conftest import (
     get_script_path,
@@ -42,11 +45,6 @@ from conftest import (
 # =============================================================================
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall', 'phase_handshake.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import _invariants as inv  # noqa: E402
 
 
 # =============================================================================

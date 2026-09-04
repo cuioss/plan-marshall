@@ -37,15 +37,12 @@ behaviour is already covered by ``test_execute_script.py``;
 this file is the unit-level guard around the boundary's three rules.
 """
 
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
 # Import the executor-module loader from the sibling subprocess-test file.
-sys.path.insert(0, str(Path(__file__).parent))
-from test_execute_script import load_executor_module  # noqa: E402
+from test_execute_script import load_executor_module
 
 # Notation used as a generic "normal" failing script in the tests below.
 TEST_NOTATION = 'plan-marshall:manage-files:manage-files'

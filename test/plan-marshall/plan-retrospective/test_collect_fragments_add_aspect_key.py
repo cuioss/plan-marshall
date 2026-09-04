@@ -23,9 +23,9 @@ from _collect_fragments_fixtures import (
     _valid_fragment_body,
     _write_fragment,
 )
-from _plan_retrospective_fixtures import setup_live_plan  # noqa: E402
+from _plan_retrospective_fixtures import setup_live_plan
 
-from conftest import run_script  # noqa: E402
+from conftest import run_script
 
 # =============================================================================
 # add — aspect-key validation guard

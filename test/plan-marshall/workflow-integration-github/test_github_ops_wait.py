@@ -31,22 +31,22 @@ from _ci_wait_contract import (
     _noop_sleep,
     _ok_auth,
     _resolve_plan_relative,
-    test_ci_wait_for_status_flip_auth_failure_short_circuits,  # noqa: F401
-    test_ci_wait_for_status_flip_completes_on_flip,  # noqa: F401
-    test_ci_wait_for_status_flip_expected_any_accepts_failure,  # noqa: F401
-    test_ci_wait_for_status_flip_expected_any_accepts_success,  # noqa: F401
-    test_ci_wait_for_status_flip_expected_success_rejects_failure,  # noqa: F401
-    test_ci_wait_for_status_flip_times_out_when_status_never_changes,  # noqa: F401
-    test_dispatch_ci_wait_for_status_flip_registered,  # noqa: F401
-    test_dispatch_issue_wait_for_close_registered,  # noqa: F401
-    test_dispatch_issue_wait_for_label_registered,  # noqa: F401
-    test_issue_wait_for_close_auth_failure_short_circuits,  # noqa: F401
-    test_issue_wait_for_close_completes_on_flip,  # noqa: F401
-    test_issue_wait_for_close_times_out_when_state_never_changes,  # noqa: F401
-    test_issue_wait_for_label_absent_completes_when_label_disappears,  # noqa: F401
-    test_issue_wait_for_label_auth_failure_short_circuits,  # noqa: F401
-    test_issue_wait_for_label_present_completes_when_label_appears,  # noqa: F401
-    test_issue_wait_for_label_times_out_when_label_state_never_changes,  # noqa: F401
+    test_ci_wait_for_status_flip_auth_failure_short_circuits,
+    test_ci_wait_for_status_flip_completes_on_flip,
+    test_ci_wait_for_status_flip_expected_any_accepts_failure,
+    test_ci_wait_for_status_flip_expected_any_accepts_success,
+    test_ci_wait_for_status_flip_expected_success_rejects_failure,
+    test_ci_wait_for_status_flip_times_out_when_status_never_changes,
+    test_dispatch_ci_wait_for_status_flip_registered,
+    test_dispatch_issue_wait_for_close_registered,
+    test_dispatch_issue_wait_for_label_registered,
+    test_issue_wait_for_close_auth_failure_short_circuits,
+    test_issue_wait_for_close_completes_on_flip,
+    test_issue_wait_for_close_times_out_when_state_never_changes,
+    test_issue_wait_for_label_absent_completes_when_label_disappears,
+    test_issue_wait_for_label_auth_failure_short_circuits,
+    test_issue_wait_for_label_present_completes_when_label_appears,
+    test_issue_wait_for_label_times_out_when_label_state_never_changes,
 )
 
 # Real committed GitHub-Actions-shaped failure log fixture. Fed as the mocked

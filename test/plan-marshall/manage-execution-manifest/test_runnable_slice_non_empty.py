@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """The phase-5 leaf's runnable build slice must be NON-EMPTY.
 
 This module asserts the **user-visible property the plan exists to restore**,

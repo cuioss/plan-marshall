@@ -132,7 +132,7 @@ def _parse_jacoco(report_file: Path) -> tuple[dict[str, Any], list[dict[str, Any
         Tuple of (overall_metrics, per_item_list) where per_item_list contains
         dicts with 'name' and 'line_pct' (and optional 'detail').
     """
-    tree = ET.parse(report_file)  # noqa: S314
+    tree = ET.parse(report_file)  # build-produced report, not untrusted input
     root = tree.getroot()
 
     line_m, line_c = _get_counter(root, 'LINE')
@@ -182,7 +182,7 @@ def _parse_jacoco(report_file: Path) -> tuple[dict[str, Any], list[dict[str, Any
 
 def _parse_cobertura(report_file: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Parse Cobertura XML report (coverage.py output)."""
-    tree = ET.parse(report_file)  # noqa: S314
+    tree = ET.parse(report_file)  # build-produced report, not untrusted input
     root = tree.getroot()
 
     line_rate = float(root.get('line-rate', '0'))
@@ -385,7 +385,7 @@ def _detect_format(path: Path) -> str:
     if suffix == '.xml':
         # Peek at root element to distinguish JaCoCo vs Cobertura
         try:
-            tree = ET.parse(path)  # noqa: S314
+            tree = ET.parse(path)  # build-produced report, not untrusted input
             root_tag = tree.getroot().tag
             if root_tag == 'report':
                 return 'jacoco'

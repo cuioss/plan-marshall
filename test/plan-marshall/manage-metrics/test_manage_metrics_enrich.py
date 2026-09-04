@@ -18,7 +18,7 @@ from _manage_metrics_fixtures import (
     ns_generate,
     ns_start_phase,
 )
-from _manage_metrics_module_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
+from _manage_metrics_module_fixtures import (
     _ENRICH_TWO_PHASE_METRICS,
     _INLINE_BUCKET,
     _INLINE_SUM,
@@ -35,7 +35,7 @@ from _manage_metrics_module_fixtures import (  # noqa: F401 — a fixture is use
     manage_metrics,
 )
 
-from conftest import run_script  # noqa: I001
+from conftest import run_script
 
 # =============================================================================
 # Test: enrich (Tier 2 - direct import)
@@ -144,7 +144,7 @@ class TestEnrichDelegatesToRuntimeOp:
         """When the subprocess raises, cmd_enrich reports enriched=False (no crash)."""
         manage_metrics.write_metrics('enrich-delegate-03', {'plan_id': 'enrich-delegate-03'})
 
-        def _raise(*args, **kwargs):  # noqa: ANN002, ANN003
+        def _raise(*args, **kwargs):  # deliberately unannotated: it accepts whatever the patched call passes
             raise OSError('boom')
 
         monkeypatch.setattr(manage_metrics.subprocess, 'run', _raise)

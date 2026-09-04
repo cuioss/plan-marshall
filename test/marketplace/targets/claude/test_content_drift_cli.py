@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the Claude-target content-drift CLI wrapper.
 
 ``content_drift_cli.main`` is a thin argparse front end over
@@ -10,33 +9,21 @@ These tests reuse the synthetic-marketplace + real-emit fixture pattern from
 the sibling ``test_content_drift.py`` and drive ``main([...])`` with
 constructed argv, capturing stdout to assert the TOON report shape.
 
-The shared TOON parser lives in the ref-toon-format skill's scripts dir,
-which is not on ``PYTHONPATH`` during pytest collection; the canonical
-``sys.path.insert`` prologue (see
-``pm-plugin-development:plugin-script-architecture`` test-scaffolding.md)
-puts it on the path so the report is parsed with ``toon_parser`` rather than
-hand-rolled parsing.
+The shared TOON parser lives in the ref-toon-format skill's scripts dir, which
+the root ``conftest`` puts on ``sys.path`` before any test module is imported,
+so the report is parsed with ``toon_parser`` rather than hand-rolled parsing.
 """
 
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
+from toon_parser import parse_toon
 
-from conftest import PROJECT_ROOT
-
-_REPO_ROOT = PROJECT_ROOT
-_TOON_SCRIPTS = _REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'ref-toon-format' / 'scripts'
-if str(_TOON_SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(_TOON_SCRIPTS))
-
-from marketplace.targets.claude.content_drift_cli import main  # noqa: E402
-from marketplace.targets.claude.target import ClaudeTarget  # noqa: E402
-from toon_parser import parse_toon  # noqa: E402
-
+from marketplace.targets.claude.content_drift_cli import main
+from marketplace.targets.claude.target import ClaudeTarget
 
 _DOCUMENTED_KEYS = {
     'status',

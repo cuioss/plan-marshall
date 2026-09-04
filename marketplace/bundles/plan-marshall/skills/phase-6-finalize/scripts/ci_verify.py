@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Deterministic ``ci-verify`` finalize-step executor for phase-6-finalize.
 
 This script replaces the former dispatched ``workflow/ci-verify.md``

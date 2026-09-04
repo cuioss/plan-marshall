@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """D1: the daemon's ping handshake carries the scheduler's in-flight / queued counts.
 
 The reconcile reads daemon idleness from the daemon's OWN scheduler count rather
@@ -12,19 +11,17 @@ backward-compatible: the client handshake reads only ``status`` and ``version``.
 from __future__ import annotations
 
 import asyncio
-import sys
 
+# PLAIN import, deliberately: the build-server suites annotate against
+# ``marshalld.Daemon``, and only a plain import gives mypy the real module — the
+# shared loader returns ``Any``, which turns every such annotation into an
+# undefined name. The name is bound the same way in every suite, so no loaded copy
+# is ever published beside the plainly-imported one.
+import marshalld
 import pytest
-from conftest import get_script_path
-
-_DAEMON_DIR = get_script_path('plan-marshall', 'manage-build-server', 'marshalld.py').parent
-if str(_DAEMON_DIR) not in sys.path:
-    sys.path.insert(0, str(_DAEMON_DIR))
-
-import marshalld  # noqa: E402
-from _build_server_protocol import JobSpec  # noqa: E402
-from _marshalld_journal import Journal  # noqa: E402
-from _marshalld_scheduler import Scheduler  # noqa: E402
+from _build_server_protocol import JobSpec
+from _marshalld_journal import Journal
+from _marshalld_scheduler import Scheduler
 
 
 @pytest.fixture

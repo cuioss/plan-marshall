@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from _plan_retrospective_fixtures import build_happy_plan_dir  # noqa: E402
+from _plan_retrospective_fixtures import build_happy_plan_dir
 from _plan_retrospective_manifest_fixtures import (
     ARTIFACT_SCRIPT,
     _check_by_name,
@@ -12,7 +12,7 @@ from _plan_retrospective_manifest_fixtures import (
     _write_manifest,
 )
 
-from conftest import run_script  # noqa: E402
+from conftest import run_script
 
 # =============================================================================
 # Forward in check-artifact-consistency

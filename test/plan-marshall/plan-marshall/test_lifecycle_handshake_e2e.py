@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """End-to-end regression test for the phase_handshake lifecycle.
 
 Locks in the chronic ``No phase_handshake data`` / ``No handshakes.toon
@@ -35,11 +34,17 @@ import argparse
 import copy
 import json
 import shutil
-import sys
 from pathlib import Path
 from typing import Any
 
+# Imported PLAINLY so this suite holds the same instances the production path
+# resolves; their marketplace ``scripts/`` directory is already on ``sys.path``
+# via the root conftest.
+import _handshake_commands as cmds
+import _invariants as inv
 import pytest
+from toon_parser import parse_toon
+
 from conftest import (
     MARKETPLACE_ROOT,
     get_script_path,
@@ -53,14 +58,6 @@ from conftest import (
 # =============================================================================
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall', 'phase_handshake.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import _handshake_commands as cmds  # noqa: E402
-import _invariants as inv  # noqa: E402
-
-from toon_parser import parse_toon  # noqa: E402
 
 SUMMARIZE_SCRIPT = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'summarize-invariants.py'

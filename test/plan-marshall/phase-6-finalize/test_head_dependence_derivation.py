@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Derivation guard for the finalize-step ``head_dependent`` membership set.
 
 HEAD-dependence used to be governed by ``HEAD_DEPENDENT_STEPS``, a six-member

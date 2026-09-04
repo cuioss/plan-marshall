@@ -13,14 +13,8 @@ signal, and genuine operator prose must not be refused.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent))
-
-import _chat_provenance as _mod  # noqa: I001
-
-from _chat_signal_fixtures import (  # noqa: I001, E402
+import _chat_provenance as _mod
+from _chat_signal_fixtures import (
     OPERATOR_TEXT,
     REENTRY_NOTICE,
     SKILL_LOAD_TEXT,

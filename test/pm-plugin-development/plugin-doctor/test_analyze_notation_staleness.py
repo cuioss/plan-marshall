@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Regression tests for the ``notation-staleness`` analyzer.
 
 The ``_analyze_notation_staleness`` analyzer flags three-part executor

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Provenance-audit tests for plugin-doctor.
 
 The ``references/rule-provenance.md`` table is the source-of-truth audit
@@ -24,13 +23,15 @@ the invariants:
 """
 
 import re
-import sys
 from pathlib import Path
 
 from conftest import PROJECT_ROOT, get_scripts_dir, load_script_module
 
-# Retained: inserted on sys.path (used outside the module loader) so the
-# analyzer modules' intra-bundle ``from <module> import ...`` references resolve.
+# No bootstrap: the analyzer modules' intra-bundle ``from <module> import ...``
+# references — and ``file_ops``, which lives in plan-marshall — resolve because
+# the root conftest puts every marketplace ``scripts/`` directory on ``sys.path``
+# before any test module is imported. ``SCRIPTS_DIR`` survives as the anchor the
+# provenance sweep below walks.
 SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'plugin-doctor')
 PROVENANCE_PATH = (
     PROJECT_ROOT
@@ -42,21 +43,6 @@ PROVENANCE_PATH = (
     / 'references'
     / 'rule-provenance.md'
 )
-
-sys.path.insert(0, str(SCRIPTS_DIR))
-
-# file_ops lives in plan-marshall; add for completeness so loading _doctor_shared
-# succeeds.
-_FILE_OPS_DIR = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'tools-file-ops'
-    / 'scripts'
-)
-sys.path.insert(0, str(_FILE_OPS_DIR))
 
 
 def _load_doctor_shared():

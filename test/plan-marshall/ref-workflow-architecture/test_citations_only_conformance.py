@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Conformance detector for the citations-only return shape.
 
 ``ref-workflow-architecture/standards/citations-only-return.md`` is the single

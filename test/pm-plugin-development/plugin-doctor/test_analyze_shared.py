@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for ``parse_flat_yaml_config`` in ``_analyze_shared.py``.
 
 Focus: the bare comma-separated inline value form. A value such as
@@ -9,12 +8,7 @@ string. This guards the fix that always routes a present inline value through
 ``_parse_inline_list`` rather than only the bracketed ``[..]`` form.
 """
 
-import sys
-
-from conftest import get_scripts_dir, load_script_module
-
-_SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'plugin-doctor')
-sys.path.insert(0, str(_SCRIPTS_DIR))
+from conftest import load_script_module
 
 _shared = load_script_module(
     'pm-plugin-development', 'plugin-doctor', '_analyze_shared.py', '_analyze_shared'

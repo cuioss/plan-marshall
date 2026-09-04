@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """CI run artifact persistence layer.
 
 Backs the ``ci-verify`` finalize step. Persists per-job CI logs plus a

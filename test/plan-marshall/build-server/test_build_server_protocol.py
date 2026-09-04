@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for _build_server_protocol internals.
 
-Drive the wire protocol and job/result schema helpers directly by inserting the
-script-shared build scripts dir on sys.path (mirrors the executor PYTHONPATH the
-daemon and client run under).
+Drive the wire protocol and job/result schema helpers directly, importing them by
+name: the root conftest puts the script-shared build scripts dir on ``sys.path``
+before any test module is imported, mirroring the executor PYTHONPATH the daemon
+and client run under.
 """
 
 from __future__ import annotations
@@ -14,20 +14,10 @@ import argparse
 import asyncio
 import json
 import socket
-import sys
 from typing import cast
 
+import _build_server_protocol as proto
 import pytest
-from conftest import get_script_path
-
-SCRIPT_PATH = get_script_path('plan-marshall', 'script-shared', 'build/_build_server_protocol.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import _build_server_protocol as proto  # noqa: E402
-
 
 # =============================================================================
 # Helpers

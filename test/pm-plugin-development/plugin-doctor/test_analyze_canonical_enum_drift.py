@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the ``canonical-enum-choices-drift`` rule analyzer.
 
 The analyzer compares a documented ``{a|b|c}`` enum in a skill's

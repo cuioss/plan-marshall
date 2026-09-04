@@ -218,7 +218,7 @@ def _emit_skill(
 
     # Reference the unused mapping so static checkers don't flag it; the
     # full mapping is consumed by agent transforms below.
-    _ = mapping  # noqa: F841
+    _ = mapping
 
     for subdir_name in VERBATIM_SKILL_SUBDIRS:
         src_subdir = skill_dir / subdir_name

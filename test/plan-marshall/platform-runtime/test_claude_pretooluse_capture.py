@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for claude_pretooluse_capture.py — the observe-only PreToolUse capture leaf.
 
 The leaf is a stdin->file hook script, so it is exercised via subprocess (a fresh
@@ -24,21 +23,19 @@ Coverage:
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from typing import Any
+
+# PLAIN import, deliberately — matching ``test_pretooluse_gate.py``, whose typed
+# probes need mypy to see the real module. The name must be bound the same way in
+# both suites or the loader would register a copy beside the plainly-imported one.
+import pretooluse_gate as gate
 
 from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path(
     "plan-marshall", "platform-runtime", "claude_pretooluse_capture.py"
 )
-SCRIPTS_DIR = SCRIPT_PATH.parent
-
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import pretooluse_gate as gate  # noqa: E402
 
 
 # =============================================================================

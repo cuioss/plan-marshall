@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """In-process command tests for ``doctor-marketplace.py`` subcommand entry points.
 
 The ``cmd_*`` functions (list-components, analyze, fix, report, quality-gate,

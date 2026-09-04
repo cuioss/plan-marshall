@@ -14,14 +14,17 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
+# PLAIN import: this suite only reads preset CONSTANTS off the class, and the
+# sibling ``test_effort_presets.py`` binds the same module plainly so mypy can
+# type-check its wrong-type probes. Binding it by file here would publish a second
+# copy beside that one, which is the ``sys.modules`` collision the loader-contract
+# guard forbids.
+import effort_presets
 from _manage_config_fixtures import SCRIPT_PATH, create_marshal_json
 
 from conftest import load_script_module
 
-_effort_presets_mod = load_script_module(
-    'plan-marshall', 'plan-marshall', 'effort_presets.py', module_name='effort_presets'
-)
-EffortPresets = _effort_presets_mod.EffortPresets
+EffortPresets = effort_presets.EffortPresets
 
 _cmd_effort_mod = load_script_module(
     'plan-marshall', 'manage-config', '_cmd_effort.py', module_name='_cmd_effort'

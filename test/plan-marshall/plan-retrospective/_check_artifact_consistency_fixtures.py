@@ -10,18 +10,17 @@ Tests for ``check-artifact-consistency.py``.
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
-
-
-from _plan_retrospective_fixtures import (  # noqa: E402
+from _plan_retrospective_fixtures import (
     build_happy_plan_dir,
 )
 
-from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
+from conftest import MARKETPLACE_ROOT, run_script
 
 SCRIPT_PATH = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'check-artifact-consistency.py'
@@ -227,10 +226,6 @@ def _run_archived(plan_dir: Path):
 # legacy key → unresolvable). These tests exercise the tier-1/legacy/unresolvable
 # endpoints; the capture and merge-commit tiers are covered in test_footprint_resolver.py.
 # =============================================================================
-
-import importlib.util  # noqa: E402
-import subprocess  # noqa: E402
-
 
 def _load_check_module():
     spec = importlib.util.spec_from_file_location('_check_artifact_under_test', SCRIPT_PATH)

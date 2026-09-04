@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Derivation guard for the finalize-step ``post_run_review`` membership set.
 
 A post-run-review step looks back over the finished run and reports on it. Three

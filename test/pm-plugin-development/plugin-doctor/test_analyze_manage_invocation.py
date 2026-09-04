@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the ``_analyze_manage_invocation.py`` plugin-doctor analyzer.
 
 The analyzer ships two rules over markdown invocations of every

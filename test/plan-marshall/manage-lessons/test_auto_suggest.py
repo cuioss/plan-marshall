@@ -192,7 +192,7 @@ def test_plan_dir_not_found_errors(plan_context):
 
 def test_auto_suggest_registered_in_manage_lessons_dispatch():
     """argparse subparser routes 'auto-suggest' to cmd_auto_suggest."""
-    import argparse  # noqa: PLC0415
+    import argparse  # local import: only this dispatch-wiring check needs it
 
     manage_lessons = _load_module('_manage_lessons_dispatch_check', 'manage-lessons.py')
     assert manage_lessons.cmd_auto_suggest is cmd_auto_suggest or callable(manage_lessons.cmd_auto_suggest)

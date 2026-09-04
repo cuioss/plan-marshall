@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Pre-archive foreign-PR landing gate for the phase-6-finalize dispatcher.
 
 A *foreign* task's change lands in a DIFFERENT repository than the one being
@@ -259,7 +258,7 @@ def check(
     # produce a false clear.
     try:
         project_root = cwd_checkout_root()
-    except Exception as exc:  # noqa: BLE001 — any resolution failure fails the gate closed
+    except Exception as exc:  # any resolution failure fails the gate closed
         return {
             'status': 'error',
             'plan_id': plan_id,

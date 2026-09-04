@@ -42,13 +42,9 @@ from __future__ import annotations
 
 import importlib.util
 import subprocess
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
-
-
-from conftest import MARKETPLACE_ROOT  # noqa: E402
+from conftest import MARKETPLACE_ROOT
 
 SCRIPT_PATH = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'direct-gh-glab-usage.py'

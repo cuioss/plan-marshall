@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """End-to-end regression coverage pinning the plan-retrospective Step 6 token to
 the manifest step_id.
 
@@ -36,10 +35,15 @@ divergence and fails test 1.
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT, get_scripts_dir
+# ``_config_defaults`` imports its sibling ``constants`` module by bare name
+# (PYTHONPATH is normally set by the executor). Under pytest the root conftest
+# puts every marketplace ``scripts/`` directory on ``sys.path`` before any test
+# module is imported, so both this import and that sibling one resolve.
+import _config_defaults as config_defaults
+
+from conftest import MARKETPLACE_ROOT
 
 # ---------------------------------------------------------------------------
 # Source anchors
@@ -52,15 +56,6 @@ _RETROSPECTIVE_SKILL = (
 
 # The canonical manifest step_id this regression pins the documented token to.
 _CANONICAL_STEP_ID = 'plan-marshall:plan-retrospective'
-
-# ``_config_defaults`` imports the sibling ``constants`` module by bare name
-# (PYTHONPATH is normally set by the executor); add the scripts dir to the
-# import path before loading so the bare ``from constants import ...`` resolves.
-_CONFIG_SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'manage-config')
-if str(_CONFIG_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_CONFIG_SCRIPTS_DIR))
-
-import _config_defaults as config_defaults  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

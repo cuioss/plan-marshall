@@ -848,10 +848,9 @@ def _load_template_module():
         'def _resolve_notation_by_target(notation):\n    return None\n',
     )
 
-    # Ensure shared dirs are importable for plan_logging's transitive imports.
-    for extra in _MARKETPLACE_SCRIPT_DIRS:
-        if extra not in sys.path:
-            sys.path.insert(0, extra)
+    # ``plan_logging``'s transitive imports resolve for the exec'd template
+    # without a bootstrap: the root conftest already put every entry of
+    # ``_MARKETPLACE_SCRIPT_DIRS`` on ``sys.path`` at its own import time.
 
     module = types.ModuleType('executor_template_under_test')
     module.__dict__['__file__'] = str(TEMPLATE_PATH)
@@ -1825,7 +1824,7 @@ def _load_claude_resolver():
     module = load_module()
     src = module.generate_target_aware_resolver_code('claude')
     namespace: dict = {'Path': Path}
-    exec(src, namespace)  # noqa: S102 — controlled, generator-owned template source
+    exec(src, namespace)  # exec of generator-owned template source: that source is precisely what is under test
     return namespace['_resolve_notation_by_target']
 
 

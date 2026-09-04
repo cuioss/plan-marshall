@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for scope_creep_check.py.
 
-Drive ``cmd_check`` directly by inserting the scripts dir on sys.path and
-patching the git-diff helper. Verifies the four residual/threshold contract
+Drive ``cmd_check`` directly, through the shared ``conftest.load_script_module``
+loader, patching the git-diff helper. Verifies the four residual/threshold contract
 cases from solution_outline.md deliverable 4:
 
     (a) empty residual           -> no finding
@@ -23,12 +22,16 @@ argv were never executed by any test.
 from __future__ import annotations
 
 import json
-import sys
 from argparse import Namespace
 from pathlib import Path
 
 import file_ops
 import pytest
+
+# PLAIN import, deliberately — matching the sibling suites, whose annotations need
+# mypy to see the real module. The name must be bound the same way in all three or
+# the loader would register a copy beside the plainly-imported one.
+import scope_creep_check as scc
 from _resolve_project_dir_fixtures import (
     CANONICAL_PLAN_ID,
     CANONICAL_WORKTREE,
@@ -38,16 +41,6 @@ from _resolve_project_dir_fixtures import (
     patch_query_worktree_path,
     worktree_query_result,
 )
-from conftest import get_script_path
-
-SCRIPT_PATH = get_script_path('plan-marshall', 'phase-5-execute', 'scope_creep_check.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import scope_creep_check as scc  # noqa: E402
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

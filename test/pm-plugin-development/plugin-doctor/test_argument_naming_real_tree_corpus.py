@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """The ARGUMENT_NAMING corpus over the real tree, reported against its own population.
 
 ``analyze_argument_naming`` is a corpus-relational rule: it judges every

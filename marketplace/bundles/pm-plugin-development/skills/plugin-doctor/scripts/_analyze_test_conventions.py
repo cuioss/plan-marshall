@@ -74,6 +74,17 @@ ID_LINE_PATTERN = re.compile(r'^\s*(?:- )?id:\s*(?P<id>\S+)\s*$', re.MULTILINE)
 #: describes the tree's own compliant majority rather than an aspiration.
 TEST_MODULE_LINE_BUDGET = 400
 
+#: Ceiling for the single-class exemption below, measured on the CLASS and not
+#: on the module. A module exceeds its own class only by header, imports and a
+#: banner — none of which a split could redistribute — so the module's line
+#: count is the wrong quantity to judge this shape by.
+#:
+#: The exemption is deliberately narrow, and the narrowness is the property
+#: being bought: a module of two under-ceiling classes is an ordinary split and
+#: stays flagged, because it has a second nameable subject to split along. This
+#: is one constant so a ceiling decision changes one line.
+TEST_MODULE_SINGLE_CLASS_CEILING = 520
+
 # --- Rule 6 -----------------------------------------------------------------
 
 #: ``Path(__file__).parent.parent.parent`` and deeper. A chain this long is
@@ -460,7 +471,7 @@ def _resolve_regex_value(value: ast.expr) -> str | None:
 
 def _run_list_command(list_command: str, cwd: Path) -> str:
     args = shlex.split(list_command)
-    completed = subprocess.run(  # noqa: S603 - registry-controlled command
+    completed = subprocess.run(  # registry-controlled command
         args, capture_output=True, text=True, cwd=str(cwd), check=True, timeout=30
     )
     return completed.stdout
@@ -569,32 +580,101 @@ def _read_source(path: Path) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def analyze_test_module_line_budget(test_root: Path, budget: int = TEST_MODULE_LINE_BUDGET) -> list[dict]:
-    """Rule 4 -- flag a collected test module over the line budget.
+def _sole_class_span(source: str, path: Path) -> int | None:
+    """Return the span of the module's single class, or None if the shape differs.
 
-    A module over budget is split by behaviour cluster into
-    ``test_{unit}_{cluster}.py``. The finding carries the module's own line
-    count and the budget so the message states the overage rather than
-    merely naming the rule.
+    The shape is "the module's whole content is one class": exactly one
+    ``ClassDef`` at module level and no module-level function. Anything else --
+    two classes, or a class beside a module-level helper -- has a second
+    nameable subject and is an ordinary split.
+
+    The span is the class's own ``end_lineno - lineno + 1``, not the module's
+    line count.
+    """
+    try:
+        tree = ast.parse(source, filename=str(path))
+    except SyntaxError:
+        return None
+    classes = [node for node in tree.body if isinstance(node, ast.ClassDef)]
+    if len(classes) != 1:
+        return None
+    if any(isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) for node in tree.body):
+        return None
+    sole = classes[0]
+    if sole.end_lineno is None:
+        return None
+    return sole.end_lineno - sole.lineno + 1
+
+
+def _is_single_class_exempt(source: str, path: Path) -> bool:
+    """Return True when ``path`` is one class whose own span is within the ceiling.
+
+    The comparison is ``<=``, matching the budget rule's own boundary: a module
+    of exactly ``TEST_MODULE_LINE_BUDGET`` lines is within budget, so a class of
+    exactly :data:`TEST_MODULE_SINGLE_CLASS_CEILING` lines is within the ceiling.
+    A class over the ceiling is flagged like any other over-budget module.
+    """
+    span = _sole_class_span(source, path)
+    return span is not None and span <= TEST_MODULE_SINGLE_CLASS_CEILING
+
+
+def analyze_test_module_line_budget(test_root: Path, budget: int = TEST_MODULE_LINE_BUDGET) -> list[dict]:
+    """Rule 4 -- flag any test-tree module over the line budget.
+
+    The rule measures **every** module the test tree carries, collected and
+    helper alike: a helper module costs a reader exactly what a collected one
+    does, and gating on the collection patterns left the tree's helper modules
+    unmeasured while the rule's name claimed otherwise.
+
+    ``_is_collected_module`` is still consulted, but as a *kind* discriminator
+    rather than a gate -- it selects which remedy the finding names, because the
+    split-by-behaviour-cluster remedy does not apply to a module that declares
+    no test. The kind lands in ``details`` so a consumer can partition the
+    findings without re-deriving it.
+
+    One shape is exempt, in either kind: a module whose whole content is a
+    single class whose own span is within
+    :data:`TEST_MODULE_SINGLE_CLASS_CEILING`. Such a module has one nameable
+    subject and no split boundary to cut along, so neither remedy applies to
+    it. See ``standards/doctor-test-conventions.md`` § test-module-line-budget.
     """
     findings: list[dict] = []
     for path in _iter_test_tree_modules(test_root):
-        if not _is_collected_module(path):
-            continue
         source = _read_source(path)
         if source is None:
             continue
         line_count = len(source.splitlines())
-        if line_count > budget:
-            findings.append(_build_line_budget_finding(path, line_count, budget))
+        if line_count <= budget:
+            continue
+        if _is_single_class_exempt(source, path):
+            continue
+        kind = 'collected' if _is_collected_module(path) else 'helper'
+        findings.append(_build_line_budget_finding(path, line_count, budget, kind))
     return findings
 
 
-def _build_line_budget_finding(path: Path, line_count: int, budget: int) -> dict:
+#: Remedy per module kind. A collected module is split by behaviour cluster; a
+#: helper module has no behaviour to cluster, so it is split by the surface it
+#: supplies, under the same ``_{domain}_*`` naming that keeps it out of
+#: collection. Naming the collected remedy on a helper would prescribe renaming
+#: it INTO the collection patterns -- the defect this widening must not
+#: introduce.
+_LINE_BUDGET_REMEDY = {
+    'collected': (
+        'split by behaviour cluster into test_{unit}_{cluster}.py, not in arbitrary halves'
+    ),
+    'helper': (
+        'split by the surface it supplies into _{domain}_{surface}.py, keeping each '
+        'module outside pytest collection patterns'
+    ),
+}
+
+
+def _build_line_budget_finding(path: Path, line_count: int, budget: int, kind: str) -> dict:
+    noun = 'test module' if kind == 'collected' else 'test helper module'
     description = (
-        f'test module is {line_count} lines, over the {budget}-line budget '
-        f'(by {line_count - budget}) — split by behaviour cluster into '
-        f'test_{{unit}}_{{cluster}}.py, not in arbitrary halves'
+        f'{noun} is {line_count} lines, over the {budget}-line budget '
+        f'(by {line_count - budget}) — {_LINE_BUDGET_REMEDY[kind]}'
     )
     return Finding(
         type='test-module-line-budget',
@@ -608,6 +688,7 @@ def _build_line_budget_finding(path: Path, line_count: int, budget: int) -> dict
             'line_count': line_count,
             'budget': budget,
             'over_by': line_count - budget,
+            'kind': kind,
             'standard_anchor': 'doctor-test-conventions.md#test-module-line-budget',
         },
     ).to_dict()

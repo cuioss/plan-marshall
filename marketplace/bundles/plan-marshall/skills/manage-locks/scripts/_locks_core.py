@@ -465,5 +465,5 @@ def log_lock_event(lock: str, event: str, lock_id: str, **fields: Any) -> None:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(log_path, 'a', encoding='utf-8') as f:
             f.write(entry)
-    except Exception:  # noqa: BLE001 — [LOCK] emission is best-effort, never raises
+    except Exception:  # [LOCK] emission is best-effort, never raises
         pass

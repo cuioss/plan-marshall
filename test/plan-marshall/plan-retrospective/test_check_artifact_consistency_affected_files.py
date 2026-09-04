@@ -17,11 +17,11 @@ from _check_artifact_consistency_fixtures import (
     _setup_exact_match_plan,
     _setup_multi_deliverable_plan,
 )
-from _plan_retrospective_fixtures import (  # noqa: E402
+from _plan_retrospective_fixtures import (
     build_happy_plan_dir,
 )
 
-from conftest import run_script  # noqa: E402
+from conftest import run_script
 
 
 class TestAffectedFilesExactMatch:

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for ``_cmd_suggest.py`` — ``suggest_domains()`` API.
 
 Pins the per-module on-disk layout: suggest_domains looks up the module via
@@ -9,18 +8,12 @@ Pins the per-module on-disk layout: suggest_domains looks up the module via
 surface.
 """
 
-import sys
 import tempfile
-from pathlib import Path
 
 import pytest
+from _arch_fixtures import setup_test_project
 
 from conftest import load_script_module
-
-sys.path.insert(0, str(Path(__file__).parent))
-
-from _arch_fixtures import setup_test_project  # noqa: E402
-
 
 _architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
 _cmd_suggest = load_script_module('plan-marshall', 'manage-architecture', '_cmd_suggest.py', '_cmd_suggest')

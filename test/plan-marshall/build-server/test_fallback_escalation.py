@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: E402
 """D5: a sustained run of daemon-unreachable fallbacks escalates once, not N times.
 
 A one-off in-process fallback and a daemon gone all run are indistinguishable when
@@ -19,7 +19,7 @@ from _build_extension_fixtures import build_scripts_dir
 
 build_scripts_dir()
 
-import _build_execute_factory as factory  # noqa: E402
+import _build_execute_factory as factory
 
 _NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Roster-vs-registry closure regression for the finalize dispatched/inline split.
 
 ``standards/dispatch-inline-split.md`` is the single source of truth for which

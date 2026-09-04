@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for ``parse_declared_tools`` in ``_analyze_coverage.py``.
 
 Focus: the inline comma-separated tool-list form. ``parse_declared_tools``
@@ -9,12 +8,7 @@ the same inline value. This guards the behavioral identity between the two
 field names so neither spelling silently drops declared tools.
 """
 
-import sys
-
-from conftest import get_scripts_dir, load_script_module
-
-_SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'plugin-doctor')
-sys.path.insert(0, str(_SCRIPTS_DIR))
+from conftest import load_script_module
 
 _coverage = load_script_module(
     'pm-plugin-development', 'plugin-doctor', '_analyze_coverage.py', '_analyze_coverage'

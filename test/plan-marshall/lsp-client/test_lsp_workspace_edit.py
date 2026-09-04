@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the pure WorkspaceEdit helpers (D2 footprint/apply/verdict).
 
 These exercise the write side's core logic with no live server: footprint is
@@ -10,18 +9,10 @@ fails the verdict, and a rollback restores the original bytes.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
+import _lsp_workspace_edit as we
 import pytest
-from conftest import get_script_path
-
-SCRIPT_PATH = get_script_path('plan-marshall', 'lsp-client', 'lsp_client.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import _lsp_workspace_edit as we  # noqa: E402
 
 
 def _text_edit(sl, sc, el, ec, new_text):

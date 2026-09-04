@@ -27,15 +27,11 @@ Each of those tests pins one deliverable of the plan that introduced
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+from _plan_retrospective_fixtures import build_happy_plan_dir
 
-
-from _plan_retrospective_fixtures import build_happy_plan_dir  # noqa: E402
-
-from conftest import MARKETPLACE_ROOT  # noqa: E402
+from conftest import MARKETPLACE_ROOT
 
 MANIFEST_SCRIPT = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'check-manifest-consistency.py'

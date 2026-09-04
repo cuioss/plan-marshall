@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the shared ``--extra`` passthrough guard (deliverable 3).
 
 ``apply_extra_passthrough`` in ``_providers_core`` is the single guard the
@@ -14,15 +13,10 @@ These tests exercise the guard directly, exercise the exact call shapes
 commands for the same inputs.
 """
 
-import sys
-from pathlib import Path
+import _providers_core
 
 from conftest import load_script_module
 
-sys.path.insert(0, str(Path(__file__).parent))
-
-
-import _providers_core  # noqa: E402
 _cred_edit = load_script_module('plan-marshall', 'manage-providers', '_cred_edit.py', '_cred_edit')
 
 apply_extra_passthrough = _providers_core.apply_extra_passthrough

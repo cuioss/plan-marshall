@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the ``task_graph_valid`` and ``task_state_hash`` invariants.
 
 Drives ``_capture_task_graph_valid`` and ``_capture_task_state_hash``
@@ -38,25 +37,19 @@ import argparse
 import copy
 import json
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
+# The invariants modules under test, imported PLAINLY so this suite holds the
+# same instances the production path resolves. Their marketplace ``scripts/``
+# directory is already on ``sys.path`` via the root conftest.
+import _handshake_store as store
+import _invariants as inv
 import pytest
+
 from conftest import get_script_path, load_script_module, parse_ns
 
-# =============================================================================
-# Import the invariants module under test.
-# =============================================================================
-
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall', 'phase_handshake.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import _handshake_store as store  # noqa: E402
-import _invariants as inv  # noqa: E402
 
 # Plan ids this module's tests file findings against — seeded by the autouse
 # ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.

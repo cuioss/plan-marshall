@@ -127,7 +127,7 @@ def _derive_head_dependence(step: str) -> tuple[bool, str | None]:
 
     try:
         records = find_implementors(_FINALIZE_STEP_EXT_POINT)
-    except Exception as exc:  # noqa: BLE001 - any discovery failure is diagnosable, not fatal
+    except Exception as exc:  # any discovery failure is diagnosable, not fatal
         return False, f'find_implementors({_FINALIZE_STEP_EXT_POINT!r}) failed ({exc})'
 
     if not records:

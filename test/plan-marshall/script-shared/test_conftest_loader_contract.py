@@ -52,7 +52,7 @@ EXTENSION_SKILL = 'plan-marshall-plugin'
 #: from BOTH sides so the guard's blind spot stays a truthful quantity: it may not
 #: grow (that widens what the guard cannot see) and it may not silently shrink
 #: (that leaves the constant overstating the gap).
-UNRESOLVED_CALL_SITE_BOUND = 87
+UNRESOLVED_CALL_SITE_BOUND = 86
 
 #: Names a file-load registers that some test module ALSO imports plainly.
 #:
@@ -69,7 +69,6 @@ UNRESOLVED_CALL_SITE_BOUND = 87
 KNOWN_REGISTRATION_COLLISIONS = frozenset({
     '_architecture_core',
     '_build_execute_factory',
-    '_cmd_effort',
     '_config_defaults',
     '_cred_edit',
     '_findings_core',
@@ -78,17 +77,12 @@ KNOWN_REGISTRATION_COLLISIONS = frozenset({
     '_gradle_execute',
     '_maven_execute',
     '_pyproject_execute',
-    'lsp_client',
     'permission_doctor',
     'permission_fix',
-    'platform_runtime',
-    'effort_presets',
-    'finalize_step_presets',
     'github_pr',
     'manage_terminal_title',
     'plan_logging',
     'recipe_scoring',
-    'review_completeness',
     'run_config',
 })
 
@@ -265,7 +259,10 @@ def test_the_scan_finds_the_loader_call_sites(tree_scan):
     # A parse_ns site too, because it resolves by a different rule: parse_ns takes
     # no module_name, so its fourth positional is an argv token. A control over
     # load_script_module alone cannot see that rule being applied to the wrong helper.
-    assert 'test_shared_harness.py' in registered['platform_runtime'], registered['platform_runtime']
+    # This site is the sharpest available: its fourth positional is the literal
+    # 'no-such-verb', so a walker reading that position as a module name would
+    # register a command-line token instead of 'manage-findings'.
+    assert 'test_shared_harness.py' in registered['manage-findings'], registered['manage-findings']
 
     # No resolved name may look like a command-line token. A name-specific check
     # ('run' is absent) only catches the tokens it happens to list; two successive

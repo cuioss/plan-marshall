@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: E402
 """Tests for the project-local marshalld reconcile (D1/D2/D3, D6 cases).
 
 The reconcile heals version drift from the meta-project's own sync surface. The
@@ -39,11 +39,17 @@ import pytest
 
 from conftest import PROJECT_ROOT
 
+# ``reconcile_daemon`` is a PROJECT-LOCAL skill script under ``.claude/``, not a
+# marketplace bundle script, so neither ``load_script_module`` nor
+# ``load_skill_module`` can address it and the root conftest's marketplace
+# ``sys.path`` setup does not reach it. This bootstrap therefore stays where every
+# marketplace one was removed, and it is what the file-level ``I001, E402`` waiver
+# above is still paying for.
 _SCRIPTS = PROJECT_ROOT / '.claude' / 'skills' / 'sync-plugin-cache' / 'scripts'
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
-import reconcile_daemon as rd  # noqa: E402
+import reconcile_daemon as rd
 
 _RESOLVED = '/cache/plan-marshall/0.1.1231/skills/manage-build-server/scripts/marshalld.py'
 _RUNNING_STALE = '/cache/plan-marshall/0.1.1212/skills/manage-build-server/scripts/marshalld.py'

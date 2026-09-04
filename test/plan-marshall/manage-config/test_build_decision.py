@@ -72,7 +72,7 @@ def _decision_ns(*, command: str | None = None, plan_id: str | None = None) -> N
 # skill scripts dir). The handler resolves should_execute_build from it at call
 # time, so monkeypatching helpers on this same module object is what the handler
 # (and the direct should_execute_build calls below) actually observe.
-import extension_base  # noqa: E402
+import extension_base
 
 
 # =============================================================================

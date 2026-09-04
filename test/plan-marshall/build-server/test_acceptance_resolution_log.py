@@ -26,8 +26,8 @@ from conftest import parse_ns
 
 build_scripts_dir()
 
-import _build_execute_factory as factory  # noqa: E402
-from _build_execute import CaptureStrategy  # noqa: E402
+import _build_execute_factory as factory
+from _build_execute import CaptureStrategy
 
 _MAVEN_NOTATION = 'plan-marshall:build-maven:maven'
 

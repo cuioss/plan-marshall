@@ -2145,8 +2145,8 @@ def _load_routing_logic(repo_root: Path) -> Any:
                 if path_str not in sys.path:
                     sys.path.insert(0, path_str)
     try:
-        import _cmd_planning_lane  # noqa: PLC0415
-    except Exception:  # noqa: BLE001 — any import-time failure degrades to no_routing_logic
+        import _cmd_planning_lane  # deferred: the sys.path bootstrap above must run first
+    except Exception:  # any import-time failure degrades to no_routing_logic
         return None
     return _cmd_planning_lane
 
@@ -2551,10 +2551,10 @@ def _recognized_bot_kinds() -> frozenset[str] | None:
     if path_str not in sys.path:
         sys.path.insert(0, path_str)
     try:
-        import bot_registry  # noqa: PLC0415
+        import bot_registry  # deferred: the sys.path bootstrap above must run first
 
         return frozenset(str(k) for k in bot_registry.bot_kinds())
-    except Exception:  # noqa: BLE001 — any import/parse failure degrades to presence-only
+    except Exception:  # any import/parse failure degrades to presence-only
         return None
 
 

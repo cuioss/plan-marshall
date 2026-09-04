@@ -199,7 +199,7 @@ class LspServer:
 
         try:
             result = handler(params)
-        except Exception as exc:  # noqa: BLE001 — a resident server must survive any handler defect
+        except Exception as exc:  # a resident server must survive any handler defect
             # A resident server whose justification is residency cannot be
             # killed by one bad request. Every handler exception becomes a
             # JSON-RPC error for a request, or a logged no-op for a
@@ -247,7 +247,7 @@ class LspServer:
                     response = self.handle(message)
                     if response is not None:
                         write_message(stdout, response)
-                except Exception as exc:  # noqa: BLE001 — one bad frame must not end the session
+                except Exception as exc:  # one bad frame must not end the session
                     _log_exception(message.get('method'), exc)
                     continue
                 if self.shutdown_requested and message.get('method') == 'exit':

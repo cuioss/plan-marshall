@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the file-bloat frontmatter ack mechanism in ``_doctor_analysis.py``.
 
 The ack mechanism suppresses ``file-bloat`` and ``subdoc-bloat`` issue
@@ -19,31 +18,15 @@ Additional cases:
   e. ``subdoc-bloat`` path — same ack logic applies to sub-documents.
 """
 
-import sys
 from pathlib import Path
 
-from conftest import PROJECT_ROOT, get_scripts_dir, load_script_module
+from conftest import PROJECT_ROOT, load_script_module
 
-# Retained: this module inserts the scripts dir on sys.path (used outside the
-# module loader) so ``from <module> import ...`` resolves for the modules under
-# test. The loader body itself routes through ``load_script_module``.
-_SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'plugin-doctor')
-
-sys.path.insert(0, str(_SCRIPTS_DIR))
-
-# file_ops lives in a different bundle; add its dir to sys.path so
-# `from file_ops import ...` resolves via the normal import machinery
-# (this is the same arrangement conftest/PYTHONPATH provides at runtime).
-_FILE_OPS_DIR = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'tools-file-ops'
-    / 'scripts'
-)
-sys.path.insert(0, str(_FILE_OPS_DIR))
+# No bootstrap: the analyzer modules' intra-bundle ``from <module> import ...``
+# references — and ``file_ops``, which lives in a different bundle — resolve
+# because the root conftest puts every marketplace ``scripts/`` directory on
+# ``sys.path`` before any test module is imported, which is the same arrangement
+# the executor's injected PYTHONPATH provides at runtime.
 
 
 def _load_module(name: str, filename: str):

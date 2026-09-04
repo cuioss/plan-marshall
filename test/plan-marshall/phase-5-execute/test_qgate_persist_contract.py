@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Cross-cutting regression suite: a failed finding-persist can never present as a clean pass.
 
 Verification scope — deliberately different from the per-site suites. The
@@ -32,19 +31,15 @@ Every test uses a unique ``plan_id`` (Q-Gate store isolation).
 from __future__ import annotations
 
 import json
-import sys
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import get_script_path, load_script_module
+# PLAIN import, deliberately: the typed helpers below annotate what ``cmd_check``
+# returns, and only a plain import gives mypy the real module — the shared loader
+# returns ``Any``, which discards those annotations.
+import scope_creep_check as scc
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'phase-5-execute', 'scope_creep_check.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import scope_creep_check as scc  # noqa: E402
+from conftest import load_script_module
 
 _findings_core = load_script_module(
     'plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core'

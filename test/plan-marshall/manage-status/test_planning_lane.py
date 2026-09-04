@@ -237,7 +237,7 @@ def test_escalate_plan_dir_not_found_errors(plan_context):
 
 def test_planning_lane_route_registered_in_manage_status_dispatch():
     """The route verb resolves to cmd_planning_lane_route in manage-status.py."""
-    import argparse  # noqa: PLC0415
+    import argparse  # local import: only this dispatch-wiring check needs it
 
     manage_status = load_script_module(
         'plan-marshall', 'manage-status', 'manage-status.py', '_manage_status_dispatch_check_pl_route'
@@ -256,7 +256,7 @@ def test_planning_lane_route_registered_in_manage_status_dispatch():
 
 def test_planning_lane_escalate_registered_in_manage_status_dispatch():
     """The escalate verb resolves to cmd_planning_lane_escalate in manage-status.py."""
-    import argparse  # noqa: PLC0415
+    import argparse  # local import: only this dispatch-wiring check needs it
 
     manage_status = load_script_module(
         'plan-marshall', 'manage-status', 'manage-status.py', '_manage_status_dispatch_check_pl_esc'

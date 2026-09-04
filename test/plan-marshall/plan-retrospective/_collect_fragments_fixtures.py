@@ -27,13 +27,9 @@ section. The validation guard itself is exercised by
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
-
-
-from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
+from conftest import MARKETPLACE_ROOT, run_script
 
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'collect-fragments.py'
 

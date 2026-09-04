@@ -10,7 +10,7 @@ from _providers_core import load_declared_providers
 from _providers_fixtures import stage_marshal
 from toon_parser import parse_toon
 
-import conftest  # noqa: F401
+import conftest
 
 _SONAR_PROVIDER_CONFIG = {
     'providers': [

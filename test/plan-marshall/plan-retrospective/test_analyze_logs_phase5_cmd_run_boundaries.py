@@ -14,9 +14,9 @@ from __future__ import annotations
 import json
 
 from _analyze_logs_fixtures import SCRIPT_PATH, _analyze_logs
-from _plan_retrospective_fixtures import setup_live_plan  # noqa: E402
+from _plan_retrospective_fixtures import setup_live_plan
 
-from conftest import run_script  # noqa: E402
+from conftest import run_script
 
 # =============================================================================
 # Phase-5 logging-gap fact extractors

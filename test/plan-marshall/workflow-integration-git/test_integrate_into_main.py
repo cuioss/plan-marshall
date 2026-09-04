@@ -928,7 +928,7 @@ class TestResolveWorktreePathViaStatusChannel:
 
     def test_resolution_failure_surfaces_the_resolver_message(self, monkeypatch) -> None:
         """A resolver failure is surfaced verbatim, never rewritten."""
-        import file_ops  # noqa: PLC0415
+        import file_ops  # local import: the handle is needed only to patch a seam here
 
         def _raise(_plan_id):
             raise file_ops.WorktreeResolutionError('status.json not found for plan')

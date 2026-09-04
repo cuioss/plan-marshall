@@ -3,7 +3,7 @@
 """Tests for input_validation.py shared module."""
 
 import pytest
-from input_validation import (  # noqa: I001
+from input_validation import (
     NO_PLAN_SENTINEL,
     PLAN_ID_RE,
     add_session_id_arg,

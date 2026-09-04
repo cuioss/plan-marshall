@@ -138,7 +138,7 @@ def cmd_ci_status(args: argparse.Namespace) -> dict:
     identifier, err_dict = github_ops._resolve_pr_identifier(args, 'ci_status')
     if err_dict:
         return err_dict
-    assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
+    assert identifier is not None  # narrowing after err_dict guard
 
     # Get checks (bucket field contains pass/fail result)
     returncode, stdout, stderr = github_ops.run_gh(
@@ -257,7 +257,7 @@ def _watch_run(run_id: str, timeout: int) -> tuple[int, str, str]:
     """
     try:
         return github_ops.run_gh(['run', 'watch', str(run_id), '--exit-status', '--compact'], timeout=timeout)
-    except Exception as exc:  # noqa: BLE001 — any watch failure degrades to the checks-fetch fallback
+    except Exception as exc:  # any watch failure degrades to the checks-fetch fallback
         return 1, '', f'gh run watch failed or timed out: {exc}'
 
 

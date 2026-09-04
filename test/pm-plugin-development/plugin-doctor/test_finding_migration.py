@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Architecture-level assertions for the uniform-``Finding`` migration (D3).
 
 These tests pin the ACHIEVED ``Finding`` architecture across the plugin-doctor

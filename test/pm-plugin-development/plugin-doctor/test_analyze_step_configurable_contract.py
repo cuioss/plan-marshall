@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the ``step-configurable-contract`` rule analyzer.
 
 The analyzer (``scan_step_configurable_contract``) is a pure static scanner

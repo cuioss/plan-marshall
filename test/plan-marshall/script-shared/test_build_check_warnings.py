@@ -5,24 +5,13 @@ Tests the factory function, argparse integration, JSON input parsing,
 and exit code semantics.
 """
 
-import importlib
 import json
-import sys
 from types import SimpleNamespace
 
-from conftest import get_scripts_dir
-
-# Add script path for imports
-_SCRIPT_DIR = get_scripts_dir('plan-marshall', 'script-shared') / 'build'
-sys.path.insert(0, str(_SCRIPT_DIR))
-
-# Also add toon_parser path
-_TOON_DIR = get_scripts_dir('plan-marshall', 'ref-toon-format')
-sys.path.insert(0, str(_TOON_DIR))
-
-_bcw = importlib.import_module('_build_check_warnings')
-
-from toon_parser import parse_toon  # noqa: E402
+# Both modules live in marketplace ``scripts/`` directories the root conftest
+# already puts on ``sys.path``, so they import plainly with no bootstrap.
+import _build_check_warnings as _bcw
+from toon_parser import parse_toon
 
 
 def _warn(message: str, wtype: str = 'other', severity: str = 'WARNING') -> dict:

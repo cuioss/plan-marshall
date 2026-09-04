@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Contract-level suite for ``standards/bot-participation-contract.md``.
 
 Cross-cutting counterpart to the co-located unit suites. Those pin per-component
@@ -59,13 +58,11 @@ from __future__ import annotations
 import itertools
 import json
 import re
-import sys
 from unittest.mock import patch
 
+import bot_registry
 import pytest
-
 from _bot_flag_derivation import derive_bot_flags, derive_declared_flags
-from conftest import PLAN_DIR_NAME, PROJECT_ROOT, get_script_path, run_script
 
 # The EVIDENCE-CLASS vocabulary and its per-script records are OWNED by the
 # participation-site population module and read from it here rather than restated.
@@ -74,17 +71,23 @@ from conftest import PLAN_DIR_NAME, PROJECT_ROOT, get_script_path, run_script
 # class the population itself does not recognise.
 from test_participation_site_population import READS_VOCABULARY, SITE_EXPECTATIONS
 
+from conftest import (
+    PLAN_DIR_NAME,
+    PROJECT_ROOT,
+    get_script_path,
+    load_script_module,
+    run_script,
+)
+
+# ``register=False``: only the returned module is needed here, and a sibling suite
+# (``test_unknown_bot_kind_escalation.py``) imports ``review_completeness`` plainly.
+# Registering under that name would put two copies of the module in play, reachable
+# by different routes and differing by collection order.
+rc = load_script_module(
+    'plan-marshall', 'automatic-review', 'review_completeness.py', register=False
+)
+
 _AR_SCRIPTS = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py').parent
-_GH_SCRIPTS = get_script_path(
-    'plan-marshall', 'workflow-integration-github', 'github_pr.py'
-).parent
-
-for _dir in (_AR_SCRIPTS, _GH_SCRIPTS):
-    if str(_dir) not in sys.path:
-        sys.path.insert(0, str(_dir))
-
-import bot_registry  # noqa: E402
-import review_completeness as rc  # noqa: E402
 
 _CONTRACT_DOC = _AR_SCRIPTS.parent / 'standards' / 'bot-participation-contract.md'
 _AR_SKILL = _AR_SCRIPTS.parent / 'SKILL.md'
@@ -384,29 +387,31 @@ class TestThisRepositorysSettledConfiguration:
     """This repo's own step params, as settled by the operator."""
 
     def test_required_and_optional_lists_are_the_settled_two_list_split(self):
-        """PR-Agent is the SOLE required bot; CodeRabbit and Sourcery are optional.
+        """cuioss-review-bot and CodeRabbit are required; Sourcery is optional.
 
-        Operator decision, on **reliability**: cuioss-review-bot is the only reviewer with
-        neither a per-account review quota nor a diff-size refusal. CodeRabbit
-        carries a rolling per-developer quota and Sourcery a weekly diff-character
-        cap, so requiring either makes routine review-coverage gaps gate the merge
-        — the failure mode that repeatedly forced merge-anyway decisions.
+        Operator decision, on **review value**: CodeRabbit finds defects the
+        cuioss-review-bot pass misses, so its silence is a real coverage gap and
+        is treated as one — it gates the quorum rather than being reported for
+        visibility only. Its rolling per-developer quota is the price of that, and
+        the remedies for a quota-blocked merge are splitting the diff or granting
+        a merge authorization; moving the reviewer back to ``optional_bots`` is not
+        one of them.
 
-        Optional is NOT dropped: an optional bot is still fetched, classified and
-        triaged, and its findings are acted on. It simply cannot hold the step
-        open by being rate-limited. CodeRabbit earns its place there — it produced
-        two real findings (one Major) that the required-bot pass missed.
+        Sourcery stays optional. Optional is NOT dropped: an optional bot is still
+        fetched, classified and triaged, and its findings are acted on. It simply
+        cannot hold the step open by hitting its weekly diff-character cap.
 
         The seeded defaults are both empty by design (never-asked), so the
         operative classification lives only in each project's own marshal.json.
         Pinning it closes the enabled-bots-vs-operative drift gap: a documented
         reviewer roster that silently disagrees with the config the pipeline
-        actually reads is invisible at every other surface.
+        actually reads is invisible at every other surface — which is exactly what
+        this assertion caught when the roster moved and nothing else noticed.
         """
         params = _live_step_params()
 
-        assert params['required_bots'] == 'cuioss-review-bot'
-        assert params['optional_bots'] == 'coderabbit,sourcery'
+        assert params['required_bots'] == 'cuioss-review-bot,coderabbit'
+        assert params['optional_bots'] == 'sourcery'
 
     def test_the_retired_single_list_key_does_not_survive(self):
         """``enabled_bots`` must be gone from the operative config, not shadowed."""

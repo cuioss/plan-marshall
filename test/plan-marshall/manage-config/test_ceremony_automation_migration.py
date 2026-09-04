@@ -47,7 +47,7 @@ _cmd_init = load_script_module(
 )
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH).
-import conftest  # noqa: E402, F401
+import conftest
 
 
 # The two flat auto-continuation knobs that are phase-level fields, with their

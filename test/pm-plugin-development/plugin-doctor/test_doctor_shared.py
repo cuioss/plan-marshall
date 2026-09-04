@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Behavioral tests for the discovery / parsing utilities in ``_doctor_shared.py``.
 
 Covers the bundle/component discovery walkers, component-type detection,

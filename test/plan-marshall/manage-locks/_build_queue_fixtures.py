@@ -73,6 +73,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from _manage_locks_fixtures import _make_live_plan
 
 from conftest import get_script_path, load_script_module
 
@@ -115,11 +116,6 @@ def _init_git_repo(repo: Path) -> None:
     own ``main`` dir rather than the developer's real checkout.
     """
     subprocess.run(['git', 'init', '-q', str(repo)], check=True)
-
-
-def _make_live_plan(base: Path, plan_id: str) -> None:
-    """Create a holder plan directory so the holder counts as LIVE."""
-    (base / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)
 
 
 def _set_max_slots(base: Path, max_slots: int) -> None:

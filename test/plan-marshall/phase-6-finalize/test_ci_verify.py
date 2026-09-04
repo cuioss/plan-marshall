@@ -40,7 +40,7 @@ import pytest
 # seams can be injected at the call level without spawning a subprocess.
 # ---------------------------------------------------------------------------
 
-from conftest import get_scripts_dir, load_script_module  # noqa: E402
+from conftest import get_scripts_dir, load_script_module
 _SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'phase-6-finalize')
 
 
@@ -52,7 +52,7 @@ _mod = _load_module('ci_verify', 'ci_verify.py')
 
 # manage-status seams for the D4b force-push regression, which asserts against
 # the PERSISTED head_at_completion record rather than a re-run of CI.
-from argparse import Namespace  # noqa: E402
+from argparse import Namespace
 
 
 _ci_verify_lifecycle = load_script_module(

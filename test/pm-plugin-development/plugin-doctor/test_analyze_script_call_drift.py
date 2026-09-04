@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Unit tests for the ``script-call-drift`` plugin-doctor rule.
 
 The analyzer parses argparse ``--help`` output for documented executor

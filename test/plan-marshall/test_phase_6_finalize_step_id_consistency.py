@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """The phase-6-finalize step-ID consistency contract.
 
 The failure it guards: ``marshal.json``'s phase-6-finalize manifest lists project steps
@@ -37,22 +36,14 @@ These tests pin the end-to-end contract:
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
+# ``_invariants`` is a private module under the plan-marshall scripts directory,
+# which the root conftest puts on ``sys.path`` before any test module is imported
+# — so it resolves plainly, and this suite holds the same instance the production
+# path does.
+import _invariants as inv
 import pytest
-from conftest import get_script_path
-
-# Load _invariants the same way the existing phase-handshake test split
-# does — _invariants is a private module under the plan-marshall scripts
-# directory and is not on PYTHONPATH at test-collection time.
-_PHASE_HANDSHAKE_SCRIPT = get_script_path('plan-marshall', 'plan-marshall', 'phase_handshake.py')
-_SCRIPTS_DIR = _PHASE_HANDSHAKE_SCRIPT.parent
-
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
-
-import _invariants as inv  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Source anchors used by tests 4 and 5

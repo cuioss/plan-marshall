@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the ``thinking-directive-in-workflow-doc`` rule analyzer.
 
 The analyzer (`analyze_thinking_directive_in_workflow_docs`) is a pure,

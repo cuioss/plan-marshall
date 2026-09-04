@@ -35,7 +35,7 @@ prove the failing direction is real: a detector never seen to NOT fire is not
 known to discriminate.
 """
 
-from self_review import (  # noqa: I001
+from self_review import (
     _detect_discard_without_report,
     _detect_duplicate_claimable_keys,
 )

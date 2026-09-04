@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Regression tests for the ``derive_gate_bundles`` pre-push-quality-gate seam.
 
 The seam at ``phase-6-finalize/scripts/derive_gate_bundles.py`` replaces the

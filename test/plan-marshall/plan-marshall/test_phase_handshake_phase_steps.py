@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402, F811
+# ruff: noqa: I001
 """Tests for phase_handshake phase_steps_complete invariant.
 
 Split from test_phase_handshake.py: covers the required-steps parser /
@@ -21,9 +21,9 @@ from _handshake_fixtures import (
     inv,
     store,
     # Fixtures (imported so pytest can resolve them):
-    only_phase_steps_invariant,  # noqa: F401
-    required_steps_path,  # noqa: F401
-    stub_metadata,  # noqa: F401
+    only_phase_steps_invariant,
+    required_steps_path,
+    stub_metadata,
 )
 
 

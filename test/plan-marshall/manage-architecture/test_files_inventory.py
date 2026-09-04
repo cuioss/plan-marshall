@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001
 """Tests for the files-inventory post-processor in ``_cmd_manage.py`` and the
 containment-fallback path→module readers.
 
@@ -13,19 +12,16 @@ resolves ``paths.tests`` paths and the project-local ``.claude/**`` tree to
 their owning module.
 """
 
-import os
-import sys
 import argparse
 import copy
+import os
 import tempfile
 from pathlib import Path
 from typing import Any
 
+from _arch_fixtures import seed_project
+
 from conftest import load_script_module, parse_ns
-
-sys.path.insert(0, str(Path(__file__).parent))
-
-from _arch_fixtures import seed_project  # noqa: E402
 
 _architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
 _cmd_manage = load_script_module('plan-marshall', 'manage-architecture', '_cmd_manage.py', '_cmd_manage')

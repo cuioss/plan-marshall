@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT, load_skill_module, run_script  # noqa: E402
+from conftest import MARKETPLACE_ROOT, load_skill_module, run_script
 
 SCRIPT_PATH = (
     MARKETPLACE_ROOT / 'pm-plugin-development' / 'skills' / 'plan-marshall-plugin' / 'scripts' / 'wrapper-tangle-scan.py'

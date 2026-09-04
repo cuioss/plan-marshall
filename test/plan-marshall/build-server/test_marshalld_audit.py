@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the marshalld central interaction-audit log.
 
 Two surfaces are exercised:
@@ -27,18 +26,16 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+import _marshalld_audit as audit_mod
+
+# PLAIN import, deliberately: this suite annotates against ``marshalld.Daemon``,
+# which only a plain import gives mypy. The name is bound the same way in every
+# suite, so no loaded copy is published beside it.
+import marshalld
 import pytest
-from conftest import get_script_path
-
-_DAEMON_DIR = get_script_path('plan-marshall', 'manage-build-server', 'marshalld.py').parent
-if str(_DAEMON_DIR) not in sys.path:
-    sys.path.insert(0, str(_DAEMON_DIR))
-
-import _marshalld_audit as audit_mod  # noqa: E402
-import marshalld  # noqa: E402
-from _build_server_protocol import JobSpec  # noqa: E402
-from _marshalld_journal import Journal  # noqa: E402
-from _marshalld_scheduler import Scheduler  # noqa: E402
+from _build_server_protocol import JobSpec
+from _marshalld_journal import Journal
+from _marshalld_scheduler import Scheduler
 
 
 @pytest.fixture

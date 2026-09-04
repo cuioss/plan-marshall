@@ -1,22 +1,19 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the server-side JSON-RPC framing and dispatch."""
 
 from __future__ import annotations
 
 import io
 import json
-import sys
 
 import pytest
-from conftest import get_scripts_dir
 
-SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'tools-corpus-language-server')
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
+from conftest import load_script_module
 
-import _corpus_lsp_protocol as protocol  # noqa: E402
+protocol = load_script_module(
+    'pm-plugin-development', 'tools-corpus-language-server', '_corpus_lsp_protocol.py'
+)
 
 
 def framed(payload: dict) -> bytes:

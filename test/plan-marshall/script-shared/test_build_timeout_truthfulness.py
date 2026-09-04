@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Cross-engine regression coverage for build-timeout truthfulness.
 
 Three end-to-end properties, each asserted for EVERY one of the four build

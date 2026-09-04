@@ -16,7 +16,7 @@ import marketplace_paths
 import pytest
 from marketplace_paths import CLAUDE_DIR, PLUGIN_CACHE_SUBPATH
 
-import conftest  # noqa: F401
+import conftest
 from conftest import get_scripts_dir, load_script_module
 
 _SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'manage-providers')

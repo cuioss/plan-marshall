@@ -430,10 +430,10 @@ def _import_parse_toon():
     if str(toon_scripts) not in sys.path:
         sys.path.insert(0, str(toon_scripts))
     try:
-        from toon_parser import parse_toon  # noqa: E402
+        from toon_parser import parse_toon
 
         return parse_toon
-    except Exception:  # noqa: BLE001 — fail open: no parser → no reconcile
+    except Exception:  # fail open: no parser → no reconcile
         return None
 
 
@@ -444,7 +444,7 @@ def _parse_status(text: str) -> dict:
         return {}
     try:
         parsed = parse_toon(text)
-    except Exception:  # noqa: BLE001 — unparseable output fails open to no-op
+    except Exception:  # unparseable output fails open to no-op
         return {}
     return parsed if isinstance(parsed, dict) else {}
 
@@ -512,7 +512,7 @@ def main(argv: list[str] | None = None) -> int:
             marker=marker_path(),
             now=_utc_now_iso(),
         )
-    except Exception as exc:  # noqa: BLE001 — the reconcile must never abort the sync
+    except Exception as exc:  # the reconcile must never abort the sync
         summary = {
             'status': 'success',
             'action': ACTION_NOOP,

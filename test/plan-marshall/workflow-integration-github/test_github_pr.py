@@ -207,7 +207,7 @@ def _run_fetch(pr_number, plan_id):
     drives ``cmd_fetch_findings`` directly rather than coming through this helper — see
     the unreached-store section in ``test_comments_stage.py``.
     """
-    from file_ops import get_base_dir  # noqa: PLC0415 — resolved per call, after the sandbox fixture
+    from file_ops import get_base_dir  # local import: resolved per call, after the sandbox fixture
 
     (get_base_dir() / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)
     args = argparse.Namespace(pr_number=pr_number, plan_id=plan_id)

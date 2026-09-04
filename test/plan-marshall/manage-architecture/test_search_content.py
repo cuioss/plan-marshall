@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001
 """Tests for the ``search --content`` reader on ``manage-architecture``.
 
 ``find`` answers *which PATH matches*; ``search --content`` answers *which file
@@ -37,16 +36,13 @@ than merely present:
 
 import argparse
 import copy
-import sys
 import tempfile
 from pathlib import Path
 from typing import Any
 
+from _arch_fixtures import seed_project
+
 from conftest import get_script_path, load_script_module, parse_ns, run_script
-
-sys.path.insert(0, str(Path(__file__).parent))
-
-from _arch_fixtures import seed_project  # noqa: E402
 
 _architecture_core = load_script_module(
     'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'

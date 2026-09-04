@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from _footprint_oracle_classification_fixtures import MANIFEST_SCRIPT, _check, _setup, _write_diff
 
-from conftest import run_script  # noqa: E402
+from conftest import run_script
 
 # =============================================================================
 # A verdict over no evidence is not a clean result

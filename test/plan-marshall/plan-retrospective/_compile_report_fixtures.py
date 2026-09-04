@@ -10,15 +10,12 @@ Tests for ``compile-report.py``.
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 from argparse import Namespace
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+import retro_sections as _retro_sections
 
-
-from conftest import MARKETPLACE_ROOT  # noqa: E402
+from conftest import MARKETPLACE_ROOT, load_script_module
 
 # Absolute path to the committed stripped-archive fixture. The regression
 # test copies this tree into a tmp dir and drives the full
@@ -55,19 +52,13 @@ _FRAGMENT_TO_ASPECT = {
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'compile-report.py'
 
 
-# Direct import of compile-report.py (hyphenated filename → importlib). This
-# gives the cleanup tests access to cmd_run and Path.unlink from the same
-# namespace the script uses, so monkeypatching affects the production code.
-_spec = importlib.util.spec_from_file_location('compile_report', str(SCRIPT_PATH))
-
-
-assert _spec is not None and _spec.loader is not None
-
-
-_compile_report = importlib.util.module_from_spec(_spec)
-
-
-_spec.loader.exec_module(_compile_report)
+# ``compile-report.py`` has a hyphenated filename, so it is addressable only by
+# file — which is what the shared loader resolves. The cleanup tests reach
+# ``cmd_run`` and ``Path.unlink`` through the SAME namespace the script uses, so
+# monkeypatching affects the production code.
+_compile_report = load_script_module(
+    'plan-marshall', 'plan-retrospective', 'compile-report.py', 'compile_report'
+)
 
 
 cmd_run = _compile_report.cmd_run
@@ -211,11 +202,11 @@ def _write_fragments_with_dispatch_boundaries(
 # round-trip so a future aspect-key add or rename that drifts the two apart fails
 # at test time, distinct from D1's hand-picked local ``cmd_add`` unit cases.
 
-# Direct import of retro_sections.py from the same scripts/ directory the
-# executor puts on PYTHONPATH (conftest mirrors that path setup). Importing the
-# live registry — rather than restating the key list — is what makes this guard
-# self-maintaining: a new SECTION_SPEC row is automatically covered.
-import retro_sections as _retro_sections  # noqa: E402
+# ``retro_sections`` is imported PLAINLY at the top of this module, from the same
+# scripts/ directory the executor puts on PYTHONPATH (conftest mirrors that path
+# setup). Importing the live registry — rather than restating the key list — is
+# what makes this guard self-maintaining: a new SECTION_SPEC row is automatically
+# covered.
 
 _COLLECT_FRAGMENTS_SCRIPT_REGISTRY = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'collect-fragments.py'

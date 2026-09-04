@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Real-server integration tests — driven against a live pyright-langserver.
 
 These are the plan's D0/D1/D2 evidence against a genuine language server (no
@@ -18,21 +17,12 @@ from __future__ import annotations
 
 import json
 import shutil
-import sys
 from pathlib import Path
 
 import pytest
-from conftest import get_script_path, parse_ns
-
-SCRIPT_PATH = get_script_path('plan-marshall', 'lsp-client', 'lsp_client.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import lsp_client as client  # noqa: E402
-import run_config  # noqa: E402
-from _lsp_jsonrpc import LspSession, StdioTransport  # noqa: E402
-from _lsp_workspace_edit import (  # noqa: E402
+import run_config
+from _lsp_jsonrpc import LspSession, StdioTransport
+from _lsp_workspace_edit import (
     apply_workspace_edit,
     count_error_diagnostics,
     diagnostic_delta,
@@ -40,6 +30,10 @@ from _lsp_workspace_edit import (  # noqa: E402
     path_to_uri,
     restore_files,
 )
+
+from conftest import load_script_module, parse_ns
+
+client = load_script_module('plan-marshall', 'lsp-client', 'lsp_client.py')
 
 _PYRIGHT = shutil.which('pyright-langserver')
 pytestmark = pytest.mark.skipif(_PYRIGHT is None, reason='pyright-langserver not installed')

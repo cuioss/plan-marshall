@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the shared ``.plan/`` dirty-source exemption predicate.
 
 ``_plan_state_exemption.partition_plan_state_exemption`` is the SINGLE rule both

@@ -11,9 +11,10 @@ Covers:
   - _dispatch: correct routing and argparse for all 25 operations
   - main: full integration — no args, missing marshal, unknown target, dispatch
 """
-from __future__ import annotations  # noqa: I001
+from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -58,6 +59,39 @@ def _make_marshal_file(directory: Path, target: str = "claude") -> Path:
     marshal_path = plan_dir / "marshal.json"
     marshal_path.write_text(json.dumps({"runtime": {"target": target}}), encoding="utf-8")
     return marshal_path
+
+
+@contextmanager
+def _router_globals(**bindings: Any):
+    """Rebind names in the namespace ``main`` actually resolves them from.
+
+    ⛔ NOT ``patch('platform_runtime.NAME', ...)`` and NOT
+    ``monkeypatch.setattr(platform_runtime, 'NAME', ...)``. Both resolve the module
+    through ``sys.modules``, and this suite is not guaranteed to be looking at the
+    same object the functions it imported came from: anything that loads
+    ``platform_runtime.py`` BY PATH republishes it under the same stem and REPLACES
+    the ``sys.modules`` entry, while ``main`` — bound here at import time — keeps
+    resolving its collaborators from its own ``__globals__``. The dotted form then
+    mutates the copy nobody calls: ``main`` reaches the REAL ``_make_runtime`` and
+    the mock records zero calls, or reads the REAL ``_PLAN_DIR_NAME`` and never sees
+    the custom plan dir. Nothing raises — the patch silently does nothing, and
+    whether it does depends on collection order, so the defect surfaces as a flaky
+    green rather than a clean red.
+
+    Patching the ``__globals__`` DICT reaches the exact bindings ``main`` and its
+    module-level collaborators read, whatever ``sys.modules`` currently maps the
+    name to.
+    """
+    with patch.dict(main.__globals__, bindings):
+        yield
+
+
+@contextmanager
+def _make_runtime_returning(runtime: MagicMock):
+    """Bind ``_make_runtime`` to a recorder returning *runtime*; yield the recorder."""
+    recorder = MagicMock(return_value=runtime)
+    with _router_globals(_make_runtime=recorder):
+        yield recorder
 
 
 def _mock_runtime() -> MagicMock:
@@ -924,9 +958,8 @@ class TestMain:
     def test_main_dispatches_to_runtime_and_prints_toon(self, tmp_path, capsys, in_tmp_cwd):
         """main() with a valid marshal dispatches correctly and prints TOON to stdout."""
         _make_marshal_file(tmp_path, "claude")
-        with patch("platform_runtime._make_runtime") as mock_make:
-            rt = _mock_runtime()
-            mock_make.return_value = rt
+        rt = _mock_runtime()
+        with _make_runtime_returning(rt):
             code = main(["session", "render-title"])
         assert code == 0
         captured = capsys.readouterr()
@@ -949,9 +982,8 @@ class TestMain:
     ):
         """An opencode project asked to install the claude hook is refused, not declined."""
         _make_marshal_file(tmp_path, "opencode")
-        with patch("platform_runtime._make_runtime") as mock_make:
-            rt = _mock_runtime()
-            mock_make.return_value = rt
+        rt = _mock_runtime()
+        with _make_runtime_returning(rt):
             code = main(["project", "install-hook", "--target", "claude"])
         assert code == 0
         parsed = _parsed(capsys.readouterr().out)
@@ -966,9 +998,8 @@ class TestMain:
     ):
         """The guard is symmetric — a claude project asked for opencode is refused."""
         _make_marshal_file(tmp_path, "claude")
-        with patch("platform_runtime._make_runtime") as mock_make:
-            rt = _mock_runtime()
-            mock_make.return_value = rt
+        rt = _mock_runtime()
+        with _make_runtime_returning(rt):
             code = main(["project", "install-hook", "--target", "opencode"])
         assert code == 0
         parsed = _parsed(capsys.readouterr().out)
@@ -981,9 +1012,8 @@ class TestMain:
     ):
         """Agreement is the ordinary path and must still dispatch."""
         _make_marshal_file(tmp_path, "claude")
-        with patch("platform_runtime._make_runtime") as mock_make:
-            rt = _mock_runtime()
-            mock_make.return_value = rt
+        rt = _mock_runtime()
+        with _make_runtime_returning(rt):
             code = main(["project", "install-hook", "--target", "claude"])
         assert code == 0
         rt.project_install_hook.assert_called_once()
@@ -995,9 +1025,8 @@ class TestMain:
         not a mismatch and must still reach the implementation that defines it."""
         _make_marshal_file(tmp_path, "claude")
         override = str(tmp_path / "settings.local.json")
-        with patch("platform_runtime._make_runtime") as mock_make:
-            rt = _mock_runtime()
-            mock_make.return_value = rt
+        rt = _mock_runtime()
+        with _make_runtime_returning(rt):
             code = main(["project", "install-hook", "--target", override])
         assert code == 0
         rt.project_install_hook.assert_called_once()
@@ -1005,9 +1034,8 @@ class TestMain:
 
     def test_main_project_initial_setup_without_marshal_uses_target_arg(self, tmp_path, capsys, in_tmp_cwd):
         """project initial-setup can run before marshal.json exists; uses --target arg."""
-        with patch("platform_runtime._make_runtime") as mock_make:
-            rt = _mock_runtime()
-            mock_make.return_value = rt
+        rt = _mock_runtime()
+        with _make_runtime_returning(rt) as mock_make:
             code = main(
                 ["project", "initial-setup", "--project-dir", str(tmp_path), "--target", "opencode"]
             )
@@ -1019,9 +1047,8 @@ class TestMain:
         plan_dir = tmp_path / ".plan"
         plan_dir.mkdir()
         (plan_dir / "marshal.json").write_text(json.dumps({"runtime": {}}), encoding="utf-8")
-        with patch("platform_runtime._make_runtime") as mock_make:
-            rt = _mock_runtime()
-            mock_make.return_value = rt
+        rt = _mock_runtime()
+        with _make_runtime_returning(rt) as mock_make:
             code = main(["health-check", "--checks", "all"])
         assert code == 0
         mock_make.assert_called_once_with("claude")
@@ -1029,9 +1056,8 @@ class TestMain:
     def test_main_dispatches_wait_for(self, tmp_path, capsys, in_tmp_cwd):
         """``wait for`` is reachable end-to-end through main()."""
         _make_marshal_file(tmp_path, "claude")
-        with patch("platform_runtime._make_runtime") as mock_make:
-            rt = _mock_runtime()
-            mock_make.return_value = rt
+        rt = _mock_runtime()
+        with _make_runtime_returning(rt):
             code = main(
                 [
                     "wait", "for",
@@ -1045,22 +1071,26 @@ class TestMain:
         rt.wait_for.assert_called_once_with("build-job", "job-1", 60)
 
     def test_main_uses_plan_dir_name_env_var(self, tmp_path, monkeypatch, capsys, in_tmp_cwd):
-        """main() respects PLAN_DIR_NAME env var when locating marshal.json."""
-        monkeypatch.setenv("PLAN_DIR_NAME", ".custom-plan")
-        import platform_runtime as _pr
+        """main() respects PLAN_DIR_NAME env var when locating marshal.json.
 
-        monkeypatch.setattr(_pr, "_PLAN_DIR_NAME", ".custom-plan")
+        ``_PLAN_DIR_NAME`` is resolved from the environment ONCE, at module import,
+        so setting the variable now cannot reach the already-bound value — the
+        rebinding is what makes this test exercise the custom directory rather than
+        the ambient ``.plan``. It goes through ``_router_globals`` because
+        ``_read_marshal`` reads the name from the same namespace ``main`` does.
+        """
+        monkeypatch.setenv("PLAN_DIR_NAME", ".custom-plan")
         custom_plan = tmp_path / ".custom-plan"
         custom_plan.mkdir()
         (custom_plan / "marshal.json").write_text(
             json.dumps({"runtime": {"target": "claude"}}), encoding="utf-8"
         )
-        with patch("platform_runtime._make_runtime") as mock_make:
-            rt = _mock_runtime()
-            mock_make.return_value = rt
+        rt = _mock_runtime()
+        recorder = MagicMock(return_value=rt)
+        with _router_globals(_PLAN_DIR_NAME=".custom-plan", _make_runtime=recorder):
             code = main(["health-check", "--checks", "all"])
         assert code == 0
-        mock_make.assert_called_once_with("claude")
+        recorder.assert_called_once_with("claude")
 
 
 # =============================================================================

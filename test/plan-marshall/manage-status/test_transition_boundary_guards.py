@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: E402
 """Tests for the clean-tree post-condition at the 5-execute → 6-finalize boundary.
 
 ``cmd_transition`` enforces a clean worktree when the next phase is a
@@ -24,10 +23,13 @@ branch after the strict-verify guard).
 
 import json
 import subprocess
-import sys as _sys
+import sys
 from argparse import Namespace
 from pathlib import Path
 
+# PLAIN imports, deliberately — see the MODULE IDENTITY note below.
+import _handshake_commands as _cmds
+import _invariants as _inv
 import pytest
 
 from conftest import load_script_module
@@ -42,23 +44,25 @@ _query = load_script_module(
 cmd_create = _lifecycle.cmd_create
 cmd_transition = _lifecycle.cmd_transition
 
-# Standard imports for the handshake modules so the invariant stubs hit the
-# same module instance ``_cmd_lifecycle.cmd_verify`` reads at runtime
-# (mirrors test_manage_status_transition*.py).
-_PLAN_HANDSHAKE_SCRIPTS_DIR = str(
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-marshall'
-    / 'scripts'
-)
-if _PLAN_HANDSHAKE_SCRIPTS_DIR not in _sys.path:
-    _sys.path.insert(0, _PLAN_HANDSHAKE_SCRIPTS_DIR)
 
-import _handshake_commands as _cmds
-import _invariants as _inv
+# =============================================================================
+# MODULE IDENTITY
+# =============================================================================
+
+
+def test_the_handshake_modules_are_the_instance_the_production_path_resolves():
+    """The stubs in this module patch the module objects ``cmd_verify`` reads.
+
+    Plain imports are what make that true, and the property is asserted rather
+    than inferred from a green run. ``conftest.load_script_module`` would bind a
+    SECOND copy under the same name: the stub would then patch an object the
+    production path never consults, and every stubbed test here would pass while
+    verifying nothing — a false green no ordinary assertion could distinguish
+    from a real one.
+    """
+    assert sys.modules['_handshake_commands'] is _cmds
+    assert sys.modules['_invariants'] is _inv
+
 
 # =============================================================================
 # Fixtures
