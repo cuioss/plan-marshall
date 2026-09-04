@@ -2800,6 +2800,15 @@ def _refire_metric(value: Any) -> tuple[int, str]:
     """
     if value is None or value == UNMEASURED_COLUMN_TOKEN:
         return 0, _METRIC_UNMEASURED
+    # ⛔ `bool` subclasses `int`, so `int(True)` is `1` and a boolean cell would
+    # fall through the parse below as MEASURED contributing 1 — a fabricated
+    # measurement, which is the exact defect the three-state read exists to
+    # prevent. TOON parses a bare `true` to a Python bool, so this is reachable
+    # from a legacy or hand-edited row. A boolean in a token column is a
+    # malformed cell, not a count. The sibling reader
+    # (`_ledger_reconciliation.read_token_column`) guards it the same way.
+    if isinstance(value, bool):
+        return 0, _METRIC_UNRECOGNISED
     try:
         return max(0, int(value)), _METRIC_MEASURED
     except (TypeError, ValueError):

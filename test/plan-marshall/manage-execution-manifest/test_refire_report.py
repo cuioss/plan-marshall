@@ -304,6 +304,31 @@ def test_an_unreadable_cell_is_counted_as_unrecognised_not_unmeasured():
     assert steps[0]['unmeasured_columns'] == 0
 
 
+def test_a_boolean_cell_is_unrecognised_and_contributes_nothing():
+    """⛔ `bool` subclasses `int`, so an unguarded `int(value)` reads `True` as a
+    MEASURED `1` — a fabricated measurement of exactly the kind the three-state
+    read exists to remove, and the more dangerous failure because it is silent.
+
+    Reachable rather than theoretical: `execution_log[]` is parsed back from
+    TOON, which yields a Python `bool` for a bare `true`, so a legacy or
+    hand-edited row can carry one. Asserting the CONTRIBUTION as well as the
+    state is what makes this fail against the defect — a reader that classified
+    the cell correctly but still summed `1` would pass on the state alone.
+
+    The sibling reader `_ledger_reconciliation.read_token_column` has guarded
+    this since it was written; this pins the pair so the two cannot drift apart
+    again.
+    """
+    rows = [_row('push', total_tokens=True, tool_uses=0, duration_ms=0)]
+
+    steps, totals = summarize_refires(rows)
+
+    assert steps[0]['unrecognised_columns'] == 1
+    assert steps[0]['unmeasured_columns'] == 0
+    assert steps[0]['total_tokens'] == 0
+    assert totals['total_tokens'] == 0
+
+
 def test_a_bad_metric_does_not_suppress_a_good_row():
     """The bad row is tolerated WITHOUT losing the rest of the report."""
     rows = [
