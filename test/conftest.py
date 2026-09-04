@@ -972,8 +972,12 @@ def pytest_collection_modifyitems(items):
 # Routing-guard population sizes, published on every run
 # =============================================================================
 
-#: The population-derived routing guards, as
-#: ``(label, path-relative-to-TEST_ROOT)``. Each module publishes its own
+#: The population-derived guards, as
+#: ``(label, path-relative-to-TEST_ROOT)``. The family started as the routing
+#: guards and now also carries the contract-text guards that derive their
+#: population from a shipped document; the constant keeps its original name so
+#: the rows below and the header line stay one identifiable set. Each module
+#: publishes its own
 #: ``GUARD_POPULATION_LABEL`` / ``GUARD_POPULATION_SIZE`` pair; this header reads
 #: those rather than re-deriving anything, so the number reported is the number
 #: the guard actually swept and the two cannot drift apart.
@@ -995,6 +999,22 @@ _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
     (
         'api-contract-parity',
         'plan-marshall/workflow-integration-github/test_pr_landing_state.py',
+    ),
+    (
+        'gate-derivation',
+        'plan-marshall/phase-6-finalize/test_gate_derivation_diagnosability.py',
+    ),
+    (
+        'gate-arm-provenance',
+        'plan-marshall/phase-6-finalize/test_gate_arm_resolver_provenance.py',
+    ),
+    (
+        'self-review-surface',
+        'plan-marshall/phase-6-finalize/test_self_review_unclassified_surface.py',
+    ),
+    (
+        'pinned-build-tool',
+        'plan-marshall/phase-6-finalize/test_no_pinned_build_tool_in_shipped_docs.py',
     ),
 )
 
