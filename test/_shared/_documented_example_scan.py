@@ -56,6 +56,29 @@ DEFECTIVE_GENERATOR_CALL = 'uv run python marketplace/targets/generate.py'
 #: own ``--target``/``--output`` pair.
 WRAPPER_GENERATOR_CALL = './pw generate'
 
+#: The OTHER broken spelling of the same defect: dropping the ``uv run`` prefix
+#: and invoking a ``marketplace/targets/`` script on the host interpreter. The
+#: docstring above already names why it does not help — every script under that
+#: package imports ``marketplace.targets``, whose ``__init__`` chain reaches
+#: ``component_targets.py`` and its ``import yaml`` — but naming a failure mode
+#: is not guarding it, and the unguarded half is what shipped: the
+#: ``marshall-steward`` upgrade flow prescribed
+#: ``{this prefix}claude/content_drift_cli.py`` for its Stage 3 verify sub-step,
+#: which died on ``ModuleNotFoundError: No module named 'yaml'`` before reaching
+#: any drift logic.
+#:
+#: Matched as a LINE PREFIX, not as a substring, and that is the whole
+#: discriminator: a prescription is a line a reader copies, so it BEGINS with the
+#: command. An explanatory mention — this docstring, and the prose in the repaired
+#: sites that says which form fails and why — is preceded by a backtick or by
+#: sentence text, so it never starts the line. Substring matching would forbid
+#: explaining the defect, which is the opposite of what the repair needs.
+#:
+#: ⛔ Defined here for the same reason as its sibling above: a guard cannot
+#: forbid a string it must itself spell. Consumers import it and never re-spell
+#: it — including in their own assertion messages and controls.
+DEFECTIVE_BARE_PYTHON_TARGETS_PREFIX = 'python3 marketplace/targets/'
+
 #: Fenced-code-block delimiter. The language tag is captured but never used to
 #: decide whether a block holds an example: a TOON task definition appears under
 #: ``toon`` fences AND, commented, under ``bash`` ones, so keying on the tag
