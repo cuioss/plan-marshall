@@ -65,7 +65,7 @@ alternative: <what the caller can do instead>
 
 One-time project setup: create `.plan/`, seed `marshal.json`, install platform hook.
 
-**Arguments**: `--project-dir <path>` (default `.`), `--target claude|opencode` (default `claude`)
+**Arguments**: `--project-dir <path>` (default `.`), `--target <registered-target>` (default from `platform_runtime._DEFAULT_TARGET`)
 
 **Success**:
 ```toon

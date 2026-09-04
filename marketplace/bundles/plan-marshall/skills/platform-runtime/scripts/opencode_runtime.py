@@ -598,7 +598,10 @@ class OpenCodeRuntime(Runtime):
                 "automatic token capture requires a platform-provided session id,"
                 " which OpenCode does not expose (issue #9292)"
             )
-            alternative = "pass --total-tokens manually"
+            alternative = (
+                "run metrics capture on the Claude target, or wire a shared"
+                " metrics-persistence boundary OpenCode can reach"
+            )
         else:
             reason = (
                 "OpenCode reaches no token-persistence boundary, so an explicit"

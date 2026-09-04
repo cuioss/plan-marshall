@@ -176,6 +176,24 @@ def test_d4_fake_target_derives_through_all_three_dicts() -> None:
         platform_runtime._TARGET_RECORDS.clear()
         platform_runtime._TARGET_RECORDS.update(_saved)
 
+    # Also verify production values match the derivation from _TARGET_RECORDS
+    # (not independently maintained).
+    prod_reg = {
+        name: rec["runtime_class"]
+        for name, rec in platform_runtime._TARGET_RECORDS.items()
+    }
+    prod_libs = {
+        name: rec["bootstrap_libs"]
+        for name, rec in platform_runtime._TARGET_RECORDS.items()
+    }
+    prod_default = next(
+        name for name, rec in platform_runtime._TARGET_RECORDS.items()
+        if rec.get("default")
+    )
+    assert prod_reg == dict(platform_runtime._REGISTRY)
+    assert prod_libs == dict(platform_runtime._TARGET_BOOTSTRAP_LIBS)
+    assert prod_default == platform_runtime._DEFAULT_TARGET
+
 
 def test_d3_fake_target_appears_in_unknown_target_message() -> None:
     """A fake target in _REGISTRY is named by the unknown_target error in project_initial_setup.

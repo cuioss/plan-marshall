@@ -189,7 +189,7 @@ from runtime_base import (  # noqa: E402
 
 _TARGET_RECORDS: dict[str, dict[str, Any]] = {
     "claude": {
-        "runtime_class": ClaudeRuntime,  # type: ignore[dict-item]
+        "runtime_class": ClaudeRuntime,
         "bootstrap_libs": (
             "tools-file-ops",
             "tools-permission-doctor",
@@ -200,7 +200,7 @@ _TARGET_RECORDS: dict[str, dict[str, Any]] = {
         "default": True,
     },
     "opencode": {
-        "runtime_class": OpenCodeRuntime,  # type: ignore[dict-item]
+        "runtime_class": OpenCodeRuntime,
         "bootstrap_libs": (),
         "default": False,
     },
