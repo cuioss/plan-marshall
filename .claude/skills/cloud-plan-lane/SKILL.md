@@ -1414,9 +1414,12 @@ reader of the table could not tell which — if either — was worth re-requesti
 Take the value from the **notice body**, the same source as the verdict; do not infer it from the
 reviewer's identity, since one reviewer can refuse under both kinds.
 
-Record the population, each reviewer's verdict, its `Reopens?` value, and the body evidence for it in
-the report's **Reviewer participation** table (§ Report), and state the coverage as N-of-M. A reviewer
-that never spoke is then *visibly* `silent` in the record, not merely unmentioned.
+Record the population, each reviewer's verdict, its `Class`, its `Reopens?` value, and the body
+evidence for it in the report's **Reviewer participation** table (§ Report), and state the coverage as
+the three named ratios § Step 8 condition 5 defines — required, optional, and overall, each written
+against its own denominator — never as one bare figure, so no number can be read against a population
+it was not measured over. A reviewer that never spoke is then *visibly* `silent` in the record, not
+merely unmentioned.
 
 #### A `Reopens? yes` refusal is RETRIED, not recorded
 
@@ -2205,11 +2208,13 @@ cross-named by `.github/workflows/pr-agent.yml` — never a list transcribed her
 reviewer, each verdict derived from the stored comment bodies (§ Step 7), never from a check state or
 a summary:
 
-| Reviewer (`author_login`) | Verdict (`reviewed` / `rate-limited` / `silent` / `unreadable`), annotated `(suppressed by label)` where § Step 8 condition 5 calls for it | Reopens? (`yes` / `no` / `unknown`; blank when `reviewed`, and blank where the label suppressed this reviewer's invitation and was still in place at the gate — a PR-open-only reviewer on an `applied-then-removed` PR takes `no`, not blank) | Body evidence / reason — for `unreadable`, the surface and the error, plus whatever positive control was taken |
-|---|---|---|---|
-| … | … | … | … |
+| Reviewer (`author_login`) | Class — ⛔ **do not enumerate the values here**: read them from § Step 7's verdict table, which is their single definition | Verdict — ⛔ **do not enumerate the values here either**: read them from that same § Step 7 table. Annotate `(suppressed by label)` where § Step 8 condition 5 calls for it | Reopens? (`yes` / `no` / `unknown`; blank for a completed review, and blank where the label suppressed this reviewer's invitation and was still in place at the gate — a PR-open-only reviewer on an `applied-then-removed` PR takes `no`, not blank) | Body evidence / reason — for `unreadable`, the surface and the error, plus whatever positive control was taken |
+|---|---|---|---|---|
+| … | … | … | … | … |
 
-State the coverage as N-of-M, and whether the § Step 8 shortfall disclosure fired and what it said.
+State the coverage as the three named ratios § Step 8 condition 5 defines — required, optional, and
+overall, each written against its own denominator — never as one bare figure, and state whether the
+§ Step 8 shortfall disclosure fired and what it said.
 
 Where a reviewer was `rate-limited` with `Reopens? yes`, add its **retry log** — one row per attempt,
 each carrying the time, the notice the attempt drew, and the wait-plus-jitter that preceded it:
