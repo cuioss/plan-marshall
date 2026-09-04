@@ -9,13 +9,15 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task, Skill, AskUserQuestion
 # Cloud Plan Lane
 
 The working contract for one plan under `doc/plans/`. It is **self-contained**: it does not use
-`/plan-marshall`, `/plan-orchestrator`, `.plan/execute-script.py`, or any `.plan/` state.
+`/plan-marshall`, `/plan-orchestrator`, `.plan/execute-script.py`, or any of the git-ignored
+`.plan/local/` state. It **reads** git-tracked `.plan/` configuration where it needs it, and **writes**
+nothing under `.plan/` at all (§ Scope and precedence).
 
 Load this skill as the **first action of every run**, before reading the plan.
 
 ## Why this lane exists
 
-`.plan/` is git-ignored, so the plan-marshall lifecycle's state — plan directories, orchestrator
+`.plan/local/` is git-ignored, so the plan-marshall lifecycle's state — plan directories, orchestrator
 ledgers, findings, locks, and the generated executor — exists only on the machine that created it.
 A cloud session clones the repository and gets none of it. This lane keeps everything a plan needs
 inside git: the plan, the rules, and the report.
@@ -31,7 +33,7 @@ records the carve-out. Specifically, within this lane:
 | Build commands resolved via `architecture resolve` | **Superseded** — call `./pw` directly (§ Build gate) |
 | CI operations via `tools-integration-ci:ci` | **Superseded** — see § GitHub access |
 | GitHub access via `gh`, not MCP | **Superseded** — the GitHub MCP server is the cloud path (§ GitHub access) |
-| `.plan/` access through `execute-script.py` | **Not applicable** — this lane never touches `.plan/` |
+| `.plan/` access through `execute-script.py` | **Narrowed** — the generated executor is git-ignored and absent from a clone, so no `manage-*` script is callable and that half of the rule cannot apply. But `.plan/marshal.json` is **git-tracked**, so a clone carries it: this lane MAY `Read` it directly for configuration it needs — the `automatic-review` step's `required_bots` / `optional_bots` is the case in point, and § Step 7 names the key path rather than it being restated here. Everything under `.plan/local/` is git-ignored, absent from a clone, and out of reach. The access is **read-only**: the lane writes nothing under `.plan/` at all |
 | Temp files under `.plan/temp/` | **Superseded** — scratch goes in the system temp dir (`$TMPDIR`), never in the repository and never in `.plan/` |
 | Structured queries before Glob/Grep | **Not applicable** — `architecture` needs the executor; use Glob/Grep/Read |
 | Findings via `manage-findings` + `ext-triage-*` | **Superseded** — findings go in the run report (§ Report) |
@@ -373,7 +375,7 @@ run the quality gate first:
 python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate"
 ```
 
-A lane run without the generated executor — the ordinary cloud case, since `.plan/` is git-ignored —
+A lane run without the generated executor — the ordinary cloud case, since the executor is git-ignored —
 runs the same gate directly:
 
 ```bash
@@ -405,8 +407,8 @@ diff before the PR — that one stays.
 
 Every commit message ends with exactly this trailer, and **no** "Generated with …" footer. The
 identity names the system that produced the commit, never the assistant or vendor behind it. A local
-run resolves it through `manage-run-config commit-trailer get`; this lane has no executor and no
-`.plan/`, so it writes that resolver's default directly:
+run resolves it through `manage-run-config commit-trailer get`; this lane has no executor to run that
+resolver with, so it writes the resolver's default directly:
 
 ```text
 Co-Authored-By: plan-marshall <noreply@cuioss.de>
@@ -2266,4 +2268,6 @@ A finding is recorded **per instance**, not bundled: three occurrences of one de
   otherwise idle, take the fallback and record in the report both that the ask was issued and that it
   went unanswered.** An ask that blocks forever is strictly worse than stopping with survivors
   disclosed, which is the same reasoning the headless carve-out rests on.
-- **Never write outside the repository** — this lane has no business in `.plan/` or `~/.claude/`.
+- **Never write outside the repository** — this lane **writes** nothing in `.plan/` or `~/.claude/`.
+  It is a rule about writing: reading git-tracked `.plan/` configuration is permitted and is scoped by
+  § Scope and precedence.
