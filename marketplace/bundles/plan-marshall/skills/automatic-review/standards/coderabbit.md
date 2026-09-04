@@ -55,7 +55,12 @@ review_body_summary_patterns:
 refusal_patterns:
   - "Review limit reached"                                                    # review-summary notice — posted in place of an automatic review
   - "Review rate limited"                                                     # command-invocation reply — posted in place of a commanded review
-rate_limit_class: awaitable_window   # the review limit is a rolling window that reopens on its own
+  - "Too many files!"                                                         # #1407 skip notice — the per-PR FILE-COUNT ceiling, posted in place of a review under a "Review skipped" heading. Detected on the cause line rather than on "Review skipped", which heads several unrelated skips (draft PRs, ignored paths, skip labels) and would over-match
+refusal_size_patterns:                                                        # the CAUSE overlay: which refusal above is diff-SIZE (needs a smaller diff), not a rate-limit window (needs backoff)
+  - "Too many files!"                                                         # cause=size, resolving refused_structural — the two rate-limit notices above are NOT here, so both keep cause=quota and the awaitable_window awaitability below. A file count does not fall on its own, so offering a wait for it would be an option guaranteed not to work
+refusal_size_cap_patterns:                                                    # extraction regexes reading the CAP the skip notice itself states
+  - "over the limit of ([0-9][0-9,]*)"                                        # captures the configured plan ceiling ("100"); number-free in the DETECTION list above so the ceiling is READ here rather than encoded, and a plan upgrade that raises it needs no pattern change
+rate_limit_class: awaitable_window   # the AWAITABILITY of the rolling review-limit window; the file-count ceiling does not rely on this field, since cause=size resolves refused_structural on its own
 rate_limit_eta_patterns:
   - "wait ([0-9]+ minutes? and [0-9]+ seconds?) before requesting another review"
   - "wait ([0-9]+ (?:minutes?|seconds?|hours?)) before requesting another review"
@@ -107,14 +112,26 @@ CodeRabbit declines on **two distinct surfaces**, and each is registered as its 
 - the **command-invocation reply** (`Review rate limited`) — posted in place of a review that
   `@coderabbitai review` explicitly asked for, wrapped in the `<details>` disclosure CodeRabbit uses
   for every auto-generated reply.
+- the **file-count skip notice** (`Too many files!`) — posted in place of an automatic review when
+  the PR's file count exceeds the plan ceiling, under a `Review skipped` heading.
 
-Both file no finding, and neither is a noise drop: CodeRabbit posts each *in place of* a review, so
-it carries no finding to extract AND it is positive evidence the bot declined. `fetch_findings`
-therefore branches on either — counting it in `count_skipped_refusal` and naming `coderabbit` in
-`refused_bots[]` — instead of folding it into `count_skipped_noise`. Two surfaces means two data
-records: the command reply says "Review rate **limited**", which the summary notice's "Review limit
-**reached**" does not contain, so registering one never covers the other. Do NOT restate the arm
-list here — `_github_pr.REFUSAL_LAYERS` remains the single place the arms are named.
+All three file no finding, and none is a noise drop: CodeRabbit posts each *in place of* a review, so
+each carries no finding to extract AND is positive evidence the bot declined. `fetch_findings`
+therefore branches on any of them — counting it in `count_skipped_refusal` and naming `coderabbit` in
+`refused_bots[]` — instead of folding it into `count_skipped_noise`. Separate surfaces means separate
+data records: the command reply says "Review rate **limited**", which the summary notice's "Review
+limit **reached**" does not contain, and the skip notice shares no phrase with either, so registering
+one never covers the others. Do NOT restate the arm list here — `_github_pr.REFUSAL_LAYERS` remains
+the single place the arms are named.
+
+**The third one differs on the CAUSE axis, not just in wording.** The two rate-limit notices describe
+a rolling window that reopens by itself, so their remedy is backoff and `rate_limit_class:
+awaitable_window` governs. A file count does not fall while you wait: the skip notice is listed in
+`refusal_size_patterns`, so `_github_pr.refusal_cause` classifies it `size` and it resolves to
+`refused_structural`, whose remedies are split / accept / disable-for-this-PR and never wait. That one
+bot carries two causes at one awaitability class is exactly why the cause cannot be read off
+`rate_limit_class` — the same split Sourcery already carries. See
+[`bot-participation-contract.md`](bot-participation-contract.md) § "Two axes: awaitability and CAUSE".
 
 The command-reply literal is deliberately the NARROW `Review rate limited` rather than the broader
 `Action not completed` wrapper the same reply carries. `rate_limit_class` is declared per-BOT and

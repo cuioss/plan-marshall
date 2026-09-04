@@ -215,7 +215,7 @@ _DECLARED_WORDING_POPULATION_SIZE = len(_DECLARED_WORDING_PAIRS)
 #: at a smaller size. Comparing against this constant converts that silent
 #: shrinkage into a named failure. When a wording is added or removed on purpose,
 #: update this number in the same commit — the mismatch message says so.
-_DECLARED_WORDING_POPULATION_BASELINE = 5
+_DECLARED_WORDING_POPULATION_BASELINE = 7
 
 
 def _quota_refusal_body(bot_kind: str) -> str:
@@ -725,19 +725,35 @@ class TestTheCauseAxisDominatesTheClassAxis:
         ceiling in its shipped standards doc is classified from that declaration,
         with the ceiling read off the notice it posted. Without it the whole cause
         axis could pass on patched data while the shipped registry wired nothing.
+
+        EVERY declared size marker is swept, not just the first: a bot may declare
+        several size-caused refusals (Sourcery declares its own character ceiling
+        and the GitHub API's file-count one), and asserting only ``[0]`` would let a
+        later addition ship unexercised.
+
+        The body is synthesised from BOTH declarations because they are not one
+        string. A detection marker need not be a prefix of the cap phrase — CodeRabbit
+        detects on ``Too many files!`` and states its ceiling as ``over the limit of
+        N`` — so the cap pattern's literal lead-in is derived from the pattern itself
+        rather than assumed to follow the marker.
         """
         sized = [b for b in _registered_bots() if bot_registry.refusal_size_patterns(b)]
         assert sized, 'registry must ship at least one bot declaring a size ceiling'
 
         for bot in sized:
-            marker = bot_registry.refusal_size_patterns(bot)[0]
-            body = f'Sorry, {marker} 150,000 characters.'
+            cap_patterns = bot_registry.refusal_size_cap_patterns(bot)
+            assert cap_patterns, f'{bot} declares a size cause but no cap extractor'
+            # The literal text each cap regex reads its figure after.
+            lead = cap_patterns[0].split('(')[0]
 
-            detected = _detect_rate_limited_bots([_comment(bot, body)])
+            for marker in bot_registry.refusal_size_patterns(bot):
+                body = f'Sorry, {marker} — {lead}150,000 characters.'
 
-            assert [r['bot_kind'] for r in detected] == [bot]
-            assert detected[0]['cause'] == _github_pr.REFUSAL_CAUSE_SIZE, bot
-            assert detected[0]['cap'] == '150000 characters', bot
+                detected = _detect_rate_limited_bots([_comment(bot, body)])
+
+                assert [r['bot_kind'] for r in detected] == [bot], (bot, marker)
+                assert detected[0]['cause'] == _github_pr.REFUSAL_CAUSE_SIZE, (bot, marker)
+                assert detected[0]['cap'].startswith('150000'), (bot, marker, detected[0]['cap'])
 
     def test_both_axis_keys_are_present_on_every_record(self):
         """One record shape whatever the cause — a consumer never probes for a key."""
