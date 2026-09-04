@@ -163,6 +163,40 @@ def test_a_framed_block_yields_only_its_first_line_as_the_heading():
     assert [banner.text for banner in collect_banners(source)] == ['tokenizer']
 
 
+def test_a_two_character_rule_run_is_not_a_heading():
+    """The matched control on the inline lower bound: three rules, not two.
+
+    A two-character run is the shape of a CLI flag in ordinary prose, so a
+    ``{2,}`` bound reads ``# --plan-id is forwarded ...`` as a heading. The
+    positive half pins that the documented three-rule form still IS a heading,
+    so the bound cannot be raised until the real form stops being recognised.
+    """
+    source = (
+        '# --- tokenizer ---\n'
+        '# --plan-id is forwarded to every child call\n'
+    )
+
+    assert [banner.text for banner in collect_banners(source)] == ['tokenizer']
+
+
+def test_a_prose_flag_comment_attributes_nothing():
+    """The effect control: a prose comment carrying a flag fabricates no finding.
+
+    A spurious banner both steals enclosure from every construct beneath it and
+    injects the sentence's words into the distinctive-token set, so it can
+    fabricate a misattribution or destroy a real heading's distinctiveness.
+    Planting one into an otherwise correctly-filed module must change nothing.
+    """
+    source = (
+        '# --- tokenizer ---\n'
+        '# --renderer is forwarded to every child invocation\n'
+        '\n\ndef tokenizer_entry():\n    return 1\n\n\n'
+        '# --- renderer ---\n\n\ndef renderer_entry():\n    return 2\n'
+    )
+
+    assert scan_module(source, 'pkg/subject.py') == []
+
+
 def test_a_module_with_one_section_reports_nothing():
     """With fewer than two headings there is no other section to belong under."""
     source = '# --- tokenizer ---\n\n\ndef renderer_entry():\n    return 1\n'

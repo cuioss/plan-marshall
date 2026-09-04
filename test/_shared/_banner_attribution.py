@@ -74,8 +74,14 @@ DEFINITION = (
 _RULE_ONLY = re.compile(r'^#\s*[-=~_*]{4,}\s*$')
 
 #: A comment carrying heading text plus rule punctuation on the same line, e.g.
-#: ``# --- Rule 4 ---------------``.
-_INLINE_HEADING = re.compile(r'^#\s*[-=~_*]{2,}\s*(?P<text>.*?)\s*[-=~_*]*\s*$')
+#: ``# --- Rule 4 ---------------``. The lower bound is THREE, not two: a
+#: two-character run is the shape of a CLI flag in ordinary prose, so ``{2,}``
+#: reads ``# --plan-id is forwarded to every child call`` as a banner heading —
+#: which both steals enclosure from every construct beneath it and injects the
+#: sentence's words into the distinctive-token set, so a spurious banner can
+#: fabricate a misattribution or destroy a real heading's distinctiveness. The
+#: documented form above carries three, and the framed sibling requires four.
+_INLINE_HEADING = re.compile(r'^#\s*[-=~_*]{3,}\s*(?P<text>.*?)\s*[-=~_*]*\s*$')
 
 #: Tokens too generic to attribute anything by. A banner whose only tokens are
 #: these names no subject, and a construct matching only on one of them would
