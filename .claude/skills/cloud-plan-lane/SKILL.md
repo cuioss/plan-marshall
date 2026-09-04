@@ -1361,7 +1361,7 @@ assign exactly one verdict:
 | `reviewed-empty` | The author published a review artifact **against the diff** carrying **no findings** — an explicit "nothing to report" over it. The reviewer ran and found nothing, which is a different fact from finding nine and a different fact again from never having looked. |
 | `rate-limited` | The author published **only a refusal/quota notice** in place of a review (e.g. "Review limit reached", "reached your weekly rate limit of … diff characters"). It engaged but did not review this diff. |
 | `silent` | The author published **nothing at all** — no review, no notice. Before recording it, run the recovery check below — **not owed where the label governs this reviewer** (⛔ below), owed as usual where it does not; an unexplained silence is recorded as such only once that check has been made. |
-| `unreadable` | The surface that would carry this author's body **errored**. Not a statement about the author at all — a statement about the run's access. |
+| `unreadable` | Either the surface that would carry this author's body **errored**, or the verdict **names no surface** it was read from. Not a statement about the author at all — a statement about the run's access: in both cases the run cannot substantiate what it read. |
 
 `reviewed-empty` is a **completed review**, so it behaves as `reviewed` does at both places the other
 verdicts are consumed: its `Reopens?` cell is **blank** (nothing was refused, so there is no limit to
