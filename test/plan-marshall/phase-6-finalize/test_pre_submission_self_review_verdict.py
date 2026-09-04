@@ -4,33 +4,46 @@
 """Doc-contract regression for the pre-submission-self-review clean verdicts.
 
 ``pre-submission-self-review.md`` used to report a single undifferentiated
-clean verdict — ``"self-review clean: {N} candidates examined"`` — on two
-structurally different outcomes:
+clean verdict — ``"self-review clean: {N} candidates examined"`` — across
+structurally different outcomes. The document now declares one labelled clean
+verdict per outcome:
 
-* **Nothing to check.** No candidate was surfaced at all (the zero-generator
-  fallback in Step 1, or a diff the surfacer found nothing in). No cognitive
-  check ever ran.
-* **No check matched.** Candidates WERE surfaced, every check was applied to
+* **not-run.** No domain surfacer resolved in the executor (the zero-generator
+  fallback in Step 1). Nothing ran: no file was searched, no candidate was
+  constructed, no check executed. This verdict is a statement about the
+  EXECUTOR and makes no claim about the diff.
+* **nothing-to-check.** A surfacer RAN over a real file set and produced no
+  candidate, so no check had anything to run against. A weak statement about
+  the diff, but a statement about the diff.
+* **no-check-matched.** Candidates WERE surfaced, every check was applied to
   them, and none fired.
+* **zero-observation.** A full-surface round returned no findings while its
+  ``delta_coverage.files_with_candidates`` was 0 over a non-zero
+  ``files_in_scope`` — it drew no observation of its own from the files it
+  searched.
 
-Collapsing the two hides the review-coverage difference: an operator reading
-"clean" on the nothing-to-check path concludes the change was reviewed and
-passed, when in fact nothing was reviewed. The defect class this file guards is
-the same one the workflow's own check 14 exists to catch — a verdict that cannot
-distinguish two states is a guard that can never observe a difference.
+Collapsing any two hides a review-coverage difference. The sharpest is the
+first pair: an operator reading "clean" on the not-run path concludes the
+change was reviewed and passed, when in fact NO ANALYSIS WAS PERFORMED. The
+defect class this file guards is the same one the workflow's own check 14
+exists to catch — a verdict that cannot distinguish two states is a guard that
+can never observe a difference.
 
 These tests pin the split:
 
-(a) The ``display_detail`` shape section declares exactly TWO distinct clean
-    verdicts, each carrying its labelled name (``nothing-to-check`` /
-    ``no-check-matched``).
-(b) Neither clean verdict is a prefix of the other, so a consumer matching a
-    whole verdict string cannot mistake one for the other.
-(c) The zero-generator fallback path (Step 1) reports the nothing-to-check
-    verdict, and never the no-check-matched one.
-(d) The old single undifferentiated form is no longer the SOLE clean verdict.
-(e) The inline-vs-dispatch return-shape invariant names both clean verdicts, so
-    the two branches cannot drift into differing verdict vocabularies.
+(a) The ``display_detail`` shape section declares one distinct clean verdict
+    per declared label, each carrying its labelled name. The expected
+    cardinality is DERIVED from the label set rather than written as a
+    literal, so adding a label without adding its verdict fails here.
+(b) The clean verdicts partition: every declared label claims exactly one
+    literal, and every literal is claimed by exactly one label.
+(c) No clean verdict is a prefix of another, so a consumer matching a whole
+    verdict string cannot mistake one for another.
+(d) The zero-generator fallback path (Step 1) reports the not-run verdict by
+    its own label, and reports NO other clean verdict.
+(e) The old single undifferentiated form is no longer the SOLE clean verdict.
+(f) The inline-vs-dispatch return-shape invariant names every clean verdict,
+    so the two branches cannot drift into differing verdict vocabularies.
 
 Every property assertion is paired with a mutation guard that runs the detector
 against the known pre-fix prose; without them a regex typo would make the
@@ -64,10 +77,28 @@ _STOP_PREFIXES = ('### ', '## ', '# ', '---')
 #: ``self-review`` token. Captures the string body without its quotes.
 _VERDICT_LITERAL = re.compile(r'`"(self-review[^"]*)"`')
 
-#: The labelled verdict names the doc must carry, mapped to the marker phrase
+#: The labelled clean verdicts the doc must carry, mapped to the marker phrase
 #: that identifies which literal belongs to which label.
-_NOTHING_TO_CHECK_LABEL = 'nothing-to-check'
-_NO_CHECK_MATCHED_LABEL = 'no-check-matched'
+#:
+#: This mapping is the POPULATION every cardinality below is derived from. A
+#: bare ``len(clean) == 2`` went stale the moment a third clean verdict was
+#: declared — and it would have gone stale SILENTLY in the other direction too,
+#: passing while a declared label had no literal at all. Deriving the expected
+#: count from this dict is what keeps the assertion honest as the set grows:
+#: adding a label here without adding its verdict to the document fails (a),
+#: and adding a verdict to the document without a label here fails (b).
+_CLEAN_VERDICT_MARKERS = {
+    'not-run': 'not run',
+    'nothing-to-check': 'zero candidates surfaced',
+    'no-check-matched': '{N} candidates examined',
+    'zero-observation': 'no observation',
+}
+
+#: The label whose verdict the zero-generator fallback path reports. Resolved
+#: by LABEL rather than by a ``len(...) == 1`` filter over some incidental
+#: property: three of the four clean verdicts carry no ``{N}``, so the old
+#: "the one without a count" filter no longer identifies anything.
+_ZERO_GENERATOR_LABEL = 'not-run'
 
 #: The pre-fix, undifferentiated clean verdict, as a normalised shape. The
 #: ``{N}`` placeholder is literal in the doc.
@@ -132,6 +163,28 @@ def _clean_verdicts(text: str) -> list[str]:
     ]
 
 
+def _partition_clean_verdicts(clean: list[str]) -> dict[str, list[str]]:
+    """Map each declared label to the clean literals carrying its marker.
+
+    A well-formed document yields exactly one literal per label and leaves no
+    literal unclaimed — that is the partition assertion (b) checks, and it is
+    what replaced the pre-split ``len(clean) == 2`` count.
+    """
+    return {
+        label: [literal for literal in clean if marker in literal]
+        for label, marker in _CLEAN_VERDICT_MARKERS.items()
+    }
+
+
+def _unclaimed_clean_verdicts(clean: list[str]) -> list[str]:
+    """Return clean literals no declared label's marker matches."""
+    return [
+        literal
+        for literal in clean
+        if not any(marker in literal for marker in _CLEAN_VERDICT_MARKERS.values())
+    ]
+
+
 def _prefix_collisions(literals: list[str]) -> list[tuple[str, str]]:
     """Return every ordered pair where one literal is a prefix of another."""
     collisions: list[tuple[str, str]] = []
@@ -168,39 +221,66 @@ def test_surface_section_is_present_and_non_empty():
 
 
 # ---------------------------------------------------------------------------
-# (a) two distinct clean verdicts, each labelled
+# (a) one distinct clean verdict per declared label
 # ---------------------------------------------------------------------------
 
 
-def test_two_distinct_clean_verdicts_are_declared():
+def test_one_distinct_clean_verdict_per_declared_label():
     clean = _clean_verdicts(_section(_OUTPUT_HEADING))
+    expected = len(_CLEAN_VERDICT_MARKERS)
 
-    assert len(clean) == 2, (
-        f'The display_detail shape must declare exactly two distinct clean '
-        f'verdicts (nothing-to-check and no-check-matched). Found {len(clean)}: '
-        f'{clean}'
+    # The cardinality is DERIVED from the declared label population, never
+    # written as a literal — a hard-coded count is what went stale when the
+    # un-run/un-observed split turned two clean verdicts into four.
+    assert len(clean) == expected, (
+        f'The display_detail shape must declare exactly one distinct clean '
+        f'verdict per declared label '
+        f'({sorted(_CLEAN_VERDICT_MARKERS)}) — {expected} in total. '
+        f'Found {len(clean)}: {clean}'
     )
 
 
-def test_both_clean_verdicts_carry_their_label():
+def test_every_clean_verdict_carries_its_label():
     section = _section(_OUTPUT_HEADING)
 
-    for label in (_NOTHING_TO_CHECK_LABEL, _NO_CHECK_MATCHED_LABEL):
+    for label in _CLEAN_VERDICT_MARKERS:
         assert label in section, (
             f'The display_detail shape must name the {label!r} verdict '
             f'explicitly, so a reader can tell which literal covers which state'
         )
 
 
-def test_nothing_to_check_verdict_names_the_absent_candidate_set():
-    section = _section(_OUTPUT_HEADING)
-    clean = _clean_verdicts(section)
-    nothing = [literal for literal in clean if '{N}' not in literal]
+# ---------------------------------------------------------------------------
+# (b) the clean verdicts PARTITION over the declared labels
+# ---------------------------------------------------------------------------
 
-    assert len(nothing) == 1, (
-        f'Exactly one clean verdict must be candidate-count-free (the '
-        f'nothing-to-check verdict, reported when no candidate was surfaced at '
-        f'all). Got: {nothing}'
+
+def test_clean_verdicts_partition_over_the_declared_labels():
+    """Every label claims exactly one literal; every literal exactly one label.
+
+    This replaced a ``len(nothing) == 1`` filter that identified the
+    candidate-count-free verdict by the ABSENCE of ``{N}``. Three of the four
+    clean verdicts now carry no ``{N}``, so that filter identifies nothing —
+    and, worse, would have kept passing had it happened to match one. A
+    partition over labelled names states the property directly instead of
+    inferring it from an incidental field.
+    """
+    clean = _clean_verdicts(_section(_OUTPUT_HEADING))
+    assert clean, 'No clean verdicts parsed — the assertion would be vacuous'
+
+    partition = _partition_clean_verdicts(clean)
+
+    ambiguous = {label: hits for label, hits in partition.items() if len(hits) != 1}
+    assert not ambiguous, (
+        f'Each declared label must claim exactly one clean verdict literal. '
+        f'These claimed a different number: {ambiguous}'
+    )
+
+    unclaimed = _unclaimed_clean_verdicts(clean)
+    assert not unclaimed, (
+        f'These clean verdicts are claimed by no declared label, so the '
+        f'partition does not cover the set the document actually declares: '
+        f'{unclaimed}. Add each to _CLEAN_VERDICT_MARKERS in the same change.'
     )
 
 
@@ -294,37 +374,53 @@ def test_no_verdict_at_all_is_a_prefix_of_another():
 
 
 # ---------------------------------------------------------------------------
-# (c) the zero-generator fallback uses the nothing-to-check verdict
+# (d) the zero-generator fallback uses the not-run verdict, and only it
 # ---------------------------------------------------------------------------
 
 
-def test_zero_generator_fallback_reports_the_nothing_to_check_verdict():
+def test_zero_generator_fallback_reports_the_not_run_verdict():
     surface = _section(_SURFACE_HEADING)
-    nothing = [
-        literal
-        for literal in _clean_verdicts(_section(_OUTPUT_HEADING))
-        if '{N}' not in literal
-    ]
-    assert len(nothing) == 1, 'Nothing-to-check verdict not resolvable'
+    partition = _partition_clean_verdicts(_clean_verdicts(_section(_OUTPUT_HEADING)))
 
-    assert nothing[0] in surface, (
-        f'The zero-generator fallback path must report the nothing-to-check '
-        f'verdict {nothing[0]!r} — it surfaced no candidates, so no check ran'
+    claimed = partition[_ZERO_GENERATOR_LABEL]
+    assert len(claimed) == 1, (
+        f'The {_ZERO_GENERATOR_LABEL!r} verdict is not resolvable by its label — '
+        f'the assertion below would be vacuous. Got: {claimed}'
+    )
+
+    assert claimed[0] in surface, (
+        f'The zero-generator fallback path must report the '
+        f'{_ZERO_GENERATOR_LABEL!r} verdict {claimed[0]!r} — no surfacer ran, '
+        f'so no analysis was performed at all'
     )
 
 
-def test_zero_generator_fallback_does_not_report_the_examined_verdict():
-    surface = _section(_SURFACE_HEADING)
-    counted = [
-        literal
-        for literal in _clean_verdicts(_section(_OUTPUT_HEADING))
-        if '{N}' in literal
-    ]
-    assert len(counted) == 1, 'No-check-matched verdict not resolvable'
+def test_zero_generator_fallback_reports_no_other_clean_verdict():
+    """The fallback must not borrow a verdict that claims something ran.
 
-    assert counted[0] not in surface, (
-        f'The zero-generator fallback path must NOT claim candidates were '
-        f'examined — it reported {counted[0]!r}, the no-check-matched verdict'
+    Every other clean verdict is a statement about a file set a surfacer
+    actually searched. The fallback searched none, so reporting any of them
+    there would restate an un-run analysis as an observation — including the
+    nothing-to-check verdict, which is the near-miss this guards.
+    """
+    surface = _section(_SURFACE_HEADING)
+    partition = _partition_clean_verdicts(_clean_verdicts(_section(_OUTPUT_HEADING)))
+
+    others = {
+        label: hits[0]
+        for label, hits in partition.items()
+        if label != _ZERO_GENERATOR_LABEL and len(hits) == 1
+    }
+    assert others, 'No sibling clean verdicts resolvable — assertion vacuous'
+
+    leaked = {
+        label: literal for label, literal in others.items() if literal in surface
+    }
+
+    assert not leaked, (
+        f'The zero-generator fallback path performed no analysis, so it must '
+        f'report no verdict that claims a file set was searched. It reported: '
+        f'{leaked}'
     )
 
 
@@ -352,8 +448,13 @@ def test_old_undifferentiated_clean_form_is_not_the_sole_clean_verdict():
         f'The document still carries the pre-fix single undifferentiated clean '
         f'verdict {_OLD_CLEAN_FORM!r} as its only clean verdict'
     )
-    assert len(clean) >= 2, (
-        f'Fewer than two distinct clean verdicts survive document-wide: {clean}'
+    # Derived from the declared label population, not a literal floor: every
+    # labelled verdict is declared in the output section, so all of them must
+    # survive a document-wide read too.
+    expected = len(_CLEAN_VERDICT_MARKERS)
+    assert len(clean) >= expected, (
+        f'Fewer than {expected} distinct clean verdicts survive document-wide '
+        f'(one per declared label {sorted(_CLEAN_VERDICT_MARKERS)}): {clean}'
     )
 
 
@@ -369,14 +470,17 @@ def test_old_undifferentiated_form_does_not_survive_verbatim_as_a_verdict():
 
 
 # ---------------------------------------------------------------------------
-# (e) the inline / dispatch branches share one verdict vocabulary
+# (f) the inline / dispatch branches share one verdict vocabulary
 # ---------------------------------------------------------------------------
 
 
-def test_return_shape_invariant_names_both_clean_verdicts():
+def test_return_shape_invariant_names_every_clean_verdict():
     gate = _section(_GATE_HEADING)
     clean = _clean_verdicts(_section(_OUTPUT_HEADING))
-    assert len(clean) == 2, 'Clean verdicts not resolvable'
+    # Re-derived over the FULL clean set: the pre-split form asserted
+    # ``len(clean) == 2`` and would have skipped every verdict beyond the
+    # second, letting a new verdict enter the vocabulary un-checked.
+    assert len(clean) == len(_CLEAN_VERDICT_MARKERS), 'Clean verdicts not resolvable'
 
     missing = [literal for literal in clean if literal not in gate]
 
@@ -426,6 +530,46 @@ def test_sole_clean_verdict_detector_rejects_the_pre_fix_shape():
     assert len(clean) < 2, (
         'The pre-fix shape must be detected as carrying fewer than two clean '
         'verdicts — otherwise assertion (d) could never fail'
+    )
+
+
+def test_partition_detector_fires_on_an_unclaimed_and_on_a_doubly_claimed_literal():
+    """Both halves of the partition assertion must be able to fail.
+
+    Without this, a marker typo would leave every label matching nothing while
+    ``ambiguous`` reported the failure only if some label matched twice — and a
+    marker broad enough to match every literal would leave ``unclaimed`` empty
+    forever. Each half is fired here against a synthetic set built to trip it.
+    """
+    # Half 1 — a literal no declared marker claims.
+    unclaimed_set = ['self-review clean: a shape no marker names']
+    assert _unclaimed_clean_verdicts(unclaimed_set) == unclaimed_set, (
+        'The unclaimed-literal detector did not fire on a literal carrying no '
+        'declared marker — the coverage half of the partition would be vacuous'
+    )
+
+    # Half 2 — one label claiming two literals, which is the collapse the
+    # partition exists to reject.
+    doubled = [
+        'self-review clean: {N} candidates examined, no check matched',
+        'self-review clean: {N} candidates examined, nothing fired',
+    ]
+    partition = _partition_clean_verdicts(doubled)
+    assert len(partition['no-check-matched']) == 2, (
+        'The label-claim detector did not fire on one label claiming two '
+        'literals — the uniqueness half of the partition would be vacuous'
+    )
+
+    # Positive control: the well-formed shape trips neither half.
+    well_formed = [
+        'self-review not run: no surfacer implementor resolved',
+        'self-review clean: surfacer ran, zero candidates surfaced',
+        'self-review clean: {N} candidates examined, no check matched',
+        'self-review clean: no observation drawn from the files searched',
+    ]
+    assert not _unclaimed_clean_verdicts(well_formed)
+    assert all(
+        len(hits) == 1 for hits in _partition_clean_verdicts(well_formed).values()
     )
 
 

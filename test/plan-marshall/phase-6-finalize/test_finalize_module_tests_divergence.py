@@ -51,8 +51,32 @@ _WHOLE_TREE_QUALITY_GATE = re.compile(
     r'whole-tree[\s`*_]{0,4}quality-gate', re.IGNORECASE
 )
 
-#: The whole-tree (no bundle argument) quality-gate invocation.
-_WHOLE_TREE_QG_INVOCATION = re.compile(r'run --command-args "quality-gate"')
+#: The heading of the section that owns guard 1's whole-tree arm, and the
+#: heading levels that terminate it (``####`` and deeper stay inside).
+_WHOLE_TREE_ARM_HEADING = '### Whole-tree quality-gate arm'
+_SAME_OR_HIGHER_HEADING = re.compile(r'#{1,3} ')
+
+#: A ``quality-gate`` resolve, and the module argument that scopes one. The arm
+#: is reachable when it resolves the canonical at DEFAULT scope — no
+#: ``--module`` — and runs what came back. Deliberately structural: the arm
+#: derives its invocation from the resolver, so which executable a project gets
+#: is that project's business. Pinning a build-tool literal here could only ever
+#: pass over a hardcoded gate document, which is the defect this sweep removes.
+_QG_RESOLVE = re.compile(r'resolve\s+--command\s+quality-gate')
+_MODULE_ARG = re.compile(r'--module\b')
+
+#: The arm must RUN what it resolved — a resolved-then-discarded executable
+#: gates nothing, so presence of the resolve alone would be a half-assertion.
+_RUNS_RESOLVED_EXECUTABLE = re.compile(
+    r'run\s+the\s+captured\s+`?executable`?', re.IGNORECASE
+)
+
+#: A WARNING the gate actually EMITS, as opposed to prose that mentions one. An
+#: emitted warning is the payload of a ``manage-logging`` invocation, so it
+#: always rides on a ``--message "[WARNING]`` line. Prose in a *different* arm
+#: that cross-references this arm's warning is not itself a warning and carries
+#: no obligation to name this arm's dimensions.
+_EMITTED_WARNING = '--message "[WARNING]'
 
 # The real Python build_map globs (single-``*`` fnmatch spans ``/``).
 _GLOBS = ['marketplace/bundles/*.py', 'test/*.py', 'pyproject.toml']
@@ -282,26 +306,85 @@ def _lock_step_sites() -> dict[str, str]:
     return sites
 
 
+def _section(heading: str) -> list[str]:
+    """Return the body lines under ``heading``, up to the next heading.
+
+    Anchored on the heading text rather than a line number so ordinary prose
+    edits around the section do not silently empty the sweep — an absent
+    heading returns ``[]``, which every caller asserts against.
+    """
+    lines = _gate_text().splitlines()
+    start = next(
+        (i for i, line in enumerate(lines) if line.strip() == heading), None
+    )
+    if start is None:
+        return []
+    body: list[str] = []
+    for line in lines[start + 1 :]:
+        if _SAME_OR_HIGHER_HEADING.match(line):
+            break
+        body.append(line)
+    return body
+
+
+def _default_scope_quality_gate_resolves(lines: list[str]) -> list[str]:
+    """Return the ``quality-gate`` resolves carrying NO ``--module`` argument."""
+    return [
+        line
+        for line in lines
+        if _QG_RESOLVE.search(line) and not _MODULE_ARG.search(line)
+    ]
+
+
 def _names_all_three_dimensions(text: str) -> bool:
     return all(dimension in text for dimension in _WHOLE_TREE_ONLY_DIMENSIONS)
 
 
+def _is_emitted_warning(line: str) -> bool:
+    return _EMITTED_WARNING in line
+
+
 def _degradation_warning_lines() -> list[str]:
-    """Return the WARNING lines covering the whole-tree quality-gate skip path."""
+    """Return the WARNINGs the gate EMITS on the whole-tree quality-gate skip path.
+
+    Scoped to *emitted* warnings on purpose. A sibling arm's prose may
+    cross-reference this arm ("exactly as the whole-tree `quality-gate` arm's
+    honest-degradation branch does for its three dimensions") while describing
+    its OWN, single-dimension warning; that sentence is documentation of another
+    guard, not a warning this arm emits, and holding it to this arm's
+    three-dimension rule would demand a false claim of it.
+    """
     return [
         line
         for line in _gate_text().splitlines()
-        if '[WARNING]' in line and _WHOLE_TREE_QUALITY_GATE.search(line)
+        if _is_emitted_warning(line) and _WHOLE_TREE_QUALITY_GATE.search(line)
     ]
 
 
 def test_whole_tree_quality_gate_pass_is_reachable_from_the_gate_document():
-    text = _gate_text()
+    """Guard 1's whole-tree arm must resolve its own invocation and then run it.
 
-    assert _WHOLE_TREE_QG_INVOCATION.search(text), (
-        'The gate document must carry a whole-tree (no bundle argument) '
-        'quality-gate invocation — without it the three whole-tree-only '
-        'dimensions are unreachable from the pre-push gate'
+    Reachability is asserted STRUCTURALLY — a default-scope (no ``--module``)
+    ``quality-gate`` resolve inside the arm, plus the instruction to run what
+    that resolve returned. Asserting a literal build-tool invocation instead
+    would pin the very hardcoding this sweep exists to remove: the arm obtains
+    its executable from the resolver, so a literal assertion can only pass on a
+    gate document that hardcodes one project's build tool.
+    """
+    arm = _section(_WHOLE_TREE_ARM_HEADING)
+
+    assert arm, (
+        f'The gate document carries no "{_WHOLE_TREE_ARM_HEADING}" section, so '
+        f'the three whole-tree-only dimensions are unreachable from the pre-push gate'
+    )
+    assert _default_scope_quality_gate_resolves(arm), (
+        'The whole-tree arm must resolve quality-gate at DEFAULT scope (no '
+        '--module argument) — a module-scoped resolve reaches only the '
+        'per-bundle dimensions, never the three whole-tree-only ones'
+    )
+    assert any(_RUNS_RESOLVED_EXECUTABLE.search(line) for line in arm), (
+        'The whole-tree arm resolves an executable but never says to run it — '
+        'a resolved-then-discarded invocation gates nothing'
     )
 
 
@@ -480,6 +563,57 @@ def test_three_dimension_detector_rejects_a_single_dimension_warning():
     assert _names_all_three_dimensions(complete), (
         'Three-dimension detector rejected a complete three-dimension WARNING'
     )
+
+
+def test_reachability_detector_rejects_a_module_scoped_resolve_and_an_empty_arm():
+    # Mutation guard for the reachability sweep. The per-bundle loop resolves
+    # the SAME canonical, so a detector that only looked for `--command
+    # quality-gate` would be satisfied by a gate document that dropped the
+    # whole-tree arm entirely — vacuously green on exactly the regression the
+    # sweep exists to catch. The `--module` argument is the discriminator.
+    per_bundle = '  resolve --command quality-gate --module {bundle} --audit-plan-id {plan_id}'
+    assert not _default_scope_quality_gate_resolves([per_bundle]), (
+        'Reachability detector accepted the per-bundle module-scoped resolve as '
+        'a whole-tree one — the sweep would pass with no whole-tree arm at all'
+    )
+
+    assert not _default_scope_quality_gate_resolves([]), (
+        'Reachability detector reported a resolve over an EMPTY section — an '
+        'absent arm must never read as a present one'
+    )
+
+    # Positive control — the whole-tree, default-scope resolve IS accepted.
+    whole_tree = '  resolve --command quality-gate --audit-plan-id {plan_id}'
+    assert _default_scope_quality_gate_resolves([whole_tree])
+
+
+def test_degradation_warning_detector_separates_an_emitted_warning_from_prose():
+    # Mutation guard for the three-dimension sweep. A sibling arm's prose may
+    # name this arm while describing its own single-dimension warning; holding
+    # that sentence to the three-dimension rule would demand a false claim of
+    # it. Only a warning the gate EMITS carries the obligation.
+    sibling_prose = (
+        'this project exposes no `test-compile` target at any scope: emit one '
+        '`[WARNING]` naming the test-tree type-checking dimension as un-gated '
+        "for this push, exactly as the whole-tree `quality-gate` arm's "
+        'honest-degradation branch does for its three dimensions.'
+    )
+    assert _WHOLE_TREE_QUALITY_GATE.search(sibling_prose), (
+        'Fixture drift: the sibling-arm prose no longer names the whole-tree '
+        'quality-gate arm, so it no longer exercises the discrimination'
+    )
+    assert not _is_emitted_warning(sibling_prose), (
+        'Emitted-warning detector accepted prose that merely mentions a '
+        'WARNING — a cross-reference is not an emitted warning'
+    )
+
+    # Positive control — the arm's own emitted warning IS selected.
+    emitted = (
+        '  --message "[WARNING] (plan-marshall:pre-push-quality-gate) Whole-tree '
+        'quality-gate unavailable — three whole-tree-only dimensions are UN-GATED."'
+    )
+    assert _is_emitted_warning(emitted)
+    assert _WHOLE_TREE_QUALITY_GATE.search(emitted)
 
 
 def test_whole_tree_arm_detector_fires_on_the_pre_fix_bundle_only_prose():
