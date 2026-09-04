@@ -19,7 +19,7 @@ The predicate definitions (the closed `prunable_when` vocabulary, the class→de
 | `mis_prune_checks[]` | one per prunable step: `pass` (step ran / predicate still holds), `skip` (footprint unresolvable — no `--diff-file` **and** the shared whole-chain resolver recovered none — or a recorded non-predicate removal cause), `inconclusive` (removal cause unestablishable), or **`fail`** (predicate now false — a mis-prune). Every row also carries `removal_cause` — see [Removal cause precedes predicate re-evaluation](#removal-cause-precedes-predicate-re-evaluation) |
 | `summary` | the per-status counts over `mis_prune_checks[]`, total by construction: every status the script emits has an explicit bucket — `passed` / `failed` / `skipped` / `inconclusive` — and an unrecognised one is counted under its own name, so `sum(summary.values()) == len(mis_prune_checks)` holds unconditionally. A bucket counting only some of the emitted statuses would let an `inconclusive` verdict land nowhere and read as a check that does not exist |
 | `footprint_source` | how the realized footprint was obtained: `diff_file` (explicit `--diff-file`), `resolved` (recovered through the shared resolver), or `unresolved` (no tier answered → the mis-prune checks skip). A **supplied** `--diff-file` never yields `unresolved`: see [A supplied `--diff-file` resolves or raises](#a-supplied---diff-file-resolves-or-raises) |
-| `cost_preview` | `execution_log_tokens` (the `execution_log` sum) and `predicted_tokens` (init preview), each beside the population it measures (`execution_log_population` / `predicted_population`), plus a `comparison` verdict. `execution_log_population` is `5-execute,6-finalize` — the only phases the ledger's writer accepts — so the sum is **not** a whole-plan actual and is not named one. `delta_tokens` / `delta_pct` appear **only** when `comparison: computed`, and `comparison_reason` only when it is not; see [The cost-preview comparison is population-gated](#the-cost-preview-comparison-is-population-gated) |
+| `cost_preview` | `execution_log_tokens` (the `execution_log` sum) and `predicted_tokens` (init preview), each beside the population it measures (`execution_log_population` / `predicted_population`), plus how much of that population the sum could READ (`execution_log_rows_in_population` / `_measured` / `_unmeasured` / `_unrecognised`) and a `comparison` verdict. `execution_log_population` is `5-execute,6-finalize` — the only phases the ledger's writer accepts — so the sum is **not** a whole-plan actual and is not named one; the four row counts state whether it is a total or a FLOOR, and ride every verdict. `delta_tokens` / `delta_pct` appear **only** when `comparison: computed`, and `comparison_reason` only when it is not; see [The cost-preview comparison is population-gated](#the-cost-preview-comparison-is-population-gated) |
 | `recompose_divergence` | the `lane_resolution` decision-log **line** count. ⚠ Despite the field name this is NOT a recompose count: the composer emits one line per dropped step plus one per lane warning, so the number rises with the size of a single compose's subtraction, not with the number of composes. Read it as "how much lane subtraction was recorded", never as "how many times the manifest was recomposed" |
 | `recorded_lane_decisions[]` | the raw `lane_resolution` decision-log lines |
 | `llm_judgement_required` | always `true` — the marker that the OVER/UNDER verdict is the LLM's, not the script's |
@@ -72,13 +72,16 @@ The prediction is whatever a producer persisted to `status.metadata.execution_pr
 
 The gate follows:
 
-| `comparison` | When | `delta_tokens` / `delta_pct` |
-|---|---|---|
-| `not_attempted` | no prediction recorded | absent |
-| `refused` | prediction recorded, populations differ (including `unstated`) | absent |
-| `computed` | populations equal | present |
+| `comparison` | When | `comparison_reason` | `delta_tokens` / `delta_pct` |
+|---|---|---|---|
+| `not_attempted` | no prediction recorded, or a recorded value that is not a token count | names which of the two | absent |
+| `refused` | prediction recorded, populations differ (including `unstated`) | `population_mismatch` | absent |
+| `refused` | populations equal, but an in-population row carries an unmeasured or unrecognised token column, so the sum is a FLOOR rather than a total | `incomplete_measurement` | absent |
+| `computed` | populations equal **and** every in-population row's token column is readable | absent | present |
 
-⛔ **A population-mismatched subtraction is the defect, not the field name.** It produces a *plausible* figure — two token counts, one subtraction, a percentage — which is exactly why it would not look wrong to the `cost_size_token_table` recalibration loop that consumes `delta_pct`. Withholding the delta and stating `comparison_reason` turns a silent choice into a legible one.
+**`computed` requires both gates, not just the population one.** The scope check and the coverage check are independent, and a reader who treats the first as the whole gate will misattribute the second. Read `comparison_reason` to tell them apart: `population_mismatch` says the two figures measure different phase sets; `incomplete_measurement` says they measure the same set but the recorded sum could not read all of it.
+
+⛔ **A subtraction across mismatched populations is one defect; a subtraction against a floor is the other, and both refuse.** Each produces a *plausible* figure — two token counts, one subtraction, a percentage — which is exactly why neither would look wrong to the `cost_size_token_table` recalibration loop that consumes `delta_pct`. Withholding the delta and stating `comparison_reason` turns a silent choice into a legible one.
 
 A producer that wants the comparison back persists **both** keys, and persists a population that genuinely matches. Persisting a phase-6-only figure (for instance the `lanes preview` `cost_sum_tokens`, which sums `phase_6_steps` alone) under a matching-looking label would defeat the gate; the label must state what was actually summed.
 
@@ -104,7 +107,13 @@ posture: minimal | standard | full
 planning_lane: light | deep
 posture_verdict: UNDER-PROVISIONED | OVER-PROVISIONED | correct
 mis_prune_checks[N]: [ {check, status, predicate, removal_cause, detail}, ... ]
-cost_preview: { execution_log_tokens, execution_log_population, predicted_tokens, predicted_population, comparison }
+cost_preview: { execution_log_tokens, execution_log_population,
+                execution_log_rows_in_population, execution_log_rows_measured,
+                execution_log_rows_unmeasured, execution_log_rows_unrecognised,
+                predicted_tokens, predicted_population, comparison }
+              # the four execution_log_rows_* fields state how much of the population
+              #   the sum could READ — they ride EVERY comparison verdict, so the floor
+              #   is legible even when no delta is emitted
               # comparison_reason present on not_attempted / refused; absent on computed
               # delta_tokens / delta_pct present ONLY on computed
 proposed_lessons[M]: [ ... ]
