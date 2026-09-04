@@ -16,6 +16,12 @@ reports whether every REQUIRED bot's participation is proven:
                               NO arm of the recognition stack could read the refusal —
                               an override that displaces whatever class the bot
                               declares. Its own member, never folded into refused_hard
+    refused_structural      — published a refusal whose CAUSE is a ceiling on the DIFF
+                              itself, so the same request never succeeds while the diff
+                              is this size. Its own member because the remedy set is
+                              DISJOINT from the three temporal ones: split the diff,
+                              accept the gap, or disable the reviewer for this PR —
+                              and never wait
     participated_stale      — published in a declared shape, but the currency test
                               failed, so the review predates the merge candidate
                               (blocking, yet remedied by a re-trigger rather than by
@@ -25,6 +31,12 @@ reports whether every REQUIRED bot's participation is proven:
                               blocking, yet remedied by accepting the decline rather
                               than re-triggering a bot that already declined)
     in_progress             — review still running at the poll bound
+    not_triggered           — PR-wide: no pull_request-event run exists for the PR at
+                              all, so NO bot could have published and this bot's
+                              silence says nothing about this bot. A refinement of
+                              absent whose remedy is to trigger the review, rather
+                              than to escalate a reviewer that was asked and stayed
+                              silent
     unregistered_kind       — the configured token matches no member of the live
                               registry kind set, so no reviewer answers to this name
                               and none ever could. A refinement of absent decided from
@@ -2218,6 +2230,33 @@ class TestUnknownVerdictEmitsNoParticipationField:
 # =============================================================================
 
 
+def _declared_state_values() -> set[str]:
+    """Every state value ``review_completeness`` declares, DERIVED from the module.
+
+    Read off the live module namespace by the ``STATE_`` naming convention the
+    constants already follow, rather than restated here. A restated list is one more
+    copy that goes stale, and it goes stale in the one direction that matters: it
+    would still list the old population on the very commit that added a state to the
+    real one, so the totality check below would pass exactly when it was meant to
+    fail.
+    """
+    return {
+        value
+        for name, value in vars(rc).items()
+        if name.startswith('STATE_') and isinstance(value, str)
+    }
+
+
+def _bucketed_state_values() -> list[str]:
+    """Every state named across the display buckets, in declaration order.
+
+    Returned as a LIST rather than a set, deliberately: the MULTIPLICITY is what
+    makes the disjointness half checkable at all, and collapsing to a set here would
+    silently absorb the duplicate that check exists to find.
+    """
+    return [state for _label, states in rc._STATE_SUMMARY_BUCKETS for state in states]
+
+
 class TestReviewStateSummary:
     """``compose_review_state_summary`` distinguishes reviewed-clean from nobody-reviewed.
 
@@ -2278,6 +2317,61 @@ class TestReviewStateSummary:
         plan_context.plan_dir_for(plan_id)
         result = rc.check_completeness(plan_id, [])
         assert result['review_state_summary'] == ''
+
+    def test_every_declared_state_falls_in_exactly_one_bucket(self):
+        """The buckets PARTITION the state taxonomy — both halves of that word.
+
+        ``compose_review_state_summary`` tallies a roster by walking
+        ``_STATE_SUMMARY_BUCKETS``, so the bucket table is the only thing standing
+        between a classified bot and the line an operator reads. Each half of
+        *exactly one* fails differently, and both fail SILENTLY — the summary still
+        renders, it is just wrong:
+
+        - a state in NO bucket contributes to no tally, so every bot that lands
+          there vanishes from the summary. The rendered total is short by that many
+          reviewers while still reading as a complete distribution — the same
+          collapse this whole surface exists to undo, re-entered through an
+          uncovered member.
+        - a state in TWO buckets is counted twice, so the total exceeds the roster
+          and a reader cannot reconcile the summary against ``bot_states``.
+
+        Both populations are DERIVED (see the two helpers above) rather than
+        restated, so equality holds in BOTH directions by construction: a state
+        added with no bucket fails here, and a bucket naming a state that no longer
+        exists fails here too. Neither direction needs its own hand-maintained list,
+        which is what keeps this case from becoming the next thing to go stale.
+        """
+        declared = _declared_state_values()
+        bucketed = _bucketed_state_values()
+
+        # The population guard, in THIS case rather than beside it. Both sets are
+        # produced by scanning a live declaration, so a derivation that silently
+        # collected nothing — a renamed constant prefix, a bucket table emptied —
+        # would leave every assertion below holding vacuously and report this
+        # partition clean while covering no state whatsoever.
+        assert declared, (
+            'no STATE_* constant was derived from review_completeness, so the '
+            'totality comparison below holds vacuously over an empty population '
+            'and pins nothing'
+        )
+        assert bucketed, (
+            '_STATE_SUMMARY_BUCKETS named no state, so the comparison below holds '
+            'vacuously and a summary that buckets nothing would still read clean'
+        )
+
+        assert set(bucketed) == declared, (
+            f'the display buckets must cover the state taxonomy exactly. Declared '
+            f'states in no bucket (silently dropped from every tally): '
+            f'{sorted(declared - set(bucketed))}. Bucketed names that are not a '
+            f'declared state (a stale bucket entry): '
+            f'{sorted(set(bucketed) - declared)}'
+        )
+
+        duplicated = sorted({state for state in bucketed if bucketed.count(state) > 1})
+        assert not duplicated, (
+            f'a state may appear in at most ONE bucket or the rendered totals '
+            f'double-count it against the roster: {duplicated}'
+        )
 
 
 # =============================================================================
