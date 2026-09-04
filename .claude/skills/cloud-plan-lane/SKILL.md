@@ -1715,13 +1715,30 @@ hold:**
    is complete and pushed **immediately before arming**, whichever commit that turns out to be.
 
 5. **A review-coverage shortfall is disclosed to the operator.** From the per-reviewer participation
-   record (§ Step 7), read the verdict of every expected reviewer. When **any** expected reviewer's
-   verdict is not `reviewed`, state the shortfall and its reason to the operator, explicitly and in
-   words, *before* arming auto-merge — carrying each reviewer's `Reopens?` value (§ Step 7), since
-   that is what tells the operator whether the gap was ever closable. For example: "Review coverage:
-   1 of 3 — `cuioss-review-bot` reviewed; `coderabbitai` rate-limited on a countdown, six attempts
-   spent without obtaining it; `sourcery-ai` rate-limited on a size ceiling, does not reopen."
-   **A run that merges on 1-of-3 must _say_ 1-of-3.**
+   record (§ Step 7), read the verdict **and the `Class`** of every expected reviewer — the `Class`
+   values are defined in § Step 7's table and are not restated here. The shortfall is computed
+   **against the required set**, not across the whole roster: a roster-wide trigger fires on an
+   optional reviewer's absence with exactly the force it fires on a required one, so it cannot say
+   whether coverage actually fell short.
+
+   State the coverage as **three named ratios**, never as one bare figure — each ratio naming the
+   population it is measured against, so a reader can tell which denominator any number belongs to:
+
+   > **`k of |required_bots|` required reviewers reviewed, `j of |optional_bots|` optional reviewers
+   > reviewed, `r of |roster|` overall.**
+
+   A reviewer whose verdict is `reviewed` **or** `reviewed-empty` counts toward these ratios — one that
+   ran and found nothing did participate — while staying separately visible in the participation table,
+   so the two are never conflated. Disclose whenever `k` falls short of `|required_bots|`, stating the
+   reason per reviewer explicitly and in words *before* arming auto-merge, and carrying each reviewer's
+   `Reopens?` value (§ Step 7), since that is what tells the operator whether the gap was ever closable.
+   An optional-set or roster shortfall is stated alongside it; it is the required-set ratio that says
+   whether the coverage the project asked for was obtained. For example: "Review coverage: 1 of 1
+   required reviewers reviewed, 0 of 2 optional reviewers reviewed, 1 of 3 overall —
+   `cuioss-review-bot` (required) reviewed; `coderabbitai` (optional) rate-limited on a countdown, six
+   attempts spent without obtaining it; `sourcery-ai` (optional) rate-limited on a size ceiling, does
+   not reopen." **A run that merges short of its required set must _say_ which ratio it is short on,
+   and by how much.**
 
    **On a `skip-bot-review` PR an empty result is expected from the reviewers the label governs,
    and is not a shortfall for them.** A reviewer with `honors_skip_label: false` was invited, so its
@@ -1730,7 +1747,7 @@ hold:**
    population is still the registry set (§ Step 7) — it is never emptied — and every verdict is
    still read **from the bodies**, never from this contract's prose. Where the bodies are empty and
    the label was in place at PR-open, annotate the `silent` as `(suppressed by label)` and state the
-   coverage as N-of-M with that annotation, not as a shortfall. Where the label landed *after* the
+   coverage as the three named ratios above, carrying that annotation, not as a shortfall. Where the label landed *after* the
    PR-open trigger, or was removed mid-cycle, the annotation does not apply and any gap is a real
    shortfall. **Whether the label governs a given reviewer is declared by the registry**, in the same
    docs the run already reads to derive the population: each carries `honors_skip_label`. Read it
