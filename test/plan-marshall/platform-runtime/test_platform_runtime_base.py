@@ -434,3 +434,58 @@ def test_every_toon_operation_documents_a_decline_path():
         assert "reason" in doc, f"{name}: decline path must carry a `reason`"
         assert "alternative" in doc, f"{name}: decline path must carry an `alternative`"
 
+
+# =============================================================================
+# D5 — SKILL.md operations table must not contain per-target restatements
+# =============================================================================
+
+
+def _skill_md_path():
+    return (
+        __import__("pathlib").Path(__file__).resolve().parents[3]
+        / "marketplace"
+        / "bundles"
+        / "plan-marshall"
+        / "skills"
+        / "platform-runtime"
+        / "SKILL.md"
+    )
+
+
+def test_skill_md_operations_table_has_no_per_target_restatements():
+    """The SKILL.md operations table must not name a target in its Purpose column.
+
+    Per-target decline paths are documented in the Runtime ABC docstrings and in
+    contract.md; restating them in the SKILL.md table creates a third encoding
+    that drifts silently.
+    """
+    skill_md = _skill_md_path()
+    if not skill_md.is_file():
+        pytest.skip("SKILL.md not found (non-checkout environment)")
+
+    text = skill_md.read_text(encoding="utf-8")
+    lines = text.splitlines()
+
+    # Find the operations table — lines starting with "| `"
+    in_table = False
+    target_patterns = ("no-op on ", "no-op on\n", "declines on ", "not supported on ")
+    violations = []
+
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("| Operation"):
+            in_table = True
+            continue
+        if in_table and not stripped.startswith("| `") and not stripped.startswith("|---"):
+            break  # end of table
+        if in_table and stripped.startswith("| `"):
+            for pat in target_patterns:
+                if pat in stripped.lower():
+                    violations.append((i, pat.strip(), stripped))
+
+    assert not violations, (
+        "SKILL.md operations table contains per-target restatements "
+        "(decline paths belong in contract.md and ABC docstrings): "
+        + "; ".join(f"L{line}: {pat!r} in {text!r}" for line, pat, text in violations)
+    )
+

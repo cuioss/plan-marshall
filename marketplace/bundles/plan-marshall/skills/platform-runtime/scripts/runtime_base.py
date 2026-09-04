@@ -12,7 +12,7 @@ ad-hoc parsing or serialization in this module.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from typing import Any
 
 from toon_parser import serialize_toon
@@ -103,6 +103,18 @@ def toon_noop(operation: str, reason: str, alternative: str) -> str:
         "alternative": alternative,
     }
     return serialize_toon(data)
+
+
+def describe_targets(registry_keys: Collection[str]) -> str:
+    """Render the ``valid targets are: a, b`` message fragment from a target set.
+
+    The concrete runtime previously hardcoded ``"claude, opencode"``; a
+    shared helper lets both the router and the runtime derive the list from
+    the same source (``platform_runtime._REGISTRY``) without introducing a
+    circular import.  Accepts any iterable of strings; sorted for stable
+    output.
+    """
+    return ", ".join(sorted(registry_keys))
 
 
 def marshal_shape_error(operation: str, marshal_path: Any, marshal_data: Any) -> str | None:
