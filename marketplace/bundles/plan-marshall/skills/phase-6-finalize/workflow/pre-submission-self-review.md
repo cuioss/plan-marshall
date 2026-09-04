@@ -401,6 +401,17 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --head-at-completion {sha}
 ```
 
+**`--force` is REQUIRED on every round after the first that filed findings.** The multi-round shape this step is built around guarantees the case: round 1 files findings and records `--outcome failed` (Branch B), the findings are fixed, and the converged round then records `done` over that live `failed` record — which `mark-step-done` refuses without `--force`. So the flag is not an escape hatch for an unexpected state; it is the ordinary terminal write of the convergence path this document prescribes, and a converged round CANNOT close the step without it. Add it to the call above whenever a prior round of this step recorded a non-`done` outcome:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome done \
+  --display-detail "{display_detail_from_workflow}" \
+  --head-at-completion {sha} --force
+```
+
+The overwrite is intended and is not a loss of signal: the superseded `failed` record's findings are already persisted in the finding store by Branch B, and `mark-step-done` returns `previous_outcome` / `previous_head_at_completion` so the transition it replaced stays legible in the return.
+
 **Branch B — findings list is non-empty**: first persist every finding to the plan's `qgate-6-finalize.jsonl` finding store, then surface the findings in the finalize TOON output (consumed by `output-template.md`) so the operator sees `file:line` and `defect_class` per finding.
 
 For every entry in the returned `findings[N]{file,line,defect_class,rationale,cohort_size}` list, emit one `manage-findings qgate add` call. This loop runs in the inline dispatcher context (the same context as the `mark-step-done` call below). `--phase 6-finalize` and `--source qgate` are mandatory; `--type bug` is the canonical finding type for a structural self-review defect. The `--detail` body carries the entry's `cohort_size` so the loop-back fix task addresses the CLASS rather than the instance — a fix task that reads "1 of 4 in this class" is told, at the point of work, that three siblings are waiting.

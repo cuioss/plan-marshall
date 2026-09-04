@@ -437,7 +437,7 @@ def test_zero_generator_fallback_does_not_report_the_old_undifferentiated_form()
 
 
 # ---------------------------------------------------------------------------
-# (d) the old undifferentiated form is not the sole clean verdict
+# (e) the old undifferentiated form is not the sole clean verdict
 # ---------------------------------------------------------------------------
 
 
