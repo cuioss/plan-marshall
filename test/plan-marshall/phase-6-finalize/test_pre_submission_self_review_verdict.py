@@ -317,12 +317,17 @@ def test_non_finding_verdicts_partition_over_the_declared_labels():
 def test_no_check_matched_verdict_carries_the_candidate_count():
     """The no-check-matched verdict is the one that reports how many it examined.
 
-    Resolved through the label partition, NOT by filtering for ``{N}``. Selecting
-    the verdict by an incidental field is the identification method its sibling
-    ``test_non_finding_verdicts_partition_over_the_declared_labels`` documents as
-    the anti-pattern it replaced: the count placeholder is a property this verdict
-    happens to have, not what makes it that verdict, so a filter on it silently
-    re-targets the moment another verdict gains or loses a count.
+    Resolved through the label partition rather than by scanning every verdict
+    for ``{N}``. The marker for this label IS the count-bearing literal, so a
+    scan and the partition select the same string today — but the partition says
+    WHICH verdict is meant, and fails loudly when the label claims zero or more
+    than one, where a bare ``{N}`` scan silently re-targets the moment another
+    verdict gains a count.
+
+    Deliberately no ``'{N}' in claimed[0]`` assertion: the marker table keys this
+    label on ``'{N} candidates examined'``, so ``claimed[0]`` contains ``{N}`` by
+    construction and such an assert could not fail. That tautology shipped here
+    once already and was caught by this step's own round-5 review.
     """
     section = _section(_OUTPUT_HEADING)
     non_finding = _non_finding_verdicts(section)
@@ -333,10 +338,6 @@ def test_no_check_matched_verdict_carries_the_candidate_count():
     assert len(claimed) == 1, (
         f'The no-check-matched label must claim exactly one verdict literal. '
         f'Got: {claimed}'
-    )
-    assert '{N}' in claimed[0], (
-        f'The no-check-matched verdict is the one reported when candidates WERE '
-        f'examined, so it must carry the {{N}} candidate count. Got: {claimed[0]!r}'
     )
 
 

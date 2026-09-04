@@ -159,17 +159,21 @@ assert _ALLOW_LIST, 'The allow-list is empty — every hit would fail for the wr
 # ---------------------------------------------------------------------------
 
 
-def test_published_population_matches_an_independent_re_derivation():
-    """The published size must equal a FRESH sweep, not its own definition.
+def test_published_population_matches_a_live_sweep():
+    """The published size must equal a live sweep, not its own definition.
 
-    ``GUARD_POPULATION_SIZE`` is bound from ``_DOCS`` at import and ``_DOCS`` is
-    already asserted non-empty there, so comparing either against itself is a
-    value against its own definition and cannot fail — a guard reporting green
-    having checked nothing, which is the archetype this module exists to catch.
-    Re-deriving the population from the tree is what makes the check falsifiable:
-    it fails if the module ever publishes a number that a live sweep does not
-    yield, which is exactly the drift the published number exists to expose on a
-    green run.
+    ``GUARD_POPULATION_SIZE`` is bound from ``_DOCS`` at import, so comparing it
+    against ``len(_DOCS)`` is a value against its own definition and cannot fail.
+    Re-invoking ``_shipped_docs()`` makes the check falsifiable for the drift it
+    CAN see: the constant re-bound to something other than the swept population,
+    or ``_DOCS`` filtered after the binding.
+
+    What this does NOT catch, stated so the green is not read as wider than it
+    is: the sweep re-enters the same ``_shipped_docs()`` the constant came from,
+    so a SHRUNKEN population — the drift the module's own note at the
+    ``GUARD_POPULATION_SIZE`` binding names — moves both sides of the equality
+    together and stays green. Exposing a shrink needs a floor the tree cannot
+    move, which this module does not carry.
     """
     live = _shipped_docs()
 
@@ -179,8 +183,8 @@ def test_published_population_matches_an_independent_re_derivation():
     )
     assert GUARD_POPULATION_SIZE == len(live), (
         f'Published population size {GUARD_POPULATION_SIZE} disagrees with a '
-        f'live re-derivation ({len(live)}), so the number reported on a green '
-        f'run is not the number swept'
+        f'live sweep ({len(live)}), so the number reported on a green run is '
+        f'not the number swept'
     )
     assert GUARD_POPULATION_LABEL.strip(), (
         'The published label is empty, so the report header would carry a bare '
