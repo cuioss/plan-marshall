@@ -233,7 +233,7 @@ If every bundle succeeds (`status: success` for all `N` invocations), proceed to
 
 ### Whole-tree quality-gate arm
 
-The per-bundle loop above cannot reach the three whole-tree-only dimensions named in the opening section (the marketplace-wide plugin-doctor pass, the `.claude/` ruff coverage, and the `marketplace/targets` SPDX coverage). Run one whole-tree `quality-gate` — no bundle argument, so the whole tree is the authority.
+The per-bundle loop above cannot reach the whole-tree-only dimensions named in the opening section. Run one whole-tree `quality-gate` — no bundle argument, so the whole tree is the authority.
 
 **Availability probe — runs BEFORE the invocation.** Resolve the canonical at default scope first, so the invocation below is only ever reached on a target that exists. Probing separates the two outcomes that would otherwise arrive in the same envelope, and keeps a build-wrapper `status: error` meaning exactly one thing — a real gate red:
 
