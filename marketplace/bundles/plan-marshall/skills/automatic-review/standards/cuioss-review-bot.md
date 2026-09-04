@@ -497,8 +497,8 @@ All three measurements are **G1**:
   produced twelve valid findings on the same diff, with zero overlap.
 - **The silence run** — across five pull requests and diffs from 5k to 57k tokens, every published
   review was **byte-identical at 242 bytes**: the bare table, zero findings. Its controlled case was
-  `/review` on plan-marshall#1027 (`gemini-3.6-flash`, the full 40748-token diff, no pruning, final
-  commit), where CodeRabbit had already reported a TOCTOU race around `shutil.move` and an
+  `/review` on `plan-marshall#1027` (`gemini-3.6-flash`, the full 40748-token diff, no pruning,
+  final commit), where CodeRabbit had already reported a TOCTOU race around `shutil.move` and an
   empty-string filename resolving to a directory — both squarely inside the charter, and this
   reviewer reported neither.
 - **The 58-pull-request sweep** — findings on 4 of 13 Python and markdown pull requests, and **0 of
@@ -528,7 +528,7 @@ return nothing. `extra_instructions` is appended as its own earlier block, so a 
 
 ⛔ **A green run is not a reproduction result.** An empty review is exactly what G1 produced, so "the
 reviewer ran and reported nothing" distinguishes nothing. The known-answer cases are
-plan-marshall#1027 (the two findings above must appear) and plan-marshall#1042, whose oracle is
+`plan-marshall#1027` (the two findings above must appear) and `plan-marshall#1042`, whose oracle is
 *shaped* rather than counted: a review returning only the two Major defects has NOT discharged the
 severity clause — it has reproduced the exact behaviour that clause was written against, while
 looking like a success.
@@ -576,7 +576,7 @@ Rejected, each with the reason:
   needs a checkout of the pull request head, which would let reviewed content rewrite the reviewer's
   own instructions — the hole `repo_context_from_default_branch` exists to close.
 - **A roster change.** Not taken, and this record alters no roster. The evidence is filed for
-  PLAN-PR-025B D7 instead: on plan-marshall#1041 all three reviewers commented on a 48-file pull
+  PLAN-PR-025B D7 instead: on `plan-marshall#1041` all three reviewers commented on a 48-file pull
   request and two of those comments were refusals, so a comment count read three while the number of
   reviewers that read the diff was one — this one. This reviewer carries no per-account review quota
   and does not decline on diff size, so it is frequently the member still available. That is an
@@ -612,9 +612,9 @@ configuration, not about this reviewer's ceiling. **No G2 yield figure exists ye
 landed with no measured post-change yield, so the honest statement of this reviewer's current signal
 quality is that it has not been measured, not that it is good.
 
-⛔ A finding count carries no information about recall, in either direction. On plan-marshall#1038
+⛔ A finding count carries no information about recall, in either direction. On `plan-marshall#1038`
 another reviewer posted three findings to this one's none — then withdrew all three itself, so the
-silence was the correct answer. On plan-marshall#1040 the direction reverses: this reviewer posted
+silence was the correct answer. On `plan-marshall#1040` the direction reverses: this reviewer posted
 first and its finding was the live defect, while the other arrived after the fix and raised one that
 was refuted. Compare what was substantiated, never how much was said.
 
