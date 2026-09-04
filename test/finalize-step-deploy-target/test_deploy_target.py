@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Contract tests for the project-local ``project:finalize-step-deploy-target`` skill.
 
 The skill is a markdown executor playbook backed by the multi-target
@@ -31,9 +30,11 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from _documented_example_scan import DEFECTIVE_GENERATOR_CALL
-from conftest import MARKETPLACE_ROOT, PROJECT_ROOT
+
+from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module
+
+cd = load_script_module('plan-marshall', 'manage-config', '_config_defaults.py')
 
 _SKILL_MD = (
     PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-deploy-target' / 'SKILL.md'
@@ -58,15 +59,6 @@ _DEFECTIVE_INVOCATION = DEFECTIVE_GENERATOR_CALL
 #: diagnostic then suggests appending the typo as a subcommand, so the failure
 #: sends a caller to fix something already correct.
 _DEFECTIVE_NOTATION = 'manage_status'
-
-_MANAGE_CONFIG_SCRIPTS_DIR = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
-)
-if str(_MANAGE_CONFIG_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_MANAGE_CONFIG_SCRIPTS_DIR))
-
-import _config_defaults as cd  # noqa: E402
-
 
 # ---------------------------------------------------------------------------
 # 1) Frontmatter and ordering

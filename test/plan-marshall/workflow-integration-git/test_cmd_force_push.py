@@ -386,7 +386,7 @@ class TestResolveBranchAndPathViaResolver:
         for a plan that plainly exists is the case that makes the distinction
         observable, so it is the one stubbed here.
         """
-        import file_ops  # noqa: PLC0415
+        import file_ops  # local import: the handle is needed only to patch a seam here
 
         def _raise(_plan_id):
             raise file_ops.WorktreeResolutionError('metadata is corrupt')

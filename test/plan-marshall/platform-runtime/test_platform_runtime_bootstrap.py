@@ -10,6 +10,7 @@ The two functions collaborate: _bootstrap_glob_discover calls _find_skills_root
 to obtain the root, then appends skill script directories based on the target.
 """
 import sys  # noqa: I001
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -26,6 +27,31 @@ from platform_runtime import (
 # =============================================================================
 # Helpers
 # =============================================================================
+
+
+@contextmanager
+def _module_file_is(path: Path):
+    """Bind ``__file__`` in the namespace ``_find_skills_root`` actually reads.
+
+    ⛔ NOT ``patch('platform_runtime.__file__', ...)``. That form resolves the
+    name through ``sys.modules``, and this suite is not guaranteed to be looking
+    at the same object the functions it imported came from: anything that loads
+    ``platform_runtime.py`` BY PATH republishes it under the same stem and
+    REPLACES the ``sys.modules`` entry, while the functions bound here at import
+    time keep resolving ``__file__`` from their own ``__globals__``. The dotted
+    patch then mutates the copy nobody reads, ``_find_skills_root`` walks the
+    REAL repository ancestry, and the assertion compares a real ``skills/`` root
+    against the ``tmp_path`` one. Nothing raises — the patch silently does
+    nothing, and whether it does depends on collection order, which makes the
+    defect a flaky green rather than a clean red.
+
+    Patching the ``__globals__`` DICT reaches the exact binding the function
+    reads, whatever ``sys.modules`` currently maps the name to.
+    ``_bootstrap_glob_discover`` lives in the same module and therefore shares
+    that dict, so one patch covers both.
+    """
+    with patch.dict(_find_skills_root.__globals__, {'__file__': str(path)}):
+        yield
 
 
 def _make_skills_root(base: Path) -> Path:
@@ -88,7 +114,7 @@ class TestFindSkillsRoot:
         fake_file.parent.mkdir(parents=True, exist_ok=True)
         fake_file.touch()
 
-        with patch("platform_runtime.__file__", str(fake_file)):
+        with _module_file_is(fake_file):
             result = _find_skills_root()
 
         assert result == skills
@@ -100,7 +126,7 @@ class TestFindSkillsRoot:
         fake_file.parent.mkdir(parents=True)
         fake_file.touch()
 
-        with patch("platform_runtime.__file__", str(fake_file)):
+        with _module_file_is(fake_file):
             result = _find_skills_root()
 
         assert result is None
@@ -114,7 +140,7 @@ class TestFindSkillsRoot:
         fake_file.parent.mkdir(parents=True)
         fake_file.touch()
 
-        with patch("platform_runtime.__file__", str(fake_file)):
+        with _module_file_is(fake_file):
             result = _find_skills_root()
 
         assert result is None
@@ -126,7 +152,7 @@ class TestFindSkillsRoot:
         deep.parent.mkdir(parents=True)
         deep.touch()
 
-        with patch("platform_runtime.__file__", str(deep)):
+        with _module_file_is(deep):
             result = _find_skills_root()
 
         assert result == skills
@@ -153,7 +179,7 @@ class TestBootstrapGlobDiscover:
         fake_file = skills / "platform-runtime" / "scripts" / "platform_runtime.py"
         fake_file.touch()
 
-        with patch("platform_runtime.__file__", str(fake_file)):
+        with _module_file_is(fake_file):
             result = _bootstrap_glob_discover(target)
 
         return result, skills
@@ -171,7 +197,7 @@ class TestBootstrapGlobDiscover:
         fake_file.parent.mkdir(parents=True)
         fake_file.touch()
 
-        with patch("platform_runtime.__file__", str(fake_file)):
+        with _module_file_is(fake_file):
             result = _bootstrap_glob_discover(None)
 
         assert result is None
@@ -224,7 +250,7 @@ class TestBootstrapGlobDiscover:
 
         sys_path_before_common = list(sys.path)
 
-        with patch("platform_runtime.__file__", str(fake_file)):
+        with _module_file_is(fake_file):
             _bootstrap_glob_discover("unknown-target")
 
         # Only common libs may have been added — no lib outside _COMMON_BOOTSTRAP_LIBS.
@@ -241,7 +267,7 @@ class TestBootstrapGlobDiscover:
 
         sys_path_before = list(sys.path)
 
-        with patch("platform_runtime.__file__", str(fake_file)):
+        with _module_file_is(fake_file):
             _bootstrap_glob_discover(None)
 
         added = [p for p in sys.path if p not in sys_path_before]
@@ -257,7 +283,7 @@ class TestBootstrapGlobDiscover:
         fake_file = skills / "platform-runtime" / "scripts" / "platform_runtime.py"
         fake_file.touch()
 
-        with patch("platform_runtime.__file__", str(fake_file)):
+        with _module_file_is(fake_file):
             _bootstrap_glob_discover("claude")
             path_after_first = list(sys.path)
             _bootstrap_glob_discover("claude")
@@ -287,7 +313,7 @@ class TestBootstrapGlobDiscover:
 
         sys_path_before = list(sys.path)
 
-        with patch("platform_runtime.__file__", str(fake_file)):
+        with _module_file_is(fake_file):
             _bootstrap_glob_discover(None)
 
         added = [p for p in sys.path if p not in sys_path_before]

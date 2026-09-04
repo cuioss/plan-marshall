@@ -4,14 +4,9 @@
 from __future__ import annotations
 
 # Import shared fixture helpers from the sibling module.
-import sys
-from pathlib import Path
+from _plan_retrospective_fixtures import setup_archived_plan, setup_live_plan
 
-sys.path.insert(0, str(Path(__file__).parent))
-
-from _plan_retrospective_fixtures import setup_archived_plan, setup_live_plan  # noqa: E402
-
-from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
+from conftest import MARKETPLACE_ROOT, run_script
 
 SCRIPT_PATH = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'collect-plan-artifacts.py'

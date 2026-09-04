@@ -41,6 +41,12 @@ import pytest
 
 from conftest import PROJECT_ROOT
 
+# ``review_retrospective`` is a PROJECT-LOCAL skill script under ``.claude/``, not a
+# marketplace bundle script. ``conftest.load_script_module`` /
+# ``load_skill_module`` resolve only under ``marketplace/bundles/``, and the root
+# conftest's ``sys.path`` setup walks only that tree, so neither can address this
+# module. The bootstrap therefore stays where every marketplace one was removed,
+# and it is what the file-level ``I001, E402`` waiver above is still paying for.
 _SCRIPTS_DIR = (
     PROJECT_ROOT
     / '.claude'
@@ -58,7 +64,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
 # when it is not found at all. A code-scoped ignore names exactly one of them and is
 # therefore UNUSED in the environment that raises the other — which
 # ``warn_unused_ignores`` turns into a hard error. The bare form is correct in both.
-import review_retrospective as rr  # type: ignore  # noqa: E402
+import review_retrospective as rr  # type: ignore
 
 
 # ---------------------------------------------------------------------------

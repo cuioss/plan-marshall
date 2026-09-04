@@ -89,11 +89,25 @@ def test_hand_built_namespace_lacks_the_defaults_parse_ns_supplies():
 #: and has no ``main()`` — a library module, not a CLI entry point.
 _NO_SEAM_CASE = ('plan-marshall', 'tools-integration-ci', 'ci_base.py')
 
+# ⛔ Both no-seam cases below pass ``register=False``, and it is load-bearing rather
+# than tidiness. ``parse_ns`` loads the script to reach its parser, and its default
+# publishes what it loaded in ``sys.modules`` under the file's stem — REPLACING the
+# entry. ``ci_base`` and ``platform_runtime`` are both imported plainly elsewhere in
+# this suite, so registering a second copy leaves those modules holding an object no
+# longer reachable by name: a ``mock.patch('platform_runtime.X')`` then patches the
+# copy published here while the function under test keeps reading its own
+# ``__globals__``, and ``ci_base.get_default_cwd()`` reads a ``_DEFAULT_CWD`` that
+# the ``set_default_cwd`` the production code called never wrote to. Neither patch
+# fails — they silently do nothing, and which copy wins is decided by run order.
+# Only the namespace is wanted here, which is exactly the case ``register=False``
+# exists for; see ``conftest.parse_ns`` and the collision guard in
+# ``test/plan-marshall/script-shared/test_conftest_loader_contract.py``.
+
 
 def test_parse_ns_raises_named_error_for_a_script_with_no_parser_seam():
     """A script with no reachable seam raises, rather than degrading."""
     with pytest.raises(ParserSeamNotFound, match='no parser seam'):
-        parse_ns(*_NO_SEAM_CASE, 'anything')
+        parse_ns(*_NO_SEAM_CASE, 'anything', register=False)
 
 
 def test_a_router_script_fails_loudly_rather_than_yielding_a_guess():
@@ -107,7 +121,14 @@ def test_a_router_script_fails_loudly_rather_than_yielding_a_guess():
     documented caveat is checked rather than merely asserted.
     """
     with pytest.raises(ParserSeamNotFound):
-        parse_ns('plan-marshall', 'platform-runtime', 'platform_runtime.py', 'statusline', 'render')
+        parse_ns(
+            'plan-marshall',
+            'platform-runtime',
+            'platform_runtime.py',
+            'statusline',
+            'render',
+            register=False,
+        )
 
 
 def test_invalid_argv_is_not_reported_as_a_missing_seam():

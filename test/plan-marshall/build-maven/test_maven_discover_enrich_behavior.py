@@ -14,7 +14,7 @@ None of these paths require a Maven binary.
 import sys
 
 import _config_core
-import _maven_execute  # noqa: F401  (ensures sys.modules['_maven_execute'] is populated)
+import _maven_execute
 
 from conftest import load_script_module
 

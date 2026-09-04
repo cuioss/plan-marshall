@@ -90,10 +90,14 @@ class ClaudeRuntime(Runtime):
     def project_initial_setup(self, project_dir: str, target: str) -> str:
         """One-time project setup for the Claude Code target."""
         if target != "claude":
+            from platform_runtime import _REGISTRY
+            from runtime_base import describe_targets
+
             return toon_error(
                 "project initial-setup",
                 "unknown_target",
-                f"Target {target!r} is not in the registry; valid targets are: claude, opencode",
+                f"Target {target!r} is not in the registry; "
+                f"valid targets are: {describe_targets(_REGISTRY.keys())}",
             )
 
         pd = claude_runtime._project_dir_path(project_dir)

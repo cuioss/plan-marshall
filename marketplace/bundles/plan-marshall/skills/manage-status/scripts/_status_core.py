@@ -25,7 +25,7 @@ from file_ops import (
     read_json,
     write_json,
 )
-from input_validation import require_valid_plan_id  # noqa: F401 - re-exported
+from input_validation import require_valid_plan_id
 from plan_logging import log_entry  # noqa: F401 - re-exported
 
 logger = logging.getLogger(__name__)
@@ -588,7 +588,7 @@ def _surface_drive(plan_id: str) -> None:
     try:
         _drive_bind(plan_id)
         _drive_repaint(plan_id)
-    except Exception as exc:  # noqa: BLE001 — drive seam is best-effort
+    except Exception as exc:  # drive seam is best-effort
         logger.debug('drive-seam surface for %s failed: %s', plan_id, exc)
 
 

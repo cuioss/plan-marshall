@@ -54,7 +54,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import PlanContext, load_script_module  # noqa: F401  (PlanContext re-exported for fixture discovery)
+from conftest import PlanContext, load_script_module
 
 # =============================================================================
 # Module loading (the script filename has hyphens, so it is loaded by identity)

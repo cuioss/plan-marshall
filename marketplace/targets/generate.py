@@ -228,7 +228,7 @@ def _bootstrap_marketplace_imports(bundles_dir: Path) -> None:
 def _compute_executor_scripts_fingerprint(bundles_dir: Path) -> str:
     """Compute the machine-portable executor script-set fingerprint (D1)."""
     _bootstrap_marketplace_imports(bundles_dir)
-    from generate_executor import (  # noqa: PLC0415
+    from generate_executor import (  # deferred: _bootstrap_marketplace_imports above must run first
         compute_executor_scripts_fingerprint,
         discover_scripts,
     )
@@ -250,7 +250,7 @@ def _compute_executor_scripts_fingerprint(bundles_dir: Path) -> str:
 def _compute_config_seed_fingerprint(bundles_dir: Path) -> str:
     """Compute the config-seed fingerprint over the default config (D2)."""
     _bootstrap_marketplace_imports(bundles_dir)
-    from _config_defaults import compute_config_seed_fingerprint  # noqa: PLC0415
+    from _config_defaults import compute_config_seed_fingerprint  # deferred: the bootstrap above must run first
 
     return compute_config_seed_fingerprint()
 
@@ -386,12 +386,12 @@ def main(argv: list[str] | None = None) -> int:
     if output_dir is not None:
         try:
             executor_fingerprint = _compute_executor_scripts_fingerprint(marketplace_dir)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # any fingerprint failure degrades to empty with a warning
             print(f'warning: could not compute executor scripts fingerprint: {exc}', file=sys.stderr)
             executor_fingerprint = ''
         try:
             config_fingerprint = _compute_config_seed_fingerprint(marketplace_dir)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # any fingerprint failure degrades to empty with a warning
             print(f'warning: could not compute config seed fingerprint: {exc}', file=sys.stderr)
             config_fingerprint = ''
         manifest = _build_dist_manifest(
@@ -414,7 +414,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f'error: target {target_name!r} not yet implemented: {exc}', file=sys.stderr)
             overall_ok = False
             continue
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # one target's failure must not abort the remaining targets
             print(f'error: target {target_name!r} failed: {exc}', file=sys.stderr)
             overall_ok = False
             continue
@@ -442,7 +442,7 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     overridden = None
                 target.finalize(per_target_output, marketplace_dir)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  # one target's failure must not abort the remaining targets
                 print(f'error: target {target_name!r} post-generation stamping failed: {exc}', file=sys.stderr)
                 overall_ok = False
                 continue

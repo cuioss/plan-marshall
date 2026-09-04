@@ -86,7 +86,7 @@ def _load_generate_module():
 
     module = types.ModuleType('generate_executor')
     module.__dict__['__file__'] = str(_GENERATE_SCRIPT)
-    exec(_GENERATE_SCRIPT.read_text(encoding='utf-8'), module.__dict__)  # noqa: S102 — repo-owned source
+    exec(_GENERATE_SCRIPT.read_text(encoding='utf-8'), module.__dict__)  # exec of repo-owned source: loading the generator this way is the point of the fixture
     return module
 
 
@@ -99,7 +99,7 @@ def _load_claude_resolver():
     module = _load_generate_module()
     src = module.generate_target_aware_resolver_code('claude')
     namespace: dict = {'Path': Path}
-    exec(src, namespace)  # noqa: S102 — generator-owned template source
+    exec(src, namespace)  # exec of generator-owned template source: that source is precisely what is under test
     return namespace['_resolve_notation_by_target']
 
 

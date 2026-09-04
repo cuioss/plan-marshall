@@ -20,7 +20,7 @@ Two invariants live here:
 The pairing invariant (every state-setting path has a matching clear) lives in
 ``test/plan-marshall/manage-status/test_title_token_ownership.py``.
 """
-from __future__ import annotations  # noqa: I001
+from __future__ import annotations
 
 import json
 from pathlib import Path

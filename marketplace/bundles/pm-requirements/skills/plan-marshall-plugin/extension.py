@@ -21,6 +21,21 @@ class Extension(ExtensionBase):
         """Return triage skill reference."""
         return 'pm-requirements:ext-triage-reqs'
 
+    def provides_file_globs(self) -> list[str]:
+        """Declare no file globs — this domain owns no distinct file type.
+
+        The empty list is a deliberate declaration, not an omission. Requirements
+        are written as ordinary prose documents in whatever format the project
+        already uses, and this bundle claims no requirements-document tree of its
+        own: it registers no ``discover_modules`` and no Axis-D ``claim_paths``, so
+        there is no path shape it could name that would not also name another
+        domain's documents. A suffix claim over prose files would union this domain
+        into every documentation change, which is what the ``file_globs`` inclusion
+        leg exists to avoid. A project that does keep a distinct requirements tree
+        declares it with ``set-inclusion``, whose operator value wins over the seed.
+        """
+        return []
+
     def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
         return [

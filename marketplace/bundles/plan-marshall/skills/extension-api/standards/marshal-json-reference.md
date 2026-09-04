@@ -14,7 +14,7 @@ Central reference for all extension-related configuration paths in `marshal.json
 | `skill_domains.{key}.workflow_skill_extensions.triage` | `provides_triage()` | phase-5-execute, phase-6-finalize | [ext-point-triage.md](ext-point-triage.md) |
 | `skill_domains.{key}.workflow_skill_extensions.marker-detect` | `provides_domain_verb()` | Marker-gate callers (resolved null-on-absent) | [ext-point-domain-verb.md](ext-point-domain-verb.md) |
 | `skill_domains.{key}.always_on` | User (`skill-domains set-inclusion`) | phase-1-init domain-detect, phase-2-refine | Core |
-| `skill_domains.{key}.file_globs` | User (`skill-domains set-inclusion`) | phase-1-init domain-detect, phase-2-refine | Core |
+| `skill_domains.{key}.file_globs` | `provides_file_globs()` (seeded when the key is absent); User override via `skill-domains set-inclusion` wins | phase-1-init domain-detect, phase-2-refine | Core |
 | `build.map` | `classify_globs()` + `classify_build_class()` (seeded, write-once, required + always seeded) | architecture derive-verification; phase-6-finalize pre-push-quality-gate activation | Core |
 | `extension_defaults.*` | `config_defaults()` | Various (write-once semantics) | Core |
 

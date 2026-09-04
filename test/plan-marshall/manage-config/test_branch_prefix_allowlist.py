@@ -23,7 +23,7 @@ the workflow file (or the prefix set) to be updated. ``docs/`` is not a working
 prefix and is asserted absent.
 """
 
-# ruff: noqa: I001, E402
+# ruff: noqa: E402
 
 import importlib.util
 import json

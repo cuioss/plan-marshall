@@ -25,6 +25,8 @@ Configuration in `extension.py` implements the Extension API contract:
 | `get_skill_domains()` | Domain metadata with profiles |
 | `applies_to_module()` | Check Java applicability via build systems |
 | `provides_triage()` | Returns `pm-dev-java:ext-triage-java` |
+| `provides_arch_gate()` | Returns the `archunit` arch-gate tool binding (`pm-dev-java:arch-gate-java`) |
+| `provides_file_globs()` | Declares the Java source glob (`['**/*.java']`) seeded into `skill_domains.java.file_globs` for domain detection; contributes no `build.map` route |
 
 ## Build Operations
 

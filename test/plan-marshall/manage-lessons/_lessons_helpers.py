@@ -67,7 +67,7 @@ class _FakeDatetime:
     def __init__(self, fixed_now):
         self._fixed_now = fixed_now
 
-    def now(self, tz=None):  # noqa: D401 - mirrors datetime API
+    def now(self, tz=None):  # name and docstring mood mirror the datetime API this stand-in replaces
         if tz is None:
             # ``datetime.now()`` returns the LOCAL wall clock with no tzinfo —
             # project the instant into the local zone first, then strip.

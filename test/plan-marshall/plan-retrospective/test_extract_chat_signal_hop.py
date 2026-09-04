@@ -13,14 +13,9 @@ silently skip. Only ``subprocess.run`` is replaced here; the original
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
+from types import SimpleNamespace
 
-sys.path.insert(0, str(Path(__file__).parent))
-
-from types import SimpleNamespace  # noqa: E402
-
-from _extract_chat_signal_fixtures import SESSION_ID, _mod  # noqa: E402
+from _extract_chat_signal_fixtures import SESSION_ID, _mod
 
 # The TOON success document ``chat_extract_signal`` emits on stdout, exactly as
 # ``runtime_base.toon_success`` + ``serialize_toon`` render it (flat fields,

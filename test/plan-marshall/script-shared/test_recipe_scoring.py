@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Unit tests for ``recipe_scoring`` — the single shared recipe-match scorer.
 
 The module under test is imported directly (PYTHONPATH-resolved by the root

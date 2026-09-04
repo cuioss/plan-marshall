@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Population-derived contract over the finalize merge-and-review script invocations.
 
 Two invariants, each derived from the tree at run time rather than a curated list of

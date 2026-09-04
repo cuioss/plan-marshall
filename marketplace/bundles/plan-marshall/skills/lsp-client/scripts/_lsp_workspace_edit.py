@@ -251,7 +251,7 @@ def apply_workspace_edit(workspace_edit: dict[str, Any]) -> tuple[list[dict[str,
             new_text = apply_text_edits(original, changes[path])
             originals[path] = original
             file_path.write_text(new_text, encoding='utf-8')
-        except Exception as exc:  # noqa: BLE001 — re-raised as WorkspaceApplyError below
+        except Exception as exc:  # re-raised as WorkspaceApplyError below
             # ⛔ The failing path stays IN ``originals``. It is recorded before
             # the write, so a write that failed part-way — ENOSPC, EIO — has
             # already truncated or partly rewritten it, and it is the one file

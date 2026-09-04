@@ -8,7 +8,7 @@ from _manage_metrics_fixtures import (
     ns_end_phase,
     ns_start_phase,
 )
-from _manage_metrics_phase_boundary_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
+from _manage_metrics_phase_boundary_fixtures import (
     _UNSEEDED_PLAN_IDS,
     _field,
     _freeze_clock,

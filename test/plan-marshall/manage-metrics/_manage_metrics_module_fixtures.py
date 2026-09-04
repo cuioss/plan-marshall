@@ -25,7 +25,7 @@ from _manage_metrics_fixtures import (
     ns_start_phase,
 )
 
-from conftest import get_script_path  # noqa: I001
+from conftest import get_script_path
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
 
@@ -216,7 +216,7 @@ def _patch_runtime_op(monkeypatch, *, status: str, per_phase: dict | None, count
     """
     counters = counters or {}
 
-    def _fake_run(argv, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+    def _fake_run(argv, *args, **kwargs):  # deliberately unannotated: it accepts whatever subprocess.run is called with
         output_file = None
         for i, token in enumerate(argv):
             if token == '--output-file' and i + 1 < len(argv):
@@ -737,10 +737,12 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
     The patched guard resolves the plan dir via the real ``get_plan_dir`` and, for
     any plan_id NOT registered as unseeded, writes the ``status.json`` sentinel
     before delegating to the genuine ``require_plan_exists``. This keeps every
-    positive test's happy path intact without per-test seeding. A
-    module whose tests need the real ``plan_not_found`` failure registers the
-    plan id via ``_register_unseeded`` first; no test in this module does, so
-    the guard here always seeds and the registry stays empty.
+    positive test's happy path intact without per-test seeding. A test that
+    needs the real ``plan_not_found`` failure registers its plan id via
+    ``_register_unseeded`` first, and
+    ``test_manage_metrics_record_dispatch_boundary_context_load_columns.py``
+    does exactly that — so the registry is genuinely read here rather than
+    being constant-empty.
     """
     _UNSEEDED_PLAN_IDS.clear()
     real_require = manage_metrics.require_plan_exists

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """
 Tests for the shared `_plan_parsing` module.
 
@@ -8,11 +7,10 @@ Focuses on the `_slugify_section_name()` helper algorithm, the
 `parse_document_sections()` round-trip behavior, and the deliverable-block
 parsing pair (`split_deliverable_blocks()` / `extract_deliverables()`). The module lives at
 `marketplace/bundles/plan-marshall/skills/manage-solution-outline/scripts/_plan_parsing.py`
-and is imported directly after a local `sys.path.insert` (matching the
-established pattern in `test/plan-marshall/plan-marshall/test_phase_handshake.py`)
-so the underscore-prefixed module is reachable by name even though ruff would
-otherwise classify it as third-party (it lives outside the configured `src`
-roots).
+and is imported directly by name: the root conftest puts every marketplace
+`scripts/` directory on `sys.path` before any test module is imported, so no
+local bootstrap is needed. Ruff still classifies it as third-party, because it
+lives outside the configured `src` roots.
 
 Although `_slugify_section_name` carries a leading underscore (module-private
 by convention), it is the canonical slug helper intended for direct import by
@@ -21,18 +19,8 @@ under explicit test coverage rather than only exercising it through
 `parse_document_sections`.
 """
 
-import sys
-
 import pytest
-from conftest import get_script_path
-
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-solution-outline', '_plan_parsing.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-from _plan_parsing import (  # noqa: E402
+from _plan_parsing import (
     INTENT_UNANNOTATED,
     _extract_affected_files,
     _extract_profiles,
@@ -43,8 +31,7 @@ from _plan_parsing import (  # noqa: E402
     parse_document_sections,
     split_deliverable_blocks,
 )
-from constants import VALID_STEP_INTENTS  # noqa: E402
-
+from constants import VALID_STEP_INTENTS
 
 # =============================================================================
 # _slugify_section_name() — character class handling

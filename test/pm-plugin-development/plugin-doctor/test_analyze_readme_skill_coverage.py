@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the ``readme-skill-registration-drift`` rule analyzer.
 
 The analyzer flags every skill a bundle's ``.claude-plugin/plugin.json``

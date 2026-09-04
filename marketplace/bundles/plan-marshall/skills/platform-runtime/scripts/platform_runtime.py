@@ -150,14 +150,18 @@ _bootstrap_glob_discover()
 # Target registration block — the ONE place a runtime target is registered, and
 # the only part of this module a new target edits.
 #
-# Everything a target needs is here: its import, its ``Runtime`` subclass in
-# ``_REGISTRY``, and its extra bootstrap libraries in ``_TARGET_BOOTSTRAP_LIBS``.
-# The imports sit inside the block rather than with the module's other imports so
-# that a registration is one contiguous edit instead of one split across thirty
-# lines. Every import here is deferred until after ``_bootstrap_glob_discover()``
-# above has put the sibling script directories on ``sys.path`` — importing
-# ``runtime_base`` before it raises ``ModuleNotFoundError`` on ``toon_parser`` —
-# which is why they carry ``noqa: E402`` and cannot move to the top of the file.
+# Everything a target needs lives in ``_TARGET_RECORDS``: its import, its
+# ``Runtime`` subclass, its extra bootstrap libraries, and whether it is the
+# default target.  ``_REGISTRY``, ``_TARGET_BOOTSTRAP_LIBS``, and
+# ``_DEFAULT_TARGET`` are derived from it so a new target edits exactly one
+# record instead of three parallel dicts.
+#
+# The imports sit inside the block rather than with the module's other imports
+# so that a registration is one contiguous edit.  Every import here is deferred
+# until after ``_bootstrap_glob_discover()`` above has put the sibling script
+# directories on ``sys.path`` — importing ``runtime_base`` before it raises
+# ``ModuleNotFoundError`` on ``toon_parser`` — which is why they carry
+# ``noqa: E402`` and cannot move to the top of the file.
 #
 # ``runtime_base`` is grouped with them for proximity, not necessity: it is the
 # shared base contract rather than a target, and a new target never touches that
@@ -165,39 +169,51 @@ _bootstrap_glob_discover()
 # alone does not, and ruff's own fix for the resulting I001 is to insert one.
 # It is kept here so the deferred imports read as a single block.
 #
-# The two dicts are declared adjacently so they cannot drift unnoticed, and a
-# lockstep test asserts their key sets stay equal.
-#
 # ``_DEFAULT_TARGET`` is the single fallback identifier: every argparse default
 # and every "no target resolved" fallback in this module reads it rather than
 # repeating a literal. The companion default in
-# ``script-shared/scripts/marketplace_paths.py`` is held equal to this one by
-# the same lockstep test.
+# ``script-shared/scripts/marketplace_paths.py`` is derived lazily from this
+# value to keep the two in sync without a hard circular import.
 # ---------------------------------------------------------------------------
 
 from claude_runtime import ClaudeRuntime  # noqa: E402
 from opencode_runtime import OpenCodeRuntime  # noqa: E402
-from runtime_base import PERMISSION_FIX_OPERATIONS, Runtime, toon_error  # noqa: E402
+from runtime_base import (  # noqa: E402
+    PERMISSION_FIX_OPERATIONS,
+    Runtime,
+    describe_targets,
+    toon_error,
+)
 
-_DEFAULT_TARGET = "claude"
+# --- single registration record ------------------------------------------------
 
-_REGISTRY: dict[str, type[Runtime]] = {
-    "claude": ClaudeRuntime,
-    "opencode": OpenCodeRuntime,
+_TARGET_RECORDS: dict[str, dict[str, Any]] = {
+    "claude": {
+        "runtime_class": ClaudeRuntime,
+        "bootstrap_libs": (
+            "tools-file-ops",
+            "tools-permission-doctor",
+            "tools-permission-fix",
+            "workflow-permission-web",
+            "script-shared",
+        ),
+        "default": True,
+    },
+    "opencode": {
+        "runtime_class": OpenCodeRuntime,
+        "bootstrap_libs": (),
+        "default": False,
+    },
 }
 
-# Additional libraries required per target, discovered via glob within the
-# skills root.  Keys match the ``runtime.target`` values in marshal.json, and
-# must cover exactly the ``_REGISTRY`` key set.
+_DEFAULT_TARGET: str = next(
+    name for name, rec in _TARGET_RECORDS.items() if rec.get("default")
+)
+_REGISTRY: dict[str, type[Runtime]] = {
+    name: rec["runtime_class"] for name, rec in _TARGET_RECORDS.items()
+}
 _TARGET_BOOTSTRAP_LIBS: dict[str, tuple[str, ...]] = {
-    "claude": (
-        "tools-file-ops",
-        "tools-permission-doctor",
-        "tools-permission-fix",
-        "workflow-permission-web",
-        "script-shared",
-    ),
-    "opencode": (),
+    name: rec["bootstrap_libs"] for name, rec in _TARGET_RECORDS.items()
 }
 
 _PLAN_DIR_NAME = os.environ.get("PLAN_DIR_NAME", ".plan")
@@ -801,7 +817,7 @@ def main(argv: list[str] | None = None) -> int:
                 operation,
                 "unknown_target",
                 f"runtime.target {target!r} is not in the registry; "
-                f"valid targets are: {', '.join(sorted(_REGISTRY))}",
+                f"valid targets are: {describe_targets(_REGISTRY.keys())}",
             )
         )
         return 0

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: F811 — tests take the imported fixture as a parameter
+
 """Tests for manage-adr.py script."""
 
 
 from argparse import Namespace
 from pathlib import Path
 
-from _manage_adr_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
+from _manage_adr_fixtures import (
     METADATA_BLOCK_END,
     METADATA_BLOCK_START,
     SCRIPT_PATH,

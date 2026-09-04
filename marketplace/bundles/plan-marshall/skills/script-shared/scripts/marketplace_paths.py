@@ -111,12 +111,21 @@ PLUGIN_CACHE_SUBPATH = 'plugins/cache/plan-marshall'
 
 # Fallback ``runtime.target`` identifier used when no target can be read from
 # ``marshal.json`` (file absent, unreadable, or carrying no ``runtime.target``).
-# Every fallback return in ``_read_runtime_target()`` reads THIS constant rather
-# than repeating the literal, so the module has one place to change. It is held
-# equal to ``platform_runtime._DEFAULT_TARGET`` by a lockstep test — the two
-# modules resolve the same default independently, and a silent divergence would
-# route this module's layout lookups at a different target than the router's.
-_DEFAULT_RUNTIME_TARGET = 'claude'
+# Every fallback return in ``_read_runtime_target()`` reads THIS function rather
+# than repeating the literal, so the module has one place to change.  The value
+# is derived lazily from ``platform_runtime._DEFAULT_TARGET`` — the two modules
+# resolve the same default from a single source, so a silent divergence is
+# structurally impossible.
+_DEFAULT_RUNTIME_TARGET_SENTINEL = 'claude'
+
+
+def _default_runtime_target() -> str:
+    """Return ``platform_runtime._DEFAULT_TARGET``, falling back to ``'claude'``."""
+    try:
+        from platform_runtime import _DEFAULT_TARGET as _target
+        return _target
+    except (ImportError, ModuleNotFoundError):
+        return _DEFAULT_RUNTIME_TARGET_SENTINEL
 
 # Fallback project-local-skill root used when the platform-runtime layout op
 # cannot be reached (no marshal.json, no marketplace tree, import failure).
@@ -154,7 +163,7 @@ def _read_runtime_target() -> str:
     """Read ``runtime.target`` from the nearest ``.plan/marshal.json``.
 
     Walks up from the current working directory; returns
-    ``_DEFAULT_RUNTIME_TARGET`` when the file is absent or malformed (every
+    ``_default_runtime_target()`` when the file is absent or malformed (every
     runtime-less environment runs the default target).
     """
     cwd = Path.cwd().resolve()
@@ -164,15 +173,15 @@ def _read_runtime_target() -> str:
             try:
                 data = json.loads(candidate.read_text(encoding='utf-8'))
             except (OSError, ValueError):
-                return _DEFAULT_RUNTIME_TARGET
+                return _default_runtime_target()
             if isinstance(data, dict):
                 runtime = data.get('runtime')
                 if isinstance(runtime, dict):
                     target = runtime.get('target')
                     if isinstance(target, str) and target:
                         return target
-            return _DEFAULT_RUNTIME_TARGET
-    return _DEFAULT_RUNTIME_TARGET
+            return _default_runtime_target()
+    return _default_runtime_target()
 
 
 def _find_skills_root() -> Path | None:
@@ -224,7 +233,7 @@ def _invoke_layout_op(target: str, method_name: str = 'layout_skill_roots') -> t
         # reach it. The router reads ``_DEFAULT_TARGET`` in its OWN fallback
         # situations — an omitted ``--target``, and a marshal.json that is absent
         # or carries no ``runtime.target`` — none of which is this one.
-        runtime: Any = _make_runtime(target) or _make_runtime(_DEFAULT_RUNTIME_TARGET)
+        runtime: Any = _make_runtime(target) or _make_runtime(_default_runtime_target())
         parsed = parse_toon(getattr(runtime, method_name)())
     except Exception:
         return None

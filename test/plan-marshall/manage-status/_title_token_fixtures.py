@@ -37,7 +37,6 @@ are specified in
 import json
 import subprocess
 from argparse import Namespace
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from conftest import get_script_path, load_script_module
@@ -118,15 +117,6 @@ def _set(plan_id, state, owner='cli'):
 def _clear(plan_id, owner='cli'):
     """Invoke ``title-token clear`` for ``plan_id`` as ``owner``."""
     return cmd_title_token(Namespace(plan_id=plan_id, token_verb='clear', owner=owner))
-
-
-def _age_token(plan_context, plan_id, seconds):
-    """Backdate the stored token's ``set_at`` by ``seconds``, in place."""
-    status_file = plan_context.plan_dir_for(plan_id) / 'status.json'
-    status = json.loads(status_file.read_text(encoding='utf-8'))
-    aged = datetime.now(UTC) - timedelta(seconds=seconds)
-    status['title_token']['set_at'] = aged.strftime('%Y-%m-%dT%H:%M:%SZ')
-    status_file.write_text(json.dumps(status), encoding='utf-8')
 
 
 # =============================================================================

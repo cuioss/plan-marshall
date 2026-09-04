@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Behavioural coverage for the daemon's job-fate reporting.
 
 The operator log must answer "what happened to THIS job?". Before this feature a
@@ -40,19 +39,20 @@ import json
 import sys
 from pathlib import Path
 
+import _marshalld_audit as audit_mod
+
+# PLAIN import, deliberately: the build-server suites annotate against
+# ``marshalld.Daemon``, which only a plain import gives mypy. The name is bound the
+# same way in every suite, so no loaded copy is published beside it.
+import marshalld
 import pytest
-from conftest import get_script_path, parse_ns
+from _build_server_protocol import JobSpec, status_payload
+from _marshalld_journal import Journal
+from _marshalld_scheduler import Scheduler
 
-_DAEMON_DIR = get_script_path('plan-marshall', 'manage-build-server', 'marshalld.py').parent
-if str(_DAEMON_DIR) not in sys.path:
-    sys.path.insert(0, str(_DAEMON_DIR))
+from conftest import load_script_module, parse_ns
 
-import _marshalld_audit as audit_mod  # noqa: E402
-import manage_build_server as mbs  # noqa: E402
-import marshalld  # noqa: E402
-from _build_server_protocol import JobSpec, status_payload  # noqa: E402
-from _marshalld_journal import Journal  # noqa: E402
-from _marshalld_scheduler import Scheduler  # noqa: E402
+mbs = load_script_module('plan-marshall', 'manage-build-server', 'manage_build_server.py')
 
 #: The ``logs`` namespace ``manage_build_server.py``'s OWN parser yields, hoisted
 #: to module scope because ``parse_ns`` re-executes the script module on every

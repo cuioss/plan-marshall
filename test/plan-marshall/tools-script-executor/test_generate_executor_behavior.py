@@ -60,10 +60,10 @@ def _load_template_module() -> types.ModuleType:
     Fills the ``{{...}}`` substitution tokens with inert stand-ins (empty
     mappings, no target-aware resolver body) and points ``{{LOGGING_DIR}}`` at
     the real manage-logging scripts so the module-level ``from plan_logging
-    import ...`` succeeds. The shared script dirs are placed on ``sys.path`` so
-    the template's ``_ledger_core`` / ``worktree_sha`` / ``toon_parser`` imports
-    resolve. ``main()`` is guarded by ``__name__ == '__main__'`` so exec does not
-    dispatch anything.
+    import ...`` succeeds. The template's ``_ledger_core`` / ``worktree_sha`` /
+    ``toon_parser`` imports resolve without a bootstrap, because the root conftest
+    already put the shared script dirs on ``sys.path``. ``main()`` is guarded by
+    ``__name__ == '__main__'`` so exec does not dispatch anything.
     """
     source = _TEMPLATE_PATH.read_text(encoding='utf-8')
     logging_dir = str(
@@ -84,9 +84,9 @@ def _load_template_module() -> types.ModuleType:
         'def _resolve_notation_by_target(notation):\n    return None\n',
     )
 
-    for extra in _MARKETPLACE_SCRIPT_DIRS:
-        if extra not in sys.path:
-            sys.path.insert(0, extra)
+    # No bootstrap: the root conftest already put every entry of
+    # ``_MARKETPLACE_SCRIPT_DIRS`` on ``sys.path`` at its own import time, so the
+    # exec'd template's transitive imports resolve.
 
     module = types.ModuleType('executor_template_ledger_boundary')
     module.__dict__['__file__'] = str(_TEMPLATE_PATH)

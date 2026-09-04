@@ -58,14 +58,14 @@ for _dep in (_SHARED_SCRIPTS, _CLIENT_SCRIPTS, _DAEMON_SCRIPTS, _LOGGING_SCRIPTS
     if str(_dep) not in sys.path:
         sys.path.insert(0, str(_dep))
 
-import _build_cli as build_cli  # noqa: E402
-import _build_execute_factory as factory  # noqa: E402
-import build_server as bsclient  # noqa: E402
-import marshalld  # noqa: E402
-from _build_execute import CaptureStrategy  # noqa: E402
-from _build_server_protocol import MARSHALLD_JOB_ENV, JobSpec, make_job_spec  # noqa: E402
-from _marshalld_journal import Journal  # noqa: E402
-from _marshalld_scheduler import Scheduler  # noqa: E402
+import _build_cli as build_cli
+import _build_execute_factory as factory
+import build_server as bsclient
+import marshalld
+from _build_execute import CaptureStrategy
+from _build_server_protocol import MARSHALLD_JOB_ENV, JobSpec, make_job_spec
+from _marshalld_journal import Journal
+from _marshalld_scheduler import Scheduler
 
 #: The bound every layer below carries. Deliberately ABOVE the daemon default, so
 #: a dropped forward is unmistakable: with the value discarded the supervisor

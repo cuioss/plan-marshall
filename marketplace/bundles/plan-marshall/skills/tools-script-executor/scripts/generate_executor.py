@@ -146,14 +146,14 @@ from marketplace_bundles import (  # noqa: E402, I001
     collect_script_dirs,
     resolve_bundle_path,
 )
-from marketplace_paths import get_base_path as _shared_get_base_path  # noqa: E402, I001
-from file_ops import get_base_dir as _get_plan_base_dir  # noqa: E402, I001
-from file_ops import get_tracked_config_dir as _get_tracked_config_dir  # noqa: E402, I001
+from marketplace_paths import get_base_path as _shared_get_base_path  # noqa: E402
+from file_ops import get_base_dir as _get_plan_base_dir  # noqa: E402
+from file_ops import get_tracked_config_dir as _get_tracked_config_dir  # noqa: E402
 
 # The SINGLE argparse accept-set derivation, shared with plugin-doctor's
 # edit-time rules. The generator embeds what it derives; the doctor reads the
 # same module at edit time. One derivation, two consumers, nothing to drift.
-import argparse_surface as surface_api  # noqa: E402, I001
+import argparse_surface as surface_api  # noqa: E402
 
 
 # Runtime-resolved locations. The executor lives at <root>/.plan/execute-script.py

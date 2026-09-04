@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Runtime tracked-source guard for the finalize ``post_run_review`` band.
 
 A ``post_run_review`` step runs AFTER the merge gate, so a tracked-source write

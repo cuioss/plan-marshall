@@ -144,7 +144,7 @@ class TestOrchestratorConcurrentWrites:
                             plan_id='race-epic', set=True, get=False, field=field, value=f'{field}-{i}'
                         )
                     )
-            except Exception as exc:  # noqa: BLE001 - surfaced into the assertion below
+            except Exception as exc:  # broad on purpose: the exception is collected and surfaced by the assertion below
                 errors.append(exc)
 
         thread_a = threading.Thread(target=_setter, args=('alpha',))

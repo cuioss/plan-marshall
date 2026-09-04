@@ -192,8 +192,8 @@ _MARKETPLACE_SCRIPT_DIRS = _setup_marketplace_pythonpath()
 # ``sys.modules``, and every later importer gets that object. Binding them from
 # the root conftest makes the real modules the ones every test sees, rather than
 # leaving the binding to whichever test module happened to be collected first.
-import plan_logging as _plan_logging  # noqa: F401, E402
-import run_config as _run_config  # noqa: F401, E402
+import plan_logging as _plan_logging  # noqa: E402
+import run_config as _run_config  # noqa: E402
 
 # Add test subdirectories with shared helpers to sys.path so tests can
 # import them without manual sys.path manipulation
@@ -1016,6 +1016,7 @@ _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
         'pinned-build-tool',
         'plan-marshall/phase-6-finalize/test_no_pinned_build_tool_in_shipped_docs.py',
     ),
+    ('parser-seam', 'test_parser_seam_coverage.py'),
 )
 
 
@@ -1146,7 +1147,7 @@ def pytest_report_header(config):
             module = _load_never_registering(TEST_ROOT / relative)
             label = module.GUARD_POPULATION_LABEL
             size = module.GUARD_POPULATION_SIZE
-        except BaseException as exc:  # noqa: BLE001 — reported, never swallowed
+        except BaseException as exc:  # broad on purpose: the failure is reported in the entry below, never swallowed
             entries.append(f'{short_name}: UNAVAILABLE ({type(exc).__name__}: {exc})')
             continue
         entries.append(f'{label}: {size}')
@@ -1535,6 +1536,66 @@ def _credentials_dir_sandbox(request, tmp_path_factory, monkeypatch):
     yield
 
 
+@pytest.fixture(autouse=True)
+def _restore_sys_path():
+    """Undo any ``sys.path`` mutation a test performs, before the next one runs.
+
+    ``sys.path`` is process-global and append-only in practice, so an entry a test
+    adds is inherited by every later test on the same xdist worker. That turns a
+    path-ABSENCE assertion into a positional one — it passes when its test runs
+    before the adder and fails when it runs after — and the two orders differ
+    between a default run, a reverse run, and any two xdist distributions. The
+    class of defect is the same whichever entry leaked, so this is neutralized at
+    the fixture level rather than by teaching each affected test to tolerate the
+    pollution: inherited by construction, and a test written later gets it without
+    its author having to know.
+
+    Restoring the LIST does not unimport anything — ``sys.modules`` keeps every
+    module already imported through a since-removed entry, so a test that put a
+    directory on the path to reach a module still holds that module afterwards.
+    What it removes is the ability of one test to change what a LATER import
+    resolves to.
+
+    Module-level ``add_skill_scripts_to_path`` calls are unaffected: those run at
+    collection time, before any test's snapshot is taken, so their entries are part
+    of the baseline this fixture restores TO rather than something it strips.
+
+    A higher-scoped fixture that mutates the path is likewise safe — pytest
+    instantiates broader scopes first, so its entry is already present when the
+    snapshot is taken.
+    """
+    original = list(sys.path)
+    yield
+    sys.path[:] = original
+
+
+@pytest.fixture(autouse=True)
+def _reset_ci_default_cwd():
+    """Clear ``ci_base``'s process-global default cwd on both sides of every test.
+
+    ``ci_base._DEFAULT_CWD`` is module state written by ``set_default_cwd()`` and
+    read by every ``run_cli`` subprocess call that does not pass an explicit
+    ``cwd=``. A test that drives a provider ``main()`` with ``--project-dir`` or
+    ``--plan-id`` therefore installs a working directory that outlives it, and the
+    next test's provider call silently runs somewhere else. Nothing fails at the
+    point of the leak; it surfaces as an unrelated test failing by position.
+
+    Cleared on BOTH sides deliberately. Clearing only on entry would leave the last
+    test's value installed for whatever runs outside the fixture's window, and a
+    ``monkeypatch``-style restore would put back a value that was itself leaked
+    from an earlier test rather than a clean one.
+
+    The public setter is used rather than a direct attribute write so the value
+    lands in the module that owns it. Imported lazily inside the body, matching the
+    ``_config_core`` / ``_providers_core`` convention of the sandboxes above.
+    """
+    import ci_base
+
+    ci_base.set_default_cwd(None)
+    yield
+    ci_base.set_default_cwd(None)
+
+
 #: Location carve-out for ``_neutralize_daemon_routing``. Every test module under
 #: this directory owns the build-server routing seam as its SYSTEM UNDER TEST, so
 #: neutralizing the seam there would delete the coverage rather than isolate it.
@@ -1665,7 +1726,7 @@ def _neutralize_daemon_routing(request, monkeypatch):
         return
 
     # Ensure the canonical copy is loaded before the scan below.
-    import _build_execute_factory  # noqa: F401
+    import _build_execute_factory
 
     for namespace in _routing_namespaces(getattr(request, 'module', None)):
         monkeypatch.setitem(namespace, _ROUTING_SEAM_NAME, _no_daemon_routing)
@@ -1925,7 +1986,7 @@ def _materialize_declared_plan_dirs(request):
     if 'plan_context' in request.fixturenames:
         request.getfixturevalue('plan_context')
 
-    from file_ops import get_base_dir  # noqa: PLC0415 — lazy: avoids a bootstrap import cycle
+    from file_ops import get_base_dir  # local import: avoids a bootstrap import cycle
 
     plans_root = get_base_dir() / 'plans'
     for plan_id in plan_ids:

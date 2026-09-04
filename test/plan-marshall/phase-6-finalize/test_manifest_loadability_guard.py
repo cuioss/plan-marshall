@@ -27,7 +27,6 @@ simulator below mirrors what the dispatcher would compute from the
 ``validate-loadable --all`` payload.
 """
 
-# ruff: noqa: I001, E402
 
 import importlib.util
 from argparse import Namespace

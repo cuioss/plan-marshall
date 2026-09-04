@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 
 # conftest.py puts script-shared/scripts on PYTHONPATH
-from marketplace_bundles import collect_script_dirs  # noqa: E402
+from marketplace_bundles import collect_script_dirs
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 BUNDLES_DIR = PROJECT_ROOT / 'marketplace' / 'bundles'

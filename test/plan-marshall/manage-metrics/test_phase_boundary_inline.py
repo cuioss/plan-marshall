@@ -37,7 +37,7 @@ from _manage_metrics_fixtures import (
     ns_phase_boundary,
     ns_start_phase,
 )
-from _phase_boundary_inline_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
+from _phase_boundary_inline_fixtures import (
     _INIT_CACHE_READ,
     _INIT_INLINE_TOTAL,
     _drive_full_six_phase_plan,

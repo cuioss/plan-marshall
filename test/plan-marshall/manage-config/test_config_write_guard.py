@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the ``_config_core`` write path.
 
 Pins the truthful-signals fixes on the config write path:
@@ -16,29 +15,14 @@ Pins the truthful-signals fixes on the config write path:
 """
 
 import json
-import sys
 from argparse import Namespace
-from pathlib import Path
 
+import _config_core
 import pytest
+from claude_runtime import ClaudeRuntime
+from toon_parser import parse_toon
 
 from conftest import load_script_module
-
-_SCRIPTS_DIR = (
-    Path(__file__).resolve().parents[3]
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
-)
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
-
-import _config_core  # noqa: E402
-from claude_runtime import ClaudeRuntime  # noqa: E402
-from toon_parser import parse_toon  # noqa: E402
 
 # Loaded under a test-local name rather than imported plainly: several sibling
 # modules load this same script, and a plain `import _cmd_init` would contend

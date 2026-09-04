@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for untrusted-ingestion/validate_struct.py — the deterministic
 containment boundary for untrusted-ingestion candidate structs.
 
@@ -14,7 +14,7 @@ import json
 
 from conftest import get_script_path, run_script
 
-from toon_parser import parse_toon  # noqa: E402
+from toon_parser import parse_toon
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'untrusted-ingestion', 'validate_struct.py')
 

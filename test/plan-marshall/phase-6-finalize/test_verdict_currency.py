@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Unit tests for the verdict-currency classifier.
 
 The dispatcher's re-entry check used to re-fire a head-dependent finalize step on
@@ -63,7 +63,7 @@ import extension_discovery
 from _step_key_canonical import canonicalize_step_key
 from extension_discovery import find_implementors
 
-from conftest import get_scripts_dir, load_script_module  # noqa: E402
+from conftest import get_scripts_dir, load_script_module
 _SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'phase-6-finalize')
 
 

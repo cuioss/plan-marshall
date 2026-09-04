@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: F811 — tests take the imported fixture as a parameter
+
 """Unit tests for the unified ``manage-change-ledger`` CLI — the first-class
 ``worktree-sha`` + ``append`` + ``query`` API over the one append-only
 change-ledger.
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from _manage_change_ledger_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
+from _manage_change_ledger_fixtures import (
     _SCRIPT,
     _init_repo,
     _read_ledger,

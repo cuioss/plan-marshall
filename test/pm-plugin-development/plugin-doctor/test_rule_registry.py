@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Regression tests for the declarative rule registry (``_rule_registry.py``).
 
 Each rule-bearing ``_analyze_*.py`` module exposes a module-level
@@ -28,29 +27,17 @@ The HARD acceptance contract these tests pin:
 from __future__ import annotations
 
 import dataclasses
-import sys
 
 import pytest
 
-from conftest import PROJECT_ROOT, get_scripts_dir, load_script_module
+from conftest import load_script_module
 
-# Inserted on sys.path so the analyzer modules' intra-bundle
-# ``from _rule_registry import RuleDescriptor`` and sibling ``from _analyze_*
-# import ...`` references resolve when the registry imports them.
-SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'plugin-doctor')
-# file_ops lives in plan-marshall; needed so loading doctor-marketplace.py
-# (``from file_ops import ...``) succeeds.
-_FILE_OPS_DIR = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'tools-file-ops'
-    / 'scripts'
-)
-sys.path.insert(0, str(SCRIPTS_DIR))
-sys.path.insert(0, str(_FILE_OPS_DIR))
+# No bootstrap: the analyzer modules' intra-bundle ``from _rule_registry import
+# RuleDescriptor`` and sibling ``from _analyze_* import ...`` references — and
+# ``file_ops``, which lives in plan-marshall and is what makes loading
+# ``doctor-marketplace.py`` succeed — resolve because the root conftest puts
+# every marketplace ``scripts/`` directory on ``sys.path`` before any test module
+# is imported.
 
 
 # The canonical opt-in rule token set; the regression target the registry

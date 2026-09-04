@@ -8,7 +8,7 @@ both permission_doctor and permission_fix scripts.
 
 import json
 
-from permission_common import (  # noqa: I001
+from permission_common import (
     EXIT_SUCCESS,
     get_project_settings_path,
     get_project_settings_path_for_write,

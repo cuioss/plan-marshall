@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the ``no-lesson-id-in-skill-prose`` rule analyzer.
 
 The analyzer detects narrative lesson-ID citations across three file classes:

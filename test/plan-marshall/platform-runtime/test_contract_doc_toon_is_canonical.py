@@ -32,7 +32,7 @@ content claim costs. What it does buy is that the class of
 transcription-invented SYNTAX can no longer land.
 """
 
-import pathlib  # noqa: I001
+import pathlib
 
 import pytest
 

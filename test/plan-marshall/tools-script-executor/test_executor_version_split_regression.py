@@ -267,7 +267,7 @@ def _resolver_from_generated_executor(tmp_path: Path):
     body = rest[: match.start() + 1] if match else rest
 
     namespace: dict = {'Path': Path}
-    exec(body, namespace)  # noqa: S102 — generator-owned source under test
+    exec(body, namespace)  # exec of generator-owned source: that source is precisely what is under test
     return namespace['_resolve_notation_by_target']
 
 

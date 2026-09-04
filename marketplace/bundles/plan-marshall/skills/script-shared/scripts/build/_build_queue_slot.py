@@ -188,7 +188,7 @@ def _acquire(plan_id: str) -> dict[str, Any]:
     try:
         bq = _load_build_queue()
         result = bq.run_acquire(Namespace(plan_id=plan_id))
-    except Exception as exc:  # noqa: BLE001 — surface as a structured error dict
+    except Exception as exc:  # surface as a structured error dict
         return {'status': 'error', 'error': f'acquire failed: {exc}'}
     return result if isinstance(result, dict) else {'status': 'error', 'error': 'non-dict acquire result'}
 
@@ -214,7 +214,7 @@ def _release_raw(plan_id: str, admission_id: str) -> dict[str, Any]:
     try:
         bq = _load_build_queue()
         result = bq.run_release(Namespace(plan_id=plan_id, id=admission_id))
-    except Exception as exc:  # noqa: BLE001 — surface as a structured error dict
+    except Exception as exc:  # surface as a structured error dict
         return {'status': 'error', 'error': f'release failed: {exc}'}
     return result if isinstance(result, dict) else {'status': 'error', 'error': 'non-dict release result'}
 

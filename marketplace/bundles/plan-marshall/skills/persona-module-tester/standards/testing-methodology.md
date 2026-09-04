@@ -89,6 +89,17 @@ repository; it is not installed into a consumer project, and a consumer is not e
 equivalent. Everywhere else the budget is a review standard that no tool reports — which is exactly why
 it is stated here as a number with a derivation behind it, so a reviewer can apply it without a gate.
 
+**One exemption: a module whose whole content is a single class.** Such a module is exempt when that
+class's own span is within **520 lines**. The ceiling is measured **on the class, not on the module** —
+a module exceeds its own class only by header, imports and a banner, none of which a split could
+redistribute, so the module's line count is the wrong quantity to judge this shape by. The boundary is
+inclusive, mirroring the budget's own.
+
+The exemption is narrow on purpose, and the narrowness is what makes it safe: a module of **two**
+under-ceiling classes stays flagged, because it has a second nameable subject and the split below
+applies to it unchanged. Only the one-subject case — where there is nothing to cut along — is exempt.
+A single class over 520 lines is flagged like any other over-budget module.
+
 ### Splitting by behaviour cluster
 
 Split on what the tests *assert*, so each resulting module has a nameable subject:

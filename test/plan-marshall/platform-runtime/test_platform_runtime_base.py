@@ -365,3 +365,127 @@ def test_concrete_returns_valid_toon_for_each_method():
         assert result.get("status") == "success", (
             f"Expected status=success, got {result.get('status')!r} in: {output!r}"
         )
+
+
+# =============================================================================
+# Test: every TOON-returning operation documents a decline path (D1)
+# =============================================================================
+
+
+def test_every_toon_operation_documents_a_decline_path():
+    """Every TOON-returning RFC operation tells a target how to decline it.
+
+    The operation population is DERIVED from the ABC itself, never restated
+    from a list, so a target added later is covered without anyone remembering.
+    A method is a runtime operation when its contract returns ``Serialized
+    TOON`` — the one documented exception, ``session_render_title``, returns
+    the empty string from a rendering target but an ordinary no-op TOON from a
+    declining one, so its docstring names the no-op even though it does not
+    print ``Serialized TOON``. The non-TOON helpers (settings/marshal I/O that
+    return raw paths/dicts/bools and surface decline via exceptions or
+    ``{"error": ...}``) are the residual.
+
+    The non-vacuity guards below prove the population did not collapse: the
+    ABC still exposes the full method set, the operation subset is exactly the
+    dispatchable 25, and the helper subset is exactly the 7 that never return
+    TOON outcomes.
+    """
+    abstract = set(getattr(Runtime, "__abstractmethods__", frozenset()))
+    assert len(abstract) == 32, f"Runtime method population collapsed: {len(abstract)}"
+
+    def _doc(name: str) -> str:
+        return getattr(Runtime, name).__doc__ or ""
+
+    toon_operations: list[str] = []
+    helpers: list[str] = []
+    for name in sorted(abstract):
+        doc = _doc(name)
+        is_operation = (
+            "Serialized TOON" in doc
+            or "no-op TOON instead" in doc
+            or "ordinary no-op TOON" in doc
+        )
+        (toon_operations if is_operation else helpers).append(name)
+
+    # Non-vacuity: 25 dispatchable operations and 7 non-TOON helper methods.
+    assert len(toon_operations) == 25, (
+        f"Expected 25 TOON-returning operations, found {len(toon_operations)}: "
+        f"{toon_operations}"
+    )
+    assert len(helpers) == 7, f"Expected 7 non-TOON helpers, found {len(helpers)}: {helpers}"
+
+    # Every TOON operation documents a decline path — a `no-op` — so a reader
+    # can answer "what does a target that cannot do this return?" for each one.
+    for name in toon_operations:
+        doc = _doc(name)
+        assert "no-op" in doc, f"{name}: contract documents no no-op decline path"
+
+    # The four operations that previously documented no decline vocabulary at
+    # all carry the FULL shape — a `no-op` with a `reason` and an `alternative`
+    # — not merely the presence of the word `no-op`.
+    for name in (
+        "project_initial_setup",
+        "health_check",
+        "layout_skill_roots",
+        "layout_bundle_cache_root",
+    ):
+        doc = _doc(name)
+        assert "no-op" in doc, f"{name}: documents no no-op decline path"
+        assert "reason" in doc, f"{name}: decline path must carry a `reason`"
+        assert "alternative" in doc, f"{name}: decline path must carry an `alternative`"
+
+
+# =============================================================================
+# D5 — SKILL.md operations table must not contain per-target restatements
+# =============================================================================
+
+
+def _skill_md_path():
+    return (
+        __import__("pathlib").Path(__file__).resolve().parents[3]
+        / "marketplace"
+        / "bundles"
+        / "plan-marshall"
+        / "skills"
+        / "platform-runtime"
+        / "SKILL.md"
+    )
+
+
+def test_skill_md_operations_table_has_no_per_target_restatements():
+    """The SKILL.md operations table must not name a target in its Purpose column.
+
+    Per-target decline paths are documented in the Runtime ABC docstrings and in
+    contract.md; restating them in the SKILL.md table creates a third encoding
+    that drifts silently.
+    """
+    skill_md = _skill_md_path()
+    if not skill_md.is_file():
+        pytest.skip("SKILL.md not found (non-checkout environment)")
+
+    text = skill_md.read_text(encoding="utf-8")
+    lines = text.splitlines()
+
+    # Find the operations table — lines starting with "| `"
+    in_table = False
+    target_patterns = ("no-op on ", "no-op on\n", "declines on ", "not supported on ")
+    violations = []
+
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("| Operation"):
+            in_table = True
+            continue
+        if in_table and not stripped.startswith("| `") and not stripped.startswith("|---"):
+            break  # end of table
+        if in_table and stripped.startswith("| `"):
+            for pat in target_patterns:
+                if pat in stripped.lower():
+                    violations.append((i, pat.strip(), stripped))
+
+    assert not violations, (
+        "SKILL.md operations table contains per-target restatements "
+        "(decline paths belong in contract.md and ABC docstrings): "
+        + "; ".join(f"L{line}: {pat!r} in {text!r}" for line, pat, text in violations)
+    )
+

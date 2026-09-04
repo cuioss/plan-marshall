@@ -8,10 +8,10 @@ from argparse import Namespace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from _manage_status_fixtures import _age_token
 from _title_token_fixtures import (
     _PHASES,
     TITLE_TOKEN_STALE_AFTER_SECONDS,
-    _age_token,
     _clear,
     _lifecycle,
     _read_archived_status,

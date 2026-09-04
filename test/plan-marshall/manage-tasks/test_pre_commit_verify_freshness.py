@@ -10,7 +10,7 @@ from pathlib import Path
 
 import file_ops
 import pytest
-from _pre_commit_verify_freshness_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
+from _pre_commit_verify_freshness_fixtures import (
     _CURRENT_SHA,
     _OTHER_SHA,
     _REAL_BUILD_NECESSITY_VERDICT,
@@ -18,7 +18,7 @@ from _pre_commit_verify_freshness_fixtures import (  # noqa: F401 — a fixture 
     _build_entry,
     _build_is_necessary,
     _capture_worktree_root,
-    _expected_notations_resolve,  # noqa: F401 — a fixture is used by NAME, not by reference
+    _expected_notations_resolve,
     _freshness_mod,
     _stub_expected_notations,
     _stub_ledger_path,

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """CLI-level regression tests for ``architecture.py init`` flag wiring.
 
 Drives the ``init`` subcommand through the real argparse / ``cmd_init``
@@ -19,16 +18,11 @@ tests in ``test_cmd_manage.py`` with coverage at the command boundary.
 """
 
 import json
-import sys
 import tempfile
-from pathlib import Path
+
+from _arch_fixtures import create_test_project
 
 from conftest import get_script_path, load_script_module, run_script
-
-sys.path.insert(0, str(Path(__file__).parent))
-
-from _arch_fixtures import create_test_project  # noqa: E402
-
 
 _architecture_core = load_script_module(
     'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'

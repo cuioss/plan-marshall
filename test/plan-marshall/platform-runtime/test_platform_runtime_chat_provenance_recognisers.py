@@ -12,7 +12,7 @@ The predicate's own behaviour is covered in ``test_platform_runtime_chat_provena
 
 from __future__ import annotations
 
-import _chat_provenance as _mod  # noqa: I001
+import _chat_provenance as _mod
 
 
 class TestPublishedConstants:

@@ -24,21 +24,9 @@ rather than literal ``order`` integers, so a renumber that preserves the
 relations keeps these tests green while a renumber that breaks one fails.
 """
 
-# ruff: noqa: I001, E402
-
-import sys
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT, load_script_module
-
-_BUNDLES = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
-_CONFIG_SCRIPTS = _BUNDLES / 'manage-config' / 'scripts'
-_EXT_SCRIPTS = _BUNDLES / 'extension-api' / 'scripts'
-
-for _d in (_CONFIG_SCRIPTS, _EXT_SCRIPTS):
-    if str(_d) not in sys.path:
-        sys.path.insert(0, str(_d))
-
+from conftest import load_script_module
 
 _config_defaults = load_script_module(
     'plan-marshall', 'manage-config', '_config_defaults.py',

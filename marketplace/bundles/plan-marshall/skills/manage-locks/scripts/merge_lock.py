@@ -870,7 +870,7 @@ def _run_executor(notation: str, *cli_args: str) -> dict[str, Any]:
         }
     try:
         parsed = parse_toon(proc.stdout)
-    except Exception as exc:  # noqa: BLE001 — any parse failure degrades to error
+    except Exception as exc:  # any parse failure degrades to error
         return {'status': 'error', 'error': f'unparseable TOON from {notation}: {exc}'}
     return parsed if isinstance(parsed, dict) else {'status': 'error', 'error': 'non-dict TOON'}
 
@@ -899,7 +899,7 @@ def _set_title_token(plan_id: str, state: str) -> None:
             '--owner',
             _TITLE_TOKEN_OWNER,
         )
-    except Exception as exc:  # noqa: BLE001 — token writes are best-effort
+    except Exception as exc:  # token writes are best-effort
         logger.debug('title-token set(%s) for %s failed: %s', state, plan_id, exc)
 
 
@@ -921,7 +921,7 @@ def _clear_title_token(plan_id: str) -> None:
             '--owner',
             _TITLE_TOKEN_OWNER,
         )
-    except Exception as exc:  # noqa: BLE001 — token writes are best-effort
+    except Exception as exc:  # token writes are best-effort
         logger.debug('title-token clear for %s failed: %s', plan_id, exc)
 
 
@@ -965,7 +965,7 @@ def _push_title_token(plan_id: str, icon: str | None = None) -> None:
         args += ['--icon', icon]
     try:
         _run_executor(_PUSH_TOKEN_NOTATION, *args)
-    except Exception as exc:  # noqa: BLE001 — token push is best-effort
+    except Exception as exc:  # token push is best-effort
         logger.debug('push-title-token(%s) for %s failed: %s', icon, plan_id, exc)
 
 

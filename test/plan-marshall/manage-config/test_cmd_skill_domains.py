@@ -1851,5 +1851,151 @@ def test_convert_extension_omits_workflow_skill_extensions_when_domain_verb_is_e
 
 
 # =============================================================================
+# configure — file_globs seeding and operator-value precedence
+# =============================================================================
+#
+# Seeding fires whenever the `file_globs` key is ABSENT for a domain, so an
+# already-configured project is backfilled on its next `configure` run. The
+# precedence is settled by ORDERING, not by a conditional: the seed lands during
+# the domain rebuild, and the pre-existing inclusion restore then re-applies any
+# snapshotted operator value on top of it.
+
+
+class _FakeGlobExtension:
+    """Fake domain extension declaring one domain key plus a file_globs accessor."""
+
+    def __init__(self, domain_key: str, file_globs: list[str]):
+        self._domain_key = domain_key
+        self._file_globs = file_globs
+
+    def get_skill_domains(self):
+        return [
+            {
+                'domain': {'key': self._domain_key, 'name': self._domain_key, 'description': ''},
+                'profiles': {},
+            }
+        ]
+
+    def provides_file_globs(self):
+        return self._file_globs
+
+
+def _patch_glob_extension(monkeypatch, bundle: str, domain_key: str, file_globs: list[str]) -> None:
+    """Replace extension discovery with a single fake extension declaring ``file_globs``.
+
+    ``configure`` reaches the accessor through ``load_domain_config_from_bundle``,
+    which iterates ``discover_all_extensions()``; patching that one query makes the
+    seeded value deterministic and independent of which real bundles declare globs.
+    """
+    monkeypatch.setattr(
+        _cmd_skill_domains,
+        'discover_all_extensions',
+        lambda: [{'bundle': bundle, 'module': _FakeGlobExtension(domain_key, file_globs)}],
+    )
+
+
+def test_configure_seeds_file_globs_from_accessor(plan_context, monkeypatch):
+    """A fresh configure seeds file_globs for a domain whose accessor declares globs."""
+    config = _inclusion_marshal_config({'system': {'defaults': []}})
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
+    _patch_glob_extension(monkeypatch, 'demo-bundle', 'demo', ['**/*.demo'])
+
+    result = cmd_skill_domains(Namespace(verb='configure', domains='demo'))
+
+    assert result['status'] == 'success'
+    updated = json.loads(marshal_path.read_text())
+    assert updated['skill_domains']['demo']['file_globs'] == ['**/*.demo']
+
+
+def test_configure_seeds_no_file_globs_key_when_accessor_returns_empty(plan_context, monkeypatch):
+    """A domain whose accessor returns [] gets no file_globs key at all."""
+    config = _inclusion_marshal_config({'system': {'defaults': []}})
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
+    _patch_glob_extension(monkeypatch, 'demo-bundle', 'demo', [])
+
+    result = cmd_skill_domains(Namespace(verb='configure', domains='demo'))
+
+    assert result['status'] == 'success'
+    updated = json.loads(marshal_path.read_text())
+    assert 'file_globs' not in updated['skill_domains']['demo']
+
+
+def test_configure_backfills_absent_file_globs_on_later_run(plan_context, monkeypatch):
+    """A pre-existing domain whose file_globs key is absent is backfilled by a later configure.
+
+    No remove/re-add cycle is needed: the key's ABSENCE is the trigger, so the
+    domain picks up the seed on its next configure while its other operator-set
+    inclusion key survives untouched.
+    """
+    config = _inclusion_marshal_config(
+        {
+            'system': {'defaults': []},
+            'demo': {'bundle': 'demo-bundle', 'always_on': True},
+        }
+    )
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
+    _patch_glob_extension(monkeypatch, 'demo-bundle', 'demo', ['**/*.demo'])
+
+    result = cmd_skill_domains(Namespace(verb='configure', domains='demo'))
+
+    assert result['status'] == 'success'
+    updated = json.loads(marshal_path.read_text())
+    assert updated['skill_domains']['demo']['file_globs'] == ['**/*.demo']
+    assert updated['skill_domains']['demo']['always_on'] is True
+
+
+def test_configure_operator_file_globs_win_over_seed(plan_context, monkeypatch):
+    """A reconfigure preserves an operator-set file_globs value rather than re-seeding it.
+
+    The fixture mirrors this repository's own ``python`` domain shape — an explicit
+    ``always_on: false`` beside a hand-set ``file_globs`` — and both keys must come
+    back byte-identical even though the accessor declares a different list.
+    """
+    config = _inclusion_marshal_config(
+        {
+            'system': {'defaults': []},
+            'python': {'bundle': 'pm-dev-python', 'always_on': False, 'file_globs': ['**/*.py']},
+        }
+    )
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
+    _patch_glob_extension(monkeypatch, 'pm-dev-python', 'python', ['**/*.pyi', 'pyproject.toml'])
+
+    result = cmd_skill_domains(Namespace(verb='configure', domains='python'))
+
+    assert result['status'] == 'success'
+    updated = json.loads(marshal_path.read_text())
+    assert updated['skill_domains']['python']['file_globs'] == ['**/*.py']
+    assert updated['skill_domains']['python']['always_on'] is False
+
+
+def test_configure_operator_empty_file_globs_survives_and_is_not_reseeded(plan_context, monkeypatch):
+    """An operator's deliberate empty list survives a reconfigure and is NOT re-seeded.
+
+    This is the boundary the absent-vs-empty trigger turns on: the snapshot keys on
+    PRESENCE, so ``file_globs: []`` is captured and restored over the seed instead
+    of reading as an unset key.
+    """
+    config = _inclusion_marshal_config(
+        {
+            'system': {'defaults': []},
+            'demo': {'bundle': 'demo-bundle', 'file_globs': []},
+        }
+    )
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
+    _patch_glob_extension(monkeypatch, 'demo-bundle', 'demo', ['**/*.demo'])
+
+    result = cmd_skill_domains(Namespace(verb='configure', domains='demo'))
+
+    assert result['status'] == 'success'
+    updated = json.loads(marshal_path.read_text())
+    assert updated['skill_domains']['demo']['file_globs'] == []
+
+
+# =============================================================================
 # Main
 # =============================================================================

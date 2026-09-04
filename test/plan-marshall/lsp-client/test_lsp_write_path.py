@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """The write path is all-or-nothing — no partial edit is ever reported as one.
 
 Three ways the shipped code landed part of a change and called it a success:
@@ -21,23 +20,19 @@ defect in argument plumbing or in how ``files[]`` renders.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
-from conftest import get_script_path, run_script
+from _fake_lsp_server import write_fake_server
+from _lsp_jsonrpc import LspSession
+from _lsp_workspace_edit import path_to_uri
+from test_lsp_client import FakeTransport
+
+from conftest import get_script_path, load_script_module, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'lsp-client', 'lsp_client.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
 
-import lsp_client as client  # noqa: E402
-from _fake_lsp_server import write_fake_server  # noqa: E402
-from _lsp_jsonrpc import LspSession  # noqa: E402
-from _lsp_workspace_edit import path_to_uri  # noqa: E402
-
-from test_lsp_client import FakeTransport  # noqa: E402
+client = load_script_module('plan-marshall', 'lsp-client', 'lsp_client.py')
 
 # Literals, not imports from the module under test — see test_lsp_diagnostics_contract.
 REASON_UNSUPPORTED = 'unsupported_resource_operation'

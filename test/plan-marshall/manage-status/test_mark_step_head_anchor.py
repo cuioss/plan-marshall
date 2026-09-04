@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Fail-closed guard for the head-anchor obligation on a head-dependent ``done``.
 
 ``head_dependent: true`` declares that a step's verdict is computed against one

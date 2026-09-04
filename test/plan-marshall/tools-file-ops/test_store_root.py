@@ -89,8 +89,8 @@ def _git(*args: str, cwd: Path) -> None:
     # caller-supplied git subcommands, never externally-sourced input; 'git'
     # is resolved via PATH intentionally so the fixture works across CI
     # runners without hardcoding an absolute git path.
-    subprocess.run(  # noqa: S603
-        ['git', '-c', 'user.name=store-root-test', '-c', 'user.email=test@example.com', *args],  # noqa: S607
+    subprocess.run(  # argv-list call, never a shell string; see the note above for the PATH decision
+        ['git', '-c', 'user.name=store-root-test', '-c', 'user.email=test@example.com', *args],  # 'git' is resolved via PATH on purpose so the fixture works on any CI runner
         cwd=cwd,
         check=True,
         capture_output=True,

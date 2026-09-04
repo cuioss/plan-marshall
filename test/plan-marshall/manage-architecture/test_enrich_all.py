@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for ``enrich_all()`` and ``cmd_enrich_all()`` in ``_cmd_enrich.py``.
 
 Pins the per-module on-disk layout: enrich_all iterates ``_project.json``'s
@@ -9,19 +8,13 @@ Pins the per-module on-disk layout: enrich_all iterates ``_project.json``'s
 from this surface.
 """
 
-import sys
 import tempfile
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from _arch_fixtures import setup_test_project
 
 from conftest import PLAN_DIR_NAME, PROJECT_ROOT, load_script_module
-
-sys.path.insert(0, str(Path(__file__).parent))
-
-from _arch_fixtures import setup_test_project  # noqa: E402
-
 
 _architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
 _cmd_enrich = load_script_module('plan-marshall', 'manage-architecture', '_cmd_enrich.py', '_cmd_enrich')

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Regression coverage: a timeout is not a red test, and a kill is not a timeout.
 
 A build that does not finish produces three distinguishable conditions — an

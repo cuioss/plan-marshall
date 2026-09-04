@@ -343,9 +343,21 @@ Two additive, per-domain inclusion keys let a domain be pulled into a plan's `re
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
 | `always_on` | bool | `false` (absent) | When `true`, the domain is unconditionally unioned into every plan's `domains` set — no narrative or file signal required. |
-| `file_globs` | list[str] | absent | Path globs (`**/*.py`, `src/*.js`, …). A plan whose affected-files signal matches any glob unions this domain in. |
+| `file_globs` | list[str] | seeded from the owning domain extension's `provides_file_globs()`; absent when that accessor returns empty | Path globs (`**/*.py`, `src/*.js`, …). A plan whose affected-files signal matches any glob unions this domain in. |
 
-Both keys are **absent by default** — no seed into `DEFAULT_SYSTEM_DOMAIN` / `get_default_config()`, so `sync-defaults`' non-destructive deep-merge neither adds nor wipes them, and existing domain configs need no migration. They are validated by `validate_domain_inclusion` (`always_on` must be a bool; `file_globs` must be a list of str) and preserved across a `skill-domains configure` reconfigure (mirroring `project_skills` / `active_profiles`).
+The two defaults are **asymmetric**, and the asymmetry is the point. `always_on` is genuinely **absent by default** — nothing seeds it, because whether a domain should be unconditionally on is a project policy no extension can know. `file_globs` IS seeded, because which file types a domain owns is exactly what the owning bundle knows.
+
+Neither key is seeded into `DEFAULT_SYSTEM_DOMAIN` / `get_default_config()`, so `sync-defaults`' non-destructive deep-merge neither adds nor wipes them, and existing domain configs need no migration. Both are validated by `validate_domain_inclusion` (`always_on` must be a bool; `file_globs` must be a list of str) and preserved across a `skill-domains configure` reconfigure (mirroring `project_skills` / `active_profiles`).
+
+### Where the `file_globs` seed comes from
+
+`convert_extension_to_domain_config` — the single seam both `skill-domains configure` and `init` route through — reads the owning bundle's Axis-A `provides_file_globs()` accessor and writes its result to `skill_domains.{domain}.file_globs`. A non-empty list is validated before it is written; an accessor returning `[]` writes no key at all, so a domain that owns no distinct file type stays absent exactly as before.
+
+**The trigger is key-absence, evaluated on every `configure` — not first-configuration-only.** `configure` snapshots each domain's existing inclusion keys by PRESENCE, rebuilds the domain from its extension (which recomputes the seed), then restores the snapshot over the rebuild. A domain whose `file_globs` key was absent contributes nothing to the snapshot, so the freshly-computed seed survives — which is what backfills an already-configured project on its next `configure` run, with no remove-and-re-add cycle.
+
+**An operator value wins over the seed.** A value set through `set-inclusion` is present in the config, so it is snapshotted and restored over the rebuild on every subsequent `configure`. That includes a deliberate `file_globs: []`: presence, not truthiness, is what the snapshot keys on, so an operator who empties a domain's globs is not silently re-seeded.
+
+**These globs are domain-detection knowledge, not build knowledge.** They never enter `build.map`, contribute no `(pattern, role)` route, and trigger no build gate — the file-to-build contract belongs to `BuildExtensionBase` alone (ADR-004).
 
 The domain detector (`manage-config domain-detect`) composes the plan's domain set as the union `{detector/prompt selections} ∪ always_on_set ∪ glob_matched_set`: the narrative/override/multiSelect detector leg, the `always_on` leg, and the `file_globs` leg (evaluated against the request narrative's path tokens at init, and the real `affected_files` at refine).
 

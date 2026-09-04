@@ -21,9 +21,9 @@ from _compile_report_fixtures import (
     _write_fragments_with_dispatch_boundaries,
     _write_fragments_with_extra,
 )
-from _plan_retrospective_fixtures import setup_live_plan  # noqa: E402
+from _plan_retrospective_fixtures import setup_live_plan
 
-from conftest import run_script  # noqa: E402
+from conftest import run_script
 
 
 def _compile(plan_id, fragments):

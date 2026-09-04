@@ -2,11 +2,15 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the module-shape rules of doctor-test-conventions.
 
-Two warning-severity rules govern whether a module is the right shape to be
-collected at all: `test-module-line-budget` (a collected module over 400
-lines) and `test-helper-module-misnamed` (a module matching pytest's
-collection patterns that declares no test). Each has a positive fixture that
-fires it and a negative control that does not."""
+Two rules govern whether a module is the right shape: `test-module-line-budget`
+(any test-tree module over 400 lines, collected or helper, outside the
+single-class exemption) and `test-helper-module-misnamed` (a module matching
+pytest's collection patterns that declares no test). Each has a positive
+fixture that fires it and a negative control that does not.
+
+The two rules consume `_is_collected_module` differently, and the tests pin
+that difference: rule 4 reads it as a *kind discriminator* selecting which
+remedy the message names, while rule 5 keeps it as a *gate*."""
 
 import textwrap
 from pathlib import Path
@@ -20,6 +24,7 @@ _analyze_test_conventions = load_script_module(
 analyze_test_module_line_budget = _analyze_test_conventions.analyze_test_module_line_budget
 analyze_test_helper_module_misnamed = _analyze_test_conventions.analyze_test_helper_module_misnamed
 TEST_MODULE_LINE_BUDGET = _analyze_test_conventions.TEST_MODULE_LINE_BUDGET
+TEST_MODULE_SINGLE_CLASS_CEILING = _analyze_test_conventions.TEST_MODULE_SINGLE_CLASS_CEILING
 
 
 def _write(test_root: Path, rel_path: str, content: str) -> Path:
@@ -28,6 +33,18 @@ def _write(test_root: Path, rel_path: str, content: str) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(textwrap.dedent(content), encoding='utf-8')
     return target
+
+
+def _class_source(name: str, span: int) -> str:
+    """Return a class declaration occupying exactly ``span`` lines.
+
+    The header is one line and the body supplies ``span - 1`` statements, so the
+    class node's own ``end_lineno - lineno + 1`` is exactly ``span``. Statements
+    are used rather than comments because a trailing comment is not part of the
+    class node and would not extend its span.
+    """
+    body = ''.join(f'    x{i} = {i}\n' for i in range(span - 1))
+    return f'class {name}:\n{body}'
 
 
 # ---------------------------------------------------------------------------
@@ -67,11 +84,134 @@ def test_line_budget_finding_carries_count_and_budget(tmp_path):
     assert details['over_by'] == over_by
 
 
-def test_uncollected_module_over_budget_is_not_flagged(tmp_path):
-    """A helper module over the budget is out of scope — the rule governs collected modules."""
+def test_helper_module_over_budget_is_flagged(tmp_path):
+    """A helper module over the budget is flagged — the rule governs the whole tree.
+
+    A helper costs a reader exactly what a collected module does, so gating
+    detection on pytest's collection patterns would leave it unmeasured.
+    """
     _write(tmp_path, '_domain_fixtures.py', '# filler\n' * (TEST_MODULE_LINE_BUDGET + 50))
 
+    findings = analyze_test_module_line_budget(tmp_path)
+
+    assert [f['rule_id'] for f in findings] == ['test-module-line-budget']
+
+
+def test_collected_module_finding_names_the_split_remedy(tmp_path):
+    """A collected module's finding carries kind 'collected' and the cluster-split remedy."""
+    _write(tmp_path, 'test_big.py', '# filler\n' * (TEST_MODULE_LINE_BUDGET + 50))
+
+    finding = analyze_test_module_line_budget(tmp_path)[0]
+
+    assert finding['details']['kind'] == 'collected'
+    assert 'test_{unit}_{cluster}.py' in finding['description']
+    assert 'behaviour cluster' in finding['description']
+
+
+def test_helper_module_finding_names_the_helper_remedy(tmp_path):
+    """A helper module's finding carries kind 'helper' and the helper-shape remedy.
+
+    The remedy must NOT be the collected one: prescribing a `test_*.py` split for
+    a module that declares no test would rename it into pytest's collection
+    patterns, which `test-helper-module-misnamed` then reports as an error.
+    """
+    _write(tmp_path, '_domain_fixtures.py', '# filler\n' * (TEST_MODULE_LINE_BUDGET + 50))
+
+    finding = analyze_test_module_line_budget(tmp_path)[0]
+
+    assert finding['details']['kind'] == 'helper'
+    assert '_{domain}_{surface}.py' in finding['description']
+    assert 'test_{unit}_{cluster}.py' not in finding['description']
+
+
+def test_helper_module_within_budget_is_not_flagged(tmp_path):
+    """Widening the scope did not widen the budget — a small helper is still clean."""
+    _write(tmp_path, '_domain_fixtures.py', '# filler\n' * 10)
+
     assert analyze_test_module_line_budget(tmp_path) == []
+
+
+def test_helper_module_misnamed_is_not_widened(tmp_path):
+    """Rule 5 keeps its collection gate — an over-budget helper is not misnamed.
+
+    The two rules use `_is_collected_module` differently on purpose: rule 4 reads
+    it as a kind discriminator, while rule 5 is *about* a module being collected
+    while declaring no test, so widening rule 5 would invert its meaning.
+    """
+    _write(tmp_path, '_domain_fixtures.py', 'def build_plan():\n    return {}\n' * 300)
+
+    assert analyze_test_helper_module_misnamed(tmp_path) == []
+
+
+# ---------------------------------------------------------------------------
+# test-module-line-budget -- the single-class exemption
+# ---------------------------------------------------------------------------
+
+
+def test_single_class_ceiling_is_520():
+    """The class-line ceiling is 520, the value the standards state."""
+    assert TEST_MODULE_SINGLE_CLASS_CEILING == 520
+
+
+def test_single_class_module_within_ceiling_is_not_flagged(tmp_path):
+    """A module whose whole content is one class within the ceiling is exempt.
+
+    The ceiling is measured on the CLASS, not on the module: this module is 560
+    lines — well over both the 400-line budget and the 520-line ceiling — while
+    its sole class spans 500. The exemption applies to the class span, so the
+    module is not flagged.
+    """
+    lead = '# module banner\n' * 60
+    _write(tmp_path, 'test_one_class.py', lead + _class_source('TestSubject', 500))
+
+    assert analyze_test_module_line_budget(tmp_path) == []
+
+
+def test_single_class_module_at_the_ceiling_is_not_flagged(tmp_path):
+    """A class of exactly the ceiling is within it, mirroring the budget's boundary."""
+    _write(tmp_path, 'test_at_ceiling.py', _class_source('TestSubject', TEST_MODULE_SINGLE_CLASS_CEILING))
+
+    assert analyze_test_module_line_budget(tmp_path) == []
+
+
+def test_single_class_module_over_ceiling_is_flagged(tmp_path):
+    """A module of one class over the ceiling is flagged like any over-budget module."""
+    _write(tmp_path, 'test_over_ceiling.py', _class_source('TestSubject', TEST_MODULE_SINGLE_CLASS_CEILING + 10))
+
+    findings = analyze_test_module_line_budget(tmp_path)
+
+    assert [f['rule_id'] for f in findings] == ['test-module-line-budget']
+
+
+def test_two_under_ceiling_classes_are_flagged(tmp_path):
+    """A module of two under-ceiling classes stays flagged — it is an ordinary split.
+
+    The exemption's narrowness is the property being bought: a second class is a
+    second nameable subject, so the prescribed split remedy applies unchanged.
+    Each class here spans 250, comfortably under the ceiling, and the module is
+    still reported.
+    """
+    two = _class_source('TestFirst', 250) + _class_source('TestSecond', 250)
+    _write(tmp_path, 'test_two_classes.py', two)
+
+    findings = analyze_test_module_line_budget(tmp_path)
+
+    assert [f['rule_id'] for f in findings] == ['test-module-line-budget']
+
+
+def test_single_class_beside_module_function_is_flagged(tmp_path):
+    """A class sharing the module with a module-level function is not the exempt shape.
+
+    The exempt shape is "the module's whole content is one class". A module-level
+    function is a second subject that a split can separate, so the module is
+    reported even though its sole class is within the ceiling.
+    """
+    source = _class_source('TestSubject', 450) + 'def helper():\n    return 1\n'
+    _write(tmp_path, 'test_class_and_function.py', source)
+
+    findings = analyze_test_module_line_budget(tmp_path)
+
+    assert [f['rule_id'] for f in findings] == ['test-module-line-budget']
 
 
 # ---------------------------------------------------------------------------

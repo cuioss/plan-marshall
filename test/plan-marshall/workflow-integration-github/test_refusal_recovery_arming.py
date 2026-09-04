@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Cross-cutting suite: a NON-CodeRabbit refusal arms the right recovery.
 
 Fail-first suite for D2 (registry-driven per-bot detection) and D4 (refusal
@@ -37,23 +36,21 @@ doc is swept here automatically.
 
 from __future__ import annotations
 
-import sys
+import importlib
 
-import pytest
+# ``github_ops`` MUST be resolved FIRST: importing ``_github_pr`` before it fails
+# outright with a partially-initialised-module ImportError, because the two close
+# an import cycle. It is reached through ``import_module`` rather than an
+# ``import`` statement because isort sorts ``_github_pr`` ahead of ``github_ops``,
+# so no arrangement of plain imports can express the ordering. That one statement
+# is what puts the imports below out of the file's import block, which is the
+# whole of the per-line ``E402`` waivers they carry.
+importlib.import_module('github_ops')
 
-from conftest import get_script_path
-
-_GH_SCRIPTS = get_script_path('plan-marshall', 'workflow-integration-github', 'github_pr.py').parent
-_AR_SCRIPTS = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py').parent
-
-for _dir in (_GH_SCRIPTS, _AR_SCRIPTS):
-    if str(_dir) not in sys.path:
-        sys.path.insert(0, str(_dir))
-
-import bot_registry  # noqa: E402
-import github_ops  # noqa: E402, F401 — import first; _github_pr closes a cycle with it
-import github_re_review  # noqa: E402
 import _github_pr  # noqa: E402
+import bot_registry  # noqa: E402
+import github_re_review  # noqa: E402
+import pytest  # noqa: E402
 from _github_pr import (  # noqa: E402
     REFUSAL_LAYER_REGISTRY,
     REFUSAL_LAYER_STRUCTURAL,
@@ -218,7 +215,7 @@ _DECLARED_WORDING_POPULATION_SIZE = len(_DECLARED_WORDING_PAIRS)
 #: at a smaller size. Comparing against this constant converts that silent
 #: shrinkage into a named failure. When a wording is added or removed on purpose,
 #: update this number in the same commit — the mismatch message says so.
-_DECLARED_WORDING_POPULATION_BASELINE = 5
+_DECLARED_WORDING_POPULATION_BASELINE = 7
 
 
 def _quota_refusal_body(bot_kind: str) -> str:
@@ -728,19 +725,35 @@ class TestTheCauseAxisDominatesTheClassAxis:
         ceiling in its shipped standards doc is classified from that declaration,
         with the ceiling read off the notice it posted. Without it the whole cause
         axis could pass on patched data while the shipped registry wired nothing.
+
+        EVERY declared size marker is swept, not just the first: a bot may declare
+        several size-caused refusals (Sourcery declares its own character ceiling
+        and the GitHub API's file-count one), and asserting only ``[0]`` would let a
+        later addition ship unexercised.
+
+        The body is synthesised from BOTH declarations because they are not one
+        string. A detection marker need not be a prefix of the cap phrase — CodeRabbit
+        detects on ``Too many files!`` and states its ceiling as ``over the limit of
+        N`` — so the cap pattern's literal lead-in is derived from the pattern itself
+        rather than assumed to follow the marker.
         """
         sized = [b for b in _registered_bots() if bot_registry.refusal_size_patterns(b)]
         assert sized, 'registry must ship at least one bot declaring a size ceiling'
 
         for bot in sized:
-            marker = bot_registry.refusal_size_patterns(bot)[0]
-            body = f'Sorry, {marker} 150,000 characters.'
+            cap_patterns = bot_registry.refusal_size_cap_patterns(bot)
+            assert cap_patterns, f'{bot} declares a size cause but no cap extractor'
+            # The literal text each cap regex reads its figure after.
+            lead = cap_patterns[0].split('(')[0]
 
-            detected = _detect_rate_limited_bots([_comment(bot, body)])
+            for marker in bot_registry.refusal_size_patterns(bot):
+                body = f'Sorry, {marker} — {lead}150,000 characters.'
 
-            assert [r['bot_kind'] for r in detected] == [bot]
-            assert detected[0]['cause'] == _github_pr.REFUSAL_CAUSE_SIZE, bot
-            assert detected[0]['cap'] == '150000 characters', bot
+                detected = _detect_rate_limited_bots([_comment(bot, body)])
+
+                assert [r['bot_kind'] for r in detected] == [bot], (bot, marker)
+                assert detected[0]['cause'] == _github_pr.REFUSAL_CAUSE_SIZE, (bot, marker)
+                assert detected[0]['cap'].startswith('150000'), (bot, marker, detected[0]['cap'])
 
     def test_both_axis_keys_are_present_on_every_record(self):
         """One record shape whatever the cause — a consumer never probes for a key."""

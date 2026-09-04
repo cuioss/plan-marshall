@@ -1,6 +1,16 @@
 # Permission Validation Standards
 
-Standards and patterns for validating and maintaining Claude Code permissions in settings files.
+## Provenance: Claude rule-pack
+
+The format validation rules in this document — `Bash(command:*)`,
+`Read(//path/**)`, `Skill(plugin:skill)`, `SlashCommand(/command:*)`,
+`WebFetch(domain:example.com)` — encode the **Claude** permission grammar. They bind
+only when the target is Claude. On a non-Claude target the permission format may use
+different types, different wildcard syntax, or no permission grammar at all; a reader
+should not assume these rules apply without confirming the target's permission model.
+
+This document is the Claude-specific half of the permission validation standards,
+declared alongside the target-agnostic analysis engine in `permission_doctor.py`.
 
 ## Validation Criteria
 

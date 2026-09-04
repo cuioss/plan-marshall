@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: F811 — tests take the imported fixture as a parameter
+
 """Tests for ``manage-locks/build_queue.py`` — the bounded-``k``-slot build-queue
 concurrency limiter with a FIFO waiting queue.
 
@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from argparse import Namespace
 
-from _build_queue_fixtures import (  # noqa: F401 — used by name, not by reference
+from _build_queue_fixtures import (
     _init_git_repo,
     _make_live_plan,
     _read_queue,

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """The diagnostics answer contract, driven against a fake server subprocess.
 
 These are CI-portable: they need no language server on ``PATH``, because the
@@ -23,21 +22,16 @@ answer:
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Any
 
-from conftest import get_script_path
+from _fake_lsp_server import write_fake_server
+from _lsp_jsonrpc import LspSession, StdioTransport
+from _lsp_workspace_edit import path_to_uri
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'lsp-client', 'lsp_client.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
+from conftest import load_script_module
 
-import lsp_client as client  # noqa: E402
-from _fake_lsp_server import write_fake_server  # noqa: E402
-from _lsp_jsonrpc import LspSession, StdioTransport  # noqa: E402
-from _lsp_workspace_edit import path_to_uri  # noqa: E402
+client = load_script_module('plan-marshall', 'lsp-client', 'lsp_client.py')
 
 # Spelled as literals rather than imported from the module under test: a guard
 # that takes its expectation from the code it guards agrees with that code by

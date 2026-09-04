@@ -176,7 +176,7 @@ def registered_target_names() -> frozenset[str]:
     place rather than rebound — but it makes correctness rest on that detail.
     Reading it at call time does not.
     """
-    from marketplace.targets import TARGET_REGISTRY  # noqa: PLC0415
+    from marketplace.targets import TARGET_REGISTRY  # read at call time, after every target has registered
 
     return frozenset(TARGET_REGISTRY)
 
@@ -189,7 +189,7 @@ def component_tree_target_names() -> frozenset[str]:
     class is constructed — every target is constructible with no arguments
     (the one target taking a selection defaults it).
     """
-    from marketplace.targets import TARGET_REGISTRY  # noqa: PLC0415
+    from marketplace.targets import TARGET_REGISTRY  # read at call time, after every target has registered
 
     return frozenset(
         name for name, target_cls in TARGET_REGISTRY.items() if target_cls().emits_bundle_tree

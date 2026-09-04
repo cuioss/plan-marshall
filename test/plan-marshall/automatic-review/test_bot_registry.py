@@ -245,23 +245,39 @@ def test_refusal_size_patterns_mark_the_diff_size_cause():
 
     The orthogonal CAUSE axis to ``rate_limit_class`` (awaitability): which of a bot's
     refusals is caused by the diff being too big (remedy: a smaller diff) rather than a
-    rate/budget quota (remedy: backoff). Sourcery is the only shipped bot with a
-    size-caused refusal — its per-PR size ceiling — and that entry ALSO appears in
-    ``refusal_patterns`` (detection stays that field's job). Both of its
-    account-quota wordings are deliberately absent here, so both classify ``quota``.
-    CodeRabbit and PR-Agent declare none, so every refusal they emit is a quota.
+    rate/budget quota (remedy: backoff). Sourcery declares two size-caused refusals —
+    its own per-PR character ceiling, and the GitHub API's per-PR FILE-COUNT ceiling it
+    reports as an inability to fetch — and both ALSO appear in ``refusal_patterns``
+    (detection stays that field's job). Both of its account-quota wordings are
+    deliberately absent here, so both classify ``quota``.
+
+    CodeRabbit declares one, and it is the reason the two axes cannot be collapsed: its
+    ``rate_limit_class`` is ``awaitable_window``, yet its file-count skip is not
+    awaitable at all. A file count does not fall while you wait.
     """
     sourcery_size = bot_registry.refusal_size_patterns('sourcery')
-    assert sourcery_size == ['your pull request is larger than the review limit of']
-    # The size marker is a genuine subset overlay — it is also a detection pattern.
-    assert sourcery_size[0] in bot_registry.refusal_patterns('sourcery')
+    assert sourcery_size == [
+        'your pull request is larger than the review limit of',
+        'does not allow us to fetch diffs exceeding',
+    ]
+    # Every size marker is a genuine subset overlay — each is also a detection pattern.
+    for size_marker in sourcery_size:
+        assert size_marker in bot_registry.refusal_patterns('sourcery')
     # Both account-quota wordings are refusals but NOT a size cause. The second is the
     # *used* phrasing (PR #1391), which the structural recogniser cannot see either.
     for quota_marker in ('reached your weekly rate limit of', 'used your own review budget of'):
         assert quota_marker in bot_registry.refusal_patterns('sourcery')
         assert quota_marker not in sourcery_size
 
-    assert bot_registry.refusal_size_patterns('coderabbit') == []
+    # CodeRabbit's file-count skip is size-caused even though its class is awaitable.
+    coderabbit_size = bot_registry.refusal_size_patterns('coderabbit')
+    assert coderabbit_size == ['Too many files!']
+    assert coderabbit_size[0] in bot_registry.refusal_patterns('coderabbit')
+    assert bot_registry.rate_limit_class('coderabbit') == 'awaitable_window'
+    for quota_marker in ('Review limit reached', 'Review rate limited'):
+        assert quota_marker in bot_registry.refusal_patterns('coderabbit')
+        assert quota_marker not in coderabbit_size
+
     assert bot_registry.refusal_size_patterns('cuioss-review-bot') == []
 
 

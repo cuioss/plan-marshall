@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: F811 — tests take the imported fixture as a parameter
+
 """Tests for manage-status.py transition: the 5-execute phase and the final-phase complete transition.
 
 Its one section: D2 — Finalize completion boundary asserts the blocking-findings STATE.
@@ -10,10 +10,10 @@ Its one section: D2 — Finalize completion boundary asserts the blocking-findin
 import json
 from argparse import Namespace
 
-import _handshake_commands as _cmds  # noqa: E402
-import _invariants as _inv  # noqa: E402
+import _handshake_commands as _cmds
+import _invariants as _inv
 import pytest
-from _manage_status_transition_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
+from _manage_status_transition_fixtures import (
     _seed_execute_phase_plan,
     _seed_finalize_phase_plan,
     _seed_plan_with_4_plan_capture,

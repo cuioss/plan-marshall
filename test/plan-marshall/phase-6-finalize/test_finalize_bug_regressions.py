@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Regression tests for the create-pr title/body grounding.
 
 These tests lock in the bug fixes shipped from the regression-defense angle —

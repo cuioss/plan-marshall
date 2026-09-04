@@ -41,6 +41,7 @@ Axis-A (`ExtensionBase`):
 - `applies_to_module()` - Check Python applicability via build systems and `.py` files
 - `provides_triage()` - Returns `pm-dev-python:ext-triage-python`
 - `provides_arch_gate()` - Returns the `import-linter` arch-gate tool binding (`pm-dev-python:arch-gate-python`)
+- `provides_file_globs()` - Declares the Python source glob (`['**/*.py']`) seeded into `skill_domains.python.file_globs` for domain detection; contributes no `build.map` route
 
 Axis-C (`DerivationResolverBase`, opted into by multiple inheritance):
 - `derivation_resolver_id()` - Returns the stable provenance id `python`, stamped onto every edge this resolver produces

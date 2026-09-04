@@ -88,7 +88,7 @@ def run_child_cmd(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess:
     every child invocation carries the forwarded flag.
     """
     forwarded = forward_project_dir(cmd)
-    return subprocess.run(forwarded, **kwargs)  # noqa: S603
+    return subprocess.run(forwarded, **kwargs)  # constructed argv, never shell-interpolated
 
 
 # ============================================================================

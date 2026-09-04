@@ -10,9 +10,24 @@ helper; this file is for what genuinely crosses them.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from conftest import get_script_path
+
+
+def _age_token(plan_context, plan_id: str, seconds: int) -> None:
+    """Backdate the stored token's ``set_at`` by ``seconds``, in place.
+
+    Staleness is a READ-side property of ``set_at``, so the only way to observe
+    it is to move the stamp rather than to wait. Both the lifecycle unit and the
+    ownership-invariant unit need that, which is what puts it here.
+    """
+    status_file = plan_context.plan_dir_for(plan_id) / 'status.json'
+    status = json.loads(status_file.read_text(encoding='utf-8'))
+    aged = datetime.now(UTC) - timedelta(seconds=seconds)
+    status['title_token']['set_at'] = aged.strftime('%Y-%m-%dT%H:%M:%SZ')
+    status_file.write_text(json.dumps(status), encoding='utf-8')
 
 
 def _write_status(plan_dir: Path) -> None:

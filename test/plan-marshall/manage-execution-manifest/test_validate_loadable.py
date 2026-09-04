@@ -14,7 +14,7 @@ Covers the loadability fail-fast guard consumed by phase-6-finalize Step 1.5:
 - Manifest-missing yields ``file_not_found`` for ``--all``
 """
 
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 
 from argparse import Namespace
 # Tier 2 direct import — match the test layout used by sibling tests.

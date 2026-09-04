@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """The STRUCTURAL refusal member — a size-capped reviewer is never offered a wait.
 
 The refusal taxonomy modelled only TEMPORAL refusal: every member said *not now*,
@@ -38,23 +37,25 @@ from __future__ import annotations
 
 import argparse
 import ast
+import importlib
 import inspect
 import re
-import sys
 import textwrap
 
+import bot_registry
 import pytest
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
+
+# ``register=False``: only the returned module is needed, and a sibling suite
+# imports ``review_completeness`` plainly. Registering under that name would put two
+# copies in play, reachable by different routes and differing by collection order.
+rc = load_script_module(
+    'plan-marshall', 'automatic-review', 'review_completeness.py', register=False
+)
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py')
 SCRIPTS_DIR = SCRIPT_PATH.parent
-
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import bot_registry  # noqa: E402
-import review_completeness as rc  # noqa: E402
 
 _CONTRACT_DOC = SCRIPTS_DIR.parent / 'standards' / 'bot-participation-contract.md'
 _AR_SKILL = SCRIPTS_DIR.parent / 'SKILL.md'
@@ -1242,12 +1243,11 @@ class TestCapExtraction:
 
     @staticmethod
     def _seam():
-        gh_scripts = get_script_path(
-            'plan-marshall', 'workflow-integration-github', 'github_pr.py'
-        ).parent
-        if str(gh_scripts) not in sys.path:
-            sys.path.insert(0, str(gh_scripts))
-        import github_ops  # noqa: F401 — import first; _github_pr closes a cycle with it
+        # ``github_ops`` MUST be resolved first — ``_github_pr`` closes an import
+        # cycle with it. Reached through ``import_module`` rather than a second
+        # ``import`` statement because isort sorts ``_github_pr`` ahead of
+        # ``github_ops``, which would break the cycle.
+        importlib.import_module('github_ops')
         import _github_pr
 
         return _github_pr
@@ -1365,12 +1365,11 @@ class TestUnrecognisedRefusalIsADistinctState:
 
     @staticmethod
     def _seam():
-        gh_scripts = get_script_path(
-            'plan-marshall', 'workflow-integration-github', 'github_pr.py'
-        ).parent
-        if str(gh_scripts) not in sys.path:
-            sys.path.insert(0, str(gh_scripts))
-        import github_ops  # noqa: F401 — import first; _github_pr closes a cycle with it
+        # ``github_ops`` MUST be resolved first — ``_github_pr`` closes an import
+        # cycle with it. Reached through ``import_module`` rather than a second
+        # ``import`` statement because isort sorts ``_github_pr`` ahead of
+        # ``github_ops``, which would break the cycle.
+        importlib.import_module('github_ops')
         import _github_pr
 
         return _github_pr
@@ -1428,12 +1427,11 @@ class TestDiffMeasurement:
 
     @staticmethod
     def _seam():
-        gh_scripts = get_script_path(
-            'plan-marshall', 'workflow-integration-github', 'github_pr.py'
-        ).parent
-        if str(gh_scripts) not in sys.path:
-            sys.path.insert(0, str(gh_scripts))
-        import github_ops  # noqa: F401
+        # ``github_ops`` MUST be resolved first — ``_github_pr`` closes an import
+        # cycle with it. Reached through ``import_module`` rather than a second
+        # ``import`` statement because isort sorts ``_github_pr`` ahead of
+        # ``github_ops``, which would break the cycle.
+        importlib.import_module('github_ops')
         import _github_pr
 
         return _github_pr

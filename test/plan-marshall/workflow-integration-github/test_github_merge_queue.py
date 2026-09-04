@@ -23,8 +23,8 @@ the imported `github_ops.cmd_pr_merge_queue`.
 
 import argparse
 
-import ci_base  # noqa: E402
-import github_ops  # noqa: E402
+import ci_base
+import github_ops
 from _ci_wait_contract import _ok_auth
 
 

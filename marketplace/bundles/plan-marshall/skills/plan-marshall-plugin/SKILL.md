@@ -36,6 +36,7 @@ See [extension-contract.md](../extension-api/standards/extension-contract.md) fo
 | `get_skill_domains()` | Returns the `general-dev` domain (cross-cutting dev skills) |
 | `discover_modules(project_root)` | Discover modules across Maven, Gradle, npm, and Python |
 | `provides_recipes()` | Returns the `code-review`, `refactor-to-profile-standards`, `security-audit`, `agentfile-hygiene`, and `surgical-fix` recipes |
+| `provides_file_globs()` | Returns `[]` — a deliberate empty declaration: `general-dev` is a cross-cutting quality domain and owns no file-type identity |
 | `applies_to_module(module_data)` | Applies general-dev skills to modules with code build systems |
 | `path_attributor_id()` | Returns the Axis-D provenance id `plan-marshall`, stamped onto every path this attributor claims |
 | `claim_paths()` | Declares the repo-relative trees the `plan-marshall` module owns — the bare `.plan` root segment |

@@ -82,6 +82,18 @@ class Extension(ExtensionBase):
             },
         ]
 
+    def provides_file_globs(self) -> list[str]:
+        """Declare the Java source glob — the file type this additive domain owns.
+
+        ``java-cui`` layers CUI-specific Java standards over the base ``java``
+        domain, so it recognises the same file type and declares the same glob. The
+        duplication is intended: the inclusion leg unions matching domains rather
+        than picking one, so both the base and the additive domain are pulled in by
+        a Java change, which is exactly the pairing ``applies_to_module``'s
+        ``additive_to='java'`` already expresses.
+        """
+        return ['**/*.java']
+
     def provides_domain_verb(self) -> list[dict] | None:
         """Return the java-cui domain's executable-verb descriptors.
 

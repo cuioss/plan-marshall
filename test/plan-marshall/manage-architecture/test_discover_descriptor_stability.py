@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Regression tests for ``discover --force`` project-identity stability.
 
 ``architecture discover --force`` run inside a
@@ -14,14 +13,10 @@ when present, else the repository-root basename (never ``project_path.name``)
 These tests reproduce the corruption and assert it no longer occurs.
 """
 
-import sys
 import tempfile
 from pathlib import Path
 
 from conftest import load_script_module
-
-sys.path.insert(0, str(Path(__file__).parent))
-
 
 _architecture_core = load_script_module(
     'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'

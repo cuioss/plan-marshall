@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the shared loader's addressing reach and its ``sys.modules`` hazard.
+"""Contract guards over ``test/conftest.py`` — loader addressing, and roster drift.
 
-Two contracts of ``test/conftest.py``'s loader pair:
+Three contracts the root conftest carries:
 
 * **Reach** — ``load_skill_module`` / ``get_skill_dir`` address a module at a
   skill's ROOT. Without them a bundle's ``plan-marshall-plugin`` ``extension.py`` is
@@ -14,6 +14,11 @@ Two contracts of ``test/conftest.py``'s loader pair:
   and reloading it fails depending on collection order — a flaky green rather than
   a clean red. The guard below enumerates the names the loaders are actually called
   with and fails when that set of collisions grows.
+* **Roster** — ``_guard_roster`` computes routing-guard drift in both directions,
+  and ``pytest_report_header`` only PRINTS it, deliberately: raising from a hook
+  that runs before collection reshapes a roster defect into a session-startup
+  error naming neither the test nor the cause. Asserting the same value in a
+  COLLECTED test is what makes the drift fail, and it names both.
 """
 
 import sys
@@ -26,10 +31,13 @@ from _loader_contract_fixtures import (
     registering_helpers_in_conftest,
 )
 
+import conftest
 from conftest import (
     MARKETPLACE_ROOT,
     TEST_ROOT,
+    _discover_guard_publishers,
     _exec_module_from_path,
+    _guard_roster,
     get_scripts_dir,
     get_skill_dir,
     load_script_module,
@@ -61,7 +69,6 @@ UNRESOLVED_CALL_SITE_BOUND = 86
 KNOWN_REGISTRATION_COLLISIONS = frozenset({
     '_architecture_core',
     '_build_execute_factory',
-    '_cmd_effort',
     '_config_defaults',
     '_cred_edit',
     '_findings_core',
@@ -70,17 +77,12 @@ KNOWN_REGISTRATION_COLLISIONS = frozenset({
     '_gradle_execute',
     '_maven_execute',
     '_pyproject_execute',
-    'lsp_client',
     'permission_doctor',
     'permission_fix',
-    'platform_runtime',
-    'effort_presets',
-    'finalize_step_presets',
     'github_pr',
     'manage_terminal_title',
     'plan_logging',
     'recipe_scoring',
-    'review_completeness',
     'run_config',
 })
 
@@ -257,7 +259,10 @@ def test_the_scan_finds_the_loader_call_sites(tree_scan):
     # A parse_ns site too, because it resolves by a different rule: parse_ns takes
     # no module_name, so its fourth positional is an argv token. A control over
     # load_script_module alone cannot see that rule being applied to the wrong helper.
-    assert 'test_shared_harness.py' in registered['platform_runtime'], registered['platform_runtime']
+    # This site is the sharpest available: its fourth positional is the literal
+    # 'no-such-verb', so a walker reading that position as a module name would
+    # register a command-line token instead of 'manage-findings'.
+    assert 'test_shared_harness.py' in registered['manage-findings'], registered['manage-findings']
 
     # No resolved name may look like a command-line token. A name-specific check
     # ('run' is absent) only catches the tokens it happens to list; two successive
@@ -359,3 +364,72 @@ def test_unresolved_call_sites_are_reported_not_hidden(tree_scan):
         'constant. Left alone it overstates the blind spot, which is the same rot the '
         'collision baseline is guarded against in the opposite direction.'
     )
+
+
+# ---------------------------------------------------------------------------
+# Roster — the drift the report header only prints
+# ---------------------------------------------------------------------------
+
+
+def test_the_routing_guard_roster_carries_no_drift():
+    """``_guard_roster`` reports no discrepancy in either direction.
+
+    The header hook prints drift and does not raise, so a session whose roster has
+    drifted is still green — a guard can vanish from the population report, or a row
+    can outlive the module it names, with nothing failing. Asserting the same value
+    here is what turns either into a red build, from a place that can name the cause
+    without reshaping it into a pre-collection startup error.
+    """
+    publishers = _discover_guard_publishers()
+    assert publishers, (
+        'the discovery walk found no guard publisher at all, so the emptiness of '
+        'discrepancies below would be a verdict about nothing'
+    )
+
+    _entries, discrepancies = _guard_roster()
+
+    assert discrepancies == [], (
+        'routing-guard roster drift:\n  '
+        + '\n  '.join(discrepancies)
+        + '\n\nAdjust _ROUTING_GUARD_MODULES in test/conftest.py so it names exactly the '
+        'modules that publish GUARD_POPULATION_LABEL: add a row for a publisher that has '
+        'none, and drop a row whose module no longer publishes one.'
+    )
+
+
+def test_a_publisher_with_no_row_is_reported_as_drift(monkeypatch):
+    """A discovered publisher the tuple does not name is a discrepancy.
+
+    Driven through the same function the header reads, so the control fails when the
+    detection breaks rather than only when the tree happens to drift.
+    """
+    monkeypatch.setattr(conftest, '_ROUTING_GUARD_MODULES', (('listed', 'listed.py'),))
+    monkeypatch.setattr(
+        conftest, '_discover_guard_publishers', lambda: ['listed.py', 'unlisted.py']
+    )
+
+    entries, discrepancies = _guard_roster()
+
+    assert ('UNLISTED:unlisted', 'unlisted.py') in entries
+    assert discrepancies == [
+        '1 publisher(s) with no _ROUTING_GUARD_MODULES row: unlisted.py'
+    ]
+
+
+def test_a_row_whose_module_stopped_publishing_is_reported_as_drift(monkeypatch):
+    """A row the discovery walk no longer finds is the other direction.
+
+    Kept as its own control because the remedy is the opposite one — delete the row
+    rather than add one — so a detector that collapsed the two directions into a
+    single "something is off" would still pass the case above.
+    """
+    monkeypatch.setattr(
+        conftest, '_ROUTING_GUARD_MODULES', (('listed', 'listed.py'), ('gone', 'gone.py'))
+    )
+    monkeypatch.setattr(conftest, '_discover_guard_publishers', lambda: ['listed.py'])
+
+    _entries, discrepancies = _guard_roster()
+
+    assert discrepancies == [
+        '1 row(s) whose module no longer publishes GUARD_POPULATION_LABEL: gone.py'
+    ]

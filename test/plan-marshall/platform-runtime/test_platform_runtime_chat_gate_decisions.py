@@ -16,8 +16,8 @@ notice.
 
 from __future__ import annotations
 
-import _chat_gate_decisions as _mod  # noqa: I001
-import _chat_signal_reducer as _reducer  # noqa: I001
+import _chat_gate_decisions as _mod
+import _chat_signal_reducer as _reducer
 
 REFUSAL = "The user doesn't want to proceed with this tool use. The tool use was rejected."
 

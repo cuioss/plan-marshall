@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the extension_discovery → route-collector bridge.
 
 ``derive_build_map_globs(project_root, extensions)`` bridges BUILD-extension
@@ -66,7 +66,7 @@ from _resolve_project_dir_fixtures import (
     assert_worktree_face_routes_through_resolver,
 )
 
-import extension_discovery as _discovery  # noqa: E402
+import extension_discovery as _discovery
 
 #: Imported by NAME rather than loaded by file. ``load_script_module`` registers the
 #: module it builds under its stem, so loading ``marketplace_paths`` here replaced the
@@ -74,7 +74,7 @@ import extension_discovery as _discovery  # noqa: E402
 #: object then failed ``importlib.reload`` with "module not in sys.modules", depending
 #: on collection order. A plain import binds THE registered module, so there is only
 #: ever one object and nothing to displace.
-import marketplace_paths as _marketplace_paths  # noqa: E402
+import marketplace_paths as _marketplace_paths
 
 
 # =============================================================================

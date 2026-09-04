@@ -37,7 +37,7 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
-from _manage_locks_fixtures import _write_lock
+from _manage_locks_fixtures import _make_live_plan, _write_lock
 
 from conftest import load_script_module
 
@@ -82,11 +82,6 @@ def _stub_title_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(merge_lock, '_set_title_token', lambda _p, _state: None)
     monkeypatch.setattr(merge_lock, '_clear_title_token', lambda _p: None)
     monkeypatch.setattr(merge_lock, '_push_title_token', lambda _p, icon=None: None)
-
-
-def _make_live_plan(base: Path, plan_id: str) -> None:
-    """Create a holder plan dir on main so the holder counts as LIVE (fresh)."""
-    (base / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)
 
 
 def _make_worktree_live_plan(base: Path, plan_id: str) -> None:

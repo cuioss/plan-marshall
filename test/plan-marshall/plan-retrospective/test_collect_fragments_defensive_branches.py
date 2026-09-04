@@ -11,7 +11,7 @@ Its sections, in order:
 from __future__ import annotations
 
 from _collect_fragments_fixtures import _load_module, _valid_fragment_body
-from _plan_retrospective_fixtures import setup_live_plan  # noqa: E402
+from _plan_retrospective_fixtures import setup_live_plan
 
 # =============================================================================
 # Defensive branches — parse exception + non-dict top level

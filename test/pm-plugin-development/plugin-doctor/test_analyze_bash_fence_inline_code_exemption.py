@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the ``bash-fence-inline-code-exemption`` rule analyzer.
 
 The analyzer is a reintroduction guard. It flags any ``*.py`` under

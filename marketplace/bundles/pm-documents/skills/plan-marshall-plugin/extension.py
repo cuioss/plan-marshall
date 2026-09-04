@@ -158,6 +158,24 @@ class Extension(ExtensionBase, PathAttributionBase, DerivationResolverBase):
 
         return self._build_applicable_result('high', signals, module_data=module_data, active_profiles=active_profiles)
 
+    def provides_file_globs(self) -> list[str]:
+        """Declare the AsciiDoc suffixes and the doc tree this domain owns.
+
+        Two kinds of claim, both narrow on purpose. The AsciiDoc suffixes are the
+        file types the bundle's skills genuinely govern (``ref-asciidoc`` and its
+        siblings), and the ``doc`` tree is the corpus this same extension already
+        claims through its Axis-D ``claim_paths`` — declaring it here keeps the two
+        statements of ownership consistent.
+
+        A bare ``**/*.md`` is deliberately EXCLUDED even though markdown is a
+        documentation suffix elsewhere in the system. In a marketplace repository
+        nearly every plan touches some markdown, so that glob would union the
+        documentation domain into almost every plan — the over-broad declaration
+        the accessor's authoring rule warns against. Markdown under ``doc/`` is
+        still covered, by the tree claim rather than by a suffix claim.
+        """
+        return ['**/*.adoc', '**/*.asciidoc', 'doc/**']
+
     def provides_recipes(self) -> list[dict]:
         """Return documentation recipes."""
         return [

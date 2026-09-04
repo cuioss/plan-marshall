@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Derivation guard for the merge-authorization population.
 
 Every mechanism by which an operator (or a policy standing in for one) can

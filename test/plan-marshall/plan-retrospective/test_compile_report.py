@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import retro_sections as _retro_sections  # noqa: E402
+import retro_sections as _retro_sections
 from _compile_report_fixtures import (
     _COLLECT_FRAGMENTS_SCRIPT_REGISTRY,
     SCRIPT_PATH,
@@ -15,9 +15,9 @@ from _compile_report_fixtures import (
     _write_full_registry_fragments,
     cmd_run,
 )
-from _plan_retrospective_fixtures import setup_archived_plan, setup_live_plan  # noqa: E402
+from _plan_retrospective_fixtures import setup_archived_plan, setup_live_plan
 
-from conftest import run_script  # noqa: E402
+from conftest import run_script
 
 
 class TestFaultPaths:

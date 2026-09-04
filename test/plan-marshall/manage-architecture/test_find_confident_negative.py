@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001
 """Regression tests pinning the confident-false-negative fix in ``find`` / ``which-module``.
 
 The defect: ``architecture find --pattern "test/plan-marshall/manage-status/*"``
@@ -24,10 +23,11 @@ generic ``source`` category exercises exactly the same code path and keeps the
 fixture free of build-descriptor discovery ambiguity.
 """
 
-import sys
 import tempfile
 from argparse import Namespace
 from pathlib import Path
+
+from _arch_fixtures import seed_project
 
 from conftest import load_script_module, parse_ns
 
@@ -52,10 +52,6 @@ def _arch_ns(verb: str, project_dir: str, **flags: str | None) -> Namespace:
     ns: Namespace = parse_ns(*_ARCH_SCRIPT, *argv)
     return ns
 
-
-sys.path.insert(0, str(Path(__file__).parent))
-
-from _arch_fixtures import seed_project  # noqa: E402
 
 _architecture_core = load_script_module(
     'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'

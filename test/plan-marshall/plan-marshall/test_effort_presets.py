@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the EffortPresets constant-class.
 
 Covers behavior and cross-checks defined for deliverable 1 of the
@@ -26,24 +25,16 @@ Covers behavior and cross-checks defined for deliverable 1 of the
 from __future__ import annotations
 
 import re
-import sys
 
+# PLAIN import, deliberately: the ``type: ignore[arg-type]`` on the malformed-payload
+# probe only suppresses something when mypy sees the real module — the shared loader
+# returns ``Any``, which makes it an unused ignore and the probe untyped.
+import effort_presets as mp
 import pytest
-from conftest import get_script_path
 
-PRESETS_SCRIPT = get_script_path('plan-marshall', 'plan-marshall', 'effort_presets.py')
-PRESETS_DIR = PRESETS_SCRIPT.parent
+from conftest import load_script_module
 
-CMD_MODELS_SCRIPT = get_script_path('plan-marshall', 'manage-config', '_cmd_effort.py')
-CMD_MODELS_DIR = CMD_MODELS_SCRIPT.parent
-
-if str(PRESETS_DIR) not in sys.path:
-    sys.path.insert(0, str(PRESETS_DIR))
-if str(CMD_MODELS_DIR) not in sys.path:
-    sys.path.insert(0, str(CMD_MODELS_DIR))
-
-import _cmd_effort as cmd_effort  # noqa: E402
-import effort_presets as mp  # noqa: E402
+cmd_effort = load_script_module('plan-marshall', 'manage-config', '_cmd_effort.py')
 
 #: The preset population every guard below parametrizes over, DERIVED from the
 #: live registry rather than restated as a literal. ``all_names()`` is the same

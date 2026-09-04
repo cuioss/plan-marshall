@@ -53,17 +53,13 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
+from _manage_locks_fixtures import _make_live_plan
 
 from conftest import load_script_module
 
 merge_lock = load_script_module(
     'plan-marshall', 'manage-locks', 'merge_lock.py', 'merge_lock_rate_window_under_test'
 )
-
-
-def _make_live_plan(base: Path, plan_id: str) -> None:
-    """Create a holder plan directory so the holder counts as LIVE."""
-    (base / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)
 
 
 def _read_store(queue_path: Path) -> dict:

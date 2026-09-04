@@ -1,26 +1,18 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for the resident corpus index — cursor resolution, definition, references, hover.
 
-Drives the underscore-prefixed helpers directly by inserting the scripts dir on
-``sys.path`` (the canonical scaffolding pattern).
+Drives the underscore-prefixed helpers directly, through the shared
+``conftest.load_script_module`` loader.
 """
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-from conftest import get_scripts_dir
-
-SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'tools-corpus-language-server')
-INVENTORY_SCRIPTS = get_scripts_dir('pm-plugin-development', 'tools-marketplace-inventory')
-for _dir in (str(SCRIPTS_DIR), str(INVENTORY_SCRIPTS)):
-    if _dir not in sys.path:
-        sys.path.insert(0, _dir)
-
-import _corpus_index as corpus_index  # noqa: E402
+# PLAIN import, deliberately: the typed assertions below rely on mypy seeing the
+# real module — the shared loader returns ``Any``, which silently discards them.
+import _corpus_index as corpus_index
 
 PLUGIN_JSON = '{"name": "%s", "version": "0.1", "skills": []}'
 

@@ -12,7 +12,7 @@ Covers the seed-side surface added by this plan:
   ``plan``, and ``order_config_keys`` emits it there.
 """
 
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 
 import pytest
 

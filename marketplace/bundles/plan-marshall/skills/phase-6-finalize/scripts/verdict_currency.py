@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Verdict-currency classifier for the phase-6-finalize re-entry check.
 
 Answers ONE question for ONE head-dependent step: *does this HEAD advance
@@ -278,7 +278,7 @@ def resolve_verdict_inputs(step: str) -> tuple[list[str], bool, str | None]:
 
     try:
         records = find_implementors(_FINALIZE_STEP_EXT_POINT)
-    except Exception:  # noqa: BLE001 - any discovery failure is fail-closed, not fatal
+    except Exception:  # any discovery failure is fail-closed, not fatal
         return [], False, REASON_DISCOVERY_UNAVAILABLE
 
     if not records:
@@ -297,7 +297,7 @@ def resolve_verdict_inputs(step: str) -> tuple[list[str], bool, str | None]:
                 Path(str(record.get('path', ''))),
                 (VERDICT_INPUTS_KEY, HEAD_DEPENDENT_KEY),
             )
-        except Exception:  # noqa: BLE001 - an unreadable declaration is fail-closed, not fatal
+        except Exception:  # an unreadable declaration is fail-closed, not fatal
             return [], False, REASON_DISCOVERY_UNAVAILABLE
         declared = fields.get(VERDICT_INPUTS_KEY)
         globs = [str(item).strip() for item in declared if str(item).strip()] if isinstance(declared, list) else []

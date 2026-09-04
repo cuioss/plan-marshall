@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Unit tests for _analyze_workflow_doc_toon_error_field.py.
 
 Covers the WORKFLOW_DOC_TOON_ERROR_FIELD analyzer:

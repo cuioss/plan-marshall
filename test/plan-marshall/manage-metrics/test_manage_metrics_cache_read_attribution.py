@@ -12,7 +12,7 @@ from _manage_metrics_fixtures import (
     ns_enrich,
     ns_generate,
 )
-from _manage_metrics_module_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
+from _manage_metrics_module_fixtures import (
     _ENRICH_TWO_PHASE_METRICS,
     _UNSEEDED_PLAN_IDS,
     _contract_attribution_keys,

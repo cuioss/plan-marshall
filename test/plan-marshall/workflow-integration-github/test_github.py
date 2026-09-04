@@ -147,9 +147,9 @@ def test_pr_create_handler_has_a_single_body_source():
 
 def _assert_single_body_source(bundle: str, skill: str, script: str) -> None:
     """Assert ``cmd_pr_create`` in the named script has exactly one body source."""
-    import ast  # noqa: PLC0415
+    import ast  # local import: only this structural check needs it
 
-    from conftest import get_scripts_dir  # noqa: PLC0415
+    from conftest import get_scripts_dir  # local import: only this structural check needs it
 
     source = (get_scripts_dir(bundle, skill) / script).read_text(encoding='utf-8')
     handler = next(

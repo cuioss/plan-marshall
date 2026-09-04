@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402, F811
+# ruff: noqa: I001
 """Tests for phase_handshake pending-findings invariants and the FIXED
 actionable-vs-knowledge blocking rule.
 
@@ -29,7 +29,7 @@ from _handshake_fixtures import (
     inv,
     store,
     # Fixtures (imported so pytest can resolve them):
-    stub_metadata,  # noqa: F401
+    stub_metadata,
 )
 
 # Plan ids this module's tests file findings against — seeded by the autouse

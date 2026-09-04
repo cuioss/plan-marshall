@@ -5,7 +5,7 @@
 
 from datetime import UTC, datetime, timedelta
 
-from _ledger_reconciliation_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
+from _ledger_reconciliation_fixtures import (
     _findings_of,
     _ledger,
     _ns_reconcile,

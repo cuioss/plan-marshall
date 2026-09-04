@@ -12,7 +12,6 @@ The executor is stdlib-only and directly invocable, so the module is loaded by p
 (no executor PYTHONPATH needed) and the filesystem cases use pytest's tmp_path.
 """
 
-# ruff: noqa: I001, E402
 
 import importlib.util
 import sys

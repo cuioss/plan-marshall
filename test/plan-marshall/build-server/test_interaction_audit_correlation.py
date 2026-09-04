@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """E2E: one job_id ties the client work log, the server interaction audit, and the ledger.
 
 A submit-then-wait interaction is driven through an env-isolated daemon — the
@@ -32,22 +31,27 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import _ledger_core as ledger_core
+import _marshalld_audit as audit_mod
+
+# PLAIN import, deliberately: the build-server suites annotate against
+# ``marshalld.Daemon``, which only a plain import gives mypy. The name is bound the
+# same way in every suite, so no loaded copy is published beside it.
+import marshalld
 import pytest
-from conftest import get_script_path, parse_ns
+from _build_server_protocol import JobSpec
+from _marshalld_journal import Journal
+from _marshalld_scheduler import Scheduler
 
-_DAEMON_DIR = get_script_path('plan-marshall', 'manage-build-server', 'marshalld.py').parent
-_CLIENT_DIR = get_script_path('plan-marshall', 'build-server-client', 'build_server.py').parent
-for _d in (_DAEMON_DIR, _CLIENT_DIR):
-    if str(_d) not in sys.path:
-        sys.path.insert(0, str(_d))
+from conftest import load_script_module, parse_ns
 
-import _ledger_core as ledger_core  # noqa: E402
-import _marshalld_audit as audit_mod  # noqa: E402
-import build_server as client  # noqa: E402
-import marshalld  # noqa: E402
-from _build_server_protocol import JobSpec  # noqa: E402
-from _marshalld_journal import Journal  # noqa: E402
-from _marshalld_scheduler import Scheduler  # noqa: E402
+#: ``register=False`` because only the returned module is used here. Publishing
+#: ``build_server`` into ``sys.modules`` would collide with the sibling modules
+#: that import it plainly.
+client = load_script_module(
+    'plan-marshall', 'build-server-client', 'build_server.py',
+    register=False,
+)
 
 #: The ``submit`` namespace ``build_server.py``'s OWN parser yields, hoisted to
 #: module scope because ``parse_ns`` re-executes the script module on every call.
@@ -72,7 +76,7 @@ class _Accepted:
 
     accepted = True
     reason = ''
-    record = {'canonical_root': 'root'}  # noqa: RUF012 — a test stub, not shared state
+    record = {'canonical_root': 'root'}  # a per-test stub value, not shared mutable state
 
 
 @pytest.fixture

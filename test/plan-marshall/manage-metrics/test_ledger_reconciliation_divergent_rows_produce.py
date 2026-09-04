@@ -10,7 +10,7 @@ re-entered phase each take.
 
 from datetime import timedelta
 
-from _ledger_reconciliation_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
+from _ledger_reconciliation_fixtures import (
     _boundary_timestamps,
     _findings_of,
     _ledger,

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """A usage string is not a call — and the skip is COUNTED, never silent.
 
 ``_INVOCATION_RE`` resolves the verb slot with ``[a-z][A-Za-z0-9_\\-]*``, so a

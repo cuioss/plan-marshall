@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the ``documented-verb-set-drift`` rule analyzer.
 
 The analyzer compares two SETS per in-scope script: the top-level verbs the

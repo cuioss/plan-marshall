@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """In-process unit tests for the pure helper functions in ``doctor-marketplace.py``.
 
 These functions (CSV/rule parsers, marketplace-root resolver, component

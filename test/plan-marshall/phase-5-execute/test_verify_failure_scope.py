@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Tests for verify_failure_scope.py.
 
 Cover the five contract cases from solution_outline.md deliverable 5:
@@ -21,7 +20,6 @@ real git worktree.
 from __future__ import annotations
 
 import json
-import sys
 
 import file_ops
 from _resolve_project_dir_fixtures import (
@@ -30,15 +28,10 @@ from _resolve_project_dir_fixtures import (
     patch_main_checkout_root,
     patch_query_worktree_path,
 )
-from conftest import get_script_path
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'phase-5-execute', 'verify_failure_scope.py')
-SCRIPTS_DIR = SCRIPT_PATH.parent
+from conftest import load_script_module
 
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import verify_failure_scope as vfs  # noqa: E402
+vfs = load_script_module('plan-marshall', 'phase-5-execute', 'verify_failure_scope.py')
 
 
 def _write_refs(plan_dir):

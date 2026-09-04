@@ -10,14 +10,11 @@ a clean site (it must not fire). The divergent-site assertions are the
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+from toon_parser import serialize_toon
 
-from toon_parser import serialize_toon  # noqa: E402
-
-from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
+from conftest import MARKETPLACE_ROOT, run_script
 
 SCRIPT_PATH = (
     MARKETPLACE_ROOT

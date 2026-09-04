@@ -14,15 +14,11 @@ The cross-check matrix being exercised is documented in
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+from _plan_retrospective_fixtures import build_happy_plan_dir
 
-
-from _plan_retrospective_fixtures import build_happy_plan_dir  # noqa: E402
-
-from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
+from conftest import MARKETPLACE_ROOT, run_script
 
 MANIFEST_SCRIPT = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'check-manifest-consistency.py'

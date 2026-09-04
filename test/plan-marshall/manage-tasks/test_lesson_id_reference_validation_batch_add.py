@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: F811 — a test takes the imported fixture as a parameter
+
 """Tests for at-write-time lesson-ID reference validation in manage-tasks.
 
 Its sections, in order:
@@ -13,7 +13,7 @@ Its sections, in order:
 
 import json
 
-from _lesson_id_reference_validation_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
+from _lesson_id_reference_validation_fixtures import (
     PHANTOM_IDS,
     REAL_LESSON_IDS,
     _batch_ns,
@@ -24,7 +24,7 @@ from _lesson_id_reference_validation_fixtures import (  # noqa: F401 — a fixtu
     _seed_plan_dir_lesson,
     cmd_batch_add,
     patch_inventory,
-    short_circuit_anchor,  # noqa: F401 — a fixture is used by NAME, not by reference
+    short_circuit_anchor,
 )
 
 # =============================================================================

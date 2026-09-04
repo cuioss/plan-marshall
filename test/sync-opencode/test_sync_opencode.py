@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Unit tests for the project-local sync_opencode.py deploy engine.
 
 Covers the singular→plural path mapping, --dry-run (no filesystem

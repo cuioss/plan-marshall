@@ -575,41 +575,46 @@ class OpenCodeRuntime(Runtime):
     ) -> str:
         """Record token consumption for OpenCode.
 
-        OpenCode exposes no session transcript, so there is nothing to sum.
-        Without ``total_tokens`` the op returns ``no-op``.
+        This operation is an honest ``no-op`` on OpenCode — on EVERY input,
+        manual count included.
 
-        With ``total_tokens`` it returns ``success`` carrying the count — but it
-        **does NOT persist it**. This method reaches no metrics boundary: unlike
-        the Claude implementation, which writes the token cursor and calls
-        ``manage-metrics end-phase`` before reporting success, this one only
-        builds a payload. An operator who passes ``--total-tokens`` here is told
-        the capture succeeded and the number is not recorded anywhere.
+        OpenCode exposes no session transcript, so auto-capture has nothing to
+        sum. And this target reaches no persistence boundary: the token-cursor
+        write and the ``manage-metrics end-phase`` call live in the Claude
+        runtime, so even an explicit ``--total-tokens`` cannot be stored here.
+        The Runtime contract therefore forbids returning ``success`` for a
+        manual count — a success the caller cannot distinguish from a stored one
+        turns a declined measurement into a silently lost one. The target
+        declines instead, naming the reason and the alternative.
 
-        That is a known defect, left as a characterised survivor rather than
-        fixed here: the persistence boundary is target-neutral (it shells out to
-        ``plan-marshall:manage-metrics``) but currently lives in
-        ``claude_runtime``, so wiring it up means relocating a helper across the
-        target boundary — the opposite of a docstring fix, and a change this
-        module should not make on its own. Bound: fires only when a caller passes
-        an explicit count on an OpenCode project, and OpenCode is not a tested
-        runtime. Do not "fix" this by deleting the paragraph; the sentence it
-        replaced claimed the value was stored, which was the actual defect.
+        Do NOT "helpfully" return a success carrying the count: that was the
+        fabricate-success defect this no-op exists to close. The recommended
+        remediation is to relocate the (target-neutral) metrics persistence
+        boundary to a shared home so both runtimes can reach it; until then,
+        OpenCode declines rather than lying about a write it cannot perform.
         """
         if total_tokens is None:
-            return toon_noop(
-                "metrics capture",
+            reason = (
                 "automatic token capture requires a platform-provided session id,"
-                " which OpenCode does not expose (issue #9292)",
-                "pass --total-tokens manually",
+                " which OpenCode does not expose (issue #9292)"
             )
-        return toon_success(
+            alternative = (
+                "run metrics capture on the Claude target, or wire a shared"
+                " metrics-persistence boundary OpenCode can reach"
+            )
+        else:
+            reason = (
+                "OpenCode reaches no token-persistence boundary, so an explicit"
+                " count cannot be stored (issue #9292)"
+            )
+            alternative = (
+                "run metrics capture on the Claude target, or wire a shared"
+                " metrics-persistence boundary OpenCode can reach"
+            )
+        return toon_noop(
             "metrics capture",
-            {
-                "plan_id": plan_id,
-                "phase": phase,
-                "tokens_captured": total_tokens,
-                "source": "manual",
-            },
+            reason,
+            alternative,
         )
 
     def metrics_normalized_tokens(

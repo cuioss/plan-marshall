@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Acceptance: a project registered with default scope has its build ACCEPTED.
 
 The positive counterpart to ``test_acceptance_fallback.py``. It asserts the
@@ -24,27 +23,21 @@ from __future__ import annotations
 
 import argparse
 import copy
-import sys
 from pathlib import Path
 from typing import Any
 
+import _build_execute_factory as factory
+import _build_server_registry as registry
+import _marshalld_verifier as verifier
 import pytest
-from conftest import get_script_path, parse_ns
+
+from conftest import load_script_module, parse_ns
 
 _BUNDLE = 'plan-marshall'
 _SKILL = 'manage-build-server'
 _SCRIPT = 'manage_build_server.py'
 
-SCRIPT_PATH = get_script_path(_BUNDLE, _SKILL, _SCRIPT)
-SCRIPTS_DIR = SCRIPT_PATH.parent
-
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import _build_execute_factory as factory  # noqa: E402
-import _build_server_registry as registry  # noqa: E402
-import _marshalld_verifier as verifier  # noqa: E402
-import manage_build_server as mbs  # noqa: E402
+mbs = load_script_module(_BUNDLE, _SKILL, _SCRIPT)
 
 
 def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:

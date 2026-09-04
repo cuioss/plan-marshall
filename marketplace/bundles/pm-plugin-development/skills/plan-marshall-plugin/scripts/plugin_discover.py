@@ -42,7 +42,7 @@ from typing import Any
 # Allow direct invocation and testing — executor sets PYTHONPATH for production.
 # Resolve extension-api scripts via the validated bundles-root helper, then the
 # version/worktree-aware bundle-path resolver (no bare concatenation).
-from marketplace_bundles import resolve_bundle_path, resolve_bundles_root  # noqa: E402
+from marketplace_bundles import resolve_bundle_path, resolve_bundles_root
 
 _BUNDLES_DIR = resolve_bundles_root(Path(__file__))
 EXTENSION_API_DIR = resolve_bundle_path(_BUNDLES_DIR, 'plan-marshall', 'skills/extension-api/scripts')

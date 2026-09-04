@@ -11,8 +11,15 @@ Its sections, in order:
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
+# MODULE IDENTITY, not merely reachability: the category vocabulary read here has
+# to be the SAME object the loaded consumers resolve, so a plain import — which
+# binds whatever ``sys.modules`` holds — is what the guard below depends on. Its
+# marketplace ``scripts/`` directory is already on ``sys.path`` via the root
+# conftest.
+import _footprint_classification
 from _footprint_oracle_classification_fixtures import (
     MANIFEST_SCRIPT,
     ROUTING_SCRIPT,
@@ -21,7 +28,7 @@ from _footprint_oracle_classification_fixtures import (
     _write_diff,
 )
 
-from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
+from conftest import MARKETPLACE_ROOT, load_script_module, run_script
 
 # =============================================================================
 # The oracle can be silent about test files, and silence must not read as production
@@ -251,13 +258,13 @@ class TestConsumerDispatchSetsAreKnownCategories:
     """
 
     def test_dispatch_sets_are_subsets_of_the_category_vocabulary(self):
-        import sys as _sys
-
-        scripts = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts'
-        _sys.path.insert(0, str(scripts))
-        from _footprint_classification import CATEGORIES
-
-        from conftest import load_script_module
+        # The vocabulary this guard compares against is the registered module —
+        # the one any importer, including the two consumers loaded below,
+        # resolves. Asserted rather than assumed: a second copy would leave this
+        # guard comparing two independent vocabularies, so it would keep passing
+        # while the real ones drifted apart.
+        assert sys.modules['_footprint_classification'] is _footprint_classification
+        CATEGORIES = _footprint_classification.CATEGORIES
 
         manifest_mod = load_script_module(
             'plan-marshall', 'plan-retrospective', 'check-manifest-consistency.py', 'cmc_dispatch_mod'

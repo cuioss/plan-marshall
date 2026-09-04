@@ -108,3 +108,18 @@ class Extension(ExtensionBase):
     def provides_arch_gate(self) -> dict | None:
         """dependency-cruiser: JS arch-gate tool. Binding: pm-dev-frontend:arch-gate-js."""
         return {'tool': 'dependency-cruiser'}
+
+    def provides_file_globs(self) -> list[str]:
+        """Declare the JavaScript and CSS source globs this domain owns.
+
+        The bundle's skills cover JavaScript (ES modules, web components, DOM trust
+        boundaries) and CSS, so those two file types are its file-type identity.
+        TypeScript suffixes are deliberately absent — the npm build system claims
+        them for Axis-B routing, but this bundle ships no TypeScript standards, so
+        declaring them here would union the domain into plans it has nothing to say
+        about. The npm toolchain descriptors (``package.json`` / ``tsconfig.json``)
+        are likewise absent: they belong to the npm build system under ADR-004.
+        Written in the ``file_globs`` dialect, where a leading ``**/`` matches zero
+        or more path segments.
+        """
+        return ['**/*.js', '**/*.mjs', '**/*.jsx', '**/*.css']

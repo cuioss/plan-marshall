@@ -15,28 +15,19 @@ so this suite pins:
    merged-state suppression and the deferred-merge clean-exit paths.
 """
 
-# ruff: noqa: I001, E402
-
-import sys
 from argparse import Namespace
 from pathlib import Path
 
-_MARKETPLACE_ROOT = (
-    Path(__file__).parent.parent.parent.parent / 'marketplace' / 'bundles'
-)
-from conftest import get_scripts_dir, load_script_module  # noqa: E402
-_SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'manage-config')
-_BRANCH_CLEANUP_DOC = (
-    _MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT, load_script_module
+
+_BRANCH_CLEANUP_DOC: Path = (
+    MARKETPLACE_ROOT
     / 'plan-marshall'
     / 'skills'
     / 'phase-6-finalize'
     / 'standards'
     / 'branch-cleanup.md'
 )
-
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
 
 
 def _load_module(name: str, filename: str):

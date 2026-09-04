@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
 """Acceptance: identical concurrent submits attach to one job.
 
 The scheduler keys on the idempotent-submit fingerprint (plan_id + command +
@@ -12,20 +11,16 @@ end-to-end through the daemon's submit dispatch over a verified registration.
 from __future__ import annotations
 
 import asyncio
-import sys
 
+# PLAIN import, deliberately: the build-server suites annotate against
+# ``marshalld.Daemon``, which only a plain import gives mypy. The name is bound the
+# same way in every suite, so no loaded copy is published beside it.
+import marshalld
 import pytest
-from conftest import get_script_path
-
-_DAEMON_DIR = get_script_path('plan-marshall', 'manage-build-server', 'marshalld.py').parent
-if str(_DAEMON_DIR) not in sys.path:
-    sys.path.insert(0, str(_DAEMON_DIR))
-
-import marshalld  # noqa: E402
-from _build_server_protocol import STATUS_QUEUED, JobSpec, make_job_spec  # noqa: E402
-from _build_server_registry import canonicalize_root, register_project  # noqa: E402
-from _marshalld_journal import Journal  # noqa: E402
-from _marshalld_scheduler import Scheduler  # noqa: E402
+from _build_server_protocol import STATUS_QUEUED, JobSpec, make_job_spec
+from _build_server_registry import canonicalize_root, register_project
+from _marshalld_journal import Journal
+from _marshalld_scheduler import Scheduler
 
 _NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
 

@@ -153,7 +153,7 @@ def _load_optional_bundle_finalize_steps(marketplace_root: Path) -> list[str]:
         sys.path.insert(0, str(scripts_dir))
         inserted = True
     try:
-        from extension_discovery import find_implementors  # noqa: PLC0415
+        from extension_discovery import find_implementors  # deferred: the sys.path insert above must run first
 
         return [
             rec['name']

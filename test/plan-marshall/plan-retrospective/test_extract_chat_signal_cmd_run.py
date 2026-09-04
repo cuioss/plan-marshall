@@ -17,7 +17,7 @@ from conftest import (
     MARKETPLACE_ROOT,
     parse_ns,
     run_script,
-)  # noqa: E402
+)
 
 BUNDLE = 'plan-marshall'
 SKILL = 'plan-retrospective'

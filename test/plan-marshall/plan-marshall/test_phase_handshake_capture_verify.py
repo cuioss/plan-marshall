@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402, F811
+# ruff: noqa: I001
 """Tests for phase_handshake cmd_capture / cmd_verify / cmd_list / cmd_clear.
 
 Split from test_phase_handshake.py: covers the base capture / verify
@@ -19,8 +19,8 @@ from _handshake_fixtures import (
     inv,
     store,
     # Fixtures (imported so pytest can resolve them):
-    stub_metadata,  # noqa: F401
-    stubbed_invariants,  # noqa: F401
+    stub_metadata,
+    stubbed_invariants,
 )
 
 

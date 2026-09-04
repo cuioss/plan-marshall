@@ -20,8 +20,6 @@ Note: Tests must handle both cases since Gradle may or may not be
 available depending on the environment (CI runners have it, local may not).
 """
 
-import sys
-
 # Shared discovery helpers (test/conftest.py puts test/plan-marshall/ on sys.path)
 from _discovery_fixtures import (
     assert_command_uses_executor,
@@ -31,19 +29,16 @@ from _discovery_fixtures import (
     assert_valid_module,
 )
 
-from conftest import PROJECT_ROOT, BuildContext
+from conftest import BuildContext, load_skill_module
 
-# Direct imports - conftest sets up PYTHONPATH
-# Import Extension class from the extension module
-EXTENSION_DIR = PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'plan-marshall-plugin'
-sys.path.insert(0, str(EXTENSION_DIR))
-
-import importlib.util  # noqa: E402
-
-spec = importlib.util.spec_from_file_location('java_extension', EXTENSION_DIR / 'extension.py')
-assert spec is not None and spec.loader is not None
-java_extension = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(java_extension)
+# ``extension.py`` sits at the SKILL ROOT, so the scripts-relative loader cannot
+# address it. The explicit ``module_name`` is mandatory rather than cosmetic:
+# every bundle ships its extension under the same filename, so the default stem
+# would be ``extension`` for all of them and loading a second would displace the
+# first.
+java_extension = load_skill_module(
+    'plan-marshall', 'plan-marshall-plugin', 'extension.py', module_name='java_extension'
+)
 Extension = java_extension.Extension
 
 # Gradle discovery shells out, so a host without a Gradle binary yields the

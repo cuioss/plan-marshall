@@ -222,7 +222,7 @@ def test_plan_dir_not_found_errors(plan_context):
 
 def test_change_type_heuristic_registered_in_manage_status_dispatch():
     """The subcommand is wired into manage-status.py argparse."""
-    import argparse  # noqa: PLC0415
+    import argparse  # local import: only this dispatch-wiring check needs it
 
     manage_status = load_script_module(
         'plan-marshall', 'manage-status', 'manage-status.py', '_manage_status_dispatch_check'

@@ -310,7 +310,7 @@ def log_entry(log_type: str, plan_id: str | None, level: str, message: str, stor
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write(entry)
 
-    except Exception:  # noqa: BLE001 — logging is best-effort, never raises into a caller
+    except Exception:  # logging is best-effort, never raises into a caller
         pass  # Silent failure for logging
 
 
@@ -363,7 +363,7 @@ def log_script_execution(
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write(entry)
 
-    except Exception:  # noqa: BLE001 — logging is best-effort, never raises into a caller
+    except Exception:  # logging is best-effort, never raises into a caller
         pass  # Silent failure for logging
 
 
@@ -560,7 +560,7 @@ def log_separator(log_type: str, plan_id: str, store: str = 'plans') -> None:
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write('\n')
 
-    except Exception:  # noqa: BLE001 — logging is best-effort, never raises into a caller
+    except Exception:  # logging is best-effort, never raises into a caller
         pass  # Silent failure for logging
 
 

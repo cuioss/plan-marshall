@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the ``declared-component-vs-disk`` rule analyzer.
 
 The analyzer scans every bundle's ``.claude-plugin/plugin.json`` under the

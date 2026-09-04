@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Unit + integration tests for the project-local sync.py engine.
 
 Covers parallel rsync, TOON return shape, --from-worktree redirection,

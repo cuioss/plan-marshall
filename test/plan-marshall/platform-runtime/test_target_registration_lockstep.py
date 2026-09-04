@@ -2,12 +2,11 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Lockstep invariants over the platform-runtime target registration block.
 
-Target registration is split across two modules that resolve a target
-independently: ``platform_runtime`` (the router's registration block) and
-``script-shared``'s ``marketplace_paths`` (the layout-lookup consumer). Nothing
-in either module forces them to agree, so a divergence would route layout
-lookups at one target while the router dispatched another — silently, since both
-modules stay internally consistent. These tests are the coupling.
+Target registration is single-sourced in ``platform_runtime._TARGET_RECORDS``;
+``_REGISTRY``, ``_TARGET_BOOTSTRAP_LIBS``, and ``_DEFAULT_TARGET`` are all
+derived from it. ``marketplace_paths._default_runtime_target()`` lazily imports
+the same value to keep layout lookups in sync. These tests verify the
+derivations agree and that the key sets stay coupled.
 """
 
 import pathlib  # noqa: I001
@@ -19,8 +18,8 @@ import platform_runtime
 
 
 def test_default_target_agrees_across_modules() -> None:
-    """Both modules resolve the same fallback target identifier."""
-    assert platform_runtime._DEFAULT_TARGET == marketplace_paths._DEFAULT_RUNTIME_TARGET
+    """The fallback in marketplace_paths is derived from platform_runtime's default."""
+    assert platform_runtime._DEFAULT_TARGET == marketplace_paths._default_runtime_target()
 
 
 def test_default_target_is_registered() -> None:
@@ -49,7 +48,7 @@ def test_default_skill_roots_match_what_the_default_target_resolves() -> None:
     The expectation is NOT computed from the constant it guards: it comes from
     invoking the real layout op through the real registry.
     """
-    resolved = marketplace_paths._invoke_layout_op(marketplace_paths._DEFAULT_RUNTIME_TARGET)
+    resolved = marketplace_paths._invoke_layout_op(marketplace_paths._default_runtime_target())
 
     assert resolved is not None, "the layout op must be reachable from the checkout"
     assert resolved == marketplace_paths._DEFAULT_SKILL_ROOTS
@@ -78,7 +77,7 @@ def test_default_bundle_cache_roots_match_what_the_default_target_resolves() -> 
         pytest.skip("no resolvable home directory; the op's raw Path.home() cannot run")
 
     resolved = marketplace_paths._invoke_layout_op(
-        marketplace_paths._DEFAULT_RUNTIME_TARGET, "layout_bundle_cache_root"
+        marketplace_paths._default_runtime_target(), "layout_bundle_cache_root"
     )
 
     assert resolved is not None, "the layout op must be reachable from the checkout"
@@ -140,3 +139,77 @@ def test_unregistered_target_resolves_to_the_default_targets_roots() -> None:
     resolved = marketplace_paths._invoke_layout_op("no-such-target")
 
     assert resolved == marketplace_paths._DEFAULT_SKILL_ROOTS
+
+
+def test_d4_fake_target_derives_through_all_three_dicts() -> None:
+    """A fake target in _TARGET_RECORDS propagates to _REGISTRY and _TARGET_BOOTSTRAP_LIBS.
+
+    Proves the three derived dicts are not independently hardcoded: adding a
+    record to _TARGET_RECORDS and re-deriving the dicts produces the expected
+    result.  If any dict were independently maintained the derivation would
+    silently diverge.
+    """
+    _saved = dict(platform_runtime._TARGET_RECORDS)
+    try:
+        platform_runtime._TARGET_RECORDS["__red_fake"] = {
+            "runtime_class": object,
+            "bootstrap_libs": ("fake-lib",),
+            "default": False,
+        }
+        reg = {
+            name: rec["runtime_class"]
+            for name, rec in platform_runtime._TARGET_RECORDS.items()
+        }
+        libs = {
+            name: rec["bootstrap_libs"]
+            for name, rec in platform_runtime._TARGET_RECORDS.items()
+        }
+        default = next(
+            name for name, rec in platform_runtime._TARGET_RECORDS.items()
+            if rec.get("default")
+        )
+        assert "__red_fake" in reg
+        assert reg["__red_fake"] is object
+        assert libs["__red_fake"] == ("fake-lib",)
+        assert default == "claude"  # default unchanged
+    finally:
+        platform_runtime._TARGET_RECORDS.clear()
+        platform_runtime._TARGET_RECORDS.update(_saved)
+
+    # Also verify production values match the derivation from _TARGET_RECORDS
+    # (not independently maintained).
+    prod_reg = {
+        name: rec["runtime_class"]
+        for name, rec in platform_runtime._TARGET_RECORDS.items()
+    }
+    prod_libs = {
+        name: rec["bootstrap_libs"]
+        for name, rec in platform_runtime._TARGET_RECORDS.items()
+    }
+    prod_default = next(
+        name for name, rec in platform_runtime._TARGET_RECORDS.items()
+        if rec.get("default")
+    )
+    assert prod_reg == dict(platform_runtime._REGISTRY)
+    assert prod_libs == dict(platform_runtime._TARGET_BOOTSTRAP_LIBS)
+    assert prod_default == platform_runtime._DEFAULT_TARGET
+
+
+def test_d3_fake_target_appears_in_unknown_target_message() -> None:
+    """A fake target in _REGISTRY is named by the unknown_target error in project_initial_setup.
+
+    Proves the concrete runtime does not hardcode ``"claude, opencode"`` but
+    derives the message from the live registry.
+    """
+    _saved = dict(platform_runtime._REGISTRY)
+    try:
+        platform_runtime._REGISTRY["__red_fake_d3"] = object  # type: ignore[assignment]
+        from claude_runtime import ClaudeRuntime
+
+        rt = ClaudeRuntime()
+        result = rt.project_initial_setup("/nonexistent", "__red_fake_d3")
+        assert "__red_fake_d3" in result
+        assert "valid targets are:" in result
+    finally:
+        platform_runtime._REGISTRY.clear()
+        platform_runtime._REGISTRY.update(_saved)

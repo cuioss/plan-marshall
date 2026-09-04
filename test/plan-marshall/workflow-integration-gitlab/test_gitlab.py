@@ -136,9 +136,9 @@ def test_pr_create_handler_has_a_single_body_source():
     ``body_file`` branch reachable from a direct-Namespace caller would stay
     invisible to it.
     """
-    import ast  # noqa: PLC0415
+    import ast  # local import: only this structural check needs it
 
-    from conftest import get_scripts_dir  # noqa: PLC0415
+    from conftest import get_scripts_dir  # local import: only this structural check needs it
 
     source = (
         get_scripts_dir('plan-marshall', 'workflow-integration-gitlab') / 'gitlab_ops.py'

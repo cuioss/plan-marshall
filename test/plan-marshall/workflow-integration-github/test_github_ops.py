@@ -1122,10 +1122,15 @@ def test_main_project_dir_sets_default_cwd(tmp_path, monkeypatch, capsys):
     Fix A (secondary guard): ``--plan-id`` must appear before the subcommand
     token, not after. ``--project-dir`` may still appear before the subcommand
     as the explicit-path escape hatch.
+
+    ``ci_base`` is the MODULE-LEVEL binding deliberately, not a function-local
+    ``import ci_base``. A local import re-resolves the name through
+    ``sys.modules`` at call time, so it would read whichever copy was published
+    last, while ``github_ops`` calls the ``set_default_cwd`` it bound at ITS
+    import time — the two can be different objects, and then the assertion reads
+    a ``_DEFAULT_CWD`` nothing ever wrote to.
     """
     import sys
-
-    import ci_base
 
     monkeypatch.setattr(ci_base, '_DEFAULT_CWD', None, raising=False)
 
@@ -1166,10 +1171,11 @@ def test_main_project_dir_equals_form(tmp_path, monkeypatch, capsys):
     Fix A (secondary guard): ``--plan-id`` must appear before the subcommand
     token. ``--project-dir=PATH`` (equals form) before the subcommand is the
     explicit-path escape hatch and must still work.
+
+    Uses the module-level ``ci_base`` binding for the same reason as the sibling
+    above — see its docstring.
     """
     import sys
-
-    import ci_base
 
     monkeypatch.setattr(ci_base, '_DEFAULT_CWD', None, raising=False)
 

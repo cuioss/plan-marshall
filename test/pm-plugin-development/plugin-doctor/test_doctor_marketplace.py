@@ -1587,10 +1587,9 @@ def _load_doctor_marketplace():
     function helpers (``_parse_rules_flag``, ``_resolve_active_rules``) without
     paying subprocess overhead per case.
     """
-    # Add the script directory to sys.path so internal ``from _x import ...``
-    # statements resolve.
-    if str(_DOCTOR_SCRIPTS_DIR) not in sys.path:
-        sys.path.insert(0, str(_DOCTOR_SCRIPTS_DIR))
+    # No bootstrap: the script's internal ``from _x import ...`` statements
+    # resolve because the root conftest puts every marketplace ``scripts/``
+    # directory on ``sys.path`` before any test module is imported.
     return load_script_module(
         'pm-plugin-development', 'plugin-doctor', 'doctor-marketplace.py', '_doctor_marketplace_under_test'
     )
@@ -1741,8 +1740,6 @@ def test_resolve_active_rules_rules_and_alias_union():
 
 def _load_doctor_analysis():
     """Import ``_doctor_analysis.py`` for direct-call tests."""
-    if str(_DOCTOR_SCRIPTS_DIR) not in sys.path:
-        sys.path.insert(0, str(_DOCTOR_SCRIPTS_DIR))
     return load_script_module(
         'pm-plugin-development', 'plugin-doctor', '_doctor_analysis.py', '_doctor_analysis_under_test'
     )
