@@ -295,8 +295,7 @@ class TestPreferenceAdmissibilityBasis:
     check rather than rejecting every bot-attributed comment — a rejection would
     hand preference learning a clean zero over a population it never read. The
     degrade is therefore kept, and made non-silent: the payload carries
-    ``preference_admissibility_basis``, so a caller can never mistake a degraded
-    narrowing for a registry-validated one.
+    ``preference_admissibility_basis``.
 
     The registry is made unresolvable by patching ``_recognized_bot_kinds`` in
     ``_findings_core`` — the module-global the once-per-query resolver looks up —
