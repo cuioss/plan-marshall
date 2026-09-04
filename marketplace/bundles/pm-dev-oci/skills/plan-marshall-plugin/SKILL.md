@@ -32,10 +32,13 @@ Declares the OCI container domain configuration including:
 
 ## Configuration
 
-All configuration is in `extension.py` which implements the Extension API:
+All configuration is in `extension.py` which implements the Extension API.
+
+Axis-A (`ExtensionBase`):
 - `get_skill_domains()` - Domain metadata with profiles
-- `provides_triage()` - Triage skill reference or None
-- `provides_outline_skill()` - Domain-specific outline skill reference or None
+- `applies_to_module()` - Check OCI applicability via container filenames, container directories, and container packaging metadata
+- `provides_triage()` - Returns `pm-dev-oci:ext-triage-oci`
+- `provides_file_globs()` - Declares the container-manifest globs (`Dockerfile`, `Containerfile`, the compose manifests, `.dockerignore` / `.containerignore`, and the hadolint / trivy descriptors) seeded into `skill_domains.oci-containers.file_globs` for domain detection. These files have no build owner under ADR-004, so the declaration contributes no `build.map` route and triggers no build gate
 
 ## Detection
 

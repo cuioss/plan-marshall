@@ -14,6 +14,8 @@ vs fetched descriptions, present vs absent extension functions, unknown
 bundle/domain fallbacks).
 """
 
+import pytest
+
 from conftest import load_script_module
 
 # Loaded under a unique module name to avoid clashing with the canonical
@@ -186,3 +188,92 @@ def test_load_profiles_from_bundle_unknown_bundle_returns_empty():
 def test_load_domain_config_from_bundle_unknown_domain_returns_none():
     """An unknown domain key resolves to None (no extension claims it)."""
     assert _sd.load_domain_config_from_bundle('no-such-domain-xyz') is None
+
+
+# =============================================================================
+# convert_extension_to_domain_config — provides_file_globs seeding
+# =============================================================================
+
+
+class _FakeGlobModule:
+    """Fake extension module whose ``provides_file_globs`` returns a declared list."""
+
+    def __init__(self, file_globs):
+        self._file_globs = file_globs
+
+    def provides_file_globs(self):
+        return self._file_globs
+
+
+class _FakeRaisingGlobModule:
+    """Fake extension module whose ``provides_file_globs`` raises."""
+
+    def provides_file_globs(self):
+        raise RuntimeError('accessor blew up')
+
+
+def test_convert_extension_seeds_file_globs_from_accessor():
+    """A non-empty accessor result is seeded into the config's ``file_globs`` key."""
+    config = _sd.convert_extension_to_domain_config(_FakeGlobModule(['**/*.py', 'pyproject.toml']), {}, 'pm-dev-python')
+
+    assert config == {'bundle': 'pm-dev-python', 'file_globs': ['**/*.py', 'pyproject.toml']}
+
+
+def test_convert_extension_empty_file_globs_writes_no_key():
+    """An accessor returning ``[]`` writes no key — byte-identical to a domain without the hook."""
+    config = _sd.convert_extension_to_domain_config(_FakeGlobModule([]), {}, 'pm-requirements')
+
+    assert config == {'bundle': 'pm-requirements'}
+    assert 'file_globs' not in config
+
+
+def test_convert_extension_raising_accessor_degrades_to_no_seed():
+    """A raising accessor degrades to no seed rather than aborting the whole conversion."""
+    config = _sd.convert_extension_to_domain_config(_FakeRaisingGlobModule(), {}, 'broken-bundle')
+
+    assert config == {'bundle': 'broken-bundle'}
+
+
+def test_convert_extension_rejects_malformed_file_globs():
+    """A malformed declaration fails at seed time rather than persisting an invalid shape."""
+    with pytest.raises(ValueError, match='file_globs'):
+        _sd.convert_extension_to_domain_config(_FakeGlobModule(['ok', 123]), {}, 'bad-bundle')
+
+
+def test_convert_extension_seeds_file_globs_alongside_providers():
+    """The seeded ``file_globs`` sits beside the existing provider-derived keys."""
+
+    class _Both(_FakeFullModule):
+        def provides_file_globs(self):
+            return ['**/*.java']
+
+    config = _sd.convert_extension_to_domain_config(_Both(), {}, 'pm-dev-java')
+
+    assert config == {
+        'bundle': 'pm-dev-java',
+        'outline_skill': 'pm-dev-java:ext-outline-java',
+        'workflow_skill_extensions': {'triage': 'pm-dev-java:ext-triage-java'},
+        'file_globs': ['**/*.java'],
+    }
+
+
+def test_load_domain_config_from_bundle_propagates_seeded_file_globs(monkeypatch):
+    """The loader seam carries the converted config's seeded ``file_globs`` through unchanged.
+
+    ``load_domain_config_from_bundle`` is the single seam both ``skill-domains
+    configure`` and ``init`` route through, so seeding at the conversion step is
+    inherited by both without duplicated logic.
+    """
+
+    class _Ext(_FakeGlobModule):
+        def get_skill_domains(self):
+            return [{'domain': {'key': 'demo', 'name': 'Demo', 'description': ''}, 'profiles': {}}]
+
+    monkeypatch.setattr(
+        _sd, 'discover_all_extensions', lambda: [{'bundle': 'demo-bundle', 'module': _Ext(['**/*.demo'])}]
+    )
+
+    assert _sd.load_domain_config_from_bundle('demo') == {
+        'bundle': 'demo-bundle',
+        'file_globs': ['**/*.demo'],
+    }

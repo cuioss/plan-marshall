@@ -59,7 +59,13 @@ class Extension(ExtensionBase):
         }]
 ```
 
-See [extension-contract.md](extension-contract.md) for the complete method contract (required `get_skill_domains()`, optional `config_defaults`, `discover_modules`, `provides_triage`, `provides_outline_skill`, `provides_recipes`, `provides_retrospective_aspects`) and the minimal / build-bundle examples. The Axis-B classification methods (`classify_paths`, `classify_path_specificity`, `classify_globs`, `classify_build_class`) are **not** available to a domain-bundle manifest — they belong to `BuildExtensionBase` and are contracted in [extension-contract.md § BuildExtensionBase Methods (Axis-B)](extension-contract.md#buildextensionbase-methods-axis-b).
+See [extension-contract.md](extension-contract.md) for the complete method contract (required `get_skill_domains()`, optional `config_defaults`, `discover_modules`, `provides_triage`, `provides_outline_skill`, `provides_recipes`, `provides_retrospective_aspects`, `provides_arch_gate`, `provides_domain_verb`, `provides_file_globs`) and the minimal / build-bundle examples. The Axis-B classification methods (`classify_paths`, `classify_path_specificity`, `classify_globs`, `classify_build_class`) are **not** available to a domain-bundle manifest — they belong to `BuildExtensionBase` and are contracted in [extension-contract.md § BuildExtensionBase Methods (Axis-B)](extension-contract.md#buildextensionbase-methods-axis-b).
+
+### Declaring the domain's own file globs
+
+Among the declarations a domain bundle may make is `provides_file_globs()` — the path globs that characterise the domain's own file types. It is **optional and defaults to the empty list**, so an existing manifest that does not override it stays a valid implementor with no edit. The returned globs seed `skill_domains.{domain}.file_globs`, which the domain detector reads on its glob inclusion leg; they are domain-detection knowledge and contribute no `build.map` route.
+
+See [extension-contract.md § provides_file_globs](extension-contract.md#provides_file_globs) for the glob dialect, the authoring rule, the seeding precedence, and the discovery-population criterion that makes this ext-point's population exactly the set of legitimate declarants — and the build-system extensions, reached by a separate collector, not.
 
 ## Hook API
 

@@ -1060,6 +1060,55 @@ class ExtensionBase(ABC):
         """
         return None
 
+    def provides_file_globs(self) -> list[str]:
+        """Return the path globs that characterise this domain's own file types.
+
+        Optional additive hook alongside provides_arch_gate() /
+        provides_domain_verb(): a domain bundle overrides it to declare the
+        globs that name the file types the domain genuinely owns.
+
+        Consumer:
+            The returned list is the SEED for ``skill_domains.{domain}.file_globs``.
+            ``manage-config``'s ``convert_extension_to_domain_config`` reads this
+            hook when it builds a domain's config block, so both ``skill-domains
+            configure`` and ``init`` inherit the seed through that one seam. The
+            seeded value is read by ``manage-config domain-detect`` alone, on its
+            glob inclusion leg, to decide which domains a plan touches. An
+            operator value set via ``set-inclusion`` overrides the seed.
+
+        NOT a build route:
+            These globs are domain-detection knowledge, not build knowledge. They
+            never enter ``build.map``, contribute no ``(pattern, role)`` route,
+            and trigger no build gate — the Axis-B file-to-build map on
+            :class:`BuildExtensionBase` (``classify_globs``) remains the sole
+            owner of build routing (ADR-004).
+
+        Glob dialect:
+            Values are written in the ``file_globs`` dialect translated by
+            ``_cmd_domain_detect._glob_to_regex``: ``**/`` matches zero or more
+            leading path segments (so a repo-root file DOES match ``**/*.py``),
+            ``**`` matches any run of characters including separators, and ``*``
+            matches a run of non-separator characters. This is NOT the
+            :func:`fnmatch.fnmatch` dialect used by ``build.map`` routes.
+
+        Authoring rule:
+            Declare only globs the domain genuinely owns, and return ``[]`` when
+            it owns no distinct file type. An over-broad glob (``**/*.md`` on a
+            documentation domain, say) unions the domain into plans that do not
+            touch its file types, which is exactly what the ``file_globs``
+            inclusion leg exists to avoid.
+
+        Keying:
+            The hook is un-keyed and applies to every domain the extension
+            declares — the same shape as provides_triage() / provides_arch_gate().
+            Every bundle currently declares exactly one domain.
+
+        Returns:
+            A list of glob strings, or ``[]`` (the default) when the domain owns
+            no distinct file type.
+        """
+        return []
+
     def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
         """Check if this domain applies to a specific module and return resolved skills.
 

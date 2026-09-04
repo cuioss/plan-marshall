@@ -41,7 +41,8 @@ hook this bundle overrides:
 | `get_skill_domains()` | Domain metadata with profiles |
 | `applies_to_module()` | Applicability check — additive to the `java` domain, keyed on Maven/Gradle build systems plus `de.cuioss:*` dependency signals |
 | `provides_recipes()` | Contributes the `cui-logging-enforce` recipe |
-| `provides_domain_verb()` | Declares the `marker-detect` verb, resolving to `pm-dev-java-cui:search-markers` — the domain-owned OpenRewrite marker detector. Core resolves it null-on-absent, so a project without java-cui active runs no marker gate. See `plan-marshall:extension-api/standards/ext-point-domain-verb.md`. |
+| `provides_file_globs()` | Declares the Java source glob (`['**/*.java']`) seeded into `skill_domains.java-cui.file_globs` for domain detection — the same file type the base `java` domain owns, matching this bundle's additive relationship to it; contributes no `build.map` route |
+| `provides_domain_verb()` | Declares the `marker-detect` verb (resolving to `pm-dev-java-cui:search-markers`, the domain-owned OpenRewrite marker detector) and the `rewrite-log-parse` verb (resolving to `pm-dev-java-cui:parse-rewrite-log`, the log-parse of the OpenRewrite WARN lines). Core resolves each null-on-absent, so a project without java-cui active runs neither signal. See `plan-marshall:extension-api/standards/ext-point-domain-verb.md`. |
 | `config_defaults()` | Seeds CUI-standard Maven profile mappings and the internal-profile skip list (write-once) |
 
 ## Integration

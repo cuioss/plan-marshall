@@ -52,6 +52,7 @@ Configuration is in `extension.py`:
 |--------|---------|
 | `get_skill_domains()` | Domain metadata with profiles |
 | `applies_to_module()` | Detect CUI JS via `npm + maven` dual build system |
+| `provides_file_globs()` | Declares the JS/CSS source globs (`['**/*.js', '**/*.mjs', '**/*.jsx', '**/*.css']`) seeded into `skill_domains.javascript-cui.file_globs` for domain detection — the same file types the base `javascript` domain owns, matching this bundle's additive relationship to it; contributes no `build.map` route |
 | `config_defaults()` | Set Maven profile defaults for CUI projects |
 
 `config_defaults()` sets write-once Maven defaults (profile map and skip list) that match CUI Open Source project conventions. These are the same Maven lifecycle hooks CUI Java projects use since the frontend Maven plugin runs inside Maven.

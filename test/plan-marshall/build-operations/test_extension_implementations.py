@@ -18,9 +18,27 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from extension_base import ExtensionBase
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import MARKETPLACE_ROOT
+
+# Every bundle that registers an Axis-A domain extension — the population
+# ``discover_all_extensions()`` reaches, and therefore the population every
+# cross-bundle assertion below must cover. Named once so a new domain bundle is
+# added in one place rather than to each list that had its own copy.
+DOMAIN_EXTENSION_BUNDLES = [
+    'pm-dev-java',
+    'pm-dev-java-cui',
+    'pm-dev-frontend',
+    'pm-dev-frontend-cui',
+    'pm-dev-python',
+    'pm-dev-oci',
+    'pm-plugin-development',
+    'pm-requirements',
+    'pm-documents',
+    'plan-marshall',
+]
 
 # Required canonical commands in discover_modules() output
 # NOTE: Commands are now part of module discovery output, not separate mappings
@@ -1379,18 +1397,7 @@ def test_plan_marshall_no_nested_gradle_when_already_gradle():
 
 def test_all_extensions_have_unique_domain_keys():
     """Test that all extensions have unique domain keys."""
-    bundles = [
-        'pm-dev-java',
-        'pm-dev-java-cui',
-        'pm-dev-frontend',
-        'pm-dev-frontend-cui',
-        'pm-dev-python',
-        'pm-dev-oci',
-        'pm-plugin-development',
-        'pm-requirements',
-        'pm-documents',
-        'plan-marshall',
-    ]
+    bundles = DOMAIN_EXTENSION_BUNDLES
     domain_keys = {}
 
     for bundle in bundles:
@@ -1412,18 +1419,7 @@ def test_all_extensions_have_unique_domain_keys():
 
 def test_all_extensions_have_required_functions():
     """Test that all extensions implement required functions."""
-    bundles = [
-        'pm-dev-java',
-        'pm-dev-java-cui',
-        'pm-dev-frontend',
-        'pm-dev-frontend-cui',
-        'pm-dev-python',
-        'pm-dev-oci',
-        'pm-plugin-development',
-        'pm-requirements',
-        'pm-documents',
-        'plan-marshall',
-    ]
+    bundles = DOMAIN_EXTENSION_BUNDLES
     # Only get_skill_domains is required (abstract method)
     required = ['get_skill_domains']
 
@@ -1436,6 +1432,124 @@ def test_all_extensions_have_required_functions():
                 assert callable(getattr(ext, func_name)), f'{bundle}: {func_name} is not callable'
         except FileNotFoundError as err:
             raise AssertionError(f'{bundle}: extension.py not found') from err
+
+
+# =============================================================================
+# provides_file_globs() Cross-Bundle Contract and Mirror-Parity Tests
+# =============================================================================
+#
+# ``provides_file_globs()`` seeds ``skill_domains.{domain}.file_globs`` through
+# ``convert_extension_to_domain_config``. A malformed declaration in any bundle
+# would surface at seed time — deep inside ``skill-domains configure`` / ``init``,
+# far from the bundle that caused it — so the well-formedness assertion below
+# pulls that failure back to the declaring bundle.
+#
+# The mirror-parity assertion covers the other half: each bundle's
+# ``plan-marshall-plugin/SKILL.md`` is a hand-maintained mirror of its
+# extension's declared methods (the manifest's own Enforcement block forbids
+# modifying extension.py without updating it), and the plugin-doctor
+# provides-method-table rule gates on a fixed four-method map that does not
+# include this hook. Asserting the biconditional here is what keeps the ten
+# manifests from silently rotting.
+
+# The domains that declare NO file globs, and do so deliberately rather than by
+# inheriting the base default silently. Each entry is (bundle, reason).
+#
+# ``general-dev`` is a cross-cutting quality domain: its skills apply regardless
+# of language, so any glob it declared would union it into every plan.
+# ``requirements`` is a knowledge-only domain that claims no requirements-document
+# tree of its own, so it has no path shape to name that is not already another
+# domain's.
+DELIBERATELY_EMPTY_FILE_GLOB_BUNDLES = [
+    ('plan-marshall', 'general-dev is cross-cutting and owns no file-type identity'),
+    ('pm-requirements', 'requirements claims no distinct requirements-document tree'),
+]
+
+
+def _skill_manifest_path(bundle_name: str) -> Path:
+    """Return the path of a bundle's ``plan-marshall-plugin`` manifest."""
+    marketplace_root: Path = MARKETPLACE_ROOT
+    return marketplace_root / bundle_name / 'skills' / 'plan-marshall-plugin' / 'SKILL.md'
+
+
+def _overrides_file_globs(ext) -> bool:
+    """Return whether ``ext``'s class overrides ``provides_file_globs()``.
+
+    Identity comparison against the base implementation, not ``hasattr``: the
+    hook is a concrete method with an ``[]`` default on :class:`ExtensionBase`,
+    so every extension *has* it and only an override is a declaration.
+    """
+    return type(ext).provides_file_globs is not ExtensionBase.provides_file_globs
+
+
+@pytest.mark.parametrize('bundle', DOMAIN_EXTENSION_BUNDLES)
+def test_provides_file_globs_is_wellformed(bundle: str):
+    """provides_file_globs() returns a list of non-empty strings in every bundle.
+
+    Cross-bundle contract assertion: a malformed declaration (a bare string, a
+    None member, an empty glob) fails here, attributed to the declaring bundle,
+    rather than at seed time inside ``convert_extension_to_domain_config``.
+    """
+    ext = load_extension(bundle)
+
+    globs = ext.provides_file_globs()
+
+    assert isinstance(globs, list), f'{bundle}: provides_file_globs() must return a list, got {type(globs).__name__}'
+    for index, glob in enumerate(globs):
+        assert isinstance(glob, str), (
+            f'{bundle}: provides_file_globs()[{index}] must be a str, got {type(glob).__name__}'
+        )
+        assert glob, f'{bundle}: provides_file_globs()[{index}] must be a non-empty string'
+
+
+@pytest.mark.parametrize('bundle', DOMAIN_EXTENSION_BUNDLES)
+def test_provides_file_globs_is_declared_not_inherited(bundle: str):
+    """Every registered domain extension declares provides_file_globs() explicitly.
+
+    An inherited default and a deliberate ``[]`` are indistinguishable by return
+    value, so the empty declaration is only meaningful if the override is there.
+    This assertion is what makes the two empty entries below a statement of
+    intent rather than an omission.
+    """
+    ext = load_extension(bundle)
+
+    assert _overrides_file_globs(ext), (
+        f'{bundle}: Extension must override provides_file_globs() rather than inherit the ExtensionBase default'
+    )
+
+
+@pytest.mark.parametrize(
+    'bundle,reason',
+    DELIBERATELY_EMPTY_FILE_GLOB_BUNDLES,
+    ids=[entry[0] for entry in DELIBERATELY_EMPTY_FILE_GLOB_BUNDLES],
+)
+def test_provides_file_globs_deliberate_empty_declarations(bundle: str, reason: str):
+    """The two domains with no file-type identity declare an empty list by intent."""
+    ext = load_extension(bundle)
+
+    assert ext.provides_file_globs() == [], f'{bundle}: expected an empty declaration — {reason}'
+
+
+@pytest.mark.parametrize('bundle', DOMAIN_EXTENSION_BUNDLES)
+def test_provides_file_globs_manifest_mirror_parity(bundle: str):
+    """A bundle's SKILL.md names provides_file_globs exactly when its class overrides it.
+
+    The biconditional is the point in both directions: a missing mention is a
+    manifest that has rotted behind its extension, and a mention with no override
+    is a manifest documenting a hook the bundle does not declare.
+    """
+    ext = load_extension(bundle)
+    manifest_path = _skill_manifest_path(bundle)
+
+    assert manifest_path.is_file(), f'{bundle}: manifest not found at {manifest_path}'
+    mentions_hook = 'provides_file_globs' in manifest_path.read_text(encoding='utf-8')
+    overrides_hook = _overrides_file_globs(ext)
+
+    assert mentions_hook == overrides_hook, (
+        f'{bundle}: SKILL.md {"names" if mentions_hook else "does not name"} provides_file_globs '
+        f'but the Extension class {"overrides" if overrides_hook else "does not override"} it — '
+        f'the manifest mirror has drifted from the extension'
+    )
 
 
 # =============================================================================

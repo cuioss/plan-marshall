@@ -231,6 +231,18 @@ class Extension(ExtensionBase, PathAttributionBase, DerivationResolverBase):
             },
         ]
 
+    def provides_file_globs(self) -> list[str]:
+        """Declare no file globs — ``general-dev`` owns no file-type identity.
+
+        The empty list is a deliberate declaration, not an omission. ``general-dev``
+        is a cross-cutting quality domain: its skills are code-quality, testing
+        methodology, and agent-behaviour standards that apply regardless of which
+        language a file is written in. It therefore owns no distinct file type, and
+        any glob it declared would be broad enough to union the domain into every
+        plan — exactly what the ``file_globs`` inclusion leg exists to avoid.
+        """
+        return []
+
     def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
         """Applicable only to modules with code build systems.
 

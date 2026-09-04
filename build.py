@@ -284,14 +284,31 @@ def get_bundle_path(module: str | None) -> str:
 
 
 def get_test_path(module: str | None) -> str:
-    """Get test path, optionally filtered by module."""
-    if module:
-        path = TEST_DIR / module
-        if not path.exists():
-            print(f'Error: Test directory not found: {path}', file=sys.stderr)
-            sys.exit(1)
-        return str(path)
-    return str(TEST_DIR)
+    """Resolve the test path, optionally filtered by module.
+
+    Pure resolution: it does NOT assert the directory exists. Whether an absent
+    test directory is an error depends on the caller — it is fatal for the
+    commands that must actually run tests (``module-tests``, ``coverage``,
+    ``test-compile``), which call :func:`require_test_path` below, and it is
+    merely "no test sources to lint" for ``quality-gate``, where a bundle may
+    legitimately carry none. Folding the assertion in here made that second case
+    impossible to express and left ``cmd_quality_gate``'s own ``.exists()``
+    guard unreachable.
+    """
+    return str(TEST_DIR / module) if module else str(TEST_DIR)
+
+
+def require_test_path(module: str | None) -> str:
+    """Resolve the test path and exit when a module-scoped one is absent.
+
+    The strict counterpart to :func:`get_test_path`, for commands whose whole
+    purpose is to run something over the test tree.
+    """
+    path = get_test_path(module)
+    if module and not Path(path).exists():
+        print(f'Error: Test directory not found: {path}', file=sys.stderr)
+        sys.exit(1)
+    return path
 
 
 def _mypy_exclude_patterns(label: str = 'mypy') -> list[re.Pattern[str]]:
@@ -486,7 +503,7 @@ def cmd_compile(module: str | None, boundary: CoverageBoundary | None = None) ->
 
 def cmd_test_compile(module: str | None, boundary: CoverageBoundary | None = None) -> int:
     """Run mypy on test sources (cold; freshness-checked on the gate paths)."""
-    path = get_test_path(module)
+    path = require_test_path(module)
     mypy_env = {**os.environ, 'MYPYPATH': _compute_mypypath()}
     if _skip_empty_mypy_scope('test-compile', path):
         # Same contract as cmd_compile's module arm: an unrecorded skip is
@@ -512,7 +529,7 @@ def cmd_module_tests(module: str | None, parallel: bool = True) -> int:
     is silently ignored. Pass ``parallel=False`` for serial single-file debug
     runs (CLI: ``--no-parallel``).
     """
-    path = get_test_path(module)
+    path = require_test_path(module)
     basetemp = _prepare_session_basetemp()
     cmd = ['uv', 'run', 'pytest', path, f'--basetemp={basetemp}']
     if parallel:
@@ -711,7 +728,7 @@ def cmd_coverage(module: str | None) -> int:
     markers (e.g. the ``real_marshal_json`` group that touches shared real
     ``.plan/`` state) keep their tests pinned to a single worker.
     """
-    test_path = get_test_path(module)
+    test_path = require_test_path(module)
     bundle_path = get_bundle_path(module)
 
     # Ensure output directory exists
