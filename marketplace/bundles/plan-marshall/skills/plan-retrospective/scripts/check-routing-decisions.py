@@ -584,11 +584,22 @@ def summarize_execution_log_tokens(manifest: dict[str, Any]) -> dict[str, int]:
         elif isinstance(value, int):
             coverage['total_tokens'] += value
             coverage['rows_measured'] += 1
-        elif isinstance(value, str) and value.strip() == UNMEASURED_COLUMN_TOKEN:
-            coverage['rows_unmeasured'] += 1
-        elif isinstance(value, str) and value.isdigit():
-            coverage['total_tokens'] += int(value)
-            coverage['rows_measured'] += 1
+        elif isinstance(value, str):
+            # Strip ONCE and branch on the stripped value. Stripping for the
+            # unmeasured comparison but not for the digit test made a padded
+            # numeric token (`' 12000'`) match neither arm: it fell to
+            # unrecognised and its count was silently dropped from the sum —
+            # an under-count wearing the shape of an unreadable cell, which is
+            # the measured-vs-unmeasured conflation this module exists to
+            # report rather than commit.
+            stripped = value.strip()
+            if stripped == UNMEASURED_COLUMN_TOKEN:
+                coverage['rows_unmeasured'] += 1
+            elif stripped.isdigit():
+                coverage['total_tokens'] += int(stripped)
+                coverage['rows_measured'] += 1
+            else:
+                coverage['rows_unrecognised'] += 1
         else:
             coverage['rows_unrecognised'] += 1
     return coverage

@@ -135,6 +135,41 @@ class TestCostPreviewRefusesADeltaAgainstAFloor:
         assert preview['execution_log_rows_unrecognised'] == 0
 
 
+class TestAPaddedNumericTokenIsMeasured:
+    """Whitespace around a numeric cell must not silently drop its count.
+
+    The reader stripped for the ``unmeasured`` comparison but not for the digit
+    test, so `' 12000'` matched neither arm and fell to UNRECOGNISED — an
+    under-count wearing the shape of an unreadable cell. That is the
+    measured-vs-unmeasured conflation this module exists to REPORT, committed by
+    the reporter itself.
+    """
+
+    def test_a_padded_numeric_cell_counts_toward_the_sum(self):
+        coverage = _crd.summarize_execution_log_tokens(_manifest(_row('a', ' 12000 ')))
+
+        assert coverage['rows_measured'] == 1
+        assert coverage['rows_unrecognised'] == 0
+        assert coverage['total_tokens'] == 12_000
+
+    def test_a_padded_unmeasured_token_still_reads_as_unmeasured(self):
+        """The adjacent arm, pinned so a future edit cannot fix one and break it."""
+        padded = f'  {_crd.UNMEASURED_COLUMN_TOKEN}  '
+
+        coverage = _crd.summarize_execution_log_tokens(_manifest(_row('a', padded)))
+
+        assert coverage['rows_unmeasured'] == 1
+        assert coverage['rows_measured'] == 0
+
+    def test_a_genuinely_unreadable_cell_is_still_unrecognised(self):
+        """The negative control — stripping must not widen what counts as measured."""
+        coverage = _crd.summarize_execution_log_tokens(_manifest(_row('a', ' 12x ')))
+
+        assert coverage['rows_unrecognised'] == 1
+        assert coverage['rows_measured'] == 0
+        assert coverage['total_tokens'] == 0
+
+
 def test_unmeasured_token_matches_writer():
     """The mirrored literal agrees with the manifest writer's own definition.
 
