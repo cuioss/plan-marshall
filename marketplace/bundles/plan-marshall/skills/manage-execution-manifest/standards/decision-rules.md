@@ -84,7 +84,7 @@ The `compose` **result** (the TOON the caller reads back — distinct from the p
 - `security_class_omitted` — list of `{step, reason}`, one record per security-class step the `security_class_inactive` pre-filter dropped (empty when none). A record list rather than a boolean because the population is metadata-derived. `phase-4-plan` Step 7b surfaces each entry in its phase return.
 - `scope_gated_finalize_dropped` / `scope_gated_finalize_immune` — the scope gate's per-step subtraction and retention lists.
 - `unresolved_ask_provider_dropped` — the unresolved-ask infra elements dropped for an absent provider.
-- `terminal_emission_dropped` — the terminal-emission step dropped because the plan is not orchestrated. A **bare step-id list**, not a `{step, reason}` record list: the reason is fixed for every entry (the plan has no orchestrator to emit to) and rides the paired `[STATUS]` decision-log line, so a per-record copy of it would state the same sentence once per step.
+- `terminal_emission_dropped` — the terminal-emission step the orchestration gate dropped. Emitted as a **bare step-id list**; the gate composes a per-record reason that the compose-result projection discards, so the reason is readable only on the paired `[STATUS]` decision-log line.
 - `decision_matrix_dropped` — list of `{step, reason}`, one record per candidate the FIRING matrix row removed, naming the rule that removed it. Empty for the default row, which narrows nothing.
 - `lane_dropped` — list of `{step, reason}`, one record per element the execution-profile lane resolution dropped, each naming the element's effective tier and the posture cutoff that removed it.
 
