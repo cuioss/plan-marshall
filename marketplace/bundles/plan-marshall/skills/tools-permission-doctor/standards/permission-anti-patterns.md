@@ -1,5 +1,17 @@
 # Permission Anti-Patterns
 
+## Provenance: Claude rule-pack
+
+The suspicious patterns, detection algorithms, severity scoring, and remediation
+guidance in this document encode the **Claude** permission model's format
+(`Write(path)`, `Read(path)`, `Bash(command:*)`). They bind only when the target is
+Claude. On a non-Claude target the permission format, severity model, and remediation
+path may differ entirely; a reader should not assume these rules apply without
+confirming the target's permission model first.
+
+This document is the Claude-specific half of the permission anti-patterns, declared
+alongside the target-agnostic analysis engine in `permission_doctor.py`.
+
 ## Suspicious Permission Patterns
 
 ### System Temp Directories

@@ -7,6 +7,16 @@ Provides:
 - detect-suspicious: Detect suspicious permissions matching anti-patterns
 - detect-missing-project-step-permissions: Detect project:{skill} steps in marshal.json
   without matching Skill({skill}) allow rules in project settings
+
+Claude rule-pack provenance:
+The analysis rules in this module (``SUSPICIOUS_PATTERNS``, ``is_marketplace_permission``,
+``extract_permission_parts``, ``is_covered_by_wildcard``, ``skill_permission_covered``)
+encode the **Claude** permission model. They bind only when the target is Claude; on a
+non-Claude target these rules do not apply. The companion standards documents
+(``permission-architecture.md``, ``permission-validation-standards.md``,
+``permission-anti-patterns.md``) carry the same declaration. The split is structural, not a
+separate dispatch path — see ``plugin-doctor/references/rule-provenance.md`` § "Engine /
+Claude rule-pack split" for the architectural precedent.
 """
 
 import argparse
@@ -35,8 +45,11 @@ from permission_common import (  # noqa: E402
 from toon_parser import serialize_toon  # noqa: E402
 
 # =============================================================================
-# detect-redundant subcommand
+# detect-redundant subcommand — Claude rule-pack
 # =============================================================================
+# ``is_marketplace_permission``, ``extract_permission_parts``, and
+# ``is_covered_by_wildcard`` encode the Claude permission grammar
+# (Skill/SlashCommand/Tool types). They bind only on a Claude target.
 
 
 def is_marketplace_permission(permission: str, project_root: Path | None = None) -> bool:
@@ -183,8 +196,11 @@ def cmd_detect_redundant(args) -> dict:
 
 
 # =============================================================================
-# detect-suspicious subcommand
+# detect-suspicious subcommand — Claude rule-pack
 # =============================================================================
+# The patterns below encode the Claude permission grammar (Write/Read/Bash format).
+# They bind only on a Claude target; on a non-Claude target the permission format
+# may differ entirely and these patterns do not apply.
 
 SUSPICIOUS_PATTERNS = [
     {'pattern': r'^Write\(\/\*\*\)$', 'reason': 'Root write access', 'severity': 'high', 'category': 'root_access'},
