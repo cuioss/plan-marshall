@@ -328,7 +328,7 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
      --message "[WARNING] (plan-marshall:pre-push-quality-gate) The resolved build skill exposes no resolve-test-scope verb, so the divergence question cannot be answered and NO pytest ran — the scoped-green / whole-tree-red divergence class (PLAN-08) is UN-GATED at finalize for this push. Proceeding on honest degradation."
    ```
 
-   Branch on the resolve's error shapes exactly as the whole-tree `quality-gate` probe prescribes: only the `Command not found` + `available[]`-omits-`module-tests` shape proves absence (branch 3); any other error shape did not answer, so STOP the step.
+   Branch on the resolve's error shapes exactly as the whole-tree `quality-gate` probe prescribes: only the `Command not found` + `available[]`-omits-`module-tests` shape proves absence, and it takes **the same own-WARNING path as the missing-verb case above** — NOT branch 3, whose WARNING interpolates `{scoped_modules}` and whose predicate reads `whole_tree_available`, neither of which exists on a path where this resolve returned no executable and branch 1's seam call therefore never ran. Any other error shape did not answer, so STOP the step.
 
 1. **Resolve the scope** — call the callable seam on the notation captured above and parse its resolution:
 

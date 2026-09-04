@@ -470,7 +470,7 @@ TOON task definition consumed by `commit-add`. Field types:
       {"target": "src/main/java/CacheConfig.java", "intent": "write-new"}
     ],
     "verification": {                                  // object, optional
-      "commands": [                                    // string[] — resolver output, never hand-written
+      "commands": [                                    // string[] — a BUILD entry is resolver output
         "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test -Dtest=CacheConfigTest\""
       ],
       "criteria": "All tests pass",                    // string
