@@ -232,7 +232,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   resolve --command quality-gate --module {bundle} --audit-plan-id {plan_id}
 ```
 
-Capture `executable`, `execution_tier` and `bash_timeout_seconds` from the returned TOON, then run the captured `executable` with the Bash timeout set to `bash_timeout_seconds * 1000` milliseconds. When `execution_tier` is `orchestrator` the invocation exceeds the Bash ceiling and MUST NOT be run here — hand it to the orchestrator's `await-long-running` seam and resume this loop on its result. A `status: error` from the resolve is handled exactly as the whole-tree arm's availability probe below prescribes: only the exact `error: architecture_error` + `message: Command not found` + `available[]`-omits-`quality-gate` shape proves the bundle exposes no `quality-gate` target (skip that bundle and record it in the same `[WARNING]` idiom § "Derive unique bundle set" uses — a skipped bundle was NOT gated, so it does not count toward the `{N} bundles … green` in Branch A's detail; report the gated count and name the skipped bundle under § "Mark Step Complete"'s governing rule); every other error shape did not answer, so STOP the step per § "Exit-code convention for every script call".
+Capture `executable`, `execution_tier` and `bash_timeout_seconds` from the returned TOON, then run the captured `executable` with the Bash timeout set to `bash_timeout_seconds * 1000` milliseconds. When `execution_tier` is `orchestrator` the invocation exceeds the Bash ceiling and MUST NOT be run here — hand it to the orchestrator's `await-long-running` seam and resume this loop on its result. A `status: error` from the resolve is handled exactly as the whole-tree arm's availability probe below prescribes: only the exact `error: architecture_error` + `message: Command not found` + `available[]`-omits-`quality-gate` shape proves the bundle exposes no `quality-gate` target (skip that bundle and record it in the same `[WARNING]` idiom § "Derive unique bundle set" uses — that `[WARNING]` carries no length ceiling and is therefore the COMPLETE record of every skipped bundle. A skipped bundle was NOT gated, so it does not count toward the gated total in Branch A's detail; report the outcome with the **bundles skipped** detail variant under § "Mark Step Complete", which states the gated and skipped counts and names at most one bundle plus an overflow count. Do NOT enumerate the skipped set inside the `display_detail`: both the number of skipped bundles and each bundle name are unbounded, so an enumeration there cannot be sized against the length ceiling at all); every other error shape did not answer, so STOP the step per § "Exit-code convention for every script call".
 
 Inspect the invocation's TOON output. On `status: error`, halt: stop iterating, record the failing bundle, and proceed to **Mark Step Complete (Failure)** below. The build wrapper's TOON already carries `errors[N]{file,line,message,category}` — surface the offending file/line via the standard finalize TOON. Read the verdict from that `status` / `errors[]`, never from the exit code, which is `0` even on a red gate. On `timeout`, `killed` or `indeterminate` this bundle's gate did not finish and returned no verdict — it is neither green nor red, so do NOT record the bundle as gated and do NOT record it as failed: STOP the step per § "Exit-code convention for every script call".
 
@@ -456,7 +456,7 @@ The condition is stated **positively**, and that is load-bearing rather than sty
 
 **Branch A does not mean every arm ran.** The list below is **derived**, by walking § Execution and taking every path that proceeds to Mark Step Complete (Success) without an arm having produced a `status: success` over a non-empty scope. Re-derive it the same way when this document's arms change; a path that turns up in that walk and is missing here is a gap to close here, not a case the governing rule silently absorbs:
 
-1. the per-bundle loop's skip of a bundle exposing no `quality-gate` target (§ "Run quality-gate per bundle");
+1. the per-bundle loop's skip of a bundle exposing no `quality-gate` target (§ "Run quality-gate per bundle") — its detail is the **bundles skipped** variant below;
 2. the per-bundle sweep over an EMPTY bundle set — `derive_gate_bundles` returned no bundle (every footprint path landed in `unresolved`), so the loop iterated nothing. The arm attempted its scope and found nothing in it, which is the "attempted, nothing in scope" row of § "A gate states what its green does not evaluate", not a pass; the default detail's `{N}` renders `0`, which states the count rather than claiming coverage, and no wording may upgrade it to one;
 3. the whole-tree `quality-gate` honest-degradation branch (§ "Whole-tree quality-gate arm");
 4. the `test-compile` both-scopes-unavailable branch (§ "Whole-tree test-compile gate", the module-scoped fallback's unavailability shape);
@@ -492,6 +492,14 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 The variant is deliberately shorter than the default one. Against the `display_detail` length ceiling owned by [`external-step-contract.md`](external-step-contract.md) § "Required termination" (do not restate the number here — read it there), the default string already reaches 75 characters before `{N}` expands, leaving room for only a small bundle count; the skip variant reaches 67 before expansion and therefore stays inside the ceiling for any count this gate can produce. Size any further variant the same way — against its **worst-case placeholder expansion**, never against its literal form. A placeholder-bearing string that fits as written is not evidence that it fits once the placeholder expands.
 
+**Worst-case expansion, defined.** The instruction above is only actionable if "worst case" has a value, so each placeholder class carries one:
+
+- **A count placeholder** expands to at most 3 digits.
+- **A name placeholder** expands to the truncation width the variant itself declares, in characters. A variant that interpolates an UNTRUNCATED name declares no width and is therefore unsizeable.
+- **A set placeholder** — one standing for a collection rather than a single value — is unbounded in two dimensions at once (how many members, and how long each member's rendering is), so no width bounds it. **A set placeholder is inadmissible in a `display_detail`.** Report the set's CARDINALITY here and leave the enumeration to a `[WARNING]`, which carries no ceiling.
+
+Branch B's failure detail is the bounded single-value case this rule permits and does not except: each of its alternatives interpolates exactly ONE module name, so its worst case grows with one name's length rather than with a set's cardinality. That is the discriminator — a set is unbounded in a way a single value is not, and only the set case forces a truncation.
+
 **Detail variant — whole-tree quality-gate degraded (honest degradation).** When Branch A is reached
 via the whole-tree `quality-gate` **honest-degradation path** (the whole-tree invocation could not run,
 so the whole-tree-only dimensions were UN-GATED and only a `[WARNING]` was emitted), the default
@@ -522,6 +530,29 @@ below, which contains the word "green" for no dimension it did not gate:
 Its worst-case expansion is 67 characters at `{N}` = one digit and 68 at two — measured from the
 expanded string, not from the literal — so it stays inside the ceiling for any bundle count this gate
 can produce, exactly as the two variants above do.
+
+**Detail variant — bundles skipped (no `quality-gate` target).** The per-bundle loop skips a bundle
+whose `quality-gate` canonical does not resolve (§ "Run quality-gate per bundle"). That bundle was
+never gated, so Branch A's default detail — which claims `{N} bundles … green` — would fold it into a
+green it did not earn. Use the variant below, which reports the gated and the skipped counts as two
+separate numbers:
+
+```text
+--display-detail "{G} bundles green, {S} skipped ({B}+{K}), whole-tree gates green"
+```
+
+`{G}` is the count of bundles that RAN and returned `status: success`; `{S}` is the count of skipped
+bundles and is excluded from `{G}`, so no skipped bundle is ever counted as green. `{B}` is the first
+skipped bundle name in sorted order, truncated to at most 14 characters; `{K}` is `{S}` minus one —
+the number of further skipped bundles this string does not name — and renders `0` when exactly one
+bundle was skipped. Its worst-case expansion is 75 characters (3-digit counts, a 14-character
+truncated name), so it stays inside the ceiling for ANY skipped set, which is precisely the property
+an enumeration of that set could not have.
+
+**No coverage information is lost by the truncation.** The per-bundle loop's `[WARNING]` names every
+skipped bundle in full and carries no length ceiling, so it remains the complete record of which
+bundles went un-gated. The division of labour is deliberate: the bounded field states the counts, the
+unbounded work-log states the set.
 
 These degradations are independent and any combination of them can co-occur on one run. Whenever more
 than one fires, no single-arm variant above is honest — compose a detail naming EVERY arm that did not

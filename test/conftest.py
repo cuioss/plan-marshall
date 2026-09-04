@@ -1009,6 +1009,10 @@ _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
         'plan-marshall/phase-6-finalize/test_gate_arm_resolver_provenance.py',
     ),
     (
+        'display-detail-ceiling',
+        'plan-marshall/phase-6-finalize/test_display_detail_ceiling.py',
+    ),
+    (
         'self-review-surface',
         'plan-marshall/phase-6-finalize/test_self_review_unclassified_surface.py',
     ),
