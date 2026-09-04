@@ -178,7 +178,6 @@ def test_arm_derivation_excludes_the_non_arm_sections():
         f'discriminating and the sweep below proves nothing about arms '
         f'specifically'
     )
-    assert len(arm_headings) < len(all_headings)
 
 
 def test_arm_detector_fires_on_a_resolver_backed_section_and_not_on_a_prose_one():

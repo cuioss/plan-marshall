@@ -387,7 +387,7 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
 
    Gate on its result the same way: `status: error` → **Mark Step Complete (Failure)** (halt before push); `status: success` → **Mark Step Complete (Success)**.
 
-The module-tests outcome folds into the Mark Step Complete branches below: Branch A (green) requires a clean per-bundle `quality-gate` sweep AND a clean whole-tree `quality-gate` AND a clean whole-tree `test-compile` AND a clean module-tests gate; Branch B (failure) covers a red per-bundle `quality-gate` OR a red whole-tree `quality-gate` OR a red `test-compile` OR a red module-tests run.
+The module-tests outcome folds into the Mark Step Complete branches below: Branch A covers a run where the per-bundle `quality-gate` sweep, the whole-tree `quality-gate`, the whole-tree `test-compile` and the module-tests gate all did NOT fail — which is not the same as all four having run, so read § "Mark Step Complete" for what the `display_detail` may then claim; Branch B (failure) covers a red per-bundle `quality-gate` OR a red whole-tree `quality-gate` OR a red `test-compile` OR a red module-tests run.
 
 ## Verdict-input surface — deliberately undeclared
 
@@ -425,8 +425,6 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "{N} bundles + whole-tree quality-gate green, test-compile + module-tests green" \
   --head-at-completion {sha}
 ```
-
-That literal is the **all-four-ran** case, and only that case. Every arm named in it must have actually run.
 
 **Detail variant — module-tests skipped (zero scoped modules).** When the module-tests gate concluded via branch 5 (no pytest ran because the footprint resolves to zero scoped modules), use the shorter variant below instead, so the skip is legible in the step record rather than indistinguishable from a green pytest run:
 
