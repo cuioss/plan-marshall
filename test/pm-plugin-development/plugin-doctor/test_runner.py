@@ -41,7 +41,6 @@ from functools import lru_cache
 from pathlib import Path
 
 import pytest
-
 from _plugin_doctor_dispatching_executor import (
     FIXTURE_NOTATION,
     seed_notation_registry,

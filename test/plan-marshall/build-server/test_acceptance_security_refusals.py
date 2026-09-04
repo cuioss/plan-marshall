@@ -39,7 +39,13 @@ from _marshalld_verifier import (
 from conftest import load_script_module
 
 supervisor = load_script_module('plan-marshall', 'manage-build-server', '_marshalld_supervisor.py')
-client = load_script_module('plan-marshall', 'build-server-client', 'build_server.py')
+#: ``register=False`` because only the returned module is used here. Publishing
+#: ``build_server`` into ``sys.modules`` would collide with the sibling modules
+#: that import it plainly.
+client = load_script_module(
+    'plan-marshall', 'build-server-client', 'build_server.py',
+    register=False,
+)
 control = load_script_module('plan-marshall', 'manage-build-server', 'manage_build_server.py')
 
 _NOTATION = 'plan-marshall:build-pyproject:pyproject_build'

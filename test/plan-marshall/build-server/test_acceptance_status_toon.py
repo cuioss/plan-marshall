@@ -23,13 +23,19 @@ from _marshalld_scheduler import Scheduler
 
 from conftest import load_script_module, parse_ns
 
-client = load_script_module('plan-marshall', 'build-server-client', 'build_server.py')
+#: ``register=False`` because only the returned module is used here. Publishing
+#: ``build_server`` into ``sys.modules`` would collide with the sibling modules
+#: that import it plainly, and a plain importer then reaches whichever copy was
+#: registered last rather than the one this module loaded.
+client = load_script_module(
+    'plan-marshall', 'build-server-client', 'build_server.py',
+    register=False,
+)
 
 #: The one ``wait`` command line this module drives, parsed by ``build_server.py``'s
 #: OWN parser. Every value is fixed, so no per-test derivation is needed. Hoisted
 #: because ``parse_ns`` re-executes the script module on every call, and
-#: ``register=False`` so it never publishes a second ``build_server`` in
-#: ``sys.modules`` alongside the one the loader published above.
+#: ``register=False`` for the same reason the loader above passes it.
 _WAIT_ARGS = parse_ns(
     'plan-marshall', 'build-server-client', 'build_server.py',
     'wait', '--job-id', 'J', '--plan-id', '', '--bound', '1',

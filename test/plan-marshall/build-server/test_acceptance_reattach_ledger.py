@@ -23,7 +23,10 @@ _BUNDLE = 'plan-marshall'
 _SKILL = 'build-server-client'
 _SCRIPT = 'build_server.py'
 
-client = load_script_module(_BUNDLE, _SKILL, _SCRIPT)
+#: ``register=False`` because only the returned module is used here. Publishing
+#: ``build_server`` into ``sys.modules`` would collide with the sibling modules
+#: that import it plainly.
+client = load_script_module(_BUNDLE, _SKILL, _SCRIPT, register=False)
 
 #: The two command lines this acceptance drives, parsed by ``build_server.py``'s
 #: OWN parser and hoisted to module scope because ``parse_ns`` re-executes the

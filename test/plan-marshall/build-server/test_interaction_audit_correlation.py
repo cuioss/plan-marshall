@@ -45,7 +45,13 @@ from _marshalld_scheduler import Scheduler
 
 from conftest import load_script_module, parse_ns
 
-client = load_script_module('plan-marshall', 'build-server-client', 'build_server.py')
+#: ``register=False`` because only the returned module is used here. Publishing
+#: ``build_server`` into ``sys.modules`` would collide with the sibling modules
+#: that import it plainly.
+client = load_script_module(
+    'plan-marshall', 'build-server-client', 'build_server.py',
+    register=False,
+)
 
 #: The ``submit`` namespace ``build_server.py``'s OWN parser yields, hoisted to
 #: module scope because ``parse_ns`` re-executes the script module on every call.

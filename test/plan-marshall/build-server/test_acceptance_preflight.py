@@ -22,7 +22,10 @@ _BUNDLE = 'plan-marshall'
 _SKILL = 'build-server-client'
 _SCRIPT = 'build_server.py'
 
-client = load_script_module(_BUNDLE, _SKILL, _SCRIPT)
+#: ``register=False`` because only the returned module is used here. Publishing
+#: ``build_server`` into ``sys.modules`` would collide with the sibling modules
+#: that import it plainly.
+client = load_script_module(_BUNDLE, _SKILL, _SCRIPT, register=False)
 
 
 def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
