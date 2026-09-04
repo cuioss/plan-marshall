@@ -100,6 +100,17 @@ DISPATCH_TERMINATION_CAUSES = (
     # `mark-step-done` recorded `outcome: loop_back` (see
     # phase-6-finalize/SKILL.md item 5c).
     'returned_with_findings',
+    # A phase-5-execute dispatch that returned `status: error, error:
+    # baseline_drift` because `baseline-reconcile` reported `conflict_count > 0`
+    # — upstream commits overlap the worktree's in-flight changes. The
+    # orchestrator answers it with a `2-refine` re-cycle rather than a failure,
+    # so it is a RECOVERABLE non-completion, not a fatal one. `execution.md`
+    # § "After execution-context returns" has always documented it as its own
+    # termination cause AND stated that `error` EXCLUDES it, but the member was
+    # missing here: a genuine drift return was rejected at argparse (exit 2) and
+    # had to be recorded as `error`, the one bucket the doc rules out, leaving
+    # the ledger unable to tell a drift return from a fatal failure.
+    'baseline_drift',
 )
 
 # ---------------------------------------------------------------------------
