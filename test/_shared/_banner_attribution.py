@@ -73,14 +73,26 @@ DEFINITION = (
 _RULE_ONLY = re.compile(r'^#\s*[-=~_*]{4,}\s*$')
 
 #: A comment carrying heading text plus rule punctuation on the same line, e.g.
-#: ``# --- Rule 4 ---------------``. The lower bound is THREE, not two: a
-#: two-character run is the shape of a CLI flag in ordinary prose, so ``{2,}``
-#: reads ``# --plan-id is forwarded to every child call`` as a banner heading —
-#: which both steals enclosure from every construct beneath it and injects the
-#: sentence's words into the distinctive-token set, so a spurious banner can
-#: fabricate a misattribution or destroy a real heading's distinctiveness. The
-#: documented form above carries three, and the framed sibling requires four.
-_INLINE_HEADING = re.compile(r'^#\s*[-=~_*]{3,}\s*(?P<text>.*?)\s*[-=~_*]*\s*$')
+#: ``# --- Rule 4 ---------------``. Two constraints, each closing a distinct
+#: false-positive shape:
+#:
+#: The lower bound is THREE, not two: a two-character run is the shape of a CLI
+#: flag in ordinary prose, so ``{2,}`` reads ``# --plan-id is forwarded to every
+#: child call`` as a banner heading. The documented form above carries three,
+#: and the framed sibling requires four.
+#:
+#: The leading run must also be HOMOGENEOUS — one character repeated, via the
+#: backreference — not any three characters drawn from the class. A mixed run
+#: admits the PEP 263 encoding cookie ``# -*- coding: utf-8 -*-``, whose ``-*-``
+#: is three characters of the class: the cookie then becomes a banner titled
+#: ``coding: utf-8`` on line 1 of every file that carries one.
+#:
+#: Both shapes fail the same way — a spurious banner steals enclosure from every
+#: construct beneath it and injects its words into the distinctive-token set, so
+#: it can fabricate a misattribution or destroy a real heading's distinctiveness.
+_INLINE_HEADING = re.compile(
+    r'^#\s*(?P<rule>[-=~_*])(?P=rule){2,}\s*(?P<text>.*?)\s*[-=~_*]*\s*$'
+)
 
 #: Tokens too generic to attribute anything by. A banner whose only tokens are
 #: these names no subject, and a construct matching only on one of them would
@@ -324,7 +336,7 @@ def main(argv: list[str] | None = None) -> int:
         allow_abbrev=False,
     )
     parser.add_argument('--before-ref', required=True, help='the ref the work started from')
-    parser.add_argument('--after-ref', required=True, help='the ref to compare against')
+    parser.add_argument('--after-ref', required=True, help='the ref the work produced')
     parser.add_argument('--paths', required=True, help='comma-separated path prefixes to cover')
     parser.add_argument('--repo', default='.', help='repository root (default: cwd)')
     args = parser.parse_args(argv)

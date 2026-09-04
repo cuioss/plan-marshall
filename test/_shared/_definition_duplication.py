@@ -213,7 +213,7 @@ def main(argv: list[str] | None = None) -> int:
         allow_abbrev=False,
     )
     parser.add_argument('--before-ref', required=True, help='the ref the work started from')
-    parser.add_argument('--after-ref', required=True, help='the ref to compare against')
+    parser.add_argument('--after-ref', required=True, help='the ref the work produced')
     parser.add_argument('--paths', required=True, help='comma-separated directory prefixes to survey')
     parser.add_argument('--repo', default='.', help='repository root (default: cwd)')
     args = parser.parse_args(argv)
