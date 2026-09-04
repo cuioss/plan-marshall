@@ -79,7 +79,6 @@ def test_test_marketplace_path_yields_no_bundle_and_one_unresolved():
 
     # Assert — no phantom ``marketplace`` bundle; the path is diagnosable, not dropped.
     assert bundles == []
-    assert 'marketplace' not in bundles
     assert unresolved == ['test/marketplace/targets/test_frontmatter.py']
 
 
