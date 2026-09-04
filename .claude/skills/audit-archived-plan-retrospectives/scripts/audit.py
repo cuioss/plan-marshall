@@ -2565,7 +2565,7 @@ def _load_preference_admissibility():
         path_str = str(scripts_dir)
         if path_str not in sys.path:
             sys.path.insert(0, path_str)
-    import _preference_admissibility  # noqa: PLC0415
+    import _preference_admissibility
 
     return _preference_admissibility
 

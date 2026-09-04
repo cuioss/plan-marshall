@@ -108,10 +108,10 @@ def recognized_bot_kinds() -> frozenset[str] | None:
         :func:`preference_admissible`, which then applies a presence-only check.
     """
     try:
-        import bot_registry  # noqa: PLC0415
+        import bot_registry
 
         return frozenset(str(kind) for kind in bot_registry.bot_kinds())
-    except Exception:  # noqa: BLE001 — any import/parse failure degrades to presence-only
+    except Exception:  # any import/parse failure degrades to presence-only
         return None
 
 
