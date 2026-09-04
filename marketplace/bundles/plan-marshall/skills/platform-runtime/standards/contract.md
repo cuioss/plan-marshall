@@ -65,7 +65,7 @@ alternative: <what the caller can do instead>
 
 One-time project setup: create `.plan/`, seed `marshal.json`, install platform hook.
 
-**Arguments**: `--project-dir <path>` (default `.`), `--target claude|opencode` (default `claude`)
+**Arguments**: `--project-dir <path>` (default `.`), `--target <registered-target>` (default from `platform_runtime._DEFAULT_TARGET`)
 
 **Success**:
 ```toon
@@ -97,6 +97,8 @@ message: "Target 'foobar' is not in the registry; valid targets are: claude, ope
 ```
 
 The seed is a read-modify-write, so it also returns `error: io_error` on three corrupt-input edges, identically on both targets: the directory tree cannot be created; `marshal.json` exists but is unreadable or unparseable; or it parses yet carries a shape the seed cannot mutate — a top-level non-object, or a `runtime` key present with a non-object value. The parse edge and the shape edge are separate, because a successful parse proves the bytes were valid JSON and not that they were an object. Every corrupt edge refuses **before any write**: the operation never falls back to an empty document, since that fallback would destroy exactly the configuration the read exists to preserve.
+
+**Declining.** A target that cannot create this plan state returns a `no-op` with a `reason` and an `alternative` rather than reporting a setup it did not perform.
 
 ---
 
@@ -267,6 +269,8 @@ roots[1]:
   - .claude/skills
 ```
 
+**Declining.** A target that cannot resolve its project-local-skill discovery roots returns a `no-op` with a `reason` and an `alternative` rather than fabricating a root list.
+
 ---
 
 ### `layout bundle-cache-root`
@@ -283,6 +287,8 @@ target: claude
 roots[1]:
   - /Users/me/.claude/plugins/cache/plan-marshall
 ```
+
+**Declining.** A target that cannot resolve its deployed-bundle cache root returns a `no-op` with a `reason` and an `alternative` rather than fabricating a cache location.
 
 ---
 
@@ -976,25 +982,23 @@ reason: Session ID found but transcript/DB query returned no usage data for this
 alternative: Pass --total-tokens manually
 ```
 
-**Success (OpenCode — manual tokens)**:
-```toon
-status: success
-operation: metrics capture
-plan_id: my-plan
-phase: execute
-tokens_captured: 8000
-source: manual
-```
-
-**This success does NOT mean the count was stored.** Note the absent `cursor_updated` — the Claude success above carries it because that path writes the token cursor and calls `manage-metrics end-phase`; this one reaches no persistence boundary at all, so the number is reported back and then lost. That is a known contract violation (`Runtime.metrics_capture` requires an explicit count to be persisted before `success`, or declined with `no-op`), recorded as a survivor rather than fixed, because the metrics boundary is target-neutral in substance but currently lives in the Claude runtime. Do not rely on this call to record anything on OpenCode.
-
-**No-op (OpenCode — no manual tokens)**:
+**No-op (OpenCode — no session transcript)**:
 ```toon
 status: no-op
 operation: metrics capture
 reason: "automatic token capture requires a platform-provided session id, which OpenCode does not expose (issue #9292)"
 alternative: pass --total-tokens manually
 ```
+
+**No-op (OpenCode — manual tokens)**:
+```toon
+status: no-op
+operation: metrics capture
+reason: "OpenCode reaches no token-persistence boundary, so an explicit count cannot be stored (issue #9292)"
+alternative: "run metrics capture on the Claude target, or wire a shared metrics-persistence boundary OpenCode can reach"
+```
+
+OpenCode declines with a `no-op` on **every** input, manual count included. It reaches no persistence boundary — the token-cursor write and the `manage-metrics end-phase` call live in the Claude runtime — so a `success` carrying a manual count would be a report of work that did not happen: a measurement the caller could not distinguish from a stored one, silently lost. `Runtime.metrics_capture` requires an explicit count to be persisted before `success`, or declined with `no-op`; OpenCode chooses the honest decline. The recommended remediation is to relocate the (target-neutral) metrics persistence boundary to a shared home both runtimes reach; until then OpenCode declines rather than lying about a write it cannot perform.
 
 ---
 
@@ -1316,7 +1320,7 @@ checks_run[4]:
   - hook
 all_healthy: true
 results[4]{check,healthy,detail}:
-  permissions,true,settings.local.json present; allow array has 12 entries
+  permissions,true,settings.json present; allow array has 12 entries
   display,true,render-title hook entry present in .claude/settings.local.json
   mcp-diagnostics,true,"MCP server reachable at 127.0.0.1:64342"
   hook,true,SessionStart hook entry present in .claude/settings.local.json
@@ -1331,9 +1335,13 @@ checks_run[2]:
   - hook
 all_healthy: false
 results[2]{check,healthy,detail}:
-  permissions,true,settings.local.json present; allow array has 12 entries
+  permissions,true,settings.json present; allow array has 12 entries
   hook,false,SessionStart hook entry missing from both .claude/settings.json and .claude/settings.local.json; run marshall-steward to install
 ```
+
+The `permissions` check's `detail` names the settings file it **actually resolved** — the read selector's `_claude_project_settings_read_path()` result — never a hardcoded literal. On a project holding only `settings.json` the detail reads `settings.json present; …`; only a project carrying `settings.local.json` reads `settings.local.json present; …`.
+
+**Declining.** A target that cannot report on its platform integration returns a `no-op` with a `reason` and an `alternative` rather than inventing health results.
 
 **Error**:
 ```toon

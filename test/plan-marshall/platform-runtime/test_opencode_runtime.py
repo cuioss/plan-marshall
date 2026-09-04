@@ -516,15 +516,20 @@ def test_permission_web_apply_invalid_scope_returns_error(runtime: OpenCodeRunti
 # =============================================================================
 
 
-def test_metrics_capture_with_total_tokens_succeeds(runtime: OpenCodeRuntime) -> None:
-    """metrics_capture with total_tokens provided succeeds and stores the count."""
+def test_metrics_capture_with_total_tokens_is_honest_noop(runtime: OpenCodeRuntime) -> None:
+    """metrics_capture with total_tokens declines rather than fabricating success.
+
+    OpenCode reaches no token-persistence boundary, so reporting ``success``
+    for a manual count would be a success the caller cannot distinguish from a
+    stored one — a silently lost measurement. The op returns an honest ``no-op``
+    with a reason and the alternative.
+    """
     result = _parse(runtime.metrics_capture("my-plan", "phase-1-init", total_tokens=42000))
-    assert result["status"] == "success"
+    assert result["status"] == "no-op"
     assert result["operation"] == "metrics capture"
-    assert result["plan_id"] == "my-plan"
-    assert result["phase"] == "phase-1-init"
-    assert result["tokens_captured"] == 42000
-    assert result["source"] == "manual"
+    assert result["reason"]
+    assert "alternative" in result
+    assert result.get("tokens_captured") is None
 
 
 def test_metrics_capture_without_tokens_is_noop(runtime: OpenCodeRuntime) -> None:
@@ -536,11 +541,12 @@ def test_metrics_capture_without_tokens_is_noop(runtime: OpenCodeRuntime) -> Non
     assert "alternative" in result
 
 
-def test_metrics_capture_zero_tokens_succeeds(runtime: OpenCodeRuntime) -> None:
-    """metrics_capture with total_tokens=0 is a valid success (zero tokens is a count)."""
+def test_metrics_capture_zero_tokens_is_honest_noop(runtime: OpenCodeRuntime) -> None:
+    """metrics_capture with total_tokens=0 is still a no-op — even zero needs persisting."""
     result = _parse(runtime.metrics_capture("my-plan", "phase-3-outline", total_tokens=0))
-    assert result["status"] == "success"
-    assert result["tokens_captured"] == 0
+    assert result["status"] == "no-op"
+    assert result["operation"] == "metrics capture"
+    assert "alternative" in result
 
 
 # =============================================================================
