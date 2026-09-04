@@ -101,10 +101,12 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id {plan_id}
 ```
 
-Locate `metadata.phase_steps.6-finalize.pre-submission-self-review.head_at_completion` and capture it as `{since_ref}`. Exactly one of two cases holds:
+Locate `metadata.phase_steps.6-finalize.pre-submission-self-review` and read BOTH its `outcome` and its `head_at_completion`. Exactly one of two cases holds:
 
-- **A prior record carries a non-empty SHA** → this is a **delta round**. Pass `--since-ref {since_ref}` on the surface call below. The surfacer narrows the file set to the footprint intersected with the paths changed since that SHA.
-- **No prior record, or its `head_at_completion` is absent/empty** → this is a **full round** (round 1, or a first run after a record that carried no anchor). Do NOT pass `--since-ref` at all. Never substitute the base branch, `HEAD`, or any other ref for a missing anchor — a fabricated anchor would silently scope the round against a boundary no round ever completed at.
+- **The prior record's `outcome` is `done` or `loop_back` AND its `head_at_completion` is a non-empty SHA** → this is a **delta round**. Capture that SHA as `{since_ref}` and pass `--since-ref {since_ref}` on the surface call below. The surfacer narrows the file set to the footprint intersected with the paths changed since that SHA.
+- **Anything else** — no prior record, an absent/empty `head_at_completion`, or an `outcome` outside `{done, loop_back}` — → this is a **full round** (round 1, a first run after a record that carried no anchor, or the round after a Branch C infrastructure failure). Do NOT pass `--since-ref` at all. Never substitute the base branch, `HEAD`, or any other ref for an inadmissible anchor — a fabricated anchor would silently scope the round against a boundary no round ever completed at.
+
+⛔ **The outcome test is what makes the SHA an anchor rather than a timestamp.** An anchor asserts *everything up to here has been reviewed*, and only a round that actually ran the review can assert it. Branch C records `failed` **with** a HEAD (it needs one for the reasons stated there) after the surfacer aborted on an infrastructure error, so that round examined nothing; `phase_steps` keeps one record per step, so the `failed` write also REPLACES the last reviewing round's anchor. Reading `head_at_completion` without the outcome test therefore hands the next round a `--since-ref` at which no file was ever examined — and because `failed` records are re-fired, the very next round scopes its delta past the un-reviewed fix commits, so nothing it surfaces is drawn from them. A full re-sweep is the correct fallback: it costs a round, whereas the narrowed one reviews the wrong file set.
 
 Passing `--since-ref` narrows WHICH FILES are surfaced, never how deeply a surfaced file is reviewed: hunks are still computed against the base branch, so every surviving file is still reviewed against its full plan diff.
 
@@ -465,7 +467,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 **Branch C — the deterministic helper exited non-zero** (Step 1's halt path). This is an INFRASTRUCTURE failure — `git_unavailable`, `base_branch_not_found`, `since_ref_unresolvable`, `worktree_resolution_failed` — not a review verdict, and it must not be routed into either branch above. Branch A would record a clean `done` for a round that never examined anything, and Branch B would send the round loop back over an error no amendment to the diff can fix. Record `failed`, which `external-step-contract.md` still admits and `assert-step-recorded --require-terminal` treats as terminal, and carry the helper's own error into the detail so the operator sees which of the four it was.
 
-Resolve the worktree HEAD SHA first, exactly as Branches A and B do — `{sha}` is not in scope here otherwise, and `--head-at-completion` applies no shape validation on a non-`done` outcome, so an unresolved placeholder would persist verbatim and be read back by the next round as a `{since_ref}` the surfacer then refuses as `since_ref_unresolvable`, routing straight back to this branch:
+Resolve the worktree HEAD SHA first, exactly as Branches A and B do — `{sha}` is not in scope here otherwise, and `--head-at-completion` applies no shape validation on a non-`done` outcome, so an unresolved placeholder would persist verbatim in the record and leave no account of the HEAD the failure happened at:
 
 ```bash
 git -C {worktree_path} rev-parse HEAD
@@ -481,7 +483,10 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --force
 ```
 
-Branch A (empty findings) persists nothing — there are no findings to write. Branches B and C forward `--head-at-completion` even though the dispatcher re-fires `loop_back` records unconditionally and retries `failed` ones: the SHA carries no *re-fire* decision value, but it IS the delta anchor the NEXT round reads in Step 1. A record written without it leaves the following round with no anchor, which silently degrades that round to a full sweep — the exact re-sweep this scoping exists to remove. The anchor is written on every terminal branch for that reason, not for the dispatcher's benefit.
+Branch A (empty findings) persists nothing — there are no findings to write. Branches B and C both forward `--head-at-completion`, but for different reasons, and only ONE of the two SHAs is ever read as an anchor.
+
+- **Branch B** — the SHA carries no *re-fire* decision value (the dispatcher re-fires `loop_back` records unconditionally), but it IS the delta anchor the NEXT round reads in Step 1. A `loop_back` record written without it leaves the following round with no anchor, which silently degrades that round to a full sweep — the exact re-sweep this scoping exists to remove.
+- **Branch C** — the SHA is recorded for the audit record of where the failure happened, and because an unresolved `{sha}` placeholder would otherwise persist verbatim in its place. It is **NOT** an anchor: Step 1 admits an anchor only from a `done` or `loop_back` record, because a round that aborted before surfacing anything reviewed nothing and cannot assert that everything up to its HEAD was examined. See Step 1's ⛔ note for the false-green that reading it would produce.
 
 The dispatcher's loop-back continuation hook admits the round under `loop_back_without_asking` and the `max_iterations` ceiling, so the round loop is bounded exactly as before. The operator must address every finding (amend the diff: rename, tighten regex, rewrite wording, delete duplicate section, fix contract drift), re-run the step, and only then advance to `push`.
 

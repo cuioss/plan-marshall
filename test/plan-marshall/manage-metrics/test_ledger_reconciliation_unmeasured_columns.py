@@ -98,6 +98,80 @@ class TestTokenColumnStates:
         assert _ledger.read_token_column('12x') == (0, _ledger.COLUMN_UNRECOGNISED)
 
 
+class TestTheDigitTestAndTheConversionAdmitTheSameSet:
+    """⛔ A cell that passes the test and raises in the parse has no third state.
+
+    The reader tested ``stripped.lstrip('-').isdigit()`` and then called
+    ``int(stripped)``, i.e. read the field by two different rules in one branch —
+    the exact anti-pattern the sibling reader's own docstring names. Two
+    reachable cells slipped through the gap and raised an uncaught
+    ``ValueError``: ``'--1'``, where the strip removes BOTH signs, and ``'²'``,
+    which ``str.isdigit()`` accepts as a digit character that is not a decimal
+    one. Neither is producible by the writer — which is the point, because this
+    module exists to CLASSIFY the hand-edited and corrupt rows that a docstring
+    promising a total trichotomy must survive.
+
+    Every case has its readable control beside it, because a predicate that
+    rejected every string would satisfy the positive half alone.
+    """
+
+    def test_a_doubled_minus_sign_is_unrecognised(self):
+        assert _ledger.read_token_column('--1') == (0, _ledger.COLUMN_UNRECOGNISED)
+
+    def test_a_lone_minus_sign_is_unrecognised(self):
+        assert _ledger.read_token_column('-') == (0, _ledger.COLUMN_UNRECOGNISED)
+
+    def test_a_superscript_digit_is_unrecognised(self):
+        assert _ledger.read_token_column('²') == (0, _ledger.COLUMN_UNRECOGNISED)
+
+    def test_a_signed_superscript_digit_is_unrecognised(self):
+        assert _ledger.read_token_column('-²') == (0, _ledger.COLUMN_UNRECOGNISED)
+
+    def test_a_non_ascii_decimal_is_unrecognised(self):
+        """``int('٣')`` SUCCEEDS — so this one is a classification call, not a crash.
+
+        A token count nobody recorded in ASCII is an unreadable cell rather than
+        a measurement; admitting it would let a number the writer never produced
+        into the reconciliation looking measured.
+        """
+        assert _ledger.read_token_column('٣') == (0, _ledger.COLUMN_UNRECOGNISED)
+
+    def test_a_single_negative_is_still_measured(self):
+        """The control — the sign arm this reader deliberately admits survives.
+
+        ``read_token_column`` classifies READABILITY and leaves plausibility to
+        the consumer, so ``-1`` is a readable number here even though its sibling
+        ``check-dispatch-audit`` rejects it as an evidence discriminator.
+        """
+        assert _ledger.read_token_column('-1') == (-1, _ledger.COLUMN_MEASURED)
+
+    def test_a_padded_digit_string_is_still_measured(self):
+        """The control for the strip — one value is both tested and parsed."""
+        assert _ledger.read_token_column(' 12000 ') == (12000, _ledger.COLUMN_MEASURED)
+
+
+class TestTheSiblingCoercionSharesThePredicate:
+    """``_as_int`` read the field by the same two rules, and was not reported.
+
+    It is the reviewer's call-site list being a SAMPLE: the same
+    ``lstrip('-').isdigit()``-then-``int()`` mismatch sat one function above
+    ``read_token_column``, in the coercion every non-token column still flows
+    through, and fixing only the reported site would have left it raising on the
+    identical input.
+    """
+
+    def test_a_doubled_minus_sign_defaults_to_zero_rather_than_raising(self):
+        assert _ledger._as_int('--1') == 0
+
+    def test_a_superscript_digit_defaults_to_zero_rather_than_raising(self):
+        assert _ledger._as_int('²') == 0
+
+    def test_a_readable_number_is_still_coerced(self):
+        """The control — the guard must not flatten every string to ``0``."""
+        assert _ledger._as_int(' -12 ') == -12
+        assert _ledger._as_int('4000') == 4000
+
+
 class TestNormalisedRowsCarryTheState:
     """The reader's OWN output separates the two zero-shaped rows."""
 

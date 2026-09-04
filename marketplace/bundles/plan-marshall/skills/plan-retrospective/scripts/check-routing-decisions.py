@@ -533,6 +533,31 @@ COMPARISON_REFUSED = 'refused'
 COMPARISON_COMPUTED = 'computed'
 
 
+def is_ascii_digits(text: str) -> bool:
+    """True for an unsigned ASCII decimal integer literal.
+
+    A deliberate SUBSET of what ``int()`` accepts, in one direction only:
+    everything this admits parses to a non-negative int, which is the whole
+    property the caller relies on. ``int()`` additionally accepts a signed form
+    and a non-ASCII decimal, both of which this refuses on purpose — see below.
+
+    ⛔ ``str.isdigit()`` alone is NOT that predicate. It is True for a superscript
+    such as ``'²'`` — a digit CHARACTER that is not a DECIMAL one — which
+    ``int()`` then rejects with an uncaught ``ValueError``. A row carrying one
+    reaches this reader through ``cmd_run``, so cost-preview generation would
+    stop on the corrupt cell instead of counting it ``rows_unrecognised``, which
+    is the whole point of publishing that state. The ASCII bound also excludes a
+    non-ASCII decimal such as ``'٣'``, which ``int()`` WOULD accept: a token
+    count recorded in one is an unreadable cell, not a term of the sum.
+
+    Deliberately defined here rather than imported from the sibling reader
+    ``check-dispatch-audit.is_ascii_digits``: the two scripts are separate
+    entry points and this is a two-line pure predicate, not a contract mirror —
+    there is no value either could drift into disagreement about.
+    """
+    return text.isascii() and text.isdigit()
+
+
 def summarize_execution_log_tokens(manifest: dict[str, Any]) -> dict[str, int]:
     """Sum ``total_tokens`` over the in-population rows AND state the sum's coverage.
 
@@ -591,11 +616,14 @@ def summarize_execution_log_tokens(manifest: dict[str, Any]) -> dict[str, int]:
             # unrecognised and its count was silently dropped from the sum —
             # an under-count wearing the shape of an unreadable cell, which is
             # the measured-vs-unmeasured conflation this module exists to
-            # report rather than commit.
+            # report rather than commit. The digit test is `is_ascii_digits`
+            # rather than `str.isdigit()` so the test and the `int()` below it
+            # admit the same set — a superscript passes `isdigit()` and then
+            # raises, taking the whole cost preview down over one corrupt cell.
             stripped = value.strip()
             if stripped == UNMEASURED_COLUMN_TOKEN:
                 coverage['rows_unmeasured'] += 1
-            elif stripped.isdigit():
+            elif is_ascii_digits(stripped):
                 coverage['total_tokens'] += int(stripped)
                 coverage['rows_measured'] += 1
             else:

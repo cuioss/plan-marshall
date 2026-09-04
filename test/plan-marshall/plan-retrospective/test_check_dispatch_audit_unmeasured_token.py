@@ -171,3 +171,48 @@ class TestANegativeTokenCountIsNotAMeasurement:
 
         assert forwards['push'] == 4_000
         assert backwards['push'] == 4_000
+
+
+class TestANonDecimalDigitCellIsUnreadableNotAnException:
+    """⛔ ``str.isdigit()`` and ``int()`` do not admit the same set.
+
+    The digit test and the conversion read the cell by two different rules, so a
+    string could pass the test and raise one line later. That is the same
+    two-rules-in-one-branch shape the negative-value class above records — here
+    its cost is not a misclassification but an uncaught ``ValueError`` that
+    aborts audit processing entirely, in a reader whose whole job is to classify
+    an unreadable cell into ``no_evidence`` rather than crash on it.
+
+    Each case has its readable control beside it, because a predicate that
+    rejected every string would satisfy the positive half alone.
+    """
+
+    def test_a_superscript_digit_reads_as_no_record_rather_than_raising(self):
+        """``'²'`` is a digit CHARACTER but not a DECIMAL one."""
+        records = _cda.finalize_token_records(_manifest(('push', '²')))
+
+        assert records['push'] is None
+
+    def test_a_non_ascii_decimal_reads_as_no_record(self):
+        """``int('٣')`` SUCCEEDS — this one is a classification call, not a crash.
+
+        A token count nobody recorded in ASCII is an unreadable cell, not a
+        measurement; admitting it would route a number the writer never produced
+        into ``ran_inline``.
+        """
+        records = _cda.finalize_token_records(_manifest(('push', '٣')))
+
+        assert records['push'] is None
+
+    def test_a_corrupt_cell_does_not_stop_the_rest_of_the_rows(self):
+        """The consequence the two assertions above prevent, at the audit's output."""
+        records = _cda.finalize_token_records(_manifest(('push', '²'), ('merge', '4000')))
+
+        assert records['push'] is None
+        assert records['merge'] == 4_000
+
+    def test_an_ascii_digit_string_is_still_a_measurement(self):
+        """The control — the ASCII bound must not reject the normal cell."""
+        records = _cda.finalize_token_records(_manifest(('push', '12000')))
+
+        assert records['push'] == 12_000

@@ -671,10 +671,14 @@ def cmd_update(args) -> dict:
         prior_task_status = task.get('status')
         task['status'] = args.status
         # The explicit half of the task-start baseline capture — its implicit
-        # sibling is the `in_progress` flip inside `finalize-step`, and both
-        # halves apply the SAME predicate. A caller that opens a task through
-        # this verb must land the same baseline, or the artifact channel fires
-        # for one entry path and is silently inert for the other. Gating on the
+        # sibling is the `in_progress` flip inside `finalize-step`. The two
+        # halves gate on DIFFERENT already-opened populations, and must: that
+        # one refuses `done`/`failed` too (`_ALREADY_OPENED_TASK_STATUSES`),
+        # because a closing call on an already-run task is a RETRY, whereas
+        # `done`/`failed` -> `in_progress` through THIS verb is a genuine
+        # reopening whose opening base is the current HEAD. A caller that opens
+        # a task through this verb must land a baseline, or the artifact channel
+        # fires for one entry path and is silently inert for the other. Gating on the
         # real transition is what stops a REPEATED `update --status in_progress`
         # on a baseline-less task from stamping one at the current HEAD — after
         # that task's earlier edits have landed, which the later diff would then

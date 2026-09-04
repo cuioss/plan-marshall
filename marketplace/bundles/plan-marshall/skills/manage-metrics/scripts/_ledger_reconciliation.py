@@ -160,14 +160,54 @@ def _row_sort_key(row: dict[str, Any]) -> tuple[bool, datetime, str, str, int]:
     )
 
 
+def is_int_literal(text: str) -> bool:
+    """True for an ASCII decimal integer literal — digits, one optional leading ``-``.
+
+    A deliberate SUBSET of what ``int()`` accepts, in one direction only: every
+    string this admits parses, and that one-way guarantee is the whole property
+    the callers rely on. ``int()`` additionally accepts forms this refuses — a
+    non-ASCII decimal, surrounding whitespace, a leading ``+`` — each of which
+    the paragraphs below argue for on its own terms.
+
+    ⛔ **The predicate must never admit what the conversion rejects.** That is the
+    direction the defect ran, and it is the one the callers cannot survive: a
+    string the test lets through and ``int()`` refuses raises inside a reader
+    whose job is to report an unreadable cell. Both readers below tested
+    ``…lstrip('-').isdigit()`` and then called ``int()`` on the value they had NOT
+    tested, so two reachable cells passed the test and raised an uncaught
+    ``ValueError`` in the conversion one line later:
+
+    * ``'--1'`` — ``lstrip('-')`` removes BOTH signs, so the residue is a digit
+      string while the value is not a number;
+    * ``'²'`` — ``str.isdigit()`` is True for a superscript, which is a digit
+      character but not a DECIMAL one, and ``int()`` accepts only decimals.
+
+    Neither is producible by the writer, and that is exactly the point: this
+    module classifies a cell's READABILITY so a hand-edited or corrupt row is
+    reported rather than crashed on, and a reader that aborts on the corrupt row
+    it exists to describe has no third state at all.
+
+    The ASCII bound is deliberate on top of ``str.isdecimal()``. ``int()`` would
+    accept a non-ASCII decimal such as ``'٣'``, but a recorded token count
+    written in one is an unreadable cell rather than a measurement — classifying
+    it as measured would put a number nobody wrote in that column into a sum.
+    """
+    body = text[1:] if text[:1] == '-' else text
+    return bool(body) and body.isascii() and body.isdigit()
+
+
 def _as_int(value: object) -> int:
     """Coerce a TOON scalar to int, defaulting to 0. Booleans are not counts."""
     if isinstance(value, bool):
         return 0
     if isinstance(value, int):
         return value
-    if isinstance(value, str) and value.strip().lstrip('-').isdigit():
-        return int(value)
+    if isinstance(value, str):
+        # Strip ONCE and both test and parse the stripped value — the same
+        # one-value rule `read_token_column` follows below.
+        stripped = value.strip()
+        if is_int_literal(stripped):
+            return int(stripped)
     return 0
 
 
@@ -178,9 +218,12 @@ def read_token_column(value: object) -> tuple[int, str]:
     an int-parsing FLOOR — every historical all-numeric row parses exactly as it
     did before — and refuses to coerce the other two states into it:
 
-    * any int, and any string that parses as one after stripping (an optional
-      leading ``-`` included), is :data:`COLUMN_MEASURED` — a measured ``0``
-      among them. The sign is admitted by the string arm because the int arm
+    * any int, and any string :func:`is_int_literal` admits after stripping (an
+      optional leading ``-`` included), is :data:`COLUMN_MEASURED` — a measured
+      ``0`` among them. That predicate is what makes "parses as one" a fact
+      rather than an aspiration: everything it admits, the ``int()`` call below
+      it parses, so no cell can pass the test and raise in the conversion.
+      The sign is admitted by the string arm because the int arm
       admits it, so the two arms agree on what a recorded number is; this reader
       classifies a cell's READABILITY and leaves the plausibility of the number
       to the consumer that presents it. (Its sibling
@@ -204,7 +247,7 @@ def read_token_column(value: object) -> tuple[int, str]:
         stripped = value.strip()
         if stripped == UNMEASURED_COLUMN_TOKEN:
             return 0, COLUMN_UNMEASURED
-        if stripped.lstrip('-').isdigit():
+        if is_int_literal(stripped):
             return int(stripped), COLUMN_MEASURED
     return 0, COLUMN_UNRECOGNISED
 

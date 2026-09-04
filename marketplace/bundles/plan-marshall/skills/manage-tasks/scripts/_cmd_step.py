@@ -20,6 +20,22 @@ from _tasks_core import (
 from file_ops import atomic_write_file
 from plan_logging import log_entry
 
+#: Task statuses from which this call CANNOT be the task's opening transition,
+#: because the record already says the task was observed running (or has already
+#: run).
+#:
+#: ⛔ `done` and `failed` belong here for the SAME reason `in_progress` does, and
+#: leaving them out was the residual half of this gate. A persisted `done` task
+#: carrying no baseline — one closed before this field existed, or hand-edited —
+#: reached the capture on a RETRY of its closing call and got the current HEAD
+#: stamped on it, i.e. a base taken AFTER every edit that task made. The write
+#: persists, and because the capture is idempotent a later `update --status
+#: in_progress` reopening KEEPS that wrong base rather than recording the real
+#: opening one. A guessed base is worse than none: `emit_artifact_lines` returns
+#: [] for a baseline-less task precisely so a wrong list cannot be published as a
+#: confident one.
+_ALREADY_OPENED_TASK_STATUSES = ('in_progress', 'done', 'failed')
+
 
 def cmd_finalize_step(args) -> dict:
     """Handle 'finalize-step' subcommand.
@@ -69,7 +85,12 @@ def cmd_finalize_step(args) -> dict:
     # returns [] for a baseline-less task precisely because a guessed base is
     # worse than none. The capture remains idempotent, so a task that already
     # carries a SHA keeps it whichever entry path opened it.
-    if prior_task_status != 'in_progress':
+    #
+    # The gate reads EVERY already-opened status, not `in_progress` alone — see
+    # `_ALREADY_OPENED_TASK_STATUSES`. A `done` or `failed` record is a task that
+    # has already run, so this call is a retry rather than an opening, and the
+    # late baseline it stamped was the same defect one status over.
+    if prior_task_status not in _ALREADY_OPENED_TASK_STATUSES:
         capture_task_start_sha(task)
 
     # Mark step with outcome

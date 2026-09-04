@@ -389,6 +389,30 @@ def parse_resolve_records(decision_lines: list[str]) -> list[dict[str, str | Non
     return out
 
 
+def is_ascii_digits(text: str) -> bool:
+    """True for an unsigned ASCII decimal integer literal.
+
+    A deliberate SUBSET of what ``int()`` accepts, in one direction only:
+    everything this admits parses to a non-negative int, which is the whole
+    property the caller relies on. ``int()`` additionally accepts a signed form
+    and a non-ASCII decimal, both of which this refuses on purpose — see below.
+
+    ⛔ ``str.isdigit()`` alone is NOT that predicate. It is True for a superscript
+    such as ``'²'`` — a digit CHARACTER that is not a DECIMAL one — which
+    ``int()`` then rejects with an uncaught ``ValueError``, aborting the whole
+    audit over a single corrupt cell in a reader whose entire job is to CLASSIFY
+    an unreadable cell rather than crash on it. The ASCII bound also excludes a
+    non-ASCII decimal such as ``'٣'``, which ``int()`` WOULD accept: a token
+    count recorded in one is an unreadable cell, not a measurement, and admitting
+    it would route a number nobody wrote into ``ran_inline``.
+
+    The sign rejection is carried by ``str.isdigit()`` itself, so ``'-1'`` and
+    ``'+1'`` are both refused — see the negative-value paragraph in
+    :func:`finalize_token_records`.
+    """
+    return text.isascii() and text.isdigit()
+
+
 def finalize_token_records(manifest: dict[str, Any] | None) -> dict[str, int | None]:
     """Return ``{canonical_step_id: total_tokens | None}`` for finalize rows.
 
@@ -415,8 +439,9 @@ def finalize_token_records(manifest: dict[str, Any] | None) -> dict[str, int | N
     and the int arm tested nothing at all, so a negative classified as MEASURED
     and routed to ``ran_inline``: the very bucket the paragraph above says is a
     recorded zero, filled by a value that is not a count. The digit test is now
-    taken on the STRIPPED value with no sign strip (``stripped.isdigit()``, which
-    rejects ``'-1'`` and ``'+1'`` alike), matching the sibling reader in
+    taken on the STRIPPED value with no sign strip
+    (:func:`is_ascii_digits`, which rejects ``'-1'`` and ``'+1'`` alike),
+    matching the sibling reader in
     ``check-routing-decisions.summarize_execution_log_tokens``, and the parse
     consumes that same stripped value rather than the raw one — reading a field by
     two different rules in one branch is how the third state went unnoticed.
@@ -450,10 +475,11 @@ def finalize_token_records(manifest: dict[str, Any] | None) -> dict[str, int | N
             # A negative is not a token count either, and it reached `ran_inline`
             # as a MEASURED value while this arm tested nothing.
             value = raw if raw >= 0 else None
-        elif isinstance(raw, str) and raw.strip().isdigit():
-            # Strip ONCE and both test and parse the stripped value. `.isdigit()`
-            # carries the sign rejection itself — no `lstrip('-')`, which is what
-            # admitted `'-1'` here.
+        elif isinstance(raw, str) and is_ascii_digits(raw.strip()):
+            # Strip ONCE and both test and parse the stripped value. The
+            # predicate carries the sign rejection itself — no `lstrip('-')`,
+            # which is what admitted `'-1'` here — and the ASCII bound is what
+            # keeps the test and the `int()` below admitting the SAME set.
             value = int(raw.strip())
         else:
             value = None

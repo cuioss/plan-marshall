@@ -16,9 +16,10 @@ those lines to the plan's work log.
 
 It also pins that both of this handler's gates are TRANSITIONS rather than
 states: a REPEATED closing call emits neither channel a second time, and a
-finalize (or an ``update --status in_progress``) on an ALREADY-open,
-baseline-less task stamps no late baseline. Both predicates were computed from
-the post-mutation record, where a transition and a repeat are indistinguishable.
+finalize on a task the record already shows as opened — ``in_progress``,
+``done`` or ``failed`` — stamps no late baseline. Both predicates were computed
+from the post-mutation record, where a transition and a repeat are
+indistinguishable.
 """
 
 import json
@@ -656,6 +657,77 @@ def test_a_finalize_on_a_pending_task_still_stamps_the_baseline(plan_context, _a
     cmd_finalize_step(_finalize_step_ns(plan_id='outcome-default', task=1, step=1, outcome='done'))
 
     task = _persisted_task(plan_context, 'outcome-default')
+    assert task[_artifacts.TASK_START_SHA_FIELD] == _head(_artifact_repo)
+
+
+@pytest.mark.parametrize('persisted_status', ['done', 'failed'], ids=['done', 'failed'])
+def test_a_finalize_retry_on_an_already_run_task_stamps_no_late_baseline(
+    plan_context, _artifact_repo, persisted_status
+):
+    """⛔ `in_progress` was not the whole already-opened population.
+
+    A persisted `done` (or `failed`) task carrying no baseline — closed before
+    the field existed, or hand-edited — reached the capture on a RETRY of its
+    closing call, where the `prior_task_status != 'done'` emission gate
+    suppresses [OUTCOME]/[ARTIFACT] but the task write still persists the
+    stamped SHA. The base recorded there is the current HEAD, i.e. taken AFTER
+    every edit the task made, and the capture's idempotence then means a later
+    `update --status in_progress` reopening KEEPS it instead of recording the
+    real opening baseline.
+    """
+    add_basic_task(
+        plan_id='outcome-default',
+        title='Already Run',
+        deliverable=1,
+        steps=['src/main/java/A.java'],
+    )
+    record = _persisted_task(plan_context, 'outcome-default')
+    record['status'] = persisted_status
+    record['steps'][0]['status'] = persisted_status
+    record.pop(_artifacts.TASK_START_SHA_FIELD, None)
+    _write_persisted_task(plan_context, 'outcome-default', record)
+
+    cmd_finalize_step(_finalize_step_ns(plan_id='outcome-default', task=1, step=1, outcome='done'))
+
+    assert _artifacts.TASK_START_SHA_FIELD not in _persisted_task(plan_context, 'outcome-default')
+
+
+def test_a_retry_cannot_pin_a_reopening_to_the_late_baseline(plan_context, _artifact_repo):
+    """The consequence the assertion above prevents, observed end to end.
+
+    Without the gate the retry writes a SHA, and `capture_task_start_sha` is
+    idempotent — so the `update --status in_progress` that genuinely reopens the
+    task would keep the retry's late base forever.
+
+    ⛔ HEAD is ADVANCED between the retry and the reopening. Without that the two
+    candidate baselines are the same commit and the assertion passes against the
+    ungated predecessor too — the control would be vacuous.
+    """
+    add_basic_task(
+        plan_id='outcome-default',
+        title='Reopened After A Retry',
+        deliverable=1,
+        steps=['src/main/java/A.java'],
+    )
+    record = _persisted_task(plan_context, 'outcome-default')
+    record['status'] = 'done'
+    record['steps'][0]['status'] = 'done'
+    record.pop(_artifacts.TASK_START_SHA_FIELD, None)
+    _write_persisted_task(plan_context, 'outcome-default', record)
+    retry_head = _head(_artifact_repo)
+    cmd_finalize_step(_finalize_step_ns(plan_id='outcome-default', task=1, step=1, outcome='done'))
+
+    (_artifact_repo / 'seed.txt').write_text('advanced\n', encoding='utf-8')
+    subprocess.run(
+        ['git', '-C', str(_artifact_repo), 'commit', '-q', '-am', 'advance'],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    cmd_update(_update_ns(plan_id='outcome-default', number=1, status='in_progress'))
+
+    task = _persisted_task(plan_context, 'outcome-default')
+    assert _head(_artifact_repo) != retry_head
     assert task[_artifacts.TASK_START_SHA_FIELD] == _head(_artifact_repo)
 
 

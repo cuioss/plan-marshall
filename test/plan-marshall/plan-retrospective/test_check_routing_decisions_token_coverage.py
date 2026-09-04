@@ -260,6 +260,58 @@ class TestAPaddedNumericTokenIsMeasured:
         assert coverage['total_tokens'] == 0
 
 
+class TestANonDecimalDigitCellIsUnrecognisedNotAnException:
+    """⛔ ``str.isdigit()`` and ``int()`` do not admit the same set.
+
+    ``'²'`` is a digit CHARACTER but not a DECIMAL one: ``str.isdigit()`` returns
+    True and ``int()`` then raises ``ValueError``. The reader tested one and
+    parsed with the other, so a single corrupt cell took the whole cost preview
+    down instead of being counted ``rows_unrecognised`` — the state this reader
+    publishes precisely so an unreadable cell is REPORTED rather than fatal. A
+    row carrying one reaches here through ``cmd_run``, so the path is live.
+
+    Each case has its readable control beside it, because a predicate that
+    rejected every string would satisfy the positive half alone.
+    """
+
+    def test_a_superscript_digit_is_unrecognised(self):
+        coverage = _crd.summarize_execution_log_tokens(_manifest(_row('a', '²')))
+
+        assert coverage['rows_unrecognised'] == 1
+        assert coverage['rows_measured'] == 0
+        assert coverage['total_tokens'] == 0
+
+    def test_a_non_ascii_decimal_is_unrecognised(self):
+        """``int('٣')`` SUCCEEDS — so this one is a classification call, not a crash.
+
+        A token count nobody wrote in ASCII is an unreadable cell rather than a
+        term of the sum; admitting it would put a number the writer never
+        produced into a published total.
+        """
+        coverage = _crd.summarize_execution_log_tokens(_manifest(_row('a', '٣')))
+
+        assert coverage['rows_unrecognised'] == 1
+        assert coverage['rows_measured'] == 0
+
+    def test_a_corrupt_cell_does_not_stop_the_rest_of_the_population(self):
+        """The consequence: the readable rows still sum, and the gap is published."""
+        coverage = _crd.summarize_execution_log_tokens(
+            _manifest(_row('a', 40_000), _row('b', '²'))
+        )
+
+        assert coverage['total_tokens'] == 40_000
+        assert coverage['rows_in_population'] == 2
+        assert coverage['rows_measured'] == 1
+        assert coverage['rows_unrecognised'] == 1
+
+    def test_an_ascii_digit_string_is_still_measured(self):
+        """The control — the ASCII bound must not reject the normal cell."""
+        coverage = _crd.summarize_execution_log_tokens(_manifest(_row('a', '12000')))
+
+        assert coverage['rows_measured'] == 1
+        assert coverage['total_tokens'] == 12_000
+
+
 def test_unmeasured_token_matches_writer():
     """The mirrored literal agrees with the manifest writer's own definition.
 
