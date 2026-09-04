@@ -2632,9 +2632,9 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
         seen_in_plan: set[tuple[str, str, str]] = set()
         for jsonl in findings_dir.glob("*.jsonl"):
             for obj in read_jsonl(jsonl):
-                # D1 authorship gate: a pipeline-self-authored comment (or one with
-                # an unrecognized bot_kind) cannot seed a preference. Applied here,
-                # implemented in the shared module resolved above.
+                # D1 authorship gate: a pipeline-self-authored comment cannot seed
+                # a preference. Applied here, implemented in the shared module
+                # resolved above.
                 if not admissibility.preference_admissible(obj, recognized_bot_kinds):
                     continue
                 disposition = _preference_disposition(obj)
